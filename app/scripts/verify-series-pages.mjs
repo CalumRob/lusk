@@ -282,8 +282,8 @@ try {
     assert(focal, 'Browser fixture must contain the selected commune')
     const level = 'commune'
     const facetQuery = spec.indicator === 'subventions_annuelles' ? { dimension: '2025' }
-      : spec.indicator === 'conso_enaf_annuel' ? { detail: '2024' }
-        : spec.indicator === 'prix_m2' ? { detail: '2025' } : {}
+      : spec.indicator === 'prix_m2' ? { detail: '2022' }
+        : spec.indicator === 'conso_enaf_annuel' ? { detail: '2024' } : {}
     const factStart = harness.factReads.length
     const query = new URLSearchParams({ territoire: focal.territoire, niveau: level, ...facetQuery })
     if (level === 'commune' && !isRaccordement) query.set('departement', '22')
@@ -436,12 +436,17 @@ try {
 
   // OCS-GE approved restriction: calendar facts stay visible as facts, while
   // comparison evidence and the selector keep the published M2/M3 roles only.
+  // The EPCI level carries real published M2/M3 peer evidence (4 measured EPCIs).
   const artif = census.find(({ indicator }) => indicator === 'artif_par_habitant')
   assert(artif)
-  await page.goto(`${baseUrl}indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=epci&vue=reperes`,
+  const epciFocal = territoiresFixture.find((territory) => territory.type === 'epci' &&
+    territory.territoire === '243500725')
+  assert(epciFocal, 'Browser fixture must contain the M3-measured EPCI')
+  await page.goto(`${baseUrl}indicateurs/milieux/artif_par_habitant?territoire=${epciFocal.territoire}&niveau=epci&vue=reperes`,
     { waitUntil: 'domcontentloaded' })
   await page.locator('h1').filter({ hasText: artif.page.label }).waitFor({ state: 'visible', timeout: 20000 })
   await page.locator('[data-etape]').first().waitFor({ state: 'visible', timeout: 20000 })
+  await page.waitForTimeout(250)
   const selectorOptions = await page.locator('select').evaluateAll((selects) =>
     selects.map((select) => Array.from(select.options).map((option) => option.value)))
   const comparisonSelect = selectorOptions.find((options) => options.includes('M2') && options.includes('M3'))
@@ -457,12 +462,24 @@ try {
   for (const [year, etat] of Object.entries(calendarEtats)) {
     assert.equal(etat, 'sans-valeur', `calendar step ${year} must not carry peer aggregate evidence`)
   }
+  const m3Etape = page.locator('[data-etape="M3"]')
+  assert.equal(await m3Etape.getAttribute('data-etat'), 'valeurs',
+    'the published M3 role keeps its native peer comparison')
   const artificialCaption = await page.locator('figure[data-renderer="trajectory"] figcaption').innerText()
   assert(artificialCaption.includes('Comparaison non publiée pour'),
     'the trajectory must name the unpublished calendar comparisons')
   const calendarFactPoint = await page.locator('.trajectoire-territoire-point[data-detail^="20"]').count()
+  assert(calendarFactPoint > 0, 'calendar observations remain rendered as factual trajectory points')
+  // The indicator-page Carte maps the published M3 role with its native value.
+  await page.getByRole('button', { name: 'Carte', exact: true }).click()
+  await page.locator('.popup-carte-kpi').first().waitFor({ state: 'visible', timeout: 20000 })
+  const artifMapText = await page.locator('.popup-carte').innerText()
+  const artifM3 = SENTINEL(947.2711327209256)
+  assert(compactText(artifMapText).includes(compactText(formaterValeur({ value: artifM3, unit: artif.resource.unit }))),
+    `the OCS-GE map must render the native M3 role value: ${artifMapText}`)
+  await page.getByRole('button', { name: 'Repères', exact: true }).click()
   // A legacy calendar URL resolves truthfully: the role replaces the year label.
-  await page.goto(`${baseUrl}indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=epci&detail=2023&vue=reperes`,
+  await page.goto(`${baseUrl}indicateurs/milieux/artif_par_habitant?territoire=${epciFocal.territoire}&niveau=epci&detail=2023&vue=reperes`,
     { waitUntil: 'domcontentloaded' })
   await page.locator('[data-etape]').first().waitFor({ state: 'visible', timeout: 20000 })
   await page.waitForTimeout(250)
@@ -472,6 +489,15 @@ try {
   const relabelledCaption = await page.locator('figure[data-renderer="trajectory"] figcaption').innerText()
   assert(relabelledCaption.includes('Comparaison non publiée pour'),
     'the canonicalized role view must still mark the calendar steps as unpublished comparisons')
+  // A missing prix_m2 annual point never invents a value (and never renders zero).
+  await page.goto(`${baseUrl}indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22&detail=2024&vue=reperes`,
+    { waitUntil: 'domcontentloaded' })
+  await page.locator('[data-etape="2024"]').waitFor({ state: 'visible', timeout: 20000 })
+  const missingPrixPoint = page.locator('.trajectoire-territoire-point[data-detail="2024"]')
+  if (await missingPrixPoint.count()) {
+    assert.equal(await missingPrixPoint.getAttribute('data-value'), null,
+      'a missing annual price point must not invent a value')
+  }
 
   // A URL focal outside the filtered cohort keeps its own bounded focal read.
   const outsideFocal = territoiresFixture.find((territory) => territory.type === 'commune' &&
