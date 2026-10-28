@@ -418,8 +418,7 @@ try {
         const cards = await page.locator('.source-card').allInnerTexts()
         const sections = await page.locator('.source-card').evaluateAll((cards) => cards.map((card) => card.id))
         console.error(`DEBUG RACC CARDS: sections=${JSON.stringify(sections)} n=${cards.length} first=${JSON.stringify(cards[0]?.slice(0, 200))}` +
-          ` links=${JSON.stringify(await page.locator('.source-card a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))))}` +
-          ` themeMeta=${JSON.stringify(await page.evaluate(() => Boolean((window as any).__VUE_DEVTOOLS_GLOBAL_HOOK__)))}`)
+          ` links=${JSON.stringify(await page.locator('.source-card a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))))}`)
       }
       assert(sourceText.includes('Révision :'), 'raccordement source card must expose the API revision hash')
       assert(await page.locator('.source-card a[href^="/sources#"]').first().isVisible(),
