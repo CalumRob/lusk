@@ -152,7 +152,7 @@ function createHarness(resources, territories, fixtures) {
         const parsed = JSON.parse(await response.text())
         if (corruptNextSeriesComparison) {
           corruptNextSeriesComparison = false
-          const seriesData = parsed.results.find((result: any) => result.data.shape === 'ordered_series')?.data
+          const seriesData = parsed.results.find((result) => result.data.shape === 'ordered_series')?.data
           const comparison = seriesData?.result?.axis_comparisons?.[0]
           if (comparison && Array.isArray(comparison.member_ranks) && comparison.member_ranks[0]) {
             comparison.member_ranks[0].rank = 999
