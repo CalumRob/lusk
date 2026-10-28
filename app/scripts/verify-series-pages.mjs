@@ -666,7 +666,8 @@ try {
     await page.locator('[data-testid="series-comparison-error"]').waitFor({ state: 'detached', timeout: 20000 })
     assert.equal(harness.batchTrace.at(-1)?.status, 200)
     assert.equal(harness.batchTrace.at(-1)?.items.length, 1)
-    assert.equal(harness.batchTrace.at(-1)?.items[0]?.intent?.kind, 'selected_comparison')
+    assert.deepEqual(harness.batchTrace.at(-1)?.items[0]?.intent, initialComparison?.intent,
+      `${spec.indicator}: recovered retry must preserve the producer-declared comparison intent`)
     assert.equal(harness.factReads.filter((item) => item.resource === spec.indicator).length,
       factsAtComparisonFailure, `${spec.indicator}: comparison-only retry must not reread admitted facts`)
 
