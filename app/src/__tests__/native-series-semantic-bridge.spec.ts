@@ -15,17 +15,30 @@ const capturePaths = (process.env.LUSK_NATIVE_SERIES_FAMILY_CAPTURES ?? '').spli
 afterEach(() => vi.unstubAllGlobals())
 
 /** One captured SQL/HTTP batch served verbatim, optionally with one wire field
- *  corrupted, exactly as the guarded capture test wrote it to disk. */
-function serveBridge(bridge: { request: { items: unknown[] }; response: unknown; response_status: number },
+ *  corrupted, exactly as the guarded capture test wrote it to disk. The
+ *  comparison-only re-acquisition (a single-item request) is served from the
+ *  same captured comparison evidence. */
+function serveBridge(bridge: { request: { items: any[] }; response: any; response_status: number },
   mutate?: (data: unknown[]) => void) {
   const wire = structuredClone(bridge)
   const data = (wire.response as { results: Array<{ data: unknown }> }).results
     .map((result) => result.data)
   mutate?.(data)
+  const comparisonIndex = wire.request.items.findIndex((item: any) => item.intent?.kind !== 'facts')
   return vi.fn(async (path: RequestInfo | URL, init?: RequestInit) => {
     expect(String(path)).toBe('/api/resources/read-batch')
-    expect(JSON.parse(String(init?.body))).toEqual(wire.request)
-    return Response.json(wire.response, { status: wire.response_status })
+    const body = JSON.parse(String(init?.body))
+    if (body.items.length === wire.request.items.length) {
+      expect(body).toEqual(wire.request)
+      return Response.json(wire.response, { status: wire.response_status })
+    }
+    expect(body.items).toHaveLength(1)
+    const requested = body.items[0]
+    const expected = wire.request.items[comparisonIndex]
+    expect(requested).toEqual({ ...expected, id: requested.id })
+    return Response.json({ contract: 'semantic-read-batch-v1',
+      results: [{ id: requested.id, resource: requested.resource, data: data[comparisonIndex] }] },
+      { status: 200 })
   })
 }
 

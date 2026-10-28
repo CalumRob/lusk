@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync, rmSync, mkdirSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 // Maintained native bridge invocation for #857: fresh guarded SQL/HTTP captures
 // (five pages + the state/calendar boundary) served verbatim through the real
@@ -13,7 +14,8 @@ import { resolve } from 'node:path'
 // passfile PATH. Never prints or copies passfile contents. No R is involved.
 const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
-const out = resolve(appRoot, 'verify-series-native-bridge-out')
+// Outside the checkout by default; pass an explicit directory for evidence runs.
+const out = resolve(process.argv[2] ?? join(tmpdir(), 'lusk-series-native-bridge'))
 const required = ['LUSK_TEST_DATABASE_PREFIX', 'LUSK_TEST_DATABASE_NAME',
   'LUSK_TEST_PUBLISH_DSN', 'LUSK_TEST_READ_DSN']
 const missing = required.filter((name) => !process.env[name])

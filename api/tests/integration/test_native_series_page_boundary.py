@@ -122,7 +122,8 @@ def test_capture_native_state_calendar_comparison_boundary(canonical_db_env, tmp
                          coordinates={"declared_detail": ["M2", "M3"]}, fields=["axis_comparisons"])
             bridge_items = [
                 {"id": "scalar-0-artif_par_habitant", "resource": "artif_par_habitant",
-                 "target": {"kind": "territory_cohort", "type": "epci"}, "intent": {"kind": "facts"}},
+                 "target": {"kind": "territory_cohort", "type": "epci"}, "intent": {"kind": "facts"},
+                 "fields": ["value"]},
                 {"id": "scalar-1-artif_par_habitant", "resource": "artif_par_habitant",
                  "target": target, "intent": {"kind": "facts"}},
                 {"id": "scalar-2-artif_par_habitant", "resource": "artif_par_habitant",
