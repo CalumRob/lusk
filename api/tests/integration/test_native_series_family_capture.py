@@ -41,6 +41,9 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
         {'territoire': '35', 'type': 'departement', 'nom': 'Ille-et-Vilaine', 'departement': None, 'epci': None},
         {'territoire': '22', 'type': 'departement', 'nom': 'Côtes-d’Armor', 'departement': None, 'epci': None},
     ]
+    cohort_target = {'kind': 'territory_cohort', 'type': 'commune',
+        'department_id': None if indicator == 'prix_m2' else '35',
+        'epci_id': 'native-e1' if indicator == 'prix_m2' else None}
     with psycopg.connect(canonical_db_env['publish_dsn']) as conn:
         for t in territories:
             conn.execute('''INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,
@@ -131,7 +134,7 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
                 response = client.post('/api/resources/read-batch', json=request)
                 captures[name] = {'request': request, 'response_status': response.status_code, 'response': response.json()}
                 assert response.status_code == 200, response.text
-            read('cohort', {'kind': 'territory_cohort', 'type': 'commune', 'department_id': '35'}, {'kind': 'facts'},
+            read('cohort', cohort_target, {'kind': 'facts'},
                  fields=['value', 'scalar_facet'] if indicator == 'prix_m2' else ['value'])
             read('focal', {'kind': 'territory', 'type': 'commune', 'id': 'native-c3'}, {'kind': 'facts'})
             read('comparison', {'kind': 'territory', 'type': 'commune', 'id': 'native-c3'},
@@ -149,7 +152,7 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
                  fields=['axis_comparisons', 'scalar_facet'] if indicator == 'prix_m2' else ['axis_comparisons'])
             bridge_items = [
                 {'id': f'scalar-0-{indicator}', 'resource': indicator,
-                 'target': {'kind': 'territory_cohort', 'type': 'commune', 'department_id': '35', 'epci_id': None},
+                 'target': cohort_target,
                  'intent': {'kind': 'facts'},
                  'fields': ['value', 'scalar_facet'] if indicator == 'prix_m2' else ['value']},
                 {'id': f'scalar-1-{indicator}', 'resource': indicator,
