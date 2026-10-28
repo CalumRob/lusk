@@ -266,12 +266,14 @@ try {
       const requested = { niveau: level, ...(department ? { departement: department } : {}),
         ...(epci ? { epci } : {}), territoire: focal.territoire }
       const exploration = modeleExploration(facts, dispatch.facet, territoiresFixture, requested, undefined, false)
+      const rankSorted = modeleExploration(facts, dispatch.facet, territoiresFixture,
+        { ...requested, tri: 'rang', ordre: 'asc' }, undefined, false)
       const trajectory = dispatch.family === 'trajectory'
         ? modeleTrajectoire(facts, dispatch.facet, boundPage.trajectory.endpoints, territoiresFixture,
           { niveau: level, territoire: focal.territoire }, [], null, { nativeSeries: true,
             nativeAxisComparisons: read.comparison?.axis_comparisons })
         : null
-      return { read, facts, dispatch, exploration, trajectory, boundPage }
+      return { read, facts, dispatch, exploration, rankSorted, trajectory, boundPage }
     } finally { globalThis.fetch = previousFetch }
   }
 
@@ -358,8 +360,7 @@ try {
         await page.waitForTimeout(120)
         const sortedRows = await page.locator('tbody tr').evaluateAll((rows) => rows.map((row) =>
           decodeURIComponent((row.querySelector('td a')?.getAttribute('href') ?? '').split('?')[0].split('/').at(-1) ?? '')))
-        const expectedOrder = [...expected.exploration.rows].sort((a, b) =>
-          (a.rang ?? Number.MAX_SAFE_INTEGER) - (b.rang ?? Number.MAX_SAFE_INTEGER)).map((row) => row.territoire.territoire)
+        const expectedOrder = expected.rankSorted.rows.map((row) => row.territoire.territoire)
         if (process.env.LUSK_SERIES_PROOF_DEBUG && sortedRows.join() !== expectedOrder.join()) {
           let firstDiff = -1
           for (let index = 0; index < Math.max(sortedRows.length, expectedOrder.length); index++) {
@@ -368,20 +369,18 @@ try {
           const liveRanks = await page.locator('tbody tr').evaluateAll((rows) => rows.map((row) =>
             [decodeURIComponent((row.querySelector('td a')?.getAttribute('href') ?? '').split('?')[0].split('/').at(-1) ?? ''),
               row.querySelectorAll('td')[1]?.innerText.trim(), row.querySelectorAll('td')[2]?.innerText.trim()]))
-          const expectedRanks = expected.exploration.rows.map((row) =>
+          const expectedRanks = expected.rankSorted.rows.map((row) =>
             [row.territoire.territoire, row.value, row.rang, row.rangTaille])
           console.error(`DEBUG SORT ${spec.indicator}: firstDiff=${firstDiff}` +
             ` aroundLive=${JSON.stringify(liveRanks.slice(Math.max(0, firstDiff - 2), firstDiff + 4))}` +
-            ` aroundExpected=${JSON.stringify(expectedRanks.slice(Math.max(0, firstDiff - 2), firstDiff + 4))}` +
-            ` probe22036=${JSON.stringify(expectedRanks.find((row) => row[0] === '22036'))}` +
-            ` probe22005=${JSON.stringify(expectedRanks.find((row) => row[0] === '22005'))}`)
+            ` aroundExpected=${JSON.stringify(expectedRanks.slice(Math.max(0, firstDiff - 2), firstDiff + 4))}`)
         }
         assert.deepEqual(sortedRows, expectedOrder,
           `${spec.indicator} table rank sort must follow the model's rank order`)
-        const focalRowRank = expected.exploration.rows.find((row) => row.territoire.territoire === focal.territoire)?.rang
+        const focalRowRank = expected.rankSorted.rows.find((row) => row.territoire.territoire === focal.territoire)?.rang
         if (focalRowRank !== null && focalRowRank !== undefined) {
           const focalRowText = await page.locator('tbody tr.selection').innerText()
-          assert(focalRowText.includes(formaterRang(focalRowRank, expected.exploration.rows.length)),
+          assert(focalRowText.includes(formaterRang(focalRowRank, expected.rankSorted.rows.length)),
             `${spec.indicator} focal row must render its model rank`)
         }
       }
