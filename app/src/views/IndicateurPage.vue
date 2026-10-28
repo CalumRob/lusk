@@ -1081,11 +1081,14 @@ async ([active, resourceId, descriptorVersion, contentVersion, _members, targetT
 }, { immediate: true })
 /** Le millésime API d'une carte source : les faits natifs, jamais une horloge inventée (#732). */
 const vintageApi = (source: { vintageId?: string; version: string; referenceDate: string | null;
-  publicationDate: string | null; lineage?: Record<string, unknown> }, licence: string | null): SourceVintageRecord => ({
-  id: source.vintageId ?? source.version, label: source.vintageId ?? source.version, version: source.version,
-  licence, dateReference: source.referenceDate, datePublication: source.publicationDate,
-  ...(typeof source.lineage?.hash === 'string' ? { revisionHash: source.lineage.hash } : {}),
-})
+  publicationDate: string | null; lineage?: Record<string, unknown> }, licence: string | null): SourceVintageRecord => {
+  const hash = source.lineage?.hash ?? source.lineage?.revision_hash
+  return {
+    id: source.vintageId ?? source.version, label: source.vintageId ?? source.version, version: source.version,
+    licence, dateReference: source.referenceDate, datePublication: source.publicationDate,
+    ...(typeof hash === 'string' ? { revisionHash: hash } : {}),
+  }
+}
 
 const sources = computed(() => {
   if (!page.value || !payload.value) return []
