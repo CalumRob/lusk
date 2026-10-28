@@ -327,7 +327,8 @@ try {
       assert(bodyText.includes(expected.read.native_descriptor.label),
         `${spec.indicator} must render the native descriptor label`)
       const activeCoordinate = Object.values(facetQuery)[0] ?? null
-      if (activeCoordinate) {
+      const trajectoryFamily = expected.dispatch.family === 'trajectory'
+      if (activeCoordinate && trajectoryFamily) {
         const focalPoint = expected.read.points.find((point) => point.axis === activeCoordinate)
         const rendered = page.locator(`.trajectoire-territoire-point[data-detail="${activeCoordinate}"]`)
         if (focalPoint?.status === 'measured') {
@@ -348,8 +349,10 @@ try {
         }
       }
       // Native per-step medians render from axis_comparisons, not browser math.
-      const medianTitles = await page.locator('.trajectoire-mediane-point title').allTextContents()
-      for (const comparison of expected.read.comparison?.axis_comparisons ?? []) {
+      const medianTitles = trajectoryFamily
+        ? await page.locator('.trajectoire-mediane-point title').allTextContents() : []
+      for (const comparison of trajectoryFamily
+        ? (expected.read.comparison?.axis_comparisons ?? []) : []) {
         if (comparison.status !== 'available' || comparison.value === null) continue
         const formatted = formaterValeur({ value: comparison.value, unit: expected.boundPage.unit })
         assert(medianTitles.some((title) => title.includes(comparison.axis) && title.includes(formatted)),
