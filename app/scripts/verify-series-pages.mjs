@@ -236,6 +236,7 @@ try {
 
   const harness = createHarness(allResources, territoiresFixture, fixtures)
   browser = await chromium.launch({ headless: true,
+    proxy: { server: 'http://127.0.0.1:9', bypass: '127.0.0.1,localhost' },
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) })
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 })
   const requests = []
