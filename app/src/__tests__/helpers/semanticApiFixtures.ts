@@ -980,7 +980,18 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
       .filter((fact) => fact.detail != null || fact.dimension != null)
       .map((fact) => {
         const axis = String(fact.detail ?? fact.dimension)
-        const source = sourceFor(resource, fact, { kind: 'territory', type: member.type, id: member.territoire }, true)
+        let source: Record<string, any>
+        try {
+          source = sourceFor(resource, fact, { kind: 'territory', type: member.type, id: member.territoire }, true)
+        } catch {
+          // A mixed-vintage aggregate fact (an EPCI spanning two OCS-GE
+          // millésimes) declares its own composite vintage identity: reuse it
+          // verbatim instead of inventing a single clock.
+          source = { source_id: fact.vintage_source ?? resource.resource_id,
+            name: fact.vintage_source ?? resource.label, vintage_id: fact.vintage_version ?? null,
+            version: fact.vintage_version ?? null, reference_date: fact.vintage_date_reference ?? null,
+            publication_date: fact.vintage_date_publication ?? null }
+        }
         return { axis, observation_period: String(fact.dimension ?? fact.detail ?? ''),
           value: fact.value, status: fact.value === null ? 'missing' : 'measured',
           missing_reason: fact.value === null ? 'missing' : null,
