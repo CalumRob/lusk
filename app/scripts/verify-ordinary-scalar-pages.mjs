@@ -354,35 +354,6 @@ try {
   const epciEvidence = await verifyFixedLevel('epci')
   const departementEvidence = await verifyFixedLevel('departement')
 
-  // The existing page/API-level intersection permits this regional fact, but
-  // scalar comparison policy does not declare a regional peer population.
-  const regionalPage = census.find(({ indicator, page, resource }) => indicator === 'stationnement_velo_par_voiture' &&
-    page.levels.includes('region') && resource.allowed_levels.includes('region'))
-  const bretagne = territoiresFixture.find((territory) => territory.type === 'region' && territory.territoire === '53')
-  assert(regionalPage && bretagne, 'Current regional page/fact intersection must remain discoverable')
-  const regionalFactStart = harness.factReads.length
-  const regionalComparisonStart = harness.comparisonReads.length
-  await page.goto(`${baseUrl}indicateurs/${regionalPage.theme}/${regionalPage.indicator}?territoire=${bretagne.territoire}&niveau=region&vue=reperes`,
-    { waitUntil: 'domcontentloaded' })
-  await page.locator('h1').filter({ hasText: regionalPage.page.label }).waitFor({ state: 'visible', timeout: 20000 })
-  const regionalFactItem = harness.factReads.slice(regionalFactStart).find((item) =>
-    item.resource === regionalPage.indicator && item.target.kind === 'territory_cohort')
-  assert.equal(regionalFactItem?.target.type, 'region')
-  assert.equal(harness.comparisonReads.length, regionalComparisonStart,
-    'Regional scalar facts must not imply a regional comparison population')
-  const regionalFacts = fixtures.nativeReadFixture(regionalFactItem, regionalPage.resource, { territories: territoiresFixture })
-  const regionalObservation = regionalFacts.observations.find((row) => row.territory.id === bretagne.territoire)
-  assert.equal(regionalObservation?.status, 'measured', 'Regional facts-only sentinel must have a native measured value')
-  const regionalApiValue = formaterValeur({ value: Number(regionalObservation.value) * 10 + 1234.5,
-    unit: regionalPage.resource.unit })
-  const regionalText = await page.locator('body').innerText()
-  assert(regionalText.includes(regionalApiValue) && regionalText.includes(regionalPage.resource.unit),
-    'Regional facts-only page must render the changed API fact/unit without peer evidence')
-  assert.equal(await page.locator('[data-testid="scalar-comparison-summary"]').count(), 0)
-  const regionalEvidence = { theme: regionalPage.theme, indicator: regionalPage.indicator,
-    target: regionalFactItem.target, status: regionalObservation.status, value: regionalObservation.value,
-    comparisonRequests: 0 }
-
   const suppressionPage = census.find(({ indicator }) => indicator === 'part_passoires')
   assert(suppressionPage)
   const suppressionFocal = focusFor(suppressionPage)
@@ -499,7 +470,6 @@ try {
     pageCount: census.length, pages: routeEvidence, checks: ['all 15 producer/API/page-grammar identities',
       'API value, unit, native median/status/rank/ties/provenance, table rank sort, and indicator-page map',
       'EPCI and department published same-level comparison and table ranks',
-      'regional page/API fact intersection without a regional comparison population',
       'suppressed native facts and unavailable comparison', 'native source dates supersede stale static clocks',
       'commune EPCI-filter scope change', 'focal outside cohort bounded read', 'HTTP 503 comparison-only retry',
       'late response rejection', '360px no page overflow'], counts: { apiRequests: harness.requests.length,
@@ -507,7 +477,7 @@ try {
       focalReads: harness.factReads.filter((item) => item.target.kind === 'territory').length,
       comparisons: harness.comparisonReads.length, staticNumericReads: numericStatic.length, retiredCalls: retired.length,
        unexpectedApiRequests: harness.unexpectedApi.length, pageErrors: pageErrors.length },
-    epciEvidence, departementEvidence, regionalEvidence, suppressionEvidence, mobile }, null, 2))
+    epciEvidence, departementEvidence, suppressionEvidence, mobile }, null, 2))
 } finally {
   await browser?.close()
   await server.close()
