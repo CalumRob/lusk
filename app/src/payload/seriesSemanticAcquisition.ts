@@ -154,13 +154,17 @@ function cohortSourceIds(series: Row[]): Set<string> {
 function comparisonItem(input: {
   resource: string; focal: Territoire; includeScalarFacet?: boolean
 }, members: Array<{ type: TerritoireType; id: string }> | null): SemanticReadItem {
+  const fields = input.includeScalarFacet
+    ? ['axis_comparisons', 'scalar_facet', 'median', 'rank', 'rank_size', 'rank_ties',
+      'selected_member_count', 'eligible_count', 'missing_count', 'member_ranks']
+    : ['axis_comparisons']
   return {
     resource: input.resource,
     target: { kind: 'territory', type: input.focal.type, id: input.focal.territoire },
     intent: members
       ? { kind: 'selected_comparison', members }
       : { kind: 'fixed_comparison', context: 'default' },
-    fields: input.includeScalarFacet ? ['axis_comparisons', 'scalar_facet'] : ['axis_comparisons'],
+    fields,
   }
 }
 
@@ -495,44 +499,217 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
 function attachAdmittedComparison(facts: OrderedSeriesFactsEvidence,
   comparison: OrderedSeriesRead['comparison'], comparisonData: Row,
   input: OrderedSeriesAcquireInput): OrderedSeriesRead {
+  let scalarComparison: Row | undefined
+  if (facts.scalar_facet) {
+    if (!isValidScalarComparisonFacet(comparisonData.scalar_facet, facts, input)) {
+      throw new Error('Preuve de comparaison scalaire native absente ou incompatible')
+    }
+    scalarComparison = comparisonData.scalar_facet as Row
+  }
   return { ...facts, comparison,
     ...(facts.scalar_facet ? { scalar_facet: { ...facts.scalar_facet,
-      ...(isValidScalarComparisonFacet(comparisonData.scalar_facet, facts, input)
-        ? { comparison: comparisonData.scalar_facet as Row } : {}),
+      comparison: scalarComparison,
     } } : {}),
   } as unknown as OrderedSeriesRead
 }
 
 function isValidScalarComparisonFacet(value: unknown, facts: OrderedSeriesFactsEvidence,
   input: OrderedSeriesAcquireInput): boolean {
-  if (!record(value) || !facts.scalar_facet?.cohort || !record(facts.scalar_facet.cohort)) return false
-  const cohortFacet = facts.scalar_facet.cohort
-  const descriptor = cohortFacet.descriptor
+  const admitted = facts.scalar_facet
+  if (!record(value) || !admitted || !record(admitted.cohort) || !record(admitted.focal)) return false
+  const cohort = admitted.cohort
+  const focal = admitted.focal
+  const cohortDescriptor = cohort.descriptor
+  const focalDescriptor = focal.descriptor
+  const descriptor = value.descriptor
   const result = value.result
-  const observations = cohortFacet.observations
-  const declaredSources = new Set(Array.isArray(observations) ? observations.flatMap((observation: Row) =>
-    Array.isArray(observation.sources) ? observation.sources.map((source: Row) => source.source_id) : []) : [])
-  const comparisonSources = record(result) && Array.isArray(result.comparison_sources)
-    ? result.comparison_sources : []
-  const expectedSelection = scopedMembers(input)
-  return value.shape === 'scalar' &&
-    value.content_version === cohortFacet.content_version &&
-    value.reference_content_version === cohortFacet.reference_content_version &&
-    record(descriptor) && value.descriptor_version === descriptor.descriptor_version &&
-    record(result) && result.indicator_id === input.resource &&
-    result.source_facet === input.resource &&
-    result.descriptor_version === descriptor.descriptor_version &&
-    ['available', 'unavailable'].includes(result.status) &&
-    ['median', 'mean'].includes(result.statistic) &&
-    record(value.scope) && Number.isInteger(value.scope.member_count) && value.scope.member_count > 0 &&
-    (expectedSelection === null || value.scope.member_count === expectedSelection.length) &&
-    comparisonSources.every((source: Row) => record(source) && text(source.source_id) &&
-      declaredSources.has(source.source_id)) &&
-    (expectedSelection === null ? value.selection === null || value.selection === undefined
-      : (Array.isArray(value.selection) && value.selection.length === expectedSelection.length && value.selection.every((member: Row) =>
-        expectedSelection.some((expected) => member.territory_type === expected.type &&
-          member.territory_id === expected.id)))) &&
-    (Array.isArray(result.member_ranks) || result.member_ranks === undefined)
+  const selection = scopedMembers(input)
+  const cohortEvidence = cohort.cohort
+  const cohortObservations = cohort.observations
+  const focalObservation = focal.observation
+  if (value.shape !== 'scalar' || value.source_facet !== input.resource ||
+      value.content_version !== cohort.content_version || value.content_version !== focal.content_version ||
+      value.reference_content_version !== cohort.reference_content_version ||
+      value.reference_content_version !== focal.reference_content_version ||
+      value.descriptor_version !== cohortDescriptor?.descriptor_version ||
+      value.descriptor_version !== focalDescriptor?.descriptor_version ||
+      value.descriptor_version !== descriptor?.descriptor_version ||
+      !record(cohortEvidence) || cohort.resource !== input.resource || cohort.shape !== 'scalar' ||
+      cohort.target?.kind !== 'territory_cohort' || cohort.target.type !== input.level ||
+      cohort.target.department_id !== (input.departmentId ?? null) ||
+      cohort.target.epci_id !== (input.epciId ?? null) ||
+      cohortEvidence.territory_type !== facts.resolved_cohort_type ||
+      cohortEvidence.department_id !== (input.departmentId ?? null) ||
+      cohortEvidence.epci_id !== (input.epciId ?? null) ||
+      cohortEvidence.reference_content_version !== value.reference_content_version ||
+      !Number.isInteger(cohortEvidence.member_count) || cohortEvidence.member_count < 1 ||
+      !sameCohortMembers(cohortEvidence.members, cohortEvidence.members) ||
+      cohortEvidence.member_count !== cohortEvidence.members.length ||
+      focal.shape !== 'scalar' || focal.source_facet !== input.resource ||
+      !record(focalObservation) || focalObservation.territory_id !== facts.territory.id ||
+      focalObservation.territory_type !== facts.territory.type ||
+      descriptor?.indicator_id !== input.resource || descriptor.theme_id !== cohortDescriptor?.theme_id ||
+      descriptor.comparison_facet !== input.resource || descriptor.direction !== cohortDescriptor?.direction ||
+      !record(result) || result.indicator_id !== input.resource || result.source_facet !== input.resource ||
+      result.descriptor_version !== value.descriptor_version || result.direction !== descriptor.direction ||
+      result.statistic !== 'median' || !['available', 'unavailable'].includes(result.status) ||
+      typeof result.focal_in_selection !== 'boolean' || !record(value.scope) || !text(value.scope.kind) ||
+      !Number.isInteger(value.scope.member_count) || value.scope.member_count < 1 ||
+      !Number.isInteger(result.selected_member_count) || result.selected_member_count !== value.scope.member_count ||
+      !Number.isInteger(result.eligible_count) || result.eligible_count < 0 ||
+      !Number.isInteger(result.missing_count) || result.missing_count < 0 ||
+      result.eligible_count + result.missing_count !== result.selected_member_count ||
+      (selection !== null && (value.scope.kind !== 'explicit_selection' ||
+        value.scope.member_count !== selection.length || !sameTypedMembers(value.selection, selection))) ||
+      (selection === null && value.selection !== null && value.selection !== undefined)) return false
+
+  const selectedIds = selection?.map((member) => member.id) ?? null
+  const scalarCohortMembers = (cohortEvidence.members as Row[]).map((member) => ({
+    id: member.id as string, type: member.type as string,
+  }))
+  if (selection && selection.some((member) => !scalarCohortMembers.some((candidate) =>
+      candidate.id === member.id && candidate.type === member.type))) return false
+  const focalSelected = selectedIds === null || selectedIds.includes(facts.territory.id)
+  if (selection && result.focal_in_selection !== focalSelected) return false
+
+  const sourceIdentity = (source: Row) => JSON.stringify([source.source_id, source.vintage_id,
+    source.version, source.reference_date ?? null, source.publication_date ?? null])
+  const factSources = new Set((Array.isArray(cohortObservations) ? cohortObservations : []).flatMap((observation: Row) =>
+    Array.isArray(observation.sources) ? observation.sources.filter(record).map(sourceIdentity) : []))
+  const comparisonSources = result.comparison_sources
+  if (!Array.isArray(comparisonSources) || comparisonSources.length === 0 ||
+      !comparisonSources.every((source: unknown) => record(source) && text(source.source_id) &&
+        text(source.vintage_id) && text(source.version) &&
+        (source.reference_date === null || text(source.reference_date)) &&
+        (source.publication_date === null || text(source.publication_date)) &&
+        factSources.has(sourceIdentity(source))) ||
+        new Set(comparisonSources.map(sourceIdentity)).size !== comparisonSources.length) throw new Error('scalar comparison provenance mismatch')
+
+  const factValues = new Map<string, number>()
+  if (Array.isArray(cohortObservations)) {
+    for (const observation of cohortObservations) {
+      if (!record(observation) || !record(observation.territory) ||
+          observation.territory.type !== facts.resolved_cohort_type ||
+          !scalarCohortMembers.some((member) => member.id === observation.territory.id) ||
+          factValues.has(observation.territory.id) ||
+          !['measured', 'unavailable'].includes(observation.status)) return false
+      if (observation.status === 'measured') {
+        if (!finite(observation.value)) return false
+        factValues.set(observation.territory.id, observation.value)
+      } else {
+        if (observation.value !== null && observation.value !== undefined) return false
+      }
+    }
+  } else throw new Error('scalar cohort observation evidence malformed')
+  if (selection) {
+    const selectedValues = selection.map((member) => factValues.get(member.id)).filter(finite)
+    if (selectedValues.length !== result.eligible_count ||
+        selection.length - selectedValues.length !== result.missing_count) throw new Error('scalar cohort values/counts mismatch')
+    const ascending = [...selectedValues].sort((left, right) => left - right)
+    const midpoint = Math.floor(ascending.length / 2)
+    const expectedMedian = ascending.length === 0 ? null : ascending.length % 2
+      ? ascending[midpoint] : (ascending[midpoint - 1] + ascending[midpoint]) / 2
+    if (result.status === 'available' && result.median !== expectedMedian) throw new Error('scalar median does not match admitted values')
+    const expectedMemberRanks = new Map<string, { rank: number; ties: number }>()
+    const counts = new Map<number, number>()
+    for (const value of selectedValues) counts.set(value, (counts.get(value) ?? 0) + 1)
+    let preceding = 0
+    for (const value of [...counts.keys()].sort((left, right) => left - right)) {
+      const count = counts.get(value)!
+      const rank = descriptor.direction === 'low' ? preceding + 1 : selectedValues.length - preceding - count + 1
+      for (const member of selection) {
+        if (factValues.get(member.id) === value) expectedMemberRanks.set(member.id, { rank, ties: count })
+      }
+      preceding += count
+    }
+    for (const row of result.member_ranks ?? []) {
+      const expected = expectedMemberRanks.get(row.territory_id)
+      if ((expected && (row.rank !== expected.rank || row.rank_size !== selectedValues.length ||
+          row.rank_ties !== expected.ties)) || (!expected && row.rank !== null)) throw new Error('scalar member rank does not match admitted values')
+    }
+    if (result.focal_in_selection) {
+      const focalExpected = expectedMemberRanks.get(facts.territory.id)
+      if (result.status === 'available' && focalExpected &&
+          (result.rank !== focalExpected.rank || result.rank_size !== selectedValues.length ||
+            result.rank_ties !== focalExpected.ties)) throw new Error('scalar focal rank does not match admitted values')
+    }
+  }
+  if (selection?.some((member) => member.id === facts.territory.id) && focalObservation.status === 'measured' &&
+       factValues.get(facts.territory.id) !== focalObservation.value) throw new Error('scalar focal fact mismatch')
+
+  if (!Array.isArray(result.member_ranks) || result.member_ranks.length !== result.selected_member_count) throw new Error('scalar peer ranks absent')
+  const rankIds = new Set<string>()
+  const ranksByPosition = new Map<number, { ties: number; count: number }>()
+  let ranked = 0
+  for (const rank of result.member_ranks) {
+    if (!record(rank) || !text(rank.territory_id) || rankIds.has(rank.territory_id) ||
+        (selectedIds !== null && !selectedIds.includes(rank.territory_id))) throw new Error('scalar peer rank identities invalid')
+    rankIds.add(rank.territory_id)
+    if (selection) {
+      const factMeasured = factValues.has(rank.territory_id)
+      if (factMeasured !== (rank.rank !== null)) throw new Error('scalar peer rank availability mismatch')
+    }
+    if (rank.rank === null) {
+      if (rank.rank_size !== null || rank.rank_ties !== null) throw new Error('scalar missing peer rank carries values')
+      continue
+    }
+    if (!Number.isInteger(rank.rank) || !Number.isInteger(rank.rank_size) ||
+        !Number.isInteger(rank.rank_ties) || rank.rank_size !== result.eligible_count ||
+        rank.rank < 1 || rank.rank > rank.rank_size || rank.rank_ties < 1 ||
+        rank.rank_ties > rank.rank_size || rank.rank + rank.rank_ties > rank.rank_size + 1) throw new Error('scalar peer rank bounds invalid')
+    ranked += 1
+    const group = ranksByPosition.get(rank.rank)
+    if (group && group.ties !== rank.rank_ties) throw new Error('scalar tie declarations conflict')
+    ranksByPosition.set(rank.rank, { ties: rank.rank_ties, count: (group?.count ?? 0) + 1 })
+  }
+  if (rankIds.size !== result.selected_member_count ||
+      (selectedIds !== null && selectedIds.some((id) => !rankIds.has(id)))) throw new Error('scalar peer rank population mismatch')
+
+  if (result.status === 'available') {
+    if (result.reason !== null || result.eligible_count < 1 || !finite(result.median) ||
+        ranked !== result.eligible_count ||
+        [...ranksByPosition.values()].some((group) => group.count !== group.ties)) throw new Error('scalar available result inconsistent')
+    const groups = [...ranksByPosition.entries()].sort(([a], [b]) => a - b)
+    let nextRank = 1
+    for (const [rank, group] of groups) {
+      if (rank !== nextRank) throw new Error('scalar rank sequence has gaps')
+      nextRank += group.ties
+    }
+    if (result.focal_in_selection && focalObservation.status === 'measured') {
+      if (!Number.isInteger(result.rank) || !Number.isInteger(result.rank_size) ||
+          !Number.isInteger(result.rank_ties) || result.rank_size !== result.eligible_count) throw new Error('scalar focal rank missing')
+    } else if (result.rank !== null || result.rank_size !== null || result.rank_ties !== null) throw new Error('scalar non-focal rank unexpectedly present')
+  } else if (result.reason === null || result.median !== null || ranked !== 0 ||
+      result.rank !== null || result.rank_size !== null || result.rank_ties !== null) {
+    throw new Error('scalar unavailable result inconsistent')
+  }
+
+  const focalRank = result.member_ranks.find((rank: Row) => rank.territory_id === facts.territory.id)
+  if (result.focal_in_selection) {
+    const focalMeasured = focalObservation.status === 'measured'
+    if (focalMeasured && result.status === 'available' &&
+        (focalRank?.rank === null || result.rank !== focalRank.rank ||
+          result.rank_size !== focalRank.rank_size || result.rank_ties !== focalRank.rank_ties)) throw new Error('scalar focal/member rank mismatch')
+    if ((!focalMeasured || result.status !== 'available') &&
+        (result.rank !== null || result.rank_size !== null || result.rank_ties !== null)) throw new Error('scalar focal rank must be null')
+  } else if (result.rank !== null || result.rank_size !== null || result.rank_ties !== null) throw new Error('scalar out-of-selection rank must be null')
+  return true
+}
+
+function sameTypedMembers(actual: unknown, expected: readonly { id: string; type: string }[]): boolean {
+  return Array.isArray(actual) && actual.length === expected.length &&
+    actual.every((member: Row) => record(member) && text(member.territory_type) && text(member.territory_id)) &&
+    new Set(actual.map((member: Row) => `${member.territory_type}\u0000${member.territory_id}`)).size === actual.length &&
+    expected.every((member) => actual.some((candidate: Row) =>
+      candidate.territory_type === member.type && candidate.territory_id === member.id))
+}
+
+function sameCohortMembers(actual: unknown, expected: readonly { id: string; type: string }[]): boolean {
+  return Array.isArray(actual) && actual.length === expected.length &&
+    actual.every((member: Row) => record(member) && text(member.type) && text(member.id)) &&
+    new Set(actual.map((member: Row) => `${member.type}\u0000${member.id}`)).size === actual.length &&
+    expected.every((member) => actual.some((candidate: Row) =>
+      candidate.type === member.type && candidate.id === member.id))
 }
 
 function cohortResponseFromFacts(facts: OrderedSeriesFactsEvidence, input: OrderedSeriesAcquireInput): Row {

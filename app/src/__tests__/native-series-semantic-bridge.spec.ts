@@ -4,7 +4,8 @@ import { mount } from '@vue/test-utils'
 import { join } from 'node:path'
 import { acquireOrderedSeriesSemantic, reacquireOrderedSeriesComparison }
   from '@/payload/seriesSemanticAcquisition'
-import { createOrderedSeriesSemanticSession } from '@/payload/seriesSemanticAcquisition'
+import { createOrderedSeriesSemanticSession, SeriesComparisonRejectedError }
+  from '@/payload/seriesSemanticAcquisition'
 import { orderedSeriesFacts } from '@/payload/orderedSeriesAdapter'
 import type { Territoire } from '@/payload/types'
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
@@ -54,6 +55,149 @@ describe('guarded native SQL/HTTP → shared ordered-series acquisition bridge',
 
   for (const path of capturePaths) {
     const capturedResource = JSON.parse(readFileSync(path, 'utf8')).application_bridge.request.items[0].resource
+    if (capturedResource === 'prix_m2') {
+      it('native HTTP price page projection contains pooled median, population, focal rank and ties', () => {
+        const capture = JSON.parse(readFileSync(path, 'utf8'))
+        const page = capture.application_page
+        expect(page.response_status).toBe(200)
+        expect(page.request.items[2].fields).toEqual(['axis_comparisons', 'scalar_facet', 'median', 'rank',
+          'rank_size', 'rank_ties', 'selected_member_count', 'eligible_count', 'missing_count', 'member_ranks'])
+        const data = page.response.results.find((result: any) => result.id === page.request.items[2].id).data
+        const scalar = data.scalar_facet
+        expect(scalar).toMatchObject({ shape: 'scalar', source_facet: 'prix_m2',
+          content_version: 'native-pooled', reference_content_version: 'native-ref',
+          descriptor_version: 'pooled-desc', selection: [
+          { territory_type: 'commune', territory_id: 'native-c1' },
+          { territory_type: 'commune', territory_id: 'native-c2' },
+            { territory_type: 'commune', territory_id: 'native-c4' },
+          ], scope: { member_count: 3 }, result: {
+            indicator_id: 'prix_m2', source_facet: 'prix_m2', descriptor_version: 'pooled-desc',
+            statistic: 'median', status: 'available', median: 987, selected_member_count: 3,
+            eligible_count: 2, missing_count: 1, rank: 1, rank_size: 2, rank_ties: 2,
+            member_ranks: [
+              { territory_id: 'native-c1', rank: 1, rank_size: 2, rank_ties: 2 },
+              { territory_id: 'native-c2', rank: 1, rank_size: 2, rank_ties: 2 },
+              { territory_id: 'native-c4', rank: null, rank_size: null, rank_ties: null },
+            ],
+          } })
+        expect(scalar.result).not.toHaveProperty('focal_value')
+        const ordered = page.response.results.find((result: any) => result.id === page.request.items[0].id).data
+        expect(ordered.content_version).toBe('native-series')
+        expect(scalar.content_version).not.toBe(ordered.content_version)
+      })
+
+      it('the real shared page adapter consumes the captured pooled median/ranks without annual substitution', async () => {
+        const capture = JSON.parse(readFileSync(path, 'utf8'))
+        const bridge = capture.application_page
+        const resource = 'prix_m2'
+        const focal = capture.territories.find((territory: Territoire) =>
+          territory.territoire === 'native-c1' && territory.type === 'commune') as Territoire
+        const fetcher = serveBridge(bridge)
+        vi.stubGlobal('fetch', fetcher)
+        const read = await acquireOrderedSeriesSemantic({ resource, level: 'commune', focal,
+          territories: capture.territories as Territoire[], departmentId: '35', includeScalarFacet: true })
+        expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual(bridge.request)
+        expect(read.scalar_facet?.comparison?.result).toMatchObject({ statistic: 'median', status: 'available',
+          median: 987, selected_member_count: 3, eligible_count: 2, missing_count: 1, rank: 1,
+          rank_size: 2, rank_ties: 2, member_ranks: [
+            { territory_id: 'native-c1', rank: 1, rank_size: 2, rank_ties: 2 },
+            { territory_id: 'native-c2', rank: 1, rank_size: 2, rank_ties: 2 },
+            { territory_id: 'native-c4', rank: null, rank_size: null, rank_ties: null },
+          ] })
+        const pageFacts = orderedSeriesFacts(read, 'habitat', capture.territories as Territoire[])
+        expect(pageFacts.find((fact) => fact.territoire === 'native-c1' && fact.detail === null))
+          .toMatchObject({ value: 987, native_scalar_comparison: {
+            status: 'available', statistic: 'median', value: 987, eligible_count: 2, missing_count: 1,
+            rank: 1, rank_size: 2, rank_ties: 2,
+          } })
+        const nativeAnnualPoints = bridge.response.results[0].data.series
+          .find((group: any) => group.territory.id === 'native-c1').points
+          .filter((point: any) => point.status === 'measured').map((point: any) => point.value)
+        const pageAnnualPoints = pageFacts.filter((fact) => fact.territoire === 'native-c1' && fact.detail !== null)
+          .map((fact) => fact.value)
+        expect(pageAnnualPoints).toEqual(nativeAnnualPoints)
+        expect(pageAnnualPoints).not.toContain(987)
+      })
+
+      it('rejects corrupt pooled comparison evidence, retains native facts, and recovers by comparison-only retry', async () => {
+        const capture = JSON.parse(readFileSync(path, 'utf8'))
+        const bridge = capture.application_page
+        const resource = 'prix_m2'
+        const focal = capture.territories.find((territory: Territoire) =>
+          territory.territoire === 'native-c1' && territory.type === 'commune') as Territoire
+        const input = { resource, level: 'commune' as const, focal,
+          territories: capture.territories as Territoire[], departmentId: '35', includeScalarFacet: true }
+        const corruptions: Array<[string, (data: any[]) => void]> = [
+          ['missing median', (data) => { delete data[2].scalar_facet.result.median }],
+          ['missing scalar content identity', (data) => { data[2].scalar_facet.content_version = '' }],
+          ['scalar reference identity', (data) => { data[2].scalar_facet.reference_content_version = 'wrong-pooled-ref' }],
+          ['scalar descriptor identity', (data) => { data[2].scalar_facet.descriptor_version = 'wrong-pooled-descriptor' }],
+          ['selection identity', (data) => { data[2].scalar_facet.selection[0].territory_id = 'not-selected' }],
+          ['population counts', (data) => { data[2].scalar_facet.result.missing_count = 0 }],
+          ['available status/value mismatch', (data) => {
+            data[2].scalar_facet.result.status = 'unavailable'
+            data[2].scalar_facet.result.reason = 'fixture_unavailable'
+          }],
+          ['peer outside population', (data) => {
+            data[2].scalar_facet.result.member_ranks[0].territory_id = 'not-selected'
+          }],
+          ['duplicate peer identity', (data) => {
+            data[2].scalar_facet.result.member_ranks[1].territory_id = 'native-c1'
+          }],
+          ['impossible peer tie bound', (data) => {
+            data[2].scalar_facet.result.member_ranks[0].rank_ties = 3
+          }],
+          ['inconsistent tie group cardinality', (data) => {
+            data[2].scalar_facet.result.member_ranks[0].rank_ties = 1
+            data[2].scalar_facet.result.member_ranks[1].rank_ties = 1
+            data[2].scalar_facet.result.rank_ties = 1
+          }],
+          ['undeclared scalar comparison provenance', (data) => {
+            data[2].scalar_facet.result.comparison_sources[0].source_id = 'undeclared-source'
+          }],
+        ]
+
+        for (const [label, corrupt] of corruptions) {
+          const invalid = structuredClone(bridge)
+          const invalidData = invalid.response.results.map((result: any) => result.data)
+          corrupt(invalidData)
+          const validData = bridge.response.results.map((result: any) => result.data)
+          const fetcher = vi.fn(async (_path: RequestInfo | URL, init?: RequestInit) => {
+            const request = JSON.parse(String(init?.body))
+            if (fetcher.mock.calls.length === 1) {
+              expect(request).toEqual(bridge.request)
+              return Response.json(invalid.response, { status: invalid.response_status })
+            }
+            expect(request.items).toHaveLength(1)
+            expect(request.items[0]).toEqual({ ...bridge.request.items[2], id: request.items[0].id })
+            return Response.json({ contract: 'semantic-read-batch-v1', results: [{
+              id: request.items[0].id, resource, data: validData[2],
+            }] }, { status: 200 })
+          })
+          vi.stubGlobal('fetch', fetcher)
+          const session = createOrderedSeriesSemanticSession()
+          let rejected: unknown
+          try { await session.acquire(input) } catch (cause) { rejected = cause }
+          expect(rejected, label).toBeInstanceOf(SeriesComparisonRejectedError)
+          const admitted = (rejected as SeriesComparisonRejectedError).facts
+          expect(admitted.scope_series.length, `${label}: annual facts remain admitted`).toBeGreaterThan(0)
+          expect(admitted.scalar_facet?.cohort, `${label}: pooled scalar facts remain admitted`).toBeDefined()
+          expect(admitted.scalar_facet?.focal, `${label}: exact focal scalar facts remain admitted`).toBeDefined()
+          expect(admitted.scalar_facet?.comparison, `${label}: corrupt comparison is never admitted`).toBeUndefined()
+
+          const recovered = await session.acquire(input)
+          expect(fetcher).toHaveBeenCalledTimes(2)
+          expect(recovered.scalar_facet?.comparison?.result).toMatchObject({
+            status: 'available', statistic: 'median', median: 987, selected_member_count: 3,
+            eligible_count: 2, missing_count: 1, rank: 1, rank_size: 2, rank_ties: 2,
+          })
+          const retryItems = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body)).items
+          expect(retryItems).toHaveLength(1)
+          expect(retryItems[0].intent.kind).toBe('selected_comparison')
+          expect(retryItems[0].fields).toEqual(bridge.request.items[2].fields)
+        }
+      })
+    }
     it(`passes the captured ${path.split(/[\\/]/).at(-1)} batch through the real app adapter`, async () => {
       const capture = JSON.parse(readFileSync(path, 'utf8'))
       const bridge = capture.application_bridge
@@ -142,12 +286,15 @@ describe('guarded native SQL/HTTP → shared ordered-series acquisition bridge',
             'unrelated-pooled-publication'
         })
         vi.stubGlobal('fetch', wrongFacetPublication)
-        const facetRejected = await acquireOrderedSeriesSemantic({ resource, level: focalTarget.type,
+        let facetRejection: unknown
+        try { await acquireOrderedSeriesSemantic({ resource, level: focalTarget.type,
           focal: focal as Territoire, territories: capture.territories as Territoire[],
           ...(cohortTarget.department_id ? { departmentId: cohortTarget.department_id } : {}),
           ...(cohortTarget.epci_id ? { epciId: cohortTarget.epci_id } : {}),
-          includeScalarFacet: true })
-        expect(facetRejected.comparison).toEqual(read.comparison)
+          includeScalarFacet: true }) } catch (cause) { facetRejection = cause }
+        expect(facetRejection).toBeInstanceOf(SeriesComparisonRejectedError)
+        const facetRejected = (facetRejection as SeriesComparisonRejectedError).facts
+        expect(facetRejected.scope_series).toEqual(read.scope_series)
         expect(facetRejected.scalar_facet?.cohort).toBeDefined()
         expect(facetRejected.scalar_facet?.focal).toBeDefined()
         expect(facetRejected.scalar_facet?.comparison).toBeUndefined()

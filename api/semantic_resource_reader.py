@@ -118,7 +118,7 @@ class SemanticResourceReader:
         resource = catalogue.resources_by_id[item.resource]
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import preflight_axis_comparisons
-            base_fields = [f for f in item.fields if f not in {"axis_comparisons", "scalar_facet"}]
+            base_fields = [f for f in item.fields if f != "axis_comparisons"]
             base_item = item.model_copy(update={"fields": base_fields or ["status"],
                                                 "coordinates": None})
             base_work = self.preflight(conn, base_item, catalogue, work_budget=work_budget)
@@ -127,7 +127,8 @@ class SemanticResourceReader:
         if resource.resource_kind in {"indicator", "typed_reading"}:
             self._coordinate_values(conn, item, resource)
         dual_scalar_series = (self._has_dual_scalar_series(resource)
-                              and item.target.kind == "territory")
+                              and item.target.kind == "territory"
+                              and bool(item.fields and "scalar_facet" in item.fields))
         if dual_scalar_series:
             self._require_dual_series_route(conn, resource)
         if resource.resource_kind == "typed_reading":
@@ -191,7 +192,11 @@ class SemanticResourceReader:
         if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
             selection = ([(member.type, member.id) for member in item.intent.members]
                          if item.intent.kind == "selected_comparison" else None)
-            fields = self._comparison_field_selection(item.fields)
+            requested_comparison_fields = ([field for field in item.fields if field != "scalar_facet"]
+                if item.fields else None)
+            if requested_comparison_fields == []:
+                requested_comparison_fields = ["status"]
+            fields = self._comparison_field_selection(requested_comparison_fields)
             focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
                                  (item.target.id,)).fetchone()
             if not focal:
@@ -341,7 +346,10 @@ class SemanticResourceReader:
         resource = catalogue.resources_by_id[item.resource]
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import read_axis_comparisons
-            base_fields = [f for f in item.fields if f not in {"axis_comparisons", "scalar_facet"}]
+            # Preserve an explicitly requested scalar facet and its scalar
+            # projection fields for the nested comparison; only remove the
+            # separately projected ordered-series axis field.
+            base_fields = [f for f in item.fields if f != "axis_comparisons"]
             base_item = item.model_copy(update={"fields": base_fields or ["status"],
                                                 "coordinates": None})
             data = self.read(conn, base_item, catalogue)
@@ -374,10 +382,15 @@ class SemanticResourceReader:
         if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
             selection = ([(member.type, member.id) for member in item.intent.members]
                          if item.intent.kind == "selected_comparison" else None)
+            requested_comparison_fields = ([field for field in item.fields if field != "scalar_facet"]
+                if item.fields else None)
+            if requested_comparison_fields == []:
+                requested_comparison_fields = ["status"]
             data = self._indicator_comparison_snapshot(
                 conn, item.target.type, item.target.id, item.resource, selection,
-                self._comparison_field_selection(item.fields),
-                include_scalar_facet=(self._has_dual_scalar_series(resource)
+                self._comparison_field_selection(requested_comparison_fields),
+                include_scalar_facet=(self._has_dual_scalar_series(resource) and
+                                      bool(item.fields and "scalar_facet" in item.fields)
                                       and item.target.kind == "territory"),
                 scalar_facet_theme_id=(resource.theme_id if self._has_dual_scalar_series(resource)
                                        and item.target.kind == "territory" else None),

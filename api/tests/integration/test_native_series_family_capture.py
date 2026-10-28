@@ -34,6 +34,7 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
     territories = [
         {'territoire': 'native-c1', 'type': 'commune', 'nom': 'Native one', 'departement': '35', 'epci': 'native-e1'},
         {'territoire': 'native-c2', 'type': 'commune', 'nom': 'Native two', 'departement': '35', 'epci': 'native-e1'},
+        {'territoire': 'native-c4', 'type': 'commune', 'nom': 'Native four', 'departement': '35', 'epci': 'native-e2'},
         {'territoire': 'native-c3', 'type': 'commune', 'nom': 'Outside', 'departement': '22', 'epci': 'native-e2'},
         {'territoire': 'native-e1', 'type': 'epci', 'nom': 'EPCI one', 'departement': '35', 'epci': None},
         {'territoire': 'native-e2', 'type': 'epci', 'nom': 'EPCI two', 'departement': '22', 'epci': None},
@@ -49,10 +50,10 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
             conn.execute('''INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,
                 density_class_code) VALUES (%s,%s,%s,%s,%s,'D1')''',
                 (t['territoire'], t['type'], t['nom'], t['departement'], t['epci']))
-        conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','native-ref',8)")
+        conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','native-ref',%s)", (len(territories),))
         levels = ['commune', 'epci', 'departement', 'region']
         conn.execute('''INSERT INTO series_dataset_publication(dataset_id,content_version,reference_content_version,row_count)
-            VALUES (%s,'native-series','native-ref',%s)''', (dataset, len(axes) * (9 if mean else 8)))
+            VALUES (%s,'native-series','native-ref',%s)''', (dataset, len(axes) * (len(territories) + (1 if mean else 0))))
         conn.execute('''INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,axis_numeric_values,
             completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version,active_read_route,
             theme_id,comparison_statistic,comparison_scope,observation_period_kind,absence_semantics)
@@ -89,6 +90,8 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
                 'Native pooled price','€/m²','low','prix_m2',%s,'transactions','sparse','pooled-desc')''', (levels,))
             conn.execute("INSERT INTO scalar_descriptor_source VALUES ('prix_m2',%s)", (source,))
             for t in territories:
+                if t['territoire'] == 'native-c4':
+                    continue  # exercise selected=3, eligible=2, missing=1 from native SQL evidence
                 conn.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('prix_m2',%s,%s,987,'measured')", (t['territoire'], t['type']))
                 conn.execute("INSERT INTO scalar_observation_source VALUES ('prix_m2',%s,%s,'pooled-vintage')", (t['territoire'], source))
             conn.execute("INSERT INTO table_publication(table_name,content_version,reference_content_version,row_count) VALUES ('scalar_observation','native-pooled','native-ref',8)")
@@ -150,6 +153,8 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
                  {'kind': 'selected_comparison', 'members': [{'type': 'commune', 'id': 'native-c1'},
                     {'type': 'commune', 'id': 'native-c2'}]},
                  fields=['axis_comparisons', 'scalar_facet'] if indicator == 'prix_m2' else ['axis_comparisons'])
+            pooled_page_fields = ['axis_comparisons', 'scalar_facet', 'median', 'rank', 'rank_size',
+                'rank_ties', 'selected_member_count', 'eligible_count', 'missing_count', 'member_ranks']
             bridge_items = [
                 {'id': f'scalar-0-{indicator}', 'resource': indicator,
                  'target': cohort_target,
@@ -162,12 +167,34 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
                  'target': {'kind': 'territory', 'type': 'commune', 'id': 'native-c3'},
                  'intent': {'kind': 'selected_comparison', 'members': [
                      {'type': 'commune', 'id': 'native-c1'}, {'type': 'commune', 'id': 'native-c2'}]},
-                 'fields': ['axis_comparisons', 'scalar_facet'] if indicator == 'prix_m2' else ['axis_comparisons']},
+                 'fields': pooled_page_fields if indicator == 'prix_m2' else ['axis_comparisons']},
             ]
             bridge_response = client.post('/api/resources/read-batch', json={'items': bridge_items})
             assert bridge_response.status_code == 200, bridge_response.text
             captures['application_bridge'] = {'request': {'items': bridge_items},
                 'response_status': bridge_response.status_code, 'response': bridge_response.json()}
+            if indicator == 'prix_m2':
+                # The page focal is inside the explicit EPCI selection so the
+                # native scalar comparison must return its actual pooled rank
+                # and tie evidence for that member, not just metadata.
+                page_items = [
+                    {'id': 'scalar-0-prix_m2', 'resource': indicator,
+                     'target': {'kind': 'territory_cohort', 'type': 'commune', 'department_id': '35', 'epci_id': None},
+                     'intent': {'kind': 'facts'}, 'fields': ['value', 'scalar_facet']},
+                    {'id': 'scalar-1-prix_m2', 'resource': indicator,
+                     'target': {'kind': 'territory', 'type': 'commune', 'id': 'native-c1'},
+                     'intent': {'kind': 'facts'}},
+                    {'id': 'scalar-2-prix_m2', 'resource': indicator,
+                     'target': {'kind': 'territory', 'type': 'commune', 'id': 'native-c1'},
+                     'intent': {'kind': 'selected_comparison', 'members': [
+                         {'type': 'commune', 'id': 'native-c1'}, {'type': 'commune', 'id': 'native-c2'},
+                         {'type': 'commune', 'id': 'native-c4'}]},
+                     'fields': pooled_page_fields},
+                ]
+                page_response = client.post('/api/resources/read-batch', json={'items': page_items})
+                assert page_response.status_code == 200, page_response.text
+                captures['application_page'] = {'request': {'items': page_items},
+                    'response_status': page_response.status_code, 'response': page_response.json()}
         capture = {'catalogue': catalogue.json(), 'territories': territories, **captures}
         output = tmp_path / f'native-{indicator}.json'
         output.write_text(json.dumps(capture, indent=2, ensure_ascii=False), encoding='utf-8')

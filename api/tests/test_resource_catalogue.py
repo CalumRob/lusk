@@ -264,6 +264,31 @@ def test_member_ranks_do_not_project_from_dual_shape_scalar_series_resources(int
         validate_resource_item(item, catalogue)
 
 
+def test_dual_scalar_series_member_ranks_require_an_explicit_nested_scalar_projection():
+    catalogue = default_resource_catalogue.__wrapped__()
+    fields = ["axis_comparisons", "scalar_facet", "median", "rank", "rank_size",
+        "rank_ties", "selected_member_count", "eligible_count", "missing_count", "member_ranks"]
+    selected = ResourceReadItem.model_validate({
+        "resource": "prix_m2",
+        "target": {"kind": "territory", "type": "commune", "id": "29001"},
+        "fields": fields,
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "commune", "id": "29001"}, {"type": "commune", "id": "29002"},
+        ]},
+    })
+    assert validate_resource_item(selected, catalogue).resource_id == "prix_m2"
+
+    for missing_selector in ("scalar_facet", "axis_comparisons"):
+        invalid = ResourceReadItem.model_validate({
+            "resource": "prix_m2",
+            "target": {"kind": "territory", "type": "commune", "id": "29001"},
+            "fields": [field for field in fields if field != missing_selector],
+            "intent": selected.intent,
+        })
+        with pytest.raises(ValueError, match="field is not declared"):
+            validate_resource_item(invalid, catalogue)
+
+
 @pytest.mark.parametrize("intent", [
     {"kind": "selected_comparison", "members": [
         {"type": "commune", "id": "29001"}, {"type": "commune", "id": "29002"},

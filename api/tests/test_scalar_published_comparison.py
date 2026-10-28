@@ -138,7 +138,6 @@ def test_published_scalar_member_projection_preserves_a_single_eligible_rank():
         {"territory_id": "c2", "rank": None, "rank_size": None, "rank_ties": None},
     ]
 
-
 def test_published_scalar_comparison_fails_closed_on_stale_inputs_or_missing_results():
     class Connection:
         def __init__(self, stale=False, missing=False, invalid=False):
@@ -302,10 +301,17 @@ def test_selected_scalar_member_projection_preserves_a_single_eligible_rank(monk
     monkeypatch.setattr(main, "_owned_series_comparison_results", lambda *_args, **_kwargs: ([], {}, None, None, None))
 
     result = main._theme_comparison_snapshot(Connection(), "commune", "c1", "demographie",
-        [("commune", "c1"), ("commune", "c2")], result_fields=("median", "member_ranks"))["results"][0]
+        [("commune", "c1"), ("commune", "c2")],
+        result_fields=("median", "rank", "rank_size", "rank_ties", "member_ranks"))["results"][0]
 
     assert (result["eligible_count"], result["missing_count"], result["median"]) == (1, 1, 10.0)
+    assert (result["rank"], result["rank_size"], result["rank_ties"]) == (1, 1, 1)
     assert result["member_ranks"] == [
         {"territory_id": "c1", "rank": 1, "rank_size": 1, "rank_ties": 1},
         {"territory_id": "c2", "rank": None, "rank_size": None, "rank_ties": None},
     ]
+
+    rank_only = main._project_comparison_result_fields(result,
+        ("rank", "rank_size", "rank_ties", "member_ranks"))
+    assert rank_only["rank_ties"] == 1
+    assert "median" not in rank_only and "focal_value" not in rank_only
