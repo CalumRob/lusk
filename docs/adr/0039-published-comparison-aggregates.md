@@ -12,6 +12,20 @@ only EPCI/departement same-level median summaries. AEDAR publishes no
 territory/member/rank rows or peer eligibility counts. Other comparison families
 and this ADR's shared publication approach are unchanged.
 
+**AEDAR selection-comparison amendment (owner-approved 2026-10-28, #768):** AEDAR
+scalar measures join request-time selected comparisons: declared comparison facets
+and directions per measure; same-level custom selections receive the
+address-weighted mean of members' published aggregate values (exactly the pooled
+address aggregate — `n_addresses` weights, no address-level evidence) for scalar
+readings and per-cell curve readings, plus direction-aware focal ranks and group
+sizes within the selection, labeled « Moyenne de la sélection ». The
+EPCI/departement same-level median summaries retained above are retired in favor
+of the Région's own direct published aggregate (« Moyenne de Bretagne »). The
+publication stance is unchanged: AEDAR still publishes no peer/rank rows or
+eligibility counts; every new statistic is computed per request from published
+facts in one committed snapshot. Scalar, profile, series and collection families
+are unchanged (median references, published aggregates).
+
 ## Decision
 
 For every currently offered comparison context, compute its peer-derived numeric results from canonical pipeline data and publish them as a comparison projection. The API serves those published results for current contexts instead of loading all peer facts and recomputing their aggregates per request. This applies across current comparison families, including scalar/profile, ordered-series, numeric period/detail collections, and AEDAR fixed-context comparisons. The inventory is contract-tested so an in-scope family cannot silently be omitted.
