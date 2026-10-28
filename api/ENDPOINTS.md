@@ -44,10 +44,18 @@ Owned ordered-series comparisons additionally accept the requested-only
 `axis_comparisons` projection: it returns API-owned comparison values, eligibility,
 missing counts, ranks/ties, and lineage for the axes already present in the comparison
 publication. It never aliases factual axes to comparison axes or reconstructs fixed
-groups. Dual scalar/series resources accept `scalar_facet` on a cohort/facts request
-to return that resource's independent scalar cohort facts; the same comparison field
-requests include its existing scalar comparison contract. These nested projections
-are opt-in and do not change default/unrequested responses.
+groups. Each projected axis row carries `axis`, `statistic` (the descriptor's declared
+comparison statistic), `status`, `value`, `min`/`max` over the eligible peers,
+`selected_member_count`, `eligible_count`, `missing_count`, per-member
+`member_ranks` (`territory_id`, `rank`, `rank_size`, `rank_ties` — direction-aware
+ex-æquo with ties), and `sources` lineage. The projection validates its own
+published evidence (statistics, rank spans within the eligible population, member
+identity, counts, and lineage) and fails closed with HTTP 503 rather than serving
+an inconsistent published group; a request that names a non-published comparison
+axis is refused with 422. Dual scalar/series resources accept `scalar_facet` on a
+cohort/facts request to return that resource's independent scalar cohort facts; the
+same comparison field requests include its existing scalar comparison contract. These
+nested projections are opt-in and do not change default/unrequested responses.
 The catalogue also includes four producer-declared `typed_reading` resources for
 selected Démographie, Économie/Emploi, Habitat, and Milieux evidence. These use the
 same `facts` grammar and a declared `groupe` coordinate. Ranked economy activities,
