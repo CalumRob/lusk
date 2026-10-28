@@ -1102,6 +1102,7 @@ const sources = computed(() => {
         .map((source) => [`${source.sourceId}\u0000${source.vintageId ?? source.version}`, source])).values()]
       if (!vintages.length) return null
       const existing = authority.find((record) => record.id === id || datasetDeSource(record.id) === datasetDeSource(id))
+      const ficheRecord = authority.find((record) => record.id === datasetDeSource(id))
       const apiVintages: SourceVintageRecord[] = vintages.map((source) => vintageApi(source, existing?.licence ?? null))
       const representative = vintages.length === 1 ? vintages[0] : null
       return {
@@ -1115,7 +1116,7 @@ const sources = computed(() => {
         clocks: existing?.clocks ?? [], caveat: existing?.caveat ?? null,
         methodology: existing?.methodology, consumers: existing?.consumers ?? [],
         replie: existing?.replie ?? false, themes: existing?.themes ?? [theme.value as Theme],
-        ficheSourceLiee: Boolean(existing),
+        ficheSourceLiee: Boolean(ficheRecord), ancreSourceId: datasetDeSource(id),
       }
     }).filter((source): source is NonNullable<typeof source> => source !== null)
   }
@@ -1133,6 +1134,7 @@ const sources = computed(() => {
         .map((source) => [`${source.sourceId}\u0000${source.vintageId ?? source.version}`, source])).values()]
       if (!vintages.length) return null
       const existing = authority.find((record) => record.id === id)
+      const ficheRecord = authority.find((record) => record.id === datasetDeSource(id))
       const apiVintages: SourceVintageRecord[] = vintages.map((source) => vintageApi(source, existing?.licence ?? null))
       const representative = vintages.length === 1 ? vintages[0] : null
       return {
@@ -1146,7 +1148,7 @@ const sources = computed(() => {
         clocks: [], caveat: existing?.caveat ?? null,
         methodology: existing?.methodology, consumers: existing?.consumers ?? [],
         replie: existing?.replie ?? false, themes: existing?.themes ?? [theme.value as Theme],
-        ficheSourceLiee: Boolean(existing),
+        ficheSourceLiee: Boolean(ficheRecord), ancreSourceId: datasetDeSource(id),
       }
     }).filter((source): source is NonNullable<typeof source> => source !== null)
   }
@@ -1162,6 +1164,7 @@ const sources = computed(() => {
         .map((source) => [`${source.sourceId}\u0000${source.vintageId ?? source.version}\u0000${String(source.lineage?.hash ?? '')}`, source])).values()]
       if (!vintages.length) return null
       const existing = authority.find((record) => record.id === id)
+      const ficheRecord = authority.find((record) => record.id === datasetDeSource(id))
       const apiVintages: SourceVintageRecord[] = vintages.map((source) => vintageApi(source, existing?.licence ?? null))
       const representative = vintages.length === 1 ? vintages[0] : null
       return { id, dataset: representative?.source ?? vintages[0]!.source,
@@ -1173,12 +1176,13 @@ const sources = computed(() => {
         datePublication: representative?.publicationDate ?? null, vintages: apiVintages, clocks: [],
         caveat: existing?.caveat ?? null, methodology: existing?.methodology,
         consumers: existing?.consumers ?? [], replie: existing?.replie ?? false,
-        themes: existing?.themes ?? [theme.value as Theme], ficheSourceLiee: Boolean(existing) }
+        themes: existing?.themes ?? [theme.value as Theme],
+        ficheSourceLiee: Boolean(ficheRecord), ancreSourceId: datasetDeSource(id) }
     }).filter((source): source is NonNullable<typeof source> => source !== null)
   }
   return page.value.sources.map((id) => authority.find((record) => record.id === datasetDeSource(id)))
     .filter((source): source is NonNullable<typeof source> => Boolean(source))
-    .map((source) => ({ ...source, ficheSourceLiee: true }))
+    .map((source) => ({ ...source, ficheSourceLiee: true, ancreSourceId: source.id }))
 })
 /**
  * Some source versions describe a planned service day while their reference
@@ -1523,7 +1527,7 @@ watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niv
           </template></RepereFamilyOutlet></main>
         <section v-else-if="vue === 'carte' && profileRegionalFactOnly" class="carte-indicateur" role="status" data-testid="profile-regional-map-unavailable">La Région dispose de faits publiés, mais pas d’une géométrie de comparaison pour cette carte.</section>
         <section v-else-if="vue === 'carte'" class="carte-indicateur"><div v-if="geometrie.masques.value" class="map-wrap"><MapExplorer :masques="geometrie.masques.value" :payload="payloadCarte" :active-ids="payloadCarte.indicateurs.map((fact) => fact.territoire)" :theme="theme as Theme" :couche="couche" :niveau="niveauMasque" :territoire-cible="territoireCible" :requete-zoom="requeteZoom" /></div><div v-else role="status">Chargement de la carte…</div></section>
-        <aside v-else><h2>L’indicateur</h2><dl><template v-if="raccordementApiLecture"><dt>Définition</dt><dd>{{ raccordementApiLecture.metadata.label }}</dd><dt>Unité</dt><dd>{{ raccordementApiLecture.metadata.unit }}</dd><dt>Mesure</dt><dd>{{ raccordementApiLecture.metadata.comparison_contract.statistic }} · {{ raccordementApiLecture.metadata.axis_values.length }} points déclarés</dd></template><template v-else><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></template></dl><p v-if="horlogeService && !raccordementApiLecture" class="indicator-date-caveat" data-testid="raccordement-dates">Les résultats reposent sur les horaires planifiés pour le {{ horlogeService.service }} ; les sources ont été acquises le {{ horlogeService.acquisition }}.</p><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink v-if="source.ficheSourceLiee" :to="{ name: 'sources', hash: `#${ancreSource(source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}<span v-if="vintage.revisionHash"> · Révision : {{ vintage.revisionHash }}</span></li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
+        <aside v-else><h2>L’indicateur</h2><dl><template v-if="raccordementApiLecture"><dt>Définition</dt><dd>{{ raccordementApiLecture.metadata.label }}</dd><dt>Unité</dt><dd>{{ raccordementApiLecture.metadata.unit }}</dd><dt>Mesure</dt><dd>{{ raccordementApiLecture.metadata.comparison_contract.statistic }} · {{ raccordementApiLecture.metadata.axis_values.length }} points déclarés</dd></template><template v-else><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></template></dl><p v-if="horlogeService && !raccordementApiLecture" class="indicator-date-caveat" data-testid="raccordement-dates">Les résultats reposent sur les horaires planifiés pour le {{ horlogeService.service }} ; les sources ont été acquises le {{ horlogeService.acquisition }}.</p><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink v-if="source.ficheSourceLiee" :to="{ name: 'sources', hash: `#${ancreSource(source.ancreSourceId ?? source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}<span v-if="vintage.revisionHash"> · Révision : {{ vintage.revisionHash }}</span></li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
      </template>
   </section>
 </template>
