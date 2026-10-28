@@ -405,7 +405,17 @@ try {
 
     // Indicator-page Carte renders the native layer for the active coordinate.
     await page.getByRole('button', { name: 'Carte', exact: true }).click()
-    await page.locator('.popup-carte-kpi').first().waitFor({ state: 'visible', timeout: 20000 })
+    try {
+      await page.locator('.popup-carte-kpi').first().waitFor({ state: 'visible', timeout: 8000 })
+    } catch (cause) {
+      const debugPath = process.env.LUSK_SERIES_PROOF_DEBUG
+      if (debugPath) {
+        await page.screenshot({ path: `${debugPath}-${spec.indicator}.png`, fullPage: false })
+        const mapHtml = await page.locator('.indicateur-page').innerHTML().catch(() => 'no page')
+        console.error(`DEBUG ${spec.indicator}: popup missing; url=${page.url()}; html=${mapHtml.slice(0, 1500)}`)
+      }
+      throw cause
+    }
     const mapText = await page.locator('.popup-carte').innerText()
     assert(mapText.includes(spec.resource.unit), `${spec.indicator} indicator map must render the native unit`)
     if (expected) {
