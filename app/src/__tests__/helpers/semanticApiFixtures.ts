@@ -996,12 +996,26 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
           source = sourceFor(resource, fact, { kind: 'territory', type: member.type, id: member.territoire }, true)
         } catch {
           // A mixed-vintage aggregate fact (an EPCI spanning two OCS-GE
-          // millésimes) declares its own composite vintage identity: reuse it
-          // verbatim instead of inventing a single clock.
-          source = { source_id: fact.vintage_source ?? resource.resource_id,
-            name: fact.vintage_source ?? resource.label, vintage_id: fact.vintage_version ?? null,
-            version: fact.vintage_version ?? null, reference_date: fact.vintage_date_reference ?? null,
-            publication_date: fact.vintage_date_publication ?? null }
+          // millésimes) reuses the declared producer vintage matching its own
+          // vintage identity and department — never an invented source clock.
+          const factVersion = String(fact.vintage_version ?? '')
+          const declaredVintages = Object.entries(metadata.source_records ?? {})
+            .flatMap(([id, record]) => ((record as Record<string, any>).vintages ?? [])
+              .map((vintage) => ({ id, ...vintage })))
+          const declared = declaredVintages.filter((vintage) => String(vintage.version) === factVersion &&
+            (!member.departement || String(vintage.id).endsWith(`dep${member.departement}`)))
+          const chosen = declared[0]
+          source = chosen
+            ? { source_id: chosen.id, name: chosen.name ??
+                (metadata.source_records as Record<string, any>)?.[chosen.id]?.dataset ?? chosen.id,
+              version: chosen.version, vintage_id: chosen.vintage_id ?? chosen.version,
+              reference_date: chosen.reference_date ?? null, publication_date: chosen.publication_date ?? null }
+            : { source_id: (metadata.source_records as Record<string, any>)?.[resource.resource_id]?.dataset
+                ?? resource.resource_id,
+              name: (metadata.source_records as Record<string, any>)?.[resource.resource_id]?.dataset ?? resource.label,
+              version: factVersion || undefined, vintage_id: fact.vintage_version ?? undefined,
+              reference_date: fact.vintage_date_reference ?? null,
+              publication_date: fact.vintage_date_publication ?? null }
         }
         return { axis, observation_period: String(fact.dimension ?? fact.detail ?? ''),
           value: fact.value, status: fact.value === null ? 'missing' : 'measured',
