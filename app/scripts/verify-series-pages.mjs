@@ -533,10 +533,9 @@ try {
     'the out-of-cohort focal must receive its own bounded territory read')
 
   // Whole-batch HTTP failure: page error, forced retry recovers.
+  harness.failNextBatchOnce()
   await page.goto(`${baseUrl}indicateurs/milieux/conso_enaf_annuel?territoire=22001&niveau=commune&departement=22&vue=reperes`,
     { waitUntil: 'domcontentloaded' })
-  await page.locator('h1').filter({ hasText: 'Consommation' }).waitFor({ state: 'visible', timeout: 20000 })
-  harness.failNextBatchOnce()
   await page.locator('[role="alert"]').waitFor({ state: 'visible', timeout: 20000 })
   await page.getByRole('button', { name: 'Réessayer' }).click()
   await page.locator('figure[data-renderer="trajectory"]').waitFor({ state: 'visible', timeout: 20000 })
