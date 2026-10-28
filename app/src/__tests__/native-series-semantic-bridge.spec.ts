@@ -138,7 +138,8 @@ describe('guarded native SQL/HTTP → shared ordered-series acquisition bridge',
   }
 })
 
-describe('guarded native corrupt-evidence rejection → shared series acquirer', () => {
+const conditionalDescribe = capturePaths.length ? describe : describe.skip
+conditionalDescribe('guarded native corrupt-evidence rejection → shared series acquirer', () => {
   const other = (statistic: string) => statistic === 'mean' ? 'median' : 'mean'
   const mutations: Array<[string, (data: any[]) => void, (bridge: { request: { items: any[] } }) => boolean]> = [
     ['comparison reference publication', (data) => { data[2].reference_content_version = 'other-reference' }, () => true],
