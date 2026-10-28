@@ -157,6 +157,7 @@ try {
         reference_content_version: initialCohort.reference_content_version,
         pooled_content_version: initialCohort.scalar_facet?.content_version,
         pooled_reference_content_version: initialCohort.scalar_facet?.reference_content_version })}; ` +
+      `alert=${await page.getByTestId('series-comparison-error').innerText()}; ` +
       `trace=${JSON.stringify(trace.slice(start).map(({ status, items }) => ({ status,
         intents: items.map((item) => item.intent.kind), targets: items.map((item) => item.target),
         publications: (trace.at(-1)?.response?.results ?? []).map(({ data }) => ({
