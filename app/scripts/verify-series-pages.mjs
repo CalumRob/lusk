@@ -567,14 +567,24 @@ try {
   // Warm same-cohort focal changes use the admitted cohort, never the prior
   // focal identity. A genuinely uncached focal fact may fail independently;
   // after it is admitted, comparison failure/retry are one-item comparisons.
-  const newFocal = territoiresFixture.find((territory) => territory.type === 'commune' &&
+  const communeWarmFocal = territoiresFixture.find((territory) => territory.type === 'commune' &&
+    territory.territoire === '22001')
+  const newCommuneFocal = territoiresFixture.find((territory) => territory.type === 'commune' &&
     territory.departement === '22' && territory.territoire !== '22001')
-  assert(newFocal, 'Browser fixture must contain a second commune in the warm department cohort')
+  assert(communeWarmFocal && newCommuneFocal,
+    'Browser fixture must contain the initial and second communes in the warm department cohort')
   for (const spec of census.filter(({ indicator }) => indicator !== 'raccordement_courbe')) {
-    const detailQuery = spec.indicator === 'prix_m2' ? '&detail=2022'
-      : spec.indicator === 'conso_enaf_annuel' ? '&detail=2024'
-        : spec.indicator === 'subventions_annuelles' ? '&dimension=2025' : ''
-    const url = `${baseUrl}indicateurs/${spec.theme}/${spec.indicator}?territoire=22001&niveau=commune&departement=22${detailQuery}&vue=reperes`
+    // OCS-GE publishes peer comparison only for the state roles at EPCI level;
+    // communes have factual calendar observations but no comparison table.
+    const isOcsGe = spec.indicator === 'artif_par_habitant'
+    const warmLevel = isOcsGe ? 'epci' : 'commune'
+    const initialFocal = isOcsGe ? epciFocal : communeWarmFocal
+    const scopeQuery = isOcsGe ? '' : '&departement=22'
+    const detailQuery = isOcsGe ? '&detail=M3'
+      : spec.indicator === 'prix_m2' ? '&detail=2022'
+        : spec.indicator === 'conso_enaf_annuel' ? '&detail=2024'
+          : spec.indicator === 'subventions_annuelles' ? '&dimension=2025' : ''
+    const url = `${baseUrl}indicateurs/${spec.theme}/${spec.indicator}?territoire=${initialFocal.territoire}&niveau=${warmLevel}${scopeQuery}${detailQuery}&vue=reperes`
     await page.goto(url, { waitUntil: 'domcontentloaded' })
     await page.locator('h1').filter({ hasText: spec.resource.label }).waitFor({ state: 'visible', timeout: 20000 })
     await page.locator('.comparison-table-scroll tbody tr').first().waitFor({ state: 'visible', timeout: 20000 })
@@ -589,6 +599,15 @@ try {
     const cohortData = initialCohort?.response.results.map((result) => result.data)
       .find((data) => data.target?.kind === 'territory_cohort')
     assert(cohortData, `${spec.indicator}: positive cohort response is preserved as native fixture evidence`)
+
+    const axis = cohortData.descriptor.comparison_point
+    const newFocal = isOcsGe
+      ? territoiresFixture.find((territory) => territory.type === 'epci' &&
+        territory.territoire !== initialFocal.territoire &&
+        cohortData.series?.some((group) => group.territory.id === territory.territoire &&
+          group.points.some((point) => point.axis === axis && point.status === 'measured')))
+      : newCommuneFocal
+    assert(newFocal, `${spec.indicator}: fixture must provide a second admitted member with a measured comparison fact`)
 
     harness.failNextBatchOnce()
     await page.evaluate((id) => {
@@ -605,7 +624,7 @@ try {
     assert.equal(warmMiss?.items[0]?.resource, spec.indicator)
     assert.equal(warmMiss?.items[0]?.intent?.kind, 'facts')
     assert.deepEqual(warmMiss?.items[0]?.target,
-      { kind: 'territory', type: 'commune', id: newFocal.territoire })
+      { kind: 'territory', type: warmLevel, id: newFocal.territoire })
     assert.equal(harness.factReads.filter((item) => item.resource === spec.indicator &&
       item.target?.kind === 'territory_cohort').length, cohortReadsBefore,
     `${spec.indicator}: the already-admitted cohort is not read again`)
@@ -621,7 +640,6 @@ try {
       assert.deepEqual(visiblePoints, expectedPoints,
         `${spec.indicator}: display only actual cohort facts for the newly selected focal`)
     } else if (group) {
-      const axis = cohortData.descriptor.comparison_point
       const expectedPoint = group.points.find((point) => point.axis === axis && point.status === 'measured')
       assert(expectedPoint, `${spec.indicator}: the focal cohort row has the declared comparison fact`)
       const row = page.locator('.comparison-table-scroll tbody tr').filter({ hasText: newFocal.nom })
@@ -640,7 +658,9 @@ try {
       [[503, 1], [200, 1], [503, 1]],
       `${spec.indicator}: exact focal facts are admitted before the independent comparison can fail`)
     assert.equal(stagedTrace[1]?.items[0]?.target?.id, newFocal.territoire)
-    assert.equal(stagedTrace[2]?.items[0]?.intent?.kind, 'selected_comparison')
+    const initialComparison = initialBatch.items.find((item) => item.intent.kind !== 'facts')
+    assert.deepEqual(stagedTrace[2]?.items[0]?.intent, initialComparison?.intent,
+      `${spec.indicator}: retry must preserve the producer-declared comparison intent`)
     const factsAtComparisonFailure = harness.factReads.filter((item) => item.resource === spec.indicator).length
     await page.getByRole('button', { name: 'Réessayer la comparaison' }).click()
     await page.locator('[data-testid="series-comparison-error"]').waitFor({ state: 'detached', timeout: 20000 })
@@ -651,7 +671,7 @@ try {
       factsAtComparisonFailure, `${spec.indicator}: comparison-only retry must not reread admitted facts`)
 
     const traceAfterRecovery = harness.batchTrace.length
-    for (const id of ['22001', newFocal.territoire]) {
+    for (const id of [initialFocal.territoire, newFocal.territoire]) {
       await page.evaluate((territoire) => {
         const url = new URL(location.href)
         url.searchParams.set('territoire', territoire)
