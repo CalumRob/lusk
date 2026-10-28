@@ -218,6 +218,38 @@ def test_projection_preflight_bounds_member_axis_work():
     assert excinfo.value.status_code == 413
 
 
+def test_unsupported_mean_default_group_contract_is_refused_not_mislabelled():
+    """A declared mean outside a selected-group scope is unsupported: the
+    established reader refuses that contract; the projection must too, instead
+    of reporting a mean while computing a median."""
+    conn = ProjectionConnection()
+    descriptor_stat = "mean"
+    original_execute = conn.execute
+
+    def execute(sql, params=None):
+        normalized = " ".join(sql.split())
+        if "SELECT d.dataset_id,d.axis_kind,d.axis_values" in normalized:
+            return Cursor(row=("owned-v1", "declared_detail", AXES, "low", descriptor_stat,
+                "default_group", "desc-v1", "series-v1", "ref-v1", "ref-v1"))
+        return original_execute(sql, params)
+
+    conn.execute = execute
+    with pytest.raises(HTTPException) as excinfo:
+        projection.read_axis_comparisons(conn, read_item())
+    assert excinfo.value.status_code == 503
+    assert "unsupported" in excinfo.value.detail
+    with pytest.raises(HTTPException) as excinfo:
+        projection.preflight_axis_comparisons(conn, read_item(), 100_000)
+    assert excinfo.value.status_code == 503
+
+
+def test_fixed_median_default_group_and_mean_selected_group_stay_supported():
+    """The two established supported contracts keep their fixed-comparison path."""
+    conn = ProjectionConnection()
+    result = projection.read_axis_comparisons(conn, read_item())
+    assert [point["statistic"] for point in result] == ["median", "median"]
+
+
 def test_selected_comparison_keeps_the_existing_unique_commune_min_two_policy():
     conn = ProjectionConnection()
     result = projection.read_axis_comparisons(conn, read_item(intent="selected_comparison"))
