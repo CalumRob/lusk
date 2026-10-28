@@ -35,7 +35,9 @@ import { adapterPageProfilDeclare, chargerCohorteProfilDeclare, chargerComparais
 import type { DeclaredProfileDescriptor, ProfileComparison, ProfilePageBinding, ProfilePublicationIdentity, ProfileTarget } from '@/payload/profileAcquisition'
 import { chargerCatalogueRessources } from '@/payload/semanticResourceClient'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
-import { acquireOrderedSeriesSemantic } from '@/payload/seriesSemanticAcquisition'
+import { acquireOrderedSeriesSemantic, reacquireOrderedSeriesComparison,
+  SeriesComparisonRejectedError } from '@/payload/seriesSemanticAcquisition'
+import type { OrderedSeriesFactsEvidence } from '@/payload/seriesSemanticAcquisition'
 import { projectRaccordementSemanticComparison, projectRaccordementSemanticFocal } from '@/payload/raccordementSemanticProjection'
 import type { RaccordementSemanticProjection } from '@/payload/raccordementSemanticProjection'
 
@@ -768,6 +770,8 @@ watch(
 )
 
 const serieLecture = ref<OrderedSeriesRead | null>(null)
+const serieComparaisonErreur = ref(false)
+const serieComparaisonChargement = ref(false)
 const raccordementApiLecture = ref<RaccordementSemanticProjection | null>(null)
 const raccordementComparaisonChargement = ref(false)
 const raccordementComparaisonErreur = ref(false)
@@ -886,12 +890,18 @@ async function chargerSerie(force = false) {
       level: niveauSerie.value, focal, territories: payloadLegacy.value.territoires,
       includeScalarFacet: seriesHasScalarFacet.value,
       ...(department ? { departmentId: department } : {}), ...(epci ? { epciId: epci } : {}) })
-    if (result.indicator_id !== adapter.indicator || !Array.isArray(result.points) ||
-      !Array.isArray(result.scope_series)) throw new Error('Invalid ordered-series response')
-    if (request === serieRequete) serieLecture.value = result
-  } catch {
     if (request === serieRequete) {
-      if (raccordement && raccordementApiLecture.value && raccordementFocalKey === focalKey) {
+      serieLecture.value = result
+      serieComparaisonErreur.value = false
+    }
+  } catch (cause) {
+    if (request === serieRequete) {
+      if (cause instanceof SeriesComparisonRejectedError) {
+        // The comparison's native evidence failed binding: the validated facts
+        // stay admitted and only the comparison is reacquired on retry (#857).
+        serieLecture.value = cause.facts as unknown as OrderedSeriesRead
+        serieComparaisonErreur.value = true
+      } else if (raccordement && raccordementApiLecture.value && raccordementFocalKey === focalKey) {
         raccordementComparaisonErreur.value = true
       } else {
         serieErreur.value = true
@@ -902,6 +912,43 @@ async function chargerSerie(force = false) {
       serieChargement.value = false
       if (raccordement) raccordementComparaisonChargement.value = false
     }
+  }
+}
+
+/** Comparison-only retry for the shared-batch pages: one bounded read
+ *  validated against the admitted facts; the warm facts are never reread. */
+async function reessayerComparaisonSerie() {
+  const adapter = orderedSeriesAdapter.value
+  const lecture = serieLecture.value
+  if (!adapter || !lecture || adapter.indicator === 'raccordement_courbe') return
+  const scope = resoudreEtatUrl({ query: route.query, territoires: payloadLegacy.value.territoires,
+    niveauxPublies: metadataSeriesApi.value?.indicator_pages?.[indicator.value]?.levels ??
+      payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]?.indicator_pages?.[indicator.value]?.levels,
+    niveauMemorise: niveauMemorise.value }).scopeValide
+  const department = scope?.departement
+  const epci = scope?.epci
+  const focal = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire &&
+    territory.type === niveauSerie.value) ??
+    payloadLegacy.value.territoires.find((territory) => territory.type === niveauSerie.value &&
+      (!department || territory.departement === department) && (!epci || territory.epci === epci))
+  if (!focal) return
+  const request = serieRequete
+  serieComparaisonChargement.value = true
+  serieComparaisonErreur.value = false
+  try {
+    const comparison = await reacquireOrderedSeriesComparison({
+      resource: adapter.indicator, level: niveauSerie.value, focal,
+      territories: payloadLegacy.value.territoires, includeScalarFacet: seriesHasScalarFacet.value,
+      ...(department ? { departmentId: department } : {}), ...(epci ? { epciId: epci } : {}),
+      facts: lecture as unknown as OrderedSeriesFactsEvidence })
+    if (request === serieRequete) {
+      serieLecture.value = { ...lecture, comparison }
+      serieComparaisonErreur.value = false
+    }
+  } catch {
+    if (request === serieRequete) serieComparaisonErreur.value = true
+  } finally {
+    if (request === serieRequete) serieComparaisonChargement.value = false
   }
 }
 const pageProfilCourante = computed(() => {
@@ -1003,7 +1050,11 @@ const page = computed(() => {
   const read = seriesPageApiActive.value && orderedSeriesAdapter.value?.indicator === indicator.value
     ? serieLecture.value : null
   const descriptor = read?.native_descriptor
+  // Published comparison axes drive the selector; while a comparison alone is
+  // rejected, the producer's own role marking (or the declared factual axis for
+  // resources whose publication covers it) keeps the binding truthful.
   const comparisonAxes = read?.comparison?.axis_comparisons?.map((row) => row.axis)
+    ?? (read?.role_axes?.length ? read.role_axes : read?.native_descriptor?.axis_values)
   if (editorial && descriptor && comparisonAxes?.length) {
     const dimensionFacet = editorial.comparison?.dimensions !== undefined || editorial.comparison?.dimension !== undefined
     const permitted = dimensionFacet ? { dimensions: comparisonAxes,
@@ -1467,6 +1518,7 @@ watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niv
 <template>
   <section class="indicateur-page presentation-editorial" :class="`theme-${theme}`" :style="themeVars">
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieChargement" role="status">Chargement des données actualisées…</div>
+    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieComparaisonErreur" role="alert" data-testid="series-comparison-error">La comparaison de cet indicateur est momentanément indisponible ; les faits validés restent affichés.<button type="button" @click="reessayerComparaisonSerie()">Réessayer la comparaison</button></div>
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
     <div v-if="chargement || (raccordementApiActive && serieChargement)" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur || (raccordementApiActive && serieErreur)" role="alert">Impossible de charger l’indicateur.<button v-if="profileBootstrapError" type="button" @click="retryProfileBootstrap++">Réessayer</button><button v-else-if="profileMode" type="button" @click="retryProfileFacts++">Réessayer</button><button v-if="!profileMode && scalaireApi" type="button" @click="retryScalaireApi++">Réessayer</button><button v-if="raccordementApiActive" type="button" @click="chargerSerie(true)">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>

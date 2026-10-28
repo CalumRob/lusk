@@ -21,6 +21,16 @@ def _context(conn, item):
         WHERE d.indicator_id=%s AND d.active_read_route""", (item.resource,)).fetchone()
     if not descriptor or descriptor[8] != descriptor[9]:
         raise HTTPException(503, "Series comparison descriptor/publication is unavailable")
+    statistic = descriptor[4] or "median"
+    if statistic == "mean" and descriptor[5] != "selected_group":
+        # The established owned-series contract supports a declared mean only
+        # for selected-group scopes; anything else would report a statistic it
+        # does not compute.
+        raise HTTPException(503, "Series comparison contract is unsupported")
+    if item.intent.kind == "fixed_comparison" and not (
+            (statistic == "mean" and descriptor[5] == "selected_group")
+            or (statistic == "median" and descriptor[5] == "default_group")):
+        raise HTTPException(503, "Series comparison contract is unsupported")
     selection = ([(m.type, m.id) for m in item.intent.members]
                  if item.intent.kind == 'selected_comparison' else None)
     level, members, scope = _comparison_cohort(conn, item.target.type, item.target.id, selection)
@@ -92,12 +102,19 @@ def read_axis_comparisons(conn, item):
                 or {p[1] for p in points} != set(members) or len(points) != count
                 or len(sources) != source_count or statistic != (descriptor[4] or 'median')
                 or any(p[2] is None or p[4] is None or p[5] != eligible or p[6] is None
-                       or not 1 <= p[4] <= eligible or not 1 <= p[6] <= eligible for p in measured)
+                       or not 1 <= p[4] <= eligible or not 1 <= p[6] <= eligible
+                       or p[4] + p[6] > eligible + 1
+                       for p in measured)
                 or any(p[2] is not None or any(v is not None for v in p[4:])
                        for p in points if p[3] != 'measured')):
             raise HTTPException(503, "Published series peer comparison evidence is inconsistent")
         available = eligible >= 2
-        values = [p[2] for p in measured]
+        measured_values = [p[2] for p in measured]
+        if available and not all(isinstance(candidate, (int, float)) and candidate == candidate
+                                 and candidate not in (float('inf'), float('-inf'))
+                                 for candidate in [*measured_values, value]):
+            raise HTTPException(503, "Published series peer comparison evidence is inconsistent")
+        values = measured_values
         result.append({"axis": axis, "statistic": statistic, "status": 'available' if available else 'unavailable',
             "value": value if available else None, "min": min(values) if available else None,
             "max": max(values) if available else None, "selected_member_count": count,

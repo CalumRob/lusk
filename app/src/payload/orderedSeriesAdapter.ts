@@ -41,6 +41,8 @@ export interface OrderedSeriesRead {
     comparison?: Record<string, any> }
   native_descriptor?: { label: string; unit: string; direction: 'high' | 'low' | 'none';
     axis_kind: string; axis_values: string[]; comparison_point: string | null }
+  /** The producer's own state-role marking carried by the admitted points (#857). */
+  role_axes?: string[]
   comparison: {
     point: string | null
     value?: number | null

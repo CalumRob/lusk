@@ -847,10 +847,13 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
             }
           })
         })() : undefined
-    const result = { indicator_id: resource.indicator_id, status: 'unavailable', reason: 'fixture_unavailable',
+    const result = { indicator_id: resource.indicator_id, theme_id: resource.theme_id,
+      label: resource.label, status: 'unavailable', reason: 'fixture_unavailable',
       unit: resource.unit, direction: resource.direction,
       source_facet: isProfile ? undefined : isSeries ? null : resource.indicator_id,
       descriptor_version: descriptorVersion,
+      statistic: isSeries ? (metadataFor(resource.theme_id).indicator_pages?.[resource.indicator_id]?.comparison?.statistic ?? 'median') : undefined,
+      ...(isSeries ? { owned_content_version: version } : {}),
       ...(isProfile ? { profile_descriptor_version: descriptorVersion } : {}),
       selected_member_count: cohort.length, eligible_count: 0, missing_count: cohort.length,
       rank: null, rank_size: null }
@@ -1011,7 +1014,9 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     const descriptor = { dataset_id: page.series_dataset_id ?? route.dataset_id ?? resource.resource_id,
       theme_id: resource.theme_id, axis_kind: page.axis_kind ?? route.axis_kind ?? resource.axes?.[0] ?? 'declared_detail',
       axis_values: axisValues.length ? axisValues : [...new Set(members.flatMap((member) =>
-        pointsFor(member).map((point) => point.axis)))], completeness: page.completeness ?? 'may_be_missing',
+        pointsFor(member).map((point) => point.axis)))],
+      axis_numeric_values: route.axis_kind === 'duration_minute' ? raccordementAxisNumericValues : null,
+      completeness: page.completeness ?? 'may_be_missing',
       absence_semantics: page.absence_semantics ?? 'unavailable', label: page.label ?? resource.label,
       unit: page.unit ?? resource.unit, direction: page.direction ?? resource.direction,
       descriptor_version: descriptorVersion, allowed_levels: page.levels ?? resource.allowed_levels,
@@ -1091,7 +1096,8 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     const response: Record<string, any> = { ...shared, territory: { id: target.id, type: target.type,
         name: territoryReference.find((row) => row.type === target.type && row.territoire === target.id)?.nom ?? target.id },
       indicator_id: resource.indicator_id, theme_id: resource.theme_id,
-      dataset_id: resource.resource_id === 'raccordement_courbe' ? raccordementRoute.dataset_id : resource.resource_id,
+      dataset_id: page.series_dataset_id ?? route.dataset_id ??
+        (resource.resource_id === 'raccordement_courbe' ? raccordementRoute.dataset_id : resource.resource_id),
       publication_id: version, content_version: version, reference_content_version: referenceVersion,
       descriptor_version: descriptorVersion, axis_kind: axisKind, axis_values: axisValues,
       axis_numeric_values: axisValues.map((value) => {

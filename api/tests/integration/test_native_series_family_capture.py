@@ -132,7 +132,7 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
                 captures[name] = {'request': request, 'response_status': response.status_code, 'response': response.json()}
                 assert response.status_code == 200, response.text
             read('cohort', {'kind': 'territory_cohort', 'type': 'commune', 'department_id': '35'}, {'kind': 'facts'},
-                 fields=['scalar_facet'] if indicator == 'prix_m2' else None)
+                 fields=['value', 'scalar_facet'] if indicator == 'prix_m2' else ['value'])
             read('focal', {'kind': 'territory', 'type': 'commune', 'id': 'native-c3'}, {'kind': 'facts'})
             read('comparison', {'kind': 'territory', 'type': 'commune', 'id': 'native-c3'},
                  {'kind': 'selected_comparison', 'members': [{'type': 'commune', 'id': 'native-c1'},
@@ -150,7 +150,8 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
             bridge_items = [
                 {'id': f'scalar-0-{indicator}', 'resource': indicator,
                  'target': {'kind': 'territory_cohort', 'type': 'commune', 'department_id': '35', 'epci_id': None},
-                 'intent': {'kind': 'facts'}, **({'fields': ['scalar_facet']} if indicator == 'prix_m2' else {})},
+                 'intent': {'kind': 'facts'},
+                 'fields': ['value', 'scalar_facet'] if indicator == 'prix_m2' else ['value']},
                 {'id': f'scalar-1-{indicator}', 'resource': indicator,
                  'target': {'kind': 'territory', 'type': 'commune', 'id': 'native-c3'},
                  'intent': {'kind': 'facts'}},

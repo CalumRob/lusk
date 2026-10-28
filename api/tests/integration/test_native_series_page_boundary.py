@@ -155,6 +155,34 @@ def test_capture_native_state_calendar_comparison_boundary(canonical_db_env, tmp
             {"territory_id": "state-e1", "rank": 1, "rank_size": 3, "rank_ties": 1},
             {"territory_id": "state-e2", "rank": 3, "rank_size": 3, "rank_ties": 1},
             {"territory_id": "state-e3", "rank": 2, "rank_size": 3, "rank_ties": 1}]
+
+        # An impossible published tie span (rank 3 + ties 3 in a size-3
+        # population) must fail closed on the requested projection, never serve
+        # HTTP 200 over inconsistent comparison evidence. The probe corrupts and
+        # restores only its own random schema's seeded row.
+        def corrupt_ties(value):
+            with psycopg.connect(canonical_db_env['publish_dsn']) as corrupt_conn:
+                corrupt_conn.execute("""UPDATE ordered_series_comparison_territory SET tie_count=%s
+                    WHERE dataset_id='ocsge_artif_etats' AND indicator_id='artif_par_habitant'
+                      AND comparison_context='same_level' AND territory_type='epci'
+                      AND axis_value='M3' AND territory_id='state-e2'""", (value,))
+
+        corrupt_ties(3)
+        try:
+            broken = client.post('/api/resources/read-batch', json={
+                "items": [{"id": "scalar-0-artif_par_habitant", "resource": "artif_par_habitant",
+                           "target": target, "intent": {"kind": "fixed_comparison", "context": "default"},
+                           "fields": ["axis_comparisons"]}]})
+            assert broken.status_code == 503, (broken.status_code, broken.text)
+            assert "inconsistent" in broken.text
+        finally:
+            corrupt_ties(1)
+        healed = client.post('/api/resources/read-batch', json={
+            "items": [{"id": "scalar-0-artif_par_habitant", "resource": "artif_par_habitant",
+                       "target": target, "intent": {"kind": "fixed_comparison", "context": "default"},
+                       "fields": ["axis_comparisons"]}]})
+        assert healed.status_code == 200, healed.text
+        assert healed.json()["results"][0]["data"]["result"]["axis_comparisons"] == points
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)
