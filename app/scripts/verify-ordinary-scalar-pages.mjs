@@ -347,8 +347,15 @@ try {
     const comparison = fixtures.nativeReadFixture(comparisonItem, density.resource, { territories: territoiresFixture })
     assert.equal(comparison.scope.kind, 'same_level')
     assert.equal(comparison.scope.territory_type, level)
+    assert.equal(comparison.result.status, 'available', `${level} comparison fixture must publish a median`)
+    assert(Number.isFinite(comparison.result.median), `${level} comparison must carry a finite native median`)
+    const expectedMedian = formaterValeur({ value: comparison.result.median, unit: density.resource.unit })
+    const summary = await page.getByTestId('scalar-comparison-summary').innerText()
+    assert(summary.includes(expectedMedian) && summary.includes(density.resource.unit),
+      `${level} summary must render the exact formatted native API median and unit: ${summary}`)
     const ranks = await assertRankTable(comparison.result, `densite/${level}`)
     return { level, territory: territory.territoire, scope: comparison.scope, median: comparison.result.median,
+      renderedMedian: `${expectedMedian} ${density.resource.unit}`,
       eligibleCount: comparison.result.eligible_count, memberRanks: comparison.result.member_ranks, ...ranks }
   }
   const epciEvidence = await verifyFixedLevel('epci')

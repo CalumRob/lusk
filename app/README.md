@@ -73,21 +73,31 @@ PowerShell: `$env:VITE_THEME_ACQUISITION_API='0'` before running a command).
   applicable readers; normal commands do not set them. Exception: the ordered
   series reader also enables `raccordement_courbe` through the default-on
   `VITE_THEME_ACQUISITION_API` switch. This is inherited client behavior, not
-  support for its retired endpoint.
+  support for its retired endpoint. `VITE_SCALAR_COHORT_API` remains independent
+  for retained fiche/standalone consumers; it does not gate ordinary scalar pages.
 - Every canonical `/indicateurs/:theme/:indicator` route first discovers its
   producer-owned resource classification through `/api/resources`. A fresh
   discovery outage is retryable for all indicator pages, including pages whose
-  successful non-profile classification keeps an existing static reader. Page
+  other non-profile classifications keep an existing static reader. Page
   metadata or the read-model manifest cannot select a reader during an outage.
-  After successful classification, non-profile scalar, series, model, and legacy
-  numeric readers keep their existing modes and factual semantics.
+  Ordinary scalar pages use API-only facts and comparisons when the
+  producer catalogue declares a scalar-only resource accepted by the existing
+  normalized scalar page grammar; they have no environment switch or static
+  numeric fallback. This does not migrate ordered series, dual-shape resources
+  such as `prix_m2`, or the `subventions` owner path. Producer descriptor,
+  facet, publication, and source identity remain authoritative: incompatibilities
+  fail closed, comparison-only failures stay retryable without rereading valid
+  facts, and the app does not invent source clocks. Producer-allowed levels do
+  not expand the page's normalized comparison controls or create regional
+  facts-only behavior. Other non-profile series, model, and legacy readers keep
+  their existing modes and factual semantics.
 - All retained declared-profile Page d’indicateur resources use the shared
   semantic profile reader without an opt-in switch. They remain API-only even
   when the independent scalar or theme-acquisition switches are unset or set
   to `'0'`; their incumbent page numerics are never a fallback. The old
   `VITE_STRUCTURE_AGE_PROFILE_API` switch and retired age-profile route reader
-  have been removed. This does not change scalar, series, fiche, or standalone
-  map acquisition modes.
+  have been removed. This does not change series, fiche, or standalone map
+  acquisition modes.
 - `LUSK_API_ORIGIN` optionally overrides the Vite development server's `/api`
   proxy target only; it is not bundled into the production frontend.
 - `VITE_MAPS_PUBLIC_BASE_URL` optionally overrides the map-asset origin; the
