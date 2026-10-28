@@ -349,7 +349,8 @@ try {
     assert.equal(comparison.scope.territory_type, level)
     assert.equal(comparison.result.status, 'available', `${level} comparison fixture must publish a median`)
     assert(Number.isFinite(comparison.result.median), `${level} comparison must carry a finite native median`)
-    const expectedMedian = formaterValeur({ value: comparison.result.median, unit: density.resource.unit })
+    const median = comparison.result.median * 10 + 1234.5
+    const expectedMedian = formaterValeur({ value: median, unit: density.resource.unit })
     const summary = await page.getByTestId('scalar-comparison-summary').innerText()
     assert(summary.includes(expectedMedian) && summary.includes(density.resource.unit),
       `${level} summary must render the exact formatted native API median and unit: ${summary}`)
