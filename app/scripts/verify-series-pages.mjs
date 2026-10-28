@@ -545,7 +545,7 @@ try {
   // the comparison evidence (raccordement's separately acquired comparison).
   await page.goto(`${baseUrl}indicateurs/mobilite/raccordement_courbe?territoire=22001&niveau=commune&departement=22&vue=reperes`,
     { waitUntil: 'domcontentloaded' })
-  await page.locator('h1').filter({ hasText: 'raccordement' }).waitFor({ state: 'visible', timeout: 20000 })
+  await page.locator('h1').filter({ hasText: 'population bretonne jointe' }).waitFor({ state: 'visible', timeout: 20000 })
   await page.locator('[data-testid="raccordement-selected-mean"]').waitFor({ state: 'visible', timeout: 20000 })
   harness.failNextComparisonOnlyOnce()
   await page.locator('[data-testid="raccordement-comparison-error"]').waitFor({ state: 'visible', timeout: 20000 })
