@@ -424,9 +424,9 @@ function nativeScalarComparison(item: Record<string, any>, resource: Resource,
   const median = sorted.length === 0 ? null : sorted.length % 2
     ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2
   const direction = resource.direction
-  const rankFor = (value: number | null) => value === null || eligible.length < 2 ? null :
+  const rankFor = (value: number | null) => value === null || eligible.length < 1 ? null :
     1 + eligible.filter((row) => direction === 'high' ? row.value! > value : row.value! < value).length
-  const tiesFor = (value: number | null) => value === null || eligible.length < 2 ? null :
+  const tiesFor = (value: number | null) => value === null || eligible.length < 1 ? null :
     eligible.filter((row) => row.value === value).length
   const focalObservation = observed.find((row) => row.member.territoire === target.id && row.member.type === target.type)
   const focalInSelection = Boolean(focalObservation)
@@ -1025,6 +1025,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
   const provenance = fact ? sourceFor(resource, fact, target) : null
   return { ...shared, indicator_id: resource.indicator_id, territory_id: target.id,
     territory_type: target.type, label: resource.label, unit: resource.unit, direction: resource.direction,
+    ...(shapes.length === 1 && shapes[0] === 'scalar' ? { comparison_facet: resource.indicator_id } : {}),
     content_version: version, reference_content_version: referenceVersion,
     descriptor_version: descriptorVersion,
     value: fact?.value ?? null, status: fact ? fact.value === null ? 'missing' : 'measured' : 'no_record',

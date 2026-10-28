@@ -137,7 +137,7 @@ function scalarComparison(theme: string, item: { target: { type: string; id?: st
   const focalInSelection = members.some((member) => member.id === focalId)
   const rankFor = (id: string) => {
     const fact = valuesById.get(id)
-    if (measured.length < 2 || fact?.status !== 'measured' || fact.value === null) return null
+    if (measured.length < 1 || fact?.status !== 'measured' || fact.value === null) return null
     return { territory_id: id, rank: 1 + measured.filter((row) => row.value > fact.value!).length,
       rank_size: measured.length, rank_ties: measured.filter((row) => row.value === fact.value).length }
   }
@@ -231,6 +231,10 @@ describe('ordinary scalar consumers on semantic resources', () => {
             dataset: 'Ancienne source éditoriale', publisher: 'Ancien éditeur',
             url: 'https://example.invalid/stale', licence: 'Licence inconnue', vintage: 'ancien', freshness: 'ancienne horloge',
           }
+          presentation.source_records.serie_historique.sha256 = 'editorial-stale-source-hash'
+          presentation.source_records.serie_historique.clocks = [{
+            name: 'Horloge éditoriale obsolète', reference: 'mercredi réel de période scolaire 1999-01-01', frequency: 'factice',
+          }]
         }
         return new Response(JSON.stringify(presentation))
       }
@@ -287,6 +291,9 @@ describe('ordinary scalar consumers on semantic resources', () => {
           expect(wrapper.text()).toContain(producer.indicator_pages.densite.unit)
           expect(wrapper.text()).not.toContain('ancienne unité éditoriale')
           expect(wrapper.text()).not.toContain('Ancienne source éditoriale')
+          expect(wrapper.text()).not.toContain('Horloge éditoriale obsolète')
+          expect(wrapper.text()).not.toContain('1999-01-01')
+          expect(wrapper.find('[data-testid="raccordement-dates"]').exists()).toBe(false)
           expect(wrapper.text()).toContain('▲ plus = mieux')
         }
         expect(fetcher.mock.calls.some(([input]) => String(input).includes('/indicator-cohorts/') ||
@@ -323,6 +330,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
         await wrapper.findAll('.vues button').find((button) => button.text() === 'L’indicateur')!.trigger('click')
         await flushPromises()
         if (focal?.sources?.[0]) expect(wrapper.text()).toContain(focal.sources[0].name)
+        if (current.indicator === 'densite') expect(wrapper.text()).toContain('2026-06-30')
         await wrapper.findAll('.vues button').find((button) => button.text() === 'Repères')!.trigger('click')
         await flushPromises()
         expect(readItems.slice(warmedPageReadCount).map(({ item }) => ({ resource: item.resource,
@@ -366,7 +374,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
             territory_id: item.target.id, territory_type: item.target.type,
             label: resource('demographie', 'densite').label, unit: resource('demographie', 'densite').unit, direction: 'high',
             content_version: 'scalar-publication-v4', reference_content_version: 'reference-v7',
-            descriptor_version: 'scalar-descriptor-v3', value: 98765, status: 'measured',
+            descriptor_version: 'scalar-descriptor-v3', comparison_facet: 'densite', value: 98765, status: 'measured',
             ...(item.fields.includes('support_count') ? { support_count: 91, denominator_count: 100 } : {}),
             sources: [sourceFor('demographie', 'densite')] }
         })
@@ -679,6 +687,59 @@ describe('ordinary scalar consumers on semantic resources', () => {
     }
   })
 
+  it('reacquires a descriptor-mismatched comparison before accepting a same-publication retry', async () => {
+    let comparisonAttempts = 0
+    let factReads = 0
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata('demographie')))
+      if (url === '/api/resources/read-batch') {
+        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
+        return nativeBatchResponse(request.items, (item, declaration) => {
+          if (item.intent.kind === 'facts') factReads++
+          else comparisonAttempts++
+          const response = nativeReadFixture(item, declaration, {
+            territories: territoiresFixture as unknown as Array<Record<string, any>>,
+          })
+          if (item.intent.kind !== 'facts' && comparisonAttempts === 1) {
+            response.result.descriptor_version = 'stale-comparison-descriptor'
+          }
+          return response
+        })
+      }
+      throw new Error(`Unexpected scalar-page request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/demographie/densite?territoire=22001&niveau=commune')
+    await router.isReady()
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      throw new Error(`API-selected page requested static numeric facts: ${file}`)
+    }
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      expect(factReads).toBe(1)
+      expect(comparisonAttempts).toBe(1)
+      expect(wrapper.find('[data-testid="scalar-comparison-error"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="scalar-comparison-summary"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="scalar-comparison-retry"]').trigger('click')
+      await flushPromises()
+      expect(factReads).toBe(1)
+      expect(comparisonAttempts).toBe(2)
+      expect(wrapper.find('[data-testid="scalar-comparison-error"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="scalar-comparison-summary"]').exists()).toBe(true)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('keeps EPCI page-table ranks bound to the producer-published same-level comparison', async () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
@@ -687,10 +748,10 @@ describe('ordinary scalar consumers on semantic resources', () => {
     const memberIds = ['200000001', '200000002']
     const cohortFacts = cohortResult('demographie', 'densite', target, memberIds, [
       observation('demographie', 'densite', memberIds[0]!, 'measured', 901),
-      observation('demographie', 'densite', memberIds[1]!, 'measured', 101),
+      observation('demographie', 'densite', memberIds[1]!, 'not_available', null),
     ])
     const values = new Map([[memberIds[0]!, { status: 'measured', value: 901 }],
-      [memberIds[1]!, { status: 'measured', value: 101 }]])
+      [memberIds[1]!, { status: 'not_available', value: null }]])
     const requests: Array<Record<string, any>> = []
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -728,8 +789,8 @@ describe('ordinary scalar consumers on semantic resources', () => {
       expect(comparisonRead?.intent.members).toBeUndefined()
       expect(wrapper.get('[data-testid="scalar-comparison-summary"]').text()).toContain('Médiane API')
       const rows = wrapper.findAll('tbody tr').map((row) => row.text())
-      expect(rows.find((row) => row.includes('EPCI X'))).toContain('1er / 2')
-      expect(rows.find((row) => row.includes('EPCI Y'))).toContain('2e / 2')
+      expect(rows.find((row) => row.includes('EPCI X'))).toContain('1er / 1')
+      expect(wrapper.get('[data-testid="scalar-comparison-summary"]').text()).toContain('1 valeurs comparables')
       expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     } finally {
       wrapper.unmount()

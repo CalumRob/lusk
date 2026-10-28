@@ -11,7 +11,10 @@ import { createServer } from 'vite'
 for (const name of Object.keys(process.env)) if (name.startsWith('VITE_')) delete process.env[name]
 const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
+const branchAtStart = execFileSync('git', ['branch', '--show-current'], { cwd: repoRoot, encoding: 'utf8' }).trim()
 const headAtStart = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
+const statusAtStart = execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' }).trim()
+assert.equal(statusAtStart, '', 'Browser acceptance requires a clean committed source tree')
 const themes = ['demographie', 'economie', 'habitat', 'mobilite']
 const expectedPages = [
   'demographie/densite', 'demographie/evolution_1968', 'demographie/taille_menages',
@@ -33,6 +36,7 @@ function createHarness(resources, territories, fixtures) {
   let delayResource = null
   let delayedStartedResolve
   let delayedReleaseResolve
+  let forcedStatus = null
   let delayedStarted = new Promise((resolve) => { delayedStartedResolve = resolve })
   let delayedRelease = new Promise((resolve) => { delayedReleaseResolve = resolve })
 
@@ -57,6 +61,8 @@ function createHarness(resources, territories, fixtures) {
   return {
     requests, factReads, comparisonReads, unexpectedApi,
     failComparison() { failNextComparison = true },
+    forceStatus(resource, status) { forcedStatus = { resource, status } },
+    clearForcedStatus() { forcedStatus = null },
     delayFacts(resource) {
       delayResource = resource
       delayedStarted = new Promise((resolve) => { delayedStartedResolve = resolve })
@@ -90,7 +96,12 @@ function createHarness(resources, territories, fixtures) {
           await delayedRelease
         }
         const response = fixtures.nativeBatchResponse(body.items, (item, declaration) => {
-          const context = { territories: territories }
+          const context = { territories,
+            ...(forcedStatus?.resource === item.resource ? { facts: territories.map((territory) => ({
+              territoire: territory.territoire, type: territory.type, key: item.resource,
+              value: null, fact_status: forcedStatus.status,
+            })) } : {}),
+          }
           const data = fixtures.nativeReadFixture(item, declaration, context)
           return sentinel(data)
         })
@@ -116,7 +127,7 @@ try {
   const baseUrl = server.resolvedUrls.local[0]
   const fixtures = await server.ssrLoadModule('/src/__tests__/helpers/semanticApiFixtures.ts')
   const territoiresFixture = JSON.parse(await readFile(resolve(repoRoot, 'public/data/territoires.json'), 'utf8'))
-  const { formaterValeur } = await server.ssrLoadModule('/src/payload/selectors.ts')
+  const { formaterValeur, formaterRang } = await server.ssrLoadModule('/src/payload/selectors.ts')
   const resources = fixtures.nativeResources().filter((resource) => resource.shapes.length === 1 && resource.shapes[0] === 'scalar' &&
     resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
   const metadataByTheme = Object.fromEntries(await Promise.all(themes.map(async (theme) => {
@@ -139,6 +150,9 @@ try {
   staleMetadata.indicator_pages.densite.unit = 'unité éditoriale obsolète'
   staleMetadata.indicator_pages.densite.direction = 'low'
   staleMetadata.indicator_pages.densite.read_model = false
+  staleMetadata.source_records.serie_historique.sha256 = 'editorial-stale-source-hash'
+  staleMetadata.source_records.serie_historique.clocks = [{ name: 'Horloge éditoriale obsolète',
+    reference: 'mercredi réel de période scolaire 1999-01-01', frequency: 'factice' }]
   const harness = createHarness(resources, territoiresFixture, fixtures)
   browser = await chromium.launch({ headless: true,
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) })
@@ -182,6 +196,53 @@ try {
     return { ...territory, epci: selected[0] }
   }
   const routeEvidence = []
+  async function renderedRanks() {
+    return page.locator('tbody tr').evaluateAll((rows) => rows.map((row) => {
+      const href = row.querySelector('td a')?.getAttribute('href') ?? ''
+      const territoryId = decodeURIComponent(href.split('?')[0].split('/').at(-1) ?? '')
+      const cells = row.querySelectorAll('td')
+      return { territoryId, name: cells[0]?.innerText.trim() ?? '', rankText: cells[2]?.innerText.trim() ?? '' }
+    }))
+  }
+  async function assertRankTable(result, indicator) {
+    const expectedById = new Map(result.member_ranks.map((rank) => [rank.territory_id, rank]))
+    const initial = await renderedRanks()
+    const matched = initial.map((row) => {
+      const expected = expectedById.get(row.territoryId)
+      assert(expected, `${indicator} rendered a row without native member rank evidence: ${JSON.stringify(row)}`)
+      assert.equal(row.rankText, formaterRang(expected.rank, expected.rank_size),
+        `${indicator}/${row.territoryId} table rank must equal the native API peer rank`)
+      return { ...row, rank: expected.rank, rank_size: expected.rank_size, rank_ties: expected.rank_ties }
+    })
+    const visibleRankCount = matched.filter((row) => row.rank !== null).length
+    const nativeRankCount = result.member_ranks.filter((rank) => rank.rank !== null).length
+    assert.equal(visibleRankCount, nativeRankCount,
+      `${indicator} rendered rank count must equal actual native ranked peer evidence, not table row count`)
+    assert.equal(nativeRankCount, result.eligible_count,
+      `${indicator} native measured members must reconcile with eligible_count`)
+    for (const rank of result.member_ranks) {
+      if (rank.rank === null) {
+        assert.equal(rank.rank_size, null)
+        assert.equal(rank.rank_ties, null)
+      } else {
+        assert(Number.isInteger(rank.rank) && Number.isInteger(rank.rank_size) && Number.isInteger(rank.rank_ties))
+        assert.equal(rank.rank_size, result.eligible_count)
+        assert(rank.rank_ties >= 1 && rank.rank_ties <= rank.rank_size)
+        assert(rank.rank + rank.rank_ties <= rank.rank_size + 1)
+      }
+    }
+    await page.locator('.comparison-table-scroll thead').getByRole('button', { name: 'Rang', exact: true }).click()
+    const sorted = await renderedRanks()
+    const expectedOrder = [...matched].sort((left, right) => {
+      if (left.rank === null) return right.rank === null ? 0 : 1
+      if (right.rank === null) return -1
+      return left.rank - right.rank
+    }).map((row) => row.territoryId)
+    assert.deepEqual(sorted.map((row) => row.territoryId), expectedOrder,
+      `${indicator} table rank sort must use native rank order (unranked last)`)
+    return { rows: matched, renderedRankCount: visibleRankCount,
+      nativeRankCount, sortedTerritoryIds: sorted.map((row) => row.territoryId) }
+  }
   for (const spec of census) {
     const pageFocal = focusFor(spec)
     const factStart = harness.factReads.length
@@ -207,6 +268,16 @@ try {
     assert((await page.locator('body').innerText()).includes(spec.resource.unit), `${spec.indicator} must render its API unit`)
     const bodyText = await page.locator('body').innerText()
     const nativeFact = fixtures.nativeReadFixture(factItem, spec.resource, { territories: territoiresFixture })
+    const nativeComparison = fixtures.nativeReadFixture(comparisonItem, spec.resource, { territories: territoiresFixture })
+    const comparisonResult = nativeComparison.result
+    assert.equal(comparisonResult.selected_member_count, comparisonResult.member_ranks.length,
+      `${spec.indicator} API comparison must return exactly one rank/status row per selected member`)
+    const expectedEligible = (nativeFact.observations ?? []).filter((row) =>
+      row.status === 'measured' && Number.isFinite(row.value)).length
+    assert.equal(comparisonResult.eligible_count, expectedEligible,
+      `${spec.indicator} API comparison eligible count must agree with the acquired native facts`)
+    assert.equal(comparisonResult.member_ranks.filter((row) => row.rank !== null).length, expectedEligible,
+      `${spec.indicator} API peer ranks must represent measured members, including singleton populations`)
     const focalObservation = nativeFact.observations?.find((row) => row.territory.id === pageFocal.territoire)
     assert(focalObservation?.status === 'measured', `${spec.indicator} browser fixture needs a measured focal sentinel`)
     const expectedApiValue = formaterValeur({ value: Number(focalObservation.value) * 10 + 1234.5,
@@ -215,7 +286,19 @@ try {
       `${spec.indicator} must render changed API value ${expectedApiValue}: ${bodyText.slice(0, 1800)}`)
     assert(!(await page.locator('body').innerText()).includes('unité éditoriale obsolète'),
       'A stale scalar presentation unit must not replace the native descriptor unit')
-    const rankCount = rowCount
+    const median = comparisonResult.median === null ? null : comparisonResult.median * 10 + 1234.5
+    if (comparisonResult.status === 'available') {
+      assert(median !== null)
+      const expectedMedian = formaterValeur({ value: median, unit: spec.resource.unit })
+      const summary = await page.getByTestId('scalar-comparison-summary').innerText()
+      assert(summary.includes(expectedMedian) && summary.includes(String(comparisonResult.eligible_count)),
+        `${spec.indicator} summary must render the native API median and eligible count: ${summary}`)
+    } else {
+      assert.equal(comparisonResult.status, 'unavailable')
+      assert.equal(median, null)
+      assert(await page.getByTestId('scalar-comparison-unavailable').isVisible())
+    }
+    const rankEvidence = await assertRankTable(comparisonResult, spec.indicator)
     await page.getByRole('button', { name: 'Carte', exact: true }).click()
     await page.locator('.popup-carte-kpi').first().waitFor({ state: 'visible', timeout: 20000 })
     const mapText = await page.locator('.popup-carte').innerText()
@@ -226,24 +309,111 @@ try {
     const sourceText = await page.locator('body').innerText()
     const observedSource = focalObservation.sources?.[0]
     if (observedSource?.name) assert(sourceText.includes(observedSource.name), `${spec.indicator} must expose API provenance`)
+    if (spec.indicator === 'densite') {
+      assert(!sourceText.includes('Horloge éditoriale obsolète') && !sourceText.includes('1999-01-01'),
+        'Stale static source clocks must not enter native scalar source cards')
+      assert(observedSource?.reference_date && sourceText.includes(observedSource.reference_date),
+        'Native source reference date must be rendered from acquired scalar provenance')
+      assert(observedSource?.publication_date && sourceText.includes(observedSource.publication_date),
+        'Native source publication date must be rendered from acquired scalar provenance')
+    }
     await page.getByRole('button', { name: 'Repères', exact: true }).click()
     await page.waitForFunction(() => Boolean(document.querySelector('tbody tr')))
     routeEvidence.push({ theme: spec.theme, indicator: spec.indicator, unit: spec.resource.unit,
       nativeTarget: factItem.target, comparisonKind: comparisonItem.intent.kind, focal: pageFocal.territoire,
-      tableRows: rankCount, mapFact: mapText.slice(0, 500), provenance: observedSource?.name ?? null })
+      tableRows: rowCount, eligibleCount: comparisonResult.eligible_count, median: comparisonResult.median,
+      renderedRankCount: rankEvidence.renderedRankCount, nativeRanks: comparisonResult.member_ranks,
+      sortedTerritories: rankEvidence.sortedTerritoryIds, mapFact: mapText.slice(0, 500),
+      provenance: observedSource?.name ?? null, referenceDate: observedSource?.reference_date ?? null,
+      publicationDate: observedSource?.publication_date ?? null })
   }
 
-  // Published non-commune fixed comparison is bound at its own level.
+  // Published non-commune comparisons keep their own page/table population and rank evidence.
   const density = census.find(({ indicator }) => indicator === 'densite')
   assert(density)
-  const epci = territoiresFixture.find((territory) => territory.type === 'epci')
-  assert(epci)
-  const epciStart = harness.comparisonReads.length
-  await page.goto(`${baseUrl}indicateurs/demographie/densite?territoire=${epci.territoire}&niveau=epci&vue=reperes`,
+  async function verifyFixedLevel(level) {
+    const territory = territoiresFixture.find((item) => item.type === level)
+    assert(territory, `Browser fixture must contain a ${level} territory`)
+    const factsStart = harness.factReads.length
+    const comparisonStart = harness.comparisonReads.length
+    await page.goto(`${baseUrl}indicateurs/demographie/densite?territoire=${territory.territoire}&niveau=${level}&vue=reperes`,
+      { waitUntil: 'domcontentloaded' })
+    await page.locator('[data-testid="scalar-comparison-summary"], [data-testid="scalar-comparison-unavailable"]')
+      .first().waitFor({ state: 'visible', timeout: 20000 })
+    const factItem = harness.factReads.slice(factsStart).find((item) => item.resource === 'densite' &&
+      item.target.kind === 'territory_cohort')
+    const comparisonItem = harness.comparisonReads.slice(comparisonStart).find((item) => item.resource === 'densite')
+    assert.equal(factItem?.target.type, level, `${level} page must acquire native facts at its selected level`)
+    assert.equal(comparisonItem?.intent.kind, 'fixed_comparison')
+    assert.equal(comparisonItem?.target.type, level, `${level} page comparison must retain its native typed target`)
+    const comparison = fixtures.nativeReadFixture(comparisonItem, density.resource, { territories: territoiresFixture })
+    assert.equal(comparison.scope.kind, 'same_level')
+    assert.equal(comparison.scope.territory_type, level)
+    const ranks = await assertRankTable(comparison.result, `densite/${level}`)
+    return { level, territory: territory.territoire, scope: comparison.scope, median: comparison.result.median,
+      eligibleCount: comparison.result.eligible_count, memberRanks: comparison.result.member_ranks, ...ranks }
+  }
+  const epciEvidence = await verifyFixedLevel('epci')
+  const departementEvidence = await verifyFixedLevel('departement')
+
+  // The existing page/API-level intersection permits this regional fact, but
+  // scalar comparison policy does not declare a regional peer population.
+  const regionalPage = census.find(({ indicator, page, resource }) => indicator === 'stationnement_velo_par_voiture' &&
+    page.levels.includes('region') && resource.allowed_levels.includes('region'))
+  const bretagne = territoiresFixture.find((territory) => territory.type === 'region' && territory.territoire === '53')
+  assert(regionalPage && bretagne, 'Current regional page/fact intersection must remain discoverable')
+  const regionalFactStart = harness.factReads.length
+  const regionalComparisonStart = harness.comparisonReads.length
+  await page.goto(`${baseUrl}indicateurs/${regionalPage.theme}/${regionalPage.indicator}?territoire=${bretagne.territoire}&niveau=region&vue=reperes`,
     { waitUntil: 'domcontentloaded' })
-  await page.locator('[data-testid="scalar-comparison-summary"]').waitFor({ state: 'visible', timeout: 20000 })
-  assert.equal(harness.comparisonReads.slice(epciStart).at(-1)?.intent.kind, 'fixed_comparison')
-  assert.equal(harness.comparisonReads.slice(epciStart).at(-1)?.target.type, 'epci')
+  await page.locator('h1').filter({ hasText: regionalPage.page.label }).waitFor({ state: 'visible', timeout: 20000 })
+  const regionalFactItem = harness.factReads.slice(regionalFactStart).find((item) =>
+    item.resource === regionalPage.indicator && item.target.kind === 'territory_cohort')
+  assert.equal(regionalFactItem?.target.type, 'region')
+  assert.equal(harness.comparisonReads.length, regionalComparisonStart,
+    'Regional scalar facts must not imply a regional comparison population')
+  const regionalFacts = fixtures.nativeReadFixture(regionalFactItem, regionalPage.resource, { territories: territoiresFixture })
+  const regionalObservation = regionalFacts.observations.find((row) => row.territory.id === bretagne.territoire)
+  assert.equal(regionalObservation?.status, 'measured', 'Regional facts-only sentinel must have a native measured value')
+  const regionalApiValue = formaterValeur({ value: Number(regionalObservation.value) * 10 + 1234.5,
+    unit: regionalPage.resource.unit })
+  const regionalText = await page.locator('body').innerText()
+  assert(regionalText.includes(regionalApiValue) && regionalText.includes(regionalPage.resource.unit),
+    'Regional facts-only page must render the changed API fact/unit without peer evidence')
+  assert.equal(await page.locator('[data-testid="scalar-comparison-summary"]').count(), 0)
+  const regionalEvidence = { theme: regionalPage.theme, indicator: regionalPage.indicator,
+    target: regionalFactItem.target, status: regionalObservation.status, value: regionalObservation.value,
+    comparisonRequests: 0 }
+
+  const suppressionPage = census.find(({ indicator }) => indicator === 'part_passoires')
+  assert(suppressionPage)
+  const suppressionFocal = focusFor(suppressionPage)
+  const suppressionFacts = territoiresFixture.map((territory) => ({ territoire: territory.territoire,
+    type: territory.type, key: suppressionPage.indicator, value: null, fact_status: 'suppressed' }))
+  harness.forceStatus(suppressionPage.indicator, 'suppressed')
+  const suppressionFactStart = harness.factReads.length
+  const suppressionComparisonStart = harness.comparisonReads.length
+  await page.goto(`${baseUrl}indicateurs/${suppressionPage.theme}/${suppressionPage.indicator}?territoire=${suppressionFocal.territoire}&niveau=commune&epci=${suppressionFocal.epci}&vue=reperes`,
+    { waitUntil: 'domcontentloaded' })
+  await page.getByTestId('scalar-comparison-unavailable').waitFor({ state: 'visible', timeout: 20000 })
+  const suppressionFactItem = harness.factReads.slice(suppressionFactStart).find((item) =>
+    item.resource === suppressionPage.indicator && item.target.kind === 'territory_cohort')
+  const suppressionComparisonItem = harness.comparisonReads.slice(suppressionComparisonStart).find((item) =>
+    item.resource === suppressionPage.indicator)
+  assert(suppressionFactItem && suppressionComparisonItem)
+  const suppressionFact = fixtures.nativeReadFixture(suppressionFactItem, suppressionPage.resource,
+    { territories: territoiresFixture, facts: suppressionFacts })
+  const suppressionComparison = fixtures.nativeReadFixture(suppressionComparisonItem, suppressionPage.resource,
+    { territories: territoiresFixture, facts: suppressionFacts })
+  assert.equal(suppressionFact.observations.every((row) => row.status === 'suppressed'), true)
+  assert.equal(suppressionComparison.result.status, 'unavailable')
+  assert.equal(suppressionComparison.result.eligible_count, 0)
+  assert.equal(suppressionComparison.result.median, null)
+  assert(suppressionComparison.result.member_ranks.every((row) => row.rank === null && row.rank_size === null))
+  harness.clearForcedStatus()
+  const suppressionEvidence = { indicator: suppressionPage.indicator, factStatus: 'suppressed',
+    comparisonStatus: suppressionComparison.result.status, eligibleCount: suppressionComparison.result.eligible_count,
+    median: suppressionComparison.result.median, memberRanks: suppressionComparison.result.member_ranks }
 
   // Scope changes acquire only the newly filtered commune cohort/comparison.
   const secondEpci = territoiresFixture.find((territory) => territory.type === 'epci' && territory.territoire !== focal.epci)
@@ -321,16 +491,25 @@ try {
   assert.deepEqual(pageErrors, [], `Browser page errors: ${pageErrors.join('; ')}`)
   assert.deepEqual(externalFailures, [], `Unexpected external requests: ${externalFailures.join('; ')}`)
   const headAtEnd = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
+  const branchAtEnd = execFileSync('git', ['branch', '--show-current'], { cwd: repoRoot, encoding: 'utf8' }).trim()
+  const statusAtEnd = execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' }).trim()
   assert.equal(headAtEnd, headAtStart, 'HEAD must remain unchanged during browser verification')
-  console.log(JSON.stringify({ issue: '#855', headAtStart, headAtEnd, modeVariables: 'all VITE_* variables unset',
+  assert.equal(branchAtEnd, branchAtStart, 'Branch must remain unchanged during browser verification')
+  assert.equal(statusAtEnd, '', 'Source tree must remain clean throughout browser verification')
+  console.log(JSON.stringify({ issue: '#855', branchAtStart, branchAtEnd, headAtStart, headAtEnd,
+    sourceCleanBeforeAndAfter: true, modeVariables: 'all VITE_* variables unset',
     pageCount: census.length, pages: routeEvidence, checks: ['all 15 producer/API/page-grammar identities',
-      'API value, unit, comparison ranks, provenance, and indicator-page map', 'EPCI published same-level comparison',
+      'API value, unit, native median/status/rank/ties/provenance, table rank sort, and indicator-page map',
+      'EPCI and department published same-level comparison and table ranks',
+      'regional page/API fact intersection without a regional comparison population',
+      'suppressed native facts and unavailable comparison', 'native source dates supersede stale static clocks',
       'commune EPCI-filter scope change', 'focal outside cohort bounded read', 'HTTP 503 comparison-only retry',
       'late response rejection', '360px no page overflow'], counts: { apiRequests: harness.requests.length,
       scalarCohortReads: harness.factReads.filter((item) => item.target.kind === 'territory_cohort').length,
       focalReads: harness.factReads.filter((item) => item.target.kind === 'territory').length,
       comparisons: harness.comparisonReads.length, staticNumericReads: numericStatic.length, retiredCalls: retired.length,
-      unexpectedApiRequests: harness.unexpectedApi.length, pageErrors: pageErrors.length }, mobile }, null, 2))
+       unexpectedApiRequests: harness.unexpectedApi.length, pageErrors: pageErrors.length },
+    epciEvidence, departementEvidence, regionalEvidence, suppressionEvidence, mobile }, null, 2))
 } finally {
   await browser?.close()
   await server.close()

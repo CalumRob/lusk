@@ -369,7 +369,8 @@ const faitsScalaireApi = ref<Indicateur[]>([])
 const erreurScalaireApi = ref<PayloadError | null>(null)
 const chargementScalaireApi = ref(false)
 const retryScalaireApi = ref(0)
-const identiteScalairePage = ref<{ contentVersion: string; referenceContentVersion: string } | null>(null)
+const identiteScalairePage = ref<{ contentVersion: string; referenceContentVersion: string;
+  descriptorVersion?: string; comparisonFacet?: string } | null>(null)
 const contratScalairePageNatif = ref<NativeThemeFactContract | null>(null)
 const faitsScalairePagePrets = ref(false)
 const generationFaitsScalairePage = ref(0)
@@ -524,16 +525,18 @@ async ([discovered, isProfile, active, ordinaryPage, currentTheme, currentIndica
 let sequenceComparaisonScalairePage = 0
 watch(() => [pageScalaireApiActive.value, profileMode.value, faitsScalairePagePrets.value,
   generationFaitsScalairePage.value, identiteScalairePage.value?.contentVersion,
-  identiteScalairePage.value?.referenceContentVersion, theme.value, indicator.value,
+  identiteScalairePage.value?.referenceContentVersion, identiteScalairePage.value?.descriptorVersion,
+  identiteScalairePage.value?.comparisonFacet, theme.value, indicator.value,
   territoirePorte.value, niveauPorte.value, departementPorte.value, epciPorte.value,
   payloadLegacy.value.territoires.length, retryComparaisonScalairePage.value] as const,
-async ([active, isProfile, factsReady, _generation, contentVersion, referenceContentVersion,
+async ([active, isProfile, factsReady, _generation, contentVersion, referenceContentVersion, descriptorVersion, comparisonFacet,
   currentTheme, currentIndicator, selectedId, routeLevel, _department, _epci, territoryCount]) => {
   const sequence = ++sequenceComparaisonScalairePage
   comparaisonScalairePage.value = null
   erreurComparaisonScalairePage.value = false
   chargementComparaisonScalairePage.value = false
-  if (!active || isProfile || !factsReady || !contentVersion || !referenceContentVersion || !territoryCount ||
+  if (!active || isProfile || !factsReady || !contentVersion || !referenceContentVersion || !descriptorVersion ||
+      !comparisonFacet || !territoryCount ||
       erreurScalaireApi.value || !metadataScalaireApi.value) return
   const pageMetadata = page.value
   if (!pageMetadata || pageMetadata.indicator !== currentIndicator || pageMetadata.family !== 'scalar') return
@@ -555,7 +558,7 @@ async ([active, isProfile, factsReady, _generation, contentVersion, referenceCon
   try {
     const result = await chargerComparaisonsScalaires([currentIndicator], currentTheme as Theme,
       { [currentIndicator]: pageMetadata }, focal, payloadLegacy.value.territoires, request,
-      { contentVersion, referenceContentVersion }, true, catalogueScalaireApi.value)
+      { contentVersion, referenceContentVersion, descriptorVersion, comparisonFacet }, true, catalogueScalaireApi.value)
     if (sequence === sequenceComparaisonScalairePage) comparaisonScalairePage.value = result[currentIndicator] ?? null
   } catch {
     if (sequence === sequenceComparaisonScalairePage) erreurComparaisonScalairePage.value = true
@@ -1067,9 +1070,9 @@ const sources = computed(() => {
         url: existing?.url ?? null, licence: existing?.licence ?? null,
         vintage: representative?.version ?? 'Plusieurs millésimes',
         freshness: representative?.publicationDate ?? '—',
-        sha256: existing?.sha256 ?? null, dateReference: representative?.referenceDate ?? null,
+        sha256: null, dateReference: representative?.referenceDate ?? null,
         datePublication: representative?.publicationDate ?? null, vintages: apiVintages,
-        clocks: existing?.clocks ?? [], caveat: existing?.caveat ?? null,
+        clocks: [], caveat: existing?.caveat ?? null,
         methodology: existing?.methodology, consumers: existing?.consumers ?? [],
         replie: existing?.replie ?? false, themes: existing?.themes ?? [theme.value as Theme],
       }
@@ -1128,7 +1131,7 @@ const model = computed(() => {
     const comparisonMatchesScope = Boolean(evidence && evidence.selectedMemberCount === expectedMembers.length &&
       evidence.memberRanks.length === expectedMembers.length &&
       expectedMembers.every((member) => ranks.has(member.territoire)) &&
-      rankedMembers === (evidence.eligibleCount >= 2 ? evidence.eligibleCount : 0))
+      rankedMembers === (evidence.eligibleCount >= 1 ? evidence.eligibleCount : 0))
     let rows = calculated.rows.map((row) => ({ ...row,
       rang: comparisonMatchesScope ? ranks.get(row.territoire.territoire)?.rank ?? null : null,
       rangTaille: comparisonMatchesScope ? ranks.get(row.territoire.territoire)?.rankSize ?? null : null,

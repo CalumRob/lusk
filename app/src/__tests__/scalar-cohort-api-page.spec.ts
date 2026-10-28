@@ -127,7 +127,7 @@ function comparisonFixture(theme: string, indicator: string, item: SemanticReadI
     : (sorted[sorted.length / 2 - 1]! + sorted[sorted.length / 2]!) / 2
   const rank = (id: string) => {
     const value = values.get(id)
-    if (eligible.length < 2 || value?.status !== 'measured' || value.value === null) return null
+    if (eligible.length < 1 || value?.status !== 'measured' || value.value === null) return null
     const better = eligible.filter((row) => direction === 'high' ? row.value > value.value! : row.value < value.value!).length
     return { territory_id: id, rank: better + 1, rank_size: eligible.length,
       rank_ties: eligible.filter((row) => row.value === value.value).length }
@@ -219,7 +219,8 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     expect(request.items[0].fields).toEqual(['value'])
     expect(acquired.facts.map((fact) => fact.territoire)).toEqual(['22001', '22002'])
     expect(acquired.facts.every((fact) => !('support_count' in fact) && !('denominator_count' in fact))).toBe(true)
-    expect(acquired.identity).toEqual({ contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' })
+    expect(acquired.identity).toEqual({ contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7',
+      descriptorVersion: 'scalar-descriptor-v3', comparisonFacet: 'densite' })
     expect(page.levels).toContain('commune')
   })
 
@@ -233,7 +234,8 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     const result = await chargerCohortePageScalaire(indicator, 'mobilite', metadata, focal, 'commune',
       territoiresFixture, { department: '22', epci: '200000001' }, [declaration('mobilite', indicator)])
     expect(result.facts).toEqual([])
-    expect(result.identity).toEqual({ contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' })
+    expect(result.identity).toEqual({ contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7',
+      descriptorVersion: 'scalar-descriptor-v3', comparisonFacet: indicator })
     expect(result.contract.completeness).toBe('sparse')
     const request = JSON.parse((fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')?.[1] as RequestInit).body as string)
     expect(request.items[0]).toMatchObject({ resource: indicator, fields: ['value'],

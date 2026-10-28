@@ -68,7 +68,12 @@ export type ScalarComparisonRequest =
   | { kind: 'fixed'; scope: { kind: 'same_level'; territoryType: TerritoireType; memberCount: number; label: string | null } }
   | { kind: 'selected'; members: Array<{ type: TerritoireType; id: string }>; scope: { kind: 'explicit_selection'; territoryType: TerritoireType; memberCount: number; label: string | null } }
 
-interface ScalarIdentity { contentVersion?: string; referenceContentVersion?: string }
+interface ScalarIdentity {
+  contentVersion?: string
+  referenceContentVersion?: string
+  descriptorVersion?: string
+  comparisonFacet?: string
+}
 
 export function scalarCohortEnabled(env: Record<string, string | undefined>): boolean {
   return env.VITE_SCALAR_COHORT_API === '1'
@@ -255,6 +260,7 @@ function adapterComparaisonScalaire(data: Row, indicator: string, page: Indicato
   const expectedDirection = page.comparison?.direction ?? page.direction
   const direction = result?.direction
   const facet = page.comparison?.indicator ?? indicator
+  const expectedFacet = identity?.comparisonFacet ?? facet
   const scopeIdentityValid = isRecord(scope) && scope.kind === request.scope.kind &&
     scope.member_count === request.scope.memberCount &&
     (request.scope.kind === 'explicit_selection'
@@ -268,7 +274,7 @@ function adapterComparaisonScalaire(data: Row, indicator: string, page: Indicato
   const rankValid = rank === null
     ? rankSize === null
     : Number.isSafeInteger(rank) && Number.isSafeInteger(rankSize) && (rank as number) >= 1 &&
-      (rank as number) <= (rankSize as number) && (rankSize as number) >= 2 && rankSize === eligible && result?.status === 'available'
+       (rank as number) <= (rankSize as number) && (rankSize as number) >= 1 && rankSize === eligible && result?.status === 'available'
   if (data.contract !== 'indicator-comparison-v1' || data.indicator_id !== indicator || data.shape !== 'scalar' ||
       !isNonEmptyText(data.content_version) || !isNonEmptyText(data.reference_content_version) ||
       (identity?.contentVersion !== undefined && data.content_version !== identity.contentVersion) ||
@@ -277,8 +283,9 @@ function adapterComparaisonScalaire(data: Row, indicator: string, page: Indicato
       JSON.stringify(actualSelection) !== JSON.stringify(expectedSelectionIdentity) || !scopeIdentityValid ||
       !result || result.indicator_id !== indicator || !['available', 'unavailable'].includes(String(result.status)) ||
       result.unit !== page.unit || direction !== expectedDirection ||
-      (direction !== 'high' && direction !== 'low') || result.source_facet !== facet ||
-      !isNonEmptyText(result.descriptor_version) || !countsValid ||
+      (direction !== 'high' && direction !== 'low') || result.source_facet !== expectedFacet ||
+      !isNonEmptyText(result.descriptor_version) ||
+      (identity?.descriptorVersion !== undefined && result.descriptor_version !== identity.descriptorVersion) || !countsValid ||
       (result.status === 'unavailable' && (rank !== null || rankSize !== null)) || !rankValid ||
       (rank !== null && !isNonEmptyText(request.scope.label))) {
     throw new PayloadError('validation', path, 'La comparaison scalaire ne reflète pas la ressource, le territoire ou le groupe demandé.')
@@ -317,7 +324,7 @@ function adapterComparaisonScalaire(data: Row, indicator: string, page: Indicato
     }
     const idsMatch = seenRankIds.size === expectedIds.size && [...expectedIds].every((id) => seenRankIds.has(id))
     const ranked = parsedRanks.filter((item) => item.rank !== null)
-    const expectedRanked = (eligible as number) >= 2 ? eligible as number : 0
+    const expectedRanked = (eligible as number) >= 1 ? eligible as number : 0
     const nativeSources: ScalarComparisonSource[] = []
     const allowedSources = new Set(declaredSources)
     if (Array.isArray(comparisonSourcesRaw)) {
@@ -341,7 +348,7 @@ function adapterComparaisonScalaire(data: Row, indicator: string, page: Indicato
           focalMemberRank.rankSize !== rankSize || (rankTies !== undefined && focalMemberRank.rankTies !== rankTies))) ||
         (focalMember && rank === null && focalMemberRank?.rank !== null) ||
         ((eligible as number) === 0 ? medianValue !== null : !isFiniteNumber(medianValue)) ||
-        ((eligible as number) === 0 ? nativeSources.length !== 0 : nativeSources.length === 0) ||
+        ((eligible as number) > 0 && nativeSources.length === 0) ||
         new Set(nativeSources.map((source) => `${source.sourceId}\u0000${source.vintageId}`)).size !== nativeSources.length ||
         (rankTies !== undefined && rankTies !== null &&
           (!Number.isSafeInteger(rankTies) || (rankTies as number) < 1)) ||
@@ -505,6 +512,10 @@ function adapterCohorteScalaire(data: Row, declaration: SemanticResourceDeclarat
   if (identity) {
     identity.contentVersion = data.content_version
     identity.referenceContentVersion = data.reference_content_version
+    if (nativePageDescriptor) {
+      identity.descriptorVersion = descriptor.descriptor_version as string
+      identity.comparisonFacet = descriptor.comparison_facet as string
+    }
   }
 
   const seen = new Set<string>()
@@ -586,7 +597,7 @@ export function indicateursScalairesPourNiveau(raw: unknown, level: TerritoireTy
 export interface ScalarCohortsWithComparisons {
   facts: Indicateur[]
   comparisons: Record<string, ScalarComparisonRank | null>
-  identity: { contentVersion: string; referenceContentVersion: string }
+  identity: { contentVersion: string; referenceContentVersion: string; descriptorVersion?: string; comparisonFacet?: string }
   nativeContracts: Record<string, NativeThemeFactContract>
   declarations: SemanticResourceDeclaration[]
 }
@@ -647,7 +658,9 @@ async function chargerCohortesEtComparaisonsScalaires(
   }
   return { facts: cohorts.flat(), comparisons, nativeContracts,
     declarations: pages.map(({ declaration }) => declaration!),
-    identity: { contentVersion: [...versions][0]!, referenceContentVersion: [...territoryVersions][0]! } }
+    identity: { contentVersion: [...versions][0]!, referenceContentVersion: [...territoryVersions][0]!,
+      ...(identities[0]?.descriptorVersion ? { descriptorVersion: identities[0].descriptorVersion } : {}),
+      ...(identities[0]?.comparisonFacet ? { comparisonFacet: identities[0].comparisonFacet } : {}) } }
 }
 
 /** Acquire the producer-registered scalar facts for one selected theme together. */
@@ -725,7 +738,8 @@ export async function chargerFaitFocalPageScalaire(
     : !('support_count' in data) && !('denominator_count' in data)
   if (data.indicator_id !== indicator || data.territory_id !== focal.territoire || data.territory_type !== focal.type ||
       data.label !== contract.label || data.unit !== contract.unit || data.direction !== contract.direction ||
-      data.descriptor_version !== contract.descriptorVersion || data.content_version !== identity.contentVersion ||
+      data.descriptor_version !== contract.descriptorVersion || data.comparison_facet !== contract.comparisonFacet ||
+      data.content_version !== identity.contentVersion ||
       data.content_version !== contract.contentVersion ||
       data.reference_content_version !== identity.referenceContentVersion ||
       data.reference_content_version !== contract.referenceContentVersion || !isNonEmptyText(data.label) ||
