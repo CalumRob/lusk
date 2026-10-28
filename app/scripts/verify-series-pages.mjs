@@ -324,8 +324,16 @@ try {
           assert.equal(await rendered.getAttribute('data-value'), String(focalPoint.value),
             `${spec.indicator} focal point at ${activeCoordinate} must bind the sentinel API value`)
         } else {
-          assert.equal(await page.locator(`[data-etape="${activeCoordinate}"]`).getAttribute('data-etat'), 'sans-valeur',
-            `${spec.indicator} missing ${activeCoordinate} step must render as a no-value fact, never zero`)
+          if (await rendered.count()) {
+            assert.equal(await rendered.getAttribute('data-value'), null,
+              `${spec.indicator} missing ${activeCoordinate} focal point must not invent a value`)
+          }
+          const comparison = (expected.read.comparison?.axis_comparisons ?? [])
+            .find((row) => row.axis === activeCoordinate)
+          if (comparison?.status !== 'available') {
+            assert.equal(await page.locator(`[data-etape="${activeCoordinate}"]`).getAttribute('data-etat'), 'sans-valeur',
+              `${spec.indicator} missing ${activeCoordinate} step must render as a no-value fact, never zero`)
+          }
         }
       }
       // Native per-step medians render from axis_comparisons, not browser math.
