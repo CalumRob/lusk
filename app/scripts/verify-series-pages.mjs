@@ -81,6 +81,7 @@ function createHarness(resources, territories, fixtures) {
   const servedBatches = []
   let failNextBatch = false
   let failNextComparisonOnly = false
+  let corruptNextSeriesComparison = false
   let anonymizeNextSeriesSources = false
   let delayNextResource = null
   let delayedStartedResolve
@@ -103,6 +104,7 @@ function createHarness(resources, territories, fixtures) {
     requests, factReads, comparisonReads, unexpectedApi, servedBatches,
     failNextBatchOnce() { failNextBatch = true },
     failNextComparisonOnlyOnce() { failNextComparisonOnly = true },
+    corruptNextSeriesComparisonOnce() { corruptNextSeriesComparison = true },
     anonymizeNextSeriesSourcesOnce() { anonymizeNextSeriesSources = true },
     delayNextBatch(resource) {
       delayNextResource = resource
@@ -148,6 +150,16 @@ function createHarness(resources, territories, fixtures) {
           return sentinelSeriesData(data)
         })
         const parsed = JSON.parse(await response.text())
+        if (corruptNextSeriesComparison) {
+          corruptNextSeriesComparison = false
+          const seriesData = parsed.results.find((result: any) => result.data.shape === 'ordered_series')?.data
+          const comparison = seriesData?.result?.axis_comparisons?.[0]
+          if (comparison && Array.isArray(comparison.member_ranks) && comparison.member_ranks[0]) {
+            comparison.member_ranks[0].rank = 999
+            await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(parsed) })
+            return
+          }
+        }
         if (anonymizeNextSeriesSources && body.items.some((item) =>
           resources.find((candidate) => candidate.resource_id === item.resource)?.shapes?.includes('ordered_series'))) {
           anonymizeNextSeriesSources = false
@@ -540,6 +552,35 @@ try {
   await page.getByRole('button', { name: 'Réessayer' }).click()
   await page.locator('figure[data-renderer="trajectory"]').waitFor({ state: 'visible', timeout: 20000 })
   assert.equal(await page.locator('[role="alert"]').count(), 0, 'the forced retry must recover the page')
+
+  // Comparison-only failure for a representative shared-batch page: the
+  // corrupt comparison evidence is rejected alone, the validated facts stay
+  // rendered, and the retry re-reads only the comparison (a single-item batch),
+  // first through a real HTTP 503, then to recovery — fact reads never repeat.
+  harness.corruptNextSeriesComparisonOnce()
+  await page.goto(`${baseUrl}indicateurs/milieux/conso_enaf_annuel?territoire=22001&niveau=commune&departement=22&vue=reperes`,
+    { waitUntil: 'domcontentloaded' })
+  await page.locator('h1').filter({ hasText: 'Consommation' }).waitFor({ state: 'visible', timeout: 20000 })
+  await page.getByTestId('series-comparison-error').waitFor({ state: 'visible', timeout: 20000 })
+  assert((await page.locator('.trajectoire-territoire-point').count()) > 0,
+    'the validated facts must stay rendered while the comparison alone is rejected')
+  const factReadsAtFailure = harness.factReads.length
+  harness.failNextComparisonOnlyOnce()
+  await page.getByRole('button', { name: 'Réessayer la comparaison' }).click()
+  await page.getByTestId('series-comparison-error').waitFor({ state: 'visible', timeout: 20000 })
+  assert.equal(harness.factReads.length, factReadsAtFailure,
+    'a comparison-only 503 retry must not reread facts')
+  assert((await page.locator('.trajectoire-territoire-point').count()) > 0,
+    'the facts must stay rendered through a comparison-only 503 retry')
+  await page.getByRole('button', { name: 'Réessayer la comparaison' }).click()
+  await page.locator('figure[data-renderer="trajectory"]').waitFor({ state: 'visible', timeout: 20000 })
+  await page.waitForTimeout(250)
+  assert.equal(await page.getByTestId('series-comparison-error').count(), 0,
+    'the recovered comparison clears the error state')
+  assert.equal(harness.factReads.length, factReadsAtFailure,
+    'the recovered comparison must not reread facts')
+  assert((await page.locator('.trajectoire-mediane-point').count()) > 0,
+    'the recovered comparison renders the native per-step medians')
 
   // Comparison-only HTTP failure keeps acquired facts; the retry re-reads only
   // the comparison evidence (raccordement's separately acquired comparison).
