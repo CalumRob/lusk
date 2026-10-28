@@ -47,8 +47,9 @@ const captures = readdirSync(resolve(out, 'native-tmp'), { recursive: true })
   .map((entry) => resolve(out, 'native-tmp', String(entry)))
 assert.ok(captures.length >= 5, `Expected at least five native captures, got ${captures.length}`)
 
-const vitest = spawnSync('npx.cmd', ['vitest', 'run', 'src/__tests__/native-series-semantic-bridge.spec.ts',
-  '--reporter=json', '--outputFile', resolve(out, 'native-bridge.json')], {
+const vitest = spawnSync(process.execPath, ['node_modules/vitest/vitest.mjs', 'run',
+  'src/__tests__/native-series-semantic-bridge.spec.ts', '--reporter=json',
+  '--outputFile', resolve(out, 'native-bridge.json')], {
   cwd: appRoot, encoding: 'utf8',
   env: { ...process.env, LUSK_NATIVE_SERIES_FAMILY_CAPTURES: captures.join(';') },
 })
