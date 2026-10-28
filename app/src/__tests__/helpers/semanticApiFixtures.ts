@@ -464,6 +464,9 @@ function nativeScalarComparison(item: Record<string, any>, resource: Resource,
     rank_size: focalInSelection && rankFor(focalObservation?.value ?? null) !== null ? eligible.length : null,
     comparison_sources: [...sourceMap.values()],
   }
+  if (item.fields?.includes('rank_ties')) {
+    result.rank_ties = focalInSelection ? tiesFor(focalObservation?.value ?? null) : null
+  }
   if (item.fields?.includes('member_ranks')) {
     result.member_ranks = observed.map(({ member, value }) => {
       const rank = rankFor(value)
@@ -859,17 +862,18 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
       rank: null, rank_size: null }
     const dualScalarSeries = shapes.includes('scalar') && isSeries
     const scalarVersions = scalarFacetVersions(resource, version, referenceVersion)
-    const scalarFacet = dualScalarSeries ? { shape: 'scalar', source_facet: resource.indicator_id,
-      ...scalarVersions, descriptor: scalarFacetDescriptor(resource, scalarVersions.descriptor_version),
-      ...(selected ? {} : { comparison_content_version: `${resource.resource_id}-scalar-comparison-fixture-v1` }),
-      selection: selected, scope: selected ? { kind: 'explicit_selection', member_count: selected.length }
-        : { kind: target.type === 'commune' ? 'density_class' : 'same_level',
-          territory_type: target.type, density_class_code: focal?.classe_densite_code ?? null,
-          member_count: cohort.length },
-      result: { indicator_id: resource.indicator_id, source_facet: resource.indicator_id,
-        status: 'unavailable', reason: 'fixture_unavailable', direction: resource.direction,
-        descriptor_version: scalarVersions.descriptor_version, selected_member_count: cohort.length,
-        eligible_count: 0, missing_count: cohort.length, rank: null, rank_size: null } } : undefined
+    const scalarComparison = dualScalarSeries
+      ? nativeScalarComparison(item, { ...resource, shapes: ['scalar'] }, context,
+        scalarVersions.content_version, scalarVersions.reference_content_version,
+        scalarVersions.descriptor_version)
+      : undefined
+    const scalarFacet = scalarComparison ? { shape: 'scalar', source_facet: resource.indicator_id,
+      content_version: scalarVersions.content_version,
+      reference_content_version: scalarVersions.reference_content_version,
+      descriptor_version: scalarVersions.descriptor_version,
+      descriptor: scalarFacetDescriptor(resource, scalarVersions.descriptor_version),
+      selection: scalarComparison.selection, scope: scalarComparison.scope,
+      result: scalarComparison.result } : undefined
     return { ...shared, contract: 'indicator-comparison-v1', indicator_id: resource.indicator_id, shape,
       content_version: version, reference_content_version: referenceVersion, selection: selected,
       scope: selected ? { kind: 'explicit_selection', member_count: selected.length }
@@ -1050,7 +1054,11 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
         availability: 'complete', points: pointsFor(member) })) }
     if (shapes.includes('scalar')) {
       const scalar = nativeReadFixture(item, { ...resource, shapes: ['scalar'] }, context)
-      response.scalar_facet = scalar
+      const scalarVersions = scalarFacetVersions(resource, version, referenceVersion)
+      response.scalar_facet = { ...scalar, content_version: scalarVersions.content_version,
+        reference_content_version: scalarVersions.reference_content_version,
+        descriptor_version: scalarVersions.descriptor_version,
+        descriptor: scalarFacetDescriptor(resource, scalarVersions.descriptor_version) }
     }
     return response
   }
@@ -1127,17 +1135,18 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
       comparison_point: page.comparison?.detail ?? page.comparison?.dimension ?? null,
        points, scope_series: [], context: null, named_references: [], availability: facts.length ? 'observed' : 'no_record' }
     if (shapes.includes('scalar')) {
-      // Emit a deterministic synthetic pooled observation with producer-owned
-      // source identity/clock. It is not copied from a checked-in curve and is
-      // not evidence of a live publication or frontend publication parity.
+      // Emit the producer fixture's pooled scalar observation separately from
+      // the annual points, retaining its own source clock and fact value.
       const pooledSourceFact = facts.find((fact) => fact.detail === null || fact.detail === undefined)
       const scalarSource = pooledSourceFact ? sourceFor(resource, pooledSourceFact, target) : null
       const scalarVersions = scalarFacetVersions(resource, version, referenceVersion)
       response.scalar_facet = { shape: 'scalar', source_facet: resource.indicator_id, ...scalarVersions,
         descriptor: scalarFacetDescriptor(resource, scalarVersions.descriptor_version),
         observation: { territory_id: target.id, territory_type: target.type,
-          status: scalarSource ? 'measured' : 'unavailable', value: scalarSource ? 700 : null,
-          support_count: scalarSource ? 12 : null, denominator_count: scalarSource ? 20 : null,
+          status: scalarSource ? 'measured' : 'unavailable',
+          value: scalarSource && pooledSourceFact?.value !== null ? Number(pooledSourceFact?.value) : null,
+          support_count: scalarSource ? pooledSourceFact?.support_count ?? pooledSourceFact?.n ?? null : null,
+          denominator_count: scalarSource ? pooledSourceFact?.denominator_count ?? null : null,
           sources: scalarSource ? [{ source_id: scalarSource.source_id, name: scalarSource.name,
             vintage_id: scalarSource.vintage_id, version: scalarSource.version,
             reference_date: scalarSource.reference_date, publication_date: scalarSource.publication_date }] : [] } }

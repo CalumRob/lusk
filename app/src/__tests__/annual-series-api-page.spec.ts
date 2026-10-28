@@ -437,6 +437,98 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
         .toBe(true)
     } finally { wrapper.unmount() }
   })
+
+  it.each(['series', 'scalar'] as const)(
+    'refreshes only the mounted prix_m2 scope after the %s publication changes', async (changedFacet) => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    const requests: Array<Array<Record<string, any>>> = []
+    let publication = 1
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path === '/api/resources') return nativeCatalogueResponse()
+      if (path !== '/api/resources/read-batch') throw new Error(`unexpected network request: ${path}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      requests.push(items)
+      return nativeBatchResponse(items, (item, resource) => {
+        const data = nativeReadFixture(item, resource, { territories: territoiresFixture })
+        if (publication === 2) {
+          if (changedFacet === 'series') {
+            data.content_version = 'prix_m2-fixture-publication-v2'
+            if (data.publication_id) data.publication_id = 'prix_m2-fixture-publication-v2'
+          }
+          if (data.scalar_facet) {
+            data.scalar_facet.content_version = changedFacet === 'scalar'
+              ? 'prix_m2-fixture-publication-v2-scalar-facet-v1'
+              : 'prix_m2-fixture-publication-v1-scalar-facet-v1'
+            data.scalar_facet.reference_content_version = 'semantic-reference-fixture-v1'
+          }
+        }
+        if (publication === 2 && changedFacet === 'series' &&
+            item.target.kind === 'territory' && item.intent.kind === 'facts') {
+          data.points = data.points.map((point: Record<string, any>) => ({ ...point,
+            value: point.value === null ? null : point.value + 100 }))
+        }
+        if (publication === 2 && changedFacet === 'series' && Array.isArray(data.series)) {
+          data.series = data.series.map((group: Record<string, any>) => ({ ...group,
+            points: group.points.map((point: Record<string, any>) => ({ ...point,
+              value: point.value === null ? null : point.value + 100 })) }))
+        }
+        if (publication === 2 && changedFacet === 'series' && item.intent.kind !== 'facts') {
+          data.content_version = 'prix_m2-fixture-publication-v2'
+        }
+        return data
+      })
+    })
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { habitat: [] } }),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      expect(requests).toHaveLength(1)
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=29001&niveau=commune&departement=29')
+      await flushPromises()
+      expect(requests).toHaveLength(2)
+      const siblingValues = wrapper.findAll('.trajectoire-territoire-point')
+        .map((point) => Number(point.attributes('data-value')))
+      publication = 2
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22')
+      await flushPromises()
+      expect(requests).toHaveLength(3)
+      expect(requests[2]).toHaveLength(1)
+      expect(requests[2]?.[0]?.intent.kind).toBe('facts')
+      expect(wrapper.get('[data-testid="series-comparison-error"]').text()).toContain('publication a changé')
+      expect(wrapper.get('[data-testid="series-comparison-error"] button').text()).toContain('Actualiser les faits')
+      const staleValues = wrapper.findAll('.trajectoire-territoire-point')
+        .map((point) => Number(point.attributes('data-value')))
+      await wrapper.get('[data-testid="series-comparison-error"] button').trigger('click')
+      await flushPromises()
+      expect(requests).toHaveLength(4)
+      expect(requests[3]).toHaveLength(3)
+      expect(requests[3]?.map((item) => item.intent.kind)).toEqual(['facts', 'facts', 'selected_comparison'])
+      expect(wrapper.find('[data-testid="series-comparison-error"]').exists()).toBe(false)
+      const refreshedValues = wrapper.findAll('.trajectoire-territoire-point')
+        .map((point) => Number(point.attributes('data-value')))
+      expect(refreshedValues).toEqual(changedFacet === 'series'
+        ? staleValues.map((value) => value + 100) : staleValues)
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=29001&niveau=commune&departement=29')
+      await flushPromises()
+      expect(requests).toHaveLength(4)
+      expect(wrapper.findAll('.trajectoire-territoire-point').map((point) => Number(point.attributes('data-value'))))
+        .toEqual(siblingValues)
+    } finally { wrapper.unmount() }
+    })
   it('waits for delayed metadata before choosing a series route when both API gates are enabled', async () => {
     let publishMetadata!: (metadata: typeof metadataMilieux) => void
     const metadata = new Promise<typeof metadataMilieux>((resolve) => { publishMetadata = resolve })

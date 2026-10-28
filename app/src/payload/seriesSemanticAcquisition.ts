@@ -40,6 +40,7 @@ export interface OrderedSeriesFactsEvidence {
 export interface OrderedSeriesSemanticSession {
   acquire(input: OrderedSeriesAcquireInput): Promise<OrderedSeriesRead>
   clearCohort(input: Pick<OrderedSeriesAcquireInput, 'resource' | 'level' | 'includeScalarFacet' | 'departmentId' | 'epciId'>): void
+  refresh(input: OrderedSeriesAcquireInput): Promise<OrderedSeriesRead>
 }
 
 export interface OrderedSeriesAcquireInput {
@@ -77,6 +78,16 @@ export class SeriesComparisonRejectedError extends Error {
   constructor(message: string, readonly facts: OrderedSeriesFactsEvidence) {
     super(message)
     this.name = 'SeriesComparisonRejectedError'
+  }
+}
+
+/** A native owner clock changed underneath admitted facts. Unlike a transient
+ *  comparison failure, this requires a scoped facts refresh before retrying. */
+export class SeriesPublicationMismatchError extends Error {
+  constructor(readonly facet: 'series' | 'scalar', message: string,
+    readonly facts?: OrderedSeriesFactsEvidence) {
+    super(message)
+    this.name = 'SeriesPublicationMismatchError'
   }
 }
 
@@ -166,6 +177,20 @@ function comparisonItem(input: {
       : { kind: 'fixed_comparison', context: 'default' },
     fields,
   }
+}
+
+function publicationMismatch(comparisonData: Row, facts: OrderedSeriesFactsEvidence):
+  'series' | 'scalar' | null {
+  if (text(comparisonData.content_version) && comparisonData.content_version !== facts.content_version ||
+      text(comparisonData.reference_content_version) &&
+        comparisonData.reference_content_version !== facts.reference_content_version) return 'series'
+  if (facts.scalar_facet && record(comparisonData.scalar_facet)) {
+    const scalar = comparisonData.scalar_facet
+    const admitted = facts.scalar_facet
+    const expectedVersion = admitted.cohort?.content_version
+    if (text(expectedVersion) && text(scalar.content_version) && scalar.content_version !== expectedVersion) return 'scalar'
+  }
+  return null
 }
 
 function scopedMembers(input: {
@@ -354,6 +379,9 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
     if (cached) return cached
     try {
       const [comparisonData] = await lireRessourcesBatch([comparisonItem(input, members)])
+      const mismatch = publicationMismatch(comparisonData, admittedFocal)
+      if (mismatch) throw new SeriesPublicationMismatchError(mismatch,
+        'La publication native a changé depuis le chargement des faits.', admittedFocal)
       const comparison = bindComparisonEvidence(comparisonData, {
         descriptor: admittedFocal.descriptor, contentVersion: admittedFocal.content_version,
         referenceContentVersion: admittedFocal.reference_content_version,
@@ -367,6 +395,7 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
       if (entries.cohortGenerations.get(key) === generation) entries.comparisons.set(compareKey, result)
       return result
     } catch (cause) {
+      if (cause instanceof SeriesPublicationMismatchError) throw cause
       throw new SeriesComparisonRejectedError(cause instanceof Error ? cause.message : String(cause), admittedFocal)
     }
   }
@@ -382,6 +411,19 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
       [focal] = await lireRessourcesBatch([focalItem])
     } catch (cause) {
       throw new SeriesCohortAvailableError('Les faits du territoire focal sont indisponibles.', admittedCohort)
+    }
+    if ((text(focal.content_version) && focal.content_version !== admittedCohort.content_version) ||
+        (text(focal.reference_content_version) &&
+          focal.reference_content_version !== admittedCohort.reference_content_version)) {
+      throw new SeriesPublicationMismatchError('series',
+        'La publication native a changé depuis le chargement des faits.', admittedCohort)
+    }
+    const admittedScalarCohort = admittedCohort.scalar_facet?.cohort
+    if (input.includeScalarFacet && record(admittedScalarCohort) && record(focal.scalar_facet) &&
+        text(admittedScalarCohort.content_version) && text(focal.scalar_facet.content_version) &&
+        focal.scalar_facet.content_version !== admittedScalarCohort.content_version) {
+      throw new SeriesPublicationMismatchError('scalar',
+        'La publication de la facette scalaire a changé depuis le chargement des faits.', admittedCohort)
     }
     cohort = cohortResponseFromFacts(admittedCohort, input)
   } else {
@@ -740,6 +782,17 @@ export function createOrderedSeriesSemanticSession(): OrderedSeriesSemanticSessi
         if (JSON.parse(focal)[0] === key) entries.comparisons.delete(comparison)
       }
       entries.cohortGenerations.set(key, (entries.cohortGenerations.get(key) ?? 0) + 1)
+    },
+    refresh: async (input) => {
+      const key = cohortKey(input)
+      entries.cohorts.delete(key)
+      for (const focal of [...entries.focals.keys()]) if (JSON.parse(focal)[0] === key) entries.focals.delete(focal)
+      for (const comparison of [...entries.comparisons.keys()]) {
+        const focal = JSON.parse(comparison)[0] as string
+        if (JSON.parse(focal)[0] === key) entries.comparisons.delete(comparison)
+      }
+      entries.cohortGenerations.set(key, (entries.cohortGenerations.get(key) ?? 0) + 1)
+      return acquireWithinSession(input, entries)
     },
   }
 }

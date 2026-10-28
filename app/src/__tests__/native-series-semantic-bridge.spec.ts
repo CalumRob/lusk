@@ -343,6 +343,46 @@ describe('guarded native SQL/HTTP → shared ordered-series acquisition bridge',
       expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body)).items).toHaveLength(3)
     })
 
+    if (capturedResource !== 'raccordement_courbe') {
+      it(`fences a late native ${path.split(/[\\/]/).at(-1)} reply after scoped refresh`, async () => {
+        const capture = JSON.parse(readFileSync(path, 'utf8'))
+        const bridge = capture.application_bridge
+        const resource = bridge.request.items[0].resource as string
+        const declaration = capture.catalogue.resources.find((item: any) =>
+          item.resource_id === resource)
+        const cohortTarget = bridge.request.items[0].target
+        const focalTarget = bridge.request.items[1].target
+        const focal = capture.territories.find((territory: Territoire) =>
+          territory.territoire === focalTarget.id && territory.type === focalTarget.type)
+        const input = { resource, level: focalTarget.type, focal: focal as Territoire,
+          territories: capture.territories as Territoire[],
+          ...(cohortTarget.department_id ? { departmentId: cohortTarget.department_id } : {}),
+          ...(cohortTarget.epci_id ? { epciId: cohortTarget.epci_id } : {}),
+          includeScalarFacet: declaration.shapes.includes('scalar') }
+        let releaseOld!: (response: Response) => void
+        const oldResponse = new Promise<Response>((resolve) => { releaseOld = resolve })
+        const refreshed = structuredClone(bridge.response)
+        for (const result of refreshed.results) {
+          if (result.data?.content_version) result.data.content_version = 'native-series-refresh-v2'
+          if (result.data?.publication_id) result.data.publication_id = 'native-series-refresh-v2'
+        }
+        const fetcher = vi.fn(async () => fetcher.mock.calls.length === 1
+          ? oldResponse : Response.json(refreshed, { status: bridge.response_status }))
+        vi.stubGlobal('fetch', fetcher)
+        const session = createOrderedSeriesSemanticSession()
+        const late = session.acquire(input)
+        await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
+        const current = await session.refresh(input)
+        expect(current.content_version).toBe('native-series-refresh-v2')
+        releaseOld(Response.json(bridge.response, { status: bridge.response_status }))
+        await late
+        const cached = await session.acquire(input)
+        expect(cached.content_version).toBe('native-series-refresh-v2')
+        expect(cached.points).toEqual(current.points)
+        expect(fetcher).toHaveBeenCalledTimes(2)
+      })
+    }
+
     it(`does not admit ${path.split(/[\\/]/).at(-1)} facts from a cold whole-batch 503`, async () => {
       const capture = JSON.parse(readFileSync(path, 'utf8'))
       const bridge = capture.application_bridge

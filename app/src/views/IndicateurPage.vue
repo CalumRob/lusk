@@ -36,7 +36,8 @@ import type { DeclaredProfileDescriptor, ProfileComparison, ProfilePageBinding, 
 import { chargerCatalogueRessources } from '@/payload/semanticResourceClient'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 import { createOrderedSeriesSemanticSession, projectAdmittedCohortForFocal,
-  SeriesCohortAvailableError, SeriesComparisonRejectedError } from '@/payload/seriesSemanticAcquisition'
+  SeriesCohortAvailableError, SeriesComparisonRejectedError,
+  SeriesPublicationMismatchError } from '@/payload/seriesSemanticAcquisition'
 import { projectRaccordementSemanticComparison, projectRaccordementSemanticFocal } from '@/payload/raccordementSemanticProjection'
 import type { RaccordementSemanticProjection } from '@/payload/raccordementSemanticProjection'
 
@@ -771,6 +772,7 @@ watch(
 const serieLecture = ref<OrderedSeriesRead | null>(null)
 const orderedSeriesSession = createOrderedSeriesSemanticSession()
 const serieComparaisonErreur = ref(false)
+const seriePublicationChange = ref(false)
 const serieComparaisonChargement = ref(false)
 const raccordementApiLecture = ref<RaccordementSemanticProjection | null>(null)
 const raccordementComparaisonChargement = ref(false)
@@ -854,6 +856,7 @@ async function chargerSerie(force = false) {
   }
   serieChargement.value = !retainedFocal
   serieErreur.value = false
+  seriePublicationChange.value = false
   if (raccordement) {
     raccordementComparaisonChargement.value = true
     raccordementComparaisonErreur.value = false
@@ -893,6 +896,7 @@ async function chargerSerie(force = false) {
     if (request === serieRequete) {
       serieLecture.value = result
       serieComparaisonErreur.value = false
+      seriePublicationChange.value = false
     }
   } catch (cause) {
     if (request === serieRequete) {
@@ -901,6 +905,10 @@ async function chargerSerie(force = false) {
         // stay admitted and only the comparison is reacquired on retry (#857).
         serieLecture.value = cause.facts as unknown as OrderedSeriesRead
         serieComparaisonErreur.value = true
+      } else if (cause instanceof SeriesPublicationMismatchError) {
+        serieLecture.value = cause.facts as unknown as OrderedSeriesRead
+        serieComparaisonErreur.value = true
+        seriePublicationChange.value = true
       } else if (cause instanceof SeriesCohortAvailableError) {
         serieLecture.value = projectAdmittedCohortForFocal(cause.cohort, focal)
         serieErreur.value = true
@@ -936,19 +944,27 @@ async function reessayerComparaisonSerie() {
       (!department || territory.departement === department) && (!epci || territory.epci === epci))
   if (!focal) return
   const request = serieRequete
+  const refreshingPublication = seriePublicationChange.value
   serieComparaisonChargement.value = true
   serieComparaisonErreur.value = false
   try {
-    const result = await orderedSeriesSession.acquire({
+    const input = {
       resource: adapter.indicator, level: niveauSerie.value, focal,
       territories: payloadLegacy.value.territoires, includeScalarFacet: seriesHasScalarFacet.value,
-      ...(department ? { departmentId: department } : {}), ...(epci ? { epciId: epci } : {}) })
+      ...(department ? { departmentId: department } : {}), ...(epci ? { epciId: epci } : {}) }
+    const result = seriePublicationChange.value
+      ? await orderedSeriesSession.refresh(input)
+      : await orderedSeriesSession.acquire(input)
     if (request === serieRequete) {
       serieLecture.value = result
       serieComparaisonErreur.value = false
+      seriePublicationChange.value = false
     }
   } catch {
-    if (request === serieRequete) serieComparaisonErreur.value = true
+    if (request === serieRequete) {
+      serieComparaisonErreur.value = true
+      seriePublicationChange.value = refreshingPublication
+    }
   } finally {
     if (request === serieRequete) serieComparaisonChargement.value = false
   }
@@ -1520,8 +1536,8 @@ watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niv
 <template>
   <section class="indicateur-page presentation-editorial" :class="`theme-${theme}`" :style="themeVars">
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieChargement" role="status">Chargement des données actualisées…</div>
-    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieComparaisonChargement" role="status" data-testid="series-comparison-retrying">Nouvelle tentative de comparaison… Les faits validés restent affichés.</div>
-    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieComparaisonErreur" role="alert" data-testid="series-comparison-error">La comparaison de cet indicateur est momentanément indisponible ; les faits validés restent affichés.<button type="button" :disabled="serieComparaisonChargement" @click="reessayerComparaisonSerie()">Réessayer la comparaison</button></div>
+    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieComparaisonChargement" role="status" data-testid="series-comparison-retrying">{{ seriePublicationChange ? 'Actualisation des faits de cette publication…' : 'Nouvelle tentative de comparaison… Les faits validés restent affichés.' }}</div>
+    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieComparaisonErreur" role="alert" data-testid="series-comparison-error">{{ seriePublicationChange ? 'La publication a changé ; actualisez les faits pour continuer.' : 'La comparaison de cet indicateur est momentanément indisponible ; les faits validés restent affichés.' }}<button type="button" :disabled="serieComparaisonChargement" @click="reessayerComparaisonSerie()">{{ seriePublicationChange ? 'Actualiser les faits' : 'Réessayer la comparaison' }}</button></div>
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
     <div v-if="chargement || (raccordementApiActive && serieChargement)" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur || (raccordementApiActive && serieErreur)" role="alert">Impossible de charger l’indicateur.<button v-if="profileBootstrapError" type="button" @click="retryProfileBootstrap++">Réessayer</button><button v-else-if="profileMode" type="button" @click="retryProfileFacts++">Réessayer</button><button v-if="!profileMode && scalaireApi" type="button" @click="retryScalaireApi++">Réessayer</button><button v-if="raccordementApiActive" type="button" @click="chargerSerie(true)">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
