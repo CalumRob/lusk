@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { join } from 'node:path'
 import { acquireOrderedSeriesSemantic, reacquireOrderedSeriesComparison }
   from '@/payload/seriesSemanticAcquisition'
+import { createOrderedSeriesSemanticSession } from '@/payload/seriesSemanticAcquisition'
 import { orderedSeriesFacts } from '@/payload/orderedSeriesAdapter'
 import type { Territoire } from '@/payload/types'
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
@@ -52,6 +53,7 @@ describe('guarded native SQL/HTTP → shared ordered-series acquisition bridge',
   })
 
   for (const path of capturePaths) {
+    const capturedResource = JSON.parse(readFileSync(path, 'utf8')).application_bridge.request.items[0].resource
     it(`passes the captured ${path.split(/[\\/]/).at(-1)} batch through the real app adapter`, async () => {
       const capture = JSON.parse(readFileSync(path, 'utf8'))
       const bridge = capture.application_bridge
@@ -134,7 +136,99 @@ describe('guarded native SQL/HTTP → shared ordered-series acquisition bridge',
         facts: read as unknown as never })
       expect((comparison as { axis_comparisons?: unknown[] }).axis_comparisons).toEqual(
         read.comparison?.axis_comparisons)
+      if (resource === 'prix_m2') {
+        const wrongFacetPublication = serveBridge(bridge, (data) => {
+          ;(data[2] as { scalar_facet: { content_version: string } }).scalar_facet.content_version =
+            'unrelated-pooled-publication'
+        })
+        vi.stubGlobal('fetch', wrongFacetPublication)
+        const facetRejected = await acquireOrderedSeriesSemantic({ resource, level: focalTarget.type,
+          focal: focal as Territoire, territories: capture.territories as Territoire[],
+          ...(cohortTarget.department_id ? { departmentId: cohortTarget.department_id } : {}),
+          ...(cohortTarget.epci_id ? { epciId: cohortTarget.epci_id } : {}),
+          includeScalarFacet: true })
+        expect(facetRejected.comparison).toEqual(read.comparison)
+        expect(facetRejected.scalar_facet?.cohort).toBeDefined()
+        expect(facetRejected.scalar_facet?.focal).toBeDefined()
+        expect(facetRejected.scalar_facet?.comparison).toBeUndefined()
+      }
     })
+
+    if (capturedResource !== 'raccordement_courbe') {
+    it(`keeps warm ${path.split(/[\\/]/).at(-1)} cohort/focal/comparison admissions in the page session`, async () => {
+      const capture = JSON.parse(readFileSync(path, 'utf8'))
+      const bridge = capture.application_bridge
+      const resource = bridge.request.items[0].resource as string
+      const declaration = capture.catalogue.resources.find((item: any) => item.resource_id === resource)
+      const cohortTarget = bridge.request.items[0].target
+      const focalTarget = bridge.request.items[1].target
+      const focal = capture.territories.find((territory: Territoire) =>
+        territory.territoire === focalTarget.id && territory.type === focalTarget.type)
+      const fetcher = serveBridge(bridge)
+      vi.stubGlobal('fetch', fetcher)
+      const session = createOrderedSeriesSemanticSession()
+      const input = { resource, level: focalTarget.type, focal: focal as Territoire,
+        territories: capture.territories as Territoire[],
+        ...(cohortTarget.department_id ? { departmentId: cohortTarget.department_id } : {}),
+        ...(cohortTarget.epci_id ? { epciId: cohortTarget.epci_id } : {}),
+        includeScalarFacet: declaration.shapes.includes('scalar') }
+
+      const admitted = await session.acquire(input)
+      const revisited = await session.acquire(input)
+
+      expect(admitted.points.length).toBeGreaterThan(0)
+      expect(revisited.points).toEqual(admitted.points)
+      expect(revisited.scope_series).toEqual(admitted.scope_series)
+      if (resource === 'prix_m2') {
+        expect(admitted.scalar_facet?.cohort).toBeDefined()
+        expect(admitted.scalar_facet?.focal).toBeDefined()
+        expect(admitted.scalar_facet?.comparison).toEqual(bridge.response.results[2]?.data.scalar_facet)
+      }
+      expect(fetcher).toHaveBeenCalledTimes(1)
+      const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))
+      expect(request.items).toHaveLength(3)
+      expect(request.items.filter((item: any) => item.intent.kind === 'facts')).toHaveLength(2)
+      expect(request.items.filter((item: any) => item.intent.kind !== 'facts')).toHaveLength(1)
+      session.clearCohort(input)
+      const refreshed = await session.acquire(input)
+      expect(refreshed.points).toEqual(admitted.points)
+      expect(fetcher).toHaveBeenCalledTimes(2)
+      expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body)).items).toHaveLength(3)
+    })
+
+    it(`does not admit ${path.split(/[\\/]/).at(-1)} facts from a cold whole-batch 503`, async () => {
+      const capture = JSON.parse(readFileSync(path, 'utf8'))
+      const bridge = capture.application_bridge
+      const resource = bridge.request.items[0].resource as string
+      const declaration = capture.catalogue.resources.find((item: any) => item.resource_id === resource)
+      const cohortTarget = bridge.request.items[0].target
+      const focalTarget = bridge.request.items[1].target
+      const focal = capture.territories.find((territory: Territoire) =>
+        territory.territoire === focalTarget.id && territory.type === focalTarget.type)
+      const session = createOrderedSeriesSemanticSession()
+      const requests: any[] = []
+      vi.stubGlobal('fetch', vi.fn(async (_path: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body))
+        requests.push(body)
+        expect(body).toEqual(bridge.request)
+        if (requests.length === 1) return new Response('native read-batch unavailable', { status: 503 })
+        return Response.json(bridge.response, { status: bridge.response_status })
+      }))
+      const input = { resource, level: focalTarget.type, focal: focal as Territoire,
+        territories: capture.territories as Territoire[],
+        ...(cohortTarget.department_id ? { departmentId: cohortTarget.department_id } : {}),
+        ...(cohortTarget.epci_id ? { epciId: cohortTarget.epci_id } : {}),
+        includeScalarFacet: declaration.shapes.includes('scalar') }
+
+      await expect(session.acquire(input)).rejects.toThrow()
+      const recovered = await session.acquire(input)
+
+      expect(recovered.points.length).toBeGreaterThan(0)
+      expect(requests).toHaveLength(2)
+      expect(requests.map((body) => body.items)).toHaveLength(2)
+      expect(requests.every((body) => body.items.length === 3)).toBe(true)
+    })
+    }
   }
 })
 

@@ -35,9 +35,8 @@ import { adapterPageProfilDeclare, chargerCohorteProfilDeclare, chargerComparais
 import type { DeclaredProfileDescriptor, ProfileComparison, ProfilePageBinding, ProfilePublicationIdentity, ProfileTarget } from '@/payload/profileAcquisition'
 import { chargerCatalogueRessources } from '@/payload/semanticResourceClient'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
-import { acquireOrderedSeriesSemantic, reacquireOrderedSeriesComparison,
-  SeriesComparisonRejectedError } from '@/payload/seriesSemanticAcquisition'
-import type { OrderedSeriesFactsEvidence } from '@/payload/seriesSemanticAcquisition'
+import { createOrderedSeriesSemanticSession, projectAdmittedCohortForFocal,
+  SeriesCohortAvailableError, SeriesComparisonRejectedError } from '@/payload/seriesSemanticAcquisition'
 import { projectRaccordementSemanticComparison, projectRaccordementSemanticFocal } from '@/payload/raccordementSemanticProjection'
 import type { RaccordementSemanticProjection } from '@/payload/raccordementSemanticProjection'
 
@@ -770,6 +769,7 @@ watch(
 )
 
 const serieLecture = ref<OrderedSeriesRead | null>(null)
+const orderedSeriesSession = createOrderedSeriesSemanticSession()
 const serieComparaisonErreur = ref(false)
 const serieComparaisonChargement = ref(false)
 const raccordementApiLecture = ref<RaccordementSemanticProjection | null>(null)
@@ -886,7 +886,7 @@ async function chargerSerie(force = false) {
       raccordementApiLecture.value = { ...projectedFocal, comparison }
       return
     }
-    const result = await acquireOrderedSeriesSemantic({ resource: adapter.indicator,
+    const result = await orderedSeriesSession.acquire({ resource: adapter.indicator,
       level: niveauSerie.value, focal, territories: payloadLegacy.value.territoires,
       includeScalarFacet: seriesHasScalarFacet.value,
       ...(department ? { departmentId: department } : {}), ...(epci ? { epciId: epci } : {}) })
@@ -901,6 +901,9 @@ async function chargerSerie(force = false) {
         // stay admitted and only the comparison is reacquired on retry (#857).
         serieLecture.value = cause.facts as unknown as OrderedSeriesRead
         serieComparaisonErreur.value = true
+      } else if (cause instanceof SeriesCohortAvailableError) {
+        serieLecture.value = projectAdmittedCohortForFocal(cause.cohort, focal)
+        serieErreur.value = true
       } else if (raccordement && raccordementApiLecture.value && raccordementFocalKey === focalKey) {
         raccordementComparaisonErreur.value = true
       } else {
@@ -936,13 +939,12 @@ async function reessayerComparaisonSerie() {
   serieComparaisonChargement.value = true
   serieComparaisonErreur.value = false
   try {
-    const comparison = await reacquireOrderedSeriesComparison({
+    const result = await orderedSeriesSession.acquire({
       resource: adapter.indicator, level: niveauSerie.value, focal,
       territories: payloadLegacy.value.territoires, includeScalarFacet: seriesHasScalarFacet.value,
-      ...(department ? { departmentId: department } : {}), ...(epci ? { epciId: epci } : {}),
-      facts: lecture as unknown as OrderedSeriesFactsEvidence })
+      ...(department ? { departmentId: department } : {}), ...(epci ? { epciId: epci } : {}) })
     if (request === serieRequete) {
-      serieLecture.value = { ...lecture, comparison }
+      serieLecture.value = result
       serieComparaisonErreur.value = false
     }
   } catch {
@@ -1518,7 +1520,8 @@ watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niv
 <template>
   <section class="indicateur-page presentation-editorial" :class="`theme-${theme}`" :style="themeVars">
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieChargement" role="status">Chargement des données actualisées…</div>
-    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieComparaisonErreur" role="alert" data-testid="series-comparison-error">La comparaison de cet indicateur est momentanément indisponible ; les faits validés restent affichés.<button type="button" @click="reessayerComparaisonSerie()">Réessayer la comparaison</button></div>
+    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieComparaisonChargement" role="status" data-testid="series-comparison-retrying">Nouvelle tentative de comparaison… Les faits validés restent affichés.</div>
+    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieComparaisonErreur" role="alert" data-testid="series-comparison-error">La comparaison de cet indicateur est momentanément indisponible ; les faits validés restent affichés.<button type="button" :disabled="serieComparaisonChargement" @click="reessayerComparaisonSerie()">Réessayer la comparaison</button></div>
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
     <div v-if="chargement || (raccordementApiActive && serieChargement)" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur || (raccordementApiActive && serieErreur)" role="alert">Impossible de charger l’indicateur.<button v-if="profileBootstrapError" type="button" @click="retryProfileBootstrap++">Réessayer</button><button v-else-if="profileMode" type="button" @click="retryProfileFacts++">Réessayer</button><button v-if="!profileMode && scalaireApi" type="button" @click="retryScalaireApi++">Réessayer</button><button v-if="raccordementApiActive" type="button" @click="chargerSerie(true)">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>

@@ -79,6 +79,7 @@ function createHarness(resources, territories, fixtures) {
   const comparisonReads = []
   const unexpectedApi = []
   const servedBatches = []
+  const batchTrace = []
   let failNextBatch = false
   let failNextComparisonOnly = false
   let corruptNextSeriesComparison = false
@@ -101,7 +102,7 @@ function createHarness(resources, territories, fixtures) {
     return value
   }
   return {
-    requests, factReads, comparisonReads, unexpectedApi, servedBatches,
+    requests, factReads, comparisonReads, unexpectedApi, servedBatches, batchTrace,
     failNextBatchOnce() { failNextBatch = true },
     failNextComparisonOnlyOnce() { failNextComparisonOnly = true },
     corruptNextSeriesComparisonOnce() { corruptNextSeriesComparison = true },
@@ -124,6 +125,8 @@ function createHarness(resources, territories, fixtures) {
       if (url.pathname === '/api/resources/read-batch' && request.method() === 'POST') {
         const body = request.postDataJSON()
         requests.push(...body.items)
+        const trace = { items: structuredClone(body.items), status: null }
+        batchTrace.push(trace)
         const hasFacts = body.items.some((item) => item.intent.kind === 'facts')
         const hasComparison = body.items.some((item) => item.intent.kind !== 'facts')
         if (hasFacts) factReads.push(...body.items.filter((item) => item.intent.kind === 'facts'))
@@ -131,11 +134,13 @@ function createHarness(resources, territories, fixtures) {
         const resource = body.items[0]?.resource
         if (failNextBatch) {
           failNextBatch = false
+          trace.status = 503
           await route.fulfill({ status: 503, contentType: 'text/plain', body: 'series read temporarily unavailable' })
           return
         }
         if (failNextComparisonOnly && hasComparison && !hasFacts) {
           failNextComparisonOnly = false
+          trace.status = 503
           await route.fulfill({ status: 503, contentType: 'text/plain', body: 'comparison temporarily unavailable' })
           return
         }
@@ -156,6 +161,7 @@ function createHarness(resources, territories, fixtures) {
           const comparison = seriesData?.result?.axis_comparisons?.[0]
           if (comparison && Array.isArray(comparison.member_ranks) && comparison.member_ranks[0]) {
             comparison.member_ranks[0].rank = 999
+            trace.status = 200
             await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(parsed) })
             return
           }
@@ -164,11 +170,13 @@ function createHarness(resources, territories, fixtures) {
           resources.find((candidate) => candidate.resource_id === item.resource)?.shapes?.includes('ordered_series'))) {
           anonymizeNextSeriesSources = false
           const anonymized = JSON.parse(JSON.stringify(renameSources(parsed)))
+          trace.status = 200
           servedBatches.push({ items: body.items, response: anonymized })
           await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(anonymized) })
           return
         }
         servedBatches.push({ items: body.items, response: parsed })
+        trace.status = 200
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(parsed) })
         return
       }
@@ -526,6 +534,7 @@ try {
     'the out-of-cohort focal must receive its own bounded territory read')
 
   // Whole-batch HTTP failure: page error, forced retry recovers.
+  const cold503TraceStart = harness.batchTrace.length
   harness.failNextBatchOnce()
   await page.goto(`${baseUrl}indicateurs/milieux/conso_enaf_annuel?territoire=22001&niveau=commune&departement=22&vue=reperes`,
     { waitUntil: 'domcontentloaded' })
@@ -533,6 +542,112 @@ try {
   await page.getByRole('button', { name: 'Réessayer' }).click()
   await page.locator('figure[data-renderer="trajectory"]').waitFor({ state: 'visible', timeout: 20000 })
   assert.equal(await page.locator('[role="alert"]').count(), 0, 'the forced retry must recover the page')
+  const cold503Trace = harness.batchTrace.slice(cold503TraceStart)
+  assert.deepEqual(cold503Trace.map(({ status, items }) => [status, items.length]), [[503, 3], [200, 3]],
+    'a cold all-or-none 503 admits no facts, so retry repeats the bounded compound batch')
+
+  // Warm same-cohort focal changes use the admitted cohort, never the prior
+  // focal identity. A genuinely uncached focal fact may fail independently;
+  // after it is admitted, comparison failure/retry are one-item comparisons.
+  const newFocal = territoiresFixture.find((territory) => territory.type === 'commune' &&
+    territory.departement === '22' && territory.territoire !== '22001')
+  assert(newFocal, 'Browser fixture must contain a second commune in the warm department cohort')
+  for (const spec of census.filter(({ indicator }) => indicator !== 'raccordement_courbe')) {
+    const detailQuery = spec.indicator === 'prix_m2' ? '&detail=2022'
+      : spec.indicator === 'conso_enaf_annuel' ? '&detail=2024'
+        : spec.indicator === 'subventions_annuelles' ? '&dimension=2025' : ''
+    const url = `${baseUrl}indicateurs/${spec.theme}/${spec.indicator}?territoire=22001&niveau=commune&departement=22${detailQuery}&vue=reperes`
+    await page.goto(url, { waitUntil: 'domcontentloaded' })
+    await page.locator('h1').filter({ hasText: spec.resource.label }).waitFor({ state: 'visible', timeout: 20000 })
+    await page.locator('.comparison-table-scroll tbody tr').first().waitFor({ state: 'visible', timeout: 20000 })
+    const warmTraceStart = harness.batchTrace.length
+    const cohortReadsBefore = harness.factReads.filter((item) => item.resource === spec.indicator &&
+      item.target?.kind === 'territory_cohort').length
+    const initialBatch = harness.batchTrace.at(-1)
+    assert.deepEqual([initialBatch?.status, initialBatch?.items.length], [200, 3],
+      `${spec.indicator}: cold positive control admits cohort/focal facts and comparison`)
+    const initialCohort = harness.servedBatches.slice().reverse().find(({ items }) =>
+      items.some((item) => item.resource === spec.indicator && item.target?.kind === 'territory_cohort'))
+    const cohortData = initialCohort?.response.results.map((result) => result.data)
+      .find((data) => data.target?.kind === 'territory_cohort')
+    assert(cohortData, `${spec.indicator}: positive cohort response is preserved as native fixture evidence`)
+
+    harness.failNextBatchOnce()
+    await page.evaluate((id) => {
+      const url = new URL(location.href)
+      url.searchParams.set('territoire', id)
+      history.pushState({}, '', url)
+      dispatchEvent(new PopStateEvent('popstate'))
+    }, newFocal.territoire)
+    await page.locator('[role="alert"]').waitFor({ state: 'visible', timeout: 20000 })
+    const warmMiss = harness.batchTrace.at(-1)
+    assert.equal(warmMiss?.status, 503)
+    assert.equal(warmMiss?.items.length, 1,
+      `${spec.indicator}: warm path avoids a compound request by reusing validated cohort facts`)
+    assert.equal(warmMiss?.items[0]?.resource, spec.indicator)
+    assert.equal(warmMiss?.items[0]?.intent?.kind, 'facts')
+    assert.deepEqual(warmMiss?.items[0]?.target,
+      { kind: 'territory', type: 'commune', id: newFocal.territoire })
+    assert.equal(harness.factReads.filter((item) => item.resource === spec.indicator &&
+      item.target?.kind === 'territory_cohort').length, cohortReadsBefore,
+    `${spec.indicator}: the already-admitted cohort is not read again`)
+
+    const group = cohortData.series?.find((entry) => entry.territory.id === newFocal.territoire &&
+      entry.territory.type === newFocal.type)
+    if (spec.page.family === 'trajectory' && group) {
+      const visiblePoints = await page.locator('.trajectoire-territoire-point').evaluateAll((points) =>
+        points.filter((point) => point.getAttribute('data-value') !== null).map((point) =>
+          [point.getAttribute('data-detail'), Number(point.getAttribute('data-value'))]))
+      const expectedPoints = group.points.filter((point) => point.status === 'measured')
+        .map((point) => [point.axis, point.value])
+      assert.deepEqual(visiblePoints, expectedPoints,
+        `${spec.indicator}: display only actual cohort facts for the newly selected focal`)
+    } else if (group) {
+      const axis = cohortData.descriptor.comparison_point
+      const expectedPoint = group.points.find((point) => point.axis === axis && point.status === 'measured')
+      assert(expectedPoint, `${spec.indicator}: the focal cohort row has the declared comparison fact`)
+      const row = page.locator('.comparison-table-scroll tbody tr').filter({ hasText: newFocal.nom })
+      await row.waitFor({ state: 'visible', timeout: 20000 })
+      assert((await row.innerText()).includes(formaterValeur({ value: expectedPoint.value, unit: spec.resource.unit })),
+        `${spec.indicator}: table value belongs to the newly selected cohort member`)
+    }
+
+    // The newly selected focal is not exact-focal admitted yet. Retry its
+    // bounded facts read; its following separate comparison read gets the 503.
+    harness.failNextComparisonOnlyOnce()
+    await page.getByRole('button', { name: 'Réessayer' }).click()
+    await page.getByTestId('series-comparison-error').waitFor({ state: 'visible', timeout: 20000 })
+    const stagedTrace = harness.batchTrace.slice(warmTraceStart)
+    assert.deepEqual(stagedTrace.map(({ status, items }) => [status, items.length]),
+      [[503, 1], [200, 1], [503, 1]],
+      `${spec.indicator}: exact focal facts are admitted before the independent comparison can fail`)
+    assert.equal(stagedTrace[1]?.items[0]?.target?.id, newFocal.territoire)
+    assert.equal(stagedTrace[2]?.items[0]?.intent?.kind, 'selected_comparison')
+    const factsAtComparisonFailure = harness.factReads.filter((item) => item.resource === spec.indicator).length
+    await page.getByRole('button', { name: 'Réessayer la comparaison' }).click()
+    await page.locator('[data-testid="series-comparison-error"]').waitFor({ state: 'detached', timeout: 20000 })
+    assert.equal(harness.batchTrace.at(-1)?.status, 200)
+    assert.equal(harness.batchTrace.at(-1)?.items.length, 1)
+    assert.equal(harness.batchTrace.at(-1)?.items[0]?.intent?.kind, 'selected_comparison')
+    assert.equal(harness.factReads.filter((item) => item.resource === spec.indicator).length,
+      factsAtComparisonFailure, `${spec.indicator}: comparison-only retry must not reread admitted facts`)
+
+    const traceAfterRecovery = harness.batchTrace.length
+    for (const id of ['22001', newFocal.territoire]) {
+      await page.evaluate((territoire) => {
+        const url = new URL(location.href)
+        url.searchParams.set('territoire', territoire)
+        history.pushState({}, '', url)
+        dispatchEvent(new PopStateEvent('popstate'))
+      }, id)
+      await page.locator('h1').filter({ hasText: spec.resource.label }).waitFor({ state: 'visible', timeout: 20000 })
+      await page.locator('.comparison-table-scroll tbody tr').first().waitFor({ state: 'visible', timeout: 20000 })
+    }
+    assert.equal(harness.batchTrace.length, traceAfterRecovery,
+      `${spec.indicator}: warm focal revisits reuse admitted facts and matching comparison keys`)
+    assert.equal(harness.factReads.filter((item) => item.resource === spec.indicator).length,
+      factsAtComparisonFailure)
+  }
 
   // Comparison-only failure for a representative shared-batch page: the
   // corrupt comparison evidence is rejected alone, the validated facts stay

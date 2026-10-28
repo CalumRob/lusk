@@ -33,7 +33,43 @@ export interface OrderedSeriesFactsEvidence {
   resolved_cohort_type: string
   resolved_cohort_members: Array<{ id: string; type: string }>
   cohort_is_filtered: boolean
+  cohort_department_id?: string | null
+  cohort_epci_id?: string | null
 }
+
+export interface OrderedSeriesSemanticSession {
+  acquire(input: OrderedSeriesAcquireInput): Promise<OrderedSeriesRead>
+  clearCohort(input: Pick<OrderedSeriesAcquireInput, 'resource' | 'level' | 'includeScalarFacet' | 'departmentId' | 'epciId'>): void
+}
+
+export interface OrderedSeriesAcquireInput {
+  resource: string
+  level: TerritoireType
+  focal: Territoire
+  territories: readonly Territoire[]
+  includeScalarFacet?: boolean
+  departmentId?: string
+  epciId?: string
+}
+
+type SessionEntries = {
+  cohorts: Map<string, OrderedSeriesFactsEvidence>
+  focals: Map<string, OrderedSeriesFactsEvidence>
+  comparisons: Map<string, OrderedSeriesRead>
+  cohortGenerations: Map<string, number>
+}
+
+const cohortKey = (input: OrderedSeriesAcquireInput) => JSON.stringify([
+  input.resource, input.level, input.departmentId ?? null, input.epciId ?? null,
+  Boolean(input.includeScalarFacet),
+])
+const focalKey = (input: OrderedSeriesAcquireInput) => JSON.stringify([
+  cohortKey(input), input.focal.type, input.focal.territoire,
+])
+const comparisonKey = (input: OrderedSeriesAcquireInput) => JSON.stringify([
+  focalKey(input), scopedMembers(input)?.map(({ type, id }) => [type, id]).sort((a, b) =>
+    `${a[0]}:${a[1]}`.localeCompare(`${b[0]}:${b[1]}`)) ?? 'fixed-default',
+])
 
 /** A comparison whose native evidence failed strict binding. The already
  *  validated facts stay admitted; only the comparison is reacquired. */
@@ -42,6 +78,27 @@ export class SeriesComparisonRejectedError extends Error {
     super(message)
     this.name = 'SeriesComparisonRejectedError'
   }
+}
+
+/** Cohort admission survives an exact-focal request failure; it contains no
+ *  claim that a focal observation was acquired. */
+export class SeriesCohortAvailableError extends Error {
+  constructor(message: string, readonly cohort: OrderedSeriesFactsEvidence) {
+    super(message)
+    this.name = 'SeriesCohortAvailableError'
+  }
+}
+
+export function projectAdmittedCohortForFocal(cohort: OrderedSeriesFactsEvidence,
+  focal: Territoire): OrderedSeriesRead {
+  const matching = cohort.scope_series.find((group) => group.territory.id === focal.territoire &&
+    group.territory.type === focal.type)
+  return { ...cohort,
+    territory: matching?.territory ?? { id: focal.territoire, type: focal.type, name: focal.nom },
+    points: matching?.points ?? [],
+    scalar_facet: cohort.scalar_facet?.cohort ? { cohort: cohort.scalar_facet.cohort } : undefined,
+    comparison: null,
+  } as unknown as OrderedSeriesRead
 }
 
 function assertDescriptor(value: unknown): Row {
@@ -276,25 +333,61 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
  *  declared sources and resolved selection before anything is admitted (#857).
  *  A comparison whose evidence fails binding rejects alone: the validated facts
  *  stay admitted on the typed error and only the comparison is reacquired. */
-export async function acquireOrderedSeriesSemantic(input: {
-  resource: string
-  level: TerritoireType
-  focal: Territoire
-  territories: readonly Territoire[]
-  includeScalarFacet?: boolean
-  departmentId?: string
-  epciId?: string
-}): Promise<OrderedSeriesRead> {
+async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: SessionEntries): Promise<OrderedSeriesRead> {
   const members = scopedMembers(input)
+  const key = cohortKey(input)
+  const exactKey = focalKey(input)
+  const compareKey = comparisonKey(input)
+  const generation = (entries.cohortGenerations.get(key) ?? 0) + (entries.cohorts.has(key) ? 0 : 1)
+  if (!entries.cohorts.has(key)) entries.cohortGenerations.set(key, generation)
+  const admittedCohort = entries.cohorts.get(key)
+  const admittedFocal = entries.focals.get(exactKey)
+  if (admittedFocal && admittedCohort &&
+      admittedFocal.content_version === admittedCohort.content_version &&
+      admittedFocal.reference_content_version === admittedCohort.reference_content_version &&
+      admittedFocal.descriptor.descriptor_version === admittedCohort.descriptor.descriptor_version) {
+    const cached = entries.comparisons.get(compareKey)
+    if (cached) return cached
+    try {
+      const [comparisonData] = await lireRessourcesBatch([comparisonItem(input, members)])
+      const comparison = bindComparisonEvidence(comparisonData, {
+        descriptor: admittedFocal.descriptor, contentVersion: admittedFocal.content_version,
+        referenceContentVersion: admittedFocal.reference_content_version,
+        declaredSourceIds: new Set(admittedFocal.declared_source_ids),
+        resolvedCohortType: admittedFocal.resolved_cohort_type,
+        resolvedCohortMembers: admittedFocal.resolved_cohort_members,
+        cohortIsFiltered: admittedFocal.cohort_is_filtered,
+        focal: admittedFocal.territory, resource: input.resource,
+      }, members)
+      const result = attachAdmittedComparison(admittedFocal, comparison, comparisonData, input)
+      if (entries.cohortGenerations.get(key) === generation) entries.comparisons.set(compareKey, result)
+      return result
+    } catch (cause) {
+      throw new SeriesComparisonRejectedError(cause instanceof Error ? cause.message : String(cause), admittedFocal)
+    }
+  }
   const cohortTarget = { kind: 'territory_cohort' as const, type: input.level,
     ...(input.level === 'commune' ? { department_id: input.departmentId ?? null, epci_id: input.epciId ?? null } : {}) }
-  const items: SemanticReadItem[] = [
-    { resource: input.resource, target: cohortTarget, intent: { kind: 'facts' },
-      fields: input.includeScalarFacet ? ['value', 'scalar_facet'] : ['value'] },
-    { resource: input.resource, target: { kind: 'territory', type: input.focal.type, id: input.focal.territoire }, intent: { kind: 'facts' } },
-    comparisonItem(input, members),
-  ]
-  const [cohort, focal, comparisonData] = await lireRessourcesBatch(items)
+  const focalItem: SemanticReadItem = { resource: input.resource,
+    target: { kind: 'territory', type: input.focal.type, id: input.focal.territoire }, intent: { kind: 'facts' } }
+  let cohort: Row
+  let focal: Row
+  let comparisonData: Row | undefined
+  if (admittedCohort) {
+    try {
+      [focal] = await lireRessourcesBatch([focalItem])
+    } catch (cause) {
+      throw new SeriesCohortAvailableError('Les faits du territoire focal sont indisponibles.', admittedCohort)
+    }
+    cohort = cohortResponseFromFacts(admittedCohort, input)
+  } else {
+    [cohort, focal, comparisonData] = await lireRessourcesBatch([
+      { resource: input.resource, target: cohortTarget, intent: { kind: 'facts' },
+        fields: input.includeScalarFacet ? ['value', 'scalar_facet'] : ['value'] },
+      focalItem,
+      comparisonItem(input, members),
+    ])
+  }
   if (cohort.shape !== 'ordered_series' || !Array.isArray(cohort.series) ||
       !record(cohort.cohort) || !Array.isArray(cohort.cohort.members) ||
       !record(focal.territory) || !Array.isArray(focal.points)) {
@@ -314,7 +407,6 @@ export async function acquireOrderedSeriesSemantic(input: {
     throw new Error('Population territoriale résolue incompatible')
   }
   if (cohort.resource !== input.resource || focal.resource !== input.resource ||
-      comparisonData.resource !== input.resource ||
       !text(cohort.content_version) || !text(cohort.reference_content_version) ||
       !(focal.content_version === cohort.content_version ||
         focal.publication_id === cohort.content_version) ||
@@ -363,7 +455,6 @@ export async function acquireOrderedSeriesSemantic(input: {
       comparison_point: descriptor.comparison_point ?? null },
     ...(input.includeScalarFacet ? { scalar_facet: {
       cohort: cohort.scalar_facet as Row | undefined, focal: focal.scalar_facet as Row | undefined,
-      comparison: comparisonData.scalar_facet as Row | undefined,
     } } : {}),
     descriptor,
     content_version: cohort.content_version,
@@ -374,8 +465,15 @@ export async function acquireOrderedSeriesSemantic(input: {
     resolved_cohort_type: resolvedCohort.territory_type,
     resolved_cohort_members: cohortMembers,
     cohort_is_filtered: Boolean(resolvedCohort.department_id || resolvedCohort.epci_id),
+    cohort_department_id: resolvedCohort.department_id,
+    cohort_epci_id: resolvedCohort.epci_id,
+  }
+  if (entries.cohortGenerations.get(key) === generation) {
+    entries.cohorts.set(key, facts)
+    entries.focals.set(exactKey, facts)
   }
   try {
+    if (!comparisonData) [comparisonData] = await lireRessourcesBatch([comparisonItem(input, members)])
     const comparison = bindComparisonEvidence(comparisonData, {
       descriptor, contentVersion: cohort.content_version,
       referenceContentVersion: cohort.reference_content_version,
@@ -383,11 +481,95 @@ export async function acquireOrderedSeriesSemantic(input: {
       resolvedCohortMembers: cohortMembers, cohortIsFiltered: facts.cohort_is_filtered,
       focal: facts.territory, resource: input.resource,
     }, members)
-    return { ...facts, comparison } as unknown as OrderedSeriesRead
+    const result = attachAdmittedComparison(facts, comparison, comparisonData, input)
+    if (entries.cohortGenerations.get(key) === generation) {
+      entries.comparisons.set(compareKey, result)
+    }
+    return result
   } catch (cause) {
     throw new SeriesComparisonRejectedError(
       cause instanceof Error ? cause.message : String(cause), facts)
   }
+}
+
+function attachAdmittedComparison(facts: OrderedSeriesFactsEvidence,
+  comparison: OrderedSeriesRead['comparison'], comparisonData: Row,
+  input: OrderedSeriesAcquireInput): OrderedSeriesRead {
+  return { ...facts, comparison,
+    ...(facts.scalar_facet ? { scalar_facet: { ...facts.scalar_facet,
+      ...(isValidScalarComparisonFacet(comparisonData.scalar_facet, facts, input)
+        ? { comparison: comparisonData.scalar_facet as Row } : {}),
+    } } : {}),
+  } as unknown as OrderedSeriesRead
+}
+
+function isValidScalarComparisonFacet(value: unknown, facts: OrderedSeriesFactsEvidence,
+  input: OrderedSeriesAcquireInput): boolean {
+  if (!record(value) || !facts.scalar_facet?.cohort || !record(facts.scalar_facet.cohort)) return false
+  const cohortFacet = facts.scalar_facet.cohort
+  const descriptor = cohortFacet.descriptor
+  const result = value.result
+  const observations = cohortFacet.observations
+  const declaredSources = new Set(Array.isArray(observations) ? observations.flatMap((observation: Row) =>
+    Array.isArray(observation.sources) ? observation.sources.map((source: Row) => source.source_id) : []) : [])
+  const comparisonSources = record(result) && Array.isArray(result.comparison_sources)
+    ? result.comparison_sources : []
+  const expectedSelection = scopedMembers(input)
+  return value.shape === 'scalar' &&
+    value.content_version === cohortFacet.content_version &&
+    value.reference_content_version === cohortFacet.reference_content_version &&
+    record(descriptor) && value.descriptor_version === descriptor.descriptor_version &&
+    record(result) && result.indicator_id === input.resource &&
+    result.source_facet === input.resource &&
+    result.descriptor_version === descriptor.descriptor_version &&
+    ['available', 'unavailable'].includes(result.status) &&
+    ['median', 'mean'].includes(result.statistic) &&
+    record(value.scope) && Number.isInteger(value.scope.member_count) && value.scope.member_count > 0 &&
+    (expectedSelection === null || value.scope.member_count === expectedSelection.length) &&
+    comparisonSources.every((source: Row) => record(source) && text(source.source_id) &&
+      declaredSources.has(source.source_id)) &&
+    (expectedSelection === null ? value.selection === null || value.selection === undefined
+      : (Array.isArray(value.selection) && value.selection.length === expectedSelection.length && value.selection.every((member: Row) =>
+        expectedSelection.some((expected) => member.territory_type === expected.type &&
+          member.territory_id === expected.id)))) &&
+    (Array.isArray(result.member_ranks) || result.member_ranks === undefined)
+}
+
+function cohortResponseFromFacts(facts: OrderedSeriesFactsEvidence, input: OrderedSeriesAcquireInput): Row {
+  return { resource: input.resource, shape: 'ordered_series',
+    content_version: facts.content_version, reference_content_version: facts.reference_content_version,
+    descriptor: facts.descriptor, series: facts.scope_series,
+    cohort: { territory_type: facts.resolved_cohort_type,
+      department_id: facts.cohort_department_id ?? null, epci_id: facts.cohort_epci_id ?? null,
+      member_count: facts.resolved_cohort_members.length, members: facts.resolved_cohort_members,
+      reference_content_version: facts.reference_content_version },
+    ...(facts.scalar_facet?.cohort ? { scalar_facet: facts.scalar_facet.cohort } : {}),
+  }
+}
+
+/** A per-page-lifetime cache for validated native series evidence. No module/global state. */
+export function createOrderedSeriesSemanticSession(): OrderedSeriesSemanticSession {
+  const entries: SessionEntries = { cohorts: new Map(), focals: new Map(), comparisons: new Map(),
+    cohortGenerations: new Map() }
+  return {
+    acquire: (input) => acquireWithinSession(input, entries),
+    clearCohort: (input) => {
+      const key = JSON.stringify([input.resource, input.level, input.departmentId ?? null,
+        input.epciId ?? null, Boolean(input.includeScalarFacet)])
+      entries.cohorts.delete(key)
+      for (const focal of [...entries.focals.keys()]) if (JSON.parse(focal)[0] === key) entries.focals.delete(focal)
+      for (const comparison of [...entries.comparisons.keys()]) {
+        const focal = JSON.parse(comparison)[0] as string
+        if (JSON.parse(focal)[0] === key) entries.comparisons.delete(comparison)
+      }
+      entries.cohortGenerations.set(key, (entries.cohortGenerations.get(key) ?? 0) + 1)
+    },
+  }
+}
+
+/** One-shot compatibility seam for consumers which do not own a page-lifetime session. */
+export function acquireOrderedSeriesSemantic(input: OrderedSeriesAcquireInput): Promise<OrderedSeriesRead> {
+  return createOrderedSeriesSemanticSession().acquire(input)
 }
 
 /** Comparison-only re-acquisition: one bounded read validated against the

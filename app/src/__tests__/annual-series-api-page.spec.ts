@@ -337,6 +337,106 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(wrapper.text()).toContain('Prix')
     } finally { wrapper.unmount() }
   })
+  it('retains admitted prix_m2 cohort facts when a warm same-cohort focal read gets HTTP 503', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    const requests: Array<{ items: Array<Record<string, any>>; status: number }> = []
+    let admittedCohort: Record<string, any> | undefined
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path === '/api/resources') return nativeCatalogueResponse()
+      if (path !== '/api/resources/read-batch') throw new Error(`unexpected network request: ${path}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (requests.length === 0) {
+        requests.push({ items, status: 200 })
+        const response = await nativeBatchResponse(items, (item, resource) =>
+          nativeReadFixture(item, resource, { territories: territoiresFixture }))
+        const json = await response.clone().json() as { results: Array<{ data: Record<string, any> }> }
+        admittedCohort = json.results.find((result) => result.data.target?.kind === 'territory_cohort')!.data
+        return response
+      }
+      const status = requests.length === 1 || requests.length === 3 ? 503 : 200
+      requests.push({ items, status })
+      if (status === 503) return new Response('native read-batch unavailable', { status })
+      return nativeBatchResponse(items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
+    })
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { habitat: [] } }),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      expect(requests[0]?.status).toBe(200)
+      expect(requests[0]?.items).toHaveLength(3)
+      expect(wrapper.text()).toContain('1 604,33')
+      expect(wrapper.find('figure[data-renderer="trajectory"]').exists()).toBe(true)
+      const oldFocalFact = requests[0]!.items[1]
+      expect(oldFocalFact.target).toMatchObject({ kind: 'territory', id: '22001' })
+
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22')
+      await flushPromises()
+
+      expect(requests).toHaveLength(2)
+      expect(requests[1]?.status).toBe(503)
+      expect(requests[1]?.items).toHaveLength(1)
+      expect(requests[1]?.items[0]).toMatchObject({ intent: { kind: 'facts' },
+        target: { kind: 'territory', type: 'commune', id: '22002' } })
+      // A failed new-focal read may not leave the previous focal's curve on screen;
+      // render only values actually admitted in the correct cohort, if present.
+      expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+      expect(wrapper.find('figure[data-renderer="trajectory"]').exists()).toBe(true)
+      const focalGroup = admittedCohort!.series.find((group: any) => group.territory.id === '22002')
+      expect(focalGroup).toBeDefined()
+      expect(wrapper.findAll('.trajectoire-territoire-point').map((point) => [
+        point.attributes('data-detail'), Number(point.attributes('data-value')),
+      ])).toEqual(focalGroup.points.filter((point: any) => point.status === 'measured')
+        .map((point: any) => [point.axis, point.value]))
+      const exactFocalValues = wrapper.findAll('.trajectoire-territoire-point')
+        .map((point) => Number(point.attributes('data-value')))
+      expect(exactFocalValues).not.toEqual([])
+
+      // Retry the genuinely uncached focal facts, then make the later
+      // comparison-only batch fail. Both admitted cohort and focal facts remain.
+      await wrapper.get('[role="alert"] button').trigger('click')
+      await flushPromises()
+      expect(requests).toHaveLength(4)
+      expect(requests[2]?.items).toHaveLength(1)
+      expect(requests[2]?.items[0]).toMatchObject({ intent: { kind: 'facts' },
+        target: { kind: 'territory', type: 'commune', id: '22002' } })
+      expect(requests[2]?.status).toBe(200)
+      expect(requests[3]?.items).toHaveLength(1)
+      expect(requests[3]?.items[0]?.intent.kind).toBe('selected_comparison')
+      expect(requests[3]?.status).toBe(503)
+      expect(wrapper.find('[data-testid="series-comparison-error"]').exists()).toBe(true)
+      expect(wrapper.findAll('.trajectoire-territoire-point').map((point) => Number(point.attributes('data-value'))))
+        .toEqual(exactFocalValues)
+      await wrapper.get('[data-testid="series-comparison-error"] button').trigger('click')
+      await flushPromises()
+      expect(requests).toHaveLength(5)
+      expect(requests[4]?.items).toHaveLength(1)
+      expect(requests[4]?.items[0]?.intent.kind).toBe('selected_comparison')
+      expect(requests[4]?.status).toBe(200)
+      expect(requests.slice(2).flatMap((entry) => entry.items.filter((item) => item.intent.kind === 'facts')))
+        .toHaveLength(1)
+      const requestTrace = requests.map(({ items, status }) => ({ status, items: items.map((item) => ({
+        resource: item.resource, intent: item.intent.kind, target: item.target,
+      })) }))
+      expect(wrapper.find('figure[data-renderer="trajectory"]').exists(),
+        `warm validated cohort facts should remain rendered after comparison batch 503; trace=${JSON.stringify(requestTrace)}`)
+        .toBe(true)
+    } finally { wrapper.unmount() }
+  })
   it('waits for delayed metadata before choosing a series route when both API gates are enabled', async () => {
     let publishMetadata!: (metadata: typeof metadataMilieux) => void
     const metadata = new Promise<typeof metadataMilieux>((resolve) => { publishMetadata = resolve })
