@@ -77,6 +77,10 @@ function assertSeriesPoint(point: unknown, declaredSourceIds: Set<string> | null
         (declaredSourceIds !== null && !declaredSourceIds.has(revision.source_id)) ||
         !(revision.reference_date === null || text(revision.reference_date)) ||
         !(revision.publication_date === null || text(revision.publication_date))) {
+      if (process.env.LUSK_SERIES_PROOF_DEBUG) {
+        console.error(`DEBUG provenance: row=${JSON.stringify(revision)}` +
+          (declaredSourceIds !== null ? ` declared=[${[...declaredSourceIds].slice(0, 12).join(', ')}]` : ''))
+      }
       throw new Error(`Provenance de point non déclarée (${context})`)
     }
   }

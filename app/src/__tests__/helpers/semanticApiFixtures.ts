@@ -142,9 +142,9 @@ function sourcesFor(resource: Resource, fact?: Record<string, any>, target?: Rec
     // A mixed-vintage aggregate fact (an EPCI spanning two OCS-GE millésimes)
     // carries its own composite vintage identity: reuse it verbatim instead of
     // inventing a clock.
-    candidates = [{ source_id: typeof fact.source_id === 'string' ? fact.source_id : fact.vintage_source,
-      name: fact.vintage_source, version: String(fact.vintage_version ?? 'vintage inconnu'),
-      reference_date: fact.vintage_date_reference ?? null, publication_date: fact.vintage_date_publication ?? null }]
+    candidates = [{ id: typeof fact.source_id === 'string' ? fact.source_id : fact.vintage_source,
+      source: fact.vintage_source, version: String(fact.vintage_version ?? 'vintage inconnu'),
+      date_reference: fact.vintage_date_reference ?? null, date_publication: fact.vintage_date_publication ?? null }]
   }
   if (candidates.length > 1 && target?.type === 'commune') {
     const territory = territories.find((item) => item.type === target.type && item.territoire === target.id)
@@ -991,39 +991,49 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
       .filter((fact) => fact.detail != null || fact.dimension != null)
       .map((fact) => {
         const axis = String(fact.detail ?? fact.dimension)
-        let source: Record<string, any>
+        const declaredVintages = Object.entries(metadata.source_records ?? {})
+          .flatMap(([id, record]) => ((record as Record<string, any>).vintages ?? [])
+            .map((vintage) => ({ id, ...vintage })))
+        let revisions: Array<Record<string, any>>
         try {
-          source = sourceFor(resource, fact, { kind: 'territory', type: member.type, id: member.territoire }, true)
-        } catch {
-          // A mixed-vintage aggregate fact (an EPCI spanning two OCS-GE
-          // millésimes) reuses the declared producer vintage matching its own
-          // vintage identity and department — never an invented source clock.
-          const factVersion = String(fact.vintage_version ?? '')
-          const declaredVintages = Object.entries(metadata.source_records ?? {})
-            .flatMap(([id, record]) => ((record as Record<string, any>).vintages ?? [])
-              .map((vintage) => ({ id, ...vintage })))
-          const declared = declaredVintages.filter((vintage) => String(vintage.version) === factVersion &&
-            (!member.departement || String(vintage.id).endsWith(`dep${member.departement}`)))
-          const chosen = declared[0]
-          source = chosen
-            ? { source_id: chosen.id, name: chosen.name ??
-                (metadata.source_records as Record<string, any>)?.[chosen.id]?.dataset ?? chosen.id,
-              version: chosen.version, vintage_id: chosen.vintage_id ?? chosen.version,
-              reference_date: chosen.reference_date ?? null, publication_date: chosen.publication_date ?? null }
-            : { source_id: (metadata.source_records as Record<string, any>)?.[resource.resource_id]?.dataset
-                ?? resource.resource_id,
-              name: (metadata.source_records as Record<string, any>)?.[resource.resource_id]?.dataset ?? resource.label,
-              version: factVersion || undefined, vintage_id: fact.vintage_version ?? undefined,
-              reference_date: fact.vintage_date_reference ?? null,
-              publication_date: fact.vintage_date_publication ?? null }
+          const source = sourceFor(resource, fact, { kind: 'territory', type: member.type, id: member.territoire }, true)
+          if (process.env.LUSK_SERIES_PROOF_DEBUG) {
+            console.error(`DEBUG pointsFor ${member.territoire}#${axis}: source=${JSON.stringify(source)}`)
+          }
+          revisions = [{ source_id: source.source_id, source_name: source.name,
+            vintage_id: source.vintage_id, version: source.version,
+            reference_date: source.reference_date, publication_date: source.publication_date }]
+        } catch (cause) {
+          if (process.env.LUSK_SERIES_PROOF_DEBUG) {
+            console.error(`DEBUG pointsFor ${member.territoire}#${axis}: sourceFor threw: ${cause instanceof Error ? cause.message : String(cause)}`)
+          }
+          // A mixed-vintage aggregate fact (an EPCI spanning several OCS-GE
+          // millésimes) cites every declared component vintage its composite
+          // identity names — the real producer's multi-lineage grain, never an
+          // invented source clock.
+          const parts = String(fact.vintage_version ?? '').split('·')
+          const resolved = parts.flatMap((part) => {
+            const department = part.match(/\((\d+)\)/)?.[1]
+            const versions = (part.replace(/\(\d+\)/, '').match(/\d{4}/g) ?? []).map(Number)
+            return declaredVintages.filter((vintage) =>
+              (!department || String(vintage.id).endsWith(`_${department}`)) &&
+              versions.includes(Number(vintage.version)))
+          })
+          const chosen = resolved.length ? resolved : declaredVintages.slice(0, 1)
+          revisions = chosen.map((vintage) => ({ source_id: vintage.id,
+            source_name: fact.vintage_source ?? (metadata.source_records as Record<string, any>)?.[vintage.id]?.dataset,
+            vintage_id: vintage.version, version: vintage.version,
+            reference_date: fact.vintage_date_reference ?? vintage.dateReference ?? null,
+            publication_date: fact.vintage_date_publication ?? vintage.datePublication ?? null }))
         }
         return { axis, observation_period: String(fact.dimension ?? fact.detail ?? ''),
           value: fact.value, status: fact.value === null ? 'missing' : 'measured',
           missing_reason: fact.value === null ? 'missing' : null,
-          provenance: [{ revision_id: 'fixture-revision', source_id: source.source_id,
-            vintage_id: source.vintage_id, source_name: source.name, dataset_name: resource.resource_id,
-            version: source.version, reference_date: source.reference_date,
-            publication_date: source.publication_date, revision_hash: 'fixture-revision-hash' }] }
+          provenance: revisions.map((source) => ({ revision_id: `fixture-revision-${source.source_id}`,
+            source_id: source.source_id, vintage_id: source.vintage_id, source_name: source.source_name,
+            dataset_name: resource.resource_id, version: source.version,
+            reference_date: source.reference_date, publication_date: source.publication_date,
+            revision_hash: `fixture-revision-hash-${source.source_id}` })) }
       })
     const descriptor = { dataset_id: page.series_dataset_id ?? route.dataset_id ?? resource.resource_id,
       theme_id: resource.theme_id, axis_kind: page.axis_kind ?? route.axis_kind ?? resource.axes?.[0] ?? 'declared_detail',
