@@ -126,9 +126,10 @@ class SemanticResourceReader:
         profile_coordinates = self._profile_comparison_coordinates(conn, item, resource)
         if resource.resource_kind in {"indicator", "typed_reading"}:
             self._coordinate_values(conn, item, resource)
+        # Keep the established automatic pooled facet on dual-shape
+        # comparisons; the selector only opts into nested scalar projection.
         dual_scalar_series = (self._has_dual_scalar_series(resource)
-                              and item.target.kind == "territory"
-                              and bool(item.fields and "scalar_facet" in item.fields))
+                              and item.target.kind == "territory")
         if dual_scalar_series:
             self._require_dual_series_route(conn, resource)
         if resource.resource_kind == "typed_reading":
@@ -218,6 +219,7 @@ class SemanticResourceReader:
                 conn, item.target.type, item.target.id, item.resource, selection, fields,
                 include_scalar_facet=dual_scalar_series,
                 scalar_facet_theme_id=resource.theme_id if dual_scalar_series else None,
+                scalar_facet_projection=bool(item.fields and "scalar_facet" in item.fields),
                 profile_coordinates=profile_coordinates)
             resource = catalogue.resources_by_id[item.resource]
             members = ([member_id for _, member_id in selection] if selection else
@@ -389,9 +391,9 @@ class SemanticResourceReader:
             data = self._indicator_comparison_snapshot(
                 conn, item.target.type, item.target.id, item.resource, selection,
                 self._comparison_field_selection(requested_comparison_fields),
-                include_scalar_facet=(self._has_dual_scalar_series(resource) and
-                                      bool(item.fields and "scalar_facet" in item.fields)
+                include_scalar_facet=(self._has_dual_scalar_series(resource)
                                       and item.target.kind == "territory"),
+                scalar_facet_projection=bool(item.fields and "scalar_facet" in item.fields),
                 scalar_facet_theme_id=(resource.theme_id if self._has_dual_scalar_series(resource)
                                        and item.target.kind == "territory" else None),
                 profile_coordinates=self._profile_comparison_coordinates(conn, item, resource))

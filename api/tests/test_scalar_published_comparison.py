@@ -315,3 +315,14 @@ def test_selected_scalar_member_projection_preserves_a_single_eligible_rank(monk
         ("rank", "rank_size", "rank_ties", "member_ranks"))
     assert rank_only["rank_ties"] == 1
     assert "median" not in rank_only and "focal_value" not in rank_only
+
+
+def test_dual_shape_projection_splits_only_the_new_explicit_scalar_facet_selection():
+    legacy_fields = ("median", "rank", "rank_ties", "rank_size")
+    assert main._dual_scalar_projection_fields(legacy_fields, True, False) == (
+        legacy_fields, legacy_fields)
+    explicit_fields = ("status", "median", "rank", "rank_ties", "member_ranks")
+    assert main._dual_scalar_projection_fields(explicit_fields, True, True) == (
+        ["status"], ["median", "rank", "rank_ties", "member_ranks"])
+    assert main._dual_scalar_projection_fields(explicit_fields, False, True) == (
+        explicit_fields, explicit_fields)

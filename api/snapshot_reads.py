@@ -27,8 +27,9 @@ _COMPARISON_RESULT_FIELDS = {
 _COMPARISON_MANDATORY_FIELDS = {"status", "reason"}
 
 
-def _dual_scalar_projection_fields(selected_fields, include_scalar_facet):
-    if not include_scalar_facet or selected_fields is None:
+def _dual_scalar_projection_fields(selected_fields, include_scalar_facet,
+                                   scalar_facet_projection=False):
+    if not include_scalar_facet or not scalar_facet_projection or selected_fields is None:
         return selected_fields, selected_fields
     nested_fields = {"median", "rank", "rank_size", "rank_ties", "selected_member_count",
         "eligible_count", "missing_count", "member_ranks"}
@@ -2324,6 +2325,7 @@ def _scalar_facet_comparison_snapshot(conn, territory_type, territory_id, indica
 def _indicator_comparison_preflight(conn, territory_type, territory_id, indicator_id,
                                     selection, selected_fields, *, snapshot_state=None,
                                     include_scalar_facet=False,
+                                    scalar_facet_projection=False,
                                     scalar_facet_theme_id=None,
                                     profile_coordinates=None):
     _validate_comparison_fields(selected_fields,
@@ -2351,7 +2353,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
             checked = _owned_reference_comparison_result(conn,active_owned,territory_type,territory_id,
                                                           indicator_id,selection)
             return {"shape": "named_reference", "checked": checked}
-        series_fields, scalar_fields = _dual_scalar_projection_fields(selected_fields, include_scalar_facet)
+        series_fields, scalar_fields = _dual_scalar_projection_fields(
+            selected_fields, include_scalar_facet, scalar_facet_projection)
         cohort = _comparison_cohort_in_snapshot(conn,territory_type,territory_id,selection,
                                                 snapshot_state)
         checked = _owned_series_comparison_results(conn,[active_owned],territory_type,territory_id,
@@ -2427,6 +2430,7 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
 def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator_id, selection,
                                    selected_fields, *, snapshot_state=None,
                                    include_scalar_facet=False,
+                                   scalar_facet_projection=False,
                                    scalar_facet_theme_id=None,
                                    profile_coordinates=None):
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
@@ -2439,7 +2443,8 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
     if include_scalar_facet and active_owned[1] != scalar_facet_theme_id:
         raise HTTPException(503, "Declared scalar and ordered-series facets have incompatible themes")
     if active_owned:
-        series_fields, scalar_fields = _dual_scalar_projection_fields(selected_fields, include_scalar_facet)
+        series_fields, scalar_fields = _dual_scalar_projection_fields(
+            selected_fields, include_scalar_facet, scalar_facet_projection)
         if active_owned[2]:
             _validate_comparison_fields(series_fields,{"selected_member_count"})
             result=_owned_reference_comparison_result(conn,active_owned,territory_type,
