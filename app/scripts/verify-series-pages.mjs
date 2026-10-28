@@ -576,10 +576,9 @@ try {
   await page.locator('h1').filter({ hasText: 'subventions' }).waitFor({ state: 'visible', timeout: 20000 })
   harness.releaseDelayed()
   await page.waitForTimeout(150)
-  const h1AfterLate = await page.locator('h1').innerText().catch((cause) => `h1 error: ${cause.message}`)
-  if (process.env.LUSK_SERIES_PROOF_DEBUG) console.error(`DEBUG LATE: h1=${JSON.stringify(h1AfterLate)} url=${page.url()}`)
-  assert(String(h1AfterLate).includes('subventions'),
-    `a late conso response must not overwrite the new route (h1=${JSON.stringify(h1AfterLate)})`)
+  const h1AfterLate = String(await page.locator('h1').innerText()).toLocaleLowerCase('fr')
+  assert(h1AfterLate.includes('subventions'),
+    'a late conso response must not overwrite the new route')
   await page.locator('tbody tr').first().waitFor({ state: 'visible', timeout: 20000 })
 
   // Small screen keeps the page inside its viewport.
