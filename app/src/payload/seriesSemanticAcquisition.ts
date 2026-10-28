@@ -634,7 +634,7 @@ function isValidScalarComparisonFacet(value: unknown, facts: OrderedSeriesFactsE
           observation.territory.type !== facts.resolved_cohort_type ||
           !scalarCohortMembers.some((member) => member.id === observation.territory.id) ||
           factValues.has(observation.territory.id) ||
-          !['measured', 'unavailable'].includes(observation.status)) return false
+          !['measured', 'suppressed', 'unsupported', 'not_available'].includes(observation.status)) return false
       if (observation.status === 'measured') {
         if (!finite(observation.value)) return false
         factValues.set(observation.territory.id, observation.value)
