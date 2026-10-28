@@ -248,6 +248,7 @@ export interface EtapeTrajectoire {
   max: number | null
   nValeurs: number
   nManquantes: number
+  comparisonSupported?: boolean
 }
 export interface PointTrajectoire { detail: string; label: string; x: number; value: number | null }
 export interface ModeleTrajectoire {
@@ -277,6 +278,8 @@ export interface OptionsTrajectoire {
   axis?: TrajectoryMetadata['axis']
   /** Canonical labels from theme metadata, outside the page descriptor. */
   labelsDetail?: Record<string, string>
+  /** Native ordered-series data owns step comparisons; absent axes are unsupported, not recomputed. */
+  nativeSeries?: boolean
 }
 
 export function modeleTrajectoire(
@@ -289,7 +292,10 @@ export function modeleTrajectoire(
   referenceLabel: string | null = null,
   options: OptionsTrajectoire = {},
 ): ModeleTrajectoire {
-  const details = facet.details
+  const details = options.nativeSeries
+    ? [...new Set(facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator &&
+      fact.detail !== null).map((fact) => fact.detail!))]
+    : facet.details
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
 
   // L'échelle temporelle partagée — UNE coordonnée par détail déclaré. Le
@@ -324,15 +330,20 @@ export function modeleTrajectoire(
     // sexe/dimension comme le statut et la facette résumée.
     const rows = filtrerFaits(facts, { theme: facet.theme, cle: facet.indicator, detail, sexe: facet.sex, dimension: facet.dimension, niveau: etat.niveau }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value })).filter((row): row is { territoire: Territoire; value: number | null } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci)))
     const valeurs = rows.filter((row) => row.value !== null).map((row) => row.value as number)
+    const native = options.nativeSeries
+      ? facts.find((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === detail &&
+        dansScope(refs.get(fact.territoire) ?? ({} as Territoire), etat.niveau, etat.departement, etat.epci))?.native_series_comparison
+      : undefined
     return {
       detail,
       label: options.labelsDetail?.[detail] ?? facet.labels[detail] ?? `Étape ${index + 1}`,
       x: xDe(detail),
-      min: valeurs.length ? Math.min(...valeurs) : null,
-      mediane: mediane(valeurs),
-      max: valeurs.length ? Math.max(...valeurs) : null,
-      nValeurs: valeurs.length,
-      nManquantes: rows.length - valeurs.length,
+      min: options.nativeSeries ? native?.min ?? null : valeurs.length ? Math.min(...valeurs) : null,
+      mediane: options.nativeSeries ? native?.statistic === 'median' ? native.value : null : mediane(valeurs),
+      max: options.nativeSeries ? native?.max ?? null : valeurs.length ? Math.max(...valeurs) : null,
+      nValeurs: options.nativeSeries ? native?.eligible_count ?? 0 : valeurs.length,
+      nManquantes: options.nativeSeries ? native?.missing_count ?? 0 : rows.length - valeurs.length,
+      ...(options.nativeSeries ? { comparisonSupported: native !== undefined } : {}),
     } satisfies EtapeTrajectoire
   }).sort((a, b) => (coordonnees.get(a.detail)! - coordonnees.get(b.detail)!) || (details.indexOf(a.detail) - details.indexOf(b.detail)))
 

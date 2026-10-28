@@ -68,13 +68,11 @@ PowerShell: `$env:VITE_THEME_ACQUISITION_API='0'` before running a command).
 - `VITE_THEME_ACQUISITION_API` is enabled by default; setting it to `'0'` selects
   the incumbent static path. This client-side switch does not establish that an
   API route is deployed or available.
-- `VITE_SCALAR_COHORT_API`, `VITE_OWNED_SERIES_API`, `VITE_CONSO_ENAF_SERIES_API`, and
-  `VITE_OCSGE_STATE_SERIES_API` remain explicit opt-ins (`'1'`) for their
-  applicable readers; normal commands do not set them. Exception: the ordered
-  series reader also enables `raccordement_courbe` through the default-on
-  `VITE_THEME_ACQUISITION_API` switch. This is inherited client behavior, not
-  support for its retired endpoint. `VITE_SCALAR_COHORT_API` remains independent
-  for retained fiche/standalone consumers; it does not gate ordinary scalar pages.
+- `VITE_SCALAR_COHORT_API` remains an opt-in for retained fiche/standalone
+  consumers; it does not gate ordinary scalar pages or the five registered
+  ordered-series indicator pages. The latter are classified from `/api/resources`
+  and read through the semantic batch contract; their old per-series feature
+  switches and direct series routes do not select the page reader.
 - Every canonical `/indicateurs/:theme/:indicator` route first discovers its
   producer-owned resource classification through `/api/resources`. A fresh
   discovery outage is retryable for all indicator pages, including pages whose
@@ -83,8 +81,8 @@ PowerShell: `$env:VITE_THEME_ACQUISITION_API='0'` before running a command).
   Ordinary scalar pages use API-only facts and comparisons when the
   producer catalogue declares a scalar-only resource accepted by the existing
   normalized scalar page grammar; they have no environment switch or static
-  numeric fallback. This does not migrate ordered series, dual-shape resources
-  such as `prix_m2`, or the `subventions` owner path. Producer descriptor,
+  numeric fallback. The five producer-declared ordered-series pages also use
+  API-only facts, with their existing page grammar retained. Producer descriptor,
   facet, publication, and source identity remain authoritative: incompatibilities
   fail closed, comparison-only failures stay retryable without rereading valid
   facts, and the app does not invent source clocks. Producer-allowed levels do

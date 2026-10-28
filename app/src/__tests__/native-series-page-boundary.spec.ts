@@ -48,9 +48,12 @@ describe('#857 guarded native stock/calendar boundary → real application seams
     expect(family.family).toBe('trajectory')
     expect(family.selected).toMatchObject({ value: 120, unit: 'm²/hab', observation_period: '2020–2023' })
     const model = modeleTrajectoire(facts, family.facet, ['M2', 'M3'], wire.territories,
-      { niveau: 'epci', territoire: 'state-e1' })
+      { niveau: 'epci', territoire: 'state-e1' }, [], null, { nativeSeries: true })
     expect(model.serieTerritoire?.find((point) => point.detail === '2023')?.value).toBe(120)
-    // Deliberately do not use model.etapes medians/ranks as native evidence.
+    expect(model.etapes.find((step) => step.detail === '2023')).toMatchObject({ mediane: null,
+      min: null, max: null, comparisonSupported: false })
+    expect(model.etapes.map((step) => step.detail)).toEqual(expect.arrayContaining(
+      ['M2', 'M3', '2020', '2021', '2022', '2023', '2024', '2025']))
   })
 
   it('shows why selecting typed EPCI is not an alternative same-level peer contract', async () => {
@@ -66,14 +69,14 @@ describe('#857 guarded native stock/calendar boundary → real application seams
       status: 'unavailable', reason: 'selected_coordinate_has_no_comparison_result' })
   })
 
-  it('RED: supplies native comparison evidence for the existing EPCI calendar-year control', async () => {
+  it('keeps calendar facts but refuses calendar peer evidence under the approved restriction', async () => {
     const fixed = await readNative('fixed')
     expect(fixed.result).toMatchObject({ statistic: 'median', median: 180, eligible_count: 3 })
     const calendar = await readNative('calendar')
-    // Existing page control: in 2023 the measured EPCI values are 120 and 180;
-    // the third EPCI has no 2023 record. M3's median=180 is a DIFFERENT reading.
-    // No browser-computed median or relabelled M3 result may satisfy this RED.
-    expect(calendar.result).toMatchObject({ source_facet: '2023', statistic: 'median', status: 'available',
-      median: 150, eligible_count: 2, missing_count: 1 })
+    // Owner decision: these remain calendar facts, not a comparison population.
+    // Preserve the old unrequested response rather than relabel its M3 fallback.
+    expect(calendar.result).toMatchObject({ source_facet: '2025', statistic: 'median', status: 'unavailable',
+      reason: 'selected_coordinate_has_no_comparison_result' })
+    expect(calendar.result).not.toHaveProperty('median')
   })
 })

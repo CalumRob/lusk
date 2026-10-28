@@ -305,26 +305,18 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(mounted.wrapper.find('[data-testid="raccordement-comparison-error"]').exists()).toBe(false)
     } finally { mounted.wrapper.unmount() }
   })
-  it('mounts prix_m2 through the shared default-off owned-series reader gate', async () => {
-    vi.stubEnv('VITE_OWNED_SERIES_API', '1')
+  it('mounts prix_m2 through the shared producer-declared semantic acquisition', async () => {
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
       if (file === 'indicateurs_habitat') return indicateursHabitatFixture
       if (file === 'theme_habitat') return metadataHabitat
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => String(input) === '/api/resources'
-      ? nativeCatalogueResponse() : new Response(JSON.stringify({
-      dataset_id: 'dvf_prix_m2', indicator_id: 'prix_m2', axis_kind: 'year', unit: '€/m²',
-      territory: { id: '22001', type: 'commune', name: 'Commune A1' },
-      points: [{ axis: '2024', observation_period: '2024', value: null, status: 'missing', provenance: [] },
-        { axis: '2025', observation_period: '2025', value: 525, status: 'measured', provenance: [] }],
-      scope_series: [{ territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: [
-        { axis: '2024', observation_period: '2024', value: null, status: 'missing', provenance: [] },
-        { axis: '2025', observation_period: '2025', value: 525, status: 'measured', provenance: [] },
-      ] }], comparison: { point: '2025', value: 525, median: 525, rank: 1, ties: 1, comparable_count: 1,
-        direction: 'low', scope: { kind: 'level', territory_type: 'commune', department_id: '22' } },
-    }), { status: 200 }))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, nativeReadFixture)
+    })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
     await router.isReady()
@@ -337,14 +329,14 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     try {
       await flushPromises()
       expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/resources')
-      expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/series-datasets/dvf_prix_m2/territories/commune/22001/prix_m2?scope_level=commune&department_id=22')
-      expect(wrapper.text()).toContain('525')
+      expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/resources/read-batch')
+      const request = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))
+      expect(request.items.map((item: any) => item.resource)).toEqual(['prix_m2', 'prix_m2', 'prix_m2'])
+      expect(wrapper.text()).toContain('1 604,33')
       expect(wrapper.text()).toContain('Prix')
     } finally { wrapper.unmount() }
   })
   it('waits for delayed metadata before choosing a series route when both API gates are enabled', async () => {
-    vi.stubEnv('VITE_OCSGE_STATE_SERIES_API', '1')
-    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '1')
     let publishMetadata!: (metadata: typeof metadataMilieux) => void
     const metadata = new Promise<typeof metadataMilieux>((resolve) => { publishMetadata = resolve })
     const loader: ChargerFichier = async (file) => {
@@ -353,11 +345,11 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       if (file === 'theme_milieux') return metadata
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => String(input) === '/api/resources'
-      ? nativeCatalogueResponse() : new Response(JSON.stringify({
-      dataset_id: 'ocsge_artif_etats', indicator_id: 'artif_par_habitant', points: [], scope_series: [],
-      territory: { id: '22001', type: 'commune', name: 'Commune A1' },
-    }), { status: 200 }))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, nativeReadFixture)
+    })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22')
     await router.isReady()
@@ -372,7 +364,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/resources')
       publishMetadata(metadataMilieux)
       await flushPromises()
-      expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22')
+      expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/resources/read-batch')
+      expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)).items[0].resource).toBe('artif_par_habitant')
       expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
   })
@@ -386,8 +379,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(() => validerThemeMetadata(metadata, 'theme_milieux.json')).toThrow()
     }
   })
-  it('completes a pending owned read when URL normalization repeats the same scope', async () => {
-    vi.stubEnv('VITE_OCSGE_STATE_SERIES_API', '1')
+  it('uses one API batch when a legacy calendar URL canonicalizes to the supported M3 role', async () => {
     localStorage.removeItem('lusk:niveau-indicateur')
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
@@ -395,9 +387,11 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       if (file === 'theme_milieux') return metadataMilieux
       throw new Error(`unexpected static read: ${file}`)
     }
-    let complete!: (response: Response) => void
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => String(input) === '/api/resources'
-      ? Promise.resolve(nativeCatalogueResponse()) : new Promise<Response>((resolve) => { complete = resolve }))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, nativeReadFixture)
+    })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22')
     await router.isReady()
@@ -407,53 +401,32 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { milieux: [] } }),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
-    await flushPromises()
-    expect(wrapper.text()).toContain('Chargement des données actualisées')
     await router.replace({ query: { ...router.currentRoute.value.query, detail: '2025' } })
     await flushPromises()
-    const point = { axis: '2025', state_role: 'M3', observation_period: '2021-2025', value: 42, status: 'measured', provenance: [] }
-    complete(new Response(JSON.stringify({ dataset_id: 'ocsge_artif_etats', indicator_id: 'artif_par_habitant',
-      axis_kind: 'declared_detail', unit: 'm²/hab', comparison_point: '2025',
-      territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: [point],
-      scope_series: [{ territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: [point] }],
-    }), { status: 200 }))
-    await flushPromises()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const batchCalls = fetchMock.mock.calls.filter(([input]) => String(input) === '/api/resources/read-batch')
+    expect(batchCalls).toHaveLength(1)
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/resources')
-    expect(fetchMock).toHaveBeenNthCalledWith(2,
-      '/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22')
-    expect(wrapper.text()).not.toContain('Chargement des données actualisées')
-    expect(wrapper.text()).toContain('42')
+    expect(batchCalls[0]?.[0]).toBe('/api/resources/read-batch')
+    expect(JSON.parse(String(batchCalls[0]?.[1]?.body)).items.map((item: any) => item.resource))
+      .toEqual(['artif_par_habitant', 'artif_par_habitant', 'artif_par_habitant'])
+    expect(router.currentRoute.value.query.detail).toBe('M3')
+    expect(wrapper.text()).toContain('Comparaison non publiée')
     wrapper.unmount()
   })
 
-  it('uses the separately gated, dataset-qualified M2/M3 reader and does not reuse ENAF state', async () => {
-    vi.stubEnv('VITE_OCSGE_STATE_SERIES_API', '1')
-    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '')
+  it('keeps OCS-GE calendar observations factual while exposing only supported comparison roles', async () => {
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
       if (file === 'indicateurs_milieux') return indicateursMilieuxFixture
       if (file === 'theme_milieux') return metadataMilieux
       throw new Error(`unexpected static read: ${file}`)
     }
-    let apiAvailable=false
-    const fetchMock = vi.spyOn(globalThis,'fetch').mockImplementation(async (input) => {
+    let apiAvailable = false
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       if (String(input) === '/api/resources') return nativeCatalogueResponse()
-      if(!apiAvailable) throw new Error('owned API unavailable')
-      return new Response(JSON.stringify({
-      dataset_id:'ocsge_artif_etats',indicator_id:'artif_par_habitant',axis_kind:'declared_detail',unit:'m²/hab',
-      territory:{id:'22001',type:'commune',name:'Commune A1'},comparison_point:'2025',
-      comparison:{point:'2025',direction:'low',scope:{kind:'level',territory_type:'commune',
-        department_id:'22',rank_field:'rang_dep'},rank:1,ties:1,median:61,comparable_count:2},
-      points:[{axis:'2021',state_role:'M2',observation_period:'2021-2025',value:0,status:'measured',provenance:[]},
-        {axis:'2025',state_role:'M3',observation_period:'2021-2025',value:42,status:'measured',provenance:[]}],
-      scope_series:[{territory:{id:'22001',type:'commune',name:'Commune A1'},points:[
-        {axis:'2021',state_role:'M2',observation_period:'2021-2025',value:0,status:'measured',provenance:[]},
-        {axis:'2025',state_role:'M3',observation_period:'2021-2025',value:42,status:'measured',comparison_rank:1,comparison_ties:1,comparison_count:2,provenance:[]}]},
-      {territory:{id:'22002',type:'commune',name:'Commune A2'},points:[
-        {axis:'2021',state_role:'M2',observation_period:'2021-2025',value:2,status:'measured',provenance:[]},
-        {axis:'2025',state_role:'M3',observation_period:'2021-2025',value:80,status:'measured',comparison_rank:2,comparison_ties:1,comparison_count:2,provenance:[]}]}],
-      }),{status:200,headers:{'Content-Type':'application/json'}})
+      if (!apiAvailable) throw new Error('semantic API unavailable')
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, nativeReadFixture)
     })
     const router=createRouter({history:createMemoryHistory(),routes})
     await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22&detail=2021')
@@ -465,18 +438,19 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       [GEOMETRIE_CHARGER_KEY]:async()=>({communes:empty,epcis:empty,departements:empty}),
     }}})
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledWith('/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22')
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/resources/read-batch')).toBe(true)
     expect(wrapper.text()).toContain('momentanément indisponibles')
     apiAvailable=true
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('momentanément indisponibles')
-    expect(wrapper.text()).toContain('42')
+    expect(wrapper.find('.trajectoire-territoire-point[data-detail="2025"]').attributes('data-value'))
+      .toBe('2606.028248734476')
+    expect(wrapper.text()).toContain('Comparaison non publiée pour')
   })
 
   it('preserves the page grammar and comparison scope, adapts API facts, and never falls back to static series on failure', async () => {
-    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '1')
     const calls: string[] = []
     const loader: ChargerFichier = async (file) => {
       calls.push(file)
@@ -486,33 +460,15 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       throw new Error(`unexpected static read: ${file}`)
     }
     const fixtureFacts = indicateursMilieuxFixture.filter((fact) => fact.key === 'conso_enaf_annuel' && fact.type === 'commune')
-    const axis: string[] = rawMetadataMilieux.indicator_pages.conso_enaf_annuel.comparison.details
-    const scopeSeries = [...new Set(fixtureFacts.map((fact) => fact.territoire))].map((id) => {
-      const territory = territoiresFixture.find((item) => item.territoire === id)!
-      return { territory: { id, type: territory.type, name: territory.nom }, points: fixtureFacts
-        .filter((fact) => fact.territoire === id).map((fact) => ({ axis: fact.detail!, observation_period: fact.detail,
-          value: fact.value, status: fact.value === null ? 'missing' : 'measured', source_id: 'consoenaf',
-          vintage_id: 'v2025', source_version: '2025', source_reference_date: '2025-01-01', source_publication_date: '2026-07-24' })) }
-    })
-    const apiRead = {
-      dataset_id: 'conso_enaf_annuel', availability: 'complete',
-      indicator_id: 'conso_enaf_annuel', axis_kind: 'year', unit: 'ha',
-      territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: axis.map((year) => ({ axis: year,
-        observation_period: year, value: fixtureFacts.find((fact) => fact.territoire === '22001' && fact.detail === year)?.value ?? null,
-        status: fixtureFacts.some((fact) => fact.territoire === '22001' && fact.detail === year)
-          ? (fixtureFacts.find((fact) => fact.territoire === '22001' && fact.detail === year)?.value === null ? 'missing' : 'measured') : 'missing',
-        source_id: 'consoenaf', vintage_id: 'v2025' })), scope_series: scopeSeries,
-      comparison: { point: '2024', value: null, median: null, rank: null, ties: null, comparable_count: 0,
-        scope: { kind: 'level', territory_type: 'commune', department_id: '22', epci_id: null } },
-    }
     let apiCalls = 0
     let retryEnabled = false
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       if (String(input) === '/api/resources') return nativeCatalogueResponse()
-      if (!String(input).startsWith('/api/series-datasets/')) return new Response('{}', { status: 404 })
+      if (String(input) !== '/api/resources/read-batch') return new Response('{}', { status: 404 })
       apiCalls++
       if (!retryEnabled) throw new Error('offline')
-      return new Response(JSON.stringify(apiRead), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, nativeReadFixture)
     })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/conso_enaf_annuel?territoire=22001&niveau=commune&departement=22')
@@ -533,11 +489,11 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
     expect(apiCalls).toBeGreaterThan(beforeRetry)
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/series-datasets/conso_enaf_annuel/territories/commune/22001/conso_enaf_annuel?scope_level=commune&department_id=22')
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/api/resources/read-batch')
     expect(wrapper.find('.vues').exists()).toBe(true)
     expect(wrapper.find('.controls').exists()).toBe(true)
     expect(wrapper.text()).toContain('Consommation')
-    expect(wrapper.text()).toContain('4,32')
+    expect(wrapper.text()).toContain('1,83')
     expect(wrapper.text()).toContain('Département 22')
     expect(wrapper.text()).not.toContain('Territoire de la série')
     await wrapper.findAll('.vues button')[2].trigger('click')
@@ -546,15 +502,15 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     expect(calls).toContain('theme_milieux')
   })
 
-  it('keeps the legacy indicator facts and does not call the API when the build gate is off by default', async () => {
-    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '')
+  it('uses the API with retired gate variables absent and never exposes the legacy page facts on failure', async () => {
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
       if (file === 'indicateurs_milieux') return indicateursMilieuxFixture
       if (file === 'theme_milieux') return metadataMilieux
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(nativeCatalogueResponse())
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input) === '/api/resources' ? nativeCatalogueResponse() : new Response('', { status: 503 }))
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/conso_enaf_annuel?territoire=22001&niveau=commune&departement=22')
     await router.isReady()
@@ -565,9 +521,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/resources')
-    expect(wrapper.text()).not.toContain('momentanément indisponibles')
-    expect(wrapper.text()).toContain('12 ha')
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/resources/read-batch')).toBe(true)
+    expect(wrapper.text()).toContain('momentanément indisponibles')
     expect(wrapper.find('.vues').exists()).toBe(true)
   })
 })

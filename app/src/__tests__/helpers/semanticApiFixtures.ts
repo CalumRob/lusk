@@ -799,6 +799,46 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     }
     const shape = isProfile ? 'declared_profile' : isSeries ? 'ordered_series'
       : isCollection ? 'period_detail' : 'scalar'
+    const axisComparisons = isSeries && item.fields?.includes('axis_comparisons')
+      ? (() => {
+          const metadata = metadataFor(resource.theme_id)
+          const page = metadata.indicator_pages?.[resource.indicator_id] ?? {}
+          const declared = resource.indicator_id === 'artif_par_habitant'
+            ? page.trajectory?.endpoints ?? []
+            : page.comparison?.details ?? page.comparison?.dimensions ?? []
+          const requested = item.coordinates?.[resource.axes?.[0] ?? '']
+          const axes = requested?.length ? declared.filter((axis: string) => requested.includes(axis)) : declared
+          const selectedMembers: Record<string, any>[] = selected
+            ? selected.map((member: Record<string, any>) => territoryReference.find((row) =>
+                row.type === member.territory_type && row.territoire === member.territory_id)).filter(Boolean)
+            : cohort
+          return axes.map((axis: string) => {
+            const observations = selectedMembers.map((member) => {
+              const fact = publishedIndicators(resource, { kind: 'territory', type: member.type,
+                id: member.territoire }).find((row) => (row.detail ?? row.dimension) === axis)
+              return { member, fact, value: fact && fact.value !== null ? Number(fact.value) : null }
+            })
+            const values = observations.filter((row) => row.value !== null).map((row) => row.value as number)
+            const statistic = page.comparison?.statistic ?? 'median'
+            const sorted = [...values].sort((a, b) => a - b)
+            const middle = Math.floor(sorted.length / 2)
+            const aggregate = statistic === 'mean' ? values.reduce((sum, value) => sum + value, 0) / values.length
+              : sorted.length % 2 ? sorted[middle] : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
+            const direction = page.comparison?.direction ?? page.direction ?? resource.direction
+            const available = values.length >= 2
+            return { axis, statistic, status: available ? 'available' : 'unavailable',
+              value: available ? aggregate : null, min: available ? Math.min(...values) : null,
+              max: available ? Math.max(...values) : null, selected_member_count: selectedMembers.length,
+              eligible_count: values.length, missing_count: selectedMembers.length - values.length,
+              member_ranks: observations.map(({ member, value }) => ({ territory_id: member.territoire,
+                rank: available && value !== null ? 1 + values.filter((candidate) => direction === 'high'
+                  ? candidate > value : candidate < value).length : null,
+                rank_size: available && value !== null ? values.length : null,
+                rank_ties: available && value !== null ? values.filter((candidate) => candidate === value).length : null })),
+              sources: [],
+            }
+          })
+        })() : undefined
     const result = { indicator_id: resource.indicator_id, status: 'unavailable', reason: 'fixture_unavailable',
       unit: resource.unit, direction: resource.direction,
       source_facet: isProfile ? undefined : isSeries ? null : resource.indicator_id,
@@ -825,7 +865,8 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
         : { kind: target.type === 'commune' ? 'density_class' : 'same_level',
           territory_type: target.type, density_class_code: focal?.classe_densite_code ?? null,
           member_count: cohort.length },
-      result, ...(scalarFacet ? { scalar_facet: scalarFacet } : {}) }
+      result: axisComparisons ? { ...result, axis_comparisons: axisComparisons } : result,
+      ...(scalarFacet ? { scalar_facet: scalarFacet } : {}) }
   }
 
   if (resource.resource_id === 'raccordement_tc' && target.kind === 'territory') {
@@ -926,6 +967,52 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     throw new Error(`Unsupported native profile fixture target: ${target.kind}`)
   }
 
+  if (target.kind === 'territory_cohort' && shapes.includes('ordered_series')) {
+    const metadata = metadataFor(resource.theme_id)
+    const page = metadata.indicator_pages?.[resource.indicator_id] ?? {}
+    const route = metadata.owned_series_routes?.[resource.indicator_id] ?? {}
+    const axisValues = page.comparison?.details ?? page.comparison?.dimensions ?? []
+    const members = territoryReference.filter((member) => member.type === target.type &&
+      (!target.department_id || member.departement === target.department_id) &&
+      (!target.epci_id || member.epci === target.epci_id))
+    const pointsFor = (member: Record<string, any>) => publishedIndicators(resource,
+      { kind: 'territory', type: member.type, id: member.territoire })
+      .filter((fact) => fact.detail != null || fact.dimension != null)
+      .map((fact) => {
+        const axis = String(fact.detail ?? fact.dimension)
+        const source = sourceFor(resource, fact, { kind: 'territory', type: member.type, id: member.territoire }, true)
+        return { axis, observation_period: String(fact.dimension ?? fact.detail ?? ''),
+          value: fact.value, status: fact.value === null ? 'missing' : 'measured',
+          missing_reason: fact.value === null ? 'missing' : null,
+          provenance: [{ revision_id: 'fixture-revision', source_id: source.source_id,
+            vintage_id: source.vintage_id, source_name: source.name, dataset_name: resource.resource_id,
+            version: source.version, reference_date: source.reference_date,
+            publication_date: source.publication_date, revision_hash: 'fixture-revision-hash' }] }
+      })
+    const descriptor = { dataset_id: page.series_dataset_id ?? route.dataset_id ?? resource.resource_id,
+      theme_id: resource.theme_id, axis_kind: page.axis_kind ?? route.axis_kind ?? resource.axes?.[0] ?? 'declared_detail',
+      axis_values: axisValues.length ? axisValues : [...new Set(members.flatMap((member) =>
+        pointsFor(member).map((point) => point.axis)))], completeness: page.completeness ?? 'may_be_missing',
+      absence_semantics: page.absence_semantics ?? 'unavailable', label: page.label ?? resource.label,
+      unit: page.unit ?? resource.unit, direction: page.direction ?? resource.direction,
+      descriptor_version: descriptorVersion, allowed_levels: page.levels ?? resource.allowed_levels,
+      comparison_point: page.comparison?.detail ?? page.comparison?.dimension ?? null,
+      observation_period_kind: page.observation_period_kind ?? null }
+    const response: Record<string, any> = { ...shared, shape: 'ordered_series', cohort: {
+      territory_type: target.type, department_id: target.department_id ?? null,
+      epci_id: target.epci_id ?? null, member_count: members.length,
+      members: members.map((member) => ({ id: member.territoire, type: member.type, name: member.nom })),
+      reference_content_version: referenceVersion }, content_version: version,
+      reference_content_version: referenceVersion, descriptor,
+      series: members.map((member) => ({ territory: { id: member.territoire, type: member.type, name: member.nom },
+        availability: 'complete', points: pointsFor(member) })) }
+    if (shapes.includes('scalar')) {
+      const scalar = nativeReadFixture(item, { ...resource, shapes: ['scalar'] }, context)
+      response.scalar_facet = scalar
+    }
+    return response
+  }
+
   if (target.kind === 'territory_cohort' && shapes.includes('scalar')) {
     const members = territoryReference.filter((member) => member.type === target.type &&
       (!target.department_id || member.departement === target.department_id) &&
@@ -964,8 +1051,10 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     if (resource.resource_id === 'raccordement_courbe') {
       return { ...shared, ...syntheticRaccordementSeries(item, resource, version, referenceVersion, descriptorVersion) }
     }
+    const page = metadataFor(resource.theme_id).indicator_pages?.[resource.indicator_id] ?? {}
+    const route = metadataFor(resource.theme_id).owned_series_routes?.[resource.indicator_id] ?? {}
     const axis = resource.axis_values?.[0]
-    const axisKind = axis?.[0] ?? resource.axes?.[0] ?? 'axis'
+    const axisKind = page.axis_kind ?? route.axis_kind ?? axis?.[0] ?? resource.axes?.[0] ?? 'axis'
     const axisValue = (fact: Record<string, any>) => String(fact.detail ?? fact.dimension ?? '')
     const seriesFacts = facts.filter((fact) => fact.detail !== null && fact.detail !== undefined ||
       fact.dimension !== null && fact.dimension !== undefined)
@@ -980,7 +1069,9 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
           revision_id: 'fixture-revision', dataset_name: resource.resource_id,
           revision_hash: 'fixture-revision-hash' }] }
     })
-    const response: Record<string, any> = { ...shared, indicator_id: resource.indicator_id, theme_id: resource.theme_id,
+    const response: Record<string, any> = { ...shared, territory: { id: target.id, type: target.type,
+        name: territoryReference.find((row) => row.type === target.type && row.territoire === target.id)?.nom ?? target.id },
+      indicator_id: resource.indicator_id, theme_id: resource.theme_id,
       dataset_id: resource.resource_id === 'raccordement_courbe' ? raccordementRoute.dataset_id : resource.resource_id,
       publication_id: version, content_version: version, reference_content_version: referenceVersion,
       descriptor_version: descriptorVersion, axis_kind: axisKind, axis_values: axisValues,
@@ -989,7 +1080,8 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
         return Number.isFinite(numeric) ? numeric : null
       }),
       completeness: facts.length ? 'observed_sparse' : 'no_record', label: resource.label,
-      unit: resource.unit, direction: resource.direction, comparison_point: null,
+      unit: resource.unit, direction: resource.direction,
+      comparison_point: page.comparison?.detail ?? page.comparison?.dimension ?? null,
        points, scope_series: [], context: null, named_references: [], availability: facts.length ? 'observed' : 'no_record' }
     if (shapes.includes('scalar')) {
       // Emit a deterministic synthetic pooled observation with producer-owned
@@ -1056,7 +1148,9 @@ export function nativeBatchResponse<T extends Record<string, any>>(
       ? scalarComparisonFields
       : resource?.shapes.includes('declared_profile') && item.intent?.kind === 'selected_comparison'
         ? profileComparisonFields : []
-    const allowedFields = new Set([...(resource?.fields ?? []), ...comparisonFields])
+    const seriesProjectionFields = resource?.shapes.includes('ordered_series') ? ['axis_comparisons',
+      ...(resource.shapes.includes('scalar') ? ['scalar_facet'] : [])] : []
+    const allowedFields = new Set([...(resource?.fields ?? []), ...comparisonFields, ...seriesProjectionFields])
     const invalidCoordinates = Boolean(resource && item.coordinates &&
       Object.entries(item.coordinates).some(([axis, values]) => {
         if (!(resource.axes ?? []).includes(axis)) return true

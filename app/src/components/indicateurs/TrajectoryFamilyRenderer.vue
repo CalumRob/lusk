@@ -79,6 +79,7 @@ const marqueur = computed(() => {
   return marker && etape ? { ...marker, x: etape.x, detailLabel: etape.label } : null
 })
 const sansValeur = computed(() => props.modele?.etapes.filter((etape) => etape.mediane === null) ?? [])
+const comparaisonNonPubliee = computed(() => props.modele?.etapes.filter((etape) => etape.comparisonSupported === false) ?? [])
 const libelleActif = computed(() => {
   const detail = props.dispatch.facet.detail
   if (detail === null) return props.dispatch.facet.label
@@ -140,7 +141,7 @@ const ariaDescription = computed(() => {
       </span>
     </div>
     <p v-if="marqueur" class="visually-hidden">Repère : {{ marqueur.label }} à {{ marqueur.detailLabel }}.</p>
-    <figcaption>Détail (actif) : {{ libelleActif }} · le détail pilote la carte, les extrêmes et le tableau ; le chemin complet reste visible.<span v-if="modele?.referenceLabel"> · Référence : {{ modele.referenceLabel }}</span><span v-if="sansValeur.length"> · {{ sansValeur.map((etape) => etape.label).join(', ') }} : aucune valeur à ce niveau.</span></figcaption>
+    <figcaption>Détail (actif) : {{ libelleActif }} · le détail pilote la carte, les extrêmes et le tableau ; le chemin complet reste visible.<span v-if="modele?.referenceLabel"> · Référence : {{ modele.referenceLabel }}</span><span v-if="sansValeur.length && !modele?.etapes.some((etape) => etape.comparisonSupported === false)"> · {{ sansValeur.map((etape) => etape.label).join(', ') }} : aucune valeur à ce niveau.</span><span v-if="comparaisonNonPubliee.length"> · Comparaison non publiée pour {{ comparaisonNonPubliee.map((etape) => etape.label).join(', ') }} ; les observations restent affichées comme faits.</span></figcaption>
     <slot :dispatch="dispatch" />
   </figure>
 </template>

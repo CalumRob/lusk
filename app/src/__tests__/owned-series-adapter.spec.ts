@@ -1,24 +1,34 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts, orderedSeriesReaderEnabled } from '../payload/orderedSeriesAdapter'
+import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts } from '../payload/orderedSeriesAdapter'
 import { territoiresFixture } from '../payload/fixtures'
 
 const metadataMilieux = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_milieux.json'), 'utf8'))
 const metadataHabitat = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_habitat.json'), 'utf8'))
 
 describe('owned M2/M3 series adapter', () => {
-  it('uses one default-off gate for all series and retains the two old flag aliases', () => {
-    for (const indicator of ['conso_enaf_annuel', 'artif_par_habitant', 'prix_m2']) {
-      expect(orderedSeriesReaderEnabled(indicator, {})).toBe(false)
-      expect(orderedSeriesReaderEnabled(indicator, { VITE_OWNED_SERIES_API: '1' })).toBe(true)
+  it('derives every ordered-series page identity from producer page and API declarations', () => {
+    const themes = ['mobilite', 'demographie', 'habitat', 'economie', 'milieux', 'programmes']
+    const declarations = themes.flatMap((theme) => {
+      const metadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata',
+        'theme-metadata', `theme_${theme}.json`), 'utf8'))
+      return Object.entries(metadata.indicator_pages ?? {})
+        .filter(([indicator, page]: [string, any]) => Boolean(page.series_dataset_id || metadata.owned_series_routes?.[indicator]))
+        .map(([indicator]) => ({ theme, indicator }))
+    })
+    for (const { theme, indicator } of declarations) {
+      expect(orderedSeriesAdapterFor(theme, indicator, { resource_id: indicator, indicator_id: indicator,
+        theme_id: theme, shapes: ['ordered_series'], target_kinds: ['territory_cohort'] })).not.toBeNull()
     }
-    expect(orderedSeriesReaderEnabled('conso_enaf_annuel', { VITE_CONSO_ENAF_SERIES_API: '1' })).toBe(true)
-    expect(orderedSeriesReaderEnabled('artif_par_habitant', { VITE_OCSGE_STATE_SERIES_API: '1' })).toBe(true)
-    expect(orderedSeriesReaderEnabled('prix_m2', { VITE_CONSO_ENAF_SERIES_API: '1', VITE_OCSGE_STATE_SERIES_API: '1' })).toBe(false)
+    expect(orderedSeriesAdapterFor('other', 'anything', { resource_id: 'anything', indicator_id: 'anything',
+      theme_id: 'other', shapes: ['scalar'], target_kinds: ['territory_cohort'] })).toBeNull()
   })
   it('registers the metadata-owned prix_m2 dataset and preserves annual point lineage', () => {
-    expect(orderedSeriesAdapterFor('habitat', 'prix_m2')).toEqual({
+    expect(orderedSeriesAdapterFor('habitat', 'prix_m2', {
+      resource_id: 'prix_m2', indicator_id: 'prix_m2', theme_id: 'habitat',
+      shapes: ['scalar', 'ordered_series'], target_kinds: ['territory_cohort'],
+    })).toEqual({
       theme: 'habitat', indicator: 'prix_m2', pathIndicator: 'prix_m2',
     })
     expect(metadataHabitat.indicator_pages.prix_m2.series_dataset_id).toBe('dvf_prix_m2')
@@ -41,7 +51,10 @@ describe('owned M2/M3 series adapter', () => {
     expect(merged[1]).toMatchObject({ detail: '2024', value: null, observation_status: 'missing' })
   })
   it('registers a dataset-qualified no-comparison adapter and preserves per-point revisions', () => {
-    const adapter = orderedSeriesAdapterFor('milieux', 'artif_par_habitant')
+    const adapter = orderedSeriesAdapterFor('milieux', 'artif_par_habitant', {
+      resource_id: 'artif_par_habitant', indicator_id: 'artif_par_habitant', theme_id: 'milieux',
+      shapes: ['ordered_series'], target_kinds: ['territory_cohort'],
+    })
     expect(adapter).toEqual({ theme: 'milieux', indicator: 'artif_par_habitant', pathIndicator: 'artif_par_habitant' })
     expect(metadataMilieux.indicator_pages.artif_par_habitant.series_dataset_id).toBe('ocsge_artif_etats')
     expect(metadataMilieux.indicator_pages.artif_par_habitant.series_publication).toBe('owned')
