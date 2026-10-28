@@ -547,21 +547,22 @@ try {
     { waitUntil: 'domcontentloaded' })
   await page.locator('h1').filter({ hasText: 'population bretonne jointe' }).waitFor({ state: 'visible', timeout: 20000 })
   await page.locator('[data-testid="raccordement-selected-mean"]').waitFor({ state: 'visible', timeout: 20000 })
-  const factsAtLoad = harness.requests.length
   harness.failNextComparisonOnlyOnce()
   // A selection change re-reads the comparison only; the cached focal curve and
   // its named reference stay exactly where they are.
   await page.goto(`${baseUrl}indicateurs/mobilite/raccordement_courbe?territoire=22001&niveau=commune&departement=22&vue=reperes`,
     { waitUntil: 'domcontentloaded' })
   await page.locator('[data-testid="raccordement-comparison-error"]').waitFor({ state: 'visible', timeout: 20000 })
-  const factsWhileBroken = harness.requests.length
+  const factReadsAtFailure = harness.factReads.length
+  const comparisonsAtFailure = harness.comparisonReads.length
   assert((await page.locator('.trajectoire-territoire-point').count()) > 0,
     'the acquired curve must stay visible during a comparison-only failure')
   await page.getByTestId('raccordement-comparison-retry').click()
   await page.locator('[data-testid="raccordement-selected-mean"]').waitFor({ state: 'visible', timeout: 20000 })
-  assert.equal(harness.requests.length, factsWhileBroken,
+  assert.equal(harness.factReads.length, factReadsAtFailure,
     'the comparison-only retry must not reread facts')
-  assert(harness.requests.length > factsAtLoad)
+  assert(harness.comparisonReads.length > comparisonsAtFailure,
+    'the comparison-only retry must re-read the comparison evidence')
 
   // A late series batch from a previous route cannot overwrite the new page.
   harness.delayNextBatch('conso_enaf_annuel')
