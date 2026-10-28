@@ -997,16 +997,10 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
         let revisions: Array<Record<string, any>>
         try {
           const source = sourceFor(resource, fact, { kind: 'territory', type: member.type, id: member.territoire }, true)
-          if (process.env.LUSK_SERIES_PROOF_DEBUG) {
-            console.error(`DEBUG pointsFor ${member.territoire}#${axis}: source=${JSON.stringify(source)}`)
-          }
           revisions = [{ source_id: source.source_id, source_name: source.name,
             vintage_id: source.vintage_id, version: source.version,
             reference_date: source.reference_date, publication_date: source.publication_date }]
         } catch (cause) {
-          if (process.env.LUSK_SERIES_PROOF_DEBUG) {
-            console.error(`DEBUG pointsFor ${member.territoire}#${axis}: sourceFor threw: ${cause instanceof Error ? cause.message : String(cause)}`)
-          }
           // A mixed-vintage aggregate fact (an EPCI spanning several OCS-GE
           // millésimes) cites every declared component vintage its composite
           // identity names — the real producer's multi-lineage grain, never an

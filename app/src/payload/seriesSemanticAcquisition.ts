@@ -29,6 +29,10 @@ export interface OrderedSeriesFactsEvidence {
   role_axes: string[]
   /** Every producer source id the cohort's own provenance declared. */
   declared_source_ids: string[]
+  /** API-resolved typed population, distinct from rows with available facts. */
+  resolved_cohort_type: string
+  resolved_cohort_members: Array<{ id: string; type: string }>
+  cohort_is_filtered: boolean
 }
 
 /** A comparison whose native evidence failed strict binding. The already
@@ -77,10 +81,6 @@ function assertSeriesPoint(point: unknown, declaredSourceIds: Set<string> | null
         (declaredSourceIds !== null && !declaredSourceIds.has(revision.source_id)) ||
         !(revision.reference_date === null || text(revision.reference_date)) ||
         !(revision.publication_date === null || text(revision.publication_date))) {
-      if (process.env.LUSK_SERIES_PROOF_DEBUG) {
-        console.error(`DEBUG provenance: row=${JSON.stringify(revision)}` +
-          (declaredSourceIds !== null ? ` declared=[${[...declaredSourceIds].slice(0, 12).join(', ')}]` : ''))
-      }
       throw new Error(`Provenance de point non déclarée (${context})`)
     }
   }
@@ -124,10 +124,16 @@ function scopedMembers(input: {
  *  whole comparison before it is cached (#857). */
 function bindComparisonEvidence(comparisonData: Row, facts: {
   descriptor: Row; contentVersion: string; referenceContentVersion: string
-  declaredSourceIds: Set<string>; memberIdentity: Set<string>
+  declaredSourceIds: Set<string>; resolvedCohortType: string
+  resolvedCohortMembers: Array<{ id: string; type: string }>; cohortIsFiltered: boolean
+  focal: { id: string; type: string }; resource: string
 }, requestedMembers: Array<{ type: TerritoireType; id: string }> | null): OrderedSeriesRead['comparison'] {
   const result = comparisonData.result
-  if (!record(result) || !['median', 'mean'].includes(result.statistic) ||
+  const target = comparisonData.target
+  if (!record(result) || !record(target) || target.kind !== 'territory' ||
+      target.id !== facts.focal.id || target.type !== facts.focal.type ||
+      comparisonData.resource !== facts.resource || result.indicator_id !== facts.resource ||
+      !['median', 'mean'].includes(result.statistic) ||
       !['available', 'unavailable'].includes(result.status) ||
       comparisonData.content_version !== facts.contentVersion ||
       comparisonData.reference_content_version !== facts.referenceContentVersion ||
@@ -142,11 +148,35 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
             requested.id === member.territory_id))) {
       throw new Error('Écho de sélection de comparaison incompatible')
     }
+    const requestedIds = new Set(requestedMembers.map((member) => member.id))
+    const resolvedIds = new Set(facts.resolvedCohortMembers.map((member) => member.id))
+    if (requestedMembers.some((member) => member.type !== facts.resolvedCohortType) ||
+        requestedIds.size !== resolvedIds.size || [...requestedIds].some((id) => !resolvedIds.has(id))) {
+      throw new Error('Sélection de comparaison incompatible avec la population API résolue')
+    }
   }
   const scope = comparisonData.scope
   if (!record(scope) || !text(scope.kind) ||
       !Number.isInteger(scope.member_count) || scope.member_count < 1) {
     throw new Error('Périmètre de comparaison sémantique incompatible')
+  }
+  const selectedTypes = requestedMembers ? [...new Set(requestedMembers.map((member) => member.type))] : []
+  const expectedScopeType = selectedTypes.length === 1 ? selectedTypes[0] : facts.resolvedCohortType
+  if (scope.territory_type !== undefined && expectedScopeType !== undefined &&
+      scope.territory_type !== expectedScopeType) {
+    throw new Error('Type du périmètre de comparaison incompatible')
+  }
+  let expectedMembers: Set<string> | undefined
+  let exactPopulation = false
+  if (requestedMembers) {
+    expectedMembers = new Set(requestedMembers.map((member) => member.id))
+    exactPopulation = true
+  } else if (!facts.cohortIsFiltered && scope.territory_type === facts.resolvedCohortType) {
+    expectedMembers = new Set(facts.resolvedCohortMembers.map((member) => member.id))
+    exactPopulation = scope.kind === 'same_level'
+    if (exactPopulation && scope.member_count !== facts.resolvedCohortMembers.length) {
+      throw new Error('Population native de comparaison incohérente avec la cohorte résolue')
+    }
   }
   const axisComparisons = Array.isArray(result.axis_comparisons) ? result.axis_comparisons : []
   if (!axisComparisons.length) throw new Error('Preuve de comparaison par axe absente')
@@ -185,13 +215,16 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
     } else if (candidate.value !== null || candidate.min !== null || candidate.max !== null) {
       throw new Error(`Comparaison indisponible porteuse de valeurs (${axis})`)
     }
+    const rankIds = new Set<string>()
     for (const rank of candidate.member_ranks) {
-      if (!record(rank) || !text(rank.territory_id) || !facts.memberIdentity.has(rank.territory_id) ||
+      if (!record(rank) || !text(rank.territory_id) || rankIds.has(rank.territory_id) ||
+          (expectedMembers !== undefined && !expectedMembers.has(rank.territory_id)) ||
           !(rank.rank === null || Number.isInteger(rank.rank)) ||
           !(rank.rank_size === null || Number.isInteger(rank.rank_size)) ||
           !(rank.rank_ties === null || Number.isInteger(rank.rank_ties))) {
         throw new Error(`Rang de pair invalide (${axis})`)
       }
+      rankIds.add(rank.territory_id)
       if (candidate.status !== 'available') {
         if (rank.rank !== null || rank.rank_size !== null || rank.rank_ties !== null) {
           throw new Error(`Rang porté par une comparaison indisponible (${axis})`)
@@ -209,6 +242,11 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
         throw new Error(`Span de rang publié impossible (${axis})`)
       }
     }
+    if (rankIds.size !== candidate.selected_member_count ||
+        (exactPopulation && expectedMembers !== undefined &&
+          (rankIds.size !== expectedMembers.size || [...expectedMembers].some((id) => !rankIds.has(id))))) {
+      throw new Error(`Population de rangs publiée incompatible (${axis})`)
+    }
     const rankedCount = candidate.member_ranks.filter((rank: Row) => rank.rank !== null).length
     if (candidate.status === 'available' ? rankedCount !== candidate.eligible_count : rankedCount !== 0) {
       throw new Error(`Rangs de pairs incohérents avec l'éligibilité (${axis})`)
@@ -218,7 +256,7 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
   const comparisonPoint = facts.descriptor.comparison_point
   const selected = mapped.find((item: Row) => item.axis === comparisonPoint)
   const focalRank = selected?.member_ranks?.find((rank: Row) =>
-    rank.territory_id === comparisonData.target?.id)
+    rank.territory_id === facts.focal.id)
   return {
     point: comparisonPoint,
     value: selected?.value,
@@ -258,10 +296,23 @@ export async function acquireOrderedSeriesSemantic(input: {
   ]
   const [cohort, focal, comparisonData] = await lireRessourcesBatch(items)
   if (cohort.shape !== 'ordered_series' || !Array.isArray(cohort.series) ||
+      !record(cohort.cohort) || !Array.isArray(cohort.cohort.members) ||
       !record(focal.territory) || !Array.isArray(focal.points)) {
     throw new Error('Réponse de série sémantique incompatible')
   }
   const descriptor = assertDescriptor(cohort.descriptor)
+  const resolvedCohort = cohort.cohort
+  if (resolvedCohort.territory_type !== input.level ||
+      resolvedCohort.department_id !== (input.departmentId ?? null) ||
+      resolvedCohort.epci_id !== (input.epciId ?? null) ||
+      resolvedCohort.reference_content_version !== cohort.reference_content_version ||
+      !Number.isInteger(resolvedCohort.member_count) ||
+      resolvedCohort.member_count !== resolvedCohort.members.length ||
+      !resolvedCohort.members.every((member: Row) => record(member) && text(member.id) &&
+        member.type === resolvedCohort.territory_type) ||
+      new Set(resolvedCohort.members.map((member: Row) => member.id)).size !== resolvedCohort.members.length) {
+    throw new Error('Population territoriale résolue incompatible')
+  }
   if (cohort.resource !== input.resource || focal.resource !== input.resource ||
       comparisonData.resource !== input.resource ||
       !text(cohort.content_version) || !text(cohort.reference_content_version) ||
@@ -298,11 +349,7 @@ export async function acquireOrderedSeriesSemantic(input: {
       }
     }
   }
-  const memberIdentity = new Set<string>([
-    ...groupSeries.map((group) => group.territory.id),
-    ...input.territories.filter((territory) => territory.type === input.level)
-      .map((territory) => territory.territoire),
-  ])
+  const cohortMembers = resolvedCohort.members.map((member: Row) => ({ id: member.id, type: member.type }))
   const facts: OrderedSeriesFactsEvidence = {
     indicator_id: input.resource,
     axis_kind: descriptor.axis_kind,
@@ -324,12 +371,17 @@ export async function acquireOrderedSeriesSemantic(input: {
     role_axes: [...new Set([...focal.points, ...groupSeries.flatMap((group: Row) => group.points)]
       .flatMap((point: Row) => text(point.state_role) ? [point.state_role] : []))],
     declared_source_ids: [...declaredSourceIds],
+    resolved_cohort_type: resolvedCohort.territory_type,
+    resolved_cohort_members: cohortMembers,
+    cohort_is_filtered: Boolean(resolvedCohort.department_id || resolvedCohort.epci_id),
   }
   try {
     const comparison = bindComparisonEvidence(comparisonData, {
       descriptor, contentVersion: cohort.content_version,
       referenceContentVersion: cohort.reference_content_version,
-      declaredSourceIds, memberIdentity,
+      declaredSourceIds, resolvedCohortType: resolvedCohort.territory_type,
+      resolvedCohortMembers: cohortMembers, cohortIsFiltered: facts.cohort_is_filtered,
+      focal: facts.territory, resource: input.resource,
     }, members)
     return { ...facts, comparison } as unknown as OrderedSeriesRead
   } catch (cause) {
@@ -350,15 +402,22 @@ export async function reacquireOrderedSeriesComparison(input: {
   epciId?: string
   facts: OrderedSeriesFactsEvidence
 }): Promise<OrderedSeriesRead['comparison']> {
+  if (input.facts.indicator_id !== input.resource ||
+      input.facts.territory.id !== input.focal.territoire ||
+      input.facts.territory.type !== input.focal.type) {
+    throw new Error('Faits admis incompatibles avec la cible de comparaison')
+  }
   const members = scopedMembers(input)
   const [comparisonData] = await lireRessourcesBatch([comparisonItem(input, members)])
   if (!record(comparisonData)) throw new Error('Réponse de comparaison sémantique incompatible')
-  const memberIdentity = new Set<string>(input.facts.scope_series.map((group) => group.territory.id))
   return bindComparisonEvidence(comparisonData, {
     descriptor: input.facts.descriptor,
     contentVersion: input.facts.content_version,
     referenceContentVersion: input.facts.reference_content_version,
     declaredSourceIds: new Set(input.facts.declared_source_ids),
-    memberIdentity,
+    resolvedCohortType: input.facts.resolved_cohort_type,
+    resolvedCohortMembers: input.facts.resolved_cohort_members,
+    cohortIsFiltered: input.facts.cohort_is_filtered,
+    focal: input.facts.territory, resource: input.resource,
   }, members)
 }

@@ -315,7 +315,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       if (String(input) === '/api/resources') return nativeCatalogueResponse()
       const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      return nativeBatchResponse(body.items, nativeReadFixture)
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
     })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
@@ -348,7 +349,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       if (String(input) === '/api/resources') return nativeCatalogueResponse()
       const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      return nativeBatchResponse(body.items, nativeReadFixture)
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
     })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22')
@@ -390,7 +392,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       if (String(input) === '/api/resources') return nativeCatalogueResponse()
       const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      return nativeBatchResponse(body.items, nativeReadFixture)
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
     })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22')
@@ -426,7 +429,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       if (String(input) === '/api/resources') return nativeCatalogueResponse()
       if (!apiAvailable) throw new Error('semantic API unavailable')
       const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      return nativeBatchResponse(body.items, nativeReadFixture)
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
     })
     const router=createRouter({history:createMemoryHistory(),routes})
     await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22&detail=2021')
@@ -468,7 +472,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       apiCalls++
       if (!retryEnabled) throw new Error('offline')
       const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      return nativeBatchResponse(body.items, nativeReadFixture)
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
     })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/conso_enaf_annuel?territoire=22001&niveau=commune&departement=22')

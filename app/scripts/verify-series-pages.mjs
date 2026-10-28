@@ -306,11 +306,6 @@ try {
     try {
       await page.locator('h1').filter({ hasText: spec.resource.label }).waitFor({ state: 'visible', timeout: 20000 })
     } catch (cause) {
-      if (process.env.LUSK_SERIES_PROOF_DEBUG) {
-        await page.screenshot({ path: `E:/Temp/opencode/857-series-evidence/wip/debug-h1-${spec.indicator}.png`, fullPage: false })
-        const text = await page.locator('body').innerText().catch(() => 'no body')
-        console.error(`DEBUG H1 ${spec.indicator}: url=${page.url()} h1=${await page.locator('h1').innerText().catch(() => 'none')} body=${text.slice(0, 300).replace(/\s+/g, ' ')}`)
-      }
       throw cause
     }
     await page.locator('figure[data-renderer], .indicateur-page').first().waitFor({ state: 'visible', timeout: 20000 })
@@ -385,20 +380,6 @@ try {
         const sortedRows = await page.locator('tbody tr').evaluateAll((rows) => rows.map((row) =>
           decodeURIComponent((row.querySelector('td a')?.getAttribute('href') ?? '').split('?')[0].split('/').at(-1) ?? '')))
         const expectedOrder = expected.rankSorted.rows.map((row) => row.territoire.territoire)
-        if (process.env.LUSK_SERIES_PROOF_DEBUG && sortedRows.join() !== expectedOrder.join()) {
-          let firstDiff = -1
-          for (let index = 0; index < Math.max(sortedRows.length, expectedOrder.length); index++) {
-            if (sortedRows[index] !== expectedOrder[index]) { firstDiff = index; break }
-          }
-          const liveRanks = await page.locator('tbody tr').evaluateAll((rows) => rows.map((row) =>
-            [decodeURIComponent((row.querySelector('td a')?.getAttribute('href') ?? '').split('?')[0].split('/').at(-1) ?? ''),
-              row.querySelectorAll('td')[1]?.innerText.trim(), row.querySelectorAll('td')[2]?.innerText.trim()]))
-          const expectedRanks = expected.rankSorted.rows.map((row) =>
-            [row.territoire.territoire, row.value, row.rang, row.rangTaille])
-          console.error(`DEBUG SORT ${spec.indicator}: firstDiff=${firstDiff}` +
-            ` aroundLive=${JSON.stringify(liveRanks.slice(Math.max(0, firstDiff - 2), firstDiff + 4))}` +
-            ` aroundExpected=${JSON.stringify(expectedRanks.slice(Math.max(0, firstDiff - 2), firstDiff + 4))}`)
-        }
         assert.deepEqual(sortedRows, expectedOrder,
           `${spec.indicator} table rank sort must follow the model's rank order`)
         const focalRowRank = expected.rankSorted.rows.find((row) => row.territoire.territoire === focal.territoire)?.rang

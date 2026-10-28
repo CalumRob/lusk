@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { join } from 'node:path'
-import { acquireOrderedSeriesSemantic, reacquireOrderedSeriesComparison,
-  SeriesComparisonRejectedError } from '@/payload/seriesSemanticAcquisition'
+import { acquireOrderedSeriesSemantic, reacquireOrderedSeriesComparison }
+  from '@/payload/seriesSemanticAcquisition'
 import { orderedSeriesFacts } from '@/payload/orderedSeriesAdapter'
 import type { Territoire } from '@/payload/types'
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
@@ -141,18 +141,35 @@ describe('guarded native SQL/HTTP → shared ordered-series acquisition bridge',
 const conditionalDescribe = capturePaths.length ? describe : describe.skip
 conditionalDescribe('guarded native corrupt-evidence rejection → shared series acquirer', () => {
   const other = (statistic: string) => statistic === 'mean' ? 'median' : 'mean'
-  const mutations: Array<[string, (data: any[]) => void, (bridge: { request: { items: any[] } }) => boolean]> = [
+  const mutations: Array<[string, (data: any[]) => void,
+    (bridge: { request: { items: any[] }; response: { results: Array<{ data: any }> } }) => boolean]> = [
     ['comparison reference publication', (data) => { data[2].reference_content_version = 'other-reference' }, () => true],
     ['comparison facts publication', (data) => { data[2].content_version = 'other-series' }, () => true],
+    ['comparison resource identity', (data) => { data[2].resource = 'other-resource' }, () => true],
+    ['comparison result indicator identity', (data) => { data[2].result.indicator_id = 'other-indicator' }, () => true],
+    ['comparison target identity', (data) => { data[2].target.id = 'native-c1' }, () => true],
+    ['comparison target type', (data) => {
+      data[2].target.type = data[2].target.type === 'commune' ? 'epci' : 'commune'
+    }, () => true],
     ['comparison descriptor version', (data) => { data[2].result.descriptor_version = 'other-descriptor' }, () => true],
     ['comparison typed selection echo', (data) => { data[2].selection[0].territory_id = 'wrong-selected-member' },
       (bridge) => bridge.request.items[2]?.intent?.kind === 'selected_comparison'],
     ['comparison resolved scope count', (data) => { data[2].scope.member_count = 999 }, () => true],
+    ['comparison typed scope echo', (data) => { data[2].scope.territory_type = 'commune' },
+      (bridge) => Boolean(bridge.request.items[2]?.intent?.kind === 'fixed_comparison' &&
+        bridge.response.results[2]?.data?.scope?.territory_type)],
     ['comparison statistic', (data) => { data[2].result.statistic = other(data[2].result.statistic) }, () => true],
     ['comparison peer membership', (data) => { data[2].result.axis_comparisons[0].member_ranks[0].territory_id = 'wrong-ranked-member' }, () => true],
+    ['comparison peer outside requested population', (data) => {
+      data[2].result.axis_comparisons[0].member_ranks[0].territory_id = 'native-c3'
+    }, (bridge) => bridge.request.items[2]?.intent?.kind === 'selected_comparison'],
     ['impossible peer rank', (data) => { data[2].result.axis_comparisons[0].member_ranks[0].rank = 999 }, () => true],
     ['focal descriptor version', (data) => { data[1].descriptor_version = 'other-focal-descriptor' }, () => true],
     ['focal provenance identity', (data) => { data[1].points[0].provenance[0].source_id = 'undeclared-producer' }, () => true],
+    ['resolved cohort filter echo', (data) => { data[0].cohort.department_id = '22' }, () => true],
+    ['resolved cohort reference identity', (data) => {
+      data[0].cohort.reference_content_version = 'other-reference'
+    }, () => true],
     ['measured point without value', (data) => { delete data[0].series[0].points[0].value }, () => true],
   ]
 
@@ -185,22 +202,49 @@ conditionalDescribe('guarded native corrupt-evidence rejection → shared series
       }
     })
     it(`a comparison-only rejection of ${resource} keeps the validated facts reacquirable`, async () => {
-      const fetcher = serveBridge(bridge, (data) => {
-        const comparison = data[2] as { result: { axis_comparisons: Array<{ member_ranks: Array<{ rank: number }> }> } }
-        comparison.result.axis_comparisons[0]!.member_ranks[0]!.rank = 999
-      })
+      const fetcher = serveBridge(bridge)
       vi.stubGlobal('fetch', fetcher)
       const read = await acquireOrderedSeriesSemantic({ resource, level: focalTarget.type,
         focal: focal as Territoire, territories: capture.territories as Territoire[],
         ...(cohortTarget.department_id ? { departmentId: cohortTarget.department_id } : {}),
         ...(cohortTarget.epci_id ? { epciId: cohortTarget.epci_id } : {}),
-        includeScalarFacet: declaration.shapes.includes('scalar') }).catch((cause: unknown) => {
-        expect(cause).toBeInstanceOf(SeriesComparisonRejectedError)
-        return (cause as SeriesComparisonRejectedError).facts
-      })
+        includeScalarFacet: declaration.shapes.includes('scalar') })
       expect(read.points.length).toBeGreaterThan(0)
-      expect((read as { comparison?: unknown }).comparison).toBeUndefined()
-      // The same-descriptor valid retry reacquires the rejected evidence.
+      const otherFocal = (capture.territories as Territoire[]).find((territory) =>
+        territory.type === focalTarget.type && territory.territoire !== focalTarget.id)
+      if (otherFocal) {
+        const shouldNotFetch = serveBridge(bridge)
+        vi.stubGlobal('fetch', shouldNotFetch)
+        await expect(reacquireOrderedSeriesComparison({ resource, level: focalTarget.type,
+          focal: otherFocal, territories: capture.territories as Territoire[],
+          ...(cohortTarget.department_id ? { departmentId: cohortTarget.department_id } : {}),
+          ...(cohortTarget.epci_id ? { epciId: cohortTarget.epci_id } : {}),
+          includeScalarFacet: declaration.shapes.includes('scalar'), facts: read as never })).rejects.toThrow()
+        expect(shouldNotFetch).not.toHaveBeenCalled()
+      }
+      // A wrong target on retry must be rejected too; the same-publication
+      // valid retry then proves that neither rejection was cached.
+      const corruptTarget = (data: unknown[]) => {
+        ;(data[2] as { target: { id: string } }).target.id = 'native-c1'
+      }
+      const badRefetcher = serveBridge(bridge, corruptTarget)
+      vi.stubGlobal('fetch', badRefetcher)
+      await expect(reacquireOrderedSeriesComparison({ resource, level: focalTarget.type,
+        focal: focal as Territoire, territories: capture.territories as Territoire[],
+        ...(cohortTarget.department_id ? { departmentId: cohortTarget.department_id } : {}),
+        ...(cohortTarget.epci_id ? { epciId: cohortTarget.epci_id } : {}),
+        includeScalarFacet: declaration.shapes.includes('scalar'), facts: read as never })).rejects.toThrow()
+      const corruptPopulation = (data: unknown[]) => {
+        ;(data[2] as { result: { axis_comparisons: Array<{ member_ranks: Array<{ territory_id: string }> }> } })
+          .result.axis_comparisons[0]!.member_ranks[0]!.territory_id = 'native-c3'
+      }
+      const populationRefetcher = serveBridge(bridge, corruptPopulation)
+      vi.stubGlobal('fetch', populationRefetcher)
+      await expect(reacquireOrderedSeriesComparison({ resource, level: focalTarget.type,
+        focal: focal as Territoire, territories: capture.territories as Territoire[],
+        ...(cohortTarget.department_id ? { departmentId: cohortTarget.department_id } : {}),
+        ...(cohortTarget.epci_id ? { epciId: cohortTarget.epci_id } : {}),
+        includeScalarFacet: declaration.shapes.includes('scalar'), facts: read as never })).rejects.toThrow()
       const refetcher = serveBridge(bridge)
       vi.stubGlobal('fetch', refetcher)
       const comparison = await reacquireOrderedSeriesComparison({ resource, level: focalTarget.type,
