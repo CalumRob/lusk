@@ -280,6 +280,11 @@ export interface OptionsTrajectoire {
   labelsDetail?: Record<string, string>
   /** Native ordered-series data owns step comparisons; absent axes are unsupported, not recomputed. */
   nativeSeries?: boolean
+  /** The acquired published comparison evidence per axis — steps exist even where local facts don't (#857). */
+  nativeAxisComparisons?: Array<{ axis: string; statistic: 'median' | 'mean'; status: 'available' | 'unavailable';
+    value: number | null; min: number | null; max: number | null; eligible_count: number; missing_count: number;
+    member_ranks?: Array<{ territory_id: string; rank: number | null; rank_size: number | null; rank_ties: number | null }>;
+    sources?: Array<Record<string, unknown>> }>
 }
 
 export function modeleTrajectoire(
@@ -293,8 +298,14 @@ export function modeleTrajectoire(
   options: OptionsTrajectoire = {},
 ): ModeleTrajectoire {
   const details = options.nativeSeries
-    ? [...new Set(facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator &&
-      fact.detail !== null).map((fact) => fact.detail!))]
+    ? [...new Set([
+        ...facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator &&
+          fact.detail !== null).map((fact) => fact.detail!),
+        // Published comparison axes stay rendered steps even where the local
+        // facts don't reach (OCS-GE M2/M3 above calendar facts) — the
+        // comparison is restricted, the factual axis is not narrowed.
+        ...(options.nativeAxisComparisons?.map((comparison) => comparison.axis) ?? []),
+      ])]
     : facet.details
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
 
@@ -331,8 +342,9 @@ export function modeleTrajectoire(
     const rows = filtrerFaits(facts, { theme: facet.theme, cle: facet.indicator, detail, sexe: facet.sex, dimension: facet.dimension, niveau: etat.niveau }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value })).filter((row): row is { territoire: Territoire; value: number | null } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci)))
     const valeurs = rows.filter((row) => row.value !== null).map((row) => row.value as number)
     const native = options.nativeSeries
-      ? facts.find((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === detail &&
+      ? (facts.find((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === detail &&
         dansScope(refs.get(fact.territoire) ?? ({} as Territoire), etat.niveau, etat.departement, etat.epci))?.native_series_comparison
+        ?? options.nativeAxisComparisons?.find((comparison) => comparison.axis === detail))
       : undefined
     return {
       detail,

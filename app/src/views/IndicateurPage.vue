@@ -1329,7 +1329,12 @@ const trajectoire = computed(() => {
     referenceFacts,
     dispatch.representation.extension.reference?.label ?? null,
     { axis: dispatch.representation.extension.axis, labelsDetail: dispatch.representation.labelsDetail,
-      nativeSeries: seriesPageApiActive.value },
+      nativeSeries: seriesPageApiActive.value,
+      nativeAxisComparisons: seriesPageApiActive.value
+        ? serieLecture.value?.comparison?.axis_comparisons?.map((row) => ({ axis: row.axis,
+          statistic: row.statistic, status: row.status, value: row.value, min: row.min,
+          max: row.max, eligible_count: row.eligible_count, missing_count: row.missing_count }))
+        : undefined },
   )
   if (indicator.value !== 'raccordement_courbe' || !raccordementApiLecture.value) return trajectoryModel
   const comparison = raccordementApiLecture.value.comparison
