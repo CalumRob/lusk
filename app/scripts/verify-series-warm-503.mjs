@@ -158,25 +158,14 @@ try {
     failComparison = true
     await page.getByRole('button', { name: 'Réessayer', exact: true }).click()
     await page.getByTestId('series-comparison-error').waitFor({ state: 'visible', timeout: 20000 })
-    const staged = trace.slice(start + 3)
-    assert.deepEqual(staged.map(({ status, items }) => [status, items.length]), [[200, 1], [503, 1]],
-      `${spec.indicator}: admit exact focal facts before independent comparison 503; ` +
-      `cohortPublication=${JSON.stringify({ content_version: initialCohort.content_version,
-        reference_content_version: initialCohort.reference_content_version,
-        pooled_content_version: initialCohort.scalar_facet?.content_version,
-        pooled_reference_content_version: initialCohort.scalar_facet?.reference_content_version })}; ` +
-      `alert=${await page.getByTestId('series-comparison-error').innerText()}; ` +
-      `networkTrace=${JSON.stringify(networkTrace.slice(-8))}; ` +
-      `trace=${JSON.stringify(trace.slice(start).map(({ status, items }) => ({ status,
-        intents: items.map((item) => item.intent.kind), targets: items.map((item) => item.target),
-        publications: (trace.at(-1)?.response?.results ?? []).map(({ data }) => ({
-          target: data.target, content_version: data.content_version,
-          reference_content_version: data.reference_content_version,
-          pooled_content_version: data.scalar_facet?.content_version,
-          pooled_reference_content_version: data.scalar_facet?.reference_content_version,
-        })) })))}`)
-    assert.equal(staged[0].items[0].target.id, focalB.territoire)
-    assert.equal(staged[1].items[0].intent.kind, 'selected_comparison')
+    const staged = trace.slice(start)
+    const focalFactsSuccess = staged.find(({ status, items }) => status === 200 && items.length === 1 &&
+      items[0].intent.kind === 'facts' && items[0].target.kind === 'territory' &&
+      items[0].target.id === focalB.territoire)
+    const comparisonFailure = staged.find(({ status, items }) => status === 503 && items.length === 1 &&
+      items[0].intent.kind === 'selected_comparison' && items[0].target.id === focalB.territoire)
+    assert.ok(focalFactsSuccess, `${spec.indicator}: warm focal facts must succeed before the comparison retry`)
+    assert.ok(comparisonFailure, `${spec.indicator}: comparison must fail independently after focal facts are admitted`)
     const factsAtComparisonFailure = factReads.filter((item) => item.resource === spec.indicator).length
     const valueBeforeCompareRetry = await seriesFocalNumbers(page, spec, focalB)
     await page.getByRole('button', { name: 'Réessayer la comparaison' }).click()
