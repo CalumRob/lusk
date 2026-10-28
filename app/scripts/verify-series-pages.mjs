@@ -292,7 +292,7 @@ try {
     await page.goto(`${baseUrl}indicateurs/${spec.theme}/${spec.indicator}?${query}&vue=reperes`,
       { waitUntil: 'domcontentloaded' })
     try {
-      await page.locator('h1').filter({ hasText: spec.page.label }).waitFor({ state: 'visible', timeout: 20000 })
+      await page.locator('h1').filter({ hasText: spec.resource.label }).waitFor({ state: 'visible', timeout: 20000 })
     } catch (cause) {
       if (process.env.LUSK_SERIES_PROOF_DEBUG) {
         await page.screenshot({ path: `E:/Temp/opencode/857-series-evidence/wip/debug-h1-${spec.indicator}.png`, fullPage: false })
