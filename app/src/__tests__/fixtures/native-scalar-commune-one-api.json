@@ -2058,6 +2058,32 @@
       }
     ]
   },
+  "territories": [
+    {
+      "territoire": "29001",
+      "type": "commune",
+      "nom": "Focal",
+      "departement": "29",
+      "epci": "E1",
+      "classe_densite_code": "D1"
+    },
+    {
+      "territoire": "29002",
+      "type": "commune",
+      "nom": "Peer",
+      "departement": "29",
+      "epci": "E2",
+      "classe_densite_code": "D2"
+    },
+    {
+      "territoire": "22001",
+      "type": "commune",
+      "nom": "Outside",
+      "departement": "22",
+      "epci": "E3",
+      "classe_densite_code": "D2"
+    }
+  ],
   "cohort": {
     "request": {
       "items": [
@@ -2079,6 +2105,7 @@
         }
       ]
     },
+    "response_status": 200,
     "response": {
       "contract": "semantic-read-batch-v1",
       "results": [
@@ -2197,6 +2224,7 @@
         }
       ]
     },
+    "response_status": 200,
     "response": {
       "contract": "semantic-read-batch-v1",
       "results": [
@@ -2273,6 +2301,7 @@
         }
       ]
     },
+    "response_status": 200,
     "response": {
       "contract": "semantic-read-batch-v1",
       "results": [
@@ -2337,9 +2366,9 @@
               "member_ranks": [
                 {
                   "territory_id": "29001",
-                  "rank": null,
-                  "rank_size": null,
-                  "rank_ties": null
+                  "rank": 1,
+                  "rank_size": 1,
+                  "rank_ties": 1
                 },
                 {
                   "territory_id": "29002",

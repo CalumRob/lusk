@@ -21,60 +21,12 @@ const captures = new Map<TerritoireType, NativeCapture>([
   ['departement', JSON.parse(readFileSync(join(__dirname, 'fixtures/native-scalar-departement-api.json'), 'utf8'))],
 ])
 const oneEligible = JSON.parse(readFileSync(join(__dirname, 'fixtures/native-scalar-commune-one-api.json'), 'utf8')) as NativeCapture
+const unavailable = JSON.parse(readFileSync(join(__dirname, 'fixtures/native-scalar-commune-unavailable-api.json'), 'utf8')) as NativeCapture
+const outsideMissingFocal = JSON.parse(readFileSync(join(__dirname, 'fixtures/native-scalar-commune-outside-missing-focal-api.json'), 'utf8')) as NativeCapture
 const rawMetadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public/data/theme_demographie.json'), 'utf8'))
 const metadata = { ...validerThemeMetadata(rawMetadata, 'theme_demographie.json'), scalar_contracts: rawMetadata.scalar_contracts }
 
 afterEach(() => vi.unstubAllGlobals())
-
-function createSingleEligibleResponse(): NativeCapture {
-  const wire = structuredClone(oneEligible)
-  const result = wire.comparison.response.results[0].data.result
-  // The original guarded capture exposed a projection mismatch: its scalar summary
-  // carried rank 1/1 while its member-rank rows were null. This is the response
-  // contract expected after the API projection fix, using the captured selected values.
-  result.member_ranks = wire.cohort.response.results[0].data.observations.map((row: Record<string, any>) =>
-    row.status === 'measured'
-      ? { territory_id: row.territory.id, rank: 1, rank_size: 1, rank_ties: 1 }
-      : { territory_id: row.territory.id, rank: null, rank_size: null, rank_ties: null })
-  return wire
-}
-
-function createUnavailableResponse(): NativeCapture {
-  const wire = structuredClone(captures.get('commune')!)
-  const rows = wire.cohort.response.results[0].data.observations
-  for (const row of rows) { row.status = 'suppressed'; row.value = null }
-  const focal = wire.focal.response.results[0].data
-  focal.status = 'suppressed'
-  focal.value = null
-  const result = wire.comparison.response.results[0].data.result
-  Object.assign(result, { status: 'unavailable', reason: 'no_selected_comparable_values', eligible_count: 0,
-    missing_count: 2, median: null, rank: null, rank_size: null, comparison_sources: [],
-    member_ranks: rows.map((row: Record<string, any>) => ({ territory_id: row.territory.id,
-      rank: null, rank_size: null, rank_ties: null })) })
-  return wire
-}
-
-function createOutOfCohortFocalResponse(): NativeCapture {
-  const wire = structuredClone(captures.get('commune')!)
-  const outsideId = '22001'
-  const outside: Territoire = { territoire: outsideId, type: 'commune', nom: 'Outside', departement: '22', epci: null }
-  wire.territories = [
-    { territoire: '29001', type: 'commune', nom: 'Focal', departement: '29', epci: null },
-    { territoire: '29002', type: 'commune', nom: 'Peer', departement: '29', epci: null }, outside,
-  ]
-  const focalItem = wire.focal.request.items[0]
-  focalItem.target.id = outsideId
-  wire.focal.response_status = 404
-  wire.focal.response = { detail: 'No scalar observation is published for this territory' }
-  const comparison = wire.comparison
-  comparison.request.items[0].target.id = outsideId
-  const data = comparison.response.results[0].data
-  data.target.id = outsideId
-  data.result.focal_in_selection = false
-  data.result.rank = null
-  data.result.rank_size = null
-  return wire
-}
 
 async function adaptNativeCapture(wire: NativeCapture, corruption?: 'descriptor' | 'facet') {
   const cohortData = wire.cohort.response.results[0].data
@@ -135,8 +87,7 @@ describe('guarded native scalar HTTP → application adapter bridge', () => {
   })
 
   it('retains a native rank and median when exactly one selected value is eligible', async () => {
-    await expect(adaptNativeCapture(oneEligible)).rejects.toThrow()
-    const result = await adaptNativeCapture(createSingleEligibleResponse())
+    const result = await adaptNativeCapture(oneEligible)
     expect(result.expected.eligible_count).toBe(1)
     expect(result.expected.median).toBe(100)
     expect(result.comparisons?.rank).toBe(1)
@@ -147,7 +98,7 @@ describe('guarded native scalar HTTP → application adapter bridge', () => {
   })
 
   it('adapts a native zero-eligible comparison and keeps its suppressed focal status', async () => {
-    const result = await adaptNativeCapture(createUnavailableResponse())
+    const result = await adaptNativeCapture(unavailable)
     expect(result.comparisons).toMatchObject({ status: 'unavailable', eligibleCount: 0, missingCount: 2, median: null,
       focalInSelection: true, rank: null, rankSize: null })
     expect(result.comparisons?.memberRanks.every((row) => row.rank === null && row.rankSize === null)).toBe(true)
@@ -155,7 +106,7 @@ describe('guarded native scalar HTTP → application adapter bridge', () => {
   })
 
   it('keeps a filtered-cohort focal outside the native selected comparison unranked', async () => {
-    const result = await adaptNativeCapture(createOutOfCohortFocalResponse())
+    const result = await adaptNativeCapture(outsideMissingFocal)
     expect(result.comparisons).toMatchObject({ status: 'available', eligibleCount: 2, focalInSelection: false,
       rank: null, rankSize: null })
     expect(result.focalFact).toBeNull()

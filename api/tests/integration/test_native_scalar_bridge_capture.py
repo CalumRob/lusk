@@ -18,13 +18,12 @@ def test_capture_native_scalar_page_batches(canonical_db_env, tmp_path, scenario
 
     territories = [
         {"territoire": "29001", "type": "commune", "nom": "Focal", "departement": "29",
-         "epci": "E1", "classe_densite_code": "D1"},
+             "epci": "E1", "classe_densite_code": "D1"},
         {"territoire": "29002", "type": "commune", "nom": "Peer", "departement": "29",
-         "epci": "E1", "classe_densite_code": "D1"},
+         "epci": "E2", "classe_densite_code": "D2"},
+        {"territoire": "22001", "type": "commune", "nom": "Outside", "departement": "22",
+            "epci": "E3", "classe_densite_code": "D2"},
     ]
-    if scenario == "outside_missing_focal":
-        territories.append({"territoire": "22001", "type": "commune", "nom": "Outside",
-            "departement": "22", "epci": "E2", "classe_densite_code": "D2"})
     focal_id = "22001" if scenario == "outside_missing_focal" else "29001"
     observations = {
         "one_eligible": [("29001", 100, "measured"), ("29002", None, "not_available")],
@@ -33,12 +32,15 @@ def test_capture_native_scalar_page_batches(canonical_db_env, tmp_path, scenario
     }[scenario]
 
     with psycopg.connect(canonical_db_env["publish_dsn"]) as conn:
+        for department_id in {territory["departement"] for territory in territories}:
+            conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name)
+                VALUES (%s,'departement',%s)""", (department_id, f"Département {department_id}"))
         for territory in territories:
             conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code)
                 VALUES (%s,'commune',%s,%s,%s,%s)""", (territory["territoire"], territory["nom"],
                 territory["departement"], territory["epci"], territory["classe_densite_code"]))
         conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref-v1',%s)",
-            (len(territories),))
+            (len(territories) + len({territory["departement"] for territory in territories}),))
         conn.execute("INSERT INTO source_dataset VALUES ('serie_historique','Historical population')")
         conn.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
             VALUES ('serie_historique','serie_historique','2023','2023-01-01','2025-01-01')""")

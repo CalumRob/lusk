@@ -971,7 +971,8 @@ def test_ordinary_scalar_fixed_non_commune_comparison_projects_native_peer_ranks
              1 if focal_status == "measured" else None, 1 if focal_status == "measured" else None,
              eligible_count if focal_status == "measured" else None,
              territory_type, peer_id, 50 if peer_status == "measured" else None, peer_status,
-             1 if peer_status == "measured" else None, 1 if peer_status == "measured" else None,
+             (2 if eligible_count == 2 else 1) if peer_status == "measured" else None,
+             1 if peer_status == "measured" else None,
              eligible_count if peer_status == "measured" else None))
         conn.execute("""INSERT INTO comparison_source_lineage(comparison_family,comparison_context,group_id,
             territory_type,facet_id,source_id,vintage_id,comparison_content_version)
