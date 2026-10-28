@@ -78,7 +78,7 @@ function createHarness(resources, territories, fixtures) {
   const factReads = []
   const comparisonReads = []
   const unexpectedApi = []
-  const servedBatches = new Map()
+  const servedBatches = []
   let failNextBatch = false
   let failNextComparisonOnly = false
   let anonymizeNextSeriesSources = false
@@ -152,11 +152,11 @@ function createHarness(resources, territories, fixtures) {
           resources.find((candidate) => candidate.resource_id === item.resource)?.shapes?.includes('ordered_series'))) {
           anonymizeNextSeriesSources = false
           const anonymized = JSON.parse(JSON.stringify(renameSources(parsed)))
-          servedBatches.set(batchSignature(body.items), anonymized)
+          servedBatches.push({ items: body.items, response: anonymized })
           await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(anonymized) })
           return
         }
-        servedBatches.set(batchSignature(body.items), parsed)
+        servedBatches.push({ items: body.items, response: parsed })
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(parsed) })
         return
       }
@@ -235,25 +235,13 @@ try {
   /** Recompute the page's expected model through the app's own seams from the
    *  exact transformed batch the browser received. */
   async function expectedModel(spec, { level, focal, department, epci, facetQuery }) {
-    const acquisitionItems = [
-      { resource: spec.indicator, target: { kind: 'territory_cohort', type: level,
-        ...(level === 'commune' ? { department_id: department ?? null, epci_id: epci ?? null } : {}) }, intent: { kind: 'facts' } },
-      { resource: spec.indicator, target: { kind: 'territory', type: focal.type, id: focal.territoire }, intent: { kind: 'facts' } },
-      { resource: spec.indicator, target: { kind: 'territory', type: focal.type, id: focal.territoire },
-        intent: level === 'commune' && (department || epci)
-          ? { kind: 'selected_comparison', members: territoiresFixture.filter((territory) =>
-            territory.type === 'commune' && territory.departement === department).map((territory) =>
-            ({ type: 'commune', id: territory.territoire })) }
-          : { kind: 'fixed_comparison', context: 'default' } },
-    ]
-    const stored = harness.servedBatches.get(batchSignature(acquisitionItems.map((item) => ({
-      ...item, fields: spec.resource.shapes.includes('scalar')
-        ? (item.intent.kind === 'facts' ? ['scalar_facet'] : ['axis_comparisons', 'scalar_facet'])
-        : (item.intent.kind === 'facts' ? undefined : ['axis_comparisons']),
-    })))) ?? harness.servedBatches.get(batchSignature(acquisitionItems))
+    const stored = [...harness.servedBatches].reverse().find(({ items }) =>
+      items.some((item) => item.resource === spec.indicator &&
+        item.target?.kind === 'territory_cohort' && item.intent?.kind === 'facts') &&
+      items.some((item) => item.resource === spec.indicator && item.intent?.kind !== 'facts'))
     assert(stored, `${spec.indicator}: the browser batch must be captured before recomputation`)
     const previousFetch = globalThis.fetch
-    globalThis.fetch = async () => new Response(JSON.stringify(stored), { status: 200, contentType: 'application/json' })
+    globalThis.fetch = async () => new Response(JSON.stringify(stored.response), { status: 200, contentType: 'application/json' })
     try {
       const read = await acquireOrderedSeriesSemantic({ resource: spec.indicator, level, focal,
         territories: territoiresFixture, includeScalarFacet: spec.resource.shapes.includes('scalar'),
