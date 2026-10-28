@@ -113,9 +113,18 @@ class SemanticResourceReader:
         return domains
 
     def preflight(self, conn, item, catalogue: ResourceCatalogue | None = None,
-                  *, work_budget: int = 200_000) -> int:
+                   *, work_budget: int = 200_000) -> int:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
+        if item.fields and "axis_comparisons" in item.fields:
+            from api.series_comparison_projection import preflight_axis_comparisons
+            base_fields = [f for f in item.fields if f not in {"axis_comparisons", "scalar_facet"}]
+            if "scalar_facet" in item.fields and "member_ranks" not in base_fields:
+                base_fields.append("member_ranks")
+            base_item = item.model_copy(update={"fields": base_fields or ["status"],
+                                                "coordinates": None})
+            base_work = self.preflight(conn, base_item, catalogue, work_budget=work_budget)
+            return base_work + preflight_axis_comparisons(conn, item, work_budget - base_work)
         profile_coordinates = self._profile_comparison_coordinates(conn, item, resource)
         if resource.resource_kind in {"indicator", "typed_reading"}:
             self._coordinate_values(conn, item, resource)
@@ -135,6 +144,11 @@ class SemanticResourceReader:
             cohort = resolve_territory_cohort(conn, item.target, work_budget=work_budget)
             estimate = preflight_cohort(conn, item, resource, cohort,
                 self._legacy_fields(item, catalogue), work_budget)
+            if item.fields and "scalar_facet" in item.fields and self._has_dual_scalar_series(resource):
+                from api.cohort_reads import preflight_scalar_cohort
+                scalar_item = item.model_copy(update={"fields": ["value"]})
+                estimate += preflight_scalar_cohort(conn, scalar_item, resource, cohort,
+                    ["value"], max(0, work_budget - estimate))
             self._cohort_scopes[id(item)] = cohort
             return estimate
         if resource.resource_kind == "aedar_source_grain":
@@ -327,12 +341,27 @@ class SemanticResourceReader:
     def read(self, conn, item, catalogue: ResourceCatalogue | None = None) -> dict:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
+        if item.fields and "axis_comparisons" in item.fields:
+            from api.series_comparison_projection import read_axis_comparisons
+            base_fields = [f for f in item.fields if f not in {"axis_comparisons", "scalar_facet"}]
+            if "scalar_facet" in item.fields and "member_ranks" not in base_fields:
+                base_fields.append("member_ranks")
+            base_item = item.model_copy(update={"fields": base_fields or ["status"],
+                                                "coordinates": None})
+            data = self.read(conn, base_item, catalogue)
+            data["result"]["axis_comparisons"] = read_axis_comparisons(conn, item)
+            return data
         if item.target.kind == "territory_cohort":
             cohort = self._cohort_scopes.pop(id(item), None)
             if cohort is None:
                 cohort = resolve_territory_cohort(conn, item.target, work_budget=200_000)
-            return read_cohort(conn, item, resource, cohort,
+            data = read_cohort(conn, item, resource, cohort,
                                self._legacy_fields(item, catalogue))
+            if item.fields and "scalar_facet" in item.fields and self._has_dual_scalar_series(resource):
+                from api.cohort_reads import read_scalar_cohort
+                scalar_item = item.model_copy(update={"fields": ["value"]})
+                data["scalar_facet"] = read_scalar_cohort(conn, scalar_item, resource, cohort, ["value"])
+            return data
         if resource.resource_kind == "typed_reading":
             return self._typed_reading_read(conn, item, resource)
         if resource.resource_kind == "aedar_source_grain":

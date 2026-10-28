@@ -1538,7 +1538,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
     if strict_fields and selected_fields is not None:
         stats={row[10] or "median" for row in descriptors}
         supported={"status","reason","selected_member_count","eligible_count","missing_count",
-                   "focal_value","rank","rank_size","rank_ties"}
+                   "focal_value","rank","rank_size","rank_ties","member_ranks"}
         if "median" in stats: supported.add("median")
         if "mean" in stats: supported.update({"mean","mean_curve"})
         _validate_comparison_fields(selected_fields,supported)

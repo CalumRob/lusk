@@ -98,10 +98,12 @@ def test_capture_native_state_calendar_comparison_boundary(canonical_db_env, tmp
             catalogue = client.get('/api/resources')
             assert catalogue.status_code == 200, catalogue.text
 
-            def read(target, intent, *, coordinates=None):
+            def read(target, intent, *, coordinates=None, fields=None):
                 item = {"resource": "artif_par_habitant", "target": target, "intent": intent}
                 if coordinates is not None:
                     item["coordinates"] = coordinates
+                if fields is not None:
+                    item["fields"] = fields
                 request = {"items": [{"id": "scalar-0-artif_par_habitant", **item}]}
                 response = client.post('/api/resources/read-batch', json=request)
                 return {"request": request, "response_status": response.status_code, "response": response.json()}
@@ -116,6 +118,19 @@ def test_capture_native_state_calendar_comparison_boundary(canonical_db_env, tmp
                 {"type": "epci", "id": "state-e1"}, {"type": "epci", "id": "state-e2"},
                 {"type": "epci", "id": "state-e3"}]},
                 coordinates={"declared_detail": ["2023"]})
+            roles = read(target, {"kind": "fixed_comparison", "context": "default"},
+                         coordinates={"declared_detail": ["M2", "M3"]}, fields=["axis_comparisons"])
+            bridge_items = [
+                {"id": "scalar-0-artif_par_habitant", "resource": "artif_par_habitant",
+                 "target": {"kind": "territory_cohort", "type": "epci"}, "intent": {"kind": "facts"}},
+                {"id": "scalar-1-artif_par_habitant", "resource": "artif_par_habitant",
+                 "target": target, "intent": {"kind": "facts"}},
+                {"id": "scalar-2-artif_par_habitant", "resource": "artif_par_habitant",
+                 "target": target, "intent": {"kind": "fixed_comparison", "context": "default"},
+                 "fields": ["axis_comparisons"]},
+            ]
+            bridge_response = client.post('/api/resources/read-batch', json={"items": bridge_items})
+            assert bridge_response.status_code == 200, bridge_response.text
         for capture in (cohort, focal, fixed, calendar, selected):
             assert capture["response_status"] == 200, capture
         fixed_result = fixed["response"]["results"][0]["data"]["result"]
@@ -126,10 +141,20 @@ def test_capture_native_state_calendar_comparison_boundary(canonical_db_env, tmp
         assert selected_data["result"]["status"] == "unavailable"
         assert selected_data["result"]["reason"] == "selected_coordinate_has_no_comparison_result"
         capture = {"schema": canonical_db_env["schema"], "catalogue": catalogue.json(), "territories": territories,
-                   "cohort": cohort, "focal": focal, "fixed": fixed, "calendar": calendar, "selected": selected}
+                   "cohort": cohort, "focal": focal, "fixed": fixed, "calendar": calendar, "selected": selected,
+                   "roles": roles, "application_bridge": {"request": {"items": bridge_items},
+                       "response_status": bridge_response.status_code, "response": bridge_response.json()}}
         output = tmp_path / 'native-state-calendar-boundary.json'
         output.write_text(json.dumps(capture, indent=2, ensure_ascii=False), encoding='utf-8')
         print(f'Guarded native state/calendar capture: {output}', flush=True)
+        assert roles["response_status"] == 200, roles
+        points = roles["response"]["results"][0]["data"]["result"]["axis_comparisons"]
+        assert [(point["axis"], point["value"], point["eligible_count"]) for point in points] == [
+            ("M2", 150, 3), ("M3", 180, 3)]
+        assert points[1]["member_ranks"] == [
+            {"territory_id": "state-e1", "rank": 1, "rank_size": 3, "rank_ties": 1},
+            {"territory_id": "state-e2", "rank": 3, "rank_size": 3, "rank_ties": 1},
+            {"territory_id": "state-e3", "rank": 2, "rank_size": 3, "rank_ties": 1}]
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)

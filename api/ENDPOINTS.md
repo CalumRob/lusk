@@ -40,6 +40,14 @@ are `facts`, `fixed_comparison` with the closed `default` context, and bounded
 coordinates and optional fields are producer-declared; status, availability,
 descriptor, axis, and provenance metadata remain mandatory where declared.
 Comparison fields use the closed comparison-result vocabulary.
+Owned ordered-series comparisons additionally accept the requested-only
+`axis_comparisons` projection: it returns API-owned comparison values, eligibility,
+missing counts, ranks/ties, and lineage for the axes already present in the comparison
+publication. It never aliases factual axes to comparison axes or reconstructs fixed
+groups. Dual scalar/series resources accept `scalar_facet` on a cohort/facts request
+to return that resource's independent scalar cohort facts; the same comparison field
+requests include its existing scalar comparison contract. These nested projections
+are opt-in and do not change default/unrequested responses.
 The catalogue also includes four producer-declared `typed_reading` resources for
 selected Démographie, Économie/Emploi, Habitat, and Milieux evidence. These use the
 same `facts` grammar and a declared `groupe` coordinate. Ranked economy activities,
