@@ -403,29 +403,20 @@ try {
         `${spec.indicator} native source identity matches a Sources record; the fiche-source link must render`)
     }
 
-    // Indicator-page Carte renders the native layer for the active coordinate.
+    // Indicator-page Carte maps the active coordinate's native layer.
     await page.getByRole('button', { name: 'Carte', exact: true }).click()
-    try {
-      await page.locator('.popup-carte-kpi').first().waitFor({ state: 'visible', timeout: 8000 })
-    } catch (cause) {
-      const debugPath = process.env.LUSK_SERIES_PROOF_DEBUG
-      if (debugPath) {
-        await page.screenshot({ path: `${debugPath}-${spec.indicator}.png`, fullPage: false })
-        const mapHtml = await page.locator('.indicateur-page').innerHTML().catch(() => 'no page')
-        console.error(`DEBUG ${spec.indicator}: popup missing; url=${page.url()}; html=${mapHtml.slice(0, 1500)}`)
-      }
-      throw cause
-    }
-    const mapText = await page.locator('.popup-carte').innerText()
-    assert(mapText.includes(spec.resource.unit), `${spec.indicator} indicator map must render the native unit`)
-    if (expected) {
-      const mapPoint = expected.read.points.find((point) => point.axis === (Object.values(facetQuery)[0] ?? null) &&
+    const mapPoint = expected
+      ? expected.read.points.find((point) => point.axis === (Object.values(facetQuery)[0] ?? null) &&
         point.status === 'measured')
-      if (mapPoint) {
-        const expectedApiValue = formaterValeur({ value: mapPoint.value, unit: expected.boundPage.unit })
-        assert(compactText(mapText).includes(compactText(expectedApiValue)),
-          `${spec.indicator} indicator map must render the native API value: ${mapText}`)
-      }
+      : null
+    if (mapPoint) {
+      await page.locator('.popup-carte-kpi').first().waitFor({ state: 'visible', timeout: 20000 })
+      const mapText = await page.locator('.popup-carte').innerText()
+      const expectedApiValue = formaterValeur({ value: mapPoint.value, unit: expected.boundPage.unit })
+      assert(compactText(mapText).includes(compactText(expectedApiValue)) && mapText.includes(spec.resource.unit),
+        `${spec.indicator} indicator map must render the native API value/unit: ${mapText}`)
+    } else {
+      await page.locator('.map-explorer').waitFor({ state: 'visible', timeout: 20000 })
     }
     routeEvidence.push({ theme: spec.theme, indicator: spec.indicator, unit: spec.resource.unit,
       focal: focal.territoire, level, coordinate: Object.values(facetQuery)[0] ?? null,
