@@ -249,6 +249,21 @@ try {
       externalFailures.push(`${request.url()} (${request.failure()?.errorText ?? 'request failed'})`)
     }
   })
+  // The public basemap's TileJSON/sprites are external infrastructure, not
+  // part of this API-only proof. The proof still runs the real MapLibre
+  // component and its native GeoJSON territory overlays; use the production
+  // style's local background layer without its remote OSM source so style
+  // readiness (and the selected-territory popup) is deterministic offline.
+  const productionMapStyle = JSON.parse(await readFile(resolve(appRoot, 'public/positron-nolabels.json'), 'utf8'))
+  const localMapStyle = {
+    version: productionMapStyle.version,
+    name: productionMapStyle.name,
+    metadata: productionMapStyle.metadata,
+    sources: {},
+    layers: productionMapStyle.layers.filter((layer) => layer.type === 'background'),
+  }
+  await page.route('**/positron-nolabels.json', (route) => route.fulfill({ status: 200,
+    contentType: 'application/json', body: JSON.stringify(localMapStyle) }))
   await page.route('**/api/**', (route) => harness.handle(route))
   for (const theme of THEMES) {
     await page.route(`**/data/theme_${theme}.json`, (route) => route.fulfill({ status: 200,
