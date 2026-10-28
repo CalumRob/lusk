@@ -543,11 +543,16 @@ try {
 
   // Comparison-only HTTP failure keeps acquired facts; the retry re-reads only
   // the comparison evidence (raccordement's separately acquired comparison).
-  await page.goto(`${baseUrl}indicateurs/mobilite/raccordement_courbe?territoire=22001&niveau=commune&departement=22&vue=reperes`,
+  await page.goto(`${baseUrl}indicateurs/mobilite/raccordement_courbe?territoire=22001&niveau=commune&vue=reperes`,
     { waitUntil: 'domcontentloaded' })
   await page.locator('h1').filter({ hasText: 'population bretonne jointe' }).waitFor({ state: 'visible', timeout: 20000 })
   await page.locator('[data-testid="raccordement-selected-mean"]').waitFor({ state: 'visible', timeout: 20000 })
+  const factsAtLoad = harness.requests.length
   harness.failNextComparisonOnlyOnce()
+  // A selection change re-reads the comparison only; the cached focal curve and
+  // its named reference stay exactly where they are.
+  await page.goto(`${baseUrl}indicateurs/mobilite/raccordement_courbe?territoire=22001&niveau=commune&departement=22&vue=reperes`,
+    { waitUntil: 'domcontentloaded' })
   await page.locator('[data-testid="raccordement-comparison-error"]').waitFor({ state: 'visible', timeout: 20000 })
   const factsWhileBroken = harness.requests.length
   assert((await page.locator('.trajectoire-territoire-point').count()) > 0,
@@ -556,6 +561,7 @@ try {
   await page.locator('[data-testid="raccordement-selected-mean"]').waitFor({ state: 'visible', timeout: 20000 })
   assert.equal(harness.requests.length, factsWhileBroken,
     'the comparison-only retry must not reread facts')
+  assert(harness.requests.length > factsAtLoad)
 
   // A late series batch from a previous route cannot overwrite the new page.
   harness.delayNextBatch('conso_enaf_annuel')
