@@ -836,7 +836,15 @@ def test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, 
         pool.close()
 
 
-def test_ordinary_scalar_selected_comparison_requests_native_peer_ranks(canonical_db_env):
+@pytest.mark.parametrize(("focal_status", "peer_status", "eligible_count"), [
+    ("measured", "measured", 2),
+    ("measured", "not_available", 1),
+    ("not_available", "measured", 1),
+    ("suppressed", "not_available", 0),
+])
+def test_ordinary_scalar_selected_comparison_requests_native_peer_ranks(
+    canonical_db_env, focal_status, peer_status, eligible_count,
+):
     """The scalar page's selected table/rank sort needs an opt-in native peer projection."""
     import psycopg
     from fastapi.testclient import TestClient
@@ -859,8 +867,9 @@ def test_ordinary_scalar_selected_comparison_requests_native_peer_ranks(canonica
             ARRAY['commune','epci','departement','region'],'population municipale','sparse','densite-native-d1')""")
         conn.execute("INSERT INTO scalar_descriptor_source VALUES ('densite','serie_historique')")
         conn.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status)
-            VALUES ('densite','29001','commune',100,'measured'),
-                   ('densite','29002','commune',100,'measured')""")
+            VALUES ('densite','29001','commune',%s,%s),('densite','29002','commune',%s,%s)""",
+            (100 if focal_status == "measured" else None, focal_status,
+             100 if peer_status == "measured" else None, peer_status))
         conn.execute("""INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id)
             VALUES ('densite','29001','serie_historique','serie_historique'),
                    ('densite','29002','serie_historique','serie_historique')""")
@@ -884,11 +893,16 @@ def test_ordinary_scalar_selected_comparison_requests_native_peer_ranks(canonica
         assert response.status_code == 200, response.text
         result = response.json()["result"]
         assert (result["median"], result["selected_member_count"], result["eligible_count"],
-                result["missing_count"]) == (100, 2, 2, 0)
+                result["missing_count"]) == (100 if eligible_count else None, 2, eligible_count, 2 - eligible_count)
+        expected_rank = lambda status: ({"rank": 1, "rank_size": eligible_count, "rank_ties": eligible_count}
+            if status == "measured" else {"rank": None, "rank_size": None, "rank_ties": None})
         assert result["member_ranks"] == [
-            {"territory_id": "29001", "rank": 1, "rank_size": 2, "rank_ties": 2},
-            {"territory_id": "29002", "rank": 1, "rank_size": 2, "rank_ties": 2},
+            {"territory_id": "29001", **expected_rank(focal_status)},
+            {"territory_id": "29002", **expected_rank(peer_status)},
         ]
+        assert result["rank"] == (1 if focal_status == "measured" else None)
+        assert result["rank_size"] == (eligible_count if focal_status == "measured" else None)
+        assert result["status"] == ("available" if eligible_count else "unavailable")
         assert response.json()["scope"] == {"kind": "explicit_selection", "member_count": 2}
         assert "territory_type" not in response.json()["scope"]
     finally:
@@ -903,8 +917,14 @@ def test_ordinary_scalar_selected_comparison_requests_native_peer_ranks(canonica
     ("epci", "200000001", "200000002"),
     ("departement", "22", "29"),
 ])
+@pytest.mark.parametrize(("focal_status", "peer_status", "eligible_count"), [
+    ("measured", "measured", 2),
+    ("measured", "not_available", 1),
+    ("not_available", "measured", 1),
+    ("suppressed", "not_available", 0),
+])
 def test_ordinary_scalar_fixed_non_commune_comparison_projects_native_peer_ranks(
-    canonical_db_env, territory_type, focal_id, peer_id,
+    canonical_db_env, territory_type, focal_id, peer_id, focal_status, peer_status, eligible_count,
 ):
     """Non-commune page tables use the published same-level peer population."""
     import psycopg
@@ -926,8 +946,9 @@ def test_ordinary_scalar_fixed_non_commune_comparison_projects_native_peer_ranks
             ARRAY['epci','departement'],'population municipale','dense_complete','densite-fixed-d1')""")
         conn.execute("INSERT INTO scalar_descriptor_source VALUES ('densite','scalar_source')")
         conn.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status)
-            VALUES ('densite',%s,%s,100,'measured'),('densite',%s,%s,50,'measured')""",
-            (focal_id, territory_type, peer_id, territory_type))
+            VALUES ('densite',%s,%s,%s,%s),('densite',%s,%s,%s,%s)""",
+            (focal_id, territory_type, 100 if focal_status == "measured" else None, focal_status,
+             peer_id, territory_type, 50 if peer_status == "measured" else None, peer_status))
         conn.execute("""INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id)
             VALUES ('densite',%s,'scalar_source','scalar_source-v1'),
                    ('densite',%s,'scalar_source','scalar_source-v1')""", (focal_id, peer_id))
@@ -936,14 +957,22 @@ def test_ordinary_scalar_fixed_non_commune_comparison_projects_native_peer_ranks
         conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,
             reference_content_version,group_row_count,territory_row_count,lineage_row_count)
             VALUES (true,'scalar-comparison-v1','scalar-v1','ref-v1',1,2,1)""")
+        median_value = (75 if eligible_count == 2 else 100 if focal_status == "measured" else
+            50 if peer_status == "measured" else None)
         conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,indicator_id,
             statistic,median,member_count,eligible_count,missing_count,lineage_source_count)
-            VALUES ('same_level','region-bretagne',%s,'densite','median',75,2,2,0,1)""", (territory_type,))
+            VALUES ('same_level','region-bretagne',%s,'densite','median',%s,2,%s,%s,1)""",
+            (territory_type, median_value, eligible_count, 2 - eligible_count))
         conn.execute("""INSERT INTO scalar_comparison_territory(comparison_context,group_id,territory_type,indicator_id,
             territory_id,value,status,rank,tie_count,rank_size) VALUES
-            ('same_level','region-bretagne',%s,'densite',%s,100,'measured',1,1,2),
-            ('same_level','region-bretagne',%s,'densite',%s,50,'measured',2,1,2)""",
-            (territory_type, focal_id, territory_type, peer_id))
+            ('same_level','region-bretagne',%s,'densite',%s,%s,%s,%s,%s,%s),
+            ('same_level','region-bretagne',%s,'densite',%s,%s,%s,%s,%s,%s)""",
+            (territory_type, focal_id, 100 if focal_status == "measured" else None, focal_status,
+             1 if focal_status == "measured" else None, 1 if focal_status == "measured" else None,
+             eligible_count if focal_status == "measured" else None,
+             territory_type, peer_id, 50 if peer_status == "measured" else None, peer_status,
+             1 if peer_status == "measured" else None, 1 if peer_status == "measured" else None,
+             eligible_count if peer_status == "measured" else None))
         conn.execute("""INSERT INTO comparison_source_lineage(comparison_family,comparison_context,group_id,
             territory_type,facet_id,source_id,vintage_id,comparison_content_version)
             VALUES ('scalar','same_level','region-bretagne',%s,'densite','scalar_source','scalar_source-v1',
@@ -967,11 +996,16 @@ def test_ordinary_scalar_fixed_non_commune_comparison_projects_native_peer_ranks
         assert body["scope"] == {"kind": "same_level", "territory_type": territory_type, "member_count": 2}
         result = body["result"]
         assert (result["median"], result["selected_member_count"], result["eligible_count"],
-                result["missing_count"]) == (75, 2, 2, 0)
+                result["missing_count"]) == (median_value, 2, eligible_count, 2 - eligible_count)
+        expected_rank = lambda status, rank: ({"rank": rank, "rank_size": eligible_count, "rank_ties": 1}
+            if status == "measured" else {"rank": None, "rank_size": None, "rank_ties": None})
         assert result["member_ranks"] == [
-            {"territory_id": focal_id, "rank": 1, "rank_size": 2, "rank_ties": 1},
-            {"territory_id": peer_id, "rank": 2, "rank_size": 2, "rank_ties": 1},
+            {"territory_id": focal_id, **expected_rank(focal_status, 1)},
+            {"territory_id": peer_id, **expected_rank(peer_status, 2 if eligible_count == 2 else 1)},
         ]
+        assert result["rank"] == (1 if focal_status == "measured" else None)
+        assert result["rank_size"] == (eligible_count if focal_status == "measured" else None)
+        assert result["status"] == ("available" if eligible_count else "unavailable")
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)

@@ -900,7 +900,7 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
                 peer_missing += peer_status != "measured"
                 ranks.append({"territory_id": member_id,
                     **({"rank": peer_rank, "rank_size": peer_size, "rank_ties": peer_ties}
-                       if eligible_count >= 2 and peer_status == "measured" else
+                        if eligible_count >= 1 and peer_status == "measured" else
                         {"rank": None, "rank_size": None, "rank_ties": None})})
             if peer_eligible != eligible_count or peer_missing != missing_count:
                 raise HTTPException(503, "Published scalar comparison peer statuses do not match group counts")
@@ -1093,7 +1093,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                     **({"rank": ranks_by_value[values_by_member[member_id]][0],
                         "rank_size": len(values),
                         "rank_ties": ranks_by_value[values_by_member[member_id]][1]}
-                       if len(values) >= 2 and member_id in values_by_member else
+                        if len(values) >= 1 and member_id in values_by_member else
                         {"rank": None, "rank_size": None, "rank_ties": None}),
                 } for member_id in members]
     profile_fixed_context = fixed_context if profiles else None
