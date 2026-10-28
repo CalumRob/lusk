@@ -188,7 +188,9 @@ try {
       await waitPageData(page, spec)
     }
     assert.equal(trace.length, recoveredTraceLength,
-      `${spec.indicator}: same-key warm revisits deduplicate admitted facts and comparison`)
+      `${spec.indicator}: same-key warm revisits deduplicate admitted facts and comparison; ` +
+      JSON.stringify(trace.slice(recoveredTraceLength).map(({ status, items }) => ({ status,
+        items: items.map(({ intent, target }) => ({ intent: intent.kind, target })) }))))
     outcomes.push({ indicator: spec.indicator, coldCompound503: trace.slice(start, start + 2)
       .map(({ status, items }) => ({ status, items: items.length })),
     warmNewFocalFacts503: { status: miss.status, item: miss.items[0] },
