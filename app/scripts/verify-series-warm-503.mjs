@@ -152,7 +152,9 @@ try {
     await page.getByTestId('series-comparison-error').waitFor({ state: 'visible', timeout: 20000 })
     const staged = trace.slice(start + 3)
     assert.deepEqual(staged.map(({ status, items }) => [status, items.length]), [[200, 1], [503, 1]],
-      `${spec.indicator}: admit exact focal facts before independent comparison 503`)
+      `${spec.indicator}: admit exact focal facts before independent comparison 503; ` +
+      `trace=${JSON.stringify(trace.slice(start).map(({ status, items }) => ({ status,
+        intents: items.map((item) => item.intent.kind), targets: items.map((item) => item.target) })))}`)
     assert.equal(staged[0].items[0].target.id, focalB.territoire)
     assert.equal(staged[1].items[0].intent.kind, 'selected_comparison')
     const factsAtComparisonFailure = factReads.filter((item) => item.resource === spec.indicator).length
