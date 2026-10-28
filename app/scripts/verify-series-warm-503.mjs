@@ -132,6 +132,8 @@ try {
     }
     assert.deepEqual(trace.slice(start).map(({ status, items }) => [status, items.length]), [[503, 3], [200, 3]],
       `${spec.indicator}: cold retry reacquires the bounded compound batch`)
+    assert.equal(await page.getByTestId('series-comparison-error').count(), 0,
+      `${spec.indicator}: successful HTTP 200 compound comparison must pass page admission, not only render facts`)
 
     const cohortBefore = factReads.filter((item) => item.resource === spec.indicator &&
       item.target.kind === 'territory_cohort').length
@@ -189,9 +191,15 @@ try {
     }
     assert.equal(trace.length, recoveredTraceLength,
       `${spec.indicator}: same-key warm revisits deduplicate admitted facts and comparison; ` +
-      JSON.stringify({ extra: trace.slice(recoveredTraceLength),
-        priorComparisons: trace.slice(start).filter(({ items }) => items.length === 1 &&
-          items[0].intent.kind === 'selected_comparison') }))
+      JSON.stringify({ extra: trace.slice(recoveredTraceLength).map(({ status, items }) => ({ status,
+        items: items.map(({ resource, target, intent, fields, coordinates }) => ({ resource, target,
+          intent, fields, coordinates, memberCount: intent.members?.length,
+          memberEnds: intent.members?.length ? [intent.members[0], intent.members.at(-1)] : null })) })),
+      comparisonRequests: trace.slice(start).filter(({ items }) => items.length === 1 &&
+        items[0].intent.kind === 'selected_comparison').map(({ status, items }) => ({ status, item: {
+          resource: items[0].resource, target: items[0].target, intent: items[0].intent,
+          fields: items[0].fields, coordinates: items[0].coordinates,
+        } })) }))
     outcomes.push({ indicator: spec.indicator, coldCompound503: trace.slice(start, start + 2)
       .map(({ status, items }) => ({ status, items: items.length })),
     warmNewFocalFacts503: { status: miss.status, item: miss.items[0] },
