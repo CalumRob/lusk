@@ -25,7 +25,9 @@ const expectedPages = [
 ].sort()
 const THEMES = ['habitat', 'milieux', 'mobilite', 'programmes']
 
-const SENTINEL = (value) => Number(value) * 10 + 1234.5
+// Binary scaling keeps a published scalar median exactly consistent with the
+// transformed member values under the acquirer's strict evidence check.
+const SENTINEL = (value) => Number(value) * 2
 
 /** Sentinel-transform measured display values only: ranks, ties, counts,
  *  statuses, axes, units and clocks must survive unmodified. */
