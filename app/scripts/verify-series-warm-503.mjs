@@ -153,6 +153,10 @@ try {
     const staged = trace.slice(start + 3)
     assert.deepEqual(staged.map(({ status, items }) => [status, items.length]), [[200, 1], [503, 1]],
       `${spec.indicator}: admit exact focal facts before independent comparison 503; ` +
+      `cohortPublication=${JSON.stringify({ content_version: initialCohort.content_version,
+        reference_content_version: initialCohort.reference_content_version,
+        pooled_content_version: initialCohort.scalar_facet?.content_version,
+        pooled_reference_content_version: initialCohort.scalar_facet?.reference_content_version })}; ` +
       `trace=${JSON.stringify(trace.slice(start).map(({ status, items }) => ({ status,
         intents: items.map((item) => item.intent.kind), targets: items.map((item) => item.target),
         publications: (trace.at(-1)?.response?.results ?? []).map(({ data }) => ({
