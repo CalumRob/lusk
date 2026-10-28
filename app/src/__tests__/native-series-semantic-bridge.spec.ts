@@ -16,6 +16,14 @@ import TrajectoryFamilyRenderer from '@/components/indicateurs/TrajectoryFamilyR
 const capturePaths = (process.env.LUSK_NATIVE_SERIES_FAMILY_CAPTURES ?? '').split(';').filter(Boolean)
 afterEach(() => vi.unstubAllGlobals())
 
+function admittedContentVersion(read: unknown): string {
+  if (typeof read !== 'object' || read === null || !('content_version' in read) ||
+      typeof read.content_version !== 'string') {
+    throw new Error('Expected the admitted ordered-series read to carry its native content version')
+  }
+  return read.content_version
+}
+
 /** One captured SQL/HTTP batch served verbatim, optionally with one wire field
  *  corrupted, exactly as the guarded capture test wrote it to disk. The
  *  comparison-only re-acquisition (a single-item request) is served from the
@@ -373,11 +381,11 @@ describe('guarded native SQL/HTTP → shared ordered-series acquisition bridge',
         const late = session.acquire(input)
         await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
         const current = await session.refresh(input)
-        expect(current.content_version).toBe('native-series-refresh-v2')
+        expect(admittedContentVersion(current)).toBe('native-series-refresh-v2')
         releaseOld(Response.json(bridge.response, { status: bridge.response_status }))
         await late
         const cached = await session.acquire(input)
-        expect(cached.content_version).toBe('native-series-refresh-v2')
+        expect(admittedContentVersion(cached)).toBe('native-series-refresh-v2')
         expect(cached.points).toEqual(current.points)
         expect(fetcher).toHaveBeenCalledTimes(2)
       })

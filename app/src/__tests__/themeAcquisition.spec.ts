@@ -40,10 +40,19 @@ describe('theme acquisition cache', () => {
       const projected = semanticComparisonForTheme(acquired.default_comparison, undefined,
         acquired.resource_reads, { type: 'commune', id: '22001' })
 
-      expect(acquired.comparison_error, acquired.comparison_failure).toBeUndefined()
+      expect(acquired.comparison_error).toBeUndefined()
+      expect(acquired.comparison_failure).toBeUndefined()
       expect(priceComparison?.scalar_facet?.result?.status).toBe('available')
       expect(priceComparison?.scalar_facet?.comparison_content_version).toBe('prix_m2-fixture-comparison-v1')
-      expect(projected?.results.find((result) => result.indicator_id === 'prix_m2')?.rank).toBeTypeOf('number')
+      expect(Array.isArray(projected?.results)).toBe(true)
+      const projectedResults: unknown[] = Array.isArray(projected?.results) ? projected.results : []
+      const priceResult = projectedResults.find((result) => typeof result === 'object' && result !== null &&
+        'indicator_id' in result && result.indicator_id === 'prix_m2')
+      expect(priceResult).toBeDefined()
+      if (typeof priceResult !== 'object' || priceResult === null || !('rank' in priceResult)) {
+        throw new Error('The pooled scalar comparison projection must expose its native rank')
+      }
+      expect(priceResult.rank).toBeTypeOf('number')
     } finally { vi.unstubAllGlobals() }
   })
 

@@ -2,13 +2,14 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { createOrderedSeriesSemanticSession } from '@/payload/seriesSemanticAcquisition'
+import type { Territoire } from '@/payload/types'
 import { nativeBatchResponse, nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
 
 afterEach(() => vi.unstubAllGlobals())
 
 describe('dual ordered-series pooled-facet admission', () => {
   it('admits native scalar statuses with null values and caches a valid pooled comparison', async () => {
-    const territories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+    const territories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8')) as Territoire[]
     const focal = territories.find((territory) => territory.territoire === '22001' && territory.type === 'commune')
     expect(focal).toBeDefined()
     const resource = nativeResources().find((candidate) => candidate.resource_id === 'prix_m2')
