@@ -1,6 +1,8 @@
 ﻿import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { afterEach, describe, expect, it, beforeEach, vi } from 'vitest'
 import IndicateurView from '../views/IndicateurView.vue'
 import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, indicateursMobiliteFixture, indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
@@ -9,7 +11,7 @@ import type { Payload, FamilleFigure, IndicatorPageMetadata } from '../payload/t
 import { routes } from '../router'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import type { Fichier } from '../payload/loader'
-import { nativeBatchResponse, nativeCatalogueResponse, nativeReadFixture } from './helpers/semanticApiFixtures'
+import { nativeBatchResponse, nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
 
 const payload: Payload = { territoires: [...territoiresFixture, { territoire: 'e', type: 'epci', nom: 'EPCI test', departement: null, epci: null }], indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture, apercu: apercuAvecNAFixture, runReport: runReportFraisFixture, vintages: vintagesFixture, programmes: null, themeMetadata: { demographie: metadonneesThemesFixtures.demographie } }
 function pagePourFamille(family: FamilleFigure): IndicatorPageMetadata {
@@ -33,7 +35,29 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
   const routedPayload = { ...payload, indicateurs: factsOverride, themeMetadata: { [themeOverride]: metadataOverride } }
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
-    if (url === '/api/resources') return nativeCatalogueResponse()
+    const hasPresentationOverride = metadataOverride !== metadonneesThemesFixtures[themeOverride]
+    const themeMetadataPath = url.match(/^\/data\/theme_([a-z]+)\.json$/)
+    if (themeMetadataPath) {
+      const theme = themeMetadataPath[1] as keyof typeof metadonneesThemesFixtures
+      const producer = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8'))
+      const presentation = theme === themeOverride && hasPresentationOverride ? metadataOverride : producer
+      return new Response(JSON.stringify(presentation === producer ? producer : { ...producer, ...presentation,
+        scalar_contracts: producer.scalar_contracts,
+        indicator_pages: { ...producer.indicator_pages, ...presentation.indicator_pages },
+        source_records: { ...presentation.source_records, ...producer.source_records } }))
+    }
+    if (url === '/api/resources') {
+      const routeTheme = String(router.currentRoute.value.params.theme) as keyof typeof metadonneesThemesFixtures
+      const routeIndicator = String(router.currentRoute.value.params.indicator)
+      const producer = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${routeTheme}.json`), 'utf8'))
+      const presentation = routeTheme === themeOverride && hasPresentationOverride ? metadataOverride : producer
+      const page = presentation.indicator_pages?.[routeIndicator]
+      const resources = nativeResources(routeTheme).filter((resource) => resource.resource_id === routeIndicator &&
+        (page?.family ?? 'scalar') === 'scalar' && resource.shapes.length === 1 && resource.shapes[0] === 'scalar' &&
+        !page?.comparison?.details?.length && !page?.comparison?.sexes?.length && !page?.comparison?.dimensions?.length &&
+        resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
+      return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+    }
     if (url === '/api/resources/read-batch') {
       const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
       return nativeBatchResponse(body.items, (item, resource) => nativeReadFixture(item, resource, {
@@ -61,16 +85,17 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
   await flushPromises()
   return { wrapper, router }
 }
-beforeEach(() => localStorage.clear())
+beforeEach(() => { localStorage.clear(); vi.stubEnv('VITE_SCALAR_COHORT_API', '0') })
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
 
 describe('IndicateurView — routed URL seam', () => {
   it('defaults to Repères and switches real URL-backed views; invalid vue is cleared by selecting Repères', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite?vue=wat'); expect(wrapper.find('main').exists()).toBe(true); await wrapper.findAll('.vues button')[0].trigger('click'); await flushPromises(); expect(router.currentRoute.value.query.vue).toBeUndefined(); await router.push({ query: { vue: 'carte' } }); await flushPromises(); expect(router.currentRoute.value.query.vue).toBe('carte'); await router.push({ query: { vue: 'indicateur' } }); await flushPromises(); expect(router.currentRoute.value.query.vue).toBe('indicateur') })
   it('renders unknown indicator honestly', async () => { const { wrapper } = await monter('/indicateurs/demographie/not-published'); expect(wrapper.text()).toContain('Indicateur introuvable') })
   it('renders an unknown theme as a finite honest error state', async () => { const { wrapper } = await monter('/indicateurs/inconnu/densite'); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Chargement de l’indicateur') })
   it('reacts when the router reuses the view for a new indicator parameter', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite'); expect(wrapper.text()).toContain('Densité de population'); await router.push('/indicateurs/demographie/not-published'); await flushPromises(); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Densité de population') })
-  it('remounts the selected theme page with its hermetic wait-set', async () => { const appels: string[] = []; const { wrapper, router } = await monter('/indicateurs/demographie/densite', appels); expect(appels).toEqual(expect.arrayContaining(['territoires', 'indicateurs_demographie', 'theme_demographie'])); await router.push('/indicateurs/habitat/not-published'); await flushPromises(); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Densité de population') })
+  it('keeps ordinary scalar page facts API-only while changing the routed theme', async () => { const appels: string[] = []; const { wrapper, router } = await monter('/indicateurs/demographie/densite', appels); expect(appels).toEqual(['territoires']); await router.push('/indicateurs/habitat/not-published'); await flushPromises(); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Densité de population') })
   it('writes fallback level, lets explicit URL win, filters, preserves fiche theme and scopes', async () => { localStorage.setItem('lusk:niveau-indicateur', 'commune'); const { wrapper, router } = await monter('/indicateurs/demographie/densite'); expect(router.currentRoute.value.query.niveau).toBe('commune'); await wrapper.find('input').setValue('Commune A'); expect(wrapper.text()).toContain('Commune A'); expect(wrapper.find('a[href*="theme=demographie"]').exists()).toBe(true); await wrapper.find('select').setValue('epci'); await flushPromises(); expect(router.currentRoute.value.query.departement).toBeUndefined(); expect(router.currentRoute.value.query.epci).toBeUndefined() })
-  it('renders unit and reusable complete source records', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite?vue=indicateur'); expect(wrapper.text()).toContain('hab./km²'); expect(wrapper.text()).toContain('Publication annuelle'); expect(router.currentRoute.value.query.vue).toBe('indicateur') })
+  it('renders the native unit and acquired source/vintage clocks', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite?vue=indicateur'); expect(wrapper.text()).toContain('hab/km²'); expect(wrapper.text()).toContain('2026-06-30'); expect(wrapper.text()).not.toContain('Publication annuelle'); expect(router.currentRoute.value.query.vue).toBe('indicateur') })
    it('mounts map integration with the exact active facet facts', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite?vue=carte&territoire=29002'); const expected = payload.indicateurs.filter((fact) => fact.key === 'densite' && fact.type === 'commune').map((fact) => fact.territoire); expect(wrapper.find('[data-testid="map"]').exists()).toBe(true); expect(wrapper.find('[data-testid="map"]').attributes('data-level')).toBe('communes'); expect(wrapper.find('[data-testid="map"]').attributes('data-selected')).toBe('29002'); expect(wrapper.find('[data-testid="map"]').attributes('data-values')).toBe(expected.join(',')); expect(router.currentRoute.value.query.vue).toBe('carte') })
   it('persists a level selected through the routed control', async () => { const { wrapper } = await monter('/indicateurs/demographie/densite'); await wrapper.find('select').setValue('epci'); await flushPromises(); expect(localStorage.getItem('lusk:niveau-indicateur')).toBe('epci') })
   it('renders real EPCI rows after switching the routed level', async () => { const { wrapper } = await monter('/indicateurs/demographie/densite'); await wrapper.find('select').setValue('epci'); await flushPromises(); expect(wrapper.find('tbody').text()).toContain('EPCI X'); expect(wrapper.find('tbody').text()).toContain('EPCI Y') })

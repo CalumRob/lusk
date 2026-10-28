@@ -900,7 +900,7 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
                 peer_missing += peer_status != "measured"
                 ranks.append({"territory_id": member_id,
                     **({"rank": peer_rank, "rank_size": peer_size, "rank_ties": peer_ties}
-                       if eligible_count >= 2 and peer_status == "measured" else
+                        if eligible_count >= 1 and peer_status == "measured" else
                         {"rank": None, "rank_size": None, "rank_ties": None})})
             if peer_eligible != eligible_count or peer_missing != missing_count:
                 raise HTTPException(503, "Published scalar comparison peer statuses do not match group counts")
@@ -1030,7 +1030,9 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         published_scalar = (_published_scalar_comparison_results(conn, scalar_descriptors,
             fixed_context, cohort_type, members, territory_id,
             selected_fields=result_fields,
-            include_ties=(result_fields is not None and "rank_ties" in result_fields)) if fixed_context else {})
+            include_ties=(result_fields is not None and "rank_ties" in result_fields),
+            include_member_ranks=(result_fields is not None and "member_ranks" in result_fields))
+            if fixed_context else {})
         if fixed_context:
             scalar_sources_by_indicator = {}
             scalar_rows = []
@@ -1074,6 +1076,26 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 "median": median([value for _, value in values]) if values else None,
                 "rank": rank, "rank_size": len(values) if rank is not None else None,
                 "comparison_sources": sources})
+            if result_fields is not None and "member_ranks" in result_fields:
+                values_by_member = {member_id: value for member_id, value in values}
+                counts = {}
+                for _member_id, value in values:
+                    counts[value] = counts.get(value, 0) + 1
+                ranks_by_value = {}
+                preceding = 0
+                for value in sorted(counts):
+                    count = counts[value]
+                    better = preceding if direction == "low" else len(values) - preceding - count
+                    ranks_by_value[value] = (better + 1, count)
+                    preceding += count
+                results[-1]["member_ranks"] = [{
+                    "territory_id": member_id,
+                    **({"rank": ranks_by_value[values_by_member[member_id]][0],
+                        "rank_size": len(values),
+                        "rank_ties": ranks_by_value[values_by_member[member_id]][1]}
+                        if len(values) >= 1 and member_id in values_by_member else
+                        {"rank": None, "rank_size": None, "rank_ties": None}),
+                } for member_id in members]
     profile_fixed_context = fixed_context if profiles else None
     if profile_coordinates and any(not p.get("comparison_scalar") for p in (profiles or [])):
         # Published comparison projections contain the descriptor's default

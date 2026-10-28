@@ -106,18 +106,20 @@ function metadataFor(theme: string): Record<string, any> {
   return metadata
 }
 
-function sourceFor(resource: Resource, fact?: Record<string, any>, target?: Record<string, any>, ownedSeries = false) {
+function sourcesFor(resource: Resource, fact?: Record<string, any>, target?: Record<string, any>, ownedSeries = false) {
   if (['raccordement_tc', 'raccordement_courbe', 'raccordement_reference'].includes(resource.resource_id)) {
     const record = mobiliteProducer.source_records[raccordementRoute.source_id]
     const clock = record.vintages.find((entry: Record<string, any>) => entry.id === raccordementRoute.source_id)
     if (!clock) throw new Error('Current Mobility producer source clock is missing')
-    return { source_id: raccordementRoute.source_id, name: record.publisher ?? record.dataset,
+    return [{ source_id: raccordementRoute.source_id, name: record.publisher ?? record.dataset,
       vintage_id: ownedSeries ? clock.version : `${clock.version}/${clock.dateReference ?? 'NA'}`,
       version: String(clock.version), reference_date: clock.dateReference ?? null,
-      publication_date: clock.datePublication ?? null }
+      publication_date: clock.datePublication ?? null }]
   }
   const metadata = metadataFor(resource.theme_id)
-  const sourceKeys = resource.shapes.includes('typed_reading') ? resource.sources.slice(0, 1) : resource.sources
+  const declaredSourceKeys = resource.shapes.includes('typed_reading') ? resource.sources.slice(0, 1) : resource.sources
+  const sourceKeys = declaredSourceKeys.filter((key) => metadata.source_records?.[key]).length
+    ? declaredSourceKeys.filter((key) => metadata.source_records?.[key]) : declaredSourceKeys
   const declared = sourceKeys.flatMap((key) => {
     const record = metadata.source_records?.[key]
     const records = Array.isArray(record?.vintages) ? record.vintages : []
@@ -143,17 +145,24 @@ function sourceFor(resource: Resource, fact?: Record<string, any>, target?: Reco
       vintage.id.endsWith(`dep${department}`))
     if (local.length) candidates = local
   }
-  if (candidates.length !== 1) {
-    throw new Error(`No unique producer vintage for ${resource.resource_id} (${candidates.length} matches)`)
+  return candidates.map((vintage) => {
+    const version = fact?.vintage_version ?? vintage.version
+    const referenceDate = fact && 'vintage_date_reference' in fact ? fact.vintage_date_reference : vintage.date_reference
+    const publicationDate = fact && 'vintage_date_publication' in fact ? fact.vintage_date_publication : vintage.date_publication
+    const vintageId = ownedSeries && ['prix_m2', 'subventions_annuelles', 'raccordement_courbe'].includes(resource.resource_id)
+      ? version : `${version}/${referenceDate ?? 'NA'}`
+    return { source_id: vintage.id, name: fact?.vintage_source ?? vintage.source,
+      vintage_id: vintageId, version, reference_date: referenceDate, publication_date: publicationDate }
+  })
+}
+
+function sourceFor(resource: Resource, fact?: Record<string, any>, target?: Record<string, any>, ownedSeries = false) {
+  const sources = sourcesFor(resource, fact, target, ownedSeries)
+  if (sources.length !== 1) {
+    throw new Error(`Expected one producer vintage for ${resource.resource_id}, got ${sources.length}; ` +
+      `${target?.type ?? 'unknown'}/${target?.id ?? 'unknown'}`)
   }
-  const vintage = candidates[0]!
-  const version = fact?.vintage_version ?? vintage.version
-  const referenceDate = fact && 'vintage_date_reference' in fact ? fact.vintage_date_reference : vintage.date_reference
-  const publicationDate = fact && 'vintage_date_publication' in fact ? fact.vintage_date_publication : vintage.date_publication
-  const vintageId = ownedSeries && ['prix_m2', 'subventions_annuelles', 'raccordement_courbe'].includes(resource.resource_id)
-    ? version : `${version}/${referenceDate ?? 'NA'}`
-  return { source_id: vintage.id, name: fact?.vintage_source ?? vintage.source,
-    vintage_id: vintageId, version, reference_date: referenceDate, publication_date: publicationDate }
+  return sources[0]!
 }
 
 function publicationFor(resource: Resource): string {
@@ -372,6 +381,103 @@ function publishedIndicators(resource: Resource, target: Record<string, any>): R
     fact.key === resource.resource_id) ?? []
 }
 
+function scalarFixtureFact(resource: Resource, member: Record<string, any>, context: NativeFixtureContext):
+  { fact: Record<string, any> | undefined; status: string; value: number | null } {
+  const target = { kind: 'territory', type: member.type, id: member.territoire }
+  const candidates = context.facts
+    ? context.facts.filter((fact) => fact.key === resource.resource_id && fact.type === member.type &&
+      fact.territoire === member.territoire)
+    : publishedIndicators(resource, target)
+  const fact = candidates[0]
+  const contract = metadataFor(resource.theme_id).scalar_contracts?.[resource.resource_id] ?? {}
+  const status = fact && fact.value !== null && fact.value !== undefined ? 'measured' :
+    fact?.fact_status && ['suppressed', 'unsupported', 'not_available', 'not_published'].includes(fact.fact_status)
+      ? fact.fact_status : contract.missing_status ?? 'not_available'
+  const value = status === 'measured' ? Number(fact!.value) : null
+  return { fact, status, value }
+}
+
+function nativeScalarComparison(item: Record<string, any>, resource: Resource,
+  context: NativeFixtureContext, version: string, referenceVersion: string, descriptorVersion: string) {
+  const target = item.target as { type: string; id: string }
+  const territoryReference = context.territories ?? territories
+  type TerritoryReference = Record<string, any>
+  const focal = territoryReference.find((territory) => territory.type === target.type &&
+    territory.territoire === target.id)
+  if (!focal) throw new Error(`Scalar comparison fixture has no focal ${target.type}/${target.id}`)
+  const selected: TerritoryReference[] | null = item.intent.kind === 'selected_comparison'
+    ? item.intent.members.map((member: { type: string; id: string }) => {
+      const ref = territoryReference.find((candidate) => candidate.type === member.type && candidate.territoire === member.id)
+      if (!ref) throw new Error(`Scalar comparison fixture has no selected member ${member.type}/${member.id}`)
+      return ref
+    }) : null
+  const members: TerritoryReference[] = selected ?? (target.type === 'commune'
+    ? territoryReference.filter((territory) => territory.type === 'commune' &&
+      territory.classe_densite_code === focal.classe_densite_code)
+    : territoryReference.filter((territory) => territory.type === target.type))
+  const observed: Array<{ member: TerritoryReference; fact: Record<string, any> | undefined;
+    status: string; value: number | null }> = members.map((member) => ({ member, ...scalarFixtureFact(resource, member, context) }))
+  const eligible = observed.filter((row) => row.status === 'measured' && row.value !== null)
+  const values = eligible.map((row) => row.value as number)
+  const sorted = [...values].sort((left, right) => left - right)
+  const middle = Math.floor(sorted.length / 2)
+  const median = sorted.length === 0 ? null : sorted.length % 2
+    ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2
+  const direction = resource.direction
+  const rankFor = (value: number | null) => value === null || eligible.length < 1 ? null :
+    1 + eligible.filter((row) => direction === 'high' ? row.value! > value : row.value! < value).length
+  const tiesFor = (value: number | null) => value === null || eligible.length < 1 ? null :
+    eligible.filter((row) => row.value === value).length
+  const focalObservation = observed.find((row) => row.member.territoire === target.id && row.member.type === target.type)
+  const focalInSelection = Boolean(focalObservation)
+  const sourceMap = new Map<string, Record<string, any>>()
+  for (const row of eligible) {
+    const sources = sourcesFor(resource, row.fact,
+      { kind: 'territory', type: row.member.type, id: row.member.territoire })
+    if (!sources.length) throw new Error(`Missing producer vintage for ${resource.resource_id}`)
+    for (const source of sources) sourceMap.set(`${source.source_id}\u0000${source.vintage_id}`, source)
+  }
+  const result: Record<string, any> = {
+    indicator_id: resource.indicator_id,
+    label: resource.label,
+    unit: resource.unit,
+    direction,
+    statistic: 'median',
+    descriptor_version: descriptorVersion,
+    source_facet: resource.indicator_id,
+    status: eligible.length ? 'available' : 'unavailable',
+    reason: eligible.length ? null : 'no_selected_comparable_values',
+    focal_in_selection: focalInSelection,
+    selected_member_count: members.length,
+    eligible_count: eligible.length,
+    missing_count: members.length - eligible.length,
+    median,
+    rank: focalInSelection ? rankFor(focalObservation?.value ?? null) : null,
+    rank_size: focalInSelection && rankFor(focalObservation?.value ?? null) !== null ? eligible.length : null,
+    comparison_sources: [...sourceMap.values()],
+  }
+  if (item.fields?.includes('member_ranks')) {
+    result.member_ranks = observed.map(({ member, value }) => {
+      const rank = rankFor(value)
+      return { territory_id: member.territoire, rank,
+        rank_size: rank === null ? null : eligible.length,
+        rank_ties: rank === null ? null : tiesFor(value) }
+    })
+  }
+  const scope = selected
+    ? { kind: 'explicit_selection', member_count: members.length }
+    : target.type === 'commune'
+      ? { kind: 'density_class', territory_type: 'commune',
+        density_class_code: focal.classe_densite_code ?? null, member_count: members.length }
+      : { kind: 'same_level', territory_type: target.type, member_count: members.length }
+  return { resource: resource.resource_id, target: item.target, contract: 'indicator-comparison-v1',
+    complete_theme: false, indicator_id: resource.indicator_id, shape: 'scalar',
+    content_version: version, reference_content_version: referenceVersion,
+    selection: selected ? item.intent.members.map((member: { type: string; id: string }) =>
+      ({ territory_type: member.type, territory_id: member.id })) : null,
+    scope, result }
+}
+
 // Profile page fixtures use current producer clocks even when their supplied
 // test observations intentionally differ from the stale static page values.
 function profileSourceFor(resource: Resource) {
@@ -588,6 +694,9 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     const isProfile = shapes.includes('declared_profile')
     const isSeries = shapes.includes('ordered_series')
     const isCollection = shapes.includes('period_detail')
+    if (!isProfile && !isSeries && !isCollection && shapes.length === 1 && shapes[0] === 'scalar') {
+      return nativeScalarComparison(item, resource, context, version, referenceVersion, descriptorVersion)
+    }
     const selected = item.intent.kind === 'selected_comparison'
       ? item.intent.members.map((member: { type: string; id: string }) => ({
         territory_type: member.type, territory_id: member.id,
@@ -719,7 +828,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
       result, ...(scalarFacet ? { scalar_facet: scalarFacet } : {}) }
   }
 
-  if (resource.resource_id === 'raccordement_tc') {
+  if (resource.resource_id === 'raccordement_tc' && target.kind === 'territory') {
     return { ...shared, ...syntheticRaccordementScalar(item, resource, version, referenceVersion, descriptorVersion) }
   }
 
@@ -825,23 +934,23 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     const scalarContract = metadata.scalar_contracts?.[resource.resource_id] ?? {}
     const descriptorVersion = `${resource.resource_id}-fixture-descriptor-v1`
     const observations = members.map((member) => {
-      const fact = publishedIndicators(resource, { kind: 'territory', type: member.type, id: member.territoire })
-        .find((candidate) => candidate.key === resource.resource_id)
-      const status = fact && fact.value !== null ? 'measured' :
-        fact?.fact_status && ['suppressed', 'unsupported', 'not_available', 'not_published'].includes(fact.fact_status)
-          ? fact.fact_status : 'not_available'
-      return { territory: { id: member.territoire, type: member.type, name: member.nom }, status,
-        value: status === 'measured' ? fact!.value : null,
-        support_count: fact?.support_count ?? fact?.n ?? null,
-        denominator_count: fact?.denominator_count ?? null,
-        sources: [profileSourceFor(resource)] }
-    })
+      const { fact, status, value } = scalarFixtureFact(resource, member, context)
+      if (!fact && scalarContract.completeness === 'sparse') return null
+        const source = sourceFor(resource, fact, { kind: 'territory', type: member.type, id: member.territoire })
+        const fields = item.fields ?? ['value', 'support_count', 'denominator_count']
+        return { territory: { id: member.territoire, type: member.type, name: member.nom }, status,
+          value: status === 'measured' ? value : null,
+          ...(fields.includes('support_count') ? { support_count: fact?.support_count ?? fact?.n ?? null } : {}),
+          ...(fields.includes('denominator_count') ? { denominator_count: fact?.denominator_count ?? null } : {}),
+          sources: [{ source_id: source.source_id, name: source.name, vintage_id: source.vintage_id,
+            version: source.version, reference_date: source.reference_date, publication_date: source.publication_date }] }
+    }).filter((item): item is NonNullable<typeof item> => item !== null)
     return { ...shared, shape: 'scalar', content_version: version, reference_content_version: referenceVersion,
       descriptor: { indicator_id: resource.indicator_id, theme_id: resource.theme_id,
         label: resource.label, unit: resource.unit, direction: resource.direction,
         comparison_facet: resource.indicator_id, allowed_levels: resource.allowed_levels,
         completeness: scalarContract.completeness ?? 'dense_complete',
-        denominator_semantics: scalarContract.denominator_semantics ?? `Fixture denominator ${resource.resource_id}`,
+         denominator_semantics: metadata.indicator_pages?.[resource.resource_id]?.calculation,
         descriptor_version: descriptorVersion },
       cohort: { territory_type: target.type, department_id: target.department_id ?? null,
         epci_id: target.epci_id ?? null, member_count: members.length,
@@ -916,6 +1025,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
   const provenance = fact ? sourceFor(resource, fact, target) : null
   return { ...shared, indicator_id: resource.indicator_id, territory_id: target.id,
     territory_type: target.type, label: resource.label, unit: resource.unit, direction: resource.direction,
+    ...(shapes.length === 1 && shapes[0] === 'scalar' ? { comparison_facet: resource.indicator_id } : {}),
     content_version: version, reference_content_version: referenceVersion,
     descriptor_version: descriptorVersion,
     value: fact?.value ?? null, status: fact ? fact.value === null ? 'missing' : 'measured' : 'no_record',
@@ -939,9 +1049,14 @@ export function nativeBatchResponse<T extends Record<string, any>>(
     const resource = byId.get(item.resource)
     const profileComparisonFields = ['median', 'rank', 'rank_size', 'rank_ties', 'selected_member_count',
       'eligible_count', 'missing_count', 'member_ranks']
-    const allowedFields = resource && resource.shapes.includes('declared_profile') &&
-      item.intent?.kind === 'selected_comparison'
-      ? new Set([...resource.fields, ...profileComparisonFields]) : new Set(resource?.fields ?? [])
+    const scalarComparisonFields = ['median', 'rank', 'rank_size', 'rank_ties', 'selected_member_count',
+      'eligible_count', 'missing_count', 'member_ranks']
+    const comparisonFields = resource?.shapes.includes('scalar') &&
+      ['fixed_comparison', 'selected_comparison'].includes(item.intent?.kind)
+      ? scalarComparisonFields
+      : resource?.shapes.includes('declared_profile') && item.intent?.kind === 'selected_comparison'
+        ? profileComparisonFields : []
+    const allowedFields = new Set([...(resource?.fields ?? []), ...comparisonFields])
     const invalidCoordinates = Boolean(resource && item.coordinates &&
       Object.entries(item.coordinates).some(([axis, values]) => {
         if (!(resource.axes ?? []).includes(axis)) return true

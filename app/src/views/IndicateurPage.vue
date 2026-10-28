@@ -25,8 +25,11 @@ import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } fro
 import { PayloadError, validerThemeMetadata } from '@/payload/validate'
 import { semanticComparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts, orderedSeriesReaderEnabled, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
-import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
-import type { Indicateur, IndicatorPageMetadata, Payload, TerritoireType, ThemeMetadata } from '@/payload/types'
+import { chargerCohorteScalaire, chargerCohortePageScalaire, chargerComparaisonsScalaires,
+  chargerFaitFocalPageScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees,
+  scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
+import type { ScalarComparisonEvidence, ScalarComparisonRequest } from '@/payload/scalarCohort'
+import type { Indicateur, IndicatorPageMetadata, NativeThemeFactContract, Payload, Territoire, TerritoireType, ThemeMetadata } from '@/payload/types'
 import { ThemeAcquisitionCache, acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison } from '@/payload/themeAcquisition'
 import { adapterPageProfilDeclare, chargerCohorteProfilDeclare, chargerComparaisonProfilDeclare, chargerCohorteScalaireLiee, chargerFaitFocalProfilDeclare } from '@/payload/profileAcquisition'
 import type { DeclaredProfileDescriptor, ProfileComparison, ProfilePageBinding, ProfilePublicationIdentity, ProfileTarget } from '@/payload/profileAcquisition'
@@ -53,7 +56,15 @@ const niveauMemorise = ref<string | undefined>(localStorage.getItem('lusk:niveau
 // L'état que la page REÇOIT de la passarelle (#505) — les deux paramètres
 // portés, lus et validés UNE fois par le contrat d'exploration.
 const porte = computed(() => lireTerritoirePorte(route.query))
+// Keep route watches on the normalized primitive values. `porte` is a fresh
+// object for every query update (including view-only changes); watching its
+// identity would repeat fact and comparison reads when revisiting a tab.
+const territoirePorte = computed(() => porte.value.territoire)
+const niveauPorte = computed(() => porte.value.niveau)
+const departementPorte = computed(() => route.query.departement)
+const epciPorte = computed(() => route.query.epci)
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
+const pageScalaireApiActive = ref(false)
 // Cutover is an operator-controlled build setting. Keep static behavior until
 // the serving schema/API are deployed and explicitly enabled together.
 const orderedSeriesAdapter = computed(() => {
@@ -91,6 +102,7 @@ const profileBootstrapLoading = ref(true)
 const profileBootstrapError = ref<PayloadError | null>(null)
 const metadataProfilRoute = ref<ThemeMetadata | null>(null)
 const catalogueProfil = ref<SemanticResourceDeclaration[]>([])
+const catalogueScalaireApi = ref<SemanticResourceDeclaration[]>([])
 const declarationProfil = ref<SemanticResourceDeclaration | null>(null)
 const descriptorProfil = ref<DeclaredProfileDescriptor | null>(null)
 const identityProfil = ref<ProfilePublicationIdentity | null>(null)
@@ -175,10 +187,12 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
   profileScalarRequestKey = ''
   profileMode.value = false
   profileDiscoveryComplete.value = false
+  pageScalaireApiActive.value = false
   profileBootstrapLoading.value = true
   profileBootstrapError.value = null
   metadataProfilRoute.value = null
   catalogueProfil.value = []
+  catalogueScalaireApi.value = []
   declarationProfil.value = null
   descriptorProfil.value = null
   identityProfil.value = null
@@ -273,8 +287,43 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     return
   }
 
-  // The route is now confirmed not to be profile-owned. Its existing scalar,
-  // ordered-series, manifest/model, or legacy numerical path remains intact.
+  // Ordinary scalar pages are selected from the producer/API/page-grammar
+  // intersection before a manifest or legacy numeric reader can claim them.
+  // Dual-shape scalar/series pages (notably prix_m2) remain on their owner path.
+  const scalarResource = resources.find((resource) => resource.resource_id === currentIndicator &&
+    resource.indicator_id === currentIndicator && resource.theme_id === currentTheme &&
+    resource.shapes.length === 1 && resource.shapes[0] === 'scalar' &&
+    resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
+  if (scalarResource) {
+    catalogueScalaireApi.value = resources
+    let loadedMetadata: ThemeMetadata
+    try { loadedMetadata = await chargerMetadataScalaireApi(currentTheme) }
+    catch (cause) {
+      if (sequence !== profileDiscoverySequence) return
+      profileBootstrapError.value = cause instanceof PayloadError ? cause
+        : new PayloadError('fetch', `theme_${currentTheme}.json`, 'Les métadonnées de cette page sont indisponibles.')
+      profileDiscoveryComplete.value = true
+      profileBootstrapLoading.value = false
+      return
+    }
+    if (sequence !== profileDiscoverySequence) return
+    const registered = indicateursScalairesEnregistres(loadedMetadata)
+    const scalarPages = pagesScalairesEnregistrees(loadedMetadata, registered)
+    validerEnregistrementScalaires(loadedMetadata, scalarPages)
+    const page = loadedMetadata.indicator_pages?.[currentIndicator]
+    if (scalarPages.includes(currentIndicator) && page?.family === 'scalar' &&
+        page.levels.some((level) => scalarResource.allowed_levels.includes(level))) {
+      metadataScalaireApi.value = loadedMetadata
+      indicateursScalairesCourants.value = scalarPages
+      pageScalaireApiActive.value = true
+      profileDiscoveryComplete.value = true
+      profileBootstrapLoading.value = false
+      return
+    }
+  }
+
+  // The route is now confirmed not to be profile- or ordinary-scalar-owned.
+  // Its existing opt-in scalar, ordered-series, manifest/model, or legacy path remains intact.
   if (scalaireApiAuMontage) {
     profileDiscoveryComplete.value = true
     profileBootstrapLoading.value = false
@@ -312,13 +361,26 @@ watch(() => [theme.value, indicator.value, retryProfileBootstrap.value] as const
 
 const scalaireApiOptionnelle = computed(() => scalarCohortEnabled(import.meta.env as Record<string, string | undefined>))
 const indicateursScalairesCourants = ref<string[]>([])
-const scalaireApi = computed(() => !profileMode.value && scalaireApiOptionnelle.value && metadataScalaireApi.value?.theme === theme.value &&
-  indicateursScalairesCourants.value.includes(indicator.value))
+const scalaireApi = computed(() => !profileMode.value && metadataScalaireApi.value?.theme === theme.value &&
+  ((pageScalaireApiActive.value && indicateursScalairesCourants.value.includes(indicator.value)) ||
+    (scalaireApiOptionnelle.value && indicateursScalairesCourants.value.includes(indicator.value))))
 const metadataScalaireApi = ref<ThemeMetadata | null>(null)
 const faitsScalaireApi = ref<Indicateur[]>([])
 const erreurScalaireApi = ref<PayloadError | null>(null)
 const chargementScalaireApi = ref(false)
 const retryScalaireApi = ref(0)
+const identiteScalairePage = ref<{ contentVersion: string; referenceContentVersion: string;
+  descriptorVersion?: string; comparisonFacet?: string } | null>(null)
+const contratScalairePageNatif = ref<NativeThemeFactContract | null>(null)
+const faitsScalairePagePrets = ref(false)
+const generationFaitsScalairePage = ref(0)
+const comparaisonScalairePage = ref<ScalarComparisonEvidence | null>(null)
+const erreurComparaisonScalairePage = ref(false)
+const chargementComparaisonScalairePage = ref(false)
+const retryComparaisonScalairePage = ref(0)
+const erreurScalaireFocalApi = ref(false)
+const focalScalaireApiAbsent = ref(false)
+const chargementScalaireFocalApi = ref(false)
 let sequenceScalaireApi = 0
 let cleRequeteScalaireApi = ''
 async function chargerMetadataScalaireApi(currentTheme: string): Promise<ThemeMetadata> {
@@ -345,16 +407,53 @@ async function chargerMetadataScalaireApi(currentTheme: string): Promise<ThemeMe
   indicateursScalairesCourants.value = registeredPages
   return metadata
 }
-watch(() => [profileDiscoveryComplete.value, profileMode.value, scalaireApiOptionnelle.value, theme.value, indicator.value, porte.value.territoire,
-  porte.value.niveau, route.query.departement, route.query.epci,
+function requeteComparaisonPageScalaire(territories: Territoire[], focal: Territoire, level: TerritoireType,
+  department: string | undefined, epci: string | undefined, label: string): ScalarComparisonRequest | null {
+  if (level === 'region' || focal.type !== level) return null
+  const members = territories.filter((territory) => territory.type === level &&
+    (level !== 'commune' || ((!department || territory.departement === department) &&
+      (!epci || territory.epci === epci))))
+  if (level === 'commune') return { kind: 'selected',
+    members: members.map((member) => ({ type: 'commune', id: member.territoire })),
+    scope: { kind: 'explicit_selection', territoryType: 'commune', memberCount: members.length, label } }
+  return { kind: 'fixed', scope: { kind: 'same_level', territoryType: level,
+    memberCount: members.length, label } }
+}
+
+function membresComparaisonPageScalaire(territories: Territoire[], request: ScalarComparisonRequest): Territoire[] {
+  if (request.kind === 'selected') {
+    const refs = new Map(territories.map((territory) => [`${territory.type}\u0000${territory.territoire}`, territory]))
+    return request.members.flatMap((member) => {
+      const territory = refs.get(`${member.type}\u0000${member.id}`)
+      return territory ? [territory] : []
+    })
+  }
+  return territories.filter((territory) => territory.type === request.scope.territoryType &&
+    (request.scope.kind !== 'density_class' || territory.classe_densite_code === request.scope.densityClassCode))
+}
+
+watch(() => [profileDiscoveryComplete.value, profileMode.value, scalaireApi.value, pageScalaireApiActive.value,
+  theme.value, indicator.value, territoirePorte.value,
+  niveauPorte.value, departementPorte.value, epciPorte.value,
   payloadLegacy.value.territoires.length, retryScalaireApi.value] as const,
-async ([discovered, isProfile, active, currentTheme, currentIndicator, selectedId, routeLevel, department, epci, territoryCount]) => {
+async ([discovered, isProfile, active, ordinaryPage, currentTheme, currentIndicator, selectedId, routeLevel,
+  department, epci, territoryCount]) => {
   if (!discovered || isProfile) return
-  const key = JSON.stringify([active, currentTheme, currentIndicator, selectedId, routeLevel, department, epci, territoryCount, retryScalaireApi.value])
+  const key = JSON.stringify([active, ordinaryPage, currentTheme, currentIndicator, selectedId, routeLevel,
+    department, epci, territoryCount, retryScalaireApi.value])
   if (active && key === cleRequeteScalaireApi) return
   cleRequeteScalaireApi = key
   const sequence = ++sequenceScalaireApi
   faitsScalaireApi.value = []; erreurScalaireApi.value = null
+  erreurScalaireFocalApi.value = false
+  focalScalaireApiAbsent.value = false
+  chargementScalaireFocalApi.value = false
+  identiteScalairePage.value = null
+  contratScalairePageNatif.value = null
+  faitsScalairePagePrets.value = false
+  comparaisonScalairePage.value = null
+  erreurComparaisonScalairePage.value = false
+  chargementComparaisonScalairePage.value = false
   if (!active || !territoryCount) return
   chargementScalaireApi.value = true
   try {
@@ -376,15 +475,96 @@ async ([discovered, isProfile, active, currentTheme, currentIndicator, selectedI
     const level = normalized.niveau ?? resoudreNiveau(routeLevel, niveauMemorise.value, page.levels)
     const dept = level === 'commune' ? normalized.scopeValide?.departement : undefined
     const codeEpci = level === 'commune' ? normalized.scopeValide?.epci : undefined
-    const focal = choisirFocalCohorte(payloadLegacy.value.territoires, level, selectedId,
+    const selectedFocal = payloadLegacy.value.territoires.find((territory) =>
+      territory.territoire === selectedId && territory.type === level)
+    const focal = selectedFocal ?? choisirFocalCohorte(payloadLegacy.value.territoires, level, selectedId,
       level === 'commune' ? { department: dept, epci: codeEpci } : {})
+    const scope = level === 'commune' ? { department: dept, epci: codeEpci } : {}
+    if (ordinaryPage) {
+      const result = await chargerCohortePageScalaire(currentIndicator, currentTheme as Theme,
+        metadataScalaireApi.value, focal, level, payloadLegacy.value.territoires, scope,
+        catalogueScalaireApi.value)
+      if (sequence === sequenceScalaireApi) {
+        faitsScalaireApi.value = result.facts
+        identiteScalairePage.value = result.identity
+        contratScalairePageNatif.value = result.contract
+        faitsScalairePagePrets.value = true
+        generationFaitsScalairePage.value++
+        chargementScalaireApi.value = false
+      }
+      const focalOutsideCohort = Boolean(focal && focal.type === level &&
+        ((scope.department && focal.departement !== scope.department) ||
+          (scope.epci && focal.epci !== scope.epci)))
+      if (focalOutsideCohort && focal) {
+        chargementScalaireFocalApi.value = true
+        try {
+          const focalFact = await chargerFaitFocalPageScalaire(result.declaration, currentIndicator,
+            currentTheme as Theme, metadataScalaireApi.value, focal, payloadLegacy.value.territoires,
+            result.identity, result.contract)
+          if (sequence === sequenceScalaireApi) {
+            faitsScalaireApi.value = focalFact ? [...result.facts, focalFact] : result.facts
+            focalScalaireApiAbsent.value = focalFact === null
+          }
+        } catch {
+          if (sequence === sequenceScalaireApi) erreurScalaireFocalApi.value = true
+        } finally {
+          if (sequence === sequenceScalaireApi) chargementScalaireFocalApi.value = false
+        }
+      }
+      return
+    }
     if (!focal) throw new PayloadError('validation', currentIndicator, 'Aucun territoire admissible dans ce périmètre.')
     const rows = await chargerCohorteScalaire(currentIndicator, currentTheme as Theme, page, focal, level,
-      payloadLegacy.value.territoires, level === 'commune' ? { department: dept, epci: codeEpci } : {})
+      payloadLegacy.value.territoires, scope)
     if (sequence === sequenceScalaireApi) faitsScalaireApi.value = rows
   } catch (cause) {
     if (sequence === sequenceScalaireApi) erreurScalaireApi.value = cause instanceof PayloadError ? cause : new PayloadError('fetch', currentIndicator, 'Impossible de charger le cohort scalaire.')
   } finally { if (sequence === sequenceScalaireApi) chargementScalaireApi.value = false }
+}, { immediate: true })
+
+let sequenceComparaisonScalairePage = 0
+watch(() => [pageScalaireApiActive.value, profileMode.value, faitsScalairePagePrets.value,
+  generationFaitsScalairePage.value, identiteScalairePage.value?.contentVersion,
+  identiteScalairePage.value?.referenceContentVersion, identiteScalairePage.value?.descriptorVersion,
+  identiteScalairePage.value?.comparisonFacet, theme.value, indicator.value,
+  territoirePorte.value, niveauPorte.value, departementPorte.value, epciPorte.value,
+  payloadLegacy.value.territoires.length, retryComparaisonScalairePage.value] as const,
+async ([active, isProfile, factsReady, _generation, contentVersion, referenceContentVersion, descriptorVersion, comparisonFacet,
+  currentTheme, currentIndicator, selectedId, routeLevel, _department, _epci, territoryCount]) => {
+  const sequence = ++sequenceComparaisonScalairePage
+  comparaisonScalairePage.value = null
+  erreurComparaisonScalairePage.value = false
+  chargementComparaisonScalairePage.value = false
+  if (!active || isProfile || !factsReady || !contentVersion || !referenceContentVersion || !descriptorVersion ||
+      !comparisonFacet || !territoryCount ||
+      erreurScalaireApi.value || !metadataScalaireApi.value) return
+  const pageMetadata = page.value
+  if (!pageMetadata || pageMetadata.indicator !== currentIndicator || pageMetadata.family !== 'scalar') return
+  const normalized = resoudreEtatUrl({ query: route.query, territoires: payloadLegacy.value.territoires,
+    niveauxPublies: pageMetadata.levels, niveauMemorise: niveauMemorise.value })
+  const level = normalized.niveau ?? resoudreNiveau(routeLevel, niveauMemorise.value, pageMetadata.levels)
+  const dept = level === 'commune' ? normalized.scopeValide?.departement : undefined
+  const codeEpci = level === 'commune' ? normalized.scopeValide?.epci : undefined
+  const focal = payloadLegacy.value.territoires.find((territory) =>
+    territory.territoire === selectedId && territory.type === level) ??
+    choisirFocalCohorte(payloadLegacy.value.territoires, level, selectedId,
+      level === 'commune' ? { department: dept, epci: codeEpci } : {})
+  if (!focal) return
+  const label = model.value?.scopeLabel ?? 'Périmètre courant'
+  const request = requeteComparaisonPageScalaire(payloadLegacy.value.territoires,
+    focal, level, dept, codeEpci, label)
+  if (!request) return
+  chargementComparaisonScalairePage.value = true
+  try {
+    const result = await chargerComparaisonsScalaires([currentIndicator], currentTheme as Theme,
+      { [currentIndicator]: pageMetadata }, focal, payloadLegacy.value.territoires, request,
+      { contentVersion, referenceContentVersion, descriptorVersion, comparisonFacet }, true, catalogueScalaireApi.value)
+    if (sequence === sequenceComparaisonScalairePage) comparaisonScalairePage.value = result[currentIndicator] ?? null
+  } catch {
+    if (sequence === sequenceComparaisonScalairePage) erreurComparaisonScalairePage.value = true
+  } finally {
+    if (sequence === sequenceComparaisonScalairePage) chargementComparaisonScalairePage.value = false
+  }
 }, { immediate: true })
 
 watch(() => [profileMode.value, declarationProfil.value?.resource_id, metadataProfilRoute.value?.indicator_pages?.[indicator.value]?.indicator,
@@ -754,21 +934,31 @@ const erreur = computed(() => {
   if (profileBootstrapError.value) return profileBootstrapError.value
   if (profileMode.value) return profileFactsError.value ?? profileFocalError.value ?? erreurLegacy.value
   if (erreurManifesteModeles.value) return erreurManifesteModeles.value
-  if (!profileMode.value && scalaireApiOptionnelle.value && (!metadataScalaireApi.value || scalaireApi.value)) return erreurScalaireApi.value
+  if (pageScalaireApiActive.value || (!profileMode.value && scalaireApiOptionnelle.value &&
+      (!metadataScalaireApi.value || scalaireApi.value))) return erreurScalaireApi.value
   return utiliseModeleIndicateur.value ? erreurModeleIndicateur.value : erreurLegacy.value
 })
 const chargement = computed(() =>
   profileBootstrapLoading.value ||
   chargementManifesteModeles.value ||
   (profileMode.value && (profileFactsLoading.value || profileFocalLoading.value)) ||
-  (!profileMode.value && scalaireApiOptionnelle.value && chargementScalaireApi.value) ||
+  (!profileMode.value && (pageScalaireApiActive.value || scalaireApiOptionnelle.value) && chargementScalaireApi.value) ||
   (utiliseModeleIndicateur.value
     ? chargementLegacy.value || chargementModeleIndicateur.value
     : chargementLegacy.value),
 )
 const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
-const page = computed(() => profileMode.value ? pageProfilCourante.value ?? undefined : metadata.value?.indicator_pages?.[indicator.value])
+const page = computed(() => {
+  const editorial = profileMode.value ? pageProfilCourante.value ?? undefined : metadata.value?.indicator_pages?.[indicator.value]
+  const native = contratScalairePageNatif.value
+  if (!editorial || !pageScalaireApiActive.value || !native) return editorial
+  const direction = native.direction === 'low' ? 'low' : native.direction === 'high' ? 'high' : editorial.direction
+  const unit = native.unit ?? editorial.unit
+  return { ...editorial, unit, direction,
+    ...(editorial.comparison ? { comparison: { ...editorial.comparison,
+      ...(native.comparisonFacet ? { indicator: native.comparisonFacet } : {}), unit, direction } } : {}) }
+})
 const familyDispatch = computed(() => page.value ? dispatchIndicatorFamily(page.value, { theme: theme.value as Theme, facts: facts.value, territories: payload.value.territoires, selected: porte.value.territoire, facet: route.query, labelsDetail: metadata.value?.detail_labels[indicator.value] }) : null)
 const profileRegionalFactOnly = computed(() => profileMode.value && targetProfil.value?.type === 'region' &&
   payload.value.territoires.some((territory) => territory.type === 'region' && territory.territoire === porte.value.territoire))
@@ -856,6 +1046,38 @@ const sources = computed(() => {
       }
     }).filter((source): source is NonNullable<typeof source> => source !== null)
   }
+  if (pageScalaireApiActive.value) {
+    const native = [
+      ...faitsScalaireApi.value.flatMap((fact) => fact.fact_sources ?? []),
+      ...(comparaisonScalairePage.value?.comparisonSources ?? []).map((source) => ({
+        sourceId: source.sourceId, source: source.name, version: source.version,
+        vintageId: source.vintageId, referenceDate: source.referenceDate, publicationDate: source.publicationDate,
+      })),
+    ]
+    const sourceIds = [...new Set([...page.value.sources, ...native.map((source) => source.sourceId)])]
+    return sourceIds.map((id) => {
+      const vintages = [...new Map(native.filter((source) => source.sourceId === id)
+        .map((source) => [`${source.sourceId}\u0000${source.vintageId ?? source.version}`, source])).values()]
+      if (!vintages.length) return null
+      const existing = authority.find((record) => record.id === id)
+      const apiVintages = vintages.map((source) => ({ id: source.vintageId ?? source.version,
+        label: source.vintageId ?? source.version, version: source.version, licence: existing?.licence ?? null,
+        dateReference: source.referenceDate, datePublication: source.publicationDate }))
+      const representative = vintages.length === 1 ? vintages[0] : null
+      return {
+        id, dataset: representative?.source ?? vintages[0]!.source,
+        publisher: existing?.publisher ?? representative?.source ?? vintages[0]!.source,
+        url: existing?.url ?? null, licence: existing?.licence ?? null,
+        vintage: representative?.version ?? 'Plusieurs millésimes',
+        freshness: representative?.publicationDate ?? '—',
+        sha256: null, dateReference: representative?.referenceDate ?? null,
+        datePublication: representative?.publicationDate ?? null, vintages: apiVintages,
+        clocks: [], caveat: existing?.caveat ?? null,
+        methodology: existing?.methodology, consumers: existing?.consumers ?? [],
+        replie: existing?.replie ?? false, themes: existing?.themes ?? [theme.value as Theme],
+      }
+    }).filter((source): source is NonNullable<typeof source> => source !== null)
+  }
   return page.value.sources.map((id) => authority.find((record) => record.id === datasetDeSource(id))).filter((source): source is NonNullable<typeof source> => Boolean(source))
 })
 /**
@@ -893,7 +1115,37 @@ const model = computed(() => {
   const dispatch = familyDispatch.value
   if (!dispatch) return null
   const calculated = modeleExploration(facts.value, dispatch.facet, payload.value.territoires,
-    requested.value, niveauMemorise.value, profileMode.value)
+    requested.value, niveauMemorise.value, profileMode.value || pageScalaireApiActive.value)
+  if (pageScalaireApiActive.value) {
+    const evidence = comparaisonScalairePage.value
+    const state = calculated.state
+    const selectedFocal = payload.value.territoires.find((territory) =>
+      territory.type === state.niveau && territory.territoire === state.territoire) ??
+      choisirFocalCohorte(payload.value.territoires, state.niveau, state.territoire,
+        state.niveau === 'commune' ? { department: state.departement, epci: state.epci } : {})
+    const request = selectedFocal ? requeteComparaisonPageScalaire(payload.value.territoires,
+      selectedFocal, state.niveau, state.departement, state.epci, calculated.scopeLabel) : null
+    const expectedMembers = request ? membresComparaisonPageScalaire(payload.value.territoires, request) : []
+    const ranks = new Map((evidence?.memberRanks ?? []).map((item) => [item.territoryId, item]))
+    const rankedMembers = evidence?.memberRanks.filter((item) => item.rank !== null).length ?? 0
+    const comparisonMatchesScope = Boolean(evidence && evidence.selectedMemberCount === expectedMembers.length &&
+      evidence.memberRanks.length === expectedMembers.length &&
+      expectedMembers.every((member) => ranks.has(member.territoire)) &&
+      rankedMembers === (evidence.eligibleCount >= 1 ? evidence.eligibleCount : 0))
+    let rows = calculated.rows.map((row) => ({ ...row,
+      rang: comparisonMatchesScope ? ranks.get(row.territoire.territoire)?.rank ?? null : null,
+      rangTaille: comparisonMatchesScope ? ranks.get(row.territoire.territoire)?.rankSize ?? null : null,
+    }))
+    if (requested.value.tri === 'rang') {
+      const factor = requested.value.ordre === 'desc' ? -1 : 1
+      rows = [...rows].sort((left, right) => {
+        if (left.rang === null) return right.rang === null ? 0 : 1
+        if (right.rang === null) return -1
+        return factor * (left.rang - right.rang)
+      })
+    }
+    return { ...calculated, median: comparisonMatchesScope && evidence?.status === 'available' ? evidence.median : null, rows }
+  }
   if (!profileMode.value) return calculated
   const regionOnly = profileRegionalFactOnly.value
   const selectedId = porte.value.territoire
@@ -1052,7 +1304,15 @@ const payloadCarte = computed(() => {
   const niveau = model.value?.state.niveau ?? niveauRoute.value ?? 'commune'
   const departement = niveau === 'commune' && typeof route.query.departement === 'string' ? route.query.departement : undefined
   const epci = niveau === 'commune' && typeof route.query.epci === 'string' ? route.query.epci : undefined
-  return payloadPourCarte(payload.value, familyDispatch.value!.facet, { niveau, departement, epci })
+  const scoped = payloadPourCarte(payload.value, familyDispatch.value!.facet, { niveau, departement, epci })
+  if (!pageScalaireApiActive.value || !porte.value.territoire) return scoped
+  const focal = payload.value.indicateurs.find((fact) => fact.theme === theme.value &&
+    fact.key === indicator.value && fact.type === niveau && fact.territoire === porte.value.territoire)
+  if (!focal || scoped.indicateurs.some((fact) => fact.theme === focal.theme && fact.key === focal.key &&
+      fact.type === focal.type && fact.territoire === focal.territoire)) return scoped
+  // A focal outside the chosen comparison filter is one separately acquired
+  // fact, not an expansion of the page's cohort or peer ranks.
+  return { ...scoped, indicateurs: [...scoped.indicateurs, focal] }
 })
 const vue = computed(() => route.query.vue === 'carte' || route.query.vue === 'indicateur' ? route.query.vue : 'reperes')
 const couche = computed<Couche | null>(() => page.value && familyDispatch.value ? ({ source: 'indicateur', clef: familyDispatch.value.facet.indicator, detail: familyDispatch.value.facet.detail, libelle: familyDispatch.value.facet.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)
@@ -1098,7 +1358,7 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
   <section class="indicateur-page presentation-editorial" :class="`theme-${theme}`" :style="themeVars">
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieChargement" role="status">Chargement des données actualisées…</div>
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
-    <div v-if="chargement || (raccordementApiActive && serieChargement)" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur || (raccordementApiActive && serieErreur)" role="alert">Impossible de charger l’indicateur.<button v-if="profileBootstrapError" type="button" @click="retryProfileBootstrap++">Réessayer</button><button v-else-if="profileMode" type="button" @click="retryProfileFacts++">Réessayer</button><button v-if="!profileMode && scalaireApiOptionnelle" type="button" @click="retryScalaireApi++">Réessayer</button><button v-if="raccordementApiActive" type="button" @click="chargerSerie(true)">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
+    <div v-if="chargement || (raccordementApiActive && serieChargement)" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur || (raccordementApiActive && serieErreur)" role="alert">Impossible de charger l’indicateur.<button v-if="profileBootstrapError" type="button" @click="retryProfileBootstrap++">Réessayer</button><button v-else-if="profileMode" type="button" @click="retryProfileFacts++">Réessayer</button><button v-if="!profileMode && scalaireApi" type="button" @click="retryScalaireApi++">Réessayer</button><button v-if="raccordementApiActive" type="button" @click="chargerSerie(true)">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
       <section v-if="profileMode" class="profile-comparison-state" data-testid="profile-comparison-state">
@@ -1117,6 +1377,25 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
           <span v-if="porte.territoire && profileComparisonTarget === porte.territoire && profileComparison.rank !== null"> · Rang API {{ formaterRang(profileComparison.rank, profileComparison.rankSize) }}</span>
           <span v-if="profileComparison.comparisonSources[0]"> · {{ profileComparison.comparisonSources[0].name }} · {{ profileComparison.comparisonSources[0].version }} · référence {{ profileComparison.comparisonSources[0].referenceDate ?? '—' }} · publication {{ profileComparison.comparisonSources[0].publicationDate ?? '—' }}</span>
         </div>
+      </section>
+      <section v-if="pageScalaireApiActive" class="scalar-comparison-state" data-testid="scalar-comparison-state">
+        <p v-if="chargementScalaireFocalApi" role="status" data-testid="scalar-focal-pending">Chargement de la valeur du territoire focal… Les faits du périmètre restent affichés.</p>
+        <div v-else-if="erreurScalaireFocalApi" role="alert" data-testid="scalar-focal-error">
+          <p>La valeur du territoire focal est momentanément indisponible. Les faits du périmètre restent affichés.</p>
+          <button type="button" data-testid="scalar-focal-retry" @click="retryScalaireApi++">Réessayer le territoire focal</button>
+        </div>
+        <p v-else-if="focalScalaireApiAbsent" data-testid="scalar-focal-unavailable">Aucune observation scalaire publiée pour le territoire focal ; les faits du périmètre restent affichés.</p>
+        <p v-if="chargementComparaisonScalairePage" role="status" data-testid="scalar-comparison-pending">Chargement de la comparaison publiée… Les faits scalaires API restent affichés.</p>
+        <div v-else-if="erreurComparaisonScalairePage" role="alert" data-testid="scalar-comparison-error">
+          <p>La comparaison est momentanément indisponible. Les faits scalaires API restent affichés.</p>
+          <button type="button" data-testid="scalar-comparison-retry" @click="retryComparaisonScalairePage++">Réessayer la comparaison</button>
+        </div>
+        <p v-else-if="comparaisonScalairePage?.status === 'unavailable'" data-testid="scalar-comparison-unavailable">La comparaison n’est pas disponible pour ce périmètre selon la publication API.</p>
+        <p v-else-if="comparaisonScalairePage?.status === 'available'" data-testid="scalar-comparison-summary">
+          {{ comparaisonScalairePage.selectedMemberCount }} territoires · {{ comparaisonScalairePage.eligibleCount }} valeurs comparables · Médiane API : {{ formaterValeur({ value: comparaisonScalairePage.median, unit: page.unit }) }} {{ page.unit }}
+          <span v-if="comparaisonScalairePage.rank !== null"> · Rang API {{ formaterRang(comparaisonScalairePage.rank, comparaisonScalairePage.rankSize) }}</span>
+          <span v-else-if="!comparaisonScalairePage.focalInSelection"> · Le territoire focal est hors de la sélection ; aucun rang ne lui est attribué.</span>
+        </p>
       </section>
       <!-- La note de contexte permanente (#472) : UNE ligne partagée par toutes
            les familles, dérivée de l'état résolu — vivante aux changements d'URL. -->

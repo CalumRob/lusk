@@ -1,161 +1,91 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
-import {
-  indicateursDemographieFixture,
-  metadonneesThemesFixtures,
-  territoiresFixture,
-} from '../payload/fixtures'
-import {
-  INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY,
-  INDICATOR_READ_MODEL_CHARGER_KEY,
-  validerModeleIndicateur,
-} from '../payload/indicatorReadModel'
+import { INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY, INDICATOR_READ_MODEL_CHARGER_KEY } from '../payload/indicatorReadModel'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
-import { nativeCatalogueResponse } from './helpers/semanticApiFixtures'
+import { createNativeSemanticApiTransport } from './helpers/nativeSemanticApiTransport'
+
+const territoires = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+const defaultTransport = createNativeSemanticApiTransport()
 
 beforeEach(() => {
   localStorage.clear()
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) =>
-    String(input) === '/api/resources' ? nativeCatalogueResponse() : new Response('', { status: 404 })))
+  vi.stubGlobal('fetch', vi.fn(defaultTransport))
 })
 afterEach(() => vi.unstubAllGlobals())
 
-describe("Page d'indicateur — modèle de lecture routé", () => {
-  it('rend densité sans demander le payload global Démographie', async () => {
-    const page = metadonneesThemesFixtures.demographie.indicator_pages!.densite
-    const facts = indicateursDemographieFixture.filter(
-      (fact) => fact.key === 'densite' && fact.type !== 'region',
-    )
-    const model = validerModeleIndicateur(
-      {
-        schema_version: '1',
-        snapshot_id: '2026-09-15',
-        theme: 'demographie',
-        indicator: 'densite',
-        theme_label: 'Démographie',
-        page,
-        detail_labels: {},
-        source_records: metadonneesThemesFixtures.demographie.source_records,
-        facts,
-      },
-      'densite.json',
-      territoiresFixture,
-    )
+describe("Page d'indicateur — coupure scalaires ordinaires du modèle de lecture (#855)", () => {
+  async function mountDensity(manifestIncludesScalar = true) {
     const payloadCalls: string[] = []
     const payloadLoader: ChargerFichier = async (file) => {
       payloadCalls.push(file)
-      if (file === 'territoires') return territoiresFixture
-      throw new Error(`legacy payload requested: ${file}`)
+      if (file === 'territoires') return territoires
+      throw new Error(`ordinary scalar page requested a static payload: ${file}`)
     }
-    const readModelLoader = vi.fn(async () => model)
-    const manifestLoader = vi.fn(async () => ({
-      schemaVersion: '1' as const,
-      routes: { demographie: ['densite'] },
-    }))
-    const router = createRouter({ history: createMemoryHistory(), routes })
-    await router.push('/indicateurs/demographie/densite')
-    await router.isReady()
-    const empty = { type: 'FeatureCollection' as const, features: [] }
-
-    const wrapper = mount(IndicateurView, {
-      global: {
-        plugins: [router],
-        provide: {
-          [PAYLOAD_CHARGER_KEY]: payloadLoader,
-          [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: manifestLoader,
-          [INDICATOR_READ_MODEL_CHARGER_KEY]: readModelLoader,
-          [GEOMETRIE_CHARGER_KEY]: async () => ({
-            communes: empty,
-            epcis: empty,
-            departements: empty,
-          }),
-        },
-      },
-    })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Densité de population')
-    expect(payloadCalls).toEqual(['territoires'])
-    expect(manifestLoader).toHaveBeenCalledOnce()
-    expect(readModelLoader).toHaveBeenCalledWith('demographie', 'densite', territoiresFixture)
-  })
-
-  it('garde le fallback legacy pour une page absente du manifeste', async () => {
-    const payloadCalls: string[] = []
-    const payloadLoader: ChargerFichier = async (file) => {
-      payloadCalls.push(file)
-      if (file === 'territoires') return territoiresFixture
-      if (file === 'indicateurs_demographie') return indicateursDemographieFixture
-      if (file === 'theme_demographie') return metadonneesThemesFixtures.demographie
-      throw new Error(`legacy payload requested: ${file}`)
-    }
-    const manifestLoader = vi.fn(async () => ({
-      schemaVersion: '1' as const,
-      routes: { demographie: [] },
-    }))
+    const manifestLoader = vi.fn(async () => ({ schemaVersion: '1' as const,
+      routes: { demographie: manifestIncludesScalar ? ['densite'] : [] } }))
     const readModelLoader = vi.fn()
     const router = createRouter({ history: createMemoryHistory(), routes })
-    await router.push('/indicateurs/demographie/densite')
+    await router.push('/indicateurs/demographie/densite?territoire=22001&niveau=commune&epci=200067460')
     await router.isReady()
     const empty = { type: 'FeatureCollection' as const, features: [] }
-
-    const wrapper = mount(IndicateurView, {
-      global: {
-        plugins: [router],
-        provide: {
-          [PAYLOAD_CHARGER_KEY]: payloadLoader,
-          [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: manifestLoader,
-          [INDICATOR_READ_MODEL_CHARGER_KEY]: readModelLoader,
-          [GEOMETRIE_CHARGER_KEY]: async () => ({
-            communes: empty,
-            epcis: empty,
-            departements: empty,
-          }),
-        },
-      },
-    })
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: payloadLoader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: manifestLoader,
+      [INDICATOR_READ_MODEL_CHARGER_KEY]: readModelLoader,
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
     await flushPromises()
+    return { wrapper, payloadCalls, manifestLoader, readModelLoader }
+  }
 
-    expect(wrapper.text()).toContain('Densité de population')
-    expect(manifestLoader).toHaveBeenCalledOnce()
-    expect(readModelLoader).not.toHaveBeenCalled()
-    expect(payloadCalls).toEqual(
-      expect.arrayContaining(['territoires', 'indicateurs_demographie', 'theme_demographie']),
-    )
+  it('acquires ordinary scalar facts through the semantic API before the indicator manifest', async () => {
+    const { wrapper, payloadCalls, manifestLoader, readModelLoader } = await mountDensity()
+    try {
+      expect(wrapper.get('h1').text()).toBe('Densité de population')
+      expect(wrapper.find('[data-testid="scalar-comparison-summary"]').exists()).toBe(true)
+      expect(payloadCalls).toEqual(['territoires'])
+      expect(manifestLoader).not.toHaveBeenCalled()
+      expect(readModelLoader).not.toHaveBeenCalled()
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain('/api/resources/read-batch')
+    } finally { wrapper.unmount() }
   })
 
-  it('attend la découverte avant tout lecteur statique et réessaie une panne de catalogue', async () => {
-    const page = metadonneesThemesFixtures.demographie.indicator_pages!.densite
-    const facts = indicateursDemographieFixture.filter((fact) => fact.key === 'densite' && fact.type !== 'region')
-    const model = validerModeleIndicateur({
-      schema_version: '1', snapshot_id: '2026-09-15', theme: 'demographie', indicator: 'densite',
-      theme_label: 'Démographie', page, detail_labels: {},
-      source_records: metadonneesThemesFixtures.demographie.source_records, facts,
-    }, 'densite.json', territoiresFixture)
+  it('does not let an indicator manifest that omits the page downgrade a producer-owned scalar page', async () => {
+    const { wrapper, payloadCalls, manifestLoader, readModelLoader } = await mountDensity(false)
+    try {
+      expect(wrapper.get('h1').text()).toBe('Densité de population')
+      expect(payloadCalls).toEqual(['territoires'])
+      expect(manifestLoader).not.toHaveBeenCalled()
+      expect(readModelLoader).not.toHaveBeenCalled()
+      expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).startsWith('/data/indicateurs_'))).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+
+  it('retries discovery before selecting a reader and then stays on the API path', async () => {
+    const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/resources' && transport.mock.calls.filter(([url]) => String(url) === '/api/resources').length === 1) {
+        return new Response('temporary catalogue outage', { status: 503 })
+      }
+      return defaultTransport(input, init)
+    })
+    vi.stubGlobal('fetch', transport)
     const payloadCalls: string[] = []
     const payloadLoader: ChargerFichier = async (file) => {
       payloadCalls.push(file)
-      if (file === 'territoires') return territoiresFixture
-      throw new Error(`legacy payload requested before classification: ${file}`)
+      if (file === 'territoires') return territoires
+      throw new Error(`ordinary scalar page requested a static payload: ${file}`)
     }
-    const manifestLoader = vi.fn(async () => ({
-      schemaVersion: '1' as const, routes: { demographie: ['densite'] },
-    }))
-    const readModelLoader = vi.fn(async () => model)
-    let catalogues = 0
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input) !== '/api/resources') return new Response('', { status: 404 })
-      catalogues += 1
-      return catalogues === 1 ? new Response('temporary catalogue outage', { status: 503 })
-        : nativeCatalogueResponse()
-    }))
+    const manifestLoader = vi.fn()
+    const readModelLoader = vi.fn()
     const router = createRouter({ history: createMemoryHistory(), routes })
-    await router.push('/indicateurs/demographie/densite')
+    await router.push('/indicateurs/demographie/densite?territoire=22001&niveau=commune&epci=200067460')
     await router.isReady()
     const empty = { type: 'FeatureCollection' as const, features: [] }
     const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
@@ -170,16 +100,14 @@ describe("Page d'indicateur — modèle de lecture routé", () => {
       expect(payloadCalls).toEqual(['territoires'])
       expect(manifestLoader).not.toHaveBeenCalled()
       expect(readModelLoader).not.toHaveBeenCalled()
-
       await wrapper.get('[role="alert"] button').trigger('click')
       await flushPromises()
-      expect(catalogues).toBe(2)
-      expect(wrapper.text()).toContain('Densité de population')
+      expect(wrapper.get('h1').text()).toBe('Densité de population')
       expect(payloadCalls).toEqual(['territoires'])
-      expect(manifestLoader).toHaveBeenCalledOnce()
-      expect(readModelLoader).toHaveBeenCalledWith('demographie', 'densite', territoiresFixture)
-    } finally {
-      wrapper.unmount()
-    }
+      expect(manifestLoader).not.toHaveBeenCalled()
+      expect(readModelLoader).not.toHaveBeenCalled()
+      expect(transport.mock.calls.map(([url]) => String(url)).filter((url) => url === '/api/resources')).toHaveLength(2)
+      expect(transport.mock.calls.map(([url]) => String(url)).filter((url) => url === '/api/resources/read-batch')).toHaveLength(2)
+    } finally { wrapper.unmount() }
   })
 })

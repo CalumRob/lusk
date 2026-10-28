@@ -1,0 +1,2387 @@
+{
+  "level": "commune",
+  "catalogue": {
+    "contract": "semantic-resource-catalogue-v1",
+    "resources": [
+      {
+        "resource_id": "aedar_territorial_aggregate",
+        "theme_id": "",
+        "indicator_id": "aedar_territorial_aggregate",
+        "label": "AEDAR territorial aggregates",
+        "unit": "",
+        "direction": "none",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [],
+        "shapes": [
+          "aedar_source_grain"
+        ],
+        "axes": [
+          "typequ",
+          "measure",
+          "context"
+        ],
+        "axis_values": [],
+        "target_kinds": [
+          "territory"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "group_value",
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison"
+        ],
+        "resource_kind": "aedar_source_grain",
+        "context_values": [
+          "density_class",
+          "epci",
+          "bretagne",
+          "same_level"
+        ],
+        "evidence": []
+      },
+      {
+        "resource_id": "demographie_selected_reading",
+        "theme_id": "demographie",
+        "indicator_id": "demographie_selected_reading",
+        "label": "Démographie",
+        "unit": "",
+        "direction": "none",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "serie_historique"
+        ],
+        "shapes": [
+          "typed_reading"
+        ],
+        "axes": [
+          "groupe"
+        ],
+        "axis_values": [
+          [
+            "groupe",
+            [
+              "trajectoire-demographique"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "groupe",
+          "story_key",
+          "salience_reason",
+          "periode",
+          "solde_naturel",
+          "solde_migratoire",
+          "taux_solde_naturel",
+          "taux_solde_migratoire",
+          "classification",
+          "status",
+          "source_id",
+          "vintage_id"
+        ],
+        "intents": [
+          "facts"
+        ],
+        "resource_kind": "typed_reading",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "densite",
+        "theme_id": "demographie",
+        "indicator_id": "densite",
+        "label": "Densité de population",
+        "unit": "hab/km²",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "serie_historique"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "evolution_1968",
+        "theme_id": "demographie",
+        "indicator_id": "evolution_1968",
+        "label": "Évolution de la population depuis 1968",
+        "unit": "%",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "serie_historique"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "structure_age",
+        "theme_id": "demographie",
+        "indicator_id": "structure_age",
+        "label": "Structure par âge",
+        "unit": "%",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "age_detail"
+        ],
+        "shapes": [
+          "declared_profile"
+        ],
+        "axes": [
+          "detail",
+          "sex"
+        ],
+        "axis_values": [
+          [
+            "detail",
+            [
+              "<15",
+              "15-24",
+              "25-39",
+              "40-54",
+              "55-64",
+              "65-79",
+              "80+"
+            ]
+          ],
+          [
+            "sex",
+            [
+              "F",
+              "M"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "detail",
+          "sex"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "taille_menages",
+        "theme_id": "demographie",
+        "indicator_id": "taille_menages",
+        "label": "Taille moyenne des ménages",
+        "unit": "pers./ménage",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "menages"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "chomage",
+        "theme_id": "economie",
+        "indicator_id": "chomage",
+        "label": "Chômage (population active)",
+        "unit": "%",
+        "direction": "low",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "rp_chomage"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "eco_activites",
+        "theme_id": "economie",
+        "indicator_id": "eco_activites",
+        "label": "Part des éco-activités",
+        "unit": "%",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "sirene_snapshot"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "economie_selected_reading",
+        "theme_id": "economie",
+        "indicator_id": "economie_selected_reading",
+        "label": "Économie/Emploi",
+        "unit": "",
+        "direction": "none",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "sirene_snapshot"
+        ],
+        "shapes": [
+          "typed_reading"
+        ],
+        "axes": [
+          "groupe"
+        ],
+        "axis_values": [
+          [
+            "groupe",
+            [
+              "sante-et-taille"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "groupe",
+          "story_key",
+          "salience_reason",
+          "status",
+          "source_id",
+          "vintage_id",
+          "ranked_activities"
+        ],
+        "intents": [
+          "facts"
+        ],
+        "resource_kind": "typed_reading",
+        "context_values": [],
+        "evidence": [
+          {
+            "field": "ranked_activities",
+            "fields": [
+              "territory_id",
+              "territory_type",
+              "groupe",
+              "rank",
+              "activity_code",
+              "activity_label",
+              "lq",
+              "establishment_count",
+              "park_share",
+              "source_id",
+              "vintage_id"
+            ]
+          }
+        ]
+      },
+      {
+        "resource_id": "effectifs_salaries",
+        "theme_id": "economie",
+        "indicator_id": "effectifs_salaries",
+        "label": "Effectifs salariés (lieu de travail)",
+        "unit": "salariés",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "flores_a88"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "age_du_bati",
+        "theme_id": "habitat",
+        "indicator_id": "age_du_bati",
+        "label": "Âge du bâti",
+        "unit": "%",
+        "direction": "low",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "logements"
+        ],
+        "shapes": [
+          "declared_profile"
+        ],
+        "axes": [
+          "detail"
+        ],
+        "axis_values": [
+          [
+            "detail",
+            [
+              "lt1919",
+              "1919_1945",
+              "1946_1970",
+              "1971_1990",
+              "1991_2005",
+              "2006_plus"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "detail"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "distribution_dpe",
+        "theme_id": "habitat",
+        "indicator_id": "distribution_dpe",
+        "label": "Distribution des étiquettes DPE (A à G)",
+        "unit": "%",
+        "direction": "low",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "dpe_22",
+          "dpe_29",
+          "dpe_35",
+          "dpe_56"
+        ],
+        "shapes": [
+          "declared_profile"
+        ],
+        "axes": [
+          "detail"
+        ],
+        "axis_values": [
+          [
+            "detail",
+            [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E",
+              "F",
+              "G"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "detail"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "habitat_selected_reading",
+        "theme_id": "habitat",
+        "indicator_id": "habitat_selected_reading",
+        "label": "Habitat",
+        "unit": "",
+        "direction": "none",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "dpe_22"
+        ],
+        "shapes": [
+          "typed_reading"
+        ],
+        "axes": [
+          "groupe"
+        ],
+        "axis_values": [
+          [
+            "groupe",
+            [
+              "etat-energetique-du-parc"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "groupe",
+          "story_key",
+          "salience_reason",
+          "classification",
+          "part_passoires",
+          "part_abc",
+          "n_dpe",
+          "status",
+          "source_id",
+          "vintage_id"
+        ],
+        "intents": [
+          "facts"
+        ],
+        "resource_kind": "typed_reading",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "mix_logements",
+        "theme_id": "habitat",
+        "indicator_id": "mix_logements",
+        "label": "Mix de logements",
+        "unit": "%",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "logements"
+        ],
+        "shapes": [
+          "declared_profile"
+        ],
+        "axes": [
+          "detail"
+        ],
+        "axis_values": [
+          [
+            "detail",
+            [
+              "principales",
+              "secondaires",
+              "vacants"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "detail"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "part_passoires",
+        "theme_id": "habitat",
+        "indicator_id": "part_passoires",
+        "label": "Part de passoires thermiques",
+        "unit": "%",
+        "direction": "low",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "dpe_22",
+          "dpe_29",
+          "dpe_35",
+          "dpe_56"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "prix_m2",
+        "theme_id": "habitat",
+        "indicator_id": "prix_m2",
+        "label": "Médiane prix au m²",
+        "unit": "€/m²",
+        "direction": "low",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "dvf_2025_dep22",
+          "dvf_2021_dep22",
+          "dvf_2021_dep29",
+          "dvf_2021_dep35",
+          "dvf_2021_dep56",
+          "dvf_2022_dep22",
+          "dvf_2022_dep29",
+          "dvf_2022_dep35",
+          "dvf_2022_dep56",
+          "dvf_2023_dep22",
+          "dvf_2023_dep29",
+          "dvf_2023_dep35",
+          "dvf_2023_dep56",
+          "dvf_2024_dep22",
+          "dvf_2024_dep29",
+          "dvf_2024_dep35",
+          "dvf_2024_dep56",
+          "dvf_2025_dep29",
+          "dvf_2025_dep35",
+          "dvf_2025_dep56"
+        ],
+        "shapes": [
+          "scalar",
+          "ordered_series"
+        ],
+        "axes": [
+          "year"
+        ],
+        "axis_values": [
+          [
+            "year",
+            [
+              "2021",
+              "2022",
+              "2023",
+              "2024",
+              "2025"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "year"
+        ],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "statut",
+        "theme_id": "habitat",
+        "indicator_id": "statut",
+        "label": "Statut d’occupation",
+        "unit": "%",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "logements"
+        ],
+        "shapes": [
+          "declared_profile"
+        ],
+        "axes": [
+          "detail"
+        ],
+        "axis_values": [
+          [
+            "detail",
+            [
+              "proprietaire",
+              "hlm",
+              "locataire_prive",
+              "loge_gratuit"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "detail"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "type",
+        "theme_id": "habitat",
+        "indicator_id": "type",
+        "label": "Type de logement",
+        "unit": "%",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "logements"
+        ],
+        "shapes": [
+          "declared_profile"
+        ],
+        "axes": [
+          "detail"
+        ],
+        "axis_values": [
+          [
+            "detail",
+            [
+              "maison",
+              "appartement"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "detail"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "artif_par_habitant",
+        "theme_id": "milieux",
+        "indicator_id": "artif_par_habitant",
+        "label": "Intensité état",
+        "unit": "m²/hab",
+        "direction": "low",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "ocsge_artificialisation_22_2025",
+          "ocsge_artificialisation_22_2021",
+          "ocsge_artificialisation_29_2021",
+          "ocsge_artificialisation_29_2024",
+          "ocsge_artificialisation_35_2020",
+          "ocsge_artificialisation_35_2023",
+          "ocsge_artificialisation_56_2022",
+          "ocsge_artificialisation_56_2024",
+          "ocsge_patch_correctif_22",
+          "ocsge_patch_correctif_29",
+          "ocsge_patch_correctif_56"
+        ],
+        "shapes": [
+          "ordered_series"
+        ],
+        "axes": [
+          "declared_detail"
+        ],
+        "axis_values": [
+          [
+            "declared_detail",
+            [
+              "M2",
+              "M3",
+              "2020",
+              "2021",
+              "2022",
+              "2023",
+              "2024",
+              "2025"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "declared_detail"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "conso_enaf_annuel",
+        "theme_id": "milieux",
+        "indicator_id": "conso_enaf_annuel",
+        "label": "Consommation d’ENAF — série annuelle",
+        "unit": "ha",
+        "direction": "low",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "consoenaf"
+        ],
+        "shapes": [
+          "ordered_series"
+        ],
+        "axes": [
+          "year"
+        ],
+        "axis_values": [
+          [
+            "year",
+            [
+              "2011",
+              "2012",
+              "2013",
+              "2014",
+              "2015",
+              "2016",
+              "2017",
+              "2018",
+              "2019",
+              "2020",
+              "2021",
+              "2022",
+              "2023",
+              "2024"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "year"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "milieux_selected_reading",
+        "theme_id": "milieux",
+        "indicator_id": "milieux_selected_reading",
+        "label": "Milieux",
+        "unit": "",
+        "direction": "none",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "serie_historique",
+          "consoenaf"
+        ],
+        "shapes": [
+          "typed_reading"
+        ],
+        "axes": [
+          "groupe"
+        ],
+        "axis_values": [
+          [
+            "groupe",
+            [
+              "artificialisation"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "groupe",
+          "story_key",
+          "salience_reason",
+          "periode_pop",
+          "periode_artif",
+          "delta_population",
+          "taux_variation_population",
+          "artif_m2_par_habitant",
+          "artif_m3_par_habitant",
+          "trajectoire_artif_par_habitant",
+          "classification",
+          "status",
+          "source_id",
+          "vintage_id",
+          "source_absences",
+          "source_bindings"
+        ],
+        "intents": [
+          "facts"
+        ],
+        "resource_kind": "typed_reading",
+        "context_values": [],
+        "evidence": [
+          {
+            "field": "source_absences",
+            "fields": [
+              "territory_id",
+              "territory_type",
+              "reason",
+              "source_id",
+              "vintage_id",
+              "source_snapshot_sha256"
+            ]
+          },
+          {
+            "field": "source_bindings",
+            "fields": [
+              "territory_id",
+              "territory_type",
+              "groupe",
+              "field_key",
+              "source_id",
+              "vintage_id",
+              "source_name",
+              "source_version",
+              "reference_date",
+              "publication_date",
+              "observation_period",
+              "dataset_id",
+              "dataset_content_version",
+              "state_role",
+              "axis_value",
+              "provenance_revision_id",
+              "population_revision_id"
+            ]
+          }
+        ]
+      },
+      {
+        "resource_id": "bornes_ev_par_station_service",
+        "theme_id": "mobilite",
+        "indicator_id": "bornes_ev_par_station_service",
+        "label": "Bornes de recharge par station-service",
+        "unit": "bornes / station",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "bpe_b316",
+          "bornes-recharges"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "bornes_recharge",
+        "theme_id": "mobilite",
+        "indicator_id": "bornes_recharge",
+        "label": "Bornes de recharge pour véhicules électriques",
+        "unit": "bornes",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "bornes-recharges"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "offre_cyclable",
+        "theme_id": "mobilite",
+        "indicator_id": "offre_cyclable",
+        "label": "L’offre cyclable",
+        "unit": "km",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "osm_reseaux"
+        ],
+        "shapes": [
+          "declared_profile"
+        ],
+        "axes": [
+          "detail"
+        ],
+        "axis_values": [
+          [
+            "detail",
+            [
+              "protege_longueur",
+              "protege_km_1000",
+              "partage_longueur",
+              "partage_km_1000",
+              "total_longueur"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "detail"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "offre_tc",
+        "theme_id": "mobilite",
+        "indicator_id": "offre_tc",
+        "label": "Part des bâtiments près d’un arrêt (à 500 m)",
+        "unit": "%",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "korrigo"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "places_stationnement_velo_1000",
+        "theme_id": "mobilite",
+        "indicator_id": "places_stationnement_velo_1000",
+        "label": "Places de stationnement vélo pour 1 000 hab.",
+        "unit": "places / 1 000 hab",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "stationnement-velo"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "places_stationnement_voiture_1000",
+        "theme_id": "mobilite",
+        "indicator_id": "places_stationnement_voiture_1000",
+        "label": "Places de stationnement voiture pour 1 000 hab.",
+        "unit": "places / 1 000 hab",
+        "direction": "low",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "osm_reseaux"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "raccordement_courbe",
+        "theme_id": "mobilite",
+        "indicator_id": "raccordement_courbe",
+        "label": "Courbe de population bretonne jointe selon le temps de trajet",
+        "unit": "%",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "raccordement_gtfs_national"
+        ],
+        "shapes": [
+          "ordered_series"
+        ],
+        "axes": [
+          "duration_minute"
+        ],
+        "axis_values": [
+          [
+            "duration_minute",
+            [
+              "0",
+              "5",
+              "10",
+              "15",
+              "20",
+              "25",
+              "30",
+              "35",
+              "40",
+              "45",
+              "50",
+              "55",
+              "60",
+              "65",
+              "70",
+              "75",
+              "80",
+              "85",
+              "90",
+              "95",
+              "100",
+              "105",
+              "110",
+              "115",
+              "120",
+              "125",
+              "130",
+              "135",
+              "140",
+              "145",
+              "150",
+              "155",
+              "160",
+              "165",
+              "170",
+              "175",
+              "180",
+              "185",
+              "190",
+              "195",
+              "200",
+              "205",
+              "210",
+              "215",
+              "220",
+              "225",
+              "230",
+              "235",
+              "240",
+              "245",
+              "250",
+              "255",
+              "260",
+              "265",
+              "270",
+              "275",
+              "280",
+              "285",
+              "290",
+              "295",
+              "300",
+              "305",
+              "310",
+              "315",
+              "320",
+              "325",
+              "330",
+              "335",
+              "340",
+              "345",
+              "350",
+              "355",
+              "360"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "duration_minute"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "raccordement_reference",
+        "theme_id": "mobilite",
+        "indicator_id": "raccordement_reference",
+        "label": "Courbe de population bretonne jointe selon le temps de trajet",
+        "unit": "%",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "raccordement_gtfs_national"
+        ],
+        "shapes": [
+          "named_reference"
+        ],
+        "axes": [
+          "duration_minute"
+        ],
+        "axis_values": [
+          [
+            "duration_minute",
+            [
+              "0",
+              "5",
+              "10",
+              "15",
+              "20",
+              "25",
+              "30",
+              "35",
+              "40",
+              "45",
+              "50",
+              "55",
+              "60",
+              "65",
+              "70",
+              "75",
+              "80",
+              "85",
+              "90",
+              "95",
+              "100",
+              "105",
+              "110",
+              "115",
+              "120",
+              "125",
+              "130",
+              "135",
+              "140",
+              "145",
+              "150",
+              "155",
+              "160",
+              "165",
+              "170",
+              "175",
+              "180",
+              "185",
+              "190",
+              "195",
+              "200",
+              "205",
+              "210",
+              "215",
+              "220",
+              "225",
+              "230",
+              "235",
+              "240",
+              "245",
+              "250",
+              "255",
+              "260",
+              "265",
+              "270",
+              "275",
+              "280",
+              "285",
+              "290",
+              "295",
+              "300",
+              "305",
+              "310",
+              "315",
+              "320",
+              "325",
+              "330",
+              "335",
+              "340",
+              "345",
+              "350",
+              "355",
+              "360"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "named_reference"
+        ],
+        "target_ids": [
+          "bretagne_all_assessed_communes_mean"
+        ],
+        "dynamic_axes": [],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "raccordement_tc",
+        "theme_id": "mobilite",
+        "indicator_id": "raccordement_tc",
+        "label": "Population bretonne jointe en 90 minutes en transports en commun",
+        "unit": "%",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "raccordement_gtfs_national"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "reseaux",
+        "theme_id": "mobilite",
+        "indicator_id": "reseaux",
+        "label": "Réseaux à pied / vélo / voiture",
+        "unit": "km",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "amenagements_cyclables"
+        ],
+        "shapes": [
+          "declared_profile"
+        ],
+        "axes": [
+          "detail"
+        ],
+        "axis_values": [
+          [
+            "detail",
+            [
+              "t_longueur",
+              "b_longueur",
+              "c_longueur"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "detail"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "reseaux_par_habitant",
+        "theme_id": "mobilite",
+        "indicator_id": "reseaux_par_habitant",
+        "label": "Longueur du réseau par habitant",
+        "unit": "km / 1 000 hab.",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "osm_reseaux",
+          "stationnement-velo"
+        ],
+        "shapes": [
+          "declared_profile"
+        ],
+        "axes": [
+          "detail"
+        ],
+        "axis_values": [
+          [
+            "detail",
+            [
+              "t_km_1000",
+              "b_km_1000",
+              "c_km_1000"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "detail"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "stationnement_velo_par_voiture",
+        "theme_id": "mobilite",
+        "indicator_id": "stationnement_velo_par_voiture",
+        "label": "Places de stationnement vélo pour 1 place voiture",
+        "unit": "places vélo / place voiture",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "osm_reseaux",
+          "stationnement-velo"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "surface_reseaux_routiers",
+        "theme_id": "mobilite",
+        "indicator_id": "surface_reseaux_routiers",
+        "label": "Part du territoire consacré aux réseaux routiers",
+        "unit": "%",
+        "direction": "low",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "ocsge_reseaux_routiers"
+        ],
+        "shapes": [
+          "scalar"
+        ],
+        "axes": [],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value",
+          "support_count",
+          "denominator_count"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "voitures_menage",
+        "theme_id": "mobilite",
+        "indicator_id": "voitures_menage",
+        "label": "Voitures par ménage",
+        "unit": "%",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "rp_logement_princ"
+        ],
+        "shapes": [
+          "declared_profile"
+        ],
+        "axes": [
+          "detail"
+        ],
+        "axis_values": [
+          [
+            "detail",
+            [
+              "sans_voiture",
+              "une_voiture",
+              "deux_plus"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "detail"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "couverture_programmes",
+        "theme_id": "programmes",
+        "indicator_id": "couverture_programmes",
+        "label": "Couverture programmatique",
+        "unit": "adhésion",
+        "direction": "none",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement",
+          "region"
+        ],
+        "sources": [
+          "acv"
+        ],
+        "shapes": [
+          "anchored_membership"
+        ],
+        "axes": [
+          "membership"
+        ],
+        "axis_values": [
+          [
+            "detail",
+            [
+              "ACV",
+              "PVD",
+              "CRTE",
+              "Territoires d'industrie",
+              "ORT"
+            ]
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "detail",
+          "label",
+          "rider",
+          "anchor_count",
+          "availability"
+        ],
+        "intents": [
+          "facts"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "subventions_annuelles",
+        "theme_id": "programmes",
+        "indicator_id": "subventions_annuelles",
+        "label": "Subventions régionales attribuées",
+        "unit": "€",
+        "direction": "high",
+        "allowed_levels": [
+          "commune",
+          "epci",
+          "departement"
+        ],
+        "sources": [
+          "subventions_scdl"
+        ],
+        "shapes": [
+          "ordered_series"
+        ],
+        "axes": [
+          "year"
+        ],
+        "axis_values": [
+          [
+            "year",
+            []
+          ]
+        ],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [
+          "year"
+        ],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      },
+      {
+        "resource_id": "subventions_par_domaine",
+        "theme_id": "programmes",
+        "indicator_id": "subventions_par_domaine",
+        "label": "Subventions régionales par domaine",
+        "unit": "€",
+        "direction": "high",
+        "allowed_levels": [
+          "commune"
+        ],
+        "sources": [
+          "subventions_scdl"
+        ],
+        "shapes": [
+          "period_detail"
+        ],
+        "axes": [
+          "period",
+          "detail"
+        ],
+        "axis_values": [],
+        "target_kinds": [
+          "territory",
+          "territory_cohort"
+        ],
+        "target_ids": [],
+        "dynamic_axes": [],
+        "fields": [
+          "value"
+        ],
+        "intents": [
+          "facts",
+          "fixed_comparison",
+          "selected_comparison"
+        ],
+        "resource_kind": "indicator",
+        "context_values": [],
+        "evidence": []
+      }
+    ]
+  },
+  "territories": [
+    {
+      "territoire": "29001",
+      "type": "commune",
+      "nom": "Focal",
+      "departement": "29",
+      "epci": "E1",
+      "classe_densite_code": "D1"
+    },
+    {
+      "territoire": "29002",
+      "type": "commune",
+      "nom": "Peer",
+      "departement": "29",
+      "epci": "E2",
+      "classe_densite_code": "D2"
+    },
+    {
+      "territoire": "22001",
+      "type": "commune",
+      "nom": "Outside",
+      "departement": "22",
+      "epci": "E3",
+      "classe_densite_code": "D2"
+    }
+  ],
+  "cohort": {
+    "request": {
+      "items": [
+        {
+          "resource": "densite",
+          "target": {
+            "kind": "territory_cohort",
+            "type": "commune",
+            "department_id": "29",
+            "epci_id": null
+          },
+          "fields": [
+            "value"
+          ],
+          "intent": {
+            "kind": "facts"
+          },
+          "id": "scalar-0-densite"
+        }
+      ]
+    },
+    "response_status": 200,
+    "response": {
+      "contract": "semantic-read-batch-v1",
+      "results": [
+        {
+          "id": "scalar-0-densite",
+          "resource": "densite",
+          "data": {
+            "resource": "densite",
+            "target": {
+              "kind": "territory_cohort",
+              "type": "commune",
+              "department_id": "29",
+              "epci_id": null
+            },
+            "shape": "scalar",
+            "cohort": {
+              "territory_type": "commune",
+              "department_id": "29",
+              "epci_id": null,
+              "member_count": 2,
+              "members": [
+                {
+                  "id": "29001",
+                  "type": "commune",
+                  "name": "Focal"
+                },
+                {
+                  "id": "29002",
+                  "type": "commune",
+                  "name": "Peer"
+                }
+              ],
+              "reference_content_version": "ref-v1"
+            },
+            "content_version": "densite-v1",
+            "reference_content_version": "ref-v1",
+            "descriptor": {
+              "indicator_id": "densite",
+              "theme_id": "demographie",
+              "label": "Densité de population",
+              "unit": "hab/km²",
+              "direction": "high",
+              "comparison_facet": "densite",
+              "allowed_levels": [
+                "commune",
+                "epci",
+                "departement",
+                "region"
+              ],
+              "denominator_semantics": "population municipale",
+              "completeness": "sparse",
+              "descriptor_version": "densite-native-d1"
+            },
+            "observations": [
+              {
+                "territory": {
+                  "id": "29001",
+                  "type": "commune",
+                  "name": "Focal"
+                },
+                "status": "measured",
+                "sources": [
+                  {
+                    "source_id": "serie_historique",
+                    "name": "Historical population",
+                    "vintage_id": "serie_historique",
+                    "version": "2023",
+                    "reference_date": "2023-01-01",
+                    "publication_date": "2025-01-01"
+                  }
+                ],
+                "value": 100.0
+              },
+              {
+                "territory": {
+                  "id": "29002",
+                  "type": "commune",
+                  "name": "Peer"
+                },
+                "status": "not_available",
+                "sources": [
+                  {
+                    "source_id": "serie_historique",
+                    "name": "Historical population",
+                    "vintage_id": "serie_historique",
+                    "version": "2023",
+                    "reference_date": "2023-01-01",
+                    "publication_date": "2025-01-01"
+                  }
+                ],
+                "value": null
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "focal": {
+    "request": {
+      "items": [
+        {
+          "resource": "densite",
+          "target": {
+            "kind": "territory",
+            "type": "commune",
+            "id": "29001"
+          },
+          "fields": [
+            "value"
+          ],
+          "intent": {
+            "kind": "facts"
+          },
+          "id": "scalar-0-densite"
+        }
+      ]
+    },
+    "response_status": 200,
+    "response": {
+      "contract": "semantic-read-batch-v1",
+      "results": [
+        {
+          "id": "scalar-0-densite",
+          "resource": "densite",
+          "data": {
+            "resource": "densite",
+            "target": {
+              "kind": "territory",
+              "type": "commune",
+              "id": "29001"
+            },
+            "indicator_id": "densite",
+            "territory_id": "29001",
+            "territory_type": "commune",
+            "value": 100.0,
+            "status": "measured",
+            "label": "Densité de population",
+            "unit": "hab/km²",
+            "direction": "high",
+            "comparison_facet": "densite",
+            "descriptor_version": "densite-native-d1",
+            "content_version": "densite-v1",
+            "sources": [
+              {
+                "source_id": "serie_historique",
+                "name": "Historical population",
+                "vintage_id": "serie_historique",
+                "version": "2023",
+                "reference_date": "2023-01-01",
+                "publication_date": "2025-01-01"
+              }
+            ],
+            "reference_content_version": "ref-v1"
+          }
+        }
+      ]
+    }
+  },
+  "comparison": {
+    "request": {
+      "items": [
+        {
+          "resource": "densite",
+          "target": {
+            "kind": "territory",
+            "type": "commune",
+            "id": "29001"
+          },
+          "fields": [
+            "median",
+            "rank",
+            "rank_size",
+            "eligible_count",
+            "selected_member_count",
+            "missing_count",
+            "member_ranks"
+          ],
+          "intent": {
+            "kind": "selected_comparison",
+            "members": [
+              {
+                "type": "commune",
+                "id": "29001"
+              },
+              {
+                "type": "commune",
+                "id": "29002"
+              }
+            ]
+          },
+          "id": "scalar-0-densite"
+        }
+      ]
+    },
+    "response_status": 200,
+    "response": {
+      "contract": "semantic-read-batch-v1",
+      "results": [
+        {
+          "id": "scalar-0-densite",
+          "resource": "densite",
+          "data": {
+            "resource": "densite",
+            "target": {
+              "kind": "territory",
+              "type": "commune",
+              "id": "29001"
+            },
+            "contract": "indicator-comparison-v1",
+            "complete_theme": false,
+            "indicator_id": "densite",
+            "shape": "scalar",
+            "content_version": "densite-v1",
+            "scalar_content_version": null,
+            "profile_content_version": null,
+            "reference_content_version": "ref-v1",
+            "selection": [
+              {
+                "territory_type": "commune",
+                "territory_id": "29001"
+              },
+              {
+                "territory_type": "commune",
+                "territory_id": "29002"
+              }
+            ],
+            "scope": {
+              "kind": "explicit_selection",
+              "member_count": 2
+            },
+            "result": {
+              "indicator_id": "densite",
+              "label": "Densité de population",
+              "unit": "hab/km²",
+              "direction": "high",
+              "statistic": "median",
+              "descriptor_version": "densite-native-d1",
+              "status": "available",
+              "reason": null,
+              "selected_member_count": 2,
+              "eligible_count": 1,
+              "missing_count": 1,
+              "focal_in_selection": true,
+              "median": 100.0,
+              "rank": 1,
+              "rank_size": 1,
+              "comparison_sources": [
+                {
+                  "source_id": "serie_historique",
+                  "name": "Historical population",
+                  "vintage_id": "serie_historique",
+                  "version": "2023",
+                  "reference_date": "2023-01-01",
+                  "publication_date": "2025-01-01"
+                }
+              ],
+              "member_ranks": [
+                {
+                  "territory_id": "29001",
+                  "rank": 1,
+                  "rank_size": 1,
+                  "rank_ties": 1
+                },
+                {
+                  "territory_id": "29002",
+                  "rank": null,
+                  "rank_size": null,
+                  "rank_ties": null
+                }
+              ],
+              "source_facet": "densite"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

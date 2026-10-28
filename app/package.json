@@ -10,6 +10,7 @@
     "validate:territory-model": "node scripts/validate-territory-model.mjs",
     "benchmark:payload": "vitest run --config scripts/vitest.benchmark.config.ts",
     "verify:profile-pages": "node scripts/verify-profile-pages.mjs",
+    "verify:ordinary-scalar-pages": "node scripts/verify-ordinary-scalar-pages.mjs",
     "verify:mobile-cahier-overflow": "node scripts/verify-mobile-cahier-overflow.mjs",
     "preview": "vite preview",
     "test": "vitest run"

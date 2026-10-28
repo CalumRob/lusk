@@ -97,7 +97,8 @@ async function poster(path: string, body: RecordValue): Promise<unknown> {
   } catch (cause) {
     throw new PayloadError('fetch', path, `Lecture sémantique indisponible : ${cause instanceof Error ? cause.message : String(cause)}`)
   }
-  if (!response.ok) throw new PayloadError('fetch', path, `Lecture sémantique indisponible (HTTP ${response.status}).`)
+  if (!response.ok) throw new PayloadError('fetch', path,
+    `Lecture sémantique indisponible (HTTP ${response.status}).`, response.status)
   return readJson(response, path)
 }
 

@@ -109,6 +109,13 @@ def test_discovery_preserves_multiple_producer_declared_shapes_and_axes():
     assert "selected_comparison" in resources["subventions_annuelles"].intents
 
 
+def test_scalar_discovery_exposes_all_producer_declared_vintage_source_identities():
+    catalogue = default_resource_catalogue.__wrapped__()
+    scalar = catalogue.resources_by_id["part_passoires"]
+
+    assert set(scalar.sources) == {"dpe_22", "dpe_29", "dpe_35", "dpe_56"}
+
+
 def test_discovery_exposes_every_retained_profile_page_and_its_declared_axes():
     catalogue = discover_indicator_resources(METADATA)
     resources = {resource.resource_id: resource for resource in catalogue.resources
@@ -180,7 +187,7 @@ def test_cohort_capability_is_derived_from_supported_fact_families():
         validate_resource_item(comparison_cohort, catalogue)
 
 
-def test_member_ranks_are_only_projectable_for_selected_declared_profile_comparisons():
+def test_member_ranks_are_projectable_for_scalar_comparisons_and_selected_profiles_only():
     catalogue = default_resource_catalogue.__wrapped__()
     selected = ResourceReadItem.model_validate({
         "resource": "structure_age",
@@ -192,6 +199,16 @@ def test_member_ranks_are_only_projectable_for_selected_declared_profile_compari
     })
     assert validate_resource_item(selected, catalogue).resource_id == "structure_age"
 
+    scalar = ResourceReadItem.model_validate({
+        "resource": "densite",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"},
+        ]},
+    })
+    assert validate_resource_item(scalar, catalogue).resource_id == "densite"
+
     fixed = ResourceReadItem.model_validate({
         "resource": "structure_age",
         "target": {"kind": "territory", "type": "commune", "id": "22001"},
@@ -201,16 +218,90 @@ def test_member_ranks_are_only_projectable_for_selected_declared_profile_compari
     with pytest.raises(ValueError, match="field is not declared"):
         validate_resource_item(fixed, catalogue)
 
-    scalar = ResourceReadItem.model_validate({
+    scalar_fixed = ResourceReadItem.model_validate({
+        "resource": "densite",
+        "target": {"kind": "territory", "type": "epci", "id": "200000001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "fixed_comparison", "context": "default"},
+    })
+    assert validate_resource_item(scalar_fixed, catalogue).resource_id == "densite"
+
+    non_comparable = ResourceReadItem.model_validate({
+        "resource": "structure_age",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "facts"},
+    })
+    with pytest.raises(ValueError, match="field is not declared"):
+        validate_resource_item(non_comparable, catalogue)
+
+    scalar_facts = ResourceReadItem.model_validate({
         "resource": "densite",
         "target": {"kind": "territory", "type": "commune", "id": "22001"},
         "fields": ["member_ranks"],
-        "intent": {"kind": "selected_comparison", "members": [
-            {"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"},
-        ]},
+        "intent": {"kind": "facts"},
     })
     with pytest.raises(ValueError, match="field is not declared"):
-        validate_resource_item(scalar, catalogue)
+        validate_resource_item(scalar_facts, catalogue)
+
+
+@pytest.mark.parametrize("intent", [
+    {"kind": "selected_comparison", "members": [
+        {"type": "commune", "id": "29001"}, {"type": "commune", "id": "29002"},
+    ]},
+    {"kind": "fixed_comparison", "context": "default"},
+])
+def test_member_ranks_do_not_project_from_dual_shape_scalar_series_resources(intent):
+    catalogue = default_resource_catalogue.__wrapped__()
+    item = ResourceReadItem.model_validate({
+        "resource": "prix_m2",
+        "target": {"kind": "territory", "type": "commune", "id": "29001"},
+        "fields": ["member_ranks"],
+        "intent": intent,
+    })
+
+    with pytest.raises(ValueError, match="field is not declared"):
+        validate_resource_item(item, catalogue)
+
+
+@pytest.mark.parametrize("intent", [
+    {"kind": "selected_comparison", "members": [
+        {"type": "commune", "id": "29001"}, {"type": "commune", "id": "29002"},
+    ]},
+    {"kind": "fixed_comparison", "context": "default"},
+])
+def test_dual_shape_member_rank_projection_fails_before_opening_the_reader(intent):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    class NoConnectionPool:
+        @contextmanager
+        def connection(self):
+            raise AssertionError("invalid dual-shape member-rank projection must fail during preflight")
+            yield
+
+    catalogue = default_resource_catalogue.__wrapped__()
+    previous_catalogue = main.app.dependency_overrides.get(main.get_resource_catalogue)
+    previous_repository = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_resource_catalogue] = lambda: catalogue
+    main.app.dependency_overrides[main.get_repository] = lambda: SimpleNamespace(connections=NoConnectionPool())
+    try:
+        response = TestClient(main.app).post("/api/resources/read", json={
+            "resource": "prix_m2",
+            "target": {"kind": "territory", "type": "commune", "id": "29001"},
+            "fields": ["member_ranks"], "intent": intent,
+        })
+        assert response.status_code == 422
+        assert "field is not declared" in response.json()["detail"]
+    finally:
+        if previous_catalogue is None:
+            main.app.dependency_overrides.pop(main.get_resource_catalogue, None)
+        else:
+            main.app.dependency_overrides[main.get_resource_catalogue] = previous_catalogue
+        if previous_repository is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous_repository
 
 
 def test_aedar_cohort_is_rejected_by_public_http_before_opening_a_connection(monkeypatch):
@@ -280,4 +371,7 @@ def test_public_discovery_is_producer_derived_and_database_free():
     assert len(payload["resources"]) == 33
     ids = {resource["resource_id"] for resource in payload["resources"]}
     assert "bornes_ev_par_station_service" in ids
+    passoires = next(resource for resource in payload["resources"]
+                     if resource["resource_id"] == "part_passoires")
+    assert set(passoires["sources"]) == {"dpe_22", "dpe_29", "dpe_35", "dpe_56"}
     assert not any(resource.startswith("share_") for resource in ids)
