@@ -372,7 +372,9 @@ try {
             [row.territoire.territoire, row.value, row.rang, row.rangTaille])
           console.error(`DEBUG SORT ${spec.indicator}: firstDiff=${firstDiff}` +
             ` aroundLive=${JSON.stringify(liveRanks.slice(Math.max(0, firstDiff - 2), firstDiff + 4))}` +
-            ` aroundExpected=${JSON.stringify(expectedRanks.slice(Math.max(0, firstDiff - 2), firstDiff + 4))}`)
+            ` aroundExpected=${JSON.stringify(expectedRanks.slice(Math.max(0, firstDiff - 2), firstDiff + 4))}` +
+            ` probe22036=${JSON.stringify(expectedRanks.find((row) => row[0] === '22036'))}` +
+            ` probe22005=${JSON.stringify(expectedRanks.find((row) => row[0] === '22005'))}`)
         }
         assert.deepEqual(sortedRows, expectedOrder,
           `${spec.indicator} table rank sort must follow the model's rank order`)
