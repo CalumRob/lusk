@@ -1,0 +1,80 @@
+{
+  "page": "/methodologie?onglet=sources&section=demographie",
+  "largeur": 1440,
+  "viewport": {
+    "innerWidth": 1440,
+    "innerHeight": 900
+  },
+  "scrollLargeurDoc": 1440,
+  "clientLargeurDoc": 1440,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 1320,
+  "maxDroiteContenu": 1304,
+  "pireContenu": "h1.methodologie__titre",
+  "debordementCoquille": -16,
+  "sectionsMilimesVides": 0,
+  "debordants": [],
+  "hauteurPagePx": 1300,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 4,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Série historique du recensement",
+      "nomLen": 39,
+      "themes": [
+        "Démographie",
+        "Milieux"
+      ],
+      "indicateurs": [
+        "Densité de population",
+        "Évolution de la population depuis 1968"
+      ],
+      "hauteurLignePx": 134,
+      "hauteurCelluleIndicateurs": 109
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Ménages (dossier complet)",
+      "nomLen": 33,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [
+        "Taille moyenne des ménages"
+      ],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": 63
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Population par sexe et âge (PRINC)",
+      "nomLen": 42,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [
+        "Structure par âge"
+      ],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": 42
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+      "nomLen": 54,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    }
+  ],
+  "tableLargeurPx": 1168,
+  "conteneurLargeurPx": 1168,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=demographie"
+}

@@ -1,0 +1,34 @@
+{
+  "page": "/indicateurs/milieux/conso_enaf_annuel?vue=indicateur",
+  "largeur": 1920,
+  "viewport": {
+    "innerWidth": 1920,
+    "innerHeight": 1080
+  },
+  "scrollLargeurDoc": 1920,
+  "clientLargeurDoc": 1920,
+  "debordementHorizontal": 0,
+  "coquilleDroite": null,
+  "maxDroiteContenu": 0,
+  "pireContenu": "",
+  "debordementCoquille": null,
+  "sectionsMilimesVides": 0,
+  "debordants": [],
+  "hauteurPagePx": 1320,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 0,
+  "lignes": [],
+  "tableLargeurPx": null,
+  "conteneurLargeurPx": null,
+  "fichesIndicateur": [
+    {
+      "jeu": "Cerema — Consommation d’espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025",
+      "texte": "Cerema — Con ommation d’e pace  naturel , agricole  et fore tier  (CONSOENAF) 2011-2025Éditeur : Cerema · Licence : Licence Ouverte 2.0 · Millé ime : 2025 · Fraîcheur : 24 juillet 2026Voir le jeu de donnée Voir la fiche  ourceMillé ime 2025 · 2025 · Licence Ouverte 2.0 · 2025-01-01 · 2026-07-24Con ommation d’ENAFannuelle — le jeu e t mi  à jour chaque année · Référence : CONSOENAF 2011-2025 (COG 2",
+      "hauteurPx": 225,
+      "millésimesRendus": 1
+    }
+  ],
+  "titrePage": "Consommation d’ENAF — série annuelle",
+  "url": "/indicateurs/milieux/conso_enaf_annuel?vue=indicateur&detail=2024&niveau=commune"
+}

@@ -1,0 +1,291 @@
+{
+  "page": "/methodologie?onglet=sources&section=milieux",
+  "largeur": 375,
+  "viewport": {
+    "innerWidth": 375,
+    "innerHeight": 812
+  },
+  "scrollLargeurDoc": 375,
+  "clientLargeurDoc": 375,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 375,
+  "maxDroiteContenu": 1001,
+  "pireContenu": "button.onglet",
+  "debordementCoquille": 626,
+  "sectionsMilimesVides": 0,
+  "debordants": [
+    {
+      "sel": "div.tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.tiroir-tete",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.en-tete-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "span.lusk-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "svg.lusk-marque__ermine",
+      "left": 399,
+      "right": 425
+    },
+    {
+      "sel": "path",
+      "left": 403,
+      "right": 409
+    },
+    {
+      "sel": "span.lusk-marque__mot",
+      "left": 433,
+      "right": 473
+    },
+    {
+      "sel": "button.tiroir-fermer",
+      "left": 682,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.lucide-x-icon.lucide-x",
+      "left": 692,
+      "right": 716
+    },
+    {
+      "sel": "div.tiroir-recherche",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.global-search",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "div.global-search__bar",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.global-search__icone.lucide-search-icon",
+      "left": 412,
+      "right": 430
+    },
+    {
+      "sel": "circle",
+      "left": 414,
+      "right": 426
+    },
+    {
+      "sel": "input.global-search__champ",
+      "left": 430,
+      "right": 725
+    },
+    {
+      "sel": "nav.nav-tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.tiroir-lien",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "span.tiroir-lien.tiroir-groupe-titre",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "a.tiroir-lien.tiroir-lien--sous",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "a.router-link-active.router-link-exact-active.tiroir-lien",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "button.onglet",
+      "left": 155,
+      "right": 394
+    },
+    {
+      "sel": "span",
+      "left": 197,
+      "right": 378
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-route-icon",
+      "left": 414,
+      "right": 432
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-users-icon",
+      "left": 528,
+      "right": 546
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-house-icon",
+      "left": 676,
+      "right": 694
+    }
+  ],
+  "hauteurPagePx": 6824,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 14,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Série historique du recensement",
+      "nomLen": 39,
+      "themes": [
+        "Démographie",
+        "Milieux"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 391,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Cerema — Consommation d’espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) — le dictionnaire Cerema annonce les consommations «en hectares », le fichier les distribue en mètres carrés : le pipeline convertit explicitement (÷ 10 000) et le teste, jamais silencieusement (docs/research/zan-rennes.md)",
+      "nomLen": 355,
+      "themes": [
+        "Milieux"
+      ],
+      "indicateurs": [
+        "Consommation d’ENAF — série annuelle"
+      ],
+      "hauteurLignePx": 601,
+      "hauteurCelluleIndicateurs": 42
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération)",
+      "nomLen": 68,
+      "themes": [
+        "Milieux"
+      ],
+      "indicateurs": [
+        "Intensité état"
+      ],
+      "hauteurLignePx": 412,
+      "hauteurCelluleIndicateurs": 21
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2021 · Côtes-d’Armor (22)",
+      "nomLen": 35,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 359,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2025 · Côtes-d’Armor (22)",
+      "nomLen": 35,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 359,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2021 · Finistère (29)",
+      "nomLen": 31,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 359,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2024 · Finistère (29)",
+      "nomLen": 31,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 359,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2020 · Ille-et-Vilaine (35)",
+      "nomLen": 37,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 359,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2023 · Ille-et-Vilaine (35)",
+      "nomLen": 37,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 359,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2022 · Morbihan (56)",
+      "nomLen": 30,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 359,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2024 · Morbihan (56)",
+      "nomLen": 30,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 359,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Patch correctif — Côtes-d’Armor (22), millésime corrigé 2021",
+      "nomLen": 60,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 380,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Patch correctif — Finistère (29), millésime corrigé 2021",
+      "nomLen": 56,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 380,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Patch correctif — Morbihan (56), millésime corrigé 2022",
+      "nomLen": 55,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 380,
+      "hauteurCelluleIndicateurs": null
+    }
+  ],
+  "tableLargeurPx": 343,
+  "conteneurLargeurPx": 343,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=milieux"
+}

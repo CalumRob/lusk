@@ -1,0 +1,206 @@
+{
+  "page": "/methodologie?onglet=sources&section=demographie",
+  "largeur": 375,
+  "viewport": {
+    "innerWidth": 375,
+    "innerHeight": 812
+  },
+  "scrollLargeurDoc": 375,
+  "clientLargeurDoc": 375,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 375,
+  "maxDroiteContenu": 1002,
+  "pireContenu": "button.onglet",
+  "debordementCoquille": 627,
+  "sectionsMilimesVides": 0,
+  "debordants": [
+    {
+      "sel": "div.tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.tiroir-tete",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.en-tete-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "span.lusk-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "svg.lusk-marque__ermine",
+      "left": 399,
+      "right": 425
+    },
+    {
+      "sel": "path",
+      "left": 403,
+      "right": 409
+    },
+    {
+      "sel": "span.lusk-marque__mot",
+      "left": 433,
+      "right": 473
+    },
+    {
+      "sel": "button.tiroir-fermer",
+      "left": 682,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.lucide-x-icon.lucide-x",
+      "left": 692,
+      "right": 716
+    },
+    {
+      "sel": "div.tiroir-recherche",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.global-search",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "div.global-search__bar",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.global-search__icone.lucide-search-icon",
+      "left": 412,
+      "right": 430
+    },
+    {
+      "sel": "circle",
+      "left": 414,
+      "right": 426
+    },
+    {
+      "sel": "input.global-search__champ",
+      "left": 430,
+      "right": 725
+    },
+    {
+      "sel": "nav.nav-tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.tiroir-lien",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "span.tiroir-lien.tiroir-groupe-titre",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "a.tiroir-lien.tiroir-lien--sous",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "a.router-link-active.router-link-exact-active.tiroir-lien",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "button.onglet",
+      "left": 155,
+      "right": 394
+    },
+    {
+      "sel": "span",
+      "left": 197,
+      "right": 378
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-route-icon",
+      "left": 414,
+      "right": 432
+    },
+    {
+      "sel": "button.onglet.onglet--selectionne",
+      "left": 512,
+      "right": 659
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-users-icon",
+      "left": 528,
+      "right": 546
+    }
+  ],
+  "hauteurPagePx": 2837,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 4,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Série historique du recensement",
+      "nomLen": 39,
+      "themes": [
+        "Démographie",
+        "Milieux"
+      ],
+      "indicateurs": [
+        "Densité de population",
+        "Évolution de la population depuis 1968"
+      ],
+      "hauteurLignePx": 437,
+      "hauteurCelluleIndicateurs": 67
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Ménages (dossier complet)",
+      "nomLen": 33,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [
+        "Taille moyenne des ménages"
+      ],
+      "hauteurLignePx": 370,
+      "hauteurCelluleIndicateurs": 21
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Population par sexe et âge (PRINC)",
+      "nomLen": 42,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [
+        "Structure par âge"
+      ],
+      "hauteurLignePx": 391,
+      "hauteurCelluleIndicateurs": 21
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+      "nomLen": 54,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 391,
+      "hauteurCelluleIndicateurs": null
+    }
+  ],
+  "tableLargeurPx": 343,
+  "conteneurLargeurPx": 343,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=demographie"
+}

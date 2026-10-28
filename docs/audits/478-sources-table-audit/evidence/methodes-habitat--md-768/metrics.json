@@ -1,0 +1,162 @@
+{
+  "page": "/methodologie?onglet=sources&section=habitat",
+  "largeur": 768,
+  "viewport": {
+    "innerWidth": 768,
+    "innerHeight": 1024
+  },
+  "scrollLargeurDoc": 768,
+  "clientLargeurDoc": 768,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 768,
+  "maxDroiteContenu": 1307,
+  "pireContenu": "table.sources-tableau",
+  "debordementCoquille": 539,
+  "sectionsMilimesVides": 0,
+  "debordants": [
+    {
+      "sel": "button.onglet",
+      "left": 772,
+      "right": 894
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-building2-icon",
+      "left": 788,
+      "right": 806
+    },
+    {
+      "sel": "path",
+      "left": 795,
+      "right": 798
+    },
+    {
+      "sel": "span",
+      "left": 814,
+      "right": 878
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-trees-icon",
+      "left": 914,
+      "right": 932
+    },
+    {
+      "sel": "table.sources-tableau",
+      "left": 16,
+      "right": 1307
+    },
+    {
+      "sel": "thead",
+      "left": 17,
+      "right": 1307
+    },
+    {
+      "sel": "tr",
+      "left": 17,
+      "right": 1307
+    },
+    {
+      "sel": "th",
+      "left": 718,
+      "right": 994
+    },
+    {
+      "sel": "th.colonne-lien",
+      "left": 1242,
+      "right": 1307
+    },
+    {
+      "sel": "span.visuellement-cache",
+      "left": 1257,
+      "right": 1258
+    },
+    {
+      "sel": "tbody",
+      "left": 17,
+      "right": 1307
+    },
+    {
+      "sel": "tr.source-jeu",
+      "left": 17,
+      "right": 1307
+    },
+    {
+      "sel": "td.cellule-fraicheur",
+      "left": 718,
+      "right": 994
+    },
+    {
+      "sel": "td.cellule-licence",
+      "left": 1158,
+      "right": 1242
+    },
+    {
+      "sel": "td.colonne-lien",
+      "left": 1242,
+      "right": 1307
+    },
+    {
+      "sel": "a.lien-donnees",
+      "left": 1258,
+      "right": 1290
+    },
+    {
+      "sel": "svg.lucide.lucide-external-link-icon.lucide-external-link",
+      "left": 1266,
+      "right": 1282
+    }
+  ],
+  "hauteurPagePx": 1422,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 3,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Logements (dossier complet)",
+      "nomLen": 35,
+      "themes": [
+        "Habitat"
+      ],
+      "indicateurs": [
+        "Mix de logements",
+        "Statut d’occupation",
+        "Âge du bâti",
+        "Type de logement"
+      ],
+      "hauteurLignePx": 184,
+      "hauteurCelluleIndicateurs": 159
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Étalab — DVF géolocalisées",
+      "nomLen": 26,
+      "themes": [
+        "Habitat"
+      ],
+      "indicateurs": [
+        "Médiane prix au m²"
+      ],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": 42
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "ADEME — Observatoire DPE, logements existants",
+      "nomLen": 45,
+      "themes": [
+        "Habitat"
+      ],
+      "indicateurs": [
+        "Part de passoires thermiques",
+        "Distribution des étiquettes DPE (A à G)"
+      ],
+      "hauteurLignePx": 176,
+      "hauteurCelluleIndicateurs": 151
+    }
+  ],
+  "tableLargeurPx": 1291,
+  "conteneurLargeurPx": 736,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=habitat"
+}

@@ -1,0 +1,251 @@
+{
+  "page": "/methodologie?onglet=sources&section=mobilite",
+  "largeur": 1024,
+  "viewport": {
+    "innerWidth": 1024,
+    "innerHeight": 768
+  },
+  "scrollLargeurDoc": 1024,
+  "clientLargeurDoc": 1024,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 1024,
+  "maxDroiteContenu": 1364,
+  "pireContenu": "table.sources-tableau",
+  "debordementCoquille": 340,
+  "sectionsMilimesVides": 0,
+  "debordants": [
+    {
+      "sel": "table.sources-tableau",
+      "left": 16,
+      "right": 1364
+    },
+    {
+      "sel": "thead",
+      "left": 17,
+      "right": 1364
+    },
+    {
+      "sel": "tr",
+      "left": 17,
+      "right": 1364
+    },
+    {
+      "sel": "th",
+      "left": 1000,
+      "right": 1163
+    },
+    {
+      "sel": "th.colonne-lien",
+      "left": 1299,
+      "right": 1364
+    },
+    {
+      "sel": "span.visuellement-cache",
+      "left": 1314,
+      "right": 1315
+    },
+    {
+      "sel": "tbody",
+      "left": 17,
+      "right": 1364
+    },
+    {
+      "sel": "tr.source-jeu",
+      "left": 17,
+      "right": 1364
+    },
+    {
+      "sel": "td.cellule-fraicheur",
+      "left": 1000,
+      "right": 1163
+    },
+    {
+      "sel": "td.cellule-licence",
+      "left": 1163,
+      "right": 1299
+    },
+    {
+      "sel": "td.colonne-lien",
+      "left": 1299,
+      "right": 1364
+    },
+    {
+      "sel": "a.lien-donnees",
+      "left": 1315,
+      "right": 1347
+    },
+    {
+      "sel": "svg.lucide.lucide-external-link-icon.lucide-external-link",
+      "left": 1323,
+      "right": 1339
+    },
+    {
+      "sel": "path",
+      "left": 1333,
+      "right": 1337
+    },
+    {
+      "sel": "span",
+      "left": 1336,
+      "right": 1347
+    }
+  ],
+  "hauteurPagePx": 3425,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 11,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
+      "nomLen": 117,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Perte totale d’accès — à pied ou en transports en commun",
+        "Perte totale d’accès — à vélo",
+        "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+        "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+        "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+        "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+        "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)"
+      ],
+      "hauteurLignePx": 973,
+      "hauteurCelluleIndicateurs": 948
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Recensement de la population, exploitations principales (Logements) — tableau LOG T12 « Équipement automobile des ménages » (le jeu DS_RP_LOGEMENT_PRINC, la dimension CARS)",
+      "nomLen": 180,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Voitures par ménage"
+      ],
+      "hauteurLignePx": 172,
+      "hauteurCelluleIndicateurs": 42
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne) — © OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)",
+      "nomLen": 136,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Places de stationnement voiture pour 1 000 hab.",
+        "Places de stationnement vélo pour 1 place voiture",
+        "L’offre cyclable"
+      ],
+      "hauteurLignePx": 222,
+      "hauteurCelluleIndicateurs": 197
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Geovelo — Aménagements cyclables France Métropolitaine (schéma national v0.3.5, ODbL — © OpenStreetMap contributors, ADR-0001)",
+      "nomLen": 126,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Réseaux à pied / vélo / voiture"
+      ],
+      "hauteurLignePx": 130,
+      "hauteurCelluleIndicateurs": 63
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Table de passage annuelle des communes (COG 2025)",
+      "nomLen": 57,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "IGN — Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)",
+      "nomLen": 84,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Bretagne Mobilité — Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ réseaux : BreizhGo TER/car/maritime + les réseaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kicéo…)",
+      "nomLen": 201,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Part des bâtiments près d’un arrêt (à 500 m)"
+      ],
+      "hauteurLignePx": 172,
+      "hauteurCelluleIndicateurs": 84
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "BDNB (Base Nationale des Bâtiments) — couche des bâtiments résidentiels de Bretagne, portée pour l’offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)",
+      "nomLen": 158,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 151,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Etalab / data.bretagne.bzh — Fichier consolidé des Bornes de Recharge pour Véhicules Électriques (IRVE), schéma 2.2.0",
+      "nomLen": 117,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Bornes de recharge pour véhicules électriques",
+        "Bornes de recharge par station-service"
+      ],
+      "hauteurLignePx": 197,
+      "hauteurCelluleIndicateurs": 172
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Ecolab — Nombre de places de stationnement vélo pour 1 000 hab. (hub d’indicateurs territoriaux de transition écologique ; source OSM : Base Nationale du Stationnement Cyclable)",
+      "nomLen": 177,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Places de stationnement vélo pour 1 000 hab.",
+        "Places de stationnement vélo pour 1 place voiture"
+      ],
+      "hauteurLignePx": 197,
+      "hauteurCelluleIndicateurs": 172
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service",
+      "nomLen": 116,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Bornes de recharge par station-service"
+      ],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": 84
+    }
+  ],
+  "tableLargeurPx": 1348,
+  "conteneurLargeurPx": 992,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=mobilite"
+}

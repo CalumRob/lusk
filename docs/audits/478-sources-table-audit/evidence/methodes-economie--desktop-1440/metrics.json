@@ -1,0 +1,89 @@
+{
+  "page": "/methodologie?onglet=sources&section=economie",
+  "largeur": 1440,
+  "viewport": {
+    "innerWidth": 1440,
+    "innerHeight": 900
+  },
+  "scrollLargeurDoc": 1440,
+  "clientLargeurDoc": 1440,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 1320,
+  "maxDroiteContenu": 1347,
+  "pireContenu": "table.sources-tableau",
+  "debordementCoquille": 27,
+  "sectionsMilimesVides": 0,
+  "debordants": [],
+  "hauteurPagePx": 1426,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 5,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
+      "nomLen": 49,
+      "themes": [
+        "Économie"
+      ],
+      "indicateurs": [
+        "Part des éco-activités"
+      ],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": 63
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A38)",
+      "nomLen": 91,
+      "themes": [
+        "Économie"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A88)",
+      "nomLen": 91,
+      "themes": [
+        "Économie"
+      ],
+      "indicateurs": [
+        "Effectifs salariés (lieu de travail)"
+      ],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": 84
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Emploi au lieu de résidence (dossier complet, ACT4/ACT5)",
+      "nomLen": 64,
+      "themes": [
+        "Économie"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale)",
+      "nomLen": 103,
+      "themes": [
+        "Économie"
+      ],
+      "indicateurs": [
+        "Chômage (population active)"
+      ],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": 63
+    }
+  ],
+  "tableLargeurPx": 1211,
+  "conteneurLargeurPx": 1168,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=economie"
+}

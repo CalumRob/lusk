@@ -1,0 +1,130 @@
+{
+  "page": "/indicateurs/milieux/conso_enaf_annuel?vue=indicateur",
+  "largeur": 375,
+  "viewport": {
+    "innerWidth": 375,
+    "innerHeight": 812
+  },
+  "scrollLargeurDoc": 375,
+  "clientLargeurDoc": 375,
+  "debordementHorizontal": 0,
+  "coquilleDroite": null,
+  "maxDroiteContenu": 0,
+  "pireContenu": "",
+  "debordementCoquille": null,
+  "sectionsMilimesVides": 0,
+  "debordants": [
+    {
+      "sel": "div.tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.tiroir-tete",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.en-tete-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "span.lusk-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "svg.lusk-marque__ermine",
+      "left": 399,
+      "right": 425
+    },
+    {
+      "sel": "path",
+      "left": 403,
+      "right": 409
+    },
+    {
+      "sel": "span.lusk-marque__mot",
+      "left": 433,
+      "right": 473
+    },
+    {
+      "sel": "button.tiroir-fermer",
+      "left": 682,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.lucide-x-icon.lucide-x",
+      "left": 692,
+      "right": 716
+    },
+    {
+      "sel": "div.tiroir-recherche",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.global-search",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "div.global-search__bar",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.global-search__icone.lucide-search-icon",
+      "left": 412,
+      "right": 430
+    },
+    {
+      "sel": "circle",
+      "left": 414,
+      "right": 426
+    },
+    {
+      "sel": "input.global-search__champ",
+      "left": 430,
+      "right": 725
+    },
+    {
+      "sel": "nav.nav-tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.tiroir-lien",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "span.tiroir-lien.tiroir-groupe-titre",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "a.tiroir-lien.tiroir-lien--sous",
+      "left": 399,
+      "right": 726
+    }
+  ],
+  "hauteurPagePx": 1831,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 0,
+  "lignes": [],
+  "tableLargeurPx": null,
+  "conteneurLargeurPx": null,
+  "fichesIndicateur": [
+    {
+      "jeu": "Cerema — Consommation d’espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025",
+      "texte": "Cerema — Con ommation d’e pace  naturel , agricole  et fore tier  (CONSOENAF) 2011-2025Éditeur : Cerema · Licence : Licence Ouverte 2.0 · Millé ime : 2025 · Fraîcheur : 24 juillet 2026Voir le jeu de donnée Voir la fiche  ourceMillé ime 2025 · 2025 · Licence Ouverte 2.0 · 2025-01-01 · 2026-07-24Con ommation d’ENAFannuelle — le jeu e t mi  à jour chaque année · Référence : CONSOENAF 2011-2025 (COG 2",
+      "hauteurPx": 545,
+      "millésimesRendus": 1
+    }
+  ],
+  "titrePage": "Consommation d’ENAF — série annuelle",
+  "url": "/indicateurs/milieux/conso_enaf_annuel?vue=indicateur&detail=2024&niveau=commune"
+}
