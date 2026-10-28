@@ -413,24 +413,25 @@ try {
       ? null
       : expected.read.points.find((point) => point.provenance?.length)?.provenance?.[0]
     if (isRaccordement) {
-      // The combined producer record: one card, native name/dates, exact link.
-      if (process.env.LUSK_SERIES_PROOF_DEBUG) {
-        const cards = await page.locator('.source-card').allInnerTexts()
-        const sections = await page.locator('.source-card').evaluateAll((cards) => cards.map((card) => card.id))
-        console.error(`DEBUG RACC CARDS: sections=${JSON.stringify(sections)} n=${cards.length} first=${JSON.stringify(cards[0]?.slice(0, 200))}` +
-          ` links=${JSON.stringify(await page.locator('.source-card a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))))}`)
-      }
+      // The combined producer record: one card, native name/dates/revision
+      // hash. Its API source id (raccordement_gtfs_national) matches no
+      // Sources record, so the Sources-page link is truthfully omitted (#732).
       assert(sourceText.includes('Révision :'), 'raccordement source card must expose the API revision hash')
-      assert(await page.locator('.source-card a[href^="/sources#"]').first().isVisible(),
-        'raccordement combined source record matches a Sources record; the link must render')
+      assert.equal(await page.locator('.source-card a[href^="/sources#"]').count(), 0,
+        'raccordement must omit the Sources link without an exact record match')
     } else if (nativeSource?.source_name) {
       assert(sourceText.includes(nativeSource.source_name), `${spec.indicator} source card must expose the API source name`)
       assert(sourceText.includes(nativeSource.reference_date) && sourceText.includes(nativeSource.publication_date),
         `${spec.indicator} source card must expose the API reference/publication dates`)
       assert(sourceText.includes('Révision :') && sourceText.includes(nativeSource.revision_hash),
         `${spec.indicator} source card must expose the API revision hash`)
-      assert(await page.locator('.source-card a[href^="/sources#"]').first().isVisible(),
-        `${spec.indicator} native source identity matches a Sources record; the fiche-source link must render`)
+      if (spec.indicator === 'subventions_annuelles') {
+        assert.equal(await page.locator('.source-card a[href^="/sources#"]').count(), 0,
+          'subventions must omit the Sources link without an exact record match (no historical fallback)')
+      } else {
+        assert(await page.locator('.source-card a[href^="/sources#"]').first().isVisible(),
+          `${spec.indicator} native source identity matches a Sources record; the fiche-source link must render`)
+      }
     }
 
     // Indicator-page Carte maps the active coordinate's native layer.
