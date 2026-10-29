@@ -3,17 +3,17 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { libelleDetail, libelleIndicateur } from '../fiche/libelles'
-import { LIBELLES_DETAILS_APP, LIBELLES_INDICATEURS_APP } from '../fiche/content/libellesAffichage'
+import { LIBELLES_INDICATEURS_APP } from '../fiche/content/libellesAffichage'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import { validerThemeMetadata } from '../payload/validate'
 import type { Theme, ThemeMetadata } from '../payload/types'
 
 /**
  * Label ownership boundary (#827). App content carries ONLY genuine editorial
- * wording; every fact-bearing label (thresholds, units/scales, age/year/time
- * bands, reference scope, classification/domain vocabulary) resolves from the
- * verified producer declaration. These tests assert the boundary itself, not
- * that a copied map renders.
+ * wording; every fact-bearing label — observation boundaries and periods,
+ * employment/unemployment definitions, thresholds, units/scales, age/year/time
+ * bands, reference scope, classification/domain vocabulary — resolves from the
+ * verified producer declaration. These tests assert the boundary itself.
  */
 
 const THEMES = Object.keys(LIBELLES_INDICATEURS_APP) as Theme[]
@@ -27,6 +27,11 @@ function publie(theme: Theme): ThemeMetadata {
 
 /** Fact-bearing labels the app must never own (producer declarations). */
 const FACT_BEARING = [
+  // observation boundary / period
+  ['demographie', 'evolution_1968'],
+  // employment location / unemployment population definitions
+  ['economie', 'effectifs_salaries'],
+  ['economie', 'chomage'],
   // transport thresholds / reach
   ['mobilite', 'offre_tc'],
   ['mobilite', 'raccordement_tc'],
@@ -48,30 +53,23 @@ function sansLibelles(theme: Theme): ThemeMetadata {
 describe('libelles d’affichage — frontière éditorial / factuel', () => {
   it.each(THEMES)('ne porte aucun libellé factuel pour le thème %s', (theme) => {
     const appIndicateurs = Object.keys(LIBELLES_INDICATEURS_APP[theme])
-    const appDetails = Object.keys(LIBELLES_DETAILS_APP[theme])
     for (const [factTheme, clef] of FACT_BEARING) {
       if (factTheme !== theme) continue
       expect(appIndicateurs).not.toContain(clef)
-      expect(appDetails).not.toContain(clef)
     }
   })
 
-  it('ne fige ni échelle, ni seuil, ni domaine dans le contenu app', () => {
-    const valeurs = [
-      ...Object.values(LIBELLES_INDICATEURS_APP).flatMap((labels) => Object.values(labels)),
-      ...Object.values(LIBELLES_DETAILS_APP).flatMap((parClef) => Object.values(parClef).flatMap((labels) => Object.values(labels))),
-    ]
+  it('ne fige ni échelle, ni seuil, ni période, ni domaine dans le contenu app', () => {
+    const valeurs = Object.values(LIBELLES_INDICATEURS_APP).flatMap((labels) => Object.values(labels))
     for (const valeur of valeurs) {
-      // unit / ratio scales, transport thresholds and reach, year/time bands
-      expect(valeur).not.toMatch(/\d+\s?(m|mètres|minutes|min|hab|‰)/)
-      expect(valeur).not.toMatch(/^\d{4}$|^\d{1,2}\s?h$/)
+      expect(valeur).not.toMatch(/\d{4}|\d+\s?(m|mètres|minutes|min|hab|‰)/)
+      expect(valeur).not.toMatch(/lieu de travail|population active|par an/)
     }
   })
 
   it('rend les libellés éditoriaux app-owned sans aucune métadonnée', () => {
     const metadata = sansLibelles('habitat')
     expect(libelleIndicateur(metadata, 'mix_logements')).toBe('Mix de logements')
-    expect(libelleDetail(metadata, 'statut', 'hlm')).toBe('Locataires HLM (parc social)')
   })
 
   it('ignore un libellé producteur périmé pour un libellé éditorial app-owned', () => {

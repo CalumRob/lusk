@@ -25,7 +25,7 @@ import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
 import { libelleIndicateur } from '@/fiche/libelles'
-import { LIBELLES_DETAILS_APP, LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
+import { LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
 import {
   figureLecturePour,
   lignesLQPour,
@@ -199,16 +199,12 @@ function figureEstReference(clef: string): boolean {
 
 /**
  * Resolve detail labels with explicit merge authority (#827): native semantic
- * axis labels first, then app-owned EDITORIAL wording, then the verified
- * producer catalogue (which owns every fact-bearing category/band label).
+ * axis labels first, then the verified producer catalogue, which owns every
+ * category/band label. The app carries no detail wording.
  */
 function labelsDetailPour(clef: string): Record<string, string> | undefined {
   const contract = nativeContract(clef)
-  const catalogueLabels = metadataVerified.value ? metadata.value?.detail_labels[clef] ?? {} : {}
-  const appLabels = LIBELLES_DETAILS_APP[props.theme]?.[clef] ?? {}
-  // Editorial app wording wins over stale catalogue wording; the catalogue
-  // still supplies every fact-bearing label the app does not own.
-  const labels: Record<string, string> = { ...catalogueLabels, ...appLabels }
+  const labels: Record<string, string> = { ...(metadataVerified.value ? metadata.value?.detail_labels[clef] ?? {} : {}) }
   const declaredKeys = new Set(contract?.axisValues ?? [])
   for (const axis of contract?.axes ?? []) {
     if (axis.name === 'detail' && axis.label && axis.label !== axis.key) {

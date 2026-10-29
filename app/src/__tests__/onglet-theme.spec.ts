@@ -106,16 +106,10 @@ describe('OngletTheme — the shared app-owned subgroup grammar (Démographie)',
     wrapper.unmount()
   })
 
-  it('app editorial detail wording beats a stale catalogue while a native axis label still wins', async () => {
-    // habitat `statut` is a genuinely editorial app-owned label set; the
-    // catalogue carries stale text and no native axis label is published.
-    const staleMetadata = structuredClone(metadonneesThemesFixtures.habitat)
-    staleMetadata.detail_labels.statut = {
-      proprietaire: 'Ancien libellé propriétaire',
-      hlm: 'Ancien libellé HLM',
-      locataire_prive: 'Ancien libellé locataire',
-      loge_gratuit: 'Ancien libellé logé',
-    }
+  it('producer category labels render from the verified catalogue and a native axis label still wins', async () => {
+    // Habitat `statut` categories are producer vocabulary: the verified
+    // catalogue supplies them, and a native axis label outranks the catalogue.
+    const catalogueMetadata = structuredClone(metadonneesThemesFixtures.habitat)
     const wrapper = mount(OngletTheme, {
       props: {
         theme: 'habitat',
@@ -125,7 +119,7 @@ describe('OngletTheme — the shared app-owned subgroup grammar (Démographie)',
           ...payloadDemographie,
           indicateurs: indicateursHabitatFixture,
           histoires: histoiresHabitatFixture,
-          themeMetadata: { habitat: staleMetadata },
+          themeMetadata: { habitat: catalogueMetadata },
         },
       },
       global: { stubs: { RouterLink: RouterLinkStub } },
@@ -133,12 +127,32 @@ describe('OngletTheme — the shared app-owned subgroup grammar (Démographie)',
     await flushPromises()
 
     const statut = wrapper.get('[data-clef="statut"]')
-    expect(statut.text()).toContain('Propriétaires')
-    expect(statut.text()).not.toContain('Ancien libellé propriétaire')
+    expect(statut.text()).toContain(catalogueMetadata.detail_labels.statut.proprietaire)
 
-    // A native axis label keeps priority over both app and catalogue text.
+    const changedMetadata = structuredClone(metadonneesThemesFixtures.habitat)
+    changedMetadata.detail_labels.statut = { ...changedMetadata.detail_labels.statut, proprietaire: 'Propriétaires (catégorie mise à jour)' }
+    const changedWrapper = mount(OngletTheme, {
+      props: {
+        theme: 'habitat',
+        territoire: '22001',
+        metadataStatus: 'ready',
+        payload: {
+          ...payloadDemographie,
+          indicateurs: indicateursHabitatFixture,
+          histoires: histoiresHabitatFixture,
+          themeMetadata: { habitat: changedMetadata },
+        },
+      },
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    await flushPromises()
+
+    // The rendered figure follows the CHANGED producer category label.
+    const changedStatut = changedWrapper.get('[data-clef="statut"]')
+    expect(changedStatut.text()).toContain('Propriétaires (catégorie mise à jour)')
+
     const nativeMetadata = structuredClone(metadonneesThemesFixtures.habitat)
-    nativeMetadata.detail_labels.statut = { proprietaire: 'Ancien libellé propriétaire' }
+    nativeMetadata.detail_labels.statut = { ...nativeMetadata.detail_labels.statut, proprietaire: 'Ancien libellé propriétaire' }
     const nativeWrapper = mount(OngletTheme, {
       props: {
         theme: 'habitat',
@@ -166,6 +180,7 @@ describe('OngletTheme — the shared app-owned subgroup grammar (Démographie)',
     expect(nativeStatut.text()).toContain('Propriétaire — contrat API')
     expect(nativeStatut.text()).not.toContain('Ancien libellé propriétaire')
     wrapper.unmount()
+    changedWrapper.unmount()
     nativeWrapper.unmount()
   })
 
@@ -274,6 +289,28 @@ describe('OngletTheme — the shared app-owned subgroup grammar (Démographie)',
     expect(wrapper.text()).toContain('Évolution de la population depuis 1968')
     expect(wrapper.text()).toContain('Taille moyenne des ménages')
     expect(wrapper.findAll('.estampille-vintage').length).toBe(4)
+  })
+
+  it('renders app editorial wording despite stale producer presentation, and follows a changed producer label', async () => {
+    const staleMetadata = structuredClone(metadonneesThemesFixtures.demographie)
+    staleMetadata.indicator_labels.densite = 'Ancien libellé du catalogue'
+    staleMetadata.indicator_labels.evolution_1968 = 'Ancienne évolution'
+    const staleWrapper = await monter('22001', histoiresDemographieFixture, { demographie: staleMetadata })
+
+    // Editorial app wording wins over the stale producer presentation.
+    expect(staleWrapper.text()).toContain('Densité de population')
+    expect(staleWrapper.text()).not.toContain('Ancien libellé du catalogue')
+    // Fact-bearing producer label (observation boundary) still renders upstream.
+    expect(staleWrapper.text()).toContain('Ancienne évolution')
+
+    const changedMetadata = structuredClone(metadonneesThemesFixtures.demographie)
+    changedMetadata.indicator_labels.evolution_1968 = 'Évolution depuis le recensement 1968 (contrat mis à jour)'
+    const changedWrapper = await monter('22001', histoiresDemographieFixture, { demographie: changedMetadata })
+
+    // The rendered figure follows the CHANGED fact-bearing producer label.
+    expect(changedWrapper.text()).toContain('Évolution depuis le recensement 1968 (contrat mis à jour)')
+    staleWrapper.unmount()
+    changedWrapper.unmount()
   })
 })
 

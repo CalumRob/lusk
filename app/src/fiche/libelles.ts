@@ -3,25 +3,21 @@
  *
  * Native semantic contract labels stay FIRST priority (the caller resolves
  * them before asking here). Otherwise the label is either genuine app-owned
- * EDITORIAL wording (`libellesAffichage.ts`, keyed to the real resource/detail
- * identities) or a producer-owned factual label — thresholds, units/scales,
- * age/year/time bands, reference scope, classification/domain vocabulary —
- * which resolves ONLY from the existing verified producer declaration
- * (`indicator_labels` / `detail_labels`). The app map never overrides a
- * factual label. There is no raw internal key on screen: an unknown label
- * throws, loud — a rendered indicator/detail without any label is a contract
- * break, never a key.
+ * EDITORIAL wording (`libellesAffichage.ts`, keyed to the real resource
+ * identity) or a producer-owned factual label — observation boundaries,
+ * definitions, thresholds, units/scales, age/year/time bands, reference scope,
+ * classification/domain vocabulary — which resolves ONLY from the existing
+ * verified producer declaration (`indicator_labels` / `detail_labels`). The app
+ * map never overrides a factual label. There is no raw internal key on screen:
+ * an unknown label throws, loud — a rendered indicator/detail without any label
+ * is a contract break, never a key.
  */
 
-import { LIBELLES_DETAILS_APP, LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
+import { LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
 import type { Theme, ThemeMetadata } from '@/payload/types'
 
 function libelleAppIndicateur(theme: Theme, clef: string): string | undefined {
   return LIBELLES_INDICATEURS_APP[theme]?.[clef]
-}
-
-function libelleAppDetail(theme: Theme, clef: string, detail: string): string | undefined {
-  return LIBELLES_DETAILS_APP[theme]?.[clef]?.[detail]
 }
 
 /**
@@ -40,16 +36,16 @@ export function libelleIndicateur(metadata: ThemeMetadata, clef: string): string
 }
 
 /**
- * The detail's French label — app-owned editorial wording first, then the
- * verified producer declaration (age bands, years, durations, categories).
- * Throws when neither carries it: a detail row without a label is never
- * rendered as a raw detail key.
+ * The detail's French label — producer-owned category/band vocabulary from the
+ * verified declaration (age bands, years, durations, housing categories). The
+ * app owns no detail wording. Throws when absent: a detail row without a label
+ * is never rendered as a raw detail key.
  */
 export function libelleDetail(metadata: ThemeMetadata, clef: string, detail: string): string {
-  const libelle = libelleAppDetail(metadata.theme, clef, detail) ?? metadata.detail_labels[clef]?.[detail]
+  const libelle = metadata.detail_labels[clef]?.[detail]
   if (libelle === undefined) {
     throw new Error(
-      `Libellé d’affichage absent — le détail « ${detail} » de « ${clef} » n’a pas de libellé éditorial app-owned ni dans detail_labels de theme_${metadata.theme}.json`,
+      `Libellé d’affichage absent — le détail « ${detail} » de « ${clef} » n’a pas de libellé dans detail_labels de theme_${metadata.theme}.json`,
     )
   }
   return libelle

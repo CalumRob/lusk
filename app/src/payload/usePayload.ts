@@ -345,7 +345,10 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         entree.valeur = valeur
         peupler(nom, valeur)
         if (nom === 'territoires' || nom === 'territoires-metadata') verifierReferenceDensite()
-        if (nom.startsWith('indicateurs_')) verifierPresenceMetadonnees(themeDe(nom))
+        // Reconcile the theme pair on EITHER settlement: an in-flight metadata
+        // request that lands after its indicators (or the reverse) must still
+        // reach the presence check.
+        if (nom.startsWith('indicateurs_') || nom.startsWith('theme_')) verifierPresenceMetadonnees(themeDe(nom))
       },
       (cause: unknown) => {
         entree.etat = 'echec'
@@ -360,7 +363,7 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         }
         // A theme that turns out PRESENT (its indicators landed) makes a
         // metadata-only 404 a real drift, even when that entry settled first.
-        if (nom.startsWith('indicateurs_')) verifierPresenceMetadonnees(themeDe(nom))
+        if (nom.startsWith('indicateurs_') || nom.startsWith('theme_')) verifierPresenceMetadonnees(themeDe(nom))
       },
     )
   }
