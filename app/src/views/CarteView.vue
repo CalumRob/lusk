@@ -62,12 +62,12 @@ import type { NiveauMasque } from '@/geo/types'
 import { useGeometrie } from '@/geo/useGeometrie'
 import { themesPresent } from '@/payload/selectors'
 import { SIGLES_PROGRAMMES, THEMES_CANONIQUES } from '@/payload/types'
-import type { SigleProgramme, Territoire, Theme } from '@/payload/types'
+import type { Payload, SigleProgramme, Territoire, Theme, ThemeMetadata } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
-import { chargerCohorteScalaire, chargerRangScalaire, choisirFocalCohorte, indicateursScalairesPourNiveau, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
+import { chargerRangScalaire } from '@/payload/scalarCohort'
 import type { ScalarComparisonRank } from '@/payload/scalarCohort'
-import { validerThemeMetadata } from '@/payload/validate'
-import type { Indicateur, ThemeMetadata } from '@/payload/types'
+import { acquireMapThemeFacts } from '@/payload/mapSemanticAcquisition'
+import type { Indicateur } from '@/payload/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -89,6 +89,7 @@ const themes = computed(() => (payload.value ? themesPresent(payload.value) : []
 
 /** L'onglet programmes — ?onglet=programmes dans l'URL (ADR-0019 #282). */
 const ongletProgrammes = computed(() => route.query.onglet === 'programmes')
+const themeAcquisCarte = computed<Theme | null>(() => ongletProgrammes.value ? 'programmes' : selection.value)
 
 /** Le sigle d'adhésion demandé — ?programme=<sigle>, valable seulement dans
  *  l'onglet programmes (un sigle hors onglet n'est pas un état). */
@@ -230,7 +231,18 @@ const geometrieAbsente = computed(
 
 /** The legend data — the same pure logic that paints the map. */
 const couchesTheme = computed<CouchesTheme | null>(() =>
-  selection.value && payload.value ? couchesDuTheme(payload.value, selection.value) : null,
+  selection.value && payloadCarte.value && mapDeclarations.value.length > 0
+    ? couchesDuTheme(payloadCarte.value, selection.value, {
+        indicatorIds: new Set(mapDeclarations.value.filter((resource) => resource.shapes.some((shape) =>
+          ['scalar', 'declared_profile', 'period_detail', 'ordered_series'].includes(shape)))
+          .map((resource) => resource.indicator_id)),
+        scalarIds: new Set(mapDeclarations.value.filter((resource) => resource.shapes.includes('scalar'))
+          .map((resource) => resource.indicator_id)),
+        storyFields: new Set(mapStories.value.flatMap((row) => Object.entries(row)
+          .filter(([, value]) => typeof value === 'number').map(([key]) => key))),
+        axes: mapAxes.value,
+      })
+    : null,
 )
 
 /** The ACTIVE layer — in-memory state; reset to the theme's default on theme change (ADR-0019). */
@@ -238,27 +250,37 @@ const coucheActive = ref<Couche | null>(null)
 watch(
   couchesTheme,
   (ct) => {
-    coucheActive.value = ct?.coucheParDefaut ?? null
+    if (!ct) return
+    const entrees = ct?.entrees.flatMap((entry) => entry.type === 'couche'
+      ? [entry.couche] : entry.groupe.couches) ?? []
+    const activeIsStillPublished = coucheActive.value && entrees.some((layer) =>
+      layer.source === coucheActive.value?.source && layer.clef === coucheActive.value?.clef &&
+      layer.detail === coucheActive.value?.detail && layer.storyKey === coucheActive.value?.storyKey)
+    if (!activeIsStillPublished) coucheActive.value = ct?.coucheParDefaut ?? null
   },
   { immediate: true },
 )
+watch(selection, () => {
+  coucheActive.value = couchesTheme.value?.coucheParDefaut ?? null
+})
 
-// Optional scalar serving is deliberately bounded to the one selected layer.
-// The static payload remains the source for layer contracts; while its
-// registered value is being fetched (or has failed), that value is removed
-// from the map reader so the old number cannot masquerade as current data.
-const cohortEnabled = computed(() => scalarCohortEnabled(import.meta.env as Record<string, string | undefined>))
-const cohortFacts = ref<Indicateur[] | null>(null)
-const cohortStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
-const registeredApiLayer = ref(false)
-const retryCohort = ref(0)
-const cohortIdentity = ref<{ contentVersion?: string; referenceContentVersion?: string }>({})
+// Standalone map values are API-only. The static model supplies presentation
+// and stable layer ordering; producer discovery and native cohort facts admit
+// the layers/values at the active level. No scalar flag or static fallback.
+const mapFacts = ref<Indicateur[]>([])
+const mapStories = ref<Array<Record<string, unknown>>>([])
+const mapMemberships = ref<NonNullable<Payload['programmes']>['mapMemberships']>([])
+const mapGrantFacts = ref<Indicateur[]>([])
+const mapAxes = ref<Record<string, string[]>>({})
+const mapThemeMetadata = ref<ThemeMetadata | null>(null)
+const mapDeclarations = ref<import('@/payload/semanticResourceClient').SemanticResourceDeclaration[]>([])
+const mapIdentities = ref<Record<string, { contentVersion: string; referenceContentVersion: string }>>({})
+const mapStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
+const retryMapFacts = ref(0)
 const territoryRankTarget = ref<Territoire | null>(null)
 const territoryRank = ref<{ territoryId: string; indicator: string; level: Territoire['type']; rank: ScalarComparisonRank } | null>(null)
 const territoryRankStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
-const cohortMetadata = new Map<Theme, ThemeMetadata>()
-const cohortRegistries = new Map<Theme, unknown>()
-let cohortSequence = 0
+let mapSequence = 0
 let territoryRankSequence = 0
 let territoryRankRequestKey: string | null = null
 const indicateurScalaireActif = computed(() => {
@@ -271,12 +293,13 @@ async function chargerRangCarte(focal: Territoire, force = false): Promise<void>
   const theme = selection.value
   const indicator = indicateurScalaireActif.value
   const level = niveauApi.value
-  const metadata = theme ? cohortMetadata.get(theme) : undefined
+  const metadata = theme ? payload.value?.themeMetadata?.[theme] : undefined
   const page = indicator ? metadata?.indicator_pages?.[indicator] : undefined
-  if (!cohortEnabled.value || !registeredApiLayer.value || !theme || !indicator || !level ||
-      cohortStatus.value !== 'ready' || !page || !payload.value) return
+  if (!theme || !indicator || !level || mapStatus.value !== 'ready' || !page || page.family !== 'scalar' || !payload.value) return
+  const identity = mapIdentities.value[indicator]
+  if (!identity) return
   const key = JSON.stringify([theme, indicator, level, focal.territoire,
-    cohortIdentity.value.contentVersion, cohortIdentity.value.referenceContentVersion])
+    identity.contentVersion, identity.referenceContentVersion])
   if (!force && territoryRankRequestKey === key &&
       ['loading', 'error', 'ready'].includes(territoryRankStatus.value)) return
   territoryRankTarget.value = focal
@@ -285,7 +308,7 @@ async function chargerRangCarte(focal: Territoire, force = false): Promise<void>
   territoryRank.value = null
   territoryRankStatus.value = 'loading'
   try {
-    const rank = await chargerRangScalaire(indicator, theme, page, focal, payload.value.territoires, cohortIdentity.value)
+    const rank = await chargerRangScalaire(indicator, theme, page, focal, payload.value.territoires, identity)
     if (sequence === territoryRankSequence) {
       territoryRank.value = rank ? { territoryId: focal.territoire, indicator, level, rank } : null
       territoryRankStatus.value = 'ready'
@@ -309,84 +332,90 @@ function retryTerritoryRank(): void {
   void chargerRangCarte(territoryRankTarget.value, true)
 }
 
-watch([selection, indicateurScalaireActif, niveauApi, payload, retryCohort], async ([theme, indicator, level, currentPayload]) => {
-  const sequence = ++cohortSequence
+watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, retryMapFacts],
+  async ([theme, level, currentPayload, loadingPayload, payloadFailed]) => {
+  const sequence = ++mapSequence
   // A pending comparison belongs to the cohort/layer that initiated it. Invalidate
   // it before resetting the visible rank state so a late response cannot revive it.
   territoryRankSequence++
-  cohortFacts.value = null
-  cohortStatus.value = 'idle'
-  registeredApiLayer.value = false
-  cohortIdentity.value = {}
+  mapFacts.value = []
+  mapStories.value = []
+  mapMemberships.value = []
+  mapGrantFacts.value = []
+  mapAxes.value = {}
+  mapThemeMetadata.value = null
+  mapDeclarations.value = []
+  mapIdentities.value = {}
+  mapStatus.value = 'idle'
   territoryRankTarget.value = null
   territoryRank.value = null
   territoryRankStatus.value = 'idle'
   territoryRankRequestKey = null
-  if (!cohortEnabled.value || !theme || !indicator || !level || !currentPayload) return
-  cohortStatus.value = 'loading'
+  if (!theme || !level || !currentPayload || loadingPayload || payloadFailed) return
+  mapStatus.value = 'loading'
   try {
-    let metadata = cohortMetadata.get(theme)
+    let metadata: ThemeMetadata | undefined = currentPayload.themeMetadata?.[theme]
     if (!metadata) {
-      const file = `theme_${theme}.json`
-      const response = await fetch(`/data/${file}`)
-      if (!response.ok) throw new Error(`Métadonnées indisponibles (HTTP ${response.status}).`)
-      const raw: unknown = await response.json()
-      const registered = indicateursScalairesPourNiveau(raw, level)
-      metadata = validerThemeMetadata(raw, file)
-      if (metadata.theme !== theme) throw new Error('Métadonnées du thème incompatibles.')
-      validerEnregistrementScalaires(metadata, registered)
-      cohortMetadata.set(theme, metadata)
-      cohortRegistries.set(theme, raw)
+      const response = await fetch(`/data/theme_${theme}.json`)
+      if (!response.ok) throw new Error('Métadonnées de présentation de la carte indisponibles')
+      metadata = await response.json() as ThemeMetadata
+      if (metadata.theme !== theme) throw new Error('Métadonnées de présentation incompatibles')
     }
-    if (sequence !== cohortSequence) return
-    const registeredForLevel = indicateursScalairesPourNiveau(cohortRegistries.get(theme), level)
-    if (!registeredForLevel.includes(indicator)) { cohortStatus.value = 'idle'; return }
-    registeredApiLayer.value = true
-    const page = metadata.indicator_pages?.[indicator]
-    if (!page || page.family !== 'scalar' || !page.levels.includes(level)) { cohortStatus.value = 'idle'; return }
-    const focal = choisirFocalCohorte(currentPayload.territoires, level, undefined, {})
-    if (!focal) { cohortStatus.value = 'idle'; return }
-    const identity: { contentVersion?: string; referenceContentVersion?: string } = {}
-    const facts = await chargerCohorteScalaire(indicator, theme, page, focal, level, currentPayload.territoires, {}, identity)
-    if (sequence === cohortSequence) {
-      cohortIdentity.value = identity
-      cohortFacts.value = facts
-      cohortStatus.value = 'ready'
+    mapThemeMetadata.value = metadata
+    const acquired = await acquireMapThemeFacts(theme, level, currentPayload.territoires,
+      metadata.indicator_keys, metadata.subgroups.flatMap((subgroup) => subgroup.reading
+        ? [{ storyKey: subgroup.reading.story_key, params: subgroup.reading.params }] : []),
+      (declarations) => { if (sequence === mapSequence) mapDeclarations.value = declarations }, metadata.indicator_pages)
+    if (sequence === mapSequence) {
+      mapFacts.value = acquired.facts
+      mapStories.value = acquired.stories
+      mapMemberships.value = acquired.memberships as NonNullable<Payload['programmes']>['mapMemberships']
+      mapGrantFacts.value = acquired.grants
+      mapAxes.value = acquired.axes
+      mapDeclarations.value = acquired.declarations
+      mapIdentities.value = acquired.identities
+      mapStatus.value = 'ready'
       if (territoryRankTarget.value) void chargerRangCarte(territoryRankTarget.value)
     }
   } catch {
-    if (sequence === cohortSequence) cohortStatus.value = 'error'
+    if (sequence === mapSequence) mapStatus.value = 'error'
   }
-}, { immediate: true })
+  }, { immediate: true })
+
+watch([selection, indicateurScalaireActif, niveauApi], () => {
+  territoryRankSequence++
+  territoryRank.value = null
+  territoryRankStatus.value = 'idle'
+  territoryRankRequestKey = null
+})
 
 const payloadCarte = computed(() => {
   const current = payload.value
-  const indicator = indicateurScalaireActif.value
+  if (!current) return current
+  if (ongletProgrammes.value) {
+    return { ...current, themeMetadata: { ...current.themeMetadata,
+      programmes: mapThemeMetadata.value ?? current.themeMetadata?.programmes }, apercu: [],
+      programmes: { membres: [], subventions: [], mapMemberships: mapMemberships.value },
+      mapGrantFacts: mapStatus.value === 'ready' ? mapGrantFacts.value : [] }
+  }
   const theme = selection.value
-  if (!current || !cohortEnabled.value || !theme || !indicator) return current
-  // Before the producer registry resolves, a scalar-looking selected layer is
-  // not proof that its static value is authoritative. Suppress it while the
-  // registration/read is pending or failed; restore the incumbent only after
-  // metadata proves this key is not registered for the active level.
-  if (!registeredApiLayer.value && cohortStatus.value === 'idle') return current
-  const indicateurs = current.indicateurs.filter((row) => row.theme !== theme || row.key !== indicator)
-  const acquired = cohortStatus.value === 'ready' && cohortFacts.value
-    ? cohortFacts.value.map((row) => territoryRank.value && territoryRank.value.territoryId === row.territoire &&
-        territoryRank.value.indicator === indicator && territoryRank.value.level === row.type
+  if (!theme) return { ...current, apercu: [] }
+  const indicateurs = current.indicateurs.filter((row) => row.theme !== theme)
+  const histoires = current.histoires.filter((row) => row.theme !== theme)
+  const acquired = mapStatus.value === 'ready' ? mapFacts.value.map((row) =>
+    territoryRank.value && territoryRank.value.territoryId === row.territoire &&
+      territoryRank.value.indicator === row.key && territoryRank.value.level === row.type
       ? { ...row, comparaisonApi: { rang: territoryRank.value.rank.rank,
-          taille: territoryRank.value.rank.rankSize, portee: territoryRank.value.rank.scope } }
-      : row)
-    : []
-  return { ...current, indicateurs: cohortStatus.value === 'ready' && cohortFacts.value
-    ? [...indicateurs, ...acquired]
-    : indicateurs }
+          taille: territoryRank.value.rank.rankSize, portee: territoryRank.value.rank.scope } } : row) : []
+  return { ...current, themeMetadata: { ...current.themeMetadata, [theme]: mapThemeMetadata.value ?? current.themeMetadata?.[theme] }, apercu: [], indicateurs: [...indicateurs, ...acquired],
+    histoires: [...histoires, ...mapStories.value] as typeof current.histoires }
 })
 
 /** Le jeu de couches de l'onglet programmes au niveau courant (level-native —
  *  l'adhésion n'existe qu'à son ancrage, les subventions à chaque niveau). */
 const couchesProgrammesDuNiveau = computed<CoucheProgramme[]>(() =>
-  payload.value && ongletProgrammes.value
-    ? couchesProgrammes(payload.value, niveau.value)
+  payloadCarte.value && ongletProgrammes.value
+    ? couchesProgrammes(payloadCarte.value, niveau.value)
     : [],
 )
 
@@ -394,7 +423,7 @@ const couchesProgrammesDuNiveau = computed<CoucheProgramme[]>(() =>
  *  lignes au niveau courant — la re-jointure d'ADR-0019), sinon la couche
  *  par défaut (les subventions). */
 const coucheProgrammesActive = computed<CoucheProgramme | null>(() => {
-  if (!payload.value || !ongletProgrammes.value) return null
+  if (!payloadCarte.value || !ongletProgrammes.value) return null
   const demandee = programmeSelectionne.value
   if (demandee) {
     const membre = couchesProgrammesDuNiveau.value.find(
@@ -402,7 +431,7 @@ const coucheProgrammesActive = computed<CoucheProgramme | null>(() => {
     )
     if (membre) return membre
   }
-  return coucheParDefautProgrammes(payload.value, niveau.value)
+  return coucheParDefautProgrammes(payloadCarte.value, niveau.value)
 })
 
 /** La couche passée à la carte — l'onglet programmes ou le thème. */
@@ -454,14 +483,15 @@ const legende = computed(() => {
     if (couche.source === 'membre') {
       return { couche, couleurs: [], seuils: [], estDivergente: false, unite: '', estPourcentage: false }
     }
-    const parTerritoire = subventionsParTerritoire(payload.value, niveau.value)
+    const parTerritoire = subventionsParTerritoire(payloadCarte.value ?? payload.value, niveau.value)
     const valeurs: number[] = []
     for (const ligne of parTerritoire.values()) {
       if (ligne.value !== null) valeurs.push(ligne.value)
     }
     const echelle = echelleValeurs(valeurs)
     const couleurs = echelleChoroplethe(ANCRAGE_PROGRAMMES, Math.max(2, echelle.seuils.length + 1))
-    return { couche, couleurs, seuils: echelle.seuils, estDivergente: false, unite: '€', estPourcentage: false }
+    const unite = parTerritoire.values().next().value?.unit ?? ''
+    return { couche, couleurs, seuils: echelle.seuils, estDivergente: false, unite, estPourcentage: unite === '%' }
   }
 
   const couche = coucheActive.value
@@ -566,17 +596,17 @@ const classesFond = computed(() =>
             :requete-zoom="demandeRecherche?.requete ?? 0"
             @territoire-clique="selectionnerTerritoirePourRang"
           />
-          <div v-if="cohortEnabled && cohortStatus === 'loading' && indicateurScalaireActif" class="carte-etat carte-etat--cohorte" role="status">
-            <p class="carte-etat-texte">Chargement des valeurs de la couche…</p>
+          <div v-if="themeAcquisCarte && mapStatus === 'loading'" class="carte-etat carte-etat--cohorte" role="status">
+            <p class="carte-etat-texte">Chargement des valeurs natives de la carte…</p>
           </div>
-          <div v-else-if="cohortEnabled && cohortStatus === 'error' && indicateurScalaireActif" class="carte-etat carte-etat--cohorte carte-etat--erreur" role="alert">
-            <p class="carte-etat-texte">Impossible de charger les valeurs de la couche.</p>
-            <button type="button" class="carte-etat-bouton" @click="retryCohort++">Réessayer</button>
+          <div v-else-if="themeAcquisCarte && mapStatus === 'error'" class="carte-etat carte-etat--cohorte carte-etat--erreur" role="alert">
+            <p class="carte-etat-texte">Impossible de charger les valeurs natives de la carte.</p>
+            <button type="button" class="carte-etat-bouton" @click="retryMapFacts++">Réessayer</button>
           </div>
-          <div v-if="cohortEnabled && territoryRankStatus === 'loading' && territoryRankTarget" class="carte-etat carte-etat--cohorte" role="status">
+          <div v-if="territoryRankStatus === 'loading' && territoryRankTarget" class="carte-etat carte-etat--cohorte" role="status">
             <p class="carte-etat-texte">Chargement du rang dans son groupe de comparaison…</p>
           </div>
-          <div v-else-if="cohortEnabled && territoryRankStatus === 'error' && territoryRankTarget" class="carte-etat carte-etat--cohorte carte-etat--erreur" role="alert">
+          <div v-else-if="territoryRankStatus === 'error' && territoryRankTarget" class="carte-etat carte-etat--cohorte carte-etat--erreur" role="alert">
             <p class="carte-etat-texte">Le rang de comparaison est indisponible.</p>
             <button type="button" class="carte-etat-bouton" @click="retryTerritoryRank">Réessayer</button>
           </div>

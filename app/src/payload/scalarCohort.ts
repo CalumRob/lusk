@@ -538,7 +538,8 @@ function adapterCohorteScalaire(data: Row, declaration: SemanticResourceDeclarat
     const validCount = (count: unknown) => count === null || (Number.isSafeInteger(count) && (count as number) >= 0)
     const countsValid = countsAvailable
       ? 'support_count' in candidate && 'denominator_count' in candidate && validCount(support) && validCount(denominator)
-      : !('support_count' in candidate) && !('denominator_count' in candidate)
+      : (!('support_count' in candidate) && !('denominator_count' in candidate)) ||
+        (validCount(support) && validCount(denominator))
     if (!statuses.includes(status) || (status === 'measured' ? !isFiniteNumber(value) : value !== null) ||
         !countsValid || candidate.sources.length === 0) {
       throw new PayloadError('validation', path, 'Valeur, statut ou support de l’observation scalaire invalide.')
@@ -576,6 +577,23 @@ function adapterCohorteScalaire(data: Row, declaration: SemanticResourceDeclarat
     throw new PayloadError('validation', path, 'Le cohort scalaire dense ne contient pas une observation par membre.')
   }
   return facts
+}
+
+/** Reuse the published scalar cohort validator/adapter for map cohort reads. */
+export function adapterCohorteScalairePourCarte(input: {
+  data: unknown
+  declaration: SemanticResourceDeclaration
+  indicator: string
+  theme: Theme
+  page: IndicatorPageMetadata
+  level: TerritoireType
+  territories: Territoire[]
+}): { facts: Indicateur[]; identity: ScalarIdentity } {
+  const identity: ScalarIdentity = {}
+  if (!isRecord(input.data)) throw new PayloadError('validation', '/api/resources/read-batch', 'Cohorte scalaire de carte invalide.')
+  const facts = adapterCohorteScalaire(input.data, input.declaration, input.indicator, input.theme,
+    input.page, input.level, input.territories, {}, identity, false, true)
+  return { facts, identity }
 }
 
 /** Producer registration may be level-specific; unsupported levels stay on the incumbent path. */

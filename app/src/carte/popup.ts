@@ -32,6 +32,7 @@ export interface KpiPopup {
    *  the indicateur rows only; null for story scalars and the Aperçu rows
    *  (CONTEXT.md §Rang : les rangs vivent sur les indicateurs du thème). */
   rang: string | null
+  provenance?: string
 }
 
 /** The display value of an Aperçu row, French (« 2 000 », « 30 » for a % unit). */
@@ -74,7 +75,7 @@ function ligneDeLaCouche(
   territoire: string,
   theme: Theme,
   couche: Couche,
-): { valeur: number | null; unite: string; valeurFormatee: string | null; rang: string | null } | null {
+): { valeur: number | null; unite: string; valeurFormatee: string | null; rang: string | null; provenance: string | null } | null {
   if (couche.source === 'indicateur') {
     const ligne = indicateurParTerritoire(
       payload.indicateurs,
@@ -88,11 +89,19 @@ function ligneDeLaCouche(
       unite: ligne.unit,
       valeurFormatee: formaterValeur(ligne),
       rang: rangEnContexte(ligne),
+      provenance: ligne.nativeContract && ligne.vintage_source && ligne.vintage_version
+        ? `${ligne.vintage_source} · ${ligne.vintage_version}` : null,
     }
   }
   const ligne = valeurHistoireParTerritoire(payload, theme, couche.clef).get(territoire)
   if (!ligne) return null
-  return { valeur: ligne.value, unite: ligne.unit, valeurFormatee: formaterValeur(ligne), rang: null }
+  const history = payload.histoires.find((item) => item.territoire === territoire && item.theme === theme &&
+    item.story_key === couche.storyKey) as (typeof payload.histoires[number] & {
+      mapApiFact?: boolean; vintage_source?: string; vintage_version?: string
+    }) | undefined
+  const provenance = history?.mapApiFact && history.vintage_source && history.vintage_version
+    ? `${history.vintage_source} · ${history.vintage_version}` : null
+  return { valeur: ligne.value, unite: ligne.unit, valeurFormatee: formaterValeur(ligne), rang: null, provenance }
 }
 
 /**
@@ -118,6 +127,7 @@ export function kpisPourPopup(
         valeur: ligne.valeurFormatee ?? '—',
         unite: ligne.unite,
         rang: ligne.rang,
+        ...(ligne.provenance ? { provenance: ligne.provenance } : {}),
       },
     ]
   }

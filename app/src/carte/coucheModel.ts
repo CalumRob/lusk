@@ -124,7 +124,8 @@ function libelleDetailDe(metadata: ThemeMetadata, clef: string, detail: string):
 }
 
 /** The distinct detail values of a multi-detail key, in payload order. */
-function detailsDe(payload: Payload, theme: Theme, clef: string): string[] {
+function detailsDe(payload: Payload, theme: Theme, clef: string, declared?: readonly string[]): string[] {
+  if (declared) return [...declared]
   const vus = new Set<string>()
   const details: string[] = []
   for (const ligne of payload.indicateurs) {
@@ -164,14 +165,14 @@ interface ScalaireStory {
  * déclare et la story résolue qu'il lit. Un param déclaré deux fois n'est
  * émis qu'une fois (la première déclaration fait foi).
  */
-function scalairesStoryDe(metadata: ThemeMetadata, histoiresDuTheme: Histoire[]): ScalaireStory[] {
+function scalairesStoryDe(metadata: ThemeMetadata, histoiresDuTheme: Histoire[], declared?: ReadonlySet<string>): ScalaireStory[] {
   const vus = new Set<string>()
   const scalaires: ScalaireStory[] = []
   for (const sousGroupe of metadata.subgroups) {
     if (!sousGroupe.reading) continue
     for (const champ of sousGroupe.reading.params) {
       if (vus.has(champ)) continue
-      if (!estScalaireNumerique(histoiresDuTheme, champ)) continue
+      if (declared ? !declared.has(champ) : !estScalaireNumerique(histoiresDuTheme, champ)) continue
       vus.add(champ)
       scalaires.push({
         champ,
@@ -197,7 +198,12 @@ function scalairesStoryDe(metadata: ThemeMetadata, histoiresDuTheme: Histoire[])
  * follow the metadata's indicator_keys order; labels come from the theme's
  * payload-owned maps (indicator_labels / detail_labels / param_labels).
  */
-export function couchesDuTheme(payload: Payload, theme: Theme): CouchesTheme {
+export function couchesDuTheme(payload: Payload, theme: Theme, admitted?: {
+  indicatorIds: ReadonlySet<string>
+  scalarIds?: ReadonlySet<string>
+  storyFields: ReadonlySet<string>
+  axes?: Readonly<Record<string, readonly string[]>>
+}): CouchesTheme {
   const metadata = payload.themeMetadata?.[theme]
   if (!metadata) {
     return { theme, entrees: [], coucheParDefaut: null }
@@ -207,23 +213,25 @@ export function couchesDuTheme(payload: Payload, theme: Theme): CouchesTheme {
   // les déclarations de fonctions, l'alias porte le type ThemeMetadata.
   const meta = metadata
   const histoiresDuTheme = payload.histoires.filter((histoire) => histoire.theme === theme)
-  const aDesHistoires = histoiresDuTheme.length > 0
+  const aDesHistoires = histoiresDuTheme.length > 0 || Boolean(admitted?.storyFields.size)
 
   // Les scalaires de Story — les params de lecture déclarés par les
   // métadonnées, filtrés aux champs numériques des lignes résolues.
-  const scalairesStory = aDesHistoires ? scalairesStoryDe(meta, histoiresDuTheme) : []
+  const scalairesStory = aDesHistoires ? scalairesStoryDe(meta, histoiresDuTheme, admitted?.storyFields)
+    .filter(({ champ }) => !admitted || admitted.storyFields.has(champ)) : []
 
   // L'ordre des figures d'indicateurs — le registre des métadonnées (l'ordre
   // de la fiche, payload-owned), filtré aux clés que le payload publie.
   const clesIndicateurs = meta.indicator_keys.filter((clef) =>
-    estCoucheCartographiable(meta, clef) &&
-    payload.indicateurs.some((ligne) => ligne.theme === theme && ligne.key === clef),
+    estCoucheCartographiable(meta, clef) && (!admitted || admitted.indicatorIds.has(clef)) &&
+    (admitted ? true : payload.indicateurs.some((ligne) => ligne.theme === theme && ligne.key === clef)),
   )
 
   const scalairesIndicateurs = new Set<string>()
   for (const clef of clesIndicateurs) {
     if (SERIES_EXCLUES[theme]?.includes(clef)) continue
-    if (payload.indicateurs.some((l) => l.theme === theme && l.key === clef && l.detail === null)) {
+    if (admitted?.scalarIds?.has(clef) || (!admitted && payload.indicateurs.some((l) =>
+      l.theme === theme && l.key === clef && l.detail === null))) {
       scalairesIndicateurs.add(clef)
     }
   }
@@ -295,7 +303,7 @@ export function couchesDuTheme(payload: Payload, theme: Theme): CouchesTheme {
         type: 'groupe',
         groupe: {
           libelle: libelleIndicateurDe(metadata, clef),
-          couches: detailsDe(payload, theme, clef).map((detail) => ({
+          couches: detailsDe(payload, theme, clef, admitted?.axes?.[clef]).map((detail) => ({
             source: 'indicateur',
             clef,
             detail,

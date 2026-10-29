@@ -305,12 +305,16 @@ function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat, noti
   if (notifier && fiche) emit('territoire-clique', fiche)
 
   const kpis = kpisPourPopup(props.payload, territoire, props.theme, couchePourPopup())
+  const echapperHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character]!)
   const lignesKpis = kpis
     .map(
       (k) =>
         `<div class="popup-carte-kpi"><span class="popup-carte-libelle">${k.libelle}</span>` +
         `<span class="popup-carte-valeur">${k.valeur} <span class="popup-carte-unite">${k.unite}</span></span>` +
         (k.rang ? `<span class="popup-carte-rang">${k.rang}</span>` : '') +
+        (k.provenance ? `<span class="popup-carte-provenance">${echapperHtml(k.provenance)}</span>` : '') +
         `</div>`,
     )
     .join('')
@@ -611,6 +615,11 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   font: var(--text-caption);
   letter-spacing: var(--text-caption-tracking);
+}
+
+.popup-carte-provenance {
+  color: var(--text-tertiary);
+  font: var(--text-caption);
 }
 
 .popup-carte-lien {
