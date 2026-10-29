@@ -834,6 +834,9 @@ def test_period_detail_cohort_keeps_sparse_availability_and_measurement_provenan
 
 def test_period_detail_selected_comparison_uses_native_selected_facet(cohort_http):
     cohort_http.publish(
+        ("UPDATE observed_collection_publication SET content_version='cohort-domain-selected-v1', "
+         "row_count=3,published_at=transaction_timestamp() "
+         "WHERE indicator_id='subventions_par_domaine'", ()),
         ("INSERT INTO observed_collection_category(indicator_id,detail_key,label,ordinal,source_id) "
          "VALUES ('subventions_par_domaine','mobility','Mobilité',1,'cohort-source')", ()),
         ("INSERT INTO period_detail_observation(indicator_id,territory_id,territory_type,detail_key,"
@@ -855,7 +858,14 @@ def test_period_detail_selected_comparison_uses_native_selected_facet(cohort_htt
     result = selected.json()["result"]
     assert result["source_facet"] == {"detail": "mobility", "observation_period": "2024"}
     assert (result["status"], result["median"], result["rank"], result["rank_size"]) == (
-        "available", 450.0, 1, 2)
+        "available", 450.0, 2, 2)
+    assert selected.json()["target"] == {"kind": "territory", "type": "commune", "id": "cohort-c1"}
+    assert selected.json()["selection"] == [
+        {"territory_type": "commune", "territory_id": "cohort-c1"},
+        {"territory_type": "commune", "territory_id": "cohort-c3"},
+    ]
+    assert selected.json()["scope"] == {"kind": "explicit_selection", "member_count": 2}
+    assert result["selected_member_count"] == 2
 
     wrong_period = cohort_http.client.post("/api/resources/read", json={
         **item, "coordinates": {"detail": ["mobility"], "period": ["2025"]},

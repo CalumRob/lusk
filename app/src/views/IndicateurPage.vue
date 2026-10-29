@@ -1321,6 +1321,31 @@ const vintageApi = (source: { vintageId?: string; version: string; referenceDate
 const sources = computed(() => {
   if (!page.value || !payload.value) return []
   const authority = sourceRecords(payload.value)
+  if (sparseCollectionPageActive.value) {
+    const native = sparseCollectionFacts.value.flatMap((fact) => fact.fact_sources ?? [])
+    const sourceIds = [...new Set([...page.value.sources, ...native.map((source) => source.sourceId)])]
+    return sourceIds.map((id) => {
+      const vintages = [...new Map(native.filter((source) => source.sourceId === id)
+        .map((source) => [`${source.sourceId}\u0000${source.vintageId ?? source.version}`, source])).values()]
+      if (!vintages.length) return null
+      const editorial = authority.find((record) => record.id === id)
+      const apiVintages: SourceVintageRecord[] = vintages.map((source) => vintageApi(source, editorial?.licence ?? null))
+      const representative = vintages.length === 1 ? vintages[0] : null
+      return {
+        id, dataset: representative?.source ?? vintages[0]!.source,
+        publisher: editorial?.publisher ?? representative?.source ?? vintages[0]!.source,
+        url: editorial?.url ?? null, licence: editorial?.licence ?? null,
+        vintage: representative?.version ?? 'Plusieurs millésimes',
+        freshness: representative?.publicationDate ?? '—', sha256: null,
+        dateReference: representative?.referenceDate ?? null,
+        datePublication: representative?.publicationDate ?? null, vintages: apiVintages,
+        clocks: editorial?.clocks ?? [], caveat: editorial?.caveat ?? null,
+        methodology: editorial?.methodology, consumers: editorial?.consumers ?? [],
+        replie: editorial?.replie ?? false, themes: editorial?.themes ?? [theme.value as Theme],
+        ficheSourceLiee: Boolean(editorial), ancreSourceId: id,
+      }
+    }).filter((source): source is NonNullable<typeof source> => source !== null)
+  }
   if (profileMode.value) {
     const native = [...profileFacts.value, ...profileFocalFacts.value, ...profileScalarFacts.value].flatMap((fact) => fact.fact_sources ?? [])
     for (const source of profileComparison.value?.comparisonSources ?? []) {
@@ -1435,6 +1460,17 @@ const horlogeService = computed(() => {
 // facette résumée d'une distribution lit souvent une AUTRE clé publiée que
 // la page, #440 ; les trajectoires et le modèle par détail filtrent déjà).
 const facts = computed(() => payload.value.indicateurs.filter((f) => f.theme === theme.value))
+const sparseCollectionSelectedAvailability = computed(() => {
+  const read = sparseCollectionRead.value
+  const territoryId = porte.value.territoire
+  if (!sparseCollectionPageActive.value || !read || !territoryId) return null
+  const availability = read.availabilityByTerritory[territoryId]
+  if (availability !== 'observed') return availability ?? null
+  const facet = familyDispatch.value?.facet
+  const hasSelectedObservation = Boolean(facet?.detail && facet.dimension && sparseCollectionFacts.value.some((fact) =>
+    fact.territoire === territoryId && fact.detail === facet.detail && fact.dimension === facet.dimension))
+  return hasSelectedObservation ? 'measured' : 'no_selected_observation'
+})
 // La machine à états URL (#508) — résolution pure de la cascade de niveaux
 // et validation du périmètre. Le composant ne fait que lui fournir la query,
 // les territoires publiés, les niveaux de la facette et la mémoire lue à la
@@ -1752,7 +1788,13 @@ watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niv
           Les faits de subventions publiés sont momentanément indisponibles.
           <button type="button" data-testid="sparse-collection-facts-retry" @click="retrySparseCollectionFacts++">Réessayer les faits</button>
         </div>
-        <p v-else-if="sparseCollectionComparisonLoading" role="status" data-testid="sparse-collection-comparison-pending">Chargement de la comparaison publiée… Les faits restent affichés.</p>
+        <p v-if="sparseCollectionSelectedAvailability === 'no_record'" data-testid="sparse-collection-no-record">
+          Aucun enregistrement de subvention publié pour ce territoire.
+        </p>
+        <p v-else-if="sparseCollectionSelectedAvailability === 'no_selected_observation'" data-testid="sparse-collection-facet-absent">
+          Aucune observation publiée pour cette catégorie et cette période ; l’absence n’est pas un montant nul.
+        </p>
+        <p v-if="sparseCollectionComparisonLoading" role="status" data-testid="sparse-collection-comparison-pending">Chargement de la comparaison publiée… Les faits restent affichés.</p>
         <div v-else-if="sparseCollectionComparisonError" role="alert" data-testid="sparse-collection-comparison-error">
           La comparaison est momentanément indisponible. Les faits API restent affichés.
           <button type="button" data-testid="sparse-collection-comparison-retry" @click="retrySparseCollectionComparison++">Réessayer la comparaison</button>
@@ -1760,7 +1802,7 @@ watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niv
         <p v-else-if="sparseCollectionComparison?.status === 'unavailable'" data-testid="sparse-collection-comparison-unavailable">La comparaison n’est pas disponible pour cette catégorie et cette période selon la publication API.</p>
         <p v-else-if="sparseCollectionComparison?.status === 'available'" data-testid="sparse-collection-comparison-summary">
           Médiane API pour {{ familyDispatch?.facet.labels[familyDispatch.facet.detail ?? ''] ?? familyDispatch?.facet.detail }} · {{ familyDispatch?.facet.dimension ?? page?.comparison?.dimension }} :
-          {{ formaterValeur({ value: typeof sparseCollectionComparison.median === 'number' ? sparseCollectionComparison.median : null, unit: page?.unit ?? '€' }) }} {{ page?.unit ?? '€' }}
+          {{ formaterValeur({ value: typeof sparseCollectionComparison.median === 'number' ? sparseCollectionComparison.median : null, unit: String(sparseCollectionComparison.unit) }) }} {{ sparseCollectionComparison.unit }}
           <span v-if="typeof sparseCollectionComparison.rank === 'number'"> · Rang API {{ formaterRang(sparseCollectionComparison.rank, typeof sparseCollectionComparison.rank_size === 'number' ? sparseCollectionComparison.rank_size : null) }}</span>
         </p>
       </section>

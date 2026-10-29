@@ -5,6 +5,7 @@ import type { SemanticReadItem, SemanticResourceDeclaration } from './semanticRe
 export interface SparseCollectionPageRead {
   facts: Indicateur[]
   periods: string[]
+  availabilityByTerritory: Record<string, 'observed' | 'no_record'>
   identity: { contentVersion: string; referenceContentVersion: string; descriptorVersion: string }
 }
 
@@ -67,6 +68,27 @@ export function periodDetailCohortFacts(data: unknown, resource: SemanticResourc
   return facts
 }
 
+export function periodDetailCohortAvailability(data: unknown,
+  resource: SemanticResourceDeclaration): Record<string, 'observed' | 'no_record'> {
+  if (!isRecord(data) || data.resource !== resource.resource_id || data.shape !== 'period_detail' ||
+      !Array.isArray(data.territories)) throw new Error('Disponibilité native de collection invalide')
+  const availability: Record<string, 'observed' | 'no_record'> = {}
+  for (const candidate of data.territories) {
+    if (!isRecord(candidate) || !isRecord(candidate.territory) || !Array.isArray(candidate.entries) ||
+        candidate.completeness !== 'observed_sparse') throw new Error('Territoire de collection invalide')
+    const territoryId = requireText(candidate.territory.id, 'territory.id')
+    if (Object.hasOwn(availability, territoryId) ||
+        (candidate.availability !== 'observed' && candidate.availability !== 'no_record')) {
+      throw new Error('Disponibilité territoriale native invalide')
+    }
+    if (candidate.availability === 'no_record' && candidate.entries.length !== 0) {
+      throw new Error('Une absence observée ne peut contenir de lignes')
+    }
+    availability[territoryId] = candidate.availability
+  }
+  return availability
+}
+
 function cohortItem(resource: string, departmentId?: string, epciId?: string): SemanticReadItem {
   return { resource, target: { kind: 'territory_cohort', type: 'commune',
     ...(departmentId ? { department_id: departmentId } : {}), ...(epciId ? { epci_id: epciId } : {}) },
@@ -77,8 +99,8 @@ function comparisonItem(resource: string, focal: Territoire, members: readonly T
   period: string): SemanticReadItem {
   return { resource, target: { kind: 'territory', type: 'commune', id: focal.territoire },
     intent: { kind: 'selected_comparison', members: members.map(({ territoire }) => ({ type: 'commune', id: territoire })) },
-    coordinates: { detail: [detail], period: [period] }, fields: ['status', 'reason', 'median', 'rank', 'rank_size',
-      'eligible_count', 'missing_count'] }
+      coordinates: { detail: [detail], period: [period] }, fields: ['status', 'reason', 'median', 'rank', 'rank_size',
+      'eligible_count', 'missing_count', 'selected_member_count'] }
 }
 
 function identity(data: Record<string, unknown>, resource: SemanticResourceDeclaration) {
@@ -94,8 +116,9 @@ export async function acquireSparseCollectionFacts(resource: SemanticResourceDec
   const factsRead = await lireRessource(cohortItem(resource.resource_id, options.departmentId, options.epciId))
   const factIdentity = identity(factsRead, resource)
   const facts = periodDetailCohortFacts(factsRead, resource)
+  const availabilityByTerritory = periodDetailCohortAvailability(factsRead, resource)
   const periods = [...new Set(facts.map(({ dimension }) => dimension).filter((value): value is string => Boolean(value)))].sort()
-  return { facts, periods, identity: factIdentity }
+  return { facts, periods, availabilityByTerritory, identity: factIdentity }
 }
 
 export async function reacquireSparseCollectionComparison(resource: SemanticResourceDeclaration,
@@ -104,10 +127,24 @@ export async function reacquireSparseCollectionComparison(resource: SemanticReso
   const data = await lireRessource(comparisonItem(resource.resource_id, options.focal, options.members,
     options.detail, options.period))
   const result = data.result
-  if (data.content_version !== options.identity.contentVersion ||
+  const expectedTarget = { kind: 'territory', type: 'commune', id: options.focal.territoire }
+  const expectedMembers = options.members.map(({ territoire }) => `commune\u0000${territoire}`).sort()
+  const selection = data.selection
+  const actualMembers = Array.isArray(selection) ? selection.flatMap((member) =>
+    isRecord(member) && member.territory_type === 'commune' && typeof member.territory_id === 'string'
+      ? [`commune\u0000${member.territory_id}`] : []) : []
+  const scope = data.scope
+  if (data.resource !== resource.resource_id || !isRecord(data.target) ||
+      data.target.kind !== expectedTarget.kind || data.target.type !== expectedTarget.type ||
+      data.target.id !== expectedTarget.id || expectedMembers.length !== options.members.length ||
+      !Array.isArray(selection) || actualMembers.length !== selection.length || actualMembers.length !== expectedMembers.length ||
+      actualMembers.sort().some((member, index) => member !== expectedMembers[index]) ||
+      !isRecord(scope) || scope.kind !== 'explicit_selection' || scope.member_count !== expectedMembers.length ||
+      data.content_version !== options.identity.contentVersion ||
       data.reference_content_version !== options.identity.referenceContentVersion || !isRecord(result) ||
       result.descriptor_version !== options.identity.descriptorVersion || !isRecord(result.source_facet) ||
-      result.source_facet.detail !== options.detail || result.source_facet.observation_period !== options.period) {
+      result.source_facet.detail !== options.detail || result.source_facet.observation_period !== options.period ||
+      result.selected_member_count !== expectedMembers.length || typeof result.unit !== 'string' || !result.unit) {
     throw new Error('La comparaison native ne correspond plus aux faits conservés')
   }
   return result

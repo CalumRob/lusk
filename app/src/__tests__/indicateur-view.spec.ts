@@ -15,7 +15,11 @@ import { nativeBatchResponse, nativeReadFixture, nativeResources } from './helpe
 
 const payload: Payload = { territoires: [...territoiresFixture, { territoire: 'e', type: 'epci', nom: 'EPCI test', departement: null, epci: null }], indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture, apercu: apercuAvecNAFixture, runReport: runReportFraisFixture, vintages: vintagesFixture, programmes: null, themeMetadata: { demographie: metadonneesThemesFixtures.demographie } }
 const networkRequests: string[] = []
+const semanticReadItems: Array<Record<string, any>> = []
 let collectionComparisonFailures = 0
+let delayNextCollectionComparison = false
+let pendingCollectionComparison: ((response: Response) => void) | null = null
+let pendingCollectionComparisonItem: Record<string, any> | null = null
 function pagePourFamille(family: FamilleFigure): IndicatorPageMetadata {
   const page = structuredClone(metadonneesThemesFixtures.demographie.indicator_pages!.densite) as any
   page.family = family
@@ -67,6 +71,7 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
     }
     if (url === '/api/resources/read' && String(router.currentRoute.value.params.indicator) === 'subventions_par_domaine') {
       const item = JSON.parse(String(init?.body)) as Record<string, any>
+      semanticReadItems.push(item)
       const marker = { resource: item.resource, content_version: 'collection-cv1', reference_content_version: 'collection-rv1' }
       if (item.target.kind === 'territory_cohort') {
         const members = routedPayload.territoires.filter((territory) => territory.type === 'commune' &&
@@ -81,8 +86,13 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
                 vintage_id: 'fixture-v1', version: '2025', reference_date: '2025-01-01', publication_date: '2025-02-01' }] })) }
         })
         return new Response(JSON.stringify({ ...marker, shape: 'period_detail',
-          descriptor: { indicator_id: item.resource, kind: 'period_detail', unit: '€', descriptor_version: 'collection-dv1' },
+          descriptor: { indicator_id: item.resource, kind: 'period_detail', unit: 'CAD', descriptor_version: 'collection-dv1' },
           territories }), { status: 200 })
+      }
+      if (delayNextCollectionComparison) {
+        delayNextCollectionComparison = false
+        pendingCollectionComparisonItem = item
+        return await new Promise<Response>((resolve) => { pendingCollectionComparison = resolve })
       }
       if (collectionComparisonFailures > 0) {
         collectionComparisonFailures--
@@ -90,10 +100,14 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
       }
       const [detail] = item.coordinates.detail
       const [period] = item.coordinates.period
-      return new Response(JSON.stringify({ ...marker, target: item.target, result: {
-        descriptor_version: 'collection-dv1', source_facet: { detail, observation_period: period },
-        status: 'available', median: 15000, rank: 1, rank_size: 2,
-      } }), { status: 200 })
+      const memberIds = item.intent.members.map((member: Record<string, string>) => member.id)
+      return new Response(JSON.stringify({ ...marker, target: item.target,
+        selection: memberIds.map((territory_id: string) => ({ territory_type: 'commune', territory_id })),
+        scope: { kind: 'explicit_selection', member_count: memberIds.length }, result: {
+          descriptor_version: 'collection-dv1', source_facet: { detail, observation_period: period }, unit: 'CAD',
+          selected_member_count: memberIds.length, status: 'available', median: period === '2024' ? 1234 : 15000,
+          rank: 1, rank_size: memberIds.length,
+        } }), { status: 200 })
     }
     if (url === '/api/resources/read-batch') {
       const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
@@ -122,19 +136,23 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
   await flushPromises()
   return { wrapper, router }
 }
-beforeEach(() => { collectionComparisonFailures = 0; networkRequests.length = 0; localStorage.clear(); vi.stubEnv('VITE_SCALAR_COHORT_API', '0') })
+beforeEach(() => { collectionComparisonFailures = 0; delayNextCollectionComparison = false; pendingCollectionComparison = null; pendingCollectionComparisonItem = null; semanticReadItems.length = 0; networkRequests.length = 0; localStorage.clear(); vi.stubEnv('VITE_SCALAR_COHORT_API', '0') })
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
 
 describe('IndicateurView — routed URL seam', () => {
-  it('acquires the sparse Programmes page from one native cohort read and keeps category/period controls', async () => {
-    const programmesMetadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_programmes.json'), 'utf8'))
+  it('acquires sparse facts once, changes category/period, retries comparison only, and joins native source clocks', async () => {
+    const programmesMetadata = structuredClone(JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_programmes.json'), 'utf8')))
+    programmesMetadata.indicator_pages.subventions_par_domaine.unit = 'STATIC_UNIT'
     const categories = programmesMetadata.indicator_pages.subventions_par_domaine.comparison.details as string[]
-    const programmesFacts = indicateursProgrammesFixture.map((fact) => fact.key !== 'subventions_par_domaine' ? fact : {
-      ...fact, detail: fact.detail === 'Agriculture' ? categories.find((category) => category.startsWith('Agriculture'))!
-        : categories.find((category) => category.startsWith('Développement des secteurs clés'))!,
+    const programmesFacts = indicateursProgrammesFixture.flatMap((fact) => {
+      if (fact.key !== 'subventions_par_domaine') return [fact]
+      const detail = fact.detail === 'Agriculture' ? categories.find((category) => category.startsWith('Agriculture'))!
+        : categories.find((category) => category.startsWith('Développement des secteurs clés'))!
+      const mapped = { ...fact, detail, value: fact.detail === 'Agriculture' ? 0 : fact.value }
+      return fact.detail === 'Agriculture' ? [mapped, { ...mapped, dimension: '2024', value: 1234 }] : [mapped]
     })
     const category = categories.find((value) => value.startsWith('Agriculture'))!
-    collectionComparisonFailures = 2
+    collectionComparisonFailures = 3
     const { wrapper, router } = await monter(
       `/indicateurs/programmes/subventions_par_domaine?territoire=22001&niveau=commune&detail=${encodeURIComponent(category)}&dimension=2025`,
       [], programmesMetadata, programmesFacts, 'programmes')
@@ -143,6 +161,7 @@ describe('IndicateurView — routed URL seam', () => {
     expect(wrapper.find('[data-testid="sparse-collection-state"]').exists(), `${wrapper.text()} ${networkRequests.join(',')} bootstrap=${state.profileBootstrapError?.message} active=${state.sparseCollectionPageActive} factsError=${state.sparseCollectionFactsError} discovered=${state.profileDiscoveryComplete}`).toBe(true)
     expect(wrapper.find('[data-testid="sparse-collection-comparison-error"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="sparse-collection-comparison-retry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="profil-liste"]').text()).toContain('0 CAD')
     expect(wrapper.find('[data-testid="sparse-collection-period-control"]').exists()).toBe(true)
     expect((wrapper.get('select[aria-label="Période comparée"]').element as HTMLSelectElement).value).toBe('2025')
     const nextCategory = categories.find((value) => value.startsWith('Développement des secteurs clés'))!
@@ -150,12 +169,87 @@ describe('IndicateurView — routed URL seam', () => {
     await flushPromises()
     expect(router.currentRoute.value.query.detail).toBe(nextCategory)
     expect(wrapper.text()).toContain(nextCategory)
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-error"]').exists()).toBe(true)
+    await wrapper.get('select[aria-label="Période comparée"]').setValue('2024')
+    await flushPromises()
+    expect(router.currentRoute.value.query.dimension).toBe('2024')
+    expect((wrapper.get('select[aria-label="Période comparée"]').element as HTMLSelectElement).value).toBe('2024')
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-error"]').exists()).toBe(true)
     await wrapper.get('[data-testid="sparse-collection-comparison-retry"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Médiane API')
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').text()).toContain('1 234')
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').text()).toContain('CAD')
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').text()).not.toContain('STATIC_UNIT')
+    expect(semanticReadItems.filter((item) => item.target.kind === 'territory_cohort')).toHaveLength(1)
+    expect(semanticReadItems.filter((item) => item.intent.kind === 'selected_comparison').at(-1)?.coordinates)
+      .toEqual({ detail: [nextCategory], period: ['2024'] })
+    await router.push({ query: { ...router.currentRoute.value.query, detail: category } })
+    await flushPromises()
     await wrapper.findAll('.vues button')[1]!.trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="map"]').attributes('data-values')).toContain('22001')
+    await wrapper.findAll('.vues button')[2]!.trigger('click')
+    await flushPromises()
+    const sourceCard = wrapper.find('.source-card')
+    expect(sourceCard.text()).toContain('2025')
+    expect(sourceCard.text()).toContain('fixture-v1')
+    expect(sourceCard.text()).not.toContain('2026-08-05')
+  })
+
+  it('distinguishes whole-territory no-record from a missing selected category-period', async () => {
+    const programmesMetadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_programmes.json'), 'utf8'))
+    const categories = programmesMetadata.indicator_pages.subventions_par_domaine.comparison.details as string[]
+    const programmesFacts = indicateursProgrammesFixture.map((fact) => fact.key !== 'subventions_par_domaine' ? fact : {
+      ...fact, detail: fact.detail === 'Agriculture' ? categories.find((category) => category.startsWith('Agriculture'))!
+        : categories.find((category) => category.startsWith('Développement des secteurs clés'))!,
+    })
+    const tourism = categories.find((category) => category === 'Tourisme')!
+    const { wrapper, router } = await monter(
+      `/indicateurs/programmes/subventions_par_domaine?territoire=22001&niveau=commune&detail=${encodeURIComponent(tourism)}&dimension=2025`,
+      [], programmesMetadata, programmesFacts, 'programmes')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="sparse-collection-facet-absent"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="sparse-collection-no-record"]').exists()).toBe(false)
+    await router.push({ query: { ...router.currentRoute.value.query, territoire: '22002' } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="sparse-collection-no-record"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="sparse-collection-facet-absent"]').exists()).toBe(false)
+  })
+
+  it('rejects a delayed comparison response after the commune scope changes', async () => {
+    const programmesMetadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_programmes.json'), 'utf8'))
+    const categories = programmesMetadata.indicator_pages.subventions_par_domaine.comparison.details as string[]
+    const agriculture = categories.find((category) => category.startsWith('Agriculture'))!
+    const programmesFacts = indicateursProgrammesFixture.map((fact) => fact.key !== 'subventions_par_domaine' ? fact : {
+      ...fact, detail: fact.detail === 'Agriculture' ? agriculture
+        : categories.find((category) => category.startsWith('Développement des secteurs clés'))!,
+    })
+    delayNextCollectionComparison = true
+    const { wrapper, router } = await monter(
+      `/indicateurs/programmes/subventions_par_domaine?territoire=22001&niveau=commune&detail=${encodeURIComponent(agriculture)}&dimension=2025`,
+      [], programmesMetadata, programmesFacts, 'programmes')
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-pending"]').exists()).toBe(true)
+    expect(pendingCollectionComparison).not.toBeNull()
+    const oldRequest = pendingCollectionComparisonItem!
+    await router.push({ query: { ...router.currentRoute.value.query, departement: '29' } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').text()).toContain('15 000')
+    const scopedRequest = semanticReadItems.filter((item) => item.target.kind === 'territory_cohort').at(-1)
+    expect(scopedRequest?.target.department_id).toBe('29')
+    expect(scopedRequest?.target.department_id).not.toBe(oldRequest.target.department_id)
+    const staleMembers = oldRequest.intent.members.map((member: Record<string, string>) => ({
+      territory_type: member.type, territory_id: member.id,
+    }))
+    pendingCollectionComparison!(new Response(JSON.stringify({ resource: oldRequest.resource, target: oldRequest.target,
+      content_version: 'collection-cv1', reference_content_version: 'collection-rv1', selection: staleMembers,
+      scope: { kind: 'explicit_selection', member_count: staleMembers.length }, result: {
+        descriptor_version: 'collection-dv1', source_facet: { detail: agriculture, observation_period: '2025' },
+        unit: 'CAD', selected_member_count: staleMembers.length, status: 'available', median: 7777,
+        rank: 1, rank_size: staleMembers.length,
+      } }), { status: 200 }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').text()).toContain('15 000')
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').text()).not.toContain('7 777')
   })
 
   it('defaults to Repères and switches real URL-backed views; invalid vue is cleared by selecting Repères', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite?vue=wat'); expect(wrapper.find('main').exists()).toBe(true); await wrapper.findAll('.vues button')[0].trigger('click'); await flushPromises(); expect(router.currentRoute.value.query.vue).toBeUndefined(); await router.push({ query: { vue: 'carte' } }); await flushPromises(); expect(router.currentRoute.value.query.vue).toBe('carte'); await router.push({ query: { vue: 'indicateur' } }); await flushPromises(); expect(router.currentRoute.value.query.vue).toBe('indicateur') })

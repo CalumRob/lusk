@@ -2480,7 +2480,7 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
         return _project_comparison_payload_fields({"contract":"indicator-comparison-v1","complete_theme":False,"indicator_id":indicator_id,
             "theme_id":collections[0]["theme_id"],"shape":"observed_collection",
             "content_version":result["content_version"],"reference_content_version":result["reference_content_version"],
-            "selection":None if selection is None else [{"territory_type":level,"territory_id":code} for level,code in selection],
+            "selection":None if selection is None else [{"territory_type":cohort_type,"territory_id":code} for code in members],
             "scope":{**scope,"member_count":len(members)} if scope else None,"result":result},selected_fields)
     shapes = list(resource.shape_rows) if resource else []
     if resource is None:

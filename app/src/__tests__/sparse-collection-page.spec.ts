@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { acquireSparseCollectionFacts, periodDetailCohortFacts, reacquireSparseCollectionComparison } from '../payload/sparseCollectionPage'
+import { acquireSparseCollectionFacts, periodDetailCohortAvailability, periodDetailCohortFacts, reacquireSparseCollectionComparison } from '../payload/sparseCollectionPage'
 import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 import type { Territoire } from '../payload/types'
 
@@ -16,6 +16,20 @@ const cohort = { resource: resource.resource_id, shape: 'period_detail', content
     { territory: { id: 'c2', type: 'commune' }, completeness: 'observed_sparse', availability: 'no_record', entries: [] },
   ] }
 
+function comparisonEnvelope(options: { resourceId?: string; targetId?: string; selectionIds?: string[];
+  contentVersion?: string; detail?: string; period?: string } = {}) {
+  const selectionIds = options.selectionIds ?? ['c1', 'c2']
+  return { resource: options.resourceId ?? resource.resource_id,
+    target: { kind: 'territory', type: 'commune', id: options.targetId ?? 'c1' },
+    content_version: options.contentVersion ?? 'cv1', reference_content_version: 'rv1',
+    selection: selectionIds.map((territory_id) => ({ territory_type: 'commune', territory_id })),
+    scope: { kind: 'explicit_selection', member_count: selectionIds.length },
+    result: { descriptor_version: 'dv1',
+      source_facet: { detail: options.detail ?? 'mobility', observation_period: options.period ?? '2025' },
+      unit: '€', selected_member_count: selectionIds.length,
+      status: 'available', median: 10, rank: 1, rank_size: 2 } }
+}
+
 afterEach(() => vi.unstubAllGlobals())
 
 describe('sparse collection indicator-page adapter', () => {
@@ -25,6 +39,7 @@ describe('sparse collection indicator-page adapter', () => {
     expect(facts[0]).toMatchObject({ territoire: 'c1', detail: 'mobility', dimension: '2025', value: 0,
       vintage_source: 'Région Bretagne', vintage_version: '2025' })
     expect(facts[0]?.fact_sources?.[0]).toMatchObject({ sourceId: 'subventions_scdl', vintageId: 'v1' })
+    expect(periodDetailCohortAvailability(cohort, resource)).toEqual({ c1: 'observed', c2: 'no_record' })
   })
 
   it('acquires one scoped native cohort read, not per-territory reads', async () => {
@@ -51,15 +66,23 @@ describe('sparse collection indicator-page adapter', () => {
       expect(item.target.id).toBe('c1')
       expect(item.intent.members).toEqual([{ type: 'commune', id: 'c1' }, { type: 'commune', id: 'c2' }])
       expect(item.coordinates).toEqual({ detail: ['mobility'], period: ['2025'] })
-      return new Response(JSON.stringify({ resource: resource.resource_id, content_version: 'cv1', reference_content_version: 'rv1',
-        result: { descriptor_version: 'dv1', source_facet: { detail: 'mobility', observation_period: '2025' },
-          status: 'available', median: 10, rank: 1, rank_size: 2 } }), { status: 200 })
+      return new Response(JSON.stringify(comparisonEnvelope()), { status: 200 })
     })
     vi.stubGlobal('fetch', fetcher)
     const comparison = await reacquireSparseCollectionComparison(resource,
       { focal, members, detail: 'mobility', period: '2025', identity })
     expect(comparison).toMatchObject({ status: 'available', median: 10, rank: 1 })
     expect(fetcher).toHaveBeenCalledTimes(1)
+    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+      JSON.parse(String(init?.body))
+      const wrongFocal = comparisonEnvelope({ targetId: 'someone-else' })
+      return new Response(JSON.stringify(wrongFocal), { status: 200 })
+    })
+    await expect(reacquireSparseCollectionComparison(resource,
+      { focal, members, detail: 'mobility', period: '2025', identity })).rejects.toThrow(/ne correspond plus/)
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(comparisonEnvelope({ selectionIds: ['c1', 'other'] })), { status: 200 }))
+    await expect(reacquireSparseCollectionComparison(resource,
+      { focal, members, detail: 'mobility', period: '2025', identity })).rejects.toThrow(/ne correspond plus/)
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ resource: resource.resource_id,
       content_version: 'new-publication', reference_content_version: 'rv1', result: {
         descriptor_version: 'dv1', source_facet: { detail: 'mobility', observation_period: '2025' },
