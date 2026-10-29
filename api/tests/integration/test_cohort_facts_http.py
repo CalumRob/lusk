@@ -832,6 +832,40 @@ def test_period_detail_cohort_keeps_sparse_availability_and_measurement_provenan
     assert body["territories"][1]["entries"] == []
 
 
+def test_period_detail_selected_comparison_uses_native_selected_facet(cohort_http):
+    cohort_http.publish(
+        ("INSERT INTO observed_collection_category(indicator_id,detail_key,label,ordinal,source_id) "
+         "VALUES ('subventions_par_domaine','mobility','Mobilité',1,'cohort-source')", ()),
+        ("INSERT INTO period_detail_observation(indicator_id,territory_id,territory_type,detail_key,"
+         "observation_period,value,source_id,vintage_id) VALUES "
+         "('subventions_par_domaine','cohort-c1','commune','mobility','2024',600,'cohort-source','cohort-v1'),"
+         "('subventions_par_domaine','cohort-c3','commune','mobility','2024',300,'cohort-source','cohort-v1')", ()),
+    )
+    item = {
+        "resource": "subventions_par_domaine",
+        "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "commune", "id": "cohort-c1"},
+            {"type": "commune", "id": "cohort-c3"},
+        ]},
+        "coordinates": {"detail": ["mobility"], "period": ["2024"]},
+    }
+    selected = cohort_http.client.post("/api/resources/read", json=item)
+    assert selected.status_code == 200, selected.text
+    result = selected.json()["result"]
+    assert result["source_facet"] == {"detail": "mobility", "observation_period": "2024"}
+    assert (result["status"], result["median"], result["rank"], result["rank_size"]) == (
+        "available", 450.0, 1, 2)
+
+    wrong_period = cohort_http.client.post("/api/resources/read", json={
+        **item, "coordinates": {"detail": ["mobility"], "period": ["2025"]},
+    })
+    assert wrong_period.status_code == 200, wrong_period.text
+    unavailable = wrong_period.json()["result"]
+    assert unavailable["status"] == "unavailable"
+    assert unavailable["reason"] == "fewer_than_two_comparable_values"
+
+
 def test_anchored_membership_cohort_keeps_rider_and_source_anchor_counts(cohort_http):
     response = cohort_http.read("couverture_programmes", department_id="29", epci_id="cohort-e29",
         coordinates={"membership": ["ACV"]},

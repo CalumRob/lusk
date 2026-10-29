@@ -77,7 +77,7 @@ def collection_snapshot(conn, descriptor, territory_type, territory_id, *, field
 
 
 def collection_comparison(conn, descriptor, territory_type, territory_id, cohort_type, members,
-                          fixed_context=None, fields=None):
+                          fixed_context=None, fields=None, coordinates=None):
     allowed = ({"status", "reason", "selected_member_count"} if descriptor["kind"] == "anchored_membership"
                else {"status", "reason", "selected_member_count", "eligible_count", "missing_count",
                      "median", "rank", "rank_size"})
@@ -89,16 +89,24 @@ def collection_comparison(conn, descriptor, territory_type, territory_id, cohort
                 "status":"unavailable","reason":"categorical_membership_not_comparable",
                 **({"selected_member_count":len(members)} if "selected_member_count" in selected else {}),**marker}
     valid = territory_type in descriptor["allowed_levels"] and cohort_type in descriptor["allowed_levels"]
+    coordinates = coordinates or {}
+    detail_values = coordinates.get("detail", [descriptor["comparison_detail"]])
+    period_values = coordinates.get("period", [descriptor["comparison_period"]])
+    if len(detail_values) != 1 or len(period_values) != 1:
+        raise HTTPException(422, "Collection comparison requires one selected category and period")
+    facet = (detail_values[0], str(period_values[0]))
     if fixed_context is not None and valid:
-        return _published_collection_comparison(conn, descriptor, territory_type, territory_id,
-                                                members, fixed_context, marker, selected)
+        result = _published_collection_comparison(conn, descriptor, territory_type, territory_id,
+                                                 members, fixed_context, marker, selected, facet)
+        result["source_facet"]["observation_period"] = period_values[0]
+        return result
     rows = conn.execute("""SELECT o.territory_id,o.value,o.source_id,sd.name,o.vintage_id,v.version,
         v.reference_date,v.publication_date FROM period_detail_observation o
         JOIN source_dataset sd ON sd.source_id=o.source_id
         JOIN source_vintage v ON v.source_id=o.source_id AND v.vintage_id=o.vintage_id
         WHERE o.indicator_id=%s AND o.detail_key=%s AND o.observation_period=%s
-          AND o.territory_id=ANY(%s)""", (descriptor["indicator_id"],descriptor["comparison_detail"],
-            descriptor["comparison_period"],list(dict.fromkeys([*members,territory_id])))).fetchall() if valid else []
+          AND o.territory_id=ANY(%s)""", (descriptor["indicator_id"],facet[0],
+            facet[1],list(dict.fromkeys([*members,territory_id])))).fetchall() if valid else []
     peers = [row for row in rows if row[0] in members]
     values = [row[1] for row in peers]
     enough = len(values)>=2
@@ -109,7 +117,7 @@ def collection_comparison(conn, descriptor, territory_type, territory_id, cohort
                               "reference_date":row[6],"publication_date":row[7]} for row in peers}
     return {"indicator_id":descriptor["indicator_id"],"theme_id":descriptor["theme_id"],
         "label":descriptor["label"],"unit":descriptor["unit"],"descriptor_version":descriptor["descriptor_version"],
-        "source_facet":{"detail":descriptor["comparison_detail"],"observation_period":descriptor["comparison_period"]},
+        "source_facet":{"detail":facet[0],"observation_period":period_values[0]},
         "direction":descriptor["direction"],"statistic":"median","status":"available" if enough else "unavailable",
         "reason":None if enough else "fewer_than_two_comparable_values" if valid else "unsupported_comparison_contract",
         **({"selected_member_count":len(members)} if "selected_member_count" in selected else {}),
@@ -145,10 +153,10 @@ def collection_comparison_preflight(conn, descriptor, fields, fixed_context, mar
 
 
 def _published_collection_comparison(conn, descriptor, territory_type, territory_id, members,
-                                     fixed_context, marker, selected):
+                                     fixed_context, marker, selected, facet=None):
     context, group_id, group_type = fixed_context
     indicator = descriptor["indicator_id"]
-    facet = (descriptor["comparison_detail"], str(descriptor["comparison_period"]))
+    facet = facet or (descriptor["comparison_detail"], str(descriptor["comparison_period"]))
     storage = conn.execute("""SELECT to_regclass('observed_collection_comparison_lineage'),
         EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
           AND table_name='observed_collection_comparison_publication' AND column_name='lineage_complete')""").fetchone()
@@ -229,7 +237,7 @@ def _published_collection_comparison(conn, descriptor, territory_type, territory
     rank = focal[3] if focal and focal[2]=="measured" else None
     return {"indicator_id":indicator,"theme_id":descriptor["theme_id"],"label":descriptor["label"],
         "unit":descriptor["unit"],"descriptor_version":descriptor["descriptor_version"],
-        "source_facet":{"detail":facet[0],"observation_period":descriptor["comparison_period"]},
+         "source_facet":{"detail":facet[0],"observation_period":facet[1]},
         "direction":descriptor["direction"],"statistic":"median","status":"available" if enough else "unavailable",
         "reason":None if enough else "fewer_than_two_comparable_values",
         **({"selected_member_count":len(expected)} if "selected_member_count" in selected else {}),

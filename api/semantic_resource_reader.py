@@ -396,7 +396,8 @@ class SemanticResourceReader:
                 scalar_facet_projection=bool(item.fields and "scalar_facet" in item.fields),
                 scalar_facet_theme_id=(resource.theme_id if self._has_dual_scalar_series(resource)
                                        and item.target.kind == "territory" else None),
-                profile_coordinates=self._profile_comparison_coordinates(conn, item, resource))
+                profile_coordinates=self._profile_comparison_coordinates(conn, item, resource),
+                collection_coordinates=item.coordinates if "period_detail" in resource.shapes else None)
             if item.coordinates:
                 data = self._filter_coordinates(data, item.coordinates, resource)
             return {"resource": item.resource, "target": item.target.model_dump(), **data}
@@ -704,7 +705,8 @@ class SemanticResourceReader:
                 source_facet = result["source_facet"]
                 values = None
                 if isinstance(source_facet, dict):
-                    matches = all(str(source_facet.get(axis)) in set(values)
+                    facet_axes = {"period": "observation_period"}
+                    matches = all(str(source_facet.get(facet_axes.get(axis, axis))) in set(values)
                                   for axis, values in coordinates.items())
                 else:
                     if "declared_profile" in getattr(resource, "shapes", ()):
