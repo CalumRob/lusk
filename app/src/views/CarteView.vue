@@ -236,7 +236,8 @@ const couchesTheme = computed<CouchesTheme | null>(() =>
         indicatorIds: new Set(mapDeclarations.value.filter((resource) => resource.shapes.some((shape) =>
           ['scalar', 'declared_profile', 'period_detail', 'ordered_series'].includes(shape)))
           .map((resource) => resource.indicator_id)),
-        scalarIds: new Set(mapDeclarations.value.filter((resource) => resource.shapes.includes('scalar'))
+        scalarIds: new Set(mapDeclarations.value.filter((resource) => resource.shapes.includes('scalar') ||
+          (selection.value === 'programmes' && resource.shapes.includes('ordered_series')))
           .map((resource) => resource.indicator_id)),
         storyFields: new Set(mapStories.value.flatMap((row) => Object.entries(row)
           .filter(([, value]) => typeof value === 'number').map(([key]) => key))),
@@ -394,7 +395,8 @@ const payloadCarte = computed(() => {
   if (!current) return current
   if (ongletProgrammes.value) {
     return { ...current, themeMetadata: { ...current.themeMetadata,
-      programmes: mapThemeMetadata.value ?? current.themeMetadata?.programmes }, apercu: [],
+      programmes: mapThemeMetadata.value?.theme === 'programmes'
+        ? mapThemeMetadata.value : current.themeMetadata?.programmes }, apercu: [],
       programmes: { membres: [], subventions: [], mapMemberships: mapMemberships.value },
       mapGrantFacts: mapStatus.value === 'ready' ? mapGrantFacts.value : [] }
   }
@@ -407,7 +409,8 @@ const payloadCarte = computed(() => {
       territoryRank.value.indicator === row.key && territoryRank.value.level === row.type
       ? { ...row, comparaisonApi: { rang: territoryRank.value.rank.rank,
           taille: territoryRank.value.rank.rankSize, portee: territoryRank.value.rank.scope } } : row) : []
-  return { ...current, themeMetadata: { ...current.themeMetadata, [theme]: mapThemeMetadata.value ?? current.themeMetadata?.[theme] }, apercu: [], indicateurs: [...indicateurs, ...acquired],
+  return { ...current, themeMetadata: { ...current.themeMetadata, [theme]: mapThemeMetadata.value?.theme === theme
+    ? mapThemeMetadata.value : current.themeMetadata?.[theme] }, apercu: [], indicateurs: [...indicateurs, ...acquired],
     histoires: [...histoires, ...mapStories.value] as typeof current.histoires }
 })
 

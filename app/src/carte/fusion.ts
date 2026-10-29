@@ -203,9 +203,13 @@ export function valeurHistoireParTerritoire(
   for (const histoire of payload.histoires) {
     if (histoire.theme !== theme) continue
     const valeur = (histoire as unknown as Record<string, unknown>)[champ]
+    const status = (histoire as unknown as Record<string, unknown>).status
+    const nativeUnits = (histoire as unknown as Record<string, unknown>).nativeUnits
+    const unit = typeof nativeUnits === 'object' && nativeUnits !== null
+      ? (nativeUnits as Record<string, unknown>)[champ] : undefined
     parTerritoire.set(histoire.territoire, {
-      value: typeof valeur === 'number' ? valeur : null,
-      unit: '',
+      value: status === 'unavailable' ? null : typeof valeur === 'number' ? valeur : null,
+      unit: typeof unit === 'string' ? unit : '',
     })
   }
   return parTerritoire

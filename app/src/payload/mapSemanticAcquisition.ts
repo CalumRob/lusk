@@ -122,8 +122,17 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
         axis_values: rawDescriptor.axis_values as string[], comparison_point: text(rawDescriptor.comparison_point) ? rawDescriptor.comparison_point : null },
       comparison: null },
       declaration.theme_id as Theme, [...territories], 'detail')
+    const grants = declaration.theme_id === 'programmes'
+      ? (() => {
+        const comparisonPoint = rawDescriptor.comparison_point
+        if (!text(comparisonPoint) || !Array.isArray(rawDescriptor.axis_values) ||
+            !rawDescriptor.axis_values.includes(comparisonPoint)) {
+          throw new Error('Point de comparaison natif des subventions absent ou hors axe')
+        }
+        return facts.filter((fact) => fact.detail === comparisonPoint)
+      })() : []
     return { facts: declaration.theme_id === 'programmes' ? [] : facts,
-      stories: [], memberships: [], grants: declaration.theme_id === 'programmes' ? facts : [],
+      stories: [], memberships: [], grants,
       declarations: [declaration], axes: { [declaration.indicator_id]:
         Array.isArray((data.descriptor as Row | undefined)?.axis_values)
           ? (data.descriptor as Row).axis_values as string[] : [] },
@@ -180,6 +189,12 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
     }
   } else if (shape === 'typed_reading') {
     if (!Array.isArray(data.territories)) throw new Error('Lectures typées natives absentes')
+    const descriptor = isRecord(data.descriptor) ? data.descriptor : null
+    const rateUnit = declaration.resource_id === 'demographie_selected_reading'
+      ? descriptor?.rate_unit : undefined
+    if (declaration.resource_id === 'demographie_selected_reading' && !text(rateUnit)) {
+      throw new Error('Unité native des taux démographiques absente')
+    }
     for (const candidate of data.territories) {
       const territory = requireRecord(candidate, 'typed-reading territory')
       if (!Array.isArray(territory.facts) || !isRecord(territory.territory)) throw new Error('Faits de lecture typée absents')
@@ -187,13 +202,18 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
         const fact = requireRecord(factValue, 'typed-reading fact')
         const reading = readingParams.find((entry) => entry.storyKey === fact.story_key || entry.storyKey === fact.groupe)
         if (!reading) continue
+        if (fact.status !== 'measured' && fact.status !== 'unavailable') {
+          throw new Error('Statut natif de lecture typée invalide')
+        }
         const source = fact.source ? [fact.source] : []
         const row: Record<string, unknown> = { territoire: territory.territory.id,
           type: territory.territory.type, theme: declaration.theme_id, story_key: reading.storyKey,
-          groupe: fact.groupe ?? reading.storyKey, mapApiFact: true }
+          groupe: fact.groupe ?? reading.storyKey, status: fact.status, mapApiFact: true,
+          ...(text(rateUnit) ? { nativeUnits: Object.fromEntries(reading.params
+            .filter((param) => param.startsWith('taux_')).map((param) => [param, rateUnit])) } : {}) }
         for (const param of reading.params) {
           const value = fact[param]
-          if (finite(value)) {
+          if (fact.status === 'measured' && finite(value)) {
             row[param] = value
           }
         }

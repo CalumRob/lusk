@@ -18,8 +18,8 @@ import type { Histoire, Indicateur, Payload } from '../payload/types'
  * territory sit on THIS variable", never the theme's KPI wall), then « Voir
  * la fiche ». Ranks live on the indicateurs table only (CONTEXT.md §Rang) :
  * a story-scalar layer (source 'histoire') shows the value without an
- * invented rank. Without a layer (the neutral first load) the Aperçu basics
- * fill the popup. A KPI the payload cannot compute is skipped — never a
+ * invented rank. Without a layer (the neutral first load), no KPI rows are
+ * shown. A KPI the payload cannot compute is skipped — never a
  * made-up number. Pure logic; the popup builder renders what this returns.
  */
 
@@ -254,20 +254,18 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
     expect(kpis[0]?.rang).toBeNull()
   })
 
-  it('without a layer, shows the Aperçu basics without ranks (the neutral-state popup)', () => {
+  it('neutral popup has no Aperçu KPI rows even when the payload still contains them', () => {
     const payload = payloadAvecApercu()
     const kpis = kpisPourPopup(payload, '29001', null, null)
 
-    expect(kpis.map((k) => k.libelle)).toEqual(['Population', 'Densité', 'Part des 65 ans et plus'])
-    expect(kpis.every((k) => k.rang === null)).toBe(true)
+    expect(kpis).toEqual([])
   })
 
-  it('skips an NA Aperçu row (value null = non calculable)', () => {
+  it('neutral popup stays free of Aperçu rows even when some are unavailable', () => {
     const payload = payloadAvecApercu(apercuAvecNAFixture)
     const kpis = kpisPourPopup(payload, '22002', null, null)
 
-    expect(kpis.map((k) => k.libelle)).toEqual(['Population', 'Densité'])
-    expect(kpis).toHaveLength(2)
+    expect(kpis).toEqual([])
   })
 
   it('a territory with no payload rows gets an honest short popup', () => {

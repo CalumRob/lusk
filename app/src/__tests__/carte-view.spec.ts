@@ -181,10 +181,11 @@ async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
         } else if (resource.shapes[0] === 'typed_reading') {
           const readings = p.histoires.filter((row: any) => row.theme === theme && row.type === type)
           const story = metadata.subgroups.find((group: any) => group.reading)?.reading
-          data = { ...identity, territories: members.map((territory) => ({ territory: { id: territory.territoire,
+          data = { ...identity, descriptor: resource.resource_id === 'demographie_selected_reading'
+            ? { rate_unit: '‰/an' } : undefined, territories: members.map((territory) => ({ territory: { id: territory.territoire,
             type, name: territory.nom }, facts: readings.filter((row: any) => row.territoire === territory.territoire)
               .map((row: any) => ({ groupe: row.groupe ?? story?.story_key, story_key: story?.story_key,
-                ...Object.fromEntries((story?.params ?? []).filter((key: string) => typeof row[key] === 'number')
+                status: row.status ?? 'measured', ...Object.fromEntries((story?.params ?? []).filter((key: string) => typeof row[key] === 'number')
                   .map((key: string) => [key, row[key]])), source: source(row) })) })) }
         } else if (resource.shapes[0] === 'anchored_membership') {
           const rows = p.programmes?.membres ?? []
@@ -200,18 +201,20 @@ async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
         } else if (resource.shapes[0] === 'ordered_series') {
           const comparisonPoint = metadata.indicator_pages[item.resource]?.comparison?.dimension
           const grants = p.programmes?.subventions ?? []
-          const valuesByTerritory = new Map<string, number>()
-          for (const row of grants) if (row.type === type && String(row.annee) === String(comparisonPoint)) {
-            valuesByTerritory.set(row.territoire, (valuesByTerritory.get(row.territoire) ?? 0) + row.montant)
+          const axisValues = [...new Set(grants.filter((row) => row.type === type).map((row) => String(row.annee)))].sort()
+          const valuesByTerritoryAndYear = new Map<string, number>()
+          for (const row of grants) if (row.type === type) {
+            const key = `${row.territoire}:${row.annee}`
+            valuesByTerritoryAndYear.set(key, (valuesByTerritoryAndYear.get(key) ?? 0) + row.montant)
           }
-          data = { ...identity, descriptor: { axis_kind: 'year', axis_values: [String(comparisonPoint)],
+          data = { ...identity, descriptor: { axis_kind: 'year', axis_values: axisValues,
             comparison_point: String(comparisonPoint), unit: resource.unit, completeness: 'sparse' },
             series: members.map((territory) => ({ territory: { id: territory.territoire, type, name: territory.nom },
-              availability: valuesByTerritory.has(territory.territoire) ? 'complete' : 'no_record',
-              points: valuesByTerritory.has(territory.territoire) ? [{ axis: String(comparisonPoint),
-                observation_period: String(comparisonPoint), status: 'measured', value: valuesByTerritory.get(territory.territoire),
+              availability: valuesByTerritoryAndYear.has(`${territory.territoire}:${comparisonPoint}`) ? 'complete' : 'no_record',
+              points: axisValues.filter((axis) => valuesByTerritoryAndYear.has(`${territory.territoire}:${axis}`)).map((axis) => ({ axis,
+                observation_period: axis, status: 'measured', value: valuesByTerritoryAndYear.get(`${territory.territoire}:${axis}`),
                 provenance: [{ source_id: resource.sources[0], source_name: resource.label, vintage_id: 'scdl-v1',
-                  version: '2025', reference_date: null, publication_date: null }] }] : [] })) }
+                  version: '2025', reference_date: null, publication_date: null }] })) })) }
         } else {
           const grants = p.programmes?.subventions ?? []
           data = { ...identity, descriptor: { kind: 'period_detail', unit: '€' }, territories: members.map((territory) => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { factsCarteDepuisLectureCohorte } from '../payload/mapSemanticAcquisition'
+import { valeurHistoireParTerritoire } from '../carte/fusion'
 import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 import type { IndicatorPageMetadata, Territoire } from '../payload/types'
 
@@ -54,16 +55,47 @@ describe('map cohort adapter', () => {
     const resource = { ...declaration('typed_reading'), resource_id: 'demographie_selected_reading',
       indicator_id: 'demographie_selected_reading', fields: ['taux_solde_naturel'] }
     const base = cohort(resource, [])
-    const data = { ...base, shape: 'typed_reading', territories: [{
-      territory: { id: '22001', type: 'commune', name: 'A' }, facts: [{ groupe: 'growth', taux_solde_naturel: 1.25,
+    const data = { ...base, shape: 'typed_reading', descriptor: { rate_unit: '‰/year-native' }, territories: [{
+      territory: { id: '22001', type: 'commune', name: 'A' }, facts: [{ groupe: 'growth', status: 'measured', taux_solde_naturel: 1.25,
         source: { source_id: 'source-a', name: 'Source', vintage_id: 'v1', version: '2025',
           reference_date: null, publication_date: null } }],
-    }] }
+    }, { territory: { id: '22002', type: 'commune', name: 'B' }, facts: [{ groupe: 'growth',
+      status: 'unavailable', taux_solde_naturel: 99,
+      source: { source_id: 'source-a', name: 'Source', vintage_id: 'v1', version: '2025',
+        reference_date: null, publication_date: null } }] }] }
     const result = factsCarteDepuisLectureCohorte(resource, data, territories,
       [{ storyKey: 'growth', params: ['taux_solde_naturel'] }])
-    expect(result.stories).toHaveLength(1)
+    expect(result.stories).toHaveLength(2)
     expect(result.stories[0]).toMatchObject({ territoire: '22001', taux_solde_naturel: 1.25,
-      vintage_id: 'v1', vintage_version: '2025' })
+      status: 'measured', nativeUnits: { taux_solde_naturel: '‰/year-native' }, vintage_id: 'v1', vintage_version: '2025' })
+    expect(result.stories[1]).not.toHaveProperty('taux_solde_naturel')
+    const payload = { histoires: result.stories } as never
+    expect(valeurHistoireParTerritoire(payload, 'demographie', 'taux_solde_naturel').get('22001'))
+      .toMatchObject({ value: 1.25, unit: '‰/year-native' })
+    expect(valeurHistoireParTerritoire(payload, 'demographie', 'taux_solde_naturel').get('22002'))
+      .toMatchObject({ value: null, unit: '‰/year-native' })
+  })
+
+  it('projects only the native annual grant comparison point, independent of point order', () => {
+    const resource = { ...declaration('ordered_series'), resource_id: 'subventions_annuelles',
+      indicator_id: 'subventions_annuelles', theme_id: 'programmes', unit: '€' }
+    const points = (reverse = false) => {
+      const rows = [
+        { axis: '2023', observation_period: '2023', value: 20, status: 'measured', provenance: [] },
+        { axis: '2025', observation_period: '2025', value: 50, status: 'measured', provenance: [] },
+      ]
+      return reverse ? rows.reverse() : rows
+    }
+    const makeData = (series: ReturnType<typeof points>) => ({ ...cohort(resource, []), shape: 'ordered_series',
+      descriptor: { axis_kind: 'year', axis_values: ['2023', '2025'], comparison_point: '2023', unit: '€' },
+      series: [{ territory: { id: '22001', type: 'commune', name: 'A' }, points: series },
+        { territory: { id: '22002', type: 'commune', name: 'B' }, points: series }] })
+    const first = factsCarteDepuisLectureCohorte(resource, makeData(points()), territories)
+    const reordered = factsCarteDepuisLectureCohorte(resource, makeData(points(true)), territories)
+    expect(first.grants.map((fact) => [fact.territoire, fact.detail, fact.value]))
+      .toEqual([['22001', '2023', 20], ['22002', '2023', 20]])
+    expect(reordered.grants.map((fact) => [fact.territoire, fact.detail, fact.value]))
+      .toEqual(first.grants.map((fact) => [fact.territoire, fact.detail, fact.value]))
   })
 
   it.each([
