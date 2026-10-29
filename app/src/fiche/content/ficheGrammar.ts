@@ -1,4 +1,4 @@
-import type { FamilleFigure, NoeudTexteRiche, Theme, ThemeMetadata } from '@/payload/types'
+import type { FamilleFigure, NoeudTexteRiche, Theme } from '@/payload/types'
 
 /** Stable app labels for producer-declared axis kinds; unknown kinds stay neutral. */
 const LIBELLES_AXE_NATIF: Readonly<Record<string, string>> = {
@@ -12,7 +12,10 @@ export function libelleAxeNatif(axisKind: string | undefined): string {
   return axisKind ? LIBELLES_AXE_NATIF[axisKind] ?? 'Coordonnée' : 'Coordonnée'
 }
 
-/** App-owned display names shared by the fiche and Mobilité's semantic content. */
+/**
+ * App-owned display names shared by the fiche and Mobilité's semantic content.
+ * Stable presentation copy — the facts it describes remain producer-owned.
+ */
 export const CONTENU_SOUS_GROUPES_FICHE = {
   mobilite: {
     'acces-aux-services': 'L’accès aux services',
@@ -21,6 +24,40 @@ export const CONTENU_SOUS_GROUPES_FICHE = {
     'offre-transports-commun': 'L’offre de transports en commun',
   },
 } as const
+
+/**
+ * App-owned editorial framing per subgroup, keyed by the producer subgroup
+ * identity. Wording and organisation only: no unit, threshold, axis, status or
+ * availability claim is derived from it.
+ */
+export const CADRAGES_SOUS_GROUPES_FICHE = {
+  mobilite: {
+    'acces-aux-services': 'Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun : les parts de bâtiments sans accès aux services essentiels.',
+    'partage-de-lespace-public': 'La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.',
+    motorisation: 'L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.',
+    'offre-transports-commun': 'La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.',
+  },
+  demographie: {
+    'etat-de-la-population': 'La population de la commune : sa taille, sa densité et la structure de ses ménages.',
+    'trajectoire-demographique': "L'évolution de la population depuis 1968 et les deux forces qui la portent : le solde naturel et le solde migratoire.",
+  },
+  habitat: {
+    'composition-du-parc': "La composition du parc de logements de la commune : le mix, le statut d'occupation et le type.",
+    'etat-energetique-du-parc': 'L’état énergétique du parc : la distribution des étiquettes DPE, la part de passoires thermiques et l’âge du bâti.',
+    marche: 'Le marché immobilier de la commune : la médiane du prix au m² des ventes.',
+  },
+  economie: {
+    'sante-et-taille': "La santé du tissu productif local : l'emploi salarié au lieu de travail et le chômage au sens du recensement.",
+    'structure-verte': 'La place des établissements verts dans le tissu productif.',
+  },
+  milieux: {
+    artificialisation: 'La consommation de la terre par l’urbanisation : l’état artificialisé et le flux annuel.',
+  },
+  programmes: {
+    couverture: "Les programmes de l'État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d'action publique, jamais des résultats.",
+    subventions: 'Les subventions attribuées par la Région Bretagne au territoire : le total annuel partout, la ventilation par domaine sur les fiches communales.',
+  },
+} as const satisfies Readonly<Record<Theme, Readonly<Record<string, string>>>>
 
 export interface FicheReadingGrammar {
   /** Template text and its presentation order; the resolved row remains API-owned. */
@@ -35,9 +72,8 @@ export interface FicheSubgroupGrammar {
   /** Structural binding to the producer's subgroup identity. */
   readonly key: string
   readonly label: string
-  /** Null only when the whole factual clause remains on producer metadata. */
+  /** App-owned editorial framing; a null framing is the honest silent state. */
   readonly framing: string | null
-  readonly framingSource?: 'theme-metadata'
   /** Producer resource identities and their display order, not availability. */
   readonly indicators: readonly string[]
   readonly figure: { readonly family: FamilleFigure; readonly indicator: string }
@@ -64,7 +100,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'acces-aux-services',
       label: CONTENU_SOUS_GROUPES_FICHE.mobilite['acces-aux-services'],
-      framing: 'Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun : les parts de bâtiments sans accès aux services essentiels.',
+      framing: CADRAGES_SOUS_GROUPES_FICHE.mobilite['acces-aux-services'],
       indicators: [
         'tot_loss_t', 'tot_loss_b', 'iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque',
         'share_food_t', 'share_food_b', 'share_food_c', 'share_health_t', 'share_health_b', 'share_health_c',
@@ -88,7 +124,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'partage-de-lespace-public',
       label: CONTENU_SOUS_GROUPES_FICHE.mobilite['partage-de-lespace-public'],
-      framing: 'La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.',
+      framing: CADRAGES_SOUS_GROUPES_FICHE.mobilite['partage-de-lespace-public'],
       indicators: [
         'reseaux', 'reseaux_par_habitant', 'surface_reseaux_routiers', 'places_stationnement_velo_1000',
         'places_stationnement_voiture_1000', 'stationnement_velo_par_voiture', 'offre_cyclable',
@@ -98,15 +134,14 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'motorisation',
       label: CONTENU_SOUS_GROUPES_FICHE.mobilite.motorisation,
-      framing: 'L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.',
+      framing: CADRAGES_SOUS_GROUPES_FICHE.mobilite['motorisation'],
       indicators: ['voitures_menage', 'bornes_recharge', 'bornes_ev_par_station_service'],
       figure: { family: 'composition', indicator: 'voitures_menage' },
     },
     {
       key: 'offre-transports-commun',
       label: CONTENU_SOUS_GROUPES_FICHE.mobilite['offre-transports-commun'],
-      framing: null,
-      framingSource: 'theme-metadata',
+      framing: CADRAGES_SOUS_GROUPES_FICHE.mobilite['offre-transports-commun'],
       indicators: ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference'],
       figure: { family: 'scalar', indicator: 'offre_tc' },
     },
@@ -115,14 +150,14 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'etat-de-la-population',
       label: 'État de la population',
-      framing: 'La population de la commune : sa taille, sa densité et la structure de ses ménages.',
+      framing: CADRAGES_SOUS_GROUPES_FICHE.demographie['etat-de-la-population'],
       indicators: ['densite', 'structure_age', 'taille_menages'],
       figure: { family: 'pyramid', indicator: 'structure_age' },
     },
     {
       key: 'trajectoire-demographique',
       label: 'Trajectoire démographique',
-      framing: "L'évolution de la population depuis 1968 et les deux forces qui la portent : le solde naturel et le solde migratoire.",
+      framing: CADRAGES_SOUS_GROUPES_FICHE.demographie['trajectoire-demographique'],
       indicators: ['evolution_1968'],
       figure: { family: 'scalar', indicator: 'evolution_1968' },
       reading: {
@@ -139,14 +174,14 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'composition-du-parc',
       label: 'La composition du parc',
-      framing: "La composition du parc de logements de la commune : le mix, le statut d'occupation et le type.",
+      framing: CADRAGES_SOUS_GROUPES_FICHE.habitat['composition-du-parc'],
       indicators: ['mix_logements', 'statut', 'type'],
       figure: { family: 'composition', indicator: 'mix_logements' },
     },
     {
       key: 'etat-energetique-du-parc',
       label: 'L’état énergétique du parc',
-      framing: 'L’état énergétique du parc : la distribution des étiquettes DPE, la part de passoires thermiques et l’âge du bâti.',
+      framing: CADRAGES_SOUS_GROUPES_FICHE.habitat['etat-energetique-du-parc'],
       indicators: ['distribution_dpe', 'part_passoires', 'age_du_bati'],
       figure: { family: 'composition', indicator: 'distribution_dpe' },
       reading: {
@@ -160,7 +195,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'marche',
       label: 'Le marché',
-      framing: 'Le marché immobilier de la commune : la médiane du prix au m² des ventes.',
+      framing: CADRAGES_SOUS_GROUPES_FICHE.habitat['marche'],
       indicators: ['prix_m2'],
       figure: { family: 'trajectory', indicator: 'prix_m2' },
     },
@@ -169,7 +204,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'sante-et-taille',
       label: 'Santé et taille du tissu productif',
-      framing: "La santé du tissu productif local : l'emploi salarié au lieu de travail et le chômage au sens du recensement.",
+      framing: CADRAGES_SOUS_GROUPES_FICHE.economie['sante-et-taille'],
       indicators: ['effectifs_salaries', 'chomage'],
       figure: { family: 'scalar', indicator: 'effectifs_salaries' },
       reading: {
@@ -191,7 +226,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'structure-verte',
       label: 'La structure verte',
-      framing: 'La place des établissements verts dans le tissu productif.',
+      framing: CADRAGES_SOUS_GROUPES_FICHE.economie['structure-verte'],
       indicators: ['eco_activites'],
       figure: { family: 'scalar', indicator: 'eco_activites' },
     },
@@ -200,7 +235,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'artificialisation',
       label: 'L’artificialisation',
-      framing: 'La consommation de la terre par l’urbanisation : l’état artificialisé et le flux annuel.',
+      framing: CADRAGES_SOUS_GROUPES_FICHE.milieux['artificialisation'],
       indicators: ['artif_par_habitant', 'conso_enaf_annuel'],
       figure: { family: 'comparison-bars', indicator: 'artif_par_habitant' },
       reading: {
@@ -217,15 +252,14 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'couverture',
       label: 'Programmes et contrats',
-      framing: "Les programmes de l'État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d'action publique, jamais des résultats.",
+      framing: CADRAGES_SOUS_GROUPES_FICHE.programmes['couverture'],
       indicators: ['couverture_programmes'],
       figure: { family: 'list', indicator: 'couverture_programmes' },
     },
     {
       key: 'subventions',
       label: 'Subventions attribuées',
-      framing: null,
-      framingSource: 'theme-metadata',
+      framing: CADRAGES_SOUS_GROUPES_FICHE.programmes['subventions'],
       indicators: ['subventions_annuelles', 'subventions_par_domaine'],
       figure: { family: 'scalar', indicator: 'subventions_annuelles' },
     },
@@ -241,13 +275,10 @@ export function sousGroupeFiche(theme: Theme, key: string): FicheSubgroupGrammar
 }
 
 /**
- * Resolve app editorial framing, retaining only the two current fact-bearing
- * clauses from their existing producer subgroup declarations.
+ * App editorial framing for a subgroup. Framing is stable presentation copy,
+ * so it no longer depends on a producer metadata fetch; the producer keeps
+ * ownership of the facts it describes.
  */
-export function cadrageSousGroupeFiche(
-  subgroup: FicheSubgroupGrammar,
-  metadata?: ThemeMetadata,
-): string | null {
-  if (subgroup.framingSource !== 'theme-metadata') return subgroup.framing
-  return metadata?.subgroups.find((candidate) => candidate.key === subgroup.key)?.framing ?? null
+export function cadrageSousGroupeFiche(subgroup: FicheSubgroupGrammar): string | null {
+  return subgroup.framing
 }

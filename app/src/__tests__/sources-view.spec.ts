@@ -14,6 +14,19 @@ import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 
 const payload: Payload = { territoires: territoiresFixture, indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture, apercu: apercuAvecNAFixture, runReport: null, vintages: vintagesFixture, programmes: null }
 
+function payloadAvecFichesSources(): Payload {
+  const demographie = structuredClone(metadonneesThemesFixtures.demographie)
+  demographie.source_records = {
+    serie_historique: {
+      dataset: 'Série historique', publisher: 'INSEE', url: null as unknown as string,
+      licence: 'Licence ouverte', vintage: 'RP 2023', freshness: 'Publication annuelle',
+      vintages: [{ id: 'serie_historique', label: 'Recensement', version: null, licence: null, dateReference: null, datePublication: null }],
+      clocks: [{ name: 'Recensement', frequency: 'quinquennale', reference: 'INSEE' }],
+    },
+  }
+  return { ...payload, themeMetadata: { ...metadonneesThemesFixtures, demographie } }
+}
+
 async function monter(charger: ChargerFichier) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/sources')
@@ -24,8 +37,27 @@ async function monter(charger: ChargerFichier) {
 }
 
 describe('SourcesView — route dataset-centric', () => {
+  it('charge seulement les références, les vintages et les fiches source, jamais les tables numériques', async () => {
+    const requested: string[] = []
+    const wrapper = await monter(async (fichier) => {
+      requested.push(fichier)
+      return chargerAvec(payloadAvecFichesSources())(fichier)
+    })
+
+    expect(wrapper.find('article.source-record').exists()).toBe(true)
+    expect(wrapper.find('a[href="/indicateurs/demographie/densite"]').exists()).toBe(true)
+    expect(requested).toContain('vintages')
+    expect(requested).toContain('territoires-metadata')
+    expect(requested).toContain('theme_demographie')
+    expect(requested).not.toContain('territoires')
+    expect(requested.some((fichier) => fichier.startsWith('indicateurs_'))).toBe(false)
+    expect(requested.some((fichier) => fichier.startsWith('histoires_'))).toBe(false)
+    expect(requested).not.toContain('apercu')
+    expect(requested).not.toContain('programmes')
+  })
+
   it('rend une fiche accessible, ses millésimes et les consommateurs canoniques', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter(chargerAvec(payloadAvecFichesSources()))
     expect(wrapper.find('h1#sources-title').exists()).toBe(true)
     expect(wrapper.find('[aria-label="Horloges de mise à jour"]').exists()).toBe(true)
     expect(wrapper.findAll('article.source-record').length).toBeGreaterThan(0)
@@ -44,7 +76,7 @@ describe('SourcesView — route dataset-centric', () => {
       ...payload,
       indicateurs: [...payload.indicateurs, ...indicateursHabitatFixture],
       histoires: [...payload.histoires, ...histoiresHabitatFixture],
-      themeMetadata: { habitat: habitatMetadata },
+      themeMetadata: { ...metadonneesThemesFixtures, habitat: habitatMetadata },
     }
     const wrapper = await monter(chargerAvec(habitatPayload))
     const dvf = wrapper.find('#source-dvf')
@@ -76,7 +108,7 @@ describe('SourcesView — route dataset-centric', () => {
       ...payload,
       indicateurs: [...payload.indicateurs, ...indicateursMobiliteFixture],
       histoires: [...payload.histoires, ...histoiresMobiliteFixture],
-      themeMetadata: { mobilite: mobiliteMetadata },
+      themeMetadata: { ...metadonneesThemesFixtures, mobilite: mobiliteMetadata },
     }))
 
     const method = wrapper.find('.source-record__methodology')

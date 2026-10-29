@@ -1904,7 +1904,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       'Mobilité',
       'Démographie',
       'Habitat',
-      'Économie',
+      'Économie/Emploi',
       'Milieux',
     ])
   })

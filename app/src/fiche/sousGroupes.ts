@@ -6,9 +6,8 @@
  * resolved readings:
  *
  * - subgroup order, label, editorial framing, resource bindings and figure
- *   presentation from ficheGrammar.ts; the two fact-bearing framing clauses
- *   use their explicitly retained producer metadata reader, and an app
- *   declaration never establishes availability;
+ *   presentation from ficheGrammar.ts; framing is app-owned presentation copy,
+ *   and an app declaration never establishes availability;
  * - compact and indicator figures use only rows actually present in the payload;
  * - the RESOLVED reading from the histoires row joined by
  *   (territoire, groupe) — the explicit subgroup link of the contract
@@ -284,9 +283,9 @@ function lecturePour(
 /**
  * The shared subgroup loop of the fiche — app-owned presentation grammar,
  * joined to actual indicator and resolved-reading rows. Theme metadata supplies
- * only the still-dependent factual explanations. Missing
- * metadata cannot hide producer-validated indicator rows; no grammar entry
- * fabricates an available fact.
+ * only the producer-owned classification vocabulary still needed by a reading;
+ * missing metadata cannot hide producer-validated indicator rows, and no
+ * grammar entry fabricates an available fact.
  */
 export function sousGroupesPourTerritoire(
   payload: Payload,
@@ -322,11 +321,12 @@ export function sousGroupesPourTerritoire(
     // state). Do not turn that absence into copy or a fake Story.
     const hasReading = sousGroupe.reading !== undefined && payload.histoires.some((row) =>
       row.theme === theme && row.territoire === territoire && row.groupe === sousGroupe.key)
+    // The classification vocabulary stays producer-owned: a reading that
+    // composes it needs the theme metadata, and says so honestly when absent.
     const readingNeedsMetadata = Boolean(sousGroupe.reading?.params.includes('classification'))
-    const explanationPending = !metadataVerified &&
-      (sousGroupe.framingSource === 'theme-metadata' || (hasReading && readingNeedsMetadata))
+    const explanationPending = !metadataVerified && hasReading && readingNeedsMetadata
     const { lecture, indisponible } = sousGroupe.reading
-      ? explanationPending && hasReading
+      ? explanationPending
         ? { lecture: null, indisponible: false }
         : lecturePour(payload, theme, territoire, sousGroupe.key, sousGroupe.reading, metadataVerified ? metadata : undefined)
       : { lecture: null, indisponible: false }
@@ -334,9 +334,7 @@ export function sousGroupesPourTerritoire(
     return {
       key: sousGroupe.key,
       label: sousGroupe.label,
-      framing: metadataVerified || sousGroupe.framingSource !== 'theme-metadata'
-        ? cadrageSousGroupeFiche(sousGroupe, metadata)
-        : null,
+      framing: cadrageSousGroupeFiche(sousGroupe),
       metadataExplanationPending: explanationPending,
       figures,
       figureCompacte,

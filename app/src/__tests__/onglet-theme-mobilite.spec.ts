@@ -129,7 +129,7 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     expect(wrapper.findAll('.figure-indicateur[data-clef="offre_cyclable"]')).toHaveLength(1)
   })
 
-  it('reads the factual public-transport framing from retained producer metadata', async () => {
+  it('reads the public-transport framing from app-owned presentation grammar', async () => {
     const upstream = JSON.parse(readFileSync(
       join(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8',
     )) as ThemeMetadata
@@ -143,7 +143,7 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     expect(wrapper.find('[data-groupe="offre-transports-commun"] .sous-groupe-titre').text())
       .toBe('L’offre de transports en commun')
     expect(wrapper.find('[data-groupe="offre-transports-commun"] .sous-groupe-cadrage').text())
-      .toBe('Cadrage factuel du réseau fourni par le producteur.')
+      .toBe('La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.')
   })
 
   it('labels say « à pied ou en transports en commun », NEVER « sans voiture » — the reading is the one exception', async () => {

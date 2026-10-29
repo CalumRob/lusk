@@ -290,21 +290,24 @@ describe('le store progressif — échecs scopés (option C)', () => {
 
   it('un thème présent sans métadonnées = dérive de validation LOUD, jamais une absence silencieuse (#313)', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Theme metadata is self-contained (no reference-table dependency): a
+    // present theme requires its metadata, and the 404 is the typed drift.
     const wrapper = await monter(
       async (fichier) => {
         if (fichier === 'theme_demographie') return null
+        if (fichier === 'indicateurs_demographie') return indicateursDemographieFixture
         return chargerAvec(payload)(fichier)
       },
-      ['territoires'],
+      ['territoires', 'indicateurs_demographie', 'theme_demographie'],
     )
     const { erreur, chargement, payload: p } = wrapper.vm.etat
 
     // Le thème est présent (indicateurs) mais sa métadonnée 404 → dérive.
     expect(consoleError).toHaveBeenCalled()
     expect(chargement.value).toBe(false)
-    // L'échec reste scopé : erreur null, page vivante, la section reste à son
-    // état vide honnête — aucune entrée de métadonnée pour le thème dérivé.
-    expect(erreur.value).toBeNull()
+    // L'échec reste scopé à la métadonnée du thème (la page vit) et la
+    // section reste à son état vide honnête — aucune entrée inventée.
+    expect(erreur.value).toMatchObject({ kind: 'validation', file: 'theme_demographie.json' })
     expect(p.value?.themeMetadata).toEqual({})
   })
 

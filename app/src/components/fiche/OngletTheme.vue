@@ -59,11 +59,9 @@ interface SousGroupeRenduComplet extends SousGroupeRendu {
 const metadataVerified = computed(() => props.metadataStatus === undefined
   ? Boolean(props.payload.themeMetadata?.[props.theme])
   : props.metadataStatus === 'ready')
-const nomTheme = computed(() => props.metadataStatus === undefined
-  ? props.payload.themeMetadata?.[props.theme]?.label ?? props.theme
-  : metadataVerified.value
-    ? props.payload.themeMetadata?.[props.theme]?.label ?? NOMS_THEMES[props.theme]
-    : NOMS_THEMES[props.theme])
+// The tab's display name is app-owned content (NOMS_THEMES), never a copy of
+// the producer's theme label; the theme identity and its facts stay payload-owned.
+const nomTheme = computed(() => NOMS_THEMES[props.theme])
 
 // Resolve factual labels from the verified catalogue or native descriptor;
 // never expose an internal indicator key in the fiche.

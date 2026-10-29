@@ -74,11 +74,12 @@ describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
     expect(titres).toEqual(['Programmes et contrats', 'Subventions attribuées'])
     expect(wrapper.find('[data-groupe="couverture"]').exists()).toBe(true)
     expect(wrapper.find('[data-groupe="subventions"]').exists()).toBe(true)
-    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').exists()).toBe(false)
+    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Libellé amont périmé')
+    expect(wrapper.text()).not.toContain('Cadrage amont périmé.')
   })
 
-  it('reads the factual grant-eligibility clause from retained producer metadata', () => {
+  it('reads the grant framing from app-owned presentation grammar, not producer copy', () => {
     const upstream = structuredClone(payloadPlein)
     upstream.themeMetadata!.programmes!.subgroups.find((subgroup) => subgroup.key === 'subventions')!.framing =
       'Cadrage factuel des niveaux de ventilation fourni par le producteur.'
@@ -86,8 +87,9 @@ describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
 
     expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-titre').text())
       .toBe('Subventions attribuées')
-    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').text())
-      .toBe('Cadrage factuel des niveaux de ventilation fourni par le producteur.')
+    const cadrage = wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').text()
+    expect(cadrage).toBe('Les subventions attribuées par la Région Bretagne au territoire : le total annuel partout, la ventilation par domaine sur les fiches communales.')
+    expect(cadrage).not.toContain('fourni par le producteur')
   })
 
   it('rend les badges avec leurs voix honnêtes — lauréate, couverte, portage nommé', () => {

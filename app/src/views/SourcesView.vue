@@ -5,9 +5,19 @@ import { computed } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { ancreSource } from '@/methodes/sources'
 import { sourceRecords } from '@/payload/selectors'
+import type { Fichier } from '@/payload/loader'
+import { THEMES_CANONIQUES } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
 
-const { payload, erreur, chargement, recharger } = usePayload()
+// Sources consumes source metadata and freshness facts, not territory-level
+// numeric tables. Theme source_records remain a narrow factual dependency;
+// vintages and territory-reference provenance retain their existing owners.
+const FICHIERS_SOURCES: Fichier[] = [
+  'territoires-metadata',
+  'vintages',
+  ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier),
+]
+const { payload, erreur, chargement, recharger } = usePayload({ attendre: FICHIERS_SOURCES, demarrer: FICHIERS_SOURCES })
 const sources = computed(() => payload.value ? sourceRecords(payload.value).filter((source) => source.consumers.length > 0) : [])
 const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 5 }).format(value)
 </script>

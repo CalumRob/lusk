@@ -51,16 +51,13 @@ const props = defineProps<{
 }>()
 
 // The theme label and remaining factual/page contracts still use metadata;
-// labels and editorial framing use app grammar. Grant eligibility framing is
-// retained from its producer subgroup declaration.
+// labels and editorial framing use app grammar.
 const metadata = computed(() => props.payload.themeMetadata?.programmes ?? null)
 
 function groupe(key: string): { label: string; framing: string | null } {
   const g = sousGroupeFiche('programmes', key)
   if (!g) throw new Error(`Sous-groupe « ${key} » absent de la grammaire fiche « programmes »`)
-  const metadataVerified = props.metadataStatus === undefined || props.metadataStatus === 'ready'
-  return { label: g.label, framing: metadataVerified || g.framingSource !== 'theme-metadata'
-    ? cadrageSousGroupeFiche(g, metadata.value ?? undefined) : null }
+  return { label: g.label, framing: cadrageSousGroupeFiche(g) }
 }
 
 const element = computed(() => programmesPourTerritoire(props.payload, props.territoire))
@@ -119,7 +116,7 @@ const lienProvenance = computed(() => {
   <!-- Facts-first: API facts and the app-owned heading survive a missing
        optional catalogue projection. -->
   <article class="onglet-theme onglet-theme--programmes bloc-programmes">
-    <p class="onglet-theme-overline">{{ metadata?.label ?? NOMS_THEMES.programmes }}</p>
+    <p class="onglet-theme-overline">{{ NOMS_THEMES.programmes }}</p>
 
     <template v-if="elementVide">
       <section class="sous-groupe" data-groupe="couverture">

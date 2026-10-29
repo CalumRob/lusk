@@ -100,8 +100,19 @@ function payloadVide(): Payload {
   }
 }
 
-/** The files that validate WITHOUT the reference table — fired immediately. */
-const SANS_REFERENCE = new Set<Fichier>(['territoires', 'territoires-metadata', 'run-report', 'vintages'])
+/**
+ * The files that validate WITHOUT the reference table — fired immediately.
+ * `theme_<theme>` metadata is self-contained (validerThemeMetadata takes no
+ * reference), so a consumer that only needs source metadata (Sources) never
+ * has to load the territory table or any numeric theme table.
+ */
+const SANS_REFERENCE = new Set<Fichier>([
+  'territoires',
+  'territoires-metadata',
+  'run-report',
+  'vintages',
+  ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier),
+])
 
 /** The full file set — no-arg `usePayload()` waits for exactly this. */
 const TOUS_LES_FICHIERS: Fichier[] = [
@@ -238,6 +249,33 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
   ) => Promise<unknown>
 
   function construire(nom: Fichier): Promise<unknown> {
+    // Les métadonnées (theme_<theme>.json, #313) sont autoportantes (le
+    // validateur ne prend aucune référence) : leur fetch ne lit jamais la
+    // table territoriale. La règle de présence (un thème qui publie ses faits
+    // publie ses métadonnées) reste portée par la paire du MÊME thème.
+    if (nom.startsWith('theme_')) {
+      const theme = themeDe(nom)
+      const indicateurs = etats.get(`indicateurs_${theme}`)
+      // A theme's metadata is self-contained: it may be loaded on its own
+      // (Sources) or after its indicators. When the theme's indicators are
+      // known to be absent (404), the metadata is absent too — never drift.
+      const fetchMeta = () => (chargerInjecte ? chargerInjecte(nom) : chargerFichierElargi(nom))
+      const present = (meta: unknown) => {
+        if (meta === null) {
+          throw new PayloadError(
+            'validation',
+            `${nom}.json`,
+            `Le thème « ${theme} » publie des indicateurs sans métadonnées (${nom}.json introuvable)`,
+          )
+        }
+        return meta
+      }
+      if (!indicateurs) return fetchMeta().then(present)
+      return indicateurs.promesse.then((indicateursTheme) => {
+        if (indicateursTheme === null) return null // thème absent → métadonnées absentes
+        return fetchMeta().then(present)
+      })
+    }
     if (SANS_REFERENCE.has(nom)) {
       return chargerInjecte ? chargerInjecte(nom) : chargerFichierElargi(nom)
     }
@@ -273,32 +311,6 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
             )
           }
           return histoires
-        })
-      })
-    }
-    // Les métadonnées (theme_<theme>.json, #313) suivent la même découverte
-    // que les histoires : chaînées sur la paire indicateurs du MÊME thème
-    // (jamais un fetch transitif) — thème absent → métadonnées absentes ;
-    // thème présent sans son fichier → dérive typée, loud.
-    if (nom.startsWith('theme_')) {
-      const theme = themeDe(nom)
-      const indicateurs = etats.get(`indicateurs_${theme}`)
-      if (!indicateurs) {
-        return Promise.reject(
-          new PayloadError('validation', `${nom}.json`, `« ${nom}.json » doit suivre ses indicateurs.`),
-        )
-      }
-      return indicateurs.promesse.then((indicateursTheme) => {
-        if (indicateursTheme === null) return null // thème absent → métadonnées absentes
-        return territoires.promesse.then(fetchant).then((meta) => {
-          if (meta === null) {
-            throw new PayloadError(
-              'validation',
-              `${nom}.json`,
-              `Le thème « ${theme} » publie des indicateurs sans métadonnées (${nom}.json introuvable)`,
-            )
-          }
-          return meta
         })
       })
     }
