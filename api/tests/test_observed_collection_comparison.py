@@ -70,6 +70,44 @@ def test_fixed_comparison_uses_published_sparse_facet_without_peer_values():
     assert not any("FROM observed_collection_comparison_territory" in sql and "territory_id=%s" not in sql for sql in conn.sql)
 
 
+def test_fixed_comparison_uses_requested_published_category_and_period():
+    class SelectedFacet(PublishedConnection):
+        def execute(self, sql, params=None):
+            result = super().execute(sql, params)
+            if "FROM observed_collection_comparison_group\n" in sql or \
+                    "FROM observed_collection_comparison_lineage" in sql:
+                assert params[-2:] == ("mobility", "2025")
+            if "FROM observed_collection_comparison_territory" in sql:
+                assert params[-3:-1] == ("mobility", "2025")
+            return result
+
+    result = collection_comparison(SelectedFacet(), DESCRIPTOR, "commune", "c1", "commune",
+        ("c1", "c2"), ("density_class", "A", "commune"),
+        coordinates={"detail": ["mobility"], "period": ["2025"]})
+    assert result["source_facet"] == {"detail": "mobility", "observation_period": "2025"}
+    assert result["median"] == 15. and result["rank"] == 2
+
+
+def test_selected_comparison_sql_reads_the_requested_category_and_period():
+    class SelectedFacet:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+            if "FROM period_detail_observation o" in sql:
+                assert params[1:3] == ("mobility", "2025")
+                return Cursor(rows=[("c1", 600., "source", "Dataset", "v1", "2025", None, None),
+                                    ("c3", 300., "source", "Dataset", "v1", "2025", None, None)])
+            if "FROM observed_collection_publication p" in sql:
+                return Cursor(("collection-v1", "ref-v1", "ref-v1"))
+            raise AssertionError(sql)
+
+    conn = SelectedFacet()
+    result = collection_comparison(conn, DESCRIPTOR, "commune", "c1", "commune", ("c1", "c3"),
+        coordinates={"detail": ["mobility"], "period": ["2025"]})
+    assert result["source_facet"] == {"detail": "mobility", "observation_period": "2025"}
+    assert (result["median"], result["rank"]) == (450., 1)
+
+
 def test_fixed_collection_selects_median_in_sql_and_rejects_unsupported_fields_early():
     conn=PublishedConnection()
     result=collection_comparison(conn,DESCRIPTOR,"commune","c1","commune",("c1","c2"),

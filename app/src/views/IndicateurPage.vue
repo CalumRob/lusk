@@ -40,6 +40,8 @@ import { createOrderedSeriesSemanticSession, projectAdmittedCohortForFocal,
   SeriesPublicationMismatchError } from '@/payload/seriesSemanticAcquisition'
 import { projectRaccordementSemanticComparison, projectRaccordementSemanticFocal } from '@/payload/raccordementSemanticProjection'
 import type { RaccordementSemanticProjection } from '@/payload/raccordementSemanticProjection'
+import { acquireSparseCollectionFacts, reacquireSparseCollectionComparison } from '@/payload/sparseCollectionPage'
+import type { SparseCollectionPageRead } from '@/payload/sparseCollectionPage'
 
 const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
 const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -69,6 +71,20 @@ const epciPorte = computed(() => route.query.epci)
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
 const pageScalaireApiActive = ref(false)
 const seriesPageApiActive = ref(false)
+const sparseCollectionPageActive = ref(false)
+const sparseCollectionResource = ref<SemanticResourceDeclaration | null>(null)
+const sparseCollectionMetadata = ref<ThemeMetadata | null>(null)
+const sparseCollectionFacts = ref<Indicateur[]>([])
+const sparseCollectionPeriods = ref<string[]>([])
+const sparseCollectionRead = ref<SparseCollectionPageRead | null>(null)
+const sparseCollectionComparison = ref<Record<string, unknown> | null>(null)
+const sparseCollectionComparisonTarget = ref<string | null>(null)
+const sparseCollectionFactsLoading = ref(false)
+const sparseCollectionFactsError = ref(false)
+const sparseCollectionComparisonLoading = ref(false)
+const sparseCollectionComparisonError = ref(false)
+const retrySparseCollectionFacts = ref(0)
+const retrySparseCollectionComparison = ref(0)
 const seriesHasScalarFacet = ref(false)
 const metadataSeriesApi = ref<ThemeMetadata | null>(null)
 const catalogueResourcesApi = ref<SemanticResourceDeclaration[] | null>(null)
@@ -195,6 +211,15 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
   profileDiscoveryComplete.value = false
   pageScalaireApiActive.value = false
   seriesPageApiActive.value = false
+  sparseCollectionPageActive.value = false
+  sparseCollectionResource.value = null
+  sparseCollectionMetadata.value = null
+  sparseCollectionFacts.value = []
+  sparseCollectionPeriods.value = []
+  sparseCollectionRead.value = null
+  sparseCollectionComparison.value = null
+  sparseCollectionFactsError.value = false
+  sparseCollectionComparisonError.value = false
   seriesHasScalarFacet.value = false
   catalogueResourcesApi.value = null
   metadataSeriesApi.value = null
@@ -366,6 +391,37 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
       profileBootstrapLoading.value = false
       return
     }
+  }
+
+  const sparseCollection = resources.find((resource) => resource.resource_id === currentIndicator &&
+    resource.indicator_id === currentIndicator && resource.theme_id === currentTheme &&
+    resource.shapes.length === 1 && resource.shapes[0] === 'period_detail' &&
+    resource.allowed_levels.length === 1 && resource.allowed_levels[0] === 'commune' &&
+    resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
+  if (currentTheme === 'programmes' && currentIndicator === 'subventions_par_domaine' && sparseCollection) {
+    try { sparseCollectionMetadata.value = await loadRouteThemeMetadata(currentTheme) }
+    catch (cause) {
+      if (sequence !== profileDiscoverySequence) return
+      profileBootstrapError.value = cause instanceof PayloadError ? cause
+        : new PayloadError('fetch', `theme_${currentTheme}.json`, 'Les métadonnées de cette page sont indisponibles.')
+      profileDiscoveryComplete.value = true
+      profileBootstrapLoading.value = false
+      return
+    }
+    if (sequence !== profileDiscoverySequence) return
+    const collectionPage = sparseCollectionMetadata.value.indicator_pages?.[currentIndicator]
+    if (!collectionPage || collectionPage.family !== 'list' || !collectionPage.levels.includes('commune')) {
+      profileBootstrapError.value = new PayloadError('validation', currentIndicator,
+        'La collection déclarée ne dispose pas d’une présentation communale compatible.')
+      profileDiscoveryComplete.value = true
+      profileBootstrapLoading.value = false
+      return
+    }
+    sparseCollectionResource.value = sparseCollection
+    sparseCollectionPageActive.value = true
+    profileDiscoveryComplete.value = true
+    profileBootstrapLoading.value = false
+    return
   }
 
   // The route is now confirmed not to be profile- or ordinary-scalar-owned.
@@ -995,6 +1051,8 @@ const payload = computed<Payload>(() => {
     : payloadLegacy.value
   const metadataBound = profileMode.value && metadataProfilAdaptee.value
     ? { ...baseInitial.themeMetadata, [theme.value]: metadataProfilAdaptee.value }
+    : sparseCollectionPageActive.value && sparseCollectionMetadata.value
+      ? { ...baseInitial.themeMetadata, [theme.value]: sparseCollectionMetadata.value }
     : seriesPageApiActive.value && metadataSeriesApi.value
       ? { ...baseInitial.themeMetadata, [theme.value]: metadataSeriesApi.value }
     : scalaireApi.value && metadataScalaireApi.value
@@ -1008,6 +1066,10 @@ const payload = computed<Payload>(() => {
   }
   if (scalaireApi.value) {
     return { ...base, indicateurs: [...base.indicateurs.filter((fact) => !(fact.theme === theme.value && fact.key === indicator.value)), ...faitsScalaireApi.value] }
+  }
+  if (sparseCollectionPageActive.value) {
+    return { ...base, indicateurs: [...base.indicateurs.filter((fact) => !(fact.theme === 'programmes' && fact.key === indicator.value)),
+      ...sparseCollectionFacts.value] }
   }
   const adapter = orderedSeriesAdapter.value
   if (!adapter) return base
@@ -1050,12 +1112,17 @@ const erreur = computed(() => {
   if (erreurManifesteModeles.value) return erreurManifesteModeles.value
   if (pageScalaireApiActive.value || (!profileMode.value && scalaireApiOptionnelle.value &&
       (!metadataScalaireApi.value || scalaireApi.value))) return erreurScalaireApi.value
+  if (sparseCollectionPageActive.value) {
+    return sparseCollectionFactsError.value
+      ? new PayloadError('fetch', indicator.value, 'Impossible de charger les faits de subventions publiés.') : null
+  }
   return utiliseModeleIndicateur.value ? erreurModeleIndicateur.value : erreurLegacy.value
 })
 const chargement = computed(() =>
   profileBootstrapLoading.value ||
   chargementManifesteModeles.value ||
   (profileMode.value && (profileFactsLoading.value || profileFocalLoading.value)) ||
+  (sparseCollectionPageActive.value && sparseCollectionFactsLoading.value) ||
   (!profileMode.value && (pageScalaireApiActive.value || scalaireApiOptionnelle.value) && chargementScalaireApi.value) ||
   (utiliseModeleIndicateur.value
     ? chargementLegacy.value || chargementModeleIndicateur.value
@@ -1065,6 +1132,13 @@ const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
 const page = computed(() => {
   const editorial = profileMode.value ? pageProfilCourante.value ?? undefined : metadata.value?.indicator_pages?.[indicator.value]
+  if (editorial && sparseCollectionPageActive.value && sparseCollectionPeriods.value.length) {
+    const dimensions = [...new Set([...(sparseCollectionPeriods.value),
+      ...(editorial.comparison?.dimension ? [editorial.comparison.dimension] : [])])].sort()
+    return { ...editorial, comparison: { ...editorial.comparison, dimensions,
+      dimension: dimensions.includes(editorial.comparison?.dimension ?? '')
+        ? editorial.comparison?.dimension : dimensions.at(-1) } }
+  }
   const read = seriesPageApiActive.value && orderedSeriesAdapter.value?.indicator === indicator.value
     ? serieLecture.value : null
   const descriptor = read?.native_descriptor
@@ -1095,6 +1169,91 @@ const page = computed(() => {
       ...(native.comparisonFacet ? { indicator: native.comparisonFacet } : {}), unit, direction } } : {}) }
 })
 const familyDispatch = computed(() => page.value ? dispatchIndicatorFamily(page.value, { theme: theme.value as Theme, facts: facts.value, territories: payload.value.territoires, selected: porte.value.territoire, facet: route.query, labelsDetail: metadata.value?.detail_labels[indicator.value] }) : null)
+let sparseFactsSequence = 0
+let sparseFactsRequestKey = ''
+watch(() => [profileDiscoveryComplete.value, sparseCollectionPageActive.value, theme.value, indicator.value,
+  route.query.departement, route.query.epci, payloadLegacy.value.territoires.length, retrySparseCollectionFacts.value] as const,
+async ([discovered, active, currentTheme, currentIndicator, department, epci, territoryCount]) => {
+  if (!discovered || !active || currentTheme !== 'programmes' || currentIndicator !== 'subventions_par_domaine' ||
+      !sparseCollectionResource.value || !territoryCount) {
+    sparseFactsRequestKey = ''
+    return
+  }
+  const normalized = resoudreEtatUrl({ query: route.query, territoires: payloadLegacy.value.territoires,
+    niveauxPublies: ['commune'], niveauMemorise: niveauMemorise.value })
+  const departmentId = typeof department === 'string' && normalized.scopeValide?.departement
+    ? normalized.scopeValide.departement : undefined
+  const epciId = typeof epci === 'string' && normalized.scopeValide?.epci
+    ? normalized.scopeValide.epci : undefined
+  const requestKey = JSON.stringify([sparseCollectionResource.value.resource_id, departmentId, epciId,
+    territoryCount, retrySparseCollectionFacts.value])
+  if (requestKey === sparseFactsRequestKey) return
+  sparseFactsRequestKey = requestKey
+  const sequence = ++sparseFactsSequence
+  sparseCollectionFacts.value = []
+  sparseCollectionPeriods.value = []
+  sparseCollectionRead.value = null
+  sparseCollectionFactsError.value = false
+  sparseCollectionComparison.value = null
+  sparseCollectionComparisonError.value = false
+  sparseCollectionFactsLoading.value = true
+  try {
+    const result = await acquireSparseCollectionFacts(sparseCollectionResource.value, {
+      ...(departmentId ? { departmentId } : {}), ...(epciId ? { epciId } : {}),
+    })
+    if (sequence !== sparseFactsSequence) return
+    sparseCollectionFacts.value = result.facts
+    sparseCollectionPeriods.value = result.periods
+    sparseCollectionRead.value = result
+  } catch {
+    if (sequence === sparseFactsSequence) sparseCollectionFactsError.value = true
+  } finally {
+    if (sequence === sparseFactsSequence) sparseCollectionFactsLoading.value = false
+  }
+}, { immediate: true })
+
+let sparseComparisonSequence = 0
+watch(() => [sparseCollectionRead.value, route.query.detail, route.query.dimension, route.query.territoire,
+  route.query.departement, route.query.epci, payloadLegacy.value.territoires.length,
+  retrySparseCollectionComparison.value] as const,
+async ([read]) => {
+  const sequence = ++sparseComparisonSequence
+  sparseCollectionComparison.value = null
+  sparseCollectionComparisonTarget.value = null
+  sparseCollectionComparisonError.value = false
+  if (!sparseCollectionPageActive.value || !read || !sparseCollectionResource.value ||
+      !payloadLegacy.value.territoires.length || !page.value) return
+  const dispatch = dispatchIndicatorFamily(page.value, { theme: theme.value as Theme,
+    facts: sparseCollectionFacts.value, territories: payload.value.territoires,
+    selected: porte.value.territoire, facet: route.query,
+    labelsDetail: metadata.value?.detail_labels[indicator.value] })
+  if (dispatch.family !== 'list') return
+  const currentPage = page.value
+  const dimensions = currentPage?.comparison?.dimensions ?? []
+  const period = typeof route.query.dimension === 'string' && dimensions.includes(route.query.dimension)
+    ? route.query.dimension : currentPage?.comparison?.dimension ?? sparseCollectionPeriods.value.at(-1)
+  const detail = dispatch.facet.detail
+  if (!detail || !period) return
+  const normalized = resoudreEtatUrl({ query: route.query, territoires: payloadLegacy.value.territoires,
+    niveauxPublies: ['commune'], niveauMemorise: niveauMemorise.value })
+  const department = normalized.scopeValide?.departement
+  const epci = normalized.scopeValide?.epci
+  const members = payloadLegacy.value.territoires.filter((territory) => territory.type === 'commune' &&
+    (!department || territory.departement === department) && (!epci || territory.epci === epci))
+  if (!members.length) return
+  const focal = members.find((territory) => territory.territoire === porte.value.territoire) ?? members[0]!
+  sparseCollectionComparisonTarget.value = focal.territoire
+  sparseCollectionComparisonLoading.value = true
+  try {
+    const comparison = await reacquireSparseCollectionComparison(sparseCollectionResource.value,
+      { focal, members, detail, period, identity: read.identity })
+    if (sequence === sparseComparisonSequence) sparseCollectionComparison.value = comparison
+  } catch {
+    if (sequence === sparseComparisonSequence) sparseCollectionComparisonError.value = true
+  } finally {
+    if (sequence === sparseComparisonSequence) sparseCollectionComparisonLoading.value = false
+  }
+}, { immediate: true })
 const profileRegionalFactOnly = computed(() => profileMode.value && targetProfil.value?.type === 'region' &&
   payload.value.territoires.some((territory) => territory.type === 'region' && territory.territoire === porte.value.territoire))
 const profileEmptyCohort = computed(() => profileMode.value && Boolean(targetProfil.value) &&
@@ -1162,6 +1321,31 @@ const vintageApi = (source: { vintageId?: string; version: string; referenceDate
 const sources = computed(() => {
   if (!page.value || !payload.value) return []
   const authority = sourceRecords(payload.value)
+  if (sparseCollectionPageActive.value) {
+    const native = sparseCollectionFacts.value.flatMap((fact) => fact.fact_sources ?? [])
+    const sourceIds = [...new Set([...page.value.sources, ...native.map((source) => source.sourceId)])]
+    return sourceIds.map((id) => {
+      const vintages = [...new Map(native.filter((source) => source.sourceId === id)
+        .map((source) => [`${source.sourceId}\u0000${source.vintageId ?? source.version}`, source])).values()]
+      if (!vintages.length) return null
+      const editorial = authority.find((record) => record.id === id)
+      const apiVintages: SourceVintageRecord[] = vintages.map((source) => vintageApi(source, editorial?.licence ?? null))
+      const representative = vintages.length === 1 ? vintages[0] : null
+      return {
+        id, dataset: representative?.source ?? vintages[0]!.source,
+        publisher: editorial?.publisher ?? representative?.source ?? vintages[0]!.source,
+        url: editorial?.url ?? null, licence: editorial?.licence ?? null,
+        vintage: representative?.version ?? 'Plusieurs millésimes',
+        freshness: representative?.publicationDate ?? '—', sha256: null,
+        dateReference: representative?.referenceDate ?? null,
+        datePublication: representative?.publicationDate ?? null, vintages: apiVintages,
+        clocks: editorial?.clocks ?? [], caveat: editorial?.caveat ?? null,
+        methodology: editorial?.methodology, consumers: editorial?.consumers ?? [],
+        replie: editorial?.replie ?? false, themes: editorial?.themes ?? [theme.value as Theme],
+        ficheSourceLiee: Boolean(editorial), ancreSourceId: id,
+      }
+    }).filter((source): source is NonNullable<typeof source> => source !== null)
+  }
   if (profileMode.value) {
     const native = [...profileFacts.value, ...profileFocalFacts.value, ...profileScalarFacts.value].flatMap((fact) => fact.fact_sources ?? [])
     for (const source of profileComparison.value?.comparisonSources ?? []) {
@@ -1276,6 +1460,17 @@ const horlogeService = computed(() => {
 // facette résumée d'une distribution lit souvent une AUTRE clé publiée que
 // la page, #440 ; les trajectoires et le modèle par détail filtrent déjà).
 const facts = computed(() => payload.value.indicateurs.filter((f) => f.theme === theme.value))
+const sparseCollectionSelectedAvailability = computed(() => {
+  const read = sparseCollectionRead.value
+  const territoryId = porte.value.territoire
+  if (!sparseCollectionPageActive.value || !read || !territoryId) return null
+  const availability = read.availabilityByTerritory[territoryId]
+  if (availability !== 'observed') return availability ?? null
+  const facet = familyDispatch.value?.facet
+  const hasSelectedObservation = Boolean(facet?.detail && facet.dimension && sparseCollectionFacts.value.some((fact) =>
+    fact.territoire === territoryId && fact.detail === facet.detail && fact.dimension === facet.dimension))
+  return hasSelectedObservation ? 'measured' : 'no_selected_observation'
+})
 // La machine à états URL (#508) — résolution pure de la cascade de niveaux
 // et validation du périmètre. Le composant ne fait que lui fournir la query,
 // les territoires publiés, les niveaux de la facette et la mémoire lue à la
@@ -1291,7 +1486,17 @@ const model = computed(() => {
   const dispatch = familyDispatch.value
   if (!dispatch) return null
   const calculated = modeleExploration(facts.value, dispatch.facet, payload.value.territoires,
-    requested.value, niveauMemorise.value, profileMode.value || pageScalaireApiActive.value)
+    requested.value, niveauMemorise.value, profileMode.value || pageScalaireApiActive.value || sparseCollectionPageActive.value)
+  if (sparseCollectionPageActive.value) {
+    const evidence = sparseCollectionComparison.value
+    const rank = typeof evidence?.rank === 'number' ? evidence.rank : null
+    const rankSize = typeof evidence?.rank_size === 'number' ? evidence.rank_size : null
+    const rows = calculated.rows.map((row) => row.territoire.territoire === sparseCollectionComparisonTarget.value
+      ? { ...row, rang: rank, rangTaille: rankSize } : row)
+    return { ...calculated,
+      median: evidence?.status === 'available' && typeof evidence.median === 'number' ? evidence.median : null,
+      rows }
+  }
   if (pageScalaireApiActive.value) {
     const evidence = comparaisonScalairePage.value
     const state = calculated.state
@@ -1578,10 +1783,36 @@ watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niv
           <span v-else-if="!comparaisonScalairePage.focalInSelection"> · Le territoire focal est hors de la sélection ; aucun rang ne lui est attribué.</span>
         </p>
       </section>
+      <section v-if="sparseCollectionPageActive" class="sparse-collection-state" data-testid="sparse-collection-state">
+        <div v-if="sparseCollectionFactsError" role="alert" data-testid="sparse-collection-facts-error">
+          Les faits de subventions publiés sont momentanément indisponibles.
+          <button type="button" data-testid="sparse-collection-facts-retry" @click="retrySparseCollectionFacts++">Réessayer les faits</button>
+        </div>
+        <p v-if="sparseCollectionSelectedAvailability === 'no_record'" data-testid="sparse-collection-no-record">
+          Aucun enregistrement de subvention publié pour ce territoire.
+        </p>
+        <p v-else-if="sparseCollectionSelectedAvailability === 'no_selected_observation'" data-testid="sparse-collection-facet-absent">
+          Aucune observation publiée pour cette catégorie et cette période ; l’absence n’est pas un montant nul.
+        </p>
+        <p v-if="sparseCollectionComparisonLoading" role="status" data-testid="sparse-collection-comparison-pending">Chargement de la comparaison publiée… Les faits restent affichés.</p>
+        <div v-else-if="sparseCollectionComparisonError" role="alert" data-testid="sparse-collection-comparison-error">
+          La comparaison est momentanément indisponible. Les faits API restent affichés.
+          <button type="button" data-testid="sparse-collection-comparison-retry" @click="retrySparseCollectionComparison++">Réessayer la comparaison</button>
+        </div>
+        <p v-else-if="sparseCollectionComparison?.status === 'unavailable'" data-testid="sparse-collection-comparison-unavailable">La comparaison n’est pas disponible pour cette catégorie et cette période selon la publication API.</p>
+        <p v-else-if="sparseCollectionComparison?.status === 'available'" data-testid="sparse-collection-comparison-summary">
+          Médiane API pour {{ familyDispatch?.facet.labels[familyDispatch.facet.detail ?? ''] ?? familyDispatch?.facet.detail }} · {{ familyDispatch?.facet.dimension ?? page?.comparison?.dimension }} :
+          {{ formaterValeur({ value: typeof sparseCollectionComparison.median === 'number' ? sparseCollectionComparison.median : null, unit: String(sparseCollectionComparison.unit) }) }} {{ sparseCollectionComparison.unit }}
+          <span v-if="typeof sparseCollectionComparison.rank === 'number'"> · Rang API {{ formaterRang(sparseCollectionComparison.rank, typeof sparseCollectionComparison.rank_size === 'number' ? sparseCollectionComparison.rank_size : null) }}</span>
+        </p>
+      </section>
       <!-- La note de contexte permanente (#472) : UNE ligne partagée par toutes
            les familles, dérivée de l'état résolu — vivante aux changements d'URL. -->
        <NoteContexteIndicateur :etat="model.state" :territoires="payload.territoires" :region-facts-only="profileRegionalFactOnly" />
-      <nav class="vues" aria-label="Vues de l’indicateur"><button :class="{ active: vue === 'reperes' }" @click="setVue('reperes')">Repères</button><button :class="{ active: vue === 'carte' }" @click="setVue('carte')">Carte</button><button :class="{ active: vue === 'indicateur' }" @click="setVue('indicateur')">L’indicateur</button></nav>
+       <nav class="vues" aria-label="Vues de l’indicateur"><button :class="{ active: vue === 'reperes' }" @click="setVue('reperes')">Repères</button><button :class="{ active: vue === 'carte' }" @click="setVue('carte')">Carte</button><button :class="{ active: vue === 'indicateur' }" @click="setVue('indicateur')">L’indicateur</button></nav>
+       <div v-if="sparseCollectionPageActive && page?.comparison?.dimensions?.length" class="controls" data-testid="sparse-collection-period-control">
+         <label>Période comparée<select aria-label="Période comparée" :value="familyDispatch?.facet.dimension ?? page.comparison.dimension ?? ''" @change="setQuery('dimension', ($event.target as HTMLSelectElement).value)"><option v-for="period in page.comparison.dimensions" :key="period" :value="period">{{ period }}</option></select></label>
+       </div>
         <main v-if="vue === 'reperes'"><RepereFamilyOutlet v-if="familyDispatch" :dispatch="familyDispatch" :modele="trajectoire" :signature="distribution" :profil="profil" :relation="relation" :composition="composition" :ensemble="ensemble">
          <template #default>
              <section v-if="raccordementApiLecture && !profileRegionalFactOnly" class="raccordement-comparison-summary" data-testid="raccordement-comparison-summary">

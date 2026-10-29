@@ -129,6 +129,22 @@ def test_profile_comparison_coordinate_binds_the_complete_facet():
     assert result["result"]["status"] == "available"
 
 
+def test_period_detail_comparison_maps_requested_period_to_native_observation_period():
+    resource = SimpleNamespace(axes=("period", "detail"), shapes=("period_detail",))
+    published = {"result": {"source_facet": {"detail": "mobility", "observation_period": "2025"},
+        "median": 15.0, "rank": 1, "status": "available"}}
+    matched = reader()._filter_coordinates(published,
+        {"detail": ["mobility"], "period": ["2025"]}, resource)
+    assert matched["result"]["status"] == "available"
+    assert matched["result"]["median"] == 15.0
+
+    wrong_period = reader()._filter_coordinates(published,
+        {"detail": ["mobility"], "period": ["2024"]}, resource)
+    assert wrong_period["result"]["status"] == "unavailable"
+    assert wrong_period["result"]["reason"] == "selected_coordinate_has_no_comparison_result"
+    assert "median" not in wrong_period["result"]
+
+
 def test_linked_profile_scalar_comparison_is_not_filtered_as_a_profile_bin():
     resource = SimpleNamespace(axes=("detail",), shapes=("declared_profile",))
     result = reader()._filter_coordinates({"result": {

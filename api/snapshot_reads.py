@@ -2432,7 +2432,7 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
                                    include_scalar_facet=False,
                                    scalar_facet_projection=False,
                                    scalar_facet_theme_id=None,
-                                   profile_coordinates=None):
+                                   profile_coordinates=None, collection_coordinates=None):
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
                 if snapshot_state is not None else None)
     active_owned = resource.owned_route if resource else _owned_series_route(conn,indicator_id)
@@ -2476,11 +2476,11 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
         if territory_id not in members:
             fixed_context = None
         result = collection_comparison(conn,collections[0],territory_type,territory_id,cohort_type,members,
-                                       fixed_context,fields=selected_fields)
+                                       fixed_context,fields=selected_fields,coordinates=collection_coordinates)
         return _project_comparison_payload_fields({"contract":"indicator-comparison-v1","complete_theme":False,"indicator_id":indicator_id,
             "theme_id":collections[0]["theme_id"],"shape":"observed_collection",
             "content_version":result["content_version"],"reference_content_version":result["reference_content_version"],
-            "selection":None if selection is None else [{"territory_type":level,"territory_id":code} for level,code in selection],
+            "selection":None if selection is None else [{"territory_type":cohort_type,"territory_id":code} for code in members],
             "scope":{**scope,"member_count":len(members)} if scope else None,"result":result},selected_fields)
     shapes = list(resource.shape_rows) if resource else []
     if resource is None:
