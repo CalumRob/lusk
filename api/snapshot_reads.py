@@ -25,6 +25,21 @@ _COMPARISON_RESULT_FIELDS = {
     "selected_member_count", "eligible_count", "missing_count", "mean", "mean_curve", "member_ranks",
 }
 _COMPARISON_MANDATORY_FIELDS = {"status", "reason"}
+
+
+def _dual_scalar_projection_fields(selected_fields, include_scalar_facet,
+                                   scalar_facet_projection=False):
+    if not include_scalar_facet or not scalar_facet_projection or selected_fields is None:
+        return selected_fields, selected_fields
+    nested_fields = {"median", "rank", "rank_size", "rank_ties", "selected_member_count",
+        "eligible_count", "missing_count", "member_ranks"}
+    nested = [field for field in selected_fields if field in nested_fields]
+    if not nested:
+        return selected_fields, selected_fields
+    series = [field for field in selected_fields if field not in nested_fields]
+    return series or ["status"], nested
+
+
 def _comparison_field_selection(fields):
     return normalize_field_selection(fields, _COMPARISON_RESULT_FIELDS | _COMPARISON_MANDATORY_FIELDS)
 
@@ -1076,6 +1091,10 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 "median": median([value for _, value in values]) if values else None,
                 "rank": rank, "rank_size": len(values) if rank is not None else None,
                 "comparison_sources": sources})
+            if result_fields is not None and "rank_ties" in result_fields:
+                results[-1]["rank_ties"] = (
+                    sum(value == focal_value for _, value in values)
+                    if rank is not None else None)
             if result_fields is not None and "member_ranks" in result_fields:
                 values_by_member = {member_id: value for member_id, value in values}
                 counts = {}
@@ -2306,6 +2325,7 @@ def _scalar_facet_comparison_snapshot(conn, territory_type, territory_id, indica
 def _indicator_comparison_preflight(conn, territory_type, territory_id, indicator_id,
                                     selection, selected_fields, *, snapshot_state=None,
                                     include_scalar_facet=False,
+                                    scalar_facet_projection=False,
                                     scalar_facet_theme_id=None,
                                     profile_coordinates=None):
     _validate_comparison_fields(selected_fields,
@@ -2333,15 +2353,17 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
             checked = _owned_reference_comparison_result(conn,active_owned,territory_type,territory_id,
                                                           indicator_id,selection)
             return {"shape": "named_reference", "checked": checked}
+        series_fields, scalar_fields = _dual_scalar_projection_fields(
+            selected_fields, include_scalar_facet, scalar_facet_projection)
         cohort = _comparison_cohort_in_snapshot(conn,territory_type,territory_id,selection,
                                                 snapshot_state)
         checked = _owned_series_comparison_results(conn,[active_owned],territory_type,territory_id,
-            selection,cohort=cohort,selected_fields=selected_fields,strict_fields=True,
+            selection,cohort=cohort,selected_fields=series_fields,strict_fields=True,
             preflight_only=True)
         scalar_work = 0
         if include_scalar_facet:
             scalar_work = _scalar_facet_comparison_preflight(conn, territory_type, territory_id,
-                indicator_id, scalar_facet_theme_id, selection, selected_fields)
+                indicator_id, scalar_facet_theme_id, selection, scalar_fields)
         return {"shape": "ordered_series", "cohort_type": cohort[0],
                 "members": cohort[1], "scope": cohort[2], "fixed_context": checked[2],
                 "checked": checked, "scalar_facet_work_units": scalar_work}
@@ -2408,6 +2430,7 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
 def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator_id, selection,
                                    selected_fields, *, snapshot_state=None,
                                    include_scalar_facet=False,
+                                   scalar_facet_projection=False,
                                    scalar_facet_theme_id=None,
                                    profile_coordinates=None):
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
@@ -2420,18 +2443,23 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
     if include_scalar_facet and active_owned[1] != scalar_facet_theme_id:
         raise HTTPException(503, "Declared scalar and ordered-series facets have incompatible themes")
     if active_owned:
+        series_fields, scalar_fields = _dual_scalar_projection_fields(
+            selected_fields, include_scalar_facet, scalar_facet_projection)
         if active_owned[2]:
-            _validate_comparison_fields(selected_fields,{"selected_member_count"})
+            _validate_comparison_fields(series_fields,{"selected_member_count"})
             result=_owned_reference_comparison_result(conn,active_owned,territory_type,
                 territory_id,indicator_id,selection)
         else:
             result=_owned_series_comparison_result(conn,active_owned,territory_type,
-                territory_id,indicator_id,selection,selected_fields)
-        projected = _project_comparison_payload_fields(result,selected_fields)
+                territory_id,indicator_id,selection,series_fields)
+        projected = _project_comparison_payload_fields(result,series_fields)
         if include_scalar_facet:
+            # The scalar facet keeps its own established comparison contract
+            # (the closed comparison vocabulary), while honoring the same
+            # caller-selected projection independently of the series result.
             projected["scalar_facet"] = _scalar_facet_comparison_snapshot(
                 conn, territory_type, territory_id, indicator_id, scalar_facet_theme_id,
-                selection, selected_fields)
+                selection, scalar_fields)
         return projected
     collections = list(resource.collections) if resource else collection_descriptors(
         conn,indicator_id=indicator_id)

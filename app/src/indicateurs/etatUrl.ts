@@ -151,7 +151,7 @@ const CLES_FACETTE = ['facet', 'detail', 'sex', 'dimension'] as const
  * remplacées SUR PLACE, le paramètre `facet` divergent supprimé, les clés
  * que la query ne porte pas encore ajoutées EN DERNIER.
  */
-export function fusionnerFacette(query: LocationQuery, urlResolue: string): LocationQueryRaw {
+export function fusionnerFacette(query: LocationQuery | LocationQueryRaw, urlResolue: string): LocationQueryRaw {
   const canonique = new URLSearchParams(urlResolue.slice(1))
   const next: LocationQueryRaw = { ...query }
   for (const cle of CLES_FACETTE) delete next[cle]

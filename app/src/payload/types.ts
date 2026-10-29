@@ -157,6 +157,13 @@ export interface Indicateur extends Omit<VintageStamp, 'vintage_version'> {
   provenance_revisions?: Array<{ revision_id: string; source_id: string; vintage_id: string;
     source_name: string; dataset_name: string; version: string; reference_date: string;
     publication_date: string; revision_hash: string }>
+  native_series_comparison?: { statistic: 'median' | 'mean'; status: 'available' | 'unavailable';
+    value: number | null; min: number | null; max: number | null; eligible_count: number; missing_count: number }
+  /** Marks a factual point from the owned ordered-series adapter, even when its axis is not comparable. */
+  native_ordered_series_fact?: true
+  native_scalar_comparison?: { status: 'available' | 'unavailable'; statistic: 'median' | 'mean';
+    value: number | null; eligible_count: number; missing_count: number; rank: number | null;
+    rank_size: number | null; rank_ties: number | null }
   /**
    * The direction-aware ordinal position (ADR-0015): 1 = best, an integer ≥ 1,
    * ties share the rank and the next rank skips (1, 1, 3). null = no
@@ -962,6 +969,8 @@ export interface SourceVintageRecord {
   licence: string | null
   dateReference: string | null
   datePublication: string | null
+  /** Immutable native observation-revision digest, when supplied by the API. */
+  revisionHash?: string
 }
 
 export interface SourceClock {

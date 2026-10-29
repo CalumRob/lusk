@@ -116,7 +116,14 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
       // détails déclarés) : une borne déclarée sans valeur à ce périmètre
       // (états OCS-GE M2/M3 au niveau commune) reste sélectionnable sans
       // rendre la page « indisponible » — le chemin existe toujours (#438).
-      const detailsDeclarees = page.comparison?.details ?? [...new Set(allFacts.map((fact) => fact.detail).filter((detail): detail is string => detail !== null))]
+      // Producer series can expose a factual axis wider than the API's
+      // published comparison roles (notably OCS-GE calendar facts vs M2/M3).
+      // A native comparison annotation marks only comparable steps; it must
+      // not accidentally turn the comparison selector into the plot's axis.
+      const nativeSeries = allFacts.some((fact) => fact.native_ordered_series_fact === true)
+      const detailsDeclarees = nativeSeries
+        ? [...new Set(allFacts.map((fact) => fact.detail).filter((detail): detail is string => detail !== null))]
+        : page.comparison?.details ?? [...new Set(allFacts.map((fact) => fact.detail).filter((detail): detail is string => detail !== null))]
       // L'appartenance aux détails DÉCLARÉS (jamais un fait sans détail) vit
       // dans le prédicat unique (#507) — le sexe/dimension restent stricts.
       const cheminRows = allFacts.filter((fact) => correspondFait(fact, { theme: facet.theme, cle: facet.indicator, details: detailsDeclarees, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE))

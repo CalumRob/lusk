@@ -213,6 +213,20 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
             } if item.intent.kind in {"fixed_comparison", "selected_comparison"} else
                 {field for shape in resource.shapes for field in _FIELDS_BY_SHAPE.get(shape, ())})
             single_shape = set(resource.shapes) if len(resource.shapes) == 1 else set()
+            if (resource.resource_kind == "indicator" and "ordered_series" in resource.shapes
+                    and item.intent.kind in {"fixed_comparison", "selected_comparison"}):
+                supported.add("axis_comparisons")
+                if "scalar" in resource.shapes:
+                    supported.add("scalar_facet")
+                    if ("axis_comparisons" in item.fields and "scalar_facet" in item.fields):
+                        # Peer ranks are requested only for the explicitly
+                        # projected pooled scalar facet, never for ordinary
+                        # ordered-series comparisons.
+                        supported.add("member_ranks")
+            if (resource.resource_kind == "indicator" and item.intent.kind == "facts" and
+                    item.target.kind == "territory_cohort" and "scalar" in resource.shapes and
+                    "ordered_series" in resource.shapes):
+                supported.add("scalar_facet")
             if (resource.resource_kind == "indicator" and
                     ((item.intent.kind == "selected_comparison" and
                       single_shape in ({"scalar"}, {"declared_profile"})) or

@@ -305,26 +305,19 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(mounted.wrapper.find('[data-testid="raccordement-comparison-error"]').exists()).toBe(false)
     } finally { mounted.wrapper.unmount() }
   })
-  it('mounts prix_m2 through the shared default-off owned-series reader gate', async () => {
-    vi.stubEnv('VITE_OWNED_SERIES_API', '1')
+  it('mounts prix_m2 through the shared producer-declared semantic acquisition', async () => {
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
       if (file === 'indicateurs_habitat') return indicateursHabitatFixture
       if (file === 'theme_habitat') return metadataHabitat
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => String(input) === '/api/resources'
-      ? nativeCatalogueResponse() : new Response(JSON.stringify({
-      dataset_id: 'dvf_prix_m2', indicator_id: 'prix_m2', axis_kind: 'year', unit: '€/m²',
-      territory: { id: '22001', type: 'commune', name: 'Commune A1' },
-      points: [{ axis: '2024', observation_period: '2024', value: null, status: 'missing', provenance: [] },
-        { axis: '2025', observation_period: '2025', value: 525, status: 'measured', provenance: [] }],
-      scope_series: [{ territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: [
-        { axis: '2024', observation_period: '2024', value: null, status: 'missing', provenance: [] },
-        { axis: '2025', observation_period: '2025', value: 525, status: 'measured', provenance: [] },
-      ] }], comparison: { point: '2025', value: 525, median: 525, rank: 1, ties: 1, comparable_count: 1,
-        direction: 'low', scope: { kind: 'level', territory_type: 'commune', department_id: '22' } },
-    }), { status: 200 }))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
+    })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
     await router.isReady()
@@ -337,14 +330,324 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     try {
       await flushPromises()
       expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/resources')
-      expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/series-datasets/dvf_prix_m2/territories/commune/22001/prix_m2?scope_level=commune&department_id=22')
-      expect(wrapper.text()).toContain('525')
+      expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/resources/read-batch')
+      const request = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))
+      expect(request.items.map((item: any) => item.resource)).toEqual(['prix_m2', 'prix_m2', 'prix_m2'])
+      expect(wrapper.text()).toContain('1 604,33')
       expect(wrapper.text()).toContain('Prix')
     } finally { wrapper.unmount() }
   })
+  it('retains admitted prix_m2 cohort facts when a warm same-cohort focal read gets HTTP 503', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    const requests: Array<{ items: Array<Record<string, any>>; status: number }> = []
+    let admittedCohort: Record<string, any> | undefined
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path === '/api/resources') return nativeCatalogueResponse()
+      if (path !== '/api/resources/read-batch') throw new Error(`unexpected network request: ${path}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (requests.length === 0) {
+        requests.push({ items, status: 200 })
+        const response = await nativeBatchResponse(items, (item, resource) =>
+          nativeReadFixture(item, resource, { territories: territoiresFixture }))
+        const json = await response.clone().json() as { results: Array<{ data: Record<string, any> }> }
+        admittedCohort = json.results.find((result) => result.data.target?.kind === 'territory_cohort')!.data
+        return response
+      }
+      const status = requests.length === 1 || requests.length === 3 ? 503 : 200
+      requests.push({ items, status })
+      if (status === 503) return new Response('native read-batch unavailable', { status })
+      return nativeBatchResponse(items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
+    })
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { habitat: [] } }),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      expect(requests[0]?.status).toBe(200)
+      expect(requests[0]?.items).toHaveLength(3)
+      expect(wrapper.text()).toContain('1 604,33')
+      expect(wrapper.find('figure[data-renderer="trajectory"]').exists()).toBe(true)
+      const oldFocalFact = requests[0]!.items[1]
+      expect(oldFocalFact.target).toMatchObject({ kind: 'territory', id: '22001' })
+
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22')
+      await flushPromises()
+
+      expect(requests).toHaveLength(2)
+      expect(requests[1]?.status).toBe(503)
+      expect(requests[1]?.items).toHaveLength(1)
+      expect(requests[1]?.items[0]).toMatchObject({ intent: { kind: 'facts' },
+        target: { kind: 'territory', type: 'commune', id: '22002' } })
+      // A failed new-focal read may not leave the previous focal's curve on screen;
+      // render only values actually admitted in the correct cohort, if present.
+      expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+      expect(wrapper.find('figure[data-renderer="trajectory"]').exists()).toBe(true)
+      const focalGroup = admittedCohort!.series.find((group: any) => group.territory.id === '22002')
+      expect(focalGroup).toBeDefined()
+      expect(wrapper.findAll('.trajectoire-territoire-point').map((point) => [
+        point.attributes('data-detail'), Number(point.attributes('data-value')),
+      ])).toEqual(focalGroup.points.filter((point: any) => point.status === 'measured')
+        .map((point: any) => [point.axis, point.value]))
+      const exactFocalValues = wrapper.findAll('.trajectoire-territoire-point')
+        .map((point) => Number(point.attributes('data-value')))
+      expect(exactFocalValues).not.toEqual([])
+
+      // Retry the genuinely uncached focal facts, then make the later
+      // comparison-only batch fail. Both admitted cohort and focal facts remain.
+      await wrapper.get('[role="alert"] button').trigger('click')
+      await flushPromises()
+      expect(requests).toHaveLength(4)
+      expect(requests[2]?.items).toHaveLength(1)
+      expect(requests[2]?.items[0]).toMatchObject({ intent: { kind: 'facts' },
+        target: { kind: 'territory', type: 'commune', id: '22002' } })
+      expect(requests[2]?.status).toBe(200)
+      expect(requests[3]?.items).toHaveLength(1)
+      expect(requests[3]?.items[0]?.intent.kind).toBe('selected_comparison')
+      expect(requests[3]?.status).toBe(503)
+      expect(wrapper.find('[data-testid="series-comparison-error"]').exists()).toBe(true)
+      expect(wrapper.findAll('.trajectoire-territoire-point').map((point) => Number(point.attributes('data-value'))))
+        .toEqual(exactFocalValues)
+      await wrapper.get('[data-testid="series-comparison-error"] button').trigger('click')
+      await flushPromises()
+      expect(requests).toHaveLength(5)
+      expect(requests[4]?.items).toHaveLength(1)
+      expect(requests[4]?.items[0]?.intent.kind).toBe('selected_comparison')
+      expect(requests[4]?.status).toBe(200)
+      expect(requests.slice(2).flatMap((entry) => entry.items.filter((item) => item.intent.kind === 'facts')))
+        .toHaveLength(1)
+      const requestTrace = requests.map(({ items, status }) => ({ status, items: items.map((item) => ({
+        resource: item.resource, intent: item.intent.kind, target: item.target,
+      })) }))
+      expect(wrapper.find('figure[data-renderer="trajectory"]').exists(),
+        `warm validated cohort facts should remain rendered after comparison batch 503; trace=${JSON.stringify(requestTrace)}`)
+        .toBe(true)
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['series', 'scalar'] as const)(
+    'refreshes only the mounted prix_m2 scope after the %s publication changes', async (changedFacet) => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    const requests: Array<Array<Record<string, any>>> = []
+    let publication = 1
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path === '/api/resources') return nativeCatalogueResponse()
+      if (path !== '/api/resources/read-batch') throw new Error(`unexpected network request: ${path}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      requests.push(items)
+      return nativeBatchResponse(items, (item, resource) => {
+        const data = nativeReadFixture(item, resource, { territories: territoiresFixture })
+        if (publication === 2) {
+          if (changedFacet === 'series') {
+            data.content_version = 'prix_m2-fixture-publication-v2'
+            if (data.publication_id) data.publication_id = 'prix_m2-fixture-publication-v2'
+          }
+          if (data.scalar_facet) {
+            data.scalar_facet.content_version = changedFacet === 'scalar'
+              ? 'prix_m2-fixture-publication-v2-scalar-facet-v1'
+              : 'prix_m2-fixture-publication-v1-scalar-facet-v1'
+            data.scalar_facet.reference_content_version = 'semantic-reference-fixture-v1'
+          }
+        }
+        if (publication === 2 && changedFacet === 'series' &&
+            item.target.kind === 'territory' && item.intent.kind === 'facts') {
+          data.points = data.points.map((point: Record<string, any>) => ({ ...point,
+            value: point.value === null ? null : point.value + 100 }))
+        }
+        if (publication === 2 && changedFacet === 'series' && Array.isArray(data.series)) {
+          data.series = data.series.map((group: Record<string, any>) => ({ ...group,
+            points: group.points.map((point: Record<string, any>) => ({ ...point,
+              value: point.value === null ? null : point.value + 100 })) }))
+        }
+        if (publication === 2 && changedFacet === 'series' && item.intent.kind !== 'facts') {
+          data.content_version = 'prix_m2-fixture-publication-v2'
+        }
+        return data
+      })
+    })
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { habitat: [] } }),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      expect(requests).toHaveLength(1)
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=29001&niveau=commune&departement=29')
+      await flushPromises()
+      expect(requests).toHaveLength(2)
+      const siblingValues = wrapper.findAll('.trajectoire-territoire-point')
+        .map((point) => Number(point.attributes('data-value')))
+      publication = 2
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22')
+      await flushPromises()
+      expect(requests).toHaveLength(3)
+      expect(requests[2]).toHaveLength(1)
+      expect(requests[2]?.[0]?.intent.kind).toBe('facts')
+      expect(wrapper.get('[data-testid="series-comparison-error"]').text()).toContain('publication a changé')
+      expect(wrapper.get('[data-testid="series-comparison-error"] button').text()).toContain('Actualiser les faits')
+      const staleValues = wrapper.findAll('.trajectoire-territoire-point')
+        .map((point) => Number(point.attributes('data-value')))
+      await wrapper.get('[data-testid="series-comparison-error"] button').trigger('click')
+      await flushPromises()
+      expect(requests).toHaveLength(4)
+      expect(requests[3]).toHaveLength(3)
+      expect(requests[3]?.map((item) => item.intent.kind)).toEqual(['facts', 'facts', 'selected_comparison'])
+      expect(wrapper.find('[data-testid="series-comparison-error"]').exists()).toBe(false)
+      const refreshedValues = wrapper.findAll('.trajectoire-territoire-point')
+        .map((point) => Number(point.attributes('data-value')))
+      expect(refreshedValues).toEqual(changedFacet === 'series'
+        ? staleValues.map((value) => value + 100) : staleValues)
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=29001&niveau=commune&departement=29')
+      await flushPromises()
+      expect(requests).toHaveLength(4)
+      expect(wrapper.findAll('.trajectoire-territoire-point').map((point) => Number(point.attributes('data-value'))))
+        .toEqual(siblingValues)
+    } finally { wrapper.unmount() }
+    })
+
+  it('keeps a delayed old focal reply out of the refreshed mounted page and cache generation', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    const requests: Array<Array<Record<string, any>>> = []
+    let publication: 1 | 2 = 1
+    let deferOldFocal = true
+    let initialPeerValues: number[] = []
+    let refreshedPeerValues: number[] = []
+    let refreshedInitialFocalValues: number[] = []
+    let releaseOldFocal!: (response: Response) => void
+    let oldFocalStarted!: () => void
+    const oldFocalSeen = new Promise<void>((resolve) => { oldFocalStarted = resolve })
+    const oldFocalReply = new Promise<Response>((resolve) => { releaseOldFocal = resolve })
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path === '/api/resources') return nativeCatalogueResponse()
+      if (path !== '/api/resources/read-batch') throw new Error(`unexpected network request: ${path}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      requests.push(items)
+      const response = await nativeBatchResponse(items, (item, resource) => {
+        const data = nativeReadFixture(item, resource, { territories: territoiresFixture })
+        if (item.target.kind === 'territory_cohort' && Array.isArray(data.series)) {
+          const peer = data.series.find((group: Record<string, any>) => group.territory.id === '22002')
+          if (peer && publication === 1) initialPeerValues = peer.points
+            .filter((point: Record<string, any>) => point.status === 'measured').map((point: Record<string, any>) => point.value)
+        }
+        if (publication === 2) {
+          data.content_version = 'prix_m2-fixture-publication-v2'
+          if (data.publication_id) data.publication_id = 'prix_m2-fixture-publication-v2'
+          if (data.scalar_facet) {
+            data.scalar_facet.content_version = 'prix_m2-fixture-publication-v1-scalar-facet-v1'
+            data.scalar_facet.reference_content_version = 'semantic-reference-fixture-v1'
+          }
+          if (item.target.kind === 'territory' && item.intent.kind === 'facts') {
+            data.points = data.points.map((point: Record<string, any>) => ({ ...point,
+              value: point.value === null ? null : point.value + 100 }))
+          }
+          if (Array.isArray(data.series)) data.series = data.series.map((group: Record<string, any>) => ({ ...group,
+            points: group.points.map((point: Record<string, any>) => ({ ...point,
+              value: point.value === null ? null : point.value + 100 })) }))
+          if (item.target.kind === 'territory_cohort' && Array.isArray(data.series)) {
+            const peer = data.series.find((group: Record<string, any>) => group.territory.id === '22002')
+            if (peer) refreshedPeerValues = peer.points
+              .filter((point: Record<string, any>) => point.status === 'measured')
+              .map((point: Record<string, any>) => point.value)
+            const initialFocal = data.series.find((group: Record<string, any>) => group.territory.id === '22001')
+            if (initialFocal) refreshedInitialFocalValues = initialFocal.points
+              .filter((point: Record<string, any>) => point.status === 'measured')
+              .map((point: Record<string, any>) => point.value)
+          }
+          if (item.intent.kind !== 'facts') data.content_version = 'prix_m2-fixture-publication-v2'
+        }
+        return data
+      })
+      if (deferOldFocal && items.length === 1 && items[0]?.target.kind === 'territory' &&
+          items[0]?.target.id === '22002') {
+        deferOldFocal = false
+        oldFocalStarted()
+        return oldFocalReply
+      }
+      return response
+    })
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { habitat: [] } }),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22')
+      await oldFocalSeen
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=29001&niveau=commune&departement=29')
+      await flushPromises()
+      publication = 2
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="series-comparison-error"] button').text()).toContain('Actualiser les faits')
+      await wrapper.get('[data-testid="series-comparison-error"] button').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="series-comparison-error"]').exists()).toBe(false)
+      const refreshedValues = wrapper.findAll('.trajectoire-territoire-point')
+        .map((point) => Number(point.attributes('data-value')))
+      expect(refreshedValues).toEqual(refreshedPeerValues)
+      expect(refreshedValues).toEqual(initialPeerValues.map((value) => value + 100))
+
+      releaseOldFocal(await nativeBatchResponse(requests[1]!, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture })))
+      await flushPromises()
+      expect(wrapper.findAll('.trajectoire-territoire-point').map((point) => Number(point.attributes('data-value'))))
+        .toEqual(refreshedValues)
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="series-comparison-error"]').exists()).toBe(false)
+      expect(wrapper.findAll('.trajectoire-territoire-point')
+        .filter((point) => point.attributes('data-value') !== undefined)
+        .map((point) => Number(point.attributes('data-value'))))
+        .toEqual(refreshedInitialFocalValues)
+      const countAfterRefresh = requests.length
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=29001&niveau=commune&departement=29')
+      await flushPromises()
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22')
+      await flushPromises()
+      expect(requests).toHaveLength(countAfterRefresh)
+      expect(wrapper.findAll('.trajectoire-territoire-point').map((point) => Number(point.attributes('data-value'))))
+        .toEqual(refreshedValues)
+      expect(requests[1]?.[0]?.target).toMatchObject({ kind: 'territory', id: '22002' })
+    } finally { wrapper.unmount() }
+  })
   it('waits for delayed metadata before choosing a series route when both API gates are enabled', async () => {
-    vi.stubEnv('VITE_OCSGE_STATE_SERIES_API', '1')
-    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '1')
     let publishMetadata!: (metadata: typeof metadataMilieux) => void
     const metadata = new Promise<typeof metadataMilieux>((resolve) => { publishMetadata = resolve })
     const loader: ChargerFichier = async (file) => {
@@ -353,11 +656,12 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       if (file === 'theme_milieux') return metadata
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => String(input) === '/api/resources'
-      ? nativeCatalogueResponse() : new Response(JSON.stringify({
-      dataset_id: 'ocsge_artif_etats', indicator_id: 'artif_par_habitant', points: [], scope_series: [],
-      territory: { id: '22001', type: 'commune', name: 'Commune A1' },
-    }), { status: 200 }))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
+    })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22')
     await router.isReady()
@@ -372,7 +676,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/resources')
       publishMetadata(metadataMilieux)
       await flushPromises()
-      expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22')
+      expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/resources/read-batch')
+      expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)).items[0].resource).toBe('artif_par_habitant')
       expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
   })
@@ -386,8 +691,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(() => validerThemeMetadata(metadata, 'theme_milieux.json')).toThrow()
     }
   })
-  it('completes a pending owned read when URL normalization repeats the same scope', async () => {
-    vi.stubEnv('VITE_OCSGE_STATE_SERIES_API', '1')
+  it('uses one API batch when a legacy calendar URL canonicalizes to the supported M3 role', async () => {
     localStorage.removeItem('lusk:niveau-indicateur')
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
@@ -395,9 +699,12 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       if (file === 'theme_milieux') return metadataMilieux
       throw new Error(`unexpected static read: ${file}`)
     }
-    let complete!: (response: Response) => void
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => String(input) === '/api/resources'
-      ? Promise.resolve(nativeCatalogueResponse()) : new Promise<Response>((resolve) => { complete = resolve }))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
+    })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22')
     await router.isReady()
@@ -407,53 +714,33 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { milieux: [] } }),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
-    await flushPromises()
-    expect(wrapper.text()).toContain('Chargement des données actualisées')
     await router.replace({ query: { ...router.currentRoute.value.query, detail: '2025' } })
     await flushPromises()
-    const point = { axis: '2025', state_role: 'M3', observation_period: '2021-2025', value: 42, status: 'measured', provenance: [] }
-    complete(new Response(JSON.stringify({ dataset_id: 'ocsge_artif_etats', indicator_id: 'artif_par_habitant',
-      axis_kind: 'declared_detail', unit: 'm²/hab', comparison_point: '2025',
-      territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: [point],
-      scope_series: [{ territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: [point] }],
-    }), { status: 200 }))
-    await flushPromises()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const batchCalls = fetchMock.mock.calls.filter(([input]) => String(input) === '/api/resources/read-batch')
+    expect(batchCalls).toHaveLength(1)
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/resources')
-    expect(fetchMock).toHaveBeenNthCalledWith(2,
-      '/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22')
-    expect(wrapper.text()).not.toContain('Chargement des données actualisées')
-    expect(wrapper.text()).toContain('42')
+    expect(batchCalls[0]?.[0]).toBe('/api/resources/read-batch')
+    expect(JSON.parse(String(batchCalls[0]?.[1]?.body)).items.map((item: any) => item.resource))
+      .toEqual(['artif_par_habitant', 'artif_par_habitant', 'artif_par_habitant'])
+    expect(router.currentRoute.value.query.detail).toBe('M3')
+    expect(wrapper.text()).toContain('Comparaison non publiée')
     wrapper.unmount()
   })
 
-  it('uses the separately gated, dataset-qualified M2/M3 reader and does not reuse ENAF state', async () => {
-    vi.stubEnv('VITE_OCSGE_STATE_SERIES_API', '1')
-    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '')
+  it('keeps OCS-GE calendar observations factual while exposing only supported comparison roles', async () => {
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
       if (file === 'indicateurs_milieux') return indicateursMilieuxFixture
       if (file === 'theme_milieux') return metadataMilieux
       throw new Error(`unexpected static read: ${file}`)
     }
-    let apiAvailable=false
-    const fetchMock = vi.spyOn(globalThis,'fetch').mockImplementation(async (input) => {
+    let apiAvailable = false
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       if (String(input) === '/api/resources') return nativeCatalogueResponse()
-      if(!apiAvailable) throw new Error('owned API unavailable')
-      return new Response(JSON.stringify({
-      dataset_id:'ocsge_artif_etats',indicator_id:'artif_par_habitant',axis_kind:'declared_detail',unit:'m²/hab',
-      territory:{id:'22001',type:'commune',name:'Commune A1'},comparison_point:'2025',
-      comparison:{point:'2025',direction:'low',scope:{kind:'level',territory_type:'commune',
-        department_id:'22',rank_field:'rang_dep'},rank:1,ties:1,median:61,comparable_count:2},
-      points:[{axis:'2021',state_role:'M2',observation_period:'2021-2025',value:0,status:'measured',provenance:[]},
-        {axis:'2025',state_role:'M3',observation_period:'2021-2025',value:42,status:'measured',provenance:[]}],
-      scope_series:[{territory:{id:'22001',type:'commune',name:'Commune A1'},points:[
-        {axis:'2021',state_role:'M2',observation_period:'2021-2025',value:0,status:'measured',provenance:[]},
-        {axis:'2025',state_role:'M3',observation_period:'2021-2025',value:42,status:'measured',comparison_rank:1,comparison_ties:1,comparison_count:2,provenance:[]}]},
-      {territory:{id:'22002',type:'commune',name:'Commune A2'},points:[
-        {axis:'2021',state_role:'M2',observation_period:'2021-2025',value:2,status:'measured',provenance:[]},
-        {axis:'2025',state_role:'M3',observation_period:'2021-2025',value:80,status:'measured',comparison_rank:2,comparison_ties:1,comparison_count:2,provenance:[]}]}],
-      }),{status:200,headers:{'Content-Type':'application/json'}})
+      if (!apiAvailable) throw new Error('semantic API unavailable')
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
     })
     const router=createRouter({history:createMemoryHistory(),routes})
     await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22&detail=2021')
@@ -465,18 +752,19 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       [GEOMETRIE_CHARGER_KEY]:async()=>({communes:empty,epcis:empty,departements:empty}),
     }}})
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledWith('/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22')
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/resources/read-batch')).toBe(true)
     expect(wrapper.text()).toContain('momentanément indisponibles')
     apiAvailable=true
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('momentanément indisponibles')
-    expect(wrapper.text()).toContain('42')
+    expect(wrapper.find('.trajectoire-territoire-point[data-detail="2025"]').attributes('data-value'))
+      .toBe('2606.028248734476')
+    expect(wrapper.text()).toContain('Comparaison non publiée pour')
   })
 
   it('preserves the page grammar and comparison scope, adapts API facts, and never falls back to static series on failure', async () => {
-    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '1')
     const calls: string[] = []
     const loader: ChargerFichier = async (file) => {
       calls.push(file)
@@ -486,33 +774,16 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       throw new Error(`unexpected static read: ${file}`)
     }
     const fixtureFacts = indicateursMilieuxFixture.filter((fact) => fact.key === 'conso_enaf_annuel' && fact.type === 'commune')
-    const axis: string[] = rawMetadataMilieux.indicator_pages.conso_enaf_annuel.comparison.details
-    const scopeSeries = [...new Set(fixtureFacts.map((fact) => fact.territoire))].map((id) => {
-      const territory = territoiresFixture.find((item) => item.territoire === id)!
-      return { territory: { id, type: territory.type, name: territory.nom }, points: fixtureFacts
-        .filter((fact) => fact.territoire === id).map((fact) => ({ axis: fact.detail!, observation_period: fact.detail,
-          value: fact.value, status: fact.value === null ? 'missing' : 'measured', source_id: 'consoenaf',
-          vintage_id: 'v2025', source_version: '2025', source_reference_date: '2025-01-01', source_publication_date: '2026-07-24' })) }
-    })
-    const apiRead = {
-      dataset_id: 'conso_enaf_annuel', availability: 'complete',
-      indicator_id: 'conso_enaf_annuel', axis_kind: 'year', unit: 'ha',
-      territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: axis.map((year) => ({ axis: year,
-        observation_period: year, value: fixtureFacts.find((fact) => fact.territoire === '22001' && fact.detail === year)?.value ?? null,
-        status: fixtureFacts.some((fact) => fact.territoire === '22001' && fact.detail === year)
-          ? (fixtureFacts.find((fact) => fact.territoire === '22001' && fact.detail === year)?.value === null ? 'missing' : 'measured') : 'missing',
-        source_id: 'consoenaf', vintage_id: 'v2025' })), scope_series: scopeSeries,
-      comparison: { point: '2024', value: null, median: null, rank: null, ties: null, comparable_count: 0,
-        scope: { kind: 'level', territory_type: 'commune', department_id: '22', epci_id: null } },
-    }
     let apiCalls = 0
     let retryEnabled = false
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       if (String(input) === '/api/resources') return nativeCatalogueResponse()
-      if (!String(input).startsWith('/api/series-datasets/')) return new Response('{}', { status: 404 })
+      if (String(input) !== '/api/resources/read-batch') return new Response('{}', { status: 404 })
       apiCalls++
       if (!retryEnabled) throw new Error('offline')
-      return new Response(JSON.stringify(apiRead), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture }))
     })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/conso_enaf_annuel?territoire=22001&niveau=commune&departement=22')
@@ -533,11 +804,11 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
     expect(apiCalls).toBeGreaterThan(beforeRetry)
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/series-datasets/conso_enaf_annuel/territories/commune/22001/conso_enaf_annuel?scope_level=commune&department_id=22')
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/api/resources/read-batch')
     expect(wrapper.find('.vues').exists()).toBe(true)
     expect(wrapper.find('.controls').exists()).toBe(true)
     expect(wrapper.text()).toContain('Consommation')
-    expect(wrapper.text()).toContain('4,32')
+    expect(wrapper.text()).toContain('1,83')
     expect(wrapper.text()).toContain('Département 22')
     expect(wrapper.text()).not.toContain('Territoire de la série')
     await wrapper.findAll('.vues button')[2].trigger('click')
@@ -546,15 +817,15 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     expect(calls).toContain('theme_milieux')
   })
 
-  it('keeps the legacy indicator facts and does not call the API when the build gate is off by default', async () => {
-    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '')
+  it('uses the API with retired gate variables absent and never exposes the legacy page facts on failure', async () => {
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
       if (file === 'indicateurs_milieux') return indicateursMilieuxFixture
       if (file === 'theme_milieux') return metadataMilieux
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(nativeCatalogueResponse())
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input) === '/api/resources' ? nativeCatalogueResponse() : new Response('', { status: 503 }))
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/conso_enaf_annuel?territoire=22001&niveau=commune&departement=22')
     await router.isReady()
@@ -565,9 +836,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/resources')
-    expect(wrapper.text()).not.toContain('momentanément indisponibles')
-    expect(wrapper.text()).toContain('12 ha')
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/resources/read-batch')).toBe(true)
+    expect(wrapper.text()).toContain('momentanément indisponibles')
     expect(wrapper.find('.vues').exists()).toBe(true)
   })
 })

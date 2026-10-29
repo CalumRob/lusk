@@ -207,6 +207,34 @@ describe('modèle trajectoire de Page d’indicateur (#438)', () => {
 
     expect(modele.serieTerritoire!.map((p) => p.value)).toEqual([10, 12])
   })
+
+  it('série native (#857) : les axes publiés sans fait local restent des étapes comparées, jamais effacées', () => {
+    // Niveau commune : les faits OCS-GE locaux portent les millésimes
+    // calendaires (aucun M2/M3 local), mais la publication de comparaison
+    // possède les médianes M2/M3. Les étapes M2/M3 doivent rester rendues
+    // avec LEUR preuve native ; les étapes calendaires restent des faits
+    // sans agrégat de pairs (décision propriétaire : restreindre la
+    // comparaison, pas le domaine factuel de l'axe).
+    const facet = pageTrajectoire(['M2', 'M3', '2020', '2021', '2022', '2023', '2024', '2025'], 'M3', ['M2', 'M3'])
+    const calendarFact = (id: string, detail: string, value: number | null): Indicateur => ({
+      ...facts(id, value ?? 0), key: 'prix', value, detail, native_ordered_series_fact: true as const })
+    const modele = modeleTrajectoire(
+      [calendarFact('a', '2020', 10), calendarFact('a', '2023', 12), calendarFact('b', '2020', 30), calendarFact('b', '2023', 14)],
+      facet, ['M2', 'M3'], territoires, { niveau: 'commune', territoire: 'a' }, [], null,
+      { nativeSeries: true, nativeAxisComparisons: [
+        { axis: 'M2', statistic: 'median', status: 'available', value: 8, min: 6, max: 11,
+          eligible_count: 2, missing_count: 0, member_ranks: [], sources: [] },
+        { axis: 'M3', statistic: 'median', status: 'available', value: 18, min: 15, max: 21,
+          eligible_count: 2, missing_count: 0, member_ranks: [], sources: [] },
+      ] })
+    expect(modele.etapes.map((etape) => etape.detail)).toEqual(expect.arrayContaining(['M2', 'M3', '2020', '2023']))
+    expect(parDetail(modele, 'M2')).toMatchObject({ mediane: 8, min: 6, max: 11, nValeurs: 2, comparisonSupported: true })
+    expect(parDetail(modele, 'M3')).toMatchObject({ mediane: 18, min: 15, max: 21, nValeurs: 2, comparisonSupported: true })
+    // Les étapes calendaires restent des faits : pas de médiane de pairs.
+    expect(parDetail(modele, '2023')).toMatchObject({ mediane: null, min: null, max: null, comparisonSupported: false })
+    expect(modele.serieTerritoire!.find((p) => p.detail === '2023')?.value).toBe(12)
+    expect(modele.serieTerritoire!.find((p) => p.detail === 'M3')?.value).toBeNull()
+  })
 })
 
 // La grammaire Repères des profils/listes (#439) — le modèle du profil

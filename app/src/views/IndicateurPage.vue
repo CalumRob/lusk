@@ -24,17 +24,20 @@ import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } from '@/indicateurs/etatUrl'
 import { PayloadError, validerThemeMetadata } from '@/payload/validate'
 import { semanticComparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
-import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts, orderedSeriesReaderEnabled, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
+import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerCohorteScalaire, chargerCohortePageScalaire, chargerComparaisonsScalaires,
   chargerFaitFocalPageScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees,
   scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
 import type { ScalarComparisonEvidence, ScalarComparisonRequest } from '@/payload/scalarCohort'
-import type { Indicateur, IndicatorPageMetadata, NativeThemeFactContract, Payload, Territoire, TerritoireType, ThemeMetadata } from '@/payload/types'
+import type { Indicateur, IndicatorPageMetadata, NativeThemeFactContract, Payload, SourceVintageRecord, Territoire, TerritoireType, ThemeMetadata } from '@/payload/types'
 import { ThemeAcquisitionCache, acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison } from '@/payload/themeAcquisition'
 import { adapterPageProfilDeclare, chargerCohorteProfilDeclare, chargerComparaisonProfilDeclare, chargerCohorteScalaireLiee, chargerFaitFocalProfilDeclare } from '@/payload/profileAcquisition'
 import type { DeclaredProfileDescriptor, ProfileComparison, ProfilePageBinding, ProfilePublicationIdentity, ProfileTarget } from '@/payload/profileAcquisition'
 import { chargerCatalogueRessources } from '@/payload/semanticResourceClient'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
+import { createOrderedSeriesSemanticSession, projectAdmittedCohortForFocal,
+  SeriesCohortAvailableError, SeriesComparisonRejectedError,
+  SeriesPublicationMismatchError } from '@/payload/seriesSemanticAcquisition'
 import { projectRaccordementSemanticComparison, projectRaccordementSemanticFocal } from '@/payload/raccordementSemanticProjection'
 import type { RaccordementSemanticProjection } from '@/payload/raccordementSemanticProjection'
 
@@ -65,18 +68,21 @@ const departementPorte = computed(() => route.query.departement)
 const epciPorte = computed(() => route.query.epci)
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
 const pageScalaireApiActive = ref(false)
-// Cutover is an operator-controlled build setting. Keep static behavior until
-// the serving schema/API are deployed and explicitly enabled together.
+const seriesPageApiActive = ref(false)
+const seriesHasScalarFacet = ref(false)
+const metadataSeriesApi = ref<ThemeMetadata | null>(null)
+const catalogueResourcesApi = ref<SemanticResourceDeclaration[] | null>(null)
 const orderedSeriesAdapter = computed(() => {
-  const adapter = orderedSeriesAdapterFor(theme.value, indicator.value)
+  const declaration = catalogueResourcesApi.value?.find((resource) => resource.resource_id === indicator.value)
+  const adapter = orderedSeriesAdapterFor(theme.value, indicator.value, declaration)
   if (!adapter) return null
-  const page = payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
+  const page = metadataSeriesApi.value?.indicator_pages?.[indicator.value] ?? payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
     ?.indicator_pages?.[indicator.value] as { series_dataset_id?: string; series_publication?: 'legacy' | 'owned' } | undefined
   // Metadata selects ownership; absence during loading is not a legacy binding.
   if (!page) return null
   const datasetId = page?.series_dataset_id
   const publicationMode = page?.series_publication
-  const enabled = orderedSeriesReaderEnabled(indicator.value, import.meta.env as Record<string, string | undefined>)
+  const enabled = seriesPageApiActive.value || adapter.indicator === 'raccordement_courbe'
   return enabled ? { ...adapter, datasetId, publicationMode } : null
 })
 const raccordementApiActive = computed(() => orderedSeriesAdapter.value?.indicator === 'raccordement_courbe')
@@ -137,7 +143,7 @@ let profileFocalRequestKey = ''
 let profileComparisonRequestKey = ''
 let profileScalarRequestKey = ''
 const utiliseManifeste = computed(() => profileDiscoveryComplete.value && !profileMode.value &&
-  !scalaireApiAuMontage && (manifesteChargerInjecte !== null || payloadChargerInjecte === null))
+  !seriesPageApiActive.value && !scalaireApiAuMontage && (manifesteChargerInjecte !== null || payloadChargerInjecte === null))
 const utiliseModeleIndicateur = computed(() => !profileMode.value && utiliseManifeste.value && routeModeleIndicateur.value)
 const modeleIndicateur = ref<IndicatorReadModel | null>(null)
 const erreurModeleIndicateur = ref<PayloadError | null>(null)
@@ -188,6 +194,10 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
   profileMode.value = false
   profileDiscoveryComplete.value = false
   pageScalaireApiActive.value = false
+  seriesPageApiActive.value = false
+  seriesHasScalarFacet.value = false
+  catalogueResourcesApi.value = null
+  metadataSeriesApi.value = null
   profileBootstrapLoading.value = true
   profileBootstrapError.value = null
   metadataProfilRoute.value = null
@@ -240,6 +250,7 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     return
   }
   if (sequence !== profileDiscoverySequence) return
+  catalogueResourcesApi.value = resources
 
   // The producer catalogue is the first authority for every indicator-page
   // route. Presentation metadata and static/model readers are considered only
@@ -282,6 +293,41 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
       return
     }
     declarationProfil.value = binding.declaration
+    profileDiscoveryComplete.value = true
+    profileBootstrapLoading.value = false
+    return
+  }
+
+  // Ordered-series pages use the same producer-first route classification as
+  // scalar/profile pages. Their static theme file remains editorial only.
+  const seriesResource = resources.find((resource) => resource.resource_id === currentIndicator &&
+    resource.indicator_id === currentIndicator && resource.theme_id === currentTheme &&
+    resource.shapes.includes('ordered_series') && resource.target_kinds.includes('territory_cohort') &&
+    resource.intents.includes('facts'))
+  const seriesAdapter = orderedSeriesAdapterFor(currentTheme, currentIndicator, seriesResource)
+  if (seriesResource && seriesAdapter && currentIndicator !== 'raccordement_courbe') {
+    let loadedMetadata: ThemeMetadata
+    try { loadedMetadata = await loadRouteThemeMetadata(currentTheme) }
+    catch (cause) {
+      if (sequence !== profileDiscoverySequence) return
+      profileBootstrapError.value = cause instanceof PayloadError ? cause
+        : new PayloadError('fetch', `theme_${currentTheme}.json`, 'Les métadonnées de cette page sont indisponibles.')
+      profileDiscoveryComplete.value = true
+      profileBootstrapLoading.value = false
+      return
+    }
+    if (sequence !== profileDiscoverySequence) return
+    const page = loadedMetadata.indicator_pages?.[currentIndicator]
+    if (!page || !['trajectory', 'scalar'].includes(page.family)) {
+      profileBootstrapError.value = new PayloadError('validation', currentIndicator,
+        'La série déclarée ne dispose pas d’une présentation locale prise en charge.')
+      profileDiscoveryComplete.value = true
+      profileBootstrapLoading.value = false
+      return
+    }
+    metadataSeriesApi.value = loadedMetadata
+    seriesPageApiActive.value = true
+    seriesHasScalarFacet.value = seriesResource.shapes.includes('scalar')
     profileDiscoveryComplete.value = true
     profileBootstrapLoading.value = false
     return
@@ -724,6 +770,10 @@ watch(
 )
 
 const serieLecture = ref<OrderedSeriesRead | null>(null)
+const orderedSeriesSession = createOrderedSeriesSemanticSession()
+const serieComparaisonErreur = ref(false)
+const seriePublicationChange = ref(false)
+const serieComparaisonChargement = ref(false)
 const raccordementApiLecture = ref<RaccordementSemanticProjection | null>(null)
 const raccordementComparaisonChargement = ref(false)
 const raccordementComparaisonErreur = ref(false)
@@ -750,9 +800,12 @@ let serieRequete = 0
 let serieRequestKey: string | null = null
 let raccordementFocalKey: string | null = null
 const niveauSerie = computed<TerritoireType>(() => {
-  const levels = payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
-    ?.indicator_pages?.[indicator.value]?.levels ?? ['commune']
-  const selected = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire)
+  const levels = metadataSeriesApi.value?.indicator_pages?.[indicator.value]?.levels ??
+    payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
+      ?.indicator_pages?.[indicator.value]?.levels ?? ['commune']
+  const selected = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire &&
+    (orderedSeriesAdapter.value?.indicator === 'raccordement_courbe' || !porte.value.niveau ||
+      territory.type === porte.value.niveau))
   // The handoff contract intentionally carries a region without `niveau`.
   // Preserve that owner-declared focal level for this native trajectory only;
   // region remains outside the shared data-first comparison-level selector.
@@ -764,21 +817,18 @@ async function chargerSerie(force = false) {
   const adapter = orderedSeriesAdapter.value
   if (!adapter || !payloadLegacy.value.territoires.length) return
   const scope = resoudreEtatUrl({ query: route.query, territoires: payloadLegacy.value.territoires,
-    niveauxPublies: payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]?.indicator_pages?.[indicator.value]?.levels,
+    niveauxPublies: metadataSeriesApi.value?.indicator_pages?.[indicator.value]?.levels ??
+      payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]?.indicator_pages?.[indicator.value]?.levels,
     niveauMemorise: niveauMemorise.value }).scopeValide
   const department = scope?.departement
   const epci = scope?.epci
   const scopeTerritories = payloadLegacy.value.territoires.filter((territory) => territory.type === niveauSerie.value &&
     (niveauSerie.value !== 'commune' || ((!department || territory.departement === department) &&
       (!epci || territory.epci === epci))))
-  const focal = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire) ?? scopeTerritories[0]
+  const focal = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire &&
+    territory.type === niveauSerie.value) ?? scopeTerritories[0]
   if (!focal) { serieErreur.value = false; serieLecture.value = null; return }
-  const query = new URLSearchParams({ scope_level: niveauSerie.value })
-  if (niveauSerie.value === 'commune' && department) query.set('department_id', department)
-  if (niveauSerie.value === 'commune' && epci) query.set('epci_id', epci)
-  const url = adapter.publicationMode === 'owned'
-    ? `/api/series-datasets/${encodeURIComponent(adapter.datasetId ?? '')}/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/${encodeURIComponent(adapter.pathIndicator)}?${query}`
-    : `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/series/${encodeURIComponent(adapter.pathIndicator)}?${query}`
+  const url = JSON.stringify([adapter.indicator, niveauSerie.value, focal.territoire, department ?? null, epci ?? null])
   const selectedIds = adapter.indicator === 'raccordement_courbe' && niveauSerie.value === 'commune' && (department || epci)
     ? scopeTerritories.filter((territory) => territory.type === 'commune')
       .map((territory) => ({ territory_type: 'commune' as const, territory_id: territory.territoire }))
@@ -806,6 +856,7 @@ async function chargerSerie(force = false) {
   }
   serieChargement.value = !retainedFocal
   serieErreur.value = false
+  seriePublicationChange.value = false
   if (raccordement) {
     raccordementComparaisonChargement.value = true
     raccordementComparaisonErreur.value = false
@@ -838,16 +889,30 @@ async function chargerSerie(force = false) {
       raccordementApiLecture.value = { ...projectedFocal, comparison }
       return
     }
-    const response = await fetch(url)
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const result = await response.json() as OrderedSeriesRead
-    if (result.indicator_id !== adapter.indicator || !Array.isArray(result.points) ||
-      (adapter.publicationMode === 'owned' && result.dataset_id !== adapter.datasetId) ||
-      !Array.isArray(result.scope_series)) throw new Error('Invalid ordered-series response')
-    if (request === serieRequete) serieLecture.value = result
-  } catch {
+    const result = await orderedSeriesSession.acquire({ resource: adapter.indicator,
+      level: niveauSerie.value, focal, territories: payloadLegacy.value.territoires,
+      includeScalarFacet: seriesHasScalarFacet.value,
+      ...(department ? { departmentId: department } : {}), ...(epci ? { epciId: epci } : {}) })
     if (request === serieRequete) {
-      if (raccordement && raccordementApiLecture.value && raccordementFocalKey === focalKey) {
+      serieLecture.value = result
+      serieComparaisonErreur.value = false
+      seriePublicationChange.value = false
+    }
+  } catch (cause) {
+    if (request === serieRequete) {
+      if (cause instanceof SeriesComparisonRejectedError) {
+        // The comparison's native evidence failed binding: the validated facts
+        // stay admitted and only the comparison is reacquired on retry (#857).
+        serieLecture.value = cause.facts as unknown as OrderedSeriesRead
+        serieComparaisonErreur.value = true
+      } else if (cause instanceof SeriesPublicationMismatchError) {
+        serieLecture.value = cause.facts as unknown as OrderedSeriesRead
+        serieComparaisonErreur.value = true
+        seriePublicationChange.value = true
+      } else if (cause instanceof SeriesCohortAvailableError) {
+        serieLecture.value = projectAdmittedCohortForFocal(cause.cohort, focal)
+        serieErreur.value = true
+      } else if (raccordement && raccordementApiLecture.value && raccordementFocalKey === focalKey) {
         raccordementComparaisonErreur.value = true
       } else {
         serieErreur.value = true
@@ -858,6 +923,50 @@ async function chargerSerie(force = false) {
       serieChargement.value = false
       if (raccordement) raccordementComparaisonChargement.value = false
     }
+  }
+}
+
+/** Comparison-only retry for the shared-batch pages: one bounded read
+ *  validated against the admitted facts; the warm facts are never reread. */
+async function reessayerComparaisonSerie() {
+  const adapter = orderedSeriesAdapter.value
+  const lecture = serieLecture.value
+  if (!adapter || !lecture || adapter.indicator === 'raccordement_courbe') return
+  const scope = resoudreEtatUrl({ query: route.query, territoires: payloadLegacy.value.territoires,
+    niveauxPublies: metadataSeriesApi.value?.indicator_pages?.[indicator.value]?.levels ??
+      payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]?.indicator_pages?.[indicator.value]?.levels,
+    niveauMemorise: niveauMemorise.value }).scopeValide
+  const department = scope?.departement
+  const epci = scope?.epci
+  const focal = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire &&
+    territory.type === niveauSerie.value) ??
+    payloadLegacy.value.territoires.find((territory) => territory.type === niveauSerie.value &&
+      (!department || territory.departement === department) && (!epci || territory.epci === epci))
+  if (!focal) return
+  const request = serieRequete
+  const refreshingPublication = seriePublicationChange.value
+  serieComparaisonChargement.value = true
+  serieComparaisonErreur.value = false
+  try {
+    const input = {
+      resource: adapter.indicator, level: niveauSerie.value, focal,
+      territories: payloadLegacy.value.territoires, includeScalarFacet: seriesHasScalarFacet.value,
+      ...(department ? { departmentId: department } : {}), ...(epci ? { epciId: epci } : {}) }
+    const result = seriePublicationChange.value
+      ? await orderedSeriesSession.refresh(input)
+      : await orderedSeriesSession.acquire(input)
+    if (request === serieRequete) {
+      serieLecture.value = result
+      serieComparaisonErreur.value = false
+      seriePublicationChange.value = false
+    }
+  } catch {
+    if (request === serieRequete) {
+      serieComparaisonErreur.value = true
+      seriePublicationChange.value = refreshingPublication
+    }
+  } finally {
+    if (request === serieRequete) serieComparaisonChargement.value = false
   }
 }
 const pageProfilCourante = computed(() => {
@@ -886,6 +995,8 @@ const payload = computed<Payload>(() => {
     : payloadLegacy.value
   const metadataBound = profileMode.value && metadataProfilAdaptee.value
     ? { ...baseInitial.themeMetadata, [theme.value]: metadataProfilAdaptee.value }
+    : seriesPageApiActive.value && metadataSeriesApi.value
+      ? { ...baseInitial.themeMetadata, [theme.value]: metadataSeriesApi.value }
     : scalaireApi.value && metadataScalaireApi.value
       ? { ...baseInitial.themeMetadata, [theme.value]: metadataScalaireApi.value }
       : baseInitial.themeMetadata
@@ -924,11 +1035,14 @@ const payload = computed<Payload>(() => {
       ...themeMetadata, indicator_pages: { ...themeMetadata.indicator_pages, raccordement_courbe: updatedPage },
     } } : base.themeMetadata, indicateurs: [...indicators, ...read.facts] } as Payload
   }
-  const page = base.themeMetadata?.[adapter.theme]?.indicator_pages?.[adapter.indicator]
+  const page = metadataSeriesApi.value?.indicator_pages?.[adapter.indicator] ??
+    base.themeMetadata?.[adapter.theme]?.indicator_pages?.[adapter.indicator]
+  const axisFacet = page?.comparison?.dimensions !== undefined || page?.comparison?.dimension !== undefined
+    ? 'dimension' as const : 'detail' as const
   const apiFacts = serieLecture.value && page
-    ? orderedSeriesFacts(serieLecture.value, adapter.theme, base.territoires).map((fact) => ({ ...fact, unit: page.unit }))
+    ? orderedSeriesFacts(serieLecture.value, adapter.theme, base.territoires, axisFacet)
     : []
-  return { ...base, indicateurs: mergeOrderedSeriesFacts(base.indicateurs, adapter.indicator, apiFacts) }
+  return { ...base, indicateurs: [...base.indicateurs.filter((fact) => !(fact.theme === adapter.theme && fact.key === adapter.indicator)), ...apiFacts] }
 })
 const erreur = computed(() => {
   if (profileBootstrapError.value) return profileBootstrapError.value
@@ -951,6 +1065,27 @@ const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
 const page = computed(() => {
   const editorial = profileMode.value ? pageProfilCourante.value ?? undefined : metadata.value?.indicator_pages?.[indicator.value]
+  const read = seriesPageApiActive.value && orderedSeriesAdapter.value?.indicator === indicator.value
+    ? serieLecture.value : null
+  const descriptor = read?.native_descriptor
+  // Published comparison axes drive the selector; while a comparison alone is
+  // rejected, the producer's own role marking (or the declared factual axis for
+  // resources whose publication covers it) keeps the binding truthful.
+  const comparisonAxes = read?.comparison?.axis_comparisons?.map((row) => row.axis)
+    ?? (read?.role_axes?.length ? read.role_axes : read?.native_descriptor?.axis_values)
+  if (editorial && descriptor && comparisonAxes?.length) {
+    const dimensionFacet = editorial.comparison?.dimensions !== undefined || editorial.comparison?.dimension !== undefined
+    const permitted = dimensionFacet ? { dimensions: comparisonAxes,
+      dimension: comparisonAxes.includes(editorial.comparison?.dimension ?? '')
+        ? editorial.comparison?.dimension : comparisonAxes.at(-1) }
+      : { details: comparisonAxes,
+        detail: comparisonAxes.includes(editorial.comparison?.detail ?? '')
+          ? editorial.comparison?.detail : comparisonAxes.at(-1) }
+    return { ...editorial, label: descriptor.label, unit: descriptor.unit,
+      direction: descriptor.direction === 'none' ? editorial.direction : descriptor.direction,
+      comparison: { ...editorial.comparison, ...permitted, unit: descriptor.unit,
+        direction: descriptor.direction === 'none' ? editorial.comparison?.direction : descriptor.direction } }
+  }
   const native = contratScalairePageNatif.value
   if (!editorial || !pageScalaireApiActive.value || !native) return editorial
   const direction = native.direction === 'low' ? 'low' : native.direction === 'high' ? 'high' : editorial.direction
@@ -1013,6 +1148,17 @@ async ([active, resourceId, descriptorVersion, contentVersion, _members, targetT
     if (sequence === profileComparisonSequence) profileComparisonLoading.value = false
   }
 }, { immediate: true })
+/** Le millésime API d'une carte source : les faits natifs, jamais une horloge inventée (#732). */
+const vintageApi = (source: { vintageId?: string; version: string; referenceDate: string | null;
+  publicationDate: string | null; lineage?: Record<string, unknown> }, licence: string | null): SourceVintageRecord => {
+  const hash = source.lineage?.hash ?? source.lineage?.revision_hash
+  return {
+    id: source.vintageId ?? source.version, label: source.vintageId ?? source.version, version: source.version,
+    licence, dateReference: source.referenceDate, datePublication: source.publicationDate,
+    ...(typeof hash === 'string' ? { revisionHash: hash } : {}),
+  }
+}
+
 const sources = computed(() => {
   if (!page.value || !payload.value) return []
   const authority = sourceRecords(payload.value)
@@ -1028,9 +1174,8 @@ const sources = computed(() => {
         .map((source) => [`${source.sourceId}\u0000${source.vintageId ?? source.version}`, source])).values()]
       if (!vintages.length) return null
       const existing = authority.find((record) => record.id === id || datasetDeSource(record.id) === datasetDeSource(id))
-      const apiVintages = vintages.map((source) => ({ id: source.vintageId ?? source.version,
-        label: source.vintageId ?? source.version, version: source.version, licence: existing?.licence ?? null,
-        dateReference: source.referenceDate, datePublication: source.publicationDate }))
+      const ficheRecord = authority.find((record) => record.id === datasetDeSource(id))
+      const apiVintages: SourceVintageRecord[] = vintages.map((source) => vintageApi(source, existing?.licence ?? null))
       const representative = vintages.length === 1 ? vintages[0] : null
       return {
         id, dataset: representative?.source ?? vintages[0]!.source,
@@ -1043,6 +1188,7 @@ const sources = computed(() => {
         clocks: existing?.clocks ?? [], caveat: existing?.caveat ?? null,
         methodology: existing?.methodology, consumers: existing?.consumers ?? [],
         replie: existing?.replie ?? false, themes: existing?.themes ?? [theme.value as Theme],
+        ficheSourceLiee: Boolean(ficheRecord), ancreSourceId: datasetDeSource(id),
       }
     }).filter((source): source is NonNullable<typeof source> => source !== null)
   }
@@ -1060,9 +1206,8 @@ const sources = computed(() => {
         .map((source) => [`${source.sourceId}\u0000${source.vintageId ?? source.version}`, source])).values()]
       if (!vintages.length) return null
       const existing = authority.find((record) => record.id === id)
-      const apiVintages = vintages.map((source) => ({ id: source.vintageId ?? source.version,
-        label: source.vintageId ?? source.version, version: source.version, licence: existing?.licence ?? null,
-        dateReference: source.referenceDate, datePublication: source.publicationDate }))
+      const ficheRecord = authority.find((record) => record.id === datasetDeSource(id))
+      const apiVintages: SourceVintageRecord[] = vintages.map((source) => vintageApi(source, existing?.licence ?? null))
       const representative = vintages.length === 1 ? vintages[0] : null
       return {
         id, dataset: representative?.source ?? vintages[0]!.source,
@@ -1075,10 +1220,41 @@ const sources = computed(() => {
         clocks: [], caveat: existing?.caveat ?? null,
         methodology: existing?.methodology, consumers: existing?.consumers ?? [],
         replie: existing?.replie ?? false, themes: existing?.themes ?? [theme.value as Theme],
+        ficheSourceLiee: Boolean(ficheRecord), ancreSourceId: datasetDeSource(id),
       }
     }).filter((source): source is NonNullable<typeof source> => source !== null)
   }
-  return page.value.sources.map((id) => authority.find((record) => record.id === datasetDeSource(id))).filter((source): source is NonNullable<typeof source> => Boolean(source))
+  if (raccordementApiActive.value && !raccordementApiLecture.value) return []
+  if ((seriesPageApiActive.value && orderedSeriesAdapter.value && serieLecture.value) ||
+      (raccordementApiActive.value && raccordementApiLecture.value)) {
+    const nativeFacts = raccordementApiActive.value && raccordementApiLecture.value
+      ? raccordementApiLecture.value.facts
+      : orderedSeriesFacts(serieLecture.value!, theme.value as Theme, payload.value.territoires)
+    const native = nativeFacts.flatMap((fact) => fact.fact_sources ?? [])
+    return [...new Set(native.map((source) => source.sourceId))].map((id) => {
+      const vintages = [...new Map(native.filter((source) => source.sourceId === id)
+        .map((source) => [`${source.sourceId}\u0000${source.vintageId ?? source.version}\u0000${String(source.lineage?.hash ?? '')}`, source])).values()]
+      if (!vintages.length) return null
+      const existing = authority.find((record) => record.id === id)
+      const ficheRecord = authority.find((record) => record.id === datasetDeSource(id))
+      const apiVintages: SourceVintageRecord[] = vintages.map((source) => vintageApi(source, existing?.licence ?? null))
+      const representative = vintages.length === 1 ? vintages[0] : null
+      return { id, dataset: representative?.source ?? vintages[0]!.source,
+        publisher: existing?.publisher ?? representative?.source ?? vintages[0]!.source,
+        url: existing?.url ?? null, licence: existing?.licence ?? null,
+        vintage: representative?.version ?? 'Plusieurs millésimes',
+        freshness: representative?.publicationDate ?? '—', sha256: null,
+        dateReference: representative?.referenceDate ?? null,
+        datePublication: representative?.publicationDate ?? null, vintages: apiVintages, clocks: [],
+        caveat: existing?.caveat ?? null, methodology: existing?.methodology,
+        consumers: existing?.consumers ?? [], replie: existing?.replie ?? false,
+        themes: existing?.themes ?? [theme.value as Theme],
+        ficheSourceLiee: Boolean(ficheRecord), ancreSourceId: datasetDeSource(id) }
+    }).filter((source): source is NonNullable<typeof source> => source !== null)
+  }
+  return page.value.sources.map((id) => authority.find((record) => record.id === datasetDeSource(id)))
+    .filter((source): source is NonNullable<typeof source> => Boolean(source))
+    .map((source) => ({ ...source, ficheSourceLiee: true, ancreSourceId: source.id }))
 })
 /**
  * Some source versions describe a planned service day while their reference
@@ -1228,7 +1404,13 @@ const trajectoire = computed(() => {
     { niveau: niveauTrajectoire, departement, epci, territoire: territoireTrajectoire },
     referenceFacts,
     dispatch.representation.extension.reference?.label ?? null,
-    { axis: dispatch.representation.extension.axis, labelsDetail: dispatch.representation.labelsDetail },
+    { axis: dispatch.representation.extension.axis, labelsDetail: dispatch.representation.labelsDetail,
+      nativeSeries: seriesPageApiActive.value,
+      nativeAxisComparisons: seriesPageApiActive.value
+        ? serieLecture.value?.comparison?.axis_comparisons?.map((row) => ({ axis: row.axis,
+          statistic: row.statistic, status: row.status, value: row.value, min: row.min,
+          max: row.max, eligible_count: row.eligible_count, missing_count: row.missing_count }))
+        : undefined },
   )
   if (indicator.value !== 'raccordement_courbe' || !raccordementApiLecture.value) return trajectoryModel
   const comparison = raccordementApiLecture.value.comparison
@@ -1331,7 +1513,8 @@ watch(() => [route.params.theme, route.params.indicator, route.query.recherche],
 // deux watchers mutuellement réactifs écrivaient « niveau: undefined » dans la
 // fenêtre « territoires chargés, métadonnées pas encore » et STRIPPAIENT un
 // departement/EPCI valide.
-watch(etatUrl, (etat) => {
+watch(() => ({ etat: etatUrl.value, facet: familyDispatch.value?.resolvedUrl, page: page.value }),
+  ({ etat, facet, page: currentPage }) => {
   if (!payload.value.territoires.length) return
   const selected = payload.value.territoires.find((territory) => territory.territoire === porte.value.territoire)
   const regionalFactsOnly = profileMode.value && selected?.type === 'region' &&
@@ -1344,19 +1527,17 @@ watch(etatUrl, (etat) => {
     if (JSON.stringify(query) !== JSON.stringify(route.query)) router.replace({ query })
     return
   }
-  const query = queryCanonique(route.query, etat)
+  let query = queryCanonique(route.query, etat)
+  if (facet !== undefined && currentPage) query = fusionnerFacette(query, facet)
   if (JSON.stringify(query) !== JSON.stringify(route.query)) router.replace({ query })
 }, { immediate: true })
 watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niveau)) { localStorage.setItem('lusk:niveau-indicateur', niveau); niveauMemorise.value = niveau } }, { immediate: true })
-watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
-  if (resolved === undefined || !page.value) return
-  const next = fusionnerFacette(route.query, resolved)
-  if (JSON.stringify(next) !== JSON.stringify(route.query)) router.replace({ query: next })
-}, { immediate: true })
 </script>
 <template>
   <section class="indicateur-page presentation-editorial" :class="`theme-${theme}`" :style="themeVars">
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieChargement" role="status">Chargement des données actualisées…</div>
+    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieComparaisonChargement" role="status" data-testid="series-comparison-retrying">{{ seriePublicationChange ? 'Actualisation des faits de cette publication…' : 'Nouvelle tentative de comparaison… Les faits validés restent affichés.' }}</div>
+    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieComparaisonErreur" role="alert" data-testid="series-comparison-error">{{ seriePublicationChange ? 'La publication a changé ; actualisez les faits pour continuer.' : 'La comparaison de cet indicateur est momentanément indisponible ; les faits validés restent affichés.' }}<button type="button" :disabled="serieComparaisonChargement" @click="reessayerComparaisonSerie()">{{ seriePublicationChange ? 'Actualiser les faits' : 'Réessayer la comparaison' }}</button></div>
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
     <div v-if="chargement || (raccordementApiActive && serieChargement)" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur || (raccordementApiActive && serieErreur)" role="alert">Impossible de charger l’indicateur.<button v-if="profileBootstrapError" type="button" @click="retryProfileBootstrap++">Réessayer</button><button v-else-if="profileMode" type="button" @click="retryProfileFacts++">Réessayer</button><button v-if="!profileMode && scalaireApi" type="button" @click="retryScalaireApi++">Réessayer</button><button v-if="raccordementApiActive" type="button" @click="chargerSerie(true)">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
@@ -1420,7 +1601,7 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
           </template></RepereFamilyOutlet></main>
         <section v-else-if="vue === 'carte' && profileRegionalFactOnly" class="carte-indicateur" role="status" data-testid="profile-regional-map-unavailable">La Région dispose de faits publiés, mais pas d’une géométrie de comparaison pour cette carte.</section>
         <section v-else-if="vue === 'carte'" class="carte-indicateur"><div v-if="geometrie.masques.value" class="map-wrap"><MapExplorer :masques="geometrie.masques.value" :payload="payloadCarte" :active-ids="payloadCarte.indicateurs.map((fact) => fact.territoire)" :theme="theme as Theme" :couche="couche" :niveau="niveauMasque" :territoire-cible="territoireCible" :requete-zoom="requeteZoom" /></div><div v-else role="status">Chargement de la carte…</div></section>
-        <aside v-else><h2>L’indicateur</h2><dl><template v-if="raccordementApiLecture"><dt>Définition</dt><dd>{{ raccordementApiLecture.metadata.label }}</dd><dt>Unité</dt><dd>{{ raccordementApiLecture.metadata.unit }}</dd><dt>Mesure</dt><dd>{{ raccordementApiLecture.metadata.comparison_contract.statistic }} · {{ raccordementApiLecture.metadata.axis_values.length }} points déclarés</dd></template><template v-else><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></template></dl><p v-if="horlogeService && !raccordementApiLecture" class="indicator-date-caveat" data-testid="raccordement-dates">Les résultats reposent sur les horaires planifiés pour le {{ horlogeService.service }} ; les sources ont été acquises le {{ horlogeService.acquisition }}.</p><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink :to="{ name: 'sources', hash: `#${ancreSource(source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}</li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
+        <aside v-else><h2>L’indicateur</h2><dl><template v-if="raccordementApiLecture"><dt>Définition</dt><dd>{{ raccordementApiLecture.metadata.label }}</dd><dt>Unité</dt><dd>{{ raccordementApiLecture.metadata.unit }}</dd><dt>Mesure</dt><dd>{{ raccordementApiLecture.metadata.comparison_contract.statistic }} · {{ raccordementApiLecture.metadata.axis_values.length }} points déclarés</dd></template><template v-else><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></template></dl><p v-if="horlogeService && !raccordementApiLecture" class="indicator-date-caveat" data-testid="raccordement-dates">Les résultats reposent sur les horaires planifiés pour le {{ horlogeService.service }} ; les sources ont été acquises le {{ horlogeService.acquisition }}.</p><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink v-if="source.ficheSourceLiee" :to="{ name: 'sources', hash: `#${ancreSource(source.ancreSourceId ?? source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}<span v-if="vintage.revisionHash"> · Révision : {{ vintage.revisionHash }}</span></li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
      </template>
   </section>
 </template>

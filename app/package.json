@@ -11,6 +11,9 @@
     "benchmark:payload": "vitest run --config scripts/vitest.benchmark.config.ts",
     "verify:profile-pages": "node scripts/verify-profile-pages.mjs",
     "verify:ordinary-scalar-pages": "node scripts/verify-ordinary-scalar-pages.mjs",
+    "verify:series-pages": "node scripts/verify-series-pages.mjs",
+    "verify:series-warm-503": "node scripts/verify-series-warm-503.mjs",
+    "verify:series-native-bridge": "node scripts/verify-series-native-bridge.mjs",
     "verify:mobile-cahier-overflow": "node scripts/verify-mobile-cahier-overflow.mjs",
     "preview": "vite preview",
     "test": "vitest run"

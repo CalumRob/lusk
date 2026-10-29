@@ -138,6 +138,14 @@ function sourcesFor(resource: Resource, fact?: Record<string, any>, target?: Rec
     (typeof fact?.vintage_date_publication !== 'string' || vintage.date_publication === fact.vintage_date_publication) &&
     (typeof fact?.vintage_source !== 'string' || vintage.source === fact.vintage_source)
   let candidates = declared.filter(matchesFact)
+  if (!candidates.length && fact?.vintage_source) {
+    // A mixed-vintage aggregate fact (an EPCI spanning two OCS-GE millésimes)
+    // carries its own composite vintage identity: reuse it verbatim instead of
+    // inventing a clock.
+    candidates = [{ id: typeof fact.source_id === 'string' ? fact.source_id : fact.vintage_source,
+      source: fact.vintage_source, version: String(fact.vintage_version ?? 'vintage inconnu'),
+      date_reference: fact.vintage_date_reference ?? null, date_publication: fact.vintage_date_publication ?? null }]
+  }
   if (candidates.length > 1 && target?.type === 'commune') {
     const territory = territories.find((item) => item.type === target.type && item.territoire === target.id)
     const department = territory?.departement
@@ -456,6 +464,9 @@ function nativeScalarComparison(item: Record<string, any>, resource: Resource,
     rank_size: focalInSelection && rankFor(focalObservation?.value ?? null) !== null ? eligible.length : null,
     comparison_sources: [...sourceMap.values()],
   }
+  if (item.fields?.includes('rank_ties')) {
+    result.rank_ties = focalInSelection ? tiesFor(focalObservation?.value ?? null) : null
+  }
   if (item.fields?.includes('member_ranks')) {
     result.member_ranks = observed.map(({ member, value }) => {
       const rank = rankFor(value)
@@ -473,6 +484,7 @@ function nativeScalarComparison(item: Record<string, any>, resource: Resource,
   return { resource: resource.resource_id, target: item.target, contract: 'indicator-comparison-v1',
     complete_theme: false, indicator_id: resource.indicator_id, shape: 'scalar',
     content_version: version, reference_content_version: referenceVersion,
+    ...(selected ? {} : { comparison_content_version: `${resource.resource_id}-fixture-comparison-v1` }),
     selection: selected ? item.intent.members.map((member: { type: string; id: string }) =>
       ({ territory_type: member.type, territory_id: member.id })) : null,
     scope, result }
@@ -799,33 +811,79 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     }
     const shape = isProfile ? 'declared_profile' : isSeries ? 'ordered_series'
       : isCollection ? 'period_detail' : 'scalar'
-    const result = { indicator_id: resource.indicator_id, status: 'unavailable', reason: 'fixture_unavailable',
+    const axisComparisons = isSeries && item.fields?.includes('axis_comparisons')
+      ? (() => {
+          const metadata = metadataFor(resource.theme_id)
+          const page = metadata.indicator_pages?.[resource.indicator_id] ?? {}
+          const declared = resource.indicator_id === 'artif_par_habitant'
+            ? page.trajectory?.endpoints ?? []
+            : page.comparison?.details ?? page.comparison?.dimensions ?? []
+          const requested = item.coordinates?.[resource.axes?.[0] ?? '']
+          const axes = requested?.length ? declared.filter((axis: string) => requested.includes(axis)) : declared
+          const selectedMembers: Record<string, any>[] = selected
+            ? selected.map((member: Record<string, any>) => territoryReference.find((row) =>
+                row.type === member.territory_type && row.territoire === member.territory_id)).filter(Boolean)
+            : cohort
+          return axes.map((axis: string) => {
+            const observations = selectedMembers.map((member) => {
+              const fact = publishedIndicators(resource, { kind: 'territory', type: member.type,
+                id: member.territoire }).find((row) => (row.detail ?? row.dimension) === axis)
+              return { member, fact, value: fact && fact.value !== null ? Number(fact.value) : null }
+            })
+            const values = observations.filter((row) => row.value !== null).map((row) => row.value as number)
+            const statistic = page.comparison?.statistic ?? 'median'
+            const sorted = [...values].sort((a, b) => a - b)
+            const middle = Math.floor(sorted.length / 2)
+            const aggregate = statistic === 'mean' ? values.reduce((sum, value) => sum + value, 0) / values.length
+              : sorted.length % 2 ? sorted[middle] : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
+            const direction = page.comparison?.direction ?? page.direction ?? resource.direction
+            const available = values.length >= 2
+            return { axis, statistic, status: available ? 'available' : 'unavailable',
+              value: available ? aggregate : null, min: available ? Math.min(...values) : null,
+              max: available ? Math.max(...values) : null, selected_member_count: selectedMembers.length,
+              eligible_count: values.length, missing_count: selectedMembers.length - values.length,
+              member_ranks: observations.map(({ member, value }) => ({ territory_id: member.territoire,
+                rank: available && value !== null ? 1 + values.filter((candidate) => direction === 'high'
+                  ? candidate > value : candidate < value).length : null,
+                rank_size: available && value !== null ? values.length : null,
+                rank_ties: available && value !== null ? values.filter((candidate) => candidate === value).length : null })),
+              sources: [],
+            }
+          })
+        })() : undefined
+    const result = { indicator_id: resource.indicator_id, theme_id: resource.theme_id,
+      label: resource.label, status: 'unavailable', reason: 'fixture_unavailable',
       unit: resource.unit, direction: resource.direction,
       source_facet: isProfile ? undefined : isSeries ? null : resource.indicator_id,
       descriptor_version: descriptorVersion,
+      statistic: isSeries ? (metadataFor(resource.theme_id).indicator_pages?.[resource.indicator_id]?.comparison?.statistic ?? 'median') : undefined,
+      ...(isSeries ? { owned_content_version: version } : {}),
       ...(isProfile ? { profile_descriptor_version: descriptorVersion } : {}),
       selected_member_count: cohort.length, eligible_count: 0, missing_count: cohort.length,
       rank: null, rank_size: null }
     const dualScalarSeries = shapes.includes('scalar') && isSeries
     const scalarVersions = scalarFacetVersions(resource, version, referenceVersion)
-    const scalarFacet = dualScalarSeries ? { shape: 'scalar', source_facet: resource.indicator_id,
-      ...scalarVersions, descriptor: scalarFacetDescriptor(resource, scalarVersions.descriptor_version),
-      ...(selected ? {} : { comparison_content_version: `${resource.resource_id}-scalar-comparison-fixture-v1` }),
-      selection: selected, scope: selected ? { kind: 'explicit_selection', member_count: selected.length }
-        : { kind: target.type === 'commune' ? 'density_class' : 'same_level',
-          territory_type: target.type, density_class_code: focal?.classe_densite_code ?? null,
-          member_count: cohort.length },
-      result: { indicator_id: resource.indicator_id, source_facet: resource.indicator_id,
-        status: 'unavailable', reason: 'fixture_unavailable', direction: resource.direction,
-        descriptor_version: scalarVersions.descriptor_version, selected_member_count: cohort.length,
-        eligible_count: 0, missing_count: cohort.length, rank: null, rank_size: null } } : undefined
+    const scalarComparison = dualScalarSeries
+      ? nativeScalarComparison(item, { ...resource, shapes: ['scalar'] }, context,
+        scalarVersions.content_version, scalarVersions.reference_content_version,
+        scalarVersions.descriptor_version)
+      : undefined
+    const scalarFacet = scalarComparison ? { shape: 'scalar', source_facet: resource.indicator_id,
+      content_version: scalarVersions.content_version,
+      reference_content_version: scalarVersions.reference_content_version,
+      descriptor_version: scalarVersions.descriptor_version,
+      comparison_content_version: scalarComparison.comparison_content_version,
+      descriptor: scalarFacetDescriptor(resource, scalarVersions.descriptor_version),
+      selection: scalarComparison.selection, scope: scalarComparison.scope,
+      result: scalarComparison.result } : undefined
     return { ...shared, contract: 'indicator-comparison-v1', indicator_id: resource.indicator_id, shape,
       content_version: version, reference_content_version: referenceVersion, selection: selected,
       scope: selected ? { kind: 'explicit_selection', member_count: selected.length }
         : { kind: target.type === 'commune' ? 'density_class' : 'same_level',
           territory_type: target.type, density_class_code: focal?.classe_densite_code ?? null,
           member_count: cohort.length },
-      result, ...(scalarFacet ? { scalar_facet: scalarFacet } : {}) }
+      result: axisComparisons ? { ...result, axis_comparisons: axisComparisons } : result,
+      ...(scalarFacet ? { scalar_facet: scalarFacet } : {}) }
   }
 
   if (resource.resource_id === 'raccordement_tc' && target.kind === 'territory') {
@@ -926,6 +984,87 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     throw new Error(`Unsupported native profile fixture target: ${target.kind}`)
   }
 
+  if (target.kind === 'territory_cohort' && shapes.includes('ordered_series')) {
+    const metadata = metadataFor(resource.theme_id)
+    const page = metadata.indicator_pages?.[resource.indicator_id] ?? {}
+    const route = metadata.owned_series_routes?.[resource.indicator_id] ?? {}
+    const axisValues = page.comparison?.details ?? page.comparison?.dimensions ?? []
+    const members = territoryReference.filter((member) => member.type === target.type &&
+      (!target.department_id || member.departement === target.department_id) &&
+      (!target.epci_id || member.epci === target.epci_id))
+    const pointsFor = (member: Record<string, any>) => publishedIndicators(resource,
+      { kind: 'territory', type: member.type, id: member.territoire })
+      .filter((fact) => fact.detail != null || fact.dimension != null)
+      .map((fact) => {
+        const axis = String(fact.detail ?? fact.dimension)
+        const declaredVintages = Object.entries(metadata.source_records ?? {})
+          .flatMap(([id, record]) => ((record as Record<string, any>).vintages ?? [])
+            .map((vintage: Record<string, any>) => ({ id, ...vintage })))
+        let revisions: Array<Record<string, any>>
+        try {
+          const source = sourceFor(resource, fact, { kind: 'territory', type: member.type, id: member.territoire }, true)
+          revisions = [{ source_id: source.source_id, source_name: source.name,
+            vintage_id: source.vintage_id, version: source.version,
+            reference_date: source.reference_date, publication_date: source.publication_date }]
+        } catch (cause) {
+          // A mixed-vintage aggregate fact (an EPCI spanning several OCS-GE
+          // millésimes) cites every declared component vintage its composite
+          // identity names — the real producer's multi-lineage grain, never an
+          // invented source clock.
+          const parts = String(fact.vintage_version ?? '').split('·')
+          const resolved = parts.flatMap((part) => {
+            const department = part.match(/\((\d+)\)/)?.[1]
+            const versions = (part.replace(/\(\d+\)/, '').match(/\d{4}/g) ?? []).map(Number)
+            return declaredVintages.filter((vintage) =>
+              (!department || String(vintage.id).endsWith(`_${department}`)) &&
+              versions.includes(Number(vintage.version)))
+          })
+          const chosen = resolved.length ? resolved : declaredVintages.slice(0, 1)
+          revisions = chosen.map((vintage) => ({ source_id: vintage.id,
+            source_name: fact.vintage_source ?? (metadata.source_records as Record<string, any>)?.[vintage.id]?.dataset,
+            vintage_id: vintage.version, version: vintage.version,
+            reference_date: fact.vintage_date_reference ?? vintage.dateReference ?? null,
+            publication_date: fact.vintage_date_publication ?? vintage.datePublication ?? null }))
+        }
+        return { axis, observation_period: String(fact.dimension ?? fact.detail ?? ''),
+          value: fact.value, status: fact.value === null ? 'missing' : 'measured',
+          missing_reason: fact.value === null ? 'missing' : null,
+          provenance: revisions.map((source) => ({ revision_id: `fixture-revision-${source.source_id}`,
+            source_id: source.source_id, vintage_id: source.vintage_id, source_name: source.source_name,
+            dataset_name: resource.resource_id, version: source.version,
+            reference_date: source.reference_date, publication_date: source.publication_date,
+            revision_hash: `fixture-revision-hash-${source.source_id}` })) }
+      })
+    const descriptor = { dataset_id: page.series_dataset_id ?? route.dataset_id ?? resource.resource_id,
+      theme_id: resource.theme_id, axis_kind: page.axis_kind ?? route.axis_kind ?? resource.axes?.[0] ?? 'declared_detail',
+      axis_values: axisValues.length ? axisValues : [...new Set(members.flatMap((member) =>
+        pointsFor(member).map((point) => point.axis)))],
+      axis_numeric_values: route.axis_kind === 'duration_minute' ? raccordementAxisNumericValues : null,
+      completeness: page.completeness ?? 'may_be_missing',
+      absence_semantics: page.absence_semantics ?? 'unavailable', label: page.label ?? resource.label,
+      unit: page.unit ?? resource.unit, direction: page.direction ?? resource.direction,
+      descriptor_version: descriptorVersion, allowed_levels: page.levels ?? resource.allowed_levels,
+      comparison_point: page.comparison?.detail ?? page.comparison?.dimension ?? null,
+      observation_period_kind: page.observation_period_kind ?? null }
+    const response: Record<string, any> = { ...shared, shape: 'ordered_series', cohort: {
+      territory_type: target.type, department_id: target.department_id ?? null,
+      epci_id: target.epci_id ?? null, member_count: members.length,
+      members: members.map((member) => ({ id: member.territoire, type: member.type, name: member.nom })),
+      reference_content_version: referenceVersion }, content_version: version,
+      reference_content_version: referenceVersion, descriptor,
+      series: members.map((member) => ({ territory: { id: member.territoire, type: member.type, name: member.nom },
+        availability: 'complete', points: pointsFor(member) })) }
+    if (shapes.includes('scalar')) {
+      const scalar = nativeReadFixture(item, { ...resource, shapes: ['scalar'] }, context)
+      const scalarVersions = scalarFacetVersions(resource, version, referenceVersion)
+      response.scalar_facet = { ...scalar, content_version: scalarVersions.content_version,
+        reference_content_version: scalarVersions.reference_content_version,
+        descriptor_version: scalarVersions.descriptor_version,
+        descriptor: scalarFacetDescriptor(resource, scalarVersions.descriptor_version) }
+    }
+    return response
+  }
+
   if (target.kind === 'territory_cohort' && shapes.includes('scalar')) {
     const members = territoryReference.filter((member) => member.type === target.type &&
       (!target.department_id || member.departement === target.department_id) &&
@@ -964,8 +1103,10 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     if (resource.resource_id === 'raccordement_courbe') {
       return { ...shared, ...syntheticRaccordementSeries(item, resource, version, referenceVersion, descriptorVersion) }
     }
+    const page = metadataFor(resource.theme_id).indicator_pages?.[resource.indicator_id] ?? {}
+    const route = metadataFor(resource.theme_id).owned_series_routes?.[resource.indicator_id] ?? {}
     const axis = resource.axis_values?.[0]
-    const axisKind = axis?.[0] ?? resource.axes?.[0] ?? 'axis'
+    const axisKind = page.axis_kind ?? route.axis_kind ?? axis?.[0] ?? resource.axes?.[0] ?? 'axis'
     const axisValue = (fact: Record<string, any>) => String(fact.detail ?? fact.dimension ?? '')
     const seriesFacts = facts.filter((fact) => fact.detail !== null && fact.detail !== undefined ||
       fact.dimension !== null && fact.dimension !== undefined)
@@ -980,8 +1121,11 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
           revision_id: 'fixture-revision', dataset_name: resource.resource_id,
           revision_hash: 'fixture-revision-hash' }] }
     })
-    const response: Record<string, any> = { ...shared, indicator_id: resource.indicator_id, theme_id: resource.theme_id,
-      dataset_id: resource.resource_id === 'raccordement_courbe' ? raccordementRoute.dataset_id : resource.resource_id,
+    const response: Record<string, any> = { ...shared, territory: { id: target.id, type: target.type,
+        name: territoryReference.find((row) => row.type === target.type && row.territoire === target.id)?.nom ?? target.id },
+      indicator_id: resource.indicator_id, theme_id: resource.theme_id,
+      dataset_id: page.series_dataset_id ?? route.dataset_id ??
+        (resource.resource_id === 'raccordement_courbe' ? raccordementRoute.dataset_id : resource.resource_id),
       publication_id: version, content_version: version, reference_content_version: referenceVersion,
       descriptor_version: descriptorVersion, axis_kind: axisKind, axis_values: axisValues,
       axis_numeric_values: axisValues.map((value) => {
@@ -989,20 +1133,22 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
         return Number.isFinite(numeric) ? numeric : null
       }),
       completeness: facts.length ? 'observed_sparse' : 'no_record', label: resource.label,
-      unit: resource.unit, direction: resource.direction, comparison_point: null,
+      unit: resource.unit, direction: resource.direction,
+      comparison_point: page.comparison?.detail ?? page.comparison?.dimension ?? null,
        points, scope_series: [], context: null, named_references: [], availability: facts.length ? 'observed' : 'no_record' }
     if (shapes.includes('scalar')) {
-      // Emit a deterministic synthetic pooled observation with producer-owned
-      // source identity/clock. It is not copied from a checked-in curve and is
-      // not evidence of a live publication or frontend publication parity.
+      // Emit the producer fixture's pooled scalar observation separately from
+      // the annual points, retaining its own source clock and fact value.
       const pooledSourceFact = facts.find((fact) => fact.detail === null || fact.detail === undefined)
       const scalarSource = pooledSourceFact ? sourceFor(resource, pooledSourceFact, target) : null
       const scalarVersions = scalarFacetVersions(resource, version, referenceVersion)
       response.scalar_facet = { shape: 'scalar', source_facet: resource.indicator_id, ...scalarVersions,
         descriptor: scalarFacetDescriptor(resource, scalarVersions.descriptor_version),
         observation: { territory_id: target.id, territory_type: target.type,
-          status: scalarSource ? 'measured' : 'unavailable', value: scalarSource ? 700 : null,
-          support_count: scalarSource ? 12 : null, denominator_count: scalarSource ? 20 : null,
+          status: scalarSource ? 'measured' : 'unavailable',
+          value: scalarSource && pooledSourceFact?.value !== null ? Number(pooledSourceFact?.value) : null,
+          support_count: scalarSource ? pooledSourceFact?.support_count ?? pooledSourceFact?.n ?? null : null,
+          denominator_count: scalarSource ? pooledSourceFact?.denominator_count ?? null : null,
           sources: scalarSource ? [{ source_id: scalarSource.source_id, name: scalarSource.name,
             vintage_id: scalarSource.vintage_id, version: scalarSource.version,
             reference_date: scalarSource.reference_date, publication_date: scalarSource.publication_date }] : [] } }
@@ -1056,7 +1202,9 @@ export function nativeBatchResponse<T extends Record<string, any>>(
       ? scalarComparisonFields
       : resource?.shapes.includes('declared_profile') && item.intent?.kind === 'selected_comparison'
         ? profileComparisonFields : []
-    const allowedFields = new Set([...(resource?.fields ?? []), ...comparisonFields])
+    const seriesProjectionFields = resource?.shapes.includes('ordered_series') ? ['axis_comparisons',
+      ...(resource.shapes.includes('scalar') ? ['scalar_facet'] : [])] : []
+    const allowedFields = new Set([...(resource?.fields ?? []), ...comparisonFields, ...seriesProjectionFields])
     const invalidCoordinates = Boolean(resource && item.coordinates &&
       Object.entries(item.coordinates).some(([axis, values]) => {
         if (!(resource.axes ?? []).includes(axis)) return true

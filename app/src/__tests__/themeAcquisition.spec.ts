@@ -20,6 +20,42 @@ import {
 } from './helpers/semanticApiFixtures'
 
 describe('theme acquisition cache', () => {
+  it('admits the pooled scalar comparison for a dual-shape Habitat resource', async () => {
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) => resource.theme_id === 'habitat')
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(input) === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body))
+        return nativeBatchResponse(items, (item, resource) => nativeReadFixture(item, resource,
+          { syntheticProfileComparisons: true }))
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const acquired = await acquireThemeFacts('commune', '22001', 'habitat')
+      const priceComparison = acquired.default_comparison?.comparison_reads.find((read) =>
+        read.resource === 'prix_m2')?.data as Record<string, any> | undefined
+      const projected = semanticComparisonForTheme(acquired.default_comparison, undefined,
+        acquired.resource_reads, { type: 'commune', id: '22001' })
+
+      expect(acquired.comparison_error).toBeUndefined()
+      expect(acquired.comparison_failure).toBeUndefined()
+      expect(priceComparison?.scalar_facet?.result?.status).toBe('available')
+      expect(priceComparison?.scalar_facet?.comparison_content_version).toBe('prix_m2-fixture-comparison-v1')
+      expect(Array.isArray(projected?.results)).toBe(true)
+      const projectedResults: unknown[] = Array.isArray(projected?.results) ? projected.results : []
+      const priceResult = projectedResults.find((result) => typeof result === 'object' && result !== null &&
+        'indicator_id' in result && result.indicator_id === 'prix_m2')
+      expect(priceResult).toBeDefined()
+      if (typeof priceResult !== 'object' || priceResult === null || !('rank' in priceResult)) {
+        throw new Error('The pooled scalar comparison projection must expose its native rank')
+      }
+      expect(priceResult.rank).toBeTypeOf('number')
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('rejects a wrong typed native profile selection before caching, so retry fetches again', async () => {
     const catalogue = await nativeCatalogueResponse().json()
     catalogue.resources = catalogue.resources.filter((resource: { resource_id: string }) =>
