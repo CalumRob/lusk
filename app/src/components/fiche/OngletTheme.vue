@@ -25,6 +25,7 @@ import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
 import { libelleIndicateur } from '@/fiche/libelles'
+import { LIBELLES_DETAILS_APP, LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
 import {
   figureLecturePour,
   lignesLQPour,
@@ -196,12 +197,16 @@ function figureEstReference(clef: string): boolean {
   )
 }
 
-/** Resolve category labels from the verified catalogue or native axis descriptor. */
+/** Resolve category labels: verified catalogue, then the app-owned display map. */
 function labelsDetailPour(clef: string): Record<string, string> | undefined {
   const contract = nativeContract(clef)
   const catalogueLabels = metadataVerified.value ? metadata.value?.detail_labels[clef] ?? {} : {}
-  if (!contract) return Object.keys(catalogueLabels).length ? catalogueLabels : undefined
-  const labels: Record<string, string> = { ...catalogueLabels }
+  const appLabels = LIBELLES_DETAILS_APP[props.theme]?.[clef] ?? {}
+  if (!contract) {
+    const labels = { ...appLabels, ...catalogueLabels }
+    return Object.keys(labels).length ? labels : undefined
+  }
+  const labels: Record<string, string> = { ...appLabels, ...catalogueLabels }
   const declaredKeys = new Set(contract.axisValues ?? [])
   for (const axis of contract.axes ?? []) {
     if (axis.name === 'detail' && axis.label && axis.label !== axis.key) {
@@ -217,6 +222,8 @@ function labelsDetailPour(clef: string): Record<string, string> | undefined {
 function libelleIndicateurMetier(clef: string): string {
   const nativeLabel = nativeContract(clef)?.label
   if (nativeLabel && nativeLabel !== clef) return nativeLabel
+  const appLabel = LIBELLES_INDICATEURS_APP[props.theme]?.[clef]
+  if (appLabel) return appLabel
   return metadataVerified.value && metadata.value ? libelleIndicateur(metadata.value, clef) : 'Fait disponible'
 }
 
@@ -233,9 +240,9 @@ function labelsLectureActivite(key: string) {
   const appLabels = sousGroupesFiche(props.theme).find((subgroup) => subgroup.key === key)?.reading?.paramLabels
   const catalogueLabels = metadataVerified.value ? metadata.value?.param_labels : undefined
   return {
-    rang: appLabels?.rang ?? catalogueLabels?.rang ?? '',
-    activity_label: appLabels?.activity_label ?? catalogueLabels?.activity_label ?? '',
-    lq: appLabels?.lq ?? catalogueLabels?.lq ?? '',
+    rang: appLabels?.rang ?? catalogueLabels?.rang ?? 'Rang',
+    activity_label: appLabels?.activity_label ?? catalogueLabels?.activity_label ?? 'Activité dominante',
+    lq: appLabels?.lq ?? catalogueLabels?.lq ?? 'Location quotient (LQ)',
   }
 }
 

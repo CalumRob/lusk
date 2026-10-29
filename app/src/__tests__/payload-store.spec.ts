@@ -291,7 +291,8 @@ describe('le store progressif — échecs scopés (option C)', () => {
   it('un thème présent sans métadonnées = dérive de validation LOUD, jamais une absence silencieuse (#313)', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     // Theme metadata is self-contained (no reference-table dependency): a
-    // present theme requires its metadata, and the 404 is the typed drift.
+    // GENUINELY present theme requires its metadata, and the 404 is the typed
+    // drift — whatever the load order of the theme's indicators.
     const wrapper = await monter(
       async (fichier) => {
         if (fichier === 'theme_demographie') return null
@@ -309,6 +310,107 @@ describe('le store progressif — échecs scopés (option C)', () => {
     // section reste à son état vide honnête — aucune entrée inventée.
     expect(erreur.value).toMatchObject({ kind: 'validation', file: 'theme_demographie.json' })
     expect(p.value?.themeMetadata).toEqual({})
+  })
+
+  it('un thème présent sans métadonnées reste une dérive typée quand ses indicateurs ont réglé d’abord', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = await monter(
+      async (fichier) => {
+        if (fichier === 'theme_demographie') return null
+        if (fichier === 'indicateurs_demographie') return indicateursDemographieFixture
+        return chargerAvec(payload)(fichier)
+      },
+      ['territoires', 'theme_demographie', 'indicateurs_demographie'],
+    )
+    const { erreur, chargement, payload: p } = wrapper.vm.etat
+
+    expect(consoleError).toHaveBeenCalled()
+    expect(chargement.value).toBe(false)
+    expect(erreur.value).toMatchObject({ kind: 'validation', file: 'theme_demographie.json' })
+    expect(p.value?.themeMetadata).toEqual({})
+  })
+
+  it('une métadonnée 404 seule (consommateur Sources) reste une absence honnête, sans dérive', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Sources loads the catalogue without the numeric tables: the test
+    // injector's full-store default is narrowed with an explicit `demarrer`
+    // (the same seam SourcesView uses).
+    const wrapper = mount(defineComponent({
+      setup() {
+        const etat = usePayload({
+          attendre: ['territoires-metadata', 'vintages', 'theme_demographie'],
+          demarrer: ['territoires-metadata', 'vintages', 'theme_demographie'],
+        })
+        return { etat }
+      },
+      render: () => h('div'),
+    }), {
+      global: {
+        provide: {
+          [PAYLOAD_CHARGER_KEY]: async (fichier: Fichier) => {
+            if (fichier.startsWith('theme_')) return null
+            return chargerAvec(payload)(fichier)
+          },
+        },
+      },
+    })
+    montee = wrapper
+    await flushPromises()
+    const { erreur, chargement, payload: p } = wrapper.vm.etat
+
+    expect(consoleError).not.toHaveBeenCalled()
+    expect(chargement.value).toBe(false)
+    expect(erreur.value).toBeNull()
+    expect(p.value?.themeMetadata).toEqual({})
+  })
+
+  it('un thème entièrement absent (indicateurs 404) ne contribue aucune métadonnée', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = await monter(
+      async (fichier) => {
+        if (fichier === 'indicateurs_demographie') return null
+        if (fichier === 'theme_demographie') return null
+        return chargerAvec(payload)(fichier)
+      },
+      ['territoires', 'indicateurs_demographie', 'theme_demographie'],
+    )
+    const { erreur, chargement, payload: p } = wrapper.vm.etat
+
+    expect(consoleError).not.toHaveBeenCalled()
+    expect(chargement.value).toBe(false)
+    expect(erreur.value).toBeNull()
+    expect(p.value?.themeMetadata).toEqual({})
+  })
+
+  it('une métadonnée 404 seule se récupère par un retry scopé, sans relire les tables numériques', async () => {
+    const demandes: string[] = []
+    let metadataEchoue = true
+    const wrapper = await monter(
+      async (fichier) => {
+        demandes.push(fichier)
+        if (fichier === 'theme_demographie') {
+          if (metadataEchoue) {
+            metadataEchoue = false
+            throw new PayloadError('fetch', 'theme_demographie.json', 'boom')
+          }
+          return metadonneesThemesFixtures.demographie
+        }
+        return chargerAvec(payload)(fichier)
+      },
+      ['territoires-metadata', 'vintages', 'theme_demographie'],
+    )
+    const { erreur, payload: p, recharger } = wrapper.vm.etat
+
+    expect(erreur.value).toMatchObject({ kind: 'fetch', file: 'theme_demographie.json' })
+    expect(p.value?.themeMetadata).toEqual({})
+
+    const avant = demandes.length
+    recharger()
+    await flushPromises()
+
+    expect(demandes.slice(avant)).toEqual(['theme_demographie'])
+    expect(erreur.value).toBeNull()
+    expect(p.value?.themeMetadata?.demographie).toEqual(metadonneesThemesFixtures.demographie)
   })
 
   it('un thème absent (404 sur tout le jeu) ne contribue aucune entrée de métadonnées', async () => {

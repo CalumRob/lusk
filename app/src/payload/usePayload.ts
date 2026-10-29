@@ -257,8 +257,10 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
       const theme = themeDe(nom)
       const indicateurs = etats.get(`indicateurs_${theme}`)
       // A theme's metadata is self-contained: it may be loaded on its own
-      // (Sources) or after its indicators. When the theme's indicators are
-      // known to be absent (404), the metadata is absent too — never drift.
+      // (Sources) or after its indicators. Its own 404 is the honest absence
+      // of that metadata (the source-records reader simply skips it) — never
+      // a fabricated presence. A theme GENUINELY known present (its indicators
+      // landed) without its metadata remains the typed, theme-scoped drift.
       const fetchMeta = () => (chargerInjecte ? chargerInjecte(nom) : chargerFichierElargi(nom))
       const present = (meta: unknown) => {
         if (meta === null) {
@@ -270,9 +272,9 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         }
         return meta
       }
-      if (!indicateurs) return fetchMeta().then(present)
+      if (!indicateurs) return fetchMeta()
       return indicateurs.promesse.then((indicateursTheme) => {
-        if (indicateursTheme === null) return null // thème absent → métadonnées absentes
+        if (indicateursTheme === null) return fetchMeta() // thème absent → métadonnées absentes
         return fetchMeta().then(present)
       })
     }

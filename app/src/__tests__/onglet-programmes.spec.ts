@@ -17,9 +17,10 @@ import type { Payload } from '../payload/types'
  *     couverte / porte / compte / ort), la ventilation communale pliée
  *     top-5 + révélation, la part de contexte, la provenance, le lien
  *     portail Région ;
- *   - l'overline, factual/page bindings and the grant-eligibility framing
- *     remain in metadata, while subgroup labels/editorial framing use the
- *     shared app-owned fiche grammar ;
+ *   - l'overline et les libellés de sous-groupe sont app-owned ; le cadrage
+ *     éditorial est app-owned sauf la clause d'éligibilité des subventions,
+ *     qui reste portée par la métadonnée producteur vérifiée (retenue sans
+ *     métadonnée, jamais remplacée par une copie app) ;
  *   - les faits d'action publique JAMAIS des résultats : aucune formulation
  *     ne présente une adhésion ou une subvention comme un effet mesuré ;
  *   - les états d'absence honnêtes : « Aucun programme référencé. » quand le
@@ -44,9 +45,9 @@ function payloadAvec(faits: typeof indicateursProgrammesFixture): Payload {
 const payloadPlein = payloadAvec(indicateursProgrammesFixture)
 const payloadVide = payloadAvec([])
 
-function montage(payload: Payload, territoire: string) {
+function montage(payload: Payload, territoire: string, metadataStatus?: 'loading' | 'ready' | 'error') {
   return mount(BlocProgrammes, {
-    props: { payload, territoire },
+    props: { payload, territoire, metadataStatus },
     global: {
       stubs: {
         RouterLink: { template: '<a><slot /></a>' },
@@ -74,12 +75,14 @@ describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
     expect(titres).toEqual(['Programmes et contrats', 'Subventions attribuées'])
     expect(wrapper.find('[data-groupe="couverture"]').exists()).toBe(true)
     expect(wrapper.find('[data-groupe="subventions"]').exists()).toBe(true)
-    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').exists()).toBe(true)
+    // The factual eligibility clause follows the producer: its subgroup is gone
+    // from the stale declaration, so the clause is withheld — never app copy.
+    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Libellé amont périmé')
     expect(wrapper.text()).not.toContain('Cadrage amont périmé.')
   })
 
-  it('reads the grant framing from app-owned presentation grammar, not producer copy', () => {
+  it('reads the factual grant-eligibility clause from retained producer metadata', () => {
     const upstream = structuredClone(payloadPlein)
     upstream.themeMetadata!.programmes!.subgroups.find((subgroup) => subgroup.key === 'subventions')!.framing =
       'Cadrage factuel des niveaux de ventilation fourni par le producteur.'
@@ -87,9 +90,38 @@ describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
 
     expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-titre').text())
       .toBe('Subventions attribuées')
-    const cadrage = wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').text()
-    expect(cadrage).toBe('Les subventions attribuées par la Région Bretagne au territoire : le total annuel partout, la ventilation par domaine sur les fiches communales.')
-    expect(cadrage).not.toContain('fourni par le producteur')
+    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').text())
+      .toBe('Cadrage factuel des niveaux de ventilation fourni par le producteur.')
+  })
+
+  it('withholds the grant-eligibility clause without verified metadata — never an app literal', () => {
+    const upstream = structuredClone(payloadPlein)
+    const subventions = upstream.themeMetadata!.programmes!.subgroups.find((subgroup) => subgroup.key === 'subventions')!
+    subventions.framing = null as unknown as string
+    const wrapper = montage(upstream, '22001')
+
+    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-titre').text())
+      .toBe('Subventions attribuées')
+    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('la ventilation par domaine sur les fiches communales')
+  })
+
+  it('withholds the eligibility clause beside the unavailable/retry state and keeps the API facts', () => {
+    const wrapper = montage(structuredClone(payloadPlein), '22001', 'error')
+
+    const groupe = wrapper.get('[data-groupe="subventions"]')
+    expect(groupe.find('.sous-groupe-cadrage').exists()).toBe(false)
+    expect(groupe.text()).toContain('L’explication des conditions d’éligibilité n’est pas disponible.')
+    expect(groupe.find('button').text()).toContain('Réessayer l’explication')
+    expect(groupe.find('.subvention-total').exists()).toBe(true)
+  })
+
+  it('withholds the eligibility clause while metadata loads', () => {
+    const wrapper = montage(structuredClone(payloadPlein), '22001', 'loading')
+
+    const groupe = wrapper.get('[data-groupe="subventions"]')
+    expect(groupe.find('.sous-groupe-cadrage').exists()).toBe(false)
+    expect(groupe.text()).toContain('Explication des conditions d’éligibilité en cours de chargement.')
   })
 
   it('rend les badges avec leurs voix honnêtes — lauréate, couverte, portage nommé', () => {

@@ -34,6 +34,7 @@
  */
 
 import type { Histoire, Payload, Theme, ThemeMetadata } from '../payload/types'
+import { LIBELLES_INDICATEURS_APP } from '../fiche/content/libellesAffichage'
 import { libelleDetail, libelleIndicateur, libelleParam } from '../fiche/libelles'
 import type { CoucheProgramme } from './programmesCouches'
 
@@ -109,7 +110,9 @@ function estCoucheCartographiable(metadata: ThemeMetadata, clef: string): boolea
  *  AUSSI un indicateur (part_passoires), la param_labels sinon (les champs
  *  d'histoires) : les deux cartes payload-owned (#318), jamais la clé brute. */
 function libelleScalaire(metadata: ThemeMetadata, champ: string): string {
-  if (champ in metadata.indicator_labels) return libelleIndicateur(metadata, champ)
+  if (champ in LIBELLES_INDICATEURS_APP[metadata.theme] || champ in metadata.indicator_labels) {
+    return libelleIndicateur(metadata, champ)
+  }
   return libelleParam(metadata, champ)
 }
 

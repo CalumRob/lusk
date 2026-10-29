@@ -1,4 +1,4 @@
-import type { FamilleFigure, NoeudTexteRiche, Theme } from '@/payload/types'
+import type { FamilleFigure, NoeudTexteRiche, Theme, ThemeMetadata } from '@/payload/types'
 
 /** Stable app labels for producer-declared axis kinds; unknown kinds stay neutral. */
 const LIBELLES_AXE_NATIF: Readonly<Record<string, string>> = {
@@ -28,14 +28,18 @@ export const CONTENU_SOUS_GROUPES_FICHE = {
 /**
  * App-owned editorial framing per subgroup, keyed by the producer subgroup
  * identity. Wording and organisation only: no unit, threshold, axis, status or
- * availability claim is derived from it.
+ * availability claim is derived from it. A subgroup whose wording carries
+ * producer-owned facts (a distance, a duration, an eligibility scope) keeps a
+ * `null` here and resolves its clause from the verified producer subgroup
+ * declaration instead — see `cadrageSousGroupeFiche`.
  */
 export const CADRAGES_SOUS_GROUPES_FICHE = {
   mobilite: {
     'acces-aux-services': 'Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun : les parts de bâtiments sans accès aux services essentiels.',
     'partage-de-lespace-public': 'La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.',
     motorisation: 'L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.',
-    'offre-transports-commun': 'La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.',
+    // Factual: the 500 m catchment and the 90-minute transit reach are producer thresholds.
+    'offre-transports-commun': null,
   },
   demographie: {
     'etat-de-la-population': 'La population de la commune : sa taille, sa densité et la structure de ses ménages.',
@@ -55,9 +59,10 @@ export const CADRAGES_SOUS_GROUPES_FICHE = {
   },
   programmes: {
     couverture: "Les programmes de l'État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d'action publique, jamais des résultats.",
-    subventions: 'Les subventions attribuées par la Région Bretagne au territoire : le total annuel partout, la ventilation par domaine sur les fiches communales.',
+    // Factual: the annual total everywhere vs the per-domain breakdown on commune fiches is producer eligibility.
+    subventions: null,
   },
-} as const satisfies Readonly<Record<Theme, Readonly<Record<string, string>>>>
+} as const satisfies Readonly<Record<Theme, Readonly<Record<string, string | null>>>>
 
 export interface FicheReadingGrammar {
   /** Template text and its presentation order; the resolved row remains API-owned. */
@@ -72,7 +77,11 @@ export interface FicheSubgroupGrammar {
   /** Structural binding to the producer's subgroup identity. */
   readonly key: string
   readonly label: string
-  /** App-owned editorial framing; a null framing is the honest silent state. */
+  /**
+   * App-owned editorial framing. `null` = the clause carries producer-owned
+   * facts and resolves from the verified producer subgroup declaration
+   * (`cadrageSousGroupeFiche`); without verified metadata it stays withheld.
+   */
   readonly framing: string | null
   /** Producer resource identities and their display order, not availability. */
   readonly indicators: readonly string[]
@@ -275,10 +284,16 @@ export function sousGroupeFiche(theme: Theme, key: string): FicheSubgroupGrammar
 }
 
 /**
- * App editorial framing for a subgroup. Framing is stable presentation copy,
- * so it no longer depends on a producer metadata fetch; the producer keeps
- * ownership of the facts it describes.
+ * Resolve a subgroup's framing. App-owned editorial framing is returned as is;
+ * a `null` entry is a factual clause (producer threshold or eligibility scope)
+ * and is read from the VERIFIED producer subgroup declaration only — pending,
+ * unavailable or incompatible metadata withholds the explanation instead of
+ * inventing or freezing a factual literal in app content.
  */
-export function cadrageSousGroupeFiche(subgroup: FicheSubgroupGrammar): string | null {
-  return subgroup.framing
+export function cadrageSousGroupeFiche(
+  subgroup: FicheSubgroupGrammar,
+  metadata?: ThemeMetadata,
+): string | null {
+  if (subgroup.framing !== null) return subgroup.framing
+  return metadata?.subgroups.find((candidate) => candidate.key === subgroup.key)?.framing ?? null
 }
