@@ -582,6 +582,10 @@ export interface SubventionProgramme {
 export interface ProgrammesPayload {
   membres: MembreProgramme[]
   subventions: SubventionProgramme[]
+  /** Native map cohort status: no_record stays neutral rather than becoming non-member. */
+  mapMemberships?: Array<{ territoire: string; type: 'commune' | 'epci'; sigle: SigleProgramme;
+    availability: 'observed' | 'no_record'; member: boolean | null; rider: string | null;
+    relationships?: Array<Record<string, unknown>>; summaries?: Array<Record<string, unknown>> }>
 }
 
 export type ModeSource = 'cron' | 'manuel'
@@ -630,6 +634,8 @@ export interface Payload {
   vintages: Vintage[] | null
   /** The programmes payload (programmes.json) — optional; null = element absent (404). */
   programmes: ProgrammesPayload | null
+  /** API-admitted map grant projection at the producer-declared comparison point. */
+  mapGrantFacts?: Indicateur[]
   /** Bounded Mobilité BPE projection; null/undefined means the element is absent. */
   profilsAccesBpe?: ProfilAccesBpeRow[] | null
   /** Compact same-building breadth × depth projection; null means absent. */

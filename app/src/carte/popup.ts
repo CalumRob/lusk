@@ -4,8 +4,8 @@
  * "how does this territory sit on THIS variable", never the theme's KPI
  * wall). Ranks live on the indicateurs table only (CONTEXT.md §Rang) : a
  * story-scalar layer (source 'histoire') shows the value without an invented
- * rank. Without a layer (the neutral first load) the Aperçu basics fill the
- * popup. A row the payload cannot compute (null value / absent row) is
+ * rank. Without a layer (the neutral first load) the popup has no KPI rows;
+ * the map shell keeps only territory identity and its fiche link. A row the payload cannot compute (null value / absent row) is
  * skipped or shown as an honest « — », never invented. Pure logic — the popup
  * builder just renders what this returns.
  *
@@ -16,7 +16,6 @@
 
 import type { ApercuRow, Payload, Theme } from '../payload/types'
 import {
-  apercuPourTerritoire,
   formaterValeur,
   rangEnContexte,
   trouverTerritoire,
@@ -32,9 +31,10 @@ export interface KpiPopup {
    *  the indicateur rows only; null for story scalars and the Aperçu rows
    *  (CONTEXT.md §Rang : les rangs vivent sur les indicateurs du thème). */
   rang: string | null
+  provenance?: string
 }
 
-/** The display value of an Aperçu row, French (« 2 000 », « 30 » for a % unit). */
+/** French display utility retained for other Aperçu consumers. */
 export function formaterValeurApercu(ligne: ApercuRow): string | null {
   if (ligne.value === null) return null
   const estPourcent = ligne.unit === '%'
@@ -44,24 +44,6 @@ export function formaterValeurApercu(ligne: ApercuRow): string | null {
   const decs = decPart.replace(/0+$/, '')
   const groupes = entiers.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
   return decs ? `${groupes},${decs}` : groupes
-}
-
-const LIBELLES_APERCU: Record<string, string> = {
-  population: 'Population',
-  densite: 'Densité',
-  part_65_plus: 'Part des 65 ans et plus',
-}
-
-/** The Aperçu KPIs, in display order (population → densité → part 65+). */
-const APERCU_EN_ORDRE = ['population', 'densite', 'part_65_plus'] as const
-
-function kpiApercu(ligne: ApercuRow): KpiPopup {
-  return {
-    libelle: LIBELLES_APERCU[ligne.key] ?? ligne.key,
-    valeur: formaterValeurApercu(ligne) ?? '—',
-    unite: ligne.unit,
-    rang: null,
-  }
 }
 
 /** The active layer's row for a territory — the valeur + unit + rank-in-context
@@ -74,7 +56,7 @@ function ligneDeLaCouche(
   territoire: string,
   theme: Theme,
   couche: Couche,
-): { valeur: number | null; unite: string; valeurFormatee: string | null; rang: string | null } | null {
+): { valeur: number | null; unite: string; valeurFormatee: string | null; rang: string | null; provenance: string | null } | null {
   if (couche.source === 'indicateur') {
     const ligne = indicateurParTerritoire(
       payload.indicateurs,
@@ -88,20 +70,27 @@ function ligneDeLaCouche(
       unite: ligne.unit,
       valeurFormatee: formaterValeur(ligne),
       rang: rangEnContexte(ligne),
+      provenance: ligne.nativeContract && ligne.vintage_source && ligne.vintage_version
+        ? `${ligne.vintage_source} · ${ligne.vintage_version}` : null,
     }
   }
   const ligne = valeurHistoireParTerritoire(payload, theme, couche.clef).get(territoire)
   if (!ligne) return null
-  return { valeur: ligne.value, unite: ligne.unit, valeurFormatee: formaterValeur(ligne), rang: null }
+  const history = payload.histoires.find((item) => item.territoire === territoire && item.theme === theme &&
+    item.story_key === couche.storyKey) as (typeof payload.histoires[number] & {
+      mapApiFact?: boolean; vintage_source?: string; vintage_version?: string
+    }) | undefined
+  const provenance = history?.mapApiFact && history.vintage_source && history.vintage_version
+    ? `${history.vintage_source} · ${history.vintage_version}` : null
+  return { valeur: ligne.value, unite: ligne.unit, valeurFormatee: formaterValeur(ligne), rang: null, provenance }
 }
 
 /**
  * The popup's rows for a territory. The ACTIVE layer leads (ADR-0019 — the
  * popup answers "how does this territory sit on THIS variable", never the
  * theme's KPI wall): its value + its rank-in-context for an indicateur layer,
- * the value alone for a story scalar. Without a layer (the neutral first
- * load), the Aperçu basics fill the popup. Rows the payload cannot compute
- * are skipped — never « 0 » or a made-up number.
+ * the value alone for a story scalar. The neutral first load has no KPI rows;
+ * only territory identity and its fiche link remain in the map shell.
  */
 export function kpisPourPopup(
   payload: Payload,
@@ -118,23 +107,16 @@ export function kpisPourPopup(
         valeur: ligne.valeurFormatee ?? '—',
         unite: ligne.unite,
         rang: ligne.rang,
+        ...(ligne.provenance ? { provenance: ligne.provenance } : {}),
       },
     ]
   }
 
-  const kpis: KpiPopup[] = []
-  const apercu = new Map(apercuPourTerritoire(payload, territoire).map((l) => [l.key, l]))
-  for (const cle of APERCU_EN_ORDRE) {
-    if (kpis.length >= 3) break
-    const ligne = apercu.get(cle)
-    if (!ligne) continue
-    kpis.push(kpiApercu(ligne))
-  }
-  return kpis
+  return []
 }
 
 /** The hover tooltip's content — the territory name + the active layer's
- *  value (audit #208 item 57). No layer (Aperçu) or a missing value →
+ *  value (audit #208 item 57). No layer or a missing value →
  *  `valeur` null (the tooltip shows the name only, honest). */
 export interface ContenuTooltip {
   nom: string

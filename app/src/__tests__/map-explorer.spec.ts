@@ -405,6 +405,31 @@ describe('MapExplorer — les couches de l’onglet « Programmes et subventions
 })
 
 describe('MapExplorer — la popup par couche (ADR-0019, #281)', () => {
+  it('neutral popup is territory identity + fiche link only, never overview KPIs', async () => {
+    const { carte } = await monter({ theme: null, couche: null })
+    const map = carte as unknown as { queryRenderedFeatures: () => { properties: { territoire: string } }[] }
+    map.queryRenderedFeatures = () => [{ properties: { territoire: '22001' } }] as never
+    carte?.fire('click', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+    const html = maplibreMock.instancesPopups.at(-1)?.contenu ?? ''
+    expect(html).toContain('Commune A1')
+    expect(html).toContain('Voir la fiche')
+    expect(html).not.toContain('class="popup-carte-kpi"')
+    expect(html).not.toContain('Population')
+  })
+
+  it('escapes producer-owned unit text before inserting it into popup HTML', async () => {
+    const hostileUnit = '<img src=x onerror=alert(1)>'
+    const hostilePayload = { ...payload, indicateurs: indicateursDemographieFixture.map((row) =>
+      row.key === 'densite' && row.territoire === '22001' ? { ...row, unit: hostileUnit } : row) }
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite, payload: hostilePayload })
+    const map = carte as unknown as { queryRenderedFeatures: () => { properties: { territoire: string } }[] }
+    map.queryRenderedFeatures = () => [{ properties: { territoire: '22001' } }] as never
+    carte?.fire('click', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+    const html = maplibreMock.instancesPopups.at(-1)?.contenu ?? ''
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;')
+    expect(html).not.toContain(`<span class="popup-carte-unite">${hostileUnit}</span>`)
+  })
+
   it('ouvre une popup qui mène par la valeur de la couche active + son rang, puis « Voir la fiche »', async () => {
     const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
     const carteFake = carte as unknown as {
@@ -424,7 +449,7 @@ describe('MapExplorer — la popup par couche (ADR-0019, #281)', () => {
     // la valeur de la couche active, formatée en français, avec son rang-en-contexte
     expect(popup?.contenu).toContain('Densité de population')
     expect(popup?.contenu).toContain('200')
-    expect(popup?.contenu).toContain("1er/2 de l'EPCI")
+    expect(popup?.contenu).toContain('1er/2 de l&#39;EPCI')
     expect(popup?.contenu).toContain('popup-carte-rang')
     // la popup répond « comment ce territoire se situe sur CETTE variable » —
     // pas le mur de KPI du thème (plus de ligne Population)
@@ -580,7 +605,7 @@ describe('MapExplorer — le zoom de recherche (#283)', () => {
     expect(popup?.contenu).toContain('Commune A1')
     expect(popup?.contenu).toContain('Densité de population')
     expect(popup?.contenu).toContain('200')
-    expect(popup?.contenu).toContain("1er/2 de l'EPCI")
+    expect(popup?.contenu).toContain('1er/2 de l&#39;EPCI')
     expect(popup?.contenu).toContain('Voir la fiche')
   })
 

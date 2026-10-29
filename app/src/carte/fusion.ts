@@ -203,9 +203,13 @@ export function valeurHistoireParTerritoire(
   for (const histoire of payload.histoires) {
     if (histoire.theme !== theme) continue
     const valeur = (histoire as unknown as Record<string, unknown>)[champ]
+    const status = (histoire as unknown as Record<string, unknown>).status
+    const nativeUnits = (histoire as unknown as Record<string, unknown>).nativeUnits
+    const unit = typeof nativeUnits === 'object' && nativeUnits !== null
+      ? (nativeUnits as Record<string, unknown>)[champ] : undefined
     parTerritoire.set(histoire.territoire, {
-      value: typeof valeur === 'number' ? valeur : null,
-      unit: '',
+      value: status === 'unavailable' ? null : typeof valeur === 'number' ? valeur : null,
+      unit: typeof unit === 'string' ? unit : '',
     })
   }
   return parTerritoire
@@ -266,10 +270,23 @@ export function membresParTerritoire(
   payload: Payload,
   sigle: SigleProgramme,
   niveau: NiveauMasque,
-): Map<string, boolean> {
-  const parTerritoire = new Map<string, boolean>()
+): Map<string, boolean | null> {
+  const parTerritoire = new Map<string, boolean | null>()
   const type = typeAdhesionDuNiveau(niveau)
   if (!type) return parTerritoire
+  const native = payload.programmes?.mapMemberships
+  if (native !== undefined) {
+    for (const territory of payload.territoires) {
+      if (territory.type === type) parTerritoire.set(territory.territoire, null)
+    }
+    for (const membership of native) {
+      if (membership.sigle === sigle && membership.type === type) {
+        parTerritoire.set(membership.territoire,
+          membership.availability === 'no_record' ? null : membership.member)
+      }
+    }
+    return parTerritoire
+  }
   for (const membre of payload.programmes?.membres ?? []) {
     if (membre.sigle === sigle && membre.type === type) parTerritoire.set(membre.territoire, true)
   }
@@ -287,6 +304,14 @@ export function subventionsParTerritoire(
 ): Map<string, ValeurLigne> {
   const parTerritoire = new Map<string, ValeurLigne>()
   const type = typeSubventionsDuNiveau(niveau)
+  if (payload.mapGrantFacts) {
+    for (const fact of payload.mapGrantFacts) {
+      if (fact.type === type && fact.value !== null) {
+        parTerritoire.set(fact.territoire, { value: fact.value, unit: fact.unit })
+      }
+    }
+    return parTerritoire
+  }
   for (const subvention of payload.programmes?.subventions ?? []) {
     if (subvention.type !== type) continue
     const actuel = parTerritoire.get(subvention.territoire)?.value ?? 0
@@ -301,7 +326,7 @@ export function subventionsParTerritoire(
 /** A feature enriched with the membership boolean (the categorical fill reads it). */
 export interface FeatureAvecMembre extends FeatureTerritoire {
   properties: FeatureTerritoire['properties'] & {
-    membre: boolean
+    membre: boolean | null
   }
 }
 
@@ -315,7 +340,7 @@ export interface CollectionAvecMembres {
  *  categorical paint). The geometry itself is untouched. */
 export function collectionAvecMembres(
   collection: CollectionMasque,
-  parTerritoire: ReadonlyMap<string, boolean>,
+  parTerritoire: ReadonlyMap<string, boolean | null>,
 ): CollectionAvecMembres {
   return {
     type: 'FeatureCollection',
@@ -323,7 +348,8 @@ export function collectionAvecMembres(
       ...feature,
       properties: {
         ...feature.properties,
-        membre: parTerritoire.get(feature.properties.territoire) ?? false,
+        membre: parTerritoire.has(feature.properties.territoire)
+          ? parTerritoire.get(feature.properties.territoire) ?? null : false,
       },
     })),
   }

@@ -291,10 +291,21 @@ describe('valeurHistoireParTerritoire — the story-scalar join (ADR-0019)', () 
     expect(parTerritoire.has('99999')).toBe(false)
   })
 
-  it('carries no unit — the histoires table publishes none (the legend shows the number alone, honest)', () => {
+  it('keeps the legacy fixture unit empty when no native descriptor unit is present', () => {
     const parTerritoire = valeurHistoireParTerritoire(payload, 'demographie', 'taux_solde_naturel')
 
     expect(parTerritoire.get('22001')?.unit).toBe('')
+  })
+
+  it('uses the native typed-reading unit and refuses numeric residue with unavailable status', () => {
+    const stories = [{ ...histoiresDemographieFixture[0]!, status: 'measured', mapApiFact: true,
+      taux_solde_naturel: 1.25, nativeUnits: { taux_solde_naturel: '‰/year-native' } },
+      { ...histoiresDemographieFixture[1]!, status: 'unavailable', mapApiFact: true,
+        taux_solde_naturel: 99, nativeUnits: { taux_solde_naturel: '‰/year-native' } }]
+    const result = valeurHistoireParTerritoire({ ...payload, histoires: stories } as Payload,
+      'demographie', 'taux_solde_naturel')
+    expect(result.get(stories[0]!.territoire)).toEqual({ value: 1.25, unit: '‰/year-native' })
+    expect(result.get(stories[1]!.territoire)).toEqual({ value: null, unit: '‰/year-native' })
   })
 
   it('maps a null scalar (the honest NA hole, e.g. an absent OCS-GE state) to a null value', () => {

@@ -29,6 +29,211 @@ import type { ChargerFichier } from '../payload/usePayload'
 import type { Histoire, HistoireDemographie, Payload } from '../payload/types'
 import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+
+const resourceShapes: Record<string, Record<string, { shape: string; source: string; levels?: string[] }>> = {
+  demographie: {
+    densite: { shape: 'scalar', source: 'serie_historique' },
+    structure_age: { shape: 'declared_profile', source: 'age_detail' },
+    evolution_1968: { shape: 'scalar', source: 'serie_historique' },
+    taille_menages: { shape: 'scalar', source: 'menages' },
+    demographie_selected_reading: { shape: 'typed_reading', source: 'serie_historique', levels: ['commune', 'epci', 'departement', 'region'] },
+  },
+  programmes: {
+    couverture_programmes: { shape: 'anchored_membership', source: 'acv' },
+    subventions_annuelles: { shape: 'ordered_series', source: 'subventions_scdl' },
+    subventions_par_domaine: { shape: 'period_detail', source: 'subventions_scdl', levels: ['commune'] },
+  },
+}
+const mapMetadataPreload = new Map<string, Record<string, any>>()
+
+/** Mount boundary fixture: producer-shaped catalogue + cohort reads, never static app reads. */
+async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
+  const metadataByTheme = new Map<string, Record<string, any>>()
+  const loadMetadata = async (theme: string) => {
+    let metadata = metadataByTheme.get(theme)
+    if (!metadata) {
+      metadata = JSON.parse(await readFile(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8'))
+      mapMetadataPreload.set(theme, metadata!)
+      if (!metadata) throw new Error(`Missing producer metadata for ${theme}`)
+      metadataByTheme.set(theme, metadata)
+    }
+    return metadata!
+  }
+  // Preload canonical metadata before mount so fetch() never performs filesystem
+  // I/O while Vue is flushing its watchers.
+  await Promise.all(['demographie', 'programmes'].map(loadMetadata))
+  const declarations = async (theme: string) => {
+    if (theme === 'programmes' && !p.programmes) return []
+    const metadata = await loadMetadata(theme)
+    const shapes = resourceShapes[theme] ?? {}
+    return Object.entries(shapes).map(([id, spec]) => {
+      const page = metadata.indicator_pages?.[id]
+      const allowed = spec.levels ?? page?.levels ?? ['commune', 'epci', 'departement']
+      const facts = p.indicateurs.filter((row) => row.key === id && row.theme === theme)
+      const details = [...new Set(facts.map((row) => row.detail).filter((value): value is string => Boolean(value)))]
+      const sexes = [...new Set(facts.map((row) => row.sex).filter(Boolean))] as string[]
+      const axes = spec.shape === 'declared_profile' ? ['detail', ...(sexes.length ? ['sex'] : [])] :
+        spec.shape === 'ordered_series' ? ['year'] : spec.shape === 'anchored_membership' ? ['membership'] :
+          spec.shape === 'typed_reading' ? ['groupe'] : []
+      const axisValues = spec.shape === 'declared_profile'
+        ? [['detail', details], ...(sexes.length ? [['sex', sexes]] : [])]
+        : spec.shape === 'anchored_membership' ? [['detail', ['ACV', 'PVD', 'CRTE', "Territoires d'industrie", 'ORT']]]
+          : spec.shape === 'typed_reading' ? [['groupe', metadata.subgroups.filter((g: any) => g.reading).map((g: any) => g.reading.story_key)]] : []
+      const source = page?.sources?.[0] ?? spec.source
+      return { resource_id: id, theme_id: theme, indicator_id: id, label: metadata.indicator_labels?.[id] ?? id,
+        unit: page?.unit ?? (spec.shape === 'anchored_membership' ? 'adhésion' : ''),
+        direction: page?.comparison?.direction ?? page?.direction ?? 'high', allowed_levels: allowed, sources: [source],
+        shapes: [spec.shape], axes, axis_values: axisValues, target_kinds: ['territory', 'territory_cohort'],
+        fields: spec.shape === 'anchored_membership' ? ['detail', 'label', 'rider', 'anchor_count', 'availability']
+          : spec.shape === 'typed_reading' ? metadata.semantic_resources?.find((r: any) => r.resource_id === id)?.fields ?? []
+            : spec.shape === 'scalar' ? ['value'] : spec.shape === 'declared_profile' ? ['value'] : ['value'],
+        intents: ['facts', ...(spec.shape === 'scalar' ? ['fixed_comparison', 'selected_comparison'] : [])] }
+    })
+  }
+  const fixtureFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input)
+    if (url.startsWith('/data/theme_')) {
+      return new Response(JSON.stringify(await loadMetadata(url.slice('/data/theme_'.length, -5))))
+    }
+    if (url === '/api/resources') {
+      try {
+      const resources = [...await declarations('demographie'), ...await declarations('programmes')]
+        return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      } catch (error) { console.error('catalogue fixture failure', error); throw error }
+    }
+    if (url === '/api/resources/read-batch') {
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      const results = []
+      for (const item of body.items) {
+        const theme = String(item.resource).startsWith('demographie_') || item.resource === 'densite' ||
+          item.resource === 'evolution_1968' || item.resource === 'taille_menages' || item.resource === 'structure_age'
+          ? 'demographie' : 'programmes'
+        const resource = (await declarations(theme)).find((entry) => entry.resource_id === item.resource)!
+        const metadata = await loadMetadata(theme)
+        const type = item.target.type as string
+        if (item.target.kind === 'territory' && item.intent.kind !== 'facts') {
+          const page = metadata.indicator_pages[item.resource]
+          const selected = item.intent.kind === 'selected_comparison'
+          const selectedMembers = selected ? item.intent.members : p.territoires
+            .filter((territory) => territory.type === type)
+            .map((territory) => ({ type: territory.type, id: territory.territoire }))
+          const sourceId = resource.sources[0]
+          const result = { indicator_id: item.resource, status: selectedMembers.length >= 2 ? 'available' : 'unavailable',
+            unit: page.unit, direction: page.comparison?.direction ?? page.direction,
+            source_facet: page.comparison?.indicator ?? item.resource, descriptor_version: 'map-fixture-v1',
+            selected_member_count: selectedMembers.length, eligible_count: selectedMembers.length, missing_count: 0,
+            rank: selectedMembers.length >= 2 ? 1 : null, rank_size: selectedMembers.length >= 2 ? selectedMembers.length : null,
+            median: selectedMembers.length >= 2 ? 0 : null, rank_ties: selectedMembers.length >= 2 ? 1 : null,
+            focal_in_selection: selectedMembers.some((member: any) => member.id === item.target.id),
+            member_ranks: selectedMembers.map((member: any) => ({ territory_id: member.id,
+              rank: selectedMembers.length >= 2 ? 1 : null, rank_size: selectedMembers.length >= 2 ? selectedMembers.length : null,
+              rank_ties: selectedMembers.length >= 2 ? 1 : null })),
+            comparison_sources: selectedMembers.length >= 2 ? [{ source_id: sourceId, name: resource.label,
+              vintage_id: 'map-fixture-v1', version: 'map-fixture-v1', reference_date: null, publication_date: null }] : [] }
+          results.push({ id: item.id, resource: item.resource, data: { resource: item.resource, target: item.target,
+            contract: 'indicator-comparison-v1', indicator_id: item.resource, shape: 'scalar',
+            content_version: `map-${item.resource}-v1`, reference_content_version: 'map-ref-v1',
+            selection: selected ? selectedMembers.map((member: any) => ({ territory_type: member.type, territory_id: member.id })) : null,
+            scope: { kind: selected ? 'explicit_selection' : type === 'commune' ? 'density_class' : 'same_level',
+              territory_type: type, density_class_code: type === 'commune' ?
+                p.territoires.find((territory) => territory.territoire === item.target.id)?.classe_densite_code : undefined,
+              member_count: selectedMembers.length }, result } })
+          continue
+        }
+        const members = p.territoires.filter((territory) => territory.type === type)
+        const cohort = { territory_type: type, department_id: null, epci_id: null,
+          member_count: members.length, members: members.map((territory) =>
+            ({ id: territory.territoire, type: territory.type, name: territory.nom })), reference_content_version: 'map-ref-v1' }
+        const identity = { resource: item.resource, target: item.target, shape: resource.shapes[0], cohort,
+          content_version: `map-${item.resource}-v1`, reference_content_version: 'map-ref-v1' }
+        const source = (row: any) => ({ source_id: resource.sources[0], name: row?.vintage_source ?? resource.label,
+          vintage_id: row?.vintage_id ?? 'map-fixture-v1', version: row?.vintage_version ?? 'map-fixture-v1',
+          reference_date: row?.vintage_date_reference ?? null, publication_date: row?.vintage_date_publication ?? null })
+        let data: Record<string, any>
+        if (resource.shapes[0] === 'scalar') {
+          const page = metadata.indicator_pages[item.resource]
+          const contract = metadata.scalar_contracts[item.resource]
+          const rows = p.indicateurs.filter((row) => row.key === item.resource && row.type === type)
+          data = { ...identity, descriptor: { indicator_id: item.resource, theme_id: theme, label: page.label,
+            unit: page.unit, direction: resource.direction,
+            comparison_facet: item.resource, allowed_levels: contract.allowed_levels,
+            completeness: contract.completeness, descriptor_version: 'map-fixture-v1' },
+            observations: members.map((territory) => { const row = rows.find((r) => r.territoire === territory.territoire)
+              return { territory: { id: territory.territoire, type, name: territory.nom },
+                status: row?.fact_status ?? (row ? 'measured' : 'not_available'), value: row?.value ?? null,
+                sources: [source(row)] } }) }
+        } else if (resource.shapes[0] === 'declared_profile') {
+          const rows = p.indicateurs.filter((row) => row.key === item.resource && row.type === type)
+          const details = resource.axis_values.find((axis: any[]) => axis[0] === 'detail')?.[1] ?? []
+          const sexes = resource.axis_values.find((axis: any[]) => axis[0] === 'sex')?.[1] ?? [null]
+          data = { ...identity, descriptor: { indicator: item.resource, label: resource.label, unit: resource.unit,
+            allowed_levels: resource.allowed_levels, completeness: 'sparse', descriptor_version: 'map-profile-v1',
+            comparison_scalar: null, required_scalar_version: null, denominator_semantics: 'fixture',
+            comparison_point: { detail: details[0], sex: sexes[0] ?? null, direction: resource.direction,
+              unit: resource.unit }, axes: details.map((key: string, order: number) => ({ name: 'detail', key, label: key, order, unit: resource.unit }))
+              .concat(sexes.filter(Boolean).map((key: string, order: number) => ({ name: 'sex', key, label: key, order, unit: null }))) },
+            profiles: members.map((territory) => ({ territory: { id: territory.territoire, type, name: territory.nom },
+              cells: rows.filter((row) => row.territoire === territory.territoire).map((row) => ({ detail: row.detail,
+                sex: row.sex ?? null, unit: row.unit, denominator_semantics: 'fixture', status: row.fact_status ?? 'measured',
+                value: row.value, sources: [source(row)] })) })) }
+        } else if (resource.shapes[0] === 'typed_reading') {
+          const readings = p.histoires.filter((row: any) => row.theme === theme && row.type === type)
+          const story = metadata.subgroups.find((group: any) => group.reading)?.reading
+          data = { ...identity, descriptor: resource.resource_id === 'demographie_selected_reading'
+            ? { rate_unit: '‰/an' } : undefined, territories: members.map((territory) => ({ territory: { id: territory.territoire,
+            type, name: territory.nom }, facts: readings.filter((row: any) => row.territoire === territory.territoire)
+              .map((row: any) => ({ groupe: row.groupe ?? story?.story_key, story_key: story?.story_key,
+                status: row.status ?? 'measured', ...Object.fromEntries((story?.params ?? []).filter((key: string) => typeof row[key] === 'number')
+                  .map((key: string) => [key, row[key]])), source: source(row) })) })) }
+        } else if (resource.shapes[0] === 'anchored_membership') {
+          const rows = p.programmes?.membres ?? []
+          data = { ...identity, descriptor: { kind: 'anchored_membership', unit: 'adhésion' }, territories: members.map((territory) => {
+            const entries = rows.filter((row) => row.territoire === territory.territoire && row.type === type)
+              .map((row) => ({ detail: row.sigle, label: row.sigle, rider: row.convention_valant_ort ? 'convention valant ORT' : null,
+                sources: [source(row)] }))
+            const summaries = [...new Set(entries.map((entry) => entry.detail))].map((detail) =>
+              ({ detail, anchor_count: entries.filter((entry) => entry.detail === detail).length }))
+            return { territory: { id: territory.territoire, type, name: territory.nom }, completeness: 'observed_sparse',
+              availability: entries.length ? 'observed' : 'no_record', entries, relationships: [], summaries }
+          }) }
+        } else if (resource.shapes[0] === 'ordered_series') {
+          const comparisonPoint = metadata.indicator_pages[item.resource]?.comparison?.dimension
+          const grants = p.programmes?.subventions ?? []
+          const axisValues = [...new Set(grants.filter((row) => row.type === type).map((row) => String(row.annee)))].sort()
+          const valuesByTerritoryAndYear = new Map<string, number>()
+          for (const row of grants) if (row.type === type) {
+            const key = `${row.territoire}:${row.annee}`
+            valuesByTerritoryAndYear.set(key, (valuesByTerritoryAndYear.get(key) ?? 0) + row.montant)
+          }
+          data = { ...identity, descriptor: { axis_kind: 'year', axis_values: axisValues,
+            comparison_point: String(comparisonPoint), unit: resource.unit, completeness: 'sparse' },
+            series: members.map((territory) => ({ territory: { id: territory.territoire, type, name: territory.nom },
+              availability: valuesByTerritoryAndYear.has(`${territory.territoire}:${comparisonPoint}`) ? 'complete' : 'no_record',
+              points: axisValues.filter((axis) => valuesByTerritoryAndYear.has(`${territory.territoire}:${axis}`)).map((axis) => ({ axis,
+                observation_period: axis, status: 'measured', value: valuesByTerritoryAndYear.get(`${territory.territoire}:${axis}`),
+                provenance: [{ source_id: resource.sources[0], source_name: resource.label, vintage_id: 'scdl-v1',
+                  version: '2025', reference_date: null, publication_date: null }] })) })) }
+        } else {
+          const grants = p.programmes?.subventions ?? []
+          data = { ...identity, descriptor: { kind: 'period_detail', unit: '€' }, territories: members.map((territory) => {
+            const entries = grants.filter((row) => row.territoire === territory.territoire && row.type === type && row.programme_libl)
+              .map((row) => ({ detail: row.programme_libl, label: row.programme_libl, observation_period: String(row.annee),
+                status: 'measured', value: row.montant, sources: [source(row)] }))
+            return { territory: { id: territory.territoire, type, name: territory.nom }, completeness: 'observed_sparse',
+              availability: entries.length ? 'observed' : 'no_record', entries }
+          }) }
+        }
+        results.push({ id: item.id, resource: item.resource, data })
+      }
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }))
+    }
+    if (url === '/api/resources/read') return new Response('', { status: 404 })
+    throw new Error(`Unexpected map API fixture request: ${url}`)
+  }
+  return fixtureFetch as typeof fetch
+}
 
 /**
  * La carte interactive (/carte — layouts.md §3): the ThemeTabs subheader
@@ -131,7 +336,18 @@ async function monter(overrides: {
   chargerPayload?: ChargerFichier
   chargerGeometrie?: ChargerGeometrie
   chemin?: string
+  apiFetch?: boolean
+  apiPayload?: Payload
 } = {}) {
+  let chargerPayload = overrides.chargerPayload ?? chargerPayloadAvec(payload)
+  if (overrides.apiFetch !== false) {
+    vi.stubGlobal('fetch', await fetchCarteApiFixture(overrides.apiPayload ?? payload))
+    const chargerPayloadOriginal = chargerPayload
+    chargerPayload = async (file: Parameters<ChargerFichier>[0]) => {
+      const theme = file.startsWith('theme_') ? file.slice('theme_'.length) : ''
+      return theme && mapMetadataPreload.has(theme) ? mapMetadataPreload.get(theme) : chargerPayloadOriginal(file)
+    }
+  }
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(overrides.chemin ?? '/carte')
   await router.isReady()
@@ -139,7 +355,7 @@ async function monter(overrides: {
     global: {
       plugins: [router],
       provide: {
-        [PAYLOAD_CHARGER_KEY]: overrides.chargerPayload ?? chargerPayloadAvec(payload),
+        [PAYLOAD_CHARGER_KEY]: chargerPayload,
         [GEOMETRIE_CHARGER_KEY]: overrides.chargerGeometrie ?? (async () => masquesCommunes),
       },
     },
@@ -151,6 +367,7 @@ async function monter(overrides: {
 /** Monte la carte sur le payload programmes, sur les trois niveaux de masque
  *  (le level-native des couches d'adhésion s'exerce au changement de niveau). */
 async function monterProgrammes(chemin: string) {
+  vi.stubGlobal('fetch', await fetchCarteApiFixture(payloadProgrammes))
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(chemin)
   await router.isReady()
@@ -158,7 +375,10 @@ async function monterProgrammes(chemin: string) {
     global: {
       plugins: [router],
       provide: {
-        [PAYLOAD_CHARGER_KEY]: chargerPayloadAvec(payloadProgrammes),
+        [PAYLOAD_CHARGER_KEY]: async (file: Parameters<ChargerFichier>[0]) => {
+          const theme = file.startsWith('theme_') ? file.slice('theme_'.length) : ''
+          return theme && mapMetadataPreload.has(theme) ? mapMetadataPreload.get(theme) : chargerPayloadAvec(payloadProgrammes)(file)
+        },
         [GEOMETRIE_CHARGER_KEY]: async () => masquesTroisNiveaux,
       },
     },
@@ -250,7 +470,8 @@ describe('CarteView — la carte avec fond publié', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     }))
-    const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
+    const { wrapper } = await monter({ chemin: '/carte?theme=demographie', apiFetch: false,
+      chargerPayload: async (file) => file === 'theme_demographie' ? metadata : chargerPayloadAvec(payload)(file) })
     await wrapper.findAll('button').find((button) => button.text().includes('Densité'))?.trigger('click')
     await flushPromises()
     expect(wrapper.find('[role="alert"]').text()).toContain('Impossible de charger les valeurs')
@@ -725,16 +946,19 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     const { wrapper } = await monter({
       chemin: '/carte?onglet=programmes',
       chargerPayload: charger,
+      apiPayload: payloadProgrammes,
     })
 
-    // programmes pend → l'état vide honnête, la carte vivante.
-    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
-    expect(wrapper.find('.carte-legendes-masques').exists()).toBe(true)
+    // L'acquisition native de la carte est indépendante du payload historique
+    // programmes encore en attente.
+    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(4)
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
+    expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
 
     resoudreProgrammes(programmesLadderFixture)
     await flushPromises()
 
-    // Le groupe apparaît — les subventions par défaut, les adhésions du niveau.
+    // Le règlement du payload historique ne remplace pas les faits natifs.
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
     expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(4)
   })

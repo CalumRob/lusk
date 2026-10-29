@@ -45,6 +45,11 @@ export function typeSubventionsDuNiveau(niveau: NiveauMasque): TerritoireType {
 export function siglesMembresDuNiveau(payload: Payload, niveau: NiveauMasque): SigleProgramme[] {
   const type = typeAdhesionDuNiveau(niveau)
   if (!type) return []
+  if (payload.programmes?.mapMemberships) {
+    const presents = new Set(payload.programmes.mapMemberships.filter((entry) => entry.type === type && entry.member)
+      .map((entry) => entry.sigle))
+    return SIGLES_PROGRAMMES.filter((sigle) => presents.has(sigle))
+  }
   const presents = new Set<SigleProgramme>()
   for (const membre of payload.programmes?.membres ?? []) {
     if (membre.type === type) presents.add(membre.sigle)
@@ -53,6 +58,7 @@ export function siglesMembresDuNiveau(payload: Payload, niveau: NiveauMasque): S
 }
 
 function subventionsPresentes(payload: Payload, niveau: NiveauMasque): boolean {
+  if (payload.mapGrantFacts) return payload.mapGrantFacts.some((fact) => fact.type === typeSubventionsDuNiveau(niveau))
   const type = typeSubventionsDuNiveau(niveau)
   return (payload.programmes?.subventions ?? []).some((ligne) => ligne.type === type)
 }
