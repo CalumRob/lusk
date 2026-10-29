@@ -197,24 +197,26 @@ function figureEstReference(clef: string): boolean {
   )
 }
 
-/** Resolve category labels: verified catalogue, then the app-owned display map. */
+/**
+ * Resolve detail labels with explicit merge authority (#827): native semantic
+ * axis labels first, then app-owned EDITORIAL wording, then the verified
+ * producer catalogue (which owns every fact-bearing category/band label).
+ */
 function labelsDetailPour(clef: string): Record<string, string> | undefined {
   const contract = nativeContract(clef)
   const catalogueLabels = metadataVerified.value ? metadata.value?.detail_labels[clef] ?? {} : {}
   const appLabels = LIBELLES_DETAILS_APP[props.theme]?.[clef] ?? {}
-  if (!contract) {
-    const labels = { ...appLabels, ...catalogueLabels }
-    return Object.keys(labels).length ? labels : undefined
-  }
-  const labels: Record<string, string> = { ...appLabels, ...catalogueLabels }
-  const declaredKeys = new Set(contract.axisValues ?? [])
-  for (const axis of contract.axes ?? []) {
+  // Editorial app wording wins over stale catalogue wording; the catalogue
+  // still supplies every fact-bearing label the app does not own.
+  const labels: Record<string, string> = { ...catalogueLabels, ...appLabels }
+  const declaredKeys = new Set(contract?.axisValues ?? [])
+  for (const axis of contract?.axes ?? []) {
     if (axis.name === 'detail' && axis.label && axis.label !== axis.key) {
       labels[axis.key] = axis.label
       declaredKeys.add(axis.key)
     }
   }
-  for (const key of Object.keys(labels)) if (!declaredKeys.has(key)) delete labels[key]
+  if (contract) for (const key of Object.keys(labels)) if (!declaredKeys.has(key)) delete labels[key]
   return Object.keys(labels).length ? labels : undefined
 }
 
@@ -236,13 +238,14 @@ function passarelle(clef: string) {
   return metadataVerified.value ? handoffExploration(metadata.value, clef, refTerritoire.value) : null
 }
 
-function labelsLectureActivite(key: string) {
-  const appLabels = sousGroupesFiche(props.theme).find((subgroup) => subgroup.key === key)?.reading?.paramLabels
+/** Reading-parameter wording is producer-owned (`param_labels`); the fallbacks
+ *  are neutral UI placeholders, never a second copy of the producer label. */
+function labelsLectureActivite(_key: string) {
   const catalogueLabels = metadataVerified.value ? metadata.value?.param_labels : undefined
   return {
-    rang: appLabels?.rang ?? catalogueLabels?.rang ?? 'Rang',
-    activity_label: appLabels?.activity_label ?? catalogueLabels?.activity_label ?? 'Activité dominante',
-    lq: appLabels?.lq ?? catalogueLabels?.lq ?? 'Location quotient (LQ)',
+    rang: catalogueLabels?.rang ?? 'Rang',
+    activity_label: catalogueLabels?.activity_label ?? 'Activité',
+    lq: catalogueLabels?.lq ?? 'LQ',
   }
 }
 

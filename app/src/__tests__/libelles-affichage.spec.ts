@@ -1,18 +1,42 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import { libelleDetail, libelleIndicateur } from '../fiche/libelles'
 import { LIBELLES_DETAILS_APP, LIBELLES_INDICATEURS_APP } from '../fiche/content/libellesAffichage'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
+import { validerThemeMetadata } from '../payload/validate'
 import type { Theme, ThemeMetadata } from '../payload/types'
 
 /**
- * Ordinary display labels are app-owned presentation (#827): the shared map
- * carries them keyed to real resource/detail identities, so a stale or absent
- * producer catalogue never blanks or renames a figure. Native contract labels
- * stay first priority at the component seam; this file proves the fallback.
+ * Label ownership boundary (#827). App content carries ONLY genuine editorial
+ * wording; every fact-bearing label (thresholds, units/scales, age/year/time
+ * bands, reference scope, classification/domain vocabulary) resolves from the
+ * verified producer declaration. These tests assert the boundary itself, not
+ * that a copied map renders.
  */
 
 const THEMES = Object.keys(LIBELLES_INDICATEURS_APP) as Theme[]
+
+function publie(theme: Theme): ThemeMetadata {
+  return validerThemeMetadata(
+    JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8')),
+    `theme_${theme}.json`,
+  )
+}
+
+/** Fact-bearing labels the app must never own (producer declarations). */
+const FACT_BEARING = [
+  // transport thresholds / reach
+  ['mobilite', 'offre_tc'],
+  ['mobilite', 'raccordement_tc'],
+  // unit / ratio scales
+  ['habitat', 'prix_m2'],
+  // reference scope
+  ['mobilite', 'raccordement_reference'],
+  // programme domain vocabulary
+  ['programmes', 'subventions_par_domaine'],
+] as const
 
 function sansLibelles(theme: Theme): ThemeMetadata {
   const metadata = structuredClone(metadonneesThemesFixtures[theme])
@@ -21,35 +45,53 @@ function sansLibelles(theme: Theme): ThemeMetadata {
   return metadata
 }
 
-describe('libelles d’affichage app-owned — repli stable, jamais une clé brute', () => {
-  it.each(THEMES)('rend les libellés d’indicateur du thème %s sans aucune métadonnée', (theme) => {
-    const metadata = sansLibelles(theme)
-    for (const [clef, libelle] of Object.entries(LIBELLES_INDICATEURS_APP[theme])) {
-      expect(libelleIndicateur(metadata, clef)).toBe(libelle)
+describe('libelles d’affichage — frontière éditorial / factuel', () => {
+  it.each(THEMES)('ne porte aucun libellé factuel pour le thème %s', (theme) => {
+    const appIndicateurs = Object.keys(LIBELLES_INDICATEURS_APP[theme])
+    const appDetails = Object.keys(LIBELLES_DETAILS_APP[theme])
+    for (const [factTheme, clef] of FACT_BEARING) {
+      if (factTheme !== theme) continue
+      expect(appIndicateurs).not.toContain(clef)
+      expect(appDetails).not.toContain(clef)
     }
   })
 
-  it.each(THEMES)('rend les libellés de détail du thème %s sans aucune métadonnée', (theme) => {
-    const metadata = sansLibelles(theme)
-    for (const [clef, details] of Object.entries(LIBELLES_DETAILS_APP[theme])) {
-      for (const [detail, libelle] of Object.entries(details)) {
-        expect(libelleDetail(metadata, clef, detail)).toBe(libelle)
-      }
+  it('ne fige ni échelle, ni seuil, ni domaine dans le contenu app', () => {
+    const valeurs = [
+      ...Object.values(LIBELLES_INDICATEURS_APP).flatMap((labels) => Object.values(labels)),
+      ...Object.values(LIBELLES_DETAILS_APP).flatMap((parClef) => Object.values(parClef).flatMap((labels) => Object.values(labels))),
+    ]
+    for (const valeur of valeurs) {
+      // unit / ratio scales, transport thresholds and reach, year/time bands
+      expect(valeur).not.toMatch(/\d+\s?(m|mètres|minutes|min|hab|‰)/)
+      expect(valeur).not.toMatch(/^\d{4}$|^\d{1,2}\s?h$/)
     }
   })
 
-  it('ignore un libellé producteur périmé pour une ressource app-owned', () => {
+  it('rend les libellés éditoriaux app-owned sans aucune métadonnée', () => {
+    const metadata = sansLibelles('habitat')
+    expect(libelleIndicateur(metadata, 'mix_logements')).toBe('Mix de logements')
+    expect(libelleDetail(metadata, 'statut', 'hlm')).toBe('Locataires HLM (parc social)')
+  })
+
+  it('ignore un libellé producteur périmé pour un libellé éditorial app-owned', () => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
     metadata.indicator_labels.densite = 'Ancien libellé du catalogue'
-    metadata.detail_labels.structure_age['<15'] = 'Ancienne tranche'
     expect(libelleIndicateur(metadata, 'densite')).toBe('Densité de population')
-    expect(libelleDetail(metadata, 'structure_age', '<15')).toBe('Moins de 15 ans')
   })
 
-  it('garde la métadonnée comme repli pour une ressource que l’app ne possède pas encore', () => {
-    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
-    metadata.indicator_labels.future_resource = 'Ressource future'
-    expect(libelleIndicateur(metadata, 'future_resource')).toBe('Ressource future')
+  it('résout un libellé factuel depuis la déclaration producteur vérifiée', () => {
+    const metadata = publie('mobilite')
+    expect(libelleIndicateur(metadata, 'offre_tc')).toBe(metadata.indicator_labels.offre_tc)
+    expect(libelleDetail(metadata, 'raccordement_courbe', 't0090')).toBe(metadata.detail_labels.raccordement_courbe.t0090)
+  })
+
+  it('suit une déclaration producteur MODIFIÉE au lieu de figer une copie app', () => {
+    const metadata = publie('mobilite')
+    metadata.indicator_labels.offre_tc = 'Part des bâtiments près d’un arrêt (à 300 m)'
+    expect(libelleIndicateur(metadata, 'offre_tc')).toBe('Part des bâtiments près d’un arrêt (à 300 m)')
+    metadata.detail_labels.raccordement_courbe.t0090 = '1 h 45'
+    expect(libelleDetail(metadata, 'raccordement_courbe', 't0090')).toBe('1 h 45')
   })
 
   it('échoue FORT quand aucune source ne porte le libellé — jamais une clé brute', () => {

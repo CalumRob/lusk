@@ -145,7 +145,6 @@ interface Magasin {
   demarrer: (fichiers?: readonly Fichier[]) => void
   recharger: () => void
 }
-
 /**
  * One magasin = one store instance. The production app shares ONE module-level
  * magasin (one fetch per session); an injected charger gets a fresh magasin
@@ -272,9 +271,12 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         }
         return meta
       }
+      // A theme known ABSENT (its indicators 404'd) contributes no orphan
+      // metadata in either arrival order: the metadata is not even fetched.
+      if (indicateurs && indicateurs.etat === 'succes' && indicateurs.valeur === null) return Promise.resolve(null)
       if (!indicateurs) return fetchMeta()
       return indicateurs.promesse.then((indicateursTheme) => {
-        if (indicateursTheme === null) return fetchMeta() // thème absent → métadonnées absentes
+        if (indicateursTheme === null) return null // thème absent → métadonnées absentes
         return fetchMeta().then(present)
       })
     }
@@ -343,6 +345,7 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         entree.valeur = valeur
         peupler(nom, valeur)
         if (nom === 'territoires' || nom === 'territoires-metadata') verifierReferenceDensite()
+        if (nom.startsWith('indicateurs_')) verifierPresenceMetadonnees(themeDe(nom))
       },
       (cause: unknown) => {
         entree.etat = 'echec'
@@ -355,8 +358,42 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         if (entree.erreur.kind === 'validation') {
           console.error(entree.erreur)
         }
+        // A theme that turns out PRESENT (its indicators landed) makes a
+        // metadata-only 404 a real drift, even when that entry settled first.
+        if (nom.startsWith('indicateurs_')) verifierPresenceMetadonnees(themeDe(nom))
       },
     )
+  }
+
+  /**
+   * Cross-file presence check: a theme whose indicators are genuinely present
+   * must publish its metadata, and a theme known ABSENT must not surface orphan
+   * metadata — in either arrival order.
+   */
+  function verifierPresenceMetadonnees(theme: Theme): void {
+    const indicateurs = etats.get(`indicateurs_${theme}`)
+    if (!indicateurs || indicateurs.etat !== 'succes') return
+    const nom = `theme_${theme}` as Fichier
+    const meta = etats.get(nom)
+    if (!meta) return
+    if (indicateurs.valeur === null) {
+      // Known-absent theme: its metadata is not a published fact.
+      if (meta.valeur !== null) {
+        meta.valeur = null
+        delete payload.value.themeMetadata?.[theme]
+      }
+      return
+    }
+    if (meta.etat !== 'succes' || meta.valeur !== null) return
+    const erreur = new PayloadError(
+      'validation',
+      `${nom}.json`,
+      `Le thème « ${theme} » publie des indicateurs sans métadonnées (${nom}.json introuvable)`,
+    )
+    meta.etat = 'echec'
+    meta.erreur = erreur
+    meta.valeur = null
+    console.error(erreur)
   }
 
   /** Start the requested files; legacy callers retain the complete default. */
@@ -378,6 +415,12 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
     for (const nom of echoues) {
       lancer(nom)
     }
+    // A metadata-only retry re-checks the theme's presence once its metadata
+    // settles: a theme whose indicators are genuinely present must not keep an
+    // absent metadata entry, and a theme known absent must not surface one.
+    for (const nom of echoues) {
+      if (nom.startsWith('theme_')) verifierPresenceMetadonnees(themeDe(nom))
+    }
   }
 
   return { payload, etats, demarrer, recharger }
@@ -385,6 +428,22 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
 
 /** The one shared store for the production app — one fetch per session. */
 let magasinPartage: Magasin | null = null
+
+export interface MagasinPayload {
+  payload: Ref<Payload>
+  etats: Map<Fichier, EntreeFichier>
+  demarrer: (fichiers?: readonly Fichier[]) => void
+  recharger: () => void
+}
+/**
+ * The shared store's actual seam (#827): one store instance whose staged
+ * starts, entries and recovery a consumer (or a test) can drive directly —
+ * the same object the production `usePayload` uses, never an injected
+ * per-call store with its own fixed default order.
+ */
+export function creerMagasinPayload(charger: ChargerFichier | null = null): MagasinPayload {
+  return creerMagasin(charger)
+}
 
 export function usePayload({ attendre, demarrer: fichiersADemarrer }: OptionsUsePayload = {}): EtatPayload {
   const chargerInjecte = inject(PAYLOAD_CHARGER_KEY, null)

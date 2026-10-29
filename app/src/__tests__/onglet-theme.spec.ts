@@ -106,6 +106,69 @@ describe('OngletTheme — the shared app-owned subgroup grammar (Démographie)',
     wrapper.unmount()
   })
 
+  it('app editorial detail wording beats a stale catalogue while a native axis label still wins', async () => {
+    // habitat `statut` is a genuinely editorial app-owned label set; the
+    // catalogue carries stale text and no native axis label is published.
+    const staleMetadata = structuredClone(metadonneesThemesFixtures.habitat)
+    staleMetadata.detail_labels.statut = {
+      proprietaire: 'Ancien libellé propriétaire',
+      hlm: 'Ancien libellé HLM',
+      locataire_prive: 'Ancien libellé locataire',
+      loge_gratuit: 'Ancien libellé logé',
+    }
+    const wrapper = mount(OngletTheme, {
+      props: {
+        theme: 'habitat',
+        territoire: '22001',
+        metadataStatus: 'ready',
+        payload: {
+          ...payloadDemographie,
+          indicateurs: indicateursHabitatFixture,
+          histoires: histoiresHabitatFixture,
+          themeMetadata: { habitat: staleMetadata },
+        },
+      },
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    await flushPromises()
+
+    const statut = wrapper.get('[data-clef="statut"]')
+    expect(statut.text()).toContain('Propriétaires')
+    expect(statut.text()).not.toContain('Ancien libellé propriétaire')
+
+    // A native axis label keeps priority over both app and catalogue text.
+    const nativeMetadata = structuredClone(metadonneesThemesFixtures.habitat)
+    nativeMetadata.detail_labels.statut = { proprietaire: 'Ancien libellé propriétaire' }
+    const nativeWrapper = mount(OngletTheme, {
+      props: {
+        theme: 'habitat',
+        territoire: '22001',
+        metadataStatus: 'ready',
+        payload: {
+          ...payloadDemographie,
+          indicateurs: indicateursHabitatFixture.map((row) => row.key !== 'statut' || row.detail !== 'proprietaire'
+            ? row
+            : { ...row, nativeContract: {
+              label: 'Statut d’occupation — contrat API',
+              shapes: ['declared_profile'],
+              axisValues: ['proprietaire'],
+              axes: [{ name: 'detail', key: 'proprietaire', label: 'Propriétaire — contrat API', order: 0 }],
+            } }),
+          histoires: histoiresHabitatFixture,
+          themeMetadata: { habitat: nativeMetadata },
+        },
+      },
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    await flushPromises()
+
+    const nativeStatut = nativeWrapper.get('[data-clef="statut"]')
+    expect(nativeStatut.text()).toContain('Propriétaire — contrat API')
+    expect(nativeStatut.text()).not.toContain('Ancien libellé propriétaire')
+    wrapper.unmount()
+    nativeWrapper.unmount()
+  })
+
   it.each([
     ['demographie', 'structure_age'],
     ['habitat', 'mix_logements'],
