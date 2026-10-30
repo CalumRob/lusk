@@ -1,0 +1,61 @@
+{
+  "audited_cohort": 145185,
+  "estimation_subset": 145099,
+  "excluded_sentinel_or_undefined": 86,
+  "train_2022_2023": 105264,
+  "holdout_2024": 39835,
+  "n_features": 69,
+  "temporal_holdout": {
+    "ridge": {
+      "n": 39835,
+      "rmse_log": 0.5788229244210471,
+      "mae_log": 0.3971050736166512,
+      "r2": 0.18765739855852837,
+      "median_abs_pct_error": 28.204278369303776
+    },
+    "xgboost": {
+      "n": 39835,
+      "rmse_log": 0.466455317920173,
+      "mae_log": 0.28660054606454155,
+      "r2": 0.4724448334984439,
+      "median_abs_pct_error": 18.251486688399808
+    }
+  },
+  "spatial_cv_2022_2023": {
+    "ridge": {
+      "folds": 5,
+      "mean_rmse_log": 0.5951508182888482,
+      "mean_mae_log": 0.412673762906583,
+      "mean_r2": 0.14220342258227486,
+      "mean_median_abs_pct_error": 29.670810797981176
+    },
+    "xgboost": {
+      "folds": 5,
+      "mean_rmse_log": 0.5146861412578771,
+      "mean_mae_log": 0.3397613847288772,
+      "mean_r2": 0.355482140958894,
+      "mean_median_abs_pct_error": 23.12606660996557
+    }
+  },
+  "final_model_in_sample": {
+    "n": 145099,
+    "rmse_log": 0.43144678560185556,
+    "mae_log": 0.2696030379686936,
+    "r2": 0.5572933363053769,
+    "median_abs_pct_error": 17.419980533426838
+  },
+  "xgb_params": {
+    "objective": "reg:squarederror",
+    "max_depth": 6,
+    "eta": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "min_child_weight": 20,
+    "lambda": 1.0,
+    "tree_method": "hist",
+    "seed": 20261029
+  },
+  "best_iteration": 727,
+  "wall_seconds": 22.4,
+  "peak_rss_gb": 1.16
+}

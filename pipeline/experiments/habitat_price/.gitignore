@@ -1,0 +1,4 @@
+# Python caches from the prototype run.
+__pycache__/
+*.pyc
+.pytest_cache/

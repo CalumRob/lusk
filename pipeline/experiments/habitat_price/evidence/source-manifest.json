@@ -1,0 +1,249 @@
+{
+  "declared_provenance": {
+    "aedar": "data.gouv 'acces-aux-equipements-depuis-les-adresses-residentielles-bretagne' 2026-v1 address-mode Parquets",
+    "bdnb": "BDNB Open 2026-02.a / v0.7.11 CSV entries, CSV/GPKG range-read",
+    "dvf_plus_native": "Cerema DVF+ open data 2026.1, R53_Bretagne (DVF_PLUS_2026_1_CSV_R053_ED251.zip)"
+  },
+  "files": {
+    "aedar_bike_lts2": {
+      "bytes": 132235496,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\address-bike-lts2-53-2026v1.parquet",
+      "sha256": "ce05c753be0b8e73af460151017fa2caf9355aa6ca0584a13494826bfb9597c0"
+    },
+    "aedar_car": {
+      "bytes": 380689782,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\address-car-53-2026v1.parquet",
+      "sha256": "ba47c3cb85b1d2c95b917704cf1f36105448dcb13920703e902c92ef49f0f302"
+    },
+    "aedar_origin_spine": {
+      "bytes": 38085172,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\aedar-origin-spine-car-53-2026v1.txt",
+      "sha256": "cb1462b1b1a521d02f9183ce58c48e8065fce2b8f610b8fed3c49ccbbab16111"
+    },
+    "aedar_transit": {
+      "bytes": 217973315,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\address-transit-53-2026v1.parquet",
+      "sha256": "87dc42796dd679b9359aeee789d45896a04645272372e5efcb795e34acba5382"
+    },
+    "bdnb_22_batiment_groupe.csv": {
+      "bytes": 155232183,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep22\\batiment_groupe.csv",
+      "sha256": "fa7a3747711cc405d432ef4df8038f55a7b055e017bf0006b10527b15786c868"
+    },
+    "bdnb_22_batiment_groupe_bdtopo_bat.csv": {
+      "bytes": 57598902,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep22\\batiment_groupe_bdtopo_bat.csv",
+      "sha256": "66320c5923eef6c29a135a65ad95976ef560decfd381da5077f287001ddfc3af"
+    },
+    "bdnb_22_batiment_groupe_ffo_bat.csv": {
+      "bytes": 27699773,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep22\\batiment_groupe_ffo_bat.csv",
+      "sha256": "ae978649d3a32d978578dfc4936ee95313637fbc8752e740753ecb5c0ddf0c00"
+    },
+    "bdnb_22_batiment_groupe_synthese_propriete_usage.csv": {
+      "bytes": 17554751,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep22\\batiment_groupe_synthese_propriete_usage.csv",
+      "sha256": "3379be5a2041863d02615093224aff14a1dddd5ac34a247abc379536b46f3e72"
+    },
+    "bdnb_22_metadonnees_jeu_de_donnee_source.csv": {
+      "bytes": 12744,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep22\\metadonnees_jeu_de_donnee_source.csv",
+      "sha256": "d947108f2c1a1666201606dff709e80460202092774af3fcaa02fe4bfcdbbec0"
+    },
+    "bdnb_22_rel_batiment_groupe_dvf_open.csv": {
+      "bytes": 10278487,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep22\\rel_batiment_groupe_dvf_open.csv",
+      "sha256": "7e5b0aa46f608cf862884450cdd1b1246bb2f42be227547ba882bddd63f65126"
+    },
+    "bdnb_29_batiment_groupe.csv": {
+      "bytes": 188738188,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep29\\batiment_groupe.csv",
+      "sha256": "eab90beeca402a897cec37fbf2b140cc47051448808d4b147d8e5005672b64aa"
+    },
+    "bdnb_29_batiment_groupe_bdtopo_bat.csv": {
+      "bytes": 71056991,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep29\\batiment_groupe_bdtopo_bat.csv",
+      "sha256": "645a35421ba3db0fda7a20a091f97c5527e9e31d849863eff40a81f7f7aba177"
+    },
+    "bdnb_29_batiment_groupe_ffo_bat.csv": {
+      "bytes": 36587033,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep29\\batiment_groupe_ffo_bat.csv",
+      "sha256": "55ab187d0b1fbecd06796f06bb96855fc91d271476df6ea1f7f186691ec37bb0"
+    },
+    "bdnb_29_batiment_groupe_synthese_propriete_usage.csv": {
+      "bytes": 23219616,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep29\\batiment_groupe_synthese_propriete_usage.csv",
+      "sha256": "24fc49a735c4ad6b53b979e327608b8197e0945f3b18b5f3980d3563efaa5bbb"
+    },
+    "bdnb_29_metadonnees_jeu_de_donnee_source.csv": {
+      "bytes": 12744,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep29\\metadonnees_jeu_de_donnee_source.csv",
+      "sha256": "d947108f2c1a1666201606dff709e80460202092774af3fcaa02fe4bfcdbbec0"
+    },
+    "bdnb_29_rel_batiment_groupe_dvf_open.csv": {
+      "bytes": 14953224,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep29\\rel_batiment_groupe_dvf_open.csv",
+      "sha256": "9d892f0731d4fe66cc67364ec9681e1347599e5c22547a65a4deb90d1260452c"
+    },
+    "bdnb_35_batiment_groupe.csv": {
+      "bytes": 172018933,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep35\\batiment_groupe.csv",
+      "sha256": "ce1b2096f2eb85357b3865b74e756af5a1874081f9ad648d11ac688a582db40c"
+    },
+    "bdnb_35_batiment_groupe_bdtopo_bat.csv": {
+      "bytes": 62199906,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep35\\batiment_groupe_bdtopo_bat.csv",
+      "sha256": "bc66c6a48d85635dbaef35689d4cc21683fc2c04e45df2420b835124fb806c56"
+    },
+    "bdnb_35_batiment_groupe_ffo_bat.csv": {
+      "bytes": 31651720,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep35\\batiment_groupe_ffo_bat.csv",
+      "sha256": "72401c20d7f81ae9562fc55ffd812bd10f6de1ed14f63c5e2af64f8247692b83"
+    },
+    "bdnb_35_batiment_groupe_synthese_propriete_usage.csv": {
+      "bytes": 20066696,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep35\\batiment_groupe_synthese_propriete_usage.csv",
+      "sha256": "faea58b96e231022570385972690c109056c0fc90d8edccc3dff02f259a62432"
+    },
+    "bdnb_35_metadonnees_jeu_de_donnee_source.csv": {
+      "bytes": 12744,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep35\\metadonnees_jeu_de_donnee_source.csv",
+      "sha256": "d947108f2c1a1666201606dff709e80460202092774af3fcaa02fe4bfcdbbec0"
+    },
+    "bdnb_35_rel_batiment_groupe_dvf_open.csv": {
+      "bytes": 16937484,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep35\\rel_batiment_groupe_dvf_open.csv",
+      "sha256": "463281f4e87d4dc46e02fced98973f1a0a27eeeefd8bcb9adb2fb353e206c9a1"
+    },
+    "bdnb_56_batiment_groupe.csv": {
+      "bytes": 161822870,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep56\\batiment_groupe.csv",
+      "sha256": "9307fcb45abef3460b18d69c4bcd0b9ce2f9cb0940f25f94f9d4587d1e6add92"
+    },
+    "bdnb_56_batiment_groupe_bdtopo_bat.csv": {
+      "bytes": 61600081,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep56\\batiment_groupe_bdtopo_bat.csv",
+      "sha256": "c6ac9ef0ec259d769853ee691f5e24d782bc5450e1258ec901871b4a753377ad"
+    },
+    "bdnb_56_batiment_groupe_ffo_bat.csv": {
+      "bytes": 31705840,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep56\\batiment_groupe_ffo_bat.csv",
+      "sha256": "871e174285e17a278a15370fd3cf91d41a2070932e09aaccd15388c657cfca2d"
+    },
+    "bdnb_56_batiment_groupe_synthese_propriete_usage.csv": {
+      "bytes": 20176631,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep56\\batiment_groupe_synthese_propriete_usage.csv",
+      "sha256": "f585418e5fe5870377fd7d0754d118787b9aa6ac11dcc00a7155562140f27f57"
+    },
+    "bdnb_56_metadonnees_jeu_de_donnee_source.csv": {
+      "bytes": 12744,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep56\\metadonnees_jeu_de_donnee_source.csv",
+      "sha256": "d947108f2c1a1666201606dff709e80460202092774af3fcaa02fe4bfcdbbec0"
+    },
+    "bdnb_56_rel_batiment_groupe_dvf_open.csv": {
+      "bytes": 13112680,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\bdnb-2026-02-a-dep56\\rel_batiment_groupe_dvf_open.csv",
+      "sha256": "e52d985e58fc71dbb86ba94e0a4ee4c76320cb786aae90af61eb4893da782955"
+    },
+    "bpe_typequ_registry": {
+      "bytes": 810772,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\BPE25_liste_hierarchisee_TYPEQU.html",
+      "sha256": "63c3f4708f2098b647ed54f8394ec4924515a5dc10ecb97d92d66fb0402f31c9"
+    },
+    "communes_limites": {
+      "bytes": 97246679,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\communes_limites.geojson",
+      "sha256": "5974ed3a73274dbc8491b137041edde5fe8c3a01ab1ee751a05eb129980f6486"
+    },
+    "dvf_plus_native": {
+      "bytes": 94532625,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\R53_Bretagne.zip",
+      "sha256": "b087a396c0843dad908f18da2a3449df24134ab3262253023f0b313e076930bd"
+    },
+    "epci_membership": {
+      "bytes": 1106419,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\epci_au_01-01-2025.zip",
+      "sha256": "06510f6199943196b6f28c45ef65003243e73684063fd2ce21c1c35de5731696"
+    },
+    "rp_1km_grid": {
+      "bytes": 64897493,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\rp2021_carreaux_1km_gpkg.zip",
+      "sha256": "725d3cb4282b2374cd150354c575589a72bb6f6307db2138d18418b6dd7d4422"
+    },
+    "rp_logements_2023": {
+      "bytes": 97954253,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\DS_RP_LOGEMENT_PRINC_2023_CSV_FR.zip",
+      "sha256": "c93ccc1db5706511ae303fdc9543b5e7012a07925e09f618c5d4e8fbeb081530"
+    },
+    "rp_menages_2023": {
+      "bytes": 31807348,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\DS_RP_MENAGES_COMP_2023_CSV_FR.zip",
+      "sha256": "3e26b46de4b7bc184648f63f4ce893fc70c1262848e5c03843305efcca6c0757"
+    },
+    "rp_population_2023": {
+      "bytes": 32699741,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\DS_RP_POPULATION_PRINC_2023_CSV_FR.zip",
+      "sha256": "553ab6016f4693e820efefd683740ec571d54226aaf7b7ad52fbd27b2d4c01bf"
+    },
+    "sitadel_22": {
+      "bytes": 38156,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\sitadel_logements_communes_D22_2021-2023_2026-09.csv",
+      "sha256": "5b842d43028c3ce514c3309d05533eed4e468d06db4366e6232d4d118fc5761f"
+    },
+    "sitadel_29": {
+      "bytes": 30715,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\sitadel_logements_communes_D29_2021-2023_2026-09.csv",
+      "sha256": "e05afc8895ba7604147a36a7b3d9e1502ef05331ec9ce3091a47894c72f002ed"
+    },
+    "sitadel_35": {
+      "bytes": 36902,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\sitadel_logements_communes_D35_2021-2023_2026-09.csv",
+      "sha256": "1f957a01b7bffe8fda559a964e4d4ace179f30168b3f1bb7e7a7833c9cc07174"
+    },
+    "sitadel_56": {
+      "bytes": 27850,
+      "exists": true,
+      "path": "pipeline\\data\\raw\\sitadel_logements_communes_D56_2021-2023_2026-09.csv",
+      "sha256": "0cbb9c6c1446ca7a0e201ce4765ca8f45c599ae1978e3efeb6717a112162d342"
+    }
+  }
+}

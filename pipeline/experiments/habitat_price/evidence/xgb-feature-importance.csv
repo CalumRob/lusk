@@ -1,0 +1,41 @@
+feature,gain
+reach_B302_bike_lts2,0.2704512
+group_ffo_usage_UNKNOWN,0.06488662
+y_km,0.041705932
+x_km,0.040545307
+reach_B105_bike_lts2,0.039410777
+reach_B302_car,0.036612943
+house_count,0.03333359
+miss__group_nb_log,0.029304039
+age_at_sale,0.02701763
+miss__group_nb_niveau,0.023601308
+apartment_count,0.023003621
+group_usage_UNKNOWN,0.02091596
+group_ffo_usage_Résidentiel collectif,0.020662835
+reach_A129_car,0.019740513
+reach_A129_transit_p1,0.016863625
+house_surface_share,0.0142260995
+log_rp1km_density,0.014178212
+miss__group_height_mean,0.013263788
+group_usage_Résidentiel collectif,0.013259213
+reach_A129_bike_lts2,0.013177574
+group_usage_Résidentiel individuel,0.013087079
+reach_B105_car,0.012914566
+group_nb_log,0.012790805
+log_residential_surface,0.01264969
+group_usage_Tertiaire,0.012358728
+group_usage_Dépendance,0.012316273
+group_fictive_geometry,0.012306276
+activity_count,0.01189995
+group_ffo_usage_Tertiaire & Autres,0.010460578
+miss__group_height_max,0.0100823315
+group_ffo_usage_Résidentiel individuel,0.009724948
+reach_B105_transit_p1,0.009291351
+miss__age_at_sale,0.008414066
+mixed_house_apartment,0.007995381
+group_built_after_sale,0.007829512
+reach_B302_transit_p1,0.0077624954
+group_ffo_usage_Dépendance,0.007622824
+group_nb_niveau,0.007564307
+age_unknown,0.007309639
+group_height_mean,0.00624724

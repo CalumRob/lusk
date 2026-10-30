@@ -1,0 +1,13 @@
+{
+  "native_rows": 1019658,
+  "main_cohort": 145185,
+  "by_year": {
+    "2022": 58431,
+    "2023": 46888,
+    "2024": 39866
+  },
+  "group_matched": 145185,
+  "origin_matched": 145185,
+  "rp_cell_matched": 145092,
+  "wall_seconds": 144.6
+}
