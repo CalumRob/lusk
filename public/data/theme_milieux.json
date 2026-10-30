@@ -36,7 +36,7 @@
     }
   ],
   "indicator_keys": ["artif_par_habitant", "conso_enaf_annuel"],
-  
+
   "sources": {
     "artif_par_habitant": "ocsge_artificialisation_22_2025",
     "conso_enaf_annuel": "consoenaf"

@@ -104,7 +104,7 @@
     "evolution_1968",
     "taille_menages"
   ],
-  
+
   "sources": {
     "densite": "serie_historique",
     "structure_age": "age_detail",

@@ -105,7 +105,7 @@
     "part_passoires",
     "distribution_dpe"
   ],
-  
+
   "sources": {
     "mix_logements": "logements",
     "statut": "logements",
