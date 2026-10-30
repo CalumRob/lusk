@@ -60,7 +60,10 @@ let referenceFetcher: ((url: string) => Promise<ReponseFetchReference>) | null =
  */
 export const chargerReferenceTerritoires: ChargerReferenceTerritoires = (options = {}) => {
   const baseUrl = options.baseUrl ?? '/data/'
-  const fetchImpl = options.fetchImpl ?? ((url: string) => fetch(url))
+  // The default is the global fetch itself (not a wrapper) so the session
+  // cache keys on a stable fetcher identity — a test that stubs global fetch
+  // changes that identity and starts a fresh cache.
+  const fetchImpl = options.fetchImpl ?? fetch
   if (fetchImpl !== referenceFetcher) {
     referenceFetcher = fetchImpl
     referenceEnCours = null

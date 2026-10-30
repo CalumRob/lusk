@@ -5,7 +5,6 @@ import {
   cleSelectionComparaison,
   semanticPublicationsCompatible,
   ThemeAcquisitionCache,
-  themeAcquisitionEnabled,
 } from '../payload/themeAcquisition'
 import type { ThemeKey, ThemeResponse } from '../payload/themeAcquisition'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
@@ -94,15 +93,10 @@ describe('theme acquisition cache', () => {
     expect(facts).toHaveBeenCalledTimes(1)
   })
 
-  it('registers every canonical theme for lazy acquisition', () => {
+  it('registers every canonical theme for acquisition — the only runtime since #868', () => {
+    // #868 : plus de drapeau VITE_THEME_ACQUISITION_API — l'acquisition API est
+    // le seul mode ; le registre doit rester complet contre THEMES_CANONIQUES.
     expect([...THEMES_ACQUISITION_API].sort()).toEqual([...THEMES_CANONIQUES].sort())
-  })
-  it('defaults the migrated path ON — the incumbent path is the explicit opt-out', () => {
-    // Le chemin migré est le DÉFAUT du produit ; l'incumbent statique ne
-    // survit que comme opt-out explicite (VITE_THEME_ACQUISITION_API='0').
-    expect(themeAcquisitionEnabled({})).toBe(true)
-    expect(themeAcquisitionEnabled({ VITE_THEME_ACQUISITION_API: '1' })).toBe(true)
-    expect(themeAcquisitionEnabled({ VITE_THEME_ACQUISITION_API: '0' })).toBe(false)
   })
   it('posts default, empty, singleton, and mixed typed selections without conflating their scopes', async () => {
     const catalogue = [{ resource_id: 'part_passoires', theme_id: 'habitat', indicator_id: 'part_passoires',

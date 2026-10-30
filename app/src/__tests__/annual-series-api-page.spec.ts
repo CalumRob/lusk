@@ -32,7 +32,6 @@ type RaccordementPageOptions = {
 }
 
 async function mountRaccordementPage(options: RaccordementPageOptions) {
-  vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
   const densityModel = options.targetType === 'commune' && options.targetId === '22001'
     ? JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data',
       'modeles-lecture', 'territoires', 'commune', '22001.json'), 'utf8')) : null
@@ -77,8 +76,7 @@ async function mountRaccordementPage(options: RaccordementPageOptions) {
 
 describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () => {
   it('mounts the current 73-point national trajectory and visible selected mean on the ordinary indicator route', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const territoryModel = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data',
+      const territoryModel = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data',
       'modeles-lecture', 'territoires', 'commune', '22001.json'), 'utf8'))
     const target = { ...territoiresFixture.find((row) => row.territoire === '22001')!,
       classe_densite_code: territoryModel.territory.classe_densite_code,
@@ -338,8 +336,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     } finally { wrapper.unmount() }
   })
   it('retains admitted prix_m2 cohort facts when a warm same-cohort focal read gets HTTP 503', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const requests: Array<{ items: Array<Record<string, any>>; status: number }> = []
+      const requests: Array<{ items: Array<Record<string, any>>; status: number }> = []
     let admittedCohort: Record<string, any> | undefined
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
@@ -440,8 +437,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
 
   it.each(['series', 'scalar'] as const)(
     'refreshes only the mounted prix_m2 scope after the %s publication changes', async (changedFacet) => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const requests: Array<Array<Record<string, any>>> = []
+      const requests: Array<Array<Record<string, any>>> = []
     let publication = 1
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
@@ -531,8 +527,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     })
 
   it('keeps a delayed old focal reply out of the refreshed mounted page and cache generation', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const requests: Array<Array<Record<string, any>>> = []
+      const requests: Array<Array<Record<string, any>>> = []
     let publication: 1 | 2 = 1
     let deferOldFocal = true
     let initialPeerValues: number[] = []

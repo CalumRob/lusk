@@ -210,7 +210,6 @@ describe('ordinary scalar consumers on semantic resources', () => {
     const scalarProcessEnv = process.env.VITE_SCALAR_COHORT_API
     delete import.meta.env.VITE_SCALAR_COHORT_API
     delete process.env.VITE_SCALAR_COHORT_API
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
     vi.stubEnv('VITE_OWNED_SERIES_API', '0')
     const readItems: Array<{ item: Record<string, any>; data: Record<string, any> }> = []
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -347,7 +346,6 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
   it('reads one native focal fact without widening a filtered commune cohort', async () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
     vi.stubEnv('VITE_OWNED_SERIES_API', '0')
     const requests: Array<Record<string, any>> = []
     const target = { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: '200000001' }
@@ -423,7 +421,6 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
   it('keeps valid cohort facts when the out-of-cohort focal has no native scalar row', async () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
     vi.stubEnv('VITE_OWNED_SERIES_API', '0')
     const target = { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: '200000001' }
     const cohortFacts = cohortResult('demographie', 'densite', target, ['22001', '22002'], [
@@ -481,7 +478,6 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
   it('ignores a late focal fact after the URL changes back inside the filtered cohort', async () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
     vi.stubEnv('VITE_OWNED_SERIES_API', '0')
     const target = { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: '200000001' }
     const members = ['22001', '22002']
@@ -555,8 +551,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
   it.each(['discovery', 'metadata'] as const)(
     'retries a %s failure without selecting a static numeric reader', async (failure) => {
       vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-      vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
-      vi.stubEnv('VITE_OWNED_SERIES_API', '0')
+        vi.stubEnv('VITE_OWNED_SERIES_API', '0')
       let discoveryAttempts = 0
       let metadataAttempts = 0
       const requestedFiles: string[] = []
@@ -742,7 +737,6 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
   it('keeps EPCI page-table ranks bound to the producer-published same-level comparison', async () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
     vi.stubEnv('VITE_OWNED_SERIES_API', '0')
     const target = { kind: 'territory_cohort', type: 'epci', department_id: null, epci_id: null }
     const memberIds = ['200000001', '200000002']

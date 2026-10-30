@@ -58,7 +58,6 @@ import type { SelectedTrajectoryComparison, TerritoryFacts } from '@/fiche/conte
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
-import { trouverTerritoire } from '@/payload/selectors'
 import { THEMES_CANONIQUES } from '@/payload/types'
 import type { Histoire, Indicateur, Payload, Territoire, Theme, ThemeMetadata } from '@/payload/types'
 import { chargerMetadonneesTheme, THEME_METADATA_CHARGER_KEY } from '@/payload/themeCatalogue'
@@ -403,7 +402,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
       }, payloadReference.value?.themeMetadata?.[themeActif])
        const comparison = semanticComparisonForTheme(acquired.comparisons.get('omitted'), {
          target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
-         territories: reference,
+         territories: [...reference],
         }, acquired.focal.resource_reads)
         const comparisonScopeLabel = libellePorteeSemantic(comparison, target)
         faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs,
@@ -488,7 +487,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
         { type: target.type, id: target.territoire })
       const comparison = semanticComparisonForTheme(nativeComparison, {
         target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
-        territories: reference,
+        territories: [...reference],
       }, acquired.focal.resource_reads)
       if (themeActif === 'demographie') {
         histoiresNuageDemographie.value = histoiresDemographieNuage(comparison)

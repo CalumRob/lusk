@@ -1,3 +1,4 @@
+import type { TerritoryComparisonContext, TerritoryComparisonMode } from '@/payload/territoryReadModel'
 import type { Territoire, TerritoireType } from '@/payload/types'
 import type { LocationQuery } from 'vue-router'
 import type { InjectionKey } from 'vue'
@@ -5,60 +6,19 @@ import type { Ref } from 'vue'
 import { buildingScopeLabel, COMPARISON_MODE_DESCRIPTIONS } from '@/fiche/content/comparisonWording'
 import { comparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 
+// The comparison vocabulary is shared with the published per-territory
+// artifact's contract (payload/territoryReadModel.ts — producer-side only
+// since #868); type-only re-export, no runtime dependency on the model.
+export type { TerritoryComparisonContext, TerritoryComparisonFact, TerritoryComparisonMode } from '@/payload/territoryReadModel'
+
 export const PARAM_COMPARAISON = 'comparaison'
 
 /**
- * Comparison-mode vocabulary, app-owned since the static runtime retirement
- * (#868): the per-territory model no longer publishes precomputed comparison
- * projections. The mode and its scope label are derived from the validated
- * territory reference (producer-published names and density labels); the
- * comparison meaning and evidence itself come from the native API contracts.
+ * #868 — since the static runtime retirement the per-territory model no longer
+ * feeds the fiche: comparison contexts are derived from the validated
+ * territory reference (producer-published names and density labels), while the
+ * comparison meaning and evidence come from the native API contracts.
  */
-export type TerritoryComparisonMode = 'densite' | 'epci' | 'bretagne'
-
-export interface TerritoryComparisonFact {
-  key: string
-  detail: string | null
-  sex: string | null
-  dimension: string | null
-  origin: 'indicator' | 'derived'
-  direction: 'plus-est-mieux' | 'moins-est-mieux'
-  rank: { position: number; size: number } | null
-  reference: { kind: 'mean' | 'median'; value: number } | null
-}
-
-export interface TerritoryComparisonContext {
-  mode: TerritoryComparisonMode
-  scope: {
-    kind:
-      | 'communes-densite'
-      | 'communes-epci'
-      | 'communes-bretagne'
-      | 'epcis-bretagne'
-      | 'departements-bretagne'
-    label: string
-  }
-  facts: TerritoryComparisonFact[]
-  buildingDistribution: {
-    label: string
-    totalBuildings: number
-    cells: Array<{
-      breadthBucket: string
-      depthBucket: string
-      buildingCount: number
-      share: number
-    }>
-  } | null
-  accessRamp: {
-    label: string
-    totalBuildings: number
-    points: Array<{
-      mode: 'c' | 'b' | 't'
-      quantile: number
-      accessibleTypes: number
-    }>
-  } | null
-}
 
 /**
  * The comparison contexts a territory can select, derived from the validated

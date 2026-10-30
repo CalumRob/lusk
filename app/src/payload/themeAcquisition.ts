@@ -276,16 +276,12 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
 }
 
 /**
- * Le chemin d'acquisition API est le DÉFAUT du produit (#627, décision
- * propriétaire 2026-10-06) : l'incumbent statique ne survit que comme opt-out
- * explicite — `VITE_THEME_ACQUISITION_API='0'`. Couplage de déploiement : un
- * build par défaut découvre les ressources productrices et les lit par lots
- * sémantiques bornés (sinon la fiche échoue fermé, jamais de repli statique).
+ * #868 — l'acquisition API est le SEUL mode du produit : le runtime statique
+ * (`VITE_THEME_ACQUISITION_API='0'`) est retiré avec ses branches. Un
+ * build découvre les ressources productrices et les lit par lots sémantiques
+ * bornés ; sinon la fiche échoue fermé, jamais de repli statique. Le retour
+ * arrière est la release précédente / récupération manuelle.
  */
-export function themeAcquisitionEnabled(env: Record<string, unknown>): boolean {
-  return env.VITE_THEME_ACQUISITION_API !== '0'
-}
-
 let catalogueRequest: Promise<SemanticResourceDeclaration[]> | null = null
 let catalogueFetcher: typeof fetch | null = null
 function producerCatalogue(): Promise<SemanticResourceDeclaration[]> {

@@ -1,5 +1,3 @@
-import type { InjectionKey } from 'vue'
-
 import type {
   DistributionAccesBatimentsRow,
   Histoire,
@@ -13,8 +11,6 @@ import type {
   ThemeMetadata,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
-import { scalarCohortEnabled } from './scalarCohort'
-import { themeAcquisitionEnabled } from './themeAcquisition'
 import {
   PayloadError,
   validerDistributionAccesBatiments,
@@ -25,6 +21,15 @@ import {
   validerTerritoires,
   validerThemeMetadata,
 } from './validate'
+
+/**
+ * #868 — this module is now the PRODUCER-SIDE contract of the published
+ * per-territory read-model artifact only (`validate:territory-model`,
+ * pipeline recovery). The browser no longer loads it: the fiche bootstraps
+ * identity/navigation from the compact territory reference
+ * (payload/territoryReference.ts) and reads every numeric from the semantic
+ * API. No fetch seam lives here anymore.
+ */
 
 /** One theme's rows, metadata, and auxiliary evidence inside a territory model. */
 export interface TerritoryThemeReadModel {
@@ -110,42 +115,6 @@ export interface TerritoryReadModel {
   themeErrors?: Partial<Record<Theme, PayloadError>>
 }
 
-export type ChargerModeleTerritoire = (
-  type: TerritoireType,
-  territoire: string,
-) => Promise<TerritoryReadModel>
-
-export type ChargerMetadonneesTheme = (theme: Theme) => Promise<ThemeMetadata>
-
-export const TERRITORY_READ_MODEL_CHARGER_KEY: InjectionKey<ChargerModeleTerritoire> =
-  Symbol('territory-read-model-charger')
-export const THEME_METADATA_CHARGER_KEY: InjectionKey<ChargerMetadonneesTheme> =
-  Symbol('theme-metadata-charger')
-
-/** Load one producer catalogue only when the active native fiche needs its explanations. */
-export const chargerMetadonneesTheme: ChargerMetadonneesTheme = async (theme) => {
-  const url = `/data/theme_${theme}.json`
-  let response: Response
-  try {
-    response = await fetch(url)
-  } catch (cause) {
-    throw new PayloadError('fetch', url,
-      `Impossible de charger le catalogue thématique : ${cause instanceof Error ? cause.message : String(cause)}`)
-  }
-  if (!response.ok) throw new PayloadError('fetch', url, `Réponse HTTP ${response.status} pour ${url}`)
-  let raw: unknown
-  try {
-    raw = await response.json()
-  } catch {
-    throw new PayloadError('validation', url, `JSON illisible dans ${url}`)
-  }
-  const metadata = validerThemeMetadata(raw, url)
-  if (metadata.theme !== theme) {
-    throw new PayloadError('validation', url, `Le catalogue ${url} ne correspond pas au thème ${theme}.`)
-  }
-  return metadata
-}
-
 type JsonObject = Record<string, unknown>
 
 function isObject(value: unknown): value is JsonObject {
@@ -203,14 +172,6 @@ function comparisonEvidenceLabel(
     fail(file, `libellé de ${nom} incohérent avec le périmètre « ${mode} »`)
   }
   return scopeLabel
-}
-
-function componentForPath(value: unknown, file: string, field: string): string {
-  const component = nonEmptyString(value, file, field)
-  if (!/^[a-z0-9_-]+$/.test(component)) {
-    fail(file, `« ${field} » contient des caractères interdits pour une adresse de fichier`)
-  }
-  return component
 }
 
 function validateTheme(
@@ -650,82 +611,4 @@ export function payloadDepuisModeleTerritoire(model: TerritoryReadModel): Payloa
     rampeAccesBatiments: mobilite?.accessRamp ?? null,
     themeMetadata: Object.fromEntries(themes.map((theme) => [theme.theme, theme.metadata])),
   }
-}
-
-/** Load one complete territory model without opening the legacy global tables. */
-export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, territoire) => {
-  const requestedFile = `territoires/${String(type)}/${String(territoire)}.json`
-  const typePath = componentForPath(type, requestedFile, 'type')
-  const territoryPath = componentForPath(territoire, requestedFile, 'territoire')
-  const file = `territoires/${typePath}/${territoryPath}.json`
-  const url = `/data/modeles-lecture/${file}`
-  let response: Response
-  try {
-    response = await fetch(url)
-  } catch (cause) {
-    throw new PayloadError(
-      'fetch',
-      file,
-      `Impossible de charger ${url} : ${cause instanceof Error ? cause.message : String(cause)}`,
-    )
-  }
-  if (!response.ok) {
-    throw new PayloadError('fetch', file, `Réponse HTTP ${response.status} pour ${url}`)
-  }
-  let raw: unknown
-  try {
-    raw = await response.json()
-  } catch {
-    throw new PayloadError('fetch', file, `JSON illisible dans ${url}`)
-  }
-  const scalarApiEnabled = scalarCohortEnabled(import.meta.env)
-  const nativeThemeApiEnabled = themeAcquisitionEnabled(import.meta.env)
-  const scalarOnlyEnabled = scalarApiEnabled && !nativeThemeApiEnabled
-  const model = validerModeleTerritoire(raw, file, { type, territoire }, nativeThemeApiEnabled
-    ? { allowPartialThemes: true }
-    : { requireAllThemes: true })
-  // Native theme facts use their semantic API contracts and start from the
-  // validated target alone; the selected legacy catalogue is optional fiche
-  // explanation enrichment. The scalar-only and explicit static paths still
-  // reconcile their producer-owned catalogues strictly. Shared fiche subgroup
-  // presentation comes from app-owned ficheGrammar.ts.
-  if (scalarOnlyEnabled) {
-    await Promise.all(Object.values(model.themes).filter((theme) => theme !== undefined).map(async (theme) => {
-      const metadataUrl = `/data/theme_${theme.theme}.json`
-      let metadataResponse: Response
-      try { metadataResponse = await fetch(metadataUrl) }
-      catch (cause) { throw new PayloadError('fetch', metadataUrl, `Impossible de charger le catalogue thématique : ${cause instanceof Error ? cause.message : String(cause)}`) }
-      if (!metadataResponse.ok) throw new PayloadError('fetch', metadataUrl, `Réponse HTTP ${metadataResponse.status} pour ${metadataUrl}`)
-      let catalogue: unknown
-      try { catalogue = await metadataResponse.json() }
-      catch { throw new PayloadError('validation', metadataUrl, `JSON illisible dans ${metadataUrl}`) }
-      const canonicalMetadata = validerThemeMetadata(catalogue, metadataUrl)
-      if (canonicalMetadata.theme !== theme.theme) {
-        throw new PayloadError('validation', metadataUrl, `Le catalogue ${metadataUrl} ne correspond pas au thème ${theme.theme}.`)
-      }
-      // Keep subgroup declarations canonical for retained non-fiche readers;
-      // the shared fiche uses its app-owned grammar. Indicator-page contracts
-      // and scalar registrations remain producer-owned. A per-territory model
-      // can lag these contracts while numeric facts remain current.
-      theme.metadata.subgroups = canonicalMetadata.subgroups
-      theme.metadata.indicator_pages = canonicalMetadata.indicator_pages
-      if (scalarApiEnabled) {
-        if (catalogue && typeof catalogue === 'object' && 'scalar_contracts' in catalogue) {
-          theme.metadata.scalar_contracts = catalogue.scalar_contracts
-        } else delete theme.metadata.scalar_contracts
-      }
-    }))
-  }
-  if (scalarOnlyEnabled) {
-    const referenceUrl = '/data/territoires.json'
-    let referenceResponse: Response
-    try { referenceResponse = await fetch(referenceUrl) }
-    catch (cause) { throw new PayloadError('fetch', referenceUrl, `Impossible de charger le référentiel des cohortes : ${cause instanceof Error ? cause.message : String(cause)}`) }
-    if (!referenceResponse.ok) throw new PayloadError('fetch', referenceUrl, `Réponse HTTP ${referenceResponse.status} pour ${referenceUrl}`)
-    let rawTerritories: unknown
-    try { rawTerritories = await referenceResponse.json() }
-    catch { throw new PayloadError('validation', referenceUrl, 'Référentiel des cohortes illisible.') }
-    model.cohortTerritories = validerTerritoires(rawTerritories, referenceUrl)
-  }
-  return model
 }
