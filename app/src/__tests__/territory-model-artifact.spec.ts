@@ -1,0 +1,448 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+import { mount } from '@vue/test-utils'
+import { describe, expect, it } from 'vitest'
+
+import {
+  indicateursMobiliteFixture,
+  histoiresMobiliteFixture,
+  metadonneesThemesFixtures,
+  territoiresFixture,
+} from '@/payload/fixtures'
+import {
+  payloadDepuisModeleTerritoire,
+  validerModeleTerritoire,
+} from '@/payload/territoryReadModel'
+import { territoryFactsFor } from '@/fiche/content/territoryFacts'
+import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
+import CahierMotorisationFigure from '@/fiche/prototype/CahierMotorisationFigure.vue'
+import { remplacerFaitsScalaires } from '@/payload/scalarCohort'
+
+/**
+ * #868 — couverture conservée du VALIDATEUR de l'artefact modèle de lecture par
+ * territoire (payload/territoryReadModel.ts). L'artefact reste un asset
+ * producteur/récupération requis (ADR-0031, `validate:territory-model`) même si le
+ * navigateur ne le charge plus : schéma/identité, complétude des six thèmes,
+ * projections de comparaison/distribution/rampe malformées. Seuls les tests
+ * d'ancien fetch navigateur / opt-out ('0') sont retirés — aucun fallback de
+ * chargeur legacy n'est réintroduit.
+ */
+
+const target = territoiresFixture.find((territoire) => territoire.territoire === '22001')!
+const modelePublie22001 = JSON.parse(readFileSync(
+  resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22001.json'),
+  'utf8',
+))
+const modelePublie22002 = JSON.parse(readFileSync(
+  resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22002.json'),
+  'utf8',
+))
+
+describe('artefact modèle de lecture par territoire — contrat producteur/récupération (ADR-0031, #868)', () => {
+  it('transporte le rider réel de la chaîne statique jusqu’à la figure de motorisation', () => {
+    const modele = validerModeleTerritoire(
+      modelePublie22002,
+      'territoires/commune/22002.json',
+      { type: 'commune', territoire: '22002' },
+      { requireAllThemes: true },
+    )
+    const mobilite = modele.themes.mobilite!
+    const payload = payloadDepuisModeleTerritoire(modele)
+    const bornesRow = payload.indicateurs.find((row) => row.key === 'bornes_ev_par_station_service')!
+    const scalarOverlay = remplacerFaitsScalaires(
+      payload.indicateurs,
+      [{ ...bornesRow, rider: null }],
+      ['bornes_ev_par_station_service'],
+    )
+    const facts = territoryFactsFor({ ...payload, indicateurs: scalarOverlay }, '22002')!
+    const motorisation = resolveMobiliteThemeContent(facts, mobilite.metadata).units[2]!.sections[0]!.evidence
+    expect(motorisation?.kind).toBe('motorisation')
+    if (motorisation?.kind !== 'motorisation') throw new Error('éléments de motorisation attendus')
+    const bornes = motorisation.charging.find(({ fact }) => fact.key === 'bornes_ev_par_station_service')!
+    expect(bornes.fact.reason).toBe('Aucune station-service sur le territoire')
+    const rendered = mount(CahierMotorisationFigure, { props: motorisation })
+    expect(rendered.text()).toContain('Indisponible')
+    expect(rendered.find('.motorisation-rider').exists()).toBe(true)
+    expect(rendered.find('.motorisation-rider').text()).toBe('Aucune station-service sur le territoire')
+  })
+
+  it('refuse un artefact de production qui ne porte pas les six thèmes (requireAllThemes)', () => {
+    expect(() =>
+      validerModeleTerritoire(
+        {
+          schema_version: '1',
+          snapshot_id: '2026-09-15',
+          territory: target,
+          territoires: territoiresFixture,
+          themes: {
+            mobilite: {
+              theme: 'mobilite',
+              indicateurs: indicateursMobiliteFixture,
+              histoires: histoiresMobiliteFixture,
+              theme_metadata: metadonneesThemesFixtures.mobilite,
+              profils_acces_bpe: null,
+              distribution_acces_batiments: null,
+              rampe_acces_batiments: null,
+            },
+          },
+        },
+        'territoires/commune/22001.json',
+        { type: 'commune', territoire: '22001' },
+        { requireAllThemes: true },
+      ),
+    ).toThrow(/thèmes manquants/)
+  })
+
+  it('isole une projection facultative invalide (allowPartialThemes) sans toucher à l’identité', () => {
+    const rawModel = structuredClone(modelePublie22001)
+    rawModel.themes.habitat.theme_metadata = null
+    const model = validerModeleTerritoire(
+      rawModel,
+      'territoires/commune/22001.json',
+      { type: 'commune', territoire: '22001' },
+      { allowPartialThemes: true },
+    )
+    expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001' })
+    expect(model.themes.programmes).toBeDefined()
+    expect(model.themes.habitat).toBeUndefined()
+    expect(model.themeErrors?.habitat).toMatchObject({ kind: 'validation' })
+  })
+
+  it('rejette un artefact dont l’identité canonique diffère de la route attendue', () => {
+    expect(() =>
+      validerModeleTerritoire(
+        modelePublie22001,
+        'territoires/commune/22002.json',
+        { type: 'commune', territoire: '22002' },
+      ),
+    ).toThrow(/ne correspond pas à la route/)
+  })
+
+  it('porte les faits Mobilité et ses preuves auxiliaires dans une unité atomique', () => {
+    const modele = validerModeleTerritoire(
+      {
+        schema_version: '1',
+        snapshot_id: '2026-09-15',
+        territory: target,
+        territoires: territoiresFixture,
+        themes: {
+          mobilite: {
+            theme: 'mobilite',
+            indicateurs: indicateursMobiliteFixture,
+            histoires: histoiresMobiliteFixture,
+            theme_metadata: metadonneesThemesFixtures.mobilite,
+            profils_acces_bpe: [
+              {
+                territoire: '22001',
+                type: 'commune',
+                profil: 'velo-compense',
+                profil_libelle: 'Le vélo compense',
+                nombre_typequ: 3,
+                exemplar_typequ: 'D267',
+                exemplar_libelle: 'Spécialiste en dermatologie vétérinérologie',
+                exemplar_c: 0.1,
+                exemplar_b: 0.4,
+                exemplar_t: 0.1,
+              },
+            ],
+            distribution_acces_batiments: null,
+            rampe_acces_batiments: null,
+          },
+        },
+      },
+      'territoires/commune/22001.json',
+    )
+
+    expect(modele.schemaVersion).toBe('1')
+    expect(modele.territory).toEqual(target)
+    expect(modele.themes.mobilite?.indicators).toHaveLength(indicateursMobiliteFixture.length)
+    expect(modele.themes.mobilite?.indicators[0]).toMatchObject(indicateursMobiliteFixture[0]!)
+    expect(modele.themes.mobilite?.bpeAccess).toHaveLength(1)
+
+    const payload = payloadDepuisModeleTerritoire(modele)
+    const facts = territoryFactsFor(payload, target.territoire)
+
+    expect(facts?.territory.name).toBe(target.nom)
+    expect(facts?.mobility.bpeAccess.availability).toBe('complete')
+    expect(facts?.mobility.bpeAccess.profiles[1]).toMatchObject({
+      profile: 'velo-compense',
+      count: 3,
+    })
+  })
+
+  it('porte une comparaison pré-calculée sans publier les lignes des pairs', () => {
+    const indicateursCible = indicateursMobiliteFixture.filter(
+      (row) => row.territoire === target.territoire ||
+        (row.territoire === '53' && row.key === 'nb_buildings'),
+    )
+    const ligneCible = indicateursCible.find((row) => row.territoire === target.territoire)!
+    const modele = validerModeleTerritoire(
+      {
+        schema_version: '1',
+        snapshot_id: '2026-09-15',
+        territory: target,
+        territoires: territoiresFixture.filter((territoire) =>
+          [target.territoire, target.epci, target.departement, '53'].includes(territoire.territoire),
+        ),
+        themes: {
+          mobilite: {
+            theme: 'mobilite',
+            indicateurs: indicateursCible,
+            histoires: histoiresMobiliteFixture.filter(
+              (row) => row.territoire === target.territoire,
+            ),
+            theme_metadata: metadonneesThemesFixtures.mobilite,
+            profils_acces_bpe: null,
+            distribution_acces_batiments: null,
+            rampe_acces_batiments: null,
+            directions_comparaison: { [ligneCible.key]: 'high' },
+            comparaisons: {
+              epci: {
+                scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+                faits: [{
+                  key: ligneCible.key,
+                  detail: ligneCible.detail,
+                  sex: ligneCible.sex ?? null,
+                  dimension: ligneCible.dimension ?? null,
+                  origin: 'indicator',
+                  direction: 'plus-est-mieux',
+                  rank_position: 2,
+                  rank_size: 7,
+                  reference_kind: 'median',
+                  reference_value: 42,
+                }],
+              },
+            },
+          },
+        },
+      },
+      'territoires/commune/22001.json',
+    )
+
+    const payload = payloadDepuisModeleTerritoire(modele)
+    const facts = territoryFactsFor(
+      payload,
+      target.territoire,
+      modele.themes.mobilite?.comparisons.epci,
+    )
+
+    expect(payload.indicateurs.every((row) =>
+      row.territoire === target.territoire || row.territoire === '53',
+    )).toBe(true)
+    expect(facts?.mobility.indicators.find((fact) => fact.key === ligneCible.key)?.comparison)
+      .toEqual({
+        direction: 'plus-est-mieux',
+        scope: {
+          mode: 'epci',
+          kind: 'communes-epci',
+          label: 'communes de EPCI X',
+        },
+        rank: { position: 2, size: 7 },
+        reference: { kind: 'median', value: 42 },
+      })
+  })
+
+  it('refuse un modèle dont le territoire déclaré ne figure pas dans le contexte', () => {
+    expect(() =>
+      validerModeleTerritoire(
+        {
+          schema_version: '1',
+          snapshot_id: '2026-09-15',
+          territory: { ...target, territoire: '99999' },
+          territoires: territoiresFixture,
+          themes: {},
+        },
+        'territoires/commune/99999.json',
+      ),
+    ).toThrow(/territoire déclaré/)
+  })
+
+  it('refuse un mode inconnu et deux comparaisons portant la même signature', () => {
+    const themeBase = {
+      theme: 'mobilite',
+      indicateurs: indicateursMobiliteFixture,
+      histoires: histoiresMobiliteFixture,
+      theme_metadata: metadonneesThemesFixtures.mobilite,
+      profils_acces_bpe: null,
+      distribution_acces_batiments: null,
+      rampe_acces_batiments: null,
+      directions_comparaison: Object.fromEntries(
+        indicateursMobiliteFixture.map((indicator) => [indicator.key, 'high']),
+      ),
+    }
+    const envelope = (comparaisons: Record<string, unknown>) => ({
+      schema_version: '1',
+      snapshot_id: '2026-09-15',
+      territory: target,
+      territoires: territoiresFixture,
+      themes: { mobilite: { ...themeBase, comparaisons } },
+    })
+    const targetFact = indicateursMobiliteFixture.find(
+      (indicator) => indicator.territoire === target.territoire,
+    )!
+    const fact = {
+      key: targetFact.key,
+      detail: targetFact.detail,
+      sex: targetFact.sex ?? null,
+      dimension: targetFact.dimension ?? null,
+      origin: 'indicator',
+      direction: 'plus-est-mieux',
+      rank_position: 1,
+      rank_size: 2,
+      reference_kind: 'median',
+      reference_value: 100,
+    }
+
+    expect(() => validerModeleTerritoire(envelope({
+      mystere: {
+        scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+        faits: [],
+      },
+    }), 'territoires/commune/22001.json')).toThrow(/mode de comparaison inconnu/)
+
+    expect(() => validerModeleTerritoire(envelope({
+      epci: {
+        scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+        faits: [fact, fact],
+      },
+    }), 'territoires/commune/22001.json')).toThrow(/dupliquée/)
+
+    expect(() => validerModeleTerritoire(envelope({
+      bretagne: {
+        scope: { kind: 'departements-bretagne', label: 'départements bretons' },
+        faits: [fact],
+      },
+    }), 'territoires/commune/22001.json')).toThrow(/scope.*incompatible/)
+
+    expect(() => validerModeleTerritoire(envelope({
+      epci: {
+        scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+        faits: [{ ...fact, key: 'fait-inventé' }],
+      },
+    }), 'territoires/commune/22001.json')).toThrow(/fait.*absent.*cible/)
+
+    expect(() => validerModeleTerritoire(envelope({
+      epci: {
+        scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+        faits: [{ ...fact, direction: 'moins-est-mieux' }],
+      },
+    }), 'territoires/commune/22001.json')).toThrow(/direction.*incohérente/)
+
+    const densityModel = validerModeleTerritoire(envelope({
+      densite: {
+        scope: { kind: 'communes-densite', label: 'grands centres urbains bretons' },
+        faits: [fact],
+      },
+    }), 'territoires/commune/22001.json')
+    expect(densityModel.themes.mobilite?.comparisons.densite?.scope).toEqual({
+      kind: 'communes-densite',
+      label: 'grands centres urbains bretons',
+    })
+    const densityFacts = territoryFactsFor(
+      payloadDepuisModeleTerritoire(densityModel),
+      target.territoire,
+      densityModel.themes.mobilite?.comparisons.densite,
+    )
+    expect(densityFacts?.mobility.indicators.find((candidate) => candidate.key === fact.key)?.comparison)
+      .toMatchObject({
+        scope: {
+          mode: 'densite',
+          kind: 'communes-densite',
+          label: 'grands centres urbains bretons',
+        },
+      })
+  })
+
+  it('refuse une projection de distribution comparée incomplète', () => {
+    const brut = structuredClone(modelePublie22001)
+    const cellules = brut.themes.mobilite.comparaisons.epci.distribution_batiments.cells
+    expect(cellules.length).toBeGreaterThan(1)
+    cellules.pop()
+
+    expect(() => validerModeleTerritoire(
+      brut,
+      'territoires/commune/22001.json',
+    )).toThrow(/distribution comparée.*incomplète/)
+  })
+
+  it('keeps the selected scope on a building figure without a published comparison', () => {
+    const brut = structuredClone(modelePublie22001)
+    brut.themes.mobilite.comparaisons.epci.distribution_batiments = null
+    brut.themes.mobilite.comparaisons.epci.rampe_acces = null
+    const model = validerModeleTerritoire(brut, 'territoires/commune/22001.json')
+    const facts = territoryFactsFor(
+      payloadDepuisModeleTerritoire(model), '22001', model.themes.mobilite?.comparisons.epci,
+    )
+    expect(facts?.mobility.buildingDistribution?.comparisonLabel)
+      .toBe(model.themes.mobilite?.comparisons.epci?.scope.label)
+    expect(facts?.mobility.accessRamp?.comparisonLabel)
+      .toBe(model.themes.mobilite?.comparisons.epci?.scope.label)
+  })
+
+  it('refuse une preuve comparée dont le libellé diverge de son périmètre', () => {
+    const brut = structuredClone(modelePublie22001)
+    type ContexteBrut = {
+      scope: { label: string }
+      distribution_batiments?: { label: string } | null
+      rampe_acces?: { label: string } | null
+    }
+    const comparaisons = brut.themes.mobilite.comparaisons as Record<string, ContexteBrut | null>
+    for (const contexte of Object.keys(comparaisons).map((mode) => comparaisons[mode])) {
+      if (!contexte) continue
+      if (contexte.distribution_batiments) {
+        contexte.distribution_batiments.label = contexte.scope.label
+      }
+      if (contexte.rampe_acces) {
+        contexte.rampe_acces.label = contexte.scope.label
+      }
+    }
+    brut.themes.mobilite.comparaisons.epci.distribution_batiments.label =
+      'communes de mauvais périmètre'
+
+    expect(() => validerModeleTerritoire(
+      brut,
+      'territoires/commune/22001.json',
+    )).toThrow(/libellé de distribution comparée incohérent/)
+  })
+
+  it('refuse un périmètre comparé dont le libellé diverge du référentiel territorial', () => {
+    const brut = structuredClone(modelePublie22001)
+    brut.themes.mobilite.comparaisons.epci.scope.label = 'communes de mauvais EPCI'
+    brut.themes.mobilite.comparaisons.epci.distribution_batiments.label =
+      'communes de mauvais EPCI'
+    brut.themes.mobilite.comparaisons.epci.rampe_acces.label =
+      'communes de mauvais EPCI'
+
+    expect(() => validerModeleTerritoire(
+      brut,
+      'territoires/commune/22001.json',
+    )).toThrow(/libellé de périmètre incohérent/)
+  })
+
+  it('refuse une distribution comparée qui ne recompose pas son total', () => {
+    const brut = structuredClone(modelePublie22001)
+    brut.themes.mobilite.comparaisons.epci.distribution_batiments.cells[0].building_count += 1
+
+    expect(() => validerModeleTerritoire(
+      brut,
+      'territoires/commune/22001.json',
+    )).toThrow(/distribution comparée.*incohérente/)
+  })
+
+  it('refuse une projection de rampe comparée incomplète', () => {
+    const brut = structuredClone(modelePublie22001)
+    brut.themes.mobilite.comparaisons.epci.distribution_batiments.label =
+      brut.themes.mobilite.comparaisons.epci.scope.label
+    brut.themes.mobilite.comparaisons.epci.rampe_acces.label =
+      brut.themes.mobilite.comparaisons.epci.scope.label
+    const points = brut.themes.mobilite.comparaisons.epci.rampe_acces.points
+    expect(points.length).toBeGreaterThan(1)
+    points.pop()
+
+    expect(() => validerModeleTerritoire(
+      brut,
+      'territoires/commune/22001.json',
+    )).toThrow(/rampe comparée.*incomplète/)
+  })
+})

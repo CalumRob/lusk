@@ -1,14 +1,19 @@
 /**
  * The browser theme catalogue seam (#868).
  *
- * After the static runtime retirement, `theme_<theme>.json` is read only for
- * the factual declarations real consumers still need: the producer-owned
- * factual labels and source records, the indicator-page contracts, and the
- * two retained framing clauses (the transport thresholds in Mobilité, the
- * grant-eligibility scope in Programmes et subventions). Stable presentation
- * grammar lives in app-owned content (fiche/content/ficheGrammar.ts); the
- * catalogue never carries the fiche's numerical runtime anymore — numerics
- * are API-only (acquisition par thème).
+ * The served `theme_<theme>.json` (public/data — nginx in production, Vite
+ * dev/build via copy-payload-build) is the REDUCED browser projection produced
+ * by the pipeline publish seam (`projection_navigateur`, pipeline/R/
+ * publier_theme_metadata.R): producer-only top-level fields (story_keys,
+ * observed_collection_contracts, semantic_resources) are not shipped; the
+ * full canonical declarations stay pinned under pipeline/inst/extdata/
+ * theme-metadata/. What the browser still reads — factual labels, source
+ * records, indicator-page contracts, sources map, and the two retained framing
+ * clauses (transport thresholds in Mobilité, grant-eligibility scope in
+ * Programmes et subventions) — is served and validated here (validerThemeMetadata,
+ * with story_keys optional since #868). Stable presentation grammar lives in
+ * app-owned content (fiche/content/ficheGrammar.ts); the catalogue never carries
+ * the fiche's numerical runtime — numerics are API-only (acquisition par thème).
  *
  * The fiche loads only the SELECTED theme's catalogue, as optional explanation
  * enrichment: missing/invalid metadata leaves the affected explanations

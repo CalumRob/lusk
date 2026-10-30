@@ -2390,7 +2390,15 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   //    indicateurs catégoriels et numériques et AUCUNE lecture ; jamais une
   //    lecture inventée pour remplir le registre. Une story DÉCLARÉE, elle,
   //    obéit aux mêmes règles que partout ailleurs.
-  const story_keys = lireTableauChaines(meta, 'story_keys', fichier, 0)
+  //    #868 : la projection navigateur servie (public/data/theme_*.json) ne
+  //    shippe plus ce registre — redondant avec les lectures déclarées des
+  //    sous-groupes. Absent → le registre de référence retombe sur le
+  //    portefeuille du thème (CLES_HISTOIRES_PAR_THEME) ; le canon producteur
+  //    (extdata) le déclare toujours, verrouillé par la parité R.
+  const story_declarees = meta['story_keys'] === undefined
+    ? []
+    : lireTableauChaines(meta, 'story_keys', fichier, 0)
+  const story_keys = story_declarees.length > 0 ? story_declarees : [...CLES_HISTOIRES_PAR_THEME[theme]]
   const portees = CLES_HISTOIRES_PAR_THEME[theme]
   const autres = new Set(
     (Object.keys(CLES_HISTOIRES_PAR_THEME) as Theme[])
@@ -2626,7 +2634,9 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   )
   const partagesInd = [...indicateursGroupes.entries()].filter(([, n]) => n > 1).map(([cle]) => cle)
   exiger(partagesInd.length === 0, fichier, 0, `indicateur(s) dans plusieurs sous-groupes : ${partagesInd.join(', ')}`)
-  const nonLiees = story_keys.filter((cle) => !histoiresGroupes.has(cle))
+  // #868 : le contrôle d'orphelins ne porte que sur le registre explicitement
+  // déclaré (story_declarees) — absent de la projection navigateur, il est vide.
+  const nonLiees = story_declarees.filter((cle) => !histoiresGroupes.has(cle))
   const illegitimes = nonLiees.filter((cle) => {
     const groupe = GROUPES_PAR_STORY[theme]?.[cle]
     if (groupe === undefined) return true

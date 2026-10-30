@@ -105,9 +105,7 @@
     "part_passoires",
     "distribution_dpe"
   ],
-  "story_keys": [
-    "etat-energetique-du-parc"
-  ],
+  
   "sources": {
     "mix_logements": "logements",
     "statut": "logements",

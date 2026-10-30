@@ -138,7 +138,7 @@
     "raccordement_courbe",
     "raccordement_reference"
   ],
-  "story_keys": ["vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"],
+  
   "selected_reading_contract": {
     "unit": "types de services",
     "direction": "low",

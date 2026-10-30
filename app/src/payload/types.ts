@@ -876,7 +876,12 @@ export interface ThemeMetadata {
   label: string
   subgroups: SousGroupeMetadata[]
   indicator_keys: string[]
-  story_keys: string[]
+  /**
+   * Registre des histoires — présent dans le canon producteur (extdata) ;
+   * la projection navigateur servie (#868) ne le shippe plus (les lectures
+   * déclarées des sous-groupes le remplacent). Optionnel côté app.
+   */
+  story_keys?: string[]
   sources: Record<string, string>
   /**
    * The indicator labels — EXACTLY indicator_keys, key → French label

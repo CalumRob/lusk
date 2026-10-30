@@ -26,12 +26,19 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
     // metadata is validated separately against the active API descriptor.
     // Producer-side semantic_resources are discovered from /api/resources;
     // they are not app presentation metadata and must not be copied into the
-    // public static theme bundle.
+    // public static theme bundle. #868 : la projection navigateur (projection_
+    // navigateur, pipeline/R/publier_theme_metadata.R) exclut aussi story_keys et
+    // observed_collection_contracts du snapshot public — registres producer-only
+    // que ni le navigateur ni les lecteurs du payload committé ne lisent.
+    const horsNavigateur = ['semantic_resources', 'story_keys', 'observed_collection_contracts']
     for (const theme of themes.filter((item) => item !== 'mobilite')) {
       const canonical = lire(canonicalDir, theme) as Record<string, unknown>
       const snapshot = lire(publicDir, theme) as Record<string, unknown>
-      const { semantic_resources: _producerResources, ...presentation } = canonical
-      expect(snapshot, `${theme} snapshot excludes producer discovery`).not.toHaveProperty('semantic_resources')
+      const presentation = { ...canonical }
+      for (const champ of horsNavigateur) delete presentation[champ]
+      for (const champ of horsNavigateur) {
+        expect(snapshot, `${theme} snapshot excludes ${champ}`).not.toHaveProperty(champ)
+      }
       expect(snapshot, theme).toEqual(presentation)
     }
   })
