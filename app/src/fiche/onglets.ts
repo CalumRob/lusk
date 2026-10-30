@@ -15,12 +15,14 @@ import type { TerritoireType, Theme } from '@/payload/types'
 
 /** The theme tabs' French labels (canonical order lives in the payload types).
  *  #408 : « Programmes et subventions » est le sixième thème — le libellé
- *  officiel du jeu de données, jamais « Programmes & financements ». */
+ *  officiel du jeu de données, jamais « Programmes & financements ».
+ *  #827 : ces libellés sont du contenu d'affichage app-owned ; le producteur
+ *  garde l'identité du thème et ses faits, jamais la copie de l'onglet. */
 export const NOMS_THEMES: Record<Theme, string> = {
   mobilite: 'Mobilité',
   demographie: 'Démographie',
   habitat: 'Habitat',
-  economie: 'Économie',
+  economie: 'Économie/Emploi',
   milieux: 'Milieux',
   programmes: 'Programmes et subventions',
 }

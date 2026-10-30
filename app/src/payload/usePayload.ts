@@ -100,8 +100,19 @@ function payloadVide(): Payload {
   }
 }
 
-/** The files that validate WITHOUT the reference table — fired immediately. */
-const SANS_REFERENCE = new Set<Fichier>(['territoires', 'territoires-metadata', 'run-report', 'vintages'])
+/**
+ * The files that validate WITHOUT the reference table — fired immediately.
+ * `theme_<theme>` metadata is self-contained (validerThemeMetadata takes no
+ * reference), so a consumer that only needs source metadata (Sources) never
+ * has to load the territory table or any numeric theme table.
+ */
+const SANS_REFERENCE = new Set<Fichier>([
+  'territoires',
+  'territoires-metadata',
+  'run-report',
+  'vintages',
+  ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier),
+])
 
 /** The full file set — no-arg `usePayload()` waits for exactly this. */
 const TOUS_LES_FICHIERS: Fichier[] = [
@@ -134,7 +145,6 @@ interface Magasin {
   demarrer: (fichiers?: readonly Fichier[]) => void
   recharger: () => void
 }
-
 /**
  * One magasin = one store instance. The production app shares ONE module-level
  * magasin (one fetch per session); an injected charger gets a fresh magasin
@@ -238,6 +248,38 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
   ) => Promise<unknown>
 
   function construire(nom: Fichier): Promise<unknown> {
+    // Les métadonnées (theme_<theme>.json, #313) sont autoportantes (le
+    // validateur ne prend aucune référence) : leur fetch ne lit jamais la
+    // table territoriale. La règle de présence (un thème qui publie ses faits
+    // publie ses métadonnées) reste portée par la paire du MÊME thème.
+    if (nom.startsWith('theme_')) {
+      const theme = themeDe(nom)
+      const indicateurs = etats.get(`indicateurs_${theme}`)
+      // A theme's metadata is self-contained: it may be loaded on its own
+      // (Sources) or after its indicators. Its own 404 is the honest absence
+      // of that metadata (the source-records reader simply skips it) — never
+      // a fabricated presence. A theme GENUINELY known present (its indicators
+      // landed) without its metadata remains the typed, theme-scoped drift.
+      const fetchMeta = () => (chargerInjecte ? chargerInjecte(nom) : chargerFichierElargi(nom))
+      const present = (meta: unknown) => {
+        if (meta === null) {
+          throw new PayloadError(
+            'validation',
+            `${nom}.json`,
+            `Le thème « ${theme} » publie des indicateurs sans métadonnées (${nom}.json introuvable)`,
+          )
+        }
+        return meta
+      }
+      // A theme known ABSENT (its indicators 404'd) contributes no orphan
+      // metadata in either arrival order: the metadata is not even fetched.
+      if (indicateurs && indicateurs.etat === 'succes' && indicateurs.valeur === null) return Promise.resolve(null)
+      if (!indicateurs) return fetchMeta()
+      return indicateurs.promesse.then((indicateursTheme) => {
+        if (indicateursTheme === null) return null // thème absent → métadonnées absentes
+        return fetchMeta().then(present)
+      })
+    }
     if (SANS_REFERENCE.has(nom)) {
       return chargerInjecte ? chargerInjecte(nom) : chargerFichierElargi(nom)
     }
@@ -276,32 +318,6 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         })
       })
     }
-    // Les métadonnées (theme_<theme>.json, #313) suivent la même découverte
-    // que les histoires : chaînées sur la paire indicateurs du MÊME thème
-    // (jamais un fetch transitif) — thème absent → métadonnées absentes ;
-    // thème présent sans son fichier → dérive typée, loud.
-    if (nom.startsWith('theme_')) {
-      const theme = themeDe(nom)
-      const indicateurs = etats.get(`indicateurs_${theme}`)
-      if (!indicateurs) {
-        return Promise.reject(
-          new PayloadError('validation', `${nom}.json`, `« ${nom}.json » doit suivre ses indicateurs.`),
-        )
-      }
-      return indicateurs.promesse.then((indicateursTheme) => {
-        if (indicateursTheme === null) return null // thème absent → métadonnées absentes
-        return territoires.promesse.then(fetchant).then((meta) => {
-          if (meta === null) {
-            throw new PayloadError(
-              'validation',
-              `${nom}.json`,
-              `Le thème « ${theme} » publie des indicateurs sans métadonnées (${nom}.json introuvable)`,
-            )
-          }
-          return meta
-        })
-      })
-    }
     return territoires.promesse.then(fetchant)
   }
 
@@ -329,6 +345,10 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         entree.valeur = valeur
         peupler(nom, valeur)
         if (nom === 'territoires' || nom === 'territoires-metadata') verifierReferenceDensite()
+        // Reconcile the theme pair on EITHER settlement: an in-flight metadata
+        // request that lands after its indicators (or the reverse) must still
+        // reach the presence check.
+        if (nom.startsWith('indicateurs_') || nom.startsWith('theme_')) verifierPresenceMetadonnees(themeDe(nom))
       },
       (cause: unknown) => {
         entree.etat = 'echec'
@@ -341,8 +361,42 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         if (entree.erreur.kind === 'validation') {
           console.error(entree.erreur)
         }
+        // A theme that turns out PRESENT (its indicators landed) makes a
+        // metadata-only 404 a real drift, even when that entry settled first.
+        if (nom.startsWith('indicateurs_') || nom.startsWith('theme_')) verifierPresenceMetadonnees(themeDe(nom))
       },
     )
+  }
+
+  /**
+   * Cross-file presence check: a theme whose indicators are genuinely present
+   * must publish its metadata, and a theme known ABSENT must not surface orphan
+   * metadata — in either arrival order.
+   */
+  function verifierPresenceMetadonnees(theme: Theme): void {
+    const indicateurs = etats.get(`indicateurs_${theme}`)
+    if (!indicateurs || indicateurs.etat !== 'succes') return
+    const nom = `theme_${theme}` as Fichier
+    const meta = etats.get(nom)
+    if (!meta) return
+    if (indicateurs.valeur === null) {
+      // Known-absent theme: its metadata is not a published fact.
+      if (meta.valeur !== null) {
+        meta.valeur = null
+        delete payload.value.themeMetadata?.[theme]
+      }
+      return
+    }
+    if (meta.etat !== 'succes' || meta.valeur !== null) return
+    const erreur = new PayloadError(
+      'validation',
+      `${nom}.json`,
+      `Le thème « ${theme} » publie des indicateurs sans métadonnées (${nom}.json introuvable)`,
+    )
+    meta.etat = 'echec'
+    meta.erreur = erreur
+    meta.valeur = null
+    console.error(erreur)
   }
 
   /** Start the requested files; legacy callers retain the complete default. */
@@ -364,6 +418,12 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
     for (const nom of echoues) {
       lancer(nom)
     }
+    // A metadata-only retry re-checks the theme's presence once its metadata
+    // settles: a theme whose indicators are genuinely present must not keep an
+    // absent metadata entry, and a theme known absent must not surface one.
+    for (const nom of echoues) {
+      if (nom.startsWith('theme_')) verifierPresenceMetadonnees(themeDe(nom))
+    }
   }
 
   return { payload, etats, demarrer, recharger }
@@ -371,6 +431,22 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
 
 /** The one shared store for the production app — one fetch per session. */
 let magasinPartage: Magasin | null = null
+
+export interface MagasinPayload {
+  payload: Ref<Payload>
+  etats: Map<Fichier, EntreeFichier>
+  demarrer: (fichiers?: readonly Fichier[]) => void
+  recharger: () => void
+}
+/**
+ * The shared store's actual seam (#827): one store instance whose staged
+ * starts, entries and recovery a consumer (or a test) can drive directly —
+ * the same object the production `usePayload` uses, never an injected
+ * per-call store with its own fixed default order.
+ */
+export function creerMagasinPayload(charger: ChargerFichier | null = null): MagasinPayload {
+  return creerMagasin(charger)
+}
 
 export function usePayload({ attendre, demarrer: fichiersADemarrer }: OptionsUsePayload = {}): EtatPayload {
   const chargerInjecte = inject(PAYLOAD_CHARGER_KEY, null)

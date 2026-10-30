@@ -15,7 +15,7 @@ describe('onglets — the ThemeTabs vocabulary (ADR-0007, six thèmes #408)', ()
       mobilite: 'Mobilité',
       demographie: 'Démographie',
       habitat: 'Habitat',
-      economie: 'Économie',
+      economie: 'Économie/Emploi',
       milieux: 'Milieux',
       // le libellé officiel du jeu de données — jamais « Programmes & financements »
       programmes: 'Programmes et subventions',

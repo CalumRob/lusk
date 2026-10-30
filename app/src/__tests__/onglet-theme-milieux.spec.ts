@@ -227,8 +227,8 @@ describe('OngletTheme — Milieux, honest edge cases', () => {
     const wrapper = await monter('22001', payloadMilieux, 'demographie')
 
     // sans métadonnée Démographie (le payload est Milieux seul), l'overline
-    // porte la clé honnête — le loader garantit la métadonnée d'un thème présent
-    expect(wrapper.find('.onglet-theme-overline').text()).toBe('demographie')
+    // porte le libellé app-owned du thème — jamais la clé brute
+    expect(wrapper.find('.onglet-theme-overline').text()).toBe('Démographie')
     expect(wrapper.find('.sous-groupe-lecture').exists()).toBe(false)
     expect(wrapper.find('.lecture-texte').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Se densifier, s’étaler, ou s’en aller')

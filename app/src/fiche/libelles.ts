@@ -1,41 +1,51 @@
 /**
- * The payload-owned label seam (issue #318) — the ONLY way the fiche and the
- * carte obtain a user-facing label: read it from the theme's metadata maps
- * (theme_<theme>.json → indicator_labels / detail_labels / param_labels).
- * There is no fallback to a raw internal key: the strict validators
- * (validerThemeMetadata) and the load-time parity guard (verifierPariteLibelles,
- * loader.ts) guarantee the label exists for every rendered key and detail —
- * a missing label is a contract violation, loud, never a key on screen.
+ * The fiche's user-facing label seam (issue #318, ownership amended by #827).
+ *
+ * Native semantic contract labels stay FIRST priority (the caller resolves
+ * them before asking here). Otherwise the label is either genuine app-owned
+ * EDITORIAL wording (`libellesAffichage.ts`, keyed to the real resource
+ * identity) or a producer-owned factual label — observation boundaries,
+ * definitions, thresholds, units/scales, age/year/time bands, reference scope,
+ * classification/domain vocabulary — which resolves ONLY from the existing
+ * verified producer declaration (`indicator_labels` / `detail_labels`). The app
+ * map never overrides a factual label. There is no raw internal key on screen:
+ * an unknown label throws, loud — a rendered indicator/detail without any label
+ * is a contract break, never a key.
  */
 
-import type { ThemeMetadata } from '@/payload/types'
+import { LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
+import type { Theme, ThemeMetadata } from '@/payload/types'
+
+function libelleAppIndicateur(theme: Theme, clef: string): string | undefined {
+  return LIBELLES_INDICATEURS_APP[theme]?.[clef]
+}
 
 /**
- * The indicator's French label — from the theme's indicator_labels (the exact
- * bijection with indicator_keys). Throws when absent: a rendered indicator
- * without its payload-owned label is a broken metadata file, never a raw key.
+ * The indicator's French label — app-owned editorial wording first, then the
+ * verified producer declaration (which owns every fact-bearing label). Throws
+ * when neither carries it: never a raw key on screen.
  */
 export function libelleIndicateur(metadata: ThemeMetadata, clef: string): string {
-  const libelle = metadata.indicator_labels[clef]
+  const libelle = libelleAppIndicateur(metadata.theme, clef) ?? metadata.indicator_labels[clef]
   if (libelle === undefined) {
     throw new Error(
-      `Libellé payload-owned absent — « ${clef} » n'a pas de libellé dans indicator_labels de theme_${metadata.theme}.json`,
+      `Libellé d’affichage absent — « ${clef} » n’a pas de libellé éditorial app-owned ni dans indicator_labels de theme_${metadata.theme}.json`,
     )
   }
   return libelle
 }
 
 /**
- * The detail's French label — from the theme's detail_labels. Throws when
- * absent (the parity guard would have refused the payload at load): a detail
- * row without its label is never rendered as a raw detail key.
+ * The detail's French label — producer-owned category/band vocabulary from the
+ * verified declaration (age bands, years, durations, housing categories). The
+ * app owns no detail wording. Throws when absent: a detail row without a label
+ * is never rendered as a raw detail key.
  */
 export function libelleDetail(metadata: ThemeMetadata, clef: string, detail: string): string {
-  const carte = metadata.detail_labels[clef]
-  const libelle = carte?.[detail]
+  const libelle = metadata.detail_labels[clef]?.[detail]
   if (libelle === undefined) {
     throw new Error(
-      `Libellé payload-owned absent — le détail « ${detail} » de « ${clef} » n'a pas de libellé dans detail_labels de theme_${metadata.theme}.json`,
+      `Libellé d’affichage absent — le détail « ${detail} » de « ${clef} » n’a pas de libellé dans detail_labels de theme_${metadata.theme}.json`,
     )
   }
   return libelle

@@ -7,8 +7,9 @@
  *
  * - subgroup order, label, editorial framing, resource bindings and figure
  *   presentation from ficheGrammar.ts; the two fact-bearing framing clauses
- *   use their explicitly retained producer metadata reader, and an app
- *   declaration never establishes availability;
+ *   (transport thresholds, grant eligibility scope) use their explicitly
+ *   retained producer declaration reader, and an app declaration never
+ *   establishes availability;
  * - compact and indicator figures use only rows actually present in the payload;
  * - the RESOLVED reading from the histoires row joined by
  *   (territoire, groupe) — the explicit subgroup link of the contract
@@ -284,9 +285,9 @@ function lecturePour(
 /**
  * The shared subgroup loop of the fiche — app-owned presentation grammar,
  * joined to actual indicator and resolved-reading rows. Theme metadata supplies
- * only the still-dependent factual explanations. Missing
- * metadata cannot hide producer-validated indicator rows; no grammar entry
- * fabricates an available fact.
+ * the producer-owned classification vocabulary and the two factual framing
+ * clauses only; missing metadata cannot hide producer-validated indicator rows,
+ * and no grammar entry fabricates an available fact.
  */
 export function sousGroupesPourTerritoire(
   payload: Payload,
@@ -322,11 +323,16 @@ export function sousGroupesPourTerritoire(
     // state). Do not turn that absence into copy or a fake Story.
     const hasReading = sousGroupe.reading !== undefined && payload.histoires.some((row) =>
       row.theme === theme && row.territoire === territoire && row.groupe === sousGroupe.key)
+    // The classification vocabulary and the two factual framing clauses stay
+    // producer-owned: without verified metadata the reading/explanations are
+    // withheld honestly (API facts and comparisons stay visible) and the
+    // consumer offers a scoped metadata-only retry.
     const readingNeedsMetadata = Boolean(sousGroupe.reading?.params.includes('classification'))
+    const framingNeedsMetadata = sousGroupe.framing === null
     const explanationPending = !metadataVerified &&
-      (sousGroupe.framingSource === 'theme-metadata' || (hasReading && readingNeedsMetadata))
+      ((hasReading && readingNeedsMetadata) || framingNeedsMetadata)
     const { lecture, indisponible } = sousGroupe.reading
-      ? explanationPending && hasReading
+      ? explanationPending && hasReading && readingNeedsMetadata
         ? { lecture: null, indisponible: false }
         : lecturePour(payload, theme, territoire, sousGroupe.key, sousGroupe.reading, metadataVerified ? metadata : undefined)
       : { lecture: null, indisponible: false }
@@ -334,9 +340,7 @@ export function sousGroupesPourTerritoire(
     return {
       key: sousGroupe.key,
       label: sousGroupe.label,
-      framing: metadataVerified || sousGroupe.framingSource !== 'theme-metadata'
-        ? cadrageSousGroupeFiche(sousGroupe, metadata)
-        : null,
+      framing: cadrageSousGroupeFiche(sousGroupe, metadataVerified ? metadata : undefined),
       metadataExplanationPending: explanationPending,
       figures,
       figureCompacte,

@@ -113,7 +113,7 @@ describe('verifierPariteLibelles — la garde bidirectionnelle du loader', () =>
 describe('les lookups payload-owned (fiche/libelles.ts) — jamais une clé brute', () => {
   const meta = metadonneesThemesFixtures.demographie
 
-  it('lisent les libellés depuis les cartes de la métadonnée', () => {
+  it('lisent les libellés depuis la carte d’affichage app-owned (#827)', () => {
     expect(libelleIndicateur(meta, 'densite')).toBe('Densité de population')
     expect(libelleDetail(meta, 'structure_age', '<15')).toBe('Moins de 15 ans')
     expect(libelleParam(meta, 'taux_solde_naturel')).toBe('Solde naturel (‰/an)')

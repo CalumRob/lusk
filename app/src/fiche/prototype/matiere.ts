@@ -43,6 +43,7 @@ import {
   sousGroupesPourTerritoire,
 } from '@/fiche/sousGroupes'
 import type { FigureLecture, LigneLQ } from '@/fiche/sousGroupes'
+import { libelleDetail, libelleIndicateur } from '@/fiche/libelles'
 import { handoffExploration, passarellesLecture } from '@/fiche/explorationHandoff'
 import type { PassarelleLecture } from '@/fiche/explorationHandoff'
 import {
@@ -257,7 +258,7 @@ function valeurIndicateur(
     // libellé la porte, jamais un doublon ambigu.
     const sexe = ligne.sex ? ` — ${ligne.sex === 'F' ? 'femmes' : 'hommes'}` : ''
     return {
-      libelle: (metadata.detail_labels[clef]?.[ligne.detail ?? ''] ?? '') + sexe,
+      libelle: (ligne.detail === null ? '' : libelleDetail(metadata, clef, ligne.detail)) + sexe,
       texte: formaterValeur(ligne) ?? '—',
       unite: ligne.unit,
       rang: rangTranche(theme, ligne),
@@ -266,7 +267,7 @@ function valeurIndicateur(
 
   return {
     clef,
-    libelle: metadata.indicator_labels[clef] ?? clef,
+    libelle: libelleIndicateur(metadata, clef),
     famille: null,
     sourceId: metadata.sources[clef] ?? null,
     valeurTexte: brut === null ? null : signePlus ? `+${brut}` : brut,

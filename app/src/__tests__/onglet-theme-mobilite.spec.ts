@@ -146,6 +146,19 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
       .toBe('Cadrage factuel du réseau fourni par le producteur.')
   })
 
+  it('withholds the factual public-transport framing without verified metadata — never an app literal', async () => {
+    const wrapper = await monter('22001', {
+      ...payloadMobilite,
+      themeMetadata: {},
+    })
+
+    expect(wrapper.find('[data-groupe="offre-transports-commun"] .sous-groupe-titre').text())
+      .toBe('L’offre de transports en commun')
+    expect(wrapper.find('[data-groupe="offre-transports-commun"] .sous-groupe-cadrage').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('500 mètres')
+    expect(wrapper.text()).not.toContain('90 minutes')
+  })
+
   it('labels say « à pied ou en transports en commun », NEVER « sans voiture » — the reading is the one exception', async () => {
     const wrapper = await monter('22001')
 

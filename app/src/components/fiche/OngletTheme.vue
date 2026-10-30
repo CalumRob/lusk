@@ -25,6 +25,7 @@ import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
 import { libelleIndicateur } from '@/fiche/libelles'
+import { LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
 import {
   figureLecturePour,
   lignesLQPour,
@@ -59,11 +60,9 @@ interface SousGroupeRenduComplet extends SousGroupeRendu {
 const metadataVerified = computed(() => props.metadataStatus === undefined
   ? Boolean(props.payload.themeMetadata?.[props.theme])
   : props.metadataStatus === 'ready')
-const nomTheme = computed(() => props.metadataStatus === undefined
-  ? props.payload.themeMetadata?.[props.theme]?.label ?? props.theme
-  : metadataVerified.value
-    ? props.payload.themeMetadata?.[props.theme]?.label ?? NOMS_THEMES[props.theme]
-    : NOMS_THEMES[props.theme])
+// The tab's display name is app-owned content (NOMS_THEMES), never a copy of
+// the producer's theme label; the theme identity and its facts stay payload-owned.
+const nomTheme = computed(() => NOMS_THEMES[props.theme])
 
 // Resolve factual labels from the verified catalogue or native descriptor;
 // never expose an internal indicator key in the fiche.
@@ -198,20 +197,22 @@ function figureEstReference(clef: string): boolean {
   )
 }
 
-/** Resolve category labels from the verified catalogue or native axis descriptor. */
+/**
+ * Resolve detail labels with explicit merge authority (#827): native semantic
+ * axis labels first, then the verified producer catalogue, which owns every
+ * category/band label. The app carries no detail wording.
+ */
 function labelsDetailPour(clef: string): Record<string, string> | undefined {
   const contract = nativeContract(clef)
-  const catalogueLabels = metadataVerified.value ? metadata.value?.detail_labels[clef] ?? {} : {}
-  if (!contract) return Object.keys(catalogueLabels).length ? catalogueLabels : undefined
-  const labels: Record<string, string> = { ...catalogueLabels }
-  const declaredKeys = new Set(contract.axisValues ?? [])
-  for (const axis of contract.axes ?? []) {
+  const labels: Record<string, string> = { ...(metadataVerified.value ? metadata.value?.detail_labels[clef] ?? {} : {}) }
+  const declaredKeys = new Set(contract?.axisValues ?? [])
+  for (const axis of contract?.axes ?? []) {
     if (axis.name === 'detail' && axis.label && axis.label !== axis.key) {
       labels[axis.key] = axis.label
       declaredKeys.add(axis.key)
     }
   }
-  for (const key of Object.keys(labels)) if (!declaredKeys.has(key)) delete labels[key]
+  if (contract) for (const key of Object.keys(labels)) if (!declaredKeys.has(key)) delete labels[key]
   return Object.keys(labels).length ? labels : undefined
 }
 
@@ -219,6 +220,8 @@ function labelsDetailPour(clef: string): Record<string, string> | undefined {
 function libelleIndicateurMetier(clef: string): string {
   const nativeLabel = nativeContract(clef)?.label
   if (nativeLabel && nativeLabel !== clef) return nativeLabel
+  const appLabel = LIBELLES_INDICATEURS_APP[props.theme]?.[clef]
+  if (appLabel) return appLabel
   return metadataVerified.value && metadata.value ? libelleIndicateur(metadata.value, clef) : 'Fait disponible'
 }
 
@@ -231,13 +234,14 @@ function passarelle(clef: string) {
   return metadataVerified.value ? handoffExploration(metadata.value, clef, refTerritoire.value) : null
 }
 
-function labelsLectureActivite(key: string) {
-  const appLabels = sousGroupesFiche(props.theme).find((subgroup) => subgroup.key === key)?.reading?.paramLabels
+/** Reading-parameter wording is producer-owned (`param_labels`); the fallbacks
+ *  are neutral UI placeholders, never a second copy of the producer label. */
+function labelsLectureActivite(_key: string) {
   const catalogueLabels = metadataVerified.value ? metadata.value?.param_labels : undefined
   return {
-    rang: appLabels?.rang ?? catalogueLabels?.rang ?? '',
-    activity_label: appLabels?.activity_label ?? catalogueLabels?.activity_label ?? '',
-    lq: appLabels?.lq ?? catalogueLabels?.lq ?? '',
+    rang: catalogueLabels?.rang ?? 'Rang',
+    activity_label: catalogueLabels?.activity_label ?? 'Activité',
+    lq: catalogueLabels?.lq ?? 'LQ',
   }
 }
 

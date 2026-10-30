@@ -51,16 +51,18 @@ const props = defineProps<{
 }>()
 
 // The theme label and remaining factual/page contracts still use metadata;
-// labels and editorial framing use app grammar. Grant eligibility framing is
-// retained from its producer subgroup declaration.
+// labels and editorial framing use app grammar. The grant-eligibility clause
+// stays producer-owned: it renders only from verified metadata.
 const metadata = computed(() => props.payload.themeMetadata?.programmes ?? null)
+const metadataVerified = computed(() => props.metadataStatus === undefined || props.metadataStatus === 'ready')
 
 function groupe(key: string): { label: string; framing: string | null } {
   const g = sousGroupeFiche('programmes', key)
   if (!g) throw new Error(`Sous-groupe « ${key} » absent de la grammaire fiche « programmes »`)
-  const metadataVerified = props.metadataStatus === undefined || props.metadataStatus === 'ready'
-  return { label: g.label, framing: metadataVerified || g.framingSource !== 'theme-metadata'
-    ? cadrageSousGroupeFiche(g, metadata.value ?? undefined) : null }
+  return {
+    label: g.label,
+    framing: cadrageSousGroupeFiche(g, metadataVerified.value ? metadata.value ?? undefined : undefined),
+  }
 }
 
 const element = computed(() => programmesPourTerritoire(props.payload, props.territoire))
@@ -119,7 +121,7 @@ const lienProvenance = computed(() => {
   <!-- Facts-first: API facts and the app-owned heading survive a missing
        optional catalogue projection. -->
   <article class="onglet-theme onglet-theme--programmes bloc-programmes">
-    <p class="onglet-theme-overline">{{ metadata?.label ?? NOMS_THEMES.programmes }}</p>
+    <p class="onglet-theme-overline">{{ NOMS_THEMES.programmes }}</p>
 
     <template v-if="elementVide">
       <section class="sous-groupe" data-groupe="couverture">
@@ -172,6 +174,8 @@ const lienProvenance = computed(() => {
         data-groupe="subventions"
       >
         <h3 class="sous-groupe-titre">{{ groupe('subventions').label }}</h3>
+        <!-- The eligibility clause is producer-owned: with pending/unavailable
+             metadata it is withheld, never replaced by app copy. -->
         <p v-if="groupe('subventions').framing" class="sous-groupe-cadrage">{{ groupe('subventions').framing }}</p>
         <p v-if="metadataStatus === 'loading' || metadataStatus === 'error'" class="subvention-vintage" role="status">
           {{ metadataStatus === 'error' ? 'L’explication des conditions d’éligibilité n’est pas disponible.' : 'Explication des conditions d’éligibilité en cours de chargement.' }}
