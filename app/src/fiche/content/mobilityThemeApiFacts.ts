@@ -1,6 +1,6 @@
 import type { Payload, Indicateur, ProfilAccesBpeRow, DistributionAccesBatimentsRow,
   RampeAccesBatimentsRow } from '@/payload/types'
-import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
+import type { TerritoryComparisonContext } from '@/fiche/comparisonContext'
 import type { ThemeResponse } from '@/payload/themeAcquisition'
 import { nativeFactContractFromEnvelope, semanticComparisonForTheme, themeFactsEnvelopeFromSemantic } from '@/payload/themeFactsAdapter'
 import { ACCESS_INDICATOR_KEYS, territoryFactsFor } from './territoryFacts'

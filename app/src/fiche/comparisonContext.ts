@@ -1,11 +1,108 @@
-import type { TerritoryComparisonContext, TerritoryComparisonMode } from '@/payload/territoryReadModel'
 import type { Territoire, TerritoireType } from '@/payload/types'
 import type { LocationQuery } from 'vue-router'
 import type { InjectionKey } from 'vue'
 import type { Ref } from 'vue'
 import { buildingScopeLabel, COMPARISON_MODE_DESCRIPTIONS } from '@/fiche/content/comparisonWording'
+import { comparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 
 export const PARAM_COMPARAISON = 'comparaison'
+
+/**
+ * Comparison-mode vocabulary, app-owned since the static runtime retirement
+ * (#868): the per-territory model no longer publishes precomputed comparison
+ * projections. The mode and its scope label are derived from the validated
+ * territory reference (producer-published names and density labels); the
+ * comparison meaning and evidence itself come from the native API contracts.
+ */
+export type TerritoryComparisonMode = 'densite' | 'epci' | 'bretagne'
+
+export interface TerritoryComparisonFact {
+  key: string
+  detail: string | null
+  sex: string | null
+  dimension: string | null
+  origin: 'indicator' | 'derived'
+  direction: 'plus-est-mieux' | 'moins-est-mieux'
+  rank: { position: number; size: number } | null
+  reference: { kind: 'mean' | 'median'; value: number } | null
+}
+
+export interface TerritoryComparisonContext {
+  mode: TerritoryComparisonMode
+  scope: {
+    kind:
+      | 'communes-densite'
+      | 'communes-epci'
+      | 'communes-bretagne'
+      | 'epcis-bretagne'
+      | 'departements-bretagne'
+    label: string
+  }
+  facts: TerritoryComparisonFact[]
+  buildingDistribution: {
+    label: string
+    totalBuildings: number
+    cells: Array<{
+      breadthBucket: string
+      depthBucket: string
+      buildingCount: number
+      share: number
+    }>
+  } | null
+  accessRamp: {
+    label: string
+    totalBuildings: number
+    points: Array<{
+      mode: 'c' | 'b' | 't'
+      quantile: number
+      accessibleTypes: number
+    }>
+  } | null
+}
+
+/**
+ * The comparison contexts a territory can select, derived from the validated
+ * reference alone (#868): the density-class label is the commune's published
+ * public label, the EPCI scope names its reference EPCI, and the Bretagne
+ * scopes keep their canonical labels. No numerical fact is reconstructed here
+ * — `facts` stays empty and all evidence comes from the native API reads.
+ */
+export function contextesDepuisReference(
+  territoire: Territoire | null,
+  territoires: readonly Territoire[],
+): Partial<Record<TerritoryComparisonMode, TerritoryComparisonContext>> {
+  if (!territoire) return {}
+  const contextes: Partial<Record<TerritoryComparisonMode, TerritoryComparisonContext>> = {}
+  const vide = (): Pick<TerritoryComparisonContext, 'facts' | 'buildingDistribution' | 'accessRamp'> =>
+    ({ facts: [], buildingDistribution: null, accessRamp: null })
+
+  if (territoire.type === 'commune') {
+    const labelDensite = territoire.classe_densite_libelle_public ?? territoire.classe_densite_libelle_insee ?? null
+    if (labelDensite) {
+      contextes.densite = { mode: 'densite', scope: { kind: 'communes-densite', label: labelDensite }, ...vide() }
+    }
+    if (territoire.epci) {
+      const epci = territoires.find((candidate) => candidate.type === 'epci' && candidate.territoire === territoire.epci)
+      const labelEpci = comparisonScopeLabel('communes-epci', null, epci?.nom ?? null)
+      if (labelEpci) {
+        contextes.epci = { mode: 'epci', scope: { kind: 'communes-epci', label: labelEpci }, ...vide() }
+      }
+    }
+    const labelBretagne = comparisonScopeLabel('communes-bretagne', null, null)
+    if (labelBretagne) {
+      contextes.bretagne = { mode: 'bretagne', scope: { kind: 'communes-bretagne', label: labelBretagne }, ...vide() }
+    }
+    return contextes
+  }
+  if (territoire.type === 'epci' || territoire.type === 'departement') {
+    const kind = territoire.type === 'epci' ? 'epcis-bretagne' : 'departements-bretagne'
+    const label = comparisonScopeLabel(kind, null, null)
+    if (label) {
+      contextes.bretagne = { mode: 'bretagne', scope: { kind, label }, ...vide() }
+    }
+  }
+  return contextes
+}
 
 export interface ResolutionContexteComparaison {
   /** Effective communal mode; other territory levels keep their own policy. */

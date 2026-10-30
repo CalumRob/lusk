@@ -10,7 +10,7 @@ import type {
   Territoire,
   TerritoireType,
 } from '@/payload/types'
-import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
+import type { TerritoryComparisonContext } from '@/fiche/comparisonContext'
 
 /** The availability of a normalized fact, independent of how a surface lays it out. */
 export type FactAvailability = 'complete' | 'incomplete' | 'absent'

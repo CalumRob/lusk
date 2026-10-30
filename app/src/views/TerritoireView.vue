@@ -8,12 +8,19 @@
  * #400 verdict: its identity anchors disappear completely, the fiche goes
  * from its identity/title controls straight into the first theme block). The
  * ?theme= URL state selects a tab; absent or invalid falls back to the
- * programmes default. One atomic territory model resolves every theme block;
- * tab changes never fetch. The page bg wears the selected theme's -wash. The breadcrumb + H1 with the
+ * programmes default. The page bg wears the selected theme's -wash. The breadcrumb + H1 with the
  * territory's real name (trouverTerritoire), the type chip and the context
  * switcher form the fiche header.
  *
- * States: skeleton while the payload loads; typed PayloadError with a Retry
+ * #868 — bootstrap lean : l'identité validée et la navigation viennent de la
+ * référence territoire compacte générée (`/data/territoires.json`, une seule
+ * lecture atomique) — jamais du modèle de lecture par territoire. Tous les
+ * numériques du thème actif viennent de l'API sémantique (acquisition par
+ * thème, #627/#851) : aucun repli statique, aucun fan-out par indicateur.
+ * Le runtime statique (`VITE_THEME_ACQUISITION_API='0'`) est retiré ; le
+ * retour arrière est la release précédente / récupération manuelle.
+ *
+ * States: skeleton while the reference loads; typed PayloadError with a Retry
  * button (ui-elements.md §Loading/empty/error — never a raw error string);
  * honest empty state when the territory (or its type) is unknown.
  */
@@ -35,18 +42,14 @@ import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedar
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import {
   PARAM_COMPARAISON,
+  contextesDepuisReference,
   optionsContexteComparaison,
   resoudreContexteComparaison,
   territoireReferencePourComparaison,
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
-import { territoryFactsFor } from '@/fiche/content/territoryFacts'
-import { chargerCohortesScalairesAvecComparaisons, chargerComparaisonsScalaires,
-  indicateursScalairesPourNiveau, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
-import type { ScalarComparisonRank, ScalarComparisonRequest } from '@/payload/scalarCohort'
-import { PayloadError } from '@/payload/validate'
-import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
+import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
 import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
   themeFactsRowsFromSemantic, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
@@ -58,9 +61,8 @@ import type { SlugOnglet } from '@/fiche/onglets'
 import { trouverTerritoire } from '@/payload/selectors'
 import { THEMES_CANONIQUES } from '@/payload/types'
 import type { Histoire, Indicateur, Payload, Territoire, Theme, ThemeMetadata } from '@/payload/types'
-import { useTerritoryReadModel } from '@/payload/useTerritoryReadModel'
-import { chargerMetadonneesTheme, payloadDepuisModeleTerritoire, THEME_METADATA_CHARGER_KEY } from '@/payload/territoryReadModel'
-import type { TerritoryReadModel } from '@/payload/territoryReadModel'
+import { chargerMetadonneesTheme, THEME_METADATA_CHARGER_KEY } from '@/payload/themeCatalogue'
+import { useTerritoryReference } from '@/payload/territoryReference'
 
 const route = useRoute()
 const router = useRouter()
@@ -80,42 +82,50 @@ const selection = computed<Theme | null>(() => {
   }
   return THEME_DEFAUT
 })
-const modeleTerritoire = useTerritoryReadModel(typeRoute, idRoute, computed(() => true))
+/** #868 : bootstrap lean — la référence compacte générée fournit l'identité
+ *  validée et les identités de navigation/jointure ; aucun modèle par territoire. */
+const referenceTerritoire = useTerritoryReference(typeRoute, idRoute, computed(() => true))
 const chargerCatalogueTheme = inject(THEME_METADATA_CHARGER_KEY, chargerMetadonneesTheme)
 const catalogueThemeAcquis = ref<{ type: string; id: string; theme: Theme; metadata: ThemeMetadata } | null>(null)
 const statutCatalogueTheme = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const retryCatalogueTheme = ref(0)
 let sequenceCatalogueTheme = 0
-const payloadModele = computed(() => {
-  const model = modeleTerritoire.model.value
-  if (!model) return null
-  const payload = payloadDepuisModeleTerritoire(model)
+
+/** Les contextes de comparaison dérivés de la référence validée — jamais
+ *  d’une projection précalculée du modèle retiré. */
+const contextesComparaison = computed(() =>
+  contextesDepuisReference(referenceTerritoire.territory.value, referenceTerritoire.reference.value ?? []))
+
+const payloadReference = computed<Payload | null>(() => {
+  const reference = referenceTerritoire.reference.value
+  if (!reference) return null
+  const themeMetadata: Partial<Record<Theme, ThemeMetadata>> = {}
   const acquired = catalogueThemeAcquis.value
-  if (!acquired || acquired.type !== typeRoute.value || acquired.id !== idRoute.value ||
-      acquired.theme !== selection.value) return payload
-  return { ...payload, themeMetadata: { ...payload.themeMetadata, [acquired.theme]: acquired.metadata } }
+  if (acquired && acquired.type === typeRoute.value && acquired.id === idRoute.value &&
+      acquired.theme === selection.value) {
+    themeMetadata[acquired.theme] = acquired.metadata
+  }
+  return {
+    territoires: [...reference],
+    territoryMetadata: null,
+    indicateurs: [],
+    histoires: [],
+    apercu: null,
+    runReport: null,
+    vintages: null,
+    programmes: null,
+    profilsAccesBpe: null,
+    distributionAccesBatiments: null,
+    rampeAccesBatiments: null,
+    themeMetadata,
+  }
 })
-const ficheScalaires = ref<import('@/payload/types').Indicateur[] | null>(null)
-const ficheScalairesStatus = ref<'loading' | 'ready' | 'error'>('loading')
-const ficheScalairesEnregistres = ref<string[]>([])
-const ficheScalairesRegistrePresent = ref(false)
-const retryFicheScalaires = ref(0)
-const ficheScalairesIdentity = ref<{ contentVersion: string; referenceContentVersion: string } | null>(null)
-const ficheComparaisonsScalaires = ref<Record<string, ScalarComparisonRank | null>>({})
-const ficheComparaisonsScalairesStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
-const retryFicheComparaisonsScalaires = ref(0)
-let sequenceFicheScalaires = 0
-let sequenceFicheComparaisonsScalaires = 0
-let derniereCleComparaisonScalaire = ''
-let derniereRepriseComparaisonScalaire = -1
 
 /**
- * Acquisition par thème derrière `VITE_THEME_ACQUISITION_API` (#627) : le
- * modèle atomique gardé fournit l'identité, les métadonnées et la grammaire de
- * présentation ; le POST faits du thème actif fournit TOUS ses numériques
- * (aucune ligne statique du thème migré ne rend), puis le registre entier se
- * réchauffe en arrière-plan (décision propriétaire 2026-10-07). Un thème hors
- * de `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
+ * Acquisition par thème (#627/#851, seul mode depuis #868) : la référence
+ * fournit l'identité ; le POST faits du thème actif fournit TOUS ses
+ * numériques (aucune ligne statique ne rend), puis le registre entier se
+ * réchauffe en arrière-plan (décision propriétaire 2026-10-07).
  */
 const productionMobilite = computed(() => selection.value === 'mobilite')
 const aedarData = ref<AedarFetchResult | null>(null)
@@ -143,37 +153,36 @@ watch([productionMobilite, typeRoute, idRoute, retryAedarCount], async ([active,
     }
   }
 }, { immediate: true })
-/** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
-const themeMigre = (theme: Theme | null): boolean =>
-  themeAcquisitionEnabled(import.meta.env) && theme !== null && THEMES_ACQUISITION_API.includes(theme)
+/** Depuis #868 tous les thèmes canoniques sont acquis par l'API — il n'y a
+ *  plus de garde de chemin migré : le catalogue du thème sélectionné n'est
+ *  qu'un enrichissement d'explications, jamais une porte sur les faits API. */
 const statutMetadataPourAffichage = computed<'loading' | 'ready' | 'error'>(() =>
-  !themeMigre(selection.value)
-    ? 'ready'
-    : statutCatalogueTheme.value === 'error' ? 'error'
-      : statutCatalogueTheme.value === 'ready' ? 'ready' : 'loading',
+  statutCatalogueTheme.value === 'error' ? 'error'
+    : statutCatalogueTheme.value === 'ready' ? 'ready' : 'loading',
 )
 function retryExplicationTheme(): void { retryCatalogueTheme.value++ }
 
-/** The selected theme's legacy catalogue enriches explanations only; it never gates API facts. */
-watch([() => modeleTerritoire.model.value, selection, typeRoute, idRoute, retryCatalogueTheme],
-  async ([model, theme, type, id], _old, onCleanup) => {
+/** The selected theme's catalogue enriches explanations only; it never gates API facts. */
+watch([() => referenceTerritoire.reference.value, selection, typeRoute, idRoute, retryCatalogueTheme],
+  async ([reference, theme, type, id], _old, onCleanup) => {
     const request = ++sequenceCatalogueTheme
     let cancelled = false
     onCleanup(() => { cancelled = true })
-    if (theme === null || !themeMigre(theme) || !model || model.territory.type !== type || model.territory.territoire !== id) {
+    const cible = referenceTerritoire.territory.value
+    if (theme === null || !reference || !cible || cible.type !== type || cible.territoire !== id) {
       statutCatalogueTheme.value = 'idle'
       return
     }
     statutCatalogueTheme.value = 'loading'
     try {
       const metadata = await chargerCatalogueTheme(theme)
-      if (cancelled || request !== sequenceCatalogueTheme || model !== modeleTerritoire.model.value ||
+      if (cancelled || request !== sequenceCatalogueTheme || reference !== referenceTerritoire.reference.value ||
           theme !== selection.value || type !== typeRoute.value || id !== idRoute.value) return
       if (metadata.theme !== theme) throw new Error(`Catalogue ${metadata.theme} inattendu pour ${theme}`)
       catalogueThemeAcquis.value = { type, id, theme, metadata }
       statutCatalogueTheme.value = 'ready'
     } catch {
-      if (!cancelled && request === sequenceCatalogueTheme && model === modeleTerritoire.model.value &&
+      if (!cancelled && request === sequenceCatalogueTheme && reference === referenceTerritoire.reference.value &&
           theme === selection.value && type === typeRoute.value && id === idRoute.value) {
         statutCatalogueTheme.value = 'error'
       }
@@ -197,97 +206,77 @@ let sequenceComparaison = 0
 let cleFaitsPrets: string | null = null
 
 const payloadPourRendu = computed<Payload | null>(() => {
-  const payload = payloadModele.value
+  const payload = payloadReference.value
   if (!payload) return null
-  if (themeMigre(selection.value)) {
-    // Chemin migré : les numériques du thème actif viennent de la seule
-    // réponse de faits API — pendant le chargement ou l'échec, AUCUNE ligne
-    // numérique statique du thème ne rend (pas de repli statique).
-    const theme = selection.value as Theme
-    const indicateurs = faitsThemeRows.value === null
-      ? payload.indicateurs.filter((row) => row.theme !== theme)
-      : [...payload.indicateurs.filter((row) => row.theme !== theme), ...faitsThemeRows.value]
-    const histoires = histoiresThemeRows.value === null
-      ? payload.histoires.filter((row) => row.theme !== theme)
-      : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value,
-        ...(theme === 'demographie' ? histoiresNuageDemographie.value : []),
-        ...(theme === 'milieux' ? histoiresNuageMilieux.value : [])]
-    // Les pairs du nuage Milieux ont besoin de leur identité dans le référentiel
-    // du payload (le sélecteur résout leurs noms) — jamais d'autres territoires.
-    const peerIds = new Set(theme === 'milieux' ? histoiresNuageMilieux.value.map((row) => row.territoire) : [])
-    const peers = modeleTerritoire.model.value?.cohortTerritories
-      ?.filter((territory) => peerIds.has(territory.territoire)) ?? []
-    const territoires = [...payload.territoires, ...peers.filter((peer) =>
-      !payload.territoires.some((existing) => existing.territoire === peer.territoire))]
-    return { ...payload, territoires, indicateurs, histoires }
-  }
-  if (!scalarCohortEnabled(import.meta.env)) return payload
   const theme = selection.value
-  if (!theme || ficheScalairesStatus.value !== 'ready' || ficheScalaires.value === null) {
-    const registered = ficheScalairesStatus.value === 'error' && ficheScalairesRegistrePresent.value &&
-      ficheScalairesEnregistres.value.length === 0
-      ? payload.indicateurs.filter((row) => row.theme === theme).map((row) => row.key)
-      : ficheScalairesEnregistres.value
-    return registered.length ? { ...payload, indicateurs: payload.indicateurs.filter((row) => row.theme !== theme || !registered.includes(row.key)) } : payload
-  }
-  const factsWithRanks = rangsScalairesPourFocal(ficheScalaires.value, idRoute.value, ficheComparaisonsScalaires.value)
-  return { ...payload, indicateurs: remplacerFaitsScalaires(payload.indicateurs, factsWithRanks, ficheScalairesEnregistres.value) }
+  if (!theme) return payload
+  // #868 — chemin natif unique : les numériques du thème actif viennent de la
+  // seule réponse de faits API. Pendant le chargement ou l'échec, AUCUNE ligne
+  // numérique statique ne rend (pas de repli statique — le runtime statique est
+  // retiré). La référence complète tient déjà les identités des pairs de
+  // comparaison (nuage Milieux, jointures), aucune fusion de cohorte n'est
+  // nécessaire.
+  const indicateurs = faitsThemeRows.value ?? []
+  const histoires = [
+    ...(histoiresThemeRows.value ?? []),
+    ...(theme === 'demographie' ? histoiresNuageDemographie.value : []),
+    ...(theme === 'milieux' ? histoiresNuageMilieux.value : []),
+  ]
+  return { ...payload, indicateurs, histoires }
 })
-const erreurFiche = modeleTerritoire.erreur
-const chargementFiche = modeleTerritoire.chargement
-const rechargerFiche = modeleTerritoire.recharger
+const erreurFiche = referenceTerritoire.erreur
+const chargementFiche = referenceTerritoire.chargement
+const rechargerFiche = referenceTerritoire.recharger
 
 
-const territoire = computed(() =>
-  payloadPourRendu.value ? trouverTerritoire(payloadPourRendu.value, idRoute.value) : null,
-)
+const territoire = computed(() => referenceTerritoire.territory.value)
 
 const typeValide = computed(
   () => territoire.value !== null && String(route.params.type) === territoire.value.type,
 )
 
 /**
- * A comparison query carries a mode, not a peer list. The loaded territory
- * model resolves that mode against the destination commune's own published
- * projections, so navigation never reuses the previous commune's cohort.
+ * A comparison query carries a mode, not a peer list. The validated reference
+ * resolves that mode against the destination commune's own published density
+ * class and EPCI, so navigation never reuses the previous commune's cohort.
  */
 const resolutionComparaison = computed(() => {
-  if (!modeleTerritoire.model.value || !territoire.value) return null
+  if (!referenceTerritoire.reference.value || !territoire.value) return null
   return resoudreContexteComparaison({
     territoire: territoire.value,
     demande: route.query[PARAM_COMPARAISON],
-    contextes: modeleTerritoire.model.value.themes.mobilite?.comparisons ?? {},
+    contextes: contextesComparaison.value,
   })
 })
 
-function libellePorteeSemantic(comparison: unknown, model: TerritoryReadModel, target: Territoire): string | null {
+function libellePorteeSemantic(comparison: unknown, target: Territoire): string | null {
   if (typeof comparison !== 'object' || comparison === null || Array.isArray(comparison)) return null
   const data = comparison as Record<string, unknown>
   if (typeof data.scope !== 'object' || data.scope === null || Array.isArray(data.scope)) return null
   const scope = data.scope as Record<string, unknown>
-  const contexts = model.themes.mobilite?.comparisons
+  const contexts = contextesComparaison.value
   if (scope.kind === 'density_class' && scope.territory_type === target.type &&
       scope.density_class_code === target.classe_densite_code) {
-    return contexts?.densite?.scope.label ?? null
+    return contexts.densite?.scope.label ?? null
   }
   if (scope.kind === 'same_level' && scope.territory_type === target.type) {
-    return contexts?.bretagne?.scope.label ?? null
+    return contexts.bretagne?.scope.label ?? null
   }
   if (scope.kind !== 'explicit_selection' || !Array.isArray(data.selection)) return null
   const selected = data.selection as unknown[]
+  const territories = referenceTerritoire.reference.value ?? []
   if (target.type === 'commune' && selected.length === 1) {
     const identity = selected[0]
     if (typeof identity === 'object' && identity !== null && !Array.isArray(identity)) {
       const actual = identity as Record<string, unknown>
       for (const mode of ['epci', 'bretagne'] as const) {
-        const reference = territoireReferencePourComparaison({ territoire: target, mode, territoires: model.territories })
+        const reference = territoireReferencePourComparaison({ territoire: target, mode, territoires: territories })
         if (reference && actual.territory_type === reference.type && actual.territory_id === reference.id) {
-          return model.themes.mobilite?.comparisons[mode]?.scope.label ?? null
+          return contexts[mode]?.scope.label ?? null
         }
       }
     }
   }
-  const territories = model.cohortTerritories ?? model.territories
   const candidates = [
     ['epci', target.type === 'commune' && target.epci
       ? territories.filter((item) => item.type === 'commune' && item.epci === target.epci) : []],
@@ -300,14 +289,14 @@ function libellePorteeSemantic(comparison: unknown, model: TerritoryReadModel, t
       return typeof actual === 'object' && actual !== null && !Array.isArray(actual) &&
         (actual as Record<string, unknown>).territory_type === member.territory_type &&
         (actual as Record<string, unknown>).territory_id === member.territory_id
-    })) return contexts?.[mode]?.scope.label ?? null
+    })) return contexts[mode]?.scope.label ?? null
   }
   return null
 }
 
 const optionsComparaison = computed(() => optionsContexteComparaison({
   territoire: territoire.value,
-  contextes: modeleTerritoire.model.value?.themes.mobilite?.comparisons ?? {},
+  contextes: contextesComparaison.value,
 }))
 
 /**
@@ -319,7 +308,7 @@ const optionsComparaison = computed(() => optionsContexteComparaison({
 const aedarReferenceTerritoire = computed(() => territoireReferencePourComparaison({
   territoire: territoire.value,
   mode: resolutionComparaison.value?.mode ?? null,
-  territoires: modeleTerritoire.model.value?.territories ?? [],
+  territoires: referenceTerritoire.reference.value ?? [],
 }))
 const aedarReferenceKey = computed(() => {
   const reference = aedarReferenceTerritoire.value
@@ -334,59 +323,10 @@ watch([productionMobilite, aedarReferenceKey, retryAedarCount], async ([active, 
   if (!cancelled) { aedarReferenceData.value = result; aedarReferenceStatus.value = result.status === 'ready' ? 'ready' : 'error' }
 }, { immediate: true })
 
-const scalarComparisonRequest = computed<ScalarComparisonRequest | null>(() => {
-  const model = modeleTerritoire.model.value
-  const focal = model?.territories.find((candidate) => candidate.territoire === idRoute.value)
-  const resolution = resolutionComparaison.value
-  if (!model || !focal || focal.type === 'region' || !resolution?.contexte) return null
-  const references = model.cohortTerritories ?? model.territories
-  const { kind: resolvedScope, label: contextLabel } = resolution.contexte.scope
-  if (focal.type === 'commune') {
-    if (resolvedScope === 'communes-densite') {
-      const densityClassCode = focal.classe_densite_code
-      if (!densityClassCode) return null
-      const memberCount = references.filter((candidate) => candidate.type === 'commune' &&
-        candidate.classe_densite_code === densityClassCode).length
-      return { kind: 'fixed', scope: { kind: 'density_class', territoryType: 'commune',
-        densityClassCode, memberCount, label: contextLabel } }
-    }
-    if (resolvedScope !== 'communes-epci' && resolvedScope !== 'communes-bretagne') return null
-    const members = references.filter((candidate) => candidate.type === 'commune' &&
-      (resolvedScope !== 'communes-epci' || candidate.epci === focal.epci))
-      .sort((left, right) => left.territoire.localeCompare(right.territoire))
-      .map((candidate) => ({ type: candidate.type, id: candidate.territoire }))
-    const includesFocal = members.some((member) => member.id === focal.territoire)
-    return { kind: 'selected', members,
-      scope: { kind: 'explicit_selection', territoryType: 'commune', memberCount: members.length,
-        label: includesFocal && members.length > 0 ? contextLabel : null } }
-  }
-  const expectedScope = focal.type === 'epci' ? 'epcis-bretagne' : 'departements-bretagne'
-  if (resolvedScope !== expectedScope) return null
-  const memberCount = references.filter((candidate) => candidate.type === focal.type).length
-  return { kind: 'fixed', scope: { kind: 'same_level', territoryType: focal.type, memberCount, label: contextLabel } }
-})
-const scalarComparisonKey = computed(() => JSON.stringify([idRoute.value, selection.value,
-  resolutionComparaison.value?.mode ?? null, scalarComparisonRequest.value]))
-
-function scopeStableFaitsScalaires(focal: import('@/payload/types').Territoire): { department?: string; epci?: string } {
-  if (focal.type !== 'commune') return {}
-  if (focal.epci) return { epci: focal.epci }
-  return focal.departement ? { department: focal.departement } : {}
-}
-
-function rangsScalairesPourFocal(facts: Indicateur[], territoryId: string,
-  ranks: Record<string, ScalarComparisonRank | null>): Indicateur[] {
-  return facts.map((fact) => {
-    const rank = fact.territoire === territoryId ? ranks[fact.key] : null
-    return { ...fact, ...(rank ? { comparaisonApi: { rang: rank.rank, taille: rank.rankSize,
-      portee: rank.scope, direction: rank.direction } } : { comparaisonApi: undefined }) }
-  })
-}
-
 /**
- * L'identité et le contenu franchissent ensemble la frontière atomique du
- * modèle de territoire. Une erreur compte comme « prête » afin de remplacer
- * le squelette par l'état d'erreur typé.
+ * L'identité franchit seule la frontière atomique de la référence validée
+ * (#868) : une erreur compte comme « prête » afin de remplacer le squelette
+ * par l'état d'erreur typé.
  */
 const identitePret = computed(
   () => (payloadPourRendu.value?.territoires.length ?? 0) > 0 || erreurFiche.value !== null,
@@ -409,138 +349,12 @@ const ongletsFiche: readonly Theme[] = [
 ]
 
 
-watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retryFicheScalaires],
-  async ([model, theme, code], _old, onCleanup) => {
-    const request = ++sequenceFicheScalaires
-    ficheScalaires.value = null
-    ficheScalairesEnregistres.value = []
-    ficheScalairesRegistrePresent.value = false
-    ficheScalairesIdentity.value = null
-    ficheComparaisonsScalaires.value = {}
-    ficheComparaisonsScalairesStatus.value = 'idle'
-    derniereCleComparaisonScalaire = ''
-    derniereRepriseComparaisonScalaire = -1
-    ficheScalairesStatus.value = 'loading'
-    let cancelled = false
-    onCleanup(() => { cancelled = true })
-    // Le thème migré n'emprunte jamais le fan-out par indicateur (#627) : sa
-    // voie unique est la requête de faits du thème.
-    if (!scalarCohortEnabled(import.meta.env) || !model || !theme || themeMigre(theme) ||
-        (theme === 'mobilite' && productionMobilite.value)) { ficheScalairesStatus.value = 'ready'; return }
-    const data = model.themes[theme]
-    if (!data) { ficheScalairesStatus.value = 'ready'; return }
-    let focal: Territoire | undefined
-    let registered: string[] = []
-    let comparisonRequest: ScalarComparisonRequest | null = null
-    let comparisonKey = ''
-    try {
-      focal = model.territories.find((territory) => territory.territoire === code)
-      if (!focal) throw new Error('Territoire focal absent')
-      if (!('scalar_contracts' in data.metadata)) { ficheScalairesStatus.value = 'ready'; return }
-      ficheScalairesRegistrePresent.value = true
-      registered = pagesScalairesEnregistrees(data.metadata,
-        indicateursScalairesPourNiveau(data.metadata, focal.type))
-      ficheScalairesEnregistres.value = registered
-      if (!registered.length) { ficheScalairesStatus.value = 'ready'; return }
-      comparisonRequest = scalarComparisonRequest.value
-      comparisonKey = scalarComparisonKey.value
-      const result = await chargerCohortesScalairesAvecComparaisons(registered, theme, data.metadata, focal, focal.type,
-        model.cohortTerritories ?? model.territories, scopeStableFaitsScalaires(focal), comparisonRequest)
-      if (!cancelled && request === sequenceFicheScalaires) {
-        ficheScalaires.value = result.facts
-        ficheScalairesIdentity.value = result.identity
-        const scopeStillCurrent = comparisonKey === scalarComparisonKey.value
-        ficheComparaisonsScalaires.value = scopeStillCurrent ? result.comparisons : {}
-        ficheComparaisonsScalairesStatus.value = scopeStillCurrent && comparisonRequest ? 'ready' : 'idle'
-        if (scopeStillCurrent) {
-          derniereCleComparaisonScalaire = comparisonKey
-          derniereRepriseComparaisonScalaire = retryFicheComparaisonsScalaires.value
-        }
-        ficheScalairesStatus.value = 'ready'
-      }
-    } catch {
-      if (cancelled || request !== sequenceFicheScalaires) return
-      if (!focal || !registered.length || !comparisonRequest || comparisonRequest.scope.memberCount < 2) {
-        ficheScalairesStatus.value = 'error'
-        return
-      }
-      // The read-batch is atomic: never salvage facts from its failed envelope.
-      // A fresh facts-only read can still keep API values visible while the
-      // comparison is retried independently; these reads do not share a snapshot.
-      try {
-        const factsOnly = await chargerCohortesScalairesAvecComparaisons(registered, theme, data.metadata,
-          focal, focal.type, model.cohortTerritories ?? model.territories,
-          scopeStableFaitsScalaires(focal), null)
-        if (cancelled || request !== sequenceFicheScalaires) return
-        ficheScalaires.value = factsOnly.facts
-        ficheScalairesIdentity.value = factsOnly.identity
-        ficheComparaisonsScalaires.value = {}
-        const scopeStillCurrent = comparisonKey === scalarComparisonKey.value
-        ficheComparaisonsScalairesStatus.value = scopeStillCurrent ? 'error' : 'idle'
-        if (scopeStillCurrent) {
-          derniereCleComparaisonScalaire = comparisonKey
-          derniereRepriseComparaisonScalaire = retryFicheComparaisonsScalaires.value
-        }
-        ficheScalairesStatus.value = 'ready'
-      } catch {
-        if (!cancelled && request === sequenceFicheScalaires) ficheScalairesStatus.value = 'error'
-      }
-    }
-  }, { immediate: true })
-function retryScalaires(): void { retryFicheScalaires.value++ }
-
-watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, scalarComparisonKey,
-  ficheScalairesStatus, retryFicheComparaisonsScalaires],
-async ([model, theme, code, key, factsStatus, retry], _old, onCleanup) => {
-  const request = ++sequenceFicheComparaisonsScalaires
-  let cancelled = false
-  onCleanup(() => { cancelled = true })
-  if (!scalarCohortEnabled(import.meta.env) || !model || !theme || themeMigre(theme) ||
-      (theme === 'mobilite' && productionMobilite.value) || factsStatus !== 'ready' ||
-      ficheScalaires.value === null || !ficheScalairesIdentity.value || !ficheScalairesEnregistres.value.length) return
-  const comparisonKey = String(key)
-  if (comparisonKey === derniereCleComparaisonScalaire && retry === derniereRepriseComparaisonScalaire) return
-  const focal = model.territories.find((territory) => territory.territoire === code)
-  const data = model.themes[theme]
-  const comparisonRequest = scalarComparisonRequest.value
-  if (!focal || !data || !comparisonRequest) {
-    derniereCleComparaisonScalaire = comparisonKey
-    derniereRepriseComparaisonScalaire = retry
-    ficheComparaisonsScalaires.value = {}
-    ficheComparaisonsScalairesStatus.value = 'idle'
-    return
-  }
-  ficheComparaisonsScalaires.value = {}
-  ficheComparaisonsScalairesStatus.value = 'loading'
-  derniereCleComparaisonScalaire = comparisonKey
-  derniereRepriseComparaisonScalaire = retry
-  try {
-    const pages = Object.fromEntries(ficheScalairesEnregistres.value.map((indicator) => {
-      const page = data.metadata.indicator_pages?.[indicator]
-      if (!page) throw new PayloadError('validation', `theme_${theme}.json`, `Page scalaire « ${indicator} » absente.`)
-      return [indicator, page]
-    }))
-    const ranks = await chargerComparaisonsScalaires(ficheScalairesEnregistres.value, theme, pages,
-      focal, model.cohortTerritories ?? model.territories, comparisonRequest, ficheScalairesIdentity.value)
-    if (!cancelled && request === sequenceFicheComparaisonsScalaires && comparisonKey === scalarComparisonKey.value) {
-      ficheComparaisonsScalaires.value = ranks
-      ficheComparaisonsScalairesStatus.value = 'ready'
-    }
-  } catch {
-    if (!cancelled && request === sequenceFicheComparaisonsScalaires && comparisonKey === scalarComparisonKey.value) {
-      ficheComparaisonsScalairesStatus.value = 'error'
-    }
-  }
-}, { immediate: true })
-
-function retryComparaisonsScalaires(): void { retryFicheComparaisonsScalaires.value++ }
-
 /** Le thème actif est prioritaire ; après son acquisition — réussie ou non —
- * les autres thèmes migrés se réchauffent en arrière-plan. Le rendu ne lit
- * que l'actif. */
-watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retryAcquisition],
-  async ([model, theme, code], _old, onCleanup) => {
-    if (!themeMigre(theme) || !model || !typeValide.value) {
+ * les autres thèmes du registre se réchauffent en arrière-plan. Le rendu ne
+ * lit que l'actif. */
+watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value, retryAcquisition],
+  async ([reference, theme, code], _old, onCleanup) => {
+    if (!theme || !reference || !typeValide.value) {
       faitsThemeRows.value = null
       histoiresThemeRows.value = null
       preuvesThemeIndisponibles.value = false
@@ -582,16 +396,16 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     try {
       const acquired = await cacheAcquisition.get(typeRoute.value, code, themeActif)
       if (cancelled || request !== sequenceAcquisition) return
-      const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
+      const target = reference.find((item) => item.territoire === code)
       if (!target || target.type !== typeRoute.value) throw new Error('Territoire focal absent')
       const rows = themeFactsRowsFromSemantic(themeActif, acquired.focal, { territoire: code, type: target.type }, {
-        epci: target.epci, region: payloadModele.value?.territoires.find((item) => item.type === 'region')?.territoire ?? null,
-      }, payloadModele.value?.themeMetadata?.[themeActif])
+        epci: target.epci, region: reference.find((item) => item.type === 'region')?.territoire ?? null,
+      }, payloadReference.value?.themeMetadata?.[themeActif])
        const comparison = semanticComparisonForTheme(acquired.comparisons.get('omitted'), {
          target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
-         territories: model.cohortTerritories,
+         territories: reference,
         }, acquired.focal.resource_reads)
-        const comparisonScopeLabel = libellePorteeSemantic(comparison, model, target)
+        const comparisonScopeLabel = libellePorteeSemantic(comparison, target)
         faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs,
           comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
       histoiresThemeRows.value = rows.histoires
@@ -622,7 +436,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     // se fondre nulle part ailleurs que dans sa propre clé.
     if (!cancelled && request === sequenceAcquisition) {
       for (const autreTheme of THEMES_ACQUISITION_API) {
-        if (autreTheme === themeActif || !themeMigre(autreTheme)) continue
+        if (autreTheme === themeActif) continue
         void cacheAcquisition.get(typeRoute.value, code, autreTheme).catch(() => {})
       }
     }
@@ -630,14 +444,14 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
 
 /** Comparison-only reads retain focal facts. The producer's fixed default is
  * cached with the paired focal read; explicit scopes acquire only comparisons. */
-watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
+watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value,
   () => resolutionComparaison.value?.mode, statutAcquisition, retryThemeComparaison],
-  async ([model, theme, code, mode], _old, onCleanup) => {
-    if (!themeMigre(theme) || theme === 'mobilite' || statutAcquisition.value !== 'ready' || !model || !typeValide.value) {
+  async ([reference, theme, code, mode], _old, onCleanup) => {
+    if (theme === 'mobilite' || statutAcquisition.value !== 'ready' || !reference || !typeValide.value || !theme) {
       statutComparaison.value = 'idle'
       return
     }
-    const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
+    const target = reference.find((item) => item.territoire === code)
     if (!target || target.type !== typeRoute.value) { statutComparaison.value = 'idle'; return }
     const themeActif = theme as Theme
     const selectionMembres: readonly ThemeSelectionMember[] | null | undefined = target.type !== 'commune' ||
@@ -645,9 +459,9 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
       ? undefined
       : mode === 'epci' || mode === 'bretagne'
         ? (() => {
-          const reference = territoireReferencePourComparaison({ territoire: target, mode,
-            territoires: model.territories })
-          return reference ? [{ territory_type: reference.type, territory_id: reference.id }] : null
+          const refTerritoire = territoireReferencePourComparaison({ territoire: target, mode,
+            territoires: reference })
+          return refTerritoire ? [{ territory_type: refTerritoire.type, territory_id: refTerritoire.id }] : null
         })()
         : null
     const request = ++sequenceComparaison
@@ -674,13 +488,13 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
         { type: target.type, id: target.territoire })
       const comparison = semanticComparisonForTheme(nativeComparison, {
         target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
-        territories: model.cohortTerritories ?? model.territories,
+        territories: reference,
       }, acquired.focal.resource_reads)
       if (themeActif === 'demographie') {
         histoiresNuageDemographie.value = histoiresDemographieNuage(comparison)
       }
         if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(comparison)
-        const comparisonScopeLabel = libellePorteeSemantic(comparison, model, target)
+        const comparisonScopeLabel = libellePorteeSemantic(comparison, target)
         faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
           comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
        statutComparaison.value = nativeComparison?.cohort_error || comparison?.reading_cloud_error ? 'error' : 'ready'
@@ -720,7 +534,6 @@ const classesFond = computed(() =>
  * Mobilité's production cahier owns the editorial body whenever its theme is selected.
  */
 const mobiliteEditorialeActive = productionMobilite
-const scalarCohortActif = scalarCohortEnabled(import.meta.env)
 const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
 const buildingStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const mobilityFocal = ref<TerritoryFacts | null>(null)
@@ -738,11 +551,11 @@ let lastComparisonKey: string | null = null
 let lastComparisonModel: object | null = null
 
 watch([productionMobilite, typeRoute, idRoute,
-  () => modeleTerritoire.model.value, retryMobilityFacts], (_values, _oldValues, onCleanup) => {
+  () => referenceTerritoire.reference.value, retryMobilityFacts], (_values, _oldValues, onCleanup) => {
   if (!productionMobilite.value) return
-  const model = modeleTerritoire.model.value
+  const reference = referenceTerritoire.reference.value
   const key = `${typeRoute.value}/${idRoute.value}/${retryMobilityFacts.value}`
-  if (model && lastFocalKey === key && lastFocalModel === model) return
+  if (reference && lastFocalKey === key && lastFocalModel === reference) return
   const request = ++focalRequestSequence
   statutAccesApi.value = 'loading'
   mobilityFocal.value = null
@@ -750,7 +563,7 @@ watch([productionMobilite, typeRoute, idRoute,
   mobilityCurveComparison.value = null
   mobilityComparisonStatus.value = 'loading'
   buildingStatus.value = 'loading'
-  if (!typeValide.value || !model || !payloadPourRendu.value) {
+  if (!typeValide.value || !reference || !payloadPourRendu.value) {
     lastFocalKey = null
     lastFocalModel = null
     lastComparisonKey = null
@@ -758,7 +571,7 @@ watch([productionMobilite, typeRoute, idRoute,
     return
   }
   lastFocalKey = key
-  lastFocalModel = model
+  lastFocalModel = reference
   const controller = new AbortController()
   let settled = false
   onCleanup(() => {
@@ -772,7 +585,7 @@ watch([productionMobilite, typeRoute, idRoute,
     const presentation = toRaw(payloadPourRendu.value)
     const target = presentation.territoires.find((territory) => territory.territoire === code)
     const initialContext = target?.type === 'commune'
-      ? modeleTerritoire.model.value?.themes.mobilite?.comparisons.densite
+      ? contextesComparaison.value.densite
       : resolutionComparaison.value?.contexte ?? undefined
     let combined = mobilityFactsFromThemeApi(presentation, code, data)
     const initialComparison = acquired.comparisons.get('omitted')
@@ -797,12 +610,12 @@ watch([productionMobilite, typeRoute, idRoute,
 }, { immediate: true })
 
 watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
-  mobilityFocal, () => modeleTerritoire.model.value, retryThemeComparaison],
+  mobilityFocal, () => referenceTerritoire.reference.value, retryThemeComparaison],
   (_values, _oldValues, onCleanup) => {
     if (!productionMobilite.value || !mobilityFocal.value || !payloadPourRendu.value) return
-    const model = modeleTerritoire.model.value
+    const reference = referenceTerritoire.reference.value
     const requestKey = `${typeRoute.value}/${idRoute.value}/${resolutionComparaison.value?.mode ?? ''}/${retryThemeComparaison.value}`
-    if (lastComparisonKey === requestKey && lastComparisonModel === model) return
+    if (lastComparisonKey === requestKey && lastComparisonModel === reference) return
     const request = ++comparisonRequestSequence
     const controller = new AbortController()
     let settled = false
@@ -813,13 +626,13 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
     const target = payloadPourRendu.value.territoires.find((territory) => territory.territoire === idRoute.value)
     const mode = resolutionComparaison.value?.mode
     const context = resolutionComparaison.value?.contexte ?? undefined
-    const cohort = modeleTerritoire.model.value?.cohortTerritories
+    const cohort = reference ?? undefined
     if (!target || (target.type === 'commune' && mode !== 'densite' && !cohort)) {
       mobilityComparisonStatus.value = 'error'
       mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
       mobilityCurveComparison.value = null
       lastComparisonKey = requestKey
-      lastComparisonModel = model
+      lastComparisonModel = reference
       return
     }
     const selection = target.type !== 'commune' || mode === 'densite' || mode == null ? undefined : mode === 'bretagne'
@@ -831,7 +644,7 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
         : []
     const explicitSelection = selection
     lastComparisonKey = requestKey
-    lastComparisonModel = model
+    lastComparisonModel = reference
     mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
     mobilityCurveComparison.value = null
     mobilityComparisonStatus.value = 'loading'
@@ -870,20 +683,14 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
     !payloadPourRendu.value ||
     !typeValide.value
   ) return null
-  const baseFacts = productionMobilite.value
-    ? mobilityFocal.value
-      ? mobilityComparisonFacts.value ?? clearThemeComparisonApiFacts(mobilityFocal.value)
-      : mobilityFactsFromThemeApi(
-        toRaw(payloadPourRendu.value), idRoute.value, null, resolutionComparaison.value?.contexte ?? undefined,
-      )
-    : territoryFactsFor(toRaw(payloadPourRendu.value), idRoute.value,
-      resolutionComparaison.value?.contexte ?? undefined)
-  const facts = baseFacts && productionMobilite.value
-    ? { ...baseFacts, mobility: { ...baseFacts.mobility, selectedTrajectoryComparison: mobilityCurveComparison.value } }
-    : baseFacts
-  if (!facts) return null
-  const contentFacts = facts
-  return resolveMobiliteThemeContent(contentFacts, payloadPourRendu.value.themeMetadata?.mobilite)
+  const baseFacts = mobilityFocal.value
+    ? mobilityComparisonFacts.value ?? clearThemeComparisonApiFacts(mobilityFocal.value)
+    : mobilityFactsFromThemeApi(
+      toRaw(payloadPourRendu.value), idRoute.value, null, resolutionComparaison.value?.contexte ?? undefined,
+    )
+  if (!baseFacts) return null
+  const facts = { ...baseFacts, mobility: { ...baseFacts.mobility, selectedTrajectoryComparison: mobilityCurveComparison.value } }
+  return resolveMobiliteThemeContent(facts, payloadPourRendu.value.themeMetadata?.mobilite)
 })
 const paginationCahier = computed(() =>
   payloadPourRendu.value && contenuMobilite.value
@@ -999,14 +806,10 @@ watch(
     </div>
 
     <template v-if="typeValide && !erreurFiche">
-      <div v-if="scalarCohortActif && ficheScalairesStatus === 'error'" class="etat-erreur" role="alert">
-        <p>Les indicateurs de ce thème ne sont pas disponibles.</p>
-        <button type="button" @click="retryScalaires">Réessayer</button>
-      </div>
-      <!-- #627 : le thème migré échoue fermé — jamais de repli sur les
-           numériques statiques ; chaque échec reste réessayable. -->
+      <!-- #627/#868 : le thème actif échoue fermé — jamais de repli sur les
+           numériques statiques (runtime retiré) ; chaque échec reste réessayable. -->
       <div
-        v-else-if="themeMigre(selection) && selection !== 'mobilite' && statutAcquisition === 'error'"
+        v-if="selection !== 'mobilite' && statutAcquisition === 'error'"
         class="etat-erreur"
         role="alert"
       >
@@ -1014,7 +817,7 @@ watch(
         <button type="button" @click="retryAcquisitionTheme">Réessayer</button>
       </div>
       <div
-        v-else-if="(themeMigre(selection) && statutComparaison === 'error') ||
+        v-else-if="statutComparaison === 'error' ||
           (productionMobilite && mobilityFocal && mobilityComparisonStatus === 'error')"
         class="etat-erreur"
         role="alert"
@@ -1022,18 +825,13 @@ watch(
         <p>Les comparaisons de ce thème ne sont pas disponibles.</p>
         <button type="button" @click="retryThemeComparison">Réessayer</button>
       </div>
-      <div v-if="themeMigre(selection) && selection !== 'mobilite' && statutAcquisition === 'ready' && preuvesThemeIndisponibles"
+      <div v-if="selection !== 'mobilite' && statutAcquisition === 'ready' && preuvesThemeIndisponibles"
         class="etat-erreur" role="alert">
         <p>Les lectures de ce thème ne sont pas disponibles.</p>
         <button type="button" @click="retryAcquisitionTheme">Réessayer</button>
       </div>
-      <div v-if="scalarCohortActif && ficheScalairesStatus === 'ready' && ficheComparaisonsScalairesStatus === 'error'"
-        class="etat-erreur" role="alert">
-        <p>Les rangs de comparaison de ce thème ne sont pas disponibles.</p>
-        <button type="button" @click="retryComparaisonsScalaires">Réessayer</button>
-      </div>
       <div class="fiche-corps">
-        <!-- Le contenu attend l'unique modèle atomique de la fiche : aucun
+        <!-- Le contenu attend la référence validée de la fiche (#868) : aucun
              panneau ne prétend avoir ses données pendant que la réponse pend. -->
         <div
           v-if="chargementFiche"
