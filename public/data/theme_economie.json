@@ -83,9 +83,7 @@
     "chomage",
     "eco_activites"
   ],
-  "story_keys": [
-    "ce-que-la-commune-abrite"
-  ],
+
   "sources": {
     "effectifs_salaries": "flores_a88",
     "chomage": "rp_chomage",

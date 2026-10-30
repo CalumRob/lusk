@@ -65,11 +65,11 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
       expect(new Set(indicateurs).size).toBe(meta.indicator_keys.length)
       const liees = meta.subgroups.flatMap((g) => g.reading ? [g.reading.story_key] : [])
       expect(new Set(liees).size).toBe(liees.length)
-      for (const cle of liees) expect(meta.story_keys).toContain(cle)
+      for (const cle of liees) expect(meta.story_keys ?? []).toContain(cle)
       // chaque story du registre est liée OU candidate de saillance déclarée
       // du groupe d'un sous-groupe (le pool Mobilité partage SON slot —
       // ADR-0002) : jamais une story orpheline, jamais un slot fabriqué
-      for (const cle of meta.story_keys.filter((c) => !liees.includes(c))) {
+      for (const cle of (meta.story_keys ?? []).filter((c) => !liees.includes(c))) {
         const groupe = GROUPES_PAR_STORY[meta.theme]?.[cle]
         expect(groupe, `« ${cle} » — candidate déclarée au registre`).toBeDefined()
         expect(meta.subgroups.map((g) => g.key)).toContain(groupe)
@@ -98,6 +98,10 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
 
     const validee = validerThemeMetadata(meta, 'theme_mobilite.json')
     expect(validee.story_keys).toEqual(['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'])
+    // #868 : sans story_keys déclaré (projection navigateur), le registre retombe
+    // sur le portefeuille du thème — la validation accepte la projection servie.
+    const { story_keys: _retire, ...projection } = copieBrute('mobilite')
+    expect(() => validerThemeMetadata(projection, 'theme_mobilite.json')).not.toThrow()
   })
 
   it('accepte la méthodologie structurée portée par une source', () => {
@@ -282,7 +286,7 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
   it('rejette une référence cross-thème (l\u2019herméticité, ADR-0020)', () => {
     // une story d'un autre thème dans story_keys (la Mobilité dans la Démographie)
     const erreur = attendErreur('demographie', (meta) => {
-      meta.story_keys.push('vingt-minutes-sans-voiture')
+      meta.story_keys!.push('vingt-minutes-sans-voiture')
     })
     expect(erreur.message).toMatch(/cross-th[èe]me/i)
   })

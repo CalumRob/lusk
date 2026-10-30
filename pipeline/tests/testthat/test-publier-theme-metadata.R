@@ -187,6 +187,44 @@ test_that("lire_theme_metadata : un thème sans fichier épinglé s'arrête bruy
   expect_error(lire_theme_metadata("theme-inexistant"), "introuvable")
 })
 
+# #868 — la projection navigateur : le fichier publié ne porte plus les champs
+# producer-only (semantic_resources, story_keys, observed_collection_contracts)
+# que ni le navigateur ni les lecteurs du payload commité ne lisent ; les clauses
+# factuelles conservées (cadrages, libellés, source_records, indicator_pages,
+# sources) restent bit-à-bit celles du canon. Le canon extdata reste complet.
+test_that("projection_navigateur : le fichier publié exclut les champs hors navigateur et se re-valide", {
+  cible <- tempfile("pub-meta-proj-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  for (theme in THEMES_METADATA) {
+    meta <- lire_theme_metadata(theme)
+    publier_theme_metadata(meta, cible, theme_attendu = theme)
+    chemin <- file.path(cible, paste0("theme_", theme, ".json"))
+    relu <- jsonlite::fromJSON(chemin, simplifyVector = FALSE)
+
+    # champs producer-only absents du fichier servi au navigateur
+    for (champ in CHAMPS_HORS_NAVIGATEUR) {
+      expect_false(champ %in% names(relu), info = paste(theme, champ))
+    }
+    # le fichier projeté se re-valide (story_keys absent → portefeuille du thème)
+    expect_error(valider_theme_metadata(relu), NA, info = theme)
+
+    # les déclarations factuelles conservées sont bit-à-bit celles du canon
+    expect_identical(relu$subgroups, meta$subgroups, info = theme)
+    expect_identical(relu$indicator_labels, meta$indicator_labels, info = theme)
+    expect_identical(relu$detail_labels, meta$detail_labels, info = theme)
+    expect_identical(relu$source_records, meta$source_records, info = theme)
+    expect_identical(relu$indicator_pages, meta$indicator_pages, info = theme)
+    expect_identical(relu$sources, meta$sources, info = theme)
+    expect_identical(relu$indicator_keys, meta$indicator_keys, info = theme)
+    # les deux clauses factuelles retenues (#827) restent servies
+    if (theme %in% c("mobilite", "programmes")) {
+      cadrages <- vapply(relu$subgroups, function(g) g$framing %||% "", character(1))
+      expect_true(any(nzchar(cadrages)), info = theme)
+    }
+  }
+})
+
 test_that("la parité registre ↔ métadonnées : chaque thème déclare les stories que sa résolution peut émettre", {
   # La parité bidirectionnelle du contrat (#316) : le fichier épinglé
   # theme_<theme>.json déclare EXACTEMENT les story_keys du registre de

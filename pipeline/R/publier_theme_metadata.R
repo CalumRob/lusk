@@ -47,6 +47,23 @@ lire_theme_metadata <- function(theme, chemin = NULL) {
   jsonlite::fromJSON(chemin, simplifyVector = FALSE)
 }
 
+# projection_navigateur --------------------------------------------------------
+# #868 — la projection SERVIE AU NAVIGATEUR. Le canon épinglé (extdata) reste
+# l'entrée producer COMPLÈTE (semantic_resources, story_keys, observed_collection_
+# contracts, owned_series_routes y vivent — le pipeline et l'API les lisent là-bas).
+# Le fichier publié vers public/data ne porte que ce que le navigateur lit
+# réellement : les registres et contrats producer-only (semantic_resources,
+# story_keys, observed_collection_contracts) en sont retirés — jamais une copie
+# de faits TypeScript, jamais un quota d'octets. Les clauses factuelles
+# conservées (cadrages des sous-groupes, libellés, source_records, indicator_pages,
+# sources) restent bit-à-bit celles du canon validé.
+CHAMPS_HORS_NAVIGATEUR <- c("semantic_resources", "story_keys", "observed_collection_contracts")
+
+projection_navigateur <- function(metadata) {
+  if (!is.list(metadata)) stop("La projection navigateur exige un objet métadonnées", call. = FALSE)
+  metadata[setdiff(names(metadata), CHAMPS_HORS_NAVIGATEUR)]
+}
+
 # publier_theme_metadata --------------------------------------------------------
 # Le seam de publication : valide, puis écrit theme_<theme>.json (le nom du
 # thème validé du contenu). La garde theme_attendu refuse la collision ;
@@ -70,14 +87,17 @@ publier_theme_metadata <- function(metadata, sortie = "public/data",
     ), call. = FALSE)
   }
   if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
+  # #868 : on écrit LA PROJECTION NAVIGATEUR du contenu validé (le canon complet
+  # reste validé en amont, intact, sous extdata).
+  projection <- projection_navigateur(metadata)
   # digits = 17 : la même discipline que publish (ADR-0004) — un contenu relu
   # en JSON est BIT À BIT le contenu validé en mémoire. auto_unbox = TRUE :
   # les scalaires (theme, label, ...) sortent en scalaires — jamais la forme
   # ["demographie"] que write_json donnerait à une liste — tandis que les
-  # tableaux (story_keys, indicator_keys, template, ...) restent des tableaux
+  # tableaux (indicator_keys, template, ...) restent des tableaux
   # (la forme que l'app valide, types.ts).
   ecrire_json_si_modifie(
-    metadata,
+    projection,
     file.path(sortie, paste0("theme_", metadata$theme, ".json")),
     dataframe = "rows", na = "null", digits = 17, pretty = TRUE,
     auto_unbox = TRUE

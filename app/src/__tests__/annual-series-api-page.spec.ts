@@ -31,15 +31,19 @@ type RaccordementPageOptions = {
   readBatch?: (items: Array<Record<string, any>>, respond: () => Response) => Response | Promise<Response>
 }
 
+// #868 — la classe de densité se lit dans la référence compacte, plus dans le
+// modèle par territoire retiré du navigateur.
+const referenceReelle: Territoire[] = JSON.parse(readFileSync(
+  join(process.cwd(), '..', 'public', 'data', 'territoires.json'), 'utf8'))
+function densiteDepuisReference(id: string) {
+  const row = referenceReelle.find((territory) => territory.territoire === id)
+  return { classe_densite_code: row?.classe_densite_code, classe_densite_libelle_public: row?.classe_densite_libelle_public }
+}
+
 async function mountRaccordementPage(options: RaccordementPageOptions) {
-  vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-  const densityModel = options.targetType === 'commune' && options.targetId === '22001'
-    ? JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data',
-      'modeles-lecture', 'territoires', 'commune', '22001.json'), 'utf8')) : null
   const territories = (options.territories ?? territoiresFixture).map((territory) =>
-    territory.territoire === options.targetId && territory.type === options.targetType && densityModel
-      ? { ...territory, classe_densite_code: densityModel.territory.classe_densite_code,
-        classe_densite_libelle_public: densityModel.territory.classe_densite_libelle_public }
+    territory.territoire === options.targetId && territory.type === options.targetType
+      ? { ...territory, ...densiteDepuisReference(options.targetId) }
       : territory)
   const loader: ChargerFichier = async (file) => {
     if (file === 'territoires') return territories
@@ -77,12 +81,8 @@ async function mountRaccordementPage(options: RaccordementPageOptions) {
 
 describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () => {
   it('mounts the current 73-point national trajectory and visible selected mean on the ordinary indicator route', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const territoryModel = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data',
-      'modeles-lecture', 'territoires', 'commune', '22001.json'), 'utf8'))
-    const target = { ...territoiresFixture.find((row) => row.territoire === '22001')!,
-      classe_densite_code: territoryModel.territory.classe_densite_code,
-      classe_densite_libelle_public: territoryModel.territory.classe_densite_libelle_public }
+      const target = { ...territoiresFixture.find((row) => row.territoire === '22001')!,
+      ...densiteDepuisReference('22001') }
     const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
     const reference = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_reference')!
     const targetIdentity = { kind: 'territory', type: target.type, id: target.territoire }
@@ -338,8 +338,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     } finally { wrapper.unmount() }
   })
   it('retains admitted prix_m2 cohort facts when a warm same-cohort focal read gets HTTP 503', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const requests: Array<{ items: Array<Record<string, any>>; status: number }> = []
+      const requests: Array<{ items: Array<Record<string, any>>; status: number }> = []
     let admittedCohort: Record<string, any> | undefined
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
@@ -440,8 +439,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
 
   it.each(['series', 'scalar'] as const)(
     'refreshes only the mounted prix_m2 scope after the %s publication changes', async (changedFacet) => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const requests: Array<Array<Record<string, any>>> = []
+      const requests: Array<Array<Record<string, any>>> = []
     let publication = 1
     const loader: ChargerFichier = async (file) => {
       if (file === 'territoires') return territoiresFixture
@@ -531,8 +529,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     })
 
   it('keeps a delayed old focal reply out of the refreshed mounted page and cache generation', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const requests: Array<Array<Record<string, any>>> = []
+      const requests: Array<Array<Record<string, any>>> = []
     let publication: 1 | 2 = 1
     let deferOldFocal = true
     let initialPeerValues: number[] = []

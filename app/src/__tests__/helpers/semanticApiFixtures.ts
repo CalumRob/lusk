@@ -91,7 +91,6 @@ const raccordementFixtureNotice = {
 const observedMilieuxCohortFixtureIds = new Set(['22001', '35238'])
 let raccordementFixtureProvenanceCache: Record<string, any> | null = null
 let milieuxAbsenceSnapshotHash: string | null = null
-const publishedModels = new Map<string, Record<string, any>>()
 const publishedReadings = new Map<string, Record<string, any> | null>()
 const producerMetadata = new Map<string, Record<string, any>>()
 
@@ -354,39 +353,44 @@ function syntheticRaccordementComparison(item: Record<string, any>, resource: Re
     selection: selected, scope, result, synthetic_fixture: raccordementFixtureNotice }
 }
 
+// #868 — the per-territory read model is retired from the browser; synthetic
+// API fixtures now read the retained GLOBAL per-theme tables (the same rows
+// the other static consumers still load), indexed once by territory so the
+// per-member lookups stay O(1) instead of scanning the whole table.
+const publishedRowsByTerritory = new Map<string, Map<string, Record<string, any>[]>>()
+function tableIndex(theme: string, fichier: string): Map<string, Record<string, any>[]> {
+  const cacheKey = `${fichier}_${theme}`
+  const cached = publishedRowsByTerritory.get(cacheKey)
+  if (cached) return cached
+  const index = new Map<string, Record<string, any>[]>()
+  try {
+    const table: Record<string, any>[] = JSON.parse(readFileSync(
+      resolve(process.cwd(), `../public/data/${fichier}_${theme}.json`), 'utf8'))
+    for (const row of table) {
+      const bucket = index.get(row.territoire)
+      if (bucket) bucket.push(row)
+      else index.set(row.territoire, [row])
+    }
+  } catch { /* table absente : aucun fait publié pour ce thème */ }
+  publishedRowsByTerritory.set(cacheKey, index)
+  return index
+}
+
 function publishedReading(resource: Resource, target: Record<string, any>): Record<string, any> | undefined {
   if (target.kind !== 'territory' || typeof target.type !== 'string' || typeof target.id !== 'string') return undefined
   const key = `${resource.resource_id}/${target.type}/${target.id}`
   if (publishedReadings.has(key)) return publishedReadings.get(key) ?? undefined
-  try {
-    const path = resolve(process.cwd(), `../public/data/modeles-lecture/territoires/${target.type}/${target.id}.json`)
-    const model = JSON.parse(readFileSync(path, 'utf8'))
-    const group = resource.axis_values?.find(([axis]) => axis === 'groupe')?.[1]?.[0]
-    const reading = model.themes?.[resource.theme_id]?.histoires?.find((fact: Record<string, any>) => fact.groupe === group)
-    publishedReadings.set(key, reading ?? null)
-    return reading
-  } catch {
-    publishedReadings.set(key, null)
-    return undefined
-  }
+  const group = resource.axis_values?.find(([axis]) => axis === 'groupe')?.[1]?.[0]
+  const reading = (tableIndex(resource.theme_id, 'histoires').get(target.id) ?? [])
+    .find((fact: Record<string, any>) => fact.type === target.type && fact.groupe === group)
+  publishedReadings.set(key, reading ?? null)
+  return reading
 }
 
 function publishedIndicators(resource: Resource, target: Record<string, any>): Record<string, any>[] {
   if (target.kind !== 'territory' || typeof target.type !== 'string' || typeof target.id !== 'string') return []
-  const key = `${target.type}/${target.id}`
-  let model = publishedModels.get(key)
-  if (!model) {
-    try {
-      const loaded: Record<string, any> = JSON.parse(readFileSync(resolve(process.cwd(),
-        `../public/data/modeles-lecture/territoires/${key}.json`), 'utf8'))
-      publishedModels.set(key, loaded)
-      model = loaded
-    } catch {
-      return []
-    }
-  }
-  return model.themes?.[resource.theme_id]?.indicateurs?.filter((fact: Record<string, any>) =>
-    fact.key === resource.resource_id) ?? []
+  return (tableIndex(resource.theme_id, 'indicateurs').get(target.id) ?? [])
+    .filter((fact: Record<string, any>) => fact.type === target.type && fact.key === resource.resource_id)
 }
 
 function scalarFixtureFact(resource: Resource, member: Record<string, any>, context: NativeFixtureContext):

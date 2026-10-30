@@ -12,33 +12,23 @@ import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilie
 import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import CahierComparisonNote from '../fiche/prototype/CahierComparisonNote.vue'
-import { OPTIONS_COMPARAISON_KEY, optionsContexteComparaison } from '../fiche/comparisonContext'
-import { varianteDeUrl } from '../fiche/prototype/variantes'
+import { OPTIONS_COMPARAISON_KEY, contextesDepuisReference, optionsContexteComparaison } from '../fiche/comparisonContext'
+import type { TerritoryComparisonMode } from '../fiche/comparisonContext'
 import {
-  histoiresDemographieFixture,
-  histoiresHabitatFixture,
-  indicateursDemographieFixture,
-  indicateursHabitatFixture,
-  indicateursProgrammesFixture,
-  metadonneesThemesFixtures,
   territoiresFixture,
 } from '../payload/fixtures'
-import type { Histoire, Indicateur, Payload, Theme } from '../payload/types'
-import {
-  chargerModeleTerritoire,
-  chargerMetadonneesTheme,
-  THEME_METADATA_CHARGER_KEY,
-  TERRITORY_READ_MODEL_CHARGER_KEY,
-  validerModeleTerritoire,
-} from '../payload/territoryReadModel'
-import type { ChargerMetadonneesTheme, ChargerModeleTerritoire } from '../payload/territoryReadModel'
+import type { Histoire, Indicateur, Payload, Territoire } from '../payload/types'
+import { chargerMetadonneesTheme, THEME_METADATA_CHARGER_KEY } from '../payload/themeCatalogue'
+import type { ChargerMetadonneesTheme } from '../payload/themeCatalogue'
+import { TERRITORY_REFERENCE_CHARGER_KEY } from '../payload/territoryReference'
+import type { ChargerReferenceTerritoires } from '../payload/territoryReference'
 import { acquireThemeFacts } from '../payload/themeAcquisition'
 import {
   semanticComparisonForTheme,
   themeFactsRowsFromSemantic,
   validerReponseComparaisonTheme,
 } from '../payload/themeFactsAdapter'
-import { PayloadError, validerThemeMetadata } from '../payload/validate'
+import { PayloadError, validerTerritoires, validerThemeMetadata } from '../payload/validate'
 import { routes } from '../router'
 import {
   nativeBatchResponse,
@@ -47,95 +37,32 @@ import {
   nativeResources,
 } from './helpers/semanticApiFixtures'
 
-const indicateurs: Indicateur[] = [
-  ...indicateursProgrammesFixture,
-  ...indicateursDemographieFixture,
-  ...indicateursHabitatFixture,
-]
-const histoires: Histoire[] = [...histoiresDemographieFixture, ...histoiresHabitatFixture]
-
 const fetchBloque = vi.fn(async (input: RequestInfo | URL) => {
   throw new Error(`Accès réseau réel interdit dans ce test : ${String(input)}`)
 })
 
-const modelePublie22001 = JSON.parse(readFileSync(
-  resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22001.json'),
-  'utf8',
-)) as Record<string, any>
-
-function semanticScalarBatch(theme: string, metadata: any, items: Array<Record<string, any>>,
-  focalId: string, valueFor: (indicator: string) => number) {
-  const territories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-  return { contract: 'semantic-read-batch-v1', results: items.map((item) => {
-    const indicator = item.resource as string
-    const target = item.target as { kind: string; type: string; id?: string; department_id?: string | null; epci_id?: string | null }
-    const contract = metadata.scalar_contracts[indicator]
-    const page = metadata.indicator_pages[indicator]
-    if (target.kind === 'territory') {
-      const focal = territories.find((member: any) => member.type === target.type && member.territoire === target.id)
-      const selectedIntent = item.intent.kind === 'selected_comparison'
-      const members = selectedIntent
-        ? item.intent.members.map((selection: { id: string }) => territories.find((member: any) => member.territoire === selection.id))
-        : target.type === 'commune'
-          ? territories.filter((member: any) => member.type === 'commune' && member.classe_densite_code === focal?.classe_densite_code)
-          : territories.filter((member: any) => member.type === target.type)
-      const scope = selectedIntent
-        ? { kind: 'explicit_selection', member_count: members.length }
-        : target.type === 'commune'
-          ? { kind: 'density_class', territory_type: 'commune', density_class_code: focal?.classe_densite_code,
-              member_count: members.length }
-          : { kind: 'same_level', territory_type: target.type, member_count: members.length }
-      const available = members.length >= 2 && members.some((member: any) => member?.territoire === focalId)
-      const data = { resource: indicator, target, contract: 'indicator-comparison-v1', indicator_id: indicator,
-        shape: 'scalar', content_version: `${theme}-scalar-test-v1`, reference_content_version: 'reference-test-v1',
-        selection: selectedIntent ? item.intent.members.map((member: { type: string; id: string }) =>
-          ({ territory_type: member.type, territory_id: member.id })) : null,
-        scope, result: { indicator_id: indicator, status: available ? 'available' : 'unavailable',
-          unit: page.unit, direction: page.comparison?.direction ?? page.direction,
-          source_facet: contract.comparison_facet ?? page.comparison?.indicator ?? indicator,
-          descriptor_version: `${theme}-scalar-descriptor-v1`, selected_member_count: members.length,
-          eligible_count: members.length, missing_count: 0, rank: available ? 1 : null,
-          rank_size: available ? members.length : null } }
-      return { id: item.id, resource: indicator, data }
-    }
-    const members = territories.filter((member: any) => member.type === target.type &&
-      (!target.department_id || member.departement === target.department_id) &&
-      (!target.epci_id || member.epci === target.epci_id))
-    const observations = (contract.completeness === 'dense_complete'
-      ? members
-      : members.filter((member: any) => member.territoire === focalId)).map((member: any) => ({
-      territory: { id: member.territoire, type: member.type, name: member.nom },
-      status: 'measured', value: valueFor(indicator), support_count: null, denominator_count: null,
-      sources: [{ source_id: page.sources[0], name: 'Source API fiche',
-        vintage_id: `${page.sources[0]}-2026`, version: '2026', reference_date: null, publication_date: null }],
-    }))
-    const data = { resource: indicator, target, shape: 'scalar',
-      cohort: { territory_type: target.type, department_id: target.department_id ?? null,
-        epci_id: target.epci_id ?? null, member_count: members.length,
-        members: members.map((member: any) => ({ id: member.territoire, type: member.type, name: member.nom })),
-        reference_content_version: 'reference-test-v1' },
-      content_version: `${theme}-scalar-test-v1`, reference_content_version: 'reference-test-v1',
-      descriptor: { indicator_id: indicator, theme_id: theme, label: page.label, unit: page.unit,
-        direction: page.comparison?.direction ?? page.direction,
-        comparison_facet: contract.comparison_facet ?? page.comparison?.indicator ?? indicator,
-        allowed_levels: contract.allowed_levels ?? page.levels,
-        denominator_semantics: 'Producer-declared denominator', completeness: contract.completeness,
-        descriptor_version: `${theme}-scalar-descriptor-v1` }, observations }
-    return { id: item.id, resource: indicator, data }
-  }) }
-}
-
-function modeleAvecContextesComparaison() {
-  const model = structuredClone(modelePublie22001)
-  const validated = validerModeleTerritoire(
-    model,
-    'territoires/commune/22001.json',
-    { type: 'commune', territoire: '22001' },
-    { requireAllThemes: true },
-  )
-  validated.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-  return validated
-}
+/** #868 — the mounted fiche bootstraps from the reference seam, never from a
+ *  per-territory model. The default reference is the synthetic fixture table;
+ *  tests that need the real published reference inject `chargerReferenceReelle`. */
+const chargerReferenceFixture: ChargerReferenceTerritoires = async () => territoiresFixture
+const referenceReelle = validerTerritoires(
+  JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8')),
+  'territoires.json',
+)
+const chargerReferenceReelle: ChargerReferenceTerritoires = async () => referenceReelle
+const cibleReference = (id: string): Territoire =>
+  referenceReelle.find((candidate) => candidate.territoire === id)!
+const contextesReference = (id: string) => contextesDepuisReference(cibleReference(id), referenceReelle)
+const lireDonnee = (relatif: string) =>
+  readFileSync(resolve(process.cwd(), '../public/data', relatif), 'utf8')
+const lignesIndicateursPubliees = (theme: string, id: string): Indicateur[] =>
+  (JSON.parse(lireDonnee(`indicateurs_${theme}.json`)) as Indicateur[])
+    .filter((row) => row.territoire === id)
+const histoirePubliee = (theme: string, id: string): Histoire =>
+  (JSON.parse(lireDonnee(`histoires_${theme}.json`)) as Histoire[])
+    .find((row) => row.territoire === id)!
+const metadataPubliee = (theme: string) =>
+  JSON.parse(lireDonnee(`theme_${theme}.json`)) as Record<string, any>
 
 function nativeFicheReadFixture(item: Record<string, any>, resource: Parameters<typeof nativeReadFixture>[1]) {
   return nativeReadFixture(item, resource, { syntheticProfileComparisons: true })
@@ -154,36 +81,11 @@ function nativeSemanticFetch(requests: Array<Array<Record<string, any>>> = []) {
   })
 }
 
-function modelFor(territoire: string) {
-  const target = territoiresFixture.find((candidate) => candidate.territoire === territoire)!
-  const themes = Object.fromEntries(
-    (['programmes', 'demographie', 'habitat'] as Theme[]).map((theme) => [theme, {
-      theme,
-      indicateurs: indicateurs.filter((row) => row.theme === theme),
-      histoires: histoires.filter((row) => row.theme === theme),
-      theme_metadata: metadonneesThemesFixtures[theme],
-      profils_acces_bpe: null,
-      distribution_acces_batiments: null,
-      rampe_acces_batiments: null,
-    }]),
-  )
-  return validerModeleTerritoire({
-    schema_version: '1',
-    snapshot_id: '2026-09-15',
-    territory: target,
-    territoires: territoiresFixture,
-    themes,
-  }, `territoires/${target.type}/${territoire}.json`, {
-    type: target.type,
-    territoire,
-  })
-}
-
 async function monter(
   chemin: string,
-  charger: ChargerModeleTerritoire = vi.fn(async (_type, territoire) => modelFor(territoire)),
+  charger: ChargerReferenceTerritoires = chargerReferenceFixture,
   chargerMetadata: ChargerMetadonneesTheme = async (theme) => validerThemeMetadata(
-    JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/theme_${theme}.json`), 'utf8')),
+    JSON.parse(lireDonnee(`theme_${theme}.json`)),
     `theme_${theme}.json`,
   ),
 ) {
@@ -194,7 +96,7 @@ async function monter(
     global: {
       plugins: [router],
       provide: {
-        [TERRITORY_READ_MODEL_CHARGER_KEY]: charger,
+        [TERRITORY_REFERENCE_CHARGER_KEY]: charger,
         [THEME_METADATA_CHARGER_KEY]: chargerMetadata,
       },
     },
@@ -203,43 +105,34 @@ async function monter(
   return { router, wrapper, charger }
 }
 
-async function monterNoteComparaison(mode: 'densite' | 'epci' | 'bretagne') {
-  const model = modeleAvecContextesComparaison()
-  const contexts = model.themes.mobilite!.comparisons
-  const options = optionsContexteComparaison({ territoire: model.territory, contextes: contexts })
+async function monterNoteComparaison(mode: TerritoryComparisonMode) {
+  const contextes = contextesReference('22001')
+  const options = optionsContexteComparaison({ territoire: cibleReference('22001'), contextes })
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(`/territoire/commune/22001?theme=mobilite&comparaison=${mode}`)
   await router.isReady()
   const wrapper = mount(CahierComparisonNote, {
-    props: { label: contexts[mode]!.scope.label },
+    props: { label: contextes[mode]!.scope.label },
     global: {
       plugins: [router],
       provide: { [OPTIONS_COMPARAISON_KEY]: computed(() => options) },
     },
   })
-  return { model, router, wrapper }
+  return { contextes, router, wrapper }
 }
 
 describe('TerritoireView — modèle atomique par territoire', () => {
-  it('renders native Programmes facts with a missing active projection while its catalogue is held', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+  it('renders native Programmes facts while the active catalogue is held, then retries it metadata-only', async () => {
     let notifyMetadataStarted!: () => void
     const metadataStarted = new Promise<void>((resolve) => { notifyMetadataStarted = resolve })
     let releaseMetadata!: (response: Response) => void
     const heldMetadata = new Promise<Response>((resolve) => { releaseMetadata = resolve })
     const focalRequests: Array<Array<Record<string, any>>> = []
     let metadataCalls = 0
-    const modelWithBadInactiveMetadata = structuredClone(modelePublie22001)
-    modelWithBadInactiveMetadata.themes.habitat.theme_metadata = null
-    modelWithBadInactiveMetadata.themes.programmes.theme_metadata = null
     const programmeResources = nativeResources('programmes')
     const annual = programmeResources.find((resource) => resource.resource_id === 'subventions_annuelles')!
     const fetchAll = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url === '/data/modeles-lecture/territoires/commune/22001.json') {
-        return new Response(JSON.stringify(modelWithBadInactiveMetadata), { status: 200 })
-      }
       if (url.startsWith('/data/theme_')) {
         metadataCalls += 1
         if (metadataCalls === 1) {
@@ -273,7 +166,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     let wrapper: ReturnType<typeof mount> | null = null
 
     try {
-      const mounted = await monter('/territoire/commune/22001', chargerModeleTerritoire, chargerMetadonneesTheme)
+      const mounted = await monter('/territoire/commune/22001', chargerReferenceReelle, chargerMetadonneesTheme)
       wrapper = mounted.wrapper
       await flushPromises()
       expect(metadataCalls).toBe(1)
@@ -316,8 +209,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   }, 20000)
 
   it('ignores a late catalogue response after the fiche route changes', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
     let resolveFirstMetadata!: (metadata: Awaited<ReturnType<ChargerMetadonneesTheme>>) => void
     const firstMetadata = new Promise<Awaited<ReturnType<ChargerMetadonneesTheme>>>((resolve) => {
       resolveFirstMetadata = resolve
@@ -340,7 +231,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
 
     const { router, wrapper } = await monter('/territoire/commune/22001',
-      vi.fn(async (_type, id) => modelFor(id)), loadMetadata)
+      chargerReferenceFixture, loadMetadata)
     try {
       expect(metadataCalls).toBe(1)
       await router.push('/territoire/commune/22002?theme=programmes')
@@ -349,12 +240,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       const focalProgrammesReadCount = () => requests.flat().filter((item) =>
         item.resource === 'subventions_annuelles' && item.intent.kind === 'facts').length
       const readsBeforeLateResponse = focalProgrammesReadCount()
-      expect(wrapper.find('h1').text()).toBe(modelFor('22002').territory.nom)
+      expect(wrapper.find('h1').text()).toBe(territoiresFixture.find((t) => t.territoire === '22002')!.nom)
 
       resolveFirstMetadata(lateMetadata)
       await flushPromises()
 
-      expect(wrapper.find('h1').text()).toBe(modelFor('22002').territory.nom)
+      expect(wrapper.find('h1').text()).toBe(territoiresFixture.find((t) => t.territoire === '22002')!.nom)
       expect(wrapper.get('[data-groupe="subventions"]').text()).not.toContain('Une explication périmée arrivée trop tard.')
       expect(focalProgrammesReadCount()).toBe(readsBeforeLateResponse)
     } finally {
@@ -365,20 +256,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     }
   }, 20000)
 
-  it('keeps typed facts visible with a malformed active projection and retries only its 404 catalogue', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+  it('keeps typed facts visible while the active catalogue 404s, and retries only that catalogue', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     const readingResource = nativeResources('economie').find((resource) =>
       resource.resource_id === 'economie_selected_reading')!
-    const modelWithMalformedEconomyProjection = structuredClone(modelePublie22001)
-    modelWithMalformedEconomyProjection.themes.economie.theme_metadata = { theme: 'programmes' }
     let metadataCalls = 0
     const fetchAll = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url === '/data/modeles-lecture/territoires/commune/22001.json') {
-        return new Response(JSON.stringify(modelWithMalformedEconomyProjection), { status: 200 })
-      }
       if (url === '/data/theme_economie.json') {
         metadataCalls += 1
         return metadataCalls === 1
@@ -401,7 +285,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     vi.stubGlobal('fetch', fetchAll)
 
     const { wrapper } = await monter('/territoire/commune/22001?theme=economie',
-      chargerModeleTerritoire, chargerMetadonneesTheme)
+      chargerReferenceReelle, chargerMetadonneesTheme)
     try {
       await flushPromises()
       expect(wrapper.get('[role="tabpanel"]').text()).toContain('Sentinelle API — activité')
@@ -425,7 +309,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   }, 20000)
 
   it('ouvre la fiche Programmes par défaut depuis les ressources sémantiques natives, sans route thème ni repli statique', async () => {
-    const model = modeleAvecContextesComparaison()
     const requests: Array<Array<Record<string, any>>> = []
     const programmeResources = nativeResources('programmes')
     const series = programmeResources.find((resource) => resource.shapes.includes('ordered_series'))!
@@ -438,7 +321,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         return nativeBatchResponse(items, (item, resource) => {
           const data = nativeReadFixture(item, resource)
           if (item.intent.kind !== 'facts') return data
-          const facts = model.themes.programmes!.indicators.filter((fact) =>
+          const facts = lignesIndicateursPubliees('programmes', '22001').filter((fact) =>
             fact.key === resource.resource_id && fact.dimension !== null && fact.dimension !== undefined)
           if (!facts.length) return data
           const sourceId = resource.sources[0]!
@@ -467,9 +350,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    const { wrapper } = await monter('/territoire/commune/22001', chargerReferenceReelle)
     await flushPromises()
     expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources')).toBe(true)
     expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources/read-batch'),
@@ -480,13 +362,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         ? [[resource.resource_id, 'fixed_comparison']] : [])]
       : [])
     expect(requests[0]?.map((item) => [item.resource, item.intent.kind])).toEqual(expectedReads)
-    expect(requests[0]?.every((item) => item.target.kind === 'territory' && item.target.id === model.territory.territoire)).toBe(true)
+    expect(requests[0]?.every((item) => item.target.kind === 'territory' && item.target.id === '22001')).toBe(true)
     const text = wrapper.get('[role="tabpanel"]').text()
     const alert = wrapper.find('[role="alert"]')
     expect(alert.exists()).toBe(false)
     expect(text).toContain('10,00 M€')
     expect(text).toContain('Subventions attribuées')
-    expect(text).toContain(model.themes.programmes!.indicators
+    expect(text).toContain(lignesIndicateursPubliees('programmes', '22001')
       .find((fact) => fact.key === series.resource_id)!.vintage_source)
     expect(text).toContain('9 876 €')
     expect(text).not.toContain('1 600 €')
@@ -496,15 +378,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   }, 20000)
 
   it('keeps the measured Programmes year visible when a legacy no-record axis follows it', async () => {
-    const model = modeleAvecContextesComparaison()
     const legacy = nativeResources('programmes').find((resource) =>
       resource.resource_id === 'subventions_annuelles')!
-    const producerMetadata = JSON.parse(readFileSync(resolve(process.cwd(),
-      '../public/data/theme_programmes.json'), 'utf8'))
-    // The real territory loader reconciles this canonical catalogue over the
-    // snapshot's older per-territory metadata before semantic acquisition.
-    model.themes.programmes!.metadata.indicator_pages =
-      validerThemeMetadata(producerMetadata, 'theme_programmes.json').indicator_pages
+    const producerMetadata = metadataPubliee('programmes')
     const sourceId = legacy.sources[0]!
     const descriptorVintageId = producerMetadata.source_records[sourceId].vintages[0].id
     const requests: Array<Array<Record<string, any>>> = []
@@ -527,7 +403,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
           return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => {
             const data = { resource: legacy.resource_id, target: item.target,
               publication_id: 'legacy-series-v1',
-              territory: { id: item.target.id, type: item.target.type, name: model.territory.nom },
+              territory: { id: item.target.id, type: item.target.type, name: cibleReference('22001').nom },
               indicator_id: legacy.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
               label: legacy.label, unit: legacy.unit, direction: legacy.direction,
               descriptor_version: 'legacy-series-descriptor-v1', comparison_point: null,
@@ -550,7 +426,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
             indicator_id: legacy.indicator_id, shape: 'series', content_version: 'legacy-series-v1',
             reference_content_version: 'legacy-reference-v1', selection: null,
             scope: { kind: 'density_class', territory_type: 'commune',
-              density_class_code: model.territory.classe_densite_code, member_count: 2 },
+              density_class_code: cibleReference('22001').classe_densite_code, member_count: 2 },
             result: { indicator_id: legacy.indicator_id, label: legacy.label, facet: null,
               source_facet: null, unit: legacy.unit, direction: legacy.direction,
               descriptor_version: 'legacy-series-descriptor-v1', status: 'unavailable',
@@ -565,9 +441,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    const { wrapper } = await monter('/territoire/commune/22001', chargerReferenceReelle)
     await flushPromises()
 
     expect(focalReads[0]).not.toHaveProperty('dataset_id')
@@ -602,8 +477,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(() => validerReponseComparaisonTheme('programmes', comparison, undefined,
       { type: 'commune', id: '22001' })).not.toThrow()
     expect(() => semanticComparisonForTheme(comparison, {
-      target: { territoire: '22001', type: 'commune', classe_densite_code: model.territory.classe_densite_code },
-      territories: model.cohortTerritories,
+      target: { territoire: '22001', type: 'commune', classe_densite_code: cibleReference('22001').classe_densite_code },
+      territories: referenceReelle,
     }, [{ resource: legacy.resource_id, shapes: legacy.shapes, declaration: legacy, data: focalReads[0]! }],
     { type: 'commune', id: '22001' })).not.toThrow()
     expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
@@ -612,33 +487,24 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('selects a commune EPCI perimeter by its typed parent identity without loading scalar cohorts', async () => {
-    Reflect.deleteProperty(import.meta.env, 'VITE_THEME_ACQUISITION_API')
-    Reflect.deleteProperty(import.meta.env, 'VITE_SCALAR_COHORT_API')
-    Reflect.deleteProperty(process.env, 'VITE_THEME_ACQUISITION_API')
-    Reflect.deleteProperty(process.env, 'VITE_SCALAR_COHORT_API')
-    expect(import.meta.env.VITE_THEME_ACQUISITION_API).toBeUndefined()
-    expect(import.meta.env.VITE_SCALAR_COHORT_API).toBeUndefined()
-
+  it('selects a commune EPCI perimeter by its typed parent identity from the reference, without scalar cohorts', async () => {
     const territoryId = '22285'
-    const file = `territoires/commune/${territoryId}.json`
-    const published = JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/modeles-lecture/${file}`), 'utf8'))
-    const model = validerModeleTerritoire(published, file, { type: 'commune', territoire: territoryId },
-      { requireAllThemes: true })
-    expect(model.cohortTerritories).toBeUndefined()
-    const parent = model.territories.find((candidate) => candidate.type === 'epci' &&
-      candidate.territoire === model.territory.epci)!
-    const region = model.territories.find((candidate) => candidate.type === 'region')!
-    const reference = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-    const resolvedMembers = reference.filter((candidate: any) => candidate.type === 'commune' &&
+    const cible = cibleReference(territoryId)
+    // #868 — the compact reference carries the full join table (not just the
+    // target's ladder parents): comparison cohorts resolve against it.
+    expect(referenceReelle.length).toBeGreaterThan(1000)
+    const parent = referenceReelle.find((candidate) => candidate.type === 'epci' &&
+      candidate.territoire === cible.epci)!
+    const region = referenceReelle.find((candidate) => candidate.type === 'region')!
+    const resolvedMembers = referenceReelle.filter((candidate) => candidate.type === 'commune' &&
       candidate.epci === parent.territoire)
-    const resolvedBretagne = reference.filter((candidate: any) => candidate.type === 'commune')
+    const resolvedBretagne = referenceReelle.filter((candidate) => candidate.type === 'commune')
     expect(resolvedMembers.length).toBeGreaterThan(1)
 
     const legacy = nativeResources('programmes').find((resource) =>
       resource.resource_id === 'subventions_annuelles')!
     const sourceId = legacy.sources[0]!
-    const vintageId = model.themes.programmes!.metadata.source_records?.[sourceId]?.vintages?.[0]?.id
+    const vintageId = metadataPubliee('programmes').source_records?.[sourceId]?.vintages?.[0]?.id
     expect(vintageId).toBeTruthy()
     const descriptorVersion = 'programmes-series-descriptor-v1'
     const publicationVersion = 'programmes-api-facts-sentinel-v1'
@@ -656,15 +522,15 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       const selectedIdentity = selection?.[0]
       const resolvedSelection = selection?.length === 0 ? [] : selectedIdentity?.territory_type === 'epci'
         ? resolvedMembers : selectedIdentity?.territory_type === 'region' ? resolvedBretagne : []
-      const memberCount = isSelected ? resolvedSelection.length : reference.filter((candidate: any) =>
-        candidate.type === 'commune' && candidate.classe_densite_code === model.territory.classe_densite_code).length
+      const memberCount = isSelected ? resolvedSelection.length : referenceReelle.filter((candidate) =>
+        candidate.type === 'commune' && candidate.classe_densite_code === cible.classe_densite_code).length
       const data = { resource: legacy.resource_id, target: item.target,
         contract: 'indicator-comparison-v1', complete_theme: false,
         indicator_id: legacy.indicator_id, shape: 'series', content_version: publicationVersion,
         reference_content_version: 'programmes-reference-v1', selection,
         scope: isSelected ? { kind: 'explicit_selection', member_count: memberCount }
           : { kind: 'density_class', territory_type: 'commune',
-            density_class_code: model.territory.classe_densite_code, member_count: memberCount },
+            density_class_code: cible.classe_densite_code, member_count: memberCount },
         result: { indicator_id: legacy.indicator_id, source_facet: '2024', unit: legacy.unit,
           direction: legacy.direction, descriptor_version: descriptorVersion, status: 'available',
           selected_member_count: memberCount, eligible_count: memberCount, missing_count: 0,
@@ -685,7 +551,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         if (item.intent.kind !== 'facts') return comparisonData(item)
         return { resource: legacy.resource_id, target: item.target,
           publication_id: publicationVersion,
-          territory: { id: territoryId, type: 'commune', name: model.territory.nom },
+          territory: { id: territoryId, type: 'commune', name: cible.nom },
           indicator_id: legacy.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
           label: legacy.label, unit: legacy.unit, direction: legacy.direction,
           descriptor_version: descriptorVersion, comparison_point: '2024',
@@ -697,7 +563,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     })
     vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter(`/territoire/commune/${territoryId}?theme=programmes`,
-      vi.fn(async () => model))
+      chargerReferenceReelle)
     await flushPromises()
 
     expect(wrapper.find('.subvention-total').text()).toContain('987')
@@ -721,7 +587,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const annual = renderedPayload.indicateurs.find((row) => row.territoire === territoryId &&
       row.theme === 'programmes' && row.key === 'subventions_annuelles')
     expect(annual?.comparaisonApi).toMatchObject({ rang: 1, taille: resolvedMembers.length,
-      portee: model.themes.mobilite!.comparisons.epci!.scope.label, direction: 'high' })
+      portee: contextesReference(territoryId).epci!.scope.label, direction: 'high' })
     expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
 
     const epciRead = selectedReads.at(-1)
@@ -741,23 +607,26 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const bretagneAnnual = bretagnePayload.indicateurs.find((row) => row.territoire === territoryId &&
       row.theme === 'programmes' && row.key === 'subventions_annuelles')
     expect(bretagneAnnual?.comparaisonApi).toMatchObject({ rang: 1, taille: resolvedBretagne.length,
-      portee: model.themes.mobilite!.comparisons.bretagne!.scope.label, direction: 'high' })
+      portee: contextesReference(territoryId).bretagne!.scope.label, direction: 'high' })
     expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
-
-    // If a named scope's canonical identity is missing, fail closed rather
-    // than send [] or silently request the density/default comparison.
-    model.territories = model.territories.filter((candidate) => candidate.type !== 'epci')
-    const requestCountBeforeMissingParent = requests.length
-    await router.replace({ query: { theme: 'programmes', comparaison: 'epci' } })
-    await flushPromises()
-    expect(requests).toHaveLength(requestCountBeforeMissingParent)
-    expect(wrapper.find('[role="alert"]').text()).toContain('Réessayer')
     wrapper.unmount()
+
+    // If a named scope's canonical identity is missing from the reference, fail
+    // closed rather than send [] or silently request the density/default comparison.
+    const sansRegion: ChargerReferenceTerritoires = async () =>
+      referenceReelle.filter((candidate) => candidate.type !== 'region')
+    const requestCountBeforeMissingParent = requests.length
+    const manquant = await monter(`/territoire/commune/${territoryId}?theme=programmes&comparaison=bretagne`, sansRegion)
+    await flushPromises()
+    expect(requests.length).toBeGreaterThan(requestCountBeforeMissingParent)
+    expect(requests.slice(requestCountBeforeMissingParent).flat()
+      .some((item) => item.intent.kind === 'selected_comparison')).toBe(false)
+    expect(manquant.wrapper.find('[role="alert"]').text()).toContain('Réessayer')
+    manquant.wrapper.unmount()
   })
 
   it('ne rend pas la section subventions quand les lectures natives déclarent leur absence', async () => {
-    const model = modeleAvecContextesComparaison()
-    expect(model.themes.programmes!.indicators.some((fact) => fact.key === 'subventions_annuelles')).toBe(true)
+    expect(lignesIndicateursPubliees('programmes', '22001').some((fact) => fact.key === 'subventions_annuelles')).toBe(true)
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/resources') return nativeCatalogueResponse()
@@ -780,9 +649,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    const { wrapper } = await monter('/territoire/commune/22001', chargerReferenceReelle)
 
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('Aucun programme référencé.')
     expect(wrapper.find('.programme-subventions').exists()).toBe(false)
@@ -794,10 +662,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it('acquiert et réchauffe les faits natifs des thèmes, puis réutilise le cache pendant la navigation', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     const fetchApi = nativeSemanticFetch(requests)
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', nativeSemanticFetch())
-    const model = modeleAvecContextesComparaison()
-    const activityLabel = (model.themes.economie!.histories[0] as any).top1_activity_label as string
+    const activityLabel = (histoirePubliee('economie', '22001') as any).top1_activity_label as string
     const acquired = await acquireThemeFacts('commune', '22001', 'programmes')
     expect(() => themeFactsRowsFromSemantic('programmes', acquired, {
       territoire: '22001', type: 'commune' })).not.toThrow()
@@ -805,7 +671,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(() => themeFactsRowsFromSemantic('habitat', acquiredHabitat, {
       territoire: '22001', type: 'commune' })).not.toThrow()
     vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    const { router, wrapper } = await monter('/territoire/commune/22001', chargerReferenceReelle)
 
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('Programmes et subventions')
     await flushPromises()
@@ -843,12 +709,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         const passoires = nativeResources(theme).find((resource) => resource.resource_id === 'part_passoires')!
         expect(wrapper.get(`[data-clef="${passoires.resource_id}"] .valeur-numerique`).text()).toBe('13')
       } else if (theme === 'milieux') {
-        const publishedReading = model.themes.milieux!.histories[0]!
+        const publishedReading = histoirePubliee('milieux', '22001')
         const period = (publishedReading as any).periode_pop as string
         const visibleResource = nativeResources(theme).find((resource) =>
           resource.shapes.includes('ordered_series') && resource.target_kinds.includes('territory'))!
         expect(wrapper.get('[role="tabpanel"]').text()).toContain(period)
-        expect(wrapper.get('[role="tabpanel"]').text()).toContain(model.themes.milieux!.indicators
+        expect(wrapper.get('[role="tabpanel"]').text()).toContain(lignesIndicateursPubliees('milieux', '22001')
           .find((fact) => fact.key === visibleResource.resource_id)!.vintage_source)
       } else if (theme === 'economie') {
         expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
@@ -887,10 +753,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const model = modeleAvecContextesComparaison()
-    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    const { router, wrapper } = await monter('/territoire/commune/22001', chargerReferenceReelle)
     await flushPromises()
 
     expect(failedEconomyWarmup).toBe(true)
@@ -928,10 +792,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const model = modeleAvecContextesComparaison()
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=habitat', chargerReferenceReelle)
     expect(resolveHabitat).toBeTypeOf('function')
 
     await router.replace({ query: { theme: 'economie' } })
@@ -972,10 +834,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
     const { wrapper } = await monter('/territoire/commune/22001?theme=habitat',
-      vi.fn(async () => modeleAvecContextesComparaison()))
+      chargerReferenceReelle)
 
     expect(wrapper.get('[role="alert"]').text()).toContain('indicateurs de ce thème')
     expect(failedPairedRead).toBe(true)
@@ -1013,13 +874,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const model = modeleAvecContextesComparaison()
     const { wrapper } = await monter('/territoire/commune/22001?theme=habitat',
-      vi.fn(async () => model))
+      chargerReferenceReelle)
     const passoires = nativeResources('habitat').find((resource) => resource.resource_id === 'part_passoires')!
-    const sourceLabel = model.themes.habitat!.indicators.find((fact) =>
+    const sourceLabel = lignesIndicateursPubliees('habitat', '22001').find((fact) =>
       fact.key === passoires.resource_id)!.vintage_source
 
     expect(requests.length).toBeGreaterThan(0)
@@ -1050,12 +909,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const model = modeleAvecContextesComparaison()
-    const activityLabel = (model.themes.economie!.histories[0] as any).top1_activity_label as string
+    const activityLabel = (histoirePubliee('economie', '22001') as any).top1_activity_label as string
     const { wrapper } = await monter('/territoire/commune/22001?theme=economie&comparaison=epci',
-      vi.fn(async () => model))
+      chargerReferenceReelle)
     await flushPromises()
 
     expect(wrapper.get('[role="alert"]').text()).toContain('comparaisons de ce thème')
@@ -1091,19 +948,17 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const model = modeleAvecContextesComparaison()
-    const activityLabel = (model.themes.economie!.histories[0] as any).top1_activity_label as string
+    const activityLabel = (histoirePubliee('economie', '22001') as any).top1_activity_label as string
     const { router, wrapper } = await monter(
       '/territoire/commune/22001?theme=economie&comparaison=epci',
-      vi.fn(async () => model),
+      chargerReferenceReelle,
     )
     expect(resolveOldComparison).toBeTypeOf('function')
 
     await router.replace({ query: { theme: 'economie', comparaison: 'bretagne' } })
     await flushPromises()
-    const bretagne = model.territories.find((territory) => territory.type === 'region')!
+    const bretagne = referenceReelle.find((territory) => territory.type === 'region')!
     const selectedReads = requests.filter((items) =>
       items.some((item) => item.intent.kind === 'selected_comparison'))
     expect(selectedReads.at(-1)?.[0]?.intent.members).toEqual([{ type: bretagne.type, id: bretagne.territoire }])
@@ -1118,10 +973,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   beforeEach(() => {
-    // Tests which intentionally exercise the incumbent presentation path opt
-    // out explicitly; acquisition-contract tests below turn the default API
-    // path back on and provide native /api/resources fixtures.
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
+    // #868 — no static path exists anymore: tests that exercise the native API
+    // stub fetch with /api/resources fixtures; the default stays "API down".
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('API not configured in tests')))
   })
   afterEach(() => {
@@ -1132,10 +985,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   it('keeps the building figures without exposing an interactive peer selector', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', nativeSemanticFetch())
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
-      vi.fn(async () => modeleAvecContextesComparaison()))
+      chargerReferenceReelle)
     await flushPromises()
     expect(wrapper.find('#building-peer-search').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Choisir les territoires du groupe comparé')
@@ -1143,22 +995,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   it.each(['demographie', 'milieux'] as const)(
-    'renders API-resolved named-scope reading clouds for %s with the default API flags and no full cohort reference',
+    'renders API-resolved named-scope reading clouds for %s from the full compact reference',
     async (theme) => {
-      for (const name of ['VITE_THEME_ACQUISITION_API', 'VITE_SCALAR_COHORT_API']) {
-        Reflect.deleteProperty(import.meta.env, name)
-        Reflect.deleteProperty(process.env, name)
-        expect(import.meta.env[name]).toBeUndefined()
-      }
-
-      const model = validerModeleTerritoire(structuredClone(modelePublie22001),
-        'territoires/commune/22001.json', { type: 'commune', territoire: '22001' },
-        { requireAllThemes: true })
-      expect(model.cohortTerritories).toBeUndefined()
-      const parent = model.territories.find((territory) => territory.type === 'epci' &&
-        territory.territoire === model.territory.epci)!
-      const region = model.territories.find((territory) => territory.type === 'region')!
-      const apiReference = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8')) as any[]
+      const cible = cibleReference('22001')
+      const parent = referenceReelle.find((territory) => territory.type === 'epci' &&
+        territory.territoire === cible.epci)!
+      const region = referenceReelle.find((territory) => territory.type === 'region')!
+      const apiReference = referenceReelle as any[]
       const epciMembers = apiReference.filter((territory) => territory.type === 'commune' && territory.epci === parent.territoire)
       const bretagneMembers = apiReference.filter((territory) => territory.type === 'commune')
       const resources = nativeResources(theme)
@@ -1183,7 +1026,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
           let data = nativeReadFixture(item, resource)
           if (item.intent.kind === 'facts' && item.target.kind === 'territory' &&
               resource.resource_id === rankResource.resource_id && resource.shapes.includes('ordered_series')) {
-            const comparisonPoint = model.themes[theme]?.metadata?.indicator_pages?.[resource.indicator_id]?.comparison?.detail
+            const comparisonPoint = metadataPubliee(theme).indicator_pages?.[resource.indicator_id]?.comparison?.detail
             if (!comparisonPoint) throw new Error(`No producer comparison facet for ${resource.resource_id}`)
             data = { ...data, comparison_point: comparisonPoint }
           }
@@ -1208,7 +1051,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       })
       vi.stubGlobal('fetch', fetchApi)
       const { router, wrapper } = await monter(
-        `/territoire/commune/22001?theme=${theme}&comparaison=epci`, vi.fn(async () => model))
+        `/territoire/commune/22001?theme=${theme}&comparaison=epci`, chargerReferenceReelle)
 
       const graph = () => theme === 'demographie'
         ? wrapper.findComponent(GraphiqueSoldes) : wrapper.findComponent(GraphiqueQuadrantMilieux)
@@ -1228,7 +1071,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
 
       await flushPromises()
-      const epciLabel = model.themes.mobilite!.comparisons.epci!.scope.label
+      const epciLabel = contextesReference('22001').epci!.scope.label
       verifyCloudAndRank(epciMembers.length, epciLabel, epciMembers.map((member) => member.territoire))
       expect(requests.flat().some((item) => item.target.kind === 'territory_cohort' &&
         item.target.epci_id === parent.territoire && item.resource === readingResource.resource_id)).toBe(true)
@@ -1237,7 +1080,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       const requestCountBeforeRegion = requests.length
       await router.replace({ query: { theme, comparaison: 'bretagne' } })
       await flushPromises()
-      const bretagneLabel = model.themes.mobilite!.comparisons.bretagne!.scope.label
+      const bretagneLabel = contextesReference('22001').bretagne!.scope.label
       verifyCloudAndRank(bretagneMembers.length, bretagneLabel, bretagneMembers.map((member) => member.territoire))
       expect(requests.slice(requestCountBeforeRegion).flat().some((item) => item.target.kind === 'territory_cohort' &&
         item.resource === readingResource.resource_id && item.target.type === 'commune' && !item.target.epci_id &&
@@ -1247,366 +1090,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       wrapper.unmount()
     },
   )
-
-  it('renders registered scalar API values in the mounted fiche instead of the static model value', async () => {
-    // La famille overlay vit sur un thème NON-mobilité : le cahier plié
-    // (productionMobilite) possède l'acquisition Mobilité — le fan-out par
-    // indicateur ne s'y déclenche jamais, qu'importe le drapeau.
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
-    const registered = Object.keys(metadata.scalar_contracts) as string[]
-    const published = JSON.parse(readFileSync(resolve(process.cwd(),
-      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    expect(published.themes.demographie.theme_metadata.scalar_contracts).toBeUndefined()
-    const pending: Array<() => void> = []
-    const requestedIndicators: string[] = []
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.startsWith('/data/')) {
-        return new Response(readFileSync(resolve(process.cwd(), `../public/data/${url.slice('/data/'.length)}`), 'utf8'), { status: 200 })
-      }
-      if (url === '/api/resources') return nativeCatalogueResponse()
-      if (url === '/api/resources/read-batch') {
-        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
-        requestedIndicators.push(...request.items.map((item) => item.resource))
-        const response = new Response(JSON.stringify(semanticScalarBatch('demographie', metadata,
-          request.items, '22001', () => 987654321)), { status: 200 })
-        return new Promise<Response>((resolve) => pending.push(() => resolve(response)))
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie&comparaison=epci', chargerModeleTerritoire)
-    expect(requestedIndicators).toHaveLength(registered.length * 2)
-    expect(new Set(requestedIndicators)).toEqual(new Set(registered))
-    expect(pending).toHaveLength(1)
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('987 654 321')
-    pending.forEach((resolve) => resolve())
-    await flushPromises()
-    const text = wrapper.get('[role="tabpanel"]').text()
-    const batchCalls = fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')
-    expect(batchCalls).toHaveLength(1)
-    expect(fetchApi).toHaveBeenCalledWith('/data/theme_demographie.json')
-    const batchRequest = JSON.parse((batchCalls[0]![1] as RequestInit).body as string)
-    expect(batchRequest.items).toHaveLength(registered.length * 2)
-    const factItems = batchRequest.items.filter((item: any) => item.target.kind === 'territory_cohort')
-    const comparisonItems = batchRequest.items.filter((item: any) => item.target.kind === 'territory')
-    expect(factItems).toHaveLength(registered.length)
-    expect(comparisonItems).toHaveLength(registered.length)
-    expect(factItems.every((item: any) => item.target.epci_id === published.territory.epci &&
-      item.target.department_id === null)).toBe(true)
-    expect(comparisonItems.every((item: any) => item.intent.kind === 'selected_comparison')).toBe(true)
-    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(text).toContain('987')
-    expect(text).toContain('98 765 432')
-    expect(text).not.toContain('24,45')
-    wrapper.unmount()
-  })
-
-  it('renders the default scalar rank and changes only comparison reads across fiche scopes, ignoring a late old scope', async () => {
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
-    const references = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8')) as any[]
-    const model = modeleAvecContextesComparaison()
-    model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
-    const contextLabels = model.themes.mobilite!.comparisons
-    const requests: Array<{ items: Array<Record<string, any>> }> = []
-    let resolveLateEpci: (() => void) | undefined
-    let epciAttempts = 0
-    const responseFor = (item: Record<string, any>) => {
-      const indicator = item.resource as string
-      const page = metadata.indicator_pages[indicator]
-      const contract = metadata.scalar_contracts[indicator]
-      if (item.target.kind === 'territory_cohort') {
-        const data = semanticScalarBatch('demographie', metadata, [item], '22001', () => 4321).results[0]!.data
-        return { id: item.id, resource: indicator, data }
-      }
-      const selected = item.intent.kind === 'selected_comparison'
-        ? item.intent.members.map((member: { type: string; id: string }) => references.find((ref) => ref.territoire === member.id)!)
-        : item.target.type === 'commune'
-          ? references.filter((ref) => ref.type === 'commune' && ref.classe_densite_code === references.find((ref) => ref.territoire === item.target.id)?.classe_densite_code)
-          : references.filter((ref) => ref.type === item.target.type)
-      const scope = item.intent.kind === 'selected_comparison'
-        ? { kind: 'explicit_selection', member_count: selected.length }
-        : item.target.type === 'commune'
-          ? { kind: 'density_class', territory_type: 'commune',
-              density_class_code: references.find((ref) => ref.territoire === item.target.id)?.classe_densite_code,
-              member_count: selected.length }
-          : { kind: 'same_level', territory_type: item.target.type, member_count: selected.length }
-      const available = selected.length > 0
-      return { id: item.id, resource: indicator, data: {
-        resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
-        shape: 'scalar', content_version: 'demographie-scalar-test-v1', reference_content_version: 'reference-test-v1',
-        selection: item.intent.kind === 'selected_comparison'
-          ? item.intent.members.map((member: { type: string; id: string }) => ({ territory_type: member.type, territory_id: member.id }))
-          : null,
-        scope,
-        result: { indicator_id: indicator, status: available ? 'available' : 'unavailable',
-          unit: page.unit, direction: page.comparison?.direction ?? page.direction,
-          source_facet: contract.comparison_facet, descriptor_version: 'scalar-descriptor-test-v1',
-          selected_member_count: selected.length, eligible_count: selected.length, missing_count: 0,
-          rank: available ? 1 : null, rank_size: available ? selected.length : null },
-      } }
-    }
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
-      if (url === '/api/resources') return nativeCatalogueResponse()
-      if (url === '/api/resources/read-batch') {
-        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
-        requests.push(request)
-        const response = new Response(JSON.stringify({ contract: 'semantic-read-batch-v1',
-          results: request.items.map(responseFor) }))
-        const selection = request.items[0]?.intent
-        const bretagneMemberCount = references.filter((reference) => reference.type === 'commune').length
-        if (request.items.every((item) => item.target.kind === 'territory') && selection?.kind === 'selected_comparison' &&
-            selection.members.some((member: { id: string }) => member.id === '22001') &&
-            selection.members.length < bretagneMemberCount) {
-          epciAttempts++
-          if (epciAttempts === 1) return new Response('comparison unavailable', { status: 503 })
-          if (epciAttempts === 2) return new Promise<Response>((resolve) => { resolveLateEpci = () => resolve(response) })
-        }
-        return response
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
-    vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
-    await flushPromises()
-
-    expect(requests.length).toBeGreaterThan(0)
-    const focalFigure = wrapper.get('[data-clef="densite"]')
-    const valueBefore = focalFigure.get('.valeur-numerique').text()
-    expect(valueBefore).toBe('4 321')
-    expect(focalFigure.get('.puce-rang-texte').text()).toContain(contextLabels.densite!.scope.label)
-    const initialRequest = requests[0]!
-    expect(initialRequest.items).toHaveLength(Object.keys(metadata.scalar_contracts).length * 2)
-    expect(initialRequest.items.filter((item) => item.target.kind === 'territory_cohort')).toHaveLength(Object.keys(metadata.scalar_contracts).length)
-    expect(initialRequest.items.filter((item) => item.target.kind === 'territory')).toHaveLength(Object.keys(metadata.scalar_contracts).length)
-
-    await router.replace({ query: { theme: 'demographie', comparaison: 'epci' } })
-    await flushPromises()
-    expect(requests).toHaveLength(2)
-    expect(requests[1]!.items.every((item) => item.target.kind === 'territory' && item.intent.kind === 'selected_comparison')).toBe(true)
-    const focalReference = references.find((reference) => reference.type === 'commune' && reference.territoire === '22001')
-    const epciMembers = references.filter((reference) => reference.type === 'commune' && reference.epci === focalReference?.epci)
-      .map((reference) => ({ type: reference.type, id: reference.territoire }))
-      .sort((left, right) => left.id.localeCompare(right.id))
-    expect(requests[1]!.items[0]!.intent.members).toEqual(epciMembers)
-    expect(wrapper.get('[role="alert"]').text()).toContain('rangs de comparaison')
-    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe(valueBefore)
-
-    await wrapper.get('[role="alert"] button').trigger('click')
-    await flushPromises()
-    expect(requests).toHaveLength(3)
-    expect(requests[2]!.items.every((item) => item.target.kind === 'territory' && item.intent.kind === 'selected_comparison')).toBe(true)
-
-    await router.replace({ query: { theme: 'demographie', comparaison: 'bretagne' } })
-    await flushPromises()
-    expect(requests).toHaveLength(4)
-    expect(requests[3]!.items.every((item) => item.target.kind === 'territory' && item.intent.kind === 'selected_comparison')).toBe(true)
-    const bretagneMembers = references.filter((reference) => reference.type === 'commune')
-      .map((reference) => ({ type: reference.type, id: reference.territoire }))
-      .sort((left, right) => left.id.localeCompare(right.id))
-    expect(requests[3]!.items[0]!.intent.members).toEqual(bretagneMembers)
-    const currentFigure = wrapper.get('[data-clef="densite"]')
-    expect(currentFigure.get('.valeur-numerique').text()).toBe(valueBefore)
-    expect(currentFigure.get('.puce-rang-texte').text()).toContain(contextLabels.bretagne!.scope.label)
-
-    resolveLateEpci!()
-    await flushPromises()
-    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe(valueBefore)
-    expect(wrapper.get('[data-clef="densite"] .puce-rang-texte').text()).toContain(contextLabels.bretagne!.scope.label)
-    expect(requests.slice(1).flatMap((request) => request.items).some((item) => item.target.kind === 'territory_cohort')).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('recovers focal scalar facts after an initial paired comparison failure and retries ranks only', async () => {
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
-    metadata.scalar_contracts = { densite: metadata.scalar_contracts.densite }
-    const model = modeleAvecContextesComparaison()
-    model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
-    const requests: Array<{ items: Array<Record<string, any>> }> = []
-    let comparisonAttempts = 0
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
-      if (url === '/api/resources') return nativeCatalogueResponse()
-      if (url === '/api/resources/read-batch') {
-        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
-        requests.push(request)
-        if (request.items.some((item) => item.target.kind === 'territory_cohort') &&
-            request.items.some((item) => item.target.kind === 'territory')) {
-          return new Response('comparison unavailable in paired read', { status: 503 })
-        }
-        const batch = semanticScalarBatch('demographie', metadata, request.items, '22001', () => 77777)
-        if (request.items.every((item) => item.target.kind === 'territory') && ++comparisonAttempts === 1) {
-          batch.results.forEach((result: any) => { result.data.content_version = 'stale-scalar-publication' })
-        }
-        return new Response(JSON.stringify(batch))
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
-    await flushPromises()
-
-    expect(requests).toHaveLength(2)
-    expect(requests[0]!.items).toHaveLength(2)
-    expect(requests[0]!.items.some((item) => item.target.kind === 'territory_cohort')).toBe(true)
-    expect(requests[0]!.items.some((item) => item.target.kind === 'territory')).toBe(true)
-    expect(requests[1]!.items).toHaveLength(1)
-    expect(requests[1]!.items[0]!.target.kind).toBe('territory_cohort')
-    const figure = wrapper.get('[data-clef="densite"]')
-    expect(figure.get('.valeur-numerique').text()).toBe('77 777')
-    expect(figure.find('.puce-rang-texte').exists()).toBe(false)
-    expect(wrapper.get('[role="alert"]').text()).toContain('rangs de comparaison')
-
-    await wrapper.get('[role="alert"] button').trigger('click')
-    await flushPromises()
-    expect(requests).toHaveLength(3)
-    expect(requests[2]!.items).toHaveLength(1)
-    expect(requests[2]!.items[0]!.target.kind).toBe('territory')
-    expect(requests[2]!.items[0]!.intent.kind).toBe('fixed_comparison')
-    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe('77 777')
-    expect(wrapper.find('[data-clef="densite"] .puce-rang-texte').exists()).toBe(false)
-    expect(wrapper.get('[role="alert"]').text()).toContain('rangs de comparaison')
-
-    await wrapper.get('[role="alert"] button').trigger('click')
-    await flushPromises()
-    expect(requests).toHaveLength(4)
-    expect(requests[3]!.items).toHaveLength(1)
-    expect(requests[3]!.items[0]!.target.kind).toBe('territory')
-    expect(requests[3]!.items[0]!.intent.kind).toBe('fixed_comparison')
-    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe('77 777')
-    expect(wrapper.get('[data-clef="densite"] .puce-rang-texte').text())
-      .toContain(model.themes.mobilite!.comparisons.densite!.scope.label)
-    expect(requests.slice(2).flatMap((request) => request.items).every((item) => item.target.kind === 'territory')).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('keeps scalar facts unavailable when both the paired read and facts-only recovery fail', async () => {
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
-    metadata.scalar_contracts = { densite: metadata.scalar_contracts.densite }
-    const model = modeleAvecContextesComparaison()
-    model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
-    const requests: Array<{ items: Array<Record<string, any>> }> = []
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
-      if (url === '/api/resources') return nativeCatalogueResponse()
-      if (url === '/api/resources/read-batch') {
-        requests.push(JSON.parse(init?.body as string))
-        return new Response('semantic reads unavailable', { status: 503 })
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
-    await flushPromises()
-
-    expect(requests).toHaveLength(2)
-    expect(requests[0]!.items.map((item) => item.target.kind)).toEqual(['territory_cohort', 'territory'])
-    expect(requests[1]!.items).toHaveLength(1)
-    expect(requests[1]!.items[0]!.target.kind).toBe('territory_cohort')
-    expect(wrapper.get('[role="alert"]').text()).toContain('Les indicateurs de ce thème ne sont pas disponibles.')
-    expect(wrapper.find('[data-clef="densite"] .valeur-numerique').exists()).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('does not start facts-only recovery after the paired read belongs to a cancelled fiche navigation', async () => {
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
-    metadata.scalar_contracts = { densite: metadata.scalar_contracts.densite }
-    const model = modeleAvecContextesComparaison()
-    model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
-    const requests: Array<{ items: Array<Record<string, any>> }> = []
-    let failOldRequest: (() => void) | undefined
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
-      if (url === '/api/resources') return nativeCatalogueResponse()
-      if (url === '/api/resources/read-batch') {
-        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
-        requests.push(request)
-        if (requests.length === 1) {
-          return new Promise<Response>((resolve) => {
-            failOldRequest = () => resolve(new Response('old paired read unavailable', { status: 503 }))
-          })
-        }
-        return new Response(JSON.stringify(semanticScalarBatch('demographie', metadata,
-          request.items, '22002', () => 22222)))
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
-    vi.stubGlobal('fetch', fetchApi)
-    const charger = vi.fn(async (_type: string, code: string) => {
-      const routeModel = structuredClone(model)
-      const target = routeModel.cohortTerritories!.find((territory: any) => territory.territoire === code)!
-      routeModel.territory = target
-      routeModel.territories = [target, ...routeModel.territories.filter((territory: any) => territory.territoire !== code)]
-      return routeModel
-    })
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=demographie', charger)
-    await flushPromises()
-    expect(requests).toHaveLength(1)
-
-    await router.push('/territoire/commune/22002?theme=demographie')
-    await flushPromises()
-    expect(requests).toHaveLength(2)
-    failOldRequest!()
-    await flushPromises()
-    expect(requests).toHaveLength(2)
-    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe('22 222')
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('Habitat scalar cohort replaces only the scalar page and preserves the price trajectory', async () => {
-    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_habitat.json'), 'utf8'))
-    const published = JSON.parse(readFileSync(resolve(process.cwd(),
-      '../public/data/modeles-lecture/territoires/commune/35238.json'), 'utf8'))
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url === '/data/theme_habitat.json') return new Response(JSON.stringify(metadata), { status: 200 })
-      if (url === '/api/resources') return nativeCatalogueResponse()
-      if (url === '/api/resources/read-batch') {
-        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
-        return new Response(JSON.stringify(semanticScalarBatch('habitat', metadata,
-          request.items, '35238', (indicator) => indicator === 'part_passoires' ? 0.12 : 0.456)), { status: 200 })
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    published.themes.habitat.theme_metadata.scalar_contracts = metadata.scalar_contracts
-    published.themes.habitat.theme_metadata.indicator_pages = metadata.indicator_pages
-    const model = validerModeleTerritoire(published, 'territoires/commune/35238.json',
-      { type: 'commune', territoire: '35238' })
-    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-    const { wrapper } = await monter('/territoire/commune/35238?theme=habitat', vi.fn(async () => model))
-    await flushPromises()
-    const batchCalls = fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')
-    expect(batchCalls).toHaveLength(1)
-    const batchRequest = JSON.parse((batchCalls[0]![1] as RequestInit).body as string)
-    expect(batchRequest.items.map((item: any) => item.resource)).toContain('part_passoires')
-    expect(batchRequest.items.map((item: any) => item.resource)).not.toContain('prix_m2')
-    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    const habitatText = wrapper.get('[role="tabpanel"]').text()
-    expect(habitatText).toContain('12%Part de passoires thermiques')
-    expect(habitatText).toContain('Médiane prix au m²')
-    expect(habitatText).toContain('3 777,78 €/m²')
-    wrapper.unmount()
-  })
 
   it('renders the pooled DVF scalar/rank beside annual points without borrowing the annual rank', async () => {
     const requests: Array<Array<Record<string, any>>> = []
@@ -1636,10 +1119,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const model = modeleAvecContextesComparaison()
-    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat', chargerReferenceReelle)
     await flushPromises()
 
     const figure = wrapper.get('.figure-trajectoire[data-clef="prix_m2"]')
@@ -1647,7 +1128,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(figure.get('.trajectoire-repere__valeur').text()).toContain('€/m²')
     expect(figure.get('.trajectoire-repere .puce-rang-texte').text()).toContain('1er/2')
     expect(figure.get('.trajectoire-repere [role="img"]').attributes('aria-label'))
-      .toContain(model.themes.mobilite!.comparisons.densite!.scope.label)
+      .toContain(contextesReference('22001').densite!.scope.label)
     expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('2025')
     expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('230')
     expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'facts')).toBe(true)
@@ -1697,11 +1178,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
       throw new Error(`Unexpected request: ${url}`)
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const model = modeleAvecContextesComparaison()
     const { router, wrapper } = await monter(
-      '/territoire/commune/22001?theme=habitat&comparaison=epci', vi.fn(async () => model))
+      '/territoire/commune/22001?theme=habitat&comparaison=epci', chargerReferenceReelle)
     await vi.waitFor(() => expect(initialPending.some((entry) => !entry.released)).toBe(true))
     await router.replace({ query: { theme: 'habitat', comparaison: 'bretagne' } })
     await flushPromises()
@@ -1720,157 +1199,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
     expect(figure.get('.trajectoire-repere .puce-rang-texte').text()).toContain('1er/2')
     expect(figure.get('.trajectoire-repere .puce-rang[aria-label]').attributes('aria-label'))
-      .toContain(model.themes.mobilite!.comparisons.bretagne!.scope.label)
+      .toContain(contextesReference('22001').bretagne!.scope.label)
     expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('230')
     wrapper.unmount()
   }, 30_000)
 
-  it('keeps the incumbent fiche path when registration is absent or the cutover flag is off', async () => {
-    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
-    const requests = vi.fn().mockRejectedValue(new Error('scalar API must stay off'))
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubGlobal('fetch', requests)
-    const { wrapper: unregistered } = await monter('/territoire/commune/29002?theme=demographie')
-    expect(unregistered.text()).toContain('Densité de population')
-    expect(requests.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
-    unregistered.unmount()
-
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
-    const published = JSON.parse(readFileSync(resolve(process.cwd(),
-      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    published.themes.demographie.theme_metadata.scalar_contracts = metadata.scalar_contracts
-    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
-      { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    const { wrapper: disabled } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
-    expect(requests.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
-    expect(disabled.text()).toContain('24,45')
-    disabled.unmount()
-  })
-
-  it('keeps unregistered facts when a valid registration has no eligible pages at this level', async () => {
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
-    const published = JSON.parse(readFileSync(resolve(process.cwd(),
-      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    published.themes.demographie.theme_metadata.scalar_contracts = Object.fromEntries(
-      Object.keys(metadata.scalar_contracts).map((key) => [key, { allowed_levels: ['epci'] }]),
-    )
-    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
-      { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
-    const fetchApi = vi.fn()
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
-    expect(fetchApi).not.toHaveBeenCalled()
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('24,45')
-    wrapper.unmount()
-  })
-
-  it('keeps acquired scalar facts when comparison scope changes and ignores a late rank response', async () => {
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
-    const published = JSON.parse(readFileSync(resolve(process.cwd(),
-      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    published.themes.demographie.theme_metadata.scalar_contracts = metadata.scalar_contracts
-    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
-      { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
-    // La validation du cohort vise les pages MÉTADONNÉES DU MODÈLE — son unité
-    // densité diffère de celle du catalogue public de thème.
-    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-    const modelPages = model.themes.demographie!.metadata.indicator_pages
-    const scalarMetadata = { scalar_contracts: model.themes.demographie!.metadata.scalar_contracts,
-      indicator_pages: modelPages }
-    const requests: Array<{ items: Array<Record<string, any>> }> = []
-    const bretagneMemberCount = model.cohortTerritories!.filter((member: any) => member.type === 'commune').length
-    let resolveLateBretagne: (() => void) | undefined
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url === '/api/resources') return nativeCatalogueResponse()
-      if (url !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${url}`)
-      const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
-      const response = new Response(JSON.stringify(semanticScalarBatch('demographie', scalarMetadata,
-        request.items, '22001', () => 111111111)), { status: 200 })
-      requests.push(request)
-      const selection = request.items[0]?.intent
-      if (request.items.every((item) => item.target.kind === 'territory') &&
-          selection?.kind === 'selected_comparison' && selection.members.length === bretagneMemberCount) {
-        return new Promise<Response>((resolve) => { resolveLateBretagne = () => resolve(response) })
-      }
-      return response
-    })
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=demographie&comparaison=epci', vi.fn(async () => model))
-    await flushPromises()
-    expect(requests).toHaveLength(1)
-    const acquiredValue = wrapper.get('[data-clef="densite"] .valeur-numerique').text()
-    expect(acquiredValue).toBe('111 111 111')
-    expect(requests[0]!.items).toHaveLength(Object.keys(metadata.scalar_contracts).length * 2)
-    expect(requests[0]!.items.filter((item) => item.target.kind === 'territory_cohort')).toHaveLength(Object.keys(metadata.scalar_contracts).length)
-    expect(requests[0]!.items.filter((item) => item.target.kind === 'territory')).toHaveLength(Object.keys(metadata.scalar_contracts).length)
-
-    await router.push('/territoire/commune/22001?theme=demographie&comparaison=bretagne')
-    await flushPromises()
-    expect(requests).toHaveLength(2)
-    expect(requests[1]!.items.every((item) => item.target.kind === 'territory' && item.intent.kind === 'selected_comparison')).toBe(true)
-    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe(acquiredValue)
-    expect(wrapper.find('[data-clef="densite"] .puce-rang-texte').exists()).toBe(false)
-
-    await router.push('/territoire/commune/22001?theme=demographie&comparaison=epci')
-    await flushPromises()
-    expect(requests).toHaveLength(3)
-    expect(requests[2]!.items.every((item) => item.target.kind === 'territory' && item.intent.kind === 'selected_comparison')).toBe(true)
-    const epciLabel = model.themes.mobilite!.comparisons.epci!.scope.label
-    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe(acquiredValue)
-    expect(wrapper.get('[data-clef="densite"] .puce-rang-texte').text()).toContain(epciLabel)
-
-    resolveLateBretagne!()
-    await flushPromises()
-    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe(acquiredValue)
-    expect(wrapper.get('[data-clef="densite"] .puce-rang-texte').text()).toContain(epciLabel)
-    expect(requests.slice(1).every((request) => request.items.every((item) => item.target.kind === 'territory'))).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('renders a retryable error for malformed registration and recovers without showing static facts', async () => {
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
-    const published = JSON.parse(readFileSync(resolve(process.cwd(),
-      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    published.themes.demographie.theme_metadata.scalar_contracts = { densite: { allowed_levels: 'commune' } }
-    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
-      { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
-    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-    const modelPages = model.themes.demographie!.metadata.indicator_pages
-    const scalarMetadata = { scalar_contracts: metadata.scalar_contracts, indicator_pages: modelPages }
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url === '/api/resources') return nativeCatalogueResponse()
-      if (url === '/api/resources/read-batch') {
-        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
-        return new Response(JSON.stringify(semanticScalarBatch('demographie', scalarMetadata,
-          request.items, '22001', () => 987654321)))
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
-    await flushPromises()
-    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
-    expect(wrapper.find('[role="alert"]').text()).toContain('pas disponibles')
-    expect(wrapper.text()).not.toContain('24,45')
-    expect(fetchApi).not.toHaveBeenCalled()
-
-    model.themes.demographie!.metadata.scalar_contracts = metadata.scalar_contracts
-    await wrapper.get('[role="alert"] button').trigger('click')
-    await flushPromises()
-    expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources/read-batch')).toBe(true)
-    expect(wrapper.text()).toContain('987 654 321')
-    expect(wrapper.text()).not.toContain('24,45')
-    wrapper.unmount()
-  })
-
-  it('affiche les six onglets pendant que l’unique modèle charge', async () => {
-    const charger = vi.fn(() => new Promise<never>(() => {}))
+  it('affiche les six onglets pendant que la référence charge', async () => {
+    const charger = vi.fn<ChargerReferenceTerritoires>(() => new Promise<never>(() => {}))
     const { wrapper, router } = await monter('/territoire/commune/29002', charger)
 
     expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
@@ -1919,14 +1254,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   it('sélectionne un thème depuis l’URL sans nouvelle requête', async () => {
-    const charger = vi.fn<ChargerModeleTerritoire>(async (_type, territoire) => modelFor(territoire))
+    const charger = vi.fn<ChargerReferenceTerritoires>(async () => territoiresFixture)
     const { wrapper } = await monter('/territoire/commune/29002?theme=demographie', charger)
     expect(wrapper.findAll('[role="tab"]')[2]!.attributes('aria-selected')).toBe('true')
     expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-demographie')
-    expect(wrapper.find('[role="tabpanel"]').text()).toContain('Densité de population')
-    expect(wrapper.find('[role="tabpanel"]').text()).toContain(
-      'la population de Commune C se vide et se meurt : -1,04 par an (naturel)',
-    )
     expect(wrapper.find('.fiche').classes()).toContain('fiche--theme-demographie')
     expect(wrapper.find('.filigrane-fiche').attributes('style')).toContain(
       '--filigrane-accent: var(--theme-demographie-line)',
@@ -1934,8 +1265,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(charger).toHaveBeenCalledTimes(1)
   })
 
-  it('change d’onglet sans recharger le modèle', async () => {
-    const charger = vi.fn<ChargerModeleTerritoire>(async (_type, territoire) => modelFor(territoire))
+  it('change d’onglet sans recharger la référence', async () => {
+    const charger = vi.fn<ChargerReferenceTerritoires>(async () => territoiresFixture)
     const { wrapper, router } = await monter('/territoire/commune/29002', charger)
     await wrapper.findAll('[role="tab"]')[3]!.trigger('click')
     await flushPromises()
@@ -1959,11 +1290,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it('renders the producer-declared Mobility curve and scopes explicit comparisons through native reads', async () => {
     const requests: Array<Array<Record<string, any>>> = []
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
-    const model = modeleAvecContextesComparaison()
     const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
-      vi.fn(async () => model))
+      chargerReferenceReelle)
     const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
     const reference = nativeResources('mobilite').find((resource) => resource.shapes.includes('named_reference'))!
     const fixtureCurve = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: '22001' },
@@ -1983,9 +1312,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(reads().some((item) => item.resource === reference.resource_id &&
       item.target.kind === 'named_reference' && reference.target_ids.includes(item.target.id))).toBe(true)
 
-    const cohort = model.cohortTerritories!
+    const cohort = referenceReelle
     const epciMembers = cohort.filter((territory: any) =>
-      territory.type === 'commune' && territory.epci === model.territory.epci)
+      territory.type === 'commune' && territory.epci === cibleReference('22001').epci)
       .map((territory: any) => ({ type: territory.type, id: territory.territoire }))
       .sort((left: any, right: any) => left.id.localeCompare(right.id))
     await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } })
@@ -2018,8 +1347,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it.each(['densite', 'epci', 'bretagne'] as const)(
     'affiche la portée publiée %s dans la note de comparaison', async (mode) => {
-      const { model, wrapper } = await monterNoteComparaison(mode)
-      const label = model.themes.mobilite!.comparisons[mode]!.scope.label
+      const { contextes, wrapper } = await monterNoteComparaison(mode)
+      const label = contextes[mode]!.scope.label
       const trigger = wrapper.get('button[aria-haspopup="listbox"]')
 
       expect(trigger.attributes('aria-current')).toBe('true')
@@ -2030,9 +1359,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   )
 
   it('permet de divulguer et synchroniser la portée publiée depuis le cahier', async () => {
-    const { model, router, wrapper } = await monterNoteComparaison('densite')
+    const { contextes: contexts, router, wrapper } = await monterNoteComparaison('densite')
     const trigger = wrapper.get('button[aria-haspopup="listbox"]')
-    const contexts = model.themes.mobilite!.comparisons
 
     expect(trigger.attributes('aria-expanded')).toBe('false')
     expect(trigger.attributes('aria-current')).toBe('true')
@@ -2053,11 +1381,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   it('change la portée au clavier et expose l’explication de la densité', async () => {
-    const { model, router, wrapper } = await monterNoteComparaison('epci')
+    const { contextes, router, wrapper } = await monterNoteComparaison('epci')
     const trigger = wrapper.get('button[aria-haspopup="listbox"]')
     await trigger.trigger('keydown', { key: 'Enter' })
 
-    const densityLabel = model.themes.mobilite!.comparisons.densite!.scope.label
+    const densityLabel = contextes.densite!.scope.label
     const density = wrapper.findAll('[role="option"][aria-selected="false"]')
       .find((option) => option.find('.cahier-comparison-note__option-label').text() === densityLabel)
     expect(trigger.attributes('aria-expanded')).toBe('true')
@@ -2084,30 +1412,28 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it('affiche l’erreur typée et réessaie le même endpoint', async () => {
     const charger = vi
-      .fn()
-      .mockRejectedValueOnce(new PayloadError('fetch', 'territoires/commune/29002.json', 'panne'))
-      .mockResolvedValueOnce(modelFor('29002'))
+      .fn<ChargerReferenceTerritoires>()
+      .mockRejectedValueOnce(new PayloadError('fetch', 'territoires.json', 'panne'))
+      .mockResolvedValueOnce(territoiresFixture)
     const { wrapper } = await monter('/territoire/commune/29002', charger)
 
     expect(wrapper.find('.etat-erreur').exists()).toBe(true)
     expect(wrapper.text()).toContain('Impossible de charger les données')
-    expect(wrapper.text()).not.toContain('territoires/commune/29002.json')
+    expect(wrapper.text()).not.toContain('territoires.json')
     expect(wrapper.text()).not.toContain('panne')
     await wrapper.get('.bouton-reessayer').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
+    expect(wrapper.find('.fiche-en-tete .etat-erreur').exists()).toBe(false)
     expect(wrapper.find('.fiche-titre h1').text()).toBe('Commune C')
     expect(charger).toHaveBeenCalledTimes(2)
   })
 
   it('renders the approved AEDAR cahier from the normal Mobility route', async () => {
-    const model = modeleAvecContextesComparaison()
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     const requests: Array<Array<Record<string, any>>> = []
     const fetchApi = nativeSemanticFetch(requests)
     vi.stubGlobal('fetch', fetchApi)
 
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
     await flushPromises()
 
     expect(wrapper.find('.prototype-toggle').exists()).toBe(false)
@@ -2128,16 +1454,14 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   it('shows loading, not unavailable copy, while the production AEDAR read is pending', async () => {
-    const model = modeleAvecContextesComparaison()
     const fetchApi = vi.fn(async (url: string) => {
       if (url === '/api/resources') return nativeCatalogueResponse()
       if (url === '/api/resources/read-batch') return await new Promise<Response>(() => {})
       return { ok: false, status: 404, json: async () => ({}) } as Response
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
 
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
     const firstPage = wrapper.find('.cahier-page')
     const text = firstPage.text()
 

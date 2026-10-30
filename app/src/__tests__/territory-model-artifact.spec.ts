@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+
 import { mount } from '@vue/test-utils'
+import { describe, expect, it } from 'vitest'
 
 import {
   indicateursMobiliteFixture,
@@ -10,8 +11,6 @@ import {
   territoiresFixture,
 } from '@/payload/fixtures'
 import {
-  chargerModeleTerritoire,
-  chargerMetadonneesTheme,
   payloadDepuisModeleTerritoire,
   validerModeleTerritoire,
 } from '@/payload/territoryReadModel'
@@ -19,6 +18,16 @@ import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import CahierMotorisationFigure from '@/fiche/prototype/CahierMotorisationFigure.vue'
 import { remplacerFaitsScalaires } from '@/payload/scalarCohort'
+
+/**
+ * #868 — couverture conservée du VALIDATEUR de l'artefact modèle de lecture par
+ * territoire (payload/territoryReadModel.ts). L'artefact reste un asset
+ * producteur/récupération requis (ADR-0031, `validate:territory-model`) même si le
+ * navigateur ne le charge plus : schéma/identité, complétude des six thèmes,
+ * projections de comparaison/distribution/rampe malformées. Seuls les tests
+ * d'ancien fetch navigateur / opt-out ('0') sont retirés — aucun fallback de
+ * chargeur legacy n'est réintroduit.
+ */
 
 const target = territoiresFixture.find((territoire) => territoire.territoire === '22001')!
 const modelePublie22001 = JSON.parse(readFileSync(
@@ -30,7 +39,7 @@ const modelePublie22002 = JSON.parse(readFileSync(
   'utf8',
 ))
 
-describe('le modèle de lecture d’un territoire', () => {
+describe('artefact modèle de lecture par territoire — contrat producteur/récupération (ADR-0031, #868)', () => {
   it('transporte le rider réel de la chaîne statique jusqu’à la figure de motorisation', () => {
     const modele = validerModeleTerritoire(
       modelePublie22002,
@@ -49,7 +58,7 @@ describe('le modèle de lecture d’un territoire', () => {
     const facts = territoryFactsFor({ ...payload, indicateurs: scalarOverlay }, '22002')!
     const motorisation = resolveMobiliteThemeContent(facts, mobilite.metadata).units[2]!.sections[0]!.evidence
     expect(motorisation?.kind).toBe('motorisation')
-    if (motorisation?.kind !== 'motorisation') throw new Error('Éléments de motorisation attendus')
+    if (motorisation?.kind !== 'motorisation') throw new Error('éléments de motorisation attendus')
     const bornes = motorisation.charging.find(({ fact }) => fact.key === 'bornes_ev_par_station_service')!
     expect(bornes.fact.reason).toBe('Aucune station-service sur le territoire')
     const rendered = mount(CahierMotorisationFigure, { props: motorisation })
@@ -58,175 +67,56 @@ describe('le modèle de lecture d’un territoire', () => {
     expect(rendered.find('.motorisation-rider').text()).toBe('Aucune station-service sur le territoire')
   })
 
-  it('refuse au chargement un artefact de production qui ne porte pas les six thèmes', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        schema_version: '1',
-        snapshot_id: '2026-09-15',
-        territory: target,
-        territoires: territoiresFixture,
-        themes: {
-          mobilite: {
-            theme: 'mobilite',
-            indicateurs: indicateursMobiliteFixture,
-            histoires: histoiresMobiliteFixture,
-            theme_metadata: metadonneesThemesFixtures.mobilite,
-            profils_acces_bpe: null,
-            distribution_acces_batiments: null,
-            rampe_acces_batiments: null,
+  it('refuse un artefact de production qui ne porte pas les six thèmes (requireAllThemes)', () => {
+    expect(() =>
+      validerModeleTerritoire(
+        {
+          schema_version: '1',
+          snapshot_id: '2026-09-15',
+          territory: target,
+          territoires: territoiresFixture,
+          themes: {
+            mobilite: {
+              theme: 'mobilite',
+              indicateurs: indicateursMobiliteFixture,
+              histoires: histoiresMobiliteFixture,
+              theme_metadata: metadonneesThemesFixtures.mobilite,
+              profils_acces_bpe: null,
+              distribution_acces_batiments: null,
+              rampe_acces_batiments: null,
+            },
           },
         },
-      }),
-    }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      await expect(chargerModeleTerritoire('commune', target.territoire))
-        .rejects.toThrow(/six thèmes|thèmes manquants/)
-    } finally {
-      vi.unstubAllGlobals()
-    }
+        'territoires/commune/22001.json',
+        { type: 'commune', territoire: '22001' },
+        { requireAllThemes: true },
+      ),
+    ).toThrow(/thèmes manquants/)
   })
 
-  it('does not gate native territory identity on reconciliation of theme catalogues', async () => {
-    const calls: string[] = []
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      calls.push(url)
-      if (!url.startsWith('/data/')) throw new Error(`Unexpected request: ${url}`)
-      const file = url.slice('/data/'.length)
-      const body = file === 'modeles-lecture/territoires/commune/22001.json'
-        ? modelePublie22001
-        : JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/${file}`), 'utf8'))
-      return new Response(JSON.stringify(body), { status: 200 })
-    }))
-
-    try {
-      const model = await chargerModeleTerritoire('commune', target.territoire)
-      expect(calls).toEqual(['/data/modeles-lecture/territoires/commune/22001.json'])
-      expect(calls).not.toContain('/data/territoires.json')
-      expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001' })
-    } finally {
-      vi.unstubAllGlobals()
-      vi.unstubAllEnvs()
-    }
-  })
-
-  it('returns validated territory identity before any optional theme catalogue is required', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    const calls: string[] = []
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      calls.push(url)
-      if (url === '/data/modeles-lecture/territoires/commune/22001.json') {
-        return new Response(JSON.stringify(modelePublie22001), { status: 200 })
-      }
-      throw new Error(`Le catalogue facultatif ne doit pas bloquer l’identité : ${url}`)
-    }))
-
-    try {
-      const model = await chargerModeleTerritoire('commune', target.territoire)
-
-      expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001', nom: 'Allineuc' })
-      expect(model.territory).toEqual(model.territories.find((item) => item.territoire === '22001'))
-      expect(calls).toEqual(['/data/modeles-lecture/territoires/commune/22001.json'])
-    } finally {
-      vi.unstubAllGlobals()
-      vi.unstubAllEnvs()
-    }
-  })
-
-  it.each([
-    ['native / scalar off', '1', '0', 0, false],
-    ['native / scalar on', '1', '1', 0, false],
-    ['explicit static / scalar off', '0', '0', 0, false],
-    ['scalar-only', '0', '1', 6, true],
-  ] as const)(
-    'retains the supported metadata dependency in the %s mode',
-    async (_label, native, scalar, catalogueCount, referenceExpected) => {
-      vi.stubEnv('VITE_THEME_ACQUISITION_API', native)
-      vi.stubEnv('VITE_SCALAR_COHORT_API', scalar)
-      const calls: string[] = []
-      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input)
-        calls.push(url)
-        if (!url.startsWith('/data/')) throw new Error(`Unexpected request: ${url}`)
-        const file = url.slice('/data/'.length)
-        const body = file === 'modeles-lecture/territoires/commune/22001.json'
-          ? modelePublie22001
-          : JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/${file}`), 'utf8'))
-        return new Response(JSON.stringify(body), { status: 200 })
-      }))
-
-      try {
-        const model = await chargerModeleTerritoire('commune', target.territoire)
-        expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001' })
-        expect(calls.filter((url) => /^\/data\/theme_[^/]+\.json$/.test(url))).toHaveLength(catalogueCount)
-        expect(calls.filter((url) => url === '/data/territoires.json')).toHaveLength(referenceExpected ? 1 : 0)
-      } finally {
-        vi.unstubAllGlobals()
-        vi.unstubAllEnvs()
-      }
-    },
-  )
-
-  it('isolates invalid inactive legacy theme content from the native territory identity', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+  it('isole une projection facultative invalide (allowPartialThemes) sans toucher à l’identité', () => {
     const rawModel = structuredClone(modelePublie22001)
     rawModel.themes.habitat.theme_metadata = null
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(rawModel), { status: 200 })))
-
-    try {
-      const model = await chargerModeleTerritoire('commune', '22001')
-      expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001' })
-      expect(model.themes.programmes).toBeDefined()
-      expect(model.themes.habitat).toBeUndefined()
-      expect(model.themeErrors?.habitat).toMatchObject({ kind: 'validation' })
-    } finally {
-      vi.unstubAllGlobals()
-      vi.unstubAllEnvs()
-    }
+    const model = validerModeleTerritoire(
+      rawModel,
+      'territoires/commune/22001.json',
+      { type: 'commune', territoire: '22001' },
+      { allowPartialThemes: true },
+    )
+    expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001' })
+    expect(model.themes.programmes).toBeDefined()
+    expect(model.themes.habitat).toBeUndefined()
+    expect(model.themeErrors?.habitat).toMatchObject({ kind: 'validation' })
   })
 
-  it.each([
-    ['HTTP 404', new Response('missing', { status: 404 })],
-    ['JSON invalide', new Response('not-json', { status: 200 })],
-    ['erreur réseau', null],
-  ])('keeps a %s metadata failure local to the optional catalogue loader', async (_name, response) => {
-    vi.stubGlobal('fetch', vi.fn(async () => {
-      if (response === null) throw new TypeError('network unavailable')
-      return response
-    }))
-
-    try {
-      await expect(chargerMetadonneesTheme('programmes')).rejects.toMatchObject({
-        file: '/data/theme_programmes.json',
-      })
-    } finally {
-      vi.unstubAllGlobals()
-      vi.unstubAllEnvs()
-    }
-  })
-
-  it('rejects a territory model that carries a different canonical route identity', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(modelePublie22001), { status: 200 })))
-
-    try {
-      await expect(chargerModeleTerritoire('commune', '22002')).rejects.toThrow(/ne correspond pas à la route/)
-    } finally {
-      vi.unstubAllGlobals()
-      vi.unstubAllEnvs()
-    }
+  it('rejette un artefact dont l’identité canonique diffère de la route attendue', () => {
+    expect(() =>
+      validerModeleTerritoire(
+        modelePublie22001,
+        'territoires/commune/22002.json',
+        { type: 'commune', territoire: '22002' },
+      ),
+    ).toThrow(/ne correspond pas à la route/)
   })
 
   it('porte les faits Mobilité et ses preuves auxiliaires dans une unité atomique', () => {
@@ -250,7 +140,7 @@ describe('le modèle de lecture d’un territoire', () => {
                 profil_libelle: 'Le vélo compense',
                 nombre_typequ: 3,
                 exemplar_typequ: 'D267',
-                exemplar_libelle: 'Spécialiste en dermatologie vénéréologie',
+                exemplar_libelle: 'Spécialiste en dermatologie vétérinérologie',
                 exemplar_c: 0.1,
                 exemplar_b: 0.4,
                 exemplar_t: 0.1,

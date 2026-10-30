@@ -7,12 +7,14 @@ import { createServer } from 'vite'
 
 // Real-browser, populated contract check for Cahier mobile overflow and the
 // shared y-axis rail regression in issue #841 and W3 labels in issue #829.
-// The static territory read model is checked-in production data; post-#627 and AEDAR semantic reads are
-// intercepted with the same builders/contracts used by the app tests.
+// #868 : the fiche bootstraps from the territory reference and reads the active
+// theme through the semantic API (/api/resources/read-batch) — intercepted here
+// with the same fixture builders/contracts used by the app tests; the retired
+// per-theme facts routes are fail-closed (HTTP 599). The checked-in read-model
+// artifact is used only as offline fixture material for the static content check.
 // Run: npm run verify:mobile-cahier-overflow. If Playwright has no cached
 // browser, run `npx playwright-core install chromium`; alternatively set
 // PLAYWRIGHT_CHROMIUM_EXECUTABLE to an installed Chromium executable.
-process.env.VITE_THEME_ACQUISITION_API = '1'
 const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
 const evidenceDir = resolve(process.env.CAHIER_EVIDENCE_DIR ?? join(tmpdir(), 'lusk-mobile-cahier-evidence'))
@@ -298,7 +300,10 @@ try {
   const { territoryFactsFor } = await server.ssrLoadModule('/src/fiche/content/territoryFacts.ts')
   const { resolveMobiliteThemeContent } = await server.ssrLoadModule('/src/fiche/content/themeContent.ts')
   const { cahierPaginationFor } = await server.ssrLoadModule('/src/fiche/prototype/cahierPagination.ts')
-  const { reponseThemeMobiliteApi } = await server.ssrLoadModule('/src/__tests__/helpers/mobiliteThemeApiStub.ts')
+  // #868 : les faits du thème actif passent par /api/resources/read-batch (contrat sémantique),
+  // servis ici par les fixtures natives du suite (semanticApiFixtures).
+  const { nativeBatchResponse, nativeReadFixture } =
+    await server.ssrLoadModule('/src/__tests__/helpers/semanticApiFixtures.ts')
   const { AEDAR_CORE_MEASURE_KEYS, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS } =
     await server.ssrLoadModule('/src/fiche/content/aedarTimeRampFacts.ts')
   const { AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU } =
@@ -321,7 +326,12 @@ try {
   assert(plainFacts, 'Published territory model must resolve Mobilité facts for the plain Cahier check')
   const plainContent = resolveMobiliteThemeContent(plainFacts, plainPayload.themeMetadata?.mobilite)
   const plainPagination = cahierPaginationFor(plainPayload, plainContent, true)
-  const mobilityFacts = reponseThemeMobiliteApi(model, 'commune', '35238', null)
+  // Fixture read-batch pour les lectures non-AEDAR (thème Mobilité) : contrat sémantique,
+  // jamais l'ancienne route theme-facts retirée.
+  function themeBatchResponse(request) {
+    return nativeBatchResponse(request.items, (item, resource) =>
+      nativeReadFixture(item, resource, { syntheticProfileComparisons: true }))
+  }
   const fixtureAttribution = 'Synthetic browser fixture; not published AEDAR facts'
   await mkdir(evidenceDir, { recursive: true })
 
@@ -392,26 +402,37 @@ try {
   const reports = []
   for (const width of [320, 360, 390, 601, 760, 761, 1440, 1800]) {
     const page = await browser.newPage({ viewport: { width, height: 844 }, deviceScaleFactor: 1 })
-    const readCalls = { mobilityFacts: 0, aedarBatches: 0, aedarItems: [] }
+    const readCalls = { retiredThemeFactsRoutes: 0, themeBatches: 0, aedarBatches: 0, aedarItems: [] }
     page.on('pageerror', (error) => console.error(`[browser pageerror ${width}px]`, error))
-    await page.route('**/api/territories/commune/35238/themes/mobilite/facts', async (route) => {
-      readCalls.mobilityFacts += 1
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mobilityFacts) })
-    })
-    await page.route('**/api/territories/commune/35238/themes/mobilite/comparison', async (route) => {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mobilityFacts.comparison) })
-    })
+    // #868 : les anciennes routes theme-facts/comparison sont retirées du navigateur —
+    // garde fail-closed : toute requête vers elles échoue la preuve (HTTP 599).
+    for (const retired of ['**/api/territories/commune/35238/themes/mobilite/facts',
+        '**/api/territories/commune/35238/themes/mobilite/comparison']) {
+      await page.route(retired, async (route) => {
+        readCalls.retiredThemeFactsRoutes += 1
+        await route.fulfill({ status: 599, contentType: 'application/json', body: 'retired route' })
+      })
+    }
     await page.route('**/api/resources/read-batch', async (route) => {
-      readCalls.aedarBatches += 1
       const request = route.request().postDataJSON()
-      readCalls.aedarItems.push(...request.items.map((item) => ({
-        id: item.id,
-        resource: item.resource,
-        target: item.target,
-        typequ: item.coordinates.typequ,
-        fields: item.fields ?? [],
-      })))
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(aedarBatchResponse(request)) })
+      const aedarItems = request.items.filter((item) => Array.isArray(item.coordinates?.typequ))
+      const themeItems = request.items.filter((item) => !Array.isArray(item.coordinates?.typequ))
+      if (aedarItems.length) {
+        readCalls.aedarBatches += 1
+        readCalls.aedarItems.push(...aedarItems.map((item) => ({
+          id: item.id,
+          resource: item.resource,
+          target: item.target,
+          typequ: item.coordinates.typequ,
+          fields: item.fields ?? [],
+        })))
+      }
+      if (themeItems.length) readCalls.themeBatches += 1
+      const results = []
+      if (themeItems.length) results.push(...themeBatchResponse({ items: themeItems }).results)
+      if (aedarItems.length) results.push(...aedarBatchResponse({ items: aedarItems }).results)
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ contract: 'semantic-read-batch-v1', results }) })
     })
     await page.goto(`${baseUrl}territoire/commune/35238?theme=mobilite`, { waitUntil: 'networkidle' })
     try {
@@ -1286,8 +1307,10 @@ try {
       mobileIndexInteraction = { control: 'Sommaire du cahier', opened: true, closedAgain: true }
     }
 
-    assert.equal(readCalls.mobilityFacts, 1,
-      `Expected exactly one theme-facts fixture request at ${width}px; got ${readCalls.mobilityFacts}. The theme-facts route may not have been requested or matched.`)
+    assert.equal(readCalls.retiredThemeFactsRoutes, 0,
+      `Retired theme-facts route hit at ${width}px (${readCalls.retiredThemeFactsRoutes}); the browser must never call it anymore.`)
+    assert.ok(readCalls.themeBatches >= 1,
+      `Expected at least one semantic read-batch for the active theme facts at ${width}px; got ${readCalls.themeBatches}.`)
     const chunk = (values, size) => Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
       values.slice(index * size, (index + 1) * size))
     const coreProjections = chunk(AEDAR_CORE_MEASURE_KEYS, 32)
@@ -1553,7 +1576,8 @@ try {
       plainMarginLayout,
       oversizedMutationDetected,
       readCalls: {
-        mobilityFacts: readCalls.mobilityFacts,
+        retiredThemeFactsRoutes: readCalls.retiredThemeFactsRoutes,
+        themeBatches: readCalls.themeBatches,
         aedarBatches: readCalls.aedarBatches,
         aedarItems: readCalls.aedarItems.map((item) => ({
           id: item.id,
@@ -1566,7 +1590,7 @@ try {
     await page.close()
   }
   console.log(JSON.stringify({
-    fixture: 'checked-in Rennes read model + existing theme-facts fixture builder + synthetic contract-valid AEDAR scenario (not published facts)',
+    fixture: 'checked-in Rennes reference/artifact for offline content + synthetic contract-valid semantic read-batch scenario (theme facts via /api/resources/read-batch since #868; not published facts)',
     evidenceDir,
     reports,
   }, null, 2))

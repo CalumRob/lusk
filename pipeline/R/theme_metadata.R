@@ -441,19 +441,24 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
   #    des indicateurs catégoriels et numériques et AUCUNE lecture ; jamais
   #    une lecture inventée pour remplir le registre. Une story DÉCLARÉE,
   #    elle, obéit aux mêmes règles que partout ailleurs.
-  if (is.null(metadata$story_keys)) {
-    manquer("story_keys", "la liste des histoires est absente")
-  }
-  cles_histoires <- unlist(metadata$story_keys, use.names = FALSE)
-  if (length(cles_histoires) > 0L &&
-      (any(!nzchar(cles_histoires)) || anyDuplicated(cles_histoires))) {
-    manquer("story_keys", "une story_key est vide ou en double")
-  }
   portees <- CLES_HISTOIRES_PAR_THEME[[theme]]
   autres <- unique(unlist(
     CLES_HISTOIRES_PAR_THEME[names(CLES_HISTOIRES_PAR_THEME) != theme],
     use.names = FALSE
   ))
+  # #868 : la projection navigateur (projection_navigateur, publier_theme_metadata)
+  # ne shippe plus le registre story_keys — redondant avec les lectures déclarées
+  # des sous-groupes, que le navigateur lit directement. Quand il est absent (fichier
+  # déjà projeté), le registre de référence retombe sur le portefeuille du thème pour
+  # la règle d'appartenance ; le contrôle d'orphelins ne porte que sur le registre
+  # explicitement déclaré. Le canon épinglé (extdata) déclare toujours story_keys,
+  # verrouillé par le test de parité registre ↔ métadonnées ci-dessous.
+  story_declarees <- if (is.null(metadata$story_keys)) character(0) else unlist(metadata$story_keys, use.names = FALSE)
+  cles_histoires <- if (length(story_declarees) > 0L) story_declarees else portees
+  if (length(story_declarees) > 0L &&
+      (any(!nzchar(story_declarees)) || anyDuplicated(story_declarees))) {
+    manquer("story_keys", "une story_key est vide ou en double")
+  }
   for (cle_histoire in cles_histoires) {
     if (!cle_histoire %in% portees) {
       if (cle_histoire %in% autres) {
@@ -1252,7 +1257,7 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
     if (is.na(ligne$salience_reason[1])) return(FALSE)  # le défaut, lui, est lié
     ligne$groupe[1] %in% cles_groupes
   }
-  orphelines_hist <- setdiff(cles_histoires, names(histoires_groupes))
+  orphelines_hist <- setdiff(story_declarees, names(histoires_groupes))
   illegitimes <- orphelines_hist[!vapply(orphelines_hist, est_candidate_legitime, logical(1L))]
   if (length(illegitimes) > 0) {
     manquer("histoires", paste0(

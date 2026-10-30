@@ -295,9 +295,9 @@ describe('payload contract — the committed payload parses and renders', () => 
       // story déclarée jamais émise est une dérive
       const clesStories = new Set<string>(histoires.map((h) => h.story_key))
       for (const cle of clesStories) {
-        if (!meta.story_keys.includes(cle)) violations.push(`${theme}: story « ${cle} » résolue sans registre`)
+        if (!(meta.story_keys ?? []).includes(cle)) violations.push(`${theme}: story « ${cle} » résolue sans registre`)
       }
-      for (const cle of meta.story_keys) {
+      for (const cle of meta.story_keys ?? []) {
         if (!clesStories.has(cle)) violations.push(`${theme}: story « ${cle} » déclarée sans lecture résolue`)
       }
 
