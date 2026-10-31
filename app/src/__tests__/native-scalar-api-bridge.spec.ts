@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chargerComparaisonsScalaires, chargerCohortePageScalaire, chargerFaitFocalPageScalaire } from '@/payload/scalarCohort'
-import { validerThemeMetadata } from '@/payload/validate'
+import { validerCatalogueNavigateur } from '@/payload/validate'
 import type { ScalarComparisonRequest } from '@/payload/scalarCohort'
 import type { Territoire, TerritoireType } from '@/payload/types'
 
@@ -24,7 +24,7 @@ const oneEligible = JSON.parse(readFileSync(join(__dirname, 'fixtures/native-sca
 const unavailable = JSON.parse(readFileSync(join(__dirname, 'fixtures/native-scalar-commune-unavailable-api.json'), 'utf8')) as NativeCapture
 const outsideMissingFocal = JSON.parse(readFileSync(join(__dirname, 'fixtures/native-scalar-commune-outside-missing-focal-api.json'), 'utf8')) as NativeCapture
 const rawMetadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public/data/theme_demographie.json'), 'utf8'))
-const metadata = { ...validerThemeMetadata(rawMetadata, 'theme_demographie.json'), scalar_contracts: rawMetadata.scalar_contracts }
+const metadata = { ...validerCatalogueNavigateur(rawMetadata, 'theme_demographie.json'), scalar_contracts: rawMetadata.scalar_contracts }
 
 afterEach(() => vi.unstubAllGlobals())
 
