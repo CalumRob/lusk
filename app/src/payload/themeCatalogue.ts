@@ -25,7 +25,7 @@
 import type { InjectionKey } from 'vue'
 
 import type { Theme, ThemeMetadata } from './types'
-import { PayloadError, validerThemeMetadata } from './validate'
+import { PayloadError, validerCatalogueNavigateur } from './validate'
 
 export type ChargerMetadonneesTheme = (theme: Theme) => Promise<ThemeMetadata>
 
@@ -49,7 +49,8 @@ export const chargerMetadonneesTheme: ChargerMetadonneesTheme = async (theme) =>
   } catch {
     throw new PayloadError('validation', url, `JSON illisible dans ${url}`)
   }
-  const metadata = validerThemeMetadata(raw, url)
+  // #868 : fichier servi = projection navigateur → contexte navigateur explicite
+  const metadata = validerCatalogueNavigateur(raw, url)
   if (metadata.theme !== theme) {
     throw new PayloadError('validation', url, `Le catalogue ${url} ne correspond pas au thème ${theme}.`)
   }

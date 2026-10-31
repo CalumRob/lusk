@@ -354,6 +354,18 @@ valider_template <- function(template, params, cle, manquer) {
   invisible(NULL)
 }
 
+# valider_projection_navigateur ---------------------------------------------------
+# #868 — point d'entrée DÉLIBÉRÉ du contrat navigateur servi (public/data/theme_*.json,
+# la projection écrite par projection_navigateur) : contexte "navigateur" explicite,
+# jamais une inférence « champ absent = mode navigateur ». Le canon producteur se valide
+# toujours avec le contexte producteur strict (défaut).
+valider_projection_navigateur <- function(metadata, vintages = NULL,
+                                          directions_module = NULL) {
+  valider_theme_metadata(metadata, vintages = vintages,
+                         directions_module = directions_module,
+                         contexte = "navigateur")
+}
+
 # valider_theme_metadata --------------------------------------------------------
 # Le garde-fou du contrat theme_<theme>.json. Entrée : le fichier lu (la forme
 # jsonlite :: fromJSON(simplifyVector = FALSE) — des listes imbriquées).
@@ -370,7 +382,19 @@ valider_template <- function(template, params, cle, manquer) {
  # Toute dérive échoue FORT, en nommant le champ fautif — jamais un chiffre
  # faux publié silencieusement.
 valider_theme_metadata <- function(metadata, vintages = NULL,
-                                   directions_module = NULL) {
+                                   directions_module = NULL,
+                                   contexte = "producteur") {
+  # #868 : deux contextes EXPLICITES, jamais d'inférence par champ absent.
+  #   - "producteur" (défaut) : le canon épinglé (extdata) et tout artefact de
+  #     récupération — validation STRICTE : story_keys obligatoire, figure de
+  #     sous-groupe obligatoire, contrôle d'orphelins complet.
+  #   - "navigateur" : la projection servie (public/data) — story_keys absent
+  #     accepté (la règle d'appartenance retombe alors sur le portefeuille du
+  #     thème) et la figure de présentation absente acceptée (grammaire fiche
+  #     app-owned, ficheGrammar.ts). Tout le reste (libellés, sources,
+  #     source_records, pages, cadrages factuels) reste requis dans les deux cas.
+  contexte <- match.arg(contexte, c("producteur", "navigateur"))
+  navigateur <- identical(contexte, "navigateur")
   manquer <- function(champ, detail) {
     stop(sprintf("Métadonnées du thème invalides — %s : %s.", champ, detail),
          call. = FALSE)
@@ -446,13 +470,14 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
     CLES_HISTOIRES_PAR_THEME[names(CLES_HISTOIRES_PAR_THEME) != theme],
     use.names = FALSE
   ))
-  # #868 : la projection navigateur (projection_navigateur, publier_theme_metadata)
-  # ne shippe plus le registre story_keys — redondant avec les lectures déclarées
-  # des sous-groupes, que le navigateur lit directement. Quand il est absent (fichier
-  # déjà projeté), le registre de référence retombe sur le portefeuille du thème pour
-  # la règle d'appartenance ; le contrôle d'orphelins ne porte que sur le registre
-  # explicitement déclaré. Le canon épinglé (extdata) déclare toujours story_keys,
-  # verrouillé par le test de parité registre ↔ métadonnées ci-dessous.
+  # #868 : contexte producteur — le registre story_keys est OBLIGATOIRE (un canon
+  # sans registre est une dérive, jamais un « mode navigateur » deviné). Contexte
+  # navigateur — la projection servie ne le porte plus ; la règle d'appartenance
+  # retombe alors sur le portefeuille du thème, et le contrôle d'orphelins ne porte
+  # que sur le registre explicitement déclaré (vide ici).
+  if (is.null(metadata$story_keys) && !navigateur) {
+    manquer("story_keys", "la liste des histoires est absente")
+  }
   story_declarees <- if (is.null(metadata$story_keys)) character(0) else unlist(metadata$story_keys, use.names = FALSE)
   cles_histoires <- if (length(story_declarees) > 0L) story_declarees else portees
   if (length(story_declarees) > 0L &&
@@ -621,7 +646,14 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
     }
 
     # la figure — une famille du contrat, un indicateur que le sous-groupe
-    # possède (la figure rend la matière du sous-groupe, jamais une autre)
+    # possède (la figure rend la matière du sous-groupe, jamais une autre).
+    # #868 : requise dans le canon producteur ; la projection navigateur ne la
+    # porte plus (présentation app-owned, ficheGrammar.ts) — le contexte
+    # navigateur l'accepte absente, le contexte producteur la refuse.
+    if (navigateur && is.null(groupe$figure)) {
+      famille <- NULL
+      indicateur_figure <- NULL
+    } else {
     if (!est_liste(groupe$figure)) {
       manquer("figure",
               paste0("« ", cle, " » : la figure est absente ou non-objet"))
@@ -639,6 +671,7 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
         !indicateur_figure %in% inds) {
       manquer("figure", paste0(
         "« ", cle, " » : la figure doit rendre un indicateur que le sous-groupe possède"))
+    }
     }
     # la lecture résolue — le lien explicite vers l'histoire du sous-groupe
     # (parent #308 : l'app n'infère jamais la relation depuis les noms).

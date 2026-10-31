@@ -10,12 +10,7 @@
         "mix_logements",
         "statut",
         "type"
-      ],
-      "figure": {
-        "family": "composition",
-        "indicator": "mix_logements"
-      }
-    },
+      ]},
     {
       "key": "etat-energetique-du-parc",
       "label": "L’état énergétique du parc",
@@ -25,10 +20,7 @@
         "part_passoires",
         "age_du_bati"
       ],
-      "figure": {
-        "family": "composition",
-        "indicator": "distribution_dpe"
-      },
+
       "reading": {
         "story_key": "etat-energetique-du-parc",
         "params": [
@@ -89,12 +81,7 @@
       "framing": "Le marché immobilier de la commune : la médiane du prix au m² des ventes.",
       "indicators": [
         "prix_m2"
-      ],
-      "figure": {
-        "family": "trajectory",
-        "indicator": "prix_m2"
-      }
-    }
+      ]}
   ],
   "indicator_keys": [
     "mix_logements",
@@ -556,18 +543,7 @@
       "zero_support_status": "not_available"
     }
   },
-  "owned_series_routes": {
-    "prix_m2": {
-      "active_read_route": true,
-      "theme_id": "habitat",
-      "serving_levels": [
-        "commune",
-        "epci",
-        "departement",
-        "region"
-      ]
-    }
-  },
+
   "source_records": {
     "logements": {
       "dataset": "INSEE — Logements (dossier complet)",

@@ -30,14 +30,26 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
     // navigateur, pipeline/R/publier_theme_metadata.R) exclut aussi story_keys et
     // observed_collection_contracts du snapshot public — registres producer-only
     // que ni le navigateur ni les lecteurs du payload committé ne lisent.
-    const horsNavigateur = ['semantic_resources', 'story_keys', 'observed_collection_contracts']
+    const horsNavigateur = ['semantic_resources', 'story_keys', 'observed_collection_contracts',
+      'indicator_directions', 'selected_reading_contract', 'comparison_scopes', 'building_comparison',
+      'service_share_scalar', 'distribution_contracts', 'owned_series_routes']
     for (const theme of themes.filter((item) => item !== 'mobilite')) {
       const canonical = lire(canonicalDir, theme) as Record<string, unknown>
       const snapshot = lire(publicDir, theme) as Record<string, unknown>
       const presentation = { ...canonical }
       for (const champ of horsNavigateur) delete presentation[champ]
+      // #868 : la figure de présentation des sous-groupes est app-owned — non servie
+      if (Array.isArray(presentation.subgroups)) {
+        presentation.subgroups = presentation.subgroups.map((g: Record<string, unknown>) => {
+          const { figure: _figure, ...reste } = g
+          return reste
+        })
+      }
       for (const champ of horsNavigateur) {
         expect(snapshot, `${theme} snapshot excludes ${champ}`).not.toHaveProperty(champ)
+      }
+      for (const groupe of (snapshot.subgroups ?? []) as Array<Record<string, unknown>>) {
+        expect(groupe, `${theme} subgroup figure not served`).not.toHaveProperty('figure')
       }
       expect(snapshot, theme).toEqual(presentation)
     }

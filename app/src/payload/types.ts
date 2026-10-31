@@ -824,7 +824,12 @@ export interface SousGroupeMetadata {
   label: string
   framing: string
   indicators: string[]
-  figure: FigureSousGroupe
+  /**
+   * Producer contract (extdata) : required. #868 : the served browser projection
+   * (projection_navigateur) no longer ships it — figure presentation is app-owned
+   * (fiche/content/ficheGrammar.ts) — so it is optional in the navigateur context.
+   */
+  figure?: FigureSousGroupe
   /** Absent for an honest indicator-only subgroup (e.g. structure-verte). */
   reading?: LectureSousGroupe
 }

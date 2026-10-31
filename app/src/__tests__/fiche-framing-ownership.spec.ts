@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { cadrageSousGroupeFiche, sousGroupeFiche } from '../fiche/content/ficheGrammar'
-import { validerThemeMetadata } from '../payload/validate'
+import { validerCatalogueNavigateur } from '../payload/validate'
 import type { ThemeMetadata } from '../payload/types'
 
 /**
@@ -14,7 +14,7 @@ import type { ThemeMetadata } from '../payload/types'
  */
 
 function publie(theme: 'mobilite' | 'programmes'): ThemeMetadata {
-  return validerThemeMetadata(
+  return validerCatalogueNavigateur(
     JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8')),
     `theme_${theme}.json`,
   )

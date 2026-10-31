@@ -19,7 +19,7 @@ import {
   validerProfilsAccesBpe,
   validerRampeAccesBatiments,
   validerTerritoires,
-  validerThemeMetadata,
+  validerCatalogueNavigateur,
 } from './validate'
 
 /**
@@ -184,7 +184,9 @@ function validateTheme(
   if (!isObject(raw)) fail(file, `« themes.${theme} » doit être un objet`)
   if (raw.theme !== theme) fail(file, `« themes.${theme}.theme » ne correspond pas à la clé du thème`)
 
-  const metadata = validerThemeMetadata(raw.theme_metadata, file)
+  // #868 : la métadonnée embarquée dans l'artefact est la projection servie →
+  // contexte navigateur explicite (le canon producteur reste validé strict côté R).
+  const metadata = validerCatalogueNavigateur(raw.theme_metadata, file)
   if (metadata.theme !== theme) fail(file, `« themes.${theme}.theme_metadata.theme » ne correspond pas au thème`)
 
   const indicators = validerIndicateurs(raw.indicateurs, file, territories)

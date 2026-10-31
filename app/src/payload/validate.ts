@@ -2362,7 +2362,29 @@ function validerSubventionsProgrammes(
  * its own theme_programmes.json with an EMPTY story registry — a theme may
  * hold categorical and numeric indicators and no lecture, none invented.
  */
-export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetadata {
+/**
+ * #868 — point d'entrée DÉLIBÉRÉ du contrat navigateur servi (la projection écrite
+ * par projection_navigateur côté R) : contexte 'navigateur' explicite. Le canon
+ * producteur / les artefacts de récupération se valident avec le contexte 'producteur'
+ * strict (défaut de validerThemeMetadata).
+ */
+export function validerCatalogueNavigateur(brut: unknown, fichier: string): ThemeMetadata {
+  return validerThemeMetadata(brut, fichier, 'navigateur')
+}
+
+export function validerThemeMetadata(
+  brut: unknown,
+  fichier: string,
+  contexte: 'producteur' | 'navigateur' = 'producteur',
+): ThemeMetadata {
+  // #868 : deux contextes EXPLICITES, jamais d'inférence par champ absent.
+  //  - 'producteur' (défaut) : canon producteur / artefact de récupération — STRICT :
+  //    story_keys et la figure de sous-groupe sont requis, contrôle d'orphelins complet.
+  //  - 'navigateur' : la projection servie (public/data/theme_*.json) — story_keys
+  //    absent accepté (repli sur le portefeuille du thème pour l'appartenance) et
+  //    figure absente acceptée (présentation app-owned, ficheGrammar.ts).
+  //    Le reste (libellés, sources, source_records, pages, cadrages) reste requis.
+  const navigateur = contexte === 'navigateur'
   exiger(estObjet(brut), fichier, 0, 'le fichier theme_<theme>.json doit être un objet JSON, jamais un tableau')
   const meta = brut as LigneBrute
 
@@ -2390,11 +2412,14 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   //    indicateurs catégoriels et numériques et AUCUNE lecture ; jamais une
   //    lecture inventée pour remplir le registre. Une story DÉCLARÉE, elle,
   //    obéit aux mêmes règles que partout ailleurs.
-  //    #868 : la projection navigateur servie (public/data/theme_*.json) ne
-  //    shippe plus ce registre — redondant avec les lectures déclarées des
-  //    sous-groupes. Absent → le registre de référence retombe sur le
-  //    portefeuille du thème (CLES_HISTOIRES_PAR_THEME) ; le canon producteur
-  //    (extdata) le déclare toujours, verrouillé par la parité R.
+  //    #868 : contexte producteur — le registre story_keys est OBLIGATOIRE (un canon
+  //    sans registre est une dérive, jamais un « mode navigateur » deviné). Contexte
+  //    navigateur — la projection servie ne le porte plus : repli sur le portefeuille
+  //    du thème pour la règle d'appartenance ; le contrôle d'orphelins ne porte que
+  //    sur le registre déclaré.
+  if (meta['story_keys'] === undefined && !navigateur) {
+    throw erreur(fichier, 0, '« story_keys » : la liste des histoires est absente')
+  }
   const story_declarees = meta['story_keys'] === undefined
     ? []
     : lireTableauChaines(meta, 'story_keys', fichier, 0)
@@ -2539,24 +2564,36 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     }
 
     // la figure — une famille du contrat, un indicateur que le sous-groupe
-    // possède (la figure rend la matière du sous-groupe, jamais une autre)
+    // possède (la figure rend la matière du sous-groupe, jamais une autre).
+    // #868 : requise dans le canon producteur ; la projection navigateur ne la
+    // porte plus (présentation app-owned, ficheGrammar.ts).
     const figureBrut = groupe['figure']
-    exiger(estObjet(figureBrut), fichier, ligneIndexee, `« ${cle} » : la figure est absente ou non-objet`)
-    const figure = figureBrut as LigneBrute
-    const family = lireChaine(figure, 'family', fichier, ligneIndexee)
-    exiger(
-      estUneDe(family, FAMILLES_FIGURE),
-      fichier,
-      ligneIndexee,
-      `« ${cle} » : la famille de figure « ${family} » est hors contrat — attendue l'une de ${FAMILLES_FIGURE.join(' | ')}`,
-    )
-    const indicateurFigure = lireChaine(figure, 'indicator', fichier, ligneIndexee)
-    exiger(
-      indicators.includes(indicateurFigure),
-      fichier,
-      ligneIndexee,
-      `« ${cle} » : la figure doit rendre un indicateur que le sous-groupe possède`,
-    )
+    let family: string | undefined
+    let indicateurFigure: string | undefined
+    if (navigateur && figureBrut === undefined) {
+      family = undefined
+      indicateurFigure = undefined
+    } else {
+      exiger(estObjet(figureBrut), fichier, ligneIndexee, `« ${cle} » : la figure est absente ou non-objet`)
+      const figure = figureBrut as LigneBrute
+      family = lireChaine(figure, 'family', fichier, ligneIndexee)
+      exiger(
+        estUneDe(family, FAMILLES_FIGURE),
+        fichier,
+        ligneIndexee,
+        `« ${cle} » : la famille de figure « ${family} » est hors contrat — attendue l'une de ${FAMILLES_FIGURE.join(' | ')}`,
+      )
+      indicateurFigure = lireChaine(figure, 'indicator', fichier, ligneIndexee)
+      exiger(
+        indicators.includes(indicateurFigure),
+        fichier,
+        ligneIndexee,
+        `« ${cle} » : la figure doit rendre un indicateur que le sous-groupe possède`,
+      )
+    }
+    const figureValeur = family !== undefined && indicateurFigure !== undefined
+      ? { family, indicator: indicateurFigure }
+      : undefined
 
     // la lecture résolue — le lien explicite vers l'histoire du sous-groupe
     // (parent #308 : l'app n'infère jamais la relation depuis les noms). Un
@@ -2569,7 +2606,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
         label: libelle,
         framing,
         indicators,
-        figure: { family, indicator: indicateurFigure },
+        ...(figureValeur ? { figure: figureValeur } : {}),
       }
     }
     exiger(estObjet(readingBrut), fichier, ligneIndexee, `« ${cle} » : la lecture (reading) est absente ou non-objet`)
@@ -2611,7 +2648,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       label: libelle,
       framing,
       indicators,
-      figure: { family, indicator: indicateurFigure },
+      ...(figureValeur ? { figure: figureValeur } : {}),
       reading: { story_key, params, template, ...(readingFigure ? { figure: readingFigure } : {}) },
     }
   })

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Theme, ThemeMetadata } from '../payload/types'
 import { GROUPES_PAR_STORY } from '../payload/types'
-import { PayloadError, validerThemeMetadata } from '../payload/validate'
+import { PayloadError, validerCatalogueNavigateur, validerThemeMetadata } from '../payload/validate'
 
 /**
  * Le contrat de métadonnées par thème (issue #309, parent #308) — le miroir
@@ -101,7 +101,9 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
     // #868 : sans story_keys déclaré (projection navigateur), le registre retombe
     // sur le portefeuille du thème — la validation accepte la projection servie.
     const { story_keys: _retire, ...projection } = copieBrute('mobilite')
-    expect(() => validerThemeMetadata(projection, 'theme_mobilite.json')).not.toThrow()
+    expect(() => validerCatalogueNavigateur(projection, 'theme_mobilite.json')).not.toThrow()
+    // #868 RED : le contexte producteur strict refuse la projection (story_keys absent)
+    expect(() => validerThemeMetadata(projection, 'theme_mobilite.json')).toThrow(/story_keys/)
   })
 
   it('accepte la méthodologie structurée portée par une source', () => {
@@ -185,7 +187,7 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
 
   it('preserves the producer-declared no-record contract when validating canonical Programmes metadata', () => {
     const published = JSON.parse(readFileSync('../public/data/theme_programmes.json', 'utf8'))
-    const metadata = validerThemeMetadata(published, 'theme_programmes.json')
+    const metadata = validerCatalogueNavigateur(published, 'theme_programmes.json')
 
     expect(metadata.indicator_pages?.subventions_annuelles).toMatchObject({
       completeness: 'may_be_missing', absence_semantics: 'no_record',
@@ -193,12 +195,12 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
 
     const unknownAbsence = structuredClone(published)
     unknownAbsence.indicator_pages.subventions_annuelles.absence_semantics = 'unavailable'
-    expect(() => validerThemeMetadata(unknownAbsence, 'theme_programmes.json'))
+    expect(() => validerCatalogueNavigateur(unknownAbsence, 'theme_programmes.json'))
       .toThrow(/absence_semantics.*invalide/)
 
     const completeButNoRecord = structuredClone(published)
     completeButNoRecord.indicator_pages.subventions_annuelles.completeness = 'dense_complete'
-    expect(() => validerThemeMetadata(completeButNoRecord, 'theme_programmes.json'))
+    expect(() => validerCatalogueNavigateur(completeButNoRecord, 'theme_programmes.json'))
       .toThrow(/absence_semantics.*requiert may_be_missing/)
   })
 
@@ -240,13 +242,13 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
   it('rejette une figure invalide', () => {
     // famille hors contrat
     let erreur = attendErreur('demographie', (meta) => {
-      meta.subgroups[0].figure.family = 'camembert' as ThemeMetadata['subgroups'][number]['figure']['family']
+      meta.subgroups[0].figure!.family = 'camembert' as NonNullable<ThemeMetadata['subgroups'][number]['figure']>['family']
     })
     expect(erreur.message).toMatch(/figure/i)
 
     // la figure rend un indicateur que le sous-groupe ne possède pas
     erreur = attendErreur('demographie', (meta) => {
-      meta.subgroups[0].figure.indicator = 'fantome'
+      meta.subgroups[0].figure!.indicator = 'fantome'
     })
     expect(erreur.message).toMatch(/figure/i)
   })

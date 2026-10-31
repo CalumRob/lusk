@@ -5,7 +5,7 @@ import { chargerCohorteScalaire, chargerCohortePageScalaire, chargerCohortesScal
   chargerComparaisonsScalaires, indicateursScalairesEnregistres, pagesScalairesEnregistrees, remplacerFaitsScalaires,
   scalarCohortEnabled, validerEnregistrementScalaires } from '../payload/scalarCohort'
 import { territoiresFixture, indicateursEconomieFixture } from '../payload/fixtures'
-import { validerThemeMetadata } from '../payload/validate'
+import { validerCatalogueNavigateur } from '../payload/validate'
 import type { SemanticReadItem, SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 
 const themeRaw = (theme: string) => JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8'))
@@ -16,7 +16,7 @@ beforeEach(() => { vi.stubEnv('VITE_SCALAR_COHORT_API', '1') })
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 function pageFor(theme: string, indicator: string) {
-  return validerThemeMetadata(themeRaw(theme), `theme_${theme}.json`).indicator_pages![indicator]!
+  return validerCatalogueNavigateur(themeRaw(theme), `theme_${theme}.json`).indicator_pages![indicator]!
 }
 
 function sourceFor(theme: string, indicator: string) {
@@ -164,7 +164,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     expect(scalarCohortEnabled({ VITE_SCALAR_COHORT_API: '1' })).toBe(true)
     const registered = indicateursScalairesEnregistres(habitat)
     expect(registered).toContain('prix_m2')
-    const metadata = validerThemeMetadata(habitat, 'theme_habitat.json')
+    const metadata = validerCatalogueNavigateur(habitat, 'theme_habitat.json')
     const scalarPages = pagesScalairesEnregistrees(metadata, registered)
     expect(scalarPages).not.toContain('prix_m2')
     expect(() => validerEnregistrementScalaires(metadata, scalarPages)).not.toThrow()
@@ -203,7 +203,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
 
   it('requests only producer-declared counts and accepts a focal outside the exact page cohort', async () => {
     const indicator = 'densite'
-    const metadata = validerThemeMetadata(themeRaw('demographie'), 'theme_demographie.json')
+    const metadata = validerCatalogueNavigateur(themeRaw('demographie'), 'theme_demographie.json')
     const page = pageFor('demographie', indicator)
     const focal = territoiresFixture.find((territory) => territory.territoire === '29001')!
     const fetcher = installCatalogueAndReads([declaration('demographie', indicator)], (item) => scalarData(
@@ -227,7 +227,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
   it('keeps a sparse scalar cohort with no observation rows explicitly empty', async () => {
     const indicator = 'bornes_ev_par_station_service'
     const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
-    const metadata = validerThemeMetadata(themeRaw('mobilite'), 'theme_mobilite.json')
+    const metadata = validerCatalogueNavigateur(themeRaw('mobilite'), 'theme_mobilite.json')
     const fetcher = installCatalogueAndReads([declaration('mobilite', indicator)], (item) =>
       scalarData('mobilite', indicator, item, { completeness: 'sparse', observations: [] }))
 
@@ -319,7 +319,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
   })
 
   it('acquires all registered ordinary scalars in one bounded semantic batch and rejects mixed publication identities', async () => {
-    const metadata = validerThemeMetadata(economy, 'theme_economie.json')
+    const metadata = validerCatalogueNavigateur(economy, 'theme_economie.json')
     const registered = indicateursScalairesEnregistres(economy).filter((indicator) => metadata.indicator_pages?.[indicator]?.family === 'scalar')
     const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
     const resources = registered.map((indicator) => declaration('economie', indicator))

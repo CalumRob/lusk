@@ -28,7 +28,7 @@ import {
   themeFactsRowsFromSemantic,
   validerReponseComparaisonTheme,
 } from '../payload/themeFactsAdapter'
-import { PayloadError, validerTerritoires, validerThemeMetadata } from '../payload/validate'
+import { PayloadError, validerTerritoires, validerCatalogueNavigateur } from '../payload/validate'
 import { routes } from '../router'
 import {
   nativeBatchResponse,
@@ -84,7 +84,7 @@ function nativeSemanticFetch(requests: Array<Array<Record<string, any>>> = []) {
 async function monter(
   chemin: string,
   charger: ChargerReferenceTerritoires = chargerReferenceFixture,
-  chargerMetadata: ChargerMetadonneesTheme = async (theme) => validerThemeMetadata(
+  chargerMetadata: ChargerMetadonneesTheme = async (theme) => validerCatalogueNavigateur(
     JSON.parse(lireDonnee(`theme_${theme}.json`)),
     `theme_${theme}.json`,
   ),
@@ -215,7 +215,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     })
     let notifySecondRequest!: () => void
     const secondRequest = new Promise<void>((resolve) => { notifySecondRequest = resolve })
-    const canonical = validerThemeMetadata(JSON.parse(readFileSync(
+    const canonical = validerCatalogueNavigateur(JSON.parse(readFileSync(
       resolve(process.cwd(), '../public/data/theme_programmes.json'), 'utf8')),
     'theme_programmes.json')
     const lateMetadata = structuredClone(canonical)

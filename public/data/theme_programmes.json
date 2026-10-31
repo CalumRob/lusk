@@ -8,11 +8,7 @@
       "framing": "Les programmes de l'État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d'action publique, jamais des résultats.",
       "indicators": [
         "couverture_programmes"
-      ],
-      "figure": {
-        "family": "list",
-        "indicator": "couverture_programmes"
-      }
+      ]
     },
     {
       "key": "subventions",
@@ -21,11 +17,7 @@
       "indicators": [
         "subventions_annuelles",
         "subventions_par_domaine"
-      ],
-      "figure": {
-        "family": "scalar",
-        "indicator": "subventions_annuelles"
-      }
+      ]
     }
   ],
   "indicator_keys": [

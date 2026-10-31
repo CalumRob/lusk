@@ -8,10 +8,12 @@ import { createServer } from 'vite'
 // Real-browser, populated contract check for Cahier mobile overflow and the
 // shared y-axis rail regression in issue #841 and W3 labels in issue #829.
 // #868 : the fiche bootstraps from the territory reference and reads the active
-// theme through the semantic API (/api/resources/read-batch) — intercepted here
-// with the same fixture builders/contracts used by the app tests; the retired
-// per-theme facts routes are fail-closed (HTTP 599). The checked-in read-model
-// artifact is used only as offline fixture material for the static content check.
+// theme through the semantic API (GET /api/resources + POST /api/resources/read-batch)
+// — both intercepted here with the same fixture builders/contracts used by the app
+// tests; any other API traffic fails closed (HTTP 599), so nothing reaches Vite's
+// public API proxy. The retired per-theme facts routes are likewise fail-closed.
+// The checked-in read-model artifact is used only as offline fixture material for
+// the static content check.
 // Run: npm run verify:mobile-cahier-overflow. If Playwright has no cached
 // browser, run `npx playwright-core install chromium`; alternatively set
 // PLAYWRIGHT_CHROMIUM_EXECUTABLE to an installed Chromium executable.
@@ -302,7 +304,7 @@ try {
   const { cahierPaginationFor } = await server.ssrLoadModule('/src/fiche/prototype/cahierPagination.ts')
   // #868 : les faits du thème actif passent par /api/resources/read-batch (contrat sémantique),
   // servis ici par les fixtures natives du suite (semanticApiFixtures).
-  const { nativeBatchResponse, nativeReadFixture } =
+  const { nativeBatchResponse, nativeReadFixture, nativeCatalogueResponse } =
     await server.ssrLoadModule('/src/__tests__/helpers/semanticApiFixtures.ts')
   const { AEDAR_CORE_MEASURE_KEYS, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS } =
     await server.ssrLoadModule('/src/fiche/content/aedarTimeRampFacts.ts')
@@ -413,6 +415,16 @@ try {
         await route.fulfill({ status: 599, contentType: 'application/json', body: 'retired route' })
       })
     }
+    // #868 : la découverte /api/resources est aussi servie par fixture — aucune
+    // requête API ne doit atteindre le proxy public de Vite.
+    await page.route('**/api/resources', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(await nativeCatalogueResponse().json()) })
+    })
+    await page.route('**/api/**', async (route) => {
+      await route.fulfill({ status: 599, contentType: 'application/json',
+        body: JSON.stringify({ error: 'unexpected API traffic in fixture-only proof' }) })
+    })
     await page.route('**/api/resources/read-batch', async (route) => {
       const request = route.request().postDataJSON()
       const aedarItems = request.items.filter((item) => Array.isArray(item.coordinates?.typequ))

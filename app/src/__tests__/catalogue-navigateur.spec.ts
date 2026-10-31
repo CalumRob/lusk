@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { THEMES_CANONIQUES } from '../payload/types'
 import type { Theme, ThemeMetadata } from '../payload/types'
-import { validerThemeMetadata } from '../payload/validate'
+import { validerCatalogueNavigateur, validerThemeMetadata } from '../payload/validate'
 
 /**
  * #868 — contrat du catalogue navigateur servi. Les fichiers public/data/theme_*.json
@@ -21,7 +21,21 @@ import { validerThemeMetadata } from '../payload/validate'
  * cadrages #827, libellés, source_records, indicator_pages, sources) restent servies.
  */
 
-const CHAMPS_HORS_NAVIGATEUR = ['story_keys', 'observed_collection_contracts', 'semantic_resources'] as const
+// Miroir de CHAMPS_HORS_NAVIGATEUR (pipeline/R/publier_theme_metadata.R) : champs
+// producer-only retirés de la projection servie — aucun lecteur navigateur, et les
+// lecteurs pipeline du payload committé les lisent dans le canon extdata.
+const CHAMPS_HORS_NAVIGATEUR = [
+  'semantic_resources',
+  'story_keys',
+  'observed_collection_contracts',
+  'indicator_directions',
+  'selected_reading_contract',
+  'comparison_scopes',
+  'building_comparison',
+  'service_share_scalar',
+  'distribution_contracts',
+  'owned_series_routes',
+] as const
 
 function lireJson(relatif: string): Record<string, any> {
   return JSON.parse(readFileSync(resolve(process.cwd(), '..', ...relatif.split('/')), 'utf8'))
@@ -31,18 +45,25 @@ const PUBLIC = (theme: string) => `public/data/theme_${theme}.json`
 const CANON = (theme: string) => `pipeline/inst/extdata/theme-metadata/theme_${theme}.json`
 
 describe('catalogue navigateur servi (#868) — projection réduite, canon complet conservé', () => {
-  it.each(THEMES_CANONIQUES)('theme_%s.json servi : champs producer-only absents, contrat navigateur valide', (theme: Theme) => {
+  it.each(THEMES_CANONIQUES)('theme_%s.json servi : champs producer-only absents, figure de présentation non servie, contrat navigateur valide', (theme: Theme) => {
     const brut = lireJson(PUBLIC(theme))
     for (const champ of CHAMPS_HORS_NAVIGATEUR) {
       expect(champ in brut, `le champ producer-only « ${champ} » ne doit plus être servi`).toBe(false)
     }
-    // la projection servie passe le validateur navigateur (story_keys optionnel)
-    const metadata = validerThemeMetadata(brut, PUBLIC(theme))
+    // #868 : la figure de présentation des sous-groupes est app-owned (ficheGrammar) —
+    // elle n'est plus servie ; la lecture (reading) reste servie (carte).
+    for (const groupe of brut.subgroups) {
+      expect('figure' in groupe, `subgroups[].figure ne doit plus être servi (${groupe.key})`).toBe(false)
+    }
+    // la projection servie passe le validateur navigateur (contexte explicite)
+    const metadata = validerCatalogueNavigateur(brut, PUBLIC(theme))
     expect(metadata.theme).toBe(theme)
     expect(metadata.subgroups.length).toBeGreaterThan(0)
     expect(Object.keys(metadata.indicator_labels).length).toBeGreaterThan(0)
     expect(metadata.source_records).toBeDefined()
     expect(metadata.indicator_pages).toBeDefined()
+    // RED : le contexte producteur strict refuse la projection servie (story_keys absent)
+    expect(() => validerThemeMetadata(brut, PUBLIC(theme))).toThrow(/story_keys/)
   })
 
   it.each(THEMES_CANONIQUES)('canon producteur theme_%s.json (extdata) : champs complets toujours présents', (theme: Theme) => {
@@ -61,8 +82,9 @@ describe('catalogue navigateur servi (#868) — projection réduite, canon compl
   })
 
   it('les deux clauses factuelles retenues (#827) restent servies bit à bit', () => {
-    const mobilite = validerThemeMetadata(lireJson(PUBLIC('mobilite')), PUBLIC('mobilite'))
-    const programmes = validerThemeMetadata(lireJson(PUBLIC('programmes')), PUBLIC('programmes'))
+    const mobilite = validerCatalogueNavigateur(lireJson(PUBLIC('mobilite')), PUBLIC('mobilite'))
+    const programmes = validerCatalogueNavigateur(lireJson(PUBLIC('programmes')), PUBLIC('programmes'))
+    void mobilite
     const cadrageTransport = mobilite.subgroups.find((g) => g.key === 'offre-transports-commun')?.framing
     const cadrageSubventions = programmes.subgroups.find((g) => g.key === 'subventions')?.framing
     expect(typeof cadrageTransport).toBe('string')
@@ -78,7 +100,7 @@ describe('catalogue navigateur servi (#868) — projection réduite, canon compl
 
   it('les registres et sources lus par la carte/fiche restent servis (indicator_keys, sources, labels)', () => {
     for (const theme of THEMES_CANONIQUES) {
-      const metadata: ThemeMetadata = validerThemeMetadata(lireJson(PUBLIC(theme)), PUBLIC(theme))
+      const metadata: ThemeMetadata = validerCatalogueNavigateur(lireJson(PUBLIC(theme)), PUBLIC(theme))
       expect(metadata.indicator_keys.length).toBeGreaterThan(0)
       expect(Object.keys(metadata.sources).sort()).toEqual([...metadata.indicator_keys].sort())
       expect(Object.keys(metadata.indicator_labels).sort()).toEqual([...metadata.indicator_keys].sort())

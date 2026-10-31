@@ -1163,7 +1163,7 @@ test_that("la page liste subventions_par_domaine publie valablement contre le pa
   )
   relu <- jsonlite::fromJSON(file.path(sortie, "theme_programmes.json"),
                              simplifyVector = FALSE)
-  expect_error(valider_theme_metadata(relu), NA)
+  expect_error(valider_projection_navigateur(relu), NA)
 
   # la stabilité BYTE du contrat (#462) : le canon republié par le trait
   # `metadata` est BIT À BIT l'artefact COMMITTÉ que l'app fetch — jamais un

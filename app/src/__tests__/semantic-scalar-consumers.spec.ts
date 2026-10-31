@@ -8,7 +8,7 @@ import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import { chargerAvec, indicateursDemographieFixture, territoiresFixture } from '../payload/fixtures'
 import { formaterRang, formaterValeur } from '../payload/selectors'
-import { validerThemeMetadata } from '../payload/validate'
+import { validerCatalogueNavigateur } from '../payload/validate'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
 import CarteView from '../views/CarteView.vue'
@@ -35,7 +35,7 @@ function ordinaryScalarPageCensus() {
   const resources = nativeResources()
   return ['demographie', 'economie', 'habitat', 'mobilite'].flatMap((theme) => {
     const raw = metadata(theme)
-    const parsed = validerThemeMetadata(raw, `theme_${theme}.json`)
+    const parsed = validerCatalogueNavigateur(raw, `theme_${theme}.json`)
     const registered = indicateursScalairesEnregistres(raw)
     return pagesScalairesEnregistrees(parsed, registered).filter((indicator) => {
       const page = parsed.indicator_pages?.[indicator]
