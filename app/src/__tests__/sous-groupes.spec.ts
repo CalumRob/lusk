@@ -105,27 +105,16 @@ describe('sousGroupesPourTerritoire — l’ordre, les labels et les clés vienn
       indicateursMobiliteFixture,
     )
 
-    expect(sousGroupes[0].figures.map((f) => f.key)).toEqual([
-      'iso_alimentation',
-      'iso_sante',
-      'iso_administration',
-      'iso_ecole',
-      'iso_banque',
-      'share_food_t',
-      'share_food_b',
-      'share_food_c',
-      'share_health_t',
-      'share_health_b',
-      'share_health_c',
-      'share_admin_t',
-      'share_admin_b',
-      'share_admin_c',
-      'share_school_t',
-      'share_school_b',
-      'share_school_c',
-      'share_bank_t',
-      'share_bank_b',
-      'share_bank_c',
+    // #627 - the acces-aux-services unit keeps only its structural identity:
+    // no figures bind to it any more, and the retained subgroups keep their
+    // app-grammar presentation order.
+    expect(sousGroupes[0].figures.map((f) => f.key)).toEqual([])
+    expect(sousGroupes[1].figures.map((f) => f.key)).toEqual([
+      'reseaux',
+      'reseaux_par_habitant',
+      'surface_reseaux_routiers',
+      'places_stationnement_velo_1000',
+      'offre_cyclable',
     ])
   })
 
@@ -189,7 +178,9 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
         indicateurs: indicateursMobiliteFixture,
         histoires: histoiresMobiliteFixture,
         expected: [
-          ['acces-aux-services', 'L’accès aux services', 'Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun : les parts de bâtiments sans accès aux services essentiels.'],
+          // #627 - the structural acces-aux-services identity stays, but its
+          // legacy framing is withheld (the AEDAR evidence owns the copy).
+          ['acces-aux-services', 'L’accès aux services', null],
           ['partage-de-lespace-public', 'Le partage de l’espace public', 'La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.'],
           ['motorisation', 'La motorisation', 'L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.'],
           ['offre-transports-commun', 'L’offre de transports en commun', null],
@@ -260,7 +251,9 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
       {
         theme: 'mobilite', indicateurs: indicateursMobiliteFixture, histoires: histoiresMobiliteFixture,
         expected: [
-          { key: 'acces-aux-services', rows: ['iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque', 'share_food_t', 'share_food_b', 'share_food_c', 'share_health_t', 'share_health_b', 'share_health_c', 'share_admin_t', 'share_admin_b', 'share_admin_c', 'share_school_t', 'share_school_b', 'share_school_c', 'share_bank_t', 'share_bank_b', 'share_bank_c'], figure: ['comparison-bars', 'iso_alimentation'], story: 'vingt-minutes-sans-voiture' },
+          // #627 - no rows, no compact figure and no reading bind to the
+          // structural acces-aux-services identity any more.
+          { key: 'acces-aux-services', rows: [] as string[], figure: null, story: null },
           { key: 'partage-de-lespace-public', rows: ['reseaux', 'reseaux_par_habitant', 'surface_reseaux_routiers', 'places_stationnement_velo_1000', 'offre_cyclable'], figure: ['composition', 'offre_cyclable'], story: null },
           { key: 'motorisation', rows: ['voitures_menage', 'bornes_recharge'], figure: ['composition', 'voitures_menage'], story: null },
           { key: 'offre-transports-commun', rows: ['offre_tc'], figure: ['scalar', 'offre_tc'], story: null },
@@ -285,9 +278,13 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
       for (const [index, binding] of expected.entries()) {
         const subgroup = rendered[index]!
         expect(subgroup.figures.map(({ key }) => key), `${theme}/${binding.key} rows`).toEqual(binding.rows)
-        expect(subgroup.figureCompacte, `${theme}/${binding.key} compact figure`).toMatchObject({
-          famille: binding.figure[0], clef: binding.figure[1],
-        })
+        if (binding.figure) {
+          expect(subgroup.figureCompacte, `${theme}/${binding.key} compact figure`).toMatchObject({
+            famille: binding.figure[0], clef: binding.figure[1],
+          })
+        } else {
+          expect(subgroup.figureCompacte, `${theme}/${binding.key} compact figure`).toBeNull()
+        }
         expect(subgroup.lecture?.story_key ?? null, `${theme}/${binding.key} resolved reading`).toBe(binding.story)
       }
     }
@@ -311,7 +308,7 @@ describe('sousGroupesPourTerritoire — la figure compacte (présentation app-ow
     expect(sousGroupes[0].figureCompacte?.lignes.length).toBeGreaterThan(0)
   })
 
-  it('rend la figure compacte du sous-groupe Accès sur sa ressource déclarée (comparison-bars)', () => {
+  it('#627 - the Accès subgroup declares no compact figure; the retained subgroups keep theirs', () => {
     const sousGroupes = sousGroupesDe(
       'mobilite',
       '22001',
@@ -319,11 +316,12 @@ describe('sousGroupesPourTerritoire — la figure compacte (présentation app-ow
       indicateursMobiliteFixture,
     )
 
-    expect(sousGroupes[0].figureCompacte).toMatchObject({
-      famille: 'comparison-bars',
-      clef: 'iso_alimentation',
+    expect(sousGroupes[0].figureCompacte).toBeNull()
+    expect(sousGroupes[0].figures).toEqual([])
+    expect(sousGroupes[1].figureCompacte).toMatchObject({
+      famille: 'composition',
+      clef: 'offre_cyclable',
     })
-    expect(sousGroupes[0].figureCompacte?.lignes).toHaveLength(1)
   })
 
   it('est null quand l’indicateur de la figure n’a aucune ligne', () => {
@@ -464,7 +462,8 @@ describe('sousGroupesPourTerritoire — la lecture rejointe par (territoire, gro
 
   it('ne déclare indisponible que les paramètres RÉFÉRENCÉS par le template (le vélo Mobilité lit sa ligne)', () => {
     // la ligne vélo porte pct_iso_full_t null par contrat — déclaré, jamais
-    // référencé par le template : la lecture existe
+    // #627 - the retired Mobilité stories no longer resolve a lecture even
+    // with committed rows: the app grammar declares no reading for the theme.
     const sousGroupes = sousGroupesDe(
       'mobilite',
       '22002',
@@ -472,8 +471,8 @@ describe('sousGroupesPourTerritoire — la lecture rejointe par (territoire, gro
       indicateursMobiliteFixture,
     )
 
-    expect(lectureDe(sousGroupes[0])?.story_key).toBe('ce-que-le-velo-preserve')
-    expect(lectureDe(sousGroupes[0])?.parametres).toEqual({ div_loss_t: '24' })
+    expect(lectureDe(sousGroupes[0])).toBeNull()
+    expect(sousGroupes[0].lectureIndisponible).toBe(false)
   })
 })
 
@@ -491,45 +490,9 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
     expect(figure).toBeNull()
   })
 
-  it('rend la distribution Mobilité pour la lecture par défaut (la signature + la médiane)', () => {
-    const payload = payloadDe(
-      indicateursMobiliteFixture,
-      histoiresMobiliteFixture,
-      { mobilite: metadonneesThemesFixtures.mobilite },
-    )
-    const sousGroupes = sousGroupesPourTerritoire(payload, 'mobilite', '22001')
-    const lecture = lectureDe(sousGroupes[0])
-    const figure = lecture ? figureLecturePour(payload, '22001', lecture) : null
-
-    expect(figure).toMatchObject({ genre: 'distribution', mediane: 38 })
-    if (figure?.genre !== 'distribution') throw new Error('figure attendue')
-    expect(figure.distribution).toMatchObject({ min: 28, max: 47 })
-    expect(figure.distribution.dec).toHaveLength(10)
-    expect(figure.nuage).toHaveLength(2)
-  })
-
-  it('rend la même distribution pour la lecture vélo, avec les deux marques de mode', () => {
-    const histoires = histoiresMobiliteFixture
-    const payload = payloadDe(
-      indicateursMobiliteFixture,
-      histoires,
-      { mobilite: metadonneesThemesFixtures.mobilite },
-    )
-    const sousGroupes = sousGroupesPourTerritoire(payload, 'mobilite', '22002')
-    const lecture = lectureDe(sousGroupes[0])
-
-    expect(lecture?.story_key).toBe('ce-que-le-velo-preserve')
-    const figure = lecture ? figureLecturePour(payload, '22002', lecture) : null
-    expect(figure).toMatchObject({
-      genre: 'distribution',
-      mediane: 24,
-      medianeVelo: 13,
-      modes: { t: 'à pied ou en transports en commun', b: 'à vélo' },
-    })
-    if (figure?.genre !== 'distribution') throw new Error('figure attendue')
-    expect(figure.distribution.dec.filter((point) => point !== null)).toHaveLength(10)
-    expect(figure.distribution.dens.filter((point) => point !== null)).toHaveLength(10)
-  })
+  // #627 - the Mobilité distribution figure retired with the vingt-minutes
+  // reading: figureLecturePour resolves no figure for the theme's retired
+  // story keys (the unknown-story regression below keeps the null contract).
 
   it('rend le quadrant Milieux (les deux forces + la fenêtre des états) quand les états existent', () => {
     const payload = payloadDe(
@@ -601,18 +564,16 @@ describe('sourceLecture — la ligne de source de la lecture', () => {
     expect(source).toContain('Base des EPCI')
   })
 
-  it('porte l’estampille de la ligne pour une lecture à vintage (Mobilité)', () => {
-    const payload = payloadDe(
-      indicateursMobiliteFixture,
+  it('#627 - the retired Mobilité reading resolves no source line any more', () => {
+    const sousGroupes = sousGroupesDe(
+      'mobilite',
+      '22001',
       histoiresMobiliteFixture,
-      { mobilite: metadonneesThemesFixtures.mobilite },
+      indicateursMobiliteFixture,
     )
-    const sousGroupes = sousGroupesPourTerritoire(payload, 'mobilite', '22001')
-    const lecture = lectureDe(sousGroupes[0])
-
-    const source = lecture ? sourceLecture(payload, lecture) : null
-    expect(source).toContain('Lusk')
-    expect(source).toContain('réf.')
+    expect(lectureDe(sousGroupes[0])).toBeNull()
+    // No reading joins the structural acces-aux-services identity, so the
+    // source slot stays honestly empty for the retired theme.
   })
 
   it('rend null sans vintages pour une lecture sans estampille propre', () => {

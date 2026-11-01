@@ -1453,7 +1453,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('shows loading, not unavailable copy, while the production AEDAR read is pending', async () => {
+  it('shows the loading state while the production AEDAR read is pending (#627)', async () => {
     const fetchApi = vi.fn(async (url: string) => {
       if (url === '/api/resources') return nativeCatalogueResponse()
       if (url === '/api/resources/read-batch') return await new Promise<Response>(() => {})
@@ -1463,13 +1463,18 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
     const firstPage = wrapper.find('.cahier-page')
-    const text = firstPage.text()
 
     expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources/read-batch')).toBe(true)
-    expect(text).toContain('Chargement des donn\u00e9es AEDAR\u2026')
-    expect(text).not.toContain('Contenu indisponible pour ce territoire.')
-    expect(firstPage.find('[role="status"]').exists()).toBe(true)
-    expect(wrapper.findAll('.cahier-page')[1]!.text()).toContain('Contenu indisponible pour ce territoire.')
+    // #627 - the retired legacy placeholder body no longer renders its
+    // « Contenu indisponible » placeholders while AEDAR is pending: the
+    // acces-aux-services unit keeps its structural identity and the
+    // production AEDAR evidence owns the surface.
+    expect(firstPage.text()).toContain('L’accès aux services')
+    expect(firstPage.text()).not.toContain('Résumé')
+    expect(firstPage.text()).not.toContain('Profils d’accès par mode')
+    expect(firstPage.text()).not.toContain('Services essentiels')
+    expect(firstPage.text()).not.toContain("Distribution de l'accès par bâtiment")
+    expect(firstPage.text()).not.toContain('Contenu indisponible pour ce territoire.')
     wrapper.unmount()
   })
 

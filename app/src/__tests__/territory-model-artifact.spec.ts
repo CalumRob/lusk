@@ -160,15 +160,18 @@ describe('artefact modèle de lecture par territoire — contrat producteur/réc
     expect(modele.themes.mobilite?.indicators[0]).toMatchObject(indicateursMobiliteFixture[0]!)
     expect(modele.themes.mobilite?.bpeAccess).toHaveLength(1)
 
+    // #627 - the auxiliary BPE profile rows stay VALIDATED in the raw
+    // producer/recovery artifact (the validator contract is unchanged), but
+    // payloadDepuisModeleTerritoire no longer projects them into the fiche
+    // payload seam: the retired accessibility readers are gone.
     const payload = payloadDepuisModeleTerritoire(modele)
+    expect('profilsAccesBpe' in payload).toBe(false)
+    expect('distributionAccesBatiments' in payload).toBe(false)
+    expect('rampeAccesBatiments' in payload).toBe(false)
     const facts = territoryFactsFor(payload, target.territoire)
-
     expect(facts?.territory.name).toBe(target.nom)
-    expect(facts?.mobility.bpeAccess.availability).toBe('complete')
-    expect(facts?.mobility.bpeAccess.profiles[1]).toMatchObject({
-      profile: 'velo-compense',
-      count: 3,
-    })
+    expect(facts?.mobility.indicators).toHaveLength(
+      indicateursMobiliteFixture.filter((row) => row.territoire === target.territoire).length)
   })
 
   it('porte une comparaison pré-calculée sans publier les lignes des pairs', () => {
@@ -366,7 +369,7 @@ describe('artefact modèle de lecture par territoire — contrat producteur/réc
     )).toThrow(/distribution comparée.*incomplète/)
   })
 
-  it('keeps the selected scope on a building figure without a published comparison', () => {
+  it('#627 - the building figures no longer resolve through the payload projection', () => {
     const brut = structuredClone(modelePublie22001)
     brut.themes.mobilite.comparaisons.epci.distribution_batiments = null
     brut.themes.mobilite.comparaisons.epci.rampe_acces = null
@@ -374,10 +377,10 @@ describe('artefact modèle de lecture par territoire — contrat producteur/réc
     const facts = territoryFactsFor(
       payloadDepuisModeleTerritoire(model), '22001', model.themes.mobilite?.comparisons.epci,
     )
-    expect(facts?.mobility.buildingDistribution?.comparisonLabel)
-      .toBe(model.themes.mobilite?.comparisons.epci?.scope.label)
-    expect(facts?.mobility.accessRamp?.comparisonLabel)
-      .toBe(model.themes.mobilite?.comparisons.epci?.scope.label)
+    // The raw artifact keeps its comparisons (the validator contract), but
+    // the retired building figures never cross the facts seam.
+    expect('buildingDistribution' in facts.mobility).toBe(false)
+    expect('accessRamp' in facts.mobility).toBe(false)
   })
 
   it('refuse une preuve comparée dont le libellé diverge de son périmètre', () => {

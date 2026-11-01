@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { libelleDetail, libelleIndicateur } from '../fiche/libelles'
 import { LIBELLES_INDICATEURS_APP } from '../fiche/content/libellesAffichage'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
-import { validerThemeMetadata } from '../payload/validate'
+import { validerCatalogueNavigateur, validerThemeMetadata } from '../payload/validate'
 import type { Theme, ThemeMetadata } from '../payload/types'
 
 /**
@@ -19,7 +19,11 @@ import type { Theme, ThemeMetadata } from '../payload/types'
 const THEMES = Object.keys(LIBELLES_INDICATEURS_APP) as Theme[]
 
 function publie(theme: Theme): ThemeMetadata {
-  return validerThemeMetadata(
+  // #868/#869 — the served public/data projection is the browser catalogue
+  // (producer-only fields stripped); it validates through the navigateur
+  // entry point, while validerThemeMetadata stays the strict producteur
+  // validator for the canonical pipeline metadata.
+  return validerCatalogueNavigateur(
     JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8')),
     `theme_${theme}.json`,
   )

@@ -1,8 +1,23 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
-import { histoiresMobiliteFixture } from '@/payload/fixtures'
-import type { Indicateur, Payload, RampeAccesBatimentsRow } from '@/payload/types'
+
+  it('#627 - the retired legacy accessibility resolvers no longer cross the seam', () => {
+    const facts = territoryFactsFor(payload, '22001')
+    expect(facts).not.toBeNull()
+    for (const field of ['access', 'bpeAccess', 'losses', 'buildingDistribution', 'accessRamp']) {
+      expect(field in facts!.mobility, field).toBe(false)
+    }
+    // The retained indicator comparison stays a plain median over the peer
+    // scope (the building-weighted mean was the retired avg_* statistic).
+    const indicator = facts?.mobility.indicators.find((fact) => fact.key === 'surface_reseaux_routiers')
+    expect(indicator?.comparison).toMatchObject({
+      direction: 'moins-est-mieux',
+      rank: { position: 1, size: 2 },
+      reference: { kind: 'median' },
+    })
+  })
+import type { Indicateur, Payload } from '@/payload/types'
 
 const vintage = {
   vintage_source: 'Source de test',
@@ -37,7 +52,7 @@ const row = (
           ? 'epci'
           : 'commune',
   theme: 'mobilite',
-  key: 'iso_sante',
+  key: 'surface_reseaux_routiers',
   detail: null,
   value,
   unit: '%',
@@ -56,69 +71,6 @@ const highDirectionRow = (territoire: string, value: number): Indicateur => ({
   detail: 'sans_voiture',
 })
 
-const averageRow = (territoire: string, key: string, value: number): Indicateur => ({
-  ...row(territoire, value),
-  key,
-  unit: key.startsWith('avg_tot_') ? 'équipements / bâtiment' : 'types d’équipement / bâtiment',
-})
-
-const buildingCountRow = (territoire: string, value: number): Indicateur => ({
-  ...row(territoire, value),
-  key: 'nb_buildings',
-  unit: 'bâtiments',
-})
-
-const accessRows: Indicateur[] = [
-  ['share_admin_c', 1],
-  ['share_admin_b', 0.8],
-  ['share_admin_t', 0.7],
-  ['share_food_c', 1],
-  ['share_food_b', 0.9],
-  ['share_food_t', 0.85],
-  ['share_health_c', 1],
-  ['share_health_b', 0.75],
-  ['share_health_t', 0.65],
-  ['share_bank_c', 1],
-  ['share_bank_b', 0.8],
-  ['share_bank_t', 0.7],
-  ['share_school_c', 1],
-  ['share_school_b', 0.9],
-  ['share_school_t', 0.8],
-].flatMap(([key, value]) =>
-  ['22001', '22002'].map((territoire) => ({
-    ...row(territoire, value as number),
-    key: key as string,
-  })),
-)
-
-const rampRows: RampeAccesBatimentsRow[] = [
-  ['c', 'Voiture'],
-  ['b', 'À vélo + TC'],
-  ['t', 'À pied + TC'],
-].flatMap(([mode, modeLabel]) =>
-  Array.from({ length: 11 }, (_, index) => ({
-    territoire: '22001',
-    type: 'commune' as const,
-    availability: 'complete' as const,
-    total_buildings: 100,
-    mode: mode as RampeAccesBatimentsRow['mode'],
-    mode_label: modeLabel,
-    quantile: index / 10,
-    quantile_label: `${index * 10} %`,
-    accessible_types: index * 2,
-    x_axis_label: 'Part cumulée des bâtiments',
-    y_axis_label: 'types d’équipements accessibles',
-     source_id: 'mobilite_snapshot',
-     source: 'Lusk — analyse d\'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
-     version: '2026-02',
-     date_reference: '2026-02-28',
-     date_publication: '2026-08-06',
-    comparison_label: null,
-    comparison_total_buildings: null,
-    comparison_accessible_types: null,
-  })),
-)
-
 const payload: Payload = {
   territoires: [
     { territoire: '22001', type: 'commune', nom: 'Commune A', departement: '22', epci: '200000001' },
@@ -130,10 +82,6 @@ const payload: Payload = {
     row('22001', 0.2),
     row('22002', 0.4),
     row('29001', 0.1),
-    buildingCountRow('22001', 100),
-    buildingCountRow('22002', 100),
-    buildingCountRow('53', 1000),
-    ...accessRows,
   ],
   histoires: [],
   apercu: null,
@@ -149,242 +97,9 @@ const payload: Payload = {
     },
   ],
   programmes: null,
-  rampeAccesBatiments: rampRows,
 }
 
 describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
-  it('normalizes target facts, provenance, access data, and one runtime comparison context', () => {
-    const facts = territoryFactsFor(payload, '22001')
-
-    expect(facts).not.toBeNull()
-    expect(facts?.territory).toEqual({
-      code: '22001',
-      type: 'commune',
-      name: 'Commune A',
-      department: '22',
-      epci: '200000001',
-      densityClassCode: null,
-    })
-    expect(facts?.theme).toBe('mobilite')
-
-    const indicator = facts?.mobility.indicators.find((fact) => fact.key === 'iso_sante')
-    expect(indicator).toMatchObject({
-      key: 'iso_sante',
-      value: 0.2,
-      unit: '%',
-      availability: 'complete',
-      provenance: {
-        sourceId: 'mobilite_snapshot',
-        source: 'Source de test',
-        version: '2026',
-      },
-      comparison: {
-        direction: 'moins-est-mieux',
-        scope: {
-          kind: 'communes-epci',
-          territoryIds: ['22001', '22002'],
-        },
-        rank: { position: 1, size: 2 },
-        reference: { kind: 'median', value: 0.30000000000000004 },
-      },
-    })
-    expect(indicator).not.toHaveProperty('rang_epci')
-
-    expect(facts?.mobility.access).toMatchObject({
-      availability: 'complete',
-      totalBuildings: { value: 100, availability: 'complete' },
-      totalBrittanyBuildings: { value: 1000, availability: 'complete' },
-      byService: {
-        administration: {
-          car: { value: 1, availability: 'complete' },
-          bike: { value: 0.8, availability: 'complete' },
-          walkTransit: { value: 0.7, availability: 'complete' },
-        },
-      },
-    })
-    expect(facts?.mobility.access.byService.administration.walkTransit.provenance).toMatchObject({
-      sourceId: 'mobilite_snapshot',
-      source: 'Source de test',
-    })
-    expect(facts?.mobility.access.byService.administration.walkTransit.comparison).toMatchObject({
-      direction: 'plus-est-mieux',
-      rank: { position: 1, size: 2 },
-      reference: { kind: 'median', value: 0.7 },
-    })
-    expect(facts?.mobility.accessRamp).toMatchObject({
-      availability: 'complete',
-      xAxisLabel: 'Part cumulée des bâtiments',
-      yAxisLabel: 'types d’équipements accessibles',
-      totalBuildings: 100,
-      curves: {
-        car: { modeLabel: 'Voiture' },
-        bike: { modeLabel: 'À vélo + TC' },
-        walkTransit: { modeLabel: 'À pied + TC' },
-      },
-    })
-    expect(facts?.mobility.accessRamp?.curves.walkTransit.points).toHaveLength(11)
-    expect(facts?.mobility.access.gapsByService.administration).toMatchObject({
-      carGap: {
-        value: 0.30000000000000004,
-        comparison: { direction: 'moins-est-mieux', rank: null, reference: { kind: 'median', value: 0.30000000000000004 } },
-      },
-      bikeGain: {
-        value: 0.10000000000000009,
-        comparison: { direction: 'plus-est-mieux', rank: null, reference: { kind: 'median', value: 0.10000000000000009 } },
-      },
-    })
-    expect(facts?.mobility.bpeAccess).toEqual({ availability: 'absent', profiles: [] })
-  })
-
-  it('uses an unweighted median for service-share peers even when building counts differ', () => {
-    const medianPayload = structuredClone(payload)
-    const peerBuildingCount = medianPayload.indicateurs.find(
-      (candidate) => candidate.territoire === '22002' && candidate.key === 'nb_buildings',
-    )
-    if (!peerBuildingCount) throw new Error('Missing peer building count')
-    peerBuildingCount.value = 900
-
-    const targetShare = medianPayload.indicateurs.find(
-      (candidate) => candidate.territoire === '22001' && candidate.key === 'share_admin_c',
-    )
-    const peerShare = medianPayload.indicateurs.find(
-      (candidate) => candidate.territoire === '22002' && candidate.key === 'share_admin_c',
-    )
-    if (!targetShare || !peerShare) throw new Error('Missing administration shares')
-    targetShare.value = 0.9
-    peerShare.value = 0.1
-
-    const facts = territoryFactsFor(medianPayload, '22001')
-
-    expect(facts?.mobility.access.byService.administration.car.comparison?.reference).toEqual({
-      kind: 'median',
-      value: 0.5,
-    })
-  })
-
-  it('normalizes the bounded BPE profile rows without exposing raw payload names', () => {
-    const bpePayload: Payload = {
-      ...payload,
-      profilsAccesBpe: [
-        {
-          territoire: '22001',
-          type: 'commune',
-          profil: 'velo-compense',
-          profil_libelle: 'Le vélo compense',
-          nombre_typequ: 3,
-          exemplar_typequ: 'D267',
-          exemplar_libelle: 'Spécialiste en dermatologie vénéréologie',
-          exemplar_c: 0.1,
-          exemplar_b: 0.4,
-          exemplar_t: 0.1,
-        },
-      ],
-    }
-
-    const facts = territoryFactsFor(bpePayload, '22001')
-
-    expect(facts?.mobility.bpeAccess?.availability).toBe('complete')
-    expect(facts?.mobility.bpeAccess?.profiles.map((profile) => profile.profile)).toEqual([
-      'acces-pied-tc',
-      'velo-compense',
-      'voiture-requise',
-      'inaccessible-20-minutes',
-    ])
-    expect(facts?.mobility.bpeAccess?.profiles[0]).toMatchObject({
-      count: 0,
-      exemplar: null,
-      comparison: { rank: null, reference: null },
-    })
-    expect(facts?.mobility.bpeAccess?.profiles[1]).toMatchObject({
-      count: 3,
-      label: 'Le vélo compense',
-      exemplar: {
-        typequ: 'D267',
-        label: 'Spécialiste en dermatologie vénéréologie',
-        car: 0.1,
-        bike: 0.4,
-        walkTransit: 0.1,
-      },
-      comparison: { rank: null, reference: null },
-    })
-    expect(facts?.mobility.bpeAccess?.profiles[2]).toMatchObject({
-      count: 0,
-      exemplar: null,
-      comparison: { rank: null, reference: null },
-    })
-    expect(facts?.mobility.bpeAccess?.profiles[3]).toMatchObject({
-      count: 0,
-      exemplar: null,
-      comparison: { rank: null, reference: null },
-    })
-  })
-
-  it('prefers published share facts for access evidence and ranks them in the same scope', () => {
-    const directAccessPayload: Payload = {
-      ...payload,
-      indicateurs: [
-        buildingCountRow('22001', 100),
-        buildingCountRow('22002', 100),
-        { ...row('22001', 0.8), key: 'share_admin_t' },
-        { ...row('22002', 0.6), key: 'share_admin_t' },
-      ],
-      themeMetadata: {
-        mobilite: {
-          theme: 'mobilite',
-          label: 'Mobilité',
-          subgroups: [],
-          indicator_keys: ['share_admin_t'],
-          story_keys: [],
-          sources: { share_admin_t: 'mobilite_snapshot' },
-          indicator_labels: {
-            share_admin_t: 'Part des bâtiments avec accès aux services administratifs',
-          },
-          detail_labels: {},
-          param_labels: {},
-        },
-      },
-    }
-    const facts = territoryFactsFor(directAccessPayload, '22001')
-    const accessFact = facts?.mobility.access.byService.administration.walkTransit
-
-    expect(accessFact).toMatchObject({
-      value: 0.8,
-      availability: 'complete',
-      provenance: { sourceId: 'mobilite_snapshot', source: 'Source de test' },
-      comparison: {
-        direction: 'plus-est-mieux',
-        scope: { kind: 'communes-epci', territoryIds: ['22001', '22002'] },
-        rank: { position: 1, size: 2 },
-        reference: { kind: 'median', value: 0.7 },
-      },
-    })
-  })
-
-  it('uses the median rather than the weighted mean for essential-service access references', () => {
-    const meanPayload: Payload = {
-      ...payload,
-      territoires: [
-        ...payload.territoires,
-        {
-          territoire: '22003',
-          type: 'commune',
-          nom: 'Commune D',
-          departement: '22',
-          epci: '200000001',
-        },
-      ],
-      indicateurs: [
-        ...payload.indicateurs,
-        buildingCountRow('22003', 800),
-        { ...row('22003', 0.1), key: 'share_admin_t' },
-      ],
-    }
-
-    const facts = territoryFactsFor(meanPayload, '22001')
-    const comparison = facts?.mobility.access.byService.administration.walkTransit.comparison
-
-    expect(comparison?.reference).toEqual({ kind: 'median', value: 0.7 })
-  })
 
   it('uses all regional communes for a commune without an EPCI and keeps ties direction-aware', () => {
     const regionalPayload: Payload = {
@@ -396,7 +111,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     }
 
     const facts = territoryFactsFor(regionalPayload, '22001')
-    const indicator = facts?.mobility.indicators.find((fact) => fact.key === 'iso_sante')
+    const indicator = facts?.mobility.indicators.find((fact) => fact.key === 'surface_reseaux_routiers')
 
     expect(indicator?.comparison).toMatchObject({
       direction: 'moins-est-mieux',
@@ -457,134 +172,6 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       direction: 'plus-est-mieux',
       rank: { position: 1, size: 2 },
       reference: { kind: 'median', value: 0.30000000000000004 },
-    })
-  })
-
-  it('marks null and missing source facts honestly instead of manufacturing values', () => {
-    const partialPayload: Payload = {
-      ...payload,
-      indicateurs: [
-        buildingCountRow('22001', 100),
-        buildingCountRow('53', 1000),
-        { ...row('22001', 1), key: 'share_admin_c' },
-        { ...row('22001', null), key: 'share_admin_t' },
-      ],
-    }
-    const facts = territoryFactsFor(partialPayload, '22001')
-    const absent = territoryFactsFor({ ...payload, indicateurs: [row('22001', 0.2)] }, '22001')
-
-    expect(facts?.mobility.access.availability).toBe('incomplete')
-    expect(facts?.mobility.access.byService.administration.car.availability).toBe('complete')
-    expect(facts?.mobility.access.byService.administration.walkTransit).toMatchObject({
-      value: null,
-      availability: 'incomplete',
-      comparison: { rank: null, reference: null },
-    })
-    expect(facts?.mobility.access.byService.alimentation.car.availability).toBe('absent')
-
-    expect(absent?.mobility.access.availability).toBe('absent')
-    expect(absent?.mobility.access.totalBuildings.availability).toBe('absent')
-    expect(absent?.mobility.losses.diversityWalkTransit.availability).toBe('absent')
-  })
-
-  it('keeps mobility facts from the payload without exposing its selection fields', () => {
-    const facts = territoryFactsFor(
-      { ...payload, histoires: histoiresMobiliteFixture },
-      '22001',
-    )
-
-    expect(facts?.mobility.losses.diversityWalkTransit).toMatchObject({
-      key: 'div_loss_t',
-      value: 38,
-      availability: 'complete',
-      provenance: { sourceId: 'mobilite_snapshot', version: '2026-02' },
-      comparison: {
-        scope: { kind: 'communes-epci', territoryIds: ['22001', '22002'] },
-        rank: { position: 2, size: 2 },
-        reference: { kind: 'median', value: 31 },
-      },
-    })
-    expect(facts).not.toHaveProperty('story_key')
-    expect(facts?.mobility.losses).not.toHaveProperty('story_key')
-  })
-
-  it('keeps median service references and computes weighted means for summary access modes', () => {
-    const summaryPayload: Payload = {
-      ...payload,
-      indicateurs: [
-        ...payload.indicateurs,
-        averageRow('22001', 'avg_tot_car', 100),
-        averageRow('22001', 'avg_tot_b', 80),
-        averageRow('22001', 'avg_tot_t', 60),
-        averageRow('22001', 'avg_div_car', 50),
-        averageRow('22001', 'avg_div_b', 40),
-        averageRow('22001', 'avg_div_t', 30),
-        averageRow('22002', 'avg_tot_car', 50),
-        averageRow('22002', 'avg_tot_b', 40),
-        averageRow('22002', 'avg_tot_t', 30),
-        averageRow('22002', 'avg_div_car', 25),
-        averageRow('22002', 'avg_div_b', 20),
-        averageRow('22002', 'avg_div_t', 15),
-      ],
-    }
-    const facts = territoryFactsFor(
-      { ...summaryPayload, histoires: histoiresMobiliteFixture },
-      '22001',
-    )
-
-    expect(facts?.mobility.losses).not.toHaveProperty('fullyIsolatedShare')
-
-    for (const mode of ['car', 'bike', 'walkTransit'] as const) {
-      const comparison = facts?.mobility.access.byService.administration[mode].comparison
-      expect(comparison).toMatchObject({
-        direction: 'plus-est-mieux',
-        scope: { kind: 'communes-epci', territoryIds: ['22001', '22002'] },
-        rank: { position: 1, size: 2 },
-        reference: { kind: 'median', value: expect.any(Number) },
-      })
-      expect(comparison?.reference?.value).toBeCloseTo(
-        mode === 'car' ? 1 : mode === 'bike' ? 0.8 : 0.7,
-        10,
-      )
-    }
-    expect(facts?.mobility.access.summary).toMatchObject({
-      availability: 'complete',
-      accessibleEquipment: {
-        car: { key: 'avg_tot_car', value: 100 },
-        bike: { key: 'avg_tot_b', value: 80 },
-        walkTransit: { key: 'avg_tot_t', value: 60 },
-      },
-      accessibleTypes: {
-        car: { key: 'avg_div_car', value: 50 },
-        bike: { key: 'avg_div_b', value: 40 },
-        walkTransit: { key: 'avg_div_t', value: 30 },
-      },
-    })
-    expect(facts?.mobility.access.summary.averageLosses).toMatchObject({
-      total: {
-        walkTransit: {
-          key: 'avg_loss_tot_t',
-          value: 40,
-          comparison: { rank: { position: 2, size: 2 }, reference: { value: 30 } },
-        },
-        bike: {
-          key: 'avg_loss_tot_b',
-          value: 20,
-          comparison: { rank: { position: 2, size: 2 }, reference: { value: 15 } },
-        },
-      },
-      diversity: {
-        walkTransit: {
-          key: 'avg_loss_div_t',
-          value: 20,
-          comparison: { rank: { position: 2, size: 2 }, reference: { value: 15 } },
-        },
-        bike: {
-          key: 'avg_loss_div_b',
-          value: 10,
-          comparison: { rank: { position: 2, size: 2 }, reference: { value: 7.5 } },
-        },
-      },
     })
   })
 
