@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 
 import SourcesView from '../views/SourcesView.vue'
+import { MENTION_DECLARATION_SANS_PAGE } from '../methodes/sources'
 import { chargerAvec, histoiresHabitatFixture, histoiresMobiliteFixture, indicateursHabitatFixture, indicateursMobiliteFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures } from '../payload/fixtures'
 import type { ChargerFichier } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
@@ -260,5 +261,21 @@ describe('SourcesView — route dataset-centric', () => {
     expect(itemReferentiel).toHaveLength(1)
     expect(itemReferentiel[0]!.text()).toContain('Référentiel territorial')
     expect(itemReferentiel[0]!.text()).not.toContain('Déclaration sans page')
+  })
+
+  it('lie la mention de déclaration depuis le module éditorial Sources, jamais un littéral du renderer (#872)', async () => {
+    // La copie stable vit dans la couche contenu (methodes/sources.ts) ; le
+    // renderer ne porte que la liaison. Le source du composant importe la
+    // mention et n'embarque JAMAIS le libellé accepté en littéral.
+    const sourceVue = readFileSync(join(process.cwd(), 'src', 'views', 'SourcesView.vue'), 'utf8')
+    expect(sourceVue).toContain('MENTION_DECLARATION_SANS_PAGE')
+    expect(sourceVue).not.toContain('Déclaration sans page')
+
+    // La liaison rend le libellé EXACT du module éditorial, pas une copie.
+    const wrapper = await monter(chargerAvec(payloadSourcesNavigation()))
+    const matrice = wrapper.find('#source-matrice-temps-mairies')
+    const reference = matrice.findAll('.source-record__consumers li')
+      .find((item) => item.text().includes('Référence médiane — commune bretonne'))!
+    expect(reference.text()).toContain(`· ${MENTION_DECLARATION_SANS_PAGE}`)
   })
 })
