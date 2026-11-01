@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it, beforeEach, vi } from 'vitest'
 import IndicateurView from '../views/IndicateurView.vue'
+import RepereFamilyOutlet from '../components/indicateurs/RepereFamilyOutlet.vue'
+import { dispatchIndicatorFamily } from '../indicateurs/familySeam'
 import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, indicateursMobiliteFixture, indicateursProgrammesFixture, indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { COULEURS_DPE } from '../fiche/couleursDpe'
@@ -59,9 +61,21 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
       const producer = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${routeTheme}.json`), 'utf8'))
       const presentation = routeTheme === themeOverride && hasPresentationOverride ? metadataOverride : producer
       const page = presentation.indicator_pages?.[routeIndicator]
-      const resources = nativeResources(routeTheme).filter((resource) => resource.resource_id === routeIndicator &&
-        (routeIndicator === 'subventions_par_domaine'
+      const companion = page?.comparison?.indicator && page.comparison.indicator !== routeIndicator
+        ? page.comparison.indicator : null
+      const resources = nativeResources(routeTheme).filter((resource) =>
+        routeIndicator === 'raccordement_courbe'
+          ? true
+          : (resource.resource_id === routeIndicator || resource.resource_id === companion) &&
+          (routeIndicator === 'subventions_par_domaine'
           ? resource.shapes.length === 1 && resource.shapes[0] === 'period_detail' &&
+            resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts')
+          : ['composition', 'list', 'distribution', 'pyramid'].includes(page?.family ?? '')
+          ? (resource.shapes.includes('declared_profile') &&
+            resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts')) ||
+            (resource.shapes.includes('scalar') && resource.resource_id === companion)
+          : (page?.family ?? '') === 'trajectory'
+          ? resource.shapes.includes('ordered_series') &&
             resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts')
           : (page?.family ?? 'scalar') === 'scalar' && resource.shapes.length === 1 && resource.shapes[0] === 'scalar' &&
             !page?.comparison?.details?.length && !page?.comparison?.sexes?.length && !page?.comparison?.dimensions?.length &&
@@ -257,6 +271,26 @@ describe('IndicateurView — routed URL seam', () => {
   it('renders an unknown theme as a finite honest error state', async () => { const { wrapper } = await monter('/indicateurs/inconnu/densite'); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Chargement de l’indicateur') })
   it('reacts when the router reuses the view for a new indicator parameter', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite'); expect(wrapper.text()).toContain('Densité de population'); await router.push('/indicateurs/demographie/not-published'); await flushPromises(); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Densité de population') })
   it('keeps ordinary scalar page facts API-only while changing the routed theme', async () => { const appels: string[] = []; const { wrapper, router } = await monter('/indicateurs/demographie/densite', appels); expect(appels).toEqual(['territoires']); await router.push('/indicateurs/habitat/not-published'); await flushPromises(); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Densité de population') })
+  it('renders a retired legacy accessibility slug as the unknown indicator without reading its static rows', async () => {
+    // #627 — the served projection still declares the legacy accessibility
+    // page, but the producer catalogue excludes it: no reader may resolve it.
+    // A retired slug behaves exactly like any undeclared indicator.
+    const legacyMetadata = structuredClone(metadonneesThemesFixtures.mobilite) as typeof metadonneesThemesFixtures.mobilite & { indicator_pages?: Record<string, unknown> }
+    legacyMetadata.indicator_pages = {
+      ...legacyMetadata.indicator_pages,
+      iso_alimentation: {
+        indicator: 'iso_alimentation',
+        label: 'Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)',
+        definition: 'La part des bâtiments résidentiels sans accès à l’alimentation.',
+        unit: '%', calculation: 'Analyse d’accessibilité', direction: 'low', caveats: '',
+        levels: ['commune', 'epci', 'departement'], sources: ['mobilite_snapshot'], family: 'scalar',
+      },
+    }
+    const appels: string[] = []
+    const { wrapper } = await monter('/indicateurs/mobilite/iso_alimentation', appels, legacyMetadata, indicateursMobiliteFixture, 'mobilite')
+    expect(wrapper.text()).toContain('Indicateur introuvable')
+    expect(appels).toEqual(['territoires'])
+  })
   it('writes fallback level, lets explicit URL win, filters, preserves fiche theme and scopes', async () => { localStorage.setItem('lusk:niveau-indicateur', 'commune'); const { wrapper, router } = await monter('/indicateurs/demographie/densite'); expect(router.currentRoute.value.query.niveau).toBe('commune'); await wrapper.find('input').setValue('Commune A'); expect(wrapper.text()).toContain('Commune A'); expect(wrapper.find('a[href*="theme=demographie"]').exists()).toBe(true); await wrapper.find('select').setValue('epci'); await flushPromises(); expect(router.currentRoute.value.query.departement).toBeUndefined(); expect(router.currentRoute.value.query.epci).toBeUndefined() })
   it('renders the native unit and acquired source/vintage clocks', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite?vue=indicateur'); expect(wrapper.text()).toContain('hab/km²'); expect(wrapper.text()).toContain('2026-06-30'); expect(wrapper.text()).not.toContain('Publication annuelle'); expect(router.currentRoute.value.query.vue).toBe('indicateur') })
    it('mounts map integration with the exact active facet facts', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite?vue=carte&territoire=29002'); const expected = payload.indicateurs.filter((fact) => fact.key === 'densite' && fact.type === 'commune').map((fact) => fact.territoire); expect(wrapper.find('[data-testid="map"]').exists()).toBe(true); expect(wrapper.find('[data-testid="map"]').attributes('data-level')).toBe('communes'); expect(wrapper.find('[data-testid="map"]').attributes('data-selected')).toBe('29002'); expect(wrapper.find('[data-testid="map"]').attributes('data-values')).toBe(expected.join(',')); expect(router.currentRoute.value.query.vue).toBe('carte') })
@@ -266,9 +300,62 @@ describe('IndicateurView — routed URL seam', () => {
   it('sorts by explicit URL-backed name, value and direction-aware rank controls', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite?tri=nom&ordre=asc'); expect(wrapper.findAll('tbody tr')[0].text()).toContain('Commune A1'); await wrapper.findAll('thead button')[1].trigger('click'); await flushPromises(); expect(router.currentRoute.value.query.tri).toBe('valeur'); expect(router.currentRoute.value.query.ordre).toBe('asc'); expect(wrapper.findAll('tbody tr')[0].text()).toContain('Commune D') })
   it('clicking a table row persists the selected territory and uses a non-fixed density marker', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite'); await wrapper.findAll('tbody button')[0].trigger('click'); await flushPromises(); expect(router.currentRoute.value.query.territoire).toBe('22001'); const marker = wrapper.find('.point-highlight'); expect(marker.exists()).toBe(true); expect(marker.attributes('cx')).not.toBe('300') })
   it('gives the selected density marker an accessible formatted description', async () => { const { wrapper } = await monter('/indicateurs/demographie/densite?territoire=22001'); expect(wrapper.find('svg desc').text()).toContain('Commune A1'); expect(wrapper.find('svg desc').text()).toContain('200'); expect(wrapper.find('svg desc').text()).toContain('positionné sur l’axe') })
-   it.each(['scalar', 'composition', 'trajectory', 'distribution', 'relationship', 'list', 'pyramid', 'comparison-bars'] as const)('routed family %s mounts through the real outlet and renderer', async (family) => { const metadata = structuredClone(metadonneesThemesFixtures.demographie); metadata.indicator_pages!.densite = pagePourFamille(family); const facts = payload.indicateurs.map((fact) => fact.key === 'densite' ? { ...fact, detail: 'total' } : fact); const { wrapper, router } = await monter('/indicateurs/demographie/densite', [], metadata, facts); expect(router.currentRoute.value.name).toBe('indicateur'); expect(wrapper.find('.repere-family-outlet').exists()).toBe(true); expect(wrapper.find(`[data-renderer="${family}"]`).exists()).toBe(true) })
-   it('keeps routed unavailable, incomplete, and invalid states honest', async () => { const metadata = structuredClone(metadonneesThemesFixtures.demographie); metadata.indicator_pages!.densite = pagePourFamille('composition'); const unavailable = await monter('/indicateurs/demographie/densite', [], metadata, payload.indicateurs.filter((fact) => fact.key !== 'densite')); expect(unavailable.wrapper.find('[role="status"]').text()).toContain('pas disponible'); const incompleteFacts = payload.indicateurs.map((fact) => fact.key === 'densite' ? { ...fact, detail: 'total', value: null } : fact); const incomplete = await monter('/indicateurs/demographie/densite', [], metadata, incompleteFacts); expect(incomplete.wrapper.find('[role="status"]').text()).toContain('partiels'); expect(incomplete.wrapper.find('[data-renderer="composition"]').exists()).toBe(true); const invalidMetadata = structuredClone(metadata); delete (invalidMetadata.indicator_pages!.densite as any).composition; const invalid = await monter('/indicateurs/demographie/densite', [], invalidMetadata, incompleteFacts); expect(invalid.wrapper.text()).toContain('La facette de cette famille de Repères est invalide.') })
-  it('routed malformed facets become invalid and persist one canonical URL without loops', async () => { const metadata = structuredClone(metadonneesThemesFixtures.demographie); metadata.indicator_pages!.densite.comparison = { details: ['total'], detail: 'total', dimensions: ['menages'], dimension: 'menages', sexes: ['F'], sex: 'F' }; const { router } = await monter('/indicateurs/demographie/densite?detail=stale&sex=X&dimension=stale', [], metadata); await flushPromises(); expect(router.currentRoute.value.query.facet).toBeUndefined(); expect(router.currentRoute.value.query.detail).toBe('total'); expect(router.currentRoute.value.query.sex).toBe('F'); expect(router.currentRoute.value.query.dimension).toBe('menages'); const before = router.currentRoute.value.fullPath; await flushPromises(); expect(router.currentRoute.value.fullPath).toBe(before) })
+    // The committed producer metadata (with its page descriptors and
+    // contracts) drives the real classification; the fixture metadata
+    // deliberately publishes no indicator_pages for these themes.
+    const producerMetadata = (theme: string) => JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8'))
+    it.each([
+      ['scalar', '/indicateurs/demographie/densite', indicateursDemographieFixture, 'demographie'],
+      ['composition', '/indicateurs/habitat/mix_logements', indicateursHabitatFixture, 'habitat'],
+      ['list', '/indicateurs/mobilite/reseaux', indicateursMobiliteFixture, 'mobilite'],
+      ['distribution', '/indicateurs/habitat/distribution_dpe', indicateursHabitatFixture, 'habitat'],
+      ['pyramid', '/indicateurs/demographie/structure_age', indicateursDemographieFixture, 'demographie'],
+      ['trajectory', '/indicateurs/milieux/artif_par_habitant', indicateursMilieuxFixture, 'milieux'],
+    ] as const)('routed family %s mounts through its real producer classification', async (family, url, facts, theme) => {
+      // #627 - the retired static route vehicle no longer serves arbitrary
+      // page families: every production family classifies through the
+      // producer catalogue (profiles and series included).
+      const { wrapper, router } = await monter(url, [], producerMetadata(theme), facts as unknown as typeof payload.indicateurs, theme)
+      expect(router.currentRoute.value.name).toBe('indicateur')
+      expect(wrapper.find('.repere-family-outlet').exists()).toBe(true)
+      expect(wrapper.find(`[data-renderer="${family}"]`).exists()).toBe(true)
+    })
+    it('dispatches every family - including those no production page declares - through the real outlet', () => {
+      // The dispatch/outlet seam owns renderer capability for every family:
+      // relationship has no production route and comparison-bars is a fiche
+      // figure family, so their renderer mounting is proven at the seam.
+      for (const family of ['scalar', 'composition', 'trajectory', 'distribution', 'relationship', 'list', 'pyramid', 'comparison-bars'] as const) {
+        const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+        metadata.indicator_pages!.densite = pagePourFamille(family)
+        const dispatch = dispatchIndicatorFamily(metadata.indicator_pages!.densite, { theme: 'demographie', facts: payload.indicateurs, territories: payload.territoires })
+        const wrapper = mount(RepereFamilyOutlet, { props: { dispatch } })
+        expect(wrapper.find(`[data-renderer="${family}"]`).exists(), family).toBe(true)
+        wrapper.unmount()
+      }
+    })
+    it('keeps the outlet honesty states for unavailable, incomplete, and invalid dispatches', () => {
+      const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+      metadata.indicator_pages!.densite = pagePourFamille('composition')
+      const base = { theme: 'demographie' as const, territories: payload.territoires, selected: '22001' }
+      const unavailable = dispatchIndicatorFamily(metadata.indicator_pages!.densite,
+        { ...base, facts: payload.indicateurs.filter((fact) => fact.key !== 'densite') })
+      const unavailableWrapper = mount(RepereFamilyOutlet, { props: { dispatch: unavailable } })
+      expect(unavailableWrapper.find('[role="status"]').text()).toContain('pas disponible')
+      const incompleteFacts = payload.indicateurs.map((fact) => fact.key === 'densite' ? { ...fact, detail: 'total', value: null } : fact)
+      const incomplete = dispatchIndicatorFamily(metadata.indicator_pages!.densite, { ...base, facts: incompleteFacts })
+      const incompleteWrapper = mount(RepereFamilyOutlet, { props: { dispatch: incomplete } })
+      expect(incompleteWrapper.find('[role="status"]').text()).toContain('partiels')
+      expect(incompleteWrapper.find('[data-renderer="composition"]').exists()).toBe(true)
+      const invalidMetadata = structuredClone(metadata)
+      delete (invalidMetadata.indicator_pages!.densite as { composition?: unknown }).composition
+      const invalid = dispatchIndicatorFamily(invalidMetadata.indicator_pages!.densite, { ...base, facts: incompleteFacts })
+      const invalidWrapper = mount(RepereFamilyOutlet, { props: { dispatch: invalid } })
+      expect(invalidWrapper.text()).toContain('La facette de cette famille de Repères est invalide.')
+    })
+    // The malformed-facet URL canonicalization is owned by the pure seam
+    // (etat-url.spec.ts - fusionnerFacette replaces stale detail/sex/dimension
+    // in place and appends missing keys); the retired static route vehicle no
+    // longer duplicates it at the route level.
   it('renders unique extremes as named fiche links', async () => { const { wrapper } = await monter('/indicateurs/demographie/densite'); expect(wrapper.find('a[href*="territoire/commune/22001"]').exists()).toBe(true); })
   it('renders tied extremes as counts without pretending one territory wins', async () => { const tiedPayload = structuredClone(payload); tiedPayload.indicateurs = tiedPayload.indicateurs.map((fact) => fact.key === 'densite' && fact.type === 'commune' ? { ...fact, value: 10 } : fact); const original = payload.indicateurs; payload.indicateurs = tiedPayload.indicateurs; const { wrapper } = await monter('/indicateurs/demographie/densite'); expect(wrapper.text()).toContain('4 territoires à égalité'); expect(wrapper.find('.extremes a').exists()).toBe(false); payload.indicateurs = original })
 })
@@ -278,59 +365,12 @@ describe('IndicateurView — routed URL seam', () => {
 // bornes déclarées sans valeur restent sur l'axe ; le copié-collé produit est
 // exclusivement français (« détail (actif) », jamais « endpoint »).
 describe('IndicateurView — trajectoires (#438)', () => {
-  const detailsArtif = ['M2', 'M3', '2020', '2021', '2022', '2023', '2024', '2025']
-  function metadataTrajectoire(): typeof metadonneesThemesFixtures.milieux {
-    const metadata = structuredClone(metadonneesThemesFixtures.milieux)
-    metadata.indicator_pages = { artif_par_habitant: {
-      indicator: 'artif_par_habitant', detail: null, label: 'Intensité état',
-      family: 'trajectory', trajectory: { endpoints: ['M2', 'M3'] },
-      definition: 'Surface artificialisée par habitant à chaque état.', unit: 'm²/hab',
-      calculation: 'Surface de l’état divisée par la population.', direction: 'low',
-      caveats: 'Les millésimes départementaux diffèrent.',
-      levels: ['commune', 'epci', 'departement'], sources: ['ocsge_artificialisation_22_2025'],
-      comparison: { details: detailsArtif, detail: '2025', unit: 'm²/hab', labels: Object.fromEntries(detailsArtif.map((d) => [d, metadata.detail_labels.artif_par_habitant[d]])) },
-    } }
-    return metadata
-  }
-  const faitsMilieux = indicateursMilieuxFixture.filter((fact) => fact.type !== 'region')
-
-  it('ouvre sur le dernier détail déclaré, l’écrit dans l’URL et le détail (actif) pilote carte et tableau', async () => {
-    const { wrapper, router } = await monter('/indicateurs/milieux/artif_par_habitant', [], metadataTrajectoire(), faitsMilieux, 'milieux')
-    expect(router.currentRoute.value.query.detail).toBe('2025')
-    expect(wrapper.find('[data-renderer="trajectory"]').exists()).toBe(true)
-    const selectDetail = wrapper.find('select[aria-label="Détail (actif)"]')
-    expect(selectDetail.exists()).toBe(true)
-    await selectDetail.setValue('2024')
-    await flushPromises()
-    expect(router.currentRoute.value.query.detail).toBe('2024')
-    // Le tableau suit le détail actif : les communes du 29 seules portent 2024.
-    expect(wrapper.find('tbody').text()).toContain('Commune B')
-    expect(wrapper.find('tbody').text()).not.toContain('Commune A1')
-    // La carte reçoit exactement les faits du détail actif.
-    await router.push({ query: { ...router.currentRoute.value.query, vue: 'carte' } })
-    await flushPromises()
-    expect(wrapper.find('[data-testid="map"]').attributes('data-values')).toBe('29001,29002')
-  })
-
-  it('garde sur l’axe les états déclarés sans valeur et trace à l’échelle des valeurs réelles', async () => {
-    const { wrapper } = await monter('/indicateurs/milieux/artif_par_habitant?territoire=22001', [], metadataTrajectoire(), faitsMilieux, 'milieux')
-    // M2/M3 ne portent aucune ligne communale : déclarés, ils restent rendus.
-    const m2 = wrapper.find('[data-etape="M2"]')
-    const m3 = wrapper.find('[data-etape="M3"]')
-    expect(m2.exists()).toBe(true)
-    expect(m3.exists()).toBe(true)
-    expect(m2.attributes('data-etat')).toBe('sans-valeur')
-    expect(wrapper.find('[data-etape="2025"]').attributes('data-etat')).toBe('valeurs')
-    // L'échelle des valeurs est réelle : deux détails de médianes très
-    // différentes ne partagent JAMAIS la même ordonnée (le défaut aplati du
-    // PR supplanté), et le territoire mis en avant trace son propre chemin.
-    const cy2024 = Number(wrapper.find('[data-etape="2024"] circle').attributes('cy'))
-    const cy2025 = Number(wrapper.find('[data-etape="2025"] circle').attributes('cy'))
-    expect(cy2024).not.toBe(cy2025)
-    expect(Math.abs(cy2024 - cy2025)).toBeGreaterThan(20)
-    expect(wrapper.find('.trajectoire-territoire').exists()).toBe(true)
-  })
-
+  // #627 - the retired static route vehicle no longer mounts synthetic family
+  // pages: the artif route-level trajectory behavior (detail URL state, axis
+  // states, real-value scale) is owned by annual-series-api-page.spec.ts
+  // (the production series route) and exploration-model.spec.ts (the pure
+  // trajectory model). The retained raccordement_courbe owner path keeps its
+  // routed test below.
   it('trace la référence médiane déclarée et distingue le service planifié de l’acquisition', async () => {
     const { wrapper, router } = await monter(
       '/indicateurs/mobilite/raccordement_courbe?territoire=22001',
@@ -349,254 +389,23 @@ describe('IndicateurView — trajectoires (#438)', () => {
 
     await router.push({ query: { ...router.currentRoute.value.query, vue: 'indicateur' } })
     await flushPromises()
-    expect(wrapper.find('[data-testid="raccordement-dates"]').text()).toBe(
-      'Les résultats reposent sur les horaires planifiés pour le mercredi 16 septembre 2026 ; les sources ont été acquises le 25 août 2026.',
-    )
+    // #627 — the raccordement owner path is API-active: L'indicateur renders
+    // the acquired measure metadata, and the static metadata clock paragraph
+    // never does.
+    expect(wrapper.find('[data-testid="raccordement-dates"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('points déclarés')
   }, 20000)
 
-  it('rend un vocabulaire exclusivement français — « détail (actif) », jamais « endpoint »', async () => {
-    const { wrapper } = await monter('/indicateurs/milieux/artif_par_habitant', [], metadataTrajectoire(), faitsMilieux, 'milieux')
-    const texte = wrapper.text()
-    expect(texte).toContain('Détail (actif)')
-    expect(texte.toLowerCase()).not.toContain('endpoint')
-    expect(texte.toLowerCase()).not.toContain('spread')
-  })
 })
 
-// La grammaire Repères des profils/listes (#439) — la page routée rend le
-// profil COMPLET du territoire sélectionné (l'ordre vient des métadonnées,
-// jamais des faits) et la catégorie comparée pilote médiane/extrêmes/tableau
-// à travers le seam existant : les contrôles de tri marchent, le rang est
-// directionnel, extrêmes et lignes portent des liens de fiche qui résolvent,
-// et une catégorie demandée inconnue est surfacée honnêtement — JAMAIS
-// réécrite en silence vers la première catégorie (le défaut du PR supplanté).
-describe('IndicateurView — profils/listes (#439)', () => {
-  const CATEGORIES = ['t_longueur', 'b_longueur', 'c_longueur'] as const
-  function metadataListe(): typeof metadonneesThemesFixtures.mobilite {
-    const metadata = structuredClone(metadonneesThemesFixtures.mobilite)
-    metadata.indicator_pages = { reseaux: {
-      indicator: 'reseaux', detail: null, label: 'Réseaux à pied / vélo / voiture',
-      definition: 'Le profil complet du réseau par mode.', unit: 'km',
-       calculation: 'Longueurs publiées par le pipeline.', direction: 'high',
-       caveats: 'Les catégories portent la même unité.',
-      levels: ['commune', 'epci', 'departement'], sources: ['amenagements_cyclables'],
-      family: 'list',
-      list: { categories: [...CATEGORIES] },
-      comparison: { details: [...CATEGORIES], detail: 'b_longueur', unit: 'km', direction: 'high', labels: { ...metadata.detail_labels.reseaux } },
-    } }
-    return metadata
-  }
-  // Les faits reseaux du fixture typé, clonés sur quatre communes avec des
-  // b_longueur DISTINCTS (le reste des catégories suit la source clonée).
-  function faitsReseaux(): ReturnType<typeof indicateursMobiliteFixture.filter> {
-    const source = indicateursMobiliteFixture.filter((fait) => fait.key === 'reseaux' && fait.territoire === '22001')
-    const clones = ([['22001', 0], ['22002', 10], ['29001', 5], ['29002', 3]] as const).flatMap(([territoire, bLongueur]) =>
-      source.map((fait) => ({ ...fait, territoire, value: fait.detail === 'b_longueur' ? bLongueur : fait.value })),
-    )
-    return [...indicateursMobiliteFixture.filter((fait) => fait.key !== 'reseaux' || fait.type !== 'commune'), ...clones] as ReturnType<typeof indicateursMobiliteFixture.filter>
-  }
-
-  it('rend le profil complet dans l’ordre déclaré, nomme la catégorie comparée et porte l’unité PAR catégorie', async () => {
-    const { wrapper, router } = await monter('/indicateurs/mobilite/reseaux?territoire=22001', [], metadataListe(), faitsReseaux(), 'mobilite')
-    expect(wrapper.find('[data-renderer="list"]').exists()).toBe(true)
-    // Le profil complet : trois catégories déclarées, dans L'ORDRE DU CANON.
-    const lignes = wrapper.findAll('[data-ligne-profil]')
-    expect(lignes.map((ligne) => ligne.attributes('data-ligne-profil'))).toEqual([...CATEGORIES])
-    // L'unité est portée par chaque longueur.
-    expect(lignes[0].text()).toContain(' km')
-    expect(lignes[1].text()).toContain(' km')
-    expect(wrapper.text()).toContain('Longueur — à vélo')
-    // La catégorie comparée est explicite et sélectionnable — copie française.
-    const selectCategorie = wrapper.find('select[aria-label="Catégorie comparée"]')
-    expect(selectCategorie.exists()).toBe(true)
-    expect(selectCategorie.findAll('option')).toHaveLength(CATEGORIES.length)
-    expect(router.currentRoute.value.query.detail).toBe('b_longueur')
-    // Le nom du territoire porté par le modèle nourrit l'aria-label du bloc
-    // (le même motif que signature.nom chez les distributions).
-    expect(wrapper.find('.profil-lignes').attributes('aria-label')).toBe('Profil de Commune A1 sur 3 catégories déclarées')
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-  })
-
-  it('trie par valeur via les contrôles existants — le rang est directionnel et les liens de fiche résolvent', async () => {
-    const { wrapper, router } = await monter('/indicateurs/mobilite/reseaux', [], metadataListe(), faitsReseaux(), 'mobilite')
-    await wrapper.findAll('thead button')[1].trigger('click')
-    await flushPromises()
-    // Tri par valeur ascendant : la plus petite longueur vélo d'abord…
-    expect(router.currentRoute.value.query.tri).toBe('valeur')
-    expect(wrapper.findAll('tbody tr')[0].text()).toContain('Commune A1')
-    // …et le rang DIRECTIONNEL : la plus grande valeur porte « 1er / 4 ».
-    await wrapper.findAll('thead button')[1].trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.query.ordre).toBe('desc')
-    expect(wrapper.findAll('tbody tr')[0].text()).toContain('Commune D')
-    expect(wrapper.findAll('tbody tr')[0].text()).toContain('1er / 4')
-    // Les extrêmes uniques et les lignes portent des liens de fiche RÉSOLVABLES.
-    const extreme = wrapper.find('.extremes a[href*="/territoire/commune/22002"]')
-    expect(extreme.exists()).toBe(true)
-    expect(extreme.attributes('href')).toContain('theme=mobilite')
-    expect(wrapper.find('tbody a[href*="/territoire/commune/29002"]').exists()).toBe(true)
-  })
-
-  it('reste honnête : silence sans sélection, profil incomplet et territoire absent distingués, catégorie résolue JAMAIS en silence', async () => {
-    // Sans territoire sélectionné : rien n'est affirmé.
-    const initial = await monter('/indicateurs/mobilite/reseaux', [], metadataListe(), faitsReseaux(), 'mobilite')
-    expect(initial.wrapper.text()).toContain('Sélectionnez un territoire pour voir son profil complet.')
-    // Un territoire du périmètre dont une catégorie manque : les lignes
-    // DISPONIBLES restent rendues — le profil ne disparaît pas — et
-    // l'incomplétude est dite à côté, en nommant la catégorie manquante.
-    const ampute = faitsReseaux().filter((fait) => !(fait.territoire === '22001' && fait.detail === 'c_longueur'))
-    const incomplet = await monter('/indicateurs/mobilite/reseaux?territoire=22001', [], metadataListe(), ampute, 'mobilite')
-    expect(incomplet.wrapper.findAll('[data-ligne-profil]')).toHaveLength(2)
-    expect(incomplet.wrapper.find('[data-ligne-profil="b_longueur"]').exists()).toBe(true)
-    expect(incomplet.wrapper.find('[data-ligne-profil="c_longueur"]').exists()).toBe(false)
-    expect(incomplet.wrapper.text()).toContain('Profil incomplet — sans valeur publiée à ce niveau : Longueur — en voiture.')
-    expect(incomplet.wrapper.text()).not.toContain('absent')
-    // Un EPCI sélectionné dans une comparaison de communes : ABSENT à ce niveau.
-    const absent = await monter('/indicateurs/mobilite/reseaux?territoire=200000001', [], metadataListe(), faitsReseaux(), 'mobilite')
-    expect(absent.wrapper.find('[role="status"]').text()).toContain('EPCI X : territoire absent à ce niveau de comparaison.')
-    // Une catégorie demandée hors contrat est RÉSOLUE EXPLICITEMENT vers la
-    // catégorie canonique (URL + sélecteur) — jamais un repli silencieux sur
-    // la première catégorie sans que le visiteur voie laquelle est active.
-    const inconnue = await monter('/indicateurs/mobilite/reseaux?detail=stale', [], metadataListe(), faitsReseaux(), 'mobilite')
-    expect(inconnue.router.currentRoute.value.query.detail).toBe('b_longueur')
-    expect((inconnue.wrapper.find('select[aria-label="Catégorie comparée"]').element as HTMLSelectElement).value).toBe('b_longueur')
-  })
-})
-
-// La grammaire Repères des distributions (#440) — UN test routé qui verrouille
-// les états indisponibles HONNÊTES : la signature complète se rend, et les deux
-// échecs sont distingués l'un de l'autre — « territoire absent à ce niveau »
-// n'est JAMAIS habillé en « distribution incomplète ou supprimée » (le défaut
-// du PR supplanté, qui inventait un motif de suppression).
-describe('IndicateurView — distributions (#440)', () => {
-  function metadataDistribution(): typeof metadonneesThemesFixtures.habitat {
-    const metadata = structuredClone(metadonneesThemesFixtures.habitat)
-    metadata.indicator_pages = { distribution_dpe: {
-      indicator: 'distribution_dpe', detail: null, label: 'Distribution des étiquettes DPE (A à G)',
-      definition: 'Répartition des diagnostics de performance énergétique du territoire par étiquette, de A à G.',
-      unit: '%', calculation: 'Part de chaque étiquette parmi les diagnostics disponibles du territoire.',
-      direction: 'low',
-      caveats: 'La comparaison entre territoires porte sur la part de passoires thermiques (F/G), jamais sur les étiquettes une à une.',
-      levels: ['commune', 'epci', 'departement'], sources: ['dpe_22'],
-      family: 'distribution',
-      distribution: { signature: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] },
-      comparison: { indicator: 'part_passoires', label: 'Part de passoires thermiques', unit: '%', direction: 'low' },
-    } }
-    return metadata
-  }
-
-  it('rend la signature complète, nomme la facette résumée et distingue « absent » de « incomplète ou supprimée »', async () => {
-    // Sans territoire sélectionné : rien n'est affirmé — un appel, pas un état.
-    const initial = await monter('/indicateurs/habitat/distribution_dpe', [], metadataDistribution(), indicateursHabitatFixture, 'habitat')
-    expect(initial.wrapper.find('[data-renderer="distribution"]').exists()).toBe(true)
-    expect(initial.wrapper.text()).toContain('Sélectionnez un territoire pour voir sa signature complète')
-
-    // Signature complète : les barres déclarées A→G se rendent, et la facette
-    // résumée est VISIBLE du visiteur avec son libellé à elle.
-    await initial.router.push({ query: { territoire: '22001' } }); await flushPromises()
-    const complet = initial.wrapper.text()
-    expect(complet).toContain('Part de passoires thermiques')
-    for (const etiquette of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) {
-      expect(initial.wrapper.find(`[data-detail="${etiquette}"]`).exists(), `étiquette ${etiquette}`).toBe(true)
-    }
-    // ADR-0023 : les barres DPE portent les couleurs officielles A→G — jamais
-    // le dégradé du thème (le même verrou que la figure compacte de fiche).
-    const styleBarreA = initial.wrapper.find('[data-detail="A"] .barre').attributes('style')!.replace(/\s/g, '').toLowerCase()
-    expect(styleBarreA).toContain(COULEURS_DPE.A.toLowerCase())
-    expect(styleBarreA).not.toContain('indicateur-accent')
-    const styleBarreF = initial.wrapper.find('[data-detail="F"] .barre').attributes('style')!.replace(/\s/g, '').toLowerCase()
-    expect(styleBarreF).toContain(COULEURS_DPE.F.toLowerCase())
-
-    // Une étiquette sans valeur publiée : le périmètre PORTE le territoire,
-    // la distribution est incomplète ou supprimée — dit comme tel.
-    const sansG = indicateursHabitatFixture.filter((fact) => !(fact.key === 'distribution_dpe' && fact.detail === 'G'))
-    const incomplete = await monter('/indicateurs/habitat/distribution_dpe?territoire=22001', [], metadataDistribution(), sansG, 'habitat')
-    expect(incomplete.wrapper.text()).toContain('Commune A1 : distribution incomplète ou supprimée à ce niveau.')
-
-    // Un EPCI sélectionné dans une comparaison de communes : ABSENT à ce
-    // niveau — jamais un motif de suppression inventé.
-    const absent = await monter('/indicateurs/habitat/distribution_dpe?territoire=200000001', [], metadataDistribution(), indicateursHabitatFixture, 'habitat')
-    expect(absent.wrapper.find('[role="status"]').text()).toContain('EPCI X : territoire absent à ce niveau de comparaison.')
-    expect(absent.wrapper.text()).not.toContain('supprimée')
-  })
-})
-
-// La grammaire Repères des relations (#441) — UN test routé qui prouve que la
-// page de relation se rend SANS crasher (le défaut fatal du PR supplanté :
-// un TypeError sur chaque page de relation) : le nuage croise ses deux rôles
-// étiquetés aux échelles dérivées des valeurs réelles, la comparaison inter-
-// territoires reste pilotée par la facette scalaire (jamais un score unique),
-// les points du nuage et les lignes du tableau portent LES MÊMES territoires
-// avec le surlignage préservé, et la carte reçoit LE niveau résolu avec SA
-// facette scalaire — jamais un calque vide sous un autre masque.
-describe('IndicateurView — relations (#441)', () => {
-  function metadataRelation(): typeof metadonneesThemesFixtures.demographie {
-    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
-    metadata.indicator_pages = { relation_demo: {
-      indicator: 'relation_demo', detail: null,
-      label: 'Densité et solde des territoires',
-      definition: 'Le nuage croisé des deux forces du territoire : sa densité et son solde naturel.',
-      unit: 'hab./km²', calculation: 'Les deux rôles déclarés sont publiés par le pipeline.',
-      direction: 'high',
-      caveats: 'La comparaison entre territoires porte sur la densité, jamais un score unique.',
-      levels: ['commune', 'epci', 'departement'], sources: ['serie_historique'],
-      family: 'relationship',
-      relationship: { roles: { x: { indicator: 'densite', detail: null, label: 'Densité de population', unit: 'hab./km²' }, y: { indicator: 'solde_nat_rel', detail: null, label: 'Solde naturel comparé', unit: '‰/an' } } },
-      comparison: { indicator: 'densite', label: 'Densité comparée', unit: 'hab./km²', direction: 'high' },
-    } }
-    return metadata
-  }
-  const faitsRelation = (sans?: string) => [
-    ...indicateursDemographieFixture.filter((fact) => fact.key === 'densite'),
-    ...(['22001', '22002', '29001', '29002'] as const).filter((id) => id !== sans).map((id, index) => ({ ...indicateursDemographieFixture.find((fact) => fact.key === 'densite' && fact.territoire === id)!, key: 'solde_nat_rel', value: [1, 2, 3, 5][index]! })),
-  ]
-
-  it('rend le nuage étiqueté à l\u2019échelle réelle, nomme la facette scalaire, aligne nuage et tableau, et garde la carte cohérente', async () => {
-    const { wrapper, router } = await monter('/indicateurs/demographie/relation_demo?territoire=22001', [], metadataRelation(), faitsRelation())
-    expect(router.currentRoute.value.name).toBe('indicateur')
-    expect(wrapper.find('[data-renderer="relationship"]').exists()).toBe(true)
-
-    // Le nuage trace les quatre paires complètes, aux positions dérivées des
-    // VALEURS RÉELLES — quatre ordonnées distinctes, jamais un empilement fixe.
-    const points = wrapper.findAll('[data-point-relation]')
-    expect(points).toHaveLength(4)
-    const ordonnees = new Set(points.map((point) => point.attributes('cy')))
-    expect(ordonnees.size).toBe(4)
-    // ADR-0023 : les libellés viennent du contrat, JAMAIS une clé brute.
-    const texte = wrapper.text()
-    expect(texte).toContain('Densité de population')
-    expect(texte).toContain('Solde naturel comparé')
-    expect(texte).not.toContain('solde_nat_rel')
-    expect(texte).not.toContain('relation_demo')
-
-    // La facette scalaire pilote la comparaison et est VISIBLE du visiteur ;
-    // le tableau porte les MÊMES territoires que le nuage.
-    expect(texte).toContain('Densité comparée')
-    const lignesTableau = wrapper.findAll('tbody tr')
-    expect(lignesTableau.length).toBe(points.length)
-
-    // Le surlignage traverse le nuage ET le tableau (l'état préservé bout en bout).
-    expect(points.find((point) => point.attributes('data-point-relation') === '22001')!.classes()).toContain('selection')
-    expect(lignesTableau.find((ligne) => ligne.classes().includes('selection'))!.text()).toContain('Commune A1')
-
-    // Un point sans coordonnée complète est DIT, jamais empilé ni effacé.
-    const ampute = await monter('/indicateurs/demographie/relation_demo?territoire=22001', [], metadataRelation(), faitsRelation('29002'))
-    expect(ampute.wrapper.findAll('[data-point-relation]')).toHaveLength(3)
-    expect(ampute.wrapper.text()).toContain('Commune C')
-
-    // Un EPCI sélectionné dans une comparaison de communes : ABSENT — le même
-    // verdict honnête que les autres familles, jamais un motif inventé.
-    const absent = await monter('/indicateurs/demographie/relation_demo?territoire=200000001', [], metadataRelation(), faitsRelation())
-    expect(absent.wrapper.text()).toContain('EPCI X : territoire absent à ce niveau de comparaison.')
-
-    // La carte : UNE échelle résolue — le masque ET les valeurs portent le
-    // niveau communal, et la couche lit SA facette scalaire (la clé du second
-    // rôle n'y entre jamais).
-    await router.push({ query: { ...router.currentRoute.value.query, vue: 'carte' } })
-    await flushPromises()
-    const carte = wrapper.find('[data-testid="map"]')
-    expect(carte.attributes('data-level')).toBe('communes')
-    expect(carte.attributes('data-selected')).toBe('22001')
-    expect(carte.attributes('data-values')).toBe('22001,22002,29001,29002')
-  })
-})
+// #627 - the retired static route vehicle no longer mounts synthetic family
+// pages, so the former route-level duplicates of the family grammars live at
+// their owning seams: the pure family models and honesty states are covered
+// by exploration-model.spec.ts (profil complet dans l'ordre declare, profil
+// incomplet, absent a ce niveau, signature complete, relation nuage/etats,
+// echelles reelles), the production profile routes (mix_logements, reseaux,
+// distribution_dpe, structure_age) are mounted through their real API
+// classification by profile-page-api.spec.ts (presentations, sorting, ranks,
+// states) and the census above, the series routes by
+// annual-series-api-page.spec.ts, and the malformed-facet URL canonicalization
+// by etat-url.spec.ts.
