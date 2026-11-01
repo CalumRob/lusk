@@ -8,7 +8,7 @@ import RepereFamilyOutlet from '../components/indicateurs/RepereFamilyOutlet.vue
 import { dispatchIndicatorFamily } from '../indicateurs/familySeam'
 import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, indicateursMobiliteFixture, indicateursProgrammesFixture, indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
-import { COULEURS_DPE } from '../fiche/couleursDpe'
+
 import type { Payload, FamilleFigure, IndicatorPageMetadata } from '../payload/types'
 import { routes } from '../router'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'

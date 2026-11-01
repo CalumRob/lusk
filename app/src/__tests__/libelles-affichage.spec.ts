@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { libelleDetail, libelleIndicateur } from '../fiche/libelles'
 import { LIBELLES_INDICATEURS_APP } from '../fiche/content/libellesAffichage'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
-import { validerCatalogueNavigateur, validerThemeMetadata } from '../payload/validate'
+import { validerCatalogueNavigateur } from '../payload/validate'
 import type { Theme, ThemeMetadata } from '../payload/types'
 
 /**

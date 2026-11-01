@@ -379,8 +379,9 @@ describe('artefact modèle de lecture par territoire — contrat producteur/réc
     )
     // The raw artifact keeps its comparisons (the validator contract), but
     // the retired building figures never cross the facts seam.
-    expect('buildingDistribution' in facts.mobility).toBe(false)
-    expect('accessRamp' in facts.mobility).toBe(false)
+    expect(facts).not.toBeNull()
+    expect('buildingDistribution' in facts!.mobility).toBe(false)
+    expect('accessRamp' in facts!.mobility).toBe(false)
   })
 
   it('refuse une preuve comparée dont le libellé diverge de son périmètre', () => {

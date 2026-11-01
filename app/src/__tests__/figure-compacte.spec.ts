@@ -276,8 +276,11 @@ describe('FigureCompacte — régression de la puce de rang directionnelle (#367
     expect(puce.attributes('aria-label')).toBe("1er/2 de l'EPCI — plus = mieux")
   })
 
-  it('scalar/iso_alimentation (moins = mieux) porte le glyphe ▼ (sens dérivé du registre Méthodes)', () => {
-    const wrapper = monter('scalar', 'iso_alimentation', 'mobilite')
+  it('scalar/surface_reseaux_routiers (moins = mieux) porte le glyphe ▼ (sens dérivé du registre Méthodes)', () => {
+    // #627 - the iso_* glyph case retired with the legacy accessibility
+    // indicators; the retained low-is-better Mobilité scalar keeps the
+    // direction-glyph coverage.
+    const wrapper = monter('scalar', 'surface_reseaux_routiers', 'mobilite')
     const puce = wrapper.find('.puce-rang')
     expect(puce.exists()).toBe(true)
     expect(puce.text()).toContain('▼')

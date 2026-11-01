@@ -76,15 +76,15 @@ async function monter(theme: Theme) {
 }
 
 describe("OngletTheme — l'estampille snapshot reste propre à la Mobilité (#504)", () => {
-  it('se rend sur l’onglet Mobilité — même quand les six thèmes sont chargés', async () => {
+  it('#627 - never renders any more: the snapshot analysis retired with the legacy surface', async () => {
     const wrapper = await monter('mobilite')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Mobilité')
-    const estampille = wrapper.find('.estampille-snapshot')
-    expect(estampille.exists()).toBe(true)
-    expect(estampille.text()).toBe(
-      'Analyse calculée le 6 août 2026 — se rafraîchit sur un rythme lent',
-    )
+    // #627 - the slow-clock promise described the retired accessibility
+    // analysis; the production AEDAR evidence carries its own provenance and
+    // the stamp no longer renders, even with all six themes loaded.
+    expect(wrapper.find('.estampille-snapshot').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Analyse calcul')
   })
 
   it.each(LIBELLES_PAR_THEME)(
