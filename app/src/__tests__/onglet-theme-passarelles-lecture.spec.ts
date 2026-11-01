@@ -5,7 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 
 import OngletTheme from '../components/fiche/OngletTheme.vue'
-import { LIBELLE_HANDOFF, passarellesLecture } from '../fiche/explorationHandoff'
+import { passarellesLecture } from '../fiche/explorationHandoff'
 import { routes } from '../router'
 import {
   apercuAvecNAFixture,
@@ -149,52 +149,11 @@ async function monter(theme: 'demographie' | 'milieux' | 'mobilite' | 'economie'
   return wrapper
 }
 
-describe('la rangée « Explorer » de la lecture flagship Mobilité (#473)', () => {
-  it('rend SEPT passarelles compactes — les constituants publiés de la lecture, territoire et niveau emportés', async () => {
-    const wrapper = await monter('mobilite', payloadPour('mobilite', mobiliteAvecPagesAcces()), '22001')
-
-    const rangee = wrapper.find('.lecture-passarelles')
-    expect(rangee.exists()).toBe(true)
-    // la lecture garde la primauté narrative : la rangée ferme la carte, SOUS la source
-    expect(rangee.find('.lecture-passarelles-etiquette').text()).toBe(LIBELLE_HANDOFF)
-    expect(wrapper.find('.lecture-source').element.compareDocumentPosition(rangee.element)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    )
-
-    const ancres = rangee.findAll('a.passarelle-exploration')
-    expect(ancres).toHaveLength(7)
-    expect(ancres.map((a) => a.attributes('href'))).toEqual([
-      '/indicateurs/mobilite/tot_loss_t?territoire=22001&niveau=commune',
-      '/indicateurs/mobilite/tot_loss_b?territoire=22001&niveau=commune',
-      '/indicateurs/mobilite/iso_alimentation?territoire=22001&niveau=commune',
-      '/indicateurs/mobilite/iso_sante?territoire=22001&niveau=commune',
-      '/indicateurs/mobilite/iso_administration?territoire=22001&niveau=commune',
-      '/indicateurs/mobilite/iso_ecole?territoire=22001&niveau=commune',
-      '/indicateurs/mobilite/iso_banque?territoire=22001&niveau=commune',
-    ])
-    // des intitulés UNIQUES (accessibilité) — le libellé publié de CHAQUE indicateur
-    const intitules = ancres.map((a) => a.text())
-    expect(new Set(intitules).size).toBe(7)
-    expect(intitules).toContain(LABELS_PERTES_TOTALES.tot_loss_t)
-    expect(intitules).toContain(LABELS_PERTES_TOTALES.tot_loss_b)
-    for (const ancre of ancres) {
-      expect(ancre.attributes('target')).toBe('_blank')
-      const rel = (ancre.attributes('rel') ?? '').split(' ')
-      expect(rel).toContain('noopener')
-      expect(rel).toContain('noreferrer')
-    }
-  })
-
-  it('la saillance vélo (ce-que-le-velo-preserve) offre les MÊMES constituants', async () => {
-    const wrapper = await monter('mobilite', payloadPour('mobilite', mobiliteAvecPagesAcces()), '22002')
-
-    const ancres = wrapper.findAll('.lecture-passarelles a.passarelle-exploration')
-    expect(ancres).toHaveLength(7)
-    expect(ancres.map((a) => a.attributes('href'))).toContain(
-      '/indicateurs/mobilite/tot_loss_b?territoire=22002&niveau=commune',
-    )
-  })
-})
+// #627 - the Mobilité flagship lecture retired with the accessibility
+// snapshot: its Explorer row (seven passarelles to the legacy tot_loss/iso
+// pages) has no reading to serve any more, and the legacy pages themselves
+// render the unknown-indicator state. The passarelles machinery keeps its
+// coverage below (Milieux quadrant, no-constituent honesty, pure seam).
 
 describe('la passarelle unique du quadrant Milieux (#473)', () => {
   it('offre la page « Intensité état » — les deux états M2/M3 que l’axe y confronte', async () => {

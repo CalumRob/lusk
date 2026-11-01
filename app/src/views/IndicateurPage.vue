@@ -198,10 +198,6 @@ async function loadRouteThemeMetadata(currentTheme: string): Promise<ThemeMetada
   return { ...metadata, ...(profileContracts === undefined ? {} : { profile_contracts: profileContracts }) } as ThemeMetadata
 }
 
-function fichiersLegacy(currentTheme: string): Fichier[] {
-  return ['territoires', `indicateurs_${currentTheme}`, `theme_${currentTheme}`] as Fichier[]
-}
-
 async function resolveProfileRoute(currentTheme: string, currentIndicator: string): Promise<void> {
   const sequence = ++profileDiscoverySequence
   profileFactsRequestKey = ''
@@ -432,6 +428,17 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     return
   }
 
+  // The retained raccordement_courbe keeps its owner path (#857): its
+  // numerics are API-owned, and its presentation envelope remains the theme
+  // catalogue. It is the only unclassified route that still resolves a page.
+  if (currentTheme === 'mobilite' && currentIndicator === 'raccordement_courbe') {
+    attendrePage.value = ['territoires', 'theme_mobilite']
+    demarrerPage.value = ['territoires', 'theme_mobilite']
+    profileDiscoveryComplete.value = true
+    profileBootstrapLoading.value = false
+    return
+  }
+
   const canUseManifest = manifesteChargerInjecte !== null || payloadChargerInjecte === null
   if (canUseManifest) {
     chargementManifesteModeles.value = true
@@ -450,11 +457,10 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
 
   profileDiscoveryComplete.value = true
   profileBootstrapLoading.value = false
-  if (!routeModeleIndicateur.value) {
-    const legacy = fichiersLegacy(currentTheme)
-    attendrePage.value = legacy
-    demarrerPage.value = [...legacy, 'territoires-metadata']
-  }
+  // No other unclassified route resolves a page any more (#627 legacy
+  // accessibility retirement): producer-excluded slugs and unknown indicators
+  // both render the honest unknown-indicator state, without loading the
+  // retired static numeric tables.
 }
 
 watch(() => [theme.value, indicator.value, retryProfileBootstrap.value] as const,
@@ -562,9 +568,8 @@ async ([discovered, isProfile, active, ordinaryPage, currentTheme, currentIndica
     if (!metadataScalaireApi.value || metadataScalaireApi.value.theme !== currentTheme) metadataScalaireApi.value = await chargerMetadataScalaireApi(currentTheme)
     if (sequence !== sequenceScalaireApi) return
     if (!indicateursScalairesCourants.value.includes(currentIndicator)) {
-      const legacyFiles = ['territoires', `indicateurs_${currentTheme}`, `theme_${currentTheme}`] as Fichier[]
-      attendrePage.value = legacyFiles
-      demarrerPage.value = legacyFiles
+      // A non-registered indicator has no API acquisition and no static
+      // fallback (#627): it renders the unknown-indicator state.
       chargementScalaireApi.value = false
       return
     }

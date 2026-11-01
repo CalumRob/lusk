@@ -10,7 +10,6 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import {
-  estampilleSnapshot,
   formaterValeur,
   histoireMobilitePourTerritoire,
   indicateursGroupeesPourTerritoire,
@@ -231,29 +230,6 @@ describe('nuageMobilite — le nuage même-échelle des pairs (ADR-0011)', () =>
   })
 })
 
-describe('estampilleSnapshot — le flagship est un snapshot, et le dit (ADR-0012)', () => {
-  it('formats the stamp from the shared vintages table (mobilite_snapshot)', () => {
-    expect(estampilleSnapshot(payloadMobilite)).toBe(
-      'Analyse calculée le 6 août 2026 — se rafraîchit sur un rythme lent',
-    )
-  })
-
-  it('never uses the weekly-refresh language', () => {
-    expect(estampilleSnapshot(payloadMobilite)).not.toContain('semaine')
-    expect(estampilleSnapshot(payloadMobilite)).not.toContain('actualis')
-  })
-
-  it('falls back to a Story row’s own stamp when the vintages table is absent', () => {
-    const payload = { ...payloadMobilite, vintages: null }
-
-    expect(estampilleSnapshot(payload)).toBe(
-      'Analyse calculée le 6 août 2026 — se rafraîchit sur un rythme lent',
-    )
-  })
-
-  it('returns null only when the payload carries no Mobilité at all', () => {
-    const payload = { ...payloadMobilite, histoires: [], vintages: null }
-
-    expect(estampilleSnapshot(payload)).toBeNull()
-  })
-})
+// #627 - the snapshot stamp selector retired with the Mobilité legacy
+// surface: the slow-clock promise described the retired accessibility
+// analysis, and the production AEDAR evidence owns its provenance.

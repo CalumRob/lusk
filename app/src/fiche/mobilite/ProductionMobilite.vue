@@ -8,10 +8,6 @@ defineProps<{
   content: ThemeContent
   pagination: CahierPagination
   comparisonOptions: readonly OptionContexteComparaison[]
-  accessStatus: 'loading' | 'ready' | 'error'
-  retryAccess: () => void
-  buildingStatus: 'loading' | 'ready' | 'error'
-  retryBuilding: () => void
   aedarData: AedarFetchResult | null
   aedarStatus: 'loading' | 'ready' | 'error'
   retryAedar: () => void
@@ -25,10 +21,6 @@ defineProps<{
     :content="content"
     :pagination="pagination"
     :comparison-options="comparisonOptions"
-    :access-status="accessStatus"
-    :retry-access="retryAccess"
-    :building-status="buildingStatus"
-    :retry-building="retryBuilding"
     :aedar-data="aedarData"
     :aedar-status="aedarStatus"
     :retry-aedar="retryAedar"

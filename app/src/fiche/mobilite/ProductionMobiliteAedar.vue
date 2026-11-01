@@ -21,10 +21,6 @@ const props = defineProps<{
   aedarReferenceTerritoire?: { type: AedarTerritoryType; id: string; nom: string } | null
   aedarReferenceData?: AedarFetchResult | null
   aedarReferenceStatus?: 'unavailable' | 'loading' | 'ready' | 'error'
-  accessStatus?: 'loading' | 'ready' | 'error'
-  retryAccess?: () => void
-  buildingStatus?: 'loading' | 'ready' | 'error'
-  retryBuilding?: () => void
 }>()
 
 const lossMapMetadata = ref<AedarDiversityLossMapMetadata>({ status: 'loading', legend: null })
@@ -101,10 +97,6 @@ const transformed = computed(() => {
     :content="transformed"
     :pagination="props.pagination"
     :comparison-options="props.comparisonOptions"
-    :access-status="props.accessStatus"
-    :retry-access="props.retryAccess"
-    :building-status="props.buildingStatus"
-    :retry-building="props.retryBuilding"
     :aedar-status="props.aedarStatus"
     show-all-units
     presentation="plain"

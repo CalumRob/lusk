@@ -1,16 +1,15 @@
 <script setup lang="ts">
 /**
- * Marginal access ramp for the three modes.
- *
- * The pipeline sends eleven quantiles per mode rather than individual
- * buildings. Each curve is therefore a separately ranked building population;
- * equal x positions do not identify the same building across modes.
+ * AEDAR time ramp: the accessible-equipment curves per travel mode over the
+ * published horizons. The legacy building-quantile ramp was retired with the
+ * Mobilité accessibility surface (#627); only the AEDAR semantic evidence
+ * renders here.
  */
 import { computed, ref } from 'vue'
 import type { Component } from 'vue'
 import { Bike, BusFront, CarFront, Footprints } from 'lucide-vue-next'
 
-import type { MobiliteAccessMode, MobiliteAccessRamp, MobiliteAccessRampPoint, TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territoryFacts'
+import type { TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territoryFacts'
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, CahierTooltipTone, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
@@ -23,7 +22,6 @@ import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
 
 const props = withDefaults(defineProps<{
-  ramp?: MobiliteAccessRamp
   timeRamp?: TimeRampFigureData
   territoryName: string
   selectedModes?: readonly AedarRampMode[]
@@ -31,7 +29,6 @@ const props = withDefaults(defineProps<{
 }>(), { showModeLegend: true })
 const emit = defineEmits<{ 'update:selectedModes': [modes: readonly AedarRampMode[]] }>()
 
-const MODE_ORDER: readonly MobiliteAccessMode[] = ['car', 'bike', 'walkTransit']
 const WIDTH = 640
 const HEIGHT = 300
 const BASE_FIGURE_GEOMETRY = {
@@ -44,192 +41,6 @@ const plotElement = ref<HTMLElement | null>(null)
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
 }
-
-const curves = computed(() => props.ramp ? MODE_ORDER.map((mode) => props.ramp!.curves[mode]) : [])
-
-const maximum = computed(() => Math.max(
-  1,
-  ...curves.value.flatMap((curve) => curve.points.flatMap((point) => [
-    point.accessibleTypes,
-    ...(point.comparisonAccessibleTypes === null ? [] : [point.comparisonAccessibleTypes]),
-  ])),
-))
-
-function xFor(quantile: number): number {
-  const { width, margin } = figureGeometry.value
-  return margin.left + quantile * (width - margin.left - margin.right)
-}
-
-function yFor(value: number): number {
-  const { height, margin } = figureGeometry.value
-  return margin.top + (1 - value / maximum.value) * (height - margin.top - margin.bottom)
-}
-
-function pathFor(points: MobiliteAccessRamp['curves'][MobiliteAccessMode]['points']): string {
-  return points
-    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${xFor(point.quantile).toFixed(2)} ${yFor(point.accessibleTypes).toFixed(2)}`)
-    .join(' ')
-}
-
-const xLabels = computed(() => curves.value[0]?.points ?? [])
-const yLabels = computed(() => [0, maximum.value])
-
-const xAxisTicks = computed(() => xLabels.value.map((point) => ({
-  key: point.quantile,
-  position: xFor(point.quantile),
-  label: point.quantileLabel,
-})))
-
-const yAxisTicks = computed(() => yLabels.value.map((value) => ({
-  key: value,
-  position: yFor(value),
-  label: formatNumber(value),
-})))
-
-const comparisonCurves = computed(() => curves.value.map((curve) => ({
-  ...curve,
-  points: curve.points.filter((point) => point.comparisonAccessibleTypes !== null).map((point) => ({
-    ...point,
-    accessibleTypes: point.comparisonAccessibleTypes!,
-  })),
-})).filter((curve) => curve.points.length > 1))
-
-const MODE_ICONS = {
-  car: CarFront,
-  bike: Bike,
-  walkTransit: Footprints,
-} as const
-
-const legend = computed<readonly FigureLegendEntry[]>(() => [
-  { key: 'territory', label: props.territoryName, marker: 'line', tone: 'territory' },
-  { key: 'comparison', label: 'Groupe comparé', marker: 'dash', tone: 'peer' },
-])
-
-type ModeAnnotation = {
-  mode: MobiliteAccessMode
-  modeLabel: string
-  value: number
-  pointX: number
-  pointY: number
-  labelY: number
-  labelX: number
-}
-
-const modeAnnotations = computed<readonly ModeAnnotation[]>(() => {
-  const desired = curves.value.map((curve) => ({
-    mode: curve.mode,
-    modeLabel: curve.modeLabel,
-    value: curve.points.find((point) => point.quantile === 1)?.accessibleTypes ?? curve.points.at(-1)?.accessibleTypes ?? 0,
-  }))
-  const placed: ModeAnnotation[] = []
-  for (const item of [...desired].sort((left, right) => yFor(left.value) - yFor(right.value))) {
-    const { height, margin } = figureGeometry.value
-    const plotBottom = height - margin.bottom
-    let labelY = Math.max(margin.top + 12, Math.min(plotBottom - 8, yFor(item.value)))
-    const previous = placed.at(-1)
-    if (previous) labelY = Math.max(labelY, previous.labelY + 18)
-    placed.push({
-      ...item,
-      pointX: xFor(1),
-      pointY: yFor(item.value),
-      labelY,
-      labelX: xFor(1) + 28,
-    })
-  }
-  const bounded = placed.map((annotation) => ({
-    ...annotation,
-    labelY: Math.min(annotation.labelY, figureGeometry.value.height - figureGeometry.value.margin.bottom - 8),
-  }))
-  return MODE_ORDER.flatMap((mode) => bounded.filter((annotation) => annotation.mode === mode))
-})
-
-type SelectedCut = {
-  quantile: number
-  quantileLabel: string
-  points: readonly {
-    mode: MobiliteAccessMode
-    modeLabel: string
-    point: MobiliteAccessRampPoint
-  }[]
-}
-
-const selectedCut = ref<SelectedCut | null>(null)
-
-function selectCut(quantile: number): void {
-  const points = curves.value.flatMap((curve) => {
-    const point = curve.points.find((candidate) => candidate.quantile === quantile)
-    return point ? [{ mode: curve.mode, modeLabel: curve.modeLabel, point }] : []
-  })
-  const quantileLabel = points[0]?.point.quantileLabel
-  if (!quantileLabel) return
-  selectedCut.value = { quantile, quantileLabel, points }
-}
-
-function clearCut(quantile: number): void {
-  if (selectedCut.value?.quantile === quantile) selectedCut.value = null
-}
-
-function cutTooltipRows(selection: SelectedCut): readonly CahierTooltipRow[] {
-  return selection.points.flatMap(({ mode, modeLabel, point }) => {
-    const presentation = {
-      tone: mode === 'walkTransit' ? 't' as const : mode === 'bike' ? 'b' as const : 'c' as const,
-      icon: MODE_ICONS[mode],
-    }
-    return [
-      {
-        label: `${props.territoryName} · ${modeLabel}`,
-        value: formatNumber(point.accessibleTypes),
-        ...presentation,
-      },
-      {
-        label: `Groupe comparé · ${modeLabel}`,
-        value: point.comparisonAccessibleTypes === null
-          ? '—'
-          : formatNumber(point.comparisonAccessibleTypes),
-        ...presentation,
-      },
-    ]
-  })
-}
-
-function cutHitboxStyle(point: MobiliteAccessRampPoint, index: number): Record<string, string> {
-  const points = xLabels.value
-  const previous = points[index - 1]
-  const next = points[index + 1]
-  const leftQuantile = previous ? (previous.quantile + point.quantile) / 2 : point.quantile
-  const rightQuantile = next ? (point.quantile + next.quantile) / 2 : point.quantile
-  const { width, height, margin } = figureGeometry.value
-  return {
-    left: `${((xFor(leftQuantile) / width) * 100)}%`,
-    top: `${(margin.top / height) * 100}%`,
-    width: `${((xFor(rightQuantile) - xFor(leftQuantile)) / width) * 100}%`,
-    height: `${((height - margin.top - margin.bottom) / height) * 100}%`,
-  }
-}
-
-const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
-  if (!selectedCut.value) return undefined
-  const values = selectedCut.value.points.flatMap(({ point }) => [
-    point.accessibleTypes,
-    ...(point.comparisonAccessibleTypes === null ? [] : [point.comparisonAccessibleTypes]),
-  ])
-  const average = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1)
-  return {
-    x: `${Math.max(0.18, Math.min(0.82, xFor(selectedCut.value.quantile) / figureGeometry.value.width)) * 100}%`,
-    y: `${Math.max(0.04, Math.min(0.48, yFor(average) / figureGeometry.value.height)) * 100}%`,
-  }
-})
-
-function curveLabel(curve: MobiliteAccessRamp['curves'][MobiliteAccessMode]): string {
-  return `${curve.modeLabel} : ${curve.points.map((point) => `${point.quantileLabel}, ${formatNumber(point.accessibleTypes)} types`).join('; ')}`
-}
-
-const accessibleLabel = computed(() =>
-  props.ramp
-    ? `${props.territoryName}. ${props.ramp.yAxisLabel} selon ${props.ramp.xAxisLabel}, par mode. ${curves.value.map(curveLabel).join('. ')}`
-    : '',
-)
-
 /** AEDAR ramp modes: icon, tooltip tone and line color per mode (narrower modes take a lightened family tone). */
 const TIME_MODE_ICONS: Readonly<Record<string, Component>> = {
   car: CarFront,
@@ -272,9 +83,8 @@ function toggleTimeMode(key: string): void {
 const timeYAxis = computed(() => cahierIntegerYAxisScale(visibleTimeSeries.value.flatMap((series) =>
   series.points.flatMap((point) => [point.value, point.referenceValue]),
 )))
-const measuredYTickLabels = computed(() => props.timeRamp
-  ? timeYAxis.value.ticks.map((value) => `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}`)
-  : yLabels.value.map(formatNumber))
+const measuredYTickLabels = computed(() => timeYAxis.value.ticks.map((value) =>
+  `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}`))
 const figureGeometry = useMeasuredCahierFigureGeometry(plotElement, measuredYTickLabels, BASE_FIGURE_GEOMETRY)
 const plotHeight = computed(() => figureGeometry.value.height -
   figureGeometry.value.margin.top - figureGeometry.value.margin.bottom)
@@ -397,142 +207,6 @@ function timeHitboxStyle(index: number): Record<string, string> {
       </div>
     </template>
     <CahierFigureLegend v-if="props.showModeLegend" :entries="timeLegend" :mark-colors="timeLegendMarkColors" :selected-keys="[...visibleTimeModes]" :toggle-keys="timeRamp.series.map((series) => series.key)" label="Modes de déplacement et référence" @toggle="toggleTimeMode" />
-  </CahierFigureFrame>
-  <CahierFigureFrame
-    v-else-if="ramp"
-    class="access-ramp-cahier"
-    size="compact"
-    :geometry="figureGeometry"
-    :x-title="ramp.xAxisLabel"
-    :y-title="ramp.yAxisLabel"
-  >
-    <template #plot>
-      <div ref="plotElement" class="access-ramp-plot cahier-figure-plot">
-        <svg
-          class="access-ramp-svg"
-          :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`"
-          preserveAspectRatio="xMidYMid meet"
-          role="img"
-          :aria-label="accessibleLabel"
-        >
-          <g class="access-ramp-grid" aria-hidden="true">
-            <line
-              v-for="value in yLabels"
-              :key="`y-${value}`"
-              :x1="figureGeometry.margin.left"
-              :x2="figureGeometry.width - figureGeometry.margin.right"
-              :y1="yFor(value)"
-              :y2="yFor(value)"
-            />
-            <line
-              v-for="point in xLabels"
-              :key="`x-${point.quantile}`"
-              :x1="xFor(point.quantile)"
-              :x2="xFor(point.quantile)"
-              :y1="figureGeometry.margin.top"
-              :y2="figureGeometry.height - figureGeometry.margin.bottom"
-            />
-            <line
-              class="access-ramp-axis"
-              :x1="figureGeometry.margin.left"
-              :x2="figureGeometry.width - figureGeometry.margin.right"
-              :y1="figureGeometry.height - figureGeometry.margin.bottom"
-              :y2="figureGeometry.height - figureGeometry.margin.bottom"
-            />
-            <line
-              class="access-ramp-median"
-              :x1="xFor(0.5)"
-              :x2="xFor(0.5)"
-              :y1="figureGeometry.margin.top"
-              :y2="figureGeometry.height - figureGeometry.margin.bottom"
-            />
-          </g>
-          <path
-            v-for="curve in comparisonCurves"
-            :key="`comparison-${curve.mode}`"
-            class="access-ramp-line access-ramp-line--comparison"
-            :class="`access-ramp-line--${curve.mode}`"
-            :d="pathFor(curve.points)"
-            aria-hidden="true"
-          />
-          <path
-            v-for="curve in curves"
-            :key="curve.mode"
-            class="access-ramp-line access-ramp-line--territory"
-            :class="`access-ramp-line--${curve.mode}`"
-            :d="pathFor(curve.points)"
-            aria-hidden="true"
-          />
-          <path
-            v-for="annotation in modeAnnotations"
-            :key="`leader-${annotation.mode}`"
-            class="access-ramp-mode-leader"
-            :d="`M ${annotation.pointX} ${annotation.pointY} L ${annotation.labelX - 10} ${annotation.labelY}`"
-            aria-hidden="true"
-          />
-          <g
-            v-for="annotation in modeAnnotations"
-            :key="`annotation-${annotation.mode}`"
-            class="access-ramp-mode-annotation"
-            :class="`access-ramp-mode-annotation--${annotation.mode}`"
-            :transform="`translate(${annotation.labelX}, ${annotation.labelY})`"
-            role="img"
-            :aria-label="annotation.modeLabel"
-          >
-            <component
-              :is="MODE_ICONS[annotation.mode]"
-              :size="16"
-              :stroke-width="1.8"
-              x="-8"
-              y="-8"
-              aria-hidden="true"
-            />
-          </g>
-          <g v-for="curve in curves" :key="`points-${curve.mode}`" class="access-ramp-points" aria-hidden="true">
-            <circle
-              v-for="point in curve.points"
-              :key="`${curve.mode}-${point.quantile}`"
-              class="access-ramp-point"
-              :class="`access-ramp-point--${curve.mode}`"
-              :cx="xFor(point.quantile)"
-              :cy="yFor(point.accessibleTypes)"
-              r="4"
-            />
-          </g>
-        </svg>
-        <CahierFigureAxisLabels
-          :geometry="figureGeometry"
-          :x-ticks="xAxisTicks"
-          :y-ticks="yAxisTicks"
-          :x-label-offset="8"
-        />
-        <div class="access-ramp-cut-hitboxes" aria-label="Détails par part cumulée de bâtiments">
-          <button
-            v-for="(point, index) in xLabels"
-            :key="`cut-${point.quantile}`"
-            class="access-ramp-cut-hitbox"
-            type="button"
-            :data-quantile="point.quantile"
-            :style="cutHitboxStyle(point, index)"
-            :aria-label="`Part cumulée : ${point.quantileLabel}`"
-            @mouseenter="selectCut(point.quantile)"
-            @mouseleave="clearCut(point.quantile)"
-            @focus="selectCut(point.quantile)"
-            @blur="clearCut(point.quantile)"
-            @click="selectCut(point.quantile)"
-          />
-        </div>
-        <CahierFigureTooltip
-          v-if="selectedCut"
-          class="access-ramp-tooltip cahier-figure-tooltip--chart"
-          :title="`Part cumulée : ${selectedCut.quantileLabel}`"
-          :rows="cutTooltipRows(selectedCut)"
-          :anchor="tooltipAnchor"
-          aria-live="polite"
-        />
-      </div>
-    </template>
-    <CahierFigureLegend :entries="legend" label="Séries comparées" />
   </CahierFigureFrame>
 </template>
 

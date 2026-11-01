@@ -314,26 +314,6 @@ export function nuageMobilite(payload: Payload, territoire: string): PointNuageM
   }))
 }
 
-/**
- * The flagship's snapshot stamp (ADR-0012) — the Mobilité block's freshness
- * promise, distinct from the light themes' weekly vintage chips: "Analyse
- * calculée le [date] — se rafraîchit sur un rythme lent". The date is the
- * snapshot's publication date (the run that computed the analysis); it is read
- * from the shared vintages table (mobilite_snapshot) and, in its absence, from
- * any Mobilité Story row's own stamp. Null only when the payload carries no
- * Mobilité at all — the block never invents a stamp.
- */
-export function estampilleSnapshot(payload: Payload): string | null {
-  const snap = payload.vintages?.find((v) => v.id === 'mobilite_snapshot')
-  if (snap?.date_publication) {
-    return `Analyse calculée le ${formaterDateFrancaise(snap.date_publication)} — se rafraîchit sur un rythme lent`
-  }
-  const histoire = payload.histoires.find((h) => h.theme === 'mobilite')
-  if (histoire?.theme === 'mobilite' && histoire.vintage_date_publication) {
-    return `Analyse calculée le ${formaterDateFrancaise(histoire.vintage_date_publication)} — se rafraîchit sur un rythme lent`
-  }
-  return null
-}
 
 /** One point of the story chart's context cloud (ADR-0011). */
 export interface PointNuage {

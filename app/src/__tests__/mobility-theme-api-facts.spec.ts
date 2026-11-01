@@ -228,8 +228,9 @@ describe('SQL Mobilité response to Variant E facts', () => {
       .toMatchObject({ value: 123, provenance: { source: 'SQL mobility', referenceDate: null } })
     expect(facts.mobility.indicators.find((fact) => fact.key === 'reseaux_par_habitant'))
       .toMatchObject({ detail: 't_km_1000', value: 456, unit: 'km / 1 000 habitants' })
-    expect(facts.mobility.losses.diversityWalkTransit.value).toBeNull()
-    expect(facts.mobility.losses.diversityBike.value).toBeNull()
+    // #627 - the retired div_loss readings no longer resolve: the MobilityFacts
+    // seam carries no losses field to revive.
+    expect('losses' in facts.mobility).toBe(false)
   })
   it('keeps the retired Mobility reading unavailable on the actual native resource catalogue', () => {
     const resources = nativeResources('mobilite')
@@ -238,8 +239,15 @@ describe('SQL Mobilité response to Variant E facts', () => {
     const facts = mobilityFactsFromThemeApi(payload, '22001', {
       theme_id: 'mobilite', resource_reads: [],
     })
-    expect(facts.mobility.losses.diversityWalkTransit.value).toBeNull()
-    expect(facts.mobility.losses.diversityBike.value).toBeNull()
+    // #627 - no reading is fabricated from the retired subgroup declaration:
+    // the losses seam itself is gone, and stale rows in the response never
+    // revive it through the semantic path.
+    expect('losses' in facts.mobility).toBe(false)
+    const withStaleRows = mobilityFactsFromThemeApi(payload, '22001', {
+      theme_id: 'mobilite', resource_reads: [],
+      readings: [{ story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', div_loss_t: 3, div_loss_b: 1 }],
+    })
+    expect('losses' in withStaleRows.mobility).toBe(false)
   })
 
   it('combines regional motorisation with a synthetic producer-derived curve without rendering its named reference', () => {
@@ -470,8 +478,10 @@ describe('SQL Mobilité response to Variant E facts', () => {
     data.indicators = []
     const facts = mobilityFacts(data, '22001')
     expect(facts.mobility.indicators).toHaveLength(0)
-    expect(facts.mobility.losses.diversityWalkTransit.value).toBeNull()
-    expect(mobilityFactsFromThemeApi(payload, '22001', null).mobility.losses.diversityWalkTransit.value).toBeNull()
+    // #627 - with no SQL values, nothing fills from the committed history:
+    // the retired losses seam is gone entirely.
+    expect('losses' in facts.mobility).toBe(false)
+    expect(mobilityFactsFromThemeApi(payload, '22001', null).mobility.indicators).toHaveLength(0)
   })
   it('accepts immutable owned-series lineage using source_name rather than scalar name', () => {
     const lineage = { revision_id: 'rev-1', source_id: 'mobilite_snapshot', vintage_id: 'v1',
@@ -488,14 +498,19 @@ describe('SQL Mobilité response to Variant E facts', () => {
       .find((fact) => fact.key === 'raccordement_courbe')?.provenance?.lineage?.revision_hash).toBe('hash-1')
   })
   it('ignores excluded legacy BPE and building-access evidence on the semantic Mobilité path', () => {
+    // #627 - the excluded envelopes are no longer parsed at all: even a
+    // response that carries them resolves no retired evidence field.
     const data = { ...response(), bpe_profile_evidence: { sources, classes:
       ['acces-pied-tc', 'velo-compense', 'voiture-requise', 'inaccessible-20-minutes'].map(
         (class_key) => ({ class_key, label: class_key, count: 0, universe_count: 0, exemplar: null }),
-      ) } }
+      ) },
+      building_access: { publication_id: 'legacy', availability: 'complete', sources,
+        distribution: [], ramp: [], presentation: { building_grid: {}, building_ramp: {} } } }
     const facts = mobilityFacts(data, '22001')
-    expect(facts.mobility.bpeAccess).toMatchObject({ availability: 'absent', profiles: [] })
-    expect(facts.mobility.buildingDistribution).toBeNull()
-    expect(facts.mobility.accessRamp).toBeNull()
+    expect(facts.mobility.indicators).toHaveLength(2)
+    expect('bpeAccess' in facts.mobility).toBe(false)
+    expect('buildingDistribution' in facts.mobility).toBe(false)
+    expect('accessRamp' in facts.mobility).toBe(false)
   })
   it('matches a profile comparison only to the same detail and sex facet', () => {
     const data = response()

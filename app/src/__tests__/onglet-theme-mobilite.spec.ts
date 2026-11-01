@@ -4,7 +4,6 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import GraphiqueDistributionMobilite from '../components/fiche/GraphiqueDistributionMobilite.vue'
 import FigureOffreCyclable from '../components/fiche/FigureOffreCyclable.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
@@ -17,6 +16,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import type { Payload, ThemeMetadata } from '../payload/types'
+import { sousGroupesFiche } from '../fiche/content/ficheGrammar'
 
 /**
  * OngletTheme — the Mobilité block through the SHARED subgroup anatomy
@@ -65,31 +65,19 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Mobilité')
-    expect(wrapper.find('.sous-groupe-titre').text()).toBe('L’accès aux services')
+    // #627 - the acces-aux-services subgroup has neither figures nor a
+    // reading any more: on the shared path it stays silent (the honest
+    // absent-data state, never an empty shell), so the first rendered
+    // subgroup is the retained partage one.
+    expect(wrapper.find('[data-groupe="acces-aux-services"]').exists()).toBe(false)
+    expect(wrapper.find('.sous-groupe-titre').text()).toBe('Le partage de l’espace public')
     const figures = wrapper
       .findAll('.grille-indicateurs .figure-indicateur')
       .map((f) => f.attributes('data-clef'))
+    // #627 - the acces-aux-services unit keeps its structural identity but
+    // renders no figures (the production AEDAR evidence owns its body); the
+    // retained subgroups render their grammar figures in app order.
     expect(figures).toEqual([
-      'iso_alimentation',
-      'iso_sante',
-      'iso_administration',
-      'iso_ecole',
-      'iso_banque',
-      'share_food_t',
-      'share_food_b',
-      'share_food_c',
-      'share_health_t',
-      'share_health_b',
-      'share_health_c',
-      'share_admin_t',
-      'share_admin_b',
-      'share_admin_c',
-      'share_school_t',
-      'share_school_b',
-      'share_school_c',
-      'share_bank_t',
-      'share_bank_b',
-      'share_bank_c',
       'offre_cyclable',
       'reseaux',
       'reseaux_par_habitant',
@@ -99,22 +87,25 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
       'bornes_recharge',
       'offre_tc',
     ])
+    expect(wrapper.find('[data-groupe="acces-aux-services"] .figure-indicateur').exists()).toBe(false)
   })
 
   it('preserves the production compact figure family for cycling offer', async () => {
+    // #869 — the served public/data projection strips the subgroup figures
+    // (app-owned since ficheGrammar took the presentation); #627 retires the
+    // acces-aux-services figure with the legacy surface. The production
+    // compact figure now lives in the app grammar alone.
     const publishedMetadata = JSON.parse(readFileSync(
       join(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8',
     )) as ThemeMetadata
-    const canonicalMetadata = JSON.parse(readFileSync(
-      join(process.cwd(), '../pipeline/inst/extdata/theme-metadata/theme_mobilite.json'), 'utf8',
-    )) as ThemeMetadata
-    const productionFigure = publishedMetadata.subgroups.find(
-      (subgroup) => subgroup.key === 'partage-de-lespace-public',
-    )?.figure
-    expect(productionFigure).toEqual({ family: 'composition', indicator: 'offre_cyclable' })
-    expect(canonicalMetadata.subgroups.find(
-      (subgroup) => subgroup.key === 'partage-de-lespace-public',
-    )?.figure).toEqual(productionFigure)
+    for (const subgroup of publishedMetadata.subgroups) {
+      expect(subgroup.figure, `${subgroup.key} served figure`).toBeUndefined()
+    }
+    const grammarFigure = sousGroupesFiche('mobilite')
+      .find((subgroup) => subgroup.key === 'partage-de-lespace-public')?.figure
+    expect(grammarFigure).toEqual({ family: 'composition', indicator: 'offre_cyclable' })
+    expect(sousGroupesFiche('mobilite')
+      .find((subgroup) => subgroup.key === 'acces-aux-services')?.figure).toBeUndefined()
 
     const wrapper = await monter('22001', {
       ...payloadMobilite,
@@ -123,10 +114,10 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
 
     const compacte = wrapper.find('.sous-groupe[data-groupe="partage-de-lespace-public"] .figure-compacte')
     expect(compacte.exists()).toBe(true)
-    expect(compacte.attributes('data-famille')).toBe(productionFigure!.family)
     expect(compacte.attributes('data-famille')).toBe('composition')
     expect(compacte.find('.figure-indicateur').attributes('data-clef')).toBe('offre_cyclable')
     expect(wrapper.findAll('.figure-indicateur[data-clef="offre_cyclable"]')).toHaveLength(1)
+    expect(wrapper.find('.sous-groupe[data-groupe="acces-aux-services"] .figure-compacte').exists()).toBe(false)
   })
 
   it('reads the factual public-transport framing from retained producer metadata', async () => {
@@ -159,38 +150,19 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     expect(wrapper.text()).not.toContain('90 minutes')
   })
 
-  it('labels say « à pied ou en transports en commun », NEVER « sans voiture » — the reading is the one exception', async () => {
+  it('labels say « à pied ou en transports en commun », NEVER « sans voiture » — no exception any more', async () => {
     const wrapper = await monter('22001')
 
     const libelles = wrapper.findAll('.figure-indicateur-libelle').map((l) => l.text())
     for (const libelle of libelles) {
       expect(libelle).not.toContain('sans voiture')
     }
-    expect(libelles.some((l) => l.includes('à pied ou en transports en commun'))).toBe(true)
     expect(libelles).toContain('Voitures par ménage')
     expect(libelles).toContain('Bornes de recharge pour véhicules électriques')
-    // `nb_buildings` QUITTE le payload (issue #368, décision #196) — la
-    // « Taille » n'est plus une figure de la fiche
+    // #627 - the retired accessibility figures (iso_*/share_*/avg_*) never
+    // render on the shared path, and `nb_buildings` stays out of the fiche.
     expect(libelles).not.toContain('Bâtiments résidentiels analysés')
-  })
-
-  it('shows a rank-in-context chip per isolation part (a commune reads its EPCI rank)', async () => {
-    const wrapper = await monter('22001')
-
-    const alimentation = wrapper.find('.figure-indicateur[data-clef="iso_alimentation"]')
-    // 22001 : 27e/38 dans son EPCI — iso_alimentation : moins = mieux → glyphe ▼ (#371)
-    expect(alimentation.find('.puce-rang').text()).toBe("▼ 27e/38 de l'EPCI")
-    const grille = wrapper
-      .findAll('.figure-indicateur')
-      .filter((f) =>
-        ['iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque'].includes(
-          f.attributes('data-clef') ?? '',
-        ),
-      )
-    expect(grille).toHaveLength(5)
-    for (const figure of grille) {
-      expect(figure.find('.puce-rang').exists()).toBe(true)
-    }
+    expect(wrapper.text()).not.toContain('Part des bâtiments sans accès')
   })
 
   it('renders the multi-detail figures with their own detail labels (voitures ×3, reseaux ×3)', async () => {
@@ -217,102 +189,22 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     expect(voitures.text()).toContain('Ménages avec 2 voitures ou plus')
   })
 
-  it('stamps the block with the snapshot estampille — distinct from the weekly chips', async () => {
+  it('stamps the block with no snapshot estampille — the analysis retired with the legacy surface', async () => {
     const wrapper = await monter('22001')
 
-    const estampille = wrapper.find('.estampille-snapshot')
-    expect(estampille.exists()).toBe(true)
-    expect(estampille.text()).toBe(
-      'Analyse calculée le 6 août 2026 — se rafraîchit sur un rythme lent',
-    )
-    expect(estampille.text()).not.toContain('semaine')
-    expect(estampille.text()).not.toContain('actualis')
+    // #627 - the slow-clock stamp described the retired snapshot analysis;
+    // the production AEDAR evidence carries its own provenance and the
+    // retained Mobilité facts use their ordinary vintage chips.
+    expect(wrapper.find('.estampille-snapshot').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Analyse calculée le')
   })
 })
 
-describe('OngletTheme — the reading slot (the app template + the flagship figure)', () => {
-  it('renders the reading from the app template with the resolved div_loss', async () => {
-    const wrapper = await monter('22001')
-
-    const texte = wrapper.find('.lecture-texte')
-    expect(texte.exists()).toBe(true)
-    expect(texte.text()).toContain('Sans voiture, 38 types de services disparaissent')
-    expect(texte.text()).toContain("de l’accès quotidien de Commune A1")
-    // the template's link renders as a RouterLink — vers Sources depuis la
-    // bascule #410 (Méthodes est retirée, la provenance vit sur /sources)
-    const liens = wrapper
-      .findAllComponents(RouterLinkStub)
-      .map((l) => l.props('to'))
-    expect(liens).toContain('/sources')
-  })
-
-  it('feeds the reading’s figure the distribution (signature), the median and the same-scale cloud', async () => {
-    const wrapper = await monter('22001')
-
-    const graphique = wrapper.findComponent(GraphiqueDistributionMobilite)
-    expect(graphique.exists()).toBe(true)
-    expect(graphique.props('mediane')).toBe(38)
-    expect(graphique.props('medianeVelo')).toBe(38)
-    expect(graphique.props('modes')).toEqual({ t: 'à pied ou en transports en commun', b: 'à vélo' })
-    expect(graphique.props('distribution')).toMatchObject({ min: 28, max: 47 })
-    expect(graphique.props('distribution')?.dec).toHaveLength(10)
-    expect(graphique.props('nuage')).toHaveLength(2)
-    expect(graphique.props('nuage')).toMatchObject([
-      { nom: 'Commune A1', divLoss: 38 },
-      { nom: 'Commune D', divLoss: 24 },
-    ])
-    // accessible text — the reading never depends on canvas alone (WCAG 2.2)
-    const aria = graphique.find('.graphique-distribution-mobilite-canvas').attributes('aria-label')
-    expect(aria).toContain('médiane 38')
-  })
-
-  it('names the comparison under the chart — current territory + clickable container', async () => {
-    const wrapper = await monter('22001')
-
-    const contexte = wrapper.find('.lecture-contexte')
-    expect(contexte.text()).toContain('Commune A1')
-    expect(contexte.text()).toContain('des communes de')
-    expect(contexte.find('.lecture-conteneur').text()).toBe('EPCI X')
-  })
-
-  it('shows the vélo salience territory’s own row and the shared distribution chart', async () => {
-    const wrapper = await monter('22002')
-
-    // the same app template reads the row's own div_loss_t (the resolved
-    // vélo reading), while both mode marks use the same distribution figure.
-    expect(wrapper.find('.lecture-texte').text()).toContain(
-      'Sans voiture, 24 types de services disparaissent',
-    )
-    const graphique = wrapper.findComponent(GraphiqueDistributionMobilite)
-    expect(graphique.exists()).toBe(true)
-    expect(graphique.props('mediane')).toBe(24)
-    expect(graphique.props('medianeVelo')).toBe(13)
-  })
-
-  it('renders the reading for the région — the default Story serves the région fiche (ADR-0012)', async () => {
-    const wrapper = await monter('53')
-
-    expect(wrapper.find('.lecture-texte').text()).toContain(
-      'Sans voiture, 29 types de services disparaissent',
-    )
-    const graphique = wrapper.findComponent(GraphiqueDistributionMobilite)
-    expect(graphique.props('nuage').map((p: { territoire: string }) => p.territoire).sort()).toEqual([
-      '22001',
-      '22002',
-    ])
-  })
-
-  it('cites the reading’s own vintage stamp as its source (issue #74)', async () => {
-    const wrapper = await monter('22001')
-
-    const source = wrapper.find('.lecture-source')
-    expect(source.exists()).toBe(true)
-    expect(source.text()).toContain('Source')
-    expect(source.text()).toContain('Lusk')
-    expect(source.text()).toContain('réf. 28 févr. 2026')
-  })
-})
-
+// #627 - the reading slot for Mobilité retired with the « Vingt minutes
+// sans voiture » snapshot: the app grammar declares no reading for the theme
+// and the production cahier owns its editorial body. The reading slot
+// machinery itself stays covered by the Démographie/Milieux/Économie/
+// Habitat OngletTheme specs.
 describe('FigureOffreCyclable — sa présentation spécialisée reste testée hors du binding fiche', () => {
   it("renders the headline « X % de l'infrastructure routière » — computed app-side from the payload rows", async () => {
     // la région 53 : 4 913,233 km ÷ 101 353,736 km ≈ 4,8 % (l'e2e #231)
@@ -378,6 +270,6 @@ describe('OngletTheme — the Mobilité block, honest edge cases', () => {
 
     expect(wrapper.findAll('.figure-indicateur')).toHaveLength(0)
     expect(wrapper.find('.sous-groupe-lecture').exists()).toBe(false)
-    expect(wrapper.find('.estampille-snapshot').exists()).toBe(true)
+    expect(wrapper.find('.estampille-snapshot').exists()).toBe(false)
   })
 })

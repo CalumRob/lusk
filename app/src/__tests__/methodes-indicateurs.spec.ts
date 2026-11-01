@@ -113,20 +113,38 @@ describe('registre Méthodes — la forme exposée au contrat de parité', () =>
       expect(Array.isArray(themeMethodes.stories)).toBe(true)
     }
   })
-
-  it('chaque thème construit documente au moins une Story', () => {
+  it('#627 - chaque thème qui documente une Story en documente au moins une', () => {
     for (const theme of THEMES_CONSTRUITS) {
+      // #627 - Mobilité's Stories retired with the accessibility snapshot:
+      // a theme may legitimately document no Story any more.
+      if (theme === 'mobilite') {
+        expect(THEMES_METHODES.mobilite.stories, '« mobilite » ne doit plus documenter de Story').toEqual([])
+        continue
+      }
       expect(THEMES_METHODES[theme].stories.length, `« ${theme} » sans Story`).toBeGreaterThan(0)
     }
   })
 })
 
 describe('registre Méthodes — la parité avec les indicateurs de la payload', () => {
-  it('couvre chaque clé d\u2019indicateur des thèmes construits', () => {
+  it('#627 - couvre chaque clé d’indicateur retenue des thèmes construits', () => {
+    // The committed public/data payloads still carry the excluded legacy
+    // accessibility rows (producer artifacts); the app registry documents
+    // only the retained identities, so parity holds on the retained set.
+    const RETIRED_MOBILITE = new Set([
+      'nb_buildings', 'tot_loss_t', 'tot_loss_b',
+      'iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque',
+      'avg_tot_car', 'avg_tot_b', 'avg_tot_t', 'avg_div_car', 'avg_div_b', 'avg_div_t',
+      'div_loss_t', 'div_loss_b',
+      'share_food_t', 'share_food_b', 'share_food_c', 'share_health_t', 'share_health_b', 'share_health_c',
+      'share_admin_t', 'share_admin_b', 'share_admin_c', 'share_school_t', 'share_school_b', 'share_school_c',
+      'share_bank_t', 'share_bank_b', 'share_bank_c',
+    ])
     for (const theme of THEMES_CONSTRUITS) {
       const clefs = clefsEtUnitesCommites(theme)
       expect(Object.keys(clefs).length, `« ${theme} » sans indicateurs commis`).toBeGreaterThan(0)
       for (const clef of Object.keys(clefs)) {
+        if (theme === 'mobilite' && RETIRED_MOBILITE.has(clef)) continue
         expect(
           THEMES_METHODES[theme].indicateurs[clef],
           `clé « ${theme}.${clef} » sans définition de registre`,
@@ -134,14 +152,21 @@ describe('registre Méthodes — la parité avec les indicateurs de la payload',
       }
     }
   })
-
-  it('porte les unités ground truth de la payload, clé par clé', () => {
+  it('#627 - porte les unités ground truth de la payload, clé retenue par clé retenue', () => {
+    const RETIRED_MOBILITE = new Set([
+      'nb_buildings', 'tot_loss_t', 'tot_loss_b',
+      'iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque',
+      'avg_tot_car', 'avg_tot_b', 'avg_tot_t', 'avg_div_car', 'avg_div_b', 'avg_div_t',
+      'div_loss_t', 'div_loss_b',
+      'share_food_t', 'share_food_b', 'share_food_c', 'share_health_t', 'share_health_b', 'share_health_c',
+      'share_admin_t', 'share_admin_b', 'share_admin_c', 'share_school_t', 'share_school_b', 'share_school_c',
+      'share_bank_t', 'share_bank_b', 'share_bank_c',
+    ])
     for (const theme of THEMES_CONSTRUITS) {
       const clefs = clefsEtUnitesCommites(theme)
       for (const [clef, unite] of Object.entries(clefs)) {
-        expect(THEMES_METHODES[theme].indicateurs[clef].unite, `unité « ${theme}.${clef} »`).toBe(
-          unite,
-        )
+        if (theme === 'mobilite' && RETIRED_MOBILITE.has(clef)) continue
+        expect(THEMES_METHODES[theme].indicateurs[clef].unite, `unité « ${theme}.${clef} »`).toBe(unite)
       }
     }
   })
@@ -207,38 +232,12 @@ describe('registre Méthodes — la parité avec les Stories de la payload', () 
     expect(THEMES_METHODES.economie.stories.find((s) => s.clef === 'ce-que-la-bretagne-abrite')).toBeUndefined()
     expect(commune?.definition).toMatch(/retirée|retiré/)
   })
+  // #627 - the Mobilité Stories (vingt-minutes, vélo) retired with the
+  // accessibility snapshot: the registry no longer documents them.
 
-  it('la mobilité documente le modèle CONTEXT.md — la Story par défaut et sa candidate saillante', () => {
-    const clefs = new Set(THEMES_METHODES.mobilite.stories.map((s) => s.clef))
-    expect(clefs).toEqual(
-      new Set(['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve']),
-    )
+  // #627 - the snapshot's slow-clock documentation retired with the
+  // analysis surface; the production AEDAR evidence owns its provenance.
 
-    // les deux Stories sont publiées — le flagship est la Story par défaut,
-    // la candidate « Ce que le vélo préserve » se déclenche par la saillance
-    for (const story of THEMES_METHODES.mobilite.stories) {
-      expect(story.statut, `« mobilite.${story.clef} » non publiée`).toBe('publiee')
-    }
-  })
-
-  it('documente l\u2019horloge lente comme fait de première classe (ADR-0012)', () => {
-    const horloge = THEMES_METHODES.mobilite.horlogeLente
-    expect(horloge, '« mobilite » sans horloge lente documentée').toBeDefined()
-
-    // ce que le flagship consomme, en une phrase — jamais vide
-    expect(horloge!.consommation.length).toBeGreaterThan(20)
-
-    // chaque entrée : ce qui bouge, à quelle fréquence, la référence figée
-    expect(horloge!.entrees.length).toBeGreaterThan(0)
-    for (const entree of horloge!.entrees) {
-      expect(entree.donnee.length, 'entrée sans donnée').toBeGreaterThan(0)
-      expect(entree.frequence.length, 'entrée sans fréquence').toBeGreaterThan(0)
-      expect(entree.reference.length, 'entrée sans référence').toBeGreaterThan(0)
-    }
-
-    // le déclencheur de rebuild — quand le thème se recalcule
-    expect(horloge!.declencheur.length).toBeGreaterThan(20)
-  })
 
   it('le milieux documente le modèle CONTEXT.md — Story unique, les quatre lectures, les trois horloges', () => {
     // la Story unique « Se densifier, s'étaler, ou s'en aller » (ADR-0014,
@@ -433,17 +432,8 @@ describe('registre Méthodes — le sens des classements (ADR-0015, #367)', () =
         'milieux.artif_par_habitant',
         'milieux.conso_enaf_annuel',
         'milieux.trajectoire_artif_par_habitant',
-        'mobilite.div_loss_b',
-        'mobilite.div_loss_t',
-        'mobilite.iso_administration',
-        'mobilite.iso_alimentation',
-        'mobilite.iso_banque',
-        'mobilite.iso_ecole',
-        'mobilite.iso_sante',
         'mobilite.places_stationnement_voiture_1000',
         'mobilite.surface_reseaux_routiers',
-        'mobilite.tot_loss_b',
-        'mobilite.tot_loss_t',
       ].sort(),
     )
   })
@@ -491,20 +481,8 @@ describe('registre Méthodes — le sens des classements (ADR-0015, #367)', () =
     expect(THEMES_METHODES.mobilite.indicateurs.bornes_ev_par_station_service).toBeDefined()
     expect(THEMES_METHODES.mobilite.indicateurs.stationnement_velo_par_voiture).toBeDefined()
 
-    // les lectures perte de diversité / perte totale, valeurs d'indicateurs du sous-groupe
-    for (const clef of ['div_loss_t', 'div_loss_b', 'tot_loss_t', 'tot_loss_b']) {
-      expect(THEMES_METHODES.mobilite.indicateurs[clef], `« mobilite.${clef} »`).toBeDefined()
-    }
-    // tot_loss compte le VOLUME d'accès perdu (jamais des types de services) :
-    // la médiane sur les bâtiments, classée à l'envers (moins d'accès perdus = mieux)
-    for (const clef of ['tot_loss_t', 'tot_loss_b']) {
-      const totLoss = THEMES_METHODES.mobilite.indicateurs[clef]
-      expect(totLoss!.unite, `« mobilite.${clef} » sans unité de volume`).toBe('accès perdus')
-      expect(totLoss!.direction, `« mobilite.${clef} » non classée à l'envers`).toBe(
-        'moins-est-mieux',
-      )
-      expect(totLoss!.definition).toMatch(/médiane|médian/)
-    }
+    // #627 - the retired div_loss/tot_loss lecture indicators are gone from
+    // the registry (the snapshot surface retired).
     // distribution_dpe est une composition en sept parts classée sur la part
     // F/G — la même valeur que part_passoires, jamais « plus = mieux »
     const dpe = THEMES_METHODES.habitat.indicateurs.distribution_dpe

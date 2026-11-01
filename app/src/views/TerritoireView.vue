@@ -533,13 +533,19 @@ const classesFond = computed(() =>
  * Mobilité's production cahier owns the editorial body whenever its theme is selected.
  */
 const mobiliteEditorialeActive = productionMobilite
-const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
-const buildingStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const mobilityFocal = ref<TerritoryFacts | null>(null)
 const mobilityComparisonFacts = ref<TerritoryFacts | null>(null)
 const mobilityCurveComparison = ref<SelectedTrajectoryComparison | null>(null)
 const mobilityComparisonStatus = ref<'loading' | 'ready' | 'error'>('loading')
-const retryMobilityFacts = ref(0)
+/**
+ * #627 correction — retained Mobilité semantic facts keep their own scoped
+ * status/retry, independent of AEDAR (which has its own status/retry) and of
+ * the retired accessibility body. The cahier's retained units read these
+ * facts through the production focal acquisition below; an initial failure
+ * must stay visibly retryable even while AEDAR renders normally.
+ */
+const statutFaitsMobilite = ref<'loading' | 'ready' | 'error'>('loading')
+const retryFaitsMobilite = ref(0)
 let focalRequestSequence = 0
 let comparisonRequestSequence = 0
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -549,19 +555,18 @@ let lastFocalModel: object | null = null
 let lastComparisonKey: string | null = null
 let lastComparisonModel: object | null = null
 
-watch([productionMobilite, typeRoute, idRoute,
-  () => referenceTerritoire.reference.value, retryMobilityFacts], (_values, _oldValues, onCleanup) => {
+watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
+  () => referenceTerritoire.reference.value], (_values, _oldValues, onCleanup) => {
   if (!productionMobilite.value) return
   const reference = referenceTerritoire.reference.value
-  const key = `${typeRoute.value}/${idRoute.value}/${retryMobilityFacts.value}`
+  const key = `${typeRoute.value}/${idRoute.value}/${retryFaitsMobilite.value}`
   if (reference && lastFocalKey === key && lastFocalModel === reference) return
   const request = ++focalRequestSequence
-  statutAccesApi.value = 'loading'
+  statutFaitsMobilite.value = 'loading'
   mobilityFocal.value = null
   mobilityComparisonFacts.value = null
   mobilityCurveComparison.value = null
   mobilityComparisonStatus.value = 'loading'
-  buildingStatus.value = 'loading'
   if (!typeValide.value || !reference || !payloadPourRendu.value) {
     lastFocalKey = null
     lastFocalModel = null
@@ -595,14 +600,12 @@ watch([productionMobilite, typeRoute, idRoute,
     mobilityComparisonFacts.value = combined
     mobilityCurveComparison.value = combined.mobility.selectedTrajectoryComparison ?? null
     mobilityComparisonStatus.value = data.comparison_error ? 'error' : 'ready'
-    statutAccesApi.value = 'ready'
-    buildingStatus.value = 'ready'
+    statutFaitsMobilite.value = 'ready'
     settled = true
   }).catch(() => {
     settled = true
     if (request === focalRequestSequence) {
-      statutAccesApi.value = 'error'
-      buildingStatus.value = 'error'
+      statutFaitsMobilite.value = 'error'
       mobilityComparisonStatus.value = 'error'
     }
   })
@@ -668,13 +671,23 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
     })
   }, { immediate: true })
 
-function rechargerMobilityFacts(): void {
+/**
+ * #627 correction — retry the retained Mobilité semantic facts themselves.
+ * Invalidating the (territory, mobilite) cache entry and bumping the focal
+ * counter re-runs the production focal watcher below, which re-acquires the
+ * semantic batch through the shared cache (request deduplication and the
+ * route/theme generation fences stay intact). AEDAR keeps its own separate
+ * status/retry and is never re-read by this action; the facts/comparison
+ * errors and their retries stay distinct.
+ */
+function rechargerFaitsMobilite(): void {
   cacheAcquisition.invalidate(typeRoute.value, idRoute.value, 'mobilite')
-  retryMobilityFacts.value += 1
+  retryFaitsMobilite.value += 1
   // Mobilité facts are consumed by both the shared theme acquisition state
   // and the production cahier; retry both consumers through the same cache.
   retryAcquisition.value += 1
 }
+
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
     !productionMobilite.value ||
@@ -815,6 +828,17 @@ watch(
         <p>Les indicateurs de ce thème ne sont pas disponibles.</p>
         <button type="button" @click="retryAcquisitionTheme">Réessayer</button>
       </div>
+      <!-- #627 correction : les faits sémantiques Mobilité retenus gardent
+           leur propre échec réessayable, visible même sans focal — AEDAR
+           (réussi ou réessayé séparément) reste affiché en dessous. -->
+      <div
+        v-else-if="productionMobilite && statutFaitsMobilite === 'error'"
+        class="etat-erreur"
+        role="alert"
+      >
+        <p>Les indicateurs de ce thème ne sont pas disponibles.</p>
+        <button type="button" @click="rechargerFaitsMobilite">Réessayer</button>
+      </div>
       <div
         v-else-if="statutComparaison === 'error' ||
           (productionMobilite && mobilityFocal && mobilityComparisonStatus === 'error')"
@@ -859,8 +883,6 @@ watch(
             <!-- The production cahier owns Mobilité's editorial body and AEDAR evidence. -->
             <ProductionMobilite v-if="productionMobilite && contenuMobilite && paginationCahier"
               :content="contenuMobilite" :pagination="paginationCahier" :comparison-options="optionsComparaison"
-              :access-status="statutAccesApi" :retry-access="rechargerMobilityFacts"
-              :building-status="buildingStatus" :retry-building="rechargerMobilityFacts"
               :aedar-data="aedarData" :aedar-status="aedarStatus" :retry-aedar="retryAedar"
               :aedar-reference-territoire="aedarReferenceTerritoire" :aedar-reference-data="aedarReferenceData"
               :aedar-reference-status="aedarReferenceStatus" />

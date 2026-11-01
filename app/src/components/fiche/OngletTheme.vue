@@ -37,7 +37,7 @@ import { LIBELLE_HANDOFF, handoffExploration, passarellesLecture } from '@/fiche
 import type { PassarelleLecture } from '@/fiche/explorationHandoff'
 import { NOMS_THEMES } from '@/fiche/onglets'
 import type { DirectionRang } from '@/methodes/indicateurs'
-import { descriptionNuage, estampilleSnapshot, trouverTerritoire } from '@/payload/selectors'
+import { descriptionNuage, trouverTerritoire } from '@/payload/selectors'
 import type { FamilleFigure, Indicateur, Payload, Theme, TrajectoryMetadata } from '@/payload/types'
 
 const props = defineProps<{
@@ -106,17 +106,6 @@ const nomTerritoire = computed(
   () => trouverTerritoire(props.payload, props.territoire)?.nom ?? props.territoire,
 )
 
-/**
- * The flagship's snapshot stamp (ADR-0012) — the honest freshness claim,
- * Mobilité's ALONE (issue #504): the payload store eagerly loads every theme
- * and the selector reads only Mobilité snapshot facts, so a Démographie or
- * Habitat tab would claim the flagship's slow clock unless the stamp is gated
- * on the tab's own theme.
- */
-const estampille = computed(() =>
-  props.theme === 'mobilite' ? estampilleSnapshot(props.payload) : null,
-)
-
 /** The chart's context subtitle — the current territory vs its same-scale group (ADR-0011). */
 const descriptionNuageComputed = computed(() =>
   descriptionNuage(props.payload, props.territoire),
@@ -133,7 +122,7 @@ function figuresGrille(groupe: SousGroupeRenduComplet) {
 /** Prefer the verified page contract; otherwise use app presentation or native shape. */
 function familleFigure(clef: string): FamilleFigure {
   if (metadataVerified.value) return metadata.value?.indicator_pages?.[clef]?.family ?? 'scalar'
-  const ficheFigure = sousGroupesFiche(props.theme).find((groupe) => groupe.figure.indicator === clef)?.figure
+  const ficheFigure = sousGroupesFiche(props.theme).find((groupe) => groupe.figure?.indicator === clef)?.figure
   if (ficheFigure) return ficheFigure.family
   const shapes = nativeContract(clef)?.shapes ?? []
   if (shapes.includes('ordered_series')) return 'trajectory'
@@ -472,8 +461,6 @@ const lignesReseaux = computed(
         </div>
       </section>
     </template>
-
-    <p v-if="estampille" class="estampille-snapshot">{{ estampille }}</p>
   </article>
 </template>
 

@@ -11,7 +11,7 @@ import type {
   CahierFigureAxisTick,
   CahierTooltipRow,
 } from '@/fiche/cahierFigureGrammaire'
-import type { ContentModeFacts } from '@/fiche/content/themeContent'
+import type { ContentFact } from '@/fiche/content/themeContent'
 import type { MobiliteAccessMode } from '@/fiche/content/territoryFacts'
 import { MOBILITE_INACCESSIBLE_LABEL, MOBILITE_MODE_LABELS } from '@/fiche/content/territoryFacts'
 import CahierFigureAxes from './CahierFigureAxes.vue'
@@ -32,10 +32,10 @@ type SummaryPlotGroup = {
 const props = defineProps<{
   metric: SummaryPlotMetric
   axisTitle: string
-  values: ContentModeFacts
+  values: Record<'car' | 'bike' | 'walkTransit', ContentFact>
   territoryName: string
   typeCount: number | null
-  inaccessibleTypes?: ContentModeFacts['car']
+  inaccessibleTypes?: Record<'car' | 'bike' | 'walkTransit', ContentFact>['car']
   showGroupLabels: boolean
   modeLabels?: Readonly<Record<MobiliteAccessMode, string>>
 }>()

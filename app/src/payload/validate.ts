@@ -2306,9 +2306,6 @@ function validerSubventionsProgrammes(
   runReport: unknown
   vintages?: unknown
   programmes?: unknown
-  profilsAccesBpe?: unknown
-  distributionAccesBatiments?: unknown
-  rampeAccesBatiments?: unknown
 }): Payload {
   const territoires = validerTerritoires(documents.territoires, 'territoires.json')
   const territoryMetadata = documents.territoiresMetadata === undefined || documents.territoiresMetadata === null
@@ -2321,22 +2318,9 @@ function validerSubventionsProgrammes(
   const runReport = validerRapportRun(documents.runReport, 'run-report.json')
   const vintages = validerVintages(documents.vintages ?? null, 'vintages.json')
   const programmes = validerProgrammes(documents.programmes ?? null, 'programmes.json', territoires)
-  const profilsAccesBpe = validerProfilsAccesBpe(
-    documents.profilsAccesBpe ?? null,
-    'profils_acces_bpe.json',
-    territoires,
-  )
-  const distributionAccesBatiments = validerDistributionAccesBatiments(
-    documents.distributionAccesBatiments ?? null,
-    'distribution_acces_batiments.json',
-    territoires,
-  )
-  const rampeAccesBatiments = validerRampeAccesBatiments(
-    documents.rampeAccesBatiments ?? null,
-    'rampe_acces_batiments.json',
-    territoires,
-  )
-
+  // #627 - the retired BPE profile / building distribution / access-ramp
+  // documents no longer cross the browser payload seam; their row validators
+  // remain for the per-territory model-artifact coverage.
   return {
     territoires,
     territoryMetadata,
@@ -2346,9 +2330,6 @@ function validerSubventionsProgrammes(
     runReport,
     vintages,
     programmes,
-    profilsAccesBpe,
-    distributionAccesBatiments,
-    rampeAccesBatiments,
   }
 }
 

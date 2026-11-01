@@ -78,23 +78,15 @@ describe('chargerPayload — the single seam', () => {
     expect(payload.histoires).toHaveLength(9)
     expect(payload.apercu).toHaveLength(apercuAvecNAFixture.length)
     expect(payload.runReport).toEqual(runReportFraisFixture)
-    expect(payload.profilsAccesBpe).toBeNull()
-  })
-
-  it('loads and validates the bounded BPE projection against the territory reference', async () => {
-    const payload = await chargerPayload(
+    // #627 - the retired BPE profile / building projections no longer cross
+    // the loader seam, even when a stale file is still published.
+    expect('profilsAccesBpe' in payload).toBe(false)
+    expect('distributionAccesBatiments' in payload).toBe(false)
+    expect('rampeAccesBatiments' in payload).toBe(false)
+    const withStaleFile = await chargerPayload(
       optionsPour({ ...fichiersDemographie, 'profils_acces_bpe.json': profilsAccesBpeFixture }),
     )
-
-    expect(payload.profilsAccesBpe).toEqual(profilsAccesBpeFixture)
-  })
-
-  it('rejects a BPE projection that falls back to a raw profile code as its label', async () => {
-    const invalide = [{ ...profilsAccesBpeFixture[0], exemplar_libelle: 'A128' }]
-
-    await expect(
-      chargerPayload(optionsPour({ ...fichiersDemographie, 'profils_acces_bpe.json': invalide })),
-    ).rejects.toMatchObject({ kind: 'validation', file: 'profils_acces_bpe.json' })
+    expect('profilsAccesBpe' in withStaleFile).toBe(false)
   })
 
   it('loads the shared vintages table — the story blocks cite their datasets from it', async () => {

@@ -27,7 +27,6 @@ import type {
 import {
   descriptionNuage,
   detailsRangEnContexte,
-  estampilleSnapshot,
   formaterDateFrancaise,
   formaterLicence,
   formaterNombreFR,
@@ -487,7 +486,7 @@ export function matiereTheme(
     nomTerritoire: ref.nom,
     groupes,
     preuves: registrePreuves(payload, metadata, groupes),
-    estampille: estampilleSnapshot(payload),
+    estampille: null,
     nuage: descriptionNuage(payload, territoire),
   }
 }

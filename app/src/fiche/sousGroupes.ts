@@ -27,7 +27,6 @@ import type {
   FamilleFigure,
   Histoire,
   HistoireDemographie,
-  HistoireMobilite,
   HistoireMilieux,
   Indicateur,
   NoeudTexteRiche,
@@ -42,7 +41,6 @@ import {
   formaterVintage,
   nuageComparaison,
   nuageMilieux,
-  nuageMobilite,
   trouverTerritoire,
 } from '@/payload/selectors'
 import type {
@@ -313,10 +311,15 @@ export function sousGroupesPourTerritoire(
       if (lignes && lignes.length > 0) figures.push({ key: clef, lignes })
     }
 
-    const lignesFigure = groupesParCle.get(sousGroupe.figure.indicator)
-    const figureCompacte: FigureCompacte | null =
-      lignesFigure && lignesFigure.length > 0
-        ? { famille: sousGroupe.figure.family, clef: sousGroupe.figure.indicator, lignes: lignesFigure }
+    // #627 - a subgroup without a declared figure (the AEDAR accessibility
+    // unit) renders no compact figure; the production cahier owns its body.
+    const figureCompacte: FigureCompacte | null = sousGroupe.figure
+      ? (() => {
+          const lignesFigure = groupesParCle.get(sousGroupe.figure.indicator)
+          return lignesFigure && lignesFigure.length > 0
+            ? { famille: sousGroupe.figure.family, clef: sousGroupe.figure.indicator, lignes: lignesFigure }
+            : null
+        })()
         : null
 
     // A subgroup may deliberately have no reading (the silent, indicator-only
@@ -351,20 +354,6 @@ export function sousGroupesPourTerritoire(
 }
 
 /** The Mobilité distribution signature, from the row's flat bins. */
-function distributionDe(histoire: HistoireMobilite): DistributionMobilite {
-  return {
-    dens: [
-      histoire.dens_1, histoire.dens_2, histoire.dens_3, histoire.dens_4, histoire.dens_5,
-      histoire.dens_6, histoire.dens_7, histoire.dens_8, histoire.dens_9, histoire.dens_10,
-    ],
-    dec: [
-      histoire.dec_1, histoire.dec_2, histoire.dec_3, histoire.dec_4, histoire.dec_5,
-      histoire.dec_6, histoire.dec_7, histoire.dec_8, histoire.dec_9, histoire.dec_10,
-    ],
-    min: histoire.dens_min,
-    max: histoire.dens_max,
-  }
-}
 
 /**
  * The reading's compact figure — selected by the producer-resolved row's
@@ -396,28 +385,9 @@ export function figureLecturePour(
     }
   }
 
-  if (lecture.story_key === 'vingt-minutes-sans-voiture' || lecture.story_key === 'ce-que-le-velo-preserve') {
-    const h = histoire as HistoireMobilite
-    // La figure exige SA matière servie (les bornes de la distribution du
-    // contrat statique) : la lecture API mobilité ne porte que les pertes —
-    // sans bornes, la figure s'absente honnêtement (le texte porte les
-    // paramètres), jamais des bins fabriqués. Miroir de la discipline
-    // Milieux (#243 : jamais un point fabriqué).
-    if (h.dens_min === null || h.dens_max === null) return null
-    // Mode wording is resolved from the payload's shared reseaux vocabulary;
-    // classification_labels describes reading values, not transport modes.
-    const modes = modesDepuisMetadata(metadata)
-    if (!modes.t || !modes.b) return null
-    return {
-      genre: 'distribution',
-      distribution: distributionPourLecture(h),
-      mediane: h.div_loss_t,
-      medianeVelo: h.div_loss_b,
-      modes,
-      nom,
-      nuage: nuageMobilite(payload, territoire) ?? [],
-    }
-  }
+  // #627 - the retired Mobilité stories (« Vingt minutes sans voiture »,
+  // « Ce que le vélo préserve ») no longer resolve a figure: their app
+  // grammar reading and the snapshot distribution they read are gone.
 
   if (lecture.story_key === 'se-densifier-setaler-ou-sen-aller') {
     const h = histoire as HistoireMilieux
@@ -446,16 +416,6 @@ export function figureLecturePour(
   return null
 }
 
-function distributionPourLecture(histoire: HistoireMobilite): DistributionMobilite {
-  return distributionDe(histoire)
-}
-
-/** Mode labels come from the payload's established `reseaux` vocabulary. */
-function modesDepuisMetadata(metadata: ThemeMetadata | undefined): { t: string; b: string } {
-  const details = metadata?.detail_labels.reseaux
-  const mode = (libelle: string | undefined) => libelle?.replace(/^[^—]+—\s*/, '') ?? ''
-  return { t: mode(details?.t_longueur), b: mode(details?.b_longueur) }
-}
 
 /** The five payload-owned LQ rows become a compact reading figure. */
 export interface LigneLQ {

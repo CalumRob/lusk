@@ -11,7 +11,6 @@ import type { Component } from 'vue'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type {
   ContentFact,
-  ContentModeFacts,
   SharingNetworksEvidence,
 } from '@/fiche/content/themeContent'
 import {
@@ -47,7 +46,7 @@ function networkFactFor(mode: NetworkMode): ContentFact {
   return network.length
 }
 
-const plotValues = computed<ContentModeFacts>(() => ({
+const plotValues = computed<Record<'car' | 'bike' | 'walkTransit', ContentFact>>(() => ({
   walkTransit: networkFactFor('walkTransit'),
   bike: networkFactFor('bike'),
   car: networkFactFor('car'),
