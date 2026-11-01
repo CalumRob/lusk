@@ -3,8 +3,6 @@ import { computed, inject, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PAYLOAD_CHARGER_KEY, usePayload } from '@/payload/usePayload'
 import type { Fichier } from '@/payload/loader'
-import { chargerManifesteModelesLecture, chargerModeleIndicateur, INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY, INDICATOR_READ_MODEL_CHARGER_KEY, payloadDepuisModeleIndicateur } from '@/payload/indicatorReadModel'
-import type { IndicatorReadModel } from '@/payload/indicatorReadModel'
 import { modeleComposition, modeleExploration, modeleEnsembleComparaison, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte } from '@/indicateurs/explorationModel'
 import type { OrdreExploration, TriExploration } from '@/indicateurs/explorationModel'
 import MapExplorer from '@/components/carte/MapExplorer.vue'
@@ -103,21 +101,13 @@ const orderedSeriesAdapter = computed(() => {
 })
 const raccordementApiActive = computed(() => orderedSeriesAdapter.value?.indicator === 'raccordement_courbe')
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
-const selectedTheme = theme.value as Theme
-const scalaireApiAuMontage = scalarCohortEnabled(import.meta.env as Record<string, string | undefined>)
 const payloadChargerInjecte = inject(PAYLOAD_CHARGER_KEY, null)
-const manifesteChargerInjecte = inject(INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY, null)
-const modeleChargerInjecte = inject(INDICATOR_READ_MODEL_CHARGER_KEY, null)
 const attendrePage = ref<Fichier[]>(['territoires'])
 const demarrerPage = ref<Fichier[]>(['territoires'])
 const { payload: payloadLegacy, erreur: erreurLegacy, chargement: chargementLegacy } = usePayload({
   attendre: attendrePage,
   demarrer: demarrerPage,
 })
-const erreurManifesteModeles = ref<PayloadError | null>(null)
-const chargementManifesteModeles = ref(false)
-const routeModeleIndicateur = ref(false)
-const chargerManifeste = manifesteChargerInjecte ?? chargerManifesteModelesLecture
 const profileDiscoveryComplete = ref(false)
 const profileMode = ref(false)
 const profileBootstrapLoading = ref(true)
@@ -158,14 +148,6 @@ let profileFactsRequestKey = ''
 let profileFocalRequestKey = ''
 let profileComparisonRequestKey = ''
 let profileScalarRequestKey = ''
-const utiliseManifeste = computed(() => profileDiscoveryComplete.value && !profileMode.value &&
-  !seriesPageApiActive.value && !scalaireApiAuMontage && (manifesteChargerInjecte !== null || payloadChargerInjecte === null))
-const utiliseModeleIndicateur = computed(() => !profileMode.value && utiliseManifeste.value && routeModeleIndicateur.value)
-const modeleIndicateur = ref<IndicatorReadModel | null>(null)
-const erreurModeleIndicateur = ref<PayloadError | null>(null)
-const chargementModeleIndicateur = ref(false)
-let modeleIndicateurDemarre = false
-const chargerModele = modeleChargerInjecte ?? chargerModeleIndicateur
 function profileCatalogueBinding(resources: SemanticResourceDeclaration[], currentTheme: string,
   currentIndicator: string) {
   const candidates = resources.filter((resource) => resource.resource_id === currentIndicator &&
@@ -244,12 +226,6 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
   profileComparisonError.value = false
   profileComparisonLoading.value = false
   profileComparisonTarget.value = null
-  routeModeleIndicateur.value = false
-  modeleIndicateur.value = null
-  erreurModeleIndicateur.value = null
-  modeleIndicateurDemarre = false
-  chargementManifesteModeles.value = false
-  erreurManifesteModeles.value = null
   const validTheme = (THEMES_CANONIQUES as readonly string[]).includes(currentTheme)
   attendrePage.value = ['territoires']
   demarrerPage.value = ['territoires']
@@ -420,14 +396,6 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     return
   }
 
-  // The route is now confirmed not to be profile- or ordinary-scalar-owned.
-  // Its existing opt-in scalar, ordered-series, manifest/model, or legacy path remains intact.
-  if (scalaireApiAuMontage) {
-    profileDiscoveryComplete.value = true
-    profileBootstrapLoading.value = false
-    return
-  }
-
   // The retained raccordement_courbe keeps its owner path (#857): its
   // numerics are API-owned, and its presentation envelope remains the theme
   // catalogue. It is the only unclassified route that still resolves a page.
@@ -439,28 +407,13 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     return
   }
 
-  const canUseManifest = manifesteChargerInjecte !== null || payloadChargerInjecte === null
-  if (canUseManifest) {
-    chargementManifesteModeles.value = true
-    try {
-      const manifest = await chargerManifeste()
-      if (sequence !== profileDiscoverySequence) return
-      routeModeleIndicateur.value = manifest.routes[currentTheme as Theme]?.includes(currentIndicator) ?? false
-    } catch (cause) {
-      if (sequence !== profileDiscoverySequence) return
-      erreurManifesteModeles.value = cause instanceof PayloadError
-        ? cause : new PayloadError('fetch', 'modeles-lecture/manifest.json', 'Impossible de charger le manifeste des modèles.')
-    } finally {
-      if (sequence === profileDiscoverySequence) chargementManifesteModeles.value = false
-    }
-  }
-
   profileDiscoveryComplete.value = true
   profileBootstrapLoading.value = false
   // No other unclassified route resolves a page any more (#627 legacy
-  // accessibility retirement): producer-excluded slugs and unknown indicators
-  // both render the honest unknown-indicator state, without loading the
-  // retired static numeric tables.
+  // accessibility retirement, #871 read-model retirement): producer-excluded
+  // slugs and unknown indicators both render the honest unknown-indicator
+  // state, without consulting a read-model manifest or loading any retired
+  // static numeric runtime.
 }
 
 watch(() => [theme.value, indicator.value, retryProfileBootstrap.value] as const,
@@ -807,28 +760,6 @@ async ([active, level, department, epci, descriptorVersion, profileVersion, scal
     if (sequence === profileScalarSequence) profileScalarLoading.value = false
   }
 }, { immediate: true })
-watch(
-  () => [payloadLegacy.value.territoires.length, utiliseModeleIndicateur.value] as const,
-  ([nombreTerritoires, doitChargerModele]) => {
-    if (!doitChargerModele || nombreTerritoires === 0 || modeleIndicateurDemarre) return
-    modeleIndicateurDemarre = true
-    chargementModeleIndicateur.value = true
-    chargerModele(selectedTheme, indicator.value, payloadLegacy.value.territoires).then(
-      (modele) => {
-        modeleIndicateur.value = modele
-        chargementModeleIndicateur.value = false
-      },
-      (cause: unknown) => {
-        erreurModeleIndicateur.value =
-          cause instanceof PayloadError
-            ? cause
-            : new PayloadError('fetch', `modeles-lecture/indicateurs/${selectedTheme}/${indicator.value}.json`, 'Impossible de charger le modèle.')
-        chargementModeleIndicateur.value = false
-      },
-    )
-  },
-  { immediate: true },
-)
 
 const serieLecture = ref<OrderedSeriesRead | null>(null)
 const orderedSeriesSession = createOrderedSeriesSemanticSession()
@@ -1051,9 +982,7 @@ const metadataProfilAdaptee = computed(() => {
   }
 })
 const payload = computed<Payload>(() => {
-  const baseInitial = modeleIndicateur.value
-    ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
-    : payloadLegacy.value
+  const baseInitial = payloadLegacy.value
   const metadataBound = profileMode.value && metadataProfilAdaptee.value
     ? { ...baseInitial.themeMetadata, [theme.value]: metadataProfilAdaptee.value }
     : sparseCollectionPageActive.value && sparseCollectionMetadata.value
@@ -1114,24 +1043,20 @@ const payload = computed<Payload>(() => {
 const erreur = computed(() => {
   if (profileBootstrapError.value) return profileBootstrapError.value
   if (profileMode.value) return profileFactsError.value ?? profileFocalError.value ?? erreurLegacy.value
-  if (erreurManifesteModeles.value) return erreurManifesteModeles.value
   if (pageScalaireApiActive.value || (!profileMode.value && scalaireApiOptionnelle.value &&
       (!metadataScalaireApi.value || scalaireApi.value))) return erreurScalaireApi.value
   if (sparseCollectionPageActive.value) {
     return sparseCollectionFactsError.value
       ? new PayloadError('fetch', indicator.value, 'Impossible de charger les faits de subventions publiés.') : null
   }
-  return utiliseModeleIndicateur.value ? erreurModeleIndicateur.value : erreurLegacy.value
+  return erreurLegacy.value
 })
 const chargement = computed(() =>
   profileBootstrapLoading.value ||
-  chargementManifesteModeles.value ||
   (profileMode.value && (profileFactsLoading.value || profileFocalLoading.value)) ||
   (sparseCollectionPageActive.value && sparseCollectionFactsLoading.value) ||
   (!profileMode.value && (pageScalaireApiActive.value || scalaireApiOptionnelle.value) && chargementScalaireApi.value) ||
-  (utiliseModeleIndicateur.value
-    ? chargementLegacy.value || chargementModeleIndicateur.value
-    : chargementLegacy.value),
+  chargementLegacy.value,
 )
 const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
