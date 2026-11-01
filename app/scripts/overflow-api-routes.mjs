@@ -1,11 +1,14 @@
-// #868 — table des routes API interceptées par la preuve mobile overflow, dans
-// l'ORDRE D'ENREGISTREMENT Playwright (page.route) : le DERNIER handler enregistré
-// qui matche gagne. Le catch-all fail-closed (599) est donc enregistré EN PREMIER,
-// puis les routes supportées (catalogue GET /api/resources, read-batch), puis les
-// routes retirées (theme-facts) — jamais l'inverse, sinon le catch-all masque tout.
-//
-// resolveApiRoute(url) rejoue cette sémantique sans navigateur : itéré depuis la fin,
-// le premier pattern qui matche gagne — exactement comme Playwright.
+// #868 — câblage RÉEL des routes API interceptées par la preuve mobile overflow,
+// partagé entre le vérifieur (verify-mobile-cahier-overflow.mjs) et le contrôle
+// sans navigateur (verify-overflow-api-routes.mjs) :
+//   - API_ROUTE_TABLE : patterns dans l'ORDRE D'ENREGISTREMENT page.route
+//     (Playwright : le DERNIER handler enregistré qui matche gagne) — le catch-all
+//     fail-closed 599 est donc EN PREMIER.
+//   - makeApiHandlers(deps) : les vrais handlers (fixture catalogue, read-batch,
+//     routes retirées 599, catch-all 599).
+//   - installApiRoutes(page, handlers) : la vraie boucle d'installation, appelée
+//     telle quelle par les deux consommateurs — un ordre ou un handler mal câblé
+//     est donc détectable sans navigateur via un faux page.
 
 export const API_ROUTE_TABLE = [
   // fail-closed en premier : aucune requête API hors fixtures n'atteint le proxy public
@@ -19,7 +22,7 @@ export const API_ROUTE_TABLE = [
   { pattern: '**/api/territories/commune/35238/themes/mobilite/comparison', kind: 'retired-599' },
 ]
 
-function globToRegExp(pattern) {
+export function globToRegExp(pattern) {
   // conversion minimale des jokers Playwright utilisés ici : ** = n'importe quoi, * = segment
   let re = ''
   for (let i = 0; i < pattern.length; i++) {
@@ -33,12 +36,57 @@ function globToRegExp(pattern) {
 }
 
 /**
- * Résout la route API pour une URL, sémantique Playwright « dernier enregistré
- * qui matche gagne » : on itère la table depuis la fin.
+ * Les vrais handlers, câblés sur les fixtures. deps :
+ *   catalogue()        -> Response-like { json() } de la fixture catalogue native
+ *   themeBatch({items})-> { results } fixture des lectures non-AEDAR
+ *   aedarBatch({items})-> { results } fixture AEDAR
+ *   readCalls          -> compteurs partagés (retiredThemeFactsRoutes, themeBatches, aedarBatches, aedarItems)
  */
-export function resolveApiRoute(url) {
-  for (let i = API_ROUTE_TABLE.length - 1; i >= 0; i--) {
-    if (globToRegExp(API_ROUTE_TABLE[i].pattern).test(url)) return API_ROUTE_TABLE[i].kind
+export function makeApiHandlers(deps) {
+  return {
+    'fail-closed-599': async (route) => {
+      await route.fulfill({ status: 599, contentType: 'application/json',
+        body: JSON.stringify({ error: 'unexpected API traffic in fixture-only proof' }) })
+    },
+    'catalogue': async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(await deps.catalogue().json()) })
+    },
+    'read-batch': async (route) => {
+      const request = route.request().postDataJSON()
+      const aedarItems = request.items.filter((item) => Array.isArray(item.coordinates?.typequ))
+      const themeItems = request.items.filter((item) => !Array.isArray(item.coordinates?.typequ))
+      if (aedarItems.length) {
+        deps.readCalls.aedarBatches += 1
+        deps.readCalls.aedarItems.push(...aedarItems.map((item) => ({
+          id: item.id,
+          resource: item.resource,
+          target: item.target,
+          typequ: item.coordinates.typequ,
+          fields: item.fields ?? [],
+        })))
+      }
+      if (themeItems.length) deps.readCalls.themeBatches += 1
+      const results = []
+      if (themeItems.length) results.push(...deps.themeBatch({ items: themeItems }).results)
+      if (aedarItems.length) results.push(...deps.aedarBatch({ items: aedarItems }).results)
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ contract: 'semantic-read-batch-v1', results }) })
+    },
+    'retired-599': async (route) => {
+      deps.readCalls.retiredThemeFactsRoutes += 1
+      await route.fulfill({ status: 599, contentType: 'application/json', body: 'retired route' })
+    },
   }
-  return 'unmatched'
+}
+
+/**
+ * La vraie boucle d'installation : enregistre chaque pattern de la table DANS
+ * L'ORDRE via page.route(pattern, handlers[kind]). Partagée par le vérifieur réel
+ * et le contrôle sans navigateur (qui passe un faux page).
+ */
+export async function installApiRoutes(page, handlers, table = API_ROUTE_TABLE) {
+  for (const entry of table) {
+    await page.route(entry.pattern, handlers[entry.kind])
+  }
 }
