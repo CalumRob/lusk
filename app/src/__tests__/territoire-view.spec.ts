@@ -1493,8 +1493,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         const carriesMobiliteFacts = !aedarOnly &&
           items.some((item) => mobiliteResourceIds.has(item.resource) && item.intent?.kind === 'facts')
         if (carriesMobiliteFacts) {
-          // The semantic batch is chunked and has a built-in facts-only recovery
-          // retry: every chunk of the initial acquisition fails, so the whole
+          // The acquisition is a bounded-chunk plan with a built-in facts-only
+          // recovery pass. Chunks are read sequentially, so the initial
+          // acquisition aborts at its first failing chunk: the whole
           // acquisition rejects instead of degrading to a partial recovery.
           if (mobiliteFactsFailing) {
             mobiliteFactsBatches.failed += 1
@@ -1514,8 +1515,60 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     const aedarReads = () => requests.filter((items) =>
       items.every((item) => item.resource === 'aedar_territorial_aggregate'))
-    expect(mobiliteFactsBatches.failed).toBeGreaterThan(0)
+    // The legitimate Mobilité semantic plan, derived independently from the
+    // fixture catalogue (the same declarations production filters), not from
+    // the observed requests: one territory facts item per commune-level
+    // territory+facts resource, one cohort item per typed_reading cohort
+    // resource, one item per named-reference id. Chunking and the facts-only
+    // recovery pass are intentional and preserved — deduplication means each
+    // item of this plan is admitted exactly once per acquisition generation.
+    const catalogue = nativeResources('mobilite')
+    const territoireFacts = catalogue.filter((resource) =>
+      resource.allowed_levels.includes('commune') &&
+      resource.target_kinds.includes('territory') && resource.intents.includes('facts'))
+    const cohortFacts = catalogue.filter((resource) =>
+      resource.shapes.includes('typed_reading') && resource.allowed_levels.includes('commune') &&
+      resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
+    const namedFacts = catalogue.filter((resource) =>
+      resource.shapes.includes('named_reference') &&
+      resource.target_kinds.includes('named_reference') && resource.intents.includes('facts'))
+    expect(territoireFacts.length, 'the fixture must declare Mobilité territory facts to read').toBeGreaterThan(0)
+    const factsCle = (resource: string, cible: Record<string, any>) =>
+      `${resource}|${cible.kind}|${cible.type ?? ''}|${cible.id ?? ''}`
+    const clesAttendues = [
+      ...territoireFacts.map((resource) => factsCle(resource.resource_id,
+        { kind: 'territory', type: 'commune', id: '22001' })),
+      ...cohortFacts.map((resource) => factsCle(resource.resource_id,
+        { kind: 'territory_cohort', type: 'commune' })),
+      ...namedFacts.flatMap((resource) => resource.target_ids.map((id) =>
+        factsCle(resource.resource_id, { kind: 'named_reference', id }))),
+    ].sort()
+    const lotFaitsMobilite = (items: Array<Record<string, any>>) =>
+      !items.every((item) => item.resource === 'aedar_territorial_aggregate') &&
+      items.some((item) => mobiliteResourceIds.has(item.resource) && item.intent?.kind === 'facts')
+    const clesFaitsLot = (items: Array<Record<string, any>>) => items
+      .filter((item) => item.intent?.kind === 'facts' && mobiliteResourceIds.has(item.resource))
+      .map((item) => factsCle(item.resource, item.target ?? {}))
+
+    // Initial phase. The paired pass aborts at its first chunk (it always
+    // carries the first catalogue facts item) and the intentional facts-only
+    // recovery pass aborts the same way: exactly two failed batches, zero
+    // admitted ones, and both batches only carry plan items.
     expect(mobiliteFactsBatches.served).toBe(0)
+    expect(mobiliteFactsBatches.failed,
+      'one paired-pass chunk + one facts-only recovery chunk fail before the sequential abort').toBe(2)
+    const lotsEchoues = requests.filter(lotFaitsMobilite)
+    expect(lotsEchoues).toHaveLength(2)
+    const clesTerritoireAttendues = new Set(territoireFacts.map((resource) =>
+      factsCle(resource.resource_id, { kind: 'territory', type: 'commune', id: '22001' })))
+    for (const items of lotsEchoues) {
+      expect(items.length, 'a failing chunk is a populated bounded batch').toBeGreaterThan(0)
+      expect(clesFaitsLot(items).length).toBeGreaterThan(0)
+      for (const cle of clesFaitsLot(items)) {
+        expect(clesTerritoireAttendues,
+          'the failure phases only read plan territory facts items').toContain(cle)
+      }
+    }
 
     // AEDAR succeeded independently: its production evidence stays visible
     // and usable while the semantic facts acquisition has failed.
@@ -1536,12 +1589,35 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(factsAlert!.text()).not.toContain('comparaisons')
 
     const aedarReadsBeforeRetry = aedarReads().length
+    const requetesAvantReessai = requests.length
     mobiliteFactsFailing = false
     await factsAlert!.find('button').trigger('click')
     await flushPromises()
 
-    // The retry genuinely re-reads and admits the retained native facts…
+    // Retry phase. The admitted request plan is exact and deduplicated: across
+    // every Mobilité facts batch of this phase, each catalogue-derived plan
+    // item appears once and nothing outside the plan is read. A duplicated
+    // admitted facts request — or a wrongly re-run acquisition generation —
+    // would double an item and fail here, whatever the chunk boundaries.
     expect(mobiliteFactsBatches.served).toBeGreaterThan(0)
+    expect(mobiliteFactsBatches.failed,
+      'the retry must not run another failing acquisition pass').toBe(2)
+    const lotsAdmis = requests.slice(requetesAvantReessai).filter(lotFaitsMobilite)
+    expect(lotsAdmis.length).toBeGreaterThan(0)
+    const compteurAdmis = new Map<string, number>()
+    for (const items of lotsAdmis) {
+      for (const cle of clesFaitsLot(items)) {
+        compteurAdmis.set(cle, (compteurAdmis.get(cle) ?? 0) + 1)
+      }
+    }
+    expect([...compteurAdmis.keys()].sort(),
+      'the retry reads exactly the catalogue plan — no foreign item, none missing').toEqual(clesAttendues)
+    for (const cle of clesAttendues) {
+      expect(compteurAdmis.get(cle),
+        `each admitted facts item must be requested exactly once (dedup): ${cle}`).toBe(1)
+    }
+
+    // The retry genuinely re-reads and admits the retained native facts…
     expect(wrapper.text()).not.toContain('Les indicateurs de ce thème ne sont pas disponibles.')
     expect(wrapper.find('.transit-point--territory').exists()).toBe(true)
     // …without forcing an AEDAR reread and with AEDAR still rendered.
