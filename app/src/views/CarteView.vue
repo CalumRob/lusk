@@ -276,6 +276,10 @@ const mapAxes = ref<Record<string, string[]>>({})
 const mapThemeMetadata = ref<ThemeMetadata | null>(null)
 const mapDeclarations = ref<import('@/payload/semanticResourceClient').SemanticResourceDeclaration[]>([])
 const mapIdentities = ref<Record<string, { contentVersion: string; referenceContentVersion: string }>>({})
+/** The validated native scalar descriptors retained per indicator — acquired
+ * with the cohort, independent of the projected rows (a sparse cohort may
+ * admit zero observations while keeping its descriptor). */
+const mapNativeContracts = ref<Record<string, NativeThemeFactContract>>({})
 const mapStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
 const retryMapFacts = ref(0)
 const territoryRankTarget = ref<Territoire | null>(null)
@@ -293,9 +297,9 @@ const niveauApi = computed(() => ({ communes: 'commune', epcis: 'epci', departem
 /** The rank read validates the native comparison against the acquired native
  * cohort contract: unit/direction/facet are native facts (the same ownership
  * seam as the fiche's native-contract page substitution), the editorial page
- * contributes presentation grammar only. */
-function pageRankAvecContratNatif(page: IndicatorPageMetadata, native: NativeThemeFactContract | undefined): IndicatorPageMetadata {
-  if (!native) return page
+ * contributes presentation grammar only. The caller fails closed when the
+ * retained descriptor is absent — never falls back to editorial facts. */
+function pageRankAvecContratNatif(page: IndicatorPageMetadata, native: NativeThemeFactContract): IndicatorPageMetadata {
   const unit = native.unit ?? page.unit
   const direction = native.direction === 'low' ? 'low' : native.direction === 'high' ? 'high' : page.direction
   return { ...page, unit, direction,
@@ -312,7 +316,12 @@ async function chargerRangCarte(focal: Territoire, force = false): Promise<void>
   if (!theme || !indicator || !level || mapStatus.value !== 'ready' || !page || page.family !== 'scalar' || !payload.value) return
   const identity = mapIdentities.value[indicator]
   if (!identity) return
-  const native = mapFacts.value.find((fact) => fact.key === indicator && fact.detail === null)?.nativeContract
+  // Ranking binds to the retained native descriptor — never to a fact row (a
+  // sparse cohort may project zero observations) and never to the editorial
+  // page's factual unit/direction/facet: without the descriptor, ranking
+  // fails closed here.
+  const native = mapNativeContracts.value[indicator]
+  if (!native) return
   const rankPage = pageRankAvecContratNatif(page, native)
   const key = JSON.stringify([theme, indicator, level, focal.territoire,
     identity.contentVersion, identity.referenceContentVersion])
@@ -362,6 +371,7 @@ watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, r
   mapThemeMetadata.value = null
   mapDeclarations.value = []
   mapIdentities.value = {}
+  mapNativeContracts.value = {}
   mapStatus.value = 'idle'
   territoryRankTarget.value = null
   territoryRank.value = null
@@ -390,6 +400,7 @@ watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, r
       mapAxes.value = acquired.axes
       mapDeclarations.value = acquired.declarations
       mapIdentities.value = acquired.identities
+      mapNativeContracts.value = acquired.nativeContracts
       mapStatus.value = 'ready'
       if (territoryRankTarget.value) void chargerRangCarte(territoryRankTarget.value)
     }

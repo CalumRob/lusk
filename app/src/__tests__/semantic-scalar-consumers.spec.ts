@@ -1189,4 +1189,74 @@ describe('ordinary scalar consumers on semantic resources', () => {
     expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain('dans l&#39;EPCI')
     wrapper.unmount()
   })
+
+  it('ranks a sparse zero-observation cohort from its retained native descriptor', async () => {
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    const target = { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: null }
+    // A sparse producer cohort may project ZERO observations while keeping its
+    // validated native descriptor and publication identity. The map must
+    // retain the descriptor independently of the rows: the rank read validates
+    // against the NATIVE unit, and the fixture's editorial page deliberately
+    // carries a different one, so an editorial fallback cannot silently pass.
+    const facts = cohortResult('demographie', 'densite', target, ['22001', '22002', '29001', '29002'], [])
+    let comparisonAttempts = 0
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata('demographie')))
+      if (url === '/api/resources') return new Response(JSON.stringify(discovery(resource('demographie', 'densite'))))
+      if (url === '/api/resources/read-batch') {
+        const item = JSON.parse(init?.body as string).items[0]
+        if (item.intent.kind === 'selected_comparison') {
+          comparisonAttempts++
+          const members = item.intent.members.map((member: { type: string; id: string }) => ({
+            territory_type: member.type, territory_id: member.id,
+          }))
+          return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: {
+            resource: 'densite', target: item.target, contract: 'indicator-comparison-v1', indicator_id: 'densite',
+            shape: 'scalar', content_version: 'scalar-publication-v4',
+            reference_content_version: 'reference-v7', selection: members,
+            scope: { kind: 'explicit_selection', member_count: members.length },
+            result: { indicator_id: 'densite', status: 'available',
+              unit: metadata('demographie').indicator_pages.densite.unit, direction: 'high', source_facet: 'densite',
+              descriptor_version: 'scalar-descriptor-v3', selected_member_count: members.length,
+              eligible_count: members.length, missing_count: 0, rank: 1, rank_size: members.length },
+          } })))
+        }
+        return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: facts })))
+      }
+      throw new Error(`unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/carte?theme=demographie')
+    await router.isReady()
+    const wrapper = mount(CarteView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: chargerAvec(staticPayload),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: communeMasks, epcis: null, departements: null }),
+    } } })
+    await flushPromises()
+    const map = maplibreMock.instancesCarteMaple.at(-1)
+    map?.fire('load')
+    await flushPromises()
+    await wrapper.findAll('.carte-sidebar-couche').find((button) => button.text().includes('Densité'))?.trigger('click')
+    await flushPromises()
+    const joined = () => map?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as {
+      features: { properties: { territoire: string; valeur: number | null } }[]
+    }
+    expect(joined().features.find((item) => item.properties.territoire === '22001')?.properties.valeur).toBeNull()
+    vi.spyOn(map!, 'queryRenderedFeatures').mockReturnValue([{ properties: { territoire: '22001' } }] as never)
+    map?.fire('click', { point: { x: 1, y: 1 }, lngLat: { lng: -2, lat: 48 } })
+    await flushPromises()
+
+    // The rank read really happened and its native-unit response was admitted
+    // — the editorial page's unit would have rejected it with an alert.
+    expect(comparisonAttempts).toBe(1)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    // Missing facts stay missing: no fact row is invented to transport the
+    // descriptor, and no zero or rank chip reaches the popup or the paint.
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain('popup-carte-kpi"')
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain('popup-carte-rang')
+    expect(joined().features.find((item) => item.properties.territoire === '22001')?.properties.valeur).toBeNull()
+    wrapper.unmount()
+  })
 })

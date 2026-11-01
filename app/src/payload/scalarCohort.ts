@@ -588,12 +588,18 @@ export function adapterCohorteScalairePourCarte(input: {
   page: IndicatorPageMetadata
   level: TerritoireType
   territories: Territoire[]
-}): { facts: Indicateur[]; identity: ScalarIdentity } {
+}): { facts: Indicateur[]; identity: ScalarIdentity; nativeContract: NativeThemeFactContract } {
   const identity: ScalarIdentity = {}
   if (!isRecord(input.data)) throw new PayloadError('validation', '/api/resources/read-batch', 'Cohorte scalaire de carte invalide.')
+  // The validated native descriptor is captured through the adapter's
+  // descriptor callback seam, before the observation iteration: a sparse
+  // cohort may project zero rows while keeping its descriptor and
+  // publication identity, and the descriptor must never ride on a fact row.
+  let captured: NativeThemeFactContract | undefined
   const facts = adapterCohorteScalaire(input.data, input.declaration, input.indicator, input.theme,
-    input.page, input.level, input.territories, {}, identity, false, true)
-  return { facts, identity }
+    input.page, input.level, input.territories, {}, identity, false, true, (contract) => { captured = contract })
+  if (!captured) throw new PayloadError('validation', '/api/resources/read-batch', 'Le descripteur scalaire natif de carte est absent.')
+  return { facts, identity, nativeContract: captured }
 }
 
 /** Producer registration may be level-specific; unsupported levels stay on the incumbent path. */

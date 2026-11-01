@@ -1,4 +1,4 @@
-import type { Indicateur, IndicatorPageMetadata, Territoire, TerritoireType, Theme } from './types'
+import type { Indicateur, IndicatorPageMetadata, NativeThemeFactContract, Territoire, TerritoireType, Theme } from './types'
 import { SIGLES_PROGRAMMES } from './types'
 import type { SigleProgramme } from './types'
 import { adapterCohorteScalairePourCarte } from './scalarCohort'
@@ -25,6 +25,10 @@ export interface MapSemanticFacts {
   axes: Record<string, string[]>
   identity: { contentVersion: string; referenceContentVersion: string }
   identities: Record<string, { contentVersion: string; referenceContentVersion: string }>
+  /** The validated native scalar descriptors, keyed by indicator and retained
+   * independently of the projected observations — a sparse cohort may admit
+   * zero rows while keeping its descriptor and publication identity. */
+  nativeContracts: Record<string, NativeThemeFactContract>
 }
 
 function requireRecord(value: unknown, field: string): Row {
@@ -83,7 +87,8 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
       territories: [...territories] })
     return { facts: adapted.facts, stories: [], memberships: [], grants: [], declarations: [declaration],
       axes: {}, identity: { contentVersion: adapted.identity.contentVersion ?? '',
-        referenceContentVersion: adapted.identity.referenceContentVersion ?? '' }, identities: {} }
+        referenceContentVersion: adapted.identity.referenceContentVersion ?? '' }, identities: {},
+      nativeContracts: { [declaration.indicator_id]: adapted.nativeContract } }
   }
   if (shape === 'declared_profile') {
     const adapted = adapterProfilDeclare({ declaration,
@@ -92,13 +97,13 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
     return { facts: adapted.facts, stories: [], memberships: [], grants: [], declarations: [declaration],
       axes: { [declaration.indicator_id]: declaration.axis_values?.find(([axis]) => axis === 'detail')?.[1] ?? [] },
       identity: { contentVersion: adapted.identity.contentVersion,
-        referenceContentVersion: adapted.identity.referenceContentVersion }, identities: {} }
+        referenceContentVersion: adapted.identity.referenceContentVersion }, identities: {}, nativeContracts: {} }
   }
   if (shape === 'period_detail') {
     const facts = periodDetailCohortFacts(data, declaration).map((fact) => ({ ...fact, theme: declaration.theme_id as Theme }))
     return { facts, stories: [], memberships: [], grants: [], declarations: [declaration], axes: {}, identity: {
       contentVersion: String(data.content_version), referenceContentVersion: String(data.reference_content_version),
-    }, identities: {} }
+    }, identities: {}, nativeContracts: {} }
   }
   if (shape === 'ordered_series') {
     const adapter = orderedSeriesAdapterFor(declaration.theme_id, declaration.indicator_id, declaration)
@@ -137,7 +142,7 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
         Array.isArray((data.descriptor as Row | undefined)?.axis_values)
           ? (data.descriptor as Row).axis_values as string[] : [] },
       identity: { contentVersion: String(data.content_version), referenceContentVersion: String(data.reference_content_version) },
-      identities: {} }
+      identities: {}, nativeContracts: {} }
   }
   const facts: Indicateur[] = []
   const stories: Array<Record<string, unknown>> = []
@@ -235,7 +240,7 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
   const axes: Record<string, string[]> = {}
   return { facts, stories, memberships, grants, declarations: [declaration], axes, identity: {
     contentVersion: data.content_version, referenceContentVersion: data.reference_content_version,
-  }, identities: {} }
+  }, identities: {}, nativeContracts: {} }
 }
 
 /** Producer-discovered, one bounded cohort read per at most 12 resources. */
@@ -253,7 +258,7 @@ export async function acquireMapThemeFacts(theme: Theme, level: TerritoireType,
     (resource.shapes.some((shape) => ['scalar', 'declared_profile', 'period_detail', 'anchored_membership', 'typed_reading', 'ordered_series'].includes(shape))))
   onDiscovered?.(candidates)
   const output: MapSemanticFacts = { facts: [], stories: [], memberships: [], grants: [], declarations: [], axes: {},
-    identity: { contentVersion: '', referenceContentVersion: '' }, identities: {} }
+    identity: { contentVersion: '', referenceContentVersion: '' }, identities: {}, nativeContracts: {} }
   for (let start = 0; start < candidates.length; start += 12) {
     const declarations = candidates.slice(start, start + 12)
     const items: SemanticReadItem[] = declarations.map((resource) => ({ resource: resource.resource_id,
@@ -275,6 +280,7 @@ export async function acquireMapThemeFacts(theme: Theme, level: TerritoireType,
       Object.assign(output.axes, admitted.axes)
       output.declarations.push(declarations[index]!)
       output.identities[declarations[index]!.indicator_id] = admitted.identity
+      Object.assign(output.nativeContracts, admitted.nativeContracts)
       if (output.identity.referenceContentVersion && output.identity.referenceContentVersion !== admitted.identity.referenceContentVersion) {
         throw new Error('Les ressources natives de la carte utilisent des référentiels différents')
       }
