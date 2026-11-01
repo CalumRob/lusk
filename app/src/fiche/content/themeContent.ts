@@ -1,29 +1,18 @@
 import {
-  MOBILITE_INACCESSIBLE_LABEL,
-  MOBILITE_MODE_LABELS,
   MOBILITE_RESEAU_MODE_LABELS,
 } from './territoryFacts'
 import { comparisonScopeLabel as resolveComparisonScopeLabel } from './comparisonScopeLabel'
-import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type { ThemeMetadata, TrajectoryMetadata } from '@/payload/types'
 import type { AedarFact } from './aedarApiClient'
 import type {
-  BpeAccessProfileFact,
   ComparisonScope,
   FactAvailability,
   FactProvenance,
-  MobiliteAccessMode,
-  MobiliteAccessModes,
-  MobiliteAccessRamp,
-  MobiliteBuildingDistribution,
-  MobiliteService,
-  MobiliteSummaryFacts,
   NumericFact,
   SelectedTrajectoryComparison,
   TerritoryFacts,
   TerritoryIdentity,
 } from './territoryFacts'
-import { libelleComparaisonBâtiments } from '@/fiche/comparisonContext'
 import { CONTENU_SOUS_GROUPES_FICHE } from './ficheGrammar'
 
 export interface ContentSource {
@@ -204,28 +193,6 @@ export interface AedarEvidenceSource {
   url: string
   credit: string | null
 }
-
-export interface DistributionEvidence {
-  kind: 'distribution'
-  buildingDistribution: MobiliteBuildingDistribution | null
-  accessRamp: MobiliteAccessRamp | null
-  comparisonPopulationLabel: string | null
-  buildingDistributionLecture: readonly TextBlock[]
-  accessRampLecture: readonly TextBlock[]
-}
-
-export interface BpeProfilesEvidence {
-  kind: 'bpe-profiles'
-  profiles: readonly BpeAccessProfileFact[]
-  territoryName: string
-  donutTooltipTitle: string
-  /** Total canonical BPE types represented by the complete projection. */
-  totalTypes: number | null
-  /** Human-readable peer-group scope for the compositional reference. */
-  comparisonLabel: string | null
-  figureLecture: readonly TextBlock[]
-}
-
 /** The five normal AEDAR access modes rendered as ramp lines (transit_gain is excluded). */
 export type AedarRampMode = 'walk' | 'transit' | 'bike_lts2' | 'bike_lts4' | 'car'
 
@@ -246,57 +213,6 @@ export interface AedarTimeRampEvidence {
   provenance: FactProvenance | null
   sourceCoverage: string
 }
-
-export type ContentModeFacts = Record<MobiliteAccessMode, ContentFact>
-
-export interface ContentLossFacts {
-  walkTransit: ContentFact
-  bike: ContentFact
-}
-
-export interface SummaryEvidence {
-  kind: 'summary'
-  legend: readonly FigureLegendEntry[]
-  accessibleEquipment: ContentModeFacts
-  accessibleTypes: ContentModeFacts
-  inaccessibleTypes: ContentFact
-  averageLosses: {
-    diversity: ContentLossFacts
-    total: ContentLossFacts
-  }
-  typeCount: number | null
-  comparisonLabel: string | null
-  figureLecture: readonly TextBlock[]
-  losses: {
-    diversity: {
-      walkTransit: ContentFact
-      bike: ContentFact
-    }
-    total: {
-      walkTransit: ContentFact
-      bike: ContentFact
-    }
-  }
-}
-
-export interface AccessServiceEvidence {
-  service: MobiliteService
-  label: string
-  modes: Record<MobiliteAccessMode, ContentFact>
-  carGap: ContentFact
-  bikeGain: ContentFact
-}
-
-export interface AccessEvidence {
-  kind: 'access'
-  legend: readonly FigureLegendEntry[]
-  totalBuildings: ContentFact
-  totalBrittanyBuildings: ContentFact
-  services: readonly AccessServiceEvidence[]
-  comparisonLabel: string | null
-  figureLecture: readonly TextBlock[]
-}
-
 export interface NetworkModeEvidence {
   mode: 'walkTransit' | 'bike' | 'car'
   label: string
@@ -344,15 +260,11 @@ export interface SharingParkingEvidence {
 }
 
 export type ContentEvidence =
-  | DistributionEvidence
   | AedarCarAccessOverviewEvidence
   | AedarDiversityLossEvidence
   | AedarAccessEvidence
   | AedarEquipmentProfileEvidence
   | AedarEquipmentExplorerEvidence
-  | BpeProfilesEvidence
-  | SummaryEvidence
-  | AccessEvidence
   | SharingNetworksEvidence
   | CyclingOfferEvidence
   | SharingParkingEvidence
@@ -376,26 +288,6 @@ export interface AedarCarAccessOverviewSection extends ContentSectionBase<'aedar
 export interface AedarDiversityLossSection extends ContentSectionBase<'aedar-diversity-loss', AedarDiversityLossEvidence> { label: string }
 export interface AedarEquipmentProfileSection extends ContentSectionBase<'aedar-equipment-profile', AedarEquipmentProfileEvidence> { label: string }
 export interface AedarEquipmentExplorerSection extends ContentSectionBase<'aedar-equipment-explorer', AedarEquipmentExplorerEvidence> { label: string }
-
-export interface ResumeSection extends ContentSectionBase<'resume', SummaryEvidence> {
-  label: 'Résumé'
-}
-
-export interface ProfilsAccesParModeSection
-  extends ContentSectionBase<'profils-acces-par-mode', BpeProfilesEvidence> {
-  label: 'Profils d’accès par mode'
-}
-
-export interface DistributionAccesParBatimentSection
-  extends ContentSectionBase<'distribution-acces-par-batiment', DistributionEvidence> {
-  label: "Distribution de l'accès par bâtiment"
-}
-
-export interface ServicesEssentielsSection
-  extends ContentSectionBase<'services-essentiels', AccessEvidence> {
-  label: 'Services essentiels'
-}
-
 export interface ReseauxSection
   extends ContentSectionBase<'reseaux', SharingNetworksEvidence> {
   label: 'Réseaux'
@@ -420,10 +312,6 @@ export type MobiliteContentSection =
   | AedarAccessSection
   | AedarEquipmentProfileSection
   | AedarEquipmentExplorerSection
-  | ResumeSection
-  | ProfilsAccesParModeSection
-  | ServicesEssentielsSection
-  | DistributionAccesParBatimentSection
   | ReseauxSection
   | OffreCyclableSection
   | StationnementSection
@@ -437,12 +325,8 @@ export interface AccesAuxServicesContentUnit {
   label: string
   introduction: readonly TextBlock[]
   rundown: readonly TextBlock[]
-  sections: readonly [
-    ResumeSection,
-    ProfilsAccesParModeSection,
-    ServicesEssentielsSection,
-    DistributionAccesParBatimentSection,
-  ]
+  /** The production AEDAR sections own this unit's content when ready. */
+  sections: readonly MobiliteContentSection[]
 }
 
 export interface PartageEspacePublicContentUnit {
@@ -472,45 +356,8 @@ export interface ThemeContent {
 export type SingleUnitThemeContent = Omit<ThemeContent, 'units'> & {
   units: readonly [ContentUnit]
 }
-
-const SERVICE_GRAMMAR: readonly {
-  key: MobiliteService
-  label: string
-}[] = [
-  { key: 'administration', label: 'Administration' },
-  { key: 'alimentation', label: 'Alimentation' },
-  { key: 'sante', label: 'Santé' },
-  { key: 'banque', label: 'Banque' },
-  { key: 'ecole', label: 'École' },
-]
-
 /** Public labels for this grammar's published indicators and content metrics. */
 const CONTENT_LABELS: Readonly<Record<string, string>> = {
-  avg_tot_car: `Équipements accessibles — ${MOBILITE_MODE_LABELS.car}`,
-  avg_tot_b: `Équipements accessibles — ${MOBILITE_MODE_LABELS.bike}`,
-  avg_tot_t: `Équipements accessibles — ${MOBILITE_MODE_LABELS.walkTransit}`,
-  avg_div_car: `Types d’équipements accessibles — ${MOBILITE_MODE_LABELS.car}`,
-  avg_div_b: `Types d’équipements accessibles — ${MOBILITE_MODE_LABELS.bike}`,
-  avg_div_t: `Types d’équipements accessibles — ${MOBILITE_MODE_LABELS.walkTransit}`,
-  div_loss_t: `Perte de diversité — ${MOBILITE_MODE_LABELS.walkTransit}`,
-  div_loss_b: `Perte de diversité — ${MOBILITE_MODE_LABELS.bike}`,
-  tot_loss_t: `Perte totale d’accès — ${MOBILITE_MODE_LABELS.walkTransit}`,
-  tot_loss_b: `Perte totale d’accès — ${MOBILITE_MODE_LABELS.bike}`,
-  share_food_t: `Part des bâtiments avec accès à l’alimentation — ${MOBILITE_MODE_LABELS.walkTransit}`,
-  share_food_b: `Part des bâtiments avec accès à l’alimentation — ${MOBILITE_MODE_LABELS.bike}`,
-  share_food_c: `Part des bâtiments avec accès à l’alimentation — ${MOBILITE_MODE_LABELS.car}`,
-  share_health_t: `Part des bâtiments avec accès à la santé — ${MOBILITE_MODE_LABELS.walkTransit}`,
-  share_health_b: `Part des bâtiments avec accès à la santé — ${MOBILITE_MODE_LABELS.bike}`,
-  share_health_c: `Part des bâtiments avec accès à la santé — ${MOBILITE_MODE_LABELS.car}`,
-  share_admin_t: `Part des bâtiments avec accès aux services administratifs — ${MOBILITE_MODE_LABELS.walkTransit}`,
-  share_admin_b: `Part des bâtiments avec accès aux services administratifs — ${MOBILITE_MODE_LABELS.bike}`,
-  share_admin_c: `Part des bâtiments avec accès aux services administratifs — ${MOBILITE_MODE_LABELS.car}`,
-  share_school_t: `Part des bâtiments avec accès à l’école — ${MOBILITE_MODE_LABELS.walkTransit}`,
-  share_school_b: `Part des bâtiments avec accès à l’école — ${MOBILITE_MODE_LABELS.bike}`,
-  share_school_c: `Part des bâtiments avec accès à l’école — ${MOBILITE_MODE_LABELS.car}`,
-  share_bank_t: `Part des bâtiments avec accès à la banque — ${MOBILITE_MODE_LABELS.walkTransit}`,
-  share_bank_b: `Part des bâtiments avec accès à la banque — ${MOBILITE_MODE_LABELS.bike}`,
-  share_bank_c: `Part des bâtiments avec accès à la banque — ${MOBILITE_MODE_LABELS.car}`,
   reseaux: 'Réseaux piéton, cyclable et routier',
   reseaux_par_habitant: 'Longueur du réseau par habitant',
   offre_cyclable: 'L’offre cyclable',
@@ -533,25 +380,6 @@ const CONTENT_DETAIL_LABELS: Readonly<Record<string, string>> = {
   'offre_cyclable:partage_km_1000': 'Partagé — km / 1 000 hab.',
   'offre_cyclable:total_longueur': 'Longueur totale',
 }
-
-const ESSENTIAL_INDICATOR_KEYS = [
-  'share_food_t',
-  'share_food_b',
-  'share_food_c',
-  'share_health_t',
-  'share_health_b',
-  'share_health_c',
-  'share_admin_t',
-  'share_admin_b',
-  'share_admin_c',
-  'share_school_t',
-  'share_school_b',
-  'share_school_c',
-  'share_bank_t',
-  'share_bank_b',
-  'share_bank_c',
-] as const
-
 const SHARING_NETWORK_INDICATOR_KEYS = ['reseaux_par_habitant'] as const
 const SHARING_CYCLING_OFFER_INDICATOR_KEYS = ['offre_cyclable'] as const
 const SHARING_PARKING_INDICATOR_KEYS = [
@@ -565,18 +393,6 @@ const NETWORK_MODES = [
   { mode: 'bike' as const, label: MOBILITE_RESEAU_MODE_LABELS.bike, length: 'b_km_1000' },
   { mode: 'car' as const, label: MOBILITE_RESEAU_MODE_LABELS.car, length: 'c_km_1000' },
 ] as const
-
-const MOBILITE_ACCESS_LEGEND: readonly FigureLegendEntry[] = [
-  { key: 'walkTransit', label: MOBILITE_MODE_LABELS.walkTransit, marker: 'icon', iconKey: 'walkTransit', tone: 't' },
-  { key: 'bike', label: MOBILITE_MODE_LABELS.bike, marker: 'icon', iconKey: 'bike', tone: 'b' },
-  { key: 'car', label: MOBILITE_MODE_LABELS.car, marker: 'icon', iconKey: 'car', tone: 'c' },
-  { key: 'inaccessible', label: MOBILITE_INACCESSIBLE_LABEL, marker: 'slash', tone: 'neutral' },
-]
-
-function mobiliteAccessLegend(includeInaccessible: boolean): readonly FigureLegendEntry[] {
-  return includeInaccessible ? MOBILITE_ACCESS_LEGEND : MOBILITE_ACCESS_LEGEND.slice(0, 3)
-}
-
 function complete(fact: NumericFact): fact is NumericFact & { value: number } {
   return fact.availability === 'complete' && fact.value !== null
 }
@@ -588,38 +404,6 @@ function hasValue(fact: NumericFact): boolean {
 function contentFact(fact: NumericFact, label: string): ContentFact {
   return { fact, label }
 }
-
-function inaccessibleFact(
-  total: number,
-  source: NumericFact,
-  key: string,
-  unit: string,
-): ContentFact {
-  const remainder = (value: number | null): number | null =>
-    value === null ? null : Math.max(0, total - value)
-  const comparison = source.comparison
-  return contentFact(
-    {
-      ...source,
-      key,
-      detail: null,
-      label: MOBILITE_INACCESSIBLE_LABEL,
-      value: remainder(source.value),
-      unit,
-      comparison: comparison
-        ? {
-            ...comparison,
-            rank: null,
-            reference: comparison.reference
-              ? { ...comparison.reference, value: remainder(comparison.reference.value)! }
-              : null,
-          }
-        : null,
-    },
-    MOBILITE_INACCESSIBLE_LABEL,
-  )
-}
-
 function absentFact(key: string, unit: string, detail: string | null = null): NumericFact {
   return {
     key,
@@ -713,37 +497,6 @@ function registerFor(sections: readonly MobiliteContentSection[]): ContentSource
 
   for (const section of sections) {
     for (const indicator of section.indicators) add(indicator)
-    if (section.evidence?.kind === 'distribution') {
-      const buildingSource = sourceFrom(section.evidence.buildingDistribution?.provenance ?? null)
-      if (buildingSource && !sources.has(sourceKey(buildingSource))) {
-        sources.set(sourceKey(buildingSource), buildingSource)
-      }
-      const rampSource = sourceFrom(section.evidence.accessRamp?.provenance ?? null)
-      if (rampSource && !sources.has(sourceKey(rampSource))) {
-        sources.set(sourceKey(rampSource), rampSource)
-      }
-    }
-    if (section.evidence?.kind === 'summary') {
-      for (const mode of Object.values(section.evidence.accessibleEquipment)) add(mode)
-      for (const mode of Object.values(section.evidence.accessibleTypes)) add(mode)
-      add(section.evidence.averageLosses.diversity.walkTransit)
-      add(section.evidence.averageLosses.diversity.bike)
-      add(section.evidence.averageLosses.total.walkTransit)
-      add(section.evidence.averageLosses.total.bike)
-      add(section.evidence.losses.diversity.walkTransit)
-      add(section.evidence.losses.diversity.bike)
-      add(section.evidence.losses.total.walkTransit)
-      add(section.evidence.losses.total.bike)
-    }
-    if (section.evidence?.kind === 'access') {
-      add(section.evidence.totalBuildings)
-      add(section.evidence.totalBrittanyBuildings)
-      for (const service of section.evidence.services) {
-        for (const mode of Object.values(service.modes)) add(mode)
-        add(service.carGap)
-        add(service.bikeGain)
-      }
-    }
     if (section.evidence?.kind === 'sharing-networks') {
       for (const fact of section.evidence.absoluteNetworks) add(fact)
       for (const network of section.evidence.networks) {
@@ -819,15 +572,6 @@ export function modeEmphasis(value: string, mode: AedarRampMode): TextSegment {
 export function link(value: string, href: string): TextSegment {
   return { kind: 'link', href, value }
 }
-
-function regionalEmphasis(value: string): TextSegment {
-  return { kind: 'emphasis', tone: 'region', value }
-}
-
-function bold(value: string, tone: TextEmphasisTone = 'default'): TextSegment {
-  return { kind: 'emphasis', tone, value }
-}
-
 type ComparisonContext = {
   scope: ComparisonScope
   reference: { kind: 'mean' | 'median'; value: number } | null
@@ -866,35 +610,6 @@ function statisticForFact(fact: NumericFact): 'moyenne' | 'médiane' {
 function populationForFact(fact: NumericFact): ComparisonPopulation {
   return fact.comparisonBasis === 'building-weighted-mean' ||
     fact.comparisonBasis === 'pooled-building-mean' ? 'bâtiments' : 'territoires'
-}
-
-function formatMillions(value: number): string {
-  if (Math.abs(value) < 1_000_000) return formatNumber(value)
-  const millions = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(
-    value / 1_000_000,
-  )
-  return `${millions} millions`
-}
-
-function introductionFor(facts: TerritoryFacts): readonly TextBlock[] {
-  const blocks: TextBlock[] = [
-    [
-      text('Cette page illustre les différences d’accès aux services selon le mode de déplacement : voiture, vélo et marche, transports en commun inclus. Elle présente les résultats d’une analyse qui cartographie les équipements accessibles en '),
-      emphasis('20 minutes'),
-      text(' autour de chaque bâtiment résidentiel breton.'),
-    ],
-  ]
-  const total = facts.mobility.access.totalBrittanyBuildings
-  const territory = facts.mobility.access.totalBuildings
-  if (complete(total) && complete(territory)) {
-    blocks.push([
-      regionalEmphasis(formatMillions(total.value)),
-      text(' de bâtiments sont pris en compte en Bretagne, dont '),
-      emphasis(formatNumber(territory.value)),
-      text(` ${territoryLead(facts.territory, false)}.`),
-    ])
-  }
-  return blocks
 }
 
 function sharingIntroduction(): readonly TextBlock[] {
@@ -956,338 +671,6 @@ export function territoryTypeLabel(territory: TerritoryIdentity): string {
   const connector = /^[aeiouyàâäéèêëîïôöùûü]/iu.test(name) ? 'd’' : 'de '
   return `${designation} ${connector}${name}`
 }
-
-function profilesFigureLecture(
-  profiles: readonly BpeAccessProfileFact[],
-  territory: TerritoryIdentity,
-): readonly TextBlock[] {
-  const example = profiles
-    .filter((profile) => profile.comparison?.reference !== null)
-    .sort((a, b) => b.count - a.count)[0]
-  return [[
-    text('Chaque colonne indique le nombre de types d’équipements BPE classés dans un profil d’accès. Les quatre profils sont exclusifs : chaque type n’est compté qu’une seule fois.'),
-  ], ...(example?.comparison?.reference ? [[
-    text(`Exemple : ${formatNumber(example.count)} types d’équipements sont classés « ${example.label} » dans ${territory.name}, contre ${formatNumber(example.comparison.reference.value)} en moyenne dans le groupe comparé.`),
-  ]] : [])]
-}
-
-function lectureProfils(): Lecture {
-  return {
-    marelle: 'Service minimum ?',
-    prose: [[
-      text('Un profil d’accès regroupe les types d’équipements BPE selon le premier mode qui permet à au moins un quart des bâtiments de les atteindre.'),
-    ]],
-  }
-}
-
-function summaryFigureLecture(summary: MobiliteSummaryFacts): readonly TextBlock[] {
-  const loss = narrativeValue(summary.averageLosses.diversity.walkTransit)
-  const comparison = summary.averageLosses.diversity.walkTransit.comparison?.reference?.value ?? null
-  return [[
-    text('La figure compare, pour chaque mode, le nombre moyen d’équipements accessibles par bâtiment et le nombre moyen de types différents. Les pertes sont calculées par rapport à la voiture.'),
-  ], ...(loss !== null && loss >= 0 && comparison !== null ? [[
-    text(`Exemple : à pied ou en transports en commun, un bâtiment accède en moyenne à ${formatNumber(loss)} types d’équipements de moins qu’en voiture, contre ${formatNumber(comparison)} dans le groupe comparé.`),
-  ]] : [])]
-}
-
-function lectureEssentiels(): Lecture {
-  return {
-    marelle: 'Tous les services ne se valent pas...',
-    prose: [[
-      text('Les services essentiels regroupent des catégories d’équipements issues de la BPE.'),
-    ]],
-  }
-}
-
-function essentialsFigureLecture(facts: TerritoryFacts): readonly TextBlock[] {
-  const examples = SERVICE_GRAMMAR.flatMap(({ key, label }) => {
-    const fact = facts.mobility.access.byService[key].walkTransit
-    const value = narrativeValue(fact)
-    const comparison = fact.comparison?.reference?.value ?? null
-    return value !== null && comparison !== null
-      ? [{ label, value, comparison, gap: Math.abs(value - comparison) }]
-      : []
-  })
-  const example = examples.reduce<typeof examples[number] | null>((best, item) => !best || item.gap > best.gap ? item : best, null)
-  return [[
-    text('Chaque anneau indique la part des bâtiments qui peuvent atteindre un regroupement de services en vingt minutes, pour chaque mode.'),
-  ], ...(example ? [[
-    text(`Exemple : à pied ou en transports en commun, ${formatNumber(example.value * 100)} % des bâtiments accèdent au regroupement « ${example.label} », contre ${formatNumber(example.comparison * 100)} % dans le groupe comparé.`),
-  ]] : [])]
-}
-
-function buildingDistributionFigureLecture(
-  distribution: MobiliteBuildingDistribution | null,
-  territory: TerritoryIdentity,
-): readonly TextBlock[] {
-  const cells = distribution?.availability === 'complete'
-    ? [...distribution.cells]
-      .filter((candidate) => candidate.comparisonShare !== null)
-      .sort((a, b) => b.share - a.share || a.breadthBucket.localeCompare(b.breadthBucket) || a.depthBucket.localeCompare(b.depthBucket))
-    : []
-  const cell = cells[0]
-  const breadth = distribution?.breadthBins.find((bin) => bin.key === cell?.breadthBucket)
-  const depth = distribution?.depthBins.find((bin) => bin.key === cell?.depthBucket)
-  return [[
-    text('Chaque case regroupe les bâtiments qui accèdent, en vingt minutes, à une même tranche de types d’équipements et d’équipements au total. Plus la case est foncée, plus leur part est élevée. Les triangles situent le territoire et le groupe comparé.'),
-  ], ...(cell && cell.share > 0 && cell.comparisonShare !== null && breadth && depth ? [[
-    text(`Exemple : ${formatNumber(cell.share * 100)} % des bâtiments de ${territory.name} accèdent à ${breadth.label} types et ${depth.label} équipements, contre ${formatNumber(cell.comparisonShare * 100)} % des bâtiments du groupe comparé.`),
-  ]] : [])]
-}
-
-function accessRampFigureLecture(ramp: MobiliteAccessRamp | null): readonly TextBlock[] {
-  const example = ramp?.availability === 'complete' ? ramp.curves.walkTransit.points.find((point) => point.quantile === 0.5) : null
-  return [[
-    text(ramp?.comparisonStatistic === 'mean'
-      ? 'Pour chaque mode, la courbe du territoire classe ses bâtiments par nombre de types accessibles en vingt minutes. Celle du groupe comparé est la moyenne, pondérée par le nombre de bâtiments, des positions correspondantes de chaque commune : ce n’est pas une courbe de bâtiments regroupés.'
-      : 'Pour chaque mode, la courbe classe les bâtiments du moins au plus grand nombre de types accessibles en vingt minutes. Les courbes du territoire et du groupe comparé suivent la même échelle.'),
-  ], ...(example?.comparisonAccessibleTypes !== null && example?.comparisonAccessibleTypes !== undefined ? [[
-    text(ramp?.comparisonStatistic === 'mean'
-      ? `Exemple : à pied ou en transports en commun, la position médiane du territoire est de ${formatNumber(example.accessibleTypes)} types, contre ${formatNumber(example.comparisonAccessibleTypes)} pour la moyenne pondérée des positions médianes des communes choisies.`
-      : `Exemple : à pied ou en transports en commun, la moitié des bâtiments accèdent à au plus ${formatNumber(example.accessibleTypes)} types, contre ${formatNumber(example.comparisonAccessibleTypes)} dans le groupe comparé.`),
-  ]] : [])]
-}
-
-function buildingComparisonPopulationLabel(
-  rawLabel: string | null,
-  statistic?: 'mean' | null,
-): string | null {
-  if (statistic === 'mean') return rawLabel ? `moyenne des ${libelleComparaisonBâtiments(rawLabel)}` : null
-  return libelleComparaisonBâtiments(rawLabel)
-}
-
-function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimentSection {
-  const buildingDistribution = facts.mobility.buildingDistribution
-  const accessRamp = facts.mobility.accessRamp
-  const meanComparison = buildingDistribution?.comparisonStatistic === 'mean' || accessRamp?.comparisonStatistic === 'mean'
-  const rawComparisonLabel = buildingDistribution?.comparisonLabel ?? accessRamp?.comparisonLabel ?? null
-  const hasAny = buildingDistribution !== null || accessRamp !== null
-  const evidence: DistributionEvidence | null = hasAny
-    ? {
-        kind: 'distribution',
-        buildingDistribution,
-        accessRamp,
-        comparisonPopulationLabel: buildingComparisonPopulationLabel(rawComparisonLabel, meanComparison ? 'mean' : null),
-        buildingDistributionLecture: buildingDistributionFigureLecture(buildingDistribution, facts.territory),
-        accessRampLecture: accessRampFigureLecture(accessRamp),
-      }
-    : null
-  const availability: FactAvailability =
-    !hasAny
-      ? 'absent'
-      : evidence !== null &&
-          (buildingDistribution === null || buildingDistribution.availability === 'complete') &&
-          (accessRamp === null || accessRamp.availability === 'complete')
-        ? 'complete'
-        : 'incomplete'
-  return {
-    key: 'distribution-acces-par-batiment',
-    label: "Distribution de l'accès par bâtiment",
-    availability,
-    indicators: [],
-    evidence,
-    provenance: [
-      ...(buildingDistribution?.provenance?.sourceId ? [buildingDistribution.provenance.sourceId] : []),
-      ...(accessRamp?.provenance?.sourceId ? [accessRamp.provenance.sourceId] : []),
-    ].filter((sourceId, index, sourceIds) => sourceIds.indexOf(sourceId) === index),
-    lecture: availability === 'complete'
-      ? { marelle: '... Tous les bâtiments non plus', prose: [] }
-      : null,
-    explorationTargets: [],
-  }
-}
-
-function contentModes(
-  modes: MobiliteAccessModes,
-  labels: Record<MobiliteAccessMode, string> = MOBILITE_MODE_LABELS,
-): ContentModeFacts {
-  return {
-    car: contentFact(modes.car, labels.car),
-    bike: contentFact(modes.bike, labels.bike),
-    walkTransit: contentFact(modes.walkTransit, labels.walkTransit),
-  }
-}
-
-function summarySection(facts: TerritoryFacts): ResumeSection {
-  const summary = facts.mobility.access.summary
-  const diversityWalkTransit = facts.mobility.losses.diversityWalkTransit
-  const diversityBike = facts.mobility.losses.diversityBike
-  const totalWalkTransit = indicatorFor(facts, 'tot_loss_t') ?? absentFact('tot_loss_t', 'accès perdus')
-  const totalBike = indicatorFor(facts, 'tot_loss_b') ?? absentFact('tot_loss_b', 'accès perdus')
-  const accessibleEquipment = contentModes(summary.accessibleEquipment)
-  const accessibleTypes = contentModes(summary.accessibleTypes)
-  const typeCount = facts.mobility.bpeAccess.profiles.length > 0
-    ? facts.mobility.bpeAccess.profiles.reduce((total, profile) => total + profile.count, 0)
-    : null
-  const inaccessibleTypes = typeCount === null
-    ? contentFact(absentFact('inaccessible_types', 'types d’équipement / bâtiment'), 'Inaccessible')
-    : inaccessibleFact(
-        typeCount,
-        accessibleTypes.car.fact,
-        'inaccessible_types',
-        'types d’équipement / bâtiment',
-      )
-  const averageLosses = {
-    diversity: {
-      walkTransit: contentFact(summary.averageLosses.diversity.walkTransit, 'Perte de diversité — à pied + TC'),
-      bike: contentFact(summary.averageLosses.diversity.bike, 'Perte de diversité — à vélo + TC'),
-    },
-    total: {
-      walkTransit: contentFact(summary.averageLosses.total.walkTransit, 'Perte totale d’accès — à pied + TC'),
-      bike: contentFact(summary.averageLosses.total.bike, 'Perte totale d’accès — à vélo + TC'),
-    },
-  }
-  const losses = {
-    diversity: {
-      walkTransit: contentFact(diversityWalkTransit, CONTENT_LABELS.div_loss_t),
-      bike: contentFact(diversityBike, CONTENT_LABELS.div_loss_b),
-    },
-    total: {
-      walkTransit: contentFact(totalWalkTransit, CONTENT_LABELS.tot_loss_t),
-      bike: contentFact(totalBike, CONTENT_LABELS.tot_loss_b),
-    },
-  }
-  const summaryFacts = [
-    ...Object.values(accessibleEquipment),
-    ...Object.values(accessibleTypes),
-    ...Object.values(averageLosses.diversity),
-    ...Object.values(averageLosses.total),
-    losses.diversity.walkTransit,
-    losses.diversity.bike,
-    losses.total.walkTransit,
-    losses.total.bike,
-  ]
-  const comparisonFact = summaryFacts.find((fact) => fact.fact.comparison)
-  const completeSummary = summaryFacts.every((value) => complete(value.fact))
-  const hasAny = summaryFacts.some((value) => hasValue(value.fact))
-  const indicators = [
-    ...Object.values(accessibleEquipment),
-    ...Object.values(accessibleTypes),
-    losses.diversity.walkTransit,
-    losses.diversity.bike,
-    losses.total.walkTransit,
-    losses.total.bike,
-  ].filter(({ fact }) => hasValue(fact)).concat(indicatorsFor(facts, [
-    'avg_tot_car', 'avg_tot_b', 'avg_tot_t', 'avg_div_car', 'avg_div_b', 'avg_div_t', 'nb_buildings',
-  ]))
-  return {
-    key: 'resume',
-    label: 'Résumé',
-    availability: !hasAny ? 'absent' : completeSummary ? 'complete' : 'incomplete',
-    indicators,
-    evidence: hasAny
-      ? {
-          kind: 'summary',
-          legend: mobiliteAccessLegend(typeCount !== null),
-          accessibleEquipment,
-          accessibleTypes,
-          inaccessibleTypes,
-          averageLosses,
-          typeCount,
-          comparisonLabel: comparisonLabel(
-            comparisonFact?.fact.comparison ?? null,
-            facts.territory,
-            comparisonFact ? statisticForFact(comparisonFact.fact) : undefined,
-            comparisonFact ? populationForFact(comparisonFact.fact) : undefined,
-          ),
-          figureLecture: summaryFigureLecture(summary),
-          losses,
-        }
-      : null,
-    provenance: sourceIdsFor(summaryFacts),
-    lecture: hasAny ? { marelle: 'Ce que l’on perd sans voiture', prose: [] } : null,
-    explorationTargets: targetsFor(indicators.map((indicator) => indicator.fact), facts.territory),
-  }
-}
-
-function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
-  if (facts.mobility.access.availability === 'absent') return null
-  return {
-    kind: 'access',
-    legend: mobiliteAccessLegend(false),
-    totalBuildings: contentFact(
-      facts.mobility.access.totalBuildings,
-      'Bâtiments du territoire analysés',
-    ),
-    totalBrittanyBuildings: contentFact(
-      facts.mobility.access.totalBrittanyBuildings,
-      'Bâtiments bretons analysés',
-    ),
-    services: SERVICE_GRAMMAR.map(({ key, label }) => ({
-      service: key,
-      label,
-      modes: {
-        car: contentFact(facts.mobility.access.byService[key].car, MOBILITE_MODE_LABELS.car),
-        bike: contentFact(facts.mobility.access.byService[key].bike, MOBILITE_MODE_LABELS.bike),
-        walkTransit: contentFact(
-          facts.mobility.access.byService[key].walkTransit,
-          MOBILITE_MODE_LABELS.walkTransit,
-        ),
-      },
-      carGap: contentFact(
-        facts.mobility.access.gapsByService[key].carGap,
-        'Écart voiture',
-      ),
-      bikeGain: contentFact(
-        facts.mobility.access.gapsByService[key].bikeGain,
-        'Apport du vélo',
-      ),
-    })),
-    comparisonLabel: comparisonLabel(
-      Object.values(facts.mobility.access.byService)
-        .flatMap((modes) => Object.values(modes))
-        .find((fact) => fact.comparison)?.comparison ?? null,
-      facts.territory,
-    ),
-    figureLecture: essentialsFigureLecture(facts),
-  }
-}
-
-function essentialsSection(facts: TerritoryFacts): ServicesEssentielsSection {
-  const indicators = indicatorsFor(facts, [...ESSENTIAL_INDICATOR_KEYS,
-    'iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque',
-  ])
-  const evidence = accessEvidence(facts)
-  const allIndicatorsComplete =
-    ESSENTIAL_INDICATOR_KEYS.every((key) => indicators.some((indicator) => indicator.fact.key === key && complete(indicator.fact)))
-  const allAccessComplete =
-    evidence !== null &&
-    complete(evidence.totalBuildings.fact) &&
-    complete(evidence.totalBrittanyBuildings.fact) &&
-    evidence.services.every((service) =>
-      [...Object.values(service.modes), service.carGap, service.bikeGain].every((fact) =>
-        complete(fact.fact),
-      ),
-    )
-  const hasAny = indicators.length > 0 || evidence !== null
-  const availability: FactAvailability =
-    !hasAny
-      ? 'absent'
-      : allIndicatorsComplete && allAccessComplete
-        ? 'complete'
-        : 'incomplete'
-  const contentFacts: ContentFact[] = [...indicators]
-  if (evidence) {
-    contentFacts.push(evidence.totalBuildings, evidence.totalBrittanyBuildings)
-    for (const service of evidence.services) {
-      contentFacts.push(...Object.values(service.modes), service.carGap, service.bikeGain)
-    }
-  }
-  return {
-    key: 'services-essentiels',
-    label: 'Services essentiels',
-    availability,
-    indicators,
-    evidence,
-    provenance: sourceIdsFor(contentFacts),
-    lecture: availability === 'complete' && evidence ? lectureEssentiels() : null,
-    explorationTargets: targetsFor(
-      indicators.map((indicator) => indicator.fact),
-      facts.territory,
-    ),
-  }
-}
-
 function comparisonLabelForFacts(
   values: readonly ContentFact[],
   territory: TerritoryIdentity,
@@ -1523,363 +906,18 @@ function sharingRundown(facts: TerritoryFacts): readonly TextBlock[] {
   }
   return [parts]
 }
-
-function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
-  const profiles = facts.mobility.bpeAccess.profiles
-  const comparisonLabelForFigure = comparisonLabel(
-    profiles.find((profile) => profile.comparison)?.comparison ?? null,
-    facts.territory,
-    'moyenne',
-  )
-  const availability: FactAvailability =
-    facts.mobility.bpeAccess.availability === 'incomplete'
-      ? 'incomplete'
-      : profiles.length > 0
-        ? 'complete'
-        : 'absent'
-  const evidence: BpeProfilesEvidence | null =
-    profiles.length > 0
-        ? {
-           kind: 'bpe-profiles',
-          profiles,
-          territoryName: facts.territory.name,
-          donutTooltipTitle: '% des bâtiments ayant accès',
-          totalTypes:
-            availability === 'complete'
-              ? profiles.reduce((total, profile) => total + profile.count, 0)
-              : null,
-          comparisonLabel: comparisonLabelForFigure,
-           figureLecture: profilesFigureLecture(
-             availability === 'complete' ? profiles : [],
-             facts.territory,
-           ),
-        }
-      : null
-  return {
-    key: 'profils-acces-par-mode',
-    label: 'Profils d’accès par mode',
-    availability,
-    indicators: [],
-    evidence,
-    provenance: [],
-    lecture: availability === 'complete'
-      ? lectureProfils()
-      : null,
-    explorationTargets: [],
-  }
-}
-
 /** Only complete, finite facts can support a narrative claim. */
 function narrativeValue(fact: NumericFact): number | null {
   return fact.availability === 'complete' && fact.value !== null && Number.isFinite(fact.value) ? fact.value : null
 }
-
-function walkingDistributionFinding(distribution: MobiliteBuildingDistribution | null): TextBlock | null {
-  if (distribution?.availability !== 'complete') return null
-  const zeroShare = distribution.cells
-    .filter((cell) =>
-      distribution.breadthBins.some((bin) => bin.key === cell.breadthBucket && bin.min === 0 && bin.max === 0) &&
-      distribution.depthBins.some((bin) => bin.key === cell.depthBucket && bin.min === 0 && bin.max === 0),
-    )
-    .reduce((sum, cell) => sum + cell.share, 0)
-  const nonEmptyCells = distribution.cells
-    .filter((cell) => cell.share > 0)
-    .sort((a, b) => b.share - a.share)
-  const top = nonEmptyCells[0]
-  if (!top) return null
-  const breadthIndex = distribution.breadthBins.findIndex((bin) => bin.key === top.breadthBucket)
-  const depthIndex = distribution.depthBins.findIndex((bin) => bin.key === top.depthBucket)
-  const highCells = distribution.cells.filter((cell) => {
-    const breadth = distribution.breadthBins.findIndex((bin) => bin.key === cell.breadthBucket)
-    const depth = distribution.depthBins.findIndex((bin) => bin.key === cell.depthBucket)
-    return breadth === distribution.breadthBins.length - 1 && depth >= distribution.depthBins.length - 2
-  })
-  const highShare = highCells.reduce((sum, cell) => sum + cell.share, 0)
-  const lowAccess = breadthIndex <= 1
-  if (zeroShare > 0.5) {
-    return [text('Pour une majorité des bâtiments, l’accès à pied ou en transports en commun reste très limité.')]
-  }
-  if (zeroShare > 0.25) {
-    return [text('Une part importante des bâtiments reste très limitée dans son accès à pied ou en transports en commun.')]
-  }
-  if (highShare >= 0.6) {
-    return [text('Cette accessibilité à pied est largement partagée entre les bâtiments.')]
-  }
-  if (lowAccess && top.share >= 0.5) {
-    return [text('Pour la plupart des bâtiments, l’accès à pied ou en transports en commun reste cantonné à une offre limitée.')]
-  }
-  if (breadthIndex >= distribution.breadthBins.length - 2 && depthIndex >= distribution.depthBins.length - 2 && top.share >= 0.4) {
-    return [text('Une large part des bâtiments conserve un accès piéton étendu, même si cette situation ne se retrouve pas partout.')]
-  }
-  if (nonEmptyCells.length >= 2 && top.share >= 0.4) {
-    return [text('L’accès à pied ou en transports en commun forme un socle pour une partie des bâtiments, mais ne se retrouve pas partout.')]
-  }
-  return null
-}
-
-// These are semantic bands, not claims shown to the reader. They are deliberately
-// not the Services essentiels threshold: retention compares one mode with the
-// territory's own car access. Three quarters of the car-accessible range is a
-// broad diversity; half of the car-accessible establishments is a broad volume.
-// Keeping the dimensions separate is what makes the hub reading possible.
-const RUNDOWN_STRONG_DIVERSITY_RETENTION = 0.75
-const RUNDOWN_STRONG_VOLUME_RETENTION = 0.5
-const RUNDOWN_LOW_RETENTION = 0.5
-const RUNDOWN_BIKE_RECOVERY = 0.33
-const RUNDOWN_BIKE_GAIN = 0.15
-const RUNDOWN_LIMITED_TYPES = 15
-const RUNDOWN_LIMITED_EQUIPMENT = 100
-const RUNDOWN_BUILDING_SPREAD = 15
-const RUNDOWN_CAR_SPREAD_RATIO = 0.5
-
-type AccessDimension = 'types' | 'equipment'
-type AccessProfile = Record<AccessDimension, number>
-
-function accessProfile(summary: MobiliteSummaryFacts, mode: MobiliteAccessMode): AccessProfile | null {
-  const types = narrativeValue(summary.accessibleTypes[mode])
-  const equipment = narrativeValue(summary.accessibleEquipment[mode])
-  return types !== null && equipment !== null ? { types, equipment } : null
-}
-
-function retention(profile: AccessProfile, car: AccessProfile, dimension: AccessDimension): number {
-  return car[dimension] > 0 ? profile[dimension] / car[dimension] : 0
-}
-
-function averageRecovery(
-  bike: AccessProfile,
-  walk: AccessProfile,
-  car: AccessProfile,
-): number {
-  const recoveries = (['types', 'equipment'] as const).flatMap((dimension) => {
-    const gap = car[dimension] - walk[dimension]
-    return gap > 0 ? [(bike[dimension] - walk[dimension]) / gap] : []
-  })
-  return recoveries.length > 0 ? recoveries.reduce((sum, value) => sum + value, 0) / recoveries.length : 0
-}
-
-function hasStrongWalkingAccess(walk: AccessProfile, car: AccessProfile): boolean {
-  return walk.types >= RUNDOWN_LIMITED_TYPES &&
-    retention(walk, car, 'types') >= RUNDOWN_STRONG_DIVERSITY_RETENTION &&
-    retention(walk, car, 'equipment') >= RUNDOWN_STRONG_VOLUME_RETENTION
-}
-
-function hasHubWalkingAccess(walk: AccessProfile, car: AccessProfile): boolean {
-  return walk.types >= RUNDOWN_LIMITED_TYPES &&
-    retention(walk, car, 'types') >= RUNDOWN_STRONG_DIVERSITY_RETENTION &&
-    retention(walk, car, 'equipment') < RUNDOWN_STRONG_VOLUME_RETENTION
-}
-
-function hasLimitedAccess(car: AccessProfile, bike: AccessProfile, walk: AccessProfile): boolean {
-  return [car, bike, walk].every((profile) =>
-    profile.types < RUNDOWN_LIMITED_TYPES && profile.equipment < RUNDOWN_LIMITED_EQUIPMENT,
-  )
-}
-
-function hasCarDependence(walk: AccessProfile, bike: AccessProfile, car: AccessProfile): boolean {
-  return retention(walk, car, 'types') < RUNDOWN_LOW_RETENTION &&
-    retention(walk, car, 'equipment') < RUNDOWN_LOW_RETENTION &&
-    retention(bike, car, 'types') < RUNDOWN_LOW_RETENTION &&
-    retention(bike, car, 'equipment') < RUNDOWN_LOW_RETENTION
-}
-
-function hasBikeBridge(walk: AccessProfile, bike: AccessProfile, car: AccessProfile): boolean {
-  return averageRecovery(bike, walk, car) >= RUNDOWN_BIKE_RECOVERY &&
-    (bike.types - walk.types) / Math.max(car.types, 1) >= RUNDOWN_BIKE_GAIN &&
-    (bike.equipment - walk.equipment) / Math.max(car.equipment, 1) >= RUNDOWN_BIKE_GAIN
-}
-
-type RundownFindingKey = 'hub' | 'walking' | 'bike-bridge' | 'car-dependent' | 'limited' | 'mixed'
-
-interface RundownFinding {
-  key: RundownFindingKey
-  priority: number
-  prose: TextBlock
-}
-
-function hubFinding(territory: TerritoryIdentity): RundownFinding {
-  return {
-    key: 'hub',
-    priority: 100,
-    prose: [
-      text(`${territoryLead(territory)}, `),
-      bold('la marche et les transports en commun', 'foot'),
-      text(' donnent accès à une gamme de services déjà diversifiée. Sans voiture, la perte porte surtout sur le choix entre plusieurs établissements de ces mêmes types.'),
-    ],
-  }
-}
-
-function hubDepthFinding(): TextBlock {
-  return [text('La voiture apporte donc une plus grande '), bold('profondeur d’offre'), text('.')]
-}
-
-function walkingFinding(territory: TerritoryIdentity): RundownFinding {
-  return {
-    key: 'walking',
-    priority: 95,
-    prose: [
-      text(`${territoryLead(territory)}, `),
-      bold('la marche et les transports en commun', 'foot'),
-      text(' donnent accès à une gamme de services étendue. La voiture élargit encore l’offre, mais '),
-      bold('l’accès sans voiture reste largement possible'),
-      text('.'),
-    ],
-  }
-}
-
-function bikeBridgeFinding(territory: TerritoryIdentity): RundownFinding {
-  return {
-    key: 'bike-bridge',
-    priority: 85,
-    prose: [
-      text(`${territoryLead(territory)}, `),
-      bold('le vélo', 'bike'),
-      text(' offre un véritable relais entre la marche et la voiture. Il élargit nettement l’offre accessible sans retrouver toute l’amplitude de la '),
-      bold('voiture', 'car'),
-      text('.'),
-    ],
-  }
-}
-
-function carDependenceFinding(territory: TerritoryIdentity): RundownFinding {
-  return {
-    key: 'car-dependent',
-    priority: 80,
-    prose: [
-      text(`${territoryLead(territory)}, `),
-      bold('la voiture', 'car'),
-      text(' structure largement l’accès aux services. Elle donne accès à la fois à une gamme plus large et à davantage d’établissements. Les autres modes ne prennent pas vraiment le relais.'),
-    ],
-  }
-}
-
-function limitedAccessFinding(territory: TerritoryIdentity): RundownFinding {
-  return {
-    key: 'limited',
-    priority: 110,
-    prose: [
-      text(`${territoryLead(territory)}, `),
-      bold('l’offre accessible reste limitée quel que soit le mode'),
-      text('. La voiture améliore peu la gamme disponible, ce qui décrit moins une dépendance automobile qu’un faible volume de services atteignables.'),
-    ],
-  }
-}
-
-function mixedFinding(territory: TerritoryIdentity): RundownFinding {
-  return {
-    key: 'mixed',
-    priority: 10,
-    prose: [
-      text(`${territoryLead(territory)}, les modes ne produisent pas la même forme d’accès. `),
-      bold('La voiture', 'car'),
-      text(' ouvre l’offre la plus large, tandis que '),
-      bold('la marche et les transports en commun', 'foot'),
-      text(' conservent une partie de la diversité accessible.'),
-    ],
-  }
-}
-
-function spreadFinding(ramp: MobiliteAccessRamp | null): TextBlock | null {
-  if (ramp?.availability !== 'complete') return null
-  const readings = (['walkTransit', 'bike', 'car'] as const).map((mode) => {
-    const curve = ramp.curves[mode]
-    const low = curve.points.find((point) => point.quantile === 0.1)?.accessibleTypes
-    const high = curve.points.find((point) => point.quantile === 0.9)?.accessibleTypes
-    return { mode, low, high, spread: low !== undefined && high !== undefined ? high - low : 0 }
-  })
-  const walking = readings.find((reading) => reading.mode === 'walkTransit')!
-  const cycling = readings.find((reading) => reading.mode === 'bike')!
-  const driving = readings.find((reading) => reading.mode === 'car')!
-  if (walking.spread >= RUNDOWN_BUILDING_SPREAD && cycling.spread >= RUNDOWN_BUILDING_SPREAD && driving.spread < RUNDOWN_CAR_SPREAD_RATIO * Math.min(walking.spread, cycling.spread)) {
-    return [text('L’accès à pied et à vélo varie fortement selon les bâtiments, alors que la voiture est plus homogène.')]
-  }
-  const selected = readings.reduce((best, reading) => reading.spread > best.spread ? reading : best)
-  if (selected.spread <= 0) return null
-  const prose = selected.mode === 'walkTransit'
-    ? 'Même cet accès à pied ou en transports en commun varie fortement selon les bâtiments.'
-    : selected.mode === 'bike'
-      ? 'Le relais du vélo ne produit toutefois pas la même amélioration pour tous les bâtiments.'
-      : 'La voiture ne gomme toutefois pas toutes les différences entre les bâtiments.'
-  return selected.spread > 0
-    ? [text(prose)]
-    : null
-}
-
-function bikeVolumeCompensationFinding(
-  walk: AccessProfile,
-  bike: AccessProfile,
-  car: AccessProfile,
-): TextBlock | null {
-  const recoveries = (['types', 'equipment'] as const).map((dimension) => {
-    const gap = car[dimension] - walk[dimension]
-    return gap > 0 ? (bike[dimension] - walk[dimension]) / gap : 0
-  })
-  const volumeRecovery = recoveries[1]!
-  const volumeGain = (bike.equipment - walk.equipment) / Math.max(car.equipment, 1)
-  if (volumeRecovery < 0.25 || volumeGain < 0.15) return null
-  return [
-    bold('Le vélo', 'bike'),
-    text(' compense une partie du volume perdu, sans retrouver toute la profondeur de l’offre.'),
-  ]
-}
-
-function bikeAggregateFinding(
-  walk: AccessProfile,
-  bike: AccessProfile,
-): TextBlock | null {
-  if (bike.types <= walk.types || bike.equipment <= walk.equipment) return null
-  return [
-    bold('Le vélo', 'bike'),
-    text(' élargit l’offre accessible sans voiture, mais reste en dessous de la voiture pour la gamme comme pour le nombre d’établissements.'),
-  ]
-}
-
-function mobiliteRundown(facts: TerritoryFacts): readonly TextBlock[] {
-  const summary = facts.mobility.access.summary
-  const car = accessProfile(summary, 'car')
-  const bike = accessProfile(summary, 'bike')
-  const walk = accessProfile(summary, 'walkTransit')
-  if (!car || !bike || !walk) {
-    return [[text('Les données disponibles ne permettent pas de dégager une lecture d’ensemble de l’accès aux services.')]]
-  }
-  const findings: RundownFinding[] = []
-  if (hasLimitedAccess(car, bike, walk)) findings.push(limitedAccessFinding(facts.territory))
-  if (hasHubWalkingAccess(walk, car)) findings.push(hubFinding(facts.territory))
-  if (hasStrongWalkingAccess(walk, car)) findings.push(walkingFinding(facts.territory))
-  if (hasBikeBridge(walk, bike, car)) findings.push(bikeBridgeFinding(facts.territory))
-  if (hasCarDependence(walk, bike, car)) findings.push(carDependenceFinding(facts.territory))
-  if (findings.length === 0) findings.push(mixedFinding(facts.territory))
-
-  const anchor = findings.sort((a, b) => b.priority - a.priority)[0]!
-  const distribution = walkingDistributionFinding(facts.mobility.buildingDistribution)
-  const spread = spreadFinding(facts.mobility.accessRamp)
-  const complements: TextBlock[] = []
-  if (anchor.key === 'hub' || anchor.key === 'walking') {
-    if (distribution) complements.push(distribution)
-    if (anchor.key === 'hub') complements.push(hubDepthFinding())
-    const bikeVolume = bikeVolumeCompensationFinding(walk, bike, car)
-    if (bikeVolume) complements.push(bikeVolume)
-  } else if (anchor.key === 'bike-bridge') {
-    if (distribution) complements.push(distribution)
-    if (spread) complements.push(spread)
-  } else if (anchor.key === 'car-dependent') {
-    if (distribution) complements.push(distribution)
-  } else if (anchor.key === 'limited') {
-    if (distribution) complements.push(distribution)
-  } else {
-    const bikeAggregate = bikeAggregateFinding(walk, bike)
-    if (bikeAggregate) complements.push(bikeAggregate)
-    if (spread) complements.push(spread)
-  }
-  return [complements.reduce((prose, complement) => [...prose, text(' '), ...complement], anchor.prose)]
-}
-
 export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: ThemeMetadata): ThemeContent {
-  const accessSections = [
-    summarySection(facts),
-    profilesSection(facts),
-    essentialsSection(facts),
-    distributionSection(facts),
-  ] as const
+  // #627 legacy accessibility retirement: the acces-aux-services unit keeps
+  // only its structural identity (the pagination/AEDAR binding). The retired
+  // snapshot sections, their introduction and their rundown no longer render
+  // as « Contenu indisponible » placeholders while AEDAR loads or fails — the
+  // production AEDAR sections own the surface and replace this unit's content
+  // as soon as their evidence is ready.
+  const accessSections: readonly MobiliteContentSection[] = []
   const sharingSections = [
     sharingNetworksSection(facts),
     sharingCyclingOfferSection(facts),
@@ -1934,8 +972,8 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
   const accessUnit: AccesAuxServicesContentUnit = {
     key: 'acces-aux-services',
     label: subgroupLabel('acces-aux-services', 'Accès aux services'),
-    introduction: introductionFor(facts),
-    rundown: mobiliteRundown(facts),
+    introduction: [],
+    rundown: [],
     sections: accessSections,
   }
   const sharingUnit: PartageEspacePublicContentUnit = {

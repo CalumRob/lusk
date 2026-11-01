@@ -516,6 +516,19 @@ function sharingIndicator(
 }
 
 describe('resolveMobiliteThemeContent', () => {
+  it('#627 retirement: renders the acces-aux-services unit without the legacy placeholder body', () => {
+    // The production AEDAR evidence owns the accessibility surface; while it
+    // loads (or fails) the unit keeps only its structural identity — the four
+    // legacy snapshot sections, their introduction and their rundown no
+    // longer render as « Contenu indisponible » placeholders.
+    const content = resolveMobiliteThemeContent(completeFacts)
+    const unit = content.units[0]
+    expect(unit.key).toBe('acces-aux-services')
+    expect(unit.label).toBe('L’accès aux services')
+    expect(unit.sections).toEqual([])
+    expect(unit.introduction).toEqual([])
+    expect(unit.rundown).toEqual([])
+  })
   it('orders all four published Mobilité subgroup units and carries their published facts', () => {
     const facts = structuredClone(completeFacts)
     facts.mobility.indicators = [

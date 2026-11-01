@@ -636,12 +636,10 @@ export interface Payload {
   programmes: ProgrammesPayload | null
   /** API-admitted map grant projection at the producer-declared comparison point. */
   mapGrantFacts?: Indicateur[]
-  /** Bounded Mobilité BPE projection; null/undefined means the element is absent. */
-  profilsAccesBpe?: ProfilAccesBpeRow[] | null
-  /** Compact same-building breadth × depth projection; null means absent. */
-  distributionAccesBatiments?: DistributionAccesBatimentsRow[] | null
-  /** Compact three-mode access-ramp quantiles; null means absent. */
-  rampeAccesBatiments?: RampeAccesBatimentsRow[] | null
+  // #627 - the retired BPE profile / building distribution / access-ramp
+  // projections no longer cross the browser payload seam; their row types
+  // remain for the per-territory model-artifact validator (producer/recovery
+  // asset) and the artifact-contract validators.
   /**
    * The producer per-theme metadata files (theme_<theme>.json, issue #309,
    * wired by #313) — keyed by theme, present themes only. These retain factual

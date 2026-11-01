@@ -40,13 +40,10 @@ import { chargerFichier } from './loader'
 import type { Fichier } from './loader'
 import type {
   ApercuRow,
-  DistributionAccesBatimentsRow,
   Histoire,
   Indicateur,
   Payload,
   ProgrammesPayload,
-  ProfilAccesBpeRow,
-  RampeAccesBatimentsRow,
   RunReport,
   Territoire,
   Theme,
@@ -93,9 +90,6 @@ function payloadVide(): Payload {
     runReport: null,
     vintages: null,
     programmes: null,
-    profilsAccesBpe: null,
-    distributionAccesBatiments: null,
-    rampeAccesBatiments: null,
     themeMetadata: {},
   }
 }
@@ -122,9 +116,6 @@ const TOUS_LES_FICHIERS: Fichier[] = [
   'vintages',
   'apercu',
   'programmes',
-  'profils_acces_bpe',
-  'distribution_acces_batiments',
-  'rampe_acces_batiments',
   ...THEMES_CANONIQUES.flatMap(
     (theme) => [`indicateurs_${theme}`, `histoires_${theme}`, `theme_${theme}`] as Fichier[],
   ),
@@ -180,15 +171,6 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         break
       case 'programmes':
         p.programmes = valeur as ProgrammesPayload | null
-        break
-      case 'profils_acces_bpe':
-        p.profilsAccesBpe = valeur as ProfilAccesBpeRow[] | null
-        break
-      case 'distribution_acces_batiments':
-        p.distributionAccesBatiments = valeur as DistributionAccesBatimentsRow[] | null
-        break
-      case 'rampe_acces_batiments':
-        p.rampeAccesBatiments = valeur as RampeAccesBatimentsRow[] | null
         break
       default:
         // Un thème absent (null) ne contribue aucune ligne — l'état vide honnête.

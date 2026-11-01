@@ -7,20 +7,9 @@
  * targets. CahierPagination owns the presentation sequence. This component
  * only lays those two inputs out as the existing Cahier exploration.
  */
-import {
-  Bike,
-  CarFront,
-  CircleSlash2,
-  Footprints,
-  HeartPulse,
-  Landmark,
-  School,
-  Utensils,
-  WalletCards,
-} from 'lucide-vue-next'
+import { CarFront } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import type { Component } from 'vue'
 
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import {
@@ -28,14 +17,11 @@ import {
 } from '@/fiche/comparisonContext'
 import type { OptionContexteComparaison } from '@/fiche/comparisonContext'
 import type {
-  AccessEvidence,
   AedarAccessEvidence,
   AedarEquipmentExplorerEvidence,
-  ContentFact,
   ContentSection,
   CyclingOfferEvidence,
   ExplorationTarget,
-  SummaryEvidence,
   SingleUnitThemeContent,
   SharingNetworksEvidence,
   ThemeContent,
@@ -44,10 +30,7 @@ import {
   routePourCibleExploration,
   routePourSectionExploration,
 } from '@/fiche/explorationHandoff'
-import {
-  MOBILITE_MODE_LABELS,
-} from '@/fiche/content/territoryFacts'
-import type { MobiliteAccessMode, MobiliteService, NumericFact, TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
+import type { TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
 import {
   AEDAR_DEFAULT_VISIBLE_RAMP_MODES,
   AEDAR_RAMP_MODE_LABELS,
@@ -55,20 +38,14 @@ import {
   toggleAedarRampModeSelection,
 } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode, AedarTimeRampEvidence } from '@/fiche/content/themeContent'
-import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
-import type { CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type { CahierPagination } from './cahierPagination'
 import CahierProse from './CahierProse.vue'
-import CahierDonut, { type CahierDonutRing } from './CahierDonut.vue'
-import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierComparisonNote from './CahierComparisonNote.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
-import BpeProfilesChartCahier from './BpeProfilesChartCahier.vue'
-import CahierSummaryPlot from './CahierSummaryPlot.vue'
-import BivariateDistributionFigureCahier from './BivariateDistributionFigureCahier.vue'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import CahierRoadSurfaceFigure from './CahierRoadSurfaceFigure.vue'
 import CahierSharingFigure from './CahierSharingFigure.vue'
@@ -95,10 +72,6 @@ const props = defineProps<{
   showMapPrototype?: boolean
   aedarAccessEnabled?: boolean
   comparisonOptions?: readonly OptionContexteComparaison[]
-  accessStatus?: 'loading' | 'ready' | 'error'
-  retryAccess?: () => void
-  buildingStatus?: 'loading' | 'ready' | 'error'
-  retryBuilding?: () => void
   aedarStatus?: 'loading' | 'ready' | 'error'
 }>()
 const route = useRoute()
@@ -171,7 +144,6 @@ const pageEntry = computed(
 const sourceEntry = computed(
   () => props.pagination.entries.find((entry) => entry.key === 'sources') ?? null,
 )
-const FIGURE_COMPARISON_LABEL = 'Groupe comparé'
 
 function pageEntryFor(key: string) {
   return props.pagination.entries.find((entry) => entry.key === key) ?? null
@@ -180,33 +152,6 @@ function pageEntryFor(key: string) {
 function pageAnchorFor(key: string): string {
   return pageEntryFor(key)?.anchor ?? `figure-${key}`
 }
-
-function comparisonLabelForFigure(comparisonLabel: string | null): string | null {
-  return comparisonLabel ? FIGURE_COMPARISON_LABEL : null
-}
-
-const SERVICE_ICONS: Readonly<Record<MobiliteService, Component>> = {
-  administration: Landmark,
-  alimentation: Utensils,
-  sante: HeartPulse,
-  banque: WalletCards,
-  ecole: School,
-}
-
-const MODE_ICONS: Readonly<Record<MobiliteAccessMode | 'inaccessible', Component>> = {
-  car: CarFront,
-  bike: Bike,
-  walkTransit: Footprints,
-  inaccessible: CircleSlash2,
-}
-
-const MODE_CLASSES: Readonly<Record<MobiliteAccessMode, string>> = {
-  car: 'c',
-  bike: 'b',
-  walkTransit: 't',
-}
-
-const SUMMARY_MODES = ['walkTransit', 'bike', 'car'] as const
 
 function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
@@ -218,179 +163,6 @@ function formatDate(value: string | null): string | null {
   return Number.isNaN(date.valueOf())
     ? value
     : new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium' }).format(date)
-}
-
-function formatFact(fact: NumericFact | null | undefined): string {
-  if (!fact || fact.value === null) return '—'
-  return fact.unit === '%' ? `${formatNumber(fact.value * 100, 0)} %` : formatNumber(fact.value)
-}
-
-function summaryMetrics(evidence: SummaryEvidence): readonly {
-  key: 'equipment' | 'types'
-  title: string
-  values: SummaryEvidence['accessibleEquipment']
-}[] {
-  return [
-    { key: 'equipment', title: 'Équipements accessibles', values: evidence.accessibleEquipment },
-    { key: 'types', title: 'Types d’équipements accessibles', values: evidence.accessibleTypes },
-  ]
-}
-
-function summaryMetricTitle(key: 'equipment' | 'types'): string {
-  return key === 'equipment' ? 'Nombre d’équip. accessibles' : "Types d'équip. accessibles"
-}
-
-type SummaryBarSegment = {
-  mode: MobiliteAccessMode | 'inaccessible'
-  fact: ContentFact
-  start: number
-  end: number
-}
-
-type RenderedSummaryBarSegment = SummaryBarSegment & {
-  label: string
-  icon: Component | null
-  value: number | null
-  left: string
-  right: string
-}
-
-function summaryHasValues(values: SummaryEvidence['accessibleEquipment']): boolean {
-  return Object.values(values).some((value) => value.fact.value !== null)
-}
-
-function summaryScale(
-  values: SummaryEvidence['accessibleEquipment'],
-  metric?: 'equipment' | 'types',
-  typeCount?: number | null,
-): number {
-  if (metric === 'types' && typeCount !== null && typeCount !== undefined) {
-    return Math.max(0, typeCount)
-  }
-  if (metric === 'equipment') {
-    return Math.max(
-      0,
-      values.car.fact.value ?? 0,
-      values.car.fact.comparison?.reference?.value ?? 0,
-    )
-  }
-  return Math.max(
-    0,
-    ...Object.values(values).flatMap((value) => [
-      value.fact.value ?? 0,
-      value.fact.comparison?.reference?.value ?? 0,
-    ]),
-  )
-}
-
-function summarySegments(
-  values: SummaryEvidence['accessibleEquipment'],
-  metric?: 'equipment' | 'types',
-  typeCount?: number | null,
-  inaccessibleTypes?: ContentFact,
-): readonly RenderedSummaryBarSegment[] {
-  return summaryBarSegments(values, false, metric, typeCount, inaccessibleTypes)
-}
-
-function summaryBarSegments(
-  values: SummaryEvidence['accessibleEquipment'],
-  reference: boolean,
-  metric?: 'equipment' | 'types',
-  typeCount?: number | null,
-  inaccessibleTypes?: ContentFact,
-): readonly RenderedSummaryBarSegment[] {
-  const scale = summaryScale(values, metric, typeCount)
-  const valueFor = (mode: MobiliteAccessMode): number | null => reference
-    ? values[mode].fact.comparison?.reference?.value ?? null
-    : values[mode].fact.value
-  const walk = Math.max(0, valueFor('walkTransit') ?? 0)
-  const bike = Math.max(walk, valueFor('bike') ?? 0)
-  const car = Math.min(scale, Math.max(bike, valueFor('car') ?? 0))
-  const inaccessibleValue = inaccessibleTypes
-    ? reference
-      ? inaccessibleTypes.fact.comparison?.reference?.value ?? null
-      : inaccessibleTypes.fact.value
-    : null
-  const segments: SummaryBarSegment[] = [
-    { mode: 'walkTransit' as const, start: 0, end: walk, fact: values.walkTransit },
-    { mode: 'bike' as const, start: walk, end: bike, fact: values.bike },
-    { mode: 'car' as const, start: bike, end: car, fact: values.car },
-  ]
-  if (metric === 'types' && inaccessibleTypes) {
-    if (inaccessibleValue !== null && scale > 0) {
-      segments.push({
-        mode: 'inaccessible' as const,
-        start: car,
-        end: scale,
-        fact: inaccessibleTypes,
-      })
-    }
-  }
-  return segments.map((segment) => ({
-    ...segment,
-    value: segment.mode === 'inaccessible' ? inaccessibleValue : valueFor(segment.mode),
-    label: segment.mode === 'inaccessible' ? segment.fact.label : MOBILITE_MODE_LABELS[segment.mode],
-    icon: modeIcon(segment.mode),
-    left: scale > 0 ? `${(segment.start / scale) * 100}%` : '0%',
-    right: scale > 0 ? `${100 - (segment.end / scale) * 100}%` : '100%',
-  }))
-}
-
-function summarySegmentClass(mode: MobiliteAccessMode | 'inaccessible'): string {
-  return mode === 'inaccessible' ? 'inaccessible' : MODE_CLASSES[mode]
-}
-
-function summaryLosses(
-  evidence: SummaryEvidence,
-  metric: 'equipment' | 'types',
-): readonly {
-  mode: 'walkTransit' | 'bike'
-  label: string
-  fact: ContentFact
-}[] {
-  const values = metric === 'equipment' ? evidence.averageLosses.total : evidence.averageLosses.diversity
-  return [
-    {
-      mode: 'walkTransit',
-      label: MOBILITE_MODE_LABELS.walkTransit,
-      fact: values.walkTransit,
-    },
-    {
-      mode: 'bike',
-      label: MOBILITE_MODE_LABELS.bike,
-      fact: values.bike,
-    },
-  ]
-}
-
-function summaryLoss(values: SummaryEvidence['accessibleEquipment'], mode: MobiliteAccessMode): number | null {
-  const car = values.car.fact.value
-  const current = values[mode].fact.value
-  return car === null || current === null || mode === 'car' ? null : Math.max(0, car - current)
-}
-
-function summaryLossForSegment(
-  values: SummaryEvidence['accessibleEquipment'],
-  segment: RenderedSummaryBarSegment,
-): number | null {
-  return segment.mode === 'inaccessible' ? null : summaryLoss(values, segment.mode)
-}
-
-function donutRings(values: {
-  car: number | null
-  bike: number | null
-  walkTransit: number | null
-}): readonly CahierDonutRing[] {
-  return [
-    { mode: 'car', value: values.car, color: 'var(--cahier-mode-car)' },
-    { mode: 'bike', value: values.bike, color: 'var(--cahier-mode-bike)' },
-    { mode: 'walkTransit', value: values.walkTransit, color: 'var(--cahier-mode-foot)' },
-  ]
-}
-
-function referenceFactText(fact: NumericFact): string {
-  if (!fact.comparison?.reference) return '—'
-  return formatFact({ ...fact, value: fact.comparison.reference.value })
 }
 
 function explorationLinks(section: ContentSection): readonly {
@@ -507,54 +279,6 @@ function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureDa
     comparisonLabel: ramp.referenceLabel,
   }
 }
-
-function percentage(value: NumericFact): number | null {
-  return value.value === null ? null : Math.max(0, Math.min(1, value.value))
-}
-
-function accessDonutRings(service: AccessEvidence['services'][number]): readonly CahierDonutRing[] {
-  return donutRings({
-    walkTransit: percentage(service.modes.walkTransit.fact),
-    bike: percentage(service.modes.bike.fact),
-    car: percentage(service.modes.car.fact),
-  })
-}
-
-function accessibleModeValue(fact: NumericFact): string {
-  return fact.value === null ? 'Indisponible' : formatFact(fact)
-}
-
-function accessTooltipId(service: MobiliteService): string {
-  return `access-${service}-detail`
-}
-
-function accessTooltipRows(
-  service: AccessEvidence['services'][number],
-  comparisonLabel: string | null,
-): readonly CahierTooltipRow[] {
-  return SUMMARY_MODES.map((mode) => ({
-       label: service.modes[mode].label,
-       value: accessibleModeValue(service.modes[mode].fact),
-       tone: MODE_CLASSES[mode] as CahierTooltipRow['tone'],
-       icon: modeIcon(mode),
-       note: service.modes[mode].fact.comparison?.reference
-          ? `${comparisonLabelForFigure(comparisonLabel) ?? 'Groupe comparé'} : ${referenceFactText(service.modes[mode].fact)}`
-         : undefined,
-     }))
-}
-
-function serviceIcon(service: MobiliteService): Component {
-  return SERVICE_ICONS[service]
-}
-
-function modeIcon(mode: MobiliteAccessMode | 'inaccessible'): Component {
-  return MODE_ICONS[mode]
-}
-
-function hasAnyAccessValue(service: AccessEvidence['services'][number]): boolean {
-  return Object.values(service.modes).some((mode) => mode.fact.value !== null)
-}
-
 function sourceLabel(source: { source: string; version: string }): string {
   const separator = source.source.indexOf(' — ')
   const shortSource = separator < 0 ? source.source : source.source.slice(0, separator)
@@ -769,9 +493,6 @@ onBeforeUnmount(() => {
                   class="figure-spread"
                   :class="{
                     'figure-spread--flip': sectionIndex % 2 === 1,
-                    'figure-spread--paired': section.evidence?.kind === 'distribution'
-                      && section.evidence.buildingDistribution?.availability === 'complete'
-                      && section.evidence.accessRamp?.availability === 'complete',
                     'figure-spread--aedar-equipment-profile': aedarEquipmentProfileEvidenceFor(section) !== null,
                     'figure-spread--aedar-equipment-explorer': aedarEquipmentExplorerEvidenceFor(section) !== null,
                   }"
@@ -873,55 +594,8 @@ onBeforeUnmount(() => {
                     />
                   </div>
 
-                  <figure
-                    v-if="section.key === 'distribution-acces-par-batiment' && props.buildingStatus && props.buildingStatus !== 'ready'"
-                    class="evidence-side evidence-figure building-api-state"
-                    :aria-busy="props.buildingStatus === 'loading'"
-                  >
-                    <p v-if="props.buildingStatus === 'loading'" role="status">Chargement des données d’accès aux bâtiments…</p>
-                    <div v-else role="alert">
-                      <p>Impossible de charger les données d’accès aux bâtiments.</p>
-                      <button type="button" @click="props.retryBuilding?.()">Réessayer</button>
-                    </div>
-                  </figure>
 
-                  <figure
-                    v-if="section.evidence?.kind === 'distribution' && section.evidence.buildingDistribution?.availability === 'complete'"
-                   class="evidence-side evidence-figure bivariate-evidence"
-                 >
-                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments par nombre de types et d’équipements accessibles — {{ section.evidence.buildingDistribution!.modeLabel }}</figcaption>
-                    <BivariateDistributionFigureCahier
-                      :distribution="section.evidence.buildingDistribution!"
-                      :territory-name="content.territory.name"
-                    />
-                    <CahierFigureLecture>
-                      <CahierProse :blocks="section.evidence.buildingDistributionLecture" />
-                    </CahierFigureLecture>
-                     <CahierComparisonNote
-                       :label="section.evidence.comparisonPopulationLabel"
-                       scope-kind="bâtiments"
-                     />
-                   </figure>
-
-                  <figure
-                    v-if="section.evidence?.kind === 'distribution' && section.evidence.accessRamp?.availability === 'complete'"
-                   class="evidence-side evidence-figure access-ramp-evidence"
-                 >
-                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Nombre de types accessibles par part cumulée des bâtiments</figcaption>
-                    <AccessRampFigureCahier
-                      :ramp="section.evidence.accessRamp!"
-                      :territory-name="content.territory.name"
-                    />
-                    <CahierFigureLecture>
-                      <CahierProse :blocks="section.evidence.accessRampLecture" />
-                    </CahierFigureLecture>
-                     <CahierComparisonNote
-                       :label="section.evidence.comparisonPopulationLabel"
-                       scope-kind="bâtiments"
-                     />
-                   </figure>
-
-                  <template v-else-if="section.evidence?.kind === 'sharing-networks' && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public')">
+                  <template v-if="section.evidence?.kind === 'sharing-networks' && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public')">
                     <div
                       v-if="props.networkFigureVariant === 'traces'"
                       class="evidence-side sharing-networks-evidence"
@@ -999,210 +673,6 @@ onBeforeUnmount(() => {
                      <CahierOffreTransportsFigure :offer="section.evidence.offer" :trajectory="section.evidence.trajectory" :comparison-trajectory="section.evidence.comparisonTrajectory" :metadata="section.evidence.trajectoryMetadata" />
                    </figure>
 
-                  <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
-                  <figcaption class="cahier-figure-title cahier-baseline-anchor">Quantité et Diversité d'Équipements accessibles en 20 min (moyennes)</figcaption>
-                  <div class="cahier-figure-frame" :style="CAHIER_FIGURE_STYLE">
-                  <template v-if="props.presentation === 'plain'">
-                    <div class="summary-metrics summary-metrics--paired summary-bar-metrics">
-                      <CahierSummaryPlot
-                        v-for="metric in summaryMetrics(section.evidence)"
-                        :key="metric.key"
-                        v-show="summaryHasValues(metric.values)"
-                        class="summary-metric"
-                        :metric="metric.key"
-                        :axis-title="summaryMetricTitle(metric.key)"
-                        :values="metric.values"
-                        :territory-name="content.territory.name"
-                        :type-count="section.evidence.typeCount"
-                        :inaccessible-types="metric.key === 'types' ? section.evidence.inaccessibleTypes : undefined"
-                        :show-group-labels="true"
-                      />
-                    </div>
-                    <CahierFigureLegend
-                      class="summary-mode-key"
-                      :entries="section.evidence.legend"
-                      :icons="MODE_ICONS"
-                      label="Modes d’accès"
-                    />
-                    <div class="summary-metrics summary-metrics--paired summary-loss-metrics">
-                      <section
-                        v-for="metric in summaryMetrics(section.evidence)"
-                        :key="metric.key"
-                        v-show="summaryHasValues(metric.values)"
-                        class="summary-metric"
-                      >
-                        <div class="summary-loss">
-                          <span class="summary-loss-title type-figure-label">
-                            {{ metric.key === 'equipment' ? 'Perte totale d’accès' : 'Perte de diversité' }}
-                          </span>
-                          <div class="summary-loss-readings">
-                            <CahierFigureScalar
-                              v-for="loss in summaryLosses(section.evidence, metric.key)"
-                              :key="loss.mode"
-                              class="summary-loss-reading"
-                              :value="loss.fact.fact.value === null ? '—' : formatNumber(loss.fact.fact.value, 0)"
-                              :label="loss.label"
-                              :icon="modeIcon(loss.mode)"
-                              :tone="MODE_CLASSES[loss.mode]"
-                              color-value
-                              :show-label="false"
-                              :aria-label="`${loss.label} : ${loss.fact.fact.value === null ? 'indisponible' : formatNumber(loss.fact.fact.value, 0)}`"
-                            >
-                              <template #reference>
-                                 <CahierComparisonValue
-                                   v-if="loss.fact.fact.comparison?.reference"
-                                   :fact="loss.fact.fact"
-                                    :maximum-fraction-digits="0"
-                                    :to="sectionExploration(section)!"
-                                />
-                              </template>
-                            </CahierFigureScalar>
-                          </div>
-                        </div>
-                      </section>
-                    </div>
-                  </template>
-                  <div v-else class="summary-metrics">
-                    <section
-                      v-for="metric in summaryMetrics(section.evidence)"
-                      :key="metric.key"
-                      v-show="summaryHasValues(metric.values)"
-                      class="summary-metric"
-                    >
-                      <h4 class="summary-metric-title">{{ metric.title }} <span>(moy./bât.)</span></h4>
-                      <div
-                        class="summary-stack"
-                        role="img"
-                        :aria-label="`${metric.title} : ${summarySegments(metric.values).map((segment) => `${segment.label} ${formatFact(segment.fact.fact)}`).join('; ')}`"
-                      >
-                        <span
-                          v-for="segment in summarySegments(metric.values)"
-                          :key="segment.mode"
-                          class="summary-stack-segment"
-                           :class="`summary-stack-segment--${summarySegmentClass(segment.mode)}`"
-                          :style="{ left: segment.left, right: segment.right }"
-                        />
-                      </div>
-                      <dl class="summary-values">
-                        <div
-                          v-for="segment in summarySegments(metric.values)"
-                          :key="segment.mode"
-                          class="summary-value"
-                           :class="`summary-value--${summarySegmentClass(segment.mode)}`"
-                        >
-                          <dt>
-                            <component :is="segment.icon" :size="16" stroke-width="1.6" aria-hidden="true" />
-                            {{ segment.label }}
-                          </dt>
-                          <dd>
-                            <strong class="cahier-scalar-value">{{ formatFact(segment.fact.fact) }}</strong>
-                             <small v-if="summaryLossForSegment(metric.values, segment) !== null">
-                               −{{ formatNumber(summaryLossForSegment(metric.values, segment)!) }} vs voiture
-                            </small>
-                              <CahierComparisonValue
-                                 :fact="segment.fact.fact"
-                                 :to="sectionExploration(section)"
-                            />
-                          </dd>
-                        </div>
-                      </dl>
-                    </section>
-                   </div>
-                   </div>
-                   <CahierFigureLecture>
-                     <CahierProse :blocks="section.evidence.figureLecture" />
-                   </CahierFigureLecture>
-                   <CahierComparisonNote :label="section.evidence.comparisonLabel" />
-                 </figure>
-
-                <figure v-else-if="section.evidence?.kind === 'bpe-profiles'" class="evidence-side evidence-figure bpe-evidence">
-                  <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
-                  <p v-if="section.evidence.totalTypes !== null" class="bpe-profile-total">
-                    {{ formatNumber(section.evidence.totalTypes, 0) }} types d’équipement
-                  </p>
-                   <BpeProfilesChartCahier
-                     :profiles="section.evidence.profiles"
-                     :total-types="section.evidence.totalTypes"
-                     :territory-name="section.evidence.territoryName"
-                    :donut-tooltip-title="section.evidence.donutTooltipTitle"
-                     :comparison-label="section.evidence.comparisonLabel"
-                     :exploration-to="sectionExploration(section)"
-                   />
-                    <CahierFigureLecture v-if="section.evidence.figureLecture.length > 0">
-                      <CahierProse :blocks="section.evidence.figureLecture" />
-                    </CahierFigureLecture>
-                    <CahierComparisonNote
-                      class="bpe-comparison-note"
-                      :label="section.evidence.comparisonLabel"
-                    />
-                 </figure>
-                  <figure v-else-if="section.evidence?.kind === 'access' && props.accessStatus && props.accessStatus !== 'ready'" class="evidence-side access-figure-collection" :aria-busy="props.accessStatus === 'loading'">
-                    <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments qui ont accès à chaque type de service</figcaption>
-                    <p v-if="props.accessStatus === 'loading'" role="status">Chargement des données d’accès aux services…</p>
-                    <div v-else role="alert">
-                      <p>Impossible de charger les données d’accès aux services.</p>
-                      <button type="button" @click="props.retryAccess?.()">Réessayer</button>
-                    </div>
-                  </figure>
-                  <figure v-else-if="section.evidence?.kind === 'access'" class="evidence-side access-figure-collection">
-                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments qui ont accès à chaque type de service</figcaption>
-                   <div class="cahier-figure-frame" :style="CAHIER_FIGURE_STYLE">
-                   <div class="access-figures" aria-label="Part des bâtiments accessibles par service et par mode">
-                    <figure
-                      v-for="service in section.evidence.services"
-                      :key="service.service"
-                      class="access-figure"
-                       :class="{ 'access-figure--incomplete': !hasAnyAccessValue(service) }"
-                     >
-                       <span class="access-service-label">{{ service.label }}</span>
-                        <CahierDonut
-                          class="stacked-donut cahier-tooltip-trigger"
-                           :rings="accessDonutRings(service)"
-                           :aria-describedby="accessTooltipId(service.service)"
-                          :label-accessible="`${service.label}. ${Object.values(service.modes).map((mode) => `${mode.label} : ${accessibleModeValue(mode.fact)}`).join('. ')}`"
-                        >
-                         <component :is="serviceIcon(service.service)" class="stacked-donut-icon" :size="16" stroke-width="1.5" aria-hidden="true" />
-                       </CahierDonut>
-                      <CahierFigureScalar
-                        class="access-foot-summary"
-                        :value="formatFact(service.modes.walkTransit.fact)"
-                        :label="service.modes.walkTransit.label"
-                        :icon="Footprints"
-                        tone="t"
-                        color-value
-                        :show-label="false"
-                        :aria-label="`${service.label}. ${service.modes.walkTransit.label} : ${formatFact(service.modes.walkTransit.fact)}`"
-                      >
-                        <template #reference>
-                           <CahierComparisonValue
-                              :fact="service.modes.walkTransit.fact"
-                              :to="sectionExploration(section)"
-                          />
-                        </template>
-                      </CahierFigureScalar>
-                       <CahierFigureTooltip
-                         :id="accessTooltipId(service.service)"
-                         class="access-tooltip"
-                         title="Détail par mode"
-                         :rows="accessTooltipRows(service, section.evidence.comparisonLabel)"
-                        popover
-                      />
-                    </figure>
-                     <div class="access-legend">
-                       <p>Chaque anneau montre la part accessible par mode.</p>
-                      <CahierFigureLegend
-                        :entries="section.evidence.legend"
-                        :icons="MODE_ICONS"
-                        label="Légende des parts d'accessibilité"
-                               />
-                             </div>
-                           </div>
-                          </div>
-                     <CahierFigureLecture>
-                      <CahierProse :blocks="section.evidence.figureLecture" />
-                    </CahierFigureLecture>
-                    <CahierComparisonNote :label="section.evidence.comparisonLabel" />
-                  </figure>
 
                   <div v-else-if="!aedarAccessEvidenceFor(section) && !aedarEquipmentProfileEvidenceFor(section) && !aedarEquipmentExplorerEvidenceFor(section)" class="evidence-side evidence-placeholder" :role="sectionIsLoading(currentUnit.key) ? 'status' : 'note'">
                   <span>{{ sectionState(section, currentUnit.key) }}</span>

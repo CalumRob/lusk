@@ -533,13 +533,10 @@ const classesFond = computed(() =>
  * Mobilité's production cahier owns the editorial body whenever its theme is selected.
  */
 const mobiliteEditorialeActive = productionMobilite
-const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
-const buildingStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const mobilityFocal = ref<TerritoryFacts | null>(null)
 const mobilityComparisonFacts = ref<TerritoryFacts | null>(null)
 const mobilityCurveComparison = ref<SelectedTrajectoryComparison | null>(null)
 const mobilityComparisonStatus = ref<'loading' | 'ready' | 'error'>('loading')
-const retryMobilityFacts = ref(0)
 let focalRequestSequence = 0
 let comparisonRequestSequence = 0
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -550,18 +547,16 @@ let lastComparisonKey: string | null = null
 let lastComparisonModel: object | null = null
 
 watch([productionMobilite, typeRoute, idRoute,
-  () => referenceTerritoire.reference.value, retryMobilityFacts], (_values, _oldValues, onCleanup) => {
+  () => referenceTerritoire.reference.value], (_values, _oldValues, onCleanup) => {
   if (!productionMobilite.value) return
   const reference = referenceTerritoire.reference.value
-  const key = `${typeRoute.value}/${idRoute.value}/${retryMobilityFacts.value}`
+  const key = `${typeRoute.value}/${idRoute.value}`
   if (reference && lastFocalKey === key && lastFocalModel === reference) return
   const request = ++focalRequestSequence
-  statutAccesApi.value = 'loading'
   mobilityFocal.value = null
   mobilityComparisonFacts.value = null
   mobilityCurveComparison.value = null
   mobilityComparisonStatus.value = 'loading'
-  buildingStatus.value = 'loading'
   if (!typeValide.value || !reference || !payloadPourRendu.value) {
     lastFocalKey = null
     lastFocalModel = null
@@ -595,14 +590,10 @@ watch([productionMobilite, typeRoute, idRoute,
     mobilityComparisonFacts.value = combined
     mobilityCurveComparison.value = combined.mobility.selectedTrajectoryComparison ?? null
     mobilityComparisonStatus.value = data.comparison_error ? 'error' : 'ready'
-    statutAccesApi.value = 'ready'
-    buildingStatus.value = 'ready'
     settled = true
   }).catch(() => {
     settled = true
     if (request === focalRequestSequence) {
-      statutAccesApi.value = 'error'
-      buildingStatus.value = 'error'
       mobilityComparisonStatus.value = 'error'
     }
   })
@@ -668,13 +659,6 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
     })
   }, { immediate: true })
 
-function rechargerMobilityFacts(): void {
-  cacheAcquisition.invalidate(typeRoute.value, idRoute.value, 'mobilite')
-  retryMobilityFacts.value += 1
-  // Mobilité facts are consumed by both the shared theme acquisition state
-  // and the production cahier; retry both consumers through the same cache.
-  retryAcquisition.value += 1
-}
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
     !productionMobilite.value ||
@@ -859,8 +843,7 @@ watch(
             <!-- The production cahier owns Mobilité's editorial body and AEDAR evidence. -->
             <ProductionMobilite v-if="productionMobilite && contenuMobilite && paginationCahier"
               :content="contenuMobilite" :pagination="paginationCahier" :comparison-options="optionsComparaison"
-              :access-status="statutAccesApi" :retry-access="rechargerMobilityFacts"
-              :building-status="buildingStatus" :retry-building="rechargerMobilityFacts"
+             
               :aedar-data="aedarData" :aedar-status="aedarStatus" :retry-aedar="retryAedar"
               :aedar-reference-territoire="aedarReferenceTerritoire" :aedar-reference-data="aedarReferenceData"
               :aedar-reference-status="aedarReferenceStatus" />

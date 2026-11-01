@@ -598,7 +598,6 @@ export function payloadDepuisModeleTerritoire(model: TerritoryReadModel): Payloa
   const themes = Object.values(model.themes).filter(
     (theme): theme is TerritoryThemeReadModel => theme !== undefined,
   )
-  const mobilite = model.themes.mobilite
 
   return {
     territoires: model.territories,
@@ -608,9 +607,6 @@ export function payloadDepuisModeleTerritoire(model: TerritoryReadModel): Payloa
     runReport: null,
     vintages: null,
     programmes: null,
-    profilsAccesBpe: mobilite?.bpeAccess ?? null,
-    distributionAccesBatiments: mobilite?.buildingDistribution ?? null,
-    rampeAccesBatiments: mobilite?.accessRamp ?? null,
     themeMetadata: Object.fromEntries(themes.map((theme) => [theme.theme, theme.metadata])),
   }
 }
