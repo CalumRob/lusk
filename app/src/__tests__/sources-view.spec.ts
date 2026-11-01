@@ -5,7 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 
 import SourcesView from '../views/SourcesView.vue'
-import { chargerAvec, histoiresHabitatFixture, histoiresMobiliteFixture, indicateursHabitatFixture, indicateursMobiliteFixture, metadonneesThemesFixtures } from '../payload/fixtures'
+import { chargerAvec, histoiresHabitatFixture, histoiresMobiliteFixture, indicateursHabitatFixture, indicateursMobiliteFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures } from '../payload/fixtures'
 import type { ChargerFichier } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
 import { apercuAvecNAFixture, histoiresDemographieFixture, indicateursDemographieFixture, territoiresFixture, vintagesFixture } from '../payload/fixtures'
@@ -25,6 +25,46 @@ function payloadAvecFichesSources(): Payload {
     },
   }
   return { ...payload, themeMetadata: { ...metadonneesThemesFixtures, demographie } }
+}
+
+/**
+ * #872 — le payload de la réconciliation navigation : la déclaration
+ * raccordement (pages courantes + référence nommée sans page), les
+ * déclarations d'accessibilité retirées du snapshot, la couverture
+ * programmatique du sixième thème et le référentiel territorial.
+ */
+function payloadSourcesNavigation(): Payload {
+  return {
+    ...payloadAvecFichesSources(),
+    themeMetadata: { ...metadonneesThemesFixtures, mobilite: metadonneesMobiliteRaccordementFixture },
+    territoryMetadata: {
+      schema_version: '1',
+      territory_reference_label: 'Référentiel territorial — classes de densité communale',
+      source_records: {
+        classe_densite_communale: {
+          dataset: 'Grille de densité 2025 — maille communale',
+          publisher: 'INSEE',
+          url: 'https://www.insee.fr/fr/statistiques/fichier/8571524/fichier_diffusion_2026.xlsx',
+          licence: 'Licence Ouverte 2.0',
+          vintage: 'Classification 2025 · géographie communale au 01/01/2026 · RP 2021',
+          freshness: 'Publication INSEE du 15 mai 2026',
+          vintages: [{
+            id: 'classe_densite_communale',
+            label: 'Grille de densité communale 2025',
+            version: 'Classification 2025',
+            licence: 'Licence Ouverte 2.0',
+            dateReference: '2021-01-01',
+            datePublication: '2026-05-15',
+          }],
+        },
+      },
+      density_classes: Object.fromEntries(Array.from({ length: 7 }, (_, index) => [String(index + 1), {
+        code: String(index + 1),
+        libelle_insee: `Classe INSEE ${index + 1}`,
+        libelle_public: `Classe publique ${index + 1}`,
+      }])),
+    } as unknown as Payload['territoryMetadata'],
+  }
 }
 
 async function monter(charger: ChargerFichier) {
@@ -115,5 +155,64 @@ describe('SourcesView — route dataset-centric', () => {
     expect(method.exists()).toBe(true)
     expect(method.text()).toContain('Estimation des places')
     expect(method.text()).toContain('26,70208 m²/place')
+  })
+
+  it('ne lie que les pages courantes — une déclaration sans page ne fabrique jamais d’URL (#872)', async () => {
+    const wrapper = await monter(chargerAvec(payloadSourcesNavigation()))
+
+    // Les Pages d'indicateur courantes du catalogue partagé restent liées,
+    // vers la route canonique de leur thème ressource.
+    expect(wrapper.find('a[href="/indicateurs/mobilite/raccordement_tc"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/indicateurs/mobilite/raccordement_courbe"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/indicateurs/programmes/subventions_annuelles"]').exists()).toBe(true)
+
+    // Les déclarations d'accessibilité retirées ne deviennent pas des liens.
+    expect(wrapper.find('a[href="/indicateurs/mobilite/iso_alimentation"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/indicateurs/mobilite/share_food_t"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/indicateurs/mobilite/nb_buildings"]').exists()).toBe(false)
+
+    // La référence nommée sans page et la couverture programmatique du
+    // sixième thème restent des déclarations, pas des pages.
+    expect(wrapper.find('a[href="/indicateurs/mobilite/raccordement_reference"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/indicateurs/programmes/couverture_programmes"]').exists()).toBe(false)
+
+    // Les déclarations restent représentées en texte, avec leur libellé producteur.
+    const matrice = wrapper.find('#source-matrice-temps-mairies')
+    expect(matrice.exists()).toBe(true)
+    expect(matrice.text()).toContain('Référence médiane — commune bretonne')
+    const snapshot = wrapper.find('#source-mobilite-snapshot')
+    expect(snapshot.exists()).toBe(true)
+    expect(snapshot.text()).toContain('Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)')
+    expect(wrapper.text()).toContain('Couverture programmatique')
+
+    // Le référentiel territorial reste un consommateur non-indicateur sans lien.
+    const referentiel = wrapper.find('#source-classe-densite-communale')
+    expect(referentiel.exists()).toBe(true)
+    expect(referentiel.text()).toContain('Référentiel territorial')
+    expect(referentiel.find('a[href^="/indicateurs/"]').exists()).toBe(false)
+  })
+
+  it('garde les ancres, l’identité de jeu et les horloges indépendantes des sources liées (#872)', async () => {
+    const wrapper = await monter(chargerAvec(payloadSourcesNavigation()))
+
+    // L'ancre de la fiche, l'identité de jeu, l'éditeur, le millésime et les
+    // horloges demeurent — la réconciliation ne retire que le lien mensonger.
+    const matrice = wrapper.find('#source-matrice-temps-mairies')
+    expect(matrice.text()).toContain('Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)')
+    expect(matrice.text()).toContain('Éditeur : Lusk')
+    expect(matrice.text()).toContain('2026-08')
+    expect(matrice.text()).toContain('Le meilleur départ de la journée')
+
+    const referentiel = wrapper.find('#source-classe-densite-communale')
+    expect(referentiel.text()).toContain('Grille de densité 2025 — maille communale')
+    expect(referentiel.text()).toContain('15 mai 2026')
+
+    // La liste des consommateurs distingue la page courante (lien) de la
+    // déclaration (texte) dans la même fiche.
+    const liens = matrice.findAll('a[href^="/indicateurs/"]')
+    expect(liens.map((lien) => lien.attributes('href'))).toEqual([
+      '/indicateurs/mobilite/raccordement_tc',
+      '/indicateurs/mobilite/raccordement_courbe',
+    ])
   })
 })
