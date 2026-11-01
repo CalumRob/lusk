@@ -125,7 +125,8 @@ def run() -> dict:
     # explained row set so a re-run after an interruption does not recompute it.
     import hashlib
 
-    cache_path = config.PRIVATE_DIR / "attribution_cache.npz"
+    cache_path = config.PRIVATE_DIR / "attribution_values.npy"
+    digest_path = config.PRIVATE_DIR / "attribution_digest.txt"
     digest = hashlib.sha256(
         np.ascontiguousarray(explain_index).tobytes()
         + np.ascontiguousarray(background).tobytes()
@@ -133,16 +134,18 @@ def run() -> dict:
     ).hexdigest()
     base = float(model.predict(background).mean())
     values = None
-    if cache_path.exists():
-        cached = np.load(cache_path, allow_pickle=False)
-        if str(cached["digest"]) == digest:
-            values = cached["values"]
-            _log("reused cached attribution matrix")
+    if cache_path.exists() and digest_path.exists():
+        if digest_path.read_text().strip() == digest:
+            cached = np.load(cache_path, allow_pickle=False)
+            if cached.shape == (len(explain_index), len(BLOCKS)):
+                values = cached
+                _log("reused cached attribution matrix")
     if values is None:
         values = attribution.grouped_shapley_batch(
             model.predict, matrix[explain_index], background, masks, list(BLOCKS),
             permutations=PERMUTATIONS, seed=config.SEED, chunk=EXPLAIN_CHUNK)
-        np.savez(cache_path, values=values, digest=np.array(digest))
+        np.save(cache_path, values)
+        digest_path.write_text(digest)
     reconstructed = base + values.sum(axis=1)
     parity_error = float(np.max(np.abs(reconstructed - predictions[explain_index])))
     _log(f"max additivity error over explained rows: {parity_error:.3e}")

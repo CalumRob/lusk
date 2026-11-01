@@ -5,30 +5,30 @@
   "brittany_index": 100.0,
   "max_additivity_error": 9.5367431640625e-07,
   "baseline_mean_phi": {
-    "property": 0.045935512382139665,
-    "access": -0.05262057399453662,
-    "local": -0.017286433298972077,
-    "timing": 0.004664776107298888,
-    "space": -0.14130752759071286
+    "property": 0.04033660203132627,
+    "access": -0.047377519158666594,
+    "local": -0.01579296513067287,
+    "timing": 0.004651197123824137,
+    "space": -0.13963226600179415
   },
-  "baseline_residual": -0.007617944408731954,
+  "baseline_residual": -0.007410780623465504,
   "audit": {
     "commune": {
       "territories": 1200,
-      "max_abs_reconciliation_error": 5.629411524710193e-07,
+      "max_abs_reconciliation_error": 4.7548189090196313e-07,
       "weighted_index_check": 100.00000000000003
     },
     "epci": {
       "territories": 62,
-      "max_abs_reconciliation_error": 1.1003170852230681e-07,
+      "max_abs_reconciliation_error": 1.1861030657644989e-07,
       "weighted_index_check": 100.00000000000004
     },
     "departement": {
       "territories": 4,
-      "max_abs_reconciliation_error": 5.9799463436593925e-09,
+      "max_abs_reconciliation_error": 3.850272066452387e-09,
       "weighted_index_check": 100.0
     }
   },
-  "wall_seconds": 2695.7,
-  "peak_rss_gb": 1.13
+  "wall_seconds": 4485.2,
+  "peak_rss_gb": 1.08
 }

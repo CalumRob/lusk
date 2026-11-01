@@ -80,32 +80,32 @@
     "brittany_index": 100.0,
     "max_additivity_error": 9.5367431640625e-07,
     "baseline_mean_phi": {
-      "property": 0.045935512382139665,
-      "access": -0.05262057399453662,
-      "local": -0.017286433298972077,
-      "timing": 0.004664776107298888,
-      "space": -0.14130752759071286
+      "property": 0.04033660203132627,
+      "access": -0.047377519158666594,
+      "local": -0.01579296513067287,
+      "timing": 0.004651197123824137,
+      "space": -0.13963226600179415
     },
-    "baseline_residual": -0.007617944408731954,
+    "baseline_residual": -0.007410780623465504,
     "audit": {
       "commune": {
         "territories": 1200,
-        "max_abs_reconciliation_error": 5.629411524710193e-07,
+        "max_abs_reconciliation_error": 4.7548189090196313e-07,
         "weighted_index_check": 100.00000000000003
       },
       "epci": {
         "territories": 62,
-        "max_abs_reconciliation_error": 1.1003170852230681e-07,
+        "max_abs_reconciliation_error": 1.1861030657644989e-07,
         "weighted_index_check": 100.00000000000004
       },
       "departement": {
         "territories": 4,
-        "max_abs_reconciliation_error": 5.9799463436593925e-09,
+        "max_abs_reconciliation_error": 3.850272066452387e-09,
         "weighted_index_check": 100.0
       }
     },
-    "wall_seconds": 2695.7,
-    "peak_rss_gb": 1.13
+    "wall_seconds": 4485.2,
+    "peak_rss_gb": 1.08
   },
   "gaps": [
     "OCS-GE 500 m neighbourhood composition: not implemented. The selected pre-2022 vintages (22/29 2021, 35 2020) are cached, but the D56 2019 baseline is absent (only the 2022 file exists, which is not a permitted substitute), and the selected-parcel anchors needed for a 500 m join are not reconstructible for every multi-parcel mutation. No placeholder values were invented.",
@@ -116,7 +116,7 @@
   ],
   "attribution_note": "Grouped Shapley values over five reporting blocks (property, AEDAR access, local setting, sale timing, joint spatial component) with a background-masking value function, estimated by antithetic permutation sampling over a 64-row background and validated by (a) an independent exact-coalition oracle over all subsets on small games, (b) an additivity check against the original fitted XGBoost prediction including missing values, and (c) a coordinate-free-model test that must return exactly zero spatial contribution. The last two target the documented upstream defects. The permutation estimator's sampling error is the dominant uncertainty in the contributions, not the model itself.",
   "timings": {
-    "total_wall_seconds": 2864.6,
-    "report_stage_seconds": 1.9
+    "total_wall_seconds": 4654.0,
+    "report_stage_seconds": 1.8
   }
 }
