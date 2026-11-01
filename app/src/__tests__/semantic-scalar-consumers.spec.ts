@@ -1198,6 +1198,13 @@ describe('ordinary scalar consumers on semantic resources', () => {
     // retain the descriptor independently of the rows: the rank read validates
     // against the NATIVE unit, and the fixture's editorial page deliberately
     // carries a different one, so an editorial fallback cannot silently pass.
+    // Sensitivity guard — the two unit sources stay deliberately different:
+    // the public producer metadata feeding resource()/cohort/rank fixtures
+    // says hab/km², while the injected payload page (chargerAvec →
+    // metadonneesThemesFixtures.demographie) says hab./km²; reverting to
+    // editorial validation would reject the native-unit comparison.
+    expect(metadonneesThemesFixtures.demographie.indicator_pages?.densite?.unit).toBe('hab./km²')
+    expect(metadata('demographie').indicator_pages.densite.unit).toBe('hab/km²')
     const facts = cohortResult('demographie', 'densite', target, ['22001', '22002', '29001', '29002'], [])
     let comparisonAttempts = 0
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1211,15 +1218,20 @@ describe('ordinary scalar consumers on semantic resources', () => {
           const members = item.intent.members.map((member: { type: string; id: string }) => ({
             territory_type: member.type, territory_id: member.id,
           }))
+          // Zero observations ⇒ no eligible member: the comparison contract
+          // owns eligibility/missingness — unavailable, none eligible, every
+          // selected member missing, no rank. The unit still binds to the
+          // native descriptor (validated before the unavailable return).
           return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: {
             resource: 'densite', target: item.target, contract: 'indicator-comparison-v1', indicator_id: 'densite',
             shape: 'scalar', content_version: 'scalar-publication-v4',
             reference_content_version: 'reference-v7', selection: members,
             scope: { kind: 'explicit_selection', member_count: members.length },
-            result: { indicator_id: 'densite', status: 'available',
+            result: { indicator_id: 'densite', status: 'unavailable',
+              reason: 'no_selected_comparable_values',
               unit: metadata('demographie').indicator_pages.densite.unit, direction: 'high', source_facet: 'densite',
               descriptor_version: 'scalar-descriptor-v3', selected_member_count: members.length,
-              eligible_count: members.length, missing_count: 0, rank: 1, rank_size: members.length },
+              eligible_count: 0, missing_count: members.length, rank: null, rank_size: null },
           } })))
         }
         return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: facts })))
