@@ -10,7 +10,6 @@
         "effectifs_salaries",
         "chomage"
       ],
-
       "reading": {
         "story_key": "ce-que-la-commune-abrite",
         "figure": {
@@ -68,14 +67,14 @@
       "framing": "La place des établissements verts dans le tissu productif.",
       "indicators": [
         "eco_activites"
-      ]}
+      ]
+    }
   ],
   "indicator_keys": [
     "effectifs_salaries",
     "chomage",
     "eco_activites"
   ],
-
   "sources": {
     "effectifs_salaries": "flores_a88",
     "chomage": "rp_chomage",

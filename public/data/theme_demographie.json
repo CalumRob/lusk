@@ -10,7 +10,8 @@
         "densite",
         "structure_age",
         "taille_menages"
-      ]},
+      ]
+    },
     {
       "key": "trajectoire-demographique",
       "label": "Trajectoire démographique",
@@ -18,7 +19,6 @@
       "indicators": [
         "evolution_1968"
       ],
-
       "reading": {
         "story_key": "trajectoire-demographique",
         "params": [
@@ -96,7 +96,6 @@
     "evolution_1968",
     "taille_menages"
   ],
-
   "sources": {
     "densite": "serie_historique",
     "structure_age": "age_detail",
