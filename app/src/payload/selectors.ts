@@ -30,6 +30,7 @@ import { THEMES_CANONIQUES } from './types'
 import { SOURCES_METHODES, datasetDeSource } from '@/methodes/sources'
 import { THEMES_CONSTRUITS, THEMES_METHODES } from '@/methodes/indicateurs'
 import type { ThemeConstruit } from '@/methodes/indicateurs'
+import { CONTENU_CATALOGUE_INDICATEURS } from '@/indicateurs/catalogueContent'
 
 /**
  * Which themes exist in the payload, in canonical order (ADR-0007: Aperçu
@@ -711,7 +712,17 @@ export interface SourceConsumerRecord {
    *  registre éditorial Méthodes (THEMES_METHODES) reste le sien). */
   theme: Theme | null
   caveat: string | null
-  kind?: 'indicator' | 'territory-reference'
+  /**
+   * La disposition de navigation du consommateur (#872). « indicator » —
+   * l'identité ressource est une Page d'indicateur COURANTE du catalogue
+   * partagé de l'app : elle seule reçoit un lien de page. « declaration » —
+   * une déclaration de source sans page courante (déclaration retirée ou
+   * ressource nommée sans page) : représentée en texte, jamais une URL de
+   * page fabriquée. « territory-reference » — le référentiel territorial.
+   * La présence d'une déclaration n'est pas l'existence d'une page ; la
+   * présentation d'une page n'est pas la disponibilité factuelle de l'API.
+   */
+  kind: 'indicator' | 'declaration' | 'territory-reference'
 }
 
 export interface SourceDatasetRecord {
@@ -733,6 +744,23 @@ export interface SourceDatasetRecord {
   replie: boolean
   themes: Theme[]
 }
+
+/**
+ * #872 — Les Pages d'indicateur COURANTES, dérivées du catalogue partagé de
+ * l'app (CONTENU_CATALOGUE_INDICATEURS — la même organisation stable que
+ * /indicateurs et la recherche groupée, jamais une seconde liste de slugs
+ * conservés/retirés). La présence d'une déclaration de source n'est pas
+ * l'existence d'une page : seules ces identités ressources reçoivent un lien
+ * de Page d'indicateur ; la présentation d'une page n'est pas la
+ * disponibilité factuelle de l'API.
+ */
+const PAGES_INDICATEUR_COURANTES = new Set(
+  CONTENU_CATALOGUE_INDICATEURS.flatMap((groupe) =>
+    groupe.sousGroupes.flatMap((sousGroupe) =>
+      sousGroupe.pages.map(({ resourceKey }) => `${groupe.theme}/${resourceKey}`),
+    ),
+  ),
+)
 
 function clocksPourThemes(themes: readonly Theme[]): SourceClock[] {
   const clocks: SourceClock[] = []
@@ -907,11 +935,17 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
       const consumerId = `${consumer.theme}:${consumer.key}`
       if (seenConsumers.has(consumerId)) continue
       seenConsumers.add(consumerId)
+      // #872 : la disposition de navigation se réconcilie avec le catalogue
+      // partagé des pages courantes — une déclaration sans page courante
+      // (référence nommée, clef retirée) reste un consommateur publié de la
+      // source, mais ne fabrique jamais une URL de Page d'indicateur.
+      const pageCourante = PAGES_INDICATEUR_COURANTES.has(`${consumer.theme}/${consumer.key}`)
       record.consumers.push({
         key: consumer.key,
         label: metadata?.indicator_labels[consumer.key] ?? THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.label ?? consumer.key,
         theme: consumer.theme,
         caveat: page?.caveats ?? metadata?.indicator_caveats?.[consumer.key] ?? THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.caveat ?? null,
+        kind: pageCourante ? 'indicator' : 'declaration',
       })
       if (!record.themes.includes(consumer.theme)) record.themes.push(consumer.theme)
     }
