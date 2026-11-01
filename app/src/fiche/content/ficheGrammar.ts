@@ -35,7 +35,9 @@ export const CONTENU_SOUS_GROUPES_FICHE = {
  */
 export const CADRAGES_SOUS_GROUPES_FICHE = {
   mobilite: {
-    'acces-aux-services': 'Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun : les parts de bâtiments sans accès aux services essentiels.',
+    // #627 - the acces-aux-services framing described the retired building-
+    // share snapshot; the production AEDAR evidence owns the unit's copy.
+    'acces-aux-services': null,
     'partage-de-lespace-public': 'La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.',
     motorisation: 'L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.',
     // Factual: the 500 m catchment and the 90-minute transit reach are producer thresholds.
@@ -83,7 +85,9 @@ export interface FicheSubgroupGrammar {
   readonly framing: string | null
   /** Producer resource identities and their display order, not availability. */
   readonly indicators: readonly string[]
-  readonly figure: { readonly family: FamilleFigure; readonly indicator: string }
+  /** The subgroup's compact figure; absent when the unit's evidence has no
+   * published indicator figure (the AEDAR accessibility unit). */
+  readonly figure?: { readonly family: FamilleFigure; readonly indicator: string }
   readonly reading?: FicheReadingGrammar
 }
 
@@ -105,30 +109,13 @@ const sources: NoeudTexteRiche = {
 export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
   mobilite: [
     {
+      // #627 - structural identity only: the pagination and the production
+      // AEDAR unit bind this key; the retired snapshot indicators, figure and
+      // reading no longer exist in app grammar.
       key: 'acces-aux-services',
       label: CONTENU_SOUS_GROUPES_FICHE.mobilite['acces-aux-services'],
       framing: CADRAGES_SOUS_GROUPES_FICHE.mobilite['acces-aux-services'],
-      indicators: [
-        'tot_loss_t', 'tot_loss_b', 'iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque',
-        'share_food_t', 'share_food_b', 'share_food_c', 'share_health_t', 'share_health_b', 'share_health_c',
-        'share_admin_t', 'share_admin_b', 'share_admin_c', 'share_school_t', 'share_school_b', 'share_school_c',
-        'share_bank_t', 'share_bank_b', 'share_bank_c', 'avg_tot_car', 'avg_tot_b', 'avg_tot_t',
-        'avg_div_car', 'avg_div_b', 'avg_div_t', 'nb_buildings',
-      ],
-      figure: { family: 'comparison-bars', indicator: 'iso_alimentation' },
-      reading: {
-        params: ['div_loss_t', 'div_loss_b', 'tot_loss_t', 'tot_loss_b', 'pct_iso_full_t', 'classification_saillance'],
-        // The parameter wording stays producer-owned (param_labels): these
-        // labels name access facts, not editorial copy.
-        template: [
-          texte('Sans voiture, '),
-          param('div_loss_t'),
-          texte(' types de services disparaissent de l’accès quotidien de '),
-          territoire,
-          texte('. '),
-          sources,
-        ],
-      },
+      indicators: [],
     },
     {
       key: 'partage-de-lespace-public',
