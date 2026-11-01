@@ -57,7 +57,25 @@ serving_theme_metadata <- function(directory, theme) {
   path <- file.path(directory, paste0("theme_", theme, ".json"))
   if (!file.exists(path))
     stop("Committed theme metadata is missing: ", basename(path), call.=FALSE)
-  jsonlite::fromJSON(path, simplifyVector=FALSE)
+  metadata <- jsonlite::fromJSON(path, simplifyVector=FALSE)
+  # #868 : la projection servie (public/data) ne porte plus les champs producer-only
+  # (CHAMPS_HORS_NAVIGATEUR + figure de présentation des sous-groupes, app-owned).
+  # Les lecteurs du payload committé les retrouvent dans le canon épinglé (extdata) :
+  # overlay canonique explicite, jamais une inférence côté navigateur.
+  canon <- lire_theme_metadata(theme)
+  for (champ in CHAMPS_HORS_NAVIGATEUR) {
+    if (!is.null(canon[[champ]])) metadata[[champ]] <- canon[[champ]]
+  }
+  if (!is.null(canon$subgroups)) {
+    metadata$subgroups <- lapply(seq_along(metadata$subgroups), function(i) {
+      groupe <- metadata$subgroups[[i]]
+      if (is.list(groupe) && !is.null(canon$subgroups[[i]]$figure)) {
+        groupe$figure <- canon$subgroups[[i]]$figure
+      }
+      groupe
+    })
+  }
+  metadata
 }
 
 normalize_serving_dir <- function(path) as.character(fs::path_norm(fs::path_abs(path)))

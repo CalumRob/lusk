@@ -335,7 +335,8 @@ test_that("un run Programmes publie SON canon par-dessus toute relique (#408)", 
                              simplifyVector = FALSE)
   expect_identical(relu$theme, "programmes")
   expect_null(relu$relique)
-  expect_error(valider_theme_metadata(relu), NA)
+  # #868 : le fichier publié est la projection servie → point d'entrée navigateur explicite
+  expect_error(valider_projection_navigateur(relu), NA)
 })
 
 test_that("un run à tables vides ne crée JAMAIS les fichiers partagés (issue #178)", {

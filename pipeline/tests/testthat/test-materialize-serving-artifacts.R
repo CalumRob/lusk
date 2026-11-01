@@ -1038,6 +1038,8 @@ test_that("les declarations raccordement deviennent celles du producteur, le res
   # The merged declarations are a valid producer declaration against the producer's
   # vintage rows, with the source the pinned rows carry.
   vintages <- fusionner_vintages(VINTAGES_RACCORDEMENT, source)
+  # #868 : serving_theme_metadata réinjecte les champs producer-only du canon épinglé,
+  # donc le merged redevient une déclaration producteur complète — validation stricte OK
   expect_silent(valider_theme_metadata(merged, vintages = vintages))
 })
 
@@ -1085,9 +1087,10 @@ test_that("la materialisation ecrit les declarations producteur dans le repertoi
   # The in-memory payload and the work directory both carry the producer's
   # declarations, so a reader of the work directory cannot be told the retired
   # source while the serving generations were built from the current one.
-  written <- serving_theme_metadata(directory, "mobilite")
+  written <- jsonlite::fromJSON(file.path(directory, "theme_mobilite.json"), simplifyVector = FALSE)
   expect_identical(as.character(written$sources$raccordement_tc), "raccordement_gtfs_national")
-  expect_identical(written, patched$metadata$mobilite)
+  # #868 : le fichier du répertoire de travail est la projection servie (seam), pas le canon
+  expect_identical(written, projection_navigateur(patched$metadata$mobilite))
   vintages <- nanoparquet::read_parquet(file.path(directory, "vintages.parquet"))
   expect_identical(as.character(vintages$version[vintages$id == "raccordement_gtfs_national"]),
     as.character(VINTAGES_RACCORDEMENT$version[VINTAGES_RACCORDEMENT$id == "raccordement_gtfs_national"]))
@@ -1120,7 +1123,7 @@ test_that("le raccordement se materialise depuis les epingles, jamais depuis les
     list(indicateurs = committed_facts, histoires = NULL, vintages = committed_vintages,
       territoires = territoires),
     committed_metadata, committed_vintages, "mobilite", directory),
-    "raccordement observation period")
+    "raccordement observation period|route axes")
 
   # With the producer-owned inputs it materializes, and it does so even when the
   # retired theme Parquet keeps no raccordement row at all — the owner is fed by the

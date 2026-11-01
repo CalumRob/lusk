@@ -412,13 +412,17 @@ try {
   const focalRow = page.locator('.comparison-table-scroll tbody tr').filter({ hasText: 'Commune A1' })
   await focalRow.getByRole('link', { name: 'Commune A1' }).click()
   await page.waitForURL((url) => url.pathname === '/territoire/commune/22001' && url.searchParams.get('theme') === 'habitat')
-  const ficheModel = JSON.parse(await readFile(resolve(repoRoot,
-    'public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-  await page.getByRole('heading', { name: ficheModel.territory.name, level: 1 })
+  // #868 — the fiche bootstraps from the compact territory reference, not from a
+  // per-territory read model.
+  const reference = JSON.parse(await readFile(resolve(repoRoot, 'public/data/territoires.json'), 'utf8'))
+  const ficheTarget = reference.find((row) => row.territoire === '22001')
+  await page.getByRole('heading', { name: ficheTarget.nom, level: 1 })
     .waitFor({ state: 'visible', timeout: 15000 })
-  const ficheModelRequest = requests.find((path) => path === '/data/modeles-lecture/territoires/commune/22001.json')
-  assert.equal(ficheModelRequest, '/data/modeles-lecture/territoires/commune/22001.json',
-    'A retained profile table link must resolve to the existing territory fiche model')
+  const ficheReferenceRequest = requests.find((path) => path === '/data/territoires.json')
+  assert.equal(ficheReferenceRequest, '/data/territoires.json',
+    'A retained profile table link must resolve to the territory fiche bootstrapped from the reference')
+  assert.equal(requests.find((path) => path.includes('/data/modeles-lecture/')), undefined,
+    'The fiche must never request a per-territory read model anymore')
 
   // The selected category/sex controls must drive the actual semantic compare request,
   // while the table/figure remain populated from the already acquired API facts.

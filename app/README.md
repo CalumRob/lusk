@@ -83,12 +83,14 @@ run is not live-publication parity.
 
 The app does not require tracked `.env.development` or `.env.production` files.
 Normal commands use the defaults defined in app source; intentional overrides
-can be supplied through the invoking process environment (for example, in
-PowerShell: `$env:VITE_THEME_ACQUISITION_API='0'` before running a command).
+can be supplied through the invoking process environment.
 
-- `VITE_THEME_ACQUISITION_API` is enabled by default; setting it to `'0'` selects
-  the incumbent static path. This client-side switch does not establish that an
-  API route is deployed or available.
+- Since #868 the fiche's numerical runtime is API-only: the fiche bootstraps
+  identity/navigation from the compact territory reference (`/data/territoires.json`)
+  and reads every theme numeric from the semantic API. The former static runtime
+  (`VITE_THEME_ACQUISITION_API='0'`) is retired — there is no environment switch
+  anymore, and rollback is the previous release / manual recovery, not a second
+  numerical browser runtime.
 - `VITE_SCALAR_COHORT_API` remains an opt-in for retained fiche/standalone
   consumers; it does not gate ordinary scalar pages or the five registered
   ordered-series indicator pages. The latter are classified from `/api/resources`

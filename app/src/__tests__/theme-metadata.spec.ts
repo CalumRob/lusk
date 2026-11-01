@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Theme, ThemeMetadata } from '../payload/types'
 import { GROUPES_PAR_STORY } from '../payload/types'
-import { PayloadError, validerThemeMetadata } from '../payload/validate'
+import { PayloadError, validerCatalogueNavigateur, validerThemeMetadata } from '../payload/validate'
 
 /**
  * Le contrat de métadonnées par thème (issue #309, parent #308) — le miroir
@@ -65,11 +65,11 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
       expect(new Set(indicateurs).size).toBe(meta.indicator_keys.length)
       const liees = meta.subgroups.flatMap((g) => g.reading ? [g.reading.story_key] : [])
       expect(new Set(liees).size).toBe(liees.length)
-      for (const cle of liees) expect(meta.story_keys).toContain(cle)
+      for (const cle of liees) expect(meta.story_keys ?? []).toContain(cle)
       // chaque story du registre est liée OU candidate de saillance déclarée
       // du groupe d'un sous-groupe (le pool Mobilité partage SON slot —
       // ADR-0002) : jamais une story orpheline, jamais un slot fabriqué
-      for (const cle of meta.story_keys.filter((c) => !liees.includes(c))) {
+      for (const cle of (meta.story_keys ?? []).filter((c) => !liees.includes(c))) {
         const groupe = GROUPES_PAR_STORY[meta.theme]?.[cle]
         expect(groupe, `« ${cle} » — candidate déclarée au registre`).toBeDefined()
         expect(meta.subgroups.map((g) => g.key)).toContain(groupe)
@@ -98,6 +98,29 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
 
     const validee = validerThemeMetadata(meta, 'theme_mobilite.json')
     expect(validee.story_keys).toEqual(['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'])
+    // #868 : sans story_keys déclaré (projection navigateur), le registre retombe
+    // sur le portefeuille du thème — la validation accepte la projection servie.
+    const { story_keys: _retire, ...projection } = copieBrute('mobilite')
+    expect(() => validerCatalogueNavigateur(projection, 'theme_mobilite.json')).not.toThrow()
+    // #868 RED : le contexte producteur strict refuse la projection (story_keys absent)
+    expect(() => validerThemeMetadata(projection, 'theme_mobilite.json')).toThrow(/story_keys/)
+  })
+
+  it('registre story_keys explicitement vide : aucune lecture non déclarée n’est autorisée (#868)', () => {
+    // RED same-theme : la fixture mobilite a une lecture déclarée (acces-aux-services) ;
+    // un registre [] explicite ne s'étend jamais au portefeuille du thème.
+    const videAvecLecture = copieBrute('mobilite')
+    expect(videAvecLecture.subgroups.some((g) => g.reading !== undefined)).toBe(true)
+    videAvecLecture.story_keys = []
+    expect(() => validerThemeMetadata(videAvecLecture, 'theme_mobilite.json')).toThrow(/histoire|story_keys|orphelin/)
+    expect(() => validerCatalogueNavigateur(videAvecLecture, 'theme_mobilite.json')).toThrow(/histoire|story_keys|orphelin/)
+
+    // contrôle : registre vide et AUCUNE lecture déclarée = valide (Programmes, #408)
+    const videSansLecture = copieBrute('programmes')
+    expect(videSansLecture.subgroups.every((g) => g.reading === undefined)).toBe(true)
+    videSansLecture.story_keys = []
+    expect(() => validerThemeMetadata(videSansLecture, 'theme_programmes.json')).not.toThrow()
+    expect(() => validerCatalogueNavigateur(videSansLecture, 'theme_programmes.json')).not.toThrow()
   })
 
   it('accepte la méthodologie structurée portée par une source', () => {
@@ -181,7 +204,7 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
 
   it('preserves the producer-declared no-record contract when validating canonical Programmes metadata', () => {
     const published = JSON.parse(readFileSync('../public/data/theme_programmes.json', 'utf8'))
-    const metadata = validerThemeMetadata(published, 'theme_programmes.json')
+    const metadata = validerCatalogueNavigateur(published, 'theme_programmes.json')
 
     expect(metadata.indicator_pages?.subventions_annuelles).toMatchObject({
       completeness: 'may_be_missing', absence_semantics: 'no_record',
@@ -189,12 +212,12 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
 
     const unknownAbsence = structuredClone(published)
     unknownAbsence.indicator_pages.subventions_annuelles.absence_semantics = 'unavailable'
-    expect(() => validerThemeMetadata(unknownAbsence, 'theme_programmes.json'))
+    expect(() => validerCatalogueNavigateur(unknownAbsence, 'theme_programmes.json'))
       .toThrow(/absence_semantics.*invalide/)
 
     const completeButNoRecord = structuredClone(published)
     completeButNoRecord.indicator_pages.subventions_annuelles.completeness = 'dense_complete'
-    expect(() => validerThemeMetadata(completeButNoRecord, 'theme_programmes.json'))
+    expect(() => validerCatalogueNavigateur(completeButNoRecord, 'theme_programmes.json'))
       .toThrow(/absence_semantics.*requiert may_be_missing/)
   })
 
@@ -236,13 +259,13 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
   it('rejette une figure invalide', () => {
     // famille hors contrat
     let erreur = attendErreur('demographie', (meta) => {
-      meta.subgroups[0].figure.family = 'camembert' as ThemeMetadata['subgroups'][number]['figure']['family']
+      meta.subgroups[0].figure!.family = 'camembert' as NonNullable<ThemeMetadata['subgroups'][number]['figure']>['family']
     })
     expect(erreur.message).toMatch(/figure/i)
 
     // la figure rend un indicateur que le sous-groupe ne possède pas
     erreur = attendErreur('demographie', (meta) => {
-      meta.subgroups[0].figure.indicator = 'fantome'
+      meta.subgroups[0].figure!.indicator = 'fantome'
     })
     expect(erreur.message).toMatch(/figure/i)
   })
@@ -282,7 +305,7 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
   it('rejette une référence cross-thème (l\u2019herméticité, ADR-0020)', () => {
     // une story d'un autre thème dans story_keys (la Mobilité dans la Démographie)
     const erreur = attendErreur('demographie', (meta) => {
-      meta.story_keys.push('vingt-minutes-sans-voiture')
+      meta.story_keys!.push('vingt-minutes-sans-voiture')
     })
     expect(erreur.message).toMatch(/cross-th[èe]me/i)
   })

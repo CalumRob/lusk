@@ -19,7 +19,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import { PayloadError, parsePayload, validerTerritoires, validerTerritoiresMetadata, validerThemeMetadata, verifierClassesDensite } from '../payload/validate'
+import { PayloadError, parsePayload, validerTerritoires, validerTerritoiresMetadata, validerCatalogueNavigateur, validerThemeMetadata, verifierClassesDensite } from '../payload/validate'
 import type { HistoireDemographie, HistoireMilieux, HistoireMobilite, Payload } from '../payload/types'
 
 type DocumentsBruts = Parameters<typeof parsePayload>[0]
@@ -83,7 +83,7 @@ describe('metadata de trajectoire raccordement', () => {
     const parsed = validerThemeMetadata(metadata, 'theme_mobilite.json')
     expect(parsed.indicator_pages?.raccordement_courbe?.family).toBe('trajectory')
     const historic = JSON.parse(fs.readFileSync('../public/data/theme_mobilite.json', 'utf8'))
-    expect(validerThemeMetadata(historic, 'theme_mobilite.json').indicator_pages?.raccordement_courbe?.family).toBe('trajectory')
+    expect(validerCatalogueNavigateur(historic, 'theme_mobilite.json').indicator_pages?.raccordement_courbe?.family).toBe('trajectory')
     const malformed = structuredClone(metadata)
     malformed.indicator_pages.raccordement_courbe.comparison.details[2] = malformed.indicator_pages.raccordement_courbe.comparison.details[1]
     expect(() => validerThemeMetadata(malformed, 'theme_mobilite.json')).toThrow('comparison.details')

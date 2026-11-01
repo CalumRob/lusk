@@ -1209,11 +1209,12 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
   it('projects only publication-coherent Mobility facts, selected means, and named-reference evidence', () => {
     const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
     const reference = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_reference')!
-    const model = JSON.parse(readFileSync(resolve(process.cwd(),
-      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    // #868 — densité lue depuis la référence compacte, plus depuis le modèle retiré.
+    const referenceTerritoires = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+    const refTarget = referenceTerritoires.find((territory: any) => territory.territoire === '22001')
     const target = { ...territoiresFixture.find((territory) => territory.territoire === '22001')!,
-      classe_densite_code: model.territory.classe_densite_code,
-      classe_densite_libelle_public: model.territory.classe_densite_libelle_public }
+      classe_densite_code: refTarget.classe_densite_code,
+      classe_densite_libelle_public: refTarget.classe_densite_libelle_public }
     const curveDeclaration = curve as unknown as SemanticResourceDeclaration
     const referenceDeclaration = reference as unknown as SemanticResourceDeclaration
     const facts = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },

@@ -824,7 +824,12 @@ export interface SousGroupeMetadata {
   label: string
   framing: string
   indicators: string[]
-  figure: FigureSousGroupe
+  /**
+   * Producer contract (extdata) : required. #868 : the served browser projection
+   * (projection_navigateur) no longer ships it — figure presentation is app-owned
+   * (fiche/content/ficheGrammar.ts) — so it is optional in the navigateur context.
+   */
+  figure?: FigureSousGroupe
   /** Absent for an honest indicator-only subgroup (e.g. structure-verte). */
   reading?: LectureSousGroupe
 }
@@ -876,7 +881,12 @@ export interface ThemeMetadata {
   label: string
   subgroups: SousGroupeMetadata[]
   indicator_keys: string[]
-  story_keys: string[]
+  /**
+   * Registre des histoires — présent dans le canon producteur (extdata) ;
+   * la projection navigateur servie (#868) ne le shippe plus (les lectures
+   * déclarées des sous-groupes le remplacent). Optionnel côté app.
+   */
+  story_keys?: string[]
   sources: Record<string, string>
   /**
    * The indicator labels — EXACTLY indicator_keys, key → French label

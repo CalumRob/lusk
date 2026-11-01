@@ -47,6 +47,43 @@ lire_theme_metadata <- function(theme, chemin = NULL) {
   jsonlite::fromJSON(chemin, simplifyVector = FALSE)
 }
 
+# projection_navigateur --------------------------------------------------------
+# #868 — la projection SERVIE AU NAVIGATEUR. Le canon épinglé (extdata) reste
+# l'entrée producer COMPLÈTE (semantic_resources, story_keys, observed_collection_
+# contracts, owned_series_routes y vivent — le pipeline et l'API les lisent là-bas).
+# Le fichier publié vers public/data ne porte que ce que le navigateur lit
+# réellement : les registres et contrats producer-only (semantic_resources,
+# story_keys, observed_collection_contracts) en sont retirés — jamais une copie
+# de faits TypeScript, jamais un quota d'octets. Les clauses factuelles
+# conservées (cadrages des sous-groupes, libellés, source_records, indicator_pages,
+# sources) restent bit-à-bit celles du canon validé.
+CHAMPS_HORS_NAVIGATEUR <- c(
+  "semantic_resources",        # découverte API : lue côté producteur (extdata)
+  "story_keys",                # registre des stories : redondant avec les lectures des sous-groupes
+  "observed_collection_contracts", # contrat de service API (publish_observed_collections, extdata)
+  "indicator_directions",      # registre de directions : contrôle du validateur producteur uniquement
+  "selected_reading_contract", # aucun lecteur
+  "comparison_scopes",         # projections legacy du modèle de lecture (extdata suffit)
+  "building_comparison",       # idem
+  "service_share_scalar",      # idem
+  "distribution_contracts",    # idem
+  "owned_series_routes"        # aucun lecteur navigateur ; les lecteurs pipeline passent par le canon extdata
+)
+
+projection_navigateur <- function(metadata) {
+  if (!is.list(metadata)) stop("La projection navigateur exige un objet métadonnées", call. = FALSE)
+  projection <- metadata[setdiff(names(metadata), CHAMPS_HORS_NAVIGATEUR)]
+  # la figure de présentation de chaque sous-groupe est app-owned (ficheGrammar.ts) :
+  # elle n'est plus servie au navigateur ; la lecture (reading) reste servie (carte).
+  if (!is.null(projection$subgroups)) {
+    projection$subgroups <- lapply(projection$subgroups, function(groupe) {
+      if (is.list(groupe)) groupe$figure <- NULL
+      groupe
+    })
+  }
+  projection
+}
+
 # publier_theme_metadata --------------------------------------------------------
 # Le seam de publication : valide, puis écrit theme_<theme>.json (le nom du
 # thème validé du contenu). La garde theme_attendu refuse la collision ;
@@ -56,9 +93,15 @@ lire_theme_metadata <- function(theme, chemin = NULL) {
 # déclarations existent.
 publier_theme_metadata <- function(metadata, sortie = "public/data",
                                    vintages = NULL, theme_attendu = NULL,
-                                   directions_module = NULL) {
+                                   directions_module = NULL,
+                                   contexte = "producteur") {
+  # #868 : validation STRICTE du contrat producteur complet AVANT projection
+  # (contexte "producteur" par défaut — un canon sans story_keys ni figure est une
+  # dérive et échoue). Seule une re-publication d'une entrée DÉJÀ projetée (ex. la
+  # copie de travail de materialize_serving_artifacts) passe contexte = "navigateur".
   valider_theme_metadata(metadata, vintages = vintages,
-                         directions_module = directions_module)
+                         directions_module = directions_module,
+                         contexte = contexte)
   if (!is.null(theme_attendu) && !identical(metadata$theme, theme_attendu)) {
     stop(sprintf(
       paste0(
@@ -70,14 +113,17 @@ publier_theme_metadata <- function(metadata, sortie = "public/data",
     ), call. = FALSE)
   }
   if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
+  # #868 : on écrit LA PROJECTION NAVIGATEUR du contenu validé (le canon complet
+  # reste validé en amont, intact, sous extdata).
+  projection <- projection_navigateur(metadata)
   # digits = 17 : la même discipline que publish (ADR-0004) — un contenu relu
   # en JSON est BIT À BIT le contenu validé en mémoire. auto_unbox = TRUE :
   # les scalaires (theme, label, ...) sortent en scalaires — jamais la forme
   # ["demographie"] que write_json donnerait à une liste — tandis que les
-  # tableaux (story_keys, indicator_keys, template, ...) restent des tableaux
+  # tableaux (indicator_keys, template, ...) restent des tableaux
   # (la forme que l'app valide, types.ts).
   ecrire_json_si_modifie(
-    metadata,
+    projection,
     file.path(sortie, paste0("theme_", metadata$theme, ".json")),
     dataframe = "rows", na = "null", digits = 17, pretty = TRUE,
     auto_unbox = TRUE

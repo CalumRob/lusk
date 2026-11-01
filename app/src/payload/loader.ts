@@ -66,7 +66,7 @@ import {
   validerRapportRun,
   validerTerritoires,
   validerTerritoiresMetadata,
-  validerThemeMetadata,
+  validerCatalogueNavigateur,
   validerVintages,
   verifierPariteLibelles,
   verifierPariteTrajectoires,
@@ -182,9 +182,10 @@ for (const theme of THEMES_CANONIQUES) {
   )
   // La métadonnée du thème (issue #309/#313) — le validateur est autonome
   // (aucune table de référence) ; la règle de présence vit dans
-  // chargerPayload et le store, jamais ici.
+  // chargerPayload et le store, jamais ici. #868 : le fichier servi est la
+  // projection navigateur → point d'entrée 'navigateur' explicite.
   VALIDER_PAR_FICHIER.set(`theme_${theme}`, (brut, fichier) =>
-    validerThemeMetadata(brut, fichier),
+    validerCatalogueNavigateur(brut, fichier),
   )
 }
 

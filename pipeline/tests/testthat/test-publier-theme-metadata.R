@@ -42,10 +42,11 @@ test_that("les six thèmes publient theme_<thème>.json — relu valide, sources
     chemin <- file.path(cible, paste0("theme_", theme, ".json"))
     expect_true(file.exists(chemin), info = theme)
 
-    # le fichier publié se relit et se re-valide (la forme du contrat #309) —
-    # le JSON publié est exactement ce que l'app lira
+    # le fichier publié se relit et se re-valide via le point d'entrée navigateur
+    # explicite (#868) — le contexte producteur strict le refuserait (champs projetés)
     relu <- jsonlite::fromJSON(chemin, simplifyVector = FALSE)
-    expect_error(valider_theme_metadata(relu), NA, info = theme)
+    expect_error(valider_projection_navigateur(relu), NA, info = theme)
+    expect_error(valider_theme_metadata(relu), "story_keys", info = theme)
     expect_identical(relu$theme, theme)
 
     # la projection que l'app fetch (fetch().json() — simplifyVector par
@@ -185,6 +186,102 @@ test_that("publier_theme_metadata : les cas concordants publient à l'identique 
 
 test_that("lire_theme_metadata : un thème sans fichier épinglé s'arrête bruyamment", {
   expect_error(lire_theme_metadata("theme-inexistant"), "introuvable")
+})
+
+# #868 — la projection navigateur : le fichier publié ne porte plus les champs
+# producer-only (semantic_resources, story_keys, observed_collection_contracts)
+# que ni le navigateur ni les lecteurs du payload commité ne lisent ; les clauses
+# factuelles conservées (cadrages, libellés, source_records, indicator_pages,
+# sources) restent bit-à-bit celles du canon. Le canon extdata reste complet.
+test_that("projection_navigateur : le fichier publié exclut les champs hors navigateur et se re-valide", {
+  cible <- tempfile("pub-meta-proj-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  for (theme in THEMES_METADATA) {
+    meta <- lire_theme_metadata(theme)
+    publier_theme_metadata(meta, cible, theme_attendu = theme)
+    chemin <- file.path(cible, paste0("theme_", theme, ".json"))
+    relu <- jsonlite::fromJSON(chemin, simplifyVector = FALSE)
+
+    # champs producer-only absents du fichier servi au navigateur
+    for (champ in CHAMPS_HORS_NAVIGATEUR) {
+      expect_false(champ %in% names(relu), info = paste(theme, champ))
+    }
+    # le fichier projeté se re-valide via le contexte navigateur explicite, et le
+    # contexte producteur strict le refuse (story_keys projeté absent) : la distinction
+    # est explicite, jamais devinée par champ absent
+    expect_error(valider_projection_navigateur(relu), NA, info = theme)
+    expect_error(valider_theme_metadata(relu), "story_keys", info = theme)
+
+    # les déclarations factuelles conservées sont bit-à-bit celles du canon
+    # (les sous-groupes perdent seulement leur figure de présentation, app-owned)
+    sous_groupes_canon_sans_figure <- lapply(meta$subgroups, function(g) { g$figure <- NULL; g })
+    expect_identical(relu$subgroups, sous_groupes_canon_sans_figure, info = theme)
+    expect_identical(relu$indicator_labels, meta$indicator_labels, info = theme)
+    expect_identical(relu$detail_labels, meta$detail_labels, info = theme)
+    expect_identical(relu$source_records, meta$source_records, info = theme)
+    expect_identical(relu$indicator_pages, meta$indicator_pages, info = theme)
+    expect_identical(relu$sources, meta$sources, info = theme)
+    expect_identical(relu$indicator_keys, meta$indicator_keys, info = theme)
+    # les deux clauses factuelles retenues (#827) restent servies
+    if (theme %in% c("mobilite", "programmes")) {
+      cadrages <- vapply(relu$subgroups, function(g) g$framing %||% "", character(1))
+      expect_true(any(nzchar(cadrages)), info = theme)
+    }
+  }
+})
+
+# #868 — RED : le canon producteur reste STRICT (contexte par défaut). Un registre
+# story_keys absent est une dérive, jamais un « mode navigateur » ; un registre
+# vide déclaré n'autorise aucune lecture orpheline.
+# #868 RED : un registre story_keys EXPLICITEMENT VIDE ne s'étend jamais au
+# portefeuille du thème — une lecture same-theme encore déclarée doit être refusée
+# dans les DEUX contextes. (Le test cross-thème ci-dessous échoue indépendamment et
+# ne couvrait pas ce contournement.)
+test_that("registre story_keys explicitement vide : aucune lecture non déclarée n'est autorisée (#868)", {
+  # mobilite a une lecture same-theme déclarée (acces-aux-services)
+  avec_lecture <- lire_theme_metadata("mobilite")
+  expect_true(any(vapply(avec_lecture$subgroups, function(g) !is.null(g$reading), logical(1))))
+  vide_avec_lecture <- avec_lecture
+  vide_avec_lecture$story_keys <- list() # [] explicite
+  expect_error(valider_theme_metadata(vide_avec_lecture), "histoire|story_keys")
+  expect_error(valider_projection_navigateur(vide_avec_lecture), "histoire|story_keys")
+
+  # contrôle : registre vide et AUCUNE lecture déclarée = valide (Programmes, #408)
+  vide_sans_lecture <- lire_theme_metadata("programmes")
+  vide_sans_lecture$story_keys <- list()
+  expect_no_error(valider_theme_metadata(vide_sans_lecture))
+  expect_no_error(valider_projection_navigateur(vide_sans_lecture))
+
+  # le registre absent reste : refusé en producteur, accepté (projection) en navigateur
+  absent <- avec_lecture
+  absent$story_keys <- NULL
+  expect_error(valider_theme_metadata(absent), "story_keys")
+  expect_no_error(valider_projection_navigateur(absent))
+})
+
+test_that("contexte producteur strict : story_keys absent refusé, registre vide + lecture orpheline refusé (#868)", {
+  meta <- lire_theme_metadata("demographie")
+  sans_registre <- meta
+  sans_registre$story_keys <- NULL
+  expect_error(valider_theme_metadata(sans_registre), "story_keys")
+
+  # registre vide déclaré (légal, #408) : OK tant qu'aucune lecture n'en sort
+  vide_ok <- lire_theme_metadata("programmes")
+  expect_no_error(valider_theme_metadata(vide_ok))
+
+  # registre vide + lecture orpheline vers une story d'un AUTRE thème : refusé
+  # dans les deux contextes (l'appartenance au portefeuille reste contrôlée)
+  orpheline <- vide_ok
+  orpheline$subgroups[[1]]$reading <- list(story_key = "vingt-minutes-sans-voiture",
+                                          params = list(), template = list())
+  expect_error(valider_theme_metadata(orpheline), "cross-thème|story_keys|histoire")
+  expect_error(valider_projection_navigateur(orpheline), "cross-thème|story_keys|histoire")
+
+  # la projection navigateur accepte bien l'objet allégé servi (figure absente)
+  projete <- projection_navigateur(meta)
+  expect_error(valider_projection_navigateur(projete), NA)
+  expect_error(valider_theme_metadata(projete), "story_keys")
 })
 
 test_that("la parité registre ↔ métadonnées : chaque thème déclare les stories que sa résolution peut émettre", {

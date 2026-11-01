@@ -318,7 +318,7 @@ describe('chargerPayload — the single seam', () => {
   it('raises a typed validation error when theme metadata drifts from the contract', async () => {
     const meta = JSON.parse(JSON.stringify(metadonneesThemesFixtures.demographie)) as ThemeMetadata
     // la dérive d'herméticité (ADR-0020) : une story d'un autre thème
-    meta.story_keys.push('vingt-minutes-sans-voiture')
+    meta.story_keys!.push('vingt-minutes-sans-voiture')
 
     await expect(
       chargerPayload(optionsPour({ ...fichiersDemographie, 'theme_demographie.json': meta })),

@@ -6,9 +6,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { maplibreMock } from './setup'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
-import { chargerAvec, indicateursDemographieFixture, territoiresFixture } from '../payload/fixtures'
+import { chargerAvec, indicateursDemographieFixture, metadonneesThemesFixtures, territoiresFixture } from '../payload/fixtures'
 import { formaterRang, formaterValeur } from '../payload/selectors'
-import { validerThemeMetadata } from '../payload/validate'
+import { validerCatalogueNavigateur } from '../payload/validate'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
 import CarteView from '../views/CarteView.vue'
@@ -35,7 +35,7 @@ function ordinaryScalarPageCensus() {
   const resources = nativeResources()
   return ['demographie', 'economie', 'habitat', 'mobilite'].flatMap((theme) => {
     const raw = metadata(theme)
-    const parsed = validerThemeMetadata(raw, `theme_${theme}.json`)
+    const parsed = validerCatalogueNavigateur(raw, `theme_${theme}.json`)
     const registered = indicateursScalairesEnregistres(raw)
     return pagesScalairesEnregistrees(parsed, registered).filter((indicator) => {
       const page = parsed.indicator_pages?.[indicator]
@@ -210,7 +210,6 @@ describe('ordinary scalar consumers on semantic resources', () => {
     const scalarProcessEnv = process.env.VITE_SCALAR_COHORT_API
     delete import.meta.env.VITE_SCALAR_COHORT_API
     delete process.env.VITE_SCALAR_COHORT_API
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
     vi.stubEnv('VITE_OWNED_SERIES_API', '0')
     const readItems: Array<{ item: Record<string, any>; data: Record<string, any> }> = []
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -347,7 +346,6 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
   it('reads one native focal fact without widening a filtered commune cohort', async () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
     vi.stubEnv('VITE_OWNED_SERIES_API', '0')
     const requests: Array<Record<string, any>> = []
     const target = { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: '200000001' }
@@ -423,7 +421,6 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
   it('keeps valid cohort facts when the out-of-cohort focal has no native scalar row', async () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
     vi.stubEnv('VITE_OWNED_SERIES_API', '0')
     const target = { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: '200000001' }
     const cohortFacts = cohortResult('demographie', 'densite', target, ['22001', '22002'], [
@@ -481,7 +478,6 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
   it('ignores a late focal fact after the URL changes back inside the filtered cohort', async () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
     vi.stubEnv('VITE_OWNED_SERIES_API', '0')
     const target = { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: '200000001' }
     const members = ['22001', '22002']
@@ -555,8 +551,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
   it.each(['discovery', 'metadata'] as const)(
     'retries a %s failure without selecting a static numeric reader', async (failure) => {
       vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-      vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
-      vi.stubEnv('VITE_OWNED_SERIES_API', '0')
+        vi.stubEnv('VITE_OWNED_SERIES_API', '0')
       let discoveryAttempts = 0
       let metadataAttempts = 0
       const requestedFiles: string[] = []
@@ -742,7 +737,6 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
   it('keeps EPCI page-table ranks bound to the producer-published same-level comparison', async () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
     vi.stubEnv('VITE_OWNED_SERIES_API', '0')
     const target = { kind: 'territory_cohort', type: 'epci', department_id: null, epci_id: null }
     const memberIds = ['200000001', '200000002']
@@ -1047,7 +1041,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
     expect(rankRead).toBeDefined()
     const rankItem = JSON.parse((rankRead?.[1] as RequestInit).body as string).items[0]
     expect(rankItem.intent.members).toEqual([{ type: 'commune', id: '22001' }, { type: 'commune', id: '22002' }])
-    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain('2e/2 · dans l\'EPCI')
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain('2e/2 · dans l&#39;EPCI')
     wrapper.unmount()
   })
 
@@ -1112,7 +1106,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
     expect(comparisonAttempts).toBe(2)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain("1er/2 · dans l'EPCI")
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain("1er/2 · dans l&#39;EPCI")
     wrapper.unmount()
   })
 
@@ -1120,19 +1114,28 @@ describe('ordinary scalar consumers on semantic resources', () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     const indicators = ['densite', 'evolution_1968'] as const
     const resources = indicators.map((indicator) => resource('demographie', indicator))
+    // The standalone map acquires every registered theme scalar at the active
+    // level inside one bounded batch: the fixture payload carries each
+    // registered scalar's page, as the loader's registration/page pair does.
+    const payloadAvecEvolution: Payload = { ...staticPayload,
+      themeMetadata: { demographie: { ...metadonneesThemesFixtures.demographie,
+        indicator_pages: { ...metadonneesThemesFixtures.demographie.indicator_pages,
+          evolution_1968: { ...metadata('demographie').indicator_pages.evolution_1968, family: 'scalar' } } } } }
     let resolveRank: (() => void) | undefined
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata('demographie')))
       if (url === '/api/resources') return new Response(JSON.stringify(discovery(...resources)))
       if (url === '/api/resources/read-batch') {
-        const item = JSON.parse(init?.body as string).items[0]
-        if (item.intent.kind === 'selected_comparison') {
-          const members = item.intent.members.map((member: { type: string; id: string }) => ({
+        const items = JSON.parse(init?.body as string).items as Array<{ id: string; resource: string;
+          target: Record<string, unknown>; intent: { kind: string; members: Array<{ type: string; id: string }> } }>
+        const rankItem = items.find((item) => item.intent.kind === 'selected_comparison')
+        if (rankItem) {
+          const members = rankItem.intent.members.map((member: { type: string; id: string }) => ({
             territory_type: member.type, territory_id: member.id,
           }))
-          const response = new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: {
-            resource: 'densite', target: item.target, contract: 'indicator-comparison-v1', indicator_id: 'densite',
+          const response = new Response(JSON.stringify(batch({ id: rankItem.id, resource: 'densite', data: {
+            resource: 'densite', target: rankItem.target, contract: 'indicator-comparison-v1', indicator_id: 'densite',
             shape: 'scalar', content_version: 'scalar-publication-v4',
             reference_content_version: 'reference-v7', selection: members,
             scope: { kind: 'explicit_selection', member_count: members.length },
@@ -1143,12 +1146,14 @@ describe('ordinary scalar consumers on semantic resources', () => {
           } })))
           return new Promise<Response>((resolve) => { resolveRank = () => resolve(response) })
         }
-        const indicator = item.resource as typeof indicators[number]
-        const facts = cohortResult('demographie', indicator, item.target, ['22001', '22002', '29001', '29002'], [
-          observation('demographie', indicator, '22001', 'measured', indicator === 'densite' ? 9876 : 0.25),
-          observation('demographie', indicator, '22002', 'measured', indicator === 'densite' ? 7654 : 0.15),
-        ])
-        return new Response(JSON.stringify(batch({ id: item.id, resource: indicator, data: facts })))
+        return new Response(JSON.stringify(batch(...items.map((item) => {
+          const indicator = item.resource as typeof indicators[number]
+          const facts = cohortResult('demographie', indicator, item.target, ['22001', '22002', '29001', '29002'], [
+            observation('demographie', indicator, '22001', 'measured', indicator === 'densite' ? 9876 : 0.25),
+            observation('demographie', indicator, '22002', 'measured', indicator === 'densite' ? 7654 : 0.15),
+          ])
+          return { id: item.id, resource: indicator, data: facts }
+        }))))
       }
       throw new Error(`unexpected request: ${url}`)
     })
@@ -1157,7 +1162,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
     await router.push('/carte?theme=demographie')
     await router.isReady()
     const wrapper = mount(CarteView, { global: { plugins: [router], provide: {
-      [PAYLOAD_CHARGER_KEY]: chargerAvec(staticPayload),
+      [PAYLOAD_CHARGER_KEY]: chargerAvec(payloadAvecEvolution),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: communeMasks, epcis: null, departements: null }),
     } } })
     await flushPromises()
@@ -1181,7 +1186,89 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain('popup-carte-rang')
-    expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain("dans l'EPCI")
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain('dans l&#39;EPCI')
+    wrapper.unmount()
+  })
+
+  it('ranks a sparse zero-observation cohort from its retained native descriptor', async () => {
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    const target = { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: null }
+    // A sparse producer cohort may project ZERO observations while keeping its
+    // validated native descriptor and publication identity. The map must
+    // retain the descriptor independently of the rows: the rank read validates
+    // against the NATIVE unit, and the fixture's editorial page deliberately
+    // carries a different one, so an editorial fallback cannot silently pass.
+    // Sensitivity guard — the two unit sources stay deliberately different:
+    // the public producer metadata feeding resource()/cohort/rank fixtures
+    // says hab/km², while the injected payload page (chargerAvec →
+    // metadonneesThemesFixtures.demographie) says hab./km²; reverting to
+    // editorial validation would reject the native-unit comparison.
+    expect(metadonneesThemesFixtures.demographie.indicator_pages?.densite?.unit).toBe('hab./km²')
+    expect(metadata('demographie').indicator_pages.densite.unit).toBe('hab/km²')
+    const facts = cohortResult('demographie', 'densite', target, ['22001', '22002', '29001', '29002'], [])
+    let comparisonAttempts = 0
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata('demographie')))
+      if (url === '/api/resources') return new Response(JSON.stringify(discovery(resource('demographie', 'densite'))))
+      if (url === '/api/resources/read-batch') {
+        const item = JSON.parse(init?.body as string).items[0]
+        if (item.intent.kind === 'selected_comparison') {
+          comparisonAttempts++
+          const members = item.intent.members.map((member: { type: string; id: string }) => ({
+            territory_type: member.type, territory_id: member.id,
+          }))
+          // Zero observations ⇒ no eligible member: the comparison contract
+          // owns eligibility/missingness — unavailable, none eligible, every
+          // selected member missing, no rank. The unit still binds to the
+          // native descriptor (validated before the unavailable return).
+          return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: {
+            resource: 'densite', target: item.target, contract: 'indicator-comparison-v1', indicator_id: 'densite',
+            shape: 'scalar', content_version: 'scalar-publication-v4',
+            reference_content_version: 'reference-v7', selection: members,
+            scope: { kind: 'explicit_selection', member_count: members.length },
+            result: { indicator_id: 'densite', status: 'unavailable',
+              reason: 'no_selected_comparable_values',
+              unit: metadata('demographie').indicator_pages.densite.unit, direction: 'high', source_facet: 'densite',
+              descriptor_version: 'scalar-descriptor-v3', selected_member_count: members.length,
+              eligible_count: 0, missing_count: members.length, rank: null, rank_size: null },
+          } })))
+        }
+        return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: facts })))
+      }
+      throw new Error(`unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/carte?theme=demographie')
+    await router.isReady()
+    const wrapper = mount(CarteView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: chargerAvec(staticPayload),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: communeMasks, epcis: null, departements: null }),
+    } } })
+    await flushPromises()
+    const map = maplibreMock.instancesCarteMaple.at(-1)
+    map?.fire('load')
+    await flushPromises()
+    await wrapper.findAll('.carte-sidebar-couche').find((button) => button.text().includes('Densité'))?.trigger('click')
+    await flushPromises()
+    const joined = () => map?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as {
+      features: { properties: { territoire: string; valeur: number | null } }[]
+    }
+    expect(joined().features.find((item) => item.properties.territoire === '22001')?.properties.valeur).toBeNull()
+    vi.spyOn(map!, 'queryRenderedFeatures').mockReturnValue([{ properties: { territoire: '22001' } }] as never)
+    map?.fire('click', { point: { x: 1, y: 1 }, lngLat: { lng: -2, lat: 48 } })
+    await flushPromises()
+
+    // The rank read really happened and its native-unit response was admitted
+    // — the editorial page's unit would have rejected it with an alert.
+    expect(comparisonAttempts).toBe(1)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    // Missing facts stay missing: no fact row is invented to transport the
+    // descriptor, and no zero or rank chip reaches the popup or the paint.
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain('popup-carte-kpi"')
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain('popup-carte-rang')
+    expect(joined().features.find((item) => item.properties.territoire === '22001')?.properties.valeur).toBeNull()
     wrapper.unmount()
   })
 })

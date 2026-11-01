@@ -1,4 +1,4 @@
-import type { TerritoryComparisonMode } from '@/payload/territoryReadModel'
+import type { TerritoryComparisonMode } from '@/fiche/comparisonContext'
 
 export const COMPARISON_MODE_DESCRIPTIONS: Readonly<Partial<Record<TerritoryComparisonMode, string>>> = {
   densite: 'Classe définie par l’Insee selon le nombre d’habitants et leur concentration sur le territoire communal.',

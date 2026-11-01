@@ -354,6 +354,18 @@ valider_template <- function(template, params, cle, manquer) {
   invisible(NULL)
 }
 
+# valider_projection_navigateur ---------------------------------------------------
+# #868 — point d'entrée DÉLIBÉRÉ du contrat navigateur servi (public/data/theme_*.json,
+# la projection écrite par projection_navigateur) : contexte "navigateur" explicite,
+# jamais une inférence « champ absent = mode navigateur ». Le canon producteur se valide
+# toujours avec le contexte producteur strict (défaut).
+valider_projection_navigateur <- function(metadata, vintages = NULL,
+                                          directions_module = NULL) {
+  valider_theme_metadata(metadata, vintages = vintages,
+                         directions_module = directions_module,
+                         contexte = "navigateur")
+}
+
 # valider_theme_metadata --------------------------------------------------------
 # Le garde-fou du contrat theme_<theme>.json. Entrée : le fichier lu (la forme
 # jsonlite :: fromJSON(simplifyVector = FALSE) — des listes imbriquées).
@@ -370,7 +382,19 @@ valider_template <- function(template, params, cle, manquer) {
  # Toute dérive échoue FORT, en nommant le champ fautif — jamais un chiffre
  # faux publié silencieusement.
 valider_theme_metadata <- function(metadata, vintages = NULL,
-                                   directions_module = NULL) {
+                                   directions_module = NULL,
+                                   contexte = "producteur") {
+  # #868 : deux contextes EXPLICITES, jamais d'inférence par champ absent.
+  #   - "producteur" (défaut) : le canon épinglé (extdata) et tout artefact de
+  #     récupération — validation STRICTE : story_keys obligatoire, figure de
+  #     sous-groupe obligatoire, contrôle d'orphelins complet.
+  #   - "navigateur" : la projection servie (public/data) — story_keys absent
+  #     accepté (la règle d'appartenance retombe alors sur le portefeuille du
+  #     thème) et la figure de présentation absente acceptée (grammaire fiche
+  #     app-owned, ficheGrammar.ts). Tout le reste (libellés, sources,
+  #     source_records, pages, cadrages factuels) reste requis dans les deux cas.
+  contexte <- match.arg(contexte, c("producteur", "navigateur"))
+  navigateur <- identical(contexte, "navigateur")
   manquer <- function(champ, detail) {
     stop(sprintf("Métadonnées du thème invalides — %s : %s.", champ, detail),
          call. = FALSE)
@@ -441,19 +465,29 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
   #    des indicateurs catégoriels et numériques et AUCUNE lecture ; jamais
   #    une lecture inventée pour remplir le registre. Une story DÉCLARÉE,
   #    elle, obéit aux mêmes règles que partout ailleurs.
-  if (is.null(metadata$story_keys)) {
-    manquer("story_keys", "la liste des histoires est absente")
-  }
-  cles_histoires <- unlist(metadata$story_keys, use.names = FALSE)
-  if (length(cles_histoires) > 0L &&
-      (any(!nzchar(cles_histoires)) || anyDuplicated(cles_histoires))) {
-    manquer("story_keys", "une story_key est vide ou en double")
-  }
   portees <- CLES_HISTOIRES_PAR_THEME[[theme]]
   autres <- unique(unlist(
     CLES_HISTOIRES_PAR_THEME[names(CLES_HISTOIRES_PAR_THEME) != theme],
     use.names = FALSE
   ))
+  # #868 : contexte producteur — le registre story_keys est OBLIGATOIRE (un canon
+  # sans registre est une dérive, jamais un « mode navigateur » deviné). Contexte
+  # navigateur — la projection servie ne le porte plus ; la règle d'appartenance
+  # retombe alors sur le portefeuille du thème, et le contrôle d'orphelins ne porte
+  # que sur le registre explicitement déclaré (vide ici).
+  story_present <- !is.null(metadata$story_keys)
+  if (!story_present && !navigateur) {
+    manquer("story_keys", "la liste des histoires est absente")
+  }
+  story_declarees <- if (!story_present) character(0) else unlist(metadata$story_keys, use.names = FALSE)
+  # #868 : distinguer ABSENT (projection navigateur : repli portefeuille pour la règle
+  # d'appartenance) et VIDE EXPLICITE [] — un registre vide déclaré ne s'étend JAMAIS au
+  # portefeuille : toute lecture encore déclarée est alors orpheline et refusée.
+  cles_histoires <- if (!story_present && navigateur) portees else story_declarees
+  if (length(story_declarees) > 0L &&
+      (any(!nzchar(story_declarees)) || anyDuplicated(story_declarees))) {
+    manquer("story_keys", "une story_key est vide ou en double")
+  }
   for (cle_histoire in cles_histoires) {
     if (!cle_histoire %in% portees) {
       if (cle_histoire %in% autres) {
@@ -616,7 +650,14 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
     }
 
     # la figure — une famille du contrat, un indicateur que le sous-groupe
-    # possède (la figure rend la matière du sous-groupe, jamais une autre)
+    # possède (la figure rend la matière du sous-groupe, jamais une autre).
+    # #868 : requise dans le canon producteur ; la projection navigateur ne la
+    # porte plus (présentation app-owned, ficheGrammar.ts) — le contexte
+    # navigateur l'accepte absente, le contexte producteur la refuse.
+    if (navigateur && is.null(groupe$figure)) {
+      famille <- NULL
+      indicateur_figure <- NULL
+    } else {
     if (!est_liste(groupe$figure)) {
       manquer("figure",
               paste0("« ", cle, " » : la figure est absente ou non-objet"))
@@ -634,6 +675,7 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
         !indicateur_figure %in% inds) {
       manquer("figure", paste0(
         "« ", cle, " » : la figure doit rendre un indicateur que le sous-groupe possède"))
+    }
     }
     # la lecture résolue — le lien explicite vers l'histoire du sous-groupe
     # (parent #308 : l'app n'infère jamais la relation depuis les noms).
@@ -1252,7 +1294,7 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
     if (is.na(ligne$salience_reason[1])) return(FALSE)  # le défaut, lui, est lié
     ligne$groupe[1] %in% cles_groupes
   }
-  orphelines_hist <- setdiff(cles_histoires, names(histoires_groupes))
+  orphelines_hist <- setdiff(story_declarees, names(histoires_groupes))
   illegitimes <- orphelines_hist[!vapply(orphelines_hist, est_candidate_legitime, logical(1L))]
   if (length(illegitimes) > 0) {
     manquer("histoires", paste0(

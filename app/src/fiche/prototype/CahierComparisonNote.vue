@@ -18,7 +18,7 @@ import {
   PARAM_COMPARAISON,
 } from '@/fiche/comparisonContext'
 import type { PrésentationPortéeComparaison } from '@/fiche/comparisonContext'
-import type { TerritoryComparisonMode } from '@/payload/territoryReadModel'
+import type { TerritoryComparisonMode } from '@/fiche/comparisonContext'
 import { buildingScopeParts } from '@/fiche/content/comparisonWording'
 
 const props = withDefaults(defineProps<{

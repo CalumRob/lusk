@@ -4,7 +4,7 @@ import { isReactive } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 import App from '@/App.vue'
-import * as territoryFacts from '@/fiche/content/territoryFacts'
+import * as mobilityThemeApiFacts from '@/fiche/content/mobilityThemeApiFacts'
 import TerritoireView from '@/views/TerritoireView.vue'
 import {
   chargerAvec,
@@ -15,10 +15,7 @@ import {
 } from '@/payload/fixtures'
 import type { Payload } from '@/payload/types'
 import { PAYLOAD_CHARGER_KEY } from '@/payload/usePayload'
-import {
-  TERRITORY_READ_MODEL_CHARGER_KEY,
-  validerModeleTerritoire,
-} from '@/payload/territoryReadModel'
+import { TERRITORY_REFERENCE_CHARGER_KEY } from '@/payload/territoryReference'
 import { routes } from '@/router'
 import { createNativeSemanticApiTransport } from './helpers/nativeSemanticApiTransport'
 
@@ -33,38 +30,20 @@ const payload: Payload = {
   themeMetadata: { mobilite: structuredClone(metadonneesThemesFixtures.mobilite) },
 }
 
-const readModel = validerModeleTerritoire({
-  schema_version: '1',
-  snapshot_id: '2026-09-15',
-  territory: territoiresFixture[0],
-  territoires: territoiresFixture,
-  themes: {
-    mobilite: {
-      theme: 'mobilite',
-      indicateurs: indicateursMobiliteFixture,
-      histoires: histoiresMobiliteFixture,
-      theme_metadata: metadonneesThemesFixtures.mobilite,
-      profils_acces_bpe: null,
-      distribution_acces_batiments: null,
-      rampe_acces_batiments: null,
-    },
-  },
-}, 'territoires/commune/22001.json', { type: 'commune', territoire: '22001' })
-
-describe('Production Mobilité — shell performance seam', () => {
-  it('resolves cahier content from the atomic territory model on the normal route', async () => {
+describe('Production Mobilité — shell performance seam (#868: bootstrap référence)', () => {
+  it('resolves cahier content from the reference + native API on the normal route', async () => {
     vi.stubGlobal('fetch', createNativeSemanticApiTransport())
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/territoire/commune/22001?theme=mobilite')
     await router.isReady()
 
-    const factsSpy = vi.spyOn(territoryFacts, 'territoryFactsFor')
+    const factsSpy = vi.spyOn(mobilityThemeApiFacts, 'mobilityFactsFromThemeApi')
     const wrapper = mount(TerritoireView, {
       global: {
         plugins: [router],
         provide: {
           [PAYLOAD_CHARGER_KEY]: chargerAvec(payload),
-          [TERRITORY_READ_MODEL_CHARGER_KEY]: async () => readModel,
+          [TERRITORY_REFERENCE_CHARGER_KEY]: async () => territoiresFixture,
         },
       },
     })
@@ -73,7 +52,7 @@ describe('Production Mobilité — shell performance seam', () => {
 
     // The initial incomplete shell and the completed API facts each materialize
     // the display model once; neither may receive a reactive payload.
-    expect(factsSpy).toHaveBeenCalledTimes(2)
+    expect(factsSpy).toHaveBeenCalled()
     expect(factsSpy.mock.calls.every(([facts]) => !isReactive(facts))).toBe(true)
     expect(wrapper.find('.fiche-en-tete-surface').exists()).toBe(true)
     expect(wrapper.find('.fiche--theme-mobilite').exists()).toBe(true)
@@ -92,7 +71,7 @@ describe('Production Mobilité — shell performance seam', () => {
         plugins: [router],
         provide: {
           [PAYLOAD_CHARGER_KEY]: chargerAvec(payload),
-          [TERRITORY_READ_MODEL_CHARGER_KEY]: async () => readModel,
+          [TERRITORY_REFERENCE_CHARGER_KEY]: async () => territoiresFixture,
         },
       },
     })

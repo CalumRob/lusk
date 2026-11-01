@@ -22,7 +22,7 @@ import RepereFamilyOutlet from '@/components/indicateurs/RepereFamilyOutlet.vue'
 import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicateur.vue'
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } from '@/indicateurs/etatUrl'
-import { PayloadError, validerThemeMetadata } from '@/payload/validate'
+import { PayloadError, validerCatalogueNavigateur } from '@/payload/validate'
 import { semanticComparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerCohorteScalaire, chargerCohortePageScalaire, chargerComparaisonsScalaires,
@@ -191,7 +191,7 @@ async function loadRouteThemeMetadata(currentTheme: string): Promise<ThemeMetada
     try { raw = await response.json() }
     catch { throw new PayloadError('validation', file, `Métadonnées ${currentTheme} illisibles.`) }
   }
-  const metadata = payloadChargerInjecte ? raw as ThemeMetadata : validerThemeMetadata(raw, file)
+  const metadata = payloadChargerInjecte ? raw as ThemeMetadata : validerCatalogueNavigateur(raw, file)
   if (metadata.theme !== currentTheme) throw new PayloadError('validation', file, 'Métadonnées du thème incompatibles avec la route.')
   const profileContracts = typeof raw === 'object' && raw !== null && !Array.isArray(raw)
     ? (raw as Record<string, unknown>).profile_contracts : undefined
@@ -493,7 +493,7 @@ async function chargerMetadataScalaireApi(currentTheme: string): Promise<ThemeMe
   try { raw = await response.json() }
   catch { throw new PayloadError('validation', file, `Métadonnées ${currentTheme} illisibles.`) }
   const registered = indicateursScalairesEnregistres(raw)
-  const metadata = validerThemeMetadata(raw, file)
+  const metadata = validerCatalogueNavigateur(raw, file)
   if (metadata.theme !== currentTheme) throw new PayloadError('validation', file, 'Métadonnées du thème incompatibles.')
   const unbound = registered.filter((id) => {
     const page = metadata.indicator_pages?.[id]

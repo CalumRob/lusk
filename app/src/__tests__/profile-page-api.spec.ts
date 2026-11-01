@@ -385,7 +385,6 @@ afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 describe('les dix pages de profils déclarés utilisent le lecteur sémantique commun', () => {
   it('découvre la famille par le catalogue producteur et couvre le census exact, sans charger de numérics statiques', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
     expect(profileSpecs.map(({ theme, indicator, family }) => [theme, indicator, family])).toEqual([
       ['demographie', 'structure_age', 'pyramid'],
