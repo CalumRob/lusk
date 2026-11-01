@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { maplibreMock } from './setup'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
-import { chargerAvec, indicateursDemographieFixture, territoiresFixture } from '../payload/fixtures'
+import { chargerAvec, indicateursDemographieFixture, metadonneesThemesFixtures, territoiresFixture } from '../payload/fixtures'
 import { formaterRang, formaterValeur } from '../payload/selectors'
 import { validerCatalogueNavigateur } from '../payload/validate'
 import { routes } from '../router'
@@ -1041,7 +1041,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
     expect(rankRead).toBeDefined()
     const rankItem = JSON.parse((rankRead?.[1] as RequestInit).body as string).items[0]
     expect(rankItem.intent.members).toEqual([{ type: 'commune', id: '22001' }, { type: 'commune', id: '22002' }])
-    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain('2e/2 · dans l\'EPCI')
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain('2e/2 · dans l&#39;EPCI')
     wrapper.unmount()
   })
 
@@ -1106,7 +1106,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
     expect(comparisonAttempts).toBe(2)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain("1er/2 · dans l'EPCI")
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain("1er/2 · dans l&#39;EPCI")
     wrapper.unmount()
   })
 
@@ -1114,19 +1114,28 @@ describe('ordinary scalar consumers on semantic resources', () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     const indicators = ['densite', 'evolution_1968'] as const
     const resources = indicators.map((indicator) => resource('demographie', indicator))
+    // The standalone map acquires every registered theme scalar at the active
+    // level inside one bounded batch: the fixture payload carries each
+    // registered scalar's page, as the loader's registration/page pair does.
+    const payloadAvecEvolution: Payload = { ...staticPayload,
+      themeMetadata: { demographie: { ...metadonneesThemesFixtures.demographie,
+        indicator_pages: { ...metadonneesThemesFixtures.demographie.indicator_pages,
+          evolution_1968: { ...metadata('demographie').indicator_pages.evolution_1968, family: 'scalar' } } } } }
     let resolveRank: (() => void) | undefined
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata('demographie')))
       if (url === '/api/resources') return new Response(JSON.stringify(discovery(...resources)))
       if (url === '/api/resources/read-batch') {
-        const item = JSON.parse(init?.body as string).items[0]
-        if (item.intent.kind === 'selected_comparison') {
-          const members = item.intent.members.map((member: { type: string; id: string }) => ({
+        const items = JSON.parse(init?.body as string).items as Array<{ id: string; resource: string;
+          target: Record<string, unknown>; intent: { kind: string; members: Array<{ type: string; id: string }> } }>
+        const rankItem = items.find((item) => item.intent.kind === 'selected_comparison')
+        if (rankItem) {
+          const members = rankItem.intent.members.map((member: { type: string; id: string }) => ({
             territory_type: member.type, territory_id: member.id,
           }))
-          const response = new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: {
-            resource: 'densite', target: item.target, contract: 'indicator-comparison-v1', indicator_id: 'densite',
+          const response = new Response(JSON.stringify(batch({ id: rankItem.id, resource: 'densite', data: {
+            resource: 'densite', target: rankItem.target, contract: 'indicator-comparison-v1', indicator_id: 'densite',
             shape: 'scalar', content_version: 'scalar-publication-v4',
             reference_content_version: 'reference-v7', selection: members,
             scope: { kind: 'explicit_selection', member_count: members.length },
@@ -1137,12 +1146,14 @@ describe('ordinary scalar consumers on semantic resources', () => {
           } })))
           return new Promise<Response>((resolve) => { resolveRank = () => resolve(response) })
         }
-        const indicator = item.resource as typeof indicators[number]
-        const facts = cohortResult('demographie', indicator, item.target, ['22001', '22002', '29001', '29002'], [
-          observation('demographie', indicator, '22001', 'measured', indicator === 'densite' ? 9876 : 0.25),
-          observation('demographie', indicator, '22002', 'measured', indicator === 'densite' ? 7654 : 0.15),
-        ])
-        return new Response(JSON.stringify(batch({ id: item.id, resource: indicator, data: facts })))
+        return new Response(JSON.stringify(batch(...items.map((item) => {
+          const indicator = item.resource as typeof indicators[number]
+          const facts = cohortResult('demographie', indicator, item.target, ['22001', '22002', '29001', '29002'], [
+            observation('demographie', indicator, '22001', 'measured', indicator === 'densite' ? 9876 : 0.25),
+            observation('demographie', indicator, '22002', 'measured', indicator === 'densite' ? 7654 : 0.15),
+          ])
+          return { id: item.id, resource: indicator, data: facts }
+        }))))
       }
       throw new Error(`unexpected request: ${url}`)
     })
@@ -1151,7 +1162,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
     await router.push('/carte?theme=demographie')
     await router.isReady()
     const wrapper = mount(CarteView, { global: { plugins: [router], provide: {
-      [PAYLOAD_CHARGER_KEY]: chargerAvec(staticPayload),
+      [PAYLOAD_CHARGER_KEY]: chargerAvec(payloadAvecEvolution),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: communeMasks, epcis: null, departements: null }),
     } } })
     await flushPromises()
@@ -1175,7 +1186,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
 
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain('popup-carte-rang')
-    expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain("dans l'EPCI")
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain('dans l&#39;EPCI')
     wrapper.unmount()
   })
 })

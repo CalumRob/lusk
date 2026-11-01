@@ -62,7 +62,7 @@ import type { NiveauMasque } from '@/geo/types'
 import { useGeometrie } from '@/geo/useGeometrie'
 import { themesPresent } from '@/payload/selectors'
 import { SIGLES_PROGRAMMES, THEMES_CANONIQUES } from '@/payload/types'
-import type { Payload, SigleProgramme, Territoire, Theme, ThemeMetadata } from '@/payload/types'
+import type { Payload, SigleProgramme, Territoire, Theme, ThemeMetadata, IndicatorPageMetadata, NativeThemeFactContract } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
 import { chargerRangScalaire } from '@/payload/scalarCohort'
 import type { ScalarComparisonRank } from '@/payload/scalarCohort'
@@ -290,6 +290,19 @@ const indicateurScalaireActif = computed(() => {
 })
 const niveauApi = computed(() => ({ communes: 'commune', epcis: 'epci', departements: 'departement' } as const)[niveau.value])
 
+/** The rank read validates the native comparison against the acquired native
+ * cohort contract: unit/direction/facet are native facts (the same ownership
+ * seam as the fiche's native-contract page substitution), the editorial page
+ * contributes presentation grammar only. */
+function pageRankAvecContratNatif(page: IndicatorPageMetadata, native: NativeThemeFactContract | undefined): IndicatorPageMetadata {
+  if (!native) return page
+  const unit = native.unit ?? page.unit
+  const direction = native.direction === 'low' ? 'low' : native.direction === 'high' ? 'high' : page.direction
+  return { ...page, unit, direction,
+    ...(page.comparison ? { comparison: { ...page.comparison,
+      ...(native.comparisonFacet ? { indicator: native.comparisonFacet } : {}), unit, direction } } : {}) }
+}
+
 async function chargerRangCarte(focal: Territoire, force = false): Promise<void> {
   const theme = selection.value
   const indicator = indicateurScalaireActif.value
@@ -299,6 +312,8 @@ async function chargerRangCarte(focal: Territoire, force = false): Promise<void>
   if (!theme || !indicator || !level || mapStatus.value !== 'ready' || !page || page.family !== 'scalar' || !payload.value) return
   const identity = mapIdentities.value[indicator]
   if (!identity) return
+  const native = mapFacts.value.find((fact) => fact.key === indicator && fact.detail === null)?.nativeContract
+  const rankPage = pageRankAvecContratNatif(page, native)
   const key = JSON.stringify([theme, indicator, level, focal.territoire,
     identity.contentVersion, identity.referenceContentVersion])
   if (!force && territoryRankRequestKey === key &&
@@ -309,7 +324,7 @@ async function chargerRangCarte(focal: Territoire, force = false): Promise<void>
   territoryRank.value = null
   territoryRankStatus.value = 'loading'
   try {
-    const rank = await chargerRangScalaire(indicator, theme, page, focal, payload.value.territoires, identity)
+    const rank = await chargerRangScalaire(indicator, theme, rankPage, focal, payload.value.territoires, identity)
     if (sequence === territoryRankSequence) {
       territoryRank.value = rank ? { territoryId: focal.territoire, indicator, level, rank } : null
       territoryRankStatus.value = 'ready'

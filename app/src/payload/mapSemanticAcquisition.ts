@@ -257,7 +257,10 @@ export async function acquireMapThemeFacts(theme: Theme, level: TerritoireType,
   for (let start = 0; start < candidates.length; start += 12) {
     const declarations = candidates.slice(start, start + 12)
     const items: SemanticReadItem[] = declarations.map((resource) => ({ resource: resource.resource_id,
-      target: { kind: 'territory_cohort', type: level },
+      // The standalone map reads the full all-Bretagne cohort: the filters are
+      // declared explicitly null, mirroring the page-side scalar cohort reads
+      // (itemScalaire) — never omitted.
+      target: { kind: 'territory_cohort', type: level, department_id: null, epci_id: null },
       ...(resource.shapes.includes('anchored_membership') ? { fields: ['detail', 'label', 'rider', 'anchor_count', 'availability'] }
           : resource.shapes.includes('declared_profile') ? { fields: ['value'] }
           : resource.shapes.includes('typed_reading') ? { fields: resource.fields } : { fields: ['value'] }),
