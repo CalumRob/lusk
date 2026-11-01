@@ -843,7 +843,6 @@ watch(
             <!-- The production cahier owns Mobilité's editorial body and AEDAR evidence. -->
             <ProductionMobilite v-if="productionMobilite && contenuMobilite && paginationCahier"
               :content="contenuMobilite" :pagination="paginationCahier" :comparison-options="optionsComparaison"
-             
               :aedar-data="aedarData" :aedar-status="aedarStatus" :retry-aedar="retryAedar"
               :aedar-reference-territoire="aedarReferenceTerritoire" :aedar-reference-data="aedarReferenceData"
               :aedar-reference-status="aedarReferenceStatus" />

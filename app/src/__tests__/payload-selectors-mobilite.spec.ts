@@ -233,4 +233,3 @@ describe('nuageMobilite — le nuage même-échelle des pairs (ADR-0011)', () =>
 // #627 - the snapshot stamp selector retired with the Mobilité legacy
 // surface: the slow-clock promise described the retired accessibility
 // analysis, and the production AEDAR evidence owns its provenance.
-
