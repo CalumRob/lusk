@@ -92,16 +92,19 @@ const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maxi
         </ul>
         <h3>Consommateurs publiés</h3>
         <!-- #872 : seul un consommateur « indicator » — une Page d'indicateur
-             courante du catalogue partagé — reçoit un lien. Une déclaration
-             de source sans page courante (clef retirée, référence nommée)
-             reste un consommateur publié, rendu en texte : jamais une URL de
-             page fabriquée. -->
+             courante du catalogue partagé — reçoit un lien. Une déclaration de
+             source sans page courante (clef retirée, référence nommée,
+             couverture catégorielle) reste un consommateur publié, rendu en
+             texte avec le cue visible générique « Déclaration sans page
+             d'indicateur courante » — jamais une URL de page fabriquée, jamais
+             un statut gardé/historique qui serait une politique factuelle. -->
         <ul v-if="source.consumers.length" class="source-record__consumers">
           <li v-for="consumer in source.consumers" :key="`${consumer.theme}-${consumer.key}`">
             <RouterLink v-if="consumer.kind === 'indicator'" :to="{ name: 'indicateur', params: { theme: consumer.theme, indicator: consumer.key } }">{{ consumer.label }}</RouterLink>
             <span v-else>{{ consumer.label }}</span>
             <span v-if="consumer.kind === 'territory-reference'"> · Référentiel territorial</span>
             <span v-else> · {{ consumer.theme }}</span>
+            <span v-if="consumer.kind === 'declaration'"> · Déclaration sans page d’indicateur courante</span>
             <small v-if="consumer.caveat"> — {{ consumer.caveat }}</small>
           </li>
         </ul>

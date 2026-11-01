@@ -215,4 +215,50 @@ describe('SourcesView — route dataset-centric', () => {
       '/indicateurs/mobilite/raccordement_courbe',
     ])
   })
+
+  it('marque visiblement les déclarations sans page courante, distinctes des pages liées (#872)', async () => {
+    const wrapper = await monter(chargerAvec(payloadSourcesNavigation()))
+    const matrice = wrapper.find('#source-matrice-temps-mairies')
+    const consommateurs = matrice.findAll('.source-record__consumers li')
+    expect(consommateurs).toHaveLength(3)
+
+    // La référence nommée sans page : aucun lien, mais un cue VISIBLE qui la
+    // reconnaît comme déclaration de source sans page d'indicateur courante —
+    // jamais du texte nu indiscernable d'un consommateur de page.
+    const reference = consommateurs.find((item) => item.text().includes('Référence médiane — commune bretonne'))!
+    expect(reference.find('a').exists()).toBe(false)
+    expect(reference.text()).toContain('Déclaration sans page d’indicateur courante')
+
+    // Une page courante : le lien canonique, jamais le cue de déclaration.
+    const page = consommateurs.find((item) => item.text().includes('Population bretonne joignable en 90 minutes en TC'))!
+    expect(page.find('a[href="/indicateurs/mobilite/raccordement_tc"]').exists()).toBe(true)
+    expect(page.text()).not.toContain('Déclaration sans page')
+
+    // Les déclarations d'accessibilité retirées portent le MÊME cue générique,
+    // dans la même liste — sans statut « retiré » inventé ni classification
+    // gardée/historique : le wording couvre les deux sans présumer de la
+    // disponibilité factuelle.
+    const snapshot = wrapper.find('#source-mobilite-snapshot')
+    const itemsSnapshot = snapshot.findAll('.source-record__consumers li')
+    expect(itemsSnapshot.length).toBeGreaterThan(0)
+    for (const item of itemsSnapshot) {
+      expect(item.find('a').exists()).toBe(false)
+      expect(item.text()).toContain('Déclaration sans page d’indicateur courante')
+    }
+
+    // La couverture programmatique du sixième thème : même cue générique.
+    const acv = wrapper.findAll('article.source-record').find((fiche) => fiche.text().includes('Couverture programmatique'))
+    expect(acv).toBeDefined()
+    const couverture = acv!.findAll('.source-record__consumers li').find((item) => item.text().includes('Couverture programmatique'))!
+    expect(couverture.find('a').exists()).toBe(false)
+    expect(couverture.text()).toContain('Déclaration sans page d’indicateur courante')
+
+    // Le référentiel territorial garde SON cue propre, jamais le cue de
+    // déclaration — il n'est ni page ni déclaration d'indicateur.
+    const referentiel = wrapper.find('#source-classe-densite-communale')
+    const itemReferentiel = referentiel.findAll('.source-record__consumers li')
+    expect(itemReferentiel).toHaveLength(1)
+    expect(itemReferentiel[0]!.text()).toContain('Référentiel territorial')
+    expect(itemReferentiel[0]!.text()).not.toContain('Déclaration sans page')
+  })
 })
