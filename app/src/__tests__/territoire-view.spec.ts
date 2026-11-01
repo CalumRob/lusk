@@ -1478,4 +1478,77 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
+  it('keeps a scoped semantic-facts retry for Mobilité while AEDAR succeeds (#627 correction)', async () => {
+    const mobiliteResourceIds = new Set(nativeResources('mobilite').map((resource) => resource.resource_id))
+    const requests: Array<Array<Record<string, any>>> = []
+    let mobiliteFactsFailing = true
+    const mobiliteFactsBatches = { failed: 0, served: 0 }
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        const aedarOnly = items.every((item) => item.resource === 'aedar_territorial_aggregate')
+        const carriesMobiliteFacts = !aedarOnly &&
+          items.some((item) => mobiliteResourceIds.has(item.resource) && item.intent?.kind === 'facts')
+        if (carriesMobiliteFacts) {
+          // The semantic batch is chunked and has a built-in facts-only recovery
+          // retry: every chunk of the initial acquisition fails, so the whole
+          // acquisition rejects instead of degrading to a partial recovery.
+          if (mobiliteFactsFailing) {
+            mobiliteFactsBatches.failed += 1
+            return new Response('', { status: 503 })
+          }
+          mobiliteFactsBatches.served += 1
+          return nativeBatchResponse(items, nativeFicheReadFixture)
+        }
+        return nativeBatchResponse(items, nativeFicheReadFixture)
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response
+    })
+    vi.stubGlobal('fetch', fetchApi)
+
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
+    await flushPromises()
+
+    const aedarReads = () => requests.filter((items) =>
+      items.every((item) => item.resource === 'aedar_territorial_aggregate'))
+    expect(mobiliteFactsBatches.failed).toBeGreaterThan(0)
+    expect(mobiliteFactsBatches.served).toBe(0)
+
+    // AEDAR succeeded independently: its production evidence stays visible
+    // and usable while the semantic facts acquisition has failed.
+    expect(wrapper.find('.aedar-state').exists()).toBe(false)
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    // No retired placeholder body section and no fabricated retained fact
+    // appear while the facts are unavailable.
+    expect(wrapper.text()).not.toContain('Résumé')
+    expect(wrapper.text()).not.toContain('Profils d’accès par mode')
+    expect(wrapper.text()).not.toContain('Services essentiels')
+    expect(wrapper.find('.transit-point--territory').exists()).toBe(false)
+
+    // The retained semantic-facts failure stays visible and retryable even
+    // without a mobilityFocal — distinct from the comparison error.
+    const factsAlert = wrapper.findAll('.etat-erreur')
+      .find((alert) => alert.text().includes('Les indicateurs de ce thème ne sont pas disponibles.'))
+    expect(factsAlert, 'a scoped semantic-facts alert must be visible').toBeDefined()
+    expect(factsAlert!.text()).not.toContain('comparaisons')
+
+    const aedarReadsBeforeRetry = aedarReads().length
+    mobiliteFactsFailing = false
+    await factsAlert!.find('button').trigger('click')
+    await flushPromises()
+
+    // The retry genuinely re-reads and admits the retained native facts…
+    expect(mobiliteFactsBatches.served).toBeGreaterThan(0)
+    expect(wrapper.text()).not.toContain('Les indicateurs de ce thème ne sont pas disponibles.')
+    expect(wrapper.find('.transit-point--territory').exists()).toBe(true)
+    // …without forcing an AEDAR reread and with AEDAR still rendered.
+    expect(aedarReads()).toHaveLength(aedarReadsBeforeRetry)
+    expect(wrapper.find('.aedar-state').exists()).toBe(false)
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    wrapper.unmount()
+  }, 20_000)
+
 })
