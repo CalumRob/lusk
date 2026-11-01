@@ -475,11 +475,15 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
   # navigateur — la projection servie ne le porte plus ; la règle d'appartenance
   # retombe alors sur le portefeuille du thème, et le contrôle d'orphelins ne porte
   # que sur le registre explicitement déclaré (vide ici).
-  if (is.null(metadata$story_keys) && !navigateur) {
+  story_present <- !is.null(metadata$story_keys)
+  if (!story_present && !navigateur) {
     manquer("story_keys", "la liste des histoires est absente")
   }
-  story_declarees <- if (is.null(metadata$story_keys)) character(0) else unlist(metadata$story_keys, use.names = FALSE)
-  cles_histoires <- if (length(story_declarees) > 0L) story_declarees else portees
+  story_declarees <- if (!story_present) character(0) else unlist(metadata$story_keys, use.names = FALSE)
+  # #868 : distinguer ABSENT (projection navigateur : repli portefeuille pour la règle
+  # d'appartenance) et VIDE EXPLICITE [] — un registre vide déclaré ne s'étend JAMAIS au
+  # portefeuille : toute lecture encore déclarée est alors orpheline et refusée.
+  cles_histoires <- if (!story_present && navigateur) portees else story_declarees
   if (length(story_declarees) > 0L &&
       (any(!nzchar(story_declarees)) || anyDuplicated(story_declarees))) {
     manquer("story_keys", "une story_key est vide ou en double")

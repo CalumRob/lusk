@@ -106,6 +106,23 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
     expect(() => validerThemeMetadata(projection, 'theme_mobilite.json')).toThrow(/story_keys/)
   })
 
+  it('registre story_keys explicitement vide : aucune lecture non déclarée n’est autorisée (#868)', () => {
+    // RED same-theme : la fixture mobilite a une lecture déclarée (acces-aux-services) ;
+    // un registre [] explicite ne s'étend jamais au portefeuille du thème.
+    const videAvecLecture = copieBrute('mobilite')
+    expect(videAvecLecture.subgroups.some((g) => g.reading !== undefined)).toBe(true)
+    videAvecLecture.story_keys = []
+    expect(() => validerThemeMetadata(videAvecLecture, 'theme_mobilite.json')).toThrow(/histoire|story_keys|orphelin/)
+    expect(() => validerCatalogueNavigateur(videAvecLecture, 'theme_mobilite.json')).toThrow(/histoire|story_keys|orphelin/)
+
+    // contrôle : registre vide et AUCUNE lecture déclarée = valide (Programmes, #408)
+    const videSansLecture = copieBrute('programmes')
+    expect(videSansLecture.subgroups.every((g) => g.reading === undefined)).toBe(true)
+    videSansLecture.story_keys = []
+    expect(() => validerThemeMetadata(videSansLecture, 'theme_programmes.json')).not.toThrow()
+    expect(() => validerCatalogueNavigateur(videSansLecture, 'theme_programmes.json')).not.toThrow()
+  })
+
   it('accepte la méthodologie structurée portée par une source', () => {
     const meta = copieBrute('demographie')
     const source = meta.source_records?.serie_historique

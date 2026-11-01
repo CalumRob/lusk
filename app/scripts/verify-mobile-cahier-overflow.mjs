@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { createServer } from 'vite'
+import { API_ROUTE_TABLE } from './overflow-api-routes.mjs'
 
 // Real-browser, populated contract check for Cahier mobile overflow and the
 // shared y-axis rail regression in issue #841 and W3 labels in issue #829.
@@ -406,46 +407,48 @@ try {
     const page = await browser.newPage({ viewport: { width, height: 844 }, deviceScaleFactor: 1 })
     const readCalls = { retiredThemeFactsRoutes: 0, themeBatches: 0, aedarBatches: 0, aedarItems: [] }
     page.on('pageerror', (error) => console.error(`[browser pageerror ${width}px]`, error))
-    // #868 : les anciennes routes theme-facts/comparison sont retirées du navigateur —
-    // garde fail-closed : toute requête vers elles échoue la preuve (HTTP 599).
-    for (const retired of ['**/api/territories/commune/35238/themes/mobilite/facts',
-        '**/api/territories/commune/35238/themes/mobilite/comparison']) {
-      await page.route(retired, async (route) => {
+    // #868 : enregistrement DANS L'ORDRE de la table (overflow-api-routes.mjs) —
+    // Playwright : le dernier handler enregistré qui matche gagne, donc le catch-all
+    // fail-closed 599 est enregistré EN PREMIER, puis catalogue, read-batch, routes
+    // retirées. La sémantique est vérifiée sans navigateur par verify-overflow-api-routes.mjs.
+    const apiHandlers = {
+      'fail-closed-599': async (route) => {
+        await route.fulfill({ status: 599, contentType: 'application/json',
+          body: JSON.stringify({ error: 'unexpected API traffic in fixture-only proof' }) })
+      },
+      'catalogue': async (route) => {
+        await route.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify(await nativeCatalogueResponse().json()) })
+      },
+      'retired-599': async (route) => {
         readCalls.retiredThemeFactsRoutes += 1
         await route.fulfill({ status: 599, contentType: 'application/json', body: 'retired route' })
-      })
+      },
+      'read-batch': async (route) => {
+        const request = route.request().postDataJSON()
+        const aedarItems = request.items.filter((item) => Array.isArray(item.coordinates?.typequ))
+        const themeItems = request.items.filter((item) => !Array.isArray(item.coordinates?.typequ))
+        if (aedarItems.length) {
+          readCalls.aedarBatches += 1
+          readCalls.aedarItems.push(...aedarItems.map((item) => ({
+            id: item.id,
+            resource: item.resource,
+            target: item.target,
+            typequ: item.coordinates.typequ,
+            fields: item.fields ?? [],
+          })))
+        }
+        if (themeItems.length) readCalls.themeBatches += 1
+        const results = []
+        if (themeItems.length) results.push(...themeBatchResponse({ items: themeItems }).results)
+        if (aedarItems.length) results.push(...aedarBatchResponse({ items: aedarItems }).results)
+        await route.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify({ contract: 'semantic-read-batch-v1', results }) })
+      },
     }
-    // #868 : la découverte /api/resources est aussi servie par fixture — aucune
-    // requête API ne doit atteindre le proxy public de Vite.
-    await page.route('**/api/resources', async (route) => {
-      await route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify(await nativeCatalogueResponse().json()) })
-    })
-    await page.route('**/api/**', async (route) => {
-      await route.fulfill({ status: 599, contentType: 'application/json',
-        body: JSON.stringify({ error: 'unexpected API traffic in fixture-only proof' }) })
-    })
-    await page.route('**/api/resources/read-batch', async (route) => {
-      const request = route.request().postDataJSON()
-      const aedarItems = request.items.filter((item) => Array.isArray(item.coordinates?.typequ))
-      const themeItems = request.items.filter((item) => !Array.isArray(item.coordinates?.typequ))
-      if (aedarItems.length) {
-        readCalls.aedarBatches += 1
-        readCalls.aedarItems.push(...aedarItems.map((item) => ({
-          id: item.id,
-          resource: item.resource,
-          target: item.target,
-          typequ: item.coordinates.typequ,
-          fields: item.fields ?? [],
-        })))
-      }
-      if (themeItems.length) readCalls.themeBatches += 1
-      const results = []
-      if (themeItems.length) results.push(...themeBatchResponse({ items: themeItems }).results)
-      if (aedarItems.length) results.push(...aedarBatchResponse({ items: aedarItems }).results)
-      await route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify({ contract: 'semantic-read-batch-v1', results }) })
-    })
+    for (const entry of API_ROUTE_TABLE) {
+      await page.route(entry.pattern, apiHandlers[entry.kind])
+    }
     await page.goto(`${baseUrl}territoire/commune/35238?theme=mobilite`, { waitUntil: 'networkidle' })
     try {
       await page.locator('#section-aedar-car-overview').waitFor({ state: 'visible', timeout: 10000 })

@@ -234,6 +234,32 @@ test_that("projection_navigateur : le fichier publié exclut les champs hors nav
 # #868 — RED : le canon producteur reste STRICT (contexte par défaut). Un registre
 # story_keys absent est une dérive, jamais un « mode navigateur » ; un registre
 # vide déclaré n'autorise aucune lecture orpheline.
+# #868 RED : un registre story_keys EXPLICITEMENT VIDE ne s'étend jamais au
+# portefeuille du thème — une lecture same-theme encore déclarée doit être refusée
+# dans les DEUX contextes. (Le test cross-thème ci-dessous échoue indépendamment et
+# ne couvrait pas ce contournement.)
+test_that("registre story_keys explicitement vide : aucune lecture non déclarée n'est autorisée (#868)", {
+  # mobilite a une lecture same-theme déclarée (acces-aux-services)
+  avec_lecture <- lire_theme_metadata("mobilite")
+  expect_true(any(vapply(avec_lecture$subgroups, function(g) !is.null(g$reading), logical(1))))
+  vide_avec_lecture <- avec_lecture
+  vide_avec_lecture$story_keys <- list() # [] explicite
+  expect_error(valider_theme_metadata(vide_avec_lecture), "histoire|story_keys")
+  expect_error(valider_projection_navigateur(vide_avec_lecture), "histoire|story_keys")
+
+  # contrôle : registre vide et AUCUNE lecture déclarée = valide (Programmes, #408)
+  vide_sans_lecture <- lire_theme_metadata("programmes")
+  vide_sans_lecture$story_keys <- list()
+  expect_no_error(valider_theme_metadata(vide_sans_lecture))
+  expect_no_error(valider_projection_navigateur(vide_sans_lecture))
+
+  # le registre absent reste : refusé en producteur, accepté (projection) en navigateur
+  absent <- avec_lecture
+  absent$story_keys <- NULL
+  expect_error(valider_theme_metadata(absent), "story_keys")
+  expect_no_error(valider_projection_navigateur(absent))
+})
+
 test_that("contexte producteur strict : story_keys absent refusé, registre vide + lecture orpheline refusé (#868)", {
   meta <- lire_theme_metadata("demographie")
   sans_registre <- meta

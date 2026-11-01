@@ -2417,13 +2417,17 @@ export function validerThemeMetadata(
   //    navigateur — la projection servie ne le porte plus : repli sur le portefeuille
   //    du thème pour la règle d'appartenance ; le contrôle d'orphelins ne porte que
   //    sur le registre déclaré.
-  if (meta['story_keys'] === undefined && !navigateur) {
+  const storyPresent = meta['story_keys'] !== undefined
+  if (!storyPresent && !navigateur) {
     throw erreur(fichier, 0, '« story_keys » : la liste des histoires est absente')
   }
-  const story_declarees = meta['story_keys'] === undefined
+  const story_declarees = !storyPresent
     ? []
     : lireTableauChaines(meta, 'story_keys', fichier, 0)
-  const story_keys = story_declarees.length > 0 ? story_declarees : [...CLES_HISTOIRES_PAR_THEME[theme]]
+  // #868 : distinguer ABSENT (projection navigateur : repli portefeuille pour la règle
+  // d'appartenance) et VIDE EXPLICITE [] — un registre vide déclaré ne s'étend JAMAIS au
+  // portefeuille : toute lecture encore déclarée est alors orpheline et refusée.
+  const story_keys = !storyPresent && navigateur ? [...CLES_HISTOIRES_PAR_THEME[theme]] : story_declarees
   const portees = CLES_HISTOIRES_PAR_THEME[theme]
   const autres = new Set(
     (Object.keys(CLES_HISTOIRES_PAR_THEME) as Theme[])
