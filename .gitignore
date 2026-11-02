@@ -54,6 +54,9 @@
 /docs/design/*
 !/docs/design/serving-model-simplification.md
 !/docs/design/serving-resource-catalogue-snapshot.md
+# Reader dispositions of the #827/#619 serving cleanups — versioned like the
+# ADRs their readers cite.
+!/docs/cleanup-indicator-runtime-871.md
 # Le prototype #499 (jetable) : son dossier de revue — README + captures —
 # est l'artefact de décision versionné, comme les rapports d'audit des
 # PRs #451/#452/#455/#491.

@@ -91,31 +91,35 @@ can be supplied through the invoking process environment.
   (`VITE_THEME_ACQUISITION_API='0'`) is retired — there is no environment switch
   anymore, and rollback is the previous release / manual recovery, not a second
   numerical browser runtime.
-- `VITE_SCALAR_COHORT_API` remains an opt-in for retained fiche/standalone
-  consumers; it does not gate ordinary scalar pages or the five registered
-  ordered-series indicator pages. The latter are classified from `/api/resources`
-  and read through the semantic batch contract; their old per-series feature
-  switches and direct series routes do not select the page reader.
+- Since #871 `VITE_SCALAR_COHORT_API` is retired with its last indicator-page
+  consumers: unset, `'0'` and `'1'` all select the same single numerical
+  runtime. Its former page-level branches — the reserved cohort reader and the
+  read-model manifest gate — are removed at their proven final callers; the
+  fiche and standalone map stopped reading the switch in #868/#627.
 - Every canonical `/indicateurs/:theme/:indicator` route first discovers its
   producer-owned resource classification through `/api/resources`. A fresh
-  discovery outage is retryable for all indicator pages, including pages whose
-  other non-profile classifications keep an existing static reader. Page
-  metadata or the read-model manifest cannot select a reader during an outage.
+  discovery outage is retryable for all indicator pages. Since #871 the
+  read-model manifest is never consulted: unknown and owner-retired URLs render
+  the honest unknown-indicator state with zero `/data/modeles-lecture/`
+  requests, even when a stale manifest or model file would be served, and no
+  reader can be authorized while discovery is unavailable.
   Ordinary scalar pages use API-only facts and comparisons when the
   producer catalogue declares a scalar-only resource accepted by the existing
   normalized scalar page grammar; they have no environment switch or static
   numeric fallback. The five producer-declared ordered-series pages also use
-  API-only facts, with their existing page grammar retained. Producer descriptor,
-  facet, publication, and source identity remain authoritative: incompatibilities
-  fail closed, comparison-only failures stay retryable without rereading valid
-  facts, and the app does not invent source clocks. Producer-allowed levels do
-  not expand the page's normalized comparison controls or create regional
-  facts-only behavior. Other non-profile series, model, and legacy readers keep
-  their existing modes and factual semantics.
+  API-only facts, with their existing page grammar retained. Producer
+  descriptor, facet, publication, and source identity remain authoritative:
+  incompatibilities fail closed, comparison-only failures stay retryable
+  without rereading valid facts, and the app does not invent source clocks.
+  Producer-allowed levels do not expand the page's normalized comparison
+  controls or create regional facts-only behavior. Retained ordered-series,
+  sparse-collection and raccordement readers keep their existing modes; the
+  committed indicator read models and manifest remain producer-side
+  publication/recovery assets guarded by their schema validators.
 - All retained declared-profile Page d’indicateur resources use the shared
-  semantic profile reader without an opt-in switch. They remain API-only even
-  when the independent scalar or theme-acquisition switches are unset or set
-  to `'0'`; their incumbent page numerics are never a fallback. The old
+  semantic profile reader without an opt-in switch. They remain API-only —
+  no retired scalar or theme-acquisition switch can disable or replace
+  them; their incumbent page numerics are never a fallback. The old
   `VITE_STRUCTURE_AGE_PROFILE_API` switch and retired age-profile route reader
   have been removed. This does not change series, fiche, or standalone map
   acquisition modes.
