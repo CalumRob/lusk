@@ -49,8 +49,19 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
 
+      - name: Python (API test prerequisites)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Installation (API contracts used by app tests)
+        run: python -m pip install -r api/requirements.txt
+
       - name: Installation (app)
         run: npm --prefix app ci
+
+      - name: Verify API fixture contracts are importable
+        run: python -c "from api.resource_catalogue import default_resource_catalogue; from api.aedar_models import AEDAR_MEASURE_KEYS; assert default_resource_catalogue().discovery_payload()['resources']; assert AEDAR_MEASURE_KEYS"
 
       - name: Tests (suite complète — un échec arrête le run)
         run: npm test
