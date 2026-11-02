@@ -528,13 +528,16 @@ export const SIGLES_PROGRAMMES = [
 export type SigleProgramme = (typeof SIGLES_PROGRAMMES)[number]
 
 /**
- * One membership row of the programmes payload (ADR-0013) — a territoire ×
- * programme at the programme's ANCHOR level: ACV/PVD commune rows, CRTE/TI
- * EPCI rows, ORT commune + EPCI rows. A labelled ACV/PVD commune carries the
- * « convention valant ORT » rider on ITS label row (never a second ORT row).
- * The ORT exception: freshness is the per-row « Dernière actualisation »
- * (vintage_date_reference never null) while the publication source is null by
- * contract (the stale page metadata is never cited — manifest #175).
+ * One membership row (ADR-0013) — a territoire × programme at the programme's
+ * ANCHOR level: ACV/PVD commune rows, CRTE/TI EPCI rows, ORT commune + EPCI
+ * rows. Since #893 this shape is only RE-DERIVED app-side by the fiche
+ * (programmesPourTerritoire) from the theme's `couverture_programmes` fact
+ * rows — it is no longer read from the retired programmes.json file. A
+ * labelled ACV/PVD commune carries the « convention valant ORT » rider on
+ * ITS label row (never a second ORT row). The ORT exception: freshness is the
+ * per-row « Dernière actualisation » (vintage_date_reference never null)
+ * while the publication source is null by contract (the stale page metadata
+ * is never cited — manifest #175).
  */
 export interface MembreProgramme {
   territoire: string
@@ -552,13 +555,15 @@ export interface MembreProgramme {
 
 /**
  * One subvention aggregate row (ADR-0013, issue #176, contrat révisé #305) —
- * precomputed by the pipeline: commune rows carry the annual FULL per-policy-
- * area split (programme_libl + montant — every domaine, never a « autres »
- * line), EPCI / département / région rows the single annual total
- * (programme_libl null). The app derives the display from these rows (the
- * descending sort, the top-5 fold, the part de contexte and the provenance —
- * the seam « the app renders »). Every row wears the SCDL weekly vintage
- * stamp.
+ * precomputed by the pipeline and persisted as programmes_subventions.parquet
+ * (the canonical serving-recovery input). Since #893 the browser no longer
+ * reads the programmes.json projection of this table: the fiche/map consume
+ * the theme's API-admitted `subventions_*` fact rows. The shape remains as
+ * the in-memory mirror used to derive those fact rows in tests.
+ * Commune rows carry the annual FULL per-policy-area split (programme_libl +
+ * montant — every domaine, never a « autres » line), EPCI / département /
+ * région rows the single annual total (programme_libl null). Every row wears
+ * the SCDL weekly vintage stamp.
  */
 export interface SubventionProgramme {
   territoire: string
@@ -574,18 +579,32 @@ export interface SubventionProgramme {
 }
 
 /**
- * The programmes payload file (programmes.json, issue #178) — a JSON OBJECT
- * with two arrays (membres + subventions, the two tables of ADR-0013), NOT an
- * array. Fetched with the « 404 = table absent » contract: a missing file
- * means the element is absent (payload.programmes null), never a fetch error.
+ * One native map membership entry (ADR-0013, #282) — acquired through the
+ * API's producer-declared `anchored_membership` read (mapSemanticAcquisition),
+ * never from a static file. `availability: 'no_record'` keeps a missing
+ * record distinct from `member: false` (the neutral no-data state, never a
+ * non-member invented).
+ */
+export interface MapMembershipProgramme {
+  territoire: string
+  type: 'commune' | 'epci'
+  sigle: SigleProgramme
+  availability: 'observed' | 'no_record'
+  member: boolean | null
+  rider: string | null
+  relationships?: Array<Record<string, unknown>>
+  summaries?: Array<Record<string, unknown>>
+}
+
+/**
+ * The programmes section of the assembled payload — the NATIVE API map cohort
+ * only (`mapMemberships`, plus `mapGrantFacts` on the payload root). The
+ * static programmes.json file contract (the { membres, subventions } object,
+ * issue #178/#179) is RETIRED (#893): no loader, validator or map fallback
+ * reads it anymore, and no fallback from API failure to the old JSON exists.
  */
 export interface ProgrammesPayload {
-  membres: MembreProgramme[]
-  subventions: SubventionProgramme[]
-  /** Native map cohort status: no_record stays neutral rather than becoming non-member. */
-  mapMemberships?: Array<{ territoire: string; type: 'commune' | 'epci'; sigle: SigleProgramme;
-    availability: 'observed' | 'no_record'; member: boolean | null; rider: string | null;
-    relationships?: Array<Record<string, unknown>>; summaries?: Array<Record<string, unknown>> }>
+  mapMemberships?: MapMembershipProgramme[]
 }
 
 export type ModeSource = 'cron' | 'manuel'
@@ -632,7 +651,11 @@ export interface Payload {
   runReport: RunReport | null
   /** The shared vintage table (vintages.json) — optional, like run-report. */
   vintages: Vintage[] | null
-  /** The programmes payload (programmes.json) — optional; null = element absent (404). */
+  /**
+   * The native API map cohort for the programmes tab (mapMemberships) —
+   * populated by the map's semantic acquisition, never loaded from a static
+   * file (programmes.json retired, #893); null until acquired.
+   */
   programmes: ProgrammesPayload | null
   /** API-admitted map grant projection at the producer-declared comparison point. */
   mapGrantFacts?: Indicateur[]

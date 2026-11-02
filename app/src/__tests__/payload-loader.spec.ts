@@ -7,9 +7,7 @@ import {
   indicateursDemographieFixture,
   indicateursHabitatFixture,
   indicateursMilieuxFixture,
-  membresProgrammesFixture,
   metadonneesThemesFixtures,
-  programmesFixture,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
@@ -47,11 +45,6 @@ const fichiersDemographie = {
   'apercu.json': apercuAvecNAFixture,
   'run-report.json': runReportFraisFixture,
   'vintages.json': vintagesFixture,
-}
-
-const fichiersProgrammes = {
-  ...fichiersDemographie,
-  'programmes.json': programmesFixture,
 }
 
 const profilsAccesBpeFixture = [
@@ -351,48 +344,19 @@ describe('chargerPayload — the single seam', () => {
   })
 })
 
-describe('chargerPayload — the programmes payload (issue #179, ADR-0013)', () => {
-  it('loads programmes.json — the { membres, subventions } object — onto the assembled payload', async () => {
-    const payload = await chargerPayload(optionsPour(fichiersProgrammes))
-
-    expect(payload.programmes).toEqual(programmesFixture)
-    expect(payload.programmes?.membres).toHaveLength(membresProgrammesFixture.length)
-  })
-
-  it('treats a 404 on programmes.json as the element being absent — null, no error', async () => {
-    const payload = await chargerPayload(optionsPour(fichiersDemographie))
-
-    expect(payload.programmes).toBeNull()
-  })
-
-  it('raises a typed fetch error when programmes.json fails with a non-404 status', async () => {
-    const { 'programmes.json': _programmes, ...sansProgrammes } = fichiersProgrammes
+describe('chargerPayload — the retired programmes.json (#893)', () => {
+  it('never requests or validates programmes.json, even when a stale file is still served', async () => {
+    const demandees: string[] = []
     const fetchImpl = async (url: string) => {
-      const nom = url.split('/').pop() ?? url
-      if (nom === 'programmes.json') {
-        return { ok: false, status: 500, json: async () => { throw new Error('500') } }
-      }
-      return stubFetch(sansProgrammes)(url)
+      demandees.push(url)
+      // un programmes.json périmé est encore servi (artefact commité non
+      // supprimé) : le chargeur ne doit NI le demander NI le valider
+      return stubFetch({ ...fichiersDemographie, 'programmes.json': { membres: [], subventions: [] } })(url)
     }
 
-    await expect(
-      chargerPayload({ baseUrl: 'data/', fetchImpl }),
-    ).rejects.toMatchObject({ kind: 'fetch', file: 'programmes.json' })
-  })
+    const payload = await chargerPayload({ baseUrl: 'data/', fetchImpl })
 
-  it('raises a typed validation error when programmes.json drifts from the contract', async () => {
-    const programmes = JSON.parse(JSON.stringify(programmesFixture)) as typeof programmesFixture
-    ;(programmes.membres[0] as { sigle: string }).sigle = 'inconnu'
-
-    await expect(
-      chargerPayload(optionsPour({ ...fichiersProgrammes, 'programmes.json': programmes })),
-    ).rejects.toMatchObject({ kind: 'validation', file: 'programmes.json' })
-  })
-
-  it('exposes an empty programmes payload when the file carries empty tables', async () => {
-    const vide = { membres: [], subventions: [] }
-    const payload = await chargerPayload(optionsPour({ ...fichiersProgrammes, 'programmes.json': vide }))
-
-    expect(payload.programmes).toEqual(vide)
+    expect(demandees).not.toContain('data/programmes.json')
+    expect(payload.programmes).toBeNull()
   })
 })

@@ -23,11 +23,14 @@
  * and vintages.json are optional — a 404 means the static-rhythm freshness
  * claim, never an error. So is apercu.json (issue #122): since #116 the
  * pipeline only publishes it when a theme HAS an aperçu — a 404 means the
- * Aperçu element is simply not built, never an error.
+ * Aperçu element is simply not built, never an error. The shared
+ * programmes.json projection is RETIRED (#893): no file entry exists for it
+ * and no loader path requests or validates it — the fiche/map read the
+ * Programmes facts through the API-backed theme files and native reads.
  *
  * The reference-table dependency holds for any caller of the per-file entry
- * point that needs it: theme files (indicateurs_<theme>, histoires_<theme>),
- * apercu and programmes validate AGAINST the validated territoires table —
+ * point that needs it: theme files (indicateurs_<theme>, histoires_<theme>)
+ * and apercu validate AGAINST the validated territoires table —
  * the ordering constraint of the loader, kept (chargerFichier('indicateurs_
  * habitat', territoires)). theme_<theme>.json does NOT validate against the
  * table (validerThemeMetadata is self-contained) — its per-file entry takes
@@ -42,7 +45,6 @@ import type {
   Histoire,
   Indicateur,
   Payload,
-  ProgrammesPayload,
   RunReport,
   Territoire,
   Theme,
@@ -56,7 +58,6 @@ import {
   validerApercu,
   validerHistoires,
   validerIndicateurs,
-  validerProgrammes,
   validerRapportRun,
   validerTerritoires,
   validerTerritoiresMetadata,
@@ -96,7 +97,6 @@ export type Fichier =
   | 'run-report'
   | 'vintages'
   | 'apercu'
-  | 'programmes'
   | `indicateurs_${Theme}`
   | `histoires_${Theme}`
   | `theme_${Theme}`
@@ -156,7 +156,6 @@ const VALIDER_PAR_FICHIER = new Map<Fichier, ValiderFichier>([
   ['run-report', (brut, fichier) => validerRapportRun(brut, fichier)],
   ['vintages', (brut, fichier) => validerVintages(brut, fichier)],
   ['apercu', (brut, fichier, territoires) => validerApercu(brut, fichier, territoires)],
-  ['programmes', (brut, fichier, territoires) => validerProgrammes(brut, fichier, territoires)],
 ])
 
 // Les fichiers de thème (ADR-0007) : les mêmes validateurs par thème, la
@@ -192,7 +191,7 @@ function exigerReference(nom: Fichier, territoires: Territoire[] | undefined): a
  * Fetch + validate ONE named file — the per-file seam of the progressive
  * store (issue #297). Returns the typed section, or null for an optional
  * file absent by 404 (the « 404 = table absente » contract, ADR-0013).
- * Theme / apercu / programmes files validate AGAINST the reference table:
+ * Theme / apercu files validate AGAINST the reference table:
  * pass the VALIDATED territoires (chargerFichier('indicateurs_habitat',
  * territoires)) — the ordering constraint of the loader, kept.
  */
@@ -205,11 +204,6 @@ export async function chargerFichier(
   territoires: Territoire[],
   options?: ChargerOptions,
 ): Promise<ApercuRow[] | null>
-export async function chargerFichier(
-  nom: 'programmes',
-  territoires: Territoire[],
-  options?: ChargerOptions,
-): Promise<ProgrammesPayload | null>
 export async function chargerFichier(
   nom: `indicateurs_${Theme}`,
   territoires: Territoire[],
@@ -285,16 +279,16 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
   const apercu = await chargerFichier('apercu', territoires, options)
   const runReport = await chargerFichier('run-report', options)
   const vintages = await chargerFichier('vintages', options)
-  // Le payload programmes (issue #179) — optionnel : un 404 sur programmes.json
-  // signifie que l'élément est simplement absent (l'état vide honnête), jamais
-  // une erreur de chargement — la machinerie optionnelle établie (le précédent
-  // run-report / vintages, ADR-0013 « 404 = table absente »).
-  const programmes = await chargerFichier('programmes', territoires, options)
 
   // La parité bidirectionnelle libellés ↔ payload (issue #318) : chaque ligne
   // (key, detail) publiée a son libellé dans les métadonnées du thème — et
   // aucun libellé déclaré n'est mort. Une dérive échoue FORT ici, jamais au
   // rendu (la fiche et la carte ne retombent jamais sur la clé brute).
+  // #893 — programmes: null, toujours : aucun programmes.json n'est demandé
+  // ni validé (la projection partagée est retirée ; les faits Programmes
+  // passent par les fichiers du thème + l'API, et la section native de la
+  // carte — mapMemberships — est acquise séparément par l'acquisition
+  // sémantique de la carte).
   const payload = {
     territoires,
     territoryMetadata,
@@ -303,7 +297,7 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
     apercu,
     runReport,
     vintages,
-    programmes,
+    programmes: null,
     themeMetadata,
   }
   verifierPariteLibelles(payload)

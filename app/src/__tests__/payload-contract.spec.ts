@@ -35,9 +35,14 @@ function lireJson(nom: string): unknown {
   return JSON.parse(readFileSync(join(dataDir, nom), 'utf-8'))
 }
 
+/** The file names actually requested through the seam (shared, memoized load). */
+const demandeesCommite: string[] = []
+
 /** Serve the committed payload through the seam, from disk — no network. */
 function chargerPayloadCommite(): Promise<Payload> {
   const fichiers: Record<string, unknown> = {}
+  // #893 — programmes.json n'est plus servi au seam : le fichier commité
+  // reste sur disque (non supprimé), mais aucun chargeur ne le demande.
   for (const nom of [
     'territoires.json',
     'territoires-metadata.json',
@@ -59,7 +64,6 @@ function chargerPayloadCommite(): Promise<Payload> {
     'theme_milieux.json',
     'run-report.json',
     'vintages.json',
-    'programmes.json',
   ]) {
     fichiers[nom] = lireJson(nom)
   }
@@ -68,6 +72,7 @@ function chargerPayloadCommite(): Promise<Payload> {
     baseUrl: 'data/',
     fetchImpl: async (url: string) => {
       const nom = url.split('/').pop() ?? url
+      demandeesCommite.push(nom)
       if (nom in fichiers) {
         return { ok: true, status: 200, json: async () => fichiers[nom] }
       }
@@ -480,33 +485,15 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(payload.vintages?.find((v) => v.id === 'epci')?.date_publication).toBeNull()
   })
 
-  it('loads the committed programmes payload — membership + subventions, the shared file (issue #178/#179)', async () => {
+  it('never requests the retired programmes.json — the committed file stays on disk but unread (#893)', async () => {
     const payload = obtenirPayload()
 
-    // Le fichier PARTAGÉ est présent (le run programmes 2026-08-07 l'a publié)
-    // — jamais l'état vide du 404 : l'élément Aperçu doit rendre des données
-    expect(payload.programmes).not.toBeNull()
-    const programmes = payload.programmes!
-
-    // les deux tables du contrat : les lignes d'adhésion (253 — les comptes
-    // verrouillés du run réel) et les agrégats de subventions (1 908 lignes,
-    // hors communes hors-Bretagne — la discipline « attribué à un territoire
-    // breton », fix des lignes communales)
-    expect(programmes.membres).toHaveLength(253)
-    expect(programmes.subventions.length).toBeGreaterThan(0)
-
-    // chaque ligne d'adhésion est ancrée commune ou EPCI (jamais département/
-    // région — l'échelle est dérivée dans l'app, ADR-0013)
-    for (const membre of programmes.membres) {
-      expect(['commune', 'epci']).toContain(membre.type)
-      expect(membre.vintage_date_reference).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    }
-
-    // chaque ligne de subvention porte le vintage hebdomadaire SCDL
-    for (const subvention of programmes.subventions) {
-      expect(subvention.vintage_version).toBe('2026-08-05')
-      expect(subvention.montant).toBeGreaterThan(0)
-    }
+    // le fichier commité EXISTE toujours (aucune suppression d'artefact) …
+    const commite = JSON.parse(readFileSync(join(dataDir, 'programmes.json'), 'utf-8')) as { membres: unknown[] }
+    expect(commite.membres.length).toBeGreaterThan(0)
+    // … mais le seam ne l'a JAMAIS demandé, et la section reste null
+    expect(demandeesCommite).not.toContain('programmes.json')
+    expect(payload.programmes).toBeNull()
   })
 
   it('publishes the Économie Stories RÉSOLUES — une lecture par (territoire, groupe), le top-5 replié', async () => {

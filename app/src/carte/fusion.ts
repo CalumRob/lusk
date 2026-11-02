@@ -262,10 +262,15 @@ export function expressionCouleurs(seuils: readonly number[], couleurs: readonly
   ] as unknown as ExpressionCouleurs
 }
 
-/** The membership join (ADR-0013, #282) — the programmes' anchor rows read at
- *  the niveau's anchor type: `membre: true` for a covered territory, the
- *  territory ABSENT from the map otherwise. A sigle not anchored at the level
- *  (CRTE at commune) joins nothing — the honest empty highlight. */
+/** The membership join (ADR-0013, #282) — the NATIVE API map cohort
+ *  (`payload.programmes.mapMemberships`, producer-declared anchored_membership
+ *  read) at the niveau's anchor type: `membre: true` for a covered territory,
+ *  null for a no_record/absent record (the neutral no-data state — never
+ *  false invented), and every territory of the level is seeded null so the
+ *  absence stays distinct from membership. A sigle not anchored at the level
+ *  (CRTE at commune) joins nothing — the honest empty highlight.
+ *  Since #893 there is NO static fallback: without the native cohort the map
+ *  is empty (API failure never falls back to the retired programmes.json). */
 export function membresParTerritoire(
   payload: Payload,
   sigle: SigleProgramme,
@@ -275,50 +280,35 @@ export function membresParTerritoire(
   const type = typeAdhesionDuNiveau(niveau)
   if (!type) return parTerritoire
   const native = payload.programmes?.mapMemberships
-  if (native !== undefined) {
-    for (const territory of payload.territoires) {
-      if (territory.type === type) parTerritoire.set(territory.territoire, null)
-    }
-    for (const membership of native) {
-      if (membership.sigle === sigle && membership.type === type) {
-        parTerritoire.set(membership.territoire,
-          membership.availability === 'no_record' ? null : membership.member)
-      }
-    }
-    return parTerritoire
+  if (native === undefined) return parTerritoire
+  for (const territory of payload.territoires) {
+    if (territory.type === type) parTerritoire.set(territory.territoire, null)
   }
-  for (const membre of payload.programmes?.membres ?? []) {
-    if (membre.sigle === sigle && membre.type === type) parTerritoire.set(membre.territoire, true)
+  for (const membership of native) {
+    if (membership.sigle === sigle && membership.type === type) {
+      parTerritoire.set(membership.territoire,
+        membership.availability === 'no_record' ? null : membership.member)
+    }
   }
   return parTerritoire
 }
 
-/** The subvention join (#282) — the total € per territory at the niveau's
- *  aggregate type: the sum of the territory's `montant` rows (the commune's
- *  by-area split or the EPCI/département annual total, ADR-0013). A territory
- *  without rows keeps null (rendered in the neutral no-data color, never an
- *  invented zero). */
+/** The subvention join (#282) — the NATIVE API grant facts
+ *  (`payload.mapGrantFacts`, the producer-declared ordered_series read at its
+ *  comparison point): the total € per territory at the niveau's aggregate
+ *  type. A territory without a grant row keeps null (rendered in the neutral
+ *  no-data color, never an invented zero). Since #893 there is NO static
+ *  fallback to the retired programmes.json subventions table. */
 export function subventionsParTerritoire(
   payload: Payload,
   niveau: NiveauMasque,
 ): Map<string, ValeurLigne> {
   const parTerritoire = new Map<string, ValeurLigne>()
   const type = typeSubventionsDuNiveau(niveau)
-  if (payload.mapGrantFacts) {
-    for (const fact of payload.mapGrantFacts) {
-      if (fact.type === type && fact.value !== null) {
-        parTerritoire.set(fact.territoire, { value: fact.value, unit: fact.unit })
-      }
+  for (const fact of payload.mapGrantFacts ?? []) {
+    if (fact.type === type && fact.value !== null) {
+      parTerritoire.set(fact.territoire, { value: fact.value, unit: fact.unit })
     }
-    return parTerritoire
-  }
-  for (const subvention of payload.programmes?.subventions ?? []) {
-    if (subvention.type !== type) continue
-    const actuel = parTerritoire.get(subvention.territoire)?.value ?? 0
-    parTerritoire.set(subvention.territoire, {
-      value: actuel + subvention.montant,
-      unit: '€',
-    })
   }
   return parTerritoire
 }

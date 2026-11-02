@@ -23,8 +23,8 @@ import type { Indicateur, MembreProgramme, Payload, SubventionProgramme } from '
  * numériques des subventions) + le référentiel `territoires` (la jointure
  * relationnelle que le contexte switcher fait déjà — les jointures sont
  * l'affaire de l'app, jamais le pipeline). La table partagée programmes.json
- * n'est PLUS l'entrée du bloc fiche : elle reste celle de la carte jusqu'à la
- * bascule (#410).
+ * est RETIRÉE (#893) : ni la fiche ni la carte ne la lisent — la carte a
+ * basculé sur les lectures natives de l'API (#410).
  *
  * Les TROIS VOIX :
  *   - couverture vers le bas : une commune montre le badge CRTE/Territoires

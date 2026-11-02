@@ -1265,8 +1265,9 @@ function provenancePour(ref: Territoire): ProvenanceSubventions | null {
 /**
  * LA DÉRIVATION EN ÉCHELLE (issue #181, ADR-0013 ; re-sourcée par #408) — le
  * rendu du bloc Programmes et subventions d'une fiche, depuis LES FAITS
- * HERMÉTIQUES DU THÈME (indicateurs_programmes.json — la paire du sixième
- * thème, jamais la table partagée programmes.json ni une lecture cross-thème)
+ * HERMÉTIQUES DU THÈME (indicateurs_programmes.json, seules entrées lues :
+ * la table partagée programmes.json est retirée depuis #893, aucune lecture
+ * cross-thème)
  * + le référentiel `territoires` (la jointure relationnelle que le contexte
  * switcher fait déjà — les jointures sont l'affaire de l'app). Les trois voix :
  *   - COMMUNE : ses labels (lauréate, le rider « convention valant ORT » comme

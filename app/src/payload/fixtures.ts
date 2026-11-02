@@ -19,9 +19,9 @@ import type {
   Histoire,
   IndicatorPageMetadata,
   Indicateur,
+  MapMembershipProgramme,
   MembreProgramme,
   Payload,
-  ProgrammesPayload,
   RunReport,
   SubventionProgramme,
   Territoire,
@@ -1042,13 +1042,17 @@ export const histoiresMilieuxFixture: Histoire[] = [
 ]
 
 /**
- * Programmes fixture (issue #179, ADR-0013) — VALUES mirror the R-side
- * contract (theme_programmes.R / subventions.R), nothing invented: the five
- * sigles of MANIFEST_PROGRAMMES_COMPLET, the two anchor levels, the
- * « convention valant ORT » rider on the ACV label row (never a second ORT
- * row for that commune), the ORT rows carrying their per-row actualisation as
- * date_reference (publication null by contract), and the SCDL weekly vintage
- * on the subvention aggregates.
+ * Programmes canonical tables (ADR-0013) — VALUES mirror the R-side contract
+ * (theme_programmes.R / subventions.R), nothing invented: the five sigles of
+ * MANIFEST_PROGRAMMES_COMPLET, the two anchor levels, the « convention valant
+ * ORT » rider on the ACV label row (never a second ORT row for that commune),
+ * the ORT rows carrying their per-row actualisation as date_reference
+ * (publication null by contract), and the SCDL weekly vintage on the
+ * subvention aggregates. Since #893 these tables are only persisted as the
+ * two Parquets (programmes_membres / programmes_subventions — the
+ * serving-recovery inputs) and re-derived app-side into the theme's fact rows
+ * (indicateursProgrammesFixture below); the programmes.json file contract is
+ * retired — no loader or validator reads it anymore.
  */
 
 /** Le vintage des labels/contrats ANCT — le tampon de SA source (manifest #175). */
@@ -1140,11 +1144,37 @@ export const subventionsProgrammesFixture: SubventionProgramme[] = [
   { territoire: '53', type: 'region', annee: 2025, programme_libl: null, montant: 2000000, ...vintageSubventions },
 ]
 
-/** Le payload programmes complet — l'objet { membres, subventions } du contrat. */
-export const programmesFixture: ProgrammesPayload = {
-  membres: membresProgrammesFixture,
-  subventions: subventionsProgrammesFixture,
-}
+/**
+ * Le cohort NATIF de la carte pour l'onglet programmes (#282, #893) — la
+ * forme produite par la lecture API déclarée `anchored_membership`
+ * (mapSemanticAcquisition) : `member: true` pour un territoire couvert, null
+ * quand l'enregistrement est absent (no_record — jamais false inventé). Les
+ * sigles/ancrages suivent les lignes membres ci-dessus.
+ */
+export const mapMembershipsProgrammesFixture: MapMembershipProgramme[] = [
+  { territoire: '22001', type: 'commune', sigle: 'ACV', availability: 'observed', member: true, rider: 'convention valant ORT', relationships: [], summaries: [] },
+  { territoire: '22002', type: 'commune', sigle: 'PVD', availability: 'observed', member: true, rider: null, relationships: [], summaries: [] },
+  { territoire: '29001', type: 'commune', sigle: 'ORT', availability: 'observed', member: true, rider: null, relationships: [], summaries: [] },
+  // no_record : l'absence d'enregistrement reste distincte de non-membre
+  { territoire: '29002', type: 'commune', sigle: 'ACV', availability: 'no_record', member: null, rider: null, relationships: [], summaries: [] },
+  { territoire: '200000001', type: 'epci', sigle: 'CRTE', availability: 'observed', member: true, rider: null, relationships: [], summaries: [] },
+  { territoire: '200000002', type: 'epci', sigle: "Territoires d'industrie", availability: 'observed', member: true, rider: null, relationships: [], summaries: [] },
+  { territoire: '200000002', type: 'epci', sigle: 'ORT', availability: 'observed', member: true, rider: null, relationships: [], summaries: [] },
+]
+
+/**
+ * Les faits natifs de subvention de la carte (#893) — les lignes
+ * `subventions_annuelles` admises par l'API au point de comparaison (2025),
+ * que la carte lit via `mapGrantFacts` (ordered_series). Une ligne à
+ * `value: null` reste ABSENTE de la carte — jamais un zéro inventé.
+ */
+export const mapGrantFactsProgrammesFixture: Indicateur[] = [
+  { territoire: '22001', type: 'commune', theme: 'programmes', key: 'subventions_annuelles', detail: '2025', dimension: '2025', value: 45000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
+  { territoire: '22002', type: 'commune', theme: 'programmes', key: 'subventions_annuelles', detail: '2025', dimension: '2025', value: null, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
+  { territoire: '200000001', type: 'epci', theme: 'programmes', key: 'subventions_annuelles', detail: '2025', dimension: '2025', value: 45000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
+  { territoire: '22', type: 'departement', theme: 'programmes', key: 'subventions_annuelles', detail: '2025', dimension: '2025', value: 300000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
+  { territoire: '53', type: 'region', theme: 'programmes', key: 'subventions_annuelles', detail: '2025', dimension: '2025', value: 2000000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
+]
 
 /**
  * Les FAITS DU THÈME Programmes et subventions (#408) — le miroir app de la
@@ -1175,12 +1205,6 @@ export const indicateursProgrammesFixture: Indicateur[] = [
   { territoire: '22001', type: 'commune', theme: 'programmes', key: 'subventions_par_domaine', detail: 'Agriculture', dimension: '2025', value: 15000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
   { territoire: '22001', type: 'commune', theme: 'programmes', key: 'subventions_par_domaine', detail: 'Développement économique', dimension: '2025', value: 30000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
 ]
-
-/** Le payload programmes vide — l'état honnête quand le fichier est absent. */
-export const programmesVideFixture: ProgrammesPayload = {
-  membres: [],
-  subventions: [],
-}
 
 /**
  * La DÉRIVATION EN ÉCHELLE (issue #181) — le fixture de l'échelle qui étend le
@@ -1220,49 +1244,6 @@ export const territoiresLadderFixture: Territoire[] = [
 ]
 
 /**
- * Les lignes d'adhésion de l'échelle : le fixture partagé + le CRTE de l'EPCI Z
- * (transversal — compte dans les deux départements) + les conventions ORT
- * signées des communes non labellisées 22003 et 29003, aux deux ancrages
- * (commune + EPCI Z — le référentiel commune → EPCI du calcul R).
- */
-export const membresLadderFixture: MembreProgramme[] = [
-  ...membresProgrammesFixture,
-  { territoire: '200000003', type: 'epci', sigle: 'CRTE', convention_valant_ort: false, ...vintageCrte },
-  { territoire: '22003', type: 'commune', sigle: 'ORT', convention_valant_ort: false, ...vintageOrt, vintage_date_reference: '2026-07-20' },
-  { territoire: '29003', type: 'commune', sigle: 'ORT', convention_valant_ort: false, ...vintageOrt, vintage_date_reference: '2026-07-21' },
-  { territoire: '200000003', type: 'epci', sigle: 'ORT', convention_valant_ort: false, ...vintageOrt, vintage_date_reference: '2026-07-21' },
-]
-
-/**
- * Les agrégats de subventions de l'échelle : le fixture partagé + la ventilation
- * LARGE COMPLÈTE de la commune 29003 (7 domaines, non triée — le tri est
- * l'affaire de l'app, #305), la ligne propre de la commune 22003, la ligne
- * sans total agrégé de la commune 29001 (la part de contexte silencieuse) et
- * le total unique de l'EPCI Z (172 000 = 162 000 + 10 000, la somme de ses
- * communes).
- */
-export const subventionsLadderFixture: SubventionProgramme[] = [
-  ...subventionsProgrammesFixture,
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Culture', montant: 30000, ...vintageSubventions },
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Environnement', montant: 10000, ...vintageSubventions },
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Développement économique', montant: 50000, ...vintageSubventions },
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Tourisme', montant: 6000, ...vintageSubventions },
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Agriculture', montant: 40000, ...vintageSubventions },
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Sport', montant: 20000, ...vintageSubventions },
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Enseignement', montant: 6000, ...vintageSubventions },
-  { territoire: '22003', type: 'commune', annee: 2025, programme_libl: 'Insertion', montant: 10000, ...vintageSubventions },
-  { territoire: '29001', type: 'commune', annee: 2025, programme_libl: 'Environnement', montant: 25000, ...vintageSubventions },
-  { territoire: '200000003', type: 'epci', annee: 2025, programme_libl: null, montant: 172000, ...vintageSubventions },
-]
-
-/** Le payload programmes de l'échelle — l'objet { membres, subventions } complet. */
-export const programmesLadderFixture: ProgrammesPayload = {
-  membres: membresLadderFixture,
-  subventions: subventionsLadderFixture,
-}
-
-
-/**
  * The per-file charger built from a full fixture payload � the T2 test seam
  * (issue #298) : `PAYLOAD_CHARGER_KEY` becomes per-file, so component specs
  * drive the progressive store by injecting a charger that maps each file name
@@ -1284,8 +1265,6 @@ export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unk
         return payload.vintages
       case 'apercu':
         return payload.apercu
-      case 'programmes':
-        return payload.programmes
       default:
         if (fichier.startsWith('indicateurs_')) {
           const theme = fichier.slice('indicateurs_'.length) as Theme
