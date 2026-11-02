@@ -474,13 +474,13 @@ function initialiserCarte(): void {
     appliquerNiveau()
     if (carte) carte.on('click', surClic)
     if (carte) carte.on('mousemove', surSurvol)
-    if (carte) carte.on('mouseleave', fermerTooltip)
+    if (carte) carte.on('mouseout', fermerTooltip)
     // une recherche intervenue avant le chargement du style n'est pas perdue
     if (props.territoireCible) zoomerSurTerritoire(props.territoireCible)
   })
 
   carte.on('error', (e) => {
-    console.error('MapLibre — erreur carte :', e.error?.message ?? e.message)
+    console.error('MapLibre — erreur carte :', e.error instanceof Error ? e.error.message : String(e.error ?? 'Erreur inconnue'))
   })
 }
 
