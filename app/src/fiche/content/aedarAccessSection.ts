@@ -11,11 +11,17 @@ import type { AedarDiversityLossMapMetadata } from './aedarDiversityLossMaps'
 import type { AedarTimeRampValues } from './aedarTimeRampFacts'
 import type { TerritoryIdentity } from './territoryFacts'
 import { emphasis, link, modeEmphasis, text, territoryLead, territoryTypeLabel } from './themeContent'
-import type { AedarAccessSection, AedarCarAccessOverviewSection, AedarDiversityLossSection, AedarEquipmentExplorerSection, AedarEquipmentProfileSection, AedarEvidenceSource, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
+import type { AedarAccessSection, AedarCarAccessOverviewSection, AedarDiversityLossSection, AedarEquipmentExplorerSection, AedarEquipmentProfileSection, AedarEvidenceSource, AedarRampMode, AedarTimeRampEvidence, TextBlock } from './themeContent'
 
 /** Blank map slots and the highlighted ramp horizon share the provisional AEDAR15 horizon. */
 export const AEDAR_PROTOTYPE_HORIZON_MINUTES = 15
 export const AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU = 'B207'
+
+/** Section labels are stable editorial content, shared by the ready and pending skeletons (#769). */
+export const AEDAR_CAR_OVERVIEW_SECTION_LABEL = 'L’offre accessible en voiture'
+export const AEDAR_ACCESS_SECTION_LABEL = 'La ville du 1/12, du 1/6, du 1/4 et du 1/3 d’heure'
+export const AEDAR_EQUIPMENT_PROFILE_SECTION_LABEL = 'Au moins un quart des adresses'
+export const AEDAR_EQUIPMENT_EXPLORER_SECTION_LABEL = 'Bac à sable'
 
 type AedarReady = Extract<AedarFetchResult, { status: 'ready' }>
 
@@ -124,7 +130,7 @@ export function aedarAccessSection(
   const provenance = data.provenance.sources.map((source) => source.source_id)
   return {
     key: 'aedar-access',
-    label: 'La ville du 1/12, du 1/6, du 1/4 et du 1/3 d’heure',
+    label: AEDAR_ACCESS_SECTION_LABEL,
     availability,
     indicators: [],
     evidence: {
@@ -204,6 +210,47 @@ function carAccessMeans(data: AedarReady, territory: { type: string; id: string 
   }
 }
 
+/**
+ * Car-overview copy shared by the ready and the pending skeleton (#769): the
+ * wording is static editorial content; only the address count and the source
+ * link wait for the aggregate read (null keeps the prose grammatical and never
+ * fabricates a number).
+ */
+function carOverviewUnitIntroduction(
+  territory: TerritoryIdentity,
+  nAddresses: number | null,
+  sourceUrl: string | null,
+): readonly TextBlock[] {
+  return [
+    [
+      text(`Cette page présente l’accès aux équipements issus de la Base permanente des équipements (BPE ${AEDAR_TYPEQU_BPE_YEAR}, INSEE) selon le mode de déplacement depuis les adresses résidentielles de la Base de données nationale des bâtiments (BDNB${nAddresses !== null ? `, ${new Intl.NumberFormat('fr-FR').format(nAddresses)} adresses résidentielles ${territoryLead(territory, false)}` : ''}). Elle s’appuie sur les jeux de données `),
+      ...(sourceUrl ? [link('AEDAR', sourceUrl)] : [text('AEDAR')]),
+      text('.'),
+    ],
+    [
+      text('Elle positionne le territoire en termes d’accès. Cet accès est différencié en fonction de sa répartition spatiale, des inégalités potentielles qu’il implique, du temps de trajet autorisé pour accéder aux équipements (5, 10, 15 ou 20 minutes), de la catégorie d’équipement BPE (dont la liste exhaustive accompagnée de descriptions est téléchargeable '),
+      link('à ce lien', 'https://www.insee.fr/fr/metadonnees/source/serie/s1161'),
+      text('), et du mode de transport.'),
+    ],
+    [
+      text('Les modes de transport suivants y sont différenciés : '),
+      modeEmphasis('Marche', 'walk'), text(', '),
+      modeEmphasis('Transports en commun', 'transit'), text(', '),
+      modeEmphasis('Vélo LTS 2', 'bike_lts2'), text(' (averse au risque), '),
+      modeEmphasis('Vélo LTS 4', 'bike_lts4'), text(' (tolérant au risque), '),
+      modeEmphasis('Voiture', 'car'), text('.'),
+    ],
+  ]
+}
+
+function carOverviewProse(horizonMinutes: number): readonly TextBlock[] {
+  return [[
+    text(`La diversité décrit le nombre de différents types d’équipements (catégories BPE) accessibles sur un total de ${AEDAR_TYPEQU_REGISTRY.length} catégories recensées. Ici, elle est définie sur la base de trajets de ${horizonMinutes} minutes. Les carreaux de la carte sont colorés en fonction de la diversité médiane des adresses qu’ils couvrent.`),
+  ], [
+    text('Le nombre d’établissements ci-dessous décrit le volume de l’offre, y compris plusieurs établissements d’un même type. Ces moyennes incluent les adresses sans accès.'),
+  ]]
+}
+
 /** Address means are additive across TYPEQU; no address-file reread is needed. */
 export function aedarCarAccessOverviewSection(
   data: AedarReady,
@@ -239,7 +286,7 @@ export function aedarCarAccessOverviewSection(
   })
   const availability = meanDiversity !== null && meanVolume !== null ? 'complete' as const : 'incomplete' as const
   return {
-    key: 'aedar-car-overview', label: 'L’offre accessible en voiture', availability,
+    key: 'aedar-car-overview', label: AEDAR_CAR_OVERVIEW_SECTION_LABEL, availability,
     indicators: [], lecture: null, explorationTargets: [],
     provenance: data.provenance.sources.map((source) => source.source_id),
     evidence: {
@@ -250,32 +297,38 @@ export function aedarCarAccessOverviewSection(
       scalarFigureTitle: `En voiture en ${horizonMinutes} minutes (moyenne par adresse)`,
       comparisonLabel: reference && scalars.some((scalar) => scalar.reference !== null)
         ? `moyenne des adresses résidentielles de ${reference.label}` : null,
-      unitIntroduction: [
-        [
-          text(`Cette page présente l’accès aux équipements issus de la Base permanente des équipements (BPE ${AEDAR_TYPEQU_BPE_YEAR}, INSEE) selon le mode de déplacement depuis les adresses résidentielles de la Base de données nationale des bâtiments (BDNB${nAddresses !== null ? `, ${new Intl.NumberFormat('fr-FR').format(nAddresses)} adresses résidentielles ${territoryLead(territory, false)}` : ''}). Elle s’appuie sur les jeux de données `),
-          ...(source?.source_url ? [link('AEDAR', source.source_url)] : [text('AEDAR')]),
-          text('.'),
-        ],
-        [
-          text('Elle positionne le territoire en termes d’accès. Cet accès est différencié en fonction de sa répartition spatiale, des inégalités potentielles qu’il implique, du temps de trajet autorisé pour accéder aux équipements (5, 10, 15 ou 20 minutes), de la catégorie d’équipement BPE (dont la liste exhaustive accompagnée de descriptions est téléchargeable '),
-          link('à ce lien', 'https://www.insee.fr/fr/metadonnees/source/serie/s1161'),
-          text('), et du mode de transport.'),
-        ],
-        [
-          text('Les modes de transport suivants y sont différenciés : '),
-          modeEmphasis('Marche', 'walk'), text(', '),
-          modeEmphasis('Transports en commun', 'transit'), text(', '),
-          modeEmphasis('Vélo LTS 2', 'bike_lts2'), text(' (averse au risque), '),
-          modeEmphasis('Vélo LTS 4', 'bike_lts4'), text(' (tolérant au risque), '),
-          modeEmphasis('Voiture', 'car'), text('.'),
-        ],
-      ],
+      unitIntroduction: carOverviewUnitIntroduction(territory, nAddresses, source?.source_url ?? null),
       availability, source: means.source,
-      prose: [[
-        text(`La diversité décrit le nombre de différents types d’équipements (catégories BPE) accessibles sur un total de ${AEDAR_TYPEQU_REGISTRY.length} catégories recensées. Ici, elle est définie sur la base de trajets de ${horizonMinutes} minutes. Les carreaux de la carte sont colorés en fonction de la diversité médiane des adresses qu’ils couvrent.`),
-      ], [
-        text('Le nombre d’établissements ci-dessous décrit le volume de l’offre, y compris plusieurs établissements d’un même type. Ces moyennes incluent les adresses sans accès.'),
-      ]],
+      prose: carOverviewProse(horizonMinutes),
+    },
+  }
+}
+
+/**
+ * #769 pending counterpart of the car overview: same label, prose and blank
+ * map slot (fixed geometry), but every numeric reading stays null and no source
+ * line renders until the aggregate read resolves. Never a fabricated number.
+ */
+export function aedarPendingCarAccessOverviewSection(territory: TerritoryIdentity): AedarCarAccessOverviewSection {
+  const horizonMinutes = AEDAR_PROTOTYPE_HORIZON_MINUTES
+  return {
+    key: 'aedar-car-overview', label: AEDAR_CAR_OVERVIEW_SECTION_LABEL, availability: 'incomplete',
+    indicators: [], lecture: null, explorationTargets: [],
+    provenance: [],
+    evidence: {
+      kind: 'aedar-car-overview', territory: { type: territory.type, code: territory.code, name: territory.name },
+      horizonMinutes, mapModes: ['car'],
+      mapFigureTitle: [text(`Diversité de l’offre accessible en voiture en ${horizonMinutes} minutes`)],
+      meanDiversity: null, meanVolume: null, nAddresses: null,
+      scalars: [
+        { key: 'meanDiversity', label: 'Types d’équipements', unit: 'types / adresse', value: null, reference: null },
+        { key: 'meanVolume', label: 'Établissements', unit: 'établissements / adresse', value: null, reference: null },
+      ],
+      scalarFigureTitle: `En voiture en ${horizonMinutes} minutes (moyenne par adresse)`,
+      comparisonLabel: null,
+      unitIntroduction: carOverviewUnitIntroduction(territory, null, null),
+      availability: 'incomplete', source: null,
+      prose: carOverviewProse(horizonMinutes),
     },
   }
 }
@@ -287,7 +340,7 @@ export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentPr
   }).status
   return {
     key: 'aedar-equipment-profile',
-    label: 'Au moins un quart des adresses',
+    label: AEDAR_EQUIPMENT_PROFILE_SECTION_LABEL,
     availability,
     indicators: [],
     evidence: {
@@ -320,7 +373,7 @@ export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentPr
 export function aedarEquipmentExplorerSection(data: AedarReady): AedarEquipmentExplorerSection {
   return {
     key: 'aedar-equipment-explorer',
-    label: 'Bac à sable',
+    label: AEDAR_EQUIPMENT_EXPLORER_SECTION_LABEL,
     availability: 'complete',
     indicators: [],
     evidence: {
@@ -377,4 +430,34 @@ export function aedarPrototypeSections(
     return [carOverview, aedarDiversityLossSection(options.lossMapMetadata, territory, aedarEvidenceSource(data)), access, equipmentProfile, equipmentExplorer]
   }
   return [carOverview, access, equipmentProfile, equipmentExplorer]
+}
+
+/**
+ * #769 — pending skeleton of the production AEDAR surface, in the EXACT order
+ * of `aedarPrototypeSections`: the published loss maps stay mounted at their
+ * final position and every numeric section keeps its label as an honest
+ * placeholder (evidence null -> the renderer's « Chargement des données
+ * AEDAR… » state), so resolving the aggregates replaces content in place
+ * instead of inserting prose/sections above the reader's current position.
+ */
+export function aedarPendingPrototypeSections(
+  territory: TerritoryIdentity,
+  options: { lossMapMetadata: AedarDiversityLossMapMetadata },
+): AedarPrototypeSectionsWithLoss {
+  return [
+    aedarPendingCarAccessOverviewSection(territory),
+    aedarDiversityLossSection(options.lossMapMetadata, territory),
+    {
+      key: 'aedar-access', label: AEDAR_ACCESS_SECTION_LABEL, availability: 'incomplete',
+      indicators: [], evidence: null, provenance: [], lecture: null, explorationTargets: [],
+    },
+    {
+      key: 'aedar-equipment-profile', label: AEDAR_EQUIPMENT_PROFILE_SECTION_LABEL, availability: 'incomplete',
+      indicators: [], evidence: null, provenance: [], lecture: null, explorationTargets: [],
+    },
+    {
+      key: 'aedar-equipment-explorer', label: AEDAR_EQUIPMENT_EXPLORER_SECTION_LABEL, availability: 'incomplete',
+      indicators: [], evidence: null, provenance: [], lecture: null, explorationTargets: [],
+    },
+  ]
 }

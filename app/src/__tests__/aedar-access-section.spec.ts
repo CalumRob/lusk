@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { aedarAccessSection, aedarPrototypeSections, AEDAR_PROTOTYPE_HORIZON_MINUTES } from '@/fiche/content/aedarAccessSection'
+import { aedarAccessSection, aedarPendingPrototypeSections, aedarPrototypeSections, AEDAR_PROTOTYPE_HORIZON_MINUTES } from '@/fiche/content/aedarAccessSection'
 import { aedarDiversityLossSection } from '@/fiche/content/aedarDiversityLossMaps'
 import { AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
@@ -262,9 +262,64 @@ describe('aedarAccessSection', () => {
 
   it('keeps source attribution compact and metadata-derived', () => {
     const data = aedarReady('22001')
-    data.provenance.sources[0]!.attribution = '© OpenStreetMap contributors; données AEDAR — licence ODbL'
+    data.provenance.sources[0]!.attribution = '© OpenStreetMap contributors; données AEDAR - licence ODbL'
     const section = aedarAccessSection(data, territory)
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     expect(section.evidence.source).toMatchObject({ label: 'AEDAR', version: '2026-v1', credit: '© OpenStreetMap contributors' })
+  })
+})
+
+describe('aedarPendingPrototypeSections (#769 layout stability)', () => {
+  const lossMapMetadata = { status: 'loading', legend: null } as const
+
+  it('mirrors the hydrated order and labels exactly, with the loss map at its final position', () => {
+    const ready = aedarPrototypeSections(aedarReady('22001'), territory, { lossMapMetadata })
+    const pending = aedarPendingPrototypeSections(territory, { lossMapMetadata })
+    expect(pending.map((section) => section.key)).toEqual(ready.map((section) => section.key))
+    expect(pending.map((section) => section.key)).toEqual([
+      'aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer',
+    ])
+    expect(pending.map((section) => section.label)).toEqual(ready.map((section) => section.label))
+    expect(pending[1]?.evidence?.kind).toBe('aedar-diversity-loss')
+    expect(pending[1]?.label).toBe('Et sans voiture alors ?')
+  })
+
+  it('keeps every numeric reading null and carries no fabricated fallback while pending', () => {
+    const pending = aedarPendingPrototypeSections(territory, { lossMapMetadata })
+    const overview = pending[0]
+    expect(overview.evidence?.kind).toBe('aedar-car-overview')
+    if (overview.evidence?.kind !== 'aedar-car-overview') return
+    expect(overview.evidence.meanDiversity).toBeNull()
+    expect(overview.evidence.meanVolume).toBeNull()
+    expect(overview.evidence.nAddresses).toBeNull()
+    expect(overview.evidence.source).toBeNull()
+    expect(overview.evidence.comparisonLabel).toBeNull()
+    expect(overview.evidence.scalars.map((scalar) => [scalar.key, scalar.value, scalar.reference])).toEqual([
+      ['meanDiversity', null, null],
+      ['meanVolume', null, null],
+    ])
+    // The pending introduction keeps the same prose but drops the address-count
+    // clause instead of inventing a number: "(BDNB)." closes directly.
+    const introduction = overview.evidence.unitIntroduction.flat().map((segment) => segment.value).join('')
+    expect(introduction).toContain('Base permanente des équipements')
+    expect(introduction).toContain('(BDNB).')
+    expect(introduction).not.toMatch(/\(BDNB, /u)
+    // Static section prose is shared verbatim with the hydrated overview.
+    const readyOverview = aedarPrototypeSections(aedarReady('22001'), territory, { lossMapMetadata })[0]
+    if (readyOverview.evidence?.kind === 'aedar-car-overview') {
+      expect(overview.evidence.prose).toEqual(readyOverview.evidence.prose)
+      expect(overview.evidence.mapFigureTitle).toEqual(readyOverview.evidence.mapFigureTitle)
+    }
+  })
+
+  it('marks the sections below the loss map as honest placeholders (evidence null, incomplete)', () => {
+    const pending = aedarPendingPrototypeSections(territory, { lossMapMetadata })
+    for (const section of pending.slice(2)) {
+      expect(section.evidence).toBeNull()
+      expect(section.availability).toBe('incomplete')
+      expect(section.lecture).toBeNull()
+      expect(section.provenance).toEqual([])
+    }
+    expect(pending[0].availability).toBe('incomplete')
   })
 })

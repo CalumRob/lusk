@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import VarianteCahierLibre from '../prototype/VarianteCahierLibre.vue'
-import { aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
-import { aedarDiversityLossSection } from '@/fiche/content/aedarDiversityLossMaps'
+import { aedarPendingPrototypeSections, aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
 import { fetchAedarDiversityLossMapLegend } from '@/fiche/content/aedarDiversityLossMaps'
 import type { AedarDiversityLossMapMetadata } from '@/fiche/content/aedarDiversityLossMaps'
 import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
@@ -42,11 +41,18 @@ const transformed = computed(() => {
   if (!props.aedarData || props.aedarData.status !== 'ready') {
     // The published map legend is independently available from aggregate facts.
     // Keep the map/editorial page in place while numeric sections hydrate.
+    // #769: render the pending skeleton in the EXACT hydrated order (prose ->
+    // car overview -> loss maps -> ...) so resolving the aggregates replaces
+    // sections in place instead of inserting content above the reader's
+    // current position and jumping « Et sans voiture alors ? » down.
     const first = props.content.units[0]
     if (!first || !props.content.territory) return props.content
-    const map = aedarDiversityLossSection(lossMapMetadata.value, props.content.territory)
-    const sections = first.sections.filter((section) => String(section.key) !== map.key)
-    const units = [{ ...first, sections: [...sections.slice(0, 1), map, ...sections.slice(1)] }, ...props.content.units.slice(1)]
+    const pending = aedarPendingPrototypeSections(props.content.territory, { lossMapMetadata: lossMapMetadata.value })
+    const carOverview = pending[0]
+    const introduction = carOverview.evidence?.kind === 'aedar-car-overview'
+      ? carOverview.evidence.unitIntroduction
+      : first.introduction
+    const units = [{ ...first, introduction, sections: pending }, ...props.content.units.slice(1)]
     return { ...props.content, units } as unknown as ThemeContent
   }
   const focal = props.aedarData
