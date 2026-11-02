@@ -24,6 +24,12 @@ one producer-selected exemplar per nonzero class. Zero classes require all
 exemplar fields to be NULL. The publication marker is reference-versioned to
 `territory_reference` and all writes are one publisher transaction. Fresh
 installs carry the same tables and deferred validation trigger in `schema.sql`.
+(**#873 correction, 2026-11-02:** superseded by migration 036 — fresh installs
+no longer carry these tables; the historical statement above described the
+pre-retirement era and is kept as dated evidence. The guarded
+`test_bpe_deferred_validation_work.py` rehearsal now builds the 016 stage by
+applying migration 016 itself, then rehearses 026 and does not touch the
+current `schema.sql` contract.)
 The ordinary `connexion_service` flow does not publish BPE. A pipeline caller
 must separately pass `publier_bpe = TRUE`; the registered publisher still checks
 the BPE artifacts, shared reference marker and vintage before writing.

@@ -68,7 +68,7 @@ are deliberately NOT ignore-listed — they open the evidence base of the DESIGN
 
 ### Theme acquisition contract
 
-- Every added indicator or theme ships behind the registered theme-acquisition switch (or an owner-owned acquisition path such as the Mobilité prototype E flow).
+- Every added indicator or theme ships through the registered theme-acquisition path (or an owner-owned acquisition path such as the Mobilité prototype E flow).
 - Since #868 the API path is the ONLY mode: `VITE_THEME_ACQUISITION_API='0'` and its callers are retired; rollback is previous-release/manual recovery, not a second numerical browser runtime.
 - Keep the acquisition registry complete against `THEMES_CANONIQUES`; its contract test must fail when a canonical theme is omitted.
 - Domain vocabulary and owner decisions for this mode live in `CONTEXT.md` — « Acquisition par thème » (anciennement « Acquisition paresseuse par thème »).
