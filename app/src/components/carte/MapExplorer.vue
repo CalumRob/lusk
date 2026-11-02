@@ -29,7 +29,7 @@
  * click-popup is open, the tooltip anchors to the popup and renders BELOW it
  * (ADR-0019) instead of following the cursor into its footprint.
  */
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import type {
   FillLayerSpecification,
   GeoJSONSource,
@@ -402,9 +402,12 @@ function hauteurSousAncre(popup: Popup): number {
 function afficherTooltip(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): void {
   const territoire = String(feature.properties.territoire)
   const contenu = contenuTooltip(props.payload, territoire, props.theme, couchePourPopup())
+  const echapperHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character]!)
   const html = `<div class="tooltip-carte">
-    <span class="tooltip-carte-nom">${contenu.nom}</span>
-    ${contenu.valeur ? `<span class="tooltip-carte-valeur">${contenu.valeur}</span>` : ''}
+    <span class="tooltip-carte-nom">${echapperHtml(contenu.nom)}</span>
+    ${contenu.valeur ? `<span class="tooltip-carte-valeur">${echapperHtml(contenu.valeur)}</span>` : ''}
   </div>`
   // ADR-0019 : un popup ouvert ancre le tooltip à son propre point, décalé
   // vers le bas — le tooltip ne suit plus le curseur dans l'empreinte du
