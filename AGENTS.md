@@ -48,8 +48,11 @@ by the orchestrator, never standing. `fortify` = edge-state inventory → issue 
 DESIGN.md v2 audit (#511). Mechanically checkable rules get vendored into repo docs so code-review
 can cite them; method depth stays in the skills. No intent personas/subagents.
 
-**Known baseline:** 10 detector findings on current code (mostly `[side-tab]` theme accent lines)
+**Known baseline:** 11 detector findings on current code (mostly `[side-tab]` theme accent lines)
 are deliberately NOT ignore-listed — they open the evidence base of the DESIGN.md v2 campaign (#511).
+Count verified 2026-11-02 (#873 receipts): the 11 findings span 8 files and are byte-identical to the
+`12d18315` base by file/rule/line. A clean full scan remains the gate; the default engine pass scans
+`.ts`/`.vue` with regex rules only (rendered/element rules are not exercised by that pass).
 
 ### General implementation rule — derive facts from contracts; own presentation in the app
 

@@ -75,14 +75,19 @@ const router = useRouter()
 
 /**
  * #873 — le démarrage EXPLICITE de la carte, demand-driven comme la
- * production. Le wait-set reste la porte de rendu ; la barre d'onglets de
- * thèmes (themesPresent lit indicateurs/histoires), la porte de présence
- * `?theme=` et les descripteurs de page des rangs de carte (themeMetadata)
- * lisent les sections des six thèmes canoniques — qu'AUCUNE autre surface
- * de production ne charge depuis #868/#871. La carte demande donc
- * elle-même ce qu'elle rend (décision propriétaire, #873) : jamais un
- * défaut eager implicite du chargeur de test, jamais un démarrage
- * accidentel des tables numériques ailleurs que sur la carte.
+ * production. Le wait-set reste la porte de rendu. La barre d'onglets de
+ * thèmes (themesPresent lit indicateurs/histoires) et la porte de présence
+ * `?theme=` lisent les sections des six thèmes canoniques — qu'AUCUNE autre
+ * surface de production ne charge depuis #868/#871 — et leur démarrage
+ * explicite est la décision propriétaire verbatim (« Carte requests its
+ * sections », les fichiers indicateurs et histoires pour la barre d'onglets,
+ * coût de téléchargement statique propre à la carte). Les `theme_<theme>`
+ * joignent le même démarrage comme détail d'implémentation des
+ * consommateurs existants de la carte (les descripteurs de page des rangs
+ * `chargerRangCarte` et la fusion de métadonnées programmes lisent le
+ * magasin, sans repli d'acquisition propre) — jamais un défaut eager
+ * implicite du chargeur de test, jamais un démarrage accidentel des
+ * tables numériques ailleurs que sur la carte.
  */
 const FICHIERS_DEMARRAGE_CARTE = [
   'territoires',

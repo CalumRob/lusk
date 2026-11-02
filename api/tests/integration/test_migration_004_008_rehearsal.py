@@ -367,18 +367,25 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
                 WHERE n.nspname=current_schema() AND t.relname='table_publication'
                   AND c.conname='table_publication_table_name_check'""").fetchone()[0]
             pre_retirement_names = set(re.findall(r"'([a-z_]+)'", check_pre_retirement))
-            # Only the markers the WALKED migrations introduced: the chain stops
-            # at 022, so 027's milieux_reading_absence and 028's
-            # aedar_territorial_aggregate are NOT claimed here — the walk
-            # predates them (036 below installs the current allow-list
-            # wholesale, which is why the post-036 convergence holds).
-            for marker in ('territory_reference', 'service_registry', 'essential_service_access',
-                           'building_ramp', 'building_grid', 'scalar_observation',
-                           'declared_profile', 'ordered_series', 'bpe_profile_evidence',
-                           'demographic_typed_reading', 'selected_reading',
-                           'economy_typed_reading', 'economy_activity_evidence',
-                           'milieux_typed_reading'):
-                assert marker in pre_retirement_names
+            # EXACT set equality at the legitimate pre-036 stage — enumerated
+            # independently from the walked migration SOURCES (never derived
+            # from the queried constraint): the pre-594 base markers, the
+            # shared serving additions 004/006/007, 016's BPE marker (016
+            # resets the allow-list to its own era, preserving all of them),
+            # 020's demographic pair, 021's economy pair, and 022's Milieux
+            # marker. The walk stops at 022, so 027's milieux_reading_absence
+            # and 028's aedar_territorial_aggregate are NOT in the set (036
+            # below installs the current allow-list wholesale, which is why
+            # the post-036 convergence holds). Exact equality catches a
+            # missing AND an unexpected marker alike.
+            assert pre_retirement_names == {
+                'territory_reference', 'service_registry', 'essential_service_access',
+                'building_ramp', 'building_grid', 'scalar_observation',
+                'declared_profile', 'ordered_series', 'bpe_profile_evidence',
+                'demographic_typed_reading', 'selected_reading',
+                'economy_typed_reading', 'economy_activity_evidence',
+                'milieux_typed_reading',
+            }
             for marker in ('scalar_observation', 'declared_profile', 'ordered_series',
                            'demographic_typed_reading', 'selected_reading',
                            'bpe_profile_evidence'):

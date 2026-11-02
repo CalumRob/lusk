@@ -13,6 +13,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY, usePayload, type ChargerFichier } from '../payload/usePayload'
+import { THEMES_CANONIQUES } from '../payload/types'
 import type { Fichier } from '../payload/loader'
 import type { Payload } from '../payload/types'
 import { PayloadError } from '../payload/validate'
@@ -263,7 +264,11 @@ describe('le store progressif — la gating par wait-set', () => {
     // The no-arg form retains the complete legacy default for BOTH the
     // production consumer and an injected test loader — the eager start is
     // the explicit no-wait-set form, never an injection side effect. The
-    // full set is started (per-theme discovery then chains its absences).
+    // COMPLETE expected request set is pinned (not a toContain sample), so a
+    // missing or extra start is caught: the six shared files, presence
+    // discovery (indicateurs_) for every canonical theme, and — per the
+    // documented absence-chaining contract — the histoires/theme pair ONLY
+    // for the fixture's present theme (Démographie).
     const demandes: Fichier[] = []
     await monter(
       async (fichier) => {
@@ -273,10 +278,18 @@ describe('le store progressif — la gating par wait-set', () => {
       undefined,
     )
 
-    expect(demandes).toContain('territoires')
-    expect(demandes).toContain('apercu')
-    expect(demandes).toContain('programmes')
-    expect(demandes).toContain('indicateurs_habitat')
+    const attendues = new Set<Fichier>([
+      'territoires',
+      'territoires-metadata',
+      'run-report',
+      'vintages',
+      'apercu',
+      'programmes',
+      ...THEMES_CANONIQUES.map((theme) => `indicateurs_${theme}` as Fichier),
+      'histoires_demographie',
+      'theme_demographie',
+    ])
+    expect([...new Set(demandes)].sort()).toEqual([...attendues].sort())
   })
 })
 
