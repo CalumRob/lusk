@@ -4,10 +4,16 @@
  *
  * Since issue #298 (the T2 heart of PRD #296 « la page d'abord, le reste en
  * arrière-plan »), the payload loads as a STORE of per-file promises feeding
- * one reactive `Payload` object that GROWS as files land. Every file is still
- * fetched eagerly and in parallel on first load (one fetch per session — the
- * payload is static, memory-cached); the wait-set is the rendering gate and
- * its files are the default fetch request for production consumers.
+ * one reactive `Payload` object that GROWS as files land. Acquisition is
+ * demand-driven per consumer (#873): each consumer's wait-set is its
+ * rendering gate, and the default start request is exactly that wait-set —
+ * or the complete legacy set for the no-argument form. A standard
+ * territorial wait-set also warms the shared `territoires-metadata` registry
+ * in the background (the published density classes gate); an explicit
+ * `demarrer` is a deliberate narrower/wider seam. The production app shares
+ * ONE store (one fetch per session, memory-cached); a test injecting a
+ * charger gets a fresh store with the SAME demand-driven default (#873) —
+ * eager full-store starts are requested explicitly, never implicit.
  *
  * `usePayload({ attendre: [...] })` starts and waits for that set, while the
  * no-argument form retains the complete legacy set. It returns the same
@@ -19,8 +25,6 @@
  *   (resolved or failed); anything already loaded is readable while it is
  *   still true.
  * - `erreur` is the wait-set's failure if any (kind preserved), else null.
- * - No-arg `usePayload()` = start and wait for the FULL set = the previous
- *   all-or-nothing behavior (backward compatible).
  *
  * Failure semantics (option C): a wait-set file failing → the typed
  * `PayloadError` + Retry; a background file failing → its section stays at
@@ -69,7 +73,9 @@ export interface EtatPayload {
 export interface OptionsUsePayload {
   /** The wait-set — the files this consumer BLOCKS on. Default = the full set. */
   attendre?: Fichier[] | Ref<Fichier[]>
-  /** Files to start for this store. Defaults to `attendre`, or the full set for injected legacy stores. */
+  /** Files to start for this store. Defaults to `attendre`, or the full set
+   *  when no wait-set is given — for production consumers and injected test
+   *  loaders alike (#873: an injected charger never widens the default). */
   demarrer?: Fichier[] | Ref<Fichier[]>
 }
 
@@ -435,12 +441,13 @@ export function usePayload({ attendre, demarrer: fichiersADemarrer }: OptionsUse
   const magasin = chargerInjecte
     ? creerMagasin(chargerInjecte)
     : (magasinPartage ??= creerMagasin(null))
-  // Production consumers request their wait-set only. Test injectors retain
-  // the historical full-store default unless a test explicitly exercises the
-  // demand-driven `demarrer` seam.
-  const fichiersParDefaut: readonly Fichier[] = chargerInjecte
-    ? TOUS_LES_FICHIERS
-    : lireFichiers(attendre, TOUS_LES_FICHIERS)
+  // #873 — the default start request is demand-driven for EVERY consumer,
+  // injected test loaders included: `attendre` is the default `demarrer`, and
+  // only the no-wait-set form retains the historical full-set default. An
+  // injected charger no longer silently turns a narrow wait-set into a
+  // full-store eager start — a test that genuinely needs background files
+  // requests them explicitly through `demarrer`.
+  const fichiersParDefaut: readonly Fichier[] = lireFichiers(attendre, TOUS_LES_FICHIERS)
   const attendreEffectif = computed(() => lireFichiers(attendre, TOUS_LES_FICHIERS))
   const demarrerEffectif = computed(() => {
     const fichiers = [...lireFichiers(fichiersADemarrer, fichiersParDefaut)]

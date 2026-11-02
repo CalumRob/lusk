@@ -13,6 +13,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY, usePayload, type ChargerFichier } from '../payload/usePayload'
+import { THEMES_CANONIQUES } from '../payload/types'
 import type { Fichier } from '../payload/loader'
 import type { Payload } from '../payload/types'
 import { PayloadError } from '../payload/validate'
@@ -39,9 +40,10 @@ const payload: Payload = {
 const Harness = defineComponent({
   props: {
     attendre: { type: Array as () => Fichier[] | undefined, default: undefined },
+    demarrer: { type: Array as () => Fichier[] | undefined, default: undefined },
   },
   setup(props) {
-    const etat = usePayload({ attendre: props.attendre })
+    const etat = usePayload({ attendre: props.attendre, demarrer: props.demarrer })
     return { etat }
   },
   render: () => h('div'),
@@ -49,9 +51,9 @@ const Harness = defineComponent({
 
 let montee: ReturnType<typeof mount> | null = null
 
-async function monter(charger: ChargerFichier, attendre?: Fichier[]) {
+async function monter(charger: ChargerFichier, attendre?: Fichier[], demarrer?: Fichier[]) {
   const wrapper = mount(Harness, {
-    props: { attendre },
+    props: { attendre, demarrer },
     global: { provide: { [PAYLOAD_CHARGER_KEY]: charger } },
   })
   montee = wrapper
@@ -71,9 +73,11 @@ describe('le store progressif — la gating par wait-set', () => {
       ...indicateursDemographieFixture[0]!,
       territoire: String(index).padStart(5, '0'),
     }))
+    // Le gros thème est le SUJET du test : il est demandé explicitement —
+    // le défaut #873 ne démarre plus toute la boutique pour l'injecteur.
     const wrapper = await monter(
       chargerAvec({ ...payload, indicateurs: lignes }),
-      ['territoires'],
+      ['territoires', 'indicateurs_demographie'],
     )
 
     expect(wrapper.vm.etat.payload.value?.indicateurs).toHaveLength(lignes.length)
@@ -131,12 +135,16 @@ describe('le store progressif — la gating par wait-set', () => {
     const enAttente = new Promise<unknown>((resoudre) => {
       resoudreHabitat = resoudre
     })
+    // L'habitat est le SUJET du test (l'arrière-plan qui pend) : démarrage
+    // explicite. Les sections hors du wait-set et hors de `demarrer` ne
+    // partent plus (#873) — elles restent à leur état vide honnête.
     const wrapper = await monter(
       async (fichier) => {
         if (fichier === 'indicateurs_habitat') return enAttente
         return chargerAvec(payload)(fichier)
       },
       ['territoires', 'run-report'],
+      ['territoires', 'run-report', 'indicateurs_habitat'],
     )
     const { payload: p, chargement } = wrapper.vm.etat
 
@@ -144,13 +152,14 @@ describe('le store progressif — la gating par wait-set', () => {
     expect(chargement.value).toBe(false)
     expect(p.value?.territoires).toEqual(territoiresFixture)
 
-    // La section pendante reste vide honnête tant qu'elle n'est pas là.
-    expect(p.value?.indicateurs).toEqual(indicateursDemographieFixture)
+    // La Démographie n'a jamais été demandée : sa section reste VIDE —
+    // l'état honnête d'un fichier non démarré, jamais un démarrage implicite.
+    expect(p.value?.indicateurs).toEqual([])
 
     // Une fois l'habitat réglé (thème absent — null), il ne contribue rien.
     resoudreHabitat(null)
     await flushPromises()
-    expect(p.value?.indicateurs).toEqual(indicateursDemographieFixture)
+    expect(p.value?.indicateurs).toEqual([])
   })
 
   it('étend dynamiquement le wait-set et démarre les fichiers découverts ensuite', async () => {
@@ -228,11 +237,68 @@ describe('le store progressif — la gating par wait-set', () => {
     expect(erreur.value).toBeInstanceOf(PayloadError)
     expect(erreur.value).toMatchObject({ kind: 'fetch', file: 'territoires.json' })
   })
+
+  it('un chargeur injecté ne change pas le défaut demand-driven de production (#873)', async () => {
+    // Injecting a test loader must not silently turn the wait-set into a
+    // full-store eager start: `attendre` stays the default start request —
+    // the same demand-driven semantics as production. Only the shared
+    // territorial registry warms in the background (the standard wait-set
+    // rule), and NOTHING else is fetched.
+    const demandes: Fichier[] = []
+    const wrapper = await monter(
+      async (fichier) => {
+        demandes.push(fichier)
+        return chargerAvec(payload)(fichier)
+      },
+      ['territoires'],
+    )
+
+    expect(demandes).toEqual(['territoires', 'territoires-metadata'])
+    expect(wrapper.vm.etat.chargement.value).toBe(false)
+    // A section outside the wait-set was never started: it stays at its
+    // honest empty state instead of being eagerly fetched.
+    expect(wrapper.vm.etat.payload.value?.indicateurs).toEqual([])
+  })
+
+  it('un chargeur injecté sans wait-set garde le défaut historique du full set (#873)', async () => {
+    // The no-arg form retains the complete legacy default for BOTH the
+    // production consumer and an injected test loader — the eager start is
+    // the explicit no-wait-set form, never an injection side effect. The
+    // COMPLETE expected request set is pinned (not a toContain sample), so a
+    // missing or extra start is caught: the six shared files, presence
+    // discovery (indicateurs_) for every canonical theme, and — per the
+    // documented absence-chaining contract — the histoires/theme pair ONLY
+    // for the fixture's present theme (Démographie).
+    const demandes: Fichier[] = []
+    await monter(
+      async (fichier) => {
+        demandes.push(fichier)
+        return chargerAvec(payload)(fichier)
+      },
+      undefined,
+    )
+
+    const attendues = new Set<Fichier>([
+      'territoires',
+      'territoires-metadata',
+      'run-report',
+      'vintages',
+      'apercu',
+      'programmes',
+      ...THEMES_CANONIQUES.map((theme) => `indicateurs_${theme}` as Fichier),
+      'histoires_demographie',
+      'theme_demographie',
+    ])
+    expect([...new Set(demandes)].sort()).toEqual([...attendues].sort())
+  })
 })
 
 describe('le store progressif — échecs scopés (option C)', () => {
   it('un échec d’arrière-plan laisse erreur null et la section absente — la page vit', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Le fichier qui échoue est le SUJET du test : démarrage explicite —
+    // le défaut #873 ne démarre plus les fichiers d'arrière-plan pour
+    // l'injecteur.
     const wrapper = await monter(
       async (fichier) => {
         if (fichier === 'indicateurs_habitat') {
@@ -241,19 +307,24 @@ describe('le store progressif — échecs scopés (option C)', () => {
         return chargerAvec(payload)(fichier)
       },
       ['territoires', 'run-report'],
+      ['territoires', 'run-report', 'indicateurs_habitat'],
     )
     const { payload: p, erreur, chargement } = wrapper.vm.etat
 
     expect(erreur.value).toBeNull()
     expect(chargement.value).toBe(false)
-    // La section reste à son état vide honnête — jamais un rendu cassé.
-    expect(p.value?.indicateurs).toEqual(indicateursDemographieFixture)
+    // La section de l'habitat échoué reste à son état vide honnête — jamais
+    // un rendu cassé (la Démographie n'est pas démarrée : démarrage à la
+    // demande, #873).
+    expect(p.value?.indicateurs).toEqual([])
     // La dérive de validation reste LOUD (canari) — jamais muette.
     expect(consoleError).toHaveBeenCalled()
   })
 
   it('une dérive de validation d’arrière-plan est distinguable d’un échec de transport', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Le fichier qui échoue est le SUJET du test : démarrage explicite,
+    // sinon l'échec d'arrière-plan ne serait jamais exercé.
     const wrapper = await monter(
       async (fichier) => {
         if (fichier === 'indicateurs_habitat') {
@@ -262,6 +333,7 @@ describe('le store progressif — échecs scopés (option C)', () => {
         return chargerAvec(payload)(fichier)
       },
       ['territoires'],
+      ['territoires', 'indicateurs_habitat'],
     )
     const { erreur } = wrapper.vm.etat
 
@@ -272,12 +344,16 @@ describe('le store progressif — échecs scopés (option C)', () => {
 
   it('un thème présent sans histoires = dérive de validation LOUD, jamais une absence silencieuse', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // La paire indicateurs/histoires du thème PRÉSENT est le SUJET du test :
+    // démarrage explicite — histoires s'enchaîne depuis ses indicateurs
+    // (l'ordre du tableau garde la contrainte d'ordre du loader).
     const wrapper = await monter(
       async (fichier) => {
         if (fichier === 'histoires_demographie') return null
         return chargerAvec(payload)(fichier)
       },
       ['territoires'],
+      ['territoires', 'indicateurs_demographie', 'histoires_demographie'],
     )
     const { erreur, chargement } = wrapper.vm.etat
 
@@ -425,6 +501,8 @@ describe('le store progressif — échecs scopés (option C)', () => {
   it('recharger refetch UNIQUEMENT les fichiers échoués — jamais le full set', async () => {
     const demandes: Fichier[] = []
     let vintagesEchoue = true
+    // Vintages est le SUJET du test (l'échec d'arrière-plan retenté) :
+    // démarrage explicite — le défaut #873 ne le lance plus pour l'injecteur.
     const wrapper = await monter(
       async (fichier) => {
         demandes.push(fichier)
@@ -435,6 +513,7 @@ describe('le store progressif — échecs scopés (option C)', () => {
         return chargerAvec(payload)(fichier)
       },
       ['territoires'],
+      ['territoires', 'vintages'],
     )
     const { erreur, recharger, payload: p } = wrapper.vm.etat
 
