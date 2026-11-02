@@ -150,7 +150,7 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
   await flushPromises()
   return { wrapper, router }
 }
-beforeEach(() => { collectionComparisonFailures = 0; delayNextCollectionComparison = false; pendingCollectionComparison = null; pendingCollectionComparisonItem = null; semanticReadItems.length = 0; networkRequests.length = 0; localStorage.clear(); vi.stubEnv('VITE_SCALAR_COHORT_API', '0') })
+beforeEach(() => { collectionComparisonFailures = 0; delayNextCollectionComparison = false; pendingCollectionComparison = null; pendingCollectionComparisonItem = null; semanticReadItems.length = 0; networkRequests.length = 0; localStorage.clear() })
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
 
 describe('IndicateurView — routed URL seam', () => {

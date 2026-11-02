@@ -23,9 +23,9 @@ import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } fro
 import { PayloadError, validerCatalogueNavigateur } from '@/payload/validate'
 import { semanticComparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
-import { chargerCohorteScalaire, chargerCohortePageScalaire, chargerComparaisonsScalaires,
+import { chargerCohortePageScalaire, chargerComparaisonsScalaires,
   chargerFaitFocalPageScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees,
-  scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
+  validerEnregistrementScalaires } from '@/payload/scalarCohort'
 import type { ScalarComparisonEvidence, ScalarComparisonRequest } from '@/payload/scalarCohort'
 import type { Indicateur, IndicatorPageMetadata, NativeThemeFactContract, Payload, SourceVintageRecord, Territoire, TerritoireType, ThemeMetadata } from '@/payload/types'
 import { ThemeAcquisitionCache, acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison } from '@/payload/themeAcquisition'
@@ -420,11 +420,12 @@ watch(() => [theme.value, indicator.value, retryProfileBootstrap.value] as const
   ([currentTheme, currentIndicator]) => { void resolveProfileRoute(currentTheme, currentIndicator) },
   { immediate: true })
 
-const scalaireApiOptionnelle = computed(() => scalarCohortEnabled(import.meta.env as Record<string, string | undefined>))
 const indicateursScalairesCourants = ref<string[]>([])
+// #871 : la page scalaire ordinaire est la SEULE lecture scalaire de la page
+// d'indicateur — l'ancien drapeau VITE_SCALAR_COHORT_API ne peut plus en
+// sélectionner une seconde.
 const scalaireApi = computed(() => !profileMode.value && metadataScalaireApi.value?.theme === theme.value &&
-  ((pageScalaireApiActive.value && indicateursScalairesCourants.value.includes(indicator.value)) ||
-    (scalaireApiOptionnelle.value && indicateursScalairesCourants.value.includes(indicator.value))))
+  pageScalaireApiActive.value && indicateursScalairesCourants.value.includes(indicator.value))
 const metadataScalaireApi = ref<ThemeMetadata | null>(null)
 const faitsScalaireApi = ref<Indicateur[]>([])
 const erreurScalaireApi = ref<PayloadError | null>(null)
@@ -493,14 +494,14 @@ function membresComparaisonPageScalaire(territories: Territoire[], request: Scal
     (request.scope.kind !== 'density_class' || territory.classe_densite_code === request.scope.densityClassCode))
 }
 
-watch(() => [profileDiscoveryComplete.value, profileMode.value, scalaireApi.value, pageScalaireApiActive.value,
+watch(() => [profileDiscoveryComplete.value, profileMode.value, scalaireApi.value,
   theme.value, indicator.value, territoirePorte.value,
   niveauPorte.value, departementPorte.value, epciPorte.value,
   payloadLegacy.value.territoires.length, retryScalaireApi.value] as const,
-async ([discovered, isProfile, active, ordinaryPage, currentTheme, currentIndicator, selectedId, routeLevel,
+async ([discovered, isProfile, active, currentTheme, currentIndicator, selectedId, routeLevel,
   department, epci, territoryCount]) => {
   if (!discovered || isProfile) return
-  const key = JSON.stringify([active, ordinaryPage, currentTheme, currentIndicator, selectedId, routeLevel,
+  const key = JSON.stringify([active, currentTheme, currentIndicator, selectedId, routeLevel,
     department, epci, territoryCount, retryScalaireApi.value])
   if (active && key === cleRequeteScalaireApi) return
   cleRequeteScalaireApi = key
@@ -540,43 +541,36 @@ async ([discovered, isProfile, active, ordinaryPage, currentTheme, currentIndica
     const focal = selectedFocal ?? choisirFocalCohorte(payloadLegacy.value.territoires, level, selectedId,
       level === 'commune' ? { department: dept, epci: codeEpci } : {})
     const scope = level === 'commune' ? { department: dept, epci: codeEpci } : {}
-    if (ordinaryPage) {
-      const result = await chargerCohortePageScalaire(currentIndicator, currentTheme as Theme,
-        metadataScalaireApi.value, focal, level, payloadLegacy.value.territoires, scope,
-        catalogueScalaireApi.value)
-      if (sequence === sequenceScalaireApi) {
-        faitsScalaireApi.value = result.facts
-        identiteScalairePage.value = result.identity
-        contratScalairePageNatif.value = result.contract
-        faitsScalairePagePrets.value = true
-        generationFaitsScalairePage.value++
-        chargementScalaireApi.value = false
-      }
-      const focalOutsideCohort = Boolean(focal && focal.type === level &&
-        ((scope.department && focal.departement !== scope.department) ||
-          (scope.epci && focal.epci !== scope.epci)))
-      if (focalOutsideCohort && focal) {
-        chargementScalaireFocalApi.value = true
-        try {
-          const focalFact = await chargerFaitFocalPageScalaire(result.declaration, currentIndicator,
-            currentTheme as Theme, metadataScalaireApi.value, focal, payloadLegacy.value.territoires,
-            result.identity, result.contract)
-          if (sequence === sequenceScalaireApi) {
-            faitsScalaireApi.value = focalFact ? [...result.facts, focalFact] : result.facts
-            focalScalaireApiAbsent.value = focalFact === null
-          }
-        } catch {
-          if (sequence === sequenceScalaireApi) erreurScalaireFocalApi.value = true
-        } finally {
-          if (sequence === sequenceScalaireApi) chargementScalaireFocalApi.value = false
-        }
-      }
-      return
+    const result = await chargerCohortePageScalaire(currentIndicator, currentTheme as Theme,
+      metadataScalaireApi.value, focal, level, payloadLegacy.value.territoires, scope,
+      catalogueScalaireApi.value)
+    if (sequence === sequenceScalaireApi) {
+      faitsScalaireApi.value = result.facts
+      identiteScalairePage.value = result.identity
+      contratScalairePageNatif.value = result.contract
+      faitsScalairePagePrets.value = true
+      generationFaitsScalairePage.value++
+      chargementScalaireApi.value = false
     }
-    if (!focal) throw new PayloadError('validation', currentIndicator, 'Aucun territoire admissible dans ce périmètre.')
-    const rows = await chargerCohorteScalaire(currentIndicator, currentTheme as Theme, page, focal, level,
-      payloadLegacy.value.territoires, scope)
-    if (sequence === sequenceScalaireApi) faitsScalaireApi.value = rows
+    const focalOutsideCohort = Boolean(focal && focal.type === level &&
+      ((scope.department && focal.departement !== scope.department) ||
+        (scope.epci && focal.epci !== scope.epci)))
+    if (focalOutsideCohort && focal) {
+      chargementScalaireFocalApi.value = true
+      try {
+        const focalFact = await chargerFaitFocalPageScalaire(result.declaration, currentIndicator,
+          currentTheme as Theme, metadataScalaireApi.value, focal, payloadLegacy.value.territoires,
+          result.identity, result.contract)
+        if (sequence === sequenceScalaireApi) {
+          faitsScalaireApi.value = focalFact ? [...result.facts, focalFact] : result.facts
+          focalScalaireApiAbsent.value = focalFact === null
+        }
+      } catch {
+        if (sequence === sequenceScalaireApi) erreurScalaireFocalApi.value = true
+      } finally {
+        if (sequence === sequenceScalaireApi) chargementScalaireFocalApi.value = false
+      }
+    }
   } catch (cause) {
     if (sequence === sequenceScalaireApi) erreurScalaireApi.value = cause instanceof PayloadError ? cause : new PayloadError('fetch', currentIndicator, 'Impossible de charger le cohort scalaire.')
   } finally { if (sequence === sequenceScalaireApi) chargementScalaireApi.value = false }
@@ -1043,8 +1037,7 @@ const payload = computed<Payload>(() => {
 const erreur = computed(() => {
   if (profileBootstrapError.value) return profileBootstrapError.value
   if (profileMode.value) return profileFactsError.value ?? profileFocalError.value ?? erreurLegacy.value
-  if (pageScalaireApiActive.value || (!profileMode.value && scalaireApiOptionnelle.value &&
-      (!metadataScalaireApi.value || scalaireApi.value))) return erreurScalaireApi.value
+  if (pageScalaireApiActive.value) return erreurScalaireApi.value
   if (sparseCollectionPageActive.value) {
     return sparseCollectionFactsError.value
       ? new PayloadError('fetch', indicator.value, 'Impossible de charger les faits de subventions publiés.') : null
@@ -1055,7 +1048,7 @@ const chargement = computed(() =>
   profileBootstrapLoading.value ||
   (profileMode.value && (profileFactsLoading.value || profileFocalLoading.value)) ||
   (sparseCollectionPageActive.value && sparseCollectionFactsLoading.value) ||
-  (!profileMode.value && (pageScalaireApiActive.value || scalaireApiOptionnelle.value) && chargementScalaireApi.value) ||
+  (!profileMode.value && pageScalaireApiActive.value && chargementScalaireApi.value) ||
   chargementLegacy.value,
 )
 const geometrie = useGeometrie()

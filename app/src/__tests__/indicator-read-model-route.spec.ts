@@ -18,7 +18,7 @@ beforeEach(() => {
   localStorage.clear()
   vi.stubGlobal('fetch', vi.fn(defaultTransport))
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 describe("Page d'indicateur — coupure scalaires ordinaires du modèle de lecture (#855, #871)", () => {
   async function mountDensity() {
@@ -146,7 +146,7 @@ describe("Routes inconnues ou retirées — plus aucune requête au manifeste de
    * The manifest and the per-indicator models are served on purpose: reaching
    * for them is exactly the residual behavior #871 retires.
    */
-  function transportProduction(options: { manifeste?: () => Response; catalogueRegionSeulement?: boolean } = {}) {
+  function transportProduction(options: { manifeste?: () => Response; ressourcesRegionSeulement?: string[] } = {}) {
     const appels: string[] = []
     const transport = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -169,11 +169,14 @@ describe("Routes inconnues ou retirées — plus aucune requête au manifeste de
         return new Response(JSON.stringify(modeleStatiquePerime(theme as 'demographie' | 'mobilite', indicator!)),
           { status: 200, headers: { 'content-type': 'application/json' } })
       }
-      if (options.catalogueRegionSeulement && url === '/api/resources') {
+      if (options.ressourcesRegionSeulement?.length && url === '/api/resources') {
         const base = await defaultTransport(input, init)
         const catalogue = await base.json() as { resources: Array<Record<string, unknown>> }
-        const densite = catalogue.resources.find((resource) => resource.resource_id === 'densite')
-        if (densite) densite.allowed_levels = ['region']
+        for (const resource of catalogue.resources) {
+          if (options.ressourcesRegionSeulement.includes(String(resource.resource_id))) {
+            resource.allowed_levels = ['region']
+          }
+        }
         return new Response(JSON.stringify(catalogue), { status: 200, headers: { 'content-type': 'application/json' } })
       }
       return defaultTransport(input, init)
@@ -245,6 +248,29 @@ describe("Routes inconnues ou retirées — plus aucune requête au manifeste de
       await flushPromises()
       expect(wrapper.text()).toContain('Indicateur introuvable.')
       expect(appels.some((url) => url.includes('/data/modeles-lecture/')), appels.join(', ')).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+
+  it('VITE_SCALAR_COHORT_API ne sélectionne plus un second runtime numérique sur la page d’indicateur', async () => {
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    const { transport, appels } = transportProduction({
+      ressourcesRegionSeulement: ['taille_menages'] })
+    // D'abord la page scalaire ordinaire, qui charge et valide son lecteur natif.
+    const { wrapper, router } = await monterSansInjection('/indicateurs/demographie/densite?territoire=22001&niveau=commune&epci=200067460', transport)
+    try {
+      expect(wrapper.get('h1').text()).toBe('Densité de population')
+      // Puis une route enregistrée dont la publication producteur ne rejoint
+      // plus aucun niveau de la page : la grammaire de page refuse la page
+      // scalaire ordinaire, et aucun lecteur de cohorte réservé à l'ancien
+      // drapeau ne peut se substituer à ce refus.
+      const appelsAvantNavigation = appels.length
+      await router.push('/indicateurs/demographie/taille_menages?territoire=22001&niveau=commune&epci=200067460')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Indicateur introuvable.')
+      expect(wrapper.find('h1').exists()).toBe(false)
+      const appelsApresNavigation = appels.slice(appelsAvantNavigation)
+      expect(appelsApresNavigation.some((url) => url === '/api/resources/read-batch'), appelsApresNavigation.join(', ')).toBe(false)
+      expect(appelsApresNavigation.some((url) => url.includes('/data/modeles-lecture/')), appelsApresNavigation.join(', ')).toBe(false)
     } finally { wrapper.unmount() }
   })
 })
