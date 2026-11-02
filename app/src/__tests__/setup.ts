@@ -159,28 +159,23 @@ const maplibreMock = vi.hoisted(() => {
   }
 })
 
-vi.mock('maplibre-gl', () => ({
-  default: {
-    Map: class extends maplibreMock.CarteFake {
-      constructor(options: Record<string, unknown>) {
-        super(options)
-        maplibreMock.instancesCarteMaple.push(this)
-      }
-    },
-    Popup: class extends maplibreMock.PopupFake {
-      constructor(options: Record<string, unknown>) {
-        super(options)
-        maplibreMock.instancesPopups.push(this)
-      }
-    },
-    NavigationControl: class {},
-    LngLat: class {
-      constructor(
-        public lng: number,
-        public lat: number,
-      ) {}
-    },
-  },
-}))
+vi.mock('maplibre-gl', () => {
+  class Map extends maplibreMock.CarteFake {
+    constructor(options: Record<string, unknown>) {
+      super(options)
+      maplibreMock.instancesCarteMaple.push(this)
+    }
+  }
+  class Popup extends maplibreMock.PopupFake {
+    constructor(options: Record<string, unknown>) {
+      super(options)
+      maplibreMock.instancesPopups.push(this)
+    }
+  }
+  class LngLat {
+    constructor(public lng: number, public lat: number) {}
+  }
+  return { Map, Popup, NavigationControl: class {}, LngLat, default: { Map, Popup, NavigationControl: class {}, LngLat } }
+})
 
 export { maplibreMock }

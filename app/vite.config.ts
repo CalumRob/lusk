@@ -69,6 +69,12 @@ function servirPayloadEnDev(): Plugin {
 
 export default defineConfig({
   plugins: [vue(), servirPayloadEnDev(), copierPayloadEnBuild(racinePayload)],
+  // MapLibre 6 resolves its module worker relative to import.meta.url. Keep the
+  // package at its own URL: prebundling it into .vite/deps leaves that worker
+  // beside the optimized module without copying the worker there.
+  optimizeDeps: {
+    exclude: ['maplibre-gl'],
+  },
   // [PROTOTYPE CARTOGRAPHIE — JETABLE] Variant E reads the existing QGIS
   // exports from pipeline/maps through Vite's /@fs seam; keep the allowance
   // bounded to this repository and remove it with the map-layout prototype.

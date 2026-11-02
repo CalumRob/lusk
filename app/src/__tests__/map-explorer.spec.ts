@@ -282,6 +282,27 @@ describe('MapExplorer — the active layer choropleth (ADR-0019)', () => {
     expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe(COULEUR_NEUTRE)
   })
 
+  it('renders hostile tooltip name and value as text, not HTML', async () => {
+    const hostileName = '<img src=x onerror=alert(1)>'
+    const hostilePayload = {
+      ...payload,
+      territoires: payload.territoires.map((territoire) =>
+        territoire.territoire === '22001' ? { ...territoire, nom: hostileName } : territoire,
+      ),
+    } as Payload
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite, payload: hostilePayload })
+    vi.spyOn(carte!, 'queryRenderedFeatures').mockReturnValue([{
+      properties: { territoire: '22001', valeur: 200 },
+    }] as never)
+
+    carte?.fire('mousemove', { point: {}, lngLat: { lng: 0, lat: 0 } })
+
+    const tooltip = maplibreMock.instancesPopups.at(-1)?.contenu ?? ''
+    expect(tooltip).not.toContain('<img')
+    expect(tooltip).toContain('&lt;img')
+    expect(tooltip).toContain('200')
+  })
+
   it('paints the layer choropleth and joins the indicator onto the source data', async () => {
     const { wrapper, carte } = await monter()
 

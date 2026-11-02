@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { createServer } from 'vite'
@@ -14,6 +14,7 @@ for (const name of Object.keys(process.env)) {
 }
 const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
+const browserArtifactDir = process.env.LUSK_BROWSER_ARTIFACT_DIR
 const headAtStart = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
 const expectedCensus = [
   ['demographie', 'structure_age', 'pyramid'],
@@ -94,6 +95,7 @@ function makeDeclarations(specs) {
 function createApiHarness(specs, territories) {
   const declarations = makeDeclarations(specs)
   const profileFacts = []
+  const factResults = []
   const profileFocalReads = []
   const scalarFacts = []
   const comparisons = []
@@ -234,7 +236,7 @@ function createApiHarness(specs, territories) {
   }
 
   return {
-    profileFacts, profileFocalReads, scalarFacts, comparisons, comparisonResults,
+    profileFacts, factResults, profileFocalReads, scalarFacts, comparisons, comparisonResults,
     fixedComparisons, apiRequests, unexpectedApi,
     failNextComparison(resource) { failComparisonFor = resource },
     suppressNextDpeSignature() { suppressDpeSignature = true },
@@ -264,7 +266,9 @@ function createApiHarness(specs, territories) {
               delayedStartedResolve?.()
               await delayedRelease
             }
-            results.push({ id: item.id, resource: item.resource, data: factData(item) })
+            const data = factData(item)
+            factResults.push(data)
+            results.push({ id: item.id, resource: item.resource, data })
           } else {
             if (item.intent.kind === 'selected_comparison') comparisons.push(item)
             else fixedComparisons.push(item)
@@ -285,6 +289,164 @@ function createApiHarness(specs, territories) {
       unexpectedApi.push({ path, method: request.method() })
       await route.fulfill({ status: 599, contentType: 'text/plain', body: 'Unanticipated API request in profile browser proof' })
     },
+  }
+}
+
+async function verifyStandaloneMap(browser, baseUrl, specs, territories, formatValue) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const harness = createApiHarness(specs, territories)
+  const errors = []
+  const externalRequests = []
+  const workerUrls = []
+  const artifactDir = process.env.LUSK_BROWSER_ARTIFACT_DIR
+  const focal = territories.find((territory) => territory.type === 'commune')
+  assert(focal)
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('worker', (worker) => workerUrls.push(worker.url()))
+  // All real MapLibre workers/modules and app data stay local. The replacement
+  // style retains the actual vector-source -> TileJSON -> attribution path.
+  await page.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin !== new URL(baseUrl).origin) {
+      externalRequests.push(route.request().url())
+      return route.abort()
+    }
+    await route.continue()
+  })
+  await page.route('**/positron-nolabels.json', (route) => route.fulfill({ json: {
+    version: 8,
+    sources: { fixture: { type: 'vector', url: `${baseUrl}__map-proof/tiles.json` } },
+    layers: [{ id: 'fixture', type: 'fill', source: 'fixture', 'source-layer': 'fixture',
+      paint: { 'fill-color': '#dddddd' } }],
+  } }))
+  await page.route('**/__map-proof/tiles.json', (route) => route.fulfill({ json: {
+    tilejson: '3.0.0', tiles: [`${baseUrl}__map-proof/{z}/{x}/{y}.pbf`], minzoom: 0, maxzoom: 14,
+    attribution: '<a href="https://www.openstreetmap.org/copyright" onclick="void 0" onmouseover="void 0">© OpenStreetMap</a> | <a href="https://example.org/credits">Tile provider</a>',
+    vector_layers: [{ id: 'fixture', fields: {} }],
+  } }))
+  await page.route('**/__map-proof/**/*.pbf', (route) => route.fulfill({
+    contentType: 'application/x-protobuf',
+    body: Buffer.from([0x1a, 0x0e, 0x0a, 0x07, 0x66, 0x69, 0x78, 0x74, 0x75, 0x72, 0x65, 0x28, 0x80, 0x20, 0x78, 0x02]),
+  }))
+  await page.route('**/api/**', (route) => harness.handleApi(route))
+  await page.route('**/data/territoires.json', (route) => route.fulfill({ json: territories }))
+  // The test territory reference is intentionally small. Published indicator
+  // files contain the whole region, so filter those real local inputs to the
+  // reference fixture; otherwise loader validation rejects their non-fixture
+  // IDs and correctly withholds every indicator tab.
+  const fixtureIds = new Set(territories.map((territory) => territory.territoire))
+  await page.route('**/data/indicateurs_*.json', async (route) => {
+    const name = new URL(route.request().url()).pathname.split('/').at(-1)
+    const rows = JSON.parse(await readFile(resolve(repoRoot, 'public/data', name), 'utf8'))
+    await route.fulfill({ json: rows.filter((row) => fixtureIds.has(row.territoire)) })
+  })
+  await page.route('**/data/histoires_*.json', async (route) => {
+    const name = new URL(route.request().url()).pathname.split('/').at(-1)
+    const rows = JSON.parse(await readFile(resolve(repoRoot, 'public/data', name), 'utf8'))
+    await route.fulfill({ json: rows.filter((row) => fixtureIds.has(row.territoire)) })
+  })
+  try {
+    await page.goto(`${baseUrl}carte`, { waitUntil: 'domcontentloaded' })
+    const canvas = page.locator('.maplibregl-canvas')
+    const sidebar = page.getByRole('complementary', { name: 'Options de la carte' })
+    await canvas.waitFor({ state: 'visible' })
+    await page.waitForFunction(() => document.querySelector('.maplibregl-canvas')?.getContext('webgl2') !== null,
+      null, { timeout: 10000 })
+    await page.waitForTimeout(250)
+    assert(workerUrls.some((url) => url.includes('maplibre-gl')), `real MapLibre worker starts: ${workerUrls.join(', ')}`)
+    const attribution = page.locator('.maplibregl-ctrl-attrib-inner')
+    await attribution.locator('a[href="https://www.openstreetmap.org/copyright"]').waitFor({ state: 'attached' })
+    assert.equal(await attribution.locator('[onclick], [onmouseover]').count(), 0)
+    assert.equal(await attribution.getByRole('link', { name: 'Tile provider' }).count(), 1)
+    assert.equal(harness.apiRequests.length, 0, 'neutral map acquires no numerical API facts')
+
+    async function searchFocal() {
+      await sidebar.getByRole('combobox').fill(focal.nom)
+      await sidebar.getByRole('option').filter({ hasText: focal.nom }).click()
+      await page.locator('.popup-carte').waitFor({ state: 'visible' })
+      assert((await page.locator('.popup-carte-titre').innerText()).includes(focal.nom))
+    }
+    await searchFocal()
+    assert.equal(await page.locator('.popup-carte-kpi').count(), 0, 'neutral popup has no invented numbers')
+    assert.equal(await page.getByRole('link', { name: 'Voir la fiche' }).getAttribute('href'),
+      `/territoire/${focal.type}/${focal.territoire}`)
+
+    // A real pointer drag and navigation control must change the geographic
+    // popup's screen projection, not merely leave a canvas node mounted.
+    const popup = page.locator('.popup-carte-fenetre')
+    const box = await canvas.boundingBox()
+    assert(box)
+    let projection = await popup.getAttribute('style')
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.7)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.3 + 70, box.y + box.height * 0.7 + 35, { steps: 8 })
+    await page.mouse.up()
+    await page.waitForFunction((previous) => document.querySelector('.popup-carte-fenetre')?.getAttribute('style') !== previous, projection)
+    projection = await popup.getAttribute('style')
+    await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+    await page.waitForFunction((previous) => document.querySelector('.popup-carte-fenetre')?.getAttribute('style') !== previous, projection)
+    await page.locator('.popup-carte-fenetre .maplibregl-popup-close-button').click()
+    await searchFocal()
+    await page.locator('.popup-carte-fenetre .maplibregl-popup-close-button').click()
+    const centered = await canvas.boundingBox()
+    await page.mouse.move(centered.x + centered.width / 2, centered.y + centered.height / 2)
+    await page.locator('.tooltip-carte').waitFor({ state: 'visible' })
+    assert((await page.locator('.tooltip-carte-nom').innerText()).length > 0, 'real map hover resolves a territory')
+
+    const spec = specs.find((candidate) => candidate.indicator === 'mix_logements')
+    assert(spec)
+    await page.getByRole('tab', { name: 'Habitat', exact: true }).click()
+    await page.waitForURL((url) => url.searchParams.get('theme') === spec.theme)
+    const values = []
+    for (const detail of spec.details.slice(0, 2)) {
+      const label = spec.metadata.detail_labels[spec.indicator][detail]
+      await sidebar.getByRole('button', { name: label, exact: true }).click()
+      await searchFocal()
+      const response = harness.factResults.find((result) => result.resource === spec.indicator && result.target.type === focal.type)
+      assert(response, 'selected standalone layer acquires API facts')
+      const cell = response.profiles.find((profile) => profile.territory.id === focal.territoire).cells.find((candidate) => candidate.detail === detail)
+      const expected = `${formatValue(cell)} ${cell.unit}`
+      await page.waitForFunction((value) => document.querySelector('.popup-carte-kpi')?.textContent?.includes(value), expected)
+      assert((await page.locator('.popup-carte').innerText()).includes('API source'))
+      values.push({ detail, expected })
+    }
+    const levelResponse = page.waitForResponse((response) => response.url().endsWith('/api/resources/read-batch') && response.ok())
+    await sidebar.getByRole('radio', { name: 'EPCI', exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('[role="radio"].est-actif')?.textContent?.trim() === 'EPCI')
+    await levelResponse
+    assert(harness.profileFacts.some((item) => item.target.type === 'epci'), 'mask switch acquires the declared native level')
+    await sidebar.getByRole('radio', { name: 'Communes', exact: true }).click()
+    await searchFocal()
+    const oldWidth = await canvas.evaluate((element) => element.clientWidth)
+    await page.setViewportSize({ width: 1040, height: 760 })
+    await page.waitForFunction((previous) => {
+      const element = document.querySelector('.maplibregl-canvas')
+      return element && element.clientWidth !== previous && element.width === Math.round(element.clientWidth * devicePixelRatio)
+    }, oldWidth)
+    let screenshot = null
+    if (artifactDir) {
+      await mkdir(artifactDir, { recursive: true })
+      screenshot = resolve(artifactDir, 'standalone-map.png')
+      await page.screenshot({ path: screenshot, fullPage: true })
+    }
+    await page.getByRole('link', { name: 'Voir la fiche' }).click()
+    await page.waitForURL((url) => url.pathname === `/territoire/${focal.type}/${focal.territoire}`)
+    assert.equal(await canvas.count(), 0, 'navigation unmounts and disposes the real map')
+    assert.deepEqual(harness.unexpectedApi, [])
+    assert.deepEqual(externalRequests, [])
+    assert.deepEqual(errors, [])
+    return { checks: ['real WebGL2 canvas and MapLibre module worker', 'TileJSON attribution sanitizer', 'neutral popup', 'search and popup', 'pointer pan',
+      'zoom control', 'hover tooltip', 'native layer values and updates', 'mask level', 'resize', 'fiche navigation and cleanup'],
+      values, screenshot, workerUrls, externalRequests, pageErrors: errors }
+  } catch (error) {
+    if (artifactDir) {
+      await mkdir(artifactDir, { recursive: true })
+      await page.screenshot({ path: resolve(artifactDir, 'standalone-failure.png'), fullPage: true })
+    }
+    console.error('Standalone map evidence at failure:', JSON.stringify({ errors, externalRequests,
+      unexpectedApi: harness.unexpectedApi, body: (await page.locator('body').innerText()).slice(0, 4000) }))
+    throw error
+  } finally {
+    await page.close()
   }
 }
 
@@ -414,7 +576,9 @@ try {
   await page.waitForURL((url) => url.pathname === '/territoire/commune/22001' && url.searchParams.get('theme') === 'habitat')
   // #868 — the fiche bootstraps from the compact territory reference, not from a
   // per-territory read model.
-  const reference = JSON.parse(await readFile(resolve(repoRoot, 'public/data/territoires.json'), 'utf8'))
+  // The /data/territoires.json route above serves this fixture, not the
+  // repository's published names. Assert the identity the browser actually got.
+  const reference = territoiresFixture
   const ficheTarget = reference.find((row) => row.territoire === '22001')
   await page.getByRole('heading', { name: ficheTarget.nom, level: 1 })
     .waitFor({ state: 'visible', timeout: 15000 })
@@ -448,6 +612,12 @@ try {
   const mapPopup = await page.locator('.popup-carte').innerText()
   assert(mapPopup.includes('API axis 15-24'), `The map popup must use the selected API facet: ${mapPopup}`)
   assert(mapPopup.includes('%'), `The map popup must display the API unit: ${mapPopup}`)
+  let indicatorMapScreenshot = null
+  if (browserArtifactDir) {
+    await mkdir(browserArtifactDir, { recursive: true })
+    indicatorMapScreenshot = resolve(browserArtifactDir, 'indicator-map.png')
+    await page.screenshot({ path: indicatorMapScreenshot, fullPage: true })
+  }
 
   // A linked DPE scalar remains a distinct map/comparison resource, never the bins.
   const dpe = specs.find((spec) => spec.indicator === 'distribution_dpe')
@@ -535,6 +705,8 @@ try {
   assert.deepEqual(harness.unexpectedApi, [], 'Every API request must be intercepted by this fixture')
   assert.deepEqual(pageErrors, [], `The browser must finish without uncaught page errors: ${pageErrors.join('; ')}`)
 
+  const standaloneMap = await verifyStandaloneMap(browser, baseUrl, specs, territoiresFixture, formaterValeur)
+
   const headAtEnd = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
   assert.equal(headAtEnd, headAtStart, 'HEAD must remain unchanged throughout browser verification')
   const report = {
@@ -557,8 +729,9 @@ try {
       staticNumericReads: numericStatic.length, retiredProfileCalls: retired.length,
       unexpectedApiRequests: harness.unexpectedApi.length, browserPageErrors: pageErrors.length,
       externalAssetFailures: externalFailures },
-    renderedEvidence: { profileMapPopup: mapPopup, dpeScalarMapPopup: dpePopup },
+    renderedEvidence: { profileMapPopup: mapPopup, dpeScalarMapPopup: dpePopup, indicatorMapScreenshot },
     mobile,
+    standaloneMap,
   }
   console.log(JSON.stringify(report, null, 2))
 } finally {
