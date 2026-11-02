@@ -1054,7 +1054,16 @@ const chargement = computed(() =>
 )
 const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
+// #871 (revue) : seules les familles ADMISES par la classification producteur
+// autorisent la présentation d'une page. Les métadonnées chaudes du magasin
+// partagé (visite Sources, revisites) peuvent enrichir une page admise —
+// jamais autoriser une route : une route non classée par la découverte rend
+// l'état inconnu, même si son descripteur éditorial retiré traîne encore
+// dans un theme_<theme>.json du cache.
+const routeAdmise = computed(() => profileMode.value || pageScalaireApiActive.value ||
+  seriesPageApiActive.value || sparseCollectionPageActive.value || raccordementApiActive.value)
 const page = computed(() => {
+  if (!routeAdmise.value) return undefined
   const editorial = profileMode.value ? pageProfilCourante.value ?? undefined : metadata.value?.indicator_pages?.[indicator.value]
   if (editorial && sparseCollectionPageActive.value && sparseCollectionPeriods.value.length) {
     const dimensions = [...new Set([...(sparseCollectionPeriods.value),

@@ -59,7 +59,9 @@ function stringArray(value: unknown, file: string, field: string): string[] {
   return value as string[]
 }
 
-/** Validate the generated index before it can influence route loading. */
+/** Validate the generated route index against its published schema — an
+ * artifact contract only: since #871 no browser code consults the manifest,
+ * so nothing it lists can influence route loading. */
 export function validerManifesteModelesLecture(
   raw: unknown,
   file: string,

@@ -9,6 +9,7 @@ import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { indicateursDemographieFixture, indicateursMobiliteFixture, metadonneesThemesFixtures } from '../payload/fixtures'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
+import SourcesView from '../views/SourcesView.vue'
 import { createNativeSemanticApiTransport } from './helpers/nativeSemanticApiTransport'
 
 const territoires = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
@@ -151,9 +152,6 @@ describe("Routes inconnues ou retirées — plus aucune requête au manifeste de
     const transport = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       appels.push(url)
-      if (url === '/data/territoires.json') {
-        return new Response(JSON.stringify(territoires), { status: 200, headers: { 'content-type': 'application/json' } })
-      }
       if (url === '/data/modeles-lecture/manifest.json') {
         return options.manifeste
           ? options.manifeste()
@@ -169,6 +167,18 @@ describe("Routes inconnues ou retirées — plus aucune requête au manifeste de
         return new Response(JSON.stringify(modeleStatiquePerime(theme as 'demographie' | 'mobilite', indicator!)),
           { status: 200, headers: { 'content-type': 'application/json' } })
       }
+      // The real published payload serves any other /data file exactly like
+      // the static host — including the theme files a real Sources visit
+      // loads into the production shared store.
+      const published = url.match(/^\/data\/([a-z0-9_-]+\.json)$/)
+      if (published) {
+        try {
+          const file = resolve(process.cwd(), '../public/data', published[1]!)
+          return new Response(readFileSync(file, 'utf8'), { status: 200, headers: { 'content-type': 'application/json' } })
+        } catch {
+          return new Response('', { status: 404 })
+        }
+      }
       if (options.ressourcesRegionSeulement?.length && url === '/api/resources') {
         const base = await defaultTransport(input, init)
         const catalogue = await base.json() as { resources: Array<Record<string, unknown>> }
@@ -182,6 +192,18 @@ describe("Routes inconnues ou retirées — plus aucune requête au manifeste de
       return defaultTransport(input, init)
     }
     return { transport, appels }
+  }
+
+  /** A real Sources visit: no injected charger, so SourcesView drives the
+   *  production shared store and loads every theme_<theme>.json into it. */
+  async function amorcerMagasinPartage(transport: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
+    vi.stubGlobal('fetch', transport)
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/sources')
+    await router.isReady()
+    const sources = mount(SourcesView, { global: { plugins: [router] } })
+    await flushPromises()
+    sources.unmount()
   }
 
   async function monterSansInjection(chemin: string, transport: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
@@ -251,7 +273,16 @@ describe("Routes inconnues ou retirées — plus aucune requête au manifeste de
     } finally { wrapper.unmount() }
   })
 
-  it('VITE_SCALAR_COHORT_API ne sélectionne plus un second runtime numérique sur la page d’indicateur', async () => {
+  it('le drapeau retiré VITE_SCALAR_COHORT_API ne change aucune sélection de lecteur', async () => {
+    // Le lecteur du drapeau est supprimé à la source : c'est cela qui prouve le
+    // retrait (#871) — l'ancien second disjonctif était structurellement
+    // inatteignable (metadataScalaireApi n'était posé qu'avec
+    // pageScalaireApiActive, et le :key de route remontait le composant),
+    // donc aucun test ne pouvait l'exercer comportementalement. Ce test ÉPINGLE
+    // le contrat résultant : pour une route admise, toute valeur du drapeau
+    // laisse le lecteur scalaire ordinaire en place ; pour une route dont la
+    // grammaire de page refuse la classification scalaire, aucune valeur ne
+    // fait émettre de lecture de cohorte ni de requête au manifeste.
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     const { transport, appels } = transportProduction({
       ressourcesRegionSeulement: ['taille_menages'] })
@@ -259,10 +290,11 @@ describe("Routes inconnues ou retirées — plus aucune requête au manifeste de
     const { wrapper, router } = await monterSansInjection('/indicateurs/demographie/densite?territoire=22001&niveau=commune&epci=200067460', transport)
     try {
       expect(wrapper.get('h1').text()).toBe('Densité de population')
+      expect(wrapper.find('[data-testid="scalar-comparison-summary"]').exists()).toBe(true)
       // Puis une route enregistrée dont la publication producteur ne rejoint
       // plus aucun niveau de la page : la grammaire de page refuse la page
-      // scalaire ordinaire, et aucun lecteur de cohorte réservé à l'ancien
-      // drapeau ne peut se substituer à ce refus.
+      // scalaire ordinaire, et aucun lecteur de cohorte ne peut se substituer
+      // à ce refus.
       const appelsAvantNavigation = appels.length
       await router.push('/indicateurs/demographie/taille_menages?territoire=22001&niveau=commune&epci=200067460')
       await flushPromises()
@@ -271,6 +303,38 @@ describe("Routes inconnues ou retirées — plus aucune requête au manifeste de
       const appelsApresNavigation = appels.slice(appelsAvantNavigation)
       expect(appelsApresNavigation.some((url) => url === '/api/resources/read-batch'), appelsApresNavigation.join(', ')).toBe(false)
       expect(appelsApresNavigation.some((url) => url.includes('/data/modeles-lecture/')), appelsApresNavigation.join(', ')).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+
+  it("une URL retirée reste inconnue quand le magasin partagé est chaud (visite Sources réelle)", async () => {
+    const { transport, appels } = transportProduction()
+    // Amorçage PRODUCTION : SourcesView sans chargeur injecté pilote le
+    // magasin partagé et y charge chaque theme_<theme>.json — dont la page
+    // retirée iso_alimentation de theme_mobilite.
+    await amorcerMagasinPartage(transport)
+    const { wrapper } = await monterSansInjection('/indicateurs/mobilite/iso_alimentation', transport)
+    try {
+      expect(wrapper.text()).toContain('Indicateur introuvable.')
+      expect(wrapper.find('h1').exists()).toBe(false)
+      expect(appels.some((url) => url.includes('/data/modeles-lecture/')), appels.join(', ')).toBe(false)
+      expect(appels.some((url) => url === '/api/resources')).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+
+  it('un magasin chaud ne transforme pas une panne de découverte en état inconnu ni en page périmée', async () => {
+    const { transport, appels } = transportProduction()
+    await amorcerMagasinPartage(transport)
+    const transportPanne = async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input) === '/api/resources'
+        ? new Response('temporary catalogue outage', { status: 503 })
+        : transport(input, init)
+    const { wrapper } = await monterSansInjection('/indicateurs/mobilite/iso_alimentation', transportPanne)
+    try {
+      expect(wrapper.find('[role="alert"]').text()).toContain('Impossible de charger l’indicateur')
+      expect(wrapper.get('[role="alert"] button').text()).toContain('Réessayer')
+      expect(wrapper.text()).not.toContain('Indicateur introuvable.')
+      expect(wrapper.find('h1').exists()).toBe(false)
+      expect(appels.some((url) => url.includes('/data/modeles-lecture/')), appels.join(', ')).toBe(false)
     } finally { wrapper.unmount() }
   })
 })

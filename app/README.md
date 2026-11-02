@@ -102,7 +102,10 @@ can be supplied through the invoking process environment.
   read-model manifest is never consulted: unknown and owner-retired URLs render
   the honest unknown-indicator state with zero `/data/modeles-lecture/`
   requests, even when a stale manifest or model file would be served, and no
-  reader can be authorized while discovery is unavailable.
+  reader can be authorized while discovery is unavailable. Page presentation is
+  gated on successful producer classification: theme metadata already warm in
+  the shared payload store (e.g. after a Sources visit) can enrich an admitted
+  page but never authorizes a route.
   Ordinary scalar pages use API-only facts and comparisons when the
   producer catalogue declares a scalar-only resource accepted by the existing
   normalized scalar page grammar; they have no environment switch or static
