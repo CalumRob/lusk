@@ -1,4 +1,13 @@
-"""Bounded actual-trigger BPE checks in the explicitly approved disposable DB."""
+"""Bounded actual-trigger BPE checks in the explicitly approved disposable DB.
+
+#873 — historical-stage rehearsal of the migration 016 -> 026 upgrade. The
+current `schema.sql` no longer carries the BPE accessibility family
+(migration 036 retired it from fresh installs), so the pre-026 stage is built
+by applying migration 016 itself — the authoritative historical DDL — over
+the current base tables. The retired objects exist ONLY in this disposable
+random schema; nothing here recreates them in production schema or
+migrations, and the stage faithfully represents the install shape that
+actually walked 016 -> 026 before the 036 retirement."""
 from __future__ import annotations
 
 import os
@@ -28,13 +37,12 @@ def test_bpe_fact_validation_work_is_partition_local_and_integrity_remains_defer
         conn.execute(f'CREATE SCHEMA "{schema}"')
         conn.execute(f'SET search_path TO "{schema}"')
         conn.execute((api / "schema.sql").read_text(encoding="utf-8"))
-        # Restore migration-016's actual full-table-per-fact implementation to
-        # simulate an existing install, then rehearse 026's corrective upgrade.
-        old_sql = (api / "migrations/016_bpe_profile_evidence.sql").read_text(encoding="utf-8")
-        old_function = old_sql.split("CREATE FUNCTION assert_bpe_profile_evidence_complete()", 1)[1].split("END $$;", 1)[0]
-        conn.execute("CREATE OR REPLACE FUNCTION assert_bpe_profile_evidence_complete()" + old_function + "END $$;")
-        conn.execute("DROP TRIGGER bpe_profile_descriptor_complete ON bpe_profile_evidence_descriptor")
-        conn.execute("DROP TRIGGER bpe_profile_class_axis_complete ON bpe_profile_class_axis")
+        # The historical stage: migration 016 creates the BPE family with its
+        # original whole-publication validator and the per-row deferred
+        # trigger — the exact install shape the 026 corrective upgrade
+        # targets. 016 also widens the publication marker allow-list to its
+        # own era, as it did historically.
+        conn.execute((api / "migrations/016_bpe_profile_evidence.sql").read_text(encoding="utf-8"))
         conn.execute("INSERT INTO source_dataset VALUES ('test','test source')")
         conn.execute("INSERT INTO source_vintage VALUES ('test','v1','v1',NULL,NULL)")
         conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref',200)")
@@ -59,8 +67,9 @@ def test_bpe_fact_validation_work_is_partition_local_and_integrity_remains_defer
                    exemplar_typequ,exemplar_label,exemplar_c,exemplar_b,exemplar_t)
                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", rows)
 
-        # RED baseline: execute the exact migration-016 function on a tiny
-        # publication. It performs the whole-table validation per fact event.
+        # RED baseline: migration 016's own whole-publication validator is
+        # live on the historical stage. It performs the whole-table
+        # validation per fact event on a tiny publication.
         conn.execute("SELECT pg_stat_force_next_flush()")
         conn.execute("SELECT pg_stat_clear_snapshot()")
         old_before = conn.execute("""SELECT seq_scan FROM pg_stat_user_tables

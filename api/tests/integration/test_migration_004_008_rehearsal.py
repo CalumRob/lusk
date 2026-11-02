@@ -1,4 +1,16 @@
-"""Guarded cumulative rehearsal of shared serving migrations 004 through 008."""
+"""Guarded cumulative rehearsal of shared serving migrations 004 through 022,
+then the 036 retirement convergence (#873).
+
+The walked chain (004/006/007/008 + 016, then 020/021/011/022) stops in the
+pre-retirement era: its marker allow-list is the additive union of everything
+the walked migrations introduced, and every populated marker/fact/provenance
+row survives the additive steps. The supported chronology continues with
+migration 036, which removes the legacy accessibility markers and objects and
+narrows the shared constraints to the retained owners — after 036, the
+walked, populated install converges EXACTLY to the current fresh
+`schema.sql` contract. No retired BPE/building object is recreated in
+production schema or migrations; the retired family exists only in this
+disposable random schema, as the historical stage requires."""
 
 from __future__ import annotations
 
@@ -343,11 +355,30 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
             assert scalar_before_021[8] == 'fixture'
             assert scalar_before_021[9] is None
             assert scalar_before_021[10].isoformat() == '2026-01-01'
-            check_020 = connection.execute("""SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
+            # The chain stops in the pre-retirement era (last walked migration:
+            # 022): its marker allow-list is the ADDITIVE union of everything
+            # the walked migrations introduced — including the legacy
+            # accessibility markers 016 kept. Equating it with the CURRENT
+            # fresh allow-list was the obsolete assertion (#873): the chain
+            # predates 023-028's additions and 036's retirement, so the sets
+            # can only converge AFTER 036 is applied (below).
+            check_pre_retirement = connection.execute("""SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
                 JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace
                 WHERE n.nspname=current_schema() AND t.relname='table_publication'
                   AND c.conname='table_publication_table_name_check'""").fetchone()[0]
-            assert set(re.findall(r"'([a-z_]+)'", check_020)) == fresh_names
+            pre_retirement_names = set(re.findall(r"'([a-z_]+)'", check_pre_retirement))
+            # Only the markers the WALKED migrations introduced: the chain stops
+            # at 022, so 027's milieux_reading_absence and 028's
+            # aedar_territorial_aggregate are NOT claimed here — the walk
+            # predates them (036 below installs the current allow-list
+            # wholesale, which is why the post-036 convergence holds).
+            for marker in ('territory_reference', 'service_registry', 'essential_service_access',
+                           'building_ramp', 'building_grid', 'scalar_observation',
+                           'declared_profile', 'ordered_series', 'bpe_profile_evidence',
+                           'demographic_typed_reading', 'selected_reading',
+                           'economy_typed_reading', 'economy_activity_evidence',
+                           'milieux_typed_reading'):
+                assert marker in pre_retirement_names
             for marker in ('scalar_observation', 'declared_profile', 'ordered_series',
                            'demographic_typed_reading', 'selected_reading',
                            'bpe_profile_evidence'):
@@ -357,6 +388,50 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
                             "UPDATE table_publication SET reference_content_version=NULL WHERE table_name=%s",
                             (marker,),
                         )
+            # The retirement is part of the supported chronology: applying 036
+            # over the walked, populated chain removes the legacy
+            # accessibility markers and objects and narrows both shared
+            # constraints to the retained owners. A populated install that
+            # walked the migrations converges to the CURRENT fresh contract —
+            # the repaired replacement for the obsolete pre-036 equality.
+            markers_before_036 = connection.execute(
+                "SELECT table_name,content_version,row_count,reference_content_version "
+                "FROM table_publication WHERE table_name IN ('scalar_observation','declared_profile',"
+                "'ordered_series','demographic_typed_reading','selected_reading','territory_reference') "
+                "ORDER BY table_name"
+            ).fetchall()
+            connection.execute((api_root / "migrations/036_retire_legacy_accessibility_serving.sql").read_text(encoding="utf-8"))
+            assert connection.execute(
+                "SELECT table_name FROM table_publication WHERE table_name IN "
+                "('service_registry','essential_service_access','building_ramp','building_grid',"
+                "'bpe_profile_evidence')"
+            ).fetchall() == []
+            assert connection.execute("""
+                SELECT count(*) FROM information_schema.tables
+                WHERE table_schema=current_schema() AND table_name IN
+                  ('service_registry','essential_service_access','building_ramp','building_grid',
+                   'building_evidence_descriptor','building_evidence_descriptor_source',
+                   'bpe_profile_evidence_descriptor','bpe_profile_class_axis',
+                   'bpe_profile_evidence','bpe_profile_evidence_source')
+            """).fetchone()[0] == 0
+            assert connection.execute(
+                "SELECT table_name,content_version,row_count,reference_content_version "
+                "FROM table_publication WHERE table_name IN ('scalar_observation','declared_profile',"
+                "'ordered_series','demographic_typed_reading','selected_reading','territory_reference') "
+                "ORDER BY table_name"
+            ).fetchall() == markers_before_036
+            assert connection.execute("""
+                SELECT d.label,d.unit,d.descriptor_version,o.value,o.status,o.support_count,
+                       s.source_id,s.vintage_id,v.version,v.reference_date,v.publication_date
+                FROM scalar_descriptor d JOIN scalar_observation o USING(indicator_id)
+                JOIN scalar_observation_source s USING(indicator_id,territory_id)
+                JOIN source_vintage v USING(source_id,vintage_id) WHERE d.indicator_id='legacy_scalar'
+            """).fetchone() == scalar_before_021
+            check_036 = connection.execute("""SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
+                JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace
+                WHERE n.nspname=current_schema() AND t.relname='table_publication'
+                  AND c.conname='table_publication_table_name_check'""").fetchone()[0]
+            assert set(re.findall(r"'([a-z_]+)'", check_036)) == fresh_names
             reference_check = connection.execute("""
                 SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
                 JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace
@@ -367,6 +442,10 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
                 r"shared_fact_publication_requires_reference.*?CHECK\s*\(.*?IN\s*\((.*?)\)",
                 fresh_sql, re.S).group(1)))
             assert set(re.findall(r"'([a-z_]+)'", reference_check)) == fresh_reference_names
+            # The retired marker can never be re-published on the walked chain.
+            with pytest.raises(psycopg.errors.CheckViolation):
+                with connection.transaction():
+                    connection.execute("INSERT INTO table_publication VALUES ('bpe_profile_evidence','x',1,now(),'ref')")
     finally:
         if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
