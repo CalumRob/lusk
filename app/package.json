@@ -28,18 +28,26 @@
     "lucide-vue-next": "^0.576.0",
     "maplibre-gl": "6.4.1",
     "viewerjs": "^1.14.0",
-    "vue": "^3.5.40",
+    "vue": "^3.5.42",
     "vue-router": "^5.0.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@vitejs/plugin-vue": "^6.0.2",
     "@vue/test-utils": "^2.4.11",
-    "happy-dom": "^20.8.3",
+    "happy-dom": "^21.0.4",
     "playwright-core": "^1.64.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
-    "vitest": "^4.1.10",
+    "vite": "^7.3.7",
+    "vitest": "^4.1.12",
     "vue-tsc": "^3.3.9"
+  },
+  "overrides": {
+    "js-beautify@1.15.4": {
+      "glob": "14.0.2",
+      "editorconfig@1.0.7": {
+        "minimatch": "11.0.1"
+      }
+    }
   }
 }
