@@ -31,9 +31,10 @@
 #     (construire_analytiques_programmes) calcule la table des adhésions, la
 #     valide et la persiste sous data/processed/programmes/ ; le seam ASSEMBLE
 #     le payload complet (les adhésions + les agrégats de subventions du ticket
-#     #176, via les signatures documentées de subventions.R) et publie le
-#     FICHIER PARTAGÉ programmes.json + les parquets par table (le contrat
-#     « 404 = table absente », le précédent apercu #116 — issue #178) ;
+#     #176, via les signatures documentées de subventions.R) et publie les
+#     parquets PAR TABLE (ecrire_parquets_programmes — le contrat
+#     « 404 = table absente », le précédent apercu #116 — issue #178 ; la
+#     projection navigateur programmes.json est RETIRÉE depuis #893) ;
 #   - le manifeste COMPLET du run : MANIFEST_PROGRAMMES_COMPLET — les CINQ
 #     sources ANCT/DGALN du manifeste #175 + la source SCDL des subventions
 #     (#176), pour que le téléchargement, le rapport de run et la table
@@ -525,9 +526,10 @@ construire_analytiques_programmes <- function(donnees, base_epci,
 #     subventions.R — construire_donnees_subventions (l'ingestion SCDL depuis
 #     le cache, par l'id du manifeste) puis construire_analytiques_subventions
 #     (le calcul, estampillé hebdomadaire) ;
-# — assemble le payload `list(membres, subventions)`, publie le FICHIER
-# PARTAGÉ programmes.json + les parquets par table (ecrire_programmes_partage —
-# le contrat « 404 = table absente », le précédent apercu #116), publie la
+# — assemble le payload `list(membres, subventions)`, publie les parquets PAR
+# TABLE (ecrire_parquets_programmes — le contrat « 404 = table absente », le
+# précédent apercu #116 ; la projection navigateur programmes.json est retirée
+# depuis #893), publie la
 # PAIRE HERMÉTIQUE du sixième thème (#408 : indicateurs_programmes.json +
 # histoires_programmes.json — l'app rend son onglet par défaut de SES propres
 # faits, jamais d'une lecture cross-thème) et retourne le payload, comme
@@ -561,9 +563,9 @@ publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
   # run à tables vides : la trace du run ne disparaît jamais)
   if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
 
-  # le fichier PARTAGÉ : écrit SEULEMENT quand une table porte des lignes — un
-  # run vide ne doit JAMAIS clobber la publication existante (issue #178)
-  ecrire_programmes_partage(payload, sortie)
+  # les parquets PAR TABLE : écrits SEULEMENT quand une table porte des lignes
+  # — un run vide ne doit JAMAIS clobber la publication existante (issue #178)
+  ecrire_parquets_programmes(payload, sortie)
 
   # la paire hermétique du sixième thème (#408) : zéro fait → rien n'est
   # écrit (l'absence honnête du thème — jamais un thème inventé)
@@ -573,21 +575,22 @@ publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
   payload
 }
 
-# ecrire_programmes_partage -----------------------------------------------------
-# La publication du FICHIER PARTAGÉ `programmes` (issue #178, le précédent
-# apercu #116 — le contrat « 404 = table absente ») : la cible que l'app lit.
-#   - programmes.json : la projection JSON des DEUX tables en UN objet
-#     { membres, subventions } — la forme que l'app consomme (issue #179) ;
+# ecrire_parquets_programmes ----------------------------------------------------
+# La publication des parquets canoniques PAR TABLE (issue #178, le précédent
+# apercu #116 — le contrat « 404 = table absente ») :
 #   - un parquet PAR TABLE (le format parquet ne tient qu'une table) :
 #     programmes_membres.parquet / programmes_subventions.parquet — les
-#     artefacts canoniques téléchargeables (ADR-0004) ;
-#   - les deux sérialisations sortent des MÊMES tables en mémoire : le JSON se
-#     relit BIT À BIT comme les parquets (le contrat de non-dérive, ADR-0004 —
-#     test-publish-programmes.R, verifier_non_derivee) ;
+#     artefacts canoniques téléchargeables (ADR-0004) et les entrées de
+#     récupération/serving de materialize_serving_artifacts.R ;
+#   - la projection navigateur PARTAGÉE programmes.json n'est PLUS écrite
+#     (issue #893 — source-only : le navigateur lit les faits du sixième thème
+#     via l'API, indicateurs_programmes.json restant l'entrée de la paire
+#     hermétique) ; un programmes.json périmé préexistant n'est NI réécrit NI
+#     supprimé par le run ;
 #   - la sentinelle : un payload dont AUCUNE table ne porte de lignes n'écrit
 #     RIEN et ne touche à aucun fichier existant — un run vide n'écrase jamais
 #     la publication précédente (le motif de test-publish.R, issue #116).
-ecrire_programmes_partage <- function(payload, sortie = "public/data") {
+ecrire_parquets_programmes <- function(payload, sortie = "public/data") {
   if (nrow(payload$membres) == 0 && nrow(payload$subventions) == 0) {
     return(invisible(payload))
   }
@@ -597,14 +600,6 @@ ecrire_programmes_partage <- function(payload, sortie = "public/data") {
                              file.path(sortie, "programmes_membres.parquet"))
   nanoparquet::write_parquet(payload$subventions,
                              file.path(sortie, "programmes_subventions.parquet"))
-
-  # digits = 17 : assez de décimales pour qu'un double relu en JSON soit BIT À
-  # BIT le double du parquet (la même discipline que publish, ADR-0004)
-  jsonlite::write_json(
-    list(membres = payload$membres, subventions = payload$subventions),
-    file.path(sortie, "programmes.json"),
-    dataframe = "rows", na = "null", digits = 17, pretty = TRUE
-  )
   invisible(payload)
 }
 

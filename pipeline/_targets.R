@@ -789,8 +789,8 @@ VERIFICATIONS_RUN <- list(
 )
 
 # VERIFICATIONS_PROGRAMMES -------------------------------------------------------
-# Les verrous des sources du thème Programmes (hors DAG des CINQ thèmes : le
-# payload partagé programmes.json est publié par la chaîne programmes_publication,
+# Les verrous des sources du thème Programmes (hors DAG des CINQ thèmes : les
+# parquets canoniques sont publiés par la chaîne programmes_publication,
 # #343 — le bloc des verrous, lui, ne fait que TÉLÉCHARGER et VÉRIFIER). Câblés
 # sur le run COMPLET SEULEMENT (LUSK_THEMES vide — le cron) : le graphe
 # télécharge alors les six sources du manifeste complet (sources_programmes) et
@@ -950,8 +950,10 @@ verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN) {
 # La publication du payload PARTAGÉ programmes (ADR-0013) dans le graphe : le
 # thème Programmes n'est pas un thème de THEMES_RUN (les CINQ thèmes du
 # payload par-thème — la porte byte-identical) mais le run COMPLET (le cron,
-# #343) publie SON payload partagé : programmes.json + les parquets par table
-# (ecrire_programmes_partage, le contrat « 404 = table absente »). Le
+# #343) publie SES parquets par table : programmes_membres.parquet +
+# programmes_subventions.parquet (ecrire_parquets_programmes, le contrat
+# « 404 = table absente » ; la projection JSON programmes.json est retirée
+# depuis #893). Le
 # téléchargement est celui du bloc des verrous (sources_programmes — la même
 # source de vérité) ; la chaîne ajoute :
 #   - fichiers_programmes : les SIX fichiers du manifeste complet en cible
@@ -1250,8 +1252,9 @@ if (selection_complete) {
   # même convention que les manifeste_<thème> du graphe)
   assign("manifeste_programmes", MANIFEST_PROGRAMMES_COMPLET)
   verifications <- c(verifications, verifications_programmes())
-  # la publication du payload PARTAGÉ programmes (ADR-0013) : le run COMPLET
-  # (le cron) publie programmes.json + les parquets par table — le même rang
+  # la publication des parquets programmes (ADR-0013) : le run COMPLET
+  # (le cron) publie les parquets par table (pas de programmes.json depuis
+  # #893) — le même rang
   # que le SIXIÈME appel run_pipeline(theme = theme_programmes()) de l'oracle
   # (test-targets-byte-identical). LEAF : rien des CINQ thèmes n'en dépend.
   publication_programmes <- programmes_publication(

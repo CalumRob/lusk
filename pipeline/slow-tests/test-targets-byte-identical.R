@@ -137,17 +137,17 @@ test_that("graphe cinq thèmes vs cinq run_pipeline séquentiels : sortie compl�
                  sortie = sortie_oracle,
                  noms_epci_geo_api = lire_noms_epci_geo_api())
   }
-  # Issue #343 — la résolution du run complet : le graphe publie AUSSI le
-  # payload PARTAGÉ programmes (programmes.json + les parquets par table,
-  # ADR-0013) et fusionne les SIX sources du module dans la table partagée des
+  # Issue #343 — la résolution du run complet : le graphe publie AUSSI les
+  # parquets PAR TABLE du module programmes (programmes_membres.parquet +
+  # programmes_subventions.parquet, ADR-0013 ; la projection JSON partagée
+  # programmes.json est retirée depuis #893, plus rien ne l'écrit des deux
+  # côtés) et fusionne les SIX sources du module dans la table partagée des
   # vintages (#178) — comme le cron qui invoque maintenant le graphe
   # (LUSK_THEMES vide). L'oracle du run complet EST donc SIX run_pipeline
   # séquentiels (les cinq thèmes + theme_programmes()) : le SIXIÈME appel
-  # écrit programmes.json et le rapport final, dans le même rang que la chaîne
+  # écrit les parquets et le rapport final, dans le même rang que la chaîne
   # programmes du graphe (publie_programmes, rapport_programmes chaîné
-  # dernier). L'alternative « ne pas publier programmes sur la sortie
-  # par défaut » a été rejetée : le payload de production (public/data) porte
-  # programmes.json — le câblage cron #343 le publierait sinon en régression.
+  # dernier).
   run_pipeline(theme = theme_programmes(), cache = "data/raw",
                sortie = sortie_oracle,
                noms_epci_geo_api = lire_noms_epci_geo_api())

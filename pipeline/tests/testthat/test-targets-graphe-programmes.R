@@ -1,9 +1,9 @@
 # test-targets-graphe-programmes --------------------------------------------------
-# Issue #343 : la publication du payload PARTAGÉ programmes dans le graphe
-# targets — le cron (le run COMPLET, LUSK_THEMES vide) invoque le graphe au
-# lieu de run_pipeline() et publie AUSSI programmes.json + les parquets par
-# table (ADR-0013), sans quoi le câblage régresse silencieusement la
-# publication. La chaîne programmes est construite depuis le DESCRIPTEUR
+# Issue #343 : la publication des parquets canoniques du thème Programmes
+# dans le graphe targets — le cron (le run COMPLET, LUSK_THEMES vide) invoque
+# le graphe au lieu de run_pipeline() et publie AUSSI les DEUX parquets par
+# table (ADR-0013 ; la projection JSON partagée programmes.json est retirée
+# depuis #893), sans quoi le câblage régresse silencieusement la publication. La chaîne programmes est construite depuis le DESCRIPTEUR
 # (theme_programmes()) et le seam de publication (publier_programmes) est
 # appelé PAR SYMBOLE avec la MÊME forme d'appel que publie_theme (brut, cache,
 # vintages, sortie — l'identité byte-identique avec le SIXIÈME appel
@@ -17,7 +17,7 @@
 #     ABSENTE d'un run restreint), le seam appelé par symbole, la fusion
 #     partagée des vintages qui porte le module (issue #178), et la LEAF-ness :
 #     rien des CINQ thèmes n'a la chaîne programmes en aval ;
-#   - la preuve d'EXÉCUTION (programmes.json produit, byte-identique au cron)
+#   - la preuve d'EXÉCUTION (les parquets produits, byte-identiques au cron)
 #     vit dans test-targets-byte-identical.R — la porte sur données réelles,
 #     qui saute quand le cache est absent (ici le cas).
 #
