@@ -29,7 +29,7 @@ describe('owned M2/M3 series adapter', () => {
       resource_id: 'prix_m2', indicator_id: 'prix_m2', theme_id: 'habitat',
       shapes: ['scalar', 'ordered_series'], target_kinds: ['territory_cohort'],
     })).toEqual({
-      theme: 'habitat', indicator: 'prix_m2', pathIndicator: 'prix_m2',
+      theme: 'habitat', indicator: 'prix_m2',
     })
     expect(metadataHabitat.indicator_pages.prix_m2.series_dataset_id).toBe('dvf_prix_m2')
     expect(metadataHabitat.indicator_pages.prix_m2.series_publication).toBe('owned')
@@ -50,7 +50,7 @@ describe('owned M2/M3 series adapter', () => {
       resource_id: 'artif_par_habitant', indicator_id: 'artif_par_habitant', theme_id: 'milieux',
       shapes: ['ordered_series'], target_kinds: ['territory_cohort'],
     })
-    expect(adapter).toEqual({ theme: 'milieux', indicator: 'artif_par_habitant', pathIndicator: 'artif_par_habitant' })
+    expect(adapter).toEqual({ theme: 'milieux', indicator: 'artif_par_habitant' })
     expect(metadataMilieux.indicator_pages.artif_par_habitant.series_dataset_id).toBe('ocsge_artif_etats')
     expect(metadataMilieux.indicator_pages.artif_par_habitant.series_publication).toBe('owned')
     const response = {
