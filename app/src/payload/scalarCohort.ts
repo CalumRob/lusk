@@ -598,22 +598,6 @@ export function adapterCohorteScalairePourCarte(input: {
   return { facts, identity, nativeContract: captured }
 }
 
-/** Producer registration may be level-specific; unsupported levels stay on the incumbent path. */
-export function indicateursScalairesPourNiveau(raw: unknown, level: TerritoireType): string[] {
-  const registered = indicateursScalairesEnregistres(raw)
-  const declarations = (raw as { scalar_contracts: unknown }).scalar_contracts
-  if (Array.isArray(declarations)) return registered
-  return registered.filter((indicator) => {
-    const contract = (declarations as Record<string, unknown>)[indicator]
-    if (typeof contract !== 'object' || contract === null || !('allowed_levels' in contract) ||
-        !Array.isArray(contract.allowed_levels) || !contract.allowed_levels.every((value) =>
-          value === 'commune' || value === 'epci' || value === 'departement' || value === 'region')) {
-      throw new PayloadError('validation', 'theme metadata', `Les niveaux autorisés de « ${indicator} » sont mal formés.`)
-    }
-    return contract.allowed_levels.includes(level)
-  })
-}
-
 export interface ScalarCohortsWithComparisons {
   facts: Indicateur[]
   comparisons: Record<string, ScalarComparisonRank | null>

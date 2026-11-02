@@ -63,7 +63,6 @@ export interface OrderedSeriesRead {
 export interface OrderedSeriesAdapter {
   theme: Theme
   indicator: string
-  pathIndicator: string
 }
 
 /** Derive eligibility from the producer catalogue; there is no parallel page allowlist. */
@@ -73,7 +72,7 @@ export function orderedSeriesAdapterFor(theme: string, indicator: string,
   if (!resource || resource.resource_id !== indicator || resource.theme_id !== theme ||
       resource.indicator_id !== indicator || !resource.shapes.includes('ordered_series') ||
       !resource.target_kinds.includes('territory_cohort')) return null
-  return { theme: theme as Theme, indicator, pathIndicator: indicator }
+  return { theme: theme as Theme, indicator }
 }
 
 /** Convert an API snapshot to the app's existing fact contract without filling gaps. */
