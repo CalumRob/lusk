@@ -23,7 +23,8 @@
  * soon as territoires + run-report have settled (the search usable after one
  * round-trip); the theme tables and vintages stream in the
  * background and never gate the first paint (the shared programmes.json is
- * retired since #893 — no such file streams in anymore). Typed PayloadError with a Retry
+ * no longer requested or read since #893 — the committed file stays on disk,
+ * intentionally unread). Typed PayloadError with a Retry
  * button when the wait-set fails; honest static-rhythm freshness fallback
  * until the run report lands.
  */

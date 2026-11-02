@@ -12,7 +12,8 @@
  * columns — so the page blocks on territories alone and never waits on theme
  * data, apercu or the run report (which keep loading in the background, one
  * fetch per session, and simply never gate this render; the shared
- * programmes.json no longer exists since #893).
+ * programmes.json is no longer requested or read since #893 — the committed
+ * file stays on disk, intentionally unread).
  *
  * The département chips and the EPCI filter live in the URL query
  * (?departement=, ?epci= — shareable, back-button friendly, like ?theme= on
