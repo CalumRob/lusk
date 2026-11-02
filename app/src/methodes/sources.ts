@@ -72,6 +72,18 @@ export const DESCRIPTIONS_SOURCES: Readonly<Record<string, string>> = {
 }
 
 /**
+ * #872 — La mention de présentation d'une déclaration de source sans Page
+ * d'indicateur courante, rendue avec chaque consommateur « declaration » de
+ * la page Sources. Copie éditoriale stable app-ownée de la couche
+ * contenu/config (AGENTS.md — jamais un littéral de renderer), liée par
+ * SourcesView. Générique par construction : elle énonce l'absence de page
+ * courante, jamais un statut gardé/historique (une classification
+ * retained/historical inventée re-étiquetterait la référence nommée et la
+ * couverture catégorielle) ni une disponibilité factuelle de l'API.
+ */
+export const MENTION_DECLARATION_SANS_PAGE = 'Déclaration sans page d’indicateur courante'
+
+/**
  * L'ancre de l'en-tête du jeu d'une source — le lien « Source » des blocs
  * d'indicateurs pointe l'en-tête du jeu (#source-dvf), jamais une ligne
  * vintage (la matrice #336 : les deux directions s'ancrent sur les mêmes

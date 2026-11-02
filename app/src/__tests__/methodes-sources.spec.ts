@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { SOURCES_METHODES, ancreSource } from '../methodes/sources'
+import { MENTION_DECLARATION_SANS_PAGE, SOURCES_METHODES, ancreSource } from '../methodes/sources'
 import type { Vintage } from '../payload/types'
 
 /**
@@ -164,5 +164,21 @@ describe('ancreSource — un ancrage stable par source', () => {
       expect(ancreSource(id)).not.toBe('sources')
       expect(ancreSource(id)).toMatch(/^source-/)
     }
+  })
+})
+
+describe('MENTION_DECLARATION_SANS_PAGE — la copie éditoriale du cue de déclaration (#872)', () => {
+  it('porte le libellé accepté, app-owné dans le module éditorial Sources', () => {
+    // Copie stable de la couche contenu (AGENTS.md — jamais un littéral de
+    // renderer) : le libellé EXACT accepté par la relecture Spec de #872.
+    expect(MENTION_DECLARATION_SANS_PAGE).toBe('Déclaration sans page d’indicateur courante')
+  })
+
+  it('reste générique — jamais un statut gardé/historique ni une disponibilité factuelle', () => {
+    // Le wording énonce l'absence de page courante, rien de plus : il ne doit
+    // pas dériver vers une classification retained/historical (qui
+    // re-étiqueterait la référence nommée et la couverture catégorielle) ni
+    // vers une politique de disponibilité factuelle.
+    expect(MENTION_DECLARATION_SANS_PAGE).not.toMatch(/retir|historique|exclu|disponible|archiv/i)
   })
 })

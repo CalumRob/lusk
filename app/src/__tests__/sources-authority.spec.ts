@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { sourceRecords } from '../payload/selectors'
-import { apercuAvecNAFixture, histoiresDemographieFixture, indicateursDemographieFixture, territoiresFixture, vintagesFixture } from '../payload/fixtures'
+import { apercuAvecNAFixture, histoiresDemographieFixture, indicateursDemographieFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures, territoiresFixture, vintagesFixture } from '../payload/fixtures'
 import type { Payload } from '../payload/types'
 
 const payload: Payload = {
@@ -111,6 +111,64 @@ describe('sourceRecords — autorité dataset-centric publiée', () => {
         kind: 'territory-reference',
         label: 'Référentiel territorial — classes de densité communale',
       }),
+    ])
+  })
+})
+
+describe('sourceRecords — la réconciliation navigation des consommateurs (#872)', () => {
+  /** La déclaration raccordement du fixture mobilite : pages courantes + référence nommée sans page + déclarations retirées. */
+  const payloadMobiliteSources: Payload = {
+    ...payload,
+    themeMetadata: { mobilite: metadonneesMobiliteRaccordementFixture },
+  }
+
+  it('ne marque comme indicateur que les Pages d’indicateur courantes du catalogue partagé', () => {
+    const matrice = sourceRecords(payloadMobiliteSources).find((record) => record.id === 'matrice_temps_mairies')!
+    const pages = matrice.consumers.filter((consumer) => consumer.kind === 'indicator')
+    expect(pages.map((consumer) => consumer.key)).toEqual(['raccordement_tc', 'raccordement_courbe'])
+    expect(pages.every((consumer) => consumer.theme === 'mobilite')).toBe(true)
+  })
+
+  it('la référence nommée sans page reste une déclaration représentée, jamais une URL de page fabriquée', () => {
+    const matrice = sourceRecords(payloadMobiliteSources).find((record) => record.id === 'matrice_temps_mairies')!
+    const reference = matrice.consumers.find((consumer) => consumer.key === 'raccordement_reference')!
+    expect(reference.kind).toBe('declaration')
+    expect(reference.label).toBe('Référence médiane — commune bretonne')
+    expect(reference.caveat).toBeTruthy()
+  })
+
+  it('les déclarations d’accessibilité retirées ne sont pas des consommateurs de page — la provenance reste', () => {
+    const snapshot = sourceRecords(payloadMobiliteSources).find((record) => record.id === 'mobilite_snapshot')!
+    expect(snapshot.consumers.length).toBeGreaterThan(0)
+    expect(snapshot.consumers.every((consumer) => consumer.kind === 'declaration')).toBe(true)
+    const iso = snapshot.consumers.find((consumer) => consumer.key === 'iso_alimentation')!
+    expect(iso.label).toBe('Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)')
+    expect(snapshot.consumers.some((consumer) => consumer.key === 'nb_buildings')).toBe(true)
+  })
+
+  it('la couverture programmatique du sixième thème reste une déclaration sans page', () => {
+    const payloadProgrammes: Payload = { ...payload, themeMetadata: { programmes: metadonneesThemesFixtures.programmes } }
+    const records = sourceRecords(payloadProgrammes)
+    const acv = records.find((record) => record.id === 'acv')!
+    expect(acv.consumers.map((consumer) => [consumer.key, consumer.kind])).toEqual([
+      ['couverture_programmes', 'declaration'],
+    ])
+    const scdl = records.find((record) => record.id === 'subventions_scdl')!
+    expect(scdl.consumers.map((consumer) => [consumer.key, consumer.kind])).toEqual([
+      ['subventions_annuelles', 'indicator'],
+      ['subventions_par_domaine', 'indicator'],
+    ])
+  })
+
+  it('réconcilie par le catalogue partagé des pages courantes, pas par le descripteur d’un fixture', () => {
+    // Le fixture démographie ne publie un descripteur de page que pour
+    // densite ; la réconciliation navigation lit le catalogue des pages
+    // courantes — evolution_1968 reste une page liée.
+    const payloadDemographie: Payload = { ...payload, themeMetadata: { demographie: metadonneesThemesFixtures.demographie } }
+    const serie = sourceRecords(payloadDemographie).find((record) => record.id === 'serie_historique')!
+    expect(serie.consumers.map((consumer) => [consumer.key, consumer.kind])).toEqual([
+      ['densite', 'indicator'],
+      ['evolution_1968', 'indicator'],
     ])
   })
 })

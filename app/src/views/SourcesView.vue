@@ -3,7 +3,7 @@ import { AlertCircle } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
-import { ancreSource } from '@/methodes/sources'
+import { MENTION_DECLARATION_SANS_PAGE, ancreSource } from '@/methodes/sources'
 import { sourceRecords } from '@/payload/selectors'
 import type { Fichier } from '@/payload/loader'
 import { THEMES_CANONIQUES } from '@/payload/types'
@@ -91,12 +91,21 @@ const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maxi
           </li>
         </ul>
         <h3>Consommateurs publiés</h3>
+        <!-- #872 : seul un consommateur « indicator » — une Page d'indicateur
+             courante du catalogue partagé — reçoit un lien. Une déclaration de
+             source sans page courante (clef retirée, référence nommée,
+             couverture catégorielle) reste un consommateur publié, rendu en
+             texte avec la mention visible générique app-ownée par le module
+             éditorial Sources (méthodes/sources.ts) — jamais une URL de page
+             fabriquée, jamais un statut gardé/historique qui serait une
+             politique factuelle. -->
         <ul v-if="source.consumers.length" class="source-record__consumers">
           <li v-for="consumer in source.consumers" :key="`${consumer.theme}-${consumer.key}`">
-            <span v-if="consumer.kind === 'territory-reference'">{{ consumer.label }}</span>
-            <RouterLink v-else :to="{ name: 'indicateur', params: { theme: consumer.theme, indicator: consumer.key } }">{{ consumer.label }}</RouterLink>
+            <RouterLink v-if="consumer.kind === 'indicator'" :to="{ name: 'indicateur', params: { theme: consumer.theme, indicator: consumer.key } }">{{ consumer.label }}</RouterLink>
+            <span v-else>{{ consumer.label }}</span>
             <span v-if="consumer.kind === 'territory-reference'"> · Référentiel territorial</span>
             <span v-else> · {{ consumer.theme }}</span>
+            <span v-if="consumer.kind === 'declaration'"> · {{ MENTION_DECLARATION_SANS_PAGE }}</span>
             <small v-if="consumer.caveat"> — {{ consumer.caveat }}</small>
           </li>
         </ul>
