@@ -15,6 +15,7 @@
     "verify:series-warm-503": "node scripts/verify-series-warm-503.mjs",
     "verify:series-native-bridge": "node scripts/verify-series-native-bridge.mjs",
     "verify:mobile-cahier-overflow": "node scripts/verify-mobile-cahier-overflow.mjs",
+    "verify:aedar-layout-stability": "node scripts/verify-aedar-layout-stability.mjs",
     "preview": "vite preview",
     "test": "vitest run"
   },
