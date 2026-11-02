@@ -50,18 +50,27 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
                     "payload_milieux") %in% noms))
   expect_false(any(c("payload_economie", "payload_mobilite") %in% noms))
 
-  # La première Page d'indicateur optée par sa métadonnée reçoit sa projection
-  # de lecture sans introduire de liste parallèle dans le graphe.
-  expect_true("modeles_lecture_demographie" %in% noms)
-  expect_true("modeles_lecture_mobilite" %in% noms)
-  expect_true("manifeste_modeles_lecture" %in% noms)
+  # Issue #890 : la génération planifiée des modèles de lecture est retirée du
+  # graphe — aucune cible par thème (modeles_lecture_<thème>), aucun manifeste
+  # (manifeste_modeles_lecture), aucune cible agrégée (modeles_territoire),
+  # même pour les thèmes dont la métadonnée déclare encore read_model.
+  expect_false(any(grepl("^modeles_lecture_", noms)))
+  expect_false("manifeste_modeles_lecture" %in% noms)
+  expect_false("modeles_territoire" %in% noms)
+  # aucun chemin planifié n'écrit plus sous modeles-lecture/** : aucune
+  # commande du graphe n'appelle un générateur de modèles de lecture
+  expect_false(any(grepl("modeles-lecture", manifeste$command, fixed = TRUE)))
+  expect_false(any(grepl(
+    "publier_modeles_lecture|publier_manifeste_modeles_lecture|publier_modeles_territoire_complet",
+    manifeste$command
+  )))
 
-  # Une cible unique agrège les payloads retournés par les cinq publications
-  # et l'adaptateur du sixième thème Programmes dans les artefacts atomiques
-  # par territoire — y compris Économie/Mobilité, qui n'ont pas de target
-  # payload_<thème>.
-  expect_true("projection_programmes" %in% noms)
-  expect_true("modeles_territoire" %in% noms)
+  # La chaîne Programmes du run complet reste câblée telle quelle — sa
+  # projection (projection_programmes) est une feuille depuis #890, rien des
+  # CINQ thèmes n'en dépend.
+  expect_true(all(c("sources_programmes", "publie_programmes",
+                    "metadata_programmes", "projection_programmes",
+                    "rapport_programmes") %in% noms))
 
   # les artefacts partagés du run
   expect_true("fusion_vintages" %in% noms)
@@ -88,25 +97,15 @@ test_that("les seams se dispatchent sur les traits du descripteur, jamais sur le
   # is.function(theme$publier), jamais un nom de thème
   expect_true(grepl("publier_economie", commande("publie_economie"), fixed = TRUE))
   expect_true(grepl("publier_mobilite", commande("publie_mobilite"), fixed = TRUE))
-  expect_true(grepl("publie_demographie", commande("modeles_lecture_demographie"), fixed = TRUE))
-  expect_false(grepl("payload_demographie", commande("modeles_lecture_demographie"), fixed = TRUE))
-  expect_true(grepl("publie_mobilite", commande("modeles_lecture_mobilite"), fixed = TRUE))
-  expect_false(grepl("payload_mobilite", commande("modeles_lecture_mobilite"), fixed = TRUE))
   expect_true(grepl("publish(", commande("publie_demographie"), fixed = TRUE))
   expect_true(grepl("publish(", commande("publie_habitat"), fixed = TRUE))
   expect_true(grepl("publish(", commande("publie_milieux"), fixed = TRUE))
   expect_false(grepl("publier_", commande("publie_demographie"), fixed = TRUE))
 
-  expect_true(grepl("publier_modeles_territoire_complet",
-                    commande("modeles_territoire"), fixed = TRUE))
-  expect_true(grepl("projection_programmes",
-                    commande("modeles_territoire"), fixed = TRUE))
-  expect_true(grepl("metadata_programmes",
-                    commande("modeles_territoire"), fixed = TRUE))
-  expect_true(grepl("vintages_table_programmes",
-                    commande("modeles_territoire"), fixed = TRUE))
-  expect_true(grepl('vintages[["programmes"]]',
-                    commande("modeles_territoire"), fixed = TRUE))
+  # Issue #890 : plus aucune commande du graphe n'appelle un générateur de
+  # modèles de lecture — le registre read_model ne pilote plus de cible
+  # planifiée (il reste un champ validé des métadonnées épinglées).
+  expect_false(any(grepl("modeles_lecture|modeles_territoire", manifeste$command)))
 
   # vintages : le cache atteint le builder qui le DÉCLARE (Habitat lit la date
   # de pull des DPE sur le mtime du cache — issue #19) — dispatch sur la
@@ -129,6 +128,42 @@ test_that("les seams se dispatchent sur les traits du descripteur, jamais sur le
                     fixed = TRUE))
   expect_true(grepl("retires = character(0)", commande("fusion_vintages"),
                     fixed = TRUE))
+})
+
+test_that("la sélection partielle du cron ne câble aucune cible de modèle de lecture (#890)", {
+  racine <- pkgload::pkg_path()
+  withr::local_dir(racine)
+  # la sélection du cron (pipeline-cron.yml) : les trois thèmes légers —
+  # dont Démographie, qui déclare read_model dans sa métadonnée épinglée
+  withr::local_envvar(LUSK_THEMES = "demographie,habitat,economie")
+
+  manifeste <- targets::tar_manifest()
+  noms <- manifeste$name
+
+  # aucune des trois familles retirées n'est atteignable en sélection partielle
+  expect_false(any(grepl("^modeles_lecture_", noms)))
+  expect_false("manifeste_modeles_lecture" %in% noms)
+  expect_false("modeles_territoire" %in% noms)
+  expect_false(any(grepl("modeles-lecture", manifeste$command, fixed = TRUE)))
+  expect_false(any(grepl("modeles_lecture|modeles_territoire", manifeste$command)))
+
+  # les cibles non liées conservent leur reachability : les familles des trois
+  # thèmes sélectionnés, les artefacts de serving et les horloges du run
+  for (theme in c("demographie", "habitat", "economie")) {
+    expect_true(
+      all(c(paste0("sources_", theme), paste0("fichiers_", theme),
+            paste0("brut_", theme), paste0("vintages_table_", theme),
+            paste0("publie_", theme), paste0("metadata_", theme),
+            paste0("rapport_", theme)) %in% noms),
+      info = paste("famille de targets du thème", theme)
+    )
+  }
+  expect_true(all(c("fusion_vintages", "scalar_serving_artifacts",
+                    "profile_serving_artifacts", "typed_reading_serving_artifacts",
+                    "geometrie") %in% noms))
+  # la publication Programmes reste réservée au run complet (sélection vide)
+  expect_false("projection_programmes" %in% noms)
+  expect_false("publie_programmes" %in% noms)
 })
 
 test_that("les étapes de données d'un thème ne dépendent jamais de celles d'un autre (skip par thème)", {
