@@ -1,20 +1,9 @@
 {
   "theme": "mobilite",
-  "comparison_scopes": {
-    "bretagne": {"kind": "communes-bretagne", "label": "communes bretonnes"}
-  },
-  "building_comparison": {"statistic": "mean", "direction": "high"},
-  "service_share_scalar": {
-    "completeness": "dense_complete",
-    "denominator_semantics": "Part des bâtiments du territoire ayant accès au service par le mode déclaré, rapportée au nombre de bâtiments résidentiels analysés publié sous nb_buildings ; la valeur canonique est une fraction 0–1, l’unité publique déclarée reste %."
-  },
-  "indicator_directions": {
-    "share_food_t": "high", "share_food_b": "high", "share_food_c": "high",
-    "share_health_t": "high", "share_health_b": "high", "share_health_c": "high",
-    "share_admin_t": "high", "share_admin_b": "high", "share_admin_c": "high",
-    "share_school_t": "high", "share_school_b": "high", "share_school_c": "high",
-    "share_bank_t": "high", "share_bank_b": "high", "share_bank_c": "high"
-  },
+
+
+
+
   "label": "Mobilité",
   "subgroups": [
     {
@@ -52,10 +41,7 @@
       "avg_div_t",
       "nb_buildings"
       ],
-      "figure": {
-        "family": "comparison-bars",
-        "indicator": "iso_alimentation"
-      },
+
       "reading": {
         "story_key": "vingt-minutes-sans-voiture",
         "params": ["div_loss_t", "div_loss_b", "tot_loss_t", "tot_loss_b", "pct_iso_full_t", "classification_saillance"],
@@ -75,23 +61,17 @@
       "key": "partage-de-lespace-public",
       "label": "Le partage de l’espace public",
       "framing": "La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.",
-      "indicators": ["reseaux", "reseaux_par_habitant", "surface_reseaux_routiers", "places_stationnement_velo_1000", "places_stationnement_voiture_1000", "stationnement_velo_par_voiture", "offre_cyclable"],
-      "figure": { "family": "composition", "indicator": "offre_cyclable" }
-    },
+      "indicators": ["reseaux", "reseaux_par_habitant", "surface_reseaux_routiers", "places_stationnement_velo_1000", "places_stationnement_voiture_1000", "stationnement_velo_par_voiture", "offre_cyclable"]},
     {
       "key": "motorisation",
       "label": "La motorisation",
       "framing": "L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.",
-      "indicators": ["voitures_menage", "bornes_recharge", "bornes_ev_par_station_service"],
-      "figure": { "family": "composition", "indicator": "voitures_menage" }
-    },
+      "indicators": ["voitures_menage", "bornes_recharge", "bornes_ev_par_station_service"]},
     {
       "key": "offre-transports-commun",
       "label": "L’offre de transports en commun",
       "framing": "La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.",
-      "indicators": ["offre_tc", "raccordement_tc", "raccordement_courbe", "raccordement_reference"],
-      "figure": { "family": "scalar", "indicator": "offre_tc" }
-    }
+      "indicators": ["offre_tc", "raccordement_tc", "raccordement_courbe", "raccordement_reference"]}
   ],
   "indicator_keys": [
     "voitures_menage",
@@ -138,15 +118,8 @@
     "raccordement_courbe",
     "raccordement_reference"
   ],
-  "story_keys": ["vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"],
-  "selected_reading_contract": {
-    "unit": "types de services",
-    "direction": "low",
-    "allowed_levels": ["commune", "epci", "departement", "region"],
-    "missing_status": "unavailable",
-    "classification_values": ["saillant", "notable", "non-saillant"],
-    "field_keys": ["groupe", "story_key", "salience_reason", "classification_saillance", "div_loss_t", "div_loss_b", "status"]
-  },
+
+
   "sources": {
     "voitures_menage": "rp_logement_princ",
      "reseaux": "amenagements_cyclables",
@@ -306,37 +279,7 @@
     "raccordement_courbe": false,
     "raccordement_reference": false
   },
-  "owned_series_routes": {
-    "raccordement_courbe": {
-      "dataset_id": "raccordement_courbe",
-      "indicator_id": "raccordement_courbe",
-      "theme_id": "mobilite",
-      "active_read_route": true,
-      "axis_kind": "duration_minute",
-      "axis_values": ["0", "15", "30", "45", "60", "90", "120", "180", "240", "300", "360"],
-      "reference_indicator": "raccordement_reference",
-      "reference_read_route": true,
-      "comparison_contract": {
-        "statistic": "median",
-        "scope": "default_group"
-      },
-      "observation_period_contract": {
-        "kind": "snapshot_date",
-        "source": "raccordement_recipe_date_mesure"
-      },
-      "reference": {
-        "id": "commune_bretonne_mediane",
-        "label": "Commune bretonne médiane",
-        "role": "analytical_reference",
-        "statistic": "median_routed_communes"
-      },
-      "reference_id": "commune_bretonne_mediane",
-      "reference_label": "Commune bretonne médiane",
-      "reference_role": "analytical_reference",
-      "reference_statistic": "median_routed_communes",
-      "source_id": "matrice_temps_mairies"
-    }
-  },
+
   "indicator_pages": {
     "nb_buildings": { "indicator": "nb_buildings", "label": "Bâtiments résidentiels analysés", "definition": "Nombre de bâtiments résidentiels analysés dans le snapshot Mobilité pour le territoire.", "unit": "bâtiments", "calculation": "Dénombrement publié par le pipeline à partir du snapshot Mobilité.", "direction": "high", "caveats": "Ce total appartient au snapshot Mobilité et peut différer des dénominateurs propres aux rampes et grilles bâtimentières.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
     "voitures_menage": { "indicator": "voitures_menage", "label": "Voitures par ménage", "definition": "Répartition des ménages selon le nombre de voitures possédées.", "unit": "%", "calculation": "Parts publiées par le pipeline.", "direction": "high", "caveats": "Les catégories décrivent les ménages recensés.", "levels": ["commune", "epci", "departement", "region"], "sources": ["rp_logement_princ"], "family": "composition", "composition": { "parts": ["sans_voiture", "une_voiture", "deux_plus"] }, "comparison": { "details": ["sans_voiture", "une_voiture", "deux_plus"], "detail": "sans_voiture", "unit": "%", "labels": { "sans_voiture": "Ménages sans voiture", "une_voiture": "Ménages avec 1 voiture", "deux_plus": "Ménages avec 2 voitures ou plus" } } },
@@ -372,15 +315,7 @@
     "reseaux_par_habitant": {"allowed_levels":["commune","epci","departement","region"],"completeness":"dense_complete","denominator_semantics":"Longueur du réseau divisée par la population du territoire, pour 1 000 habitants","detail_units":{"t_km_1000":"km / 1 000 hab.","b_km_1000":"km / 1 000 hab.","c_km_1000":"km / 1 000 hab."}},
     "offre_cyclable": {"allowed_levels":["commune","epci","departement","region"],"completeness":"dense_complete","denominator_semantics":"Longueurs Geovelo protégée, partagée et totale; les composantes par habitant sont divisées par la population, pour 1 000 habitants","detail_units":{"protege_longueur":"km","protege_km_1000":"km / 1 000 hab","partage_longueur":"km","partage_km_1000":"km / 1 000 hab","total_longueur":"km"}}
   },
-  "distribution_contracts": {
-    "mobilite_density_distribution": {
-      "source_id": "mobilite_snapshot",
-      "allowed_focal_levels": ["commune", "epci", "departement", "region"],
-      "axis_ordinals": [1,2,3,4,5,6,7,8,9,10],
-      "density_unit": "1 / type de service perdu",
-      "decile_unit": "type de service perdu"
-    }
-  },
+
   "scalar_contracts": {
     "nb_buildings": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "nb_buildings", "missing_status": "not_available", "counts_available": false },
     "surface_reseaux_routiers": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "surface_reseaux_routiers", "missing_status": "not_available", "counts_available": false },
