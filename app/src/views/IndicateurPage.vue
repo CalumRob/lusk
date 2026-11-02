@@ -90,14 +90,15 @@ const orderedSeriesAdapter = computed(() => {
   const declaration = catalogueResourcesApi.value?.find((resource) => resource.resource_id === indicator.value)
   const adapter = orderedSeriesAdapterFor(theme.value, indicator.value, declaration)
   if (!adapter) return null
-  const page = metadataSeriesApi.value?.indicator_pages?.[indicator.value] ?? payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
-    ?.indicator_pages?.[indicator.value] as { series_dataset_id?: string; series_publication?: 'legacy' | 'owned' } | undefined
-  // Metadata selects ownership; absence during loading is not a legacy binding.
+  // Metadata still gates the page's editorial ownership; its absence during
+  // loading is not a binding. The old series_dataset_id/series_publication
+  // stubs no longer select anything (#871): the producer catalogue decides.
+  const page = metadataSeriesApi.value?.indicator_pages?.[indicator.value] ??
+    payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
+      ?.indicator_pages?.[indicator.value]
   if (!page) return null
-  const datasetId = page?.series_dataset_id
-  const publicationMode = page?.series_publication
   const enabled = seriesPageApiActive.value || adapter.indicator === 'raccordement_courbe'
-  return enabled ? { ...adapter, datasetId, publicationMode } : null
+  return enabled ? adapter : null
 })
 const raccordementApiActive = computed(() => orderedSeriesAdapter.value?.indicator === 'raccordement_courbe')
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))

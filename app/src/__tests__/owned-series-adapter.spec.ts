@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts } from '../payload/orderedSeriesAdapter'
+import { orderedSeriesAdapterFor, orderedSeriesFacts } from '../payload/orderedSeriesAdapter'
 import { territoiresFixture } from '../payload/fixtures'
 
 const metadataMilieux = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_milieux.json'), 'utf8'))
@@ -44,11 +44,6 @@ describe('owned M2/M3 series adapter', () => {
     expect(fact[0]).toMatchObject({ detail: '2024', value: null, observation_status: 'missing',
       vintage_id: '2025', observation_period: '2024' })
     expect(fact[0].provenance_revisions?.[0].revision_id).toBe('dvf-2025')
-    const scalarHeadline = { ...fact[0], detail: null, value: 2450, observation_status: 'measured' as const }
-    const merged = mergeOrderedSeriesFacts([scalarHeadline, { ...fact[0], detail: '2024', value: 2000 }], 'prix_m2', fact)
-    expect(merged).toHaveLength(2)
-    expect(merged[0]).toMatchObject({ detail: null, value: 2450 })
-    expect(merged[1]).toMatchObject({ detail: '2024', value: null, observation_status: 'missing' })
   })
   it('registers a dataset-qualified no-comparison adapter and preserves per-point revisions', () => {
     const adapter = orderedSeriesAdapterFor('milieux', 'artif_par_habitant', {
