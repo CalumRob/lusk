@@ -3,8 +3,6 @@ import { computed, inject, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PAYLOAD_CHARGER_KEY, usePayload } from '@/payload/usePayload'
 import type { Fichier } from '@/payload/loader'
-import { chargerManifesteModelesLecture, chargerModeleIndicateur, INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY, INDICATOR_READ_MODEL_CHARGER_KEY, payloadDepuisModeleIndicateur } from '@/payload/indicatorReadModel'
-import type { IndicatorReadModel } from '@/payload/indicatorReadModel'
 import { modeleComposition, modeleExploration, modeleEnsembleComparaison, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte } from '@/indicateurs/explorationModel'
 import type { OrdreExploration, TriExploration } from '@/indicateurs/explorationModel'
 import MapExplorer from '@/components/carte/MapExplorer.vue'
@@ -25,9 +23,9 @@ import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } fro
 import { PayloadError, validerCatalogueNavigateur } from '@/payload/validate'
 import { semanticComparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
-import { chargerCohorteScalaire, chargerCohortePageScalaire, chargerComparaisonsScalaires,
+import { chargerCohortePageScalaire, chargerComparaisonsScalaires,
   chargerFaitFocalPageScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees,
-  scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
+  validerEnregistrementScalaires } from '@/payload/scalarCohort'
 import type { ScalarComparisonEvidence, ScalarComparisonRequest } from '@/payload/scalarCohort'
 import type { Indicateur, IndicatorPageMetadata, NativeThemeFactContract, Payload, SourceVintageRecord, Territoire, TerritoireType, ThemeMetadata } from '@/payload/types'
 import { ThemeAcquisitionCache, acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison } from '@/payload/themeAcquisition'
@@ -92,32 +90,25 @@ const orderedSeriesAdapter = computed(() => {
   const declaration = catalogueResourcesApi.value?.find((resource) => resource.resource_id === indicator.value)
   const adapter = orderedSeriesAdapterFor(theme.value, indicator.value, declaration)
   if (!adapter) return null
-  const page = metadataSeriesApi.value?.indicator_pages?.[indicator.value] ?? payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
-    ?.indicator_pages?.[indicator.value] as { series_dataset_id?: string; series_publication?: 'legacy' | 'owned' } | undefined
-  // Metadata selects ownership; absence during loading is not a legacy binding.
+  // Metadata still gates the page's editorial ownership; its absence during
+  // loading is not a binding. The old series_dataset_id/series_publication
+  // stubs no longer select anything (#871): the producer catalogue decides.
+  const page = metadataSeriesApi.value?.indicator_pages?.[indicator.value] ??
+    payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
+      ?.indicator_pages?.[indicator.value]
   if (!page) return null
-  const datasetId = page?.series_dataset_id
-  const publicationMode = page?.series_publication
   const enabled = seriesPageApiActive.value || adapter.indicator === 'raccordement_courbe'
-  return enabled ? { ...adapter, datasetId, publicationMode } : null
+  return enabled ? adapter : null
 })
 const raccordementApiActive = computed(() => orderedSeriesAdapter.value?.indicator === 'raccordement_courbe')
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
-const selectedTheme = theme.value as Theme
-const scalaireApiAuMontage = scalarCohortEnabled(import.meta.env as Record<string, string | undefined>)
 const payloadChargerInjecte = inject(PAYLOAD_CHARGER_KEY, null)
-const manifesteChargerInjecte = inject(INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY, null)
-const modeleChargerInjecte = inject(INDICATOR_READ_MODEL_CHARGER_KEY, null)
 const attendrePage = ref<Fichier[]>(['territoires'])
 const demarrerPage = ref<Fichier[]>(['territoires'])
 const { payload: payloadLegacy, erreur: erreurLegacy, chargement: chargementLegacy } = usePayload({
   attendre: attendrePage,
   demarrer: demarrerPage,
 })
-const erreurManifesteModeles = ref<PayloadError | null>(null)
-const chargementManifesteModeles = ref(false)
-const routeModeleIndicateur = ref(false)
-const chargerManifeste = manifesteChargerInjecte ?? chargerManifesteModelesLecture
 const profileDiscoveryComplete = ref(false)
 const profileMode = ref(false)
 const profileBootstrapLoading = ref(true)
@@ -158,14 +149,6 @@ let profileFactsRequestKey = ''
 let profileFocalRequestKey = ''
 let profileComparisonRequestKey = ''
 let profileScalarRequestKey = ''
-const utiliseManifeste = computed(() => profileDiscoveryComplete.value && !profileMode.value &&
-  !seriesPageApiActive.value && !scalaireApiAuMontage && (manifesteChargerInjecte !== null || payloadChargerInjecte === null))
-const utiliseModeleIndicateur = computed(() => !profileMode.value && utiliseManifeste.value && routeModeleIndicateur.value)
-const modeleIndicateur = ref<IndicatorReadModel | null>(null)
-const erreurModeleIndicateur = ref<PayloadError | null>(null)
-const chargementModeleIndicateur = ref(false)
-let modeleIndicateurDemarre = false
-const chargerModele = modeleChargerInjecte ?? chargerModeleIndicateur
 function profileCatalogueBinding(resources: SemanticResourceDeclaration[], currentTheme: string,
   currentIndicator: string) {
   const candidates = resources.filter((resource) => resource.resource_id === currentIndicator &&
@@ -244,12 +227,6 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
   profileComparisonError.value = false
   profileComparisonLoading.value = false
   profileComparisonTarget.value = null
-  routeModeleIndicateur.value = false
-  modeleIndicateur.value = null
-  erreurModeleIndicateur.value = null
-  modeleIndicateurDemarre = false
-  chargementManifesteModeles.value = false
-  erreurManifesteModeles.value = null
   const validTheme = (THEMES_CANONIQUES as readonly string[]).includes(currentTheme)
   attendrePage.value = ['territoires']
   demarrerPage.value = ['territoires']
@@ -420,14 +397,6 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     return
   }
 
-  // The route is now confirmed not to be profile- or ordinary-scalar-owned.
-  // Its existing opt-in scalar, ordered-series, manifest/model, or legacy path remains intact.
-  if (scalaireApiAuMontage) {
-    profileDiscoveryComplete.value = true
-    profileBootstrapLoading.value = false
-    return
-  }
-
   // The retained raccordement_courbe keeps its owner path (#857): its
   // numerics are API-owned, and its presentation envelope remains the theme
   // catalogue. It is the only unclassified route that still resolves a page.
@@ -439,39 +408,25 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     return
   }
 
-  const canUseManifest = manifesteChargerInjecte !== null || payloadChargerInjecte === null
-  if (canUseManifest) {
-    chargementManifesteModeles.value = true
-    try {
-      const manifest = await chargerManifeste()
-      if (sequence !== profileDiscoverySequence) return
-      routeModeleIndicateur.value = manifest.routes[currentTheme as Theme]?.includes(currentIndicator) ?? false
-    } catch (cause) {
-      if (sequence !== profileDiscoverySequence) return
-      erreurManifesteModeles.value = cause instanceof PayloadError
-        ? cause : new PayloadError('fetch', 'modeles-lecture/manifest.json', 'Impossible de charger le manifeste des modèles.')
-    } finally {
-      if (sequence === profileDiscoverySequence) chargementManifesteModeles.value = false
-    }
-  }
-
   profileDiscoveryComplete.value = true
   profileBootstrapLoading.value = false
   // No other unclassified route resolves a page any more (#627 legacy
-  // accessibility retirement): producer-excluded slugs and unknown indicators
-  // both render the honest unknown-indicator state, without loading the
-  // retired static numeric tables.
+  // accessibility retirement, #871 read-model retirement): producer-excluded
+  // slugs and unknown indicators both render the honest unknown-indicator
+  // state, without consulting a read-model manifest or loading any retired
+  // static numeric runtime.
 }
 
 watch(() => [theme.value, indicator.value, retryProfileBootstrap.value] as const,
   ([currentTheme, currentIndicator]) => { void resolveProfileRoute(currentTheme, currentIndicator) },
   { immediate: true })
 
-const scalaireApiOptionnelle = computed(() => scalarCohortEnabled(import.meta.env as Record<string, string | undefined>))
 const indicateursScalairesCourants = ref<string[]>([])
+// #871 : la page scalaire ordinaire est la SEULE lecture scalaire de la page
+// d'indicateur — l'ancien drapeau VITE_SCALAR_COHORT_API ne peut plus en
+// sélectionner une seconde.
 const scalaireApi = computed(() => !profileMode.value && metadataScalaireApi.value?.theme === theme.value &&
-  ((pageScalaireApiActive.value && indicateursScalairesCourants.value.includes(indicator.value)) ||
-    (scalaireApiOptionnelle.value && indicateursScalairesCourants.value.includes(indicator.value))))
+  pageScalaireApiActive.value && indicateursScalairesCourants.value.includes(indicator.value))
 const metadataScalaireApi = ref<ThemeMetadata | null>(null)
 const faitsScalaireApi = ref<Indicateur[]>([])
 const erreurScalaireApi = ref<PayloadError | null>(null)
@@ -540,14 +495,14 @@ function membresComparaisonPageScalaire(territories: Territoire[], request: Scal
     (request.scope.kind !== 'density_class' || territory.classe_densite_code === request.scope.densityClassCode))
 }
 
-watch(() => [profileDiscoveryComplete.value, profileMode.value, scalaireApi.value, pageScalaireApiActive.value,
+watch(() => [profileDiscoveryComplete.value, profileMode.value, scalaireApi.value,
   theme.value, indicator.value, territoirePorte.value,
   niveauPorte.value, departementPorte.value, epciPorte.value,
   payloadLegacy.value.territoires.length, retryScalaireApi.value] as const,
-async ([discovered, isProfile, active, ordinaryPage, currentTheme, currentIndicator, selectedId, routeLevel,
+async ([discovered, isProfile, active, currentTheme, currentIndicator, selectedId, routeLevel,
   department, epci, territoryCount]) => {
   if (!discovered || isProfile) return
-  const key = JSON.stringify([active, ordinaryPage, currentTheme, currentIndicator, selectedId, routeLevel,
+  const key = JSON.stringify([active, currentTheme, currentIndicator, selectedId, routeLevel,
     department, epci, territoryCount, retryScalaireApi.value])
   if (active && key === cleRequeteScalaireApi) return
   cleRequeteScalaireApi = key
@@ -587,43 +542,36 @@ async ([discovered, isProfile, active, ordinaryPage, currentTheme, currentIndica
     const focal = selectedFocal ?? choisirFocalCohorte(payloadLegacy.value.territoires, level, selectedId,
       level === 'commune' ? { department: dept, epci: codeEpci } : {})
     const scope = level === 'commune' ? { department: dept, epci: codeEpci } : {}
-    if (ordinaryPage) {
-      const result = await chargerCohortePageScalaire(currentIndicator, currentTheme as Theme,
-        metadataScalaireApi.value, focal, level, payloadLegacy.value.territoires, scope,
-        catalogueScalaireApi.value)
-      if (sequence === sequenceScalaireApi) {
-        faitsScalaireApi.value = result.facts
-        identiteScalairePage.value = result.identity
-        contratScalairePageNatif.value = result.contract
-        faitsScalairePagePrets.value = true
-        generationFaitsScalairePage.value++
-        chargementScalaireApi.value = false
-      }
-      const focalOutsideCohort = Boolean(focal && focal.type === level &&
-        ((scope.department && focal.departement !== scope.department) ||
-          (scope.epci && focal.epci !== scope.epci)))
-      if (focalOutsideCohort && focal) {
-        chargementScalaireFocalApi.value = true
-        try {
-          const focalFact = await chargerFaitFocalPageScalaire(result.declaration, currentIndicator,
-            currentTheme as Theme, metadataScalaireApi.value, focal, payloadLegacy.value.territoires,
-            result.identity, result.contract)
-          if (sequence === sequenceScalaireApi) {
-            faitsScalaireApi.value = focalFact ? [...result.facts, focalFact] : result.facts
-            focalScalaireApiAbsent.value = focalFact === null
-          }
-        } catch {
-          if (sequence === sequenceScalaireApi) erreurScalaireFocalApi.value = true
-        } finally {
-          if (sequence === sequenceScalaireApi) chargementScalaireFocalApi.value = false
-        }
-      }
-      return
+    const result = await chargerCohortePageScalaire(currentIndicator, currentTheme as Theme,
+      metadataScalaireApi.value, focal, level, payloadLegacy.value.territoires, scope,
+      catalogueScalaireApi.value)
+    if (sequence === sequenceScalaireApi) {
+      faitsScalaireApi.value = result.facts
+      identiteScalairePage.value = result.identity
+      contratScalairePageNatif.value = result.contract
+      faitsScalairePagePrets.value = true
+      generationFaitsScalairePage.value++
+      chargementScalaireApi.value = false
     }
-    if (!focal) throw new PayloadError('validation', currentIndicator, 'Aucun territoire admissible dans ce périmètre.')
-    const rows = await chargerCohorteScalaire(currentIndicator, currentTheme as Theme, page, focal, level,
-      payloadLegacy.value.territoires, scope)
-    if (sequence === sequenceScalaireApi) faitsScalaireApi.value = rows
+    const focalOutsideCohort = Boolean(focal && focal.type === level &&
+      ((scope.department && focal.departement !== scope.department) ||
+        (scope.epci && focal.epci !== scope.epci)))
+    if (focalOutsideCohort && focal) {
+      chargementScalaireFocalApi.value = true
+      try {
+        const focalFact = await chargerFaitFocalPageScalaire(result.declaration, currentIndicator,
+          currentTheme as Theme, metadataScalaireApi.value, focal, payloadLegacy.value.territoires,
+          result.identity, result.contract)
+        if (sequence === sequenceScalaireApi) {
+          faitsScalaireApi.value = focalFact ? [...result.facts, focalFact] : result.facts
+          focalScalaireApiAbsent.value = focalFact === null
+        }
+      } catch {
+        if (sequence === sequenceScalaireApi) erreurScalaireFocalApi.value = true
+      } finally {
+        if (sequence === sequenceScalaireApi) chargementScalaireFocalApi.value = false
+      }
+    }
   } catch (cause) {
     if (sequence === sequenceScalaireApi) erreurScalaireApi.value = cause instanceof PayloadError ? cause : new PayloadError('fetch', currentIndicator, 'Impossible de charger le cohort scalaire.')
   } finally { if (sequence === sequenceScalaireApi) chargementScalaireApi.value = false }
@@ -807,28 +755,6 @@ async ([active, level, department, epci, descriptorVersion, profileVersion, scal
     if (sequence === profileScalarSequence) profileScalarLoading.value = false
   }
 }, { immediate: true })
-watch(
-  () => [payloadLegacy.value.territoires.length, utiliseModeleIndicateur.value] as const,
-  ([nombreTerritoires, doitChargerModele]) => {
-    if (!doitChargerModele || nombreTerritoires === 0 || modeleIndicateurDemarre) return
-    modeleIndicateurDemarre = true
-    chargementModeleIndicateur.value = true
-    chargerModele(selectedTheme, indicator.value, payloadLegacy.value.territoires).then(
-      (modele) => {
-        modeleIndicateur.value = modele
-        chargementModeleIndicateur.value = false
-      },
-      (cause: unknown) => {
-        erreurModeleIndicateur.value =
-          cause instanceof PayloadError
-            ? cause
-            : new PayloadError('fetch', `modeles-lecture/indicateurs/${selectedTheme}/${indicator.value}.json`, 'Impossible de charger le modèle.')
-        chargementModeleIndicateur.value = false
-      },
-    )
-  },
-  { immediate: true },
-)
 
 const serieLecture = ref<OrderedSeriesRead | null>(null)
 const orderedSeriesSession = createOrderedSeriesSemanticSession()
@@ -1051,9 +977,7 @@ const metadataProfilAdaptee = computed(() => {
   }
 })
 const payload = computed<Payload>(() => {
-  const baseInitial = modeleIndicateur.value
-    ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
-    : payloadLegacy.value
+  const baseInitial = payloadLegacy.value
   const metadataBound = profileMode.value && metadataProfilAdaptee.value
     ? { ...baseInitial.themeMetadata, [theme.value]: metadataProfilAdaptee.value }
     : sparseCollectionPageActive.value && sparseCollectionMetadata.value
@@ -1114,28 +1038,32 @@ const payload = computed<Payload>(() => {
 const erreur = computed(() => {
   if (profileBootstrapError.value) return profileBootstrapError.value
   if (profileMode.value) return profileFactsError.value ?? profileFocalError.value ?? erreurLegacy.value
-  if (erreurManifesteModeles.value) return erreurManifesteModeles.value
-  if (pageScalaireApiActive.value || (!profileMode.value && scalaireApiOptionnelle.value &&
-      (!metadataScalaireApi.value || scalaireApi.value))) return erreurScalaireApi.value
+  if (pageScalaireApiActive.value) return erreurScalaireApi.value
   if (sparseCollectionPageActive.value) {
     return sparseCollectionFactsError.value
       ? new PayloadError('fetch', indicator.value, 'Impossible de charger les faits de subventions publiés.') : null
   }
-  return utiliseModeleIndicateur.value ? erreurModeleIndicateur.value : erreurLegacy.value
+  return erreurLegacy.value
 })
 const chargement = computed(() =>
   profileBootstrapLoading.value ||
-  chargementManifesteModeles.value ||
   (profileMode.value && (profileFactsLoading.value || profileFocalLoading.value)) ||
   (sparseCollectionPageActive.value && sparseCollectionFactsLoading.value) ||
-  (!profileMode.value && (pageScalaireApiActive.value || scalaireApiOptionnelle.value) && chargementScalaireApi.value) ||
-  (utiliseModeleIndicateur.value
-    ? chargementLegacy.value || chargementModeleIndicateur.value
-    : chargementLegacy.value),
+  (!profileMode.value && pageScalaireApiActive.value && chargementScalaireApi.value) ||
+  chargementLegacy.value,
 )
 const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
+// #871 (revue) : seules les familles ADMISES par la classification producteur
+// autorisent la présentation d'une page. Les métadonnées chaudes du magasin
+// partagé (visite Sources, revisites) peuvent enrichir une page admise —
+// jamais autoriser une route : une route non classée par la découverte rend
+// l'état inconnu, même si son descripteur éditorial retiré traîne encore
+// dans un theme_<theme>.json du cache.
+const routeAdmise = computed(() => profileMode.value || pageScalaireApiActive.value ||
+  seriesPageApiActive.value || sparseCollectionPageActive.value || raccordementApiActive.value)
 const page = computed(() => {
+  if (!routeAdmise.value) return undefined
   const editorial = profileMode.value ? pageProfilCourante.value ?? undefined : metadata.value?.indicator_pages?.[indicator.value]
   if (editorial && sparseCollectionPageActive.value && sparseCollectionPeriods.value.length) {
     const dimensions = [...new Set([...(sparseCollectionPeriods.value),

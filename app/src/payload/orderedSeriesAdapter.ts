@@ -64,8 +64,6 @@ export interface OrderedSeriesAdapter {
   theme: Theme
   indicator: string
   pathIndicator: string
-  datasetId?: string
-  publicationMode?: 'legacy' | 'owned'
 }
 
 /** Derive eligibility from the producer catalogue; there is no parallel page allowlist. */
@@ -229,13 +227,4 @@ export function orderedSeriesFacts(
     }
   }
   return rows
-}
-
-/** Replace trajectory points from the API while retaining any canonical scalar headline. */
-export function mergeOrderedSeriesFacts(
-  existing: readonly Indicateur[],
-  indicator: string,
-  seriesFacts: readonly Indicateur[],
-): Indicateur[] {
-  return [...existing.filter((fact) => fact.key !== indicator || fact.detail == null), ...seriesFacts]
 }

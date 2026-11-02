@@ -5,7 +5,6 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import { indicateursHabitatFixture, indicateursMilieuxFixture, indicateursMobiliteFixture, territoiresFixture } from '../payload/fixtures'
-import { INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY } from '../payload/indicatorReadModel'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import type { Territoire } from '../payload/types'
 import { routes } from '../router'
@@ -73,7 +72,6 @@ async function mountRaccordementPage(options: RaccordementPageOptions) {
   const empty = { type: 'FeatureCollection' as const, features: [] }
   const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
     [PAYLOAD_CHARGER_KEY]: loader,
-    [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { mobilite: [] } }),
     [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
   } } })
   return { wrapper, router, requests, calls, territories }
@@ -116,7 +114,6 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const empty = { type: 'FeatureCollection' as const, features: [] }
     const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
       [PAYLOAD_CHARGER_KEY]: loader,
-      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { mobilite: [] } }),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     try {
@@ -324,7 +321,6 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const empty = { type: 'FeatureCollection' as const, features: [] }
     const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
       [PAYLOAD_CHARGER_KEY]: loader,
-      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { habitat: [] } }),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     try {
@@ -371,7 +367,6 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const empty = { type: 'FeatureCollection' as const, features: [] }
     const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
       [PAYLOAD_CHARGER_KEY]: loader,
-      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { habitat: [] } }),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     try {
@@ -489,7 +484,6 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const empty = { type: 'FeatureCollection' as const, features: [] }
     const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
       [PAYLOAD_CHARGER_KEY]: loader,
-      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { habitat: [] } }),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     try {
@@ -600,7 +594,6 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const empty = { type: 'FeatureCollection' as const, features: [] }
     const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
       [PAYLOAD_CHARGER_KEY]: loader,
-      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { habitat: [] } }),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     try {
@@ -665,7 +658,6 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const empty = { type: 'FeatureCollection' as const, features: [] }
     const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
       [PAYLOAD_CHARGER_KEY]: loader,
-      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { milieux: [] } }),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     try {
@@ -708,7 +700,6 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const empty = { type: 'FeatureCollection' as const, features: [] }
     const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
       [PAYLOAD_CHARGER_KEY]: loader,
-      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { milieux: [] } }),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     await router.replace({ query: { ...router.currentRoute.value.query, detail: '2025' } })
@@ -745,7 +736,6 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const empty={type:'FeatureCollection' as const,features:[]}
     const wrapper=mount(IndicateurView,{global:{plugins:[router],provide:{
       [PAYLOAD_CHARGER_KEY]:loader,
-      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]:async()=>({schemaVersion:'1' as const,routes:{milieux:[]}}),
       [GEOMETRIE_CHARGER_KEY]:async()=>({communes:empty,epcis:empty,departements:empty}),
     }}})
     await flushPromises()
@@ -788,7 +778,6 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const empty = { type: 'FeatureCollection' as const, features: [] }
     const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
       [PAYLOAD_CHARGER_KEY]: loader,
-      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { milieux: [] } }),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     await flushPromises()
@@ -829,7 +818,6 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const empty = { type: 'FeatureCollection' as const, features: [] }
     const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
       [PAYLOAD_CHARGER_KEY]: loader,
-      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { milieux: [] } }),
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     await flushPromises()

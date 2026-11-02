@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chargerCohorteScalaire, chargerCohortePageScalaire, chargerCohortesScalaires, chargerRangScalaire,
   chargerComparaisonsScalaires, indicateursScalairesEnregistres, pagesScalairesEnregistrees, remplacerFaitsScalaires,
-  scalarCohortEnabled, validerEnregistrementScalaires } from '../payload/scalarCohort'
+  validerEnregistrementScalaires } from '../payload/scalarCohort'
 import { territoiresFixture, indicateursEconomieFixture } from '../payload/fixtures'
 import { validerCatalogueNavigateur } from '../payload/validate'
 import type { SemanticReadItem, SemanticResourceDeclaration } from '../payload/semanticResourceClient'
@@ -12,7 +12,6 @@ const themeRaw = (theme: string) => JSON.parse(readFileSync(join(process.cwd(), 
 const economy = themeRaw('economie')
 const habitat = themeRaw('habitat')
 
-beforeEach(() => { vi.stubEnv('VITE_SCALAR_COHORT_API', '1') })
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 function pageFor(theme: string, indicator: string) {
@@ -158,10 +157,7 @@ function comparisonFixture(theme: string, indicator: string, item: SemanticReadI
 }
 
 describe('ordinary scalar producer declarations and semantic acquisition', () => {
-  it('keeps the existing switch default and preserves producer registration boundaries', () => {
-    expect(scalarCohortEnabled({})).toBe(false)
-    expect(scalarCohortEnabled({ VITE_SCALAR_COHORT_API: '0' })).toBe(false)
-    expect(scalarCohortEnabled({ VITE_SCALAR_COHORT_API: '1' })).toBe(true)
+  it('preserves producer registration boundaries without an environment switch (#871)', () => {
     const registered = indicateursScalairesEnregistres(habitat)
     expect(registered).toContain('prix_m2')
     const metadata = validerCatalogueNavigateur(habitat, 'theme_habitat.json')

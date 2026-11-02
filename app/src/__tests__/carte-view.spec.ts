@@ -436,7 +436,6 @@ describe('CarteView — les états (chargement / erreur / fond indisponible)', (
 
 describe('CarteView — la carte avec fond publié', () => {
   it('masque le scalaire statique tant que le cohort est indisponible puis récupère via le retry', async () => {
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     const metadata = JSON.parse(await (await import('node:fs/promises')).readFile('../public/data/theme_demographie.json', 'utf8'))
     const page = metadata.indicator_pages.densite
     const resource = { resource_id: 'densite', theme_id: 'demographie', indicator_id: 'densite', label: 'Densité',

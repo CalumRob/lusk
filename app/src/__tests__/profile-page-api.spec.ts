@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import { territoiresFixture } from '../payload/fixtures'
 import type { ThemeMetadata, TerritoireType } from '../payload/types'
-import { INDICATOR_READ_MODEL_CHARGER_KEY, INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY } from '../payload/indicatorReadModel'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
@@ -27,8 +26,6 @@ type ProfileSpec = {
 const themeNames = ['demographie', 'habitat', 'mobilite'] as const
 const metadataByTheme = Object.fromEntries(themeNames.map((theme) => [theme,
   JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8')) as ThemeMetadata & JsonRecord]))
-const currentReadModelManifestRoutes = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data',
-  'modeles-lecture', 'manifest.json'), 'utf8')).routes as Record<string, string[]>
 
 function profilesFromProducerMetadata(): ProfileSpec[] {
   const profiles: ProfileSpec[] = []
@@ -361,7 +358,7 @@ function pageLoader(staticFiles: string[], options: { failThemeMetadata?: number
 }
 
 async function mountPage(theme: string, indicator: string, transport: ReturnType<typeof createTransport>, query = 'territoire=22001&niveau=commune',
-  options: { manifestRoutes?: Record<string, string[]>; failThemeMetadata?: number; invalidThemeMetadata?: number } = {}) {
+  options: { failThemeMetadata?: number; invalidThemeMetadata?: number } = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(`/indicateurs/${theme}/${indicator}?${query}`)
   await router.isReady()
@@ -370,8 +367,6 @@ async function mountPage(theme: string, indicator: string, transport: ReturnType
   vi.stubGlobal('fetch', transport.fetcher)
   const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
      [PAYLOAD_CHARGER_KEY]: pageLoader(staticFiles, options),
-     [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: options.manifestRoutes ?? {} }),
-    [INDICATOR_READ_MODEL_CHARGER_KEY]: vi.fn(async () => { throw new Error('profile route must not load a static read model') }),
     [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
   }, stubs: { MapExplorer: {
     name: 'MapExplorer', props: ['payload', 'activeIds', 'theme', 'couche', 'niveau', 'territoireCible', 'requeteZoom', 'masques'],
@@ -385,7 +380,6 @@ afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 describe('les dix pages de profils déclarés utilisent le lecteur sémantique commun', () => {
   it('découvre la famille par le catalogue producteur et couvre le census exact, sans charger de numérics statiques', async () => {
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
     expect(profileSpecs.map(({ theme, indicator, family }) => [theme, indicator, family])).toEqual([
       ['demographie', 'structure_age', 'pyramid'],
       ['habitat', 'mix_logements', 'composition'], ['habitat', 'statut', 'composition'],
@@ -643,7 +637,7 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     wrapper.unmount()
   })
 
-  it('découvre le profil avant le manifeste courant si famille et marqueur éditoriaux manquent', async () => {
+  it('découvre le profil par le catalogue producteur même si famille et marqueur éditoriaux manquent', async () => {
     const spec = profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!
     const saved = spec.metadata.profile_contracts
     const savedPage = spec.metadata.indicator_pages?.[spec.indicator]
@@ -652,7 +646,7 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     const transport = createTransport()
     try {
       const mounted = await mountPage(spec.theme, spec.indicator, transport,
-        'territoire=22001&niveau=commune', { manifestRoutes: currentReadModelManifestRoutes })
+        'territoire=22001&niveau=commune')
       await flushPromises()
       expect(transport.calls.some(({ url }) => url === '/api/resources')).toBe(true)
       expect(transport.profileFactsCalls).toHaveLength(0)
@@ -660,7 +654,8 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
       expect(mounted.wrapper.find('[role="alert"] button').text()).toContain('Réessayer')
       expect(mounted.staticFiles.some((file) => file.startsWith('indicateurs_'))).toBe(false)
       expect(transport.calls.some(({ url }) => url.startsWith('/data/indicateurs_'))).toBe(false)
-      expect(transport.calls.some(({ url }) => url.includes('modeles-lecture/indicateurs'))).toBe(false)
+      expect(transport.calls.some(({ url }) => url.includes('/data/modeles-lecture/')),
+        transport.calls.map(({ url }) => url).join(', ')).toBe(false)
       mounted.wrapper.unmount()
     } finally {
       spec.metadata.profile_contracts = saved

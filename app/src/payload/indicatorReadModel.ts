@@ -1,17 +1,22 @@
 import type {
   Indicateur,
   IndicatorPageMetadata,
-  Payload,
   SourceRecord,
   Territoire,
   TerritoireType,
-  ThemeMetadata,
   Theme,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
 import { PayloadError, validerIndicateurs } from './validate'
-import type { InjectionKey } from 'vue'
 
+/**
+ * Artifact schema validators for the generated per-Indicateur read models
+ * (ADR-0031). Since #871 the browser no longer selects, fetches or projects
+ * these models: route classification is producer-owned (`/api/resources`)
+ * and unknown/retired routes render the honest unknown-indicator state.
+ * The committed models and manifest remain producer-side publication and
+ * recovery assets — these validators keep their schema contract tested.
+ */
 export interface IndicatorReadModel {
   schemaVersion: '1'
   snapshotId: string
@@ -29,20 +34,6 @@ export interface IndicatorReadModelManifest {
   schemaVersion: '1'
   routes: Partial<Record<Theme, string[]>>
 }
-
-export type ChargerModeleIndicateur = (
-  theme: Theme,
-  indicator: string,
-  territories: Territoire[],
-) => Promise<IndicatorReadModel>
-
-export type ChargerManifesteModelesLecture = () => Promise<IndicatorReadModelManifest>
-
-export const INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY: InjectionKey<ChargerManifesteModelesLecture> =
-  Symbol('indicator-read-model-manifest-charger')
-
-export const INDICATOR_READ_MODEL_CHARGER_KEY: InjectionKey<ChargerModeleIndicateur> =
-  Symbol('indicator-read-model-charger')
 
 type JsonObject = Record<string, unknown>
 
@@ -68,7 +59,9 @@ function stringArray(value: unknown, file: string, field: string): string[] {
   return value as string[]
 }
 
-/** Validate the generated index before it can influence route loading. */
+/** Validate the generated route index against its published schema — an
+ * artifact contract only: since #871 no browser code consults the manifest,
+ * so nothing it lists can influence route loading. */
 export function validerManifesteModelesLecture(
   raw: unknown,
   file: string,
@@ -91,30 +84,6 @@ export function validerManifesteModelesLecture(
   }
 
   return { schemaVersion: '1', routes }
-}
-
-/** Load the generated route index before deciding which page payload to open. */
-export const chargerManifesteModelesLecture: ChargerManifesteModelesLecture = async () => {
-  const file = 'modeles-lecture/manifest.json'
-  const url = `/data/${file}`
-  let response: Response
-  try {
-    response = await fetch(url)
-  } catch (cause) {
-    throw new PayloadError(
-      'fetch',
-      file,
-      `Impossible de charger ${url} : ${cause instanceof Error ? cause.message : String(cause)}`,
-    )
-  }
-  if (!response.ok) throw new PayloadError('fetch', file, `Réponse HTTP ${response.status} pour ${url}`)
-  let raw: unknown
-  try {
-    raw = await response.json()
-  } catch {
-    throw new PayloadError('fetch', file, `JSON illisible dans ${url}`)
-  }
-  return validerManifesteModelesLecture(raw, file)
 }
 
 function validatePage(raw: unknown, file: string, indicator: string): IndicatorPageMetadata {
@@ -171,7 +140,8 @@ function validateSourceRecords(
   return records
 }
 
-/** Validate one independently fetched Page d'indicateur read model (ADR-0031). */
+/** Validate one generated Page d'indicateur read model (ADR-0031) against its
+ * published territorial reference. */
 export function validerModeleIndicateur(
   raw: unknown,
   file: string,
@@ -217,65 +187,5 @@ export function validerModeleIndicateur(
     detailLabels,
     sourceRecords,
     facts,
-  }
-}
-
-/** Load the static indicator model without opening the legacy global tables. */
-export const chargerModeleIndicateur: ChargerModeleIndicateur = async (
-  theme,
-  indicator,
-  territories,
-) => {
-  const file = `indicateurs/${theme}/${indicator}.json`
-  const url = `/data/modeles-lecture/${file}`
-  let response: Response
-  try {
-    response = await fetch(url)
-  } catch (cause) {
-    throw new PayloadError(
-      'fetch',
-      file,
-      `Impossible de charger ${url} : ${cause instanceof Error ? cause.message : String(cause)}`,
-    )
-  }
-  if (!response.ok) {
-    throw new PayloadError('fetch', file, `Réponse HTTP ${response.status} pour ${url}`)
-  }
-  let raw: unknown
-  try {
-    raw = await response.json()
-  } catch {
-    throw new PayloadError('fetch', file, `JSON illisible dans ${url}`)
-  }
-  return validerModeleIndicateur(raw, file, territories, { theme, indicator })
-}
-
-/** Adapt one indicator model to the legacy page selectors during migration. */
-export function payloadDepuisModeleIndicateur(
-  model: IndicatorReadModel,
-  territories: Territoire[],
-): Payload {
-  const metadata: ThemeMetadata = {
-    theme: model.theme,
-    label: model.themeLabel,
-    subgroups: [],
-    indicator_keys: [model.indicator],
-    story_keys: [],
-    sources: { [model.indicator]: model.page.sources[0]! },
-    source_records: model.sourceRecords,
-    indicator_labels: { [model.indicator]: model.page.label },
-    detail_labels: { [model.indicator]: model.detailLabels },
-    param_labels: {},
-    indicator_pages: { [model.indicator]: model.page },
-  }
-  return {
-    territoires: territories,
-    indicateurs: model.facts,
-    histoires: [],
-    apercu: null,
-    runReport: null,
-    vintages: null,
-    programmes: null,
-    themeMetadata: { [model.theme]: metadata },
   }
 }
