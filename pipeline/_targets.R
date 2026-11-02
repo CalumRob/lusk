@@ -241,10 +241,10 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
   vintages <- as.name(paste0("vintages_table_", nom))
   payload <- as.name(paste0("payload_", nom))
   metadata <- as.name(paste0("metadata_", nom))
-  # Every theme exposes the same publication target to downstream projections.
-  # `publie_<theme>` normalizes both the custom `publier` seam and the shared
-  # `publish()` seam to the payload returned by publication.
-  modele_source <- as.name(paste0("publie_", nom))
+  # Every theme exposes the same publication target to the downstream
+  # artifacts (serving, rapports). `publie_<theme>` normalizes both the custom
+  # `publier` seam and the shared `publish()` seam to the payload returned by
+  # publication.
 
   # vintages : le builder du thème prend le cache seulement s'il le déclare —
   # le dispatch sur la signature, à l'identique de run_pipeline (Démographie
@@ -350,33 +350,11 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
       )
     ))
 
-    # Les Pages d'indicateur optent explicitement dans leur métadonnée pour la
-    # projection de lecture. Le target reste unique par thème pour que l'ajout
-    # d'une page ne nécessite aucune nouvelle liste câblée dans l'orchestrateur.
-    if (any(vapply(
-      theme$metadata()$indicator_pages,
-      function(page) isTRUE(page$read_model),
-      logical(1)
-    ))) {
-      modeles <- as.name(paste0("modeles_lecture_", nom))
-      grappe <- c(grappe, list(
-        tar_target_raw(
-          as.character(modeles),
-          bquote({
-            .(modele_source)
-            .(metadata)
-            .(vintages)
-            publier_modeles_lecture(
-              .(modele_source),
-              .(metadata),
-              .(vintages),
-              sortie = .(sortie)
-            )
-          }),
-          format = "file"
-        )
-      ))
-    }
+    # Issue #890 : la projection de lecture par Page d'indicateur
+    # (modeles_lecture_<thème>, pilotée par le registre read_model de la
+    # métadonnée) n'est plus câblée ici — la génération planifiée des modèles
+    # de lecture est retirée du graphe. Le champ read_model reste un champ
+    # validé des métadonnées épinglées (validation des artefacts publiés).
   }
 
   # LE RACCORDEMENT NATIONAL (#728) : les pins versionnés du package (enveloppe,
@@ -1111,105 +1089,16 @@ for (t in THEMES_RUN) {
   precedent <- as.name(paste0("publie_", t$theme))
 }
 
-# Les modèles de lecture par territoire sont construits APRÈS les publications
-# des thèmes : `publie_<thème>` retourne le payload produit par le seam partagé
-# ou spécialisé, donc aucun thème ne perd son payload uniquement parce qu'il
-# n'expose pas de target `payload_<thème>`. Une seule cible agrège les thèmes
-# actifs et écrit chaque adresse de territoire, ce qui évite les courses entre
-# cinq écrivains qui se remplaceraient mutuellement.
-targets_modeles_territoire <- list()
-if (selection_complete && length(THEMES_RUN) > 0L &&
-    all(vapply(THEMES_RUN, function(t) "metadata" %in% names(t), logical(1)))) {
-  noms_themes <- vapply(THEMES_RUN, function(t) t$theme, character(1))
-  directions_modeles <- stats::setNames(
-    lapply(THEMES_RUN, function(t) t$directions),
-    noms_themes
-  )
-  payload_symbols <- lapply(noms_themes, function(nom) {
-    as.name(paste0("publie_", nom))
-  })
-  metadata_symbols <- lapply(noms_themes, function(nom) {
-    as.name(paste0("metadata_", nom))
-  })
-  vintage_symbols <- lapply(noms_themes, function(nom) {
-    as.name(paste0("vintages_table_", nom))
-  })
-  ordre <- c("programmes", "mobilite", "demographie", "habitat", "economie", "milieux")
-  index <- match(ordre[-1L], noms_themes)
-  noms_themes <- ordre
-  directions_modeles <- c(
-    list(programmes = theme_programmes()$directions),
-    directions_modeles[index]
-  )
-  payload_symbols <- c(list(as.name("projection_programmes")),
-                       payload_symbols[index])
-  metadata_symbols <- c(list(as.name("metadata_programmes")),
-                         metadata_symbols[index])
-  vintage_symbols <- c(list(as.name("vintages_table_programmes")),
-                        vintage_symbols[index])
-  payloads_expr <- as.call(c(
-    list(as.name("list")),
-    payload_symbols
-  ))
-  metadatas_expr <- as.call(c(
-    list(as.name("list")),
-    metadata_symbols
-  ))
-  vintages_expr <- as.call(c(
-    list(as.name("list")),
-    vintage_symbols
-  ))
-  snapshot_expr <- if (selection_complete) {
-    bquote(identifiant_snapshot(vintages[["programmes"]]))
-  } else {
-    bquote(identifiant_snapshot(vintages[[length(vintages)]]))
-  }
-  targets_modeles_territoire <- list(tar_target_raw(
-    "modeles_territoire",
-    bquote({
-      payloads <- stats::setNames(.(payloads_expr), .(noms_themes))
-      metadatas <- stats::setNames(.(metadatas_expr), .(noms_themes))
-      vintages <- stats::setNames(.(vintages_expr), .(noms_themes))
-      publier_modeles_territoire_complet(
-        payloads, metadatas, vintages,
-        sortie = .(SORTIE_RUN),
-        # run_pipeline() est l'oracle séquentiel : sur le run complet,
-        # Programmes est publié en dernier et porte l'horloge finale.
-        snapshot_id = .(snapshot_expr),
-        directions = .(directions_modeles)
-      )
-    }),
-    format = "file"
-  ))
-}
-
-# L'index de chargement des Pages d'indicateur est une petite projection du
-# même registre `indicator_pages.read_model`. Il est publié par une cible
-# unique : l'app ne maintient aucune liste parallèle de routes optées.
-target_manifeste_modeles_lecture <- list()
-if (length(THEMES_RUN) > 0L && all(vapply(
-  THEMES_RUN,
-  function(t) "metadata" %in% names(t),
-  logical(1L)
-))) {
-  noms_manifeste <- vapply(THEMES_RUN, function(t) t$theme, character(1L))
-  metadata_manifeste <- lapply(noms_manifeste, function(nom) {
-    as.name(paste0("metadata_", nom))
-  })
-  if (selection_complete) {
-    noms_manifeste <- c("programmes", noms_manifeste)
-    metadata_manifeste <- c(list(as.name("metadata_programmes")), metadata_manifeste)
-  }
-  metadatas_manifest_expr <- as.call(c(list(as.name("list")), metadata_manifeste))
-  target_manifeste_modeles_lecture <- list(tar_target_raw(
-    "manifeste_modeles_lecture",
-    bquote({
-      metadatas <- stats::setNames(.(metadatas_manifest_expr), .(noms_manifeste))
-      publier_manifeste_modeles_lecture(metadatas, sortie = .(SORTIE_RUN))
-    }),
-    format = "file"
-  ))
-}
+# Issue #890 : les modèles de lecture ne sont plus générés par le graphe — la
+# cible agrégée modeles_territoire (son appel planifié en mémoire à
+# publier_modeles_territoire_complet) et la cible manifeste_modeles_lecture
+# sont retirées ici, comme les cibles par thème modeles_lecture_<thème> dans
+# grappe_theme. Aucun chemin planifié n'écrit plus sous modeles-lecture/** :
+# les artefacts publiés et leurs validateurs restent inchangés, et la commande
+# manuelle de rafraîchissement JSON (scripts/publish-territory-models.R ->
+# publier_modeles_territoire_depuis_json) reste le seul générateur de modèles
+# de territoire jusqu'au suivi #891. La chaîne Programmes ci-dessus
+# (projection_programmes comprise) garde sa reachability inchangée.
 
 rapports <- list()
 precedent <- NULL
@@ -1334,8 +1223,6 @@ list(
   classes_densite_cible,
   grappes,
   publies,
-  targets_modeles_territoire,
-  target_manifeste_modeles_lecture,
   fusion_themes(themes_fusion),
   scalar_artifacts_themes(),
   profile_artifacts_themes(),
