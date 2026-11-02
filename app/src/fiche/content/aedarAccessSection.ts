@@ -23,6 +23,19 @@ export const AEDAR_ACCESS_SECTION_LABEL = 'La ville du 1/12, du 1/6, du 1/4 et d
 export const AEDAR_EQUIPMENT_PROFILE_SECTION_LABEL = 'Au moins un quart des adresses'
 export const AEDAR_EQUIPMENT_EXPLORER_SECTION_LABEL = 'Bac à sable'
 
+/**
+ * App-owned presentation descriptors (key/label/unit) of the two car-overview
+ * readings. The AEDAR producer/API contract declares only measure column names
+ * (`count_<horizon>_<mode>_<statistic>`) — no display units — so these
+ * descriptors live in this semantic content module, single-sourced and consumed
+ * by BOTH the hydrated and the pending builders so pending facts cannot drift
+ * (#889 Standards review).
+ */
+export const AEDAR_CAR_OVERVIEW_SCALAR_READINGS = [
+  { key: 'meanDiversity', label: 'Types d’équipements', unit: 'types / adresse' },
+  { key: 'meanVolume', label: 'Établissements', unit: 'établissements / adresse' },
+] as const
+
 type AedarReady = Extract<AedarFetchResult, { status: 'ready' }>
 
 function sameAedarPublication(left: AedarReady, right: AedarReady): boolean {
@@ -251,6 +264,15 @@ function carOverviewProse(horizonMinutes: number): readonly TextBlock[] {
   ]]
 }
 
+/** Shared overview presentation, consumed by the ready and pending builders alike (#889 review). */
+function carOverviewMapFigureTitle(horizonMinutes: number): TextBlock {
+  return [text(`Diversité de l’offre accessible en voiture en ${horizonMinutes} minutes`)]
+}
+
+function carOverviewScalarFigureTitle(horizonMinutes: number): string {
+  return `En voiture en ${horizonMinutes} minutes (moyenne par adresse)`
+}
+
 /** Address means are additive across TYPEQU; no address-file reread is needed. */
 export function aedarCarAccessOverviewSection(
   data: AedarReady,
@@ -269,10 +291,7 @@ export function aedarCarAccessOverviewSection(
   const referenceMeans = reference && sameSourceClock && sameAedarPublication(reference.data, data)
     ? carAccessMeans(reference.data, reference.territory)
     : null
-  const scalars = ([
-    { key: 'meanDiversity', label: 'Types d’équipements', unit: 'types / adresse' },
-    { key: 'meanVolume', label: 'Établissements', unit: 'établissements / adresse' },
-  ] as const).map((reading) => {
+  const scalars = AEDAR_CAR_OVERVIEW_SCALAR_READINGS.map((reading) => {
     const value = means[reading.key]
     const referenceValue = referenceMeans?.[reading.key] ?? null
     return {
@@ -292,9 +311,9 @@ export function aedarCarAccessOverviewSection(
     evidence: {
       kind: 'aedar-car-overview', territory: { type: territory.type, code: territory.code, name: territory.name },
       horizonMinutes, mapModes: ['car'],
-      mapFigureTitle: [text(`Diversité de l’offre accessible en voiture en ${horizonMinutes} minutes`)],
+      mapFigureTitle: carOverviewMapFigureTitle(horizonMinutes),
       meanDiversity, meanVolume, nAddresses, scalars,
-      scalarFigureTitle: `En voiture en ${horizonMinutes} minutes (moyenne par adresse)`,
+      scalarFigureTitle: carOverviewScalarFigureTitle(horizonMinutes),
       comparisonLabel: reference && scalars.some((scalar) => scalar.reference !== null)
         ? `moyenne des adresses résidentielles de ${reference.label}` : null,
       unitIntroduction: carOverviewUnitIntroduction(territory, nAddresses, source?.source_url ?? null),
@@ -318,13 +337,10 @@ export function aedarPendingCarAccessOverviewSection(territory: TerritoryIdentit
     evidence: {
       kind: 'aedar-car-overview', territory: { type: territory.type, code: territory.code, name: territory.name },
       horizonMinutes, mapModes: ['car'],
-      mapFigureTitle: [text(`Diversité de l’offre accessible en voiture en ${horizonMinutes} minutes`)],
+      mapFigureTitle: carOverviewMapFigureTitle(horizonMinutes),
       meanDiversity: null, meanVolume: null, nAddresses: null,
-      scalars: [
-        { key: 'meanDiversity', label: 'Types d’équipements', unit: 'types / adresse', value: null, reference: null },
-        { key: 'meanVolume', label: 'Établissements', unit: 'établissements / adresse', value: null, reference: null },
-      ],
-      scalarFigureTitle: `En voiture en ${horizonMinutes} minutes (moyenne par adresse)`,
+      scalars: AEDAR_CAR_OVERVIEW_SCALAR_READINGS.map((reading) => ({ ...reading, value: null, reference: null })),
+      scalarFigureTitle: carOverviewScalarFigureTitle(horizonMinutes),
       comparisonLabel: null,
       unitIntroduction: carOverviewUnitIntroduction(territory, null, null),
       availability: 'incomplete', source: null,

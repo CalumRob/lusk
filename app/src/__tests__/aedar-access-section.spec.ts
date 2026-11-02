@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { aedarAccessSection, aedarPendingPrototypeSections, aedarPrototypeSections, AEDAR_PROTOTYPE_HORIZON_MINUTES } from '@/fiche/content/aedarAccessSection'
+import { aedarAccessSection, aedarPendingPrototypeSections, aedarPrototypeSections, AEDAR_CAR_OVERVIEW_SCALAR_READINGS, AEDAR_PROTOTYPE_HORIZON_MINUTES } from '@/fiche/content/aedarAccessSection'
 import { aedarDiversityLossSection } from '@/fiche/content/aedarDiversityLossMaps'
 import { AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
@@ -321,5 +321,35 @@ describe('aedarPendingPrototypeSections (#769 layout stability)', () => {
       expect(section.provenance).toEqual([])
     }
     expect(pending[0].availability).toBe('incomplete')
+  })
+
+  it('consumes the single shared scalar descriptor set in both builders, with pending values null (#889 review)', () => {
+    // The AEDAR producer/API contract declares only measure column names — no
+    // display units — so key/label/unit are app-owned descriptors, exported
+    // once and consumed by BOTH the hydrated and the pending builders.
+    const descriptors = AEDAR_CAR_OVERVIEW_SCALAR_READINGS.map(({ key, label, unit }) => ({ key, label, unit }))
+    expect(descriptors).toEqual([
+      { key: 'meanDiversity', label: 'Types d’équipements', unit: 'types / adresse' },
+      { key: 'meanVolume', label: 'Établissements', unit: 'établissements / adresse' },
+    ])
+    const ready = aedarPrototypeSections(aedarReady('22001'), territory, { lossMapMetadata })[0]
+    const pending = aedarPendingPrototypeSections(territory, { lossMapMetadata })[0]
+    if (ready.evidence?.kind !== 'aedar-car-overview' || pending.evidence?.kind !== 'aedar-car-overview') {
+      throw new Error('aedar-car-overview evidence expected')
+    }
+    const shapeOf = (scalars: readonly { key: string; label: string; unit: string }[]) =>
+      scalars.map(({ key, label, unit }) => ({ key, label, unit }))
+    // Both builders take the descriptors from the same exported set: pending
+    // facts cannot drift from the hydrated presentation.
+    expect(shapeOf(ready.evidence.scalars)).toEqual(descriptors)
+    expect(shapeOf(pending.evidence.scalars)).toEqual(descriptors)
+    // Ready readings carry real numbers from the fixture; pending stay null
+    // (rendered '—') — no fabricated fallback.
+    expect(ready.evidence.scalars.map((scalar) => typeof scalar.value)).toEqual(['number', 'number'])
+    expect(pending.evidence.scalars.map((scalar) => [scalar.value, scalar.reference])).toEqual([[null, null], [null, null]])
+    // The remaining overview presentation (map title, scalar figure title) is
+    // shared verbatim between pending and hydrated too.
+    expect(pending.evidence.mapFigureTitle).toEqual(ready.evidence.mapFigureTitle)
+    expect(pending.evidence.scalarFigureTitle).toEqual(ready.evidence.scalarFigureTitle)
   })
 })
