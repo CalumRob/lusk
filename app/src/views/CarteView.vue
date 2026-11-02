@@ -64,6 +64,7 @@ import { themesPresent } from '@/payload/selectors'
 import { SIGLES_PROGRAMMES, THEMES_CANONIQUES } from '@/payload/types'
 import type { Payload, SigleProgramme, Territoire, Theme, ThemeMetadata, IndicatorPageMetadata, NativeThemeFactContract } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
+import type { Fichier } from '@/payload/loader'
 import { chargerRangScalaire } from '@/payload/scalarCohort'
 import type { ScalarComparisonRank } from '@/payload/scalarCohort'
 import { acquireMapThemeFacts } from '@/payload/mapSemanticAcquisition'
@@ -72,12 +73,33 @@ import type { Indicateur } from '@/payload/types'
 const route = useRoute()
 const router = useRouter()
 
+/**
+ * #873 — le démarrage EXPLICITE de la carte, demand-driven comme la
+ * production. Le wait-set reste la porte de rendu ; la barre d'onglets de
+ * thèmes (themesPresent lit indicateurs/histoires), la porte de présence
+ * `?theme=` et les descripteurs de page des rangs de carte (themeMetadata)
+ * lisent les sections des six thèmes canoniques — qu'AUCUNE autre surface
+ * de production ne charge depuis #868/#871. La carte demande donc
+ * elle-même ce qu'elle rend (décision propriétaire, #873) : jamais un
+ * défaut eager implicite du chargeur de test, jamais un démarrage
+ * accidentel des tables numériques ailleurs que sur la carte.
+ */
+const FICHIERS_DEMARRAGE_CARTE = [
+  'territoires',
+  'run-report',
+  ...THEMES_CANONIQUES.flatMap((theme) => [
+    `indicateurs_${theme}`,
+    `histoires_${theme}`,
+    `theme_${theme}`,
+  ]),
+] as Fichier[]
+
 const {
   payload,
   erreur: erreurPayload,
   chargement: chargementPayload,
   recharger: rechargerPayload,
-} = usePayload({ attendre: ['territoires', 'run-report'] })
+} = usePayload({ attendre: ['territoires', 'run-report'], demarrer: FICHIERS_DEMARRAGE_CARTE })
 const {
   masques,
   erreur: erreurGeometrie,
