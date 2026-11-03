@@ -4,7 +4,6 @@ import { resolve } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed } from 'vue'
 
 import TerritoireView from '../views/TerritoireView.vue'
 import BlocProgrammes from '../components/fiche/BlocProgrammes.vue'
@@ -12,8 +11,7 @@ import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilie
 import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import CahierComparisonNote from '../fiche/prototype/CahierComparisonNote.vue'
-import { OPTIONS_COMPARAISON_KEY, contextesDepuisReference, optionsContexteComparaison } from '../fiche/comparisonContext'
-import type { TerritoryComparisonMode } from '../fiche/comparisonContext'
+import { contextesDepuisReference } from '../fiche/comparisonContext'
 import {
   territoiresFixture,
 } from '../payload/fixtures'
@@ -105,20 +103,9 @@ async function monter(
   return { router, wrapper, charger }
 }
 
-async function monterNoteComparaison(mode: TerritoryComparisonMode) {
-  const contextes = contextesReference('22001')
-  const options = optionsContexteComparaison({ territoire: cibleReference('22001'), contextes })
-  const router = createRouter({ history: createMemoryHistory(), routes })
-  await router.push(`/territoire/commune/22001?theme=mobilite&comparaison=${mode}`)
-  await router.isReady()
-  const wrapper = mount(CahierComparisonNote, {
-    props: { label: contextes[mode]!.scope.label },
-    global: {
-      plugins: [router],
-      provide: { [OPTIONS_COMPARAISON_KEY]: computed(() => options) },
-    },
-  })
-  return { contextes, router, wrapper }
+/** #860 — la note de comparaison du cahier est en lecture seule (plus de sélecteur). */
+function monterNoteComparaison(label: string) {
+  return mount(CahierComparisonNote, { props: { label } })
 }
 
 describe('TerritoireView — modèle atomique par territoire', () => {
@@ -421,12 +408,18 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         }
         if (comparisonAttempts++ === 0) return new Response('comparison retry offline', { status: 503 })
         return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => {
+          // #860 — la sélection par défaut d'une commune est niveau-natif (son
+          // EPCI) : la passe selected_comparison échoie les membres tapés demandés.
+          const members = (item.intent as { members?: Array<{ type: string; id: string }> }).members ?? null
+          const selection = members?.map((member) => ({ territory_type: member.type, territory_id: member.id })) ?? null
           const data = { resource: legacy.resource_id, target: item.target,
             contract: 'indicator-comparison-v1', complete_theme: false,
             indicator_id: legacy.indicator_id, shape: 'series', content_version: 'legacy-series-v1',
-            reference_content_version: 'legacy-reference-v1', selection: null,
-            scope: { kind: 'density_class', territory_type: 'commune',
-              density_class_code: cibleReference('22001').classe_densite_code, member_count: 2 },
+            reference_content_version: 'legacy-reference-v1', selection,
+            scope: selection
+              ? { kind: 'explicit_selection', territory_type: 'commune', member_count: 2 }
+              : { kind: 'density_class', territory_type: 'commune',
+                density_class_code: cibleReference('22001').classe_densite_code, member_count: 2 },
             result: { indicator_id: legacy.indicator_id, label: legacy.label, facet: null,
               source_facet: null, unit: legacy.unit, direction: legacy.direction,
               descriptor_version: 'legacy-series-descriptor-v1', status: 'unavailable',
@@ -462,19 +455,26 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       source_version: null, source_reference_date: null, source_publication_date: null,
       vintage_version: null, vintage_date_reference: null, vintage_date_publication: null })
     expect(renderedAnnual[1]).not.toHaveProperty('fact_sources')
+    // #860 — le défaut d'une commune est niveau-natif : la passe de comparaison
+    // part en selected_comparison avec la cohorte communale de son EPCI.
+    const membresDefaut = referenceReelle
+      .filter((candidate) => candidate.type === 'commune' && candidate.epci === cibleReference('22001').epci)
+      .map((candidate) => ({ territory_type: 'commune' as const, territory_id: candidate.territoire }))
+      .sort((a, b) => a.territory_id.localeCompare(b.territory_id))
     expect(requests.map((items) => items.map((item) => item.intent.kind))).toEqual([
-      ['facts', 'fixed_comparison'], ['facts'], ['fixed_comparison'],
+      ['facts', 'fixed_comparison'], ['facts'], ['selected_comparison'],
     ])
+    expect(requests[2]![0]!.intent.members).toEqual(membresDefaut.map((m) => ({ type: m.territory_type, id: m.territory_id })))
 
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
 
     expect(requests).toHaveLength(4)
-    expect(requests[3]!.map((item) => item.intent.kind)).toEqual(['fixed_comparison'])
-    const comparison = { theme_id: 'programmes' as const, comparison_reads: [{
+    expect(requests[3]!.map((item) => item.intent.kind)).toEqual(['selected_comparison'])
+    const comparison = { theme_id: 'programmes' as const, selection: membresDefaut, comparison_reads: [{
       resource: legacy.resource_id, shapes: legacy.shapes, declaration: legacy, data: successfulComparison!,
     }] }
-    expect(() => validerReponseComparaisonTheme('programmes', comparison, undefined,
+    expect(() => validerReponseComparaisonTheme('programmes', comparison, membresDefaut,
       { type: 'commune', id: '22001' })).not.toThrow()
     expect(() => semanticComparisonForTheme(comparison, {
       target: { territoire: '22001', type: 'commune', classe_densite_code: cibleReference('22001').classe_densite_code },
@@ -495,7 +495,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(referenceReelle.length).toBeGreaterThan(1000)
     const parent = referenceReelle.find((candidate) => candidate.type === 'epci' &&
       candidate.territoire === cible.epci)!
-    const region = referenceReelle.find((candidate) => candidate.type === 'region')!
     const resolvedMembers = referenceReelle.filter((candidate) => candidate.type === 'commune' &&
       candidate.epci === parent.territoire)
     const resolvedBretagne = referenceReelle.filter((candidate) => candidate.type === 'commune')
@@ -518,10 +517,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         territory_type: member.type, territory_id: member.id,
       })) : null
       // Model the API resolver: one typed EPCI identity expands against the
-      // canonical reference to the actual commune perimeter used for rank.
+      // canonical reference to the actual commune perimeter used for rank;
+      // typed commune members (densité, sélection tapée) resolve as themselves.
       const selectedIdentity = selection?.[0]
-      const resolvedSelection = selection?.length === 0 ? [] : selectedIdentity?.territory_type === 'epci'
-        ? resolvedMembers : selectedIdentity?.territory_type === 'region' ? resolvedBretagne : []
+      const resolvedSelection = !selection || selection.length === 0 ? []
+        : selectedIdentity?.territory_type === 'epci'
+          ? resolvedMembers
+          : selectedIdentity?.territory_type === 'region' ? resolvedBretagne : selection
       const memberCount = isSelected ? resolvedSelection.length : referenceReelle.filter((candidate) =>
         candidate.type === 'commune' && candidate.classe_densite_code === cible.classe_densite_code).length
       const data = { resource: legacy.resource_id, target: item.target,
@@ -567,19 +569,22 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
 
     expect(wrapper.find('.subvention-total').text()).toContain('987')
-    expect(requests).toHaveLength(1)
+    // #860 — la fiche untouched d'une commune lit son défaut NIVEAU-NATIF : une
+    // passe selected_comparison part dès le chargement avec la cohorte communale
+    // de son EPCI (la densité n'est plus le défaut silencieux).
+    const typedOf = (rows: Territoire[]) => rows
+      .map((row) => ({ type: 'commune' as const, id: row.territoire }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+    const epciTyped = typedOf(resolvedMembers)
+    const bretagneTyped = typedOf(resolvedBretagne)
+    expect(requests).toHaveLength(2)
     expect(requests[0]!.map((item) => item.intent.kind)).toEqual(['facts', 'fixed_comparison'])
-
-    await router.replace({ query: { theme: 'programmes', comparaison: 'epci' } })
-    await flushPromises()
-
-    const selectedBatch = requests.at(-1)!
-    const selectedItem = selectedBatch.find((item) => item.intent.kind === 'selected_comparison')!
-    expect(selectedItem.intent.members).toEqual([{ type: 'epci', id: parent.territoire }])
-    expect(selectedBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+    const defaultBatch = requests[1]!
+    expect(defaultBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+    expect(defaultBatch[0]!.intent.members).toEqual(epciTyped)
     expect(requests.flat().filter((item) => item.intent.kind === 'facts')).toHaveLength(1)
     expect(wrapper.find('.subvention-total').text()).toContain('987')
-    expect(selectedReads.at(-1)?.selection).toEqual([{ territory_type: 'epci', territory_id: parent.territoire }])
+    expect(selectedReads.at(-1)?.selection).toEqual(epciTyped.map((m) => ({ territory_type: m.type, territory_id: m.id })))
     expect(selectedReads.at(-1)?.scope.member_count).toBe(resolvedMembers.length)
     expect(selectedReads.at(-1)?.result.selected_member_count).toBe(resolvedMembers.length)
     expect(selectedReads.at(-1)?.result.rank_size).toBe(resolvedMembers.length)
@@ -590,15 +595,24 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       portee: contextesReference(territoryId).epci!.scope.label, direction: 'high' })
     expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
 
+    // Le preset explicite « epci » résout la même portée que le défaut : le cache
+    // (territoire, thème, sélection) sert la réponse, aucune nouvelle requête.
+    await router.replace({ query: { theme: 'programmes', comparaison: 'epci' } })
+    await flushPromises()
+    expect(router.currentRoute.value.query.comparaison).toBe('epci')
+    expect(requests).toHaveLength(2)
+    expect(requests.flat().filter((item) => item.intent.kind === 'facts')).toHaveLength(1)
+
     const epciRead = selectedReads.at(-1)
     await router.replace({ query: { theme: 'programmes', comparaison: 'bretagne' } })
     await flushPromises()
+    expect(requests).toHaveLength(3)
     const bretagneBatch = requests.at(-1)!
     const bretagneItem = bretagneBatch.find((item) => item.intent.kind === 'selected_comparison')!
-    expect(bretagneItem.intent.members).toEqual([{ type: 'region', id: region.territoire }])
+    expect(bretagneItem.intent.members).toEqual(bretagneTyped)
     expect(bretagneBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
     expect(requests.flat().filter((item) => item.intent.kind === 'facts')).toHaveLength(1)
-    expect(selectedReads.at(-1)?.selection).toEqual([{ territory_type: 'region', territory_id: region.territoire }])
+    expect(selectedReads.at(-1)?.selection).toEqual(bretagneTyped.map((m) => ({ territory_type: m.type, territory_id: m.id })))
     expect(selectedReads.at(-1)?.scope.member_count).toBe(resolvedBretagne.length)
     expect(selectedReads.at(-1)?.result.selected_member_count).toBe(resolvedBretagne.length)
     expect(selectedReads.at(-1)?.result.rank_size).toBe(resolvedBretagne.length)
@@ -609,6 +623,37 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(bretagneAnnual?.comparaisonApi).toMatchObject({ rang: 1, taille: resolvedBretagne.length,
       portee: contextesReference(territoryId).bretagne!.scope.label, direction: 'high' })
     expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
+
+    // Le preset « densite » devient explicite : cohorte de la classe de densité,
+    // membres tapés en communes (plus de défaut silencieux niché).
+    const densityMembers = referenceReelle.filter((candidate) => candidate.type === 'commune' &&
+      candidate.classe_densite_code === cible.classe_densite_code)
+      .map((candidate) => ({ type: 'commune' as const, id: candidate.territoire }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+    await router.replace({ query: { theme: 'programmes', comparaison: 'densite' } })
+    await flushPromises()
+    expect(requests).toHaveLength(4)
+    const densityBatch = requests.at(-1)!
+    expect(densityBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+    expect([...densityBatch[0]!.intent.members].sort((a, b) => a.id.localeCompare(b.id))).toEqual(densityMembers)
+    expect(selectedReads.at(-1)?.scope.member_count).toBe(densityMembers.length)
+
+    // Une sélection explicitement vide part avec [] : aucune comparaison.
+    await router.replace({ query: { theme: 'programmes', comparaison: '' } })
+    await flushPromises()
+    expect(router.currentRoute.value.query.comparaison).toBe('')
+    expect(requests).toHaveLength(5)
+    const emptyBatch = requests.at(-1)!
+    expect(emptyBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+    expect(emptyBatch[0]!.intent.members).toEqual([])
+
+    // Des membres tapés même niveau partent tels quels, dans l'ordre de l'URL.
+    const typed = `${territoryId},${resolvedMembers.find((m) => m.territoire !== territoryId)!.territoire}`
+    await router.replace({ query: { theme: 'programmes', comparaison: typed.split(',').map((id) => `commune:${id}`).join(',') } })
+    await flushPromises()
+    expect(requests).toHaveLength(6)
+    const typedBatch = requests.at(-1)!
+    expect(typedBatch[0]!.intent.members).toEqual(typed.split(',').map((id) => ({ type: 'commune', id })))
     wrapper.unmount()
 
     // If a named scope's canonical identity is missing from the reference, fail
@@ -677,12 +722,16 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     const themeByResource = new Map(nativeResources().map((resource) => [resource.resource_id, resource.theme_id]))
+    // #860 — les passes selected_comparison (sélection de comparaison) ne sont
+    // pas des réchauffages de faits : ne compter que les lots « facts ».
     const requestsByTheme = () => Object.fromEntries(
       ['programmes', 'habitat', 'demographie', 'milieux', 'economie', 'mobilite'].map((theme) => [theme,
-        requests.filter((items) => items.some((item) => themeByResource.get(item.resource) === theme)).length]),
+        requests.filter((items) => items.some((item) => item.intent.kind === 'facts' &&
+          item.target.kind === 'territory' && themeByResource.get(item.resource) === theme)).length]),
     )
     const warmedCounts = requestsByTheme()
-    const themeRequests = requests.filter((items) => items.some((item) => themeByResource.has(item.resource)))
+    const themeRequests = requests.filter((items) => items.some((item) =>
+      item.intent.kind === 'facts' && themeByResource.has(item.resource)))
 
     expect(themeRequests[0]?.every((item) => themeByResource.get(item.resource) === 'programmes')).toBe(true)
     expect(Object.values(warmedCounts).every((count) => count > 0)).toBe(true)
@@ -958,10 +1007,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     await router.replace({ query: { theme: 'economie', comparaison: 'bretagne' } })
     await flushPromises()
-    const bretagne = referenceReelle.find((territory) => territory.type === 'region')!
     const selectedReads = requests.filter((items) =>
       items.some((item) => item.intent.kind === 'selected_comparison'))
-    expect(selectedReads.at(-1)?.[0]?.intent.members).toEqual([{ type: bretagne.type, id: bretagne.territoire }])
+    const bretagneTyped = referenceReelle.filter((territory) => territory.type === 'commune')
+      .map((territory) => ({ type: 'commune' as const, id: territory.territoire }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+    expect(selectedReads.at(-1)?.[0]?.intent.members).toEqual(bretagneTyped)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
 
     resolveOldComparison!()
@@ -1034,8 +1085,16 @@ describe('TerritoireView — modèle atomique par territoire', () => {
             focalReads.set(resource.resource_id, data)
           }
           if (item.intent.kind !== 'selected_comparison') return data
-          const selected = item.intent.members[0]!
-          const selectedMembers = selected.type === 'epci' ? epciMembers : bretagneMembers
+          // #860 — les membres partent en cohorte communale développée (triée) ;
+          // reconnaître la portée EPCI à l'ensemble des ids demandés.
+          const selectedIds = item.intent.members.map((member: { type: string; id: string }) => member.id)
+          const isEpciScope = selectedIds.length === epciMembers.length &&
+            epciMembers.every((member) => selectedIds.includes(member.territoire))
+          const selectedMembers = isEpciScope ? epciMembers
+            : selectedIds.length === bretagneMembers.length &&
+              bretagneMembers.every((member) => selectedIds.includes(member.territoire))
+              ? bretagneMembers
+              : item.intent.members
           const scopeCount = selectedMembers.length
           const focal = focalReads.get(resource.resource_id)
           const comparisonFacet = resource.shapes.includes('ordered_series')
@@ -1073,8 +1132,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       await flushPromises()
       const epciLabel = contextesReference('22001').epci!.scope.label
       verifyCloudAndRank(epciMembers.length, epciLabel, epciMembers.map((member) => member.territoire))
+      // #860 — la sélection EPCI part en membres communaux développés : la
+      // lecture de cohorte n'a plus de filtre epci_id (cohorte Bretagne entière,
+      // le nuage valide la sélection contre la cohorte lue).
       expect(requests.flat().some((item) => item.target.kind === 'territory_cohort' &&
-        item.target.epci_id === parent.territoire && item.resource === readingResource.resource_id)).toBe(true)
+        !item.target.epci_id && item.resource === readingResource.resource_id)).toBe(true)
       expect(selectedRanks.at(-1)).toEqual({ scopeCount: epciMembers.length, rankSize: epciMembers.length })
 
       const requestCountBeforeRegion = requests.length
@@ -1127,8 +1189,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(figure.get('.trajectoire-repere__valeur').text()).toContain('700')
     expect(figure.get('.trajectoire-repere__valeur').text()).toContain('€/m²')
     expect(figure.get('.trajectoire-repere .puce-rang-texte').text()).toContain('1er/2')
+    // #860 — le défaut d'une commune est niveau-natif (son EPCI), jamais la densité
     expect(figure.get('.trajectoire-repere [role="img"]').attributes('aria-label'))
-      .toContain(contextesReference('22001').densite!.scope.label)
+      .toContain(contextesReference('22001').epci!.scope.label)
     expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('2025')
     expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('230')
     expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'facts')).toBe(true)
@@ -1221,15 +1284,15 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     expect(wrapper.find('.fiche-titre h1').text()).toBe('Commune C')
     expect(wrapper.find('.puce-type').text()).toBe('Commune')
-    expect(wrapper.find('.fiche-actions .contexte-switcher').exists()).toBe(true)
+    expect(wrapper.find('.fiche-actions .echelle-territoriale').exists()).toBe(true)
     const breadcrumb = wrapper.find('.fil-ariane')
     expect(breadcrumb.text()).toContain('Accueil')
     expect(breadcrumb.text()).toContain('Les communes')
     expect(breadcrumb.find('a[href="/"]').exists()).toBe(true)
     expect(breadcrumb.find('a[href="/communes"]').exists()).toBe(true)
-    expect(wrapper.find('.contexte-switcher').text()).toContain('EPCI Y')
-    expect(wrapper.find('.contexte-switcher').text()).toContain('Département 29')
-    expect(wrapper.find('.contexte-switcher').text()).toContain('Bretagne')
+    expect(wrapper.find('.echelle-territoriale').text()).toContain('EPCI Y')
+    expect(wrapper.find('.echelle-territoriale').text()).toContain('Département 29')
+    expect(wrapper.find('.echelle-territoriale').text()).toContain('Bretagne')
   })
 
   it('présente toujours les six thèmes dans l’ordre produit', async () => {
@@ -1346,69 +1409,19 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   }, 20_000)
 
   it.each(['densite', 'epci', 'bretagne'] as const)(
-    'affiche la portée publiée %s dans la note de comparaison', async (mode) => {
-      const { contextes, wrapper } = await monterNoteComparaison(mode)
+    'affiche la portée publiée %s dans la note de comparaison, en lecture seule', async (mode) => {
+      const contextes = contextesReference('22001')
       const label = contextes[mode]!.scope.label
-      const trigger = wrapper.get('button[aria-haspopup="listbox"]')
+      const wrapper = monterNoteComparaison(label)
 
-      expect(trigger.attributes('aria-current')).toBe('true')
-      expect(trigger.text()).toContain(label)
-      expect(wrapper.get('.cahier-comparison-note__scope').text()).toBe(label)
+      const note = wrapper.get('.cahier-comparison-note')
+      expect(note.text()).toContain(label)
+      // #860 — plus de contrôle dans la note : aucun bouton/listbox
+      expect(wrapper.find('button').exists()).toBe(false)
+      expect(wrapper.find('[aria-haspopup]').exists()).toBe(false)
       wrapper.unmount()
     },
   )
-
-  it('permet de divulguer et synchroniser la portée publiée depuis le cahier', async () => {
-    const { contextes: contexts, router, wrapper } = await monterNoteComparaison('densite')
-    const trigger = wrapper.get('button[aria-haspopup="listbox"]')
-
-    expect(trigger.attributes('aria-expanded')).toBe('false')
-    expect(trigger.attributes('aria-current')).toBe('true')
-    expect(trigger.text()).toContain(contexts.densite!.scope.label)
-    expect(wrapper.get('.cahier-comparison-note__scope').text()).toBe(contexts.densite!.scope.label)
-    await trigger.trigger('click')
-    const options = wrapper.findAll('[role="option"][aria-selected="false"]')
-    expect(options.map((option) => option.text())).toEqual([
-      contexts.epci!.scope.label,
-      contexts.bretagne!.scope.label,
-    ])
-    await options[0]!.trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.query.comparaison).toBe('epci')
-    await wrapper.setProps({ label: contexts.epci!.scope.label })
-    expect(wrapper.get('.cahier-comparison-note__scope').text()).toBe(contexts.epci!.scope.label)
-    wrapper.unmount()
-  })
-
-  it('change la portée au clavier et expose l’explication de la densité', async () => {
-    const { contextes, router, wrapper } = await monterNoteComparaison('epci')
-    const trigger = wrapper.get('button[aria-haspopup="listbox"]')
-    await trigger.trigger('keydown', { key: 'Enter' })
-
-    const densityLabel = contextes.densite!.scope.label
-    const density = wrapper.findAll('[role="option"][aria-selected="false"]')
-      .find((option) => option.find('.cahier-comparison-note__option-label').text() === densityLabel)
-    expect(trigger.attributes('aria-expanded')).toBe('true')
-    expect(density).toBeDefined()
-    expect(density!.attributes('title')).toBe(
-      'Classe définie par l’Insee selon le nombre d’habitants et leur concentration sur le territoire communal.',
-    )
-    const descriptionId = density!.attributes('aria-describedby')
-    expect(wrapper.get(`#${descriptionId}`).text()).toContain('Classe définie par l’Insee')
-    await density!.trigger('focus')
-    await density!.trigger('keydown', { key: 'Escape' })
-    expect(trigger.attributes('aria-expanded')).toBe('false')
-    await trigger.trigger('keydown', { key: 'Enter' })
-    const reopenedDensity = wrapper.findAll('[role="option"][aria-selected="false"]')
-      .find((option) => option.find('.cahier-comparison-note__option-label').text() === densityLabel)
-    expect(reopenedDensity).toBeDefined()
-    await reopenedDensity!.trigger('focus')
-    await reopenedDensity!.trigger('keydown', { key: 'Enter' })
-    await flushPromises()
-
-    expect(router.currentRoute.value.query.comparaison).toBeUndefined()
-    wrapper.unmount()
-  })
 
   it('affiche l’erreur typée et réessaie le même endpoint', async () => {
     const charger = vi
@@ -1627,4 +1640,119 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   }, 20_000)
 
+})
+
+describe('TerritoireView — #860 : la puce de Sélection de comparaison dans la rangée collante', () => {
+  it('assied la puce à côté des onglets dans la barre collante, avec la portée par défaut niveau-natif', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=programmes', chargerReferenceReelle)
+    await flushPromises()
+
+    const barre = wrapper.get('.fiche-barre-collante')
+    expect(barre.findAll('[role="tab"]')).toHaveLength(6)
+    const puce = barre.get('.puce-selection__trigger')
+    const porteeDefaut = contextesReference('22001').epci!.scope.label
+    expect(puce.text()).toContain('communes de')
+    expect(puce.text()).toContain(porteeDefaut)
+    expect(puce.attributes('aria-label')).toBe(`Sélection de comparaison active : ${porteeDefaut}`)
+    expect(puce.attributes('aria-haspopup')).toBe('menu')
+    expect(puce.attributes('aria-expanded')).toBe('false')
+
+    // Le défaut niveau-natif (EPCI de la commune) a déjà été acquis en
+    // selected_comparison avec la cohorte communale de l'EPCI — jamais la densité.
+    const selectedItems = requests.flat().filter((item) => item.intent.kind === 'selected_comparison')
+    expect(selectedItems.length).toBeGreaterThan(0)
+    const epciTyped = referenceReelle
+      .filter((t) => t.type === 'commune' && t.epci === cibleReference('22001').epci)
+      .map((t) => ({ type: 'commune' as const, id: t.territoire }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+    expect(selectedItems[0]!.intent.members).toEqual(epciTyped)
+    wrapper.unmount()
+  })
+
+  it('le menu rapide des presets pilote l’URL et la passe d’acquisition par thème actif', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=programmes', chargerReferenceReelle)
+    await flushPromises()
+
+    const puce = wrapper.get('.puce-selection__trigger')
+    await puce.trigger('click')
+    const entrees = wrapper.findAll('[role="menuitemradio"]')
+    const labels = entrees.map((e) => e.find('.puce-selection__option-label').text())
+    const porteeDefaut = contextesReference('22001').epci!.scope.label
+    expect(labels).toEqual([
+      `Par défaut : ${porteeDefaut}`,
+      contextesReference('22001').epci!.scope.label,
+      contextesReference('22001').bretagne!.scope.label,
+      contextesReference('22001').densite!.scope.label,
+      'Aucune comparaison',
+    ])
+    expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['true', 'false', 'false', 'false', 'false'])
+
+    // Choisir le preset Bretagne écrit ?comparaison=bretagne et lance une
+    // passe selected_comparison avec toutes les communes bretonnes.
+    const bretagneTyped = referenceReelle.filter((t) => t.type === 'commune')
+      .map((t) => ({ type: 'commune' as const, id: t.territoire }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+    const selectedWith = (members: unknown) => requests
+      .filter((batch) => batch.some((item) => item.intent.kind === 'selected_comparison' &&
+        JSON.stringify(item.intent.members) === JSON.stringify(members))).length
+    await entrees[2]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.comparaison).toBe('bretagne')
+    expect(selectedWith(bretagneTyped)).toBe(1)
+
+    // La sélection vide explicite écrit ?comparaison= et part avec [].
+    await wrapper.get('.puce-selection__trigger').trigger('click')
+    await wrapper.findAll('[role="menuitemradio"]')[4]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.comparaison).toBe('')
+    expect(selectedWith([])).toBe(1)
+    expect(wrapper.get('.puce-selection__trigger').attributes('aria-label'))
+      .toBe('Sélection de comparaison active : Aucune comparaison')
+
+    // Le retour au défaut retire le paramètre (partageable : absent = défaut).
+    await wrapper.get('.puce-selection__trigger').trigger('click')
+    await wrapper.findAll('[role="menuitemradio"]')[0]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.comparaison).toBeUndefined()
+    expect(wrapper.get('.puce-selection__trigger').attributes('aria-label'))
+      .toBe(`Sélection de comparaison active : ${porteeDefaut}`)
+    wrapper.unmount()
+  })
+
+  it('une URL de membres tapés résout et acquiert la sélection telle quelle', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+    const membres = 'commune:22001,commune:22002'
+    const { router, wrapper } = await monter(
+      `/territoire/commune/22001?theme=programmes&comparaison=${membres}`, chargerReferenceReelle)
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.comparaison).toBe(membres)
+    const typedItems = requests.flat().filter((item) => item.intent.kind === 'selected_comparison')
+    expect(typedItems.length).toBeGreaterThan(0)
+    expect(typedItems[0]!.intent.members).toEqual([
+      { type: 'commune', id: '22001' },
+      { type: 'commune', id: '22002' },
+    ])
+    expect(wrapper.get('.puce-selection__trigger').attributes('aria-label'))
+      .toBe('Sélection de comparaison active : 2 communes')
+    wrapper.unmount()
+  })
+
+  it('la fiche Région n’a aucun contrôle de comparaison', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+    const { router, wrapper } = await monter('/territoire/region/53?theme=programmes&comparaison=bretagne',
+      chargerReferenceReelle)
+    await flushPromises()
+
+    expect(wrapper.find('.puce-selection').exists()).toBe(false)
+    // Le paramètre est retiré : la Région n'a pas de comparaison.
+    expect(router.currentRoute.value.query.comparaison).toBeUndefined()
+    wrapper.unmount()
+  })
 })

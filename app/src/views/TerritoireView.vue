@@ -30,9 +30,10 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
 import BlocProgrammes from '@/components/fiche/BlocProgrammes.vue'
-import ContexteSwitcher from '@/components/fiche/ContexteSwitcher.vue'
+import EchelleTerritoriale from '@/components/fiche/EchelleTerritoriale.vue'
 import FiligraneFiche from '@/components/fiche/FiligraneFiche.vue'
 import OngletTheme from '@/components/fiche/OngletTheme.vue'
+import PuceSelectionComparaison from '@/components/fiche/PuceSelectionComparaison.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
 import ProductionMobilite from '@/fiche/mobilite/ProductionMobilite.vue'
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
@@ -43,8 +44,11 @@ import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import {
   PARAM_COMPARAISON,
   contextesDepuisReference,
-  optionsContexteComparaison,
-  resoudreContexteComparaison,
+  developperMembresCommunes,
+  libelleSelectionComparaison,
+  presetsDisponibles,
+  resoudreSelectionComparaison,
+  serialiserSelection,
   territoireReferencePourComparaison,
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
@@ -235,17 +239,49 @@ const typeValide = computed(
 )
 
 /**
- * A comparison query carries a mode, not a peer list. The validated reference
- * resolves that mode against the destination commune's own published density
- * class and EPCI, so navigation never reuses the previous commune's cohort.
+ * #860 — la Sélection de comparaison résolue depuis l'URL et la référence
+ * validée : preset, membres tapés même niveau, vide explicite, ou absent (défaut
+ * niveau-natif, jamais la densité). Le paramètre ne porte plus un mode figé :
+ * la référence résolue décide quels membres tapés partent en acquisition.
  */
-const resolutionComparaison = computed(() => {
-  if (!referenceTerritoire.reference.value || !territoire.value) return null
-  return resoudreContexteComparaison({
+const resolutionSelection = computed(() => {
+  const reference = referenceTerritoire.reference.value
+  if (!reference || !territoire.value) return null
+  return resoudreSelectionComparaison({
     territoire: territoire.value,
     demande: route.query[PARAM_COMPARAISON],
     contextes: contextesComparaison.value,
+    territoires: reference,
   })
+})
+
+/** Le contexte par défaut niveau-natif (entrée « Par défaut » de la puce d'en-tête). */
+const resolutionDefaut = computed(() => {
+  const reference = referenceTerritoire.reference.value
+  if (!reference || !territoire.value) return null
+  return resoudreSelectionComparaison({
+    territoire: territoire.value,
+    demande: undefined,
+    contextes: contextesComparaison.value,
+    territoires: reference,
+  })
+})
+
+/**
+ * #860 — les membres tapés envoyés à la passe selected_comparison : une
+ * référence territoriale entière (EPCI/région) se développe en sa cohorte
+ * communale triée (l'API résout la maille requise) ; les membres tapés même
+ * niveau partent tels quels, dans l'ordre de l'URL.
+ */
+const membresAcquisition = computed<readonly ThemeSelectionMember[] | null | undefined>(() => {
+  const membres = resolutionSelection.value?.membres
+  if (membres === null || membres === undefined) return membres
+  const target = territoire.value
+  const reference = referenceTerritoire.reference.value ?? []
+  if (target?.type === 'commune' && membres.some((membre) => membre.territory_type !== 'commune')) {
+    return developperMembresCommunes(membres, reference)
+  }
+  return membres
 })
 
 function libellePorteeSemantic(comparison: unknown, target: Territoire): string | null {
@@ -293,20 +329,41 @@ function libellePorteeSemantic(comparison: unknown, target: Territoire): string 
   return null
 }
 
-const optionsComparaison = computed(() => optionsContexteComparaison({
+/** Presets du menu rapide de la puce d'en-tête (la Région n'en a aucun). */
+const presetsSelection = computed(() => presetsDisponibles({
   territoire: territoire.value,
   contextes: contextesComparaison.value,
 }))
+const libelleDefautSelection = computed(() => {
+  const resolution = resolutionDefaut.value
+  return resolution ? libelleSelectionComparaison(resolution) : null
+})
+const libelleActifSelection = computed(() => {
+  const resolution = resolutionSelection.value
+  return resolution ? libelleSelectionComparaison(resolution) : null
+})
+/** La Région n'a pas de contrôle de comparaison (#768). */
+const controleSelectionVisible = computed(() =>
+  Boolean(territoire.value && territoire.value.type !== 'region' && referenceTerritoire.reference.value))
+
+/** Écrit la sélection choisie par la puce dans ?comparaison= (partageable). */
+function choisirSelection(valeur: string | undefined): void {
+  const query = { ...route.query }
+  if (valeur === undefined) delete query[PARAM_COMPARAISON]
+  else query[PARAM_COMPARAISON] = valeur
+  void router.replace({ query })
+}
 
 /**
  * The AEDAR comparison lines read the same aggregates on a single
  * published reference territory (EPCI or région Bretagne) — never a cohort.
- * A density-class comparison has no single-territory reference and the
- * comparison stays honestly unavailable.
+ * A density-class cohort or a typed member selection has no single-territory
+ * reference and the comparison stays honestly unavailable (les lectures
+ * selected_comparison AEDAR arrivent avec #859/#863).
  */
 const aedarReferenceTerritoire = computed(() => territoireReferencePourComparaison({
   territoire: territoire.value,
-  mode: resolutionComparaison.value?.mode ?? null,
+  mode: resolutionSelection.value?.preset ?? null,
   territoires: referenceTerritoire.reference.value ?? [],
 }))
 const aedarReferenceKey = computed(() => {
@@ -400,11 +457,17 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
       const rows = themeFactsRowsFromSemantic(themeActif, acquired.focal, { territoire: code, type: target.type }, {
         epci: target.epci, region: reference.find((item) => item.type === 'region')?.territoire ?? null,
       }, payloadReference.value?.themeMetadata?.[themeActif])
-       const comparison = semanticComparisonForTheme(acquired.comparisons.get('omitted'), {
-         target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
-         territories: [...reference],
-        }, acquired.focal.resource_reads)
-        const comparisonScopeLabel = libellePorteeSemantic(comparison, target)
+       // #860 — le défaut déclaré niché (« omitted ») ne sert que les niveaux
+       // dont il est le contexte (EPCI/département/région). Une commune lit son
+       // défaut niveau-natif via la passe selected_comparison du watcher dédié.
+       const membresActifs = membresAcquisition.value
+       const comparison = membresActifs === undefined
+         ? semanticComparisonForTheme(acquired.comparisons.get('omitted'), {
+           target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
+           territories: [...reference],
+         }, acquired.focal.resource_reads)
+         : null
+        const comparisonScopeLabel = comparison ? libellePorteeSemantic(comparison, target) : null
         faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs,
           comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
       histoiresThemeRows.value = rows.histoires
@@ -441,11 +504,14 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
     }
   }, { immediate: true })
 
-/** Comparison-only reads retain focal facts. The producer's fixed default is
- * cached with the paired focal read; explicit scopes acquire only comparisons. */
+/** #860 — Comparison-only reads retain focal facts: one selected_comparison
+ * pass per active theme on selection change, with the resolved typed members
+ * (cache keyed (territory, theme, selection); late responses rejected and
+ * publication-token mismatch fails closed inside the cache). `undefined`
+ * members read the producer's declared default nested in the facts response. */
 watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value,
-  () => resolutionComparaison.value?.mode, statutAcquisition, retryThemeComparaison],
-  async ([reference, theme, code, mode], _old, onCleanup) => {
+  () => membresAcquisition.value, statutAcquisition, retryThemeComparaison],
+  async ([reference, theme, code, selectionMembres], _old, onCleanup) => {
     if (theme === 'mobilite' || statutAcquisition.value !== 'ready' || !reference || !typeValide.value || !theme) {
       statutComparaison.value = 'idle'
       return
@@ -453,16 +519,6 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
     const target = reference.find((item) => item.territoire === code)
     if (!target || target.type !== typeRoute.value) { statutComparaison.value = 'idle'; return }
     const themeActif = theme as Theme
-    const selectionMembres: readonly ThemeSelectionMember[] | null | undefined = target.type !== 'commune' ||
-      mode === 'densite' || mode === null || mode === undefined
-      ? undefined
-      : mode === 'epci' || mode === 'bretagne'
-        ? (() => {
-          const refTerritoire = territoireReferencePourComparaison({ territoire: target, mode,
-            territoires: reference })
-          return refTerritoire ? [{ territory_type: refTerritoire.type, territory_id: refTerritoire.id }] : null
-        })()
-        : null
     const request = ++sequenceComparaison
     let cancelled = false
     onCleanup(() => { cancelled = true })
@@ -474,16 +530,16 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
     if (themeActif === 'milieux') histoiresNuageMilieux.value = []
     if (themeActif === 'demographie') histoiresNuageDemographie.value = []
     if (selectionMembres === null) {
-      // Un périmètre nommé sans identité parente résolue est indisponible,
+      // Une sélection nommée sans identité résoluble est indisponible,
       // jamais une sélection vide ni le contexte fixe par défaut.
       statutComparaison.value = 'error'
       return
     }
     try {
-      const acquired = await cacheAcquisition.select(typeRoute.value, code, themeActif, selectionMembres)
+      const acquired = await cacheAcquisition.select(typeRoute.value, code, themeActif, selectionMembres ?? undefined)
       if (cancelled || request !== sequenceComparaison) return
-      const nativeComparison = acquired.comparisons.get(cleSelectionComparaison(selectionMembres))
-      validerReponseComparaisonTheme(themeActif, nativeComparison, selectionMembres,
+      const nativeComparison = acquired.comparisons.get(cleSelectionComparaison(selectionMembres ?? undefined))
+      validerReponseComparaisonTheme(themeActif, nativeComparison, selectionMembres ?? undefined,
         { type: target.type, id: target.territoire })
       const comparison = semanticComparisonForTheme(nativeComparison, {
         target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
@@ -587,12 +643,14 @@ watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
     const data = acquired.focal
     if (request !== focalRequestSequence || !payloadPourRendu.value || !isRecord(data)) return
     const presentation = toRaw(payloadPourRendu.value)
-    const target = presentation.territoires.find((territory) => territory.territoire === code)
-    const initialContext = target?.type === 'commune'
-      ? contextesComparaison.value.densite
-      : resolutionComparaison.value?.contexte ?? undefined
+    // #860 — le défaut niveau-natif d'une commune (son EPCI, ou Bretagne) n'est
+    // plus la densité niché : la commune passe par la sélection explicite du
+    // watcher de comparaison ci-dessous.
+    const initialContext = resolutionSelection.value?.contexte ?? undefined
     let combined = mobilityFactsFromThemeApi(presentation, code, data)
-    const initialComparison = acquired.comparisons.get('omitted')
+    const initialComparison = membresAcquisition.value === undefined
+      ? acquired.comparisons.get('omitted')
+      : undefined
     combined = initialComparison
       ? applyThemeComparisonApiFacts(combined, initialComparison, initialContext)
       : clearThemeComparisonApiFacts(combined)
@@ -611,12 +669,14 @@ watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
   })
 }, { immediate: true })
 
-watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
+watch([productionMobilite, typeRoute, idRoute, () => membresAcquisition.value,
   mobilityFocal, () => referenceTerritoire.reference.value, retryThemeComparaison],
   (_values, _oldValues, onCleanup) => {
     if (!productionMobilite.value || !mobilityFocal.value || !payloadPourRendu.value) return
     const reference = referenceTerritoire.reference.value
-    const requestKey = `${typeRoute.value}/${idRoute.value}/${resolutionComparaison.value?.mode ?? ''}/${retryThemeComparaison.value}`
+    const resolution = resolutionSelection.value
+    const membres = membresAcquisition.value
+    const requestKey = `${typeRoute.value}/${idRoute.value}/${serialiserSelection(resolution?.selection ?? { etat: 'defaut' }) ?? 'defaut'}/${retryThemeComparaison.value}`
     if (lastComparisonKey === requestKey && lastComparisonModel === reference) return
     const request = ++comparisonRequestSequence
     const controller = new AbortController()
@@ -626,10 +686,9 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
       if (!settled) lastComparisonKey = null
     })
     const target = payloadPourRendu.value.territoires.find((territory) => territory.territoire === idRoute.value)
-    const mode = resolutionComparaison.value?.mode
-    const context = resolutionComparaison.value?.contexte ?? undefined
+    const context = resolution?.contexte ?? undefined
     const cohort = reference ?? undefined
-    if (!target || (target.type === 'commune' && mode !== 'densite' && !cohort)) {
+    if (!target || membres === null || !cohort) {
       mobilityComparisonStatus.value = 'error'
       mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
       mobilityCurveComparison.value = null
@@ -637,14 +696,9 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
       lastComparisonModel = reference
       return
     }
-    const selection = target.type !== 'commune' || mode === 'densite' || mode == null ? undefined : mode === 'bretagne'
-      ? (cohort ?? []).filter((item) => item.type === 'commune')
-        .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
-      : mode === 'epci' && target?.epci
-        ? (cohort ?? []).filter((item) => item.type === 'commune' && item.epci === target.epci)
-          .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
-        : []
-    const explicitSelection = selection
+    // #860 — les membres tapés de l'acquisition (déjà développés en cohorte
+    // communale quand une référence territoriale entière est sélectionnée).
+    const explicitSelection: readonly ThemeSelectionMember[] | undefined = membres ?? undefined
     lastComparisonKey = requestKey
     lastComparisonModel = reference
     mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
@@ -698,7 +752,7 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
   const baseFacts = mobilityFocal.value
     ? mobilityComparisonFacts.value ?? clearThemeComparisonApiFacts(mobilityFocal.value)
     : mobilityFactsFromThemeApi(
-      toRaw(payloadPourRendu.value), idRoute.value, null, resolutionComparaison.value?.contexte ?? undefined,
+      toRaw(payloadPourRendu.value), idRoute.value, null, resolutionSelection.value?.contexte ?? undefined,
     )
   if (!baseFacts) return null
   const facts = { ...baseFacts, mobility: { ...baseFacts.mobility, selectedTrajectoryComparison: mobilityCurveComparison.value } }
@@ -742,11 +796,16 @@ watch(
 )
 
 watch(
-  resolutionComparaison,
+  resolutionSelection,
   (resolution) => {
     if (!resolution?.canonicaliser) return
+    // #860 — réécrit ?comparaison= vers la sérialisation canonique de la
+    // sélection résolue (preset, membres tapés dédupliqués, vide explicite,
+    // ou absent pour le défaut).
     const query = { ...route.query }
-    delete query[PARAM_COMPARAISON]
+    const valeur = serialiserSelection(resolution.selection)
+    if (valeur === undefined) delete query[PARAM_COMPARAISON]
+    else query[PARAM_COMPARAISON] = valeur
     delete query.variant
     router.replace({ query })
   },
@@ -804,17 +863,31 @@ watch(
           </div>
           <div class="fiche-actions">
             <span class="puce-type">{{ nomType }}</span>
-            <ContexteSwitcher :echelons="echelons" />
+            <EchelleTerritoriale :echelons="echelons" />
           </div>
         </div>
       </template>
       </div>
-      <ThemeTabs
-        :themes="ongletsFiche"
-        :selected="selection"
-        masquer-onglet-initial
-        @select="choisirOnglet"
-      />
+      <!-- #860 — la rangée collante de la fiche : les onglets de thème plus la
+           puce de Sélection de comparaison (absente sur la Région, qui n'a
+           aucune comparaison). -->
+      <div class="fiche-barre-collante">
+        <ThemeTabs
+          :themes="ongletsFiche"
+          :selected="selection"
+          :collant="false"
+          masquer-onglet-initial
+          @select="choisirOnglet"
+        />
+        <PuceSelectionComparaison
+          v-if="controleSelectionVisible"
+          :selection="resolutionSelection?.selection ?? { etat: 'defaut' }"
+          :libelle-actif="libelleActifSelection"
+          :libelle-defaut="libelleDefautSelection"
+          :presets="presetsSelection"
+          @choisir="choisirSelection"
+        />
+      </div>
     </div>
 
     <template v-if="typeValide && !erreurFiche">
@@ -882,7 +955,7 @@ watch(
           >
             <!-- The production cahier owns Mobilité's editorial body and AEDAR evidence. -->
             <ProductionMobilite v-if="productionMobilite && contenuMobilite && paginationCahier"
-              :content="contenuMobilite" :pagination="paginationCahier" :comparison-options="optionsComparaison"
+              :content="contenuMobilite" :pagination="paginationCahier"
               :aedar-data="aedarData" :aedar-status="aedarStatus" :retry-aedar="retryAedar"
               :aedar-reference-territoire="aedarReferenceTerritoire" :aedar-reference-data="aedarReferenceData"
               :aedar-reference-status="aedarReferenceStatus" />
@@ -950,6 +1023,20 @@ watch(
 
 .fiche-en-tete-surface {
   background: var(--surface-primary);
+}
+
+/* #860 — la rangée collante de la fiche (onglets + puce de Sélection de
+   comparaison), assise sous l'en-tête global comme l'était la barre d'onglets. */
+.fiche-barre-collante {
+  position: sticky;
+  top: var(--header-height);
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding: 0 var(--grid-margin-mobile);
+  background: var(--surface-primary);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .fil-ariane {
