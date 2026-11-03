@@ -1,6 +1,7 @@
 import type { TerritoryComparisonContext, TerritoryComparisonMode } from '@/payload/territoryReadModel'
 import type { Territoire, TerritoireType } from '@/payload/types'
 import type { LocationQuery } from 'vue-router'
+import type { InjectionKey, Ref } from 'vue'
 import { COMPARISON_MODE_DESCRIPTIONS } from '@/fiche/content/comparisonWording'
 import { comparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 
@@ -36,6 +37,27 @@ export const PARAM_COMPARAISON = 'comparaison'
 /** Les presets de la Sélection — les mêmes jetons d’URL que les anciens modes. */
 export const PRESETS_COMPARAISON = ['epci', 'bretagne', 'densite'] as const
 export type PresetComparaison = (typeof PRESETS_COMPARAISON)[number]
+
+/**
+ * #860 (ruling propriétaire 2026-11-03) — le contrôle de comparaison vit dans
+ * le page-heading collant du Cahier, pas dans le chrome d'onglets : la fiche
+ * fournit ce seam (provide) et le Cahier l'injecte pour rendre BoutonComparaison.
+ * `null` = aucun contrôle (la Région n'a aucune comparaison).
+ */
+export interface ControleComparaison {
+  selection: SelectionComparaison
+  /** Libellé de la portée active (nom accessible du bouton). */
+  libelleActif: string | null
+  /** Preset niveau-natif, coché quand le paramètre d'URL est absent. */
+  presetDefaut: PresetComparaison | null
+  /** Presets proposés (résolution réelle garantie pour ce territoire). */
+  presets: readonly PresetComparaisonOption[]
+  /** Écrit la sélection choisie dans ?comparaison= (absent vs vide explicite préservés). */
+  choisir: (selection: SelectionComparaison) => void
+}
+
+export const CONTROLE_COMPARAISON_KEY: InjectionKey<Readonly<Ref<ControleComparaison | null>>> =
+  Symbol('controle-comparaison')
 
 /** Un membre tapé de la sélection — même forme que le contrat sémantique. */
 export interface MembreSelection {

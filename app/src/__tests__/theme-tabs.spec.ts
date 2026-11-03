@@ -393,23 +393,3 @@ describe('ThemeTabs — le label de la barre et l\u2019icône du premier onglet 
     expect(wrapper.findAll('[role="tab"]')[0].find('svg').exists()).toBe(true)
   })
 })
-
-describe('ThemeTabs — intégration dans la rangée collante de la fiche (#860)', () => {
-  it('reste collante par défaut (comportement hérité carte/Méthodes)', () => {
-    const wrapper = montage(['demographie'])
-    expect(wrapper.get('.theme-tabs').classes()).not.toContain('theme-tabs--integre')
-  })
-
-  it('collant: false rend la barre non collante pour laisser la rangée parent porter la puce de sélection', () => {
-    const wrapper = mount(ThemeTabs, {
-      props: { themes: ['demographie'], selected: 'demographie', masquerOngletInitial: true, collant: false },
-      attachTo: document.body,
-    })
-    montee = wrapper
-
-    const barre = wrapper.get('.theme-tabs')
-    expect(barre.classes()).toContain('theme-tabs--integre')
-    expect(barre.attributes('role')).toBe('tablist')
-    expect(wrapper.findAll('[role="tab"]')).toHaveLength(1)
-  })
-})

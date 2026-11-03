@@ -25,7 +25,7 @@
  * honest empty state when the territory (or its type) is unknown.
  */
 import { AlertCircle, ChevronRight, SearchX } from 'lucide-vue-next'
-import { computed, inject, ref, toRaw, watch } from 'vue'
+import { computed, inject, provide, ref, toRaw, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
@@ -33,7 +33,6 @@ import BlocProgrammes from '@/components/fiche/BlocProgrammes.vue'
 import EchelleTerritoriale from '@/components/fiche/EchelleTerritoriale.vue'
 import FiligraneFiche from '@/components/fiche/FiligraneFiche.vue'
 import OngletTheme from '@/components/fiche/OngletTheme.vue'
-import PuceSelectionComparaison from '@/components/fiche/PuceSelectionComparaison.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
 import ProductionMobilite from '@/fiche/mobilite/ProductionMobilite.vue'
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
@@ -42,6 +41,7 @@ import { AEDAR_CORE_MEASURE_KEYS, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS } from '@/f
 import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import {
+  CONTROLE_COMPARAISON_KEY,
   PARAM_COMPARAISON,
   contextesDepuisReference,
   developperMembresCommunes,
@@ -51,7 +51,7 @@ import {
   serialiserSelection,
   territoireReferencePourComparaison,
 } from '@/fiche/comparisonContext'
-import type { SelectionComparaison } from '@/fiche/comparisonContext'
+import type { ControleComparaison, SelectionComparaison } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
 import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
@@ -317,6 +317,11 @@ function libellePorteeSemantic(comparison: unknown, target: Territoire): string 
     ['epci', target.type === 'commune' && target.epci
       ? territories.filter((item) => item.type === 'commune' && item.epci === target.epci) : []],
     ['bretagne', territories.filter((item) => item.type === target.type)],
+    // Une sélection explicite égale à la cohorte de la classe de densité
+    // (preset « densite » développé) porte le libellé de la classe.
+    ['densite', target.type === 'commune' && target.classe_densite_code
+      ? territories.filter((item) => item.type === 'commune' &&
+        item.classe_densite_code === target.classe_densite_code) : []],
   ] as const
   for (const [mode, members] of candidates) {
     const expected = members.map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
@@ -337,10 +342,6 @@ const presetsSelection = computed(() => presetsDisponibles({
   contextes: contextesComparaison.value,
   territoires: referenceTerritoire.reference.value ?? [],
 }))
-const libelleDefautSelection = computed(() => {
-  const resolution = resolutionDefaut.value
-  return resolution ? libelleSelectionComparaison(resolution) : null
-})
 const libelleActifSelection = computed(() => {
   const resolution = resolutionSelection.value
   return resolution ? libelleSelectionComparaison(resolution) : null
@@ -348,6 +349,25 @@ const libelleActifSelection = computed(() => {
 /** La Région n'a pas de contrôle de comparaison (#768). */
 const controleSelectionVisible = computed(() =>
   Boolean(territoire.value && territoire.value.type !== 'region' && referenceTerritoire.reference.value))
+
+/**
+ * #860 (ruling 2026-11-03) — le contrôle de comparaison est fourni au Cahier
+ * (page-heading collant), pas au chrome d'onglets : BoutonComparaison l'injecte.
+ */
+const controleComparaison = computed<ControleComparaison | null>(() => {
+  if (!controleSelectionVisible.value) return null
+  const resolution = resolutionSelection.value
+  const defaut = resolutionDefaut.value
+  if (!resolution || !defaut) return null
+  return {
+    selection: resolution.selection,
+    libelleActif: libelleActifSelection.value,
+    presetDefaut: defaut.preset,
+    presets: presetsSelection.value,
+    choisir: choisirSelection,
+  }
+})
+provide(CONTROLE_COMPARAISON_KEY, controleComparaison)
 
 /** Écrit la sélection choisie par la puce dans ?comparaison= (partageable) :
  *  absent (défaut) vs chaîne vide (vide explicite) sont préservés par la
@@ -874,26 +894,16 @@ watch(
         </div>
       </template>
       </div>
-      <!-- #860 — la rangée collante de la fiche : les onglets de thème plus la
-           puce de Sélection de comparaison (absente sur la Région, qui n'a
-           aucune comparaison). -->
-      <div class="fiche-barre-collante">
-        <ThemeTabs
-          :themes="ongletsFiche"
-          :selected="selection"
-          :collant="false"
-          masquer-onglet-initial
-          @select="choisirOnglet"
-        />
-        <PuceSelectionComparaison
-          v-if="controleSelectionVisible"
-          :selection="resolutionSelection?.selection ?? { etat: 'defaut' }"
-          :libelle-actif="libelleActifSelection"
-          :libelle-defaut="libelleDefautSelection"
-          :presets="presetsSelection"
-          @choisir="choisirSelection"
-        />
-      </div>
+      <!-- #860 (ruling 2026-11-03) — le contrôle de comparaison ne vit PAS dans
+           le chrome d'onglets : il est fourni au page-heading collant du Cahier
+           (voir provide CONTROLE_COMPARAISON_KEY) et la barre d'onglets garde son
+           comportement collant hérité. -->
+      <ThemeTabs
+        :themes="ongletsFiche"
+        :selected="selection"
+        masquer-onglet-initial
+        @select="choisirOnglet"
+      />
     </div>
 
     <template v-if="typeValide && !erreurFiche">
@@ -1029,20 +1039,6 @@ watch(
 
 .fiche-en-tete-surface {
   background: var(--surface-primary);
-}
-
-/* #860 — la rangée collante de la fiche (onglets + puce de Sélection de
-   comparaison), assise sous l'en-tête global comme l'était la barre d'onglets. */
-.fiche-barre-collante {
-  position: sticky;
-  top: var(--header-height);
-  z-index: var(--z-sticky);
-  display: flex;
-  align-items: stretch;
-  gap: var(--space-2);
-  padding: 0 var(--grid-margin-mobile);
-  background: var(--surface-primary);
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .fil-ariane {

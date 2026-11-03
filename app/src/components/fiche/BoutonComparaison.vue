@@ -1,17 +1,27 @@
 <script setup lang="ts">
 /**
- * PuceSelectionComparaison — le contrôle de la Sélection de comparaison assis
- * dans la rangée collante de l’en-tête de la fiche (#768/#860) : une puce
- * « Sélection : <portée> » qui ouvre un menu rapide (défaut niveau-natif,
- * presets, aucune comparaison). La Région n’a aucun contrôle. Le constructeur
- * complet (recherche, gestion des membres tapés) est la tranche #861 — ici la
- * puce + les presets seulement. La puce émet la valeur d’URL à écrire dans
- * `?comparaison=` ; la vue propriétaire applique la navigation.
+ * BoutonComparaison — le contrôle de comparaison de la fiche, assis dans le
+ * page-heading collant du Cahier (juste à gauche du titre « {thème} ·
+ * {territoire} », #860 ruling propriétaire 2026-11-03) : face laconique
+ * « Comparaison » ; la portée active ne se lit que dans le nom accessible
+ * (aria-label), jamais en prose visible. « Sélection » reste du vocabulaire
+ * de glossaire, jamais du copy UI.
  *
- * A11y : bouton avec aria-haspopup="menu" + aria-expanded, nom accessible complet
- * (« Sélection de comparaison active : … »), menu role="menu" en
- * menuitemradio avec aria-checked, navigation clavier (flèches/Home/End/Échap,
- * Entrée/Espace), cibles tactiles 44px au pointeur grossier.
+ * Le menu ne porte AUCUNE entrée « Par défaut » : quand le paramètre d'URL est
+ * absent (état défaut), le preset niveau-natif (l'EPCI d'une commune ; le même
+ * niveau Bretagne sur EPCI/département) apparaît comme l'entrée cochée ;
+ * les entrées sont les presets + « Aucune comparaison ». Choisir le preset du
+ * défaut écrit le preset explicite dans l'URL. Le constructeur de membres
+ * tapés (recherche, gestion) est la tranche #861.
+ *
+ * Visuel natif du Cahier (grammaire papier) : libellé en petites capitales
+ * --font-ui comme le sommaire mobile, bouton carré sans chrome de pilule,
+ * menu papier bordé --red-soft comme le dialog du Cahier.
+ *
+ * A11y : bouton aria-haspopup="menu" + aria-expanded + nom accessible complet,
+ * menu role="menu" en menuitemradio avec aria-checked, navigation clavier
+ * (flèches/Home/End/Échap, Entrée/Espace), cibles tactiles 44px au pointeur
+ * grossier.
  */
 import { ChevronDown } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onBeforeUpdate, onMounted, ref, useId } from 'vue'
@@ -19,6 +29,7 @@ import type { ComponentPublicInstance } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
 import type {
+  PresetComparaison,
   PresetComparaisonOption,
   SelectionComparaison,
 } from '@/fiche/comparisonContext'
@@ -26,16 +37,16 @@ import { serialiserSelection } from '@/fiche/comparisonContext'
 
 const props = defineProps<{
   selection: SelectionComparaison
-  /** Libellé de la portée active (défaut/preset : portée résolue ; membres : compte ; vide : « Aucune comparaison »). */
+  /** Libellé de la portée active — porté par le nom accessible, pas en prose visible. */
   libelleActif: string | null
-  /** Libellé du contexte par défaut niveau-natif (entrée « Par défaut » du menu). */
-  libelleDefaut: string | null
-  /** Presets proposés par le menu rapide (déjà filtrés au niveau du territoire). */
+  /** Preset niveau-natif (coché quand le paramètre est absent). */
+  presetDefaut: PresetComparaison | null
+  /** Presets proposés (déjà filtrés : résolution réelle garantie pour ce territoire). */
   presets: readonly PresetComparaisonOption[]
 }>()
 
 const emit = defineEmits<{
-  /** La Sélection choisie, typée — la vue la sérialise dans ?comparaison= (absent vs vide explicite préservés). */
+  /** La sélection choisie, typée — la vue la sérialise dans ?comparaison=. */
   (e: 'choisir', selection: SelectionComparaison): void
 }>()
 
@@ -47,17 +58,13 @@ interface EntreeMenu {
 }
 
 const entrees = computed<readonly EntreeMenu[]>(() => [
-  {
-    selection: { etat: 'defaut' },
-    label: props.libelleDefaut ? `Par défaut : ${props.libelleDefaut}` : 'Contexte par défaut',
-    description: null,
-    actif: props.selection.etat === 'defaut',
-  },
   ...props.presets.map((preset) => ({
     selection: { etat: 'preset', preset: preset.preset } as SelectionComparaison,
     label: preset.label,
     description: preset.description,
-    actif: props.selection.etat === 'preset' && props.selection.preset === preset.preset,
+    actif: props.selection.etat === 'preset'
+      ? props.selection.preset === preset.preset
+      : props.selection.etat === 'defaut' && props.presetDefaut === preset.preset,
   })),
   {
     selection: { etat: 'vide' },
@@ -124,13 +131,13 @@ function choisir(entree: EntreeMenu): void {
 </script>
 
 <template>
-  <div ref="rootRef" class="puce-selection">
+  <div ref="rootRef" class="bouton-comparaison">
     <button
       type="button"
-      class="puce-selection__trigger"
+      class="bouton-comparaison__declencheur"
       ref="triggerRef"
       aria-haspopup="menu"
-      :aria-label="`Sélection de comparaison active : ${libelleActif ?? 'aucune'}`"
+      :aria-label="`Comparaison : ${libelleActif ?? 'aucune portée active'}`"
       :aria-controls="menuId"
       :aria-expanded="ouvert ? 'true' : 'false'"
       @click="basculer"
@@ -140,16 +147,15 @@ function choisir(entree: EntreeMenu): void {
       @keydown.arrow-up.prevent="ouvrir(entrees.length - 1)"
       @keydown.esc.stop="fermer"
     >
-      <span class="puce-selection__titre">Sélection</span>
-      <span class="puce-selection__portee">{{ libelleActif ?? '—' }}</span>
-      <AppIcon :icone="ChevronDown" :taille="14" class="puce-selection__fleche" :class="{ 'is-open': ouvert }" aria-hidden="true" />
+      <span class="bouton-comparaison__texte">Comparaison</span>
+      <AppIcon :icone="ChevronDown" :taille="12" class="bouton-comparaison__fleche" :class="{ 'is-open': ouvert }" aria-hidden="true" />
     </button>
     <div
       v-if="ouvert"
       :id="menuId"
-      class="puce-selection__menu"
+      class="bouton-comparaison__menu"
       role="menu"
-      aria-label="Sélection de comparaison"
+      aria-label="Portée de comparaison"
     >
       <button
         v-for="(entree, index) in entrees"
@@ -157,9 +163,9 @@ function choisir(entree: EntreeMenu): void {
         :ref="enregistrerOption"
         type="button"
         role="menuitemradio"
-        class="puce-selection__option"
+        class="bouton-comparaison__option"
         :aria-checked="entree.actif ? 'true' : 'false'"
-        :aria-describedby="entree.description ? `${menuId}-${serialiserSelection(entree.selection) ?? 'defaut'}-help` : undefined"
+        :aria-describedby="entree.description ? `${menuId}-${serialiserSelection(entree.selection)}-help` : undefined"
         :title="entree.description ?? undefined"
         @click="choisir(entree)"
         @keydown.enter.prevent="choisir(entree)"
@@ -170,12 +176,12 @@ function choisir(entree: EntreeMenu): void {
         @keydown.end.prevent="optionRefs[optionRefs.length - 1]?.focus()"
         @keydown.esc.stop="fermer"
       >
-        <span class="puce-selection__option-coche" aria-hidden="true">{{ entree.actif ? '✓' : '' }}</span>
-        <span class="puce-selection__option-label">{{ entree.label }}</span>
+        <span class="bouton-comparaison__coche" aria-hidden="true">{{ entree.actif ? '✓' : '' }}</span>
+        <span class="bouton-comparaison__option-label">{{ entree.label }}</span>
         <span
           v-if="entree.description"
-          :id="`${menuId}-${serialiserSelection(entree.selection) ?? 'defaut'}-help`"
-          class="puce-selection__option-help"
+          :id="`${menuId}-${serialiserSelection(entree.selection)}-help`"
+          class="bouton-comparaison__option-help"
         >{{ entree.description }}</span>
       </button>
     </div>
@@ -183,130 +189,122 @@ function choisir(entree: EntreeMenu): void {
 </template>
 
 <style scoped>
-.puce-selection {
+.bouton-comparaison {
   position: relative;
   display: flex;
   align-items: center;
   flex-shrink: 0;
 }
 
-.puce-selection__trigger {
+/* Face laconique en petites capitales, comme le sommaire mobile du Cahier. */
+.bouton-comparaison__declencheur {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  min-block-size: 44px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--surface-tertiary);
-  color: var(--text-primary);
-  font: var(--text-body-sm);
+  gap: 4px;
+  min-block-size: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--cahier-theme-strong, var(--red, var(--accent-primary)));
+  font: 700 12px/1.3 var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.puce-selection__trigger:hover {
-  background: var(--surface-primary);
-  border-color: var(--brand-500);
+.bouton-comparaison__declencheur:hover {
+  color: var(--red, var(--accent-primary));
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
-.puce-selection__trigger:focus-visible,
-.puce-selection__option:focus-visible {
-  outline: 2px solid var(--brand-500);
+.bouton-comparaison__declencheur:focus-visible,
+.bouton-comparaison__option:focus-visible {
+  outline: 2px solid var(--red, var(--accent-primary));
   outline-offset: 2px;
 }
 
-.puce-selection__titre {
-  color: var(--text-tertiary);
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-  text-transform: uppercase;
-}
-
-.puce-selection__portee {
-  font-weight: 600;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-.puce-selection__fleche {
+.bouton-comparaison__fleche {
   flex-shrink: 0;
-  color: var(--text-tertiary);
   transition: transform 150ms ease;
 }
 
-.puce-selection__fleche.is-open {
+.bouton-comparaison__fleche.is-open {
   transform: rotate(180deg);
 }
 
-.puce-selection__menu {
+/* Menu papier, bordé comme le dialog du Cahier — pas de chrome générique. */
+.bouton-comparaison__menu {
   position: absolute;
-  top: calc(100% + var(--space-1));
+  top: calc(100% + 4px);
   inset-inline-end: 0;
   z-index: var(--z-popover);
   display: flex;
   flex-direction: column;
-  min-inline-size: 16rem;
-  max-inline-size: min(22rem, calc(100vw - 2 * var(--grid-margin-mobile)));
+  min-inline-size: 15rem;
+  max-inline-size: min(20rem, calc(100vw - 2 * var(--space-4)));
   padding: var(--space-1);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--surface-primary);
-  box-shadow: var(--shadow-subtle);
+  border: 1px solid var(--red-soft, color-mix(in oklab, var(--cahier-default, var(--muted)) 18%, transparent));
+  border-radius: 2px;
+  background: var(--paper, var(--surface-primary));
+  box-shadow: 0 10px 30px rgb(18 28 27 / 16%);
 }
 
-.puce-selection__option {
+.bouton-comparaison__option {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  min-block-size: 44px;
+  min-block-size: 36px;
   padding: var(--space-2) var(--space-3);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   background: transparent;
-  color: var(--text-primary);
-  font: var(--text-body-sm);
+  color: var(--ink, var(--text-primary));
+  font: 400 13px/1.35 var(--font-ui);
   text-align: start;
   cursor: pointer;
   overflow-wrap: anywhere;
 }
 
-.puce-selection__option:hover {
-  background: var(--surface-tertiary);
+.bouton-comparaison__option:hover {
+  background: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 8%, transparent);
 }
 
-.puce-selection__option[aria-checked='true'] {
-  font-weight: 600;
+.bouton-comparaison__option[aria-checked='true'] {
+  font-weight: 700;
 }
 
-.puce-selection__option-coche {
+.bouton-comparaison__coche {
   flex-shrink: 0;
   inline-size: 1em;
-  color: var(--brand-700);
+  color: var(--red, var(--accent-primary));
 }
 
-.puce-selection__option-help {
+.bouton-comparaison__option-help {
   display: none;
   flex-basis: 100%;
-  color: var(--text-tertiary);
+  color: var(--muted, var(--text-tertiary));
   font: var(--text-caption);
   line-height: 1.35;
 }
 
-.puce-selection__option:hover .puce-selection__option-help,
-.puce-selection__option:focus-visible .puce-selection__option-help {
+.bouton-comparaison__option:hover .bouton-comparaison__option-help,
+.bouton-comparaison__option:focus-visible .bouton-comparaison__option-help {
   display: block;
 }
 
 @media (pointer: coarse) {
-  .puce-selection__trigger,
-  .puce-selection__option {
+  .bouton-comparaison__declencheur,
+  .bouton-comparaison__option {
     min-block-size: 44px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .puce-selection__fleche {
+  .bouton-comparaison__fleche {
     transition: none;
   }
 }

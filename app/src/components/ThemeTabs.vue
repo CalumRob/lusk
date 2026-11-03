@@ -68,13 +68,8 @@ const props = withDefaults(
      *  premier par l'ordre des thèmes passés ; la carte et les Méthodes
      *  conservent leur premier onglet renommé. */
     masquerOngletInitial?: boolean
-    /** #860 : la fiche assied la puce de Sélection de comparaison à côté des
-     *  onglets dans SA propre rangée collante — `collant: false` rend la barre
-     *  non collante (le conteneur parent porte le sticky) et sans fond/bordure
-     *  propres. Par défaut la barre reste collante sous l'en-tête global. */
-    collant?: boolean
   }>(),
-  { ariaLabel: 'Thèmes de la fiche', collant: true },
+  { ariaLabel: 'Thèmes de la fiche' },
 )
 
 const emit = defineEmits<{
@@ -146,7 +141,6 @@ function surTouche(ev: KeyboardEvent): void {
 <template>
   <div
     class="theme-tabs"
-    :class="{ 'theme-tabs--integre': !collant }"
     role="tablist"
     :aria-label="props.ariaLabel"
     @keydown="surTouche"
@@ -251,16 +245,5 @@ function surTouche(ev: KeyboardEvent): void {
 .onglet--selectionne::after {
   background: var(--couleur-line, var(--brand-500));
   transform: scaleX(1);
-}
-
-/* #860 — barre intégrée dans la rangée collante de la fiche (avec la puce de
-   sélection) : le conteneur parent porte le sticky, le fond et la bordure. */
-.theme-tabs--integre {
-  position: static;
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 0;
-  background: transparent;
-  border-bottom: 0;
 }
 </style>

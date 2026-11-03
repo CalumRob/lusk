@@ -10,7 +10,6 @@ import BlocProgrammes from '../components/fiche/BlocProgrammes.vue'
 import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilieux.vue'
 import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
-import CahierComparisonNote from '../fiche/prototype/CahierComparisonNote.vue'
 import { contextesDepuisReference } from '../fiche/comparisonContext'
 import {
   territoiresFixture,
@@ -101,11 +100,6 @@ async function monter(
   })
   await flushPromises()
   return { router, wrapper, charger }
-}
-
-/** #860 — la note de comparaison du cahier est en lecture seule (plus de sélecteur). */
-function monterNoteComparaison(label: string) {
-  return mount(CahierComparisonNote, { props: { label } })
 }
 
 describe('TerritoireView — modèle atomique par territoire', () => {
@@ -1408,17 +1402,22 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   }, 20_000)
 
-  it.each(['densite', 'epci', 'bretagne'] as const)(
-    'affiche la portée publiée %s dans la note de comparaison, en lecture seule', async (mode) => {
-      const contextes = contextesReference('22001')
-      const label = contextes[mode]!.scope.label
-      const wrapper = monterNoteComparaison(label)
+  it.each(['epci', 'bretagne'] as const)(
+    'la loi de nommage %s portée par les légendes des figures du cahier (note « Groupe comparé » retirée)', async (mode) => {
+      // #860 (ruling 2026-11-03) — une seule légende par figure : la note
+      // séparée est retirée ; la portée résolue vit dans les marques de pair
+      // (CahierComparisonValue) et les légendes des figures.
+      const requests: Array<Array<Record<string, any>>> = []
+      vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+      const { wrapper } = await monter(
+        `/territoire/commune/22001?theme=mobilite&comparaison=${mode}`, chargerReferenceReelle)
+      await flushPromises()
 
-      const note = wrapper.get('.cahier-comparison-note')
-      expect(note.text()).toContain(label)
-      // #860 — plus de contrôle dans la note : aucun bouton/listbox
-      expect(wrapper.find('button').exists()).toBe(false)
-      expect(wrapper.find('[aria-haspopup]').exists()).toBe(false)
+      expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(0)
+      const contextes = contextesReference('22001')
+      const labels = wrapper.findAll('.cahier-comparison-value__scope, .cahier-figure-legend-label, .cahier-network-bar-chart__reference-key')
+        .map((el) => el.text())
+      expect(labels.some((texte) => texte.includes(contextes[mode]!.scope.label))).toBe(true)
       wrapper.unmount()
     },
   )
@@ -1642,22 +1641,26 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
 })
 
-describe('TerritoireView — #860 : la puce de Sélection de comparaison dans la rangée collante', () => {
-  it('assied la puce à côté des onglets dans la barre collante, avec la portée par défaut niveau-natif', async () => {
+describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison » dans le page-heading collant du Cahier', () => {
+  it('assied le bouton dans le page-heading collant, à gauche du titre thème·territoire, avec la portée par défaut niveau-natif', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
-    const { wrapper } = await monter('/territoire/commune/22001?theme=programmes', chargerReferenceReelle)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
     await flushPromises()
 
-    const barre = wrapper.get('.fiche-barre-collante')
-    expect(barre.findAll('[role="tab"]')).toHaveLength(6)
-    const puce = barre.get('.puce-selection__trigger')
+    // plus de contrôle dans le chrome d'onglets
+    expect(wrapper.find('.fiche-barre-collante').exists()).toBe(false)
+    const heading = wrapper.get('.page-layout--sticky .page-heading')
+    const bouton = heading.get('.bouton-comparaison__declencheur')
     const porteeDefaut = contextesReference('22001').epci!.scope.label
-    expect(puce.text()).toContain('communes de')
-    expect(puce.text()).toContain(porteeDefaut)
-    expect(puce.attributes('aria-label')).toBe(`Sélection de comparaison active : ${porteeDefaut}`)
-    expect(puce.attributes('aria-haspopup')).toBe('menu')
-    expect(puce.attributes('aria-expanded')).toBe('false')
+    // face laconique « Comparaison » ; la portée ride dans le nom accessible
+    expect(bouton.find('.bouton-comparaison__texte').text()).toBe('Comparaison')
+    expect(bouton.attributes('aria-label')).toBe(`Comparaison : ${porteeDefaut}`)
+    expect(bouton.attributes('aria-haspopup')).toBe('menu')
+    // aligné à droite, immédiatement à gauche du titre « thème · territoire »
+    const contexte = heading.get('.page-heading-context')
+    expect(contexte.element.firstElementChild).toBe(wrapper.find('.bouton-comparaison').element)
+    expect(contexte.get('.page-heading-theme').text()).toBe('Mobilité')
 
     // Le défaut niveau-natif (EPCI de la commune) a déjà été acquis en
     // selected_comparison avec la cohorte communale de l'EPCI — jamais la densité.
@@ -1671,55 +1674,55 @@ describe('TerritoireView — #860 : la puce de Sélection de comparaison dans la
     wrapper.unmount()
   })
 
-  it('le menu rapide des presets pilote l’URL et la passe d’acquisition par thème actif', async () => {
+  it('le menu des presets (sans « Par défaut ») pilote l’URL et la passe d’acquisition par thème actif', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=programmes', chargerReferenceReelle)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
     await flushPromises()
 
-    const puce = wrapper.get('.puce-selection__trigger')
-    await puce.trigger('click')
+    const bouton = wrapper.get('.page-heading .bouton-comparaison__declencheur')
+    await bouton.trigger('click')
     const entrees = wrapper.findAll('[role="menuitemradio"]')
-    const labels = entrees.map((e) => e.find('.puce-selection__option-label').text())
-    const porteeDefaut = contextesReference('22001').epci!.scope.label
+    const labels = entrees.map((e) => e.find('.bouton-comparaison__option-label').text())
     expect(labels).toEqual([
-      `Par défaut : ${porteeDefaut}`,
       contextesReference('22001').epci!.scope.label,
       contextesReference('22001').bretagne!.scope.label,
       contextesReference('22001').densite!.scope.label,
       'Aucune comparaison',
     ])
-    expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['true', 'false', 'false', 'false', 'false'])
+    expect(wrapper.text()).not.toContain('Par défaut')
+    // param absent → le preset niveau-natif (epci) est coché
+    expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['true', 'false', 'false', 'false'])
 
     // Choisir le preset Bretagne écrit ?comparaison=bretagne et lance une
     // passe selected_comparison avec toutes les communes bretonnes.
     const bretagneTyped = referenceReelle.filter((t) => t.type === 'commune')
       .map((t) => ({ type: 'commune' as const, id: t.territoire }))
       .sort((a, b) => a.id.localeCompare(b.id))
-    const selectedWith = (members: unknown) => requests
+    // La passe selected_comparison peut être découpée en plusieurs lots bornés
+    // (≤12 lectures) — tous portent les mêmes membres tapés.
+    const selectedBatchesWith = (members: unknown) => requests
       .filter((batch) => batch.some((item) => item.intent.kind === 'selected_comparison' &&
-        JSON.stringify(item.intent.members) === JSON.stringify(members))).length
-    await entrees[2]!.trigger('click')
+        JSON.stringify(item.intent.members) === JSON.stringify(members)))
+    await entrees[1]!.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBe('bretagne')
-    expect(selectedWith(bretagneTyped)).toBe(1)
+    expect(selectedBatchesWith(bretagneTyped).length).toBeGreaterThan(0)
 
     // La sélection vide explicite écrit ?comparaison= et part avec [].
-    await wrapper.get('.puce-selection__trigger').trigger('click')
-    await wrapper.findAll('[role="menuitemradio"]')[4]!.trigger('click')
+    await wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
+    await wrapper.findAll('[role="menuitemradio"]')[3]!.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBe('')
-    expect(selectedWith([])).toBe(1)
-    expect(wrapper.get('.puce-selection__trigger').attributes('aria-label'))
-      .toBe('Sélection de comparaison active : Aucune comparaison')
+    expect(selectedBatchesWith([]).length).toBeGreaterThan(0)
+    expect(wrapper.get('.page-heading .bouton-comparaison__declencheur').attributes('aria-label'))
+      .toBe('Comparaison : Aucune comparaison')
 
-    // Le retour au défaut retire le paramètre (partageable : absent = défaut).
-    await wrapper.get('.puce-selection__trigger').trigger('click')
+    // Choisir le preset niveau-natif écrit le preset explicite dans l'URL.
+    await wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
     await wrapper.findAll('[role="menuitemradio"]')[0]!.trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query.comparaison).toBeUndefined()
-    expect(wrapper.get('.puce-selection__trigger').attributes('aria-label'))
-      .toBe(`Sélection de comparaison active : ${porteeDefaut}`)
+    expect(router.currentRoute.value.query.comparaison).toBe('epci')
     wrapper.unmount()
   })
 
@@ -1728,7 +1731,7 @@ describe('TerritoireView — #860 : la puce de Sélection de comparaison dans la
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
     const membres = 'commune:22001,commune:22002'
     const { router, wrapper } = await monter(
-      `/territoire/commune/22001?theme=programmes&comparaison=${membres}`, chargerReferenceReelle)
+      `/territoire/commune/22001?theme=mobilite&comparaison=${membres}`, chargerReferenceReelle)
     await flushPromises()
 
     expect(router.currentRoute.value.query.comparaison).toBe(membres)
@@ -1738,19 +1741,19 @@ describe('TerritoireView — #860 : la puce de Sélection de comparaison dans la
       { type: 'commune', id: '22001' },
       { type: 'commune', id: '22002' },
     ])
-    expect(wrapper.get('.puce-selection__trigger').attributes('aria-label'))
-      .toBe('Sélection de comparaison active : 2 communes')
+    expect(wrapper.get('.page-heading .bouton-comparaison__declencheur').attributes('aria-label'))
+      .toBe('Comparaison : 2 communes')
     wrapper.unmount()
   })
 
   it('la fiche Région n’a aucun contrôle de comparaison', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
-    const { router, wrapper } = await monter('/territoire/region/53?theme=programmes&comparaison=bretagne',
+    const { router, wrapper } = await monter('/territoire/region/53?theme=mobilite&comparaison=bretagne',
       chargerReferenceReelle)
     await flushPromises()
 
-    expect(wrapper.find('.puce-selection').exists()).toBe(false)
+    expect(wrapper.find('.bouton-comparaison').exists()).toBe(false)
     // Le paramètre est retiré : la Région n'a pas de comparaison.
     expect(router.currentRoute.value.query.comparaison).toBeUndefined()
     wrapper.unmount()
