@@ -96,7 +96,7 @@ describe('AEDAR car access overview', () => {
     expect(volume!.reference!.value).toBeCloseTo(1)
     expect(diversity!.reference).not.toHaveProperty('rank')
     expect(diversity!.reference).not.toHaveProperty('scope.kind', 'communes-epci')
-    expect(section.evidence!.comparisonLabel).toBe('Moyenne · EPCI Test')
+    expect(section.evidence!.comparisonLabel).toBe('Moyenne de EPCI Test')
   })
 
   it.each(['partial universe', 'uncovered', 'publication', 'source vintage', 'wrong territory'])('keeps local scalars without borrowing an incompatible EPCI: %s', (kind) => {

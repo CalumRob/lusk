@@ -123,7 +123,7 @@ export function aedarAccessSection(
         territory: reference.territory,
       })
     : null
-  const referenceLabel = reference ? `Moyenne · ${reference.label}` : null
+  const referenceLabel = reference ? `Moyenne de ${reference.label}` : null
   const ramps = values.map((ramp) => rampEvidence(ramp, referenceValues, referenceLabel))
   const diversity = ramps.find((ramp) => ramp.rampKey === 'diversity')
   const horizonIndex = diversity?.xAxis.values.indexOf(AEDAR_PROTOTYPE_HORIZON_MINUTES) ?? -1
@@ -315,7 +315,7 @@ export function aedarCarAccessOverviewSection(
       meanDiversity, meanVolume, nAddresses, scalars,
       scalarFigureTitle: carOverviewScalarFigureTitle(horizonMinutes),
       comparisonLabel: reference && scalars.some((scalar) => scalar.reference !== null)
-        ? `Moyenne · ${reference.label}` : null,
+        ? `Moyenne de ${reference.label}` : null,
       unitIntroduction: carOverviewUnitIntroduction(territory, nAddresses, source?.source_url ?? null),
       availability, source: means.source,
       prose: carOverviewProse(horizonMinutes),

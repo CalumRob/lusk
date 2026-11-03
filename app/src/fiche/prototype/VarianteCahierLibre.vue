@@ -465,7 +465,6 @@ onBeforeUnmount(() => {
                         <template v-if="scalar.reference" #reference>
                           <CahierComparisonValue
                             :named-reference="scalar.reference"
-                            :scope-label="aedarCarAccessOverviewEvidenceFor(section)!.comparisonLabel"
                           />
                         </template>
                       </CahierFigureScalar>

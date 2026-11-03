@@ -11,11 +11,8 @@ const props = withDefaults(
     namedReference?: TerritorialScalarReference | null
     to?: RouteLocationRaw | null
     maximumFractionDigits?: number
-    /** Loi de nommage portée par la légende de la figure (#860 ruling) :
-     *  statistique en un mot + portée résolue (« moyenne des communes de … »). */
-    scopeLabel?: string | null
   }>(),
-  { to: null, maximumFractionDigits: 1, scopeLabel: null },
+  { to: null, maximumFractionDigits: 1 },
 )
 
 function formatNumber(value: number, maximumFractionDigits = 1): string {
@@ -40,7 +37,6 @@ function comparisonText(): string | null {
     <span v-if="comparisonText()" class="cahier-comparison-value__reference">
       Groupe comparé :
       <strong class="region-emphasis">{{ comparisonText() }}</strong>
-      <span v-if="scopeLabel" class="cahier-comparison-value__scope"> — {{ scopeLabel }}</span>
     </span>
     <span v-if="fact?.comparison && !namedReference" class="cahier-comparison-value__rank">
       <CahierRank
@@ -79,10 +75,6 @@ function comparisonText(): string | null {
   max-width: 100%;
   white-space: normal;
   overflow-wrap: break-word;
-}
-
-.cahier-comparison-value__scope {
-  color: var(--cahier-default, var(--text-tertiary));
 }
 
 .cahier-comparison-value__rank {

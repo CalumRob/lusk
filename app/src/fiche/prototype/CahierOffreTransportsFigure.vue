@@ -61,7 +61,7 @@ const comparisonLabel = computed(() => {
   const comparison = props.comparisonTrajectory
   if (!comparison) return ''
   const statistic = comparison.statistic === 'mean' ? 'Moyenne' : comparison.statistic
-  return `${statistic} · ${comparison.scope.label} · ${comparison.eligibleCount}`
+  return `${statistic} des ${comparison.scope.label}`
 })
 const markerPoint = computed(() => props.metadata?.marker
   ? props.trajectory.find(item => item.fact.detail === props.metadata?.marker?.detail && item.fact.value !== null)

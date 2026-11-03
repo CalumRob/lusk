@@ -309,7 +309,7 @@ describe('VarianteCahierLibre — AEDAR access', () => {
       'Vélo (LTS4)',
       'Transports en commun',
       'À pied',
-      'Moyenne · EPCI X',
+      'Moyenne de EPCI X',
     ])
     const referenceMark = sharedRampLegend[5]!.find('.cahier-figure-legend-mark')
     expect(referenceMark.classes()).toContain('cahier-figure-legend-mark--dash')
@@ -321,7 +321,7 @@ describe('VarianteCahierLibre — AEDAR access', () => {
     // séparée est retirée ; la loi de nommage vit dans la légende des modes
     // (entrée « peer » libellée) et dans les marques de pair des figures.
     expect(wrapper.findAll('[data-section="aedar-access"] .cahier-comparison-note')).toHaveLength(0)
-    expect(sharedRampLegend[5]!.text()).toBe('Moyenne · EPCI X')
+    expect(sharedRampLegend[5]!.text()).toBe('Moyenne de EPCI X')
 
   })
 
@@ -593,8 +593,8 @@ describe('ProductionMobiliteAedar', () => {
     // #860 (ruling) — la marque de pair de la figure porte la loi de nommage :
     // « Groupe comparé : <valeur> — <statistique + portée résolue> », une seule légende.
     expect(scalars.map((scalar) => scalar.get('.cahier-comparison-value').text())).toEqual([
-      'Groupe comparé : 2,5 — Moyenne · EPCI X',
-      'Groupe comparé : 2,5 — Moyenne · EPCI X',
+      'Groupe comparé : 2,5',
+      'Groupe comparé : 2,5',
     ])
     expect(scalars[0]!.attributes('aria-label')).toContain('Moyenne — EPCI X : 2,5 types / adresse')
     expect(overview.text()).toContain('15 minutes (moyenne par adresse)')
@@ -870,7 +870,7 @@ describe('ProductionMobiliteAedar', () => {
     const section = ((cahierProps.content as ThemeContent).units[0].sections as readonly ContentSection[]).find((candidate) => candidate.key === 'aedar-access') as AedarAccessSection
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     for (const ramp of section.evidence.ramps) {
-      expect(ramp.referenceLabel).toBe('Moyenne · EPCI X')
+      expect(ramp.referenceLabel).toBe('Moyenne de EPCI X')
     }
     // Ten reference types contribute 0.25 each, all remaining types have zero access.
     expect(section.evidence.ramps[0]?.reference?.car).toEqual([2.5, 2.5, 2.5, 2.5])

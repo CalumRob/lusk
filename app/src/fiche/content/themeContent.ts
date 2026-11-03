@@ -593,7 +593,7 @@ function comparisonLabel(
   if (!scopeLabel) return null
   // Le kind est adapté du statistic servi, pas inféré de la famille visuelle.
   const statistic = comparison?.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane'
-  const label = `${statistic} · ${scopeLabel}`
+  const label = `${statistic} des ${scopeLabel}`
   return comparison?.reference ? label : `Comparaison indisponible — ${label}`
 }
 

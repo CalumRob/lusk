@@ -54,7 +54,6 @@ function ariaForFact(fact: ContentFact): string {
             :fact="props.evidence.roadSurface.fact"
             :maximum-fraction-digits="0"
             :to="routeFor(props.evidence.roadSurface)"
-            :scope-label="props.evidence.comparisonLabel"
           />
         </template>
       </CahierFigureScalar>
