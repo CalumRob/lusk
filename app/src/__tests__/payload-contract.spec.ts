@@ -266,8 +266,8 @@ describe('payload contract — the committed payload parses and renders', () => 
     ])
     // Tout thème porté par le payload committé est un thème du registre (la
     // validation l'impose en amont) — le registre ne dérive jamais du payload.
-    for (const ligne of payload.indicateurs) expect(THEMES_CANONIQUES).toContain(ligne.theme)
-    for (const ligne of payload.histoires) expect(THEMES_CANONIQUES).toContain(ligne.theme)
+    const themesDuPayload = new Set([...payload.indicateurs, ...payload.histoires].map((ligne) => ligne.theme))
+    expect([...themesDuPayload].every((theme) => (THEMES_CANONIQUES as readonly string[]).includes(theme))).toBe(true)
   })
 
   it('loads the committed theme_<theme>.json metadata for all five built themes (#311, #313)', async () => {
