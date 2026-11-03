@@ -53,7 +53,7 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
   # Issue #890 : la génération planifiée des modèles de lecture est retirée du
   # graphe — aucune cible par thème (modeles_lecture_<thème>), aucun manifeste
   # (manifeste_modeles_lecture), aucune cible agrégée (modeles_territoire),
-  # même pour les thèmes dont la métadonnée déclare encore read_model.
+  # même pour les thèmes dont la métadonnée déclarait read_model avant #900.
   expect_false(any(grepl("^modeles_lecture_", noms)))
   expect_false("manifeste_modeles_lecture" %in% noms)
   expect_false("modeles_territoire" %in% noms)
@@ -102,9 +102,9 @@ test_that("les seams se dispatchent sur les traits du descripteur, jamais sur le
   expect_true(grepl("publish(", commande("publie_milieux"), fixed = TRUE))
   expect_false(grepl("publier_", commande("publie_demographie"), fixed = TRUE))
 
-  # Issue #890 : plus aucune commande du graphe n'appelle un générateur de
-  # modèles de lecture — le registre read_model ne pilote plus de cible
-  # planifiée (il reste un champ validé des métadonnées épinglées).
+  # Issue #890/#900 : plus aucune commande du graphe n'appelle un générateur
+  # de modèles de lecture — le registre read_model ne pilote plus de cible
+  # planifiée et le champ lui-même est retiré des métadonnées en #900.
   expect_false(any(grepl("modeles_lecture|modeles_territoire", manifeste$command)))
 
   # vintages : le cache atteint le builder qui le DÉCLARE (Habitat lit la date
@@ -134,7 +134,7 @@ test_that("la sélection partielle du cron ne câble aucune cible de modèle de 
   racine <- pkgload::pkg_path()
   withr::local_dir(racine)
   # la sélection du cron (pipeline-cron.yml) : les trois thèmes légers —
-  # dont Démographie, qui déclare read_model dans sa métadonnée épinglée
+  # dont Démographie, qui déclarait read_model avant #900
   withr::local_envvar(LUSK_THEMES = "demographie,habitat,economie")
 
   manifeste <- targets::tar_manifest()
