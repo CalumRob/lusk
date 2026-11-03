@@ -138,15 +138,18 @@ const programmeSelectionne = computed<SigleProgramme | null>(() => {
 const selection = computed<Theme | null>(() => {
   if (ongletProgrammes.value) return null
   const demande = route.query.theme
-  // #901 — la porte de ?theme= est le registre : tout thème canonique est
-  // admis (la présence est produit, pas lignes de faits). La sélection
-  // attend que le wait-set soit réglé — la porte de rendu de la page.
+  // #901 — la porte de ?theme= est le registre : tout thème canonique du
+  // registre est admis (la présence est produit, pas lignes de faits), la
+  // sélection attendant que le wait-set soit réglé (porte de rendu). Le mode
+  // Programmes garde SON unique état d'URL (?onglet=programmes, ADR-0019) :
+  // ?theme=programmes n'est pas une seconde autorité — le watch ci-dessous
+  // le normalise vers ?onglet=programmes.
   if (
     payload.value &&
     !chargementPayload.value &&
     !erreurPayload.value &&
     typeof demande === 'string' &&
-    (THEMES_CANONIQUES as readonly string[]).includes(demande)
+    (themes.value as string[]).includes(demande)
   ) {
     return demande as Theme
   }
@@ -198,6 +201,15 @@ watch(
           query: { onglet: 'programmes', ...(programmeValide ? { programme } : {}) },
         })
       }
+      return
+    }
+    // #901 — ?theme=programmes est canonique (le registre l'admet) : il est
+    // normalisé vers l'UNIQUE URL du mode Programmes (?onglet=programmes,
+    // ADR-0019 #282), le sigle valide conservé — pas une seconde autorité.
+    if (theme === 'programmes') {
+      router.replace({
+        query: { onglet: 'programmes', ...(programmeValide ? { programme } : {}) },
+      })
       return
     }
     if (themeCanonique) {
@@ -263,42 +275,6 @@ const geometrieAbsente = computed(
     niveauxDisponibles.value.length === 0,
 )
 
-/** The legend data — the same pure logic that paints the map. */
-const couchesTheme = computed<CouchesTheme | null>(() =>
-  selection.value && payloadCarte.value && mapDeclarations.value.length > 0
-    ? couchesDuTheme(payloadCarte.value, selection.value, {
-        indicatorIds: new Set(mapDeclarations.value.filter((resource) => resource.shapes.some((shape) =>
-          ['scalar', 'declared_profile', 'period_detail', 'ordered_series'].includes(shape)))
-          .map((resource) => resource.indicator_id)),
-        scalarIds: new Set(mapDeclarations.value.filter((resource) => resource.shapes.includes('scalar') ||
-          (selection.value === 'programmes' && resource.shapes.includes('ordered_series')))
-          .map((resource) => resource.indicator_id)),
-        storyFields: new Set(mapStories.value.flatMap((row) => Object.entries(row)
-          .filter(([, value]) => typeof value === 'number').map(([key]) => key))),
-        axes: mapAxes.value,
-      })
-    : null,
-)
-
-/** The ACTIVE layer — in-memory state; reset to the theme's default on theme change (ADR-0019). */
-const coucheActive = ref<Couche | null>(null)
-watch(
-  couchesTheme,
-  (ct) => {
-    if (!ct) return
-    const entrees = ct?.entrees.flatMap((entry) => entry.type === 'couche'
-      ? [entry.couche] : entry.groupe.couches) ?? []
-    const activeIsStillPublished = coucheActive.value && entrees.some((layer) =>
-      layer.source === coucheActive.value?.source && layer.clef === coucheActive.value?.clef &&
-      layer.detail === coucheActive.value?.detail && layer.storyKey === coucheActive.value?.storyKey)
-    if (!activeIsStillPublished) coucheActive.value = ct?.coucheParDefaut ?? null
-  },
-  { immediate: true },
-)
-watch(selection, () => {
-  coucheActive.value = couchesTheme.value?.coucheParDefaut ?? null
-})
-
 // Standalone map values are API-only. The static model supplies presentation
 // and stable layer ordering; producer discovery and native cohort facts admit
 // the layers/values at the active level. No scalar flag or static fallback.
@@ -322,10 +298,9 @@ const territoryRankStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
 let mapSequence = 0
 let territoryRankSequence = 0
 let territoryRankRequestKey: string | null = null
-const indicateurScalaireActif = computed(() => {
-  const layer = coucheActive.value
-  return selection.value && layer?.source === 'indicateur' && layer.detail === null ? layer.clef : null
-})
+// #901 — indicateurScalaireActif lit coucheActive : déclaré APRÈS payloadCarte
+// avec le bloc couches (le watch de reset de rang évalue son source à la
+// création et ne doit pas lire une déclaration en cours d'initialisation).
 const niveauApi = computed(() => ({ communes: 'commune', epcis: 'epci', departements: 'departement' } as const)[niveau.value])
 
 /** The rank read validates the native comparison against the acquired native
@@ -443,13 +418,6 @@ watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, r
   }
   }, { immediate: true })
 
-watch([selection, indicateurScalaireActif, niveauApi], () => {
-  territoryRankSequence++
-  territoryRank.value = null
-  territoryRankStatus.value = 'idle'
-  territoryRankRequestKey = null
-})
-
 const payloadCarte = computed(() => {
   const current = payload.value
   if (!current) return current
@@ -475,6 +443,57 @@ const payloadCarte = computed(() => {
   return { ...current, themeMetadata: { ...current.themeMetadata, [theme]: mapThemeMetadata.value?.theme === theme
     ? mapThemeMetadata.value : current.themeMetadata?.[theme] }, indicateurs: [...indicateurs, ...acquired],
     histoires: [...histoires, ...mapStories.value] as typeof current.histoires }
+})
+
+/** The legend data — the same pure logic that paints the map. Déclaré APRÈS
+ *  les états map* et payloadCarte : le watch immédiat ci-dessous évalue ce
+ *  computed pendant le setup (même avec un magasin déjà chaud), donc toutes
+ *  ses dépendances doivent être initialisées avant lui. */
+const couchesTheme = computed<CouchesTheme | null>(() =>
+  selection.value && payloadCarte.value && mapDeclarations.value.length > 0
+    ? couchesDuTheme(payloadCarte.value, selection.value, {
+        indicatorIds: new Set(mapDeclarations.value.filter((resource) => resource.shapes.some((shape) =>
+          ['scalar', 'declared_profile', 'period_detail', 'ordered_series'].includes(shape)))
+          .map((resource) => resource.indicator_id)),
+        scalarIds: new Set(mapDeclarations.value.filter((resource) => resource.shapes.includes('scalar') ||
+          (selection.value === 'programmes' && resource.shapes.includes('ordered_series')))
+          .map((resource) => resource.indicator_id)),
+        storyFields: new Set(mapStories.value.flatMap((row) => Object.entries(row)
+          .filter(([, value]) => typeof value === 'number').map(([key]) => key))),
+        axes: mapAxes.value,
+      })
+    : null,
+)
+
+/** The ACTIVE layer — in-memory state; reset to the theme's default on theme change (ADR-0019). */
+const coucheActive = ref<Couche | null>(null)
+watch(
+  couchesTheme,
+  (ct) => {
+    if (!ct) return
+    const entrees = ct?.entrees.flatMap((entry) => entry.type === 'couche'
+      ? [entry.couche] : entry.groupe.couches) ?? []
+    const activeIsStillPublished = coucheActive.value && entrees.some((layer) =>
+      layer.source === coucheActive.value?.source && layer.clef === coucheActive.value?.clef &&
+      layer.detail === coucheActive.value?.detail && layer.storyKey === coucheActive.value?.storyKey)
+    if (!activeIsStillPublished) coucheActive.value = ct?.coucheParDefaut ?? null
+  },
+  { immediate: true },
+)
+watch(selection, () => {
+  coucheActive.value = couchesTheme.value?.coucheParDefaut ?? null
+})
+
+const indicateurScalaireActif = computed(() => {
+  const layer = coucheActive.value
+  return selection.value && layer?.source === 'indicateur' && layer.detail === null ? layer.clef : null
+})
+
+watch([selection, indicateurScalaireActif, niveauApi], () => {
+  territoryRankSequence++
+  territoryRank.value = null
+  territoryRankStatus.value = 'idle'
+  territoryRankRequestKey = null
 })
 
 /** Le jeu de couches de l'onglet programmes au niveau courant (level-native —
