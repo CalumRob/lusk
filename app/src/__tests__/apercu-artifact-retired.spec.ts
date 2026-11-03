@@ -85,12 +85,12 @@ describe('aucun lecteur d’artefact commité dans les sources app (#903)', () =
       ['grep', '-l', 'apercu\\.json', '--', 'app/src', 'app/scripts', 'app/vite.config.ts'],
       { cwd: repoRoot, encoding: 'utf8' },
     )
-    // Remaining mentions are no-request assertions and history comments only:
-    // nothing may read the committed file from the retired path.
+    // Whatever mentions remain (no-request assertions, history comments), none
+    // may read the committed file from the retired path — the scan stays green
+    // even if every mention is one day removed (no minimum-mention lock).
     const mentions = sources.stdout.split('\n').filter(Boolean)
       // This spec is the deletion contract itself: it names the retired paths.
       .filter((file) => file !== 'app/src/__tests__/apercu-artifact-retired.spec.ts')
-    expect(mentions.length).toBeGreaterThan(0) // the retirement stays documented
     for (const file of mentions) {
       const content = readFileSync(path.join(repoRoot, file), 'utf8')
       expect(/readFile(Sync)?\([^)]*apercu\.json/s.test(content), file).toBe(false)
