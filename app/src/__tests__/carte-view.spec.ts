@@ -24,6 +24,7 @@ import {
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { ChargerFichier } from '../payload/usePayload'
+import { THEMES_CANONIQUES } from '../payload/types'
 import type { Histoire, HistoireDemographie, Indicateur, MembreProgramme, Payload, SubventionProgramme } from '../payload/types'
 import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
@@ -1092,6 +1093,101 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     await flushPromises()
     expect(router.currentRoute.value.query.theme).toBeUndefined()
     expect(wrapper.find('.carte--theme-apercu').exists()).toBe(true)
+  })
+})
+
+describe('CarteView — #901 : onglets + admission ?theme= depuis le REGISTRE THEMES_CANONIQUES (présence produit, pas lignes de faits)', () => {
+  /** La barre d'onglets de la carte : le premier onglet « Programmes et
+   *  subventions » (ADR-0019) couvre le thème `programmes`, puis les cinq
+   *  autres thèmes dans l'ordre canonique du registre — six identités. */
+  const ONGLETS_REGISTRE = [
+    'Programmes et subventions',
+    'Mobilité',
+    'Démographie',
+    'Habitat',
+    'Économie/Emploi',
+    'Milieux',
+  ]
+  const fichiersNumeriques = (demandes: string[]) =>
+    demandes.filter((f) => f.startsWith('indicateurs_') || f.startsWith('histoires_'))
+
+  it('cache frais : les 6 identités d’onglets du registre, et ZÉRO des 12 fichiers numériques demandés même si leurs réponses sont disponibles', async () => {
+    const demandes: string[] = []
+    // Le chargeur SERT les lignes statiques si on les demande (elles sont
+    // « disponibles » côté fixture) — la carte ne doit JAMAIS les demander.
+    const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
+      return chargerAvec(payload)(fichier)
+    }
+    const { wrapper } = await monter({ chargerPayload: charger, apiFetch: false })
+
+    expect(wrapper.findAll('[role="tab"]').map((o) => o.text().trim())).toEqual(ONGLETS_REGISTRE)
+    expect(fichiersNumeriques(demandes)).toEqual([])
+    // Le démarrage reste demand-driven et étroit : wait-set + les 6 métadonnées.
+    expect(new Set(demandes)).toEqual(new Set([
+      'territoires',
+      'run-report',
+      ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as const),
+    ]))
+  })
+
+  it('?theme= canonique admis dès le wait-set — même quand l’API ne déclare aucune ressource pour ce thème (état « sans couche » honnête, onglets stables)', async () => {
+    const demandes: string[] = []
+    const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
+      return chargerAvec(payload)(fichier)
+    }
+    const { router, wrapper } = await monter({ chemin: '/carte?theme=mobilite', chargerPayload: charger })
+
+    // mobilite n'a aucune ressource déclarée dans le fixture API : aucune
+    // couche, aucune erreur — mais l'onglet existe et est sélectionné.
+    expect(router.currentRoute.value.query.theme).toBe('mobilite')
+    const onglets = wrapper.findAll('[role="tab"]')
+    expect(onglets.map((o) => o.text().trim())).toEqual(ONGLETS_REGISTRE)
+    expect(onglets[1]!.attributes('aria-selected')).toBe('true')
+    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
+    expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
+    expect(fichiersNumeriques(demandes)).toEqual([])
+  })
+
+  it('échec API du thème sélectionné → « indisponible + Réessayer », PAS une absence : onglets stables, URL gardée, aucune valeur statique de repli, zéro requête numérique', async () => {
+    const metadata = JSON.parse(await readFile(join(process.cwd(), '..', 'public', 'data', 'theme_demographie.json'), 'utf8'))
+    const demandes: string[] = []
+    const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
+      return fichier === 'theme_demographie' ? metadata : chargerAvec(payload)(fichier)
+    }
+    const fixture = await fetchCarteApiFixture(payload)
+    let premierAppel = true
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/resources' && premierAppel) {
+        premierAppel = false
+        return new Response('', { status: 503 })
+      }
+      return fixture(input, init)
+    }))
+    const { router, wrapper } = await monter({ chemin: '/carte?theme=demographie', chargerPayload: charger, apiFetch: false })
+    await flushPromises()
+
+    // L'échec API est un état indisponible + retry — jamais une absence d'onglet.
+    expect(wrapper.find('[role="alert"]').text()).toContain('Impossible de charger les valeurs natives de la carte.')
+    expect(router.currentRoute.value.query.theme).toBe('demographie')
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+    // Aucune valeur statique de repli : les lignes du fixture (disponibles
+    // côté chargeur) ne sont ni demandées ni rendues pendant l'échec.
+    const carte = maplibreMock.instancesCarteMaple.at(-1)
+    const joined = () => carte?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as { features: { properties: { territoire: string; valeur: number | null } }[] }
+    expect(joined().features.find((f) => f.properties.territoire === '22001')?.properties.valeur).toBeNull()
+    expect(fichiersNumeriques(demandes)).toEqual([])
+
+    // Retry → l'API sert enfin → les valeurs natives rendent (toujours zéro
+    // requête numérique statique).
+    await wrapper.find('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
+    expect(joined().features.find((f) => f.properties.territoire === '22001')?.properties.valeur).not.toBeNull()
+    expect(fichiersNumeriques(demandes)).toEqual([])
   })
 })
 
