@@ -195,6 +195,7 @@ describe('région fixed_comparison : fail-closed (niveau non supporté par les r
   const baseComparison: Record<string, any> = {
     resource: 'prix_m2', target: { kind: 'territory', type: 'region', id: '53' },
     content_version: 'cv1', reference_content_version: 'rv1',
+    selection: null, // le producteur émet toujours le champ (null sur fixed)
     scope: null,
     result: { indicator_id: 'prix_m2', descriptor_version: 'dv1', statistic: 'median',
       status: 'unavailable', reason: 'unsupported_comparison_contract',
@@ -455,6 +456,18 @@ describe('identité d’axe, tuple de rang, repli de résumé (#892)', () => {
     })
     expect(read).toBeUndefined()
     expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+  })
+
+  it('fixed_comparison avec champ selection OMIS (undefined) -> rejet : le producteur émet toujours selection: null explicitement', async () => {
+    const { read, rejected } = await acquirePrix((data) => { delete data.selection })
+    expect(read, 'selection omise doit être rejetée (champ null explicite requis)').toBeUndefined()
+    expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+  })
+
+  it('fixed_comparison avec selection: null explicite -> admis', async () => {
+    const { read, rejected } = await acquirePrix((data) => { data.selection = null })
+    expect(rejected).toBeUndefined()
+    expect(read.comparison?.scope?.kind).toBe('density_class')
   })
 
   it('selected_comparison avec selection null -> rejet (écho attendu)', async () => {
