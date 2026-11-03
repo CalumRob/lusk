@@ -289,6 +289,31 @@ describe('DESIGN.md §4 — Spacing & layout', () => {
   })
 })
 
+describe('DESIGN.md §2.4 — WCAG 2.2 AA contrast floor (4.5:1 body text)', () => {
+  function luminance(hex: string): number {
+    const value = hex.replace('#', '')
+    const channels = [0, 2, 4].map((offset) => {
+      const c = parseInt(value.slice(offset, offset + 2), 16) / 255
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * channels[0]! + 0.7152 * channels[1]! + 0.0722 * channels[2]!
+  }
+  function contrast(fg: string, bg: string): number {
+    const [lighter, darker] = [luminance(fg), luminance(bg)].sort((a, b) => b - a)
+    return (lighter + 0.05) / (darker + 0.05)
+  }
+
+  it('text-primary meets 4.5:1 on both surface tokens; text-secondary does not (notes must use text-primary)', () => {
+    const primary = tokens.get('--text-primary')!
+    const secondary = tokens.get('--text-secondary')!
+    for (const surface of ['--surface-secondary', '--surface-primary']) {
+      const bg = tokens.get(surface)!
+      expect(contrast(primary, bg), `--text-primary on ${surface}`).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(secondary, bg), `--text-secondary on ${surface}`).toBeLessThan(4.5)
+    }
+  })
+})
+
 describe('DESIGN.md §7 — Depth & surface', () => {
   it('declares the chrome backdrop recipe', () => {
     expectToken('--surface-chrome', 'rgba(255,255,255,0.8)')

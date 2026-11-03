@@ -61,6 +61,16 @@ describe('modèle pur de Page d’indicateur', () => {
       .toEqual([['a', 2, 2], ['b', 1, 2]])
   })
 
+  it('labels a combined département+EPCI URL scope with BOTH sourced identities (#892 recheck)', () => {
+    // filtre combiné : la légende ne doit pas choisir le département seul
+    const combine = modeleExploration([facts('a', 10)], facet(), territoires, { niveau: 'commune', departement: '22', epci: 'e' })
+    expect(combine.scopeLabel).toBe('Département 22 · EPCI e')
+    // filtres simples : libellés exacts inchangés
+    expect(modeleExploration([facts('a', 10)], facet(), territoires, { niveau: 'commune', departement: '22' }).scopeLabel).toBe('Département 22')
+    expect(modeleExploration([facts('a', 10)], facet(), territoires, { niveau: 'commune', epci: 'e' }).scopeLabel).toBe('EPCI e')
+    expect(modeleExploration([facts('a', 10)], facet(), territoires, { niveau: 'commune' }).scopeLabel).toBe('Bretagne')
+  })
+
   it('samples finite density coordinates', () => { const density = estimerDensite([10, 20, 30]); expect(density.every((point) => Number.isFinite(point.x) && Number.isFinite(point.density))).toBe(true); expect(positionDensite(density, 20)).toBeCloseTo(50); expect(hauteurDensite(density, 20)).not.toBeNull() })
   it('map filtering keeps BOTH sexes so fusion can aggregate F+M (a sex-filtered payload starves resoudreGroupeSexe and crashes the paint watcher)', () => { const resolved = { ...facet(), detail: 'F', sex: 'F' as const, dimension: 'women', labels: { F: 'Femmes' } }; const femmeA = { ...facts('a', 10), detail: 'F', sex: 'F', dimension: 'women' }; const hommeA = { ...facts('a', 12), detail: 'F', sex: 'M', dimension: 'women' }; const femmeB = { ...facts('b', 20), detail: 'F', sex: 'F', dimension: 'women' }; const source = { territoires, indicateurs: [femmeA, hommeA, femmeB] as unknown as Indicateur[], histoires: [], apercu: null, runReport: null, vintages: null, programmes: null }; const result = payloadPourCarte(source, resolved, { niveau: 'commune' }); expect(result.indicateurs).toEqual([femmeA, hommeA, femmeB]) })
   it('presents ties, null values and empty scopes honestly', () => { const tied = modeleExploration([facts('a', 0), facts('b', 0), facts('c', null)], facet(), territoires, { niveau: 'commune', territoire: 'c' }); expect(tied.high.count).toBe(2); expect(tied.median).toBe(0); expect(tied.markerX).toBeNull(); const empty = modeleExploration([], facet(), territoires, { niveau: 'commune' }); expect(empty.rows).toHaveLength(0); expect(empty.median).toBeNull() })
