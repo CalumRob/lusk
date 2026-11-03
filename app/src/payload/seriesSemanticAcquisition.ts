@@ -258,11 +258,11 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
         requestedIds.size !== resolvedIds.size || [...requestedIds].some((id) => !resolvedIds.has(id))) {
       throw new Error('Sélection de comparaison incompatible avec la population API résolue')
     }
-  } else if (comparisonData.selection !== null && comparisonData.selection !== undefined) {
-    // fixed_comparison : le producteur publie explicitement selection null
-    // (api/snapshot_reads.py:1886-1888) — une sélection publiée sur un fixed
-    // est un contrat invalide, rejeté
-    throw new Error('Sélection publiée sur une comparaison fixed (selection attendu null)')
+  } else if (comparisonData.selection !== null) {
+    // fixed_comparison : le producteur émet TOUJOURS le champ selection, à null
+    // explicitement (api/snapshot_reads.py:1886-1888) — un champ omis
+    // (undefined) comme une sélection non null sont rejetés
+    throw new Error('Sélection de comparaison fixed invalide (champ selection null explicite requis)')
   }
   // #892 fail-closed — contrat de portée PAR KIND, dérivé de l'INTENT de la
   // requête d'acquisition (contrat producteur api/snapshot_reads.py
