@@ -114,7 +114,12 @@ TYPEQU × measure cell the response returns the group statistic computed per
 request: the address-weighted mean of the members' published aggregate values
 (weights = published `n_addresses`) — exactly the pooled address aggregate of
 the selection, reported as `statistic: "pooled"` with the summed source counts —
-for scalar readings and per-cell curve readings alike. The focal receives
+for scalar readings and per-cell curve readings alike. The group coverage is
+derived from the members' published coverage statuses, never fabricated:
+`covered` only when every member is covered; a lesser status is reflected as
+published when the members agree on it, and a disagreement has no single
+derivable coverage and stays unknown (`null`) rather than being upgraded.
+The focal receives
 `rank`, `rank_size` and `rank_ties` (opt-in via `fields`) only when it is itself
 a member and the measure's producer-declared facet is ranked: a direction-aware
 flat ordinal within the selection, ties sharing the rank, using the declared

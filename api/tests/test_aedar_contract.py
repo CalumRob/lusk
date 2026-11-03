@@ -688,12 +688,19 @@ def _aedar_selected_state():
 
 
 def _aedar_facets():
+    # Mirror the declared producer taxonomy exactly: share -> diversity,
+    # mean -> volume (both ranked, higher-is-better); min/max/deciles ->
+    # distribution curve readings, never ranked.
     from api.aedar_models import AEDAR_MEASURE_KEYS
     facets = {}
     for measure in AEDAR_MEASURE_KEYS:
         statistic = measure.rsplit("_", 1)[1]
-        facets[measure] = {"facet": "diversity" if statistic == "share" else "volume",
-                           "direction": "high", "ranked": statistic in ("share", "mean")}
+        if statistic == "share":
+            facets[measure] = {"facet": "diversity", "direction": "high", "ranked": True}
+        elif statistic == "mean":
+            facets[measure] = {"facet": "volume", "direction": "high", "ranked": True}
+        else:
+            facets[measure] = {"facet": "distribution", "direction": "high", "ranked": False}
     return facets
 
 
@@ -727,7 +734,7 @@ def test_aedar_selected_comparison_returns_weighted_mean_ranks_and_curve_cells()
     # Per-cell curve readings get the same weighted mean but no rank chips.
     curve = by_cell[("A104", "count_5_walk_decile1")]
     assert curve["group_value"] == pytest.approx(2.2)
-    assert curve["comparison_facet"] == "diversity" or curve["comparison_facet"]
+    assert curve["comparison_facet"] == "distribution"
     assert curve["rank"] is None and curve["rank_size"] is None and curve["rank_ties"] is None
     assert by_cell[("B207", "count_5_walk_mean")]["group_value"] == pytest.approx(
         (2*10 + 4*30 + 4*10) / 50)
@@ -840,4 +847,30 @@ def test_aedar_fixed_same_level_reference_reads_the_region_direct_aggregate():
             _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", "same_level",
             "A104", "count_5_walk_mean")
     assert err.value.status_code == 422
+
+
+
+def test_aedar_selected_comparison_derives_group_coverage_honestly():
+    members = [("commune", "22001"), ("commune", "22002"), ("commune", "22003")]
+    # All members covered -> the group coverage is derived as covered.
+    result = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", members,
+        ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert result["comparisons"][0]["group_coverage_status"] == "covered"
+    # Mixed member statuses: no single derivable coverage, so it stays
+    # unknown (null) - never upgraded to covered.
+    state = _aedar_selected_state()
+    state["aggregates"][("member", "22003")]["A104"]["coverage"] = "pending_review"
+    result = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(state), "commune", "22001", members,
+        ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert result["comparisons"][0]["group_coverage_status"] is None
+    # A uniform lesser status is reflected as published, not upgraded.
+    state = _aedar_selected_state()
+    for code in ("22001", "22002", "22003"):
+        state["aggregates"][("member", code)]["A104"]["coverage"] = "uncovered_no_address_origins"
+    result = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(state), "commune", "22001", members,
+        ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert result["comparisons"][0]["group_coverage_status"] == "uncovered_no_address_origins"
 

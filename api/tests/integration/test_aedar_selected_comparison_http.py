@@ -61,12 +61,13 @@ def _seed_aedar(publisher):
         VALUES ('sel-c1','commune','Commune 1','22','sel-e1','D1','Dense'),
                ('sel-c2','commune','Commune 2','22','sel-e1','D1','Dense'),
                ('sel-c3','commune','Commune 3','22','sel-e2','D2','Peu dense'),
+               ('sel-c4','commune','Commune 4','22','sel-e2','D2','Peu dense'),
                ('sel-e1','epci','EPCI 1','22',NULL,NULL,NULL),
                ('sel-e2','epci','EPCI 2','22',NULL,NULL,NULL),
                ('22','departement','Département 22',NULL,NULL,NULL,NULL),
                ('53','region','Bretagne',NULL,NULL,NULL,NULL)""")
     publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count)"
-                      " VALUES ('territory_reference','b' || repeat('0',63),7)")
+                      " VALUES ('territory_reference','b' || repeat('0',63),8)")
 
     rows = [
         # communes: n_addresses weights 10 / 30 / 10
@@ -85,6 +86,12 @@ def _seed_aedar(publisher):
                        {"count_5_walk_mean": 4.0, "count_5_walk_decile1": 1.0}),
         _aggregate_row("commune", "sel-c3", "B207", 10, 8,
                        {"count_5_walk_mean": 4.0, "count_5_walk_decile1": 3.0}),
+        # A member whose published coverage is not "covered" (free text, NOT NULL
+        # only) but which still carries measured values: used to prove the group
+        # coverage is derived, never fabricated as "covered".
+        {**_aggregate_row("commune", "sel-c4", "A104", 5, 4,
+                          {"count_5_walk_mean": 2.0, "count_5_walk_decile1": 0.5}),
+         "coverage_status": "pending_review"},
         # EPCI, département and région direct aggregates (fixed references).
         _aggregate_row("epci", "sel-e1", "A104", 40, 34, {"count_5_walk_mean": 7.0}),
         _aggregate_row("departement", "22", "A104", 100, 90, {"count_5_walk_mean": 9.0}),
@@ -323,6 +330,37 @@ def test_fixed_same_level_returns_the_region_direct_aggregate(aedar_http):
         "intent": {"kind": "fixed_comparison", "context": "same_level"},
     })
     assert commune.status_code == 422
+
+
+def test_selected_comparison_derives_group_coverage_from_member_statuses(aedar_http):
+    members = [{"type": "commune", "id": "sel-c1"}, {"type": "commune", "id": "sel-c2"},
+               {"type": "commune", "id": "sel-c3"}]
+    # All members covered -> derived group coverage is "covered".
+    response = aedar_http.post("/api/resources/read", json=_selected_item(members=members))
+    assert response.status_code == 200, response.text
+    assert response.json()["comparisons"][0]["group_coverage_status"] == "covered"
+
+    # Mixed statuses (sel-c4 publishes "pending_review" with measured values):
+    # no single derivable coverage, so it stays unknown (null), never upgraded.
+    mixed = [{"type": "commune", "id": "sel-c1"}, {"type": "commune", "id": "sel-c2"},
+             {"type": "commune", "id": "sel-c4"}]
+    response = aedar_http.post("/api/resources/read", json=_selected_item(members=mixed))
+    assert response.status_code == 200, response.text
+    entry = response.json()["comparisons"][0]
+    assert entry["group_coverage_status"] is None
+    # The group statistic itself is still the address-weighted mean over the
+    # members' published values: (5*10 + 8*30 + 2*5) / 45.
+    assert entry["group_value"] == pytest.approx(300 / 45)
+    assert entry["group_n_addresses"] == 45
+
+    # A uniform lesser status is reflected as published, not upgraded.
+    response = aedar_http.post("/api/resources/read", json=_selected_item(
+        members=[{"type": "commune", "id": "sel-c4"}]))
+    assert response.status_code == 200, response.text
+    entry = response.json()["comparisons"][0]
+    assert entry["group_coverage_status"] == "pending_review"
+    assert entry["group_value"] == pytest.approx(2.0)
+    assert entry["rank"] is None  # the focal (sel-c1) is not a member
 
 
 def test_batch_reads_selected_comparison_and_facts_on_one_committed_snapshot(aedar_http):

@@ -280,13 +280,21 @@ def _aedar_selected_comparison_snapshot(conn, territory_type, territory_id, memb
         focal_row = focal_rows.get(typequ_value)
         if not focal_row:
             raise HTTPException(404, "No published focal AEDAR value")
+        member_records = []
+        for level, code in resolved:
+            record = member_rows.get((code, typequ_value))
+            if record is None:
+                raise HTTPException(422, f"Selected comparison member {level}/{code} has no published AEDAR aggregate for typequ {typequ_value}")
+            member_records.append((level, code, record))
+        # Honest derived coverage: the members' common published status when
+        # they all agree (all covered -> covered); a disagreement has no single
+        # derivable coverage and stays unknown (null), never upgraded.
+        statuses = {record["coverage_status"] for _, _, record in member_records}
+        group_coverage = next(iter(statuses)) if len(statuses) == 1 else None
         for measure in measure_list:
             facet = facets[measure]
             values = []
-            for level, code in resolved:
-                record = member_rows.get((code, typequ_value))
-                if record is None:
-                    raise HTTPException(422, f"Selected comparison member {level}/{code} has no published AEDAR aggregate for typequ {typequ_value}")
+            for level, code, record in member_records:
                 value = (record["measures"] or {}).get(measure)
                 weight = record["n_addresses"]
                 if value is None or weight is None or weight <= 0:
@@ -326,7 +334,7 @@ def _aedar_selected_comparison_snapshot(conn, territory_type, territory_id, memb
                 "group_value": group_value,
                 "group_n_addresses": total_weight,
                 "group_n_observed": total_observed,
-                "group_coverage_status": "covered",
+                "group_coverage_status": group_coverage,
                 "value": focal_value,
                 "status": "measured" if focal_value is not None else "not_available",
                 "n_addresses": focal_row["n_addresses"],
