@@ -62,6 +62,9 @@ const avecDensite = (territoire: Territoire, code = '1'): Territoire => ({
 /** Commune A1 (22001, EPCI X) avec une classe de densité publiée. */
 const commune = avecDensite(territoiresFixture.find((t) => t.territoire === '22001')!)
 const communeSansEpci = avecDensite({ ...territoiresFixture.find((t) => t.territoire === '22001')!, epci: null })
+/** Référence où chaque commune porte une classe de densité (comme territoires.json). */
+const territoiresAvecDensite: Territoire[] = territoiresFixture.map((t) =>
+  t.type === 'commune' ? avecDensite(t, t.territoire === '22001' || t.territoire === '22002' ? '1' : '7') : t)
 const epci = territoiresFixture.find((t) => t.type === 'epci')!
 const departement = territoiresFixture.find((t) => t.type === 'departement')!
 const region = territoiresFixture.find((t) => t.type === 'region')!
@@ -209,18 +212,26 @@ describe('résolution de la sélection — presets explicites', () => {
     ])
   })
 
-  it('le preset epci d’une commune sans EPCI est invalide : retour au défaut + URL canonique', () => {
+  it('le preset epci d’une commune sans EPCI ne restaure JAMAIS le défaut : sélection vide explicite + URL canonique', () => {
+    // Loi du glossaire (CONTEXT.md « Sélection de comparaison », clarification
+    // 2026-10-02) : une sélection explicite non honorable = vide explicite
+    // (aucune comparaison), jamais le contexte par défaut.
     const resolution = resoudre({ territoire: communeSansEpci, demande: 'epci' })
-    expect(resolution.selection).toEqual({ etat: 'defaut' })
-    expect(resolution.preset).toBe('bretagne')
+    expect(resolution.selection).toEqual({ etat: 'vide' })
+    expect(resolution.membres).toEqual([])
+    expect(resolution.contexte).toBeNull()
+    expect(resolution.preset).toBeNull()
     expect(resolution.canonicaliser).toBe(true)
+    expect(serialiserSelection(resolution.selection)).toBe('')
   })
 
-  it('un preset communal sur un EPCI/département est invalide et canonisé', () => {
+  it('un preset non applicable au niveau (epci/densite sur EPCI/département) devient vide explicite, pas le défaut', () => {
     for (const demande of ['epci', 'densite'] as const) {
       const resolution = resoudre({ territoire: epci, demande })
-      expect(resolution.selection).toEqual({ etat: 'defaut' })
+      expect(resolution.selection).toEqual({ etat: 'vide' })
+      expect(resolution.membres).toEqual([])
       expect(resolution.canonicaliser).toBe(true)
+      expect(serialiserSelection(resolution.selection)).toBe('')
     }
   })
 
@@ -279,13 +290,19 @@ describe('résolution de la sélection — membres tapés et vide explicite', ()
     expect(resolution.canonicaliser).toBe(true)
   })
 
-  it('une liste de membres entièrement invalide retombe sur le défaut avec URL canonique', () => {
+  it('une liste de membres dont aucun ne survit à la validation devient vide explicite (jamais le défaut) + URL canonique', () => {
+    // Même loi du glossaire : l’intention explicite ne peut pas être honorée →
+    // aucune comparaison, pas le contexte par défaut.
     const resolution = resoudre({ territoire: commune, demande: 'commune:99999' })
-    expect(resolution.selection).toEqual({ etat: 'defaut' })
+    expect(resolution.selection).toEqual({ etat: 'vide' })
+    expect(resolution.membres).toEqual([])
+    expect(resolution.contexte).toBeNull()
+    expect(resolution.preset).toBeNull()
     expect(resolution.canonicaliser).toBe(true)
+    expect(serialiserSelection(resolution.selection)).toBe('')
   })
 
-  it('une valeur illisible retombe sur le défaut et demande une URL canonique', () => {
+  it('une valeur illisible (hors contrat) retombe sur le défaut et demande une URL canonique', () => {
     for (const demande of ['mystere', ['epci', 'bretagne'], null] as const) {
       const resolution = resoudre({ territoire: commune, demande })
       expect(resolution.selection).toEqual({ etat: 'defaut' })
@@ -303,9 +320,9 @@ describe('résolution de la sélection — membres tapés et vide explicite', ()
 
 describe('presets du menu rapide de l’en-tête', () => {
   it('une commune propose EPCI (si elle en a un) · Bretagne · classe de densité, dans cet ordre', () => {
-    expect(presetsDisponibles({ territoire: commune, contextes }).map((p) => p.preset))
+    expect(presetsDisponibles({ territoire: commune, contextes, territoires: territoiresAvecDensite }).map((p) => p.preset))
       .toEqual(['epci', 'bretagne', 'densite'])
-    expect(presetsDisponibles({ territoire: commune, contextes })).toEqual([
+    expect(presetsDisponibles({ territoire: commune, contextes, territoires: territoiresAvecDensite })).toEqual([
       { preset: 'epci', label: 'communes de EPCI X', description: null },
       { preset: 'bretagne', label: 'communes bretonnes', description: null },
       {
@@ -317,23 +334,40 @@ describe('presets du menu rapide de l’en-tête', () => {
   })
 
   it('une commune sans EPCI ne propose pas le preset EPCI', () => {
-    expect(presetsDisponibles({ territoire: communeSansEpci, contextes }).map((p) => p.preset))
+    expect(presetsDisponibles({ territoire: communeSansEpci, contextes, territoires: territoiresAvecDensite }).map((p) => p.preset))
       .toEqual(['bretagne', 'densite'])
+  })
+
+  it('un preset dont la résolution de membres échoue n’est jamais proposé (aucune option en cul-de-sac)', () => {
+    // EPCI renseigné mais absent de la référence chargée : pas de preset epci.
+    const sansEpciX = territoiresAvecDensite.filter((t) => t.territoire !== '200000001')
+    expect(presetsDisponibles({ territoire: commune, contextes, territoires: sansEpciX }).map((p) => p.preset))
+      .toEqual(['bretagne', 'densite'])
+    // Région absente de la référence : pas de preset bretagne.
+    const sansRegion = territoiresAvecDensite.filter((t) => t.type !== 'region')
+    expect(presetsDisponibles({ territoire: commune, contextes, territoires: sansRegion }).map((p) => p.preset))
+      .toEqual(['epci', 'densite'])
+    // Commune sans classe de densité publiée : pas de preset densite.
+    const sansClasse = { ...territoiresFixture.find((t) => t.territoire === '22001')!,
+      classe_densite_code: null, classe_densite_libelle_public: null, classe_densite_libelle_insee: null }
+    const contextesSansDensite = { epci: contextes.epci, bretagne: contextes.bretagne }
+    expect(presetsDisponibles({ territoire: sansClasse, contextes: contextesSansDensite, territoires: territoiresAvecDensite })
+      .map((p) => p.preset)).toEqual(['epci', 'bretagne'])
   })
 
   it('un EPCI / un département ne proposent que le même niveau Bretagne', () => {
     const contexteFixe: Partial<Record<TerritoryComparisonMode, TerritoryComparisonContext>> = {
       bretagne: { ...contextes.bretagne, scope: { kind: 'epcis-bretagne', label: 'EPCI du périmètre de comparaison' } },
     }
-    expect(presetsDisponibles({ territoire: epci, contextes: contexteFixe }))
+    expect(presetsDisponibles({ territoire: epci, contextes: contexteFixe, territoires: territoiresFixture }))
       .toEqual([{ preset: 'bretagne', label: 'EPCI du périmètre de comparaison', description: null }])
-    expect(presetsDisponibles({ territoire: departement, contextes: contexteFixe }).map((p) => p.preset))
+    expect(presetsDisponibles({ territoire: departement, contextes: contexteFixe, territoires: territoiresFixture }).map((p) => p.preset))
       .toEqual(['bretagne'])
   })
 
   it('la Région ne propose aucun preset (pas de contrôle de comparaison)', () => {
-    expect(presetsDisponibles({ territoire: region, contextes })).toEqual([])
-    expect(presetsDisponibles({ territoire: null, contextes })).toEqual([])
+    expect(presetsDisponibles({ territoire: region, contextes, territoires: territoiresFixture })).toEqual([])
+    expect(presetsDisponibles({ territoire: null, contextes, territoires: territoiresFixture })).toEqual([])
   })
 })
 

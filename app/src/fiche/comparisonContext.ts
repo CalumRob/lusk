@@ -227,9 +227,18 @@ function validerMembres(
 
 /**
  * Résout la Sélection de comparaison de la fiche depuis l’URL et la référence
- * validée. Le défaut est niveau-natif (jamais la densité) ; une sélection vide
- * explicite ne restaure aucun groupe ; une sélection nommée mais non résoluble
- * échoue fermé (`membres: null`) sans retirer le paramètre.
+ * validée. Le défaut est niveau-natif (jamais la densité).
+ *
+ * Loi du glossaire (CONTEXT.md « Sélection de comparaison », clarification
+ * 2026-10-02) : « An explicitly empty selection means no comparison, not a
+ * request to restore that default » — une INTENTION explicite (preset non
+ * applicable au niveau, ou liste de membres dont aucun ne survit à la
+ * validation) qui ne peut pas être honorée résout en sélection VIDE explicite
+ * (`etat: 'vide'`, `membres: []`, aucune comparaison) avec l’URL canonisée vers
+ * `?comparaison=` — JAMAIS vers le contexte par défaut. Seule une valeur
+ * illisible (hors contrat de parse) retombe sur le défaut (paramètre retiré).
+ * Une sélection nommée dont l’identité de référence manque échoue fermé
+ * (`membres: null`, réessayable) sans retirer le paramètre.
  */
 export function resoudreSelectionComparaison(options: {
   territoire: Territoire | null
@@ -261,12 +270,21 @@ export function resoudreSelectionComparaison(options: {
     }
   }
 
+  /** Intention explicite non honorable → vide explicite canonique (loi du glossaire). */
+  const appliquerVide = (): ResolutionSelectionComparaison => ({
+    selection: { etat: 'vide' },
+    membres: [],
+    contexte: null,
+    preset: null,
+    canonicaliser: true,
+  })
+
   if (lu === null || lu.etat === 'defaut') return appliquerDefaut(lu === null)
   if (lu.etat === 'vide') {
     return { selection: lu, membres: [], contexte: null, preset: null, canonicaliser: false }
   }
   if (lu.etat === 'preset') {
-    if (!presetApplicable(lu.preset, territoire)) return appliquerDefaut(true)
+    if (!presetApplicable(lu.preset, territoire)) return appliquerVide()
     if (territoire.type !== 'commune') {
       // Même niveau Bretagne : le défaut déclaré du producteur sert ce preset.
       return {
@@ -286,7 +304,7 @@ export function resoudreSelectionComparaison(options: {
     }
   }
   const { retenus, invalides } = validerMembres(lu.membres, territoire, territoires)
-  if (!retenus.length) return appliquerDefaut(true)
+  if (!retenus.length) return appliquerVide()
   return {
     selection: { etat: 'membres', membres: retenus },
     membres: retenus,
@@ -307,34 +325,35 @@ export interface PresetComparaisonOption {
  * « communes de son EPCI · communes de Bretagne · communes de sa classe de
  * densité », un EPCI/département seulement le même niveau Bretagne, la Région
  * aucun (pas de contrôle de comparaison).
+ *
+ * Règle d’honnêteté du menu : un preset n’est proposé que s’il RÉSOLT réellement
+ * pour le territoire courant — contexte publié ET membres résolubles
+ * (`membresPourPreset` ≠ null). Aucune option offerte ne peut donc mener à un
+ * cul-de-sac (ex. preset EPCI quand l’EPCI n’est pas dans la référence chargée).
  */
 export function presetsDisponibles(options: {
   territoire: Territoire | null
   contextes: Partial<Record<TerritoryComparisonMode, TerritoryComparisonContext>>
+  territoires: readonly Territoire[]
 }): readonly PresetComparaisonOption[] {
-  const { territoire, contextes } = options
+  const { territoire, contextes, territoires } = options
   if (!territoire || territoire.type === 'region') return []
-  if (territoire.type === 'commune') {
-    const liste: PresetComparaisonOption[] = []
-    if (territoire.epci && contextes.epci) {
-      liste.push({ preset: 'epci', label: contextes.epci.scope.label, description: null })
-    }
-    if (contextes.bretagne) {
-      liste.push({ preset: 'bretagne', label: contextes.bretagne.scope.label, description: null })
-    }
-    if (contextes.densite) {
-      liste.push({
-        preset: 'densite',
-        label: contextes.densite.scope.label,
-        description: COMPARISON_MODE_DESCRIPTIONS.densite ?? null,
-      })
-    }
-    return liste
+  const candidats: PresetComparaison[] = territoire.type === 'commune'
+    ? ['epci', 'bretagne', 'densite']
+    : ['bretagne']
+  const liste: PresetComparaisonOption[] = []
+  for (const preset of candidats) {
+    const contexte = contextes[preset]
+    if (!contexte) continue
+    // Un preset dont la résolution de membres échoue (null) n'est jamais offert.
+    if (membresPourPreset(preset, territoire, territoires) === null) continue
+    liste.push({
+      preset,
+      label: contexte.scope.label,
+      description: preset === 'densite' ? COMPARISON_MODE_DESCRIPTIONS.densite ?? null : null,
+    })
   }
-  if (contextes.bretagne) {
-    return [{ preset: 'bretagne', label: contextes.bretagne.scope.label, description: null }]
-  }
-  return []
+  return liste
 }
 
 const MOTS_TYPE: Record<TerritoireType, [string, string]> = {
