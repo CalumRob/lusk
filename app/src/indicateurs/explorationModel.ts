@@ -174,7 +174,19 @@ export function hauteurDensite(density: readonly DensitePoint[], value: number |
   return before.y + (after.y - before.y) * fraction
 }
 
-export function modeleExploration(facts: readonly Indicateur[], facet: ComparisonFacet, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string): ModeleExploration {
+export interface OptionsExploration {
+  /**
+   * #892 (revue P2) — mode « rangs API uniquement » (pages série ordonnée) :
+   * le rang et la taille de CHAQUE ligne viennent UNIQUEMENT de l'évidence
+   * de comparaison publiée par le producteur et posée sur le fait
+   * (`comparaisonApi`, à la coordonnée déclarée par l'adapter) — jamais d'un
+   * rang recalculé sur les valeurs, jamais d'une taille `all.length` fabriquée.
+   * Un axe observé SANS comparaison publiée garde rang null (absence ≠ zéro).
+   */
+  rangsApiUniquement?: boolean
+}
+
+export function modeleExploration(facts: readonly Indicateur[], facet: ComparisonFacet, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string, options: OptionsExploration = {}): ModeleExploration {
   // La cascade explicite → mémorisé → repli est l'unique règle de la machine
   // URL (#508), partagée avec l'applier de la Page d'indicateur.
   const niveau = resoudreNiveau(requested.niveau, remembered, facet.levels)
@@ -188,13 +200,15 @@ export function modeleExploration(facts: readonly Indicateur[], facet: Compariso
   const distribution = [...values].sort((a, b) => a - b)
   const median = mediane(distribution)
   // #892 : le repli sur les colonnes de rang statiques (rang_epci/rang_reg et
-  // leurs _n) est RETIRÉ — les rangs du tableau sont toujours le classement
-  // ex-aequo directionnel calculé sur les valeurs (#437). Les rangs publiés
-  // par l'API arrivent par comparaisonApi et écrasent ces rangs calculés dans
-  // les modes API de la page (voir IndicateurPage).
+  // leurs _n) est RETIRÉ — le mode par défaut calcule le classement ex-aequo
+  // directionnel sur les valeurs (#437). En mode rangsApiUniquement (pages
+  // série), le rang ne vient QUE de l'évidence API posée sur le fait
+  // (comparaisonApi) : aucune évidence = rang null, jamais de re-classement.
   const rangsCalcules = rangsExAequo(values, facet.direction)
-  const ranks = new Map(all.map((row, index) => [row.territoire.territoire, rangsCalcules[index]] as const))
-  const rankSizes = new Map(all.map((row) => [row.territoire.territoire, all.length] as const))
+  const ranks = new Map(all.map((row, index) => [row.territoire.territoire,
+    options.rangsApiUniquement ? row.fact.comparaisonApi?.rang ?? null : rangsCalcules[index]] as const))
+  const rankSizes = new Map(all.map((row) => [row.territoire.territoire,
+    options.rangsApiUniquement ? row.fact.comparaisonApi?.taille ?? null : all.length] as const))
   const project = (row: typeof all[number]): LigneExploration => ({ territoire: row.territoire, value: row.value, rang: ranks.get(row.territoire.territoire) ?? null, rangTaille: rankSizes.get(row.territoire.territoire) ?? null, fiche: lienFiche(row.territoire, facet.theme), highlighted: row.territoire.territoire === requested.territoire })
   const filtered = all.filter((row) => !requested.recherche || row.territoire.nom.toLocaleLowerCase('fr').includes(requested.recherche.toLocaleLowerCase('fr')))
   const tri = requested.tri ?? 'nom'
@@ -202,7 +216,17 @@ export function modeleExploration(facts: readonly Indicateur[], facet: Compariso
   const factor = ordre === 'asc' ? 1 : -1
   const rows = [...filtered].sort((a, b) => {
     if (tri === 'nom') return factor * a.territoire.nom.localeCompare(b.territoire.nom, 'fr')
-    if (tri === 'rang') return factor * ((ranks.get(a.territoire.territoire) ?? Number.MAX_SAFE_INTEGER) - (ranks.get(b.territoire.territoire) ?? Number.MAX_SAFE_INTEGER))
+    if (tri === 'rang') {
+      const rangA = ranks.get(a.territoire.territoire) ?? null
+      const rangB = ranks.get(b.territoire.territoire) ?? null
+      // les lignes sans rang (pas d'évidence API en mode rangsApiUniquement)
+      // vont à la fin dans les DEUX sens ; en mode calcul aucun rang n'est
+      // null, l'ordre est exactement l'ancien
+      if (rangA === null && rangB === null) return 0
+      if (rangA === null) return 1
+      if (rangB === null) return -1
+      return factor * (rangA - rangB)
+    }
     return factor * (a.value - b.value)
   }).map(project)
   const highRows = all.filter((row) => row.value === Math.max(...all.map((item) => item.value))).map(project)

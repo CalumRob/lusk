@@ -616,6 +616,9 @@ export function validerIndicateurs(
   const lignes = brut as unknown[]
   const reference = indexerReference(territoires)
   const vus = new Set<string>()
+  // #892 : la forme du bloc de rang est HOMOGÈNE par document — « présente »
+  // (forme commise) ou « absente » (projection future) sur TOUTES les lignes.
+  let formeRangDocument: 'presente' | 'absente' | null = null
 
   const result = lignes.map((ligne, i) => {
     const ligneIndexee = i + 1
@@ -660,6 +663,16 @@ export function validerIndicateurs(
       ligneIndexee,
       `les six colonnes de rang vont ensemble — ${rangPresentes.length} présente(s) sur 6 (${rangPresentes.join(', ') || 'aucune'})`,
     )
+    const formeLigne: 'presente' | 'absente' = rangPresentes.length === 0 ? 'absente' : 'presente'
+    if (formeRangDocument === null) formeRangDocument = formeLigne
+    else {
+      exiger(
+        formeLigne === formeRangDocument,
+        fichier,
+        ligneIndexee,
+        `bloc de rang hétérogène — cette ligne est en forme « ${formeLigne} » mais le document est en forme « ${formeRangDocument} » : les six colonnes de rang sont présentes sur chaque ligne ou sur aucune`,
+      )
+    }
     let rang_epci: number | null = null
     let rang_dep: number | null = null
     let rang_reg: number | null = null

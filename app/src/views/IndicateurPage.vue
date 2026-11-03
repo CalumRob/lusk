@@ -1419,10 +1419,16 @@ const model = computed(() => {
   const dispatch = familyDispatch.value
   if (!dispatch) return null
   // #892 : plus de chemin usePublishedRanks — les rangs statiques ne sont
-  // jamais lus ; les modes API écrasent ensuite les rangs calculés par la
-  // comparaison API (comparaisonApi / memberRanks ci-dessous).
+  // jamais lus. #892 (revue P2) : sur une page SÉRIE ordonnée, les rangs du
+  // tableau viennent UNIQUEMENT de l'évidence de comparaison publiée par
+  // l'API (comparaisonApi posée par l'adapter sur le fait de l'axe actif, à la
+  // coordonnée déclarée) — un axe observé sans comparaison publiée n'a aucun
+  // rang (pas de re-classement navigateur, pas de taille all.length). Les
+  // autres modes gardent le classement calculé et les branche API ci-dessous
+  // écrasent avec memberRanks / comparaisonApi.
+  const rangsApiUniquement = seriesPageApiActive.value && orderedSeriesAdapter.value !== null
   const calculated = modeleExploration(facts.value, dispatch.facet, payload.value.territoires,
-    requested.value, niveauMemorise.value)
+    requested.value, niveauMemorise.value, { rangsApiUniquement })
   if (sparseCollectionPageActive.value) {
     const evidence = sparseCollectionComparison.value
     const rank = typeof evidence?.rank === 'number' ? evidence.rank : null
