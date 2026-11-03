@@ -118,9 +118,10 @@ can be supplied through the invoking process environment.
   controls or create regional facts-only behavior. Retained ordered-series,
   sparse-collection and raccordement readers keep their existing modes. Since
   #900 the committed read-model artifacts (`modeles-lecture/**`) and their
-  schema validators/CLI are retired: no file, route, validator or test
-  references them anymore, and the route/profile verifiers keep asserting
-  zero `/data/modeles-lecture/` requests.
+  schema validators/CLI are retired: no production reader, route, validator
+  or test requires them anymore. The remaining `/data/modeles-lecture/`
+  mentions are negative contract assertions only — the route/profile
+  verifiers keep asserting zero such requests.
 - All retained declared-profile Page d’indicateur resources use the shared
   semantic profile reader without an opt-in switch. They remain API-only —
   no retired scalar or theme-acquisition switch can disable or replace
