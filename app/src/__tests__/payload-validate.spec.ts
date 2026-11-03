@@ -208,6 +208,41 @@ describe('parsePayload — accepts the contract shape', () => {
     attendErreurValidation(documentsBruts({ indicateurs }))
   })
 
+  it('accepts a FUTURE projection without the six rank columns (#892) — absent reads as null', () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    const colonnes = ['rang_epci', 'rang_epci_n', 'rang_dep', 'rang_dep_n', 'rang_reg', 'rang_reg_n'] as const
+    for (const ligne of indicateurs) {
+      for (const colonne of colonnes) {
+        delete (ligne as Partial<(typeof indicateursDemographieFixture)[number]>)[colonne]
+      }
+    }
+
+    const payload = parsePayload(documentsBruts({ indicateurs }))
+
+    expect(payload.indicateurs.length).toBeGreaterThan(0)
+    for (const ligne of payload.indicateurs) {
+      for (const colonne of colonnes) {
+        expect(ligne[colonne]).toBeNull()
+      }
+    }
+  })
+
+  it('still accepts the already-committed JSON that carries the legacy rank columns (#892)', () => {
+    const payload = parsePayload(documentsBruts())
+
+    const densite = payload.indicateurs.find((i) => i.territoire === '22001' && i.key === 'densite')
+    expect(densite?.rang_epci).toBe(1)
+    expect(densite?.rang_epci_n).toBe(2)
+  })
+
+  it('still rejects a PRESENT rank whose group size is absent (#892 — a malformed present pair fails)', () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    delete (indicateurs[0] as Partial<(typeof indicateursDemographieFixture)[number]>).rang_epci_n
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/rang/i)
+  })
+
   it('rejects a missing required column (unit)', () => {
     const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
     delete (indicateurs[0] as Partial<(typeof indicateursDemographieFixture)[number]>).unit
