@@ -115,12 +115,19 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
       const [detail] = item.coordinates.detail
       const [period] = item.coordinates.period
       const memberIds = item.intent.members.map((member: Record<string, string>) => member.id)
+      // Contrat producteur (api/migrations/030…) : rank_size = eligible_count =
+      // nb de membres MESURÉS à la coordonnée comparée — jamais memberIds.length
+      // (un membre no_record est compté en missing, pas en éligible).
+      const eligible = memberIds.filter((id) => factsOverride.some((fact) =>
+        fact.key === item.resource && fact.territoire === id && fact.detail === detail &&
+        fact.dimension === period && fact.value !== null)).length
       return new Response(JSON.stringify({ ...marker, target: item.target,
         selection: memberIds.map((territory_id: string) => ({ territory_type: 'commune', territory_id })),
         scope: { kind: 'explicit_selection', member_count: memberIds.length }, result: {
           descriptor_version: 'collection-dv1', source_facet: { detail, observation_period: period }, unit: 'CAD',
           selected_member_count: memberIds.length, status: 'available', median: period === '2024' ? 1234 : 15000,
-          rank: 1, rank_size: memberIds.length,
+          eligible_count: eligible, missing_count: memberIds.length - eligible,
+          rank: 1, rank_size: eligible,
         } }), { status: 200 })
     }
     if (url === '/api/resources/read-batch') {
@@ -215,13 +222,16 @@ describe('IndicateurView — routed URL seam', () => {
     const categories = programmesMetadata.indicator_pages.subventions_par_domaine.comparison.details as string[]
     const category = categories.find((value) => value.startsWith('Agriculture'))!
     const base = indicateursProgrammesFixture.find((fact) => fact.key === 'subventions_par_domaine' && fact.detail === 'Agriculture')!
-    // trois communes portent la MÊME catégorie/période avec des montants différents :
-    // un rang calculé localement existerait pour chaque pair si on le laissait passer
+    // QUATRE communes portent la MÊME catégorie/période avec des montants différents :
+    // 4 membres mesurés → eligible_count = 4 (contrat api/migrations/030), donc le
+    // rang API du mock est « 1er / 4 » — un rang calculé localement existerait pour
+    // chaque pair si on le laissait passer
     const programmesFacts = [
       ...indicateursProgrammesFixture.filter((fact) => fact.key !== 'subventions_par_domaine'),
       { ...base, territoire: '22001', detail: category, dimension: '2025', value: 15000 },
       { ...base, territoire: '22002', detail: category, dimension: '2025', value: 30000 },
       { ...base, territoire: '29001', detail: category, dimension: '2025', value: 5000 },
+      { ...base, territoire: '29002', detail: category, dimension: '2025', value: 22000 },
     ]
     const { wrapper } = await monter(
       `/indicateurs/programmes/subventions_par_domaine?territoire=22001&niveau=commune&detail=${encodeURIComponent(category)}&dimension=2025`,
@@ -231,14 +241,14 @@ describe('IndicateurView — routed URL seam', () => {
     expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').exists()).toBe(true)
 
     const rows = wrapper.findAll('.comparison-table-scroll tbody tr')
-    expect(rows.length).toBe(3)
+    expect(rows.length).toBe(4)
     const celluleRang = (row: ReturnType<typeof wrapper.findAll>[number]) => row.findAll('td')[2]!.text().trim()
     const estFocal = (row: ReturnType<typeof wrapper.findAll>[number]) => row.classes().includes('selection')
     const focal = rows.find(estFocal)!
     const pairs = rows.filter((row) => !estFocal(row))
-    expect(pairs.length).toBe(2)
-    // le focal affiche le rang API exact (mock : rank 1, rank_size = nb de membres)
-    expect(celluleRang(focal)).toMatch(/^1er \/ \d+$/)
+    expect(pairs.length).toBe(3)
+    // le focal affiche le rang API EXACT (1er / 4 = rank 1, rank_size = eligible_count 4)
+    expect(celluleRang(focal)).toBe('1er / 4')
     // les pairs sans évidence de comparaison API par membre : AUCUN rang affiché
     // (pas de rang calculé localement, aucune taille de groupe fabriquée)
     for (const row of pairs) {

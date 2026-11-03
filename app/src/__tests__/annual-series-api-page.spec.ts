@@ -333,6 +333,85 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(wrapper.text()).toContain('Prix')
     } finally { wrapper.unmount() }
   })
+  it('series table ranks come ONLY from published axis_comparisons evidence (#892 P2) — observed axis without comparison shows no rank', async () => {
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, (item, resource) => {
+        const data = nativeReadFixture(item, resource, { territories: territoiresFixture })
+        // Preuve sémantique : l'axe 2024 est OBSERVÉ (faits publiés) mais sa
+        // comparaison est publiée « unavailable » (aucun rang publié — forme
+        // valide du contrat, membre_ranks tous null) ; l'axe 2025 porte des
+        // rangs API volontairement inversés par rapport à l'ordre des valeurs,
+        // pour prouver que le rang affiché vient de l'API et non du navigateur.
+        if (item.intent?.kind !== 'facts' && Array.isArray(data?.result?.axis_comparisons)) {
+          data.result.axis_comparisons = data.result.axis_comparisons
+            .map((comparison: any) => {
+              if (comparison.axis === '2024') {
+                return { ...comparison, status: 'unavailable', value: null, min: null, max: null,
+                  eligible_count: 0, missing_count: comparison.selected_member_count,
+                  member_ranks: comparison.member_ranks.map((rank: any) => ({
+                    territory_id: rank.territory_id, rank: null, rank_size: null, rank_ties: null })) }
+              }
+              if (comparison.axis === '2025') {
+                return { ...comparison, member_ranks: comparison.member_ranks.map((rank: any) => ({
+                  ...rank, rank: rank.rank === null ? null : 4 - rank.rank, rank_ties: rank.rank === null ? null : 1 })) }
+              }
+              return comparison
+            })
+        }
+        return data
+      })
+    })
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune')
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      const rankCell = (row: ReturnType<typeof wrapper.findAll>[number]) => row.findAll('td')[2]!.text().trim()
+      const rowTerritoire = (row: ReturnType<typeof wrapper.findAll>[number]) =>
+        (row.find('td a')?.attributes('href') ?? '').split('?')[0]?.split('/').at(-1) ?? ''
+
+      // --- axe comparé (2025, détail par défaut) : rangs = évidence API exacte
+      let rows = wrapper.findAll('.comparison-table-scroll tbody tr')
+      expect(rows.length).toBe(3) // 22001 sans valeur à 2025 est exclue du tableau
+      const focal = rows.find((row) => row.classes().includes('selection'))!
+      expect(rowTerritoire(focal)).toBe('22002')
+      // rang API inversé (1er/3) — PAS le rang calculé sur les valeurs (qui donnerait 3e/3, direction low)
+      expect(rankCell(focal)).toBe('1er / 3')
+      const parRang = Object.fromEntries(rows.map((row) => [rowTerritoire(row), rankCell(row)]))
+      expect(parRang).toEqual({ '22002': '1er / 3', '29001': '2e / 3', '29002': '3e / 3' })
+
+      // --- tri par rang : suit l évidence API (1, 2, 3), pas un autre ordre
+      const boutonRang = wrapper.findAll('.comparison-table-scroll thead button')
+        .find((bouton) => bouton.text().startsWith('Rang'))!
+      await boutonRang.trigger('click')
+      await flushPromises()
+      rows = wrapper.findAll('.comparison-table-scroll tbody tr')
+      expect(rows.map(rowTerritoire)).toEqual(['22002', '29001', '29002'])
+
+      // --- axe observé SANS comparaison publiée (2024) : AUCUN rang affiché, ni focal ni pairs
+      await router.push({ query: { ...router.currentRoute.value.query, detail: '2024' } })
+      await flushPromises()
+      rows = wrapper.findAll('.comparison-table-scroll tbody tr')
+      expect(rows.length).toBe(3)
+      for (const row of rows) {
+        expect(rankCell(row)).toBe('')
+      }
+    } finally { wrapper.unmount() }
+  })
+
   it('retains admitted prix_m2 cohort facts when a warm same-cohort focal read gets HTTP 503', async () => {
       const requests: Array<{ items: Array<Record<string, any>>; status: number }> = []
     let admittedCohort: Record<string, any> | undefined

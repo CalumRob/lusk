@@ -293,6 +293,24 @@ describe('parsePayload — accepts the contract shape', () => {
     expect(erreur.message).toMatch(/rang/i)
   })
 
+  it('rejects a MIXED document — some rows with all six columns, others with none (#892 homogeneous block per array)', () => {
+    // ligne 0 : forme commise (six présentes) ; ligne 1 : forme future (six absentes).
+    // Chaque ligne passe seule le contrôle par ligne, mais le document est hétérogène.
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    const colonnes = ['rang_epci', 'rang_epci_n', 'rang_dep', 'rang_dep_n', 'rang_reg', 'rang_reg_n'] as const
+    for (const colonne of colonnes) {
+      delete (indicateurs[1] as Partial<(typeof indicateursDemographieFixture)[number]>)[colonne]
+    }
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/rang/i)
+  })
+
+  it('accepts an empty indicateurs array (#892 — no rows, no rank shape to homogenize)', () => {
+    const payload = parsePayload(documentsBruts({ indicateurs: [] }))
+    expect(payload.indicateurs).toEqual([])
+  })
+
   it('rejects a missing required column (unit)', () => {
     const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
     delete (indicateurs[0] as Partial<(typeof indicateursDemographieFixture)[number]>).unit
