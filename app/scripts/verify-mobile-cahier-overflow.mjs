@@ -1188,31 +1188,49 @@ try {
       values.slice(index * size, (index + 1) * size))
     const coreProjections = chunk(AEDAR_CORE_MEASURE_KEYS, 32)
     const detailProjections = chunk(AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, 32)
-    const expectedAedarBatches = coreProjections.length + detailProjections.length
+    // #860 — défaut niveau-natif : la commune lit aussi les agrégats AEDAR core
+    // de SON EPCI (référence de comparaison), sans détail explorer.
+    const communeCible = model.cohortTerritories.find((t) => t.territoire === '35238')
+    const epciReference = communeCible?.epci
+      ? model.cohortTerritories.find((t) => t.type === 'epci' && t.territoire === communeCible.epci)
+      : null
+    const expectedAedarBatches = coreProjections.length + detailProjections.length + (epciReference ? coreProjections.length : 0)
     assert.equal(readCalls.aedarBatches, expectedAedarBatches,
-      `Expected ${expectedAedarBatches} semantic read-batch POSTs for the current core/detail field projections at ${width}px; got ${readCalls.aedarBatches}.`)
+      `Expected ${expectedAedarBatches} semantic read-batch POSTs for the core/detail field projections (focal + référence EPCI) at ${width}px; got ${readCalls.aedarBatches}.`)
     const expectedTypequPartitions = chunk(AEDAR_TYPEQU_REGISTRY.map(({ code }) => code), 100)
     const expectedAedarItems = coreProjections.length * expectedTypequPartitions.length + detailProjections.length
+      + (epciReference ? coreProjections.length * expectedTypequPartitions.length : 0)
     assert.equal(readCalls.aedarItems.length, expectedAedarItems,
-      `Expected ${expectedAedarItems} AEDAR resource items across the core universe and explorer projections at ${width}px; got ${readCalls.aedarItems.length}.`)
+      `Expected ${expectedAedarItems} AEDAR resource items across the core universe, explorer projections and EPCI reference at ${width}px; got ${readCalls.aedarItems.length}.`)
     const expectedProjections = [
-      ...coreProjections.map((keys) => ({ fields: keys.map((key) => `measures.${key}`), partitions: expectedTypequPartitions })),
+      ...coreProjections.map((keys) => ({ fields: keys.map((key) => `measures.${key}`), partitions: expectedTypequPartitions, reference: Boolean(epciReference) })),
       ...detailProjections.map((keys) => ({
         fields: keys.map((key) => `measures.${key}`),
         partitions: [[AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU]],
+        reference: false,
       })),
     ]
     for (const projection of expectedProjections) {
       const items = readCalls.aedarItems.filter((item) => JSON.stringify(item.fields) === JSON.stringify(projection.fields))
-      assert.equal(items.length, projection.partitions.length,
+      assert.equal(items.length, projection.partitions.length * (projection.reference ? 2 : 1),
         `Unexpected TYPEQU partition count for AEDAR projection at ${width}px: ${JSON.stringify(projection.fields)}`)
-      for (const [index, item] of items.entries()) {
+      const focal = items.filter((item) => item.target.type === 'commune')
+      const reference = items.filter((item) => item.target.type === 'epci')
+      assert.equal(focal.length, projection.partitions.length, `Focal AEDAR items at ${width}px`)
+      assert.equal(reference.length, projection.reference ? projection.partitions.length : 0, `EPCI reference AEDAR items at ${width}px`)
+      for (const [index, item] of focal.entries()) {
         assert.equal(item.id, `aedar-${index}`, `Unexpected AEDAR item id at ${width}px, projection index ${index}`)
         assert.equal(item.resource, 'aedar_territorial_aggregate', `Unexpected AEDAR resource at ${width}px, item ${index}`)
         assert.deepEqual(item.target, { kind: 'territory', type: 'commune', id: '35238' },
-          `Unexpected AEDAR target at ${width}px, item ${index}`)
+          `Unexpected focal AEDAR target at ${width}px, item ${index}`)
         assert.deepEqual(item.typequ, projection.partitions[index],
           `AEDAR TYPEQU range mismatch at ${width}px, item ${index}; fixture must cover the registered codes in producer order.`)
+      }
+      for (const [index, item] of reference.entries()) {
+        assert.deepEqual(item.target, { kind: 'territory', type: 'epci', id: epciReference.territoire },
+          `Unexpected EPCI reference AEDAR target at ${width}px, item ${index}`)
+        assert.deepEqual(item.typequ, projection.partitions[index],
+          `Reference AEDAR TYPEQU range mismatch at ${width}px, item ${index}.`)
       }
     }
 
