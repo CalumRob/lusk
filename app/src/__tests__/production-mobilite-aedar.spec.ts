@@ -391,6 +391,65 @@ describe('ProductionMobiliteAedar', () => {
     expect(wrapper.text()).not.toContain('Les données AEDAR ne sont pas disponibles.')
   })
 
+  it('renders the hydrated section skeleton in final order while the aggregate request is pending (#769)', async () => {
+    const content = baseContent()
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push({ path: '/territoire/commune/22001' })
+    await router.isReady()
+    const wrapper = mount(ProductionMobiliteAedar, { props: {
+      content, pagination: cahierPaginationFor(payload, content), comparisonOptions: [],
+      aedarData: null, aedarStatus: 'loading', retryAedar: () => {},
+    }, global: { plugins: [router] } })
+    await flushPromises()
+
+    const cahierProps = wrapper.findComponent(VarianteCahierLibre).props()
+    const firstUnit = (cahierProps.content as ThemeContent).units[0]
+    // The pending page must already carry the hydrated order — resolving the
+    // aggregates may never insert a section above « Et sans voiture alors ? ».
+    expect(firstUnit.sections.map((section) => section.key)).toEqual([
+      'aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer',
+    ])
+    // The unit introduction prose renders before hydration, above every section.
+    const introduction = firstUnit.introduction.flat().map((segment) => segment.value).join('')
+    expect(introduction).toContain('Base permanente des équipements')
+    expect(introduction).toContain('BDNB')
+    // No fabricated numeric fallback while pending: means stay null and the
+    // address count clause stays out of the prose ("(BDNB)." closes directly).
+    expect(introduction).toContain('(BDNB).')
+    const pendingOverview = firstUnit.sections[0]
+    expect(pendingOverview.evidence?.kind).toBe('aedar-car-overview')
+    if (pendingOverview.evidence?.kind === 'aedar-car-overview') {
+      expect(pendingOverview.evidence.meanDiversity).toBeNull()
+      expect(pendingOverview.evidence.meanVolume).toBeNull()
+      expect(pendingOverview.evidence.nAddresses).toBeNull()
+      expect(pendingOverview.evidence.scalars.every((scalar) => scalar.value === null && scalar.reference === null)).toBe(true)
+      expect(pendingOverview.evidence.source).toBeNull()
+    }
+    // The published loss maps stay mounted at their final position (index 1).
+    expect(firstUnit.sections[1].key).toBe('aedar-diversity-loss')
+    expect(firstUnit.sections[1].evidence?.kind).toBe('aedar-diversity-loss')
+    // Sections below keep their pending placeholders with honest labels.
+    expect(firstUnit.sections.slice(2).map((section) => [section.key, section.label, section.evidence])).toEqual([
+      ['aedar-access', 'La ville du 1/12, du 1/6, du 1/4 et du 1/3 d’heure', null],
+      ['aedar-equipment-profile', 'Au moins un quart des adresses', null],
+      ['aedar-equipment-explorer', 'Bac à sable', null],
+    ])
+    // Rendered DOM: same order on the first page, prose on the page, blank map
+    // slot reserved, scalars honestly '—'.
+    const firstPage = wrapper.find('.cahier-page')
+    expect(firstPage.findAll('.figure-stack > [data-section]').map((section) => section.attributes('data-section'))).toEqual([
+      'aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer',
+    ])
+    expect(firstPage.find('.page-copy').text()).toContain('Base permanente des équipements')
+    const overview = firstPage.get('[data-section="aedar-car-overview"]')
+    expect(overview.find('.blank-map-slots .blank-map-slot--car').exists()).toBe(true)
+    expect(overview.findAll('.cahier-figure-scalar-value').map((scalar) => scalar.text())).toEqual(['—', '—'])
+    expect(firstPage.find('[data-section="aedar-diversity-loss"] .aedar-diversity-loss-map').exists()).toBe(true)
+    expect(firstPage.findAll('.cahier-section-state').map((state) => state.text())).toEqual([
+      'Chargement des données AEDAR…', 'Chargement des données AEDAR…', 'Chargement des données AEDAR…',
+    ])
+  })
+
   it('renders production loss maps and metadata-driven legend', async () => {
     const base = baseContent()
     const content = {
