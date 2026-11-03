@@ -2,9 +2,10 @@
 # Rebuild the building cohorts from the cached Mobilité source target as
 # canonical Parquet plus the existing static JSON projection.
 # Run from pipeline/ after `targets::tar_make(names = 'brut_mobilite')`.
-# Then run `Rscript scripts/publish-territory-models.R` to refresh the fiches.
 # The full graph remains the authority for regular releases; this targeted
 # refresh keeps the other published themes and their snapshots untouched.
+# (#891: the manual territory-model refresh helper is retired — no CLI
+# rebuilds the per-territory read models from the published JSON anymore.)
 
 if (!requireNamespace("pkgload", quietly = TRUE)) {
   stop("pkgload is required to load the pipeline.", call. = FALSE)

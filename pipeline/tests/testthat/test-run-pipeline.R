@@ -43,7 +43,6 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   appels$geometrie_cible_vue <- NULL
   appels$vintages_json <- 0
   appels$meta <- 0
-  appels$modeles_territoire <- 0
 
   faux_payload <- list(
     indicateurs = data.frame(x = 1),
@@ -111,10 +110,6 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
       appels$meta_directions <- directions_module
       invisible(metadata)
     },
-    publier_modeles_territoire_depuis_json = function(...) {
-      appels$modeles_territoire <- appels$modeles_territoire + 1
-      character(0)
-    },
     materialize_theme_scalar_artifact = function(...) invisible(NULL),
     materialize_theme_profile_artifacts = function(...) invisible(NULL),
     # le payload stubé ci-dessus ne porte pas les faits de lecture sélectionnés :
@@ -159,10 +154,9 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   expect_equal(appels$geometrie, 1)
   expect_equal(appels$vintages_json, 1)
   expect_equal(appels$meta, 1)
-  # Un run mono-thème ne peut pas prouver que les cinq paires déjà présentes
-  # appartiennent au même run. Seul le graphe complet ou la commande explicite
-  # de matérialisation publie donc l'agrégat territorial.
-  expect_equal(appels$modeles_territoire, 0)
+  # #890/#891 : plus aucune étape de run ne génère de modèles de lecture
+  # (planifié ou manuel depuis JSON) — l'agrégat territorial n'est plus publié
+  # que comme artefact retenu, validé côté app (validate:territory-model).
   expect_identical(appels$vintages_json_vus, faux_vintages)
 
   # la donnée du compute vient de construire_donnees_brut

@@ -1091,15 +1091,12 @@ for (t in THEMES_RUN) {
   precedent <- as.name(paste0("publie_", t$theme))
 }
 
-# Issue #890 : les modèles de lecture ne sont plus générés par le graphe — la
-# cible agrégée modeles_territoire (son appel planifié en mémoire à
-# publier_modeles_territoire_complet) et la cible manifeste_modeles_lecture
-# sont retirées ici, comme les cibles par thème modeles_lecture_<thème> dans
-# grappe_theme. Aucun chemin planifié n'écrit plus sous modeles-lecture/** :
-# les artefacts publiés et leurs validateurs restent inchangés, et la commande
-# manuelle de rafraîchissement JSON (scripts/publish-territory-models.R ->
-# publier_modeles_territoire_depuis_json) reste le seul générateur de modèles
-# de territoire jusqu'au suivi #891. La chaîne Programmes ci-dessus
+# Issues #890/#891 : les modèles de lecture ne sont plus générés du tout — la
+# voie planifiée (cible agrégée modeles_territoire, manifeste_modeles_lecture
+# et cibles par thème modeles_lecture_<thème> dans grappe_theme) comme la voie
+# manuelle (script publish-territory-models.R et son aide JSON) sont retirées.
+# Aucun chemin n'écrit plus sous modeles-lecture/** : les artefacts publiés et
+# leurs validateurs restent inchangés. La chaîne Programmes ci-dessus
 # (projection_programmes comprise) garde sa reachability inchangée.
 
 rapports <- list()

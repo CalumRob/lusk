@@ -1,15 +1,28 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
-  indicateursMobiliteFixture,
+  histoiresDemographieFixture,
+  histoiresEconomieFixture,
+  histoiresHabitatFixture,
+  histoiresMilieuxFixture,
   histoiresMobiliteFixture,
+  indicateursDemographieFixture,
+  indicateursEconomieFixture,
+  indicateursHabitatFixture,
+  indicateursMilieuxFixture,
+  indicateursMobiliteFixture,
+  indicateursProgrammesFixture,
   metadonneesThemesFixtures,
   territoiresFixture,
+  vintagesFixture,
 } from '@/payload/fixtures'
+import { THEMES_CANONIQUES, type Theme } from '@/payload/types'
 import {
   payloadDepuisModeleTerritoire,
   validerModeleTerritoire,
@@ -18,6 +31,7 @@ import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import CahierMotorisationFigure from '@/fiche/prototype/CahierMotorisationFigure.vue'
 import { remplacerFaitsScalaires } from '@/payload/scalarCohort'
+import { territoryModelBuffer } from '../../scripts/territory-model-dev'
 
 /**
  * #868 — couverture conservée du VALIDATEUR de l'artefact modèle de lecture par
@@ -38,6 +52,38 @@ const modelePublie22002 = JSON.parse(readFileSync(
   resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22002.json'),
   'utf8',
 ))
+
+/**
+ * Écrit une racine canonique minimale depuis les fixtures partagées :
+ * territoires.json, vintages.json et les trois fichiers par thème canonique
+ * (indicateurs_*, histoires_*, theme_*). C'est le contrat lu par
+ * scripts/territory-model-dev.ts (branche de parité du validateur).
+ */
+function ecrireRacineCanonique(racine: string): void {
+  writeFileSync(join(racine, 'territoires.json'), JSON.stringify(territoiresFixture))
+  writeFileSync(join(racine, 'vintages.json'), JSON.stringify(vintagesFixture))
+  const indicateurs: Record<Theme, unknown[]> = {
+    mobilite: indicateursMobiliteFixture,
+    demographie: indicateursDemographieFixture,
+    habitat: indicateursHabitatFixture,
+    economie: indicateursEconomieFixture,
+    milieux: indicateursMilieuxFixture,
+    programmes: indicateursProgrammesFixture,
+  }
+  const histoires: Record<Theme, unknown[]> = {
+    mobilite: histoiresMobiliteFixture,
+    demographie: histoiresDemographieFixture,
+    habitat: histoiresHabitatFixture,
+    economie: histoiresEconomieFixture,
+    milieux: histoiresMilieuxFixture,
+    programmes: [],
+  }
+  for (const theme of THEMES_CANONIQUES) {
+    writeFileSync(join(racine, `indicateurs_${theme}.json`), JSON.stringify(indicateurs[theme]))
+    writeFileSync(join(racine, `histoires_${theme}.json`), JSON.stringify(histoires[theme]))
+    writeFileSync(join(racine, `theme_${theme}.json`), JSON.stringify(metadonneesThemesFixtures[theme]))
+  }
+}
 
 describe('artefact modèle de lecture par territoire — contrat producteur/récupération (ADR-0031, #868)', () => {
   it('transporte le rider réel de la chaîne statique jusqu’à la figure de motorisation', () => {
@@ -449,4 +495,146 @@ describe('artefact modèle de lecture par territoire — contrat producteur/réc
       'territoires/commune/22001.json',
     )).toThrow(/rampe comparée.*incomplète/)
   })
+})
+
+/**
+ * #891 — le chemin MANUEL de régénération des modèles depuis les JSON publiés
+ * est retiré (app/scripts/publish-territory-model.mjs + la commande
+ * generate:territory-model), tandis que le VALIDATEUR d'artefacts reste :
+ * validate:territory-model et son aide de parité canonique
+ * (scripts/territory-model-dev.ts), seule lectrice de ces entrées JSON dans la
+ * chaîne modèle/parité (d'autres lectrices actives existent ailleurs : carte,
+ * sources, référence territoriale, recovery serving), et elle n'est utilisée
+ * que par la branche de parité optionnelle du validateur — jamais pour publier.
+ */
+describe('contrat CLI et branche de parité canonique du validateur (#891)', () => {
+  it('retire le wrapper generate:territory-model mais garde validate:territory-model', () => {
+    const appRoot = process.cwd()
+    const pkg = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect('generate:territory-model' in pkg.scripts).toBe(false)
+    expect(pkg.scripts['validate:territory-model']).toBe('node scripts/validate-territory-model.mjs')
+    expect(existsSync(resolve(appRoot, 'scripts', 'publish-territory-model.mjs'))).toBe(false)
+    expect(existsSync(resolve(appRoot, 'scripts', 'validate-territory-model.mjs'))).toBe(true)
+    expect(existsSync(resolve(appRoot, 'scripts', 'territory-model-dev.ts'))).toBe(true)
+  })
+
+  it('la branche de parité canonique projette toujours un modèle validable depuis une racine fixture', async () => {
+    const racine = mkdtempSync(join(tmpdir(), 'lusk-canonique-'))
+    try {
+      ecrireRacineCanonique(racine)
+
+      const buffer = await territoryModelBuffer(racine, 'commune', '22001')
+      expect(buffer).not.toBeNull()
+      const brut = JSON.parse(buffer!.toString('utf8')) as {
+        schema_version: string
+        snapshot_id: string
+        territory: { territoire: string }
+        themes: Record<string, unknown>
+      }
+      expect(brut.schema_version).toBe('1')
+      expect(brut.territory.territoire).toBe('22001')
+      expect(Object.keys(brut.themes).sort()).toEqual([...THEMES_CANONIQUES].sort())
+      const snapshotAttendu = vintagesFixture
+        .map((vintage) => vintage.date_reference)
+        .filter((date): date is string => Boolean(date))
+        .sort()
+        .at(-1)
+      expect(brut.snapshot_id).toBe(snapshotAttendu)
+
+      // le modèle reconstruit depuis la racine canonique traverse le validateur
+      // d'artefact exactement comme la branche de parité de validate-territory-model.mjs
+      const modele = validerModeleTerritoire(
+        brut,
+        'legacy-commune-22001.json',
+        { type: 'commune', territoire: '22001' },
+      )
+      expect(modele.territory).toMatchObject({ type: 'commune', territoire: '22001' })
+      expect(modele.themes.mobilite).toBeDefined()
+
+      // un territoire absent de la référence ne produit aucune projection
+      expect(await territoryModelBuffer(racine, 'commune', '99999')).toBeNull()
+    } finally {
+      rmSync(racine, { recursive: true, force: true })
+    }
+  })
+})
+
+/**
+ * #891 (SPEC P2) — la branche de parité sémantique doit être exercée via
+ * l'entrypoint CLI RÉEL (`node scripts/validate-territory-model.mjs <modele>
+ * <racine-canonique>`, comparaison compact-vs-legacy du fichier :39-99), pas
+ * seulement via ses fonctions internes. Le test positif assert
+ * `semanticParity: true` sur un modèle et une racine canonique fixture ; le
+ * test négatif prouve qu'un contenu sémantique divergent fait ÉCHOUER la
+ * parité, donc que la comparaison ne peut pas être contournée. Aucun artefact
+ * commité n'est modifié : tout passe par des copies temporaires isolées.
+ */
+describe('entrypoint CLI validate:territory-model — parité sémantique canonique (#891)', () => {
+  const appRoot = process.cwd()
+  const cli = resolve(appRoot, 'scripts', 'validate-territory-model.mjs')
+
+  function runCli(modelePath: string, racine: string) {
+    return spawnSync(process.execPath, [cli, modelePath, racine], {
+      cwd: appRoot,
+      encoding: 'utf8',
+      timeout: 120000,
+    })
+  }
+
+  // territory-model-dev.ts met en cache la source au niveau du module :
+  // vi.resetModules() + import dynamique donnent une instance fraîche par racine
+  async function ecrireModeleDepuisRacine(dossier: string, racine: string, altere = false): Promise<string> {
+    vi.resetModules()
+    const { territoryModelBuffer: bufferFrais } = await import('../../scripts/territory-model-dev')
+    const buffer = await bufferFrais(racine, 'commune', '22001')
+    if (!buffer) throw new Error('projection fixture nulle')
+    const brut = JSON.parse(buffer.toString('utf8')) as {
+      themes: { mobilite: { indicateurs: Array<Record<string, unknown>> } }
+    }
+    if (altere) {
+      const ligne = brut.themes.mobilite.indicateurs.find((row) =>
+        row.territoire === '22001' && row.key === 'offre_tc')
+      if (!ligne) throw new Error('ligne offre_tc absente du fixture')
+      ligne.value = 0.5 // contenu sémantique divergent de la racine canonique
+    }
+    // le CLI déduit type/territoire du chemin : <...>/commune/22001.json
+    const chemin = join(dossier, 'territoires', 'commune', '22001.json')
+    mkdirSync(dirname(chemin), { recursive: true })
+    writeFileSync(chemin, JSON.stringify(brut))
+    return chemin
+  }
+
+  it('imprime semanticParity:true via le CLI sur modèle + racine canonique fixture', async () => {
+    const racine = mkdtempSync(join(tmpdir(), 'lusk-cli-racine-'))
+    const dossierModele = mkdtempSync(join(tmpdir(), 'lusk-cli-modele-'))
+    try {
+      ecrireRacineCanonique(racine)
+      const modelePath = await ecrireModeleDepuisRacine(dossierModele, racine)
+      const result = runCli(modelePath, racine)
+      expect(result.status, String(result.stderr)).toBe(0)
+      expect(result.stdout).toContain('"territory":"22001"')
+      expect(result.stdout).toContain('"semanticParity":true')
+    } finally {
+      rmSync(racine, { recursive: true, force: true })
+      rmSync(dossierModele, { recursive: true, force: true })
+    }
+  }, 180000)
+
+  it('fait échouer la parité quand le contenu sémantique diverge (comparaison non contournable)', async () => {
+    const racine = mkdtempSync(join(tmpdir(), 'lusk-cli-racine-'))
+    const dossierModele = mkdtempSync(join(tmpdir(), 'lusk-cli-modele-'))
+    try {
+      ecrireRacineCanonique(racine)
+      const modelePath = await ecrireModeleDepuisRacine(dossierModele, racine, true)
+      const result = runCli(modelePath, racine)
+      expect(result.status).not.toBe(0)
+      expect(result.stderr + result.stdout).toMatch(/observable Mobilit/)
+      expect(result.stdout).not.toContain('"semanticParity":true')
+    } finally {
+      rmSync(racine, { recursive: true, force: true })
+      rmSync(dossierModele, { recursive: true, force: true })
+    }
+  }, 180000)
 })
