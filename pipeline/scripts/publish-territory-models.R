@@ -3,8 +3,13 @@
 #
 # Ce script ne reconstruit aucune donnée source : il relit les JSON canoniques
 # déjà présents sous public/data/, puis ne projette que la ou les fiches
-# demandées. Il est destiné au développement et aux prototypes ; le graphe
-# targets reste l'autorité pour une publication complète.
+# demandées. Il est destiné au développement et aux prototypes. Depuis #890,
+# le graphe targets ne publie plus les modèles de lecture (cibles
+# modeles_territoire, manifeste_modeles_lecture et modeles_lecture_<thème>
+# retirées du graphe) : ce script est le seul générateur restant de modèles
+# de territoire jusqu'au suivi #891. Le graphe reste l'autorité des
+# publications canoniques planifiées retenues (JSON/Parquet des thèmes,
+# artefacts de serving, horloges de fraîcheur).
 
 script_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
 script_path <- if (length(script_arg) == 1L) {
