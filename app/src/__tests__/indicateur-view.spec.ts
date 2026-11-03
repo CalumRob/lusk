@@ -210,6 +210,42 @@ describe('IndicateurView — routed URL seam', () => {
     expect(sourceCard.text()).not.toContain('2026-08-05')
   })
 
+  it('sparse comparison table: only the focal row shows the API rank — peers never show locally calculated ranks (#892)', async () => {
+    const programmesMetadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_programmes.json'), 'utf8'))
+    const categories = programmesMetadata.indicator_pages.subventions_par_domaine.comparison.details as string[]
+    const category = categories.find((value) => value.startsWith('Agriculture'))!
+    const base = indicateursProgrammesFixture.find((fact) => fact.key === 'subventions_par_domaine' && fact.detail === 'Agriculture')!
+    // trois communes portent la MÊME catégorie/période avec des montants différents :
+    // un rang calculé localement existerait pour chaque pair si on le laissait passer
+    const programmesFacts = [
+      ...indicateursProgrammesFixture.filter((fact) => fact.key !== 'subventions_par_domaine'),
+      { ...base, territoire: '22001', detail: category, dimension: '2025', value: 15000 },
+      { ...base, territoire: '22002', detail: category, dimension: '2025', value: 30000 },
+      { ...base, territoire: '29001', detail: category, dimension: '2025', value: 5000 },
+    ]
+    const { wrapper } = await monter(
+      `/indicateurs/programmes/subventions_par_domaine?territoire=22001&niveau=commune&detail=${encodeURIComponent(category)}&dimension=2025`,
+      [], programmesMetadata, programmesFacts, 'programmes')
+    await flushPromises()
+    // la comparaison API a répondu (rang du focal uniquement — la requête ne porte que le focal)
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').exists()).toBe(true)
+
+    const rows = wrapper.findAll('.comparison-table-scroll tbody tr')
+    expect(rows.length).toBe(3)
+    const celluleRang = (row: ReturnType<typeof wrapper.findAll>[number]) => row.findAll('td')[2]!.text().trim()
+    const estFocal = (row: ReturnType<typeof wrapper.findAll>[number]) => row.classes().includes('selection')
+    const focal = rows.find(estFocal)!
+    const pairs = rows.filter((row) => !estFocal(row))
+    expect(pairs.length).toBe(2)
+    // le focal affiche le rang API exact (mock : rank 1, rank_size = nb de membres)
+    expect(celluleRang(focal)).toMatch(/^1er \/ \d+$/)
+    // les pairs sans évidence de comparaison API par membre : AUCUN rang affiché
+    // (pas de rang calculé localement, aucune taille de groupe fabriquée)
+    for (const row of pairs) {
+      expect(celluleRang(row)).toBe('')
+    }
+  })
+
   it('distinguishes whole-territory no-record from a missing selected category-period', async () => {
     const programmesMetadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_programmes.json'), 'utf8'))
     const categories = programmesMetadata.indicator_pages.subventions_par_domaine.comparison.details as string[]
