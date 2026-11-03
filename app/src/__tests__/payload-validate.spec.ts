@@ -240,7 +240,7 @@ describe('parsePayload — accepts the contract shape', () => {
     const colonnes = ['rang_epci', 'rang_epci_n', 'rang_dep', 'rang_dep_n', 'rang_reg', 'rang_reg_n'] as const
     for (const ligne of indicateurs) {
       for (const colonne of colonnes) {
-        (ligne as Record<string, unknown>)[colonne] = null
+        (ligne as unknown as Record<string, unknown>)[colonne] = null
       }
     }
 
