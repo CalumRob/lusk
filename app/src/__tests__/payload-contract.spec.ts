@@ -5,12 +5,12 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import { chargerPayload } from '../payload/loader'
 import { indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture } from '../payload/fixtures'
+import { THEMES_CANONIQUES } from '../payload/types'
 import type { HistoireMobilite, Payload } from '../payload/types'
 import {
   formaterRang,
   histoireEconomiePourTerritoire,
   ligneFraicheur,
-  themesPresent,
 } from '../payload/selectors'
 
 /**
@@ -253,16 +253,21 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect('apercu' in payload).toBe(false)
   })
 
-  it('drives the theme tab bar from the payload (all five themes are built)', async () => {
+  it('the canonical registry THEMES_CANONIQUES is the tab-bar authority — six supported themes (#901)', async () => {
     const payload = obtenirPayload()
 
-    expect(themesPresent(payload)).toEqual([
+    expect([...THEMES_CANONIQUES]).toEqual([
       'mobilite',
       'demographie',
       'habitat',
       'economie',
       'milieux',
+      'programmes',
     ])
+    // Tout thème porté par le payload committé est un thème du registre (la
+    // validation l'impose en amont) — le registre ne dérive jamais du payload.
+    for (const ligne of payload.indicateurs) expect(THEMES_CANONIQUES).toContain(ligne.theme)
+    for (const ligne of payload.histoires) expect(THEMES_CANONIQUES).toContain(ligne.theme)
   })
 
   it('loads the committed theme_<theme>.json metadata for all five built themes (#311, #313)', async () => {

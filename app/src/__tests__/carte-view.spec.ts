@@ -573,14 +573,20 @@ describe('CarteView — la carte avec fond publié', () => {
     wrapper.unmount()
   })
 
-  it('renders the map + sidebar and the payload-driven ThemeTabs', async () => {
+  it('renders the map + sidebar and the registry-driven ThemeTabs — six supported themes (#901)', async () => {
     const { wrapper } = await monter()
 
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'MapSidebar' }).exists()).toBe(true)
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets[0]).toBe('Programmes et subventions')
-    expect(onglets).toContain('Démographie')
+    expect(onglets).toEqual([
+      'Programmes et subventions',
+      'Mobilité',
+      'Démographie',
+      'Habitat',
+      'Économie/Emploi',
+      'Milieux',
+    ])
   })
 
   it('the Aperçu tab (default) runs on the brand ramp and shows the mask-level legend', async () => {
@@ -924,9 +930,13 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     histoires: [...histoiresDemographieFixture, ...histoiresHabitatFixture],
   }
 
-  it('rend la carte neutre dès que territoires + run-report se règlent, toutes les paires de thèmes encore pendantes', async () => {
+  it('rend la carte neutre dès que territoires + run-report se règlent — les 6 onglets du registre sont là, les 12 fichiers numériques ne sont jamais demandés (#901)', async () => {
+    const demandes: string[] = []
     const enAttente = new Promise<unknown>(() => {})
     const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
+      // Les paires numériques « pendraient » si on les demandait — elles ne
+      // le sont jamais (#901 : zéro téléchargement numérique statique).
       if (fichier.startsWith('indicateurs_') || fichier.startsWith('histoires_')) return enAttente
       return chargerAvec(payload)(fichier)
     }
@@ -935,9 +945,17 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     // Le wait-set de la carte est réglé → pas de squelette, la carte vit.
     expect(wrapper.find('[role="status"]').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
-    // Aucun onglet de thème (les paires pendent) — le premier onglet seul.
+    // Les 6 onglets du registre (la présence est produit, pas lignes de faits).
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets).toEqual(['Programmes et subventions'])
+    expect(onglets).toEqual([
+      'Programmes et subventions',
+      'Mobilité',
+      'Démographie',
+      'Habitat',
+      'Économie/Emploi',
+      'Milieux',
+    ])
+    expect(demandes.filter((f) => f.startsWith('indicateurs_') || f.startsWith('histoires_'))).toEqual([])
     // L'état neutre honnête : masques seuls, aucune couche d'indicateurs.
     expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
     expect(wrapper.find('.carte-legendes-masques').text()).toContain("sans couche d'indicateurs")
@@ -984,18 +1002,14 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     expect(popup?.contenu).toContain('Voir la fiche')
   })
 
-  it('la liste de couches se remplit progressivement — une couche n’est rendue que quand SA paire atterrit, l’URL ?theme= conservée', async () => {
-    let resoudreIndicateurs: (v: unknown) => void = () => {}
-    let resoudreHistoires: (v: unknown) => void = () => {}
-    const indicateursEnAttente = new Promise<unknown>((resoudre) => {
-      resoudreIndicateurs = resoudre
-    })
-    const histoiresEnAttente = new Promise<unknown>((resoudre) => {
-      resoudreHistoires = resoudre
-    })
+  it('?theme= canonique est admis dès le wait-set (registre #901) — les couches viennent de l’API, les fichiers numériques du thème ne sont jamais demandés', async () => {
+    const demandes: string[] = []
+    const enAttente = new Promise<unknown>(() => {})
     const charger: ChargerFichier = async (fichier) => {
-      if (fichier === 'indicateurs_demographie') return indicateursEnAttente
-      if (fichier === 'histoires_demographie') return histoiresEnAttente
+      demandes.push(fichier)
+      // Les fichiers numériques du thème « pendraient » si on les demandait —
+      // ils ne le sont jamais (#901).
+      if (fichier === 'indicateurs_demographie' || fichier === 'histoires_demographie') return enAttente
       return chargerAvec(payload)(fichier)
     }
     const { router, wrapper } = await monter({
@@ -1003,19 +1017,12 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
       chargerPayload: charger,
     })
 
-    // Le thème demandé pend encore → l'état neutre honnête, l'URL CONSERVÉE
-    // (la normalisation ne réécrit pas un thème valide en vol).
-    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
-    expect(wrapper.find('.carte-legendes-masques').text()).toContain("sans couche d'indicateurs")
+    // Le thème canonique est admis immédiatement (la présence est produit,
+    // pas lignes de faits) : l'URL est conservée et la couche par défaut du
+    // thème (le premier scalaire de Story) est servie par l'API.
     expect(router.currentRoute.value.query.theme).toBe('demographie')
-
-    // La paire atterrit → la couche par défaut du thème (le premier scalaire
-    // de Story) rend, sans rechargement de la page.
-    resoudreIndicateurs(indicateursDemographieFixture)
-    resoudreHistoires(histoiresDemographieFixture)
-    await flushPromises()
-
-    expect(router.currentRoute.value.query.theme).toBe('demographie')
+    expect(demandes).not.toContain('indicateurs_demographie')
+    expect(demandes).not.toContain('histoires_demographie')
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
     expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Solde naturel (‰/an)')
   })
@@ -1035,13 +1042,17 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     // Aucun fichier 'programmes' n'a été demandé au magasin : les couches
     // viennent exclusivement des lectures natives de l'API.
     expect(demandes).not.toContain('programmes')
+    // #901 — idem pour les 12 fichiers numériques : zéro requête statique.
+    expect(demandes.filter((f) => f.startsWith('indicateurs_') || f.startsWith('histoires_'))).toEqual([])
     expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(4)
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
   })
 
-  it('une paire de thème d’arrière-plan en échec → ses couches absentes, la carte vivante, aucune erreur de page', async () => {
+  it('les fichiers numériques d’arrière-plan ne sont plus démarrés du tout (#901) : leur échec n’atteint jamais la carte, les 6 onglets du registre restent', async () => {
+    const demandes: string[] = []
     const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
       if (fichier === 'indicateurs_habitat' || fichier === 'histoires_habitat') {
         throw new PayloadError('fetch', `${fichier}.json`, 'réseau')
       }
@@ -1049,12 +1060,13 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     }
     const { wrapper } = await monter({ chargerPayload: charger })
 
-    // Aucune erreur de page — la carte vit, l'onglet habitat simplement absent
-    // (l'absence honnête, jamais une erreur).
+    // Aucune erreur de page — la carte vit, et les 6 onglets du registre
+    // rendent (la présence est produit, pas lignes de faits).
     expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
-    const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets).toEqual(['Programmes et subventions', 'Démographie'])
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+    // Les fichiers numériques en échec n'ont même pas été demandés.
+    expect(demandes.filter((f) => f.startsWith('indicateurs_') || f.startsWith('histoires_'))).toEqual([])
   })
 
   it('garde l’URL ?theme= demandée quand le wait-set échoue — Retry la remet debout sans normalisation prématurée', async () => {
@@ -1177,7 +1189,7 @@ describe('CarteView — #901 : onglets + admission ?theme= depuis le REGISTRE TH
     // côté chargeur) ne sont ni demandées ni rendues pendant l'échec.
     const carte = maplibreMock.instancesCarteMaple.at(-1)
     const joined = () => carte?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as { features: { properties: { territoire: string; valeur: number | null } }[] }
-    expect(joined().features.find((f) => f.properties.territoire === '22001')?.properties.valeur).toBeNull()
+    expect(joined().features.find((f) => f.properties.territoire === '22001')?.properties.valeur ?? null).toBeNull()
     expect(fichiersNumeriques(demandes)).toEqual([])
 
     // Retry → l'API sert enfin → les valeurs natives rendent (toujours zéro
