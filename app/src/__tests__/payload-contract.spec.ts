@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -40,8 +40,9 @@ const demandeesCommite: string[] = []
 /** Serve the committed payload through the seam, from disk — no network. */
 function chargerPayloadCommite(): Promise<Payload> {
   const fichiers: Record<string, unknown> = {}
-  // #893 — programmes.json n'est plus servi au seam : le fichier commité
-  // reste sur disque (non supprimé), mais aucun chargeur ne le demande.
+  // #893/#902 — programmes.json n'est plus servi au seam : l'artefact commité
+  // est SUPPRIMÉ des deux copies suivies (public/ et app/dist/), et aucun
+  // chargeur ne le demande.
   // #894 — idem pour apercu.json : relique committée, jamais demandée.
   for (const nom of [
     'territoires.json',
@@ -484,13 +485,16 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(payload.vintages?.find((v) => v.id === 'epci')?.date_publication).toBeNull()
   })
 
-  it('never requests the retired programmes.json — the committed file stays on disk but unread (#893)', async () => {
+  it('the retired programmes.json is absent and never requested or regenerated (#893 retired, #902 deleted)', async () => {
     const payload = obtenirPayload()
 
-    // le fichier commité EXISTE toujours (aucune suppression d'artefact) …
-    const commite = JSON.parse(readFileSync(join(dataDir, 'programmes.json'), 'utf-8')) as { membres: unknown[] }
-    expect(commite.membres.length).toBeGreaterThan(0)
-    // … mais le seam ne l'a JAMAIS demandé, et la section reste null
+    // l'artefact commité est SUPPRIMÉ des deux copies suivies (#902) : ni la
+    // source public/ ni la copie dist/ ne le portent — et comme le build ne
+    // fait que recopier public/data → dist/data (copy-payload-build.ts), la
+    // copie de build ne peut PAS le recréer
+    expect(existsSync(join(dataDir, 'programmes.json'))).toBe(false)
+    expect(existsSync(join(process.cwd(), 'dist', 'data', 'programmes.json'))).toBe(false)
+    // le seam ne l'a JAMAIS demandé, et la section reste null
     expect(demandeesCommite).not.toContain('programmes.json')
     expect(payload.programmes).toBeNull()
   })

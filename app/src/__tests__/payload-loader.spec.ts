@@ -349,8 +349,9 @@ describe('chargerPayload — the retired programmes.json (#893)', () => {
     const demandees: string[] = []
     const fetchImpl = async (url: string) => {
       demandees.push(url)
-      // un programmes.json périmé est encore servi (artefact commité non
-      // supprimé) : le chargeur ne doit NI le demander NI le valider
+      // un programmes.json périmé est encore servi (ex. par un ancien
+      // déploiement — l'artefact commité est supprimé depuis #902) : le
+      // chargeur ne doit NI le demander NI le valider
       return stubFetch({ ...fichiersDemographie, 'programmes.json': { membres: [], subventions: [] } })(url)
     }
 
