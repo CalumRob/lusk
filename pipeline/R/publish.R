@@ -171,15 +171,18 @@ projection_json_indicateurs <- function(indicateurs) {
 }
 # publish ---------------------------------------------------------------------
 # Étape 5 : publication. Upsert du payload vers la cible. Deux backends :
-#   - "static" (défaut, issue #10, ADR-0004) : écrit les tables en parquet
-#     (l'artefact canonique téléchargeable) ET leurs projections JSON (ce que
-#     l'app Vue fetch), vers le home public du payload (public/data/ à la
-#     racine du dépôt — là où Pages et l'app lisent). Les deux sérialisations
-#     sortent des MÊMES tables en mémoire : le test d'égalité (test-publish.R)
-#     verrouille la non-dérive — pour les thèmes retirés (#757) il compare la
-#     projection JSON à la table en mémoire, pour la Mobilité il compare JSON
-#     et parquet l'un à l'autre (dérive impossible, pas juste improbable —
-#     ADR-0004).
+#   - "static" (défaut, issue #10, ADR-0004) : écrit les tables vers le home
+#     public du payload (public/data/ à la racine du dépôt — là où Pages et
+#     l'app lisent), en parquet (l'artefact canonique téléchargeable) et/ou en
+#     projection JSON (ce que l'app Vue fetch) — SELON la table, pas les deux
+#     formats partout : les règles par projection sont détaillées ci-dessous
+#     (pas de parquet par thème hors Mobilité, #757 ; pas de apercu.json
+#     depuis #894, le parquet apercu.parquet reste). Chaque sérialisation
+#     écrite sort de la MÊME table en mémoire : le test d'égalité
+#     (test-publish.R) verrouille la non-dérive — pour les thèmes retirés
+#     (#757) il compare la projection JSON à la table en mémoire, pour la
+#     Mobilité il compare JSON et parquet l'un à l'autre (dérive impossible,
+#     pas juste improbable — ADR-0004).
 #   - "parquet" (local, comportement historique inchangé) : parquet seul.
 # Sémantique d'upsert documentée : le payload EST l'état complet des fiches —
 # écrire écrase, donc relancer ne duplique jamais. Le backend Supabase
