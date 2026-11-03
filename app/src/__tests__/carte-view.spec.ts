@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 
+import { defineComponent, h } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -22,8 +23,10 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
+import { PAYLOAD_CHARGER_KEY, usePayload } from '../payload/usePayload'
 import type { ChargerFichier } from '../payload/usePayload'
+import type { Fichier } from '../payload/loader'
+import { THEMES_CANONIQUES } from '../payload/types'
 import type { Histoire, HistoireDemographie, Indicateur, MembreProgramme, Payload, SubventionProgramme } from '../payload/types'
 import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
@@ -572,14 +575,20 @@ describe('CarteView — la carte avec fond publié', () => {
     wrapper.unmount()
   })
 
-  it('renders the map + sidebar and the payload-driven ThemeTabs', async () => {
+  it('renders the map + sidebar and the registry-driven ThemeTabs — six supported themes (#901)', async () => {
     const { wrapper } = await monter()
 
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'MapSidebar' }).exists()).toBe(true)
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets[0]).toBe('Programmes et subventions')
-    expect(onglets).toContain('Démographie')
+    expect(onglets).toEqual([
+      'Programmes et subventions',
+      'Mobilité',
+      'Démographie',
+      'Habitat',
+      'Économie/Emploi',
+      'Milieux',
+    ])
   })
 
   it('the Aperçu tab (default) runs on the brand ramp and shows the mask-level legend', async () => {
@@ -923,9 +932,13 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     histoires: [...histoiresDemographieFixture, ...histoiresHabitatFixture],
   }
 
-  it('rend la carte neutre dès que territoires + run-report se règlent, toutes les paires de thèmes encore pendantes', async () => {
+  it('rend la carte neutre dès que territoires + run-report se règlent — les 6 onglets du registre sont là, les 12 fichiers numériques ne sont jamais demandés (#901)', async () => {
+    const demandes: string[] = []
     const enAttente = new Promise<unknown>(() => {})
     const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
+      // Les paires numériques « pendraient » si on les demandait — elles ne
+      // le sont jamais (#901 : zéro téléchargement numérique statique).
       if (fichier.startsWith('indicateurs_') || fichier.startsWith('histoires_')) return enAttente
       return chargerAvec(payload)(fichier)
     }
@@ -934,9 +947,17 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     // Le wait-set de la carte est réglé → pas de squelette, la carte vit.
     expect(wrapper.find('[role="status"]').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
-    // Aucun onglet de thème (les paires pendent) — le premier onglet seul.
+    // Les 6 onglets du registre (la présence est produit, pas lignes de faits).
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets).toEqual(['Programmes et subventions'])
+    expect(onglets).toEqual([
+      'Programmes et subventions',
+      'Mobilité',
+      'Démographie',
+      'Habitat',
+      'Économie/Emploi',
+      'Milieux',
+    ])
+    expect(demandes.filter((f) => f.startsWith('indicateurs_') || f.startsWith('histoires_'))).toEqual([])
     // L'état neutre honnête : masques seuls, aucune couche d'indicateurs.
     expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
     expect(wrapper.find('.carte-legendes-masques').text()).toContain("sans couche d'indicateurs")
@@ -983,18 +1004,14 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     expect(popup?.contenu).toContain('Voir la fiche')
   })
 
-  it('la liste de couches se remplit progressivement — une couche n’est rendue que quand SA paire atterrit, l’URL ?theme= conservée', async () => {
-    let resoudreIndicateurs: (v: unknown) => void = () => {}
-    let resoudreHistoires: (v: unknown) => void = () => {}
-    const indicateursEnAttente = new Promise<unknown>((resoudre) => {
-      resoudreIndicateurs = resoudre
-    })
-    const histoiresEnAttente = new Promise<unknown>((resoudre) => {
-      resoudreHistoires = resoudre
-    })
+  it('?theme= canonique est admis dès le wait-set (registre #901) — les couches viennent de l’API, les fichiers numériques du thème ne sont jamais demandés', async () => {
+    const demandes: string[] = []
+    const enAttente = new Promise<unknown>(() => {})
     const charger: ChargerFichier = async (fichier) => {
-      if (fichier === 'indicateurs_demographie') return indicateursEnAttente
-      if (fichier === 'histoires_demographie') return histoiresEnAttente
+      demandes.push(fichier)
+      // Les fichiers numériques du thème « pendraient » si on les demandait —
+      // ils ne le sont jamais (#901).
+      if (fichier === 'indicateurs_demographie' || fichier === 'histoires_demographie') return enAttente
       return chargerAvec(payload)(fichier)
     }
     const { router, wrapper } = await monter({
@@ -1002,19 +1019,12 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
       chargerPayload: charger,
     })
 
-    // Le thème demandé pend encore → l'état neutre honnête, l'URL CONSERVÉE
-    // (la normalisation ne réécrit pas un thème valide en vol).
-    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
-    expect(wrapper.find('.carte-legendes-masques').text()).toContain("sans couche d'indicateurs")
+    // Le thème canonique est admis immédiatement (la présence est produit,
+    // pas lignes de faits) : l'URL est conservée et la couche par défaut du
+    // thème (le premier scalaire de Story) est servie par l'API.
     expect(router.currentRoute.value.query.theme).toBe('demographie')
-
-    // La paire atterrit → la couche par défaut du thème (le premier scalaire
-    // de Story) rend, sans rechargement de la page.
-    resoudreIndicateurs(indicateursDemographieFixture)
-    resoudreHistoires(histoiresDemographieFixture)
-    await flushPromises()
-
-    expect(router.currentRoute.value.query.theme).toBe('demographie')
+    expect(demandes).not.toContain('indicateurs_demographie')
+    expect(demandes).not.toContain('histoires_demographie')
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
     expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Solde naturel (‰/an)')
   })
@@ -1034,13 +1044,17 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     // Aucun fichier 'programmes' n'a été demandé au magasin : les couches
     // viennent exclusivement des lectures natives de l'API.
     expect(demandes).not.toContain('programmes')
+    // #901 — idem pour les 12 fichiers numériques : zéro requête statique.
+    expect(demandes.filter((f) => f.startsWith('indicateurs_') || f.startsWith('histoires_'))).toEqual([])
     expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(4)
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
   })
 
-  it('une paire de thème d’arrière-plan en échec → ses couches absentes, la carte vivante, aucune erreur de page', async () => {
+  it('les fichiers numériques d’arrière-plan ne sont plus démarrés du tout (#901) : leur échec n’atteint jamais la carte, les 6 onglets du registre restent', async () => {
+    const demandes: string[] = []
     const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
       if (fichier === 'indicateurs_habitat' || fichier === 'histoires_habitat') {
         throw new PayloadError('fetch', `${fichier}.json`, 'réseau')
       }
@@ -1048,12 +1062,13 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     }
     const { wrapper } = await monter({ chargerPayload: charger })
 
-    // Aucune erreur de page — la carte vit, l'onglet habitat simplement absent
-    // (l'absence honnête, jamais une erreur).
+    // Aucune erreur de page — la carte vit, et les 6 onglets du registre
+    // rendent (la présence est produit, pas lignes de faits).
     expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
-    const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets).toEqual(['Programmes et subventions', 'Démographie'])
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+    // Les fichiers numériques en échec n'ont même pas été demandés.
+    expect(demandes.filter((f) => f.startsWith('indicateurs_') || f.startsWith('histoires_'))).toEqual([])
   })
 
   it('garde l’URL ?theme= demandée quand le wait-set échoue — Retry la remet debout sans normalisation prématurée', async () => {
@@ -1092,6 +1107,309 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     await flushPromises()
     expect(router.currentRoute.value.query.theme).toBeUndefined()
     expect(wrapper.find('.carte--theme-apercu').exists()).toBe(true)
+  })
+})
+
+describe('CarteView — #901 : onglets + admission ?theme= depuis le REGISTRE THEMES_CANONIQUES (présence produit, pas lignes de faits)', () => {
+  /** La barre d'onglets de la carte : le premier onglet « Programmes et
+   *  subventions » (ADR-0019) couvre le thème `programmes`, puis les cinq
+   *  autres thèmes dans l'ordre canonique du registre — six identités. */
+  const ONGLETS_REGISTRE = [
+    'Programmes et subventions',
+    'Mobilité',
+    'Démographie',
+    'Habitat',
+    'Économie/Emploi',
+    'Milieux',
+  ]
+  const fichiersNumeriques = (demandes: string[]) =>
+    demandes.filter((f) => f.startsWith('indicateurs_') || f.startsWith('histoires_'))
+
+  it('cache frais : les 6 identités d’onglets du registre, et ZÉRO des 12 fichiers numériques demandés même si leurs réponses sont disponibles', async () => {
+    const demandes: string[] = []
+    // Le chargeur SERT les lignes statiques si on les demande (elles sont
+    // « disponibles » côté fixture) — la carte ne doit JAMAIS les demander.
+    const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
+      return chargerAvec(payload)(fichier)
+    }
+    const { wrapper } = await monter({ chargerPayload: charger, apiFetch: false })
+
+    expect(wrapper.findAll('[role="tab"]').map((o) => o.text().trim())).toEqual(ONGLETS_REGISTRE)
+    expect(fichiersNumeriques(demandes)).toEqual([])
+    // Le démarrage reste demand-driven et étroit : wait-set + les 6 métadonnées.
+    expect(new Set(demandes)).toEqual(new Set([
+      'territoires',
+      'run-report',
+      ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as const),
+    ]))
+  })
+
+  it('?theme= canonique admis dès le wait-set — même quand l’API ne déclare aucune ressource pour ce thème (état « sans couche » honnête, onglets stables)', async () => {
+    const demandes: string[] = []
+    const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
+      return chargerAvec(payload)(fichier)
+    }
+    const { router, wrapper } = await monter({ chemin: '/carte?theme=mobilite', chargerPayload: charger })
+
+    // mobilite n'a aucune ressource déclarée dans le fixture API : aucune
+    // couche, aucune erreur — mais l'onglet existe et est sélectionné.
+    expect(router.currentRoute.value.query.theme).toBe('mobilite')
+    const onglets = wrapper.findAll('[role="tab"]')
+    expect(onglets.map((o) => o.text().trim())).toEqual(ONGLETS_REGISTRE)
+    expect(onglets[1]!.attributes('aria-selected')).toBe('true')
+    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
+    expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
+    expect(fichiersNumeriques(demandes)).toEqual([])
+  })
+
+  it('échec API du thème sélectionné → « indisponible + Réessayer », PAS une absence : onglets stables, URL gardée, aucune valeur statique de repli, zéro requête numérique', async () => {
+    const metadata = JSON.parse(await readFile(join(process.cwd(), '..', 'public', 'data', 'theme_demographie.json'), 'utf8'))
+    const demandes: string[] = []
+    const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
+      return fichier === 'theme_demographie' ? metadata : chargerAvec(payload)(fichier)
+    }
+    const fixture = await fetchCarteApiFixture(payload)
+    let premierAppel = true
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/resources' && premierAppel) {
+        premierAppel = false
+        return new Response('', { status: 503 })
+      }
+      return fixture(input, init)
+    }))
+    const { router, wrapper } = await monter({ chemin: '/carte?theme=demographie', chargerPayload: charger, apiFetch: false })
+    await flushPromises()
+
+    // L'échec API est un état indisponible + retry — jamais une absence d'onglet.
+    expect(wrapper.find('[role="alert"]').text()).toContain('Impossible de charger les valeurs natives de la carte.')
+    expect(router.currentRoute.value.query.theme).toBe('demographie')
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+    // Aucune valeur statique de repli : les lignes du fixture (disponibles
+    // côté chargeur) ne sont ni demandées ni rendues pendant l'échec.
+    const carte = maplibreMock.instancesCarteMaple.at(-1)
+    const joined = () => carte?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as { features: { properties: { territoire: string; valeur: number | null } }[] }
+    expect(joined().features.find((f) => f.properties.territoire === '22001')?.properties.valeur ?? null).toBeNull()
+    expect(fichiersNumeriques(demandes)).toEqual([])
+
+    // Retry → l'API sert enfin → les valeurs natives rendent (toujours zéro
+    // requête numérique statique).
+    await wrapper.find('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
+    expect(joined().features.find((f) => f.properties.territoire === '22001')?.properties.valeur).not.toBeNull()
+    expect(fichiersNumeriques(demandes)).toEqual([])
+  })
+
+  it('?theme=programmes (canonique) est normalisé vers l’URL unique du mode Programmes (?onglet=programmes) — couches adhésion/subventions rendues via l’API, pas seulement le highlight d’onglet (#901)', async () => {
+    const demandes: string[] = []
+    const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
+      return chargerAvec(payloadProgrammes)(fichier)
+    }
+    const { router, wrapper } = await monter({
+      chemin: '/carte?theme=programmes',
+      chargerPayload: charger,
+      apiPayload: payloadProgrammes,
+    })
+
+    // Une seule autorité d'URL pour le mode Programmes : ?onglet=programmes.
+    expect(router.currentRoute.value.query).toEqual({ onglet: 'programmes' })
+    // Le mode spécial rend SES couches, servies par l'acquisition API native
+    // (membres + subventions) — pas un état vide de branche générique.
+    const couches = wrapper.findAll('.carte-sidebar-couche').map((b) => b.text().trim())
+    expect(couches).toEqual(['ACV', 'PVD', 'ORT', 'Subventions totales'])
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Subventions totales')
+    // 6 onglets du registre, zéro requête numérique statique.
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+    expect(fichiersNumeriques(demandes)).toEqual([])
+  })
+
+  it('?theme=programmes&programme=ACV conserve le paramètre de couche à travers la normalisation (?onglet=programmes&programme=ACV)', async () => {
+    const { router, wrapper } = await monter({
+      chemin: '/carte?theme=programmes&programme=ACV',
+      apiPayload: payloadProgrammes,
+    })
+
+    expect(router.currentRoute.value.query).toEqual({ onglet: 'programmes', programme: 'ACV' })
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('ACV')
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('ACV')
+  })
+
+  it('passer de ?theme=demographie à l’onglet Programmes écrit l’URL canonique ?onglet=programmes (jamais ?theme=programmes)', async () => {
+    const { router, wrapper } = await monterProgrammes('/carte?theme=demographie')
+
+    expect(router.currentRoute.value.query).toEqual({ theme: 'demographie' })
+    await wrapper.findAll('[role="tab"]')[0].trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ onglet: 'programmes' })
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
+  })
+
+  it('?theme=programmes avec l’API en échec → normalisé vers ?onglet=programmes, état indisponible + Retry (pas une absence), onglets stables, zéro requête numérique', async () => {
+    const metadataProgrammes = JSON.parse(await readFile(join(process.cwd(), '..', 'public', 'data', 'theme_programmes.json'), 'utf8'))
+    const demandes: string[] = []
+    const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
+      return fichier === 'theme_programmes' ? metadataProgrammes : chargerAvec(payloadProgrammes)(fichier)
+    }
+    const fixture = await fetchCarteApiFixture(payloadProgrammes)
+    let premierAppel = true
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/resources/read-batch' && premierAppel) {
+        premierAppel = false
+        return new Response('', { status: 503 })
+      }
+      return fixture(input, init)
+    }))
+    const { router, wrapper } = await monter({
+      chemin: '/carte?theme=programmes',
+      chargerPayload: charger,
+      apiFetch: false,
+    })
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ onglet: 'programmes' })
+    expect(wrapper.find('[role="alert"]').text()).toContain('Impossible de charger les valeurs natives de la carte.')
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+    expect(fichiersNumeriques(demandes)).toEqual([])
+
+    await wrapper.find('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
+    expect(fichiersNumeriques(demandes)).toEqual([])
+  })
+})
+
+describe('CarteView — #901 : magasin partagé CHAUD (aucun chargeur injecté — le seam public réel)', () => {
+  it('store warm via une autre route, puis carte montée sur le magasin de production : zéro nouveau départ statique (12 fichiers numériques inclus), valeurs API utilisées, et panne API sans aucun repli statique', async () => {
+    const payloadChaud: Payload = {
+      ...payload,
+      indicateurs: [...indicateursDemographieFixture, ...indicateursHabitatFixture],
+      histoires: [...histoiresDemographieFixture, ...histoiresHabitatFixture],
+    }
+    // Les faits servis par l'API sont décalés (×100) : une valeur rendue à
+    // 20000 prouve la ligne API, jamais la ligne statique chaude (200).
+    const payloadApi: Payload = {
+      ...payloadChaud,
+      indicateurs: payloadChaud.indicateurs.map((l) =>
+        l.value === null ? l : { ...l, value: l.value * 100 }),
+      histoires: payloadChaud.histoires.map((h) =>
+        Object.fromEntries(Object.entries(h).map(([k, v]) => [k, typeof v === 'number' ? v * 100 : v])) as Payload['histoires'][number]),
+    }
+    const demandesData: string[] = []
+    let apiEnEchec = false
+    const fixtureApi = await fetchCarteApiFixture(payloadApi)
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.startsWith('/data/')) {
+        demandesData.push(url)
+        const fichier = url.slice('/data/'.length, -'.json'.length) as Fichier
+        // Les catalogues theme_* servis = les fichiers committés réels (comme
+        // en production) ; les sections numériques viennent du fixture.
+        if (fichier.startsWith('theme_')) {
+          try {
+            return new Response(await readFile(join(process.cwd(), '..', 'public', 'data', `${fichier}.json`), 'utf8'))
+          } catch {
+            return new Response('', { status: 404 })
+          }
+        }
+        const section = await chargerAvec(payloadChaud)(fichier)
+        if (section === null || section === undefined) return new Response('', { status: 404 })
+        return new Response(JSON.stringify(section))
+      }
+      // Panne ciblée sur les lectures de cohorts (la découverte réussit :
+      // les couches existent, leurs valeurs échouent).
+      if (apiEnEchec && url === '/api/resources/read-batch') return new Response('', { status: 503 })
+      return fixtureApi(input, init)
+    }))
+
+    // Phase 0 — « une autre route » chauffe le magasin partagé de production :
+    // usePayload SANS chargeur injecté (magasinPartage) + chargeur réel (fetch
+    // stubbé, validateurs réels) — seam public, pas un mock du hook.
+    const harness = mount(defineComponent({
+      setup() {
+        const etat = usePayload()
+        return { etat }
+      },
+      render: () => h('div'),
+    }))
+    await vi.waitFor(() => {
+      expect(harness.vm.etat.chargement.value).toBe(false)
+      expect(harness.vm.etat.erreur.value).toBeNull()
+    })
+    // Le magasin est bien CHAUD en lignes numériques.
+    expect(harness.vm.etat.payload.value.indicateurs.length).toBeGreaterThan(0)
+    expect(harness.vm.etat.payload.value.histoires.length).toBeGreaterThan(0)
+    const numeriquesChauffes = demandesData.filter((u) => u.includes('indicateurs_') || u.includes('histoires_'))
+    expect(numeriquesChauffes).toContain('/data/indicateurs_demographie.json')
+    expect(numeriquesChauffes).toContain('/data/histoires_demographie.json')
+    const marqueur = demandesData.length
+
+    const monterSurMagasinChaud = async () => {
+      const router = createRouter({ history: createMemoryHistory(), routes })
+      await router.push('/carte?theme=demographie')
+      await router.isReady()
+      const wrapper = mount(CarteView, {
+        global: {
+          plugins: [router],
+          provide: { [GEOMETRIE_CHARGER_KEY]: async () => masquesCommunes },
+        },
+      })
+      await flushPromises()
+      return { router, wrapper }
+    }
+    const valeur22001 = () => {
+      const carte = maplibreMock.instancesCarteMaple.at(-1)
+      const joined = carte?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as
+        { features: { properties: { territoire: string; valeur: number | null } }[] }
+      return joined?.features.find((f) => f.properties.territoire === '22001')?.properties.valeur ?? null
+    }
+
+    // Phase 1 — la carte montée SANS chargeur injecté réutilise le magasin chaud.
+    const { router, wrapper } = await monterSurMagasinChaud()
+    // ZÉRO nouveau départ statique (les 12 fichiers numériques inclus).
+    expect(demandesData.slice(marqueur).filter((u) => u.startsWith('/data/'))).toEqual([])
+    // 6 onglets du registre, URL canonique conservée.
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
+    expect(router.currentRoute.value.query.theme).toBe('demographie')
+    // Les valeurs rendues viennent de l'API (×100), pas des lignes statiques chaudes.
+    await wrapper.findAll('.carte-sidebar-couche').find((b) => b.text().includes('Densité'))!.trigger('click')
+    await flushPromises()
+    expect(valeur22001()).toBe(200 * 100)
+    const marqueur2 = demandesData.length
+
+    // Phase 2 — panne API (read-batch 503) : AUCUN repli sur les lignes
+    // statiques chaudes (valeur null), état indisponible + Retry, onglets/URL stables.
+    apiEnEchec = true
+    wrapper.unmount()
+    const { router: router2, wrapper: wrapper2 } = await monterSurMagasinChaud()
+    expect(wrapper2.find('[role="alert"]').text()).toContain('Impossible de charger les valeurs natives de la carte.')
+    expect(router2.currentRoute.value.query.theme).toBe('demographie')
+    expect(wrapper2.findAll('[role="tab"]')).toHaveLength(6)
+    await wrapper2.findAll('.carte-sidebar-couche').find((b) => b.text().includes('Densité'))!.trigger('click')
+    await flushPromises()
+    expect(valeur22001()).toBeNull()
+    expect(demandesData.slice(marqueur2).filter((u) => u.startsWith('/data/'))).toEqual([])
+
+    // Retry → l'API revient → valeurs API (×100) de nouveau, toujours zéro statique.
+    apiEnEchec = false
+    await wrapper2.find('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper2.find('[role="alert"]').exists()).toBe(false)
+    await wrapper2.findAll('.carte-sidebar-couche').find((b) => b.text().includes('Densité'))!.trigger('click')
+    await flushPromises()
+    expect(valeur22001()).toBe(200 * 100)
+    expect(demandesData.slice(marqueur2).filter((u) => u.startsWith('/data/'))).toEqual([])
+
+    wrapper2.unmount()
+    harness.unmount()
   })
 })
 

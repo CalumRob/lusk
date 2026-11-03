@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * ThemeTabs — the payload-driven theme subheader (ADR-0007 + ui-elements.md
- * §ThemeTabs). The bar renders exactly the themes present in the payload
- * (themesPresent) in the order the caller passes them; the selected tab wears
+ * ThemeTabs — the registry-driven theme subheader (ADR-0007 + ui-elements.md
+ * §ThemeTabs). The bar renders exactly the themes the caller passes them — the
+ * canonical registry THEMES_CANONIQUES on the fiche and the carte (#901) — in
+ * that order; the selected tab wears
  * its theme ramp (-strong text + -line underline; hover -soft). A leading
  * pseudo-tab (Aperçu on the legacy fiche, the carte's renamed first tab,
  * Méthodes' Sources) is rendered unless `masquerOngletInitial` — since #408
