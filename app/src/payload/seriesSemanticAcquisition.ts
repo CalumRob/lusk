@@ -336,9 +336,19 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
   }
   const axisComparisons = Array.isArray(result.axis_comparisons) ? result.axis_comparisons : []
   if (!axisComparisons.length) throw new Error('Preuve de comparaison par axe absente')
+  // identité d'axe : chaque axe publié doit être un texte non vide, UNIQUE,
+  // et déclaré dans le contrat d'axes du descripteur (publish_series.R:1268-1274
+  // exige un sous-ensemble ordonné déclaré sans doublon)
+  const declaredAxes = new Set((facts.descriptor.axis_values as unknown[]).filter((axis): axis is string => text(axis)))
+  const seenAxes = new Set<string>()
   const mapped = axisComparisons.map((candidate: unknown) => {
-    const axis = record(candidate) && text(candidate.axis) ? candidate.axis : '?'
-    if (!record(candidate) || !['median', 'mean'].includes(candidate.statistic) ||
+    if (!record(candidate) || !text(candidate.axis) || !declaredAxes.has(candidate.axis) ||
+        seenAxes.has(candidate.axis)) {
+      throw new Error('Axe de comparaison manquant, invalide, dupliqué ou non déclaré')
+    }
+    seenAxes.add(candidate.axis)
+    const axis = candidate.axis
+    if (!['median', 'mean'].includes(candidate.statistic) ||
         candidate.statistic !== result.statistic ||
         !['available', 'unavailable'].includes(candidate.status) ||
         !(candidate.value === null || finite(candidate.value)) ||
@@ -393,7 +403,15 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
       }
       // A member without a measured value legitimately carries no rank; the
       // ranked-count check below reconciles them with the eligibility.
-      if (rank.rank === null) continue
+      // Tuple all-or-nothing (producteur series_comparison_projection.py:122-124,
+      // 166-170) : rank, rank_size et rank_ties sont soit tous null (non classé),
+      // soit tous renseignés (classé) — jamais un mélange.
+      if (rank.rank === null) {
+        if (rank.rank_size !== null || rank.rank_ties !== null) {
+          throw new Error(`Tuple de rang incomplet (${axis})`)
+        }
+        continue
+      }
       if (!Number.isInteger(rank.rank) || !Number.isInteger(rank.rank_size) ||
           !Number.isInteger(rank.rank_ties) || rank.rank_size !== candidate.eligible_count ||
           rank.rank_size < 1 || rank.rank < 1 || rank.rank > rank.rank_size ||
@@ -414,11 +432,19 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
     return candidate
   })
   const comparisonPoint = facts.descriptor.comparison_point
-  const selected = mapped.find((item: Row) => item.axis === comparisonPoint)
+  let selected = comparisonPoint === null ? undefined : mapped.find((item: Row) => item.axis === comparisonPoint)
+  // Repli EXACT du producteur (api/snapshot_reads.py:1707-1713) : point déclaré
+  // non publié + axis_kind 'declared_detail' -> dernier axe de comparaison
+  // publié (ordre déclaré conservé). Jamais de re-étiquetage d'un autre axe.
+  let effectivePoint: string | null = comparisonPoint
+  if (!selected && facts.descriptor.axis_kind === 'declared_detail' && mapped.length) {
+    selected = mapped[mapped.length - 1]
+    effectivePoint = selected?.axis ?? null
+  }
   const focalRank = selected?.member_ranks?.find((rank: Row) =>
     rank.territory_id === facts.focal.id)
   return {
-    point: comparisonPoint,
+    point: effectivePoint,
     value: selected?.value,
     median: selected?.statistic === 'median' ? selected.value : undefined,
     mean: selected?.statistic === 'mean' ? selected.value : undefined,
