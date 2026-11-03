@@ -258,6 +258,11 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
         requestedIds.size !== resolvedIds.size || [...requestedIds].some((id) => !resolvedIds.has(id))) {
       throw new Error('Sélection de comparaison incompatible avec la population API résolue')
     }
+  } else if (comparisonData.selection !== null && comparisonData.selection !== undefined) {
+    // fixed_comparison : le producteur publie explicitement selection null
+    // (api/snapshot_reads.py:1886-1888) — une sélection publiée sur un fixed
+    // est un contrat invalide, rejeté
+    throw new Error('Sélection publiée sur une comparaison fixed (selection attendu null)')
   }
   // #892 fail-closed — contrat de portée PAR KIND, dérivé de l'INTENT de la
   // requête d'acquisition (contrat producteur api/snapshot_reads.py
@@ -431,6 +436,16 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
     }
     return candidate
   })
+  // sous-ensemble ORDONNÉ du contrat d'axes déclaré (api/series_comparison_projection.py:48-52
+  // : axes = [axis for axis in declared if axis in axes]) — une réponse réordonnée
+  // viole le contrat et ne doit jamais choisir le mauvais axe de résumé
+  const declaredAxisOrder = (facts.descriptor.axis_values as unknown[]).filter((axis): axis is string => text(axis))
+  let curseurOrdre = 0
+  for (const item of mapped) {
+    const index = declaredAxisOrder.indexOf((item as Row).axis, curseurOrdre)
+    if (index === -1) throw new Error('Axes de comparaison publiés hors ordre déclaré')
+    curseurOrdre = index + 1
+  }
   const comparisonPoint = facts.descriptor.comparison_point
   let selected = comparisonPoint === null ? undefined : mapped.find((item: Row) => item.axis === comparisonPoint)
   // Repli EXACT du producteur (api/snapshot_reads.py:1707-1713) : point déclaré
