@@ -78,6 +78,22 @@ const payload: Payload = {
   programmes: null,
 }
 
+/** #892 : payload dont les lignes `densite` portent un rang de comparaison API
+ *  (comparaisonApi, portée exacte déclarée) — la popup lit CE rang, jamais les
+ *  colonnes statiques rang_* (qui restent présentes sur les lignes commises). */
+function payloadAvecRangApi(
+  rangs: Record<string, { rang: number; taille: number | null; portee: string }>,
+): Payload {
+  return {
+    ...payload,
+    indicateurs: indicateursDemographieFixture.map((row) =>
+      row.key === 'densite' && rangs[row.territoire]
+        ? { ...row, comparaisonApi: rangs[row.territoire] }
+        : row,
+    ),
+  }
+}
+
 /** Le payload avec l'onglet programmes — le cohort NATIF de l'API (#893 :
  *  mapMemberships + mapGrantFacts, aucun repli statique) + un fait de
  *  subvention 22002 (12 000 €) pour que la choroplèthe ait des valeurs. */
@@ -437,8 +453,12 @@ describe('MapExplorer — la popup par couche (ADR-0019, #281)', () => {
     expect(html).not.toContain(`<span class="popup-carte-unite">${hostileUnit}</span>`)
   })
 
-  it('ouvre une popup qui mène par la valeur de la couche active + son rang, puis « Voir la fiche »', async () => {
-    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
+  it('ouvre une popup qui mène par la valeur de la couche active + son rang API, puis « Voir la fiche » (#892)', async () => {
+    const { carte } = await monter({
+      theme: 'demographie',
+      couche: coucheDensite,
+      payload: payloadAvecRangApi({ '22001': { rang: 1, taille: 2, portee: "communes de l'EPCI X" } }),
+    })
     const carteFake = carte as unknown as {
       queryRenderedFeatures: () => { properties: { territoire: string } }[]
     }
@@ -453,15 +473,35 @@ describe('MapExplorer — la popup par couche (ADR-0019, #281)', () => {
     expect(popup?.contenu).toContain('Voir la fiche')
     // #409 : le lien fiche préserve la lentille — le thème actif voyage en query.
     expect(popup?.contenu).toContain('theme=demographie')
-    // la valeur de la couche active, formatée en français, avec son rang-en-contexte
+    // la valeur de la couche active, formatée en français, avec le rang de la
+    // comparaison API et sa portée exacte déclarée
     expect(popup?.contenu).toContain('Densité de population')
     expect(popup?.contenu).toContain('200')
-    expect(popup?.contenu).toContain('1er/2 de l&#39;EPCI')
+    expect(popup?.contenu).toContain('1er/2 · communes de l&#39;EPCI X')
     expect(popup?.contenu).toContain('popup-carte-rang')
     // la popup répond « comment ce territoire se situe sur CETTE variable » —
     // pas le mur de KPI du thème (plus de ligne Population)
     expect(popup?.contenu).not.toContain('>Population<')
     expect(popup?.options.focusAfterOpen).toBe(true)
+  })
+
+  it('sans comparaisonApi, la popup n\'affiche AUCUN rang malgré les colonnes statiques présentes (#892)', async () => {
+    // le payload par défaut porte rang_epci 1/2 sur la ligne 22001 : aucune puce
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [
+      { properties: { territoire: '22001' } },
+    ] as never
+
+    carte?.fire('click', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+
+    const popup = maplibreMock.instancesPopups.at(-1)
+    expect(popup?.contenu).toContain('Densité de population')
+    expect(popup?.contenu).toContain('200')
+    expect(popup?.contenu).not.toContain('popup-carte-rang')
+    expect(popup?.contenu).not.toContain('1er/2')
   })
 
   it('une couche story (source histoire) ouvre une popup valeur seule — aucun rang inventé', async () => {
@@ -481,11 +521,12 @@ describe('MapExplorer — la popup par couche (ADR-0019, #281)', () => {
     expect(popup?.contenu).not.toContain('popup-carte-rang')
   })
 
-  it('la popup reflète la ligne du niveau affiché — un EPCI cliqué montre la valeur ET le rang de l’EPCI', async () => {
+  it('la popup reflète la ligne du niveau affiché — un EPCI cliqué montre la valeur ET le rang API de l’EPCI (#892)', async () => {
     const { wrapper, carte } = await monter({
       masques: masquesDeuxNiveaux,
       theme: 'demographie',
       couche: coucheDensite,
+      payload: payloadAvecRangApi({ '200000001': { rang: 2, taille: 2, portee: 'EPCIs de Bretagne' } }),
     })
     await wrapper.setProps({ niveau: 'epcis' })
 
@@ -499,7 +540,7 @@ describe('MapExplorer — la popup par couche (ADR-0019, #281)', () => {
 
     const popup = maplibreMock.instancesPopups.at(-1)
     expect(popup?.contenu).toContain('133,33')
-    expect(popup?.contenu).toContain('2e/2 de la région')
+    expect(popup?.contenu).toContain('2e/2 · EPCIs de Bretagne')
     expect(popup?.contenu).toContain('Voir la fiche')
   })
 
@@ -595,8 +636,12 @@ describe('MapExplorer — le zoom de recherche (#283)', () => {
   const communeA1 = { territoire: '22001', type: 'commune' as const, nom: 'Commune A1', departement: '22', epci: '200000001' }
   const epciX = { territoire: '200000001', type: 'epci' as const, nom: 'EPCI X', departement: '22', epci: null }
 
-  it('zooms on the searched territory (fitBounds) and opens the layer-aware popup at its center', async () => {
-    const { wrapper, carte } = await monter({ theme: 'demographie', couche: coucheDensite })
+  it('zooms on the searched territory (fitBounds) and opens the layer-aware popup at its center — rang API (#892)', async () => {
+    const { wrapper, carte } = await monter({
+      theme: 'demographie',
+      couche: coucheDensite,
+      payload: payloadAvecRangApi({ '22001': { rang: 1, taille: 2, portee: "communes de l'EPCI X" } }),
+    })
 
     await wrapper.setProps({ territoireCible: communeA1, requeteZoom: 1 })
     await flushPromises()
@@ -612,15 +657,16 @@ describe('MapExplorer — le zoom de recherche (#283)', () => {
     expect(popup?.contenu).toContain('Commune A1')
     expect(popup?.contenu).toContain('Densité de population')
     expect(popup?.contenu).toContain('200')
-    expect(popup?.contenu).toContain('1er/2 de l&#39;EPCI')
+    expect(popup?.contenu).toContain('1er/2 · communes de l&#39;EPCI X')
     expect(popup?.contenu).toContain('Voir la fiche')
   })
 
-  it('zooms on the searched territory at the ACTIVE level — le niveau basculé arrive avec la demande', async () => {
+  it('zooms on the searched territory at the ACTIVE level — le niveau basculé arrive avec la demande (rang API, #892)', async () => {
     const { wrapper, carte } = await monter({
       masques: masquesDeuxNiveaux,
       theme: 'demographie',
       couche: coucheDensite,
+      payload: payloadAvecRangApi({ '200000001': { rang: 2, taille: 2, portee: 'EPCIs de Bretagne' } }),
     })
 
     await wrapper.setProps({ niveau: 'epcis', territoireCible: epciX, requeteZoom: 1 })
@@ -630,7 +676,7 @@ describe('MapExplorer — le zoom de recherche (#283)', () => {
     const popup = maplibreMock.instancesPopups.at(-1)
     expect(popup?.contenu).toContain('EPCI X')
     expect(popup?.contenu).toContain('133,33')
-    expect(popup?.contenu).toContain('2e/2 de la région')
+    expect(popup?.contenu).toContain('2e/2 · EPCIs de Bretagne')
     expect(popup?.contenu).toContain('Voir la fiche')
   })
 

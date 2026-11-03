@@ -36,11 +36,15 @@ const payloadEconomie: Payload = {
   themeMetadata: { economie: metadonneesThemesFixtures.economie },
 }
 
-async function monter(territoire: string, histoires: Histoire[] = histoiresEconomieFixture) {
+async function monter(
+  territoire: string,
+  histoires: Histoire[] = histoiresEconomieFixture,
+  indicateurs = indicateursEconomieFixture,
+) {
   const wrapper = mount(OngletTheme, {
     props: {
       theme: 'economie',
-      payload: { ...payloadEconomie, histoires },
+      payload: { ...payloadEconomie, histoires, indicateurs },
       territoire,
     },
     global: { stubs: { RouterLink: RouterLinkStub } },
@@ -90,12 +94,25 @@ describe('OngletTheme — the two app-owned subgroups (3 indicateurs)', () => {
     expect(wrapper.find('.figure-indicateur[data-clef="eco_activites"]').text()).toContain('54')
   })
 
-  it('shows the rank-in-context chip (a commune reads its EPCI rank)', async () => {
+  it('shows NO rank chip from the legacy static columns (#892)', async () => {
     const wrapper = await monter('22001')
+
+    // la ligne commise porte rang_epci 29/38 — aucune puce sans comparaisonApi
+    const effectifs = wrapper.find('.figure-indicateur[data-clef="effectifs_salaries"]')
+    expect(effectifs.find('.puce-rang').exists()).toBe(false)
+  })
+
+  it('shows the rank-in-context chip from the API comparison (exact declared scope, #892)', async () => {
+    const indicateurs = indicateursEconomieFixture.map((row) =>
+      row.territoire === '22001' && row.key === 'effectifs_salaries'
+        ? { ...row, comparaisonApi: { rang: 29, taille: 38, portee: "communes de l'EPCI X" } }
+        : row,
+    )
+    const wrapper = await monter('22001', histoiresEconomieFixture, indicateurs)
 
     const effectifs = wrapper.find('.figure-indicateur[data-clef="effectifs_salaries"]')
     // effectifs_salaries : plus = mieux → glyphe ▲ (issue #371)
-    expect(effectifs.find('.puce-rang').text()).toBe("▲ 29e/38 de l'EPCI")
+    expect(effectifs.find('.puce-rang').text()).toBe("▲ 29e/38 · communes de l'EPCI X")
   })
 })
 

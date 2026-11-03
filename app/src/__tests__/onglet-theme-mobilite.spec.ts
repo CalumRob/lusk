@@ -239,18 +239,46 @@ describe('FigureOffreCyclable — sa présentation spécialisée reste testée h
     expect(figure.text()).not.toContain('à venir')
   })
 
-  it('keeps its vintage stamp (osm_reseaux) and its per-detail ranks as labels', async () => {
+  it('keeps its vintage stamp (osm_reseaux) — and NO per-detail rank chip from static columns (#892)', async () => {
     const wrapper = monterFigureOffreCyclable('22001')
 
     const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
     expect(figure.find('.estampille-vintage').text()).toContain(
       'OpenStreetMap — réseaux routier/cyclable/piéton',
     )
+    // les lignes portent pourtant rang_epci 20/38 et 10/38 : le repli statique
+    // est retiré — aucune puce sans comparaisonApi
+    expect(figure.findAll('.puce-rang')).toHaveLength(0)
+  })
+
+  it('renders the per-detail ranks as labels from the API comparison only (#892)', async () => {
+    // comparaisonApi déclarée par le producteur, portée exacte « communes de l’EPCI X »
+    const rangsApi: Record<string, { rang: number; taille: number; portee: string }> = {
+      protege_km_1000: { rang: 20, taille: 38, portee: 'communes de l’EPCI X' },
+      partage_km_1000: { rang: 10, taille: 38, portee: 'communes de l’EPCI X' },
+    }
+    const lignes = indicateursMobiliteFixture
+      .filter((row) => row.territoire === '22001' && row.key === 'offre_cyclable')
+      .map((row) => (row.detail && rangsApi[row.detail]
+        ? { ...row, comparaisonApi: rangsApi[row.detail] }
+        : row))
+    const wrapper = mount(FigureOffreCyclable, {
+      props: {
+        clef: 'offre_cyclable',
+        lignes,
+        reseaux: indicateursMobiliteFixture.filter((row) => row.territoire === '22001' && row.key === 'reseaux'),
+        libelle: 'L’offre cyclable',
+        labelsDetail: metadonneesThemesFixtures.mobilite?.detail_labels?.offre_cyclable,
+        theme: 'mobilite',
+      },
+    })
+
+    const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
     expect(figure.findAll('.puce-rang')).toHaveLength(2)
     // offre_cyclable : plus = mieux → glyphe ▲ sur chaque détail (#371)
     expect(figure.findAll('.puce-rang').map((p) => p.text())).toEqual([
-      "▲ 20e/38 de l'EPCI",
-      "▲ 10e/38 de l'EPCI",
+      '▲ 20e/38 · communes de l’EPCI X',
+      '▲ 10e/38 · communes de l’EPCI X',
     ])
   })
 

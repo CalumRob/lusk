@@ -1107,12 +1107,14 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     } finally {
       method.direction = publishedDirection
     }
+    // #892 : une ligne qui ne porte QUE les colonnes de rang statiques
+    // (rang_epci 1/2) ne produit AUCUNE puce — le repli statique est retiré,
+    // même avec des valeurs présentes (l'absence n'est pas un zéro).
     const staticFigure = mount(FigureTrajectoire, { props: {
       clef: 'prix_m2', theme: 'habitat', libelle: 'Prix médian au mètre carré',
       lignes: [{ ...projected.find((row) => row.key === 'prix_m2' && row.detail === null)!, rang_epci: 1, rang_epci_n: 2 }],
     } })
-    expect(staticFigure.find('.puce-rang-glyphe').text().trim()).toBe('▼')
-    expect(staticFigure.find('.puce-rang').attributes('aria-label')).toBe("1er/2 de l'EPCI — moins = mieux")
+    expect(staticFigure.find('.puce-rang').exists()).toBe(false)
     const corruptedComparison: any = structuredClone(comparison)
     corruptedComparison.comparison_reads[0].data.scalar_facet.result.source_facet = '2025'
     expect(() => semanticComparisonForTheme(corruptedComparison, undefined, reads))
