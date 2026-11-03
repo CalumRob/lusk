@@ -253,6 +253,23 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
       !Number.isInteger(scope.member_count) || scope.member_count < 1) {
     throw new Error('Périmètre de comparaison sémantique incompatible')
   }
+  // #892 fail-closed : le kind de la portée répond à l'INTENT de la requête
+  // d'acquisition (contrat producteur api/snapshot_reads.py _comparison_cohort),
+  // jamais aux filtres devinés ni aux libellés :
+  //   selected_comparison          -> explicit_selection
+  //   fixed_comparison commune     -> density_class (+ code = classe du focal)
+  //   fixed_comparison epci/dept   -> same_level
+  //   fixed_comparison région      -> aucune portée publiée (scope absent)
+  const expectedKind = requestedMembers !== null
+    ? 'explicit_selection'
+    : facts.resolvedCohortType === 'commune' ? 'density_class'
+      : (facts.resolvedCohortType === 'epci' || facts.resolvedCohortType === 'departement') ? 'same_level'
+        : null
+  if (expectedKind === null) {
+    if (record(scope)) throw new Error('Portée publiée pour un niveau sans comparaison')
+  } else if (scope.kind !== expectedKind) {
+    throw new Error(`Portée de comparaison « ${String(scope.kind)} » invalide — « ${expectedKind} » attendu pour cette requête`)
+  }
   const selectedTypes = requestedMembers ? [...new Set(requestedMembers.map((member) => member.type))] : []
   const expectedScopeType = selectedTypes.length === 1 ? selectedTypes[0] : facts.resolvedCohortType
   if (scope.territory_type !== undefined && expectedScopeType !== undefined &&

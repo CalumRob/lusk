@@ -12,7 +12,9 @@ export function comparisonScopeLabel(
     case 'communes-densite': return null
     case 'communes-epci': return epciName ? `communes de ${epciName}` : 'communes de l’EPCI'
     case 'communes-bretagne': return 'communes bretonnes'
-    case 'epcis-bretagne': return 'EPCI bretons'
+    // neutre : un EPCI transfrontalier n'est pas entièrement breton (CONTEXT
+    // « Partie bretonne d'un EPCI ») — jamais « EPCI bretons »
+    case 'epcis-bretagne': return 'EPCI du périmètre de comparaison'
     case 'departements-bretagne': return 'départements bretons'
   }
 }
