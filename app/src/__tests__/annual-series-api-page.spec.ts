@@ -146,8 +146,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     } finally { wrapper.unmount() }
   })
   it.each([
-    { targetId: '200000001', targetType: 'epci' as const, label: 'EPCI bretons', available: true },
-    { targetId: '22', targetType: 'departement' as const, label: 'départements bretons', available: true },
+    { targetId: '200000001', targetType: 'epci' as const, label: 'même niveau territorial (EPCI)', available: true },
+    { targetId: '22', targetType: 'departement' as const, label: 'même niveau territorial (départements)', available: true },
     { targetId: '53', targetType: 'region' as const, label: null, available: false },
   ])('keeps the native raccordement curve visible at the published $targetType level', async ({ targetId, targetType, label, available }) => {
     const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
@@ -334,8 +334,14 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     } finally { wrapper.unmount() }
   })
   it('series table ranks come ONLY from published axis_comparisons evidence (#892 P2) — observed axis without comparison shows no rank', async () => {
+    // classes de densité réelles sur les communes du fixture (référence commise) :
+    // la portée density_class du fixed_comparison doit porter un code valide égal
+    // à celui du focal acquis, sinon l'évidence est rejetée au seam (#892 fail-closed)
+    const classe = densiteDepuisReference('22001')
+    const territories = territoiresFixture.map((territory) =>
+      territory.type === 'commune' ? { ...territory, ...classe } : territory)
     const loader: ChargerFichier = async (file) => {
-      if (file === 'territoires') return territoiresFixture
+      if (file === 'territoires') return territories
       if (file === 'indicateurs_habitat') return indicateursHabitatFixture
       if (file === 'theme_habitat') return metadataHabitat
       throw new Error(`unexpected static read: ${file}`)
@@ -344,7 +350,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       if (String(input) === '/api/resources') return nativeCatalogueResponse()
       const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
       return nativeBatchResponse(body.items, (item, resource) => {
-        const data = nativeReadFixture(item, resource, { territories: territoiresFixture })
+        const data = nativeReadFixture(item, resource, { territories })
         // Preuve sémantique : l'axe 2024 est OBSERVÉ (faits publiés) mais sa
         // comparaison est publiée « unavailable » (aucun rang publié — forme
         // valide du contrat, membre_ranks tous null) ; l'axe 2025 porte des
