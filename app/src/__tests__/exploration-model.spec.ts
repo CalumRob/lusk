@@ -15,18 +15,62 @@ describe('modèle pur de Page d’indicateur', () => {
   it('keeps Bretagne EPCI and département scopes populated', () => { expect(modeleExploration([facts('e', 10, 'epci'), facts('f', 20, 'epci')], facet(), territoires, { niveau: 'epci' }).rows).toHaveLength(2); expect(modeleExploration([facts('22', 10, 'departement'), facts('29', 20, 'departement')], facet(), territoires, { niveau: 'departement' }).rows).toHaveLength(2) })
   it('filters communes and removes incompatible scope state at other levels', () => { const factsAll = [facts('a', 10), facts('b', 20), facts('c', 30)]; expect(modeleExploration(factsAll, facet(), territoires, { niveau: 'commune', departement: '22' }).rows).toHaveLength(2); const result = modeleExploration([facts('e', 10, 'epci')], facet(), territoires, { niveau: 'epci', departement: '22', epci: 'e' }); expect(result.state.departement).toBeUndefined(); expect(result.state.epci).toBeUndefined() })
   it('computes median, direction and ranks from the resolved facet', () => { const metadata = structuredClone(metadonneesThemesFixtures.demographie); metadata.indicator_pages!.densite.direction = 'low'; const lowFacet = normalizeComparisonFacet(metadata.indicator_pages!.densite, {}, 'demographie'); const result = modeleExploration([facts('a', 10), facts('b', 10), facts('c', 30), facts('d', 40)], lowFacet, territoires, { niveau: 'commune', tri: 'valeur', ordre: 'desc' }); expect(result.median).toBe(20); expect(result.direction).toBe('low'); expect(result.rows.map((row) => row.rang)).toEqual([4, 3, 1, 1]) })
-  it('uses producer natural ranks and denominators for API-backed commune scopes rather than re-ranking a URL-filtered cohort', () => {
+  it('never reads the legacy static rank columns (#892) — ranks are always the direction-aware ex-aequo of the values', () => {
+    // les lignes portent des rangs statiques (rang_epci 4/6 et 1/6, rang_reg 2/5)
+    // qui ne correspondent PAS au classement calculé : ils doivent être ignorés
     const a = { ...facts('a', 10), rang_epci: 4, rang_epci_n: 6 }
     const b = { ...facts('b', 20), rang_epci: 1, rang_epci_n: 6 }
-    const epci = modeleExploration([a, b], facet(), territoires, { niveau: 'commune', epci: 'e' }, undefined, true)
-    expect(epci.rows.map(({ rang, rangTaille }) => [rang, rangTaille])).toEqual([[4, 6], [1, 6]])
-    const department = modeleExploration([a, b], facet(), territoires, { niveau: 'commune', departement: '22' }, undefined, true)
-    expect(department.rows.map(({ rang, rangTaille }) => [rang, rangTaille])).toEqual([[4, 6], [1, 6]])
+    const epci = modeleExploration([a, b], facet(), territoires, { niveau: 'commune', epci: 'e' })
+    // direction high (densite) : b=20 est 1er, a=10 est 2e — et NON 4e/1er statique
+    expect(epci.rows.map(({ rang, rangTaille }) => [rang, rangTaille])).toEqual([[2, 2], [1, 2]])
+    const department = modeleExploration([a, b], facet(), territoires, { niveau: 'commune', departement: '22' })
+    expect(department.rows.map(({ rang, rangTaille }) => [rang, rangTaille])).toEqual([[2, 2], [1, 2]])
     const fallbackTerritories = [...territoires, { territoire: 'island', type: 'commune' as const, nom: 'Île', departement: '29', epci: null }]
     const fallback = { ...facts('island', 5), rang_reg: 2, rang_reg_n: 5 }
-    const region = modeleExploration([fallback], facet(), fallbackTerritories, { niveau: 'commune' }, undefined, true)
-    expect(region.rows.map(({ rang, rangTaille }) => [rang, rangTaille])).toEqual([[2, 5]])
+    const region = modeleExploration([fallback], facet(), fallbackTerritories, { niveau: 'commune' })
+    // rang_reg statique 2/5 ignoré : une seule valeur → rang calculé 1/1
+    expect(region.rows.map(({ rang, rangTaille }) => [rang, rangTaille])).toEqual([[1, 1]])
   })
+  it('rangsApiUniquement (#892 P2) : les rangs viennent UNIQUEMENT de l’évidence API posée sur le fait — jamais calculés, jamais all.length', () => {
+    const a = { ...facts('a', 10), comparaisonApi: { rang: 2, taille: 7, portee: 'communes de l’EPCI X' } }
+    // b porte un rang statique (ignoré, #892) mais AUCUNE évidence API
+    const b = { ...facts('b', 20), rang_epci: 9, rang_epci_n: 9 }
+    const c = { ...facts('c', 30), comparaisonApi: { rang: 1, taille: 7, portee: 'communes de l’EPCI X' } }
+    const m = modeleExploration([a, b, c], facet(), territoires, { niveau: 'commune' }, undefined, { rangsApiUniquement: true })
+    // calcul navigateur (high) donnerait [3, 2, 1] avec taille 3 — l’évidence API dit [2, null, 1] avec taille 7
+    expect(m.rows.map(({ territoire, rang, rangTaille }) => [territoire.territoire, rang, rangTaille]))
+      .toEqual([['a', 2, 7], ['b', null, null], ['c', 1, 7]])
+  })
+
+  it('rangsApiUniquement : le tri par rang suit l’évidence API, les sans-rang vont à la fin dans les DEUX sens', () => {
+    const a = { ...facts('a', 10), comparaisonApi: { rang: 2, taille: 7, portee: 'p' } }
+    const b = { ...facts('b', 20) }
+    const c = { ...facts('c', 30), comparaisonApi: { rang: 1, taille: 7, portee: 'p' } }
+    const asc = modeleExploration([a, b, c], facet(), territoires, { niveau: 'commune', tri: 'rang', ordre: 'asc' }, undefined, { rangsApiUniquement: true })
+    expect(asc.rows.map((row) => row.territoire.territoire)).toEqual(['c', 'a', 'b']) // rangs 1, 2, puis null
+    const desc = modeleExploration([a, b, c], facet(), territoires, { niveau: 'commune', tri: 'rang', ordre: 'desc' }, undefined, { rangsApiUniquement: true })
+    expect(desc.rows.map((row) => row.territoire.territoire)).toEqual(['a', 'c', 'b']) // rangs 2, 1, puis null
+  })
+
+  it('sans l’option, le mode calcul historique est inchangé (rang ex-aequo + taille du périmètre)', () => {
+    const a = { ...facts('a', 10), comparaisonApi: { rang: 9, taille: 9, portee: 'p' } }
+    const b = { ...facts('b', 20) }
+    const m = modeleExploration([a, b], facet(), territoires, { niveau: 'commune' })
+    // comparaisonApi n’est PAS lu par le modèle générique : rang calculé 2/2 et 1/2, taille 2
+    expect(m.rows.map(({ territoire, rang, rangTaille }) => [territoire.territoire, rang, rangTaille]))
+      .toEqual([['a', 2, 2], ['b', 1, 2]])
+  })
+
+  it('labels a combined département+EPCI URL scope with BOTH sourced identities (#892 recheck)', () => {
+    // filtre combiné : la légende ne doit pas choisir le département seul
+    const combine = modeleExploration([facts('a', 10)], facet(), territoires, { niveau: 'commune', departement: '22', epci: 'e' })
+    expect(combine.scopeLabel).toBe('Département 22 · EPCI e')
+    // filtres simples : libellés exacts inchangés
+    expect(modeleExploration([facts('a', 10)], facet(), territoires, { niveau: 'commune', departement: '22' }).scopeLabel).toBe('Département 22')
+    expect(modeleExploration([facts('a', 10)], facet(), territoires, { niveau: 'commune', epci: 'e' }).scopeLabel).toBe('EPCI e')
+    expect(modeleExploration([facts('a', 10)], facet(), territoires, { niveau: 'commune' }).scopeLabel).toBe('Bretagne')
+  })
+
   it('samples finite density coordinates', () => { const density = estimerDensite([10, 20, 30]); expect(density.every((point) => Number.isFinite(point.x) && Number.isFinite(point.density))).toBe(true); expect(positionDensite(density, 20)).toBeCloseTo(50); expect(hauteurDensite(density, 20)).not.toBeNull() })
   it('map filtering keeps BOTH sexes so fusion can aggregate F+M (a sex-filtered payload starves resoudreGroupeSexe and crashes the paint watcher)', () => { const resolved = { ...facet(), detail: 'F', sex: 'F' as const, dimension: 'women', labels: { F: 'Femmes' } }; const femmeA = { ...facts('a', 10), detail: 'F', sex: 'F', dimension: 'women' }; const hommeA = { ...facts('a', 12), detail: 'F', sex: 'M', dimension: 'women' }; const femmeB = { ...facts('b', 20), detail: 'F', sex: 'F', dimension: 'women' }; const source = { territoires, indicateurs: [femmeA, hommeA, femmeB] as unknown as Indicateur[], histoires: [], apercu: null, runReport: null, vintages: null, programmes: null }; const result = payloadPourCarte(source, resolved, { niveau: 'commune' }); expect(result.indicateurs).toEqual([femmeA, hommeA, femmeB]) })
   it('presents ties, null values and empty scopes honestly', () => { const tied = modeleExploration([facts('a', 0), facts('b', 0), facts('c', null)], facet(), territoires, { niveau: 'commune', territoire: 'c' }); expect(tied.high.count).toBe(2); expect(tied.median).toBe(0); expect(tied.markerX).toBeNull(); const empty = modeleExploration([], facet(), territoires, { niveau: 'commune' }); expect(empty.rows).toHaveLength(0); expect(empty.median).toBeNull() })

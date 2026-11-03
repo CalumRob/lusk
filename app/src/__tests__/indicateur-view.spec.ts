@@ -114,13 +114,41 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
       }
       const [detail] = item.coordinates.detail
       const [period] = item.coordinates.period
-      const memberIds = item.intent.members.map((member: Record<string, string>) => member.id)
+      const memberIds: string[] = item.intent.members.map((member: Record<string, string>) => member.id)
+      // Contrat producteur FIDELE (api/observed_collections.py) : eligible =
+      // membres MESURÉS à la coordonnée comparée (jamais memberIds.length — un
+      // membre no_record compte en missing) ; status available ssi eligible >= 2,
+      // sinon « unavailable » + reason fewer_than_two_comparable_values et
+      // median/rank/rank_size null. Le rang du focal est le rang de concurrence
+      // (direction high) sur les valeurs éligibles ; rank_size = eligible_count.
+      const valeurDe = (id: string): number | undefined => {
+        const brut = factsOverride.find((fact) =>
+          fact.key === item.resource && fact.territoire === id && fact.detail === detail &&
+          fact.dimension === period && fact.value !== null)?.value
+        return typeof brut === 'number' ? brut : undefined
+      }
+      const values = memberIds.map(valeurDe).filter((v): v is number => v !== undefined)
+      const focalId = item.target.id as string
+      const focalValue = memberIds.includes(focalId) ? valeurDe(focalId) : undefined
+      const eligible = values.length
+      const enough = eligible >= 2
+      const sorted = [...values].sort((a, b) => a - b)
+      const mediane = enough
+        ? (sorted.length % 2 ? sorted[Math.floor(sorted.length / 2)]! : (sorted[sorted.length / 2 - 1]! + sorted[sorted.length / 2]!) / 2)
+        : null
+      const rank = enough && focalValue !== undefined
+        ? 1 + values.filter((v: number) => v > focalValue).length
+        : null
       return new Response(JSON.stringify({ ...marker, target: item.target,
         selection: memberIds.map((territory_id: string) => ({ territory_type: 'commune', territory_id })),
         scope: { kind: 'explicit_selection', member_count: memberIds.length }, result: {
           descriptor_version: 'collection-dv1', source_facet: { detail, observation_period: period }, unit: 'CAD',
-          selected_member_count: memberIds.length, status: 'available', median: period === '2024' ? 1234 : 15000,
-          rank: 1, rank_size: memberIds.length,
+          direction: 'high', statistic: 'median',
+          status: enough ? 'available' : 'unavailable',
+          reason: enough ? null : 'fewer_than_two_comparable_values',
+          selected_member_count: memberIds.length, eligible_count: eligible,
+          missing_count: memberIds.length - eligible,
+          median: mediane, rank, rank_size: rank === null ? null : eligible,
         } }), { status: 200 })
     }
     if (url === '/api/resources/read-batch') {
@@ -163,7 +191,13 @@ describe('IndicateurView — routed URL seam', () => {
       const detail = fact.detail === 'Agriculture' ? categories.find((category) => category.startsWith('Agriculture'))!
         : categories.find((category) => category.startsWith('Développement des secteurs clés'))!
       const mapped = { ...fact, detail, value: fact.detail === 'Agriculture' ? 0 : fact.value }
-      return fact.detail === 'Agriculture' ? [mapped, { ...mapped, dimension: '2024', value: 1234 }] : [mapped]
+      // la facette (Développement…, 2024) doit porter DEUX mesures pour que la
+      // comparaison soit « available » (eligible >= 2, contrat producteur) :
+      // médiane 1 234 € sur deux communes mesurées
+      return fact.detail === 'Agriculture'
+        ? [mapped, { ...mapped, dimension: '2024', value: 1234 }]
+        : [mapped, { ...mapped, dimension: '2024', value: 1234 },
+           { ...mapped, territoire: '22002', dimension: '2024', value: 1234 }]
     })
     const category = categories.find((value) => value.startsWith('Agriculture'))!
     collectionComparisonFailures = 3
@@ -210,6 +244,45 @@ describe('IndicateurView — routed URL seam', () => {
     expect(sourceCard.text()).not.toContain('2026-08-05')
   })
 
+  it('sparse comparison table: only the focal row shows the API rank — peers never show locally calculated ranks (#892)', async () => {
+    const programmesMetadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_programmes.json'), 'utf8'))
+    const categories = programmesMetadata.indicator_pages.subventions_par_domaine.comparison.details as string[]
+    const category = categories.find((value) => value.startsWith('Agriculture'))!
+    const base = indicateursProgrammesFixture.find((fact) => fact.key === 'subventions_par_domaine' && fact.detail === 'Agriculture')!
+    // QUATRE communes portent la MÊME catégorie/période avec des montants différents :
+    // 4 membres mesurés → eligible_count = 4 (contrat api/migrations/030) ; le focal
+    // porte la valeur la plus haute (direction high) → rang API « 1er / 4 » —
+    // un rang calculé localement existerait pour chaque pair si on le laissait passer
+    const programmesFacts = [
+      ...indicateursProgrammesFixture.filter((fact) => fact.key !== 'subventions_par_domaine'),
+      { ...base, territoire: '22001', detail: category, dimension: '2025', value: 45000 },
+      { ...base, territoire: '22002', detail: category, dimension: '2025', value: 30000 },
+      { ...base, territoire: '29001', detail: category, dimension: '2025', value: 5000 },
+      { ...base, territoire: '29002', detail: category, dimension: '2025', value: 22000 },
+    ]
+    const { wrapper } = await monter(
+      `/indicateurs/programmes/subventions_par_domaine?territoire=22001&niveau=commune&detail=${encodeURIComponent(category)}&dimension=2025`,
+      [], programmesMetadata, programmesFacts, 'programmes')
+    await flushPromises()
+    // la comparaison API a répondu (rang du focal uniquement — la requête ne porte que le focal)
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').exists()).toBe(true)
+
+    const rows = wrapper.findAll('.comparison-table-scroll tbody tr')
+    expect(rows.length).toBe(4)
+    const celluleRang = (row: ReturnType<typeof wrapper.findAll>[number]) => row.findAll('td')[2]!.text().trim()
+    const estFocal = (row: ReturnType<typeof wrapper.findAll>[number]) => row.classes().includes('selection')
+    const focal = rows.find(estFocal)!
+    const pairs = rows.filter((row) => !estFocal(row))
+    expect(pairs.length).toBe(3)
+    // le focal affiche le rang API EXACT (1er / 4 = rank 1, rank_size = eligible_count 4)
+    expect(celluleRang(focal)).toBe('1er / 4')
+    // les pairs sans évidence de comparaison API par membre : AUCUN rang affiché
+    // (pas de rang calculé localement, aucune taille de groupe fabriquée)
+    for (const row of pairs) {
+      expect(celluleRang(row)).toBe('')
+    }
+  })
+
   it('distinguishes whole-territory no-record from a missing selected category-period', async () => {
     const programmesMetadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_programmes.json'), 'utf8'))
     const categories = programmesMetadata.indicator_pages.subventions_par_domaine.comparison.details as string[]
@@ -224,6 +297,13 @@ describe('IndicateurView — routed URL seam', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="sparse-collection-facet-absent"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="sparse-collection-no-record"]').exists()).toBe(false)
+    // facette sans AUCUNE observation : la comparaison publiée est « unavailable »
+    // (eligible < 2, api/observed_collections.py) — median/rang null, JAMAIS un
+    // rang 1 / taille 0 inventé
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-unavailable"]').exists()).toBe(true)
+    const etatCollection = wrapper.find('[data-testid="sparse-collection-state"]')
+    expect(etatCollection.text()).not.toContain('Rang API')
+    expect(etatCollection.text()).not.toMatch(/\d+(er|e)\//)
     await router.push({ query: { ...router.currentRoute.value.query, territoire: '22002' } })
     await flushPromises()
     expect(wrapper.find('[data-testid="sparse-collection-no-record"]').exists()).toBe(true)
@@ -238,6 +318,13 @@ describe('IndicateurView — routed URL seam', () => {
       ...fact, detail: fact.detail === 'Agriculture' ? agriculture
         : categories.find((category) => category.startsWith('Développement des secteurs clés'))!,
     })
+    // deux communes du département 29 mesurées à la même facette : la comparaison
+    // re-scopée sur le 29 reste « available » (eligible = 2) avec médiane 15 000 €
+    const baseAgri = programmesFacts.find((fact) => fact.key === 'subventions_par_domaine' && fact.detail === agriculture)!
+    programmesFacts.push(
+      { ...baseAgri, territoire: '29001', dimension: '2025', value: 15000 },
+      { ...baseAgri, territoire: '29002', dimension: '2025', value: 15000 },
+    )
     delayNextCollectionComparison = true
     const { wrapper, router } = await monter(
       `/indicateurs/programmes/subventions_par_domaine?territoire=22001&niveau=commune&detail=${encodeURIComponent(agriculture)}&dimension=2025`,

@@ -168,7 +168,14 @@ export interface Indicateur extends Omit<VintageStamp, 'vintage_version'> {
    * The direction-aware ordinal position (ADR-0015): 1 = best, an integer ≥ 1,
    * ties share the rank and the next rank skips (1, 1, 3). null = no
    * comparison group at that level. Each rank carries its group size in the
-   * matching `rang_*_n` column — the « / Y » of the chip, always shown.
+   * matching `rang_*_n` column.
+   *
+   * #892 — legacy fixed-scope columns: retained on the type because committed
+   * JSON still carries them (validation accepts both forms) and the
+   * ordered-series adapter still populates the producer-declared `rank_field`
+   * at its comparison coordinate only. They are NO LONGER a browser fallback:
+   * no chip is rendered from them, and future static JSON projections omit all
+   * six columns.
    */
   rang_epci: number | null
   rang_dep: number | null
@@ -177,7 +184,7 @@ export interface Indicateur extends Omit<VintageStamp, 'vintage_version'> {
   rang_epci_n: number | null
   rang_dep_n: number | null
   rang_reg_n: number | null
-  /** Rank returned by the acquired comparison API. Never copied from retired legacy rang_* columns. */
+  /** Rank returned by the acquired comparison API with its declared exact scope. The ONLY rank the UI renders a chip from (#892). */
   comparaisonApi?: { rang: number; taille: number | null; portee: string | null; direction?: 'high' | 'low' }
 }
 

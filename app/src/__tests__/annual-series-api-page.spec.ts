@@ -146,8 +146,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     } finally { wrapper.unmount() }
   })
   it.each([
-    { targetId: '200000001', targetType: 'epci' as const, label: 'EPCI bretons', available: true },
-    { targetId: '22', targetType: 'departement' as const, label: 'départements bretons', available: true },
+    { targetId: '200000001', targetType: 'epci' as const, label: 'même niveau territorial (EPCI)', available: true },
+    { targetId: '22', targetType: 'departement' as const, label: 'même niveau territorial (départements)', available: true },
     { targetId: '53', targetType: 'region' as const, label: null, available: false },
   ])('keeps the native raccordement curve visible at the published $targetType level', async ({ targetId, targetType, label, available }) => {
     const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
@@ -333,6 +333,261 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(wrapper.text()).toContain('Prix')
     } finally { wrapper.unmount() }
   })
+  it('series table ranks come ONLY from published axis_comparisons evidence (#892 P2) — observed axis without comparison shows no rank', async () => {
+    // classes de densité réelles sur les communes du fixture (référence commise) :
+    // la portée density_class du fixed_comparison doit porter un code valide égal
+    // à celui du focal acquis, sinon l'évidence est rejetée au seam (#892 fail-closed)
+    const classe = densiteDepuisReference('22001')
+    const territories = territoiresFixture.map((territory) =>
+      territory.type === 'commune' ? { ...territory, ...classe } : territory)
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territories
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, (item, resource) => {
+        const data = nativeReadFixture(item, resource, { territories })
+        // Preuve sémantique : l'axe 2024 est OBSERVÉ (faits publiés) mais sa
+        // comparaison est publiée « unavailable » (aucun rang publié — forme
+        // valide du contrat, membre_ranks tous null) ; l'axe 2025 porte des
+        // rangs API volontairement inversés par rapport à l'ordre des valeurs,
+        // pour prouver que le rang affiché vient de l'API et non du navigateur.
+        if (item.intent?.kind !== 'facts' && Array.isArray(data?.result?.axis_comparisons)) {
+          data.result.axis_comparisons = data.result.axis_comparisons
+            .map((comparison: any) => {
+              if (comparison.axis === '2024') {
+                return { ...comparison, status: 'unavailable', value: null, min: null, max: null,
+                  eligible_count: 0, missing_count: comparison.selected_member_count,
+                  member_ranks: comparison.member_ranks.map((rank: any) => ({
+                    territory_id: rank.territory_id, rank: null, rank_size: null, rank_ties: null })) }
+              }
+              if (comparison.axis === '2025') {
+                return { ...comparison, member_ranks: comparison.member_ranks.map((rank: any) => ({
+                  ...rank, rank: rank.rank === null ? null : 4 - rank.rank, rank_ties: rank.rank === null ? null : 1 })) }
+              }
+              return comparison
+            })
+        }
+        return data
+      })
+    })
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune')
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      const rankCell = (row: ReturnType<typeof wrapper.findAll>[number]) => row.findAll('td')[2]!.text().trim()
+      const rowTerritoire = (row: ReturnType<typeof wrapper.findAll>[number]) =>
+        (row.find('td a')?.attributes('href') ?? '').split('?')[0]?.split('/').at(-1) ?? ''
+
+      // --- axe comparé (2025, détail par défaut) : rangs = évidence API exacte
+      let rows = wrapper.findAll('.comparison-table-scroll tbody tr')
+      expect(rows.length).toBe(3) // 22001 sans valeur à 2025 est exclue du tableau
+      const focal = rows.find((row) => row.classes().includes('selection'))!
+      expect(rowTerritoire(focal)).toBe('22002')
+      // rang API inversé (1er/3) — PAS le rang calculé sur les valeurs (qui donnerait 3e/3, direction low)
+      expect(rankCell(focal)).toBe('1er / 3')
+      const parRang = Object.fromEntries(rows.map((row) => [rowTerritoire(row), rankCell(row)]))
+      expect(parRang).toEqual({ '22002': '1er / 3', '29001': '2e / 3', '29002': '3e / 3' })
+
+      // --- tri par rang : suit l évidence API (1, 2, 3), pas un autre ordre
+      const boutonRang = wrapper.findAll('.comparison-table-scroll thead button')
+        .find((bouton) => bouton.text().startsWith('Rang'))!
+      await boutonRang.trigger('click')
+      await flushPromises()
+      rows = wrapper.findAll('.comparison-table-scroll tbody tr')
+      expect(rows.map(rowTerritoire)).toEqual(['22002', '29001', '29002'])
+
+      // --- axe observé SANS comparaison publiée (2024) : AUCUN rang affiché, ni focal ni pairs
+      await router.push({ query: { ...router.currentRoute.value.query, detail: '2024' } })
+      await flushPromises()
+      rows = wrapper.findAll('.comparison-table-scroll tbody tr')
+      expect(rows.length).toBe(3)
+      for (const row of rows) {
+        expect(rankCell(row)).toBe('')
+      }
+    } finally { wrapper.unmount() }
+  })
+
+  it('unfiltered commune route: the rank scope note carries the API-declared density class, the caption keeps the listed universe (#892)', async () => {
+    // Toutes les communes du fixture partagent la classe de densité de 22001 :
+    // le fixed_comparison non filtré du producteur résout alors scope density_class
+    // (api/snapshot_reads.py) — la cohorte de rang est la classe, pas la région.
+    const classe = densiteDepuisReference('22001')
+    expect(classe.classe_densite_code).toBeTruthy()
+    const territories = territoiresFixture.map((territory) =>
+      territory.type === 'commune' ? { ...territory, ...classe } : territory)
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territories
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories }))
+    })
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const monterPrix = async (url: string) => {
+      const router = createRouter({ history: createMemoryHistory(), routes })
+      await router.push(url)
+      await router.isReady()
+      const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+        [PAYLOAD_CHARGER_KEY]: loader,
+        [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+      } } })
+      return { wrapper, router }
+    }
+    const { wrapper, router } = await monterPrix('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune')
+    try {
+      await flushPromises()
+      // la légende du tableau garde l'univers LISTÉ (toutes les communes de l'URL)
+      const caption = wrapper.find('.comparison-table-scroll caption')
+      expect(caption.text()).toContain('Bretagne')
+      // les rangs sont présents (publiés par l'API à l'axe 2025) — 3 éligibles (22001
+      // sans valeur à 2025) dans une cohorte de 4 membres : les cellules portent /3
+      const cells = wrapper.findAll('.comparison-table-scroll tbody tr')
+        .map((row) => row.findAll('td')[2]!.text().trim())
+      expect(cells.length).toBe(3)
+      expect(cells.every((cell) => /^\d+(er|e) \/ 3$/.test(cell))).toBe(true)
+      // la note nomme la portée DÉCLARÉE du rang (classe de densité du focal acquis)
+      // et la COHORTE (member_count = 4) — sans confondre avec les 3 classés (/3)
+      const note = wrapper.get('[data-testid="rang-scope-note"]')
+      expect(note.text()).toContain(`portée : ${classe.classe_densite_libelle_public!}`)
+      expect(note.text()).toContain('cohorte de comparaison : 4 territoires')
+      expect(note.text()).not.toContain('classés')
+      // la note utilise le token de texte accessible (contraste AA), pas text-secondary
+      const source = readFileSync(join(process.cwd(), 'src', 'views', 'IndicateurPage.vue'), 'utf8')
+      expect(source).toMatch(/\.rang-scope-note\{[^}]*var\(--text-primary\)/)
+      // changement d'axe réactif : la note garde la portée de la lecture acquise
+      // (cohorte 4), les cellules suivent l'axe (2022 : 4 éligibles → /4)
+      await router.push({ query: { ...router.currentRoute.value.query, detail: '2022' } })
+      await flushPromises()
+      const cells2022 = wrapper.findAll('.comparison-table-scroll tbody tr')
+        .map((row) => row.findAll('td')[2]!.text().trim())
+      expect(cells2022.every((cell) => /^\d+(er|e) \/ 4$/.test(cell))).toBe(true)
+      expect(wrapper.get('[data-testid="rang-scope-note"]').text()).toContain('cohorte de comparaison : 4 territoires')
+    } finally { wrapper.unmount() }
+
+    // cas filtré (sélection explicite = l'univers listé) : légende seule, pas de note parasite
+    const { wrapper: wrapperFiltre } = await monterPrix('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22&detail=2022')
+    try {
+      await flushPromises()
+      expect(wrapperFiltre.find('.comparison-table-scroll caption').text()).toContain('Département 22')
+      // rangs présents à 2022 (22001 et 22002 mesurées, eligible = 2) mais la portée
+      // est la sélection explicite = l'univers listé : aucune note de portée séparée
+      const cells = wrapperFiltre.findAll('.comparison-table-scroll tbody tr')
+        .map((row) => row.findAll('td')[2]!.text().trim())
+      expect(cells.length).toBe(2)
+      expect(cells.every((cell) => /^\d+(er|e) \/ \d+$/.test(cell))).toBe(true)
+      expect(wrapperFiltre.find('[data-testid="rang-scope-note"]').exists()).toBe(false)
+    } finally { wrapperFiltre.unmount() }
+
+    // filtre COMBINÉ département+EPCI : la légende nomme les DEUX identités sourcées
+    // (jamais le département seul), sélection explicite = univers listé → pas de note
+    const { wrapper: wrapperCombine } = await monterPrix('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22&epci=200000001&detail=2022')
+    try {
+      await flushPromises()
+      expect(wrapperCombine.find('.comparison-table-scroll caption').text()).toContain('Département 22 · EPCI 200000001')
+      expect(wrapperCombine.find('[data-testid="rang-scope-note"]').exists()).toBe(false)
+    } finally { wrapperCombine.unmount() }
+
+    // SANS territoire dans l'URL : le focal réel vient de la lecture acquise
+    // (repli du chargeur), pas d'une devinette d'URL — la note se résout quand même
+    const { wrapper: wrapperSansCible } = await monterPrix('/indicateurs/habitat/prix_m2?niveau=commune')
+    try {
+      await flushPromises()
+      expect(wrapperSansCible.find('.comparison-table-scroll caption').text()).toContain('Bretagne')
+      const note = wrapperSansCible.get('[data-testid="rang-scope-note"]')
+      expect(note.text()).toContain(`portée : ${classe.classe_densite_libelle_public!}`)
+    } finally { wrapperSansCible.unmount() }
+  })
+
+  it('mixed density classes: only cohort members carry API ranks, outside IDs stay rankless; mismatch scope is rejected at the acquisition seam (#892)', async () => {
+    // classes réelles de la référence : 22001/22002 -> 5 (bourgs ruraux bretons), 29001/29002 -> 6
+    const classe5 = densiteDepuisReference('22002')
+    const classe6 = densiteDepuisReference('29001')
+    expect(classe5.classe_densite_code).not.toBe(classe6.classe_densite_code)
+    const territories = territoiresFixture.map((territory) => {
+      if (territory.territoire === '29001' || territory.territoire === '29002') return { ...territory, ...classe6 }
+      if (territory.type === 'commune') return { ...territory, ...classe5 }
+      return territory
+    })
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territories
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    let forcerClasseIncoherente = false
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, (item, resource) => {
+        const data = nativeReadFixture(item, resource, { territories })
+        // cas de rejet : la comparaison déclare une classe de densité qui ne
+        // correspond PAS au focal acquis (code '1' vs classe 5 du focal 22002)
+        if (forcerClasseIncoherente && item.intent?.kind !== 'facts' && data?.scope) {
+          data.scope = { ...data.scope, density_class_code: '1' }
+        }
+        return data
+      })
+    })
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const monterPrix = async (url: string) => {
+      const router = createRouter({ history: createMemoryHistory(), routes })
+      await router.push(url)
+      await router.isReady()
+      return mount(IndicateurView, { global: { plugins: [router], provide: {
+        [PAYLOAD_CHARGER_KEY]: loader,
+        [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+      } } })
+    }
+    const celluleRang = (row: ReturnType<typeof wrapper.findAll>[number]) => row.findAll('td')[2]!.text().trim()
+    const territoireDe = (row: ReturnType<typeof wrapper.findAll>[number]) =>
+      (row.find('td a')?.attributes('href') ?? '').split('?')[0]?.split('/').at(-1) ?? ''
+
+    // --- cas nominal : focal 22002 (classe 5), non filtré, axe 2022 (22001+22002 mesurées)
+    const wrapper = await monterPrix('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&detail=2022')
+    try {
+      await flushPromises()
+      const rows = wrapper.findAll('.comparison-table-scroll tbody tr')
+      expect(rows.length).toBe(4) // le tableau LISTE les 4 communes de l'URL
+      const rangs = Object.fromEntries(rows.map((row) => [territoireDe(row), celluleRang(row)]))
+      // dans la cohorte (classe 5 = 22001+22002) : rangs API publiés ; hors cohorte : aucun
+      expect(rangs['22001']).toMatch(/^\d+(er|e) \/ 2$/)
+      expect(rangs['22002']).toMatch(/^\d+(er|e) \/ 2$/)
+      expect(rangs['29001']).toBe('')
+      expect(rangs['29002']).toBe('')
+      const note = wrapper.get('[data-testid="rang-scope-note"]')
+      expect(note.text()).toContain(`portée : ${classe5.classe_densite_libelle_public!}`)
+      expect(note.text()).toContain('cohorte de comparaison : 2 territoires')
+    } finally { wrapper.unmount() }
+
+    // --- cas de rejet : scope density_class incohérent avec le focal acquis ->
+    // la comparaison est rejetée au seam d'acquisition (facts admis, pas de rangs)
+    forcerClasseIncoherente = true
+    const wrapperRejet = await monterPrix('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&detail=2022')
+    try {
+      await flushPromises()
+      const rows = wrapperRejet.findAll('.comparison-table-scroll tbody tr')
+      expect(rows.length).toBe(4) // les faits admis restent listés
+      for (const row of rows) expect(celluleRang(row)).toBe('') // aucun rang sans évidence valide
+      expect(wrapperRejet.find('[data-testid="rang-scope-note"]').exists()).toBe(false)
+    } finally { wrapperRejet.unmount() }
+  })
+
   it('retains admitted prix_m2 cohort facts when a warm same-cohort focal read gets HTTP 503', async () => {
       const requests: Array<{ items: Array<Record<string, any>>; status: number }> = []
     let admittedCohort: Record<string, any> | undefined

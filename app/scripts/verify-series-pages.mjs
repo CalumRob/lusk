@@ -303,9 +303,11 @@ try {
         territories: territoiresFixture, selected: focal.territoire, facet: facetQuery })
       const requested = { niveau: level, ...(department ? { departement: department } : {}),
         ...(epci ? { epci } : {}), territoire: focal.territoire }
-      const exploration = modeleExploration(facts, dispatch.facet, territoiresFixture, requested, undefined, false)
+      // #892 : page série — le tableau n'utilise QUE l'évidence de comparaison
+      // publiée (comparaisonApi posée par l'adapter sur le fait de l'axe actif)
+      const exploration = modeleExploration(facts, dispatch.facet, territoiresFixture, requested, undefined, { rangsApiUniquement: true })
       const rankSorted = modeleExploration(facts, dispatch.facet, territoiresFixture,
-        { ...requested, tri: 'rang', ordre: 'asc' }, undefined, false)
+        { ...requested, tri: 'rang', ordre: 'asc' }, undefined, { rangsApiUniquement: true })
       const trajectory = dispatch.family === 'trajectory'
         ? modeleTrajectoire(facts, dispatch.facet, boundPage.trajectory.endpoints, territoiresFixture,
           { niveau: level, territoire: focal.territoire }, [], null, { nativeSeries: true,
@@ -408,11 +410,14 @@ try {
         const expectedOrder = expected.rankSorted.rows.map((row) => row.territoire.territoire)
         assert.deepEqual(sortedRows, expectedOrder,
           `${spec.indicator} table rank sort must follow the model's rank order`)
-        const focalRowRank = expected.rankSorted.rows.find((row) => row.territoire.territoire === focal.territoire)?.rang
-        if (focalRowRank !== null && focalRowRank !== undefined) {
+        // #892 : le rang affiché est l'évidence API publiée (comparaisonApi de
+        // l'axe actif), jamais un rang recalculé navigateur : rang + taille lus
+        // sur la ligne du modèle en mode rangsApiUniquement.
+        const focalRow = expected.rankSorted.rows.find((row) => row.territoire.territoire === focal.territoire)
+        if (focalRow && focalRow.rang !== null && focalRow.rang !== undefined) {
           const focalRowText = await page.locator('tbody tr.selection').innerText()
-          assert(focalRowText.includes(formaterRang(focalRowRank, expected.rankSorted.rows.length)),
-            `${spec.indicator} focal row must render its model rank`)
+          assert(focalRowText.includes(formaterRang(focalRow.rang, focalRow.rangTaille)),
+            `${spec.indicator} focal row must render its published API rank`)
         }
       }
     }

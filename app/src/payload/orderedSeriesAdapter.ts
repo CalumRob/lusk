@@ -52,6 +52,7 @@ export interface OrderedSeriesRead {
     comparable_count?: number
     direction?: 'high' | 'low' | 'none'
     scope?: { kind?: string; territory_type?: string; department_id?: string | null; epci_id?: string | null;
+      density_class_code?: string | null; member_count?: number;
       rank_field?: 'rang_epci' | 'rang_dep' | 'rang_reg' | null; label?: string | null }
     axis_comparisons?: Array<{ axis: string; statistic: 'median' | 'mean'; status: 'available' | 'unavailable';
       value: number | null; min: number | null; max: number | null; selected_member_count: number;

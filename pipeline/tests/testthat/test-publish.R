@@ -125,16 +125,50 @@ test_that("le JSON se relit exactement comme les tables en mémoire / parquet �
     json <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
     verifier_non_derivee(parquet, json, nom)
   }
+  # #892 : la projection JSON des indicateurs omet EXACTEMENT les six colonnes
+  # de rang à portée fixe — la table canonique EN MÉMOIRE les conserve.
   verifier_projection_sur_table(
     payload$indicateurs,
     jsonlite::fromJSON(file.path(cible, "indicateurs_demographie.json")),
-    "indicateurs_demographie"
+    "indicateurs_demographie",
+    colonnes_retirees = COLONNES_RANG_JSON_OMISES
   )
   verifier_projection_sur_table(
     payload$histoires,
     jsonlite::fromJSON(file.path(cible, "histoires_demographie.json")),
     "histoires_demographie"
   )
+})
+
+test_that("#892 : le JSON omet exactement les six colonnes de rang — mémoire et parquet retenu les gardent", {
+  # L'asymétrie voulue, verrouillée des deux côtés : la projection JSON FUTURE
+  # n'omet QUE rang_epci/rang_epci_n/rang_dep/rang_dep_n/rang_reg/rang_reg_n ;
+  # la table canonique en mémoire et le parquet retenu (Mobilité seule, #619)
+  # les conservent avec leurs valeurs (les calculs de rangs ne changent pas).
+  payload <- compute_payload(load_fixture())
+  payload$indicateurs$theme <- "mobilite"
+  payload$histoires$theme <- "mobilite"
+  cible <- tempfile("pub-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  publish(payload, cible) # backend static : parquet (mobilite) + JSON
+
+  # la table canonique EN MÉMOIRE porte les six colonnes
+  expect_true(all(COLONNES_RANG_JSON_OMISES %in% names(payload$indicateurs)))
+  # le parquet retenu les porte aussi, valeurs comprises
+  parquet <- nanoparquet::read_parquet(file.path(cible, "indicateurs_mobilite.parquet"))
+  expect_true(all(COLONNES_RANG_JSON_OMISES %in% names(parquet)))
+  for (col in COLONNES_RANG_JSON_OMISES) {
+    expect_identical(as.numeric(parquet[[col]]),
+                     as.numeric(payload$indicateurs[[col]]), info = col)
+  }
+  # la projection JSON les omet exactement — aucune autre colonne en moins
+  json <- jsonlite::fromJSON(file.path(cible, "indicateurs_mobilite.json"))
+  expect_false(any(COLONNES_RANG_JSON_OMISES %in% names(json)))
+  expect_setequal(names(json),
+                  setdiff(names(payload$indicateurs), COLONNES_RANG_JSON_OMISES))
+  verifier_projection_sur_table(payload$indicateurs, json, "indicateurs_mobilite",
+                                colonnes_retirees = COLONNES_RANG_JSON_OMISES)
 })
 
 test_that("la publication est par thème : le thème du payload nomme les fichiers", {
@@ -247,10 +281,12 @@ test_that("le JSON Habitat se relit exactement comme les tables en mémoire — 
 
   publish(payload, cible)
 
+  # #892 : mêmes six colonnes de rang omises du JSON Habitat, table en mémoire intacte
   verifier_projection_sur_table(
     payload$indicateurs,
     jsonlite::fromJSON(file.path(cible, "indicateurs_habitat.json")),
-    "indicateurs_habitat"
+    "indicateurs_habitat",
+    colonnes_retirees = COLONNES_RANG_JSON_OMISES
   )
   verifier_projection_sur_table(
     payload$histoires,

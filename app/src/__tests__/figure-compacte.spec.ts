@@ -265,22 +265,32 @@ describe('FigureCompacte — trajectoire (artif_par_habitant)', () => {
   })
 })
 
-describe('FigureCompacte — régression de la puce de rang directionnelle (#367)', () => {
-  it('scalar/densite (plus = mieux) porte le glyphe ▲ dans la phrase accessible', () => {
+describe('FigureCompacte — régression de la puce de rang directionnelle (#367, rang API #892)', () => {
+  it('scalar/densite sans comparaisonApi : aucune puce malgré les colonnes statiques (#892)', () => {
+    // la ligne fixture porte rang_epci 1/2 — le repli statique est retiré
     const wrapper = monter('scalar', 'densite', 'demographie')
+    expect(wrapper.find('.puce-rang').exists()).toBe(false)
+  })
+
+  it('scalar/densite (plus = mieux) porte le glyphe ▲ dans la phrase accessible — rang de la comparaison API (#892)', () => {
+    const lignesApi = lignes('demographie', 'densite', '22001')
+      .map((l) => ({ ...l, comparaisonApi: { rang: 1, taille: 2, portee: "communes de l'EPCI X" } }))
+    const wrapper = monter('scalar', 'densite', 'demographie', '22001', { lignes: lignesApi })
     const puce = wrapper.find('.puce-rang')
     expect(puce.exists()).toBe(true)
     // le glyphe ▲ (plus = mieux) accompagne le rang, jamais sans texte accessible
-    expect(puce.text()).toBe("▲ 1er/2 de l'EPCI")
-    expect(puce.attributes('title')).toBe("1er/2 de l'EPCI — plus = mieux")
-    expect(puce.attributes('aria-label')).toBe("1er/2 de l'EPCI — plus = mieux")
+    expect(puce.text()).toBe("▲ 1er/2 · communes de l'EPCI X")
+    expect(puce.attributes('title')).toBe("1er/2 · communes de l'EPCI X — plus = mieux")
+    expect(puce.attributes('aria-label')).toBe("1er/2 · communes de l'EPCI X — plus = mieux")
   })
 
-  it('scalar/surface_reseaux_routiers (moins = mieux) porte le glyphe ▼ (sens dérivé du registre Méthodes)', () => {
+  it('scalar/surface_reseaux_routiers (moins = mieux) porte le glyphe ▼ — rang API (#892, sens dérivé du registre Méthodes)', () => {
     // #627 - the iso_* glyph case retired with the legacy accessibility
     // indicators; the retained low-is-better Mobilité scalar keeps the
     // direction-glyph coverage.
-    const wrapper = monter('scalar', 'surface_reseaux_routiers', 'mobilite')
+    const lignesApi = lignes('mobilite', 'surface_reseaux_routiers', '22001')
+      .map((l) => ({ ...l, comparaisonApi: { rang: 27, taille: 38, portee: "communes de l'EPCI X" } }))
+    const wrapper = monter('scalar', 'surface_reseaux_routiers', 'mobilite', '22001', { lignes: lignesApi })
     const puce = wrapper.find('.puce-rang')
     expect(puce.exists()).toBe(true)
     expect(puce.text()).toContain('▼')

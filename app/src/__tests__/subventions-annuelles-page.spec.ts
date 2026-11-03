@@ -113,9 +113,30 @@ beforeEach(() => localStorage.clear())
 
 describe('Page d’indicateur subventions_annuelles — page complète contre le payload committé (#467)', () => {
   it('Repères peuplés : médiane, extrêmes réels et tableau communal — la facette épinglée survit à sa propre réécriture canonique', async () => {
+    // #892 : la cellule de rang du tableau porte le rang PUBLIÉ par l'API à
+    // l'axe actif — on le lit dans la réponse native servie, puis on vérifie
+    // la cellule octet pour octet (jamais la taille du périmètre calculée /725).
+    const saine = createNativeSemanticApiTransport()
+    let rangApi: { rang: number; taille: number | null } | null = null
+    const transport = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const reponse = await saine(input, init)
+      if (String(input) === '/api/resources/read-batch' && reponse.status === 200) {
+        const corps = await reponse.clone().json() as any
+        for (const resultat of corps.results ?? []) {
+          const axes = resultat?.data?.result?.axis_comparisons
+          if (!Array.isArray(axes)) continue
+          const axe = axes.find((a: any) => a.axis === '2025')
+          const membre = axe?.member_ranks?.find((r: any) => r.territory_id === '22001')
+          if (membre?.rank !== null && membre?.rank !== undefined) {
+            rangApi = { rang: membre.rank, taille: membre.rank_size ?? null }
+          }
+        }
+      }
+      return reponse
+    }
     // L'arrivée SANS paramètre dimension : le repli résolu (« 2025 ») est écrit
     // dans l'URL par la canonicalisation — le second passage doit rester VALIDE.
-    const { wrapper, router } = await monter('/indicateurs/programmes/subventions_annuelles?territoire=22001')
+    const { wrapper, router } = await monter('/indicateurs/programmes/subventions_annuelles?territoire=22001', undefined, transport)
     expect(router.currentRoute.value.query.dimension).toBe('2025')
     expect(wrapper.find('[role="alert"]').exists(), 'aucune facette invalide').toBe(false)
     // La médiane communale réelle (725 communes comparées).
@@ -129,7 +150,11 @@ describe('Page d’indicateur subventions_annuelles — page complète contre le
     // Le tableau porte la ligne communale demandée avec SA valeur publiée.
     const ligne = ligneDuTableau(wrapper, '22001')
     expect(ligne!.findAll('td')[1]!.text().replace(/\s+/g, ' ')).toBe('1 600 €')
-    expect(ligne!.findAll('td')[2]!.text()).toContain('/ 725')
+    // Rang API exact publié à 2025 pour 22001 (évidence member_ranks), taille
+    // d'éligibilité — PAS la taille 725 du périmètre calculée navigateur.
+    expect(rangApi).not.toBeNull()
+    const attendu = `${rangApi!.rang === 1 ? '1er' : `${rangApi!.rang}e`} / ${rangApi!.taille}`
+    expect(ligne!.findAll('td')[2]!.text().trim()).toBe(attendu)
     // Le changement de niveau reste peuplé : les 61 EPCIs bretons comparés.
     await router.replace({ query: { ...router.currentRoute.value.query, niveau: 'epci' } })
     await flushPromises()

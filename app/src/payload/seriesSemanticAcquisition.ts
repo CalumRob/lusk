@@ -193,6 +193,12 @@ function publicationMismatch(comparisonData: Row, facts: OrderedSeriesFactsEvide
   return null
 }
 
+/** Classe de densité du focal ACQUIS, lue dans la référence validée. */
+function focalDensityClassOf(input: { focal: Territoire; territories: readonly Territoire[] }): string | null {
+  return input.territories.find((territory) =>
+    territory.territoire === input.focal.territoire && territory.type === input.focal.type)?.classe_densite_code ?? null
+}
+
 function scopedMembers(input: {
   level: TerritoireType; territories: readonly Territoire[]; departmentId?: string; epciId?: string
 }): Array<{ type: TerritoireType; id: string }> | null {
@@ -213,6 +219,8 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
   declaredSourceIds: Set<string>; resolvedCohortType: string
   resolvedCohortMembers: Array<{ id: string; type: string }>; cohortIsFiltered: boolean
   focal: { id: string; type: string }; resource: string
+  focalDensityClass: string | null
+  territories: readonly Territoire[]
 }, requestedMembers: Array<{ type: TerritoireType; id: string }> | null): OrderedSeriesRead['comparison'] {
   const result = comparisonData.result
   const target = comparisonData.target
@@ -228,11 +236,21 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
   }
   if (requestedMembers) {
     const selection = comparisonData.selection
-    if (!Array.isArray(selection) || selection.length !== requestedMembers.length ||
-        !selection.every((member: Row) => record(member) &&
-          requestedMembers.some((requested) => requested.type === member.territory_type &&
-            requested.id === member.territory_id))) {
+    // écho d'identité EXACT et unique : ensemble identique, sans doublon ni
+    // remplacement (l'ordre n'est pas sémantique — le producteur trie, on
+    // accepte tout ordre mais jamais [A,A] pour [A,B])
+    if (!Array.isArray(selection) || selection.length !== requestedMembers.length) {
       throw new Error('Écho de sélection de comparaison incompatible')
+    }
+    const selectionKeys = selection.map((member: Row) =>
+      record(member) && text(member.territory_type) && text(member.territory_id)
+        ? `${member.territory_type}\u0000${member.territory_id}` : null)
+    const requestedKeys = requestedMembers.map((member) => `${member.type}\u0000${member.id}`)
+    if (selectionKeys.some((key) => key === null) ||
+        new Set(selectionKeys).size !== selectionKeys.length ||
+        (selectionKeys as string[]).some((key) => !requestedKeys.includes(key)) ||
+        requestedKeys.some((key) => !(selectionKeys as string[]).includes(key))) {
+      throw new Error('Écho de sélection de comparaison incompatible (doublon, manquant ou remplacé)')
     }
     const requestedIds = new Set(requestedMembers.map((member) => member.id))
     const resolvedIds = new Set(facts.resolvedCohortMembers.map((member) => member.id))
@@ -240,11 +258,48 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
         requestedIds.size !== resolvedIds.size || [...requestedIds].some((id) => !resolvedIds.has(id))) {
       throw new Error('Sélection de comparaison incompatible avec la population API résolue')
     }
+  } else if (comparisonData.selection !== null) {
+    // fixed_comparison : le producteur émet TOUJOURS le champ selection, à null
+    // explicitement (api/snapshot_reads.py:1886-1888) — un champ omis
+    // (undefined) comme une sélection non null sont rejetés
+    throw new Error('Sélection de comparaison fixed invalide (champ selection null explicite requis)')
+  }
+  // #892 fail-closed — contrat de portée PAR KIND, dérivé de l'INTENT de la
+  // requête d'acquisition (contrat producteur api/snapshot_reads.py
+  // _comparison_cohort), jamais des filtres devinés ni des libellés :
+  //   selected_comparison        -> explicit_selection (écho de sélection exact)
+  //   fixed_comparison commune   -> density_class + territory_type 'commune' +
+  //                                 density_class_code non vide = classe du focal acquis
+  //   fixed_comparison epci/dept -> same_level + territory_type EXACT du niveau
+  //   fixed_comparison région    -> aucune comparaison publiée : fail-closed
+  //     (les ressources série ordinaires n'acceptent pas la région ; le
+  //     raccordement régional relève de son propre contrat owner)
+  const expectedKind = requestedMembers !== null
+    ? 'explicit_selection'
+    : facts.resolvedCohortType === 'commune' ? 'density_class'
+      : (facts.resolvedCohortType === 'epci' || facts.resolvedCohortType === 'departement') ? 'same_level'
+        : null
+  if (expectedKind === null) {
+    throw new Error('Comparaison publiée indisponible pour ce niveau (région non supportée)')
   }
   const scope = comparisonData.scope
   if (!record(scope) || !text(scope.kind) ||
       !Number.isInteger(scope.member_count) || scope.member_count < 1) {
     throw new Error('Périmètre de comparaison sémantique incompatible')
+  }
+  if (scope.kind !== expectedKind) {
+    throw new Error(`Portée de comparaison « ${String(scope.kind)} » invalide — « ${expectedKind} » attendu pour cette requête`)
+  }
+  // champs d'identité requis PAR KIND (producteur : snapshot_reads.py:160-192)
+  if (expectedKind === 'density_class' &&
+      (scope.territory_type !== 'commune' || !text(scope.density_class_code) ||
+        scope.density_class_code !== facts.focalDensityClass)) {
+    throw new Error('Portée density_class invalide ou incohérente avec le territoire focal')
+  }
+  if (expectedKind === 'same_level' && scope.territory_type !== facts.resolvedCohortType) {
+    // territory_type est REQUIS pour same_level (snapshot_reads.py:172-174) :
+    // absent ou erroné -> rejet précoce, l'identité de cohorte est vérifiée
+    throw new Error('Portée same_level sans territory_type exact du niveau acquis')
   }
   const selectedTypes = requestedMembers ? [...new Set(requestedMembers.map((member) => member.type))] : []
   const expectedScopeType = selectedTypes.length === 1 ? selectedTypes[0] : facts.resolvedCohortType
@@ -257,18 +312,48 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
   if (requestedMembers) {
     expectedMembers = new Set(requestedMembers.map((member) => member.id))
     exactPopulation = true
-  } else if (!facts.cohortIsFiltered && scope.territory_type === facts.resolvedCohortType) {
-    expectedMembers = new Set(facts.resolvedCohortMembers.map((member) => member.id))
-    exactPopulation = scope.kind === 'same_level'
-    if (exactPopulation && scope.member_count !== facts.resolvedCohortMembers.length) {
+  } else if (!facts.cohortIsFiltered) {
+    // fixed : la cohorte résolue est TOUJOURS l'identité de référence des rangs.
+    // Pour density_class, la cohorte de comparaison est le SOUS-ENSEMBLE de la
+    // classe de densité, résolu depuis la RÉFÉRENCE validée (champs d'identité
+    // de classe publiés) — jamais depuis un calcul navigateur. Tout membre de
+    // la cohorte résolue doit figurer dans la référence, sinon on ne peut pas
+    // établir la cohorte exacte : rejet avec le gap précis, pas d'inférence.
+    if (scope.kind === 'density_class') {
+      const classes = new Map(facts.territories.map((territory) =>
+        [territory.territoire, territory.classe_densite_code ?? null] as const))
+      const membresClasse: string[] = []
+      for (const member of facts.resolvedCohortMembers) {
+        const classe = classes.get(member.id)
+        if (classe === undefined) {
+          throw new Error(`Référence validée ne couvre pas la cohorte résolue (membre ${member.id} sans classe de densité publiée)`)
+        }
+        if (classe === scope.density_class_code) membresClasse.push(member.id)
+      }
+      expectedMembers = new Set(membresClasse)
+    } else {
+      expectedMembers = new Set(facts.resolvedCohortMembers.map((member) => member.id))
+    }
+    exactPopulation = true
+    if (scope.member_count !== expectedMembers.size) {
       throw new Error('Population native de comparaison incohérente avec la cohorte résolue')
     }
   }
   const axisComparisons = Array.isArray(result.axis_comparisons) ? result.axis_comparisons : []
   if (!axisComparisons.length) throw new Error('Preuve de comparaison par axe absente')
+  // identité d'axe : chaque axe publié doit être un texte non vide, UNIQUE,
+  // et déclaré dans le contrat d'axes du descripteur (publish_series.R:1268-1274
+  // exige un sous-ensemble ordonné déclaré sans doublon)
+  const declaredAxes = new Set((facts.descriptor.axis_values as unknown[]).filter((axis): axis is string => text(axis)))
+  const seenAxes = new Set<string>()
   const mapped = axisComparisons.map((candidate: unknown) => {
-    const axis = record(candidate) && text(candidate.axis) ? candidate.axis : '?'
-    if (!record(candidate) || !['median', 'mean'].includes(candidate.statistic) ||
+    if (!record(candidate) || !text(candidate.axis) || !declaredAxes.has(candidate.axis) ||
+        seenAxes.has(candidate.axis)) {
+      throw new Error('Axe de comparaison manquant, invalide, dupliqué ou non déclaré')
+    }
+    seenAxes.add(candidate.axis)
+    const axis = candidate.axis
+    if (!['median', 'mean'].includes(candidate.statistic) ||
         candidate.statistic !== result.statistic ||
         !['available', 'unavailable'].includes(candidate.status) ||
         !(candidate.value === null || finite(candidate.value)) ||
@@ -298,8 +383,12 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
           candidate.value > candidate.max || candidate.eligible_count < 2) {
         throw new Error(`Agrégat de comparaison incohérent (${axis})`)
       }
-    } else if (candidate.value !== null || candidate.min !== null || candidate.max !== null) {
-      throw new Error(`Comparaison indisponible porteuse de valeurs (${axis})`)
+    } else if (candidate.value !== null || candidate.min !== null || candidate.max !== null ||
+        // seuil exact du producteur (series_comparison_projection.py:111 :
+        // available = eligible >= 2) — un unavailable avec >= 2 éligibles
+        // est incohérent, rejeté
+        candidate.eligible_count >= 2) {
+      throw new Error(`Comparaison indisponible incohérente (${axis})`)
     }
     const rankIds = new Set<string>()
     for (const rank of candidate.member_ranks) {
@@ -319,7 +408,15 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
       }
       // A member without a measured value legitimately carries no rank; the
       // ranked-count check below reconciles them with the eligibility.
-      if (rank.rank === null) continue
+      // Tuple all-or-nothing (producteur series_comparison_projection.py:122-124,
+      // 166-170) : rank, rank_size et rank_ties sont soit tous null (non classé),
+      // soit tous renseignés (classé) — jamais un mélange.
+      if (rank.rank === null) {
+        if (rank.rank_size !== null || rank.rank_ties !== null) {
+          throw new Error(`Tuple de rang incomplet (${axis})`)
+        }
+        continue
+      }
       if (!Number.isInteger(rank.rank) || !Number.isInteger(rank.rank_size) ||
           !Number.isInteger(rank.rank_ties) || rank.rank_size !== candidate.eligible_count ||
           rank.rank_size < 1 || rank.rank < 1 || rank.rank > rank.rank_size ||
@@ -339,12 +436,30 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
     }
     return candidate
   })
+  // sous-ensemble ORDONNÉ du contrat d'axes déclaré (api/series_comparison_projection.py:48-52
+  // : axes = [axis for axis in declared if axis in axes]) — une réponse réordonnée
+  // viole le contrat et ne doit jamais choisir le mauvais axe de résumé
+  const declaredAxisOrder = (facts.descriptor.axis_values as unknown[]).filter((axis): axis is string => text(axis))
+  let curseurOrdre = 0
+  for (const item of mapped) {
+    const index = declaredAxisOrder.indexOf((item as Row).axis, curseurOrdre)
+    if (index === -1) throw new Error('Axes de comparaison publiés hors ordre déclaré')
+    curseurOrdre = index + 1
+  }
   const comparisonPoint = facts.descriptor.comparison_point
-  const selected = mapped.find((item: Row) => item.axis === comparisonPoint)
+  let selected = comparisonPoint === null ? undefined : mapped.find((item: Row) => item.axis === comparisonPoint)
+  // Repli EXACT du producteur (api/snapshot_reads.py:1707-1713) : point déclaré
+  // non publié + axis_kind 'declared_detail' -> dernier axe de comparaison
+  // publié (ordre déclaré conservé). Jamais de re-étiquetage d'un autre axe.
+  let effectivePoint: string | null = comparisonPoint
+  if (!selected && facts.descriptor.axis_kind === 'declared_detail' && mapped.length) {
+    selected = mapped[mapped.length - 1]
+    effectivePoint = selected?.axis ?? null
+  }
   const focalRank = selected?.member_ranks?.find((rank: Row) =>
     rank.territory_id === facts.focal.id)
   return {
-    point: comparisonPoint,
+    point: effectivePoint,
     value: selected?.value,
     median: selected?.statistic === 'median' ? selected.value : undefined,
     mean: selected?.statistic === 'mean' ? selected.value : undefined,
@@ -390,6 +505,8 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
         resolvedCohortMembers: admittedFocal.resolved_cohort_members,
         cohortIsFiltered: admittedFocal.cohort_is_filtered,
         focal: admittedFocal.territory, resource: input.resource,
+        focalDensityClass: focalDensityClassOf(input),
+        territories: input.territories,
       }, members)
       const result = attachAdmittedComparison(admittedFocal, comparison, comparisonData, input)
       if (entries.cohortGenerations.get(key) === generation) entries.comparisons.set(compareKey, result)
@@ -526,6 +643,8 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
       declaredSourceIds, resolvedCohortType: resolvedCohort.territory_type,
       resolvedCohortMembers: cohortMembers, cohortIsFiltered: facts.cohort_is_filtered,
       focal: facts.territory, resource: input.resource,
+      focalDensityClass: focalDensityClassOf(input),
+      territories: input.territories,
     }, members)
     const result = attachAdmittedComparison(facts, comparison, comparisonData, input)
     if (entries.cohortGenerations.get(key) === generation) {
@@ -831,5 +950,7 @@ export async function reacquireOrderedSeriesComparison(input: {
     resolvedCohortMembers: input.facts.resolved_cohort_members,
     cohortIsFiltered: input.facts.cohort_is_filtered,
     focal: input.facts.territory, resource: input.resource,
+    focalDensityClass: focalDensityClassOf(input),
+    territories: input.territories,
   }, members)
 }

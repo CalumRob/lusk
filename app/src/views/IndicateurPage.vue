@@ -21,7 +21,8 @@ import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicat
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } from '@/indicateurs/etatUrl'
 import { PayloadError, validerCatalogueNavigateur } from '@/payload/validate'
-import { semanticComparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
+import { apiComparisonScopeLabel, semanticComparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
+import { rangScopeNoteCopy } from '@/fiche/content/comparisonWording'
 import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerCohortePageScalaire, chargerComparaisonsScalaires,
   chargerFaitFocalPageScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees,
@@ -1418,14 +1419,41 @@ const requested = computed(() => ({ niveau: niveauRoute.value, ...(etatUrl.value
 const model = computed(() => {
   const dispatch = familyDispatch.value
   if (!dispatch) return null
+  // #892 : plus de chemin usePublishedRanks — les rangs statiques ne sont
+  // jamais lus. #892 (revue P2) : sur une page SÉRIE ordonnée, les rangs du
+  // tableau viennent UNIQUEMENT de l'évidence de comparaison publiée par
+  // l'API (comparaisonApi posée par l'adapter sur le fait de l'axe actif, à la
+  // coordonnée déclarée) — un axe observé sans comparaison publiée n'a aucun
+  // rang (pas de re-classement navigateur, pas de taille all.length). Les
+  // autres modes gardent le classement calculé et les branche API ci-dessous
+  // écrasent avec memberRanks / comparaisonApi.
+  const rangsApiUniquement = seriesPageApiActive.value && orderedSeriesAdapter.value !== null
   const calculated = modeleExploration(facts.value, dispatch.facet, payload.value.territoires,
-    requested.value, niveauMemorise.value, profileMode.value || pageScalaireApiActive.value || sparseCollectionPageActive.value)
+    requested.value, niveauMemorise.value, { rangsApiUniquement })
   if (sparseCollectionPageActive.value) {
     const evidence = sparseCollectionComparison.value
     const rank = typeof evidence?.rank === 'number' ? evidence.rank : null
     const rankSize = typeof evidence?.rank_size === 'number' ? evidence.rank_size : null
-    const rows = calculated.rows.map((row) => row.territoire.territoire === sparseCollectionComparisonTarget.value
-      ? { ...row, rang: rank, rangTaille: rankSize } : row)
+    // #892 (revue P2) : la comparaison API de la collection clairsemée ne porte
+    // QUE le rang du territoire focal (la requête selected_comparison cible le
+    // focal — aucune évidence de rang par membre pour les pairs). Les pairs
+    // gardent donc rang/rangTaille null : aucun rang calculé localement affiché,
+    // aucune appartenance ni taille de groupe fabriquée. Seul le focal affiche
+    // le rang API, à sa portée exacte déclarée.
+    let rows = calculated.rows.map((row) => row.territoire.territoire === sparseCollectionComparisonTarget.value
+      ? { ...row, rang: rank, rangTaille: rankSize }
+      : { ...row, rang: null, rangTaille: null })
+    if (requested.value.tri === 'rang') {
+      // tri par rang : le focal noté par l'API en tête, les pairs sans rang à
+      // la fin — la même convention null-last que les branches scalaire/profil
+      // (l'ordre nom/valeur, lui, reste l'exploration légitime inchangée).
+      const factor = requested.value.ordre === 'desc' ? -1 : 1
+      rows = [...rows].sort((left, right) => {
+        if (left.rang === null) return right.rang === null ? 0 : 1
+        if (right.rang === null) return -1
+        return factor * (left.rang - right.rang)
+      })
+    }
     return { ...calculated,
       median: evidence?.status === 'available' && typeof evidence.median === 'number' ? evidence.median : null,
       rows }
@@ -1466,7 +1494,7 @@ const model = computed(() => {
   const comparisonRanks = new Map((profileComparison.value?.memberRanks ?? []).map((item) => [item.territoryId, item]))
   const completeComparisonRows = requested.value.recherche
     ? modeleExploration(facts.value, dispatch.facet, payload.value.territoires,
-      { ...requested.value, recherche: undefined, tri: 'nom', ordre: 'asc' }, niveauMemorise.value, true).rows
+      { ...requested.value, recherche: undefined, tri: 'nom', ordre: 'asc' }, niveauMemorise.value).rows
     : calculated.rows
   const eligibleIds = new Set(completeComparisonRows.map((row) => row.territoire.territoire))
   const rankedIds = new Set([...comparisonRanks.values()].filter((item) => item.rank !== null).map((item) => item.territoryId))
@@ -1519,6 +1547,35 @@ const raccordementComparisonScopeLabel = computed(() => {
       ? target.classe_densite_libelle_public ?? null : null
   }
   return semanticComparisonScopeLabel(comparison.scope, target.type)
+})
+// #892 recheck : sur une page série, le tableau LISTE l'univers de l'URL
+// (légende = model.scopeLabel) mais les rangs affichés viennent de la portée
+// DÉCLARÉE par le producteur (scope de la lecture de comparaison) — pour une
+// commune sans filtre, le fixed_comparison résout la classe de densité, pas la
+// région. Quand un rang est présent et que la portée API diffère de l'univers
+// listé, une note dédiée la nomme : la légende du tableau n'est jamais réécrite
+// pour affirmer une cohorte qu'il ne liste pas. (Toutes les lignes du tableau
+// partagent la portée de l'unique lecture de comparaison de la page.)
+const rangScopeNote = computed(() => {
+  if (!model.value || !seriesPageApiActive.value || !orderedSeriesAdapter.value) return null
+  if (!model.value.rows.some((row) => row.rang !== null)) return null
+  const read = serieLecture.value
+  const scope = read?.comparison?.scope
+  if (!scope) return null
+  // le focal EXACT vient de la lecture acquise (serieLecture.territory), jamais
+  // d'une devinette d'URL : sans ?territoire=, le chargeur a choisi un repli,
+  // c'est CE focal acquis qui porte la classe de densité de la portée
+  const acquiredFocal = read?.territory
+  const target = acquiredFocal
+    ? payload.value.territoires.find((territory) =>
+        territory.territoire === acquiredFocal.id && territory.type === acquiredFocal.type) ?? null
+    : null
+  const label = apiComparisonScopeLabel(scope, target, model.value.scopeLabel)
+  if (!label || label === model.value.scopeLabel) return null
+  const count = typeof scope.member_count === 'number' ? scope.member_count : null
+  // copy partagée : portée déclarée + cohorte (member_count) — le nombre classé
+  // (rank_size) reste dans les cellules de rang, jamais confondu ici
+  return rangScopeNoteCopy(label, count)
 })
 // Le chemin complet de la trajectoire (#438), dans le MÊME périmètre résolu
 // que le modèle par détail — le détail (actif) pilote carte/extrêmes/tableau
@@ -1761,7 +1818,7 @@ watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niv
             <div v-if="familyDispatch.family !== 'distribution' && !raccordementApiLecture && !profileRegionalFactOnly" class="hero"><article class="median"><span>Médiane</span><strong>{{ model!.median === null ? '—' : formaterValeur({ value: model!.median, unit: familyDispatch.facet.unit }) }} <small>{{ familyDispatch.facet.unit }}</small></strong><p>{{ model!.scopeLabel }}</p></article><article class="distribution"><h2>Distribution</h2><svg class="density" viewBox="0 0 600 180" role="img" aria-label="Densité des valeurs"><title>Densité des valeurs</title><desc v-if="markerDescription">{{ markerDescription }}</desc><path :d="`M ${model!.density.map((point, index) => `${index * (600 / Math.max(model!.density.length - 1, 1))},${20 + point.y * 1.5}`).join(' L ')}`" /><circle v-if="model!.markerX !== null && model!.markerY !== null" :cx="model!.markerX! * 6" :cy="20 + model!.markerY! * 1.5" r="7" class="point-highlight" :aria-label="markerDescription" /></svg><span v-if="markerDescription" class="visually-hidden">{{ markerDescription }}</span></article></div>
             <div v-if="!raccordementApiLecture && !profileRegionalFactOnly" class="extremes"><article><h2>Valeurs les plus hautes</h2><span v-if="model!.high.count > 1">{{ model!.high.count }} territoires à égalité</span><RouterLink v-for="row in model!.high.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article><article><h2>Valeurs les plus basses</h2><span v-if="model!.low.count > 1">{{ model!.low.count }} territoires à égalité</span><RouterLink v-for="row in model!.low.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article></div>
              <div v-if="!profileRegionalFactOnly" class="controls"><label>Niveau <select :value="model!.state.niveau" @change="setQuery(PARAM_NIVEAU, ($event.target as HTMLSelectElement).value)"><option v-for="niveau in page.levels" :key="niveau" :value="niveau">{{ niveau === 'commune' ? 'Communes' : niveau === 'epci' ? 'EPCI' : niveau === 'region' ? 'Région' : 'Départements' }}</option></select></label><label v-if="model!.state.niveau === 'commune'">Département <input :value="route.query.departement ?? ''" @input="setQuery('departement', ($event.target as HTMLInputElement).value)" /></label><label v-if="model!.state.niveau === 'commune'">EPCI <input :value="route.query.epci ?? ''" @input="setQuery('epci', ($event.target as HTMLInputElement).value)" /></label><label>Rechercher <input v-model="recherche" @input="setQuery('recherche', recherche)" /></label><label v-if="familyDispatch.family === 'trajectory'">Détail (actif) <select aria-label="Détail (actif)" :value="familyDispatch.facet.detail ?? ''" @change="setQuery('detail', ($event.target as HTMLSelectElement).value)"><option v-for="detail in familyDispatch.facet.details" :key="detail" :value="detail">{{ libelleDetail(detail) }}</option></select></label><label v-if="familyDispatch.family === 'list'">Catégorie comparée <select aria-label="Catégorie comparée" :value="familyDispatch.facet.detail ?? ''" @change="setQuery('detail', ($event.target as HTMLSelectElement).value)"><option v-for="detail in familyDispatch.facet.details" :key="detail" :value="detail">{{ familyDispatch.facet.labels[detail] ?? detail }}</option></select></label><label v-if="profileMode && familyDispatch.family !== 'list' && page.comparison?.details?.length">Catégorie comparée <select aria-label="Catégorie comparée" :value="familyDispatch.facet.detail ?? ''" @change="setQuery('detail', ($event.target as HTMLSelectElement).value)"><option v-for="detail in page.comparison.details" :key="detail" :value="detail">{{ familyDispatch.facet.labels[detail] ?? detail }}</option></select></label><label v-if="profileMode && page.comparison?.sexes?.length">Sexe comparé <select aria-label="Sexe comparé" :value="familyDispatch.facet.sex ?? ''" @change="setQuery('sex', ($event.target as HTMLSelectElement).value)"><option v-for="sex in page.comparison.sexes" :key="sex" :value="sex">{{ sex === 'F' ? 'Femmes' : 'Hommes' }}</option></select></label></div>
-             <div v-if="!raccordementApiLecture && !profileRegionalFactOnly" class="comparison-table-scroll" role="region" aria-label="Tableau des territoires comparables" tabindex="0"><table><caption>Territoires comparables — {{ model!.scopeLabel }}</caption><thead><tr><th><button type="button" @click="setSort('nom')">Territoire</button></th><th><button type="button" @click="setSort('valeur')">Valeur</button></th><th><button type="button" @click="setSort('rang')">Rang</button> <span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></th><th /></tr></thead><tbody><tr v-for="row in model!.rows" :key="row.territoire.territoire" :class="{ selection: row.highlighted }"><td><RouterLink :to="row.fiche">{{ row.territoire.nom }}</RouterLink></td><td>{{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</td><td><span :title="`${formaterRang(row.rang, row.rangTaille)} · ${directionText}`" :aria-label="`${formaterRang(row.rang, row.rangTaille)} · ${directionText}`">{{ formaterRang(row.rang, row.rangTaille) }}</span></td><td><button type="button" @click="setQuery(PARAM_TERRITOIRE, row.territoire.territoire)">Voir sur la distribution</button></td></tr></tbody></table></div>
+             <div v-if="!raccordementApiLecture && !profileRegionalFactOnly" class="comparison-table-scroll" role="region" aria-label="Tableau des territoires comparables" tabindex="0"><p v-if="rangScopeNote" class="rang-scope-note" data-testid="rang-scope-note">{{ rangScopeNote }}</p><table><caption>Territoires comparables — {{ model!.scopeLabel }}</caption><thead><tr><th><button type="button" @click="setSort('nom')">Territoire</button></th><th><button type="button" @click="setSort('valeur')">Valeur</button></th><th><button type="button" @click="setSort('rang')">Rang</button> <span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></th><th /></tr></thead><tbody><tr v-for="row in model!.rows" :key="row.territoire.territoire" :class="{ selection: row.highlighted }"><td><RouterLink :to="row.fiche">{{ row.territoire.nom }}</RouterLink></td><td>{{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</td><td><span :title="`${formaterRang(row.rang, row.rangTaille)} · ${directionText}`" :aria-label="`${formaterRang(row.rang, row.rangTaille)} · ${directionText}`">{{ formaterRang(row.rang, row.rangTaille) }}</span></td><td><button type="button" @click="setQuery(PARAM_TERRITOIRE, row.territoire.territoire)">Voir sur la distribution</button></td></tr></tbody></table></div>
           </template></RepereFamilyOutlet></main>
         <section v-else-if="vue === 'carte' && profileRegionalFactOnly" class="carte-indicateur" role="status" data-testid="profile-regional-map-unavailable">La Région dispose de faits publiés, mais pas d’une géométrie de comparaison pour cette carte.</section>
         <section v-else-if="vue === 'carte'" class="carte-indicateur"><div v-if="geometrie.masques.value" class="map-wrap"><MapExplorer :masques="geometrie.masques.value" :payload="payloadCarte" :active-ids="payloadCarte.indicateurs.map((fact) => fact.territoire)" :theme="theme as Theme" :couche="couche" :niveau="niveauMasque" :territoire-cible="territoireCible" :requete-zoom="requeteZoom" /></div><div v-else role="status">Chargement de la carte…</div></section>
@@ -1770,6 +1827,6 @@ watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niv
   </section>
 </template>
 <style scoped>
-.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.comparison-table-scroll{max-width:100%;overflow-x:auto}
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.comparison-table-scroll{max-width:100%;overflow-x:auto}.rang-scope-note{margin:0 0 8px;font:var(--text-body-sm);color:var(--text-primary)}
 .indicateur-page{min-height:100%;padding:clamp(24px,5vw,64px) max(16px,calc((100% - 1200px)/2));color:var(--text-primary)}header{max-width:760px}h1{font:var(--text-h1);margin:.3rem 0 1rem}h2{font:var(--text-h3)}.sur-titre{color:var(--indicateur-strong);font:var(--text-overline);text-transform:uppercase}.vues{display:flex;gap:24px;margin:32px 0;border-bottom:1px solid var(--border-default);padding-bottom:12px}.vues button.active{border-bottom:0;box-shadow:inset 0 -3px 0 var(--indicateur-accent);border-radius:0;font-weight:700}.hero,.extremes{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.hero article,.extremes article,aside{padding:24px;background:var(--surface-primary);border:1px solid var(--border-default);border-radius:12px;margin-bottom:16px}.median strong{display:block;font:600 clamp(3rem,9vw,7rem)/1 var(--font-ui);margin:20px 0}.median small{font:var(--text-body)}.density{width:100%;height:170px;border-bottom:2px solid var(--indicateur-line)}.density path{fill:none;stroke:var(--indicateur-accent);stroke-width:4}.point-highlight{fill:var(--status-error)}.extremes article{display:flex;flex-direction:column;gap:8px}.indicator-date-caveat{margin:0 0 16px;color:var(--text-secondary)}.controls{display:flex;gap:16px;flex-wrap:wrap;margin:24px 0}label{display:flex;flex-direction:column;gap:4px}select,input{padding:8px;border:1px solid var(--border-default);border-radius:6px}table{width:100%;border-collapse:collapse;background:var(--surface-primary)}th,td{padding:12px;border-bottom:1px solid var(--border-subtle);text-align:left}tr.selection{background:var(--indicateur-soft)}button{border:0;background:none;color:var(--accent-primary);cursor:pointer}.carte-indicateur,.map-wrap{min-height:540px}.map-wrap{position:relative;height:540px}.map-wrap :deep(.map-explorer){height:100%}dt{font-weight:700;margin-top:12px}dd{margin:0}@media(max-width:700px){.hero,.extremes{grid-template-columns:1fr}table{font-size:.85rem}}
 </style>

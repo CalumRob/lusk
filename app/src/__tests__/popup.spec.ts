@@ -84,16 +84,35 @@ describe('formaterValeurApercu — French display of an Aperçu row', () => {
 })
 
 describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
-  it('leads with the active layer — its value and its rank-in-context, no KPI wall', () => {
+  it('leads with the active layer — its value, NO rank chip from legacy static columns (#892)', () => {
     const payload = payloadAvecApercu()
     const kpis = kpisPourPopup(payload, '22001', 'demographie', coucheDensite)
 
+    // la ligne commise porte rang_epci 1/2 — le repli statique est retiré :
+    // aucune puce, même avec des valeurs statiques présentes
     expect(kpis).toHaveLength(1)
     expect(kpis[0]).toEqual({
       libelle: 'Densité de population',
       valeur: '200',
       unite: 'hab/km²',
-      rang: "1er/2 de l'EPCI",
+      rang: null,
+    })
+  })
+
+  it('shows the API comparison rank with its exact declared scope when comparaisonApi is present (#892)', () => {
+    const payload = payloadAvecApercu()
+    const ligne = payload.indicateurs.find((l) => l.territoire === '22001' && l.key === 'densite')!
+    const avecApi: Indicateur = {
+      ...ligne,
+      comparaisonApi: { rang: 2, taille: 38, portee: 'communes de l’EPCI X' },
+    }
+    const kpis = kpisPourPopup({ ...payload, indicateurs: [avecApi] }, '22001', 'demographie', coucheDensite)
+
+    expect(kpis[0]).toEqual({
+      libelle: 'Densité de population',
+      valeur: '200',
+      unite: 'hab/km²',
+      rang: '2e/38 · communes de l’EPCI X',
     })
   })
 
@@ -153,12 +172,13 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
     }
     const kpis = kpisPourPopup(payloadHabitat, '22001', 'habitat', couchePartPassoires)
 
+    // #892 : rang_epci 2/2 statique porté par la ligne — aucune puce sans comparaisonApi
     expect(kpis).toHaveLength(1)
     expect(kpis[0]).toEqual({
       libelle: 'part_passoires',
       valeur: '13',
       unite: '%',
-      rang: "2e/2 de l'EPCI",
+      rang: null,
     })
   })
 
@@ -175,11 +195,11 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
     })
   })
 
-  it('reads a grouped detail layer by clef + detail with its own rank (ADR-0019)', () => {
+  it('reads a grouped detail layer by clef + detail — no rank chip from static columns (#892, ADR-0019)', () => {
     const payload = payloadAvecApercu()
     const kpis = kpisPourPopup(payload, '22001', 'demographie', coucheTrancheMoin15)
 
-    expect(kpis[0]).toEqual({ libelle: 'Moins de 15 ans', valeur: '30', unite: '%', rang: "1er/2 de l'EPCI" })
+    expect(kpis[0]).toEqual({ libelle: 'Moins de 15 ans', valeur: '30', unite: '%', rang: null })
   })
 
   it('aggregates the F+M sex shares of a grouped structure_age detail into one popup value (issue #390 regression)', () => {
@@ -191,21 +211,22 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
     const couche: Couche = { ...coucheTrancheMoin15, detail: '40-54', libelle: '40 à 54 ans' }
 
     // issue #390 : la carte reste groupée par key + detail (jamais par sexe) ;
-    // les parts F (0.09) et M (0.06) se combinent en 0.15 → '15', le rang
-    // partagé (1er/2 de l'EPCI) étant conservé.
+    // les parts F (0.09) et M (0.06) se combinent en 0.15 → '15'. #892 : le
+    // rang statique partagé (rang_epci 1/2) n'est plus une puce — rang null.
     expect(kpisPourPopup(payload, '22001', 'demographie', couche)[0]).toEqual({
       libelle: '40 à 54 ans',
       valeur: '15',
       unite: '%',
-      rang: "1er/2 de l'EPCI",
+      rang: null,
     })
   })
 
-  it('an EPCI row shows its régional rank when it has no EPCI rank (rang_epci null)', () => {
+  it('an EPCI row with only a static regional rank shows no chip (#892 — plus de repli rang_reg)', () => {
     const payload = payloadAvecApercu()
     const kpis = kpisPourPopup(payload, '200000001', 'demographie', coucheDensite)
 
-    expect(kpis[0]?.rang).toBe('2e/2 de la région')
+    expect(kpis[0]?.valeur).toBe('133,33')
+    expect(kpis[0]?.rang).toBeNull()
   })
 
   it('a layer row with no rank column at all (la région) shows the value without a rank', () => {

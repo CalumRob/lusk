@@ -208,6 +208,109 @@ describe('parsePayload — accepts the contract shape', () => {
     attendErreurValidation(documentsBruts({ indicateurs }))
   })
 
+  it('accepts a FUTURE projection without the six rank columns (#892) — all six absent, read as null', () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    const colonnes = ['rang_epci', 'rang_epci_n', 'rang_dep', 'rang_dep_n', 'rang_reg', 'rang_reg_n'] as const
+    for (const ligne of indicateurs) {
+      for (const colonne of colonnes) {
+        delete (ligne as Partial<(typeof indicateursDemographieFixture)[number]>)[colonne]
+      }
+    }
+
+    const payload = parsePayload(documentsBruts({ indicateurs }))
+
+    expect(payload.indicateurs.length).toBeGreaterThan(0)
+    for (const ligne of payload.indicateurs) {
+      for (const colonne of colonnes) {
+        expect(ligne[colonne]).toBeNull()
+      }
+    }
+  })
+
+  it('still accepts the already-committed JSON that carries the legacy rank columns (#892)', () => {
+    const payload = parsePayload(documentsBruts())
+
+    const densite = payload.indicateurs.find((i) => i.territoire === '22001' && i.key === 'densite')
+    expect(densite?.rang_epci).toBe(1)
+    expect(densite?.rang_epci_n).toBe(2)
+  })
+
+  it('accepts the six columns all present with valid null pairs (#892 — the old form, NA included)', () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    const colonnes = ['rang_epci', 'rang_epci_n', 'rang_dep', 'rang_dep_n', 'rang_reg', 'rang_reg_n'] as const
+    for (const ligne of indicateurs) {
+      for (const colonne of colonnes) {
+        (ligne as unknown as Record<string, unknown>)[colonne] = null
+      }
+    }
+
+    const payload = parsePayload(documentsBruts({ indicateurs }))
+
+    for (const ligne of payload.indicateurs) {
+      for (const colonne of colonnes) {
+        expect(ligne[colonne]).toBeNull()
+      }
+    }
+  })
+
+  it('rejects a PARTIAL omission of the six columns (#892 — the block is all-or-nothing, never normalized)', () => {
+    // une seule colonne manquante (5 présentes sur 6) : forme malformée
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    delete (indicateurs[0] as Partial<(typeof indicateursDemographieFixture)[number]>).rang_epci
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/rang/i)
+  })
+
+  it('rejects the missing member of a null-valued pair (#892 — « rang_epci: null » present, « rang_epci_n » absent)', () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    indicateurs[0].rang_epci = null // clé présente, valeur null
+    delete (indicateurs[0] as Partial<(typeof indicateursDemographieFixture)[number]>).rang_epci_n // membre absent
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/rang/i)
+  })
+
+  it('rejects other partial shapes: a whole pair absent (#892) or a single size column absent', () => {
+    // paire rang_reg/rang_reg_n entièrement absente (4 présentes sur 6)
+    const sansPaireReg = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    delete (sansPaireReg[0] as Partial<(typeof sansPaireReg)[number]>).rang_reg
+    delete (sansPaireReg[0] as Partial<(typeof sansPaireReg)[number]>).rang_reg_n
+    expect(attendErreurValidation(documentsBruts({ indicateurs: sansPaireReg })).message).toMatch(/rang/i)
+
+    // une seule taille absente (5 présentes sur 6) — même refus, même sans rang porté
+    const sansTaille = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    delete (sansTaille[0] as Partial<(typeof sansTaille)[number]>).rang_dep_n
+    expect(attendErreurValidation(documentsBruts({ indicateurs: sansTaille })).message).toMatch(/rang/i)
+  })
+
+  it('still rejects a PRESENT rank whose group size value is null (#892 — malformed present pair fails)', () => {
+    // les six colonnes sont présentes, mais le rang est porté sans sa taille
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    indicateurs[0].rang_epci_n = null
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/rang/i)
+  })
+
+  it('rejects a MIXED document — some rows with all six columns, others with none (#892 homogeneous block per array)', () => {
+    // ligne 0 : forme commise (six présentes) ; ligne 1 : forme future (six absentes).
+    // Chaque ligne passe seule le contrôle par ligne, mais le document est hétérogène.
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    const colonnes = ['rang_epci', 'rang_epci_n', 'rang_dep', 'rang_dep_n', 'rang_reg', 'rang_reg_n'] as const
+    for (const colonne of colonnes) {
+      delete (indicateurs[1] as Partial<(typeof indicateursDemographieFixture)[number]>)[colonne]
+    }
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/rang/i)
+  })
+
+  it('accepts an empty indicateurs array (#892 — no rows, no rank shape to homogenize)', () => {
+    const payload = parsePayload(documentsBruts({ indicateurs: [] }))
+    expect(payload.indicateurs).toEqual([])
+  })
+
   it('rejects a missing required column (unit)', () => {
     const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
     delete (indicateurs[0] as Partial<(typeof indicateursDemographieFixture)[number]>).unit

@@ -266,10 +266,13 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
   # est issu (#757 : plus de parquet par-thème) — les colonnes entièrement NA
   # (le `detail` d'un bloc de clés scalaires) et les colonnes multi-lignes des
   # histoires incluses ; la référence partagée reste parquet contre JSON.
+  # #892 : la projection JSON omet exactement les six colonnes de rang à
+  # portée fixe ; la table en mémoire (comme le parquet retenu) les garde.
   verifier_projection_sur_table(
     payload$indicateurs,
     jsonlite::fromJSON(file.path(cible, "indicateurs_economie.json")),
-    "indicateurs_economie"
+    "indicateurs_economie",
+    colonnes_retirees = COLONNES_RANG_JSON_OMISES
   )
   verifier_projection_sur_table(
     payload$histoires,

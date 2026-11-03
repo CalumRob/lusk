@@ -199,7 +199,11 @@ describe('OngletTheme — the shared app-owned subgroup grammar (Démographie)',
       ...indicateursMobiliteFixture,
       ...indicateursProgrammesFixture,
     ].map((row) => theme === 'economie' && row.theme === 'economie' && row.key === 'chomage'
-      ? { ...row, nativeContract: { direction: 'high' } }
+      // #892 : la puce de rang vient de la comparaison API (comparaisonApi),
+      // jamais des colonnes statiques rang_* — le rang statique 28/38 du
+      // fixture ne produit plus de puce.
+      ? { ...row, nativeContract: { direction: 'high' as const },
+          comparaisonApi: { rang: 28, taille: 38, portee: "communes de l'EPCI X", direction: 'high' as const } }
       : row)
     const wrapper = mount(OngletTheme, {
       props: {

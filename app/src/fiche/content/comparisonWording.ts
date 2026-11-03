@@ -13,3 +13,17 @@ export function buildingScopeLabel(label: string): string {
 export function buildingScopeParts(label: string): { fixed: string; scope: string } {
   return { fixed: BUILDING_SCOPE_PREFIX, scope: label }
 }
+
+/**
+ * Copy partagée de la note de portée des rangs publiés par l'API (#892) :
+ * la portée DÉCLARÉE par le producteur + la cohorte de comparaison
+ * (member_count). Le nombre de territoires CLASSÉS (rank_size = éligibles)
+ * n'est PAS repris ici — il vit dans chaque cellule de rang, et cohorte ≠
+ * éligibles (ex. 4 membres, 3 mesurés).
+ */
+export function rangScopeNoteCopy(label: string, cohortCount: number | null): string {
+  const cohorte = cohortCount !== null
+    ? ` · cohorte de comparaison : ${cohortCount} territoire${cohortCount > 1 ? 's' : ''}`
+    : ''
+  return `Rangs publiés par l’API — portée : ${label}${cohorte}`
+}

@@ -146,6 +146,29 @@ themes_parquet_retires <- function() {
 theme_parquet_retire <- function(theme) {
   length(theme) == 1L && !is.na(theme) && theme %in% themes_parquet_retires()
 }
+
+# Issue #892 : les six colonnes de rang à portée fixe (rang_epci / rang_dep /
+# rang_reg et leurs tailles _n) sont OMISES des FUTURES projections JSON
+# `indicateurs_<theme>.json` — le repli de rang statique est retiré côté app
+# (rangEnContexte / detailsRangEnContexte ne lisent plus que la comparaison
+# API, avec sa portée exacte déclarée). Les faits canoniques EN MÉMOIRE, le
+# parquet retenu (Mobilité seule, #619), les calculs de rangs (compute_ranks,
+# analytics_economie_ranks, thème Mobilité) et le contrat de comparaison API
+# (rang exact + portée, rank_field de série ordonnée à sa coordonnée déclarée)
+# les conservent INCHANGÉS. Aucun fichier commité n'est réécrit par cette
+# modification — elle ne gouverne que la prochaine génération.
+COLONNES_RANG_JSON_OMISES <- c(
+  "rang_epci", "rang_epci_n",
+  "rang_dep", "rang_dep_n",
+  "rang_reg", "rang_reg_n"
+)
+
+# La projection JSON des indicateurs sans les colonnes de rang omises (#892).
+# setdiff tolère une table qui ne les porterait pas : elles restent omises.
+projection_json_indicateurs <- function(indicateurs) {
+  indicateurs[, setdiff(names(indicateurs), COLONNES_RANG_JSON_OMISES),
+               drop = FALSE]
+}
 # publish ---------------------------------------------------------------------
 # Étape 5 : publication. Upsert du payload vers la cible. Deux backends :
 #   - "static" (défaut, issue #10, ADR-0004) : écrit les tables en parquet
@@ -272,8 +295,10 @@ publish <- function(payload, cible = "public/data", backend = "static") {
   if (backend == "static") {
     # Les projections JSON : générées depuis les MÊMES tables en mémoire que
     # le parquet — le test d'égalité (test-publish.R) verrouille la
-    # non-dérive. Un tableau = un tableau JSON (dataframe = "rows" : une
-    # liste d'objets, la forme native de fetch().json() côté app).
+    # non-dérive, à l'asymétrie #892 près pour les indicateurs (les six
+    # colonnes de rang y sont omises du JSON seulement). Un tableau = un
+    # tableau JSON (dataframe = "rows" : une liste d'objets, la forme native
+    # de fetch().json() côté app).
     # digits = 17 : assez de décimales pour qu'un double relu en JSON soit
     # BIT À BIT le double du parquet (17 chiffres significatifs suffisent
     # toujours à un aller-retour exact — le défaut jsonlite, 4 chiffres,
@@ -283,7 +308,12 @@ publish <- function(payload, cible = "public/data", backend = "static") {
                              dataframe = "rows", na = "null",
                              digits = 17, pretty = TRUE)
     }
-    ecrire_projection(payload$indicateurs, paste0("indicateurs_", theme, ".json"))
+    # #892 : la projection JSON des indicateurs omet exactement les six
+    # colonnes de rang à portée fixe ; la table en mémoire (et le parquet
+    # retenu pour la Mobilité) les conservent — asymétrie voulue, verrouillée
+    # par test-publish.R.
+    ecrire_projection(projection_json_indicateurs(payload$indicateurs),
+                      paste0("indicateurs_", theme, ".json"))
     ecrire_projection(payload$histoires, paste0("histoires_", theme, ".json"))
     ecrire_projection(payload$territoires, "territoires.json")
     if (nrow(payload$apercu) > 0) {

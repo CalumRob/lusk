@@ -96,21 +96,25 @@ describe('histoirePourTerritoire — the Story row', () => {
   })
 })
 
-describe('rangEnContexte — the rank chip of the nearest comparison group (ADR-0015)', () => {
-  it('shows the EPCI rank for a commune, with its group size', () => {
+describe('rangEnContexte — the rank chip comes from the API comparison only (#892)', () => {
+  it('never renders a chip from legacy fixed-scope static rank columns, even when stale rows carry values', () => {
+    // #892 : le repli statique est retiré — rang_epci 1/2 porté par la ligne
+    // commise ne produit AUCUNE puce (l'absence n'est pas un zéro : null).
     const densite22001 = indicateursDemographieFixture.find(
       (l) => l.territoire === '22001' && l.key === 'densite',
     )!
+    expect(densite22001.rang_epci).toBe(1) // la ligne fixture porte bien le rang statique
 
-    expect(rangEnContexte(densite22001)).toBe("1er/2 de l'EPCI")
+    expect(rangEnContexte(densite22001)).toBeNull()
   })
 
-  it('falls back to the régional rank when the EPCI rank is null (an EPCI ranks among its peers)', () => {
+  it('ignores the static regional rank of an EPCI row too (no fallback to another scope)', () => {
     const densiteEpci = indicateursDemographieFixture.find(
       (l) => l.territoire === '200000001' && l.key === 'densite',
     )!
+    expect(densiteEpci.rang_reg).toBe(2)
 
-    expect(rangEnContexte(densiteEpci)).toBe('2e/2 de la région')
+    expect(rangEnContexte(densiteEpci)).toBeNull()
   })
 
   it('returns null when every rank is null (the région ranks nowhere)', () => {
@@ -119,6 +123,18 @@ describe('rangEnContexte — the rank chip of the nearest comparison group (ADR-
     )!
 
     expect(rangEnContexte(densiteRegion)).toBeNull()
+  })
+
+  it('renders the API comparison rank with its declared exact scope (comparaisonApi)', () => {
+    const densite22001 = indicateursDemographieFixture.find(
+      (l) => l.territoire === '22001' && l.key === 'densite',
+    )!
+    const avecApi = {
+      ...densite22001,
+      comparaisonApi: { rang: 3, taille: 14, portee: 'Même classe de densité' },
+    }
+
+    expect(rangEnContexte(avecApi)).toBe('3e/14 · Même classe de densité')
   })
 })
 
