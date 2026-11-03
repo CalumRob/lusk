@@ -883,7 +883,10 @@ onBeforeUnmount(() => {
 .cahier--indexed-sections .page-heading-territory { min-width: 0; overflow: hidden; color: var(--accent-primary); font-weight: 600; text-align: right; text-overflow: ellipsis; }
 /* #860 — le bouton « Comparaison » reste centré dans la rangée du heading
    (align-items: baseline) sans l'épaissir ; le territoire tronque à sa droite. */
-.cahier--indexed-sections .page-heading-comparaison { align-self: center; flex: none; }
+.cahier--indexed-sections .page-heading-comparaison { position: static; align-self: center; flex: none; }
+/* Réserver la colonne de contexte indépendamment du contrôle : son apparition
+   ne doit pas réduire le titre et lui ajouter une ligne sur ordinateur. */
+.cahier--indexed-sections .page-heading-context { position: relative; inline-size: min(32vw, 18rem); }
 .cahier--indexed-sections .page-heading h2 {
   max-width: none;
   text-align: left;
@@ -1111,6 +1114,7 @@ onBeforeUnmount(() => {
     grid-column: 2;
     grid-row: 1;
     max-width: 100%;
+    inline-size: 100%;
   }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 10px; }

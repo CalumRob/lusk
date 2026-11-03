@@ -305,6 +305,8 @@
 }
 
 .cahier-figure-scalar-reference {
+  width: 100%;
+  min-width: 0;
   color: var(--color-figure-reference);
   font: var(--type-figure-label);
   letter-spacing: normal;

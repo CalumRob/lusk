@@ -1652,6 +1652,8 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     expect(wrapper.find('.fiche-barre-collante').exists()).toBe(false)
     const heading = wrapper.get('.page-layout--sticky .page-heading')
     const bouton = heading.get('.bouton-comparaison__declencheur')
+    expect(wrapper.get('.cahier--indexed-sections .page-layout--sticky .page-heading .bouton-comparaison__declencheur').element)
+      .toBe(bouton.element)
     const porteeDefaut = contextesReference('22001').epci!.scope.label
     // face laconique « Comparaison » ; la portée ride dans le nom accessible
     expect(bouton.find('.bouton-comparaison__texte').text()).toBe('Comparaison')

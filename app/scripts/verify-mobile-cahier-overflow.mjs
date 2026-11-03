@@ -426,6 +426,54 @@ try {
     }
     await page.locator('#section-aedar-equipment-explorer').waitFor({ state: 'visible' })
 
+    // #860 : chemin Mobilité de production, pas un montage du contrôle isolé.
+    const trigger = page.locator('.page-heading .bouton-comparaison__declencheur').first()
+    assert(await trigger.isVisible(), `Comparaison absent du Cahier de production à ${width}px`)
+    const heading = await trigger.evaluate((button) => {
+      const root = button.closest('.bouton-comparaison')
+      const heading = button.closest('.page-heading')
+      const withButton = heading.getBoundingClientRect().height
+      root.style.display = 'none'
+      const withoutButton = heading.getBoundingClientRect().height
+      root.style.removeProperty('display')
+      return { withButton, withoutButton }
+    })
+    assert.equal(heading.withButton, heading.withoutButton, `Le bouton agrandit le heading à ${width}px : ${JSON.stringify(heading)}`)
+    await trigger.click()
+    const menuBounds = await page.locator('.bouton-comparaison__menu').evaluate((element) => {
+      const { left, right } = element.getBoundingClientRect()
+      return { left, right, viewport: innerWidth }
+    })
+    assert(menuBounds.left >= 0 && menuBounds.right <= menuBounds.viewport,
+      `Menu hors du viewport à ${width}px : ${JSON.stringify(menuBounds)}`)
+    const options = page.locator('.bouton-comparaison__menu [role="menuitemradio"]')
+    for (const option of await options.all()) {
+      await option.hover()
+      const contained = await option.evaluate((element) => {
+        const menu = element.closest('[role="menu"]').getBoundingClientRect()
+        return [element, ...element.querySelectorAll('span')].every((node) => {
+          const rect = node.getBoundingClientRect()
+          return !rect.width || (rect.left >= menu.left && rect.right <= menu.right
+            && rect.top >= menu.top && rect.bottom <= menu.bottom)
+        })
+      })
+      assert(contained, `Entrée hors du menu à ${width}px : ${await option.innerText()}`)
+    }
+    await trigger.press('Escape')
+    const marks = await page.locator('#section-aedar-car-overview .cahier-comparison-value').evaluateAll((elements) =>
+      elements.map((element) => ({
+        width: element.getBoundingClientRect().width,
+        height: element.getBoundingClientRect().height,
+        text: element.textContent.trim(),
+        overflow: element.scrollWidth > element.clientWidth + 1,
+      })))
+    assert.equal(marks.length, 2, 'Les deux scalaires AEDAR doivent porter leur référence')
+    for (const mark of marks) {
+      assert(mark.width >= 80 && mark.height < 160 && !mark.overflow,
+        `Marque de pair réduite à une colonne de caractères à ${width}px : ${JSON.stringify(mark)}`)
+    }
+    console.log(`Comparaison ${width}px: ${JSON.stringify({ heading, marks })}`)
+
     const w3Visual = await page.evaluate(() => {
       const waffle = document.querySelector('.aedar-waffle')
       const grid = waffle?.querySelector('.aedar-waffle-grid')

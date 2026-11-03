@@ -201,13 +201,13 @@ function choisir(entree: EntreeMenu): void {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-block-size: 36px;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--cahier-theme-strong, var(--red, var(--accent-primary)));
-  font: 700 12px/1.3 var(--font-ui);
+  font: inherit;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
@@ -244,8 +244,8 @@ function choisir(entree: EntreeMenu): void {
   z-index: var(--z-popover);
   display: flex;
   flex-direction: column;
-  min-inline-size: 15rem;
-  max-inline-size: min(20rem, calc(100vw - 2 * var(--space-4)));
+  box-sizing: border-box;
+  inline-size: min(20rem, calc(100vw - 2 * var(--space-4)));
   padding: var(--space-1);
   border: 1px solid var(--red-soft, color-mix(in oklab, var(--cahier-default, var(--muted)) 18%, transparent));
   border-radius: 2px;
@@ -254,7 +254,8 @@ function choisir(entree: EntreeMenu): void {
 }
 
 .bouton-comparaison__option {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1em minmax(0, 1fr);
   align-items: baseline;
   gap: var(--space-2);
   min-block-size: 36px;
@@ -273,6 +274,12 @@ function choisir(entree: EntreeMenu): void {
   background: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 8%, transparent);
 }
 
+.bouton-comparaison__declencheur:active,
+.bouton-comparaison__option:active {
+  color: var(--red, var(--accent-primary));
+  background: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 16%, transparent);
+}
+
 .bouton-comparaison__option[aria-checked='true'] {
   font-weight: 700;
 }
@@ -285,7 +292,7 @@ function choisir(entree: EntreeMenu): void {
 
 .bouton-comparaison__option-help {
   display: none;
-  flex-basis: 100%;
+  grid-column: 2;
   color: var(--muted, var(--text-tertiary));
   font: var(--text-caption);
   line-height: 1.35;

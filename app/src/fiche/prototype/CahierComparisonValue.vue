@@ -66,9 +66,9 @@ function comparisonText(): string | null {
   font: var(--type-figure-comparison);
   letter-spacing: normal;
   text-align: center;
-  /* #860 — la marque de pair porte désormais la portée résolue (texte long) :
-     contain: inline-size empêche ce texte d'inflate la largeur intrinsèque
-     des cellules de grille étroites (mobile) ; le contenu s'enroule en place. */
+  grid-template-columns: minmax(0, 1fr);
+  /* Les parents donnent une largeur disponible explicite ; la portée ne doit
+     pas élargir les colonnes intrinsèques des scalaires inline. */
   contain: inline-size;
 }
 

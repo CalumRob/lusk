@@ -47,6 +47,10 @@ afterEach(() => {
 })
 
 describe('BoutonComparaison — face « Comparaison » du page-heading collant (#860 ruling)', () => {
+  it('porte un état pressé papier sur le déclencheur et chaque option (DESIGN §6)', () => {
+    const source = readFileSync(join(process.cwd(), 'src/components/fiche/BoutonComparaison.vue'), 'utf8')
+    expect(source).toMatch(/\.bouton-comparaison__declencheur:active,\s*\.bouton-comparaison__option:active\s*\{[^}]*background:/)
+  })
   it('affiche juste « Comparaison » en visible ; la portée active ride dans le nom accessible', () => {
     const wrapper = monter({ etat: 'defaut' })
     const bouton = wrapper.get('.bouton-comparaison__declencheur')
