@@ -3,11 +3,9 @@ import ProductionMobiliteAedar from './ProductionMobiliteAedar.vue'
 import type { CahierPagination } from '@/fiche/prototype/cahierPagination'
 import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import type { ThemeContent } from '@/fiche/content/themeContent'
-import type { OptionContexteComparaison } from '@/fiche/comparisonContext'
 defineProps<{
   content: ThemeContent
   pagination: CahierPagination
-  comparisonOptions: readonly OptionContexteComparaison[]
   aedarData: AedarFetchResult | null
   aedarStatus: 'loading' | 'ready' | 'error'
   retryAedar: () => void
@@ -20,7 +18,6 @@ defineProps<{
   <ProductionMobiliteAedar
     :content="content"
     :pagination="pagination"
-    :comparison-options="comparisonOptions"
     :aedar-data="aedarData"
     :aedar-status="aedarStatus"
     :retry-aedar="retryAedar"

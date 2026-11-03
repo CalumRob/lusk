@@ -7,12 +7,10 @@ import type { AedarDiversityLossMapMetadata } from '@/fiche/content/aedarDiversi
 import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import type { ContentSource, ThemeContent } from '@/fiche/content/themeContent'
 import type { CahierPagination } from '../prototype/cahierPagination'
-import type { OptionContexteComparaison } from '@/fiche/comparisonContext'
 
 const props = defineProps<{
   content: ThemeContent
   pagination: CahierPagination
-  comparisonOptions: readonly OptionContexteComparaison[]
   aedarData: AedarFetchResult | null
   aedarStatus: 'loading' | 'ready' | 'error'
   retryAedar: () => void
@@ -102,7 +100,6 @@ const transformed = computed(() => {
   <VarianteCahierLibre
     :content="transformed"
     :pagination="props.pagination"
-    :comparison-options="props.comparisonOptions"
     :aedar-status="props.aedarStatus"
     show-all-units
     presentation="plain"

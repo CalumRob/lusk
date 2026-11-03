@@ -8,14 +8,10 @@
  * only lays those two inputs out as the existing Cahier exploration.
  */
 import { CarFront } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
-import {
-  OPTIONS_COMPARAISON_KEY,
-} from '@/fiche/comparisonContext'
-import type { OptionContexteComparaison } from '@/fiche/comparisonContext'
 import type {
   AedarAccessEvidence,
   AedarEquipmentExplorerEvidence,
@@ -71,12 +67,9 @@ const props = defineProps<{
   networkFigureVariant?: 'traces'
   showMapPrototype?: boolean
   aedarAccessEnabled?: boolean
-  comparisonOptions?: readonly OptionContexteComparaison[]
   aedarStatus?: 'loading' | 'ready' | 'error'
 }>()
 const route = useRoute()
-
-provide(OPTIONS_COMPARAISON_KEY, computed(() => props.comparisonOptions ?? []))
 
 const rootRef = ref<HTMLElement | null>(null)
 const activeFigure = ref('')

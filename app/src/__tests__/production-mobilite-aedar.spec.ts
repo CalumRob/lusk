@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+﻿import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -382,7 +382,7 @@ describe('ProductionMobiliteAedar', () => {
       return { ok: true, json: async () => lossInlineLegend(mode) }
     }))
     const wrapper = mount(ProductionMobiliteAedar, { props: {
-      content, pagination: cahierPaginationFor(payload, content), comparisonOptions: [],
+      content, pagination: cahierPaginationFor(payload, content), 
       aedarData: null, aedarStatus: 'loading', retryAedar: () => {},
     }, global: { plugins: [router] } })
     await flushPromises()
@@ -397,7 +397,7 @@ describe('ProductionMobiliteAedar', () => {
     await router.push({ path: '/territoire/commune/22001' })
     await router.isReady()
     const wrapper = mount(ProductionMobiliteAedar, { props: {
-      content, pagination: cahierPaginationFor(payload, content), comparisonOptions: [],
+      content, pagination: cahierPaginationFor(payload, content), 
       aedarData: null, aedarStatus: 'loading', retryAedar: () => {},
     }, global: { plugins: [router] } })
     await flushPromises()
@@ -475,7 +475,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: { ...aedarReady, facts: aedarFacts(10, { canonicalUniverse: true }) },
         aedarStatus: 'ready',
         retryAedar: () => {},
@@ -567,7 +567,7 @@ describe('ProductionMobiliteAedar', () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     const wrapper = mount(ProductionMobiliteAedar, {
       props: {
-        content, pagination: cahierPaginationFor(payload, content), comparisonOptions: [],
+        content, pagination: cahierPaginationFor(payload, content), 
         aedarData: { ...aedarReady, facts: aedarFacts(10, { canonicalUniverse: true }) },
         aedarStatus: 'ready', retryAedar: () => {},
         aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' },
@@ -610,7 +610,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: null,
         aedarStatus: 'loading',
         retryAedar: () => {},
@@ -633,7 +633,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: { status: 'error', error: { code: 'publication-unavailable', message: 'N/A' } },
         aedarStatus: 'error',
         retryAedar: () => { retrySpy.called = true },
@@ -658,7 +658,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: aedarReady,
         aedarStatus: 'ready',
         retryAedar: () => {},
@@ -763,7 +763,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: aedarExplorerReady(),
         aedarStatus: 'ready',
         retryAedar: () => {},
@@ -849,7 +849,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: aedarReady,
         aedarStatus: 'ready',
         retryAedar: () => {},
@@ -880,7 +880,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: aedarReady,
         aedarStatus: 'ready',
         retryAedar: () => {},
