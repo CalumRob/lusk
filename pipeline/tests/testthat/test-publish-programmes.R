@@ -1,17 +1,20 @@
 # test-publish-programmes ------------------------------------------------------
-# Le ticket #178 : la publication du payload PARTAGÉ `programmes` — le fichier
-# programmes.json (les DEUX tables de l'ADR-0013 : les lignes d'adhésion du
-# ticket #175 et les agrégats de subventions du ticket #176) + les parquets
-# canoniques PAR TABLE, écrits par le seam de publication du thème
-# (publier_programmes) vers la cible que l'app lit — le contrat « 404 = table
-# absente », le précédent apercu #116.
+# La publication des DEUX tables canoniques du thème Programmes (ADR-0013 :
+# les lignes d'adhésion du ticket #175 et les agrégats de subventions du
+# ticket #176) — les parquets PAR TABLE écrits par le seam de publication du
+# thème (publier_programmes) vers la cible de récupération/serving
+# (materialize_serving_artifacts.R).
 #
-# Le contrat verrouillé ici (acceptance #178) :
-#   - un run à tables PEUPLÉES écrit les fichiers partagés ; un run à tables
-#     VIDES n'écrit RIEN et laisse tout fichier existant INTACT (la sentinelle,
-#     le même motif que test-publish.R #116) ;
-#   - la projection JSON égale le parquet BIT À BIT pour les mêmes tables en
-#     mémoire (le contrat de non-dérive, ADR-0004 — verifier_non_derivee) ;
+# Issue #893 : la projection navigateur partagée programmes.json est RETIRÉE
+# (source-only) — le navigateur lit les faits du thème via l'API ; les parquets
+# restent les artefacts canoniques. Le contrat verrouillé ici :
+#   - un run à tables PEUPLÉES écrit les DEUX parquets et NE CRÉE AUCUN
+#     programmes.json ; un programmes.json périmé préexistant n'est NI réécrit
+#     NI supprimé (aucun cleanup n'est du ressort du run) ;
+#   - un run à tables VIDES n'écrit RIEN et laisse tout fichier existant INTACT
+#     (la sentinelle, le même motif que test-publish.R #116) ;
+#   - chaque parquet égale la table EN MÉMOIRE dont il est issu, colonne pour
+#     colonne (le contrat de non-dérive, ADR-0004 — verifier_non_derivee) ;
 #   - les vintages du module (les CINQ sources ANCT + la source SCDL des
 #     subventions, #176) sont FUSIONNÉS dans la table partagée des vintages
 #     (upsert par id, issue #124 — jamais l'écrasement last-writer-wins) ;
@@ -141,7 +144,7 @@ executer_run_programmes_pub <- function(cache, sortie, donnees,
   run_pipeline(theme = theme_programmes(), cache = cache, sortie = sortie)
 }
 
-test_that("un run peuplé écrit programmes.json + les parquets par table ; le JSON égale les parquets bit à bit", {
+test_that("un run peuplé écrit les DEUX parquets par table et NE crée AUCUN programmes.json (#893)", {
   racine <- tempfile("pub-prog-")
   dir.create(racine)
   cache <- file.path(racine, "cache")
@@ -160,10 +163,11 @@ test_that("un run peuplé écrit programmes.json + les parquets par table ; le J
   expect_true(nrow(payload$membres) > 0)
   expect_true(nrow(payload$subventions) > 0)
 
-  # les fichiers partagés : programmes.json (les deux tables) + un parquet PAR
-  # table (le format parquet ne tient qu'une table — le nommage documenté du
-  # contrat #178 : programmes_membres / programmes_subventions)
-  expect_true(file.exists(file.path(sortie, "programmes.json")))
+  # les artefacts canoniques : un parquet PAR TABLE (le format parquet ne
+  # tient qu'une table — programmes_membres / programmes_subventions, les
+  # entrées de récupération de materialize_serving_artifacts.R) — et AUCUN
+  # programmes.json : la projection navigateur partagée est retirée (#893)
+  expect_false(file.exists(file.path(sortie, "programmes.json")))
   expect_true(file.exists(file.path(sortie, "programmes_membres.parquet")))
   expect_true(file.exists(file.path(sortie, "programmes_subventions.parquet")))
   # Issue #408 : Programmes et subventions est le SIXIÈME thème — le run
@@ -181,18 +185,13 @@ test_that("un run peuplé écrit programmes.json + les parquets par table ; le J
                                        "subventions_par_domaine"))
   expect_true(all(faits$theme == "programmes"))
 
-  # la forme du JSON : un OBJET à deux clés (ce que l'app lit — #179)
-  js <- jsonlite::fromJSON(file.path(sortie, "programmes.json"))
-  expect_named(js, c("membres", "subventions"))
-  expect_true(nrow(js$membres) == nrow(payload$membres))
-  expect_true(nrow(js$subventions) == nrow(payload$subventions))
-
-  # le contrat de non-dérive (ADR-0004) : la projection JSON égale le parquet
-  # BIT À BIT pour chacune des deux tables (le motif de test-publish.R)
+  # le contrat de non-dérive (ADR-0004) : chaque PARQUET égale la table EN
+  # MÉMOIRE dont il est issu, colonne pour colonne (le motif de
+  # test-publish.R, appliqué mémoire → parquet puisque le JSON est retiré)
   pq_membres <- nanoparquet::read_parquet(file.path(sortie, "programmes_membres.parquet"))
   pq_subventions <- nanoparquet::read_parquet(file.path(sortie, "programmes_subventions.parquet"))
-  verifier_non_derivee(pq_membres, js$membres, "programmes_membres")
-  verifier_non_derivee(pq_subventions, js$subventions, "programmes_subventions")
+  verifier_non_derivee(pq_membres, payload$membres, "programmes_membres")
+  verifier_non_derivee(pq_subventions, payload$subventions, "programmes_subventions")
 })
 
 test_that("les vintages du module (6 sources, SCDL incluse) sont fusionnés dans la table partagée ; le run est tracé", {
@@ -266,9 +265,15 @@ test_that("un run à tables VIDES n'écrit RIEN et laisse la sentinelle INTACTE 
   dir.create(racine)
   cache <- file.path(racine, "cache")
   sortie <- file.path(racine, "pub")
+  dir.create(sortie, recursive = TRUE)
   on.exit(unlink(racine, recursive = TRUE), add = TRUE)
 
-  # 1) un run peuplé écrit les fichiers partagés (la sentinelle)
+  # la relique : un programmes.json périmé encore présent (artefact commité —
+  # #893 ne le supprime pas) ; le run ne doit NI le récrire NI le supprimer
+  writeLines('{"membres": [], "subventions": [], "relique": true}',
+             file.path(sortie, "programmes.json"))
+
+  # 1) un run peuplé écrit les DEUX parquets (la sentinelle)
   executer_run_programmes_pub(
     cache, sortie,
     donnees = donnees_programmes_pub(),
@@ -283,7 +288,8 @@ test_that("un run à tables VIDES n'écrit RIEN et laisse la sentinelle INTACTE 
                     "programmes_subventions.parquet"), octets)
 
   # 2) un run à tables vides (aucune ligne d'adhésion, aucune convention)
-  #    n'écrit RIEN : les fichiers partagés restent EXACTEMENT les mêmes
+  #    n'écrit RIEN : les fichiers existants (parquets + relique JSON)
+  #    restent EXACTEMENT les mêmes
   executer_run_programmes_pub(
     cache, sortie,
     donnees = list(
@@ -329,8 +335,9 @@ test_that("un run Programmes publie SON canon par-dessus toute relique (#408)", 
     statuts = statuts_programmes_pub()
   )
 
-  # le run publie SES fichiers partagés, et le canon remplace la relique
-  expect_true(file.exists(file.path(sortie, "programmes.json")))
+  # le run publie SES parquets ; la relique programmes.json n'est pas créée
+  # (#893) et le canon remplace la relique de métadonnées
+  expect_false(file.exists(file.path(sortie, "programmes.json")))
   relu <- jsonlite::fromJSON(file.path(sortie, "theme_programmes.json"),
                              simplifyVector = FALSE)
   expect_identical(relu$theme, "programmes")

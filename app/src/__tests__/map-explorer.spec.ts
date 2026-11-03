@@ -14,8 +14,8 @@ import {
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   indicateursHabitatFixture,
-  membresProgrammesFixture,
-  subventionsProgrammesFixture,
+  mapGrantFactsProgrammesFixture,
+  mapMembershipsProgrammesFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
@@ -78,28 +78,14 @@ const payload: Payload = {
   programmes: null,
 }
 
-/** Le payload avec l'onglet programmes — les lignes partagées + une ligne de
- *  subvention communale supplémentaire (22002) pour que la choroplèthe ait
- *  des valeurs à joindre. */
+/** Le payload avec l'onglet programmes — le cohort NATIF de l'API (#893 :
+ *  mapMemberships + mapGrantFacts, aucun repli statique) + un fait de
+ *  subvention 22002 (12 000 €) pour que la choroplèthe ait des valeurs. */
 const payloadProgrammes: Payload = {
   ...payload,
-  programmes: {
-    membres: membresProgrammesFixture,
-    subventions: [
-      ...subventionsProgrammesFixture,
-      {
-        territoire: '22002',
-        type: 'commune',
-        annee: 2025,
-        programme_libl: null,
-        montant: 12000,
-        vintage_source: 'Région Bretagne — subventions attribuées (SCDL)',
-        vintage_version: '2026-08-05',
-        vintage_date_reference: '2026-08-05',
-        vintage_date_publication: '2026-08-05',
-      },
-    ],
-  },
+  programmes: { mapMemberships: mapMembershipsProgrammesFixture },
+  mapGrantFacts: mapGrantFactsProgrammesFixture.map((fait) =>
+    fait.territoire === '22002' ? { ...fait, value: 12000 } : fait),
 }
 
 /** The Démographie densité layer — the previous config's equivalent, as a Couche. */
@@ -366,7 +352,7 @@ describe('MapExplorer — les couches de l’onglet « Programmes et subventions
     const a1 = donnees.features.find((f) => f.properties.territoire === '22001')
     const d = donnees.features.find((f) => f.properties.territoire === '22002')
     expect(a1?.properties.membre).toBe(true) // lauréate ACV
-    expect(d?.properties.membre).toBe(false) // PVD, pas ACV
+    expect(d?.properties.membre).toBeNull() // PVD, pas ACV : semé null (neutre), jamais false inventé
   })
 
   it('choroplèthe la couche subventions — le total € par territoire joint sur la source', async () => {

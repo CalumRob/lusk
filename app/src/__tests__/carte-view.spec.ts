@@ -19,14 +19,13 @@ import {
   indicateursDemographieFixture,
   indicateursHabitatFixture,
   membresProgrammesFixture,
-  programmesLadderFixture,
   subventionsProgrammesFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { ChargerFichier } from '../payload/usePayload'
-import type { Histoire, HistoireDemographie, Payload } from '../payload/types'
+import type { Histoire, HistoireDemographie, Indicateur, MembreProgramme, Payload, SubventionProgramme } from '../payload/types'
 import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
 import { readFile } from 'node:fs/promises'
@@ -48,6 +47,81 @@ const resourceShapes: Record<string, Record<string, { shape: string; source: str
 }
 const mapMetadataPreload = new Map<string, Record<string, any>>()
 
+/** Le miroir TS du builder R (construire_indicateurs_programmes) : les tables
+ *  canoniques du fixture → les FAITS du thème servis par l'API (#893 : la
+ *  carte ne lit plus aucun programmes.json, l'API sert les lignes
+ *  indicateurs_programmes admises). */
+function lignesCouverture(membres: MembreProgramme[]): Indicateur[] {
+  return membres.map((m) => ({
+    territoire: m.territoire,
+    type: m.type,
+    theme: 'programmes',
+    key: 'couverture_programmes',
+    detail: m.sigle,
+    value: 1,
+    unit: 'adhésion',
+    rider: m.convention_valant_ort ? 'convention valant ORT' : null,
+    rang_epci: null,
+    rang_epci_n: null,
+    rang_dep: null,
+    rang_dep_n: null,
+    rang_reg: null,
+    rang_reg_n: null,
+    vintage_source: m.vintage_source,
+    vintage_version: m.vintage_version,
+    vintage_date_reference: m.vintage_date_reference,
+    vintage_date_publication: m.vintage_date_publication,
+  }))
+}
+
+function lignesSubventions(subventions: SubventionProgramme[]): Indicateur[] {
+  const territoires = [...new Set(subventions.map((s) => s.territoire))]
+  const lignes: Indicateur[] = []
+  for (const territoire of territoires) {
+    const lignesTerritoire = subventions.filter((s) => s.territoire === territoire)
+    const annee = Math.max(...lignesTerritoire.map((s) => s.annee))
+    const anneeRef = lignesTerritoire.filter((s) => s.annee === annee)
+    const type = lignesTerritoire[0]!.type
+    lignes.push({
+      territoire,
+      type,
+      theme: 'programmes',
+      key: 'subventions_annuelles',
+      detail: null,
+      dimension: String(annee),
+      value: anneeRef.reduce((somme, s) => somme + s.montant, 0),
+      unit: '€',
+      rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null,
+      rang_reg: null, rang_reg_n: null,
+      vintage_source: anneeRef[0]!.vintage_source,
+      vintage_version: anneeRef[0]!.vintage_version,
+      vintage_date_reference: anneeRef[0]!.vintage_date_reference,
+      vintage_date_publication: anneeRef[0]!.vintage_date_publication,
+    })
+    if (type === 'commune') {
+      for (const s of anneeRef) {
+        lignes.push({
+          territoire,
+          type,
+          theme: 'programmes',
+          key: 'subventions_par_domaine',
+          detail: s.programme_libl,
+          dimension: String(annee),
+          value: s.montant,
+          unit: '€',
+          rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null,
+          rang_reg: null, rang_reg_n: null,
+          vintage_source: s.vintage_source,
+          vintage_version: s.vintage_version,
+          vintage_date_reference: s.vintage_date_reference,
+          vintage_date_publication: s.vintage_date_publication,
+        })
+      }
+    }
+  }
+  return lignes
+}
+
 /** Mount boundary fixture: producer-shaped catalogue + cohort reads, never static app reads. */
 async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
   const metadataByTheme = new Map<string, Record<string, any>>()
@@ -65,7 +139,9 @@ async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
   // I/O while Vue is flushing its watchers.
   await Promise.all(['demographie', 'programmes'].map(loadMetadata))
   const declarations = async (theme: string) => {
-    if (theme === 'programmes' && !p.programmes) return []
+    // #893 — un thème programmes sans faits (aucune ligne indicateurs_programmes)
+    // n'a aucune ressource déclarée côté API
+    if (theme === 'programmes' && !p.indicateurs.some((row) => row.theme === 'programmes')) return []
     const metadata = await loadMetadata(theme)
     const shapes = resourceShapes[theme] ?? {}
     return Object.entries(shapes).map(([id, spec]) => {
@@ -188,10 +264,13 @@ async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
                 status: row.status ?? 'measured', ...Object.fromEntries((story?.params ?? []).filter((key: string) => typeof row[key] === 'number')
                   .map((key: string) => [key, row[key]])), source: source(row) })) })) }
         } else if (resource.shapes[0] === 'anchored_membership') {
-          const rows = p.programmes?.membres ?? []
+          // #893 — les adhésions servies par l'API sont les lignes
+          // couverture_programmes du thème (plus aucun programmes.json)
+          const rows = p.indicateurs.filter((row) => row.theme === 'programmes' &&
+            row.key === 'couverture_programmes' && row.type === type)
           data = { ...identity, descriptor: { kind: 'anchored_membership', unit: 'adhésion' }, territories: members.map((territory) => {
-            const entries = rows.filter((row) => row.territoire === territory.territoire && row.type === type)
-              .map((row) => ({ detail: row.sigle, label: row.sigle, rider: row.convention_valant_ort ? 'convention valant ORT' : null,
+            const entries = rows.filter((row) => row.territoire === territory.territoire)
+              .map((row) => ({ detail: row.detail, label: row.detail, rider: row.rider ?? null,
                 sources: [source(row)] }))
             const summaries = [...new Set(entries.map((entry) => entry.detail))].map((detail) =>
               ({ detail, anchor_count: entries.filter((entry) => entry.detail === detail).length }))
@@ -200,12 +279,14 @@ async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
           }) }
         } else if (resource.shapes[0] === 'ordered_series') {
           const comparisonPoint = metadata.indicator_pages[item.resource]?.comparison?.dimension
-          const grants = p.programmes?.subventions ?? []
-          const axisValues = [...new Set(grants.filter((row) => row.type === type).map((row) => String(row.annee)))].sort()
+          // #893 — les subventions servies par l'API sont les lignes
+          // subventions_annuelles du thème (total poolé par année)
+          const grants = p.indicateurs.filter((row) => row.theme === 'programmes' &&
+            row.key === 'subventions_annuelles' && row.type === type)
+          const axisValues = [...new Set(grants.map((row) => String(row.dimension)))].sort()
           const valuesByTerritoryAndYear = new Map<string, number>()
-          for (const row of grants) if (row.type === type) {
-            const key = `${row.territoire}:${row.annee}`
-            valuesByTerritoryAndYear.set(key, (valuesByTerritoryAndYear.get(key) ?? 0) + row.montant)
+          for (const row of grants) if (row.value !== null) {
+            valuesByTerritoryAndYear.set(`${row.territoire}:${row.dimension}`, row.value)
           }
           data = { ...identity, descriptor: { axis_kind: 'year', axis_values: axisValues,
             comparison_point: String(comparisonPoint), unit: resource.unit, completeness: 'sparse' },
@@ -216,11 +297,14 @@ async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
                 provenance: [{ source_id: resource.sources[0], source_name: resource.label, vintage_id: 'scdl-v1',
                   version: '2025', reference_date: null, publication_date: null }] })) })) }
         } else {
-          const grants = p.programmes?.subventions ?? []
+          // #893 — la ventilation par domaine servie par l'API : les lignes
+          // subventions_par_domaine du thème
+          const grants = p.indicateurs.filter((row) => row.theme === 'programmes' &&
+            row.key === 'subventions_par_domaine' && row.type === type)
           data = { ...identity, descriptor: { kind: 'period_detail', unit: '€' }, territories: members.map((territory) => {
-            const entries = grants.filter((row) => row.territoire === territory.territoire && row.type === type && row.programme_libl)
-              .map((row) => ({ detail: row.programme_libl, label: row.programme_libl, observation_period: String(row.annee),
-                status: 'measured', value: row.montant, sources: [source(row)] }))
+            const entries = grants.filter((row) => row.territoire === territory.territoire && row.detail)
+              .map((row) => ({ detail: row.detail, label: row.detail, observation_period: String(row.dimension),
+                status: 'measured', value: row.value, sources: [source(row)] }))
             return { territory: { id: territory.territoire, type, name: territory.nom }, completeness: 'observed_sparse',
               availability: entries.length ? 'observed' : 'no_record', entries }
           }) }
@@ -305,27 +389,31 @@ const payload: Payload = {
   programmes: null,
 }
 
-/** Le payload avec l'onglet programmes — les lignes partagées + une ligne de
- *  subvention communale supplémentaire (22002) pour une légende lisible. */
+/** Le payload avec l'onglet programmes — les FAITS du thème (#893 : plus
+ *  aucun programmes.json ; l'API sert les lignes indicateurs_programmes,
+ *  ici dérivées des tables canoniques du fixture) + une ligne de subvention
+ *  communale supplémentaire (22002, 12 000 €) pour une légende lisible. */
+const subventionsCarteFixture: SubventionProgramme[] = [
+  ...subventionsProgrammesFixture,
+  {
+    territoire: '22002',
+    type: 'commune',
+    annee: 2025,
+    programme_libl: null,
+    montant: 12000,
+    vintage_source: 'Région Bretagne — subventions attribuées (SCDL)',
+    vintage_version: '2026-08-05',
+    vintage_date_reference: '2026-08-05',
+    vintage_date_publication: '2026-08-05',
+  },
+]
 const payloadProgrammes: Payload = {
   ...payload,
-  programmes: {
-    membres: membresProgrammesFixture,
-    subventions: [
-      ...subventionsProgrammesFixture,
-      {
-        territoire: '22002',
-        type: 'commune',
-        annee: 2025,
-        programme_libl: null,
-        montant: 12000,
-        vintage_source: 'Région Bretagne — subventions attribuées (SCDL)',
-        vintage_version: '2026-08-05',
-        vintage_date_reference: '2026-08-05',
-        vintage_date_publication: '2026-08-05',
-      },
-    ],
-  },
+  indicateurs: [
+    ...indicateursDemographieFixture,
+    ...lignesCouverture(membresProgrammesFixture),
+    ...lignesSubventions(subventionsCarteFixture),
+  ],
 }
 
 function chargerPayloadAvec(p: Payload): ChargerFichier {
@@ -654,7 +742,7 @@ describe('CarteView — l’onglet « Programmes et subventions » (ADR-0019 #28
     expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
   })
 
-  it('?onglet=programmes sans payload programmes (404 = élément absent) → l’état vide honnête', async () => {
+  it('?onglet=programmes sans faits programmes côté API → l’état vide honnête, aucun repli statique (#893)', async () => {
     const { wrapper } = await monter({ chemin: '/carte?onglet=programmes' })
 
     expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
@@ -933,14 +1021,11 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Solde naturel (‰/an)')
   })
 
-  it('le groupe de couches « Programmes et subventions » apparaît quand programmes atterrit (arrière-plan)', async () => {
-    let resoudreProgrammes: (v: unknown) => void = () => {}
-    const programmesEnAttente = new Promise<unknown>((resoudre) => {
-      resoudreProgrammes = resoudre
-    })
+  it('l’onglet programmes est piloté par l’acquisition API native — le magasin ne demande JAMAIS programmes.json (#893)', async () => {
+    const demandes: string[] = []
     const charger: ChargerFichier = async (fichier) => {
-      if (fichier === 'programmes') return programmesEnAttente
-      return chargerAvec(payload)(fichier)
+      demandes.push(fichier)
+      return chargerAvec(payloadProgrammes)(fichier)
     }
     const { wrapper } = await monter({
       chemin: '/carte?onglet=programmes',
@@ -948,18 +1033,12 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
       apiPayload: payloadProgrammes,
     })
 
-    // L'acquisition native de la carte est indépendante du payload historique
-    // programmes encore en attente.
+    // Aucun fichier 'programmes' n'a été demandé au magasin : les couches
+    // viennent exclusivement des lectures natives de l'API.
+    expect(demandes).not.toContain('programmes')
     expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(4)
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
-
-    resoudreProgrammes(programmesLadderFixture)
-    await flushPromises()
-
-    // Le règlement du payload historique ne remplace pas les faits natifs.
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
-    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(4)
   })
 
   it('une paire de thème d’arrière-plan en échec → ses couches absentes, la carte vivante, aucune erreur de page', async () => {

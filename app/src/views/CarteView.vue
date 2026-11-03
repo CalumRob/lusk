@@ -450,7 +450,10 @@ const payloadCarte = computed(() => {
     return { ...current, themeMetadata: { ...current.themeMetadata,
       programmes: mapThemeMetadata.value?.theme === 'programmes'
         ? mapThemeMetadata.value : current.themeMetadata?.programmes }, apercu: [],
-      programmes: { membres: [], subventions: [], mapMemberships: mapMemberships.value },
+      // #893 — la section programmes ne porte QUE le cohort natif de l'API
+      // (aucun repli sur l'ancien programmes.json) ; mapGrantFacts est vide
+      // tant que l'acquisition native n'est pas prête (jamais de repli).
+      programmes: { mapMemberships: mapMemberships.value },
       mapGrantFacts: mapStatus.value === 'ready' ? mapGrantFacts.value : [] }
   }
   const theme = selection.value

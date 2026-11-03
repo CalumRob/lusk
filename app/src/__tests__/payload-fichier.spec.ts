@@ -5,12 +5,11 @@ import {
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   metadonneesThemesFixtures,
-  programmesFixture,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import { chargerFichier, type ChargerOptions, type ReponseFetch } from '../payload/loader'
+import { chargerFichier, type ChargerOptions, type Fichier, type ReponseFetch } from '../payload/loader'
 import { PayloadError } from '../payload/validate'
 import type { Territoire, ThemeMetadata } from '../payload/types'
 
@@ -19,7 +18,7 @@ import type { Territoire, ThemeMetadata } from '../payload/types'
  * progressive store, PRD #296): one named file in, its typed section out.
  * Same fetchImpl injection, same per-file validators, same « 404 = table
  * absente » contract (ADR-0013) — only the granularity changes. The
- * reference-table dependency holds for the theme / apercu / programmes
+ * reference-table dependency holds for the theme / apercu
  * files: the caller passes the VALIDATED territoires, exactly the ordering
  * constraint the loader already respects. chargerPayload() behavior is
  * locked by payload-loader.spec.ts, unchanged by this ticket.
@@ -48,7 +47,6 @@ const fichiersDemographie = {
   'apercu.json': apercuAvecNAFixture,
   'run-report.json': runReportFraisFixture,
   'vintages.json': vintagesFixture,
-  'programmes.json': programmesFixture,
 }
 
 /** La table de référence VALIDÉE — le prérequis d'ordre du loader (elle se charge en premier). */
@@ -77,9 +75,14 @@ describe('chargerFichier — the per-file seam', () => {
 
     const vintages = await chargerFichier('vintages', options)
     expect(vintages).toEqual(vintagesFixture)
+  })
 
-    const programmes = await chargerFichier('programmes', territoires, options)
-    expect(programmes).toEqual(programmesFixture)
+  it('has no per-file entry for the retired programmes.json (#893) — the name is not a file anymore', () => {
+    // Le type Fichier ne contient plus 'programmes' : aucun chargeur ne peut
+    // plus demander ce fichier (le typage l'interdit, testé ci-dessous).
+    // @ts-expect-error — 'programmes' n'est plus un Fichier depuis #893
+    const nom: Fichier = 'programmes'
+    expect(nom).toBe('programmes')
   })
 
   it('treats a 404 on an optional file as absent — the « 404 = table absente » contract (ADR-0013)', async () => {
@@ -90,7 +93,6 @@ describe('chargerFichier — the per-file seam', () => {
     await expect(chargerFichier('run-report', options)).resolves.toBeNull()
     await expect(chargerFichier('vintages', options)).resolves.toBeNull()
     await expect(chargerFichier('apercu', territoires, options)).resolves.toBeNull()
-    await expect(chargerFichier('programmes', territoires, options)).resolves.toBeNull()
     await expect(chargerFichier('indicateurs_habitat', territoires, options)).resolves.toBeNull()
     await expect(chargerFichier('histoires_habitat', territoires, options)).resolves.toBeNull()
     await expect(chargerFichier('theme_habitat', options)).resolves.toBeNull()

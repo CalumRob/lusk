@@ -1,7 +1,9 @@
 /**
  * Le modèle de couches de l'onglet « Programmes & financements » de la carte
- * (ADR-0019 #282) — la carte, miroir de la fiche, appliquée au payload
- * programmes (ADR-0013). Level-native : les couches d'adhésion (highlight
+ * (ADR-0019 #282) — la carte, miroir de la fiche, appliquée au cohort NATIF
+ * de l'API (mapMemberships / mapGrantFacts, ADR-0013 ; la projection statique
+ * programmes.json est retirée depuis #893 — aucun repli). Level-native : les
+ * couches d'adhésion (highlight
  * catégoriel in/out) n'existent qu'à leur niveau d'ancrage — ACV · PVD · ORT
  * à la commune, CRTE · Territoires d'industrie · ORT à l'EPCI — AUCUNE au
  * département (pas de lignes là-bas : l'absence honnête, jamais inventée) ;
@@ -39,28 +41,27 @@ export function typeSubventionsDuNiveau(niveau: NiveauMasque): TerritoireType {
 }
 
 /**
- * Les sigles d'adhésion qui ont des lignes à un niveau (l'ordre canonique du
- * contrat filtré par la présence — jamais un sigle mort). Vide au département.
+ * Les sigles d'adhésion qui ont des lignes NATIVES à un niveau (l'ordre
+ * canonique du contrat filtré par la présence dans le cohort API
+ * `mapMemberships` — jamais un sigle mort, jamais un repli statique depuis
+ * #893). Vide au département.
  */
 export function siglesMembresDuNiveau(payload: Payload, niveau: NiveauMasque): SigleProgramme[] {
   const type = typeAdhesionDuNiveau(niveau)
   if (!type) return []
-  if (payload.programmes?.mapMemberships) {
-    const presents = new Set(payload.programmes.mapMemberships.filter((entry) => entry.type === type && entry.member)
-      .map((entry) => entry.sigle))
-    return SIGLES_PROGRAMMES.filter((sigle) => presents.has(sigle))
-  }
-  const presents = new Set<SigleProgramme>()
-  for (const membre of payload.programmes?.membres ?? []) {
-    if (membre.type === type) presents.add(membre.sigle)
-  }
+  const presents = new Set(
+    (payload.programmes?.mapMemberships ?? [])
+      .filter((entry) => entry.type === type && entry.member)
+      .map((entry) => entry.sigle),
+  )
   return SIGLES_PROGRAMMES.filter((sigle) => presents.has(sigle))
 }
 
+/** La couche subventions n'existe que si des faits natifs de subvention
+ *  (mapGrantFacts, lecture API déclarée) portent le niveau — jamais de repli
+ *  sur l'ancienne table statique (#893). */
 function subventionsPresentes(payload: Payload, niveau: NiveauMasque): boolean {
-  if (payload.mapGrantFacts) return payload.mapGrantFacts.some((fact) => fact.type === typeSubventionsDuNiveau(niveau))
-  const type = typeSubventionsDuNiveau(niveau)
-  return (payload.programmes?.subventions ?? []).some((ligne) => ligne.type === type)
+  return (payload.mapGrantFacts ?? []).some((fact) => fact.type === typeSubventionsDuNiveau(niveau))
 }
 
 /**

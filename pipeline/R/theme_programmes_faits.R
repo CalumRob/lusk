@@ -2,8 +2,9 @@
 # Les faits du SIXIÈME thème (issue #408) : Programmes et subventions cesse
 # d'être un simple contrat de publication partagé (ADR-0013) et publie SA
 # paire hermétique — indicateurs_programmes.json + histoires_programmes.json —
-# à côté du fichier partagé programmes.json (qui reste la table cross-thème
-# de la carte et des Méthodes jusqu'à la bascule #410 ; ADR-0020 l'autorise).
+# qui est DÉSORMAIS la seule entrée navigateur des faits du thème : la table
+# cross-thème partagée programmes.json est retirée (#893), la carte lit ses
+# adhésions/subventions via les lectures sémantiques natives de l'API.
 #
 # Trois clés d'indicateurs, les DEUX natures de faits du thème (CONTEXT.md
 # §Programmes et subventions — le périmètre verrouillé 2026-08-06) :
@@ -71,8 +72,8 @@ INDICATEURS_PROGRAMMES <- tibble::tibble(
 
 # construire_indicateurs_programmes ---------------------------------------------
 # Le builder des faits du thème : les tables normalisées EN MÉMOIRE du seam
-# (membres + subventions — les mêmes tables que ecrire_programmes_partage
-# projette) en entrée, la table d'indicateurs du contrat en sortie. Une table
+# (membres + subventions — les mêmes tables que ecrire_parquets_programmes
+# persiste en parquets) en entrée, la table d'indicateurs du contrat en sortie. Une table
 # vide produit une table vide — l'absence honnête (le thème n'est pas
 # construit, jamais un zéro inventé).
 construire_indicateurs_programmes <- function(membres, subventions) {
