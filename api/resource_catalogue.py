@@ -5,7 +5,7 @@ projects their declared serving shapes; it does not maintain an API-side list of
 indicator IDs or physical table names.
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 import json
 import os
@@ -44,6 +44,9 @@ class IndicatorResource:
     storage_relation: str | None = None
     publication_table: str | None = None
     side_relations: tuple[dict, ...] = ()
+    # Producer-declared per-measure comparison facets (AEDAR source grain):
+    # measure key -> {"facet", "direction", "ranked"}.
+    measure_facets: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -161,6 +164,10 @@ _COMPARABLE_SHAPES = frozenset({
 _COHORT_FACT_SHAPES = frozenset({
     "scalar", "declared_profile", "ordered_series", "period_detail", "anchored_membership",
 })
+# Request-time AEDAR selection ranks (ADR-0039 amendment, #768/#859): the
+# focal rank, group size and tie count are computed per request from published
+# aggregates; fixed AEDAR contexts stay reference-only and grant no rank fields.
+_AEDAR_SELECTED_COMPARISON_FIELDS = frozenset({"rank", "rank_size", "rank_ties"})
 
 
 def _declared_source_identities(page, source_records, fallback):
@@ -206,6 +213,9 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         if resource.resource_kind == "aedar_source_grain" and item.intent.kind == "facts":
             from api.aedar_models import AEDAR_MEASURE_KEYS
             supported = {"measures." + key for key in AEDAR_MEASURE_KEYS}
+        elif (resource.resource_kind == "aedar_source_grain"
+                and item.intent.kind == "selected_comparison"):
+            supported = set(resource.fields) | set(_AEDAR_SELECTED_COMPARISON_FIELDS)
         else:
             supported = (set(resource.fields) if resource.resource_kind != "indicator" else {
             "focal_value", "median", "rank", "rank_size", "rank_ties",
@@ -261,6 +271,38 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
     if item.intent.kind not in resource.intents:
         raise ValueError("intent is not declared for this resource")
     return resource
+
+
+def _declared_measure_facets(declaration, resource_id) -> dict[str, dict]:
+    """Validate and project producer per-measure comparison facets.
+
+    A declared facet map must cover exactly the registered AEDAR measure
+    vocabulary, so a selected-comparison measure cannot be silently omitted;
+    an `aedar_source_grain` resource that declares `selected_comparison` must
+    declare the complete map (ADR-0039's AEDAR selection-comparison amendment,
+    #768/#859). Directions follow the ADR-0015 vocabulary (`high`/`low`).
+    """
+    declared = declaration.get("measure_facets")
+    intents = tuple(declaration.get("intents", ("facts",)))
+    if declared is None:
+        if declaration.get("kind") == "aedar_source_grain" and "selected_comparison" in intents:
+            raise ValueError(f"Incomplete measure facets for producer resource: {resource_id}")
+        return {}
+    if declaration.get("kind") != "aedar_source_grain" or not isinstance(declared, dict):
+        raise ValueError(f"Invalid measure facets for producer resource: {resource_id}")
+    from api.aedar_models import AEDAR_MEASURE_KEYS
+    if set(declared) != set(AEDAR_MEASURE_KEYS):
+        raise ValueError(f"Incomplete measure facets for producer resource: {resource_id}")
+    facets = {}
+    for measure, facet in declared.items():
+        if (not isinstance(facet, dict) or set(facet) != {"facet", "direction", "ranked"}
+                or not isinstance(facet["facet"], str) or not facet["facet"]
+                or not facet["facet"].replace("_", "").isalnum()
+                or facet["direction"] not in ("high", "low")
+                or not isinstance(facet["ranked"], bool)):
+            raise ValueError(f"Invalid measure facet declaration for producer resource: {resource_id}")
+        facets[measure] = dict(facet)
+    return facets
 
 
 def discover_indicator_resources(metadata_directory: str | Path,
@@ -449,7 +491,8 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 context_values=tuple(declaration.get("axes", {}).get("context", ())),
                 storage_relation=declaration.get("storage_relation"),
                 publication_table=declaration.get("publication_table"),
-                side_relations=tuple(declaration.get("side_relations", ()))))
+                side_relations=tuple(declaration.get("side_relations", ())),
+                measure_facets=_declared_measure_facets(declaration, resource_id)))
     resources.sort(key=lambda item: (item.theme_id, item.indicator_id))
     excluded = tuple(item for item in declarations
                      if item.disposition == "excluded_legacy_accessibility")

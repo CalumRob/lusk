@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from api import aedar_reads, semantic_resource_reader
-from api.resource_catalogue import default_resource_catalogue, validate_resource_item
+from api.resource_catalogue import (default_resource_catalogue,
+                                     discover_indicator_resources, validate_resource_item)
 from api.resource_requests import ResourceReadItem
 
 
@@ -15,13 +16,16 @@ def test_aedar_semantic_dispatch_is_declared_typed_and_bounded():
     resource = default_resource_catalogue.__wrapped__().resources_by_id["aedar_territorial_aggregate"]
     assert resource.resource_kind == "aedar_source_grain"
     assert resource.axes == ("typequ", "measure", "context")
-    assert resource.intents == ("facts", "fixed_comparison")
+    assert resource.intents == ("facts", "fixed_comparison", "selected_comparison")
     assert resource.allowed_levels == ("commune", "epci", "departement", "region")
     assert resource.context_values == ("density_class", "epci", "bretagne", "same_level")
     dispatch_source = inspect.getsource(semantic_resource_reader.SemanticResourceReader)
     assert 'resource.resource_kind == "aedar_source_grain"' in dispatch_source
     assert dispatch_source.count("_aedar_territorial_aggregate_snapshot") >= 2
     assert dispatch_source.count("_aedar_comparison_snapshot") >= 2
+    # Request-time selected comparisons are dispatched through the same seam
+    # (ADR-0039's AEDAR selection-comparison amendment, #768/#859).
+    assert dispatch_source.count("_aedar_selected_comparison_snapshot") >= 2
     sql = inspect.getsource(aedar_reads._aedar_territorial_aggregate_snapshot)
     assert "territory_type=%s AND territory_id=%s" in sql
     assert "LIMIT %s OFFSET %s" in sql
@@ -451,3 +455,422 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
     state["mode"]="legacy_rank"
     legacy=TestClient(main.app).post("/api/resources/read",json=payload())
     assert legacy.status_code==503
+
+
+def test_aedar_measure_facets_cover_every_registered_measure_with_declared_directions():
+    from api.aedar_models import AEDAR_MEASURE_KEYS
+    catalogue = default_resource_catalogue.__wrapped__()
+    resource = catalogue.resources_by_id["aedar_territorial_aggregate"]
+    # The producer declaration is exact per measure: an in-scope selected-
+    # comparison measure cannot be silently omitted from the facet registry.
+    assert set(resource.measure_facets) == set(AEDAR_MEASURE_KEYS)
+    for measure, facet in resource.measure_facets.items():
+        assert set(facet) == {"facet", "direction", "ranked"}
+        assert facet["direction"] in ("high", "low")
+        assert isinstance(facet["ranked"], bool)
+        # ADR-0015 conventions: diversity and volume readings are
+        # higher-is-better and carry selection rank chips; per-cell curve
+        # readings show their group mean and are never ranked.
+        statistic = measure.rsplit("_", 1)[1]
+        if statistic == "share":
+            assert facet == {"facet": "diversity", "direction": "high", "ranked": True}
+        elif statistic == "mean":
+            assert facet == {"facet": "volume", "direction": "high", "ranked": True}
+        else:
+            assert facet == {"facet": "distribution", "direction": "high", "ranked": False}
+    public = next(item for item in catalogue.discovery_payload()["resources"]
+                  if item["resource_id"] == "aedar_territorial_aggregate")
+    assert set(public["measure_facets"]) == set(AEDAR_MEASURE_KEYS)
+    assert "selected_comparison" in public["intents"]
+
+
+def test_aedar_selected_comparison_grants_rank_fields_only_for_the_selected_intent():
+    catalogue = default_resource_catalogue.__wrapped__()
+    target = {"kind": "territory", "type": "commune", "id": "22001"}
+    members = [{"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"}]
+    coordinates = {"typequ": ["A104"], "measure": ["count_5_walk_mean"]}
+    selected = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate", "target": target,
+        "coordinates": coordinates,
+        "fields": ["group_value", "value", "rank", "rank_size", "rank_ties"],
+        "intent": {"kind": "selected_comparison", "members": members},
+    })
+    resource = validate_resource_item(selected, catalogue)
+    assert resource.resource_id == "aedar_territorial_aggregate"
+    # Fixed AEDAR contexts stay reference-only: no rank fields are granted.
+    for intent in ({"kind": "fixed_comparison", "context": "same_level"},
+                   {"kind": "facts"}):
+        item = ResourceReadItem.model_validate({
+            "resource": "aedar_territorial_aggregate", "target": target,
+            "coordinates": coordinates, "fields": ["rank"], "intent": intent,
+        })
+        with pytest.raises(ValueError, match="field is not declared"):
+            validate_resource_item(item, catalogue)
+    # member_ranks is not an AEDAR projection; peers/rank rows stay unpublished.
+    not_granted = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate", "target": target,
+        "coordinates": coordinates, "fields": ["member_ranks"],
+        "intent": {"kind": "selected_comparison", "members": members},
+    })
+    with pytest.raises(ValueError, match="field is not declared"):
+        validate_resource_item(not_granted, catalogue)
+
+
+def test_aedar_measure_facet_declaration_fails_closed_when_incomplete(tmp_path):
+    import json
+    import shutil
+    root = Path(__file__).resolve().parents[2]
+    metadata = root / "pipeline/inst/extdata/theme-metadata"
+    contract = json.loads((root / "pipeline/inst/extdata/semantic-resource-contracts.json")
+                          .read_text(encoding="utf-8"))
+    shutil.copytree(metadata, tmp_path / "theme-metadata")
+    base = tmp_path / "semantic-resource-contracts.json"
+
+    def discover():
+        return discover_indicator_resources(tmp_path / "theme-metadata", base)
+
+    # A facet map missing one registered measure cannot load.
+    broken = json.loads(json.dumps(contract))
+    broken["resources"][0]["measure_facets"].pop("count_5_walk_mean")
+    base.write_text(json.dumps(broken), encoding="utf-8")
+    with pytest.raises(ValueError, match="Incomplete measure facets"):
+        discover()
+
+    # selected_comparison without the complete map cannot load either.
+    missing = json.loads(json.dumps(contract))
+    del missing["resources"][0]["measure_facets"]
+    base.write_text(json.dumps(missing), encoding="utf-8")
+    with pytest.raises(ValueError, match="Incomplete measure facets"):
+        discover()
+
+    # An invalid direction or facet shape is rejected.
+    invalid = json.loads(json.dumps(contract))
+    invalid["resources"][0]["measure_facets"]["count_5_walk_mean"]["direction"] = "sideways"
+    base.write_text(json.dumps(invalid), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid measure facet"):
+        discover()
+
+
+
+class _AedarSelectedRows:
+    """Cursor double: tuple rows plus a matching column description."""
+    def __init__(self, columns, rows):
+        self.columns = columns
+        self.rows = rows
+        self.description = [type("Column", (), {"name": name}) for name in columns]
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+    def fetchall(self):
+        return self.rows
+
+
+class _AedarSelectedConnection:
+    """Route the exact AEDAR snapshot queries to fixture rows."""
+    def __init__(self, state):
+        self.state = state
+        self.queries = []
+
+    def execute(self, sql, params=None):
+        self.queries.append(sql)
+        s = sql
+        if "aedar_comparison_publication" in s:
+            return _AedarSelectedRows(["marker"], [(
+
+                "cmp-v1", "2026-v1", "aed-v1", "ref-v1", "inputs-v1", {"address_origins": "sha"},
+                1, 0, "reference_only", "aed-v1", "ref-v1")])
+        if "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY" in s:
+            ids = params[0]
+            return _AedarSelectedRows(["territory_id", "territory_type"],
+                [(code, self.state["reference"][code]) for code in ids if code in self.state["reference"]])
+        if "SELECT 1 FROM territory_reference" in s:
+            return _AedarSelectedRows(["one"], [(1,)])
+        if "SELECT t.epci_id,r.territory_id" in s:
+            return _AedarSelectedRows(["focal"], [(self.state.get("epci"), "53")])
+        if "a.typequ=ANY" in s:
+            # Focal aggregate rows projected over the requested measures.
+            measures, _ttype, tid, typequs = params
+            rows = []
+            for typequ, record in self.state["aggregates"][("focal", tid)].items():
+                if typequ in typequs:
+                    rows.append((typequ, record["label"], "aedar_bretagne", "2026-v1",
+                        "https://example.test", "ODbL", "AEDAR", None, "2026-09-30",
+                        record["n_addresses"], record["n_observed"], record["coverage"],
+                        {m: record["measures"].get(m) for m in measures}))
+            return _AedarSelectedRows(["typequ", "typequ_label", "source_id", "vintage_id", "source_url",
+                "licence", "attribution", "reference_date", "publication_date", "n_addresses",
+                "n_observed", "coverage_status", "measures"], rows)
+        if "territory_id=ANY(%s::text[]) AND typequ=ANY" in s:
+            # Member aggregate rows projected over the requested measures.
+            measures, _ttype, ids, typequs = params
+            rows = []
+            for code in ids:
+                for typequ, record in self.state["aggregates"].get(("member", code), {}).items():
+                    if typequ in typequs:
+                        rows.append((code, typequ, record["n_addresses"], record["n_observed"],
+                            record["coverage"], {m: record["measures"].get(m) for m in measures}))
+            return _AedarSelectedRows(["territory_id", "typequ", "n_addresses", "n_observed",
+                "coverage_status", "measures"], rows)
+        if "FROM aedar_territorial_aggregate WHERE territory_type=%s" in s:
+            # Direct fixed reference read (fixed_comparison contexts).
+            measure, rtype, rid, typequ = params
+            record = self.state["aggregates"].get(("direct", rtype, rid), {}).get(typequ)
+            if record is None:
+                return _AedarSelectedRows(["value", "n_addresses", "n_observed", "coverage_status"], [])
+            return _AedarSelectedRows(["value", "n_addresses", "n_observed", "coverage_status"],
+                [(record["measures"].get(measure), record["n_addresses"], record["n_observed"],
+                  record["coverage"])])
+        if "FROM aedar_territorial_aggregate a" in s:
+            # Focal row of a fixed comparison (single typequ).
+            measure, ttype, tid, typequ = params
+            record = self.state["aggregates"][("focal", tid)][typequ]
+            return _AedarSelectedRows(["typequ_label", "source_id", "vintage_id", "source_url", "licence",
+                "attribution", "reference_date", "publication_date", "value", "n_addresses",
+                "n_observed", "coverage_status"],
+                (record["label"], "aedar_bretagne", "2026-v1", "https://example.test", "ODbL", "AEDAR",
+                 None, "2026-09-30", record["measures"].get(measure), record["n_addresses"],
+                 record["n_observed"], record["coverage"]))
+        if "FROM aedar_comparison_group" in s:
+            return _AedarSelectedRows(["value", "n_addresses", "n_observed", "coverage_status", "statistic"],
+                [(4.0, None, None, None, "pooled")])
+        raise AssertionError(f"Unexpected AEDAR query: {s}")
+
+
+def _aedar_selected_state():
+    return {
+        "reference": {"22001": "commune", "22002": "commune", "22003": "commune",
+                      "E1": "epci", "53": "region"},
+        "epci": "E1",
+        "aggregates": {
+            ("focal", "22001"): {
+                "A104": {"label": "Alimentation", "n_addresses": 10, "n_observed": 9,
+                         "coverage": "covered",
+                         "measures": {"count_5_walk_mean": 5.0, "count_5_walk_decile1": 1.0}},
+                "B207": {"label": "Santé", "n_addresses": 10, "n_observed": 9,
+                         "coverage": "covered",
+                         "measures": {"count_5_walk_mean": 2.0, "count_5_walk_decile1": 0.5}},
+            },
+            ("member", "22001"): {
+                "A104": {"label": "Alimentation", "n_addresses": 10, "n_observed": 9,
+                         "coverage": "covered",
+                         "measures": {"count_5_walk_mean": 5.0, "count_5_walk_decile1": 1.0}},
+                "B207": {"label": "Santé", "n_addresses": 10, "n_observed": 9,
+                         "coverage": "covered",
+                         "measures": {"count_5_walk_mean": 2.0, "count_5_walk_decile1": 0.5}},
+            },
+            ("member", "22002"): {
+                "A104": {"label": "Alimentation", "n_addresses": 30, "n_observed": 25,
+                         "coverage": "covered",
+                         "measures": {"count_5_walk_mean": 8.0, "count_5_walk_decile1": 2.0}},
+                "B207": {"label": "Santé", "n_addresses": 30, "n_observed": 25,
+                         "coverage": "covered",
+                         "measures": {"count_5_walk_mean": 4.0, "count_5_walk_decile1": 1.0}},
+            },
+            ("member", "22003"): {
+                "A104": {"label": "Alimentation", "n_addresses": 10, "n_observed": 8,
+                         "coverage": "covered",
+                         "measures": {"count_5_walk_mean": 8.0, "count_5_walk_decile1": 4.0}},
+                "B207": {"label": "Santé", "n_addresses": 10, "n_observed": 8,
+                         "coverage": "covered",
+                         "measures": {"count_5_walk_mean": 4.0, "count_5_walk_decile1": 3.0}},
+            },
+            ("focal", "E1"): {
+                "A104": {"label": "Alimentation", "n_addresses": 500, "n_observed": 400,
+                         "coverage": "covered",
+                         "measures": {"count_5_walk_mean": 6.0}},
+            },
+            ("direct", "region", "53"): {
+                "A104": {"label": "Alimentation", "n_addresses": 1000, "n_observed": 900,
+                         "coverage": "covered",
+                         "measures": {"count_5_walk_mean": 13.0}},
+            },
+        },
+    }
+
+
+def _aedar_facets():
+    # Mirror the declared producer taxonomy exactly: share -> diversity,
+    # mean -> volume (both ranked, higher-is-better); min/max/deciles ->
+    # distribution curve readings, never ranked.
+    from api.aedar_models import AEDAR_MEASURE_KEYS
+    facets = {}
+    for measure in AEDAR_MEASURE_KEYS:
+        statistic = measure.rsplit("_", 1)[1]
+        if statistic == "share":
+            facets[measure] = {"facet": "diversity", "direction": "high", "ranked": True}
+        elif statistic == "mean":
+            facets[measure] = {"facet": "volume", "direction": "high", "ranked": True}
+        else:
+            facets[measure] = {"facet": "distribution", "direction": "high", "ranked": False}
+    return facets
+
+
+def test_aedar_selected_comparison_returns_weighted_mean_ranks_and_curve_cells():
+    from fastapi import HTTPException
+    conn = _AedarSelectedConnection(_aedar_selected_state())
+    members = [("commune", "22001"), ("commune", "22002"), ("commune", "22003")]
+    result = aedar_reads._aedar_selected_comparison_snapshot(
+        conn, "commune", "22001", members, ["A104", "B207"],
+        ["count_5_walk_mean", "count_5_walk_decile1"],
+        ["group_value", "value", "rank", "rank_size", "rank_ties"], _aedar_facets())
+    assert result["selection"] == [{"territory_type": "commune", "territory_id": code}
+                                    for _, code in members]
+    assert result["scope"] == {"kind": "explicit_selection", "member_count": 3,
+                               "territory_type": "commune"}
+    assert result["content_version"] == "cmp-v1" and result["source_snapshot_id"] == "2026-v1"
+    assert result["aedar_content_version"] == "aed-v1" and result["reference_content_version"] == "ref-v1"
+    by_cell = {(entry["typequ"], entry["measure"]): entry for entry in result["comparisons"]}
+    assert len(result["comparisons"]) == 4
+    scalar = by_cell[("A104", "count_5_walk_mean")]
+    # Address-weighted mean: (5*10 + 8*30 + 8*10) / 50 = 7.4 - exactly the pooled
+    # address aggregate of the selection, with the summed source counts.
+    assert scalar["statistic"] == "pooled"
+    assert scalar["group_value"] == pytest.approx(7.4)
+    assert scalar["group_n_addresses"] == 50 and scalar["group_n_observed"] == 42
+    assert scalar["group_coverage_status"] == "covered"
+    assert scalar["direction"] == "high" and scalar["comparison_facet"] == "volume"
+    assert scalar["value"] == 5.0 and scalar["status"] == "measured"
+    # Direction-aware focal rank, ties share the rank: values 5, 8, 8 -> 3e/3.
+    assert (scalar["rank"], scalar["rank_size"], scalar["rank_ties"]) == (3, 3, 1)
+    # Per-cell curve readings get the same weighted mean but no rank chips.
+    curve = by_cell[("A104", "count_5_walk_decile1")]
+    assert curve["group_value"] == pytest.approx(2.2)
+    assert curve["comparison_facet"] == "distribution"
+    assert curve["rank"] is None and curve["rank_size"] is None and curve["rank_ties"] is None
+    assert by_cell[("B207", "count_5_walk_mean")]["group_value"] == pytest.approx(
+        (2*10 + 4*30 + 4*10) / 50)
+    # Field projection drops the unselected optional fields.
+    projected = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", members,
+        ["A104"], ["count_5_walk_mean"], ["group_value", "rank"], _aedar_facets())
+    entry = projected["comparisons"][0]
+    assert entry["group_value"] == pytest.approx(7.4) and entry["rank"] == 3
+    assert "value" not in entry and "rank_size" not in entry and "rank_ties" not in entry
+    # Preflight only validates marker, focal and members without reading facts.
+    pre = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", members,
+        ["A104"], ["count_5_walk_mean"], None, _aedar_facets(), preflight_only=True)
+    assert pre == {"content_version": "cmp-v1", "reference_content_version": "ref-v1"}
+
+
+def test_aedar_selected_comparison_rank_is_direction_aware_and_needs_a_member_focal():
+    from fastapi import HTTPException
+    facets = _aedar_facets()
+    facets["count_5_walk_mean"] = {"facet": "volume", "direction": "low", "ranked": True}
+    members = [("commune", "22001"), ("commune", "22002"), ("commune", "22003")]
+    # lower-is-better: values 5, 8, 8 -> focal 5 is best -> 1er/3.
+    result = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", members,
+        ["A104"], ["count_5_walk_mean"], ["rank", "rank_size", "rank_ties"], facets)
+    entry = result["comparisons"][0]
+    assert (entry["rank"], entry["rank_size"], entry["rank_ties"]) == (1, 3, 1)
+    # The focal must be a member to receive a rank; the group stat still reads
+    # over exactly the requested membership.
+    without_focal = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001",
+        [("commune", "22002"), ("commune", "22003")], ["A104"], ["count_5_walk_mean"],
+        ["group_value", "rank", "rank_size", "rank_ties"], _aedar_facets())
+    entry = without_focal["comparisons"][0]
+    assert entry["group_value"] == pytest.approx(8.0)
+    assert entry["rank"] is None and entry["rank_size"] is None and entry["rank_ties"] is None
+    assert without_focal["scope"]["member_count"] == 2
+
+
+def test_aedar_selected_comparison_fails_closed_naming_the_failed_member():
+    from fastapi import HTTPException
+    members = [("commune", "22001"), ("commune", "22002"), ("commune", "22003")]
+    # Unknown member identity.
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_selected_comparison_snapshot(
+            _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001",
+            members + [("commune", "99999")], ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert err.value.status_code == 404 and "commune/99999" in err.value.detail
+    # Member type does not match its reference identity.
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_selected_comparison_snapshot(
+            _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001",
+            [("epci", "22001")], ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert err.value.status_code == 422 and "epci/22001" in err.value.detail
+    # Mixed-level selection: members must share the focal level.
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_selected_comparison_snapshot(
+            _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001",
+            [("commune", "22002"), ("epci", "E1")], ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert err.value.status_code == 422 and "epci/E1" in err.value.detail
+    # Empty selection has no pooled aggregate.
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_selected_comparison_snapshot(
+            _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001",
+            [], ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert err.value.status_code == 422
+    # Partial member: no published aggregate row for the requested typequ.
+    state = _aedar_selected_state()
+    del state["aggregates"][("member", "22003")]["A104"]
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_selected_comparison_snapshot(
+            _AedarSelectedConnection(state), "commune", "22001", members,
+            ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert err.value.status_code == 422 and "commune/22003" in err.value.detail
+    # Partial member: published row exists but the measure value is null.
+    state = _aedar_selected_state()
+    state["aggregates"][("member", "22003")]["A104"]["measures"]["count_5_walk_mean"] = None
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_selected_comparison_snapshot(
+            _AedarSelectedConnection(state), "commune", "22001", members,
+            ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert err.value.status_code == 422 and "commune/22003" in err.value.detail
+    # Unknown measure coordinate and missing coordinates are 422.
+    for typequ, measures in ((["A104"], ["bogus"]), (None, ["count_5_walk_mean"])):
+        with pytest.raises(HTTPException) as err:
+            aedar_reads._aedar_selected_comparison_snapshot(
+                _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", members,
+                typequ, measures, None, _aedar_facets())
+        assert err.value.status_code == 422
+
+
+def test_aedar_fixed_same_level_reference_reads_the_region_direct_aggregate():
+    from fastapi import HTTPException
+    conn = _AedarSelectedConnection(_aedar_selected_state())
+    # EPCI same-level reference: the Région's own direct published aggregate
+    # ("Moyenne de Bretagne"), never the retired same-level median summaries.
+    result = aedar_reads._aedar_comparison_snapshot(conn, "epci", "E1", "same_level",
+                                                   "A104", "count_5_walk_mean")
+    comparison = result["comparison"]
+    assert comparison["comparison_context"] == "same_level"
+    assert comparison["group_id"] == "53" and comparison["territory_type"] == "region"
+    assert comparison["statistic"] == "direct"
+    assert comparison["group_value"] == 13.0
+    assert comparison["group_n_addresses"] == 1000
+    assert not any("aedar_comparison_group" in q and "same_level" in q for q in conn.queries)
+    # Same-level stays scoped to EPCI/département fiches.
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_comparison_snapshot(
+            _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", "same_level",
+            "A104", "count_5_walk_mean")
+    assert err.value.status_code == 422
+
+
+
+def test_aedar_selected_comparison_derives_group_coverage_honestly():
+    members = [("commune", "22001"), ("commune", "22002"), ("commune", "22003")]
+    # All members covered -> the group coverage is derived as covered.
+    result = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", members,
+        ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert result["comparisons"][0]["group_coverage_status"] == "covered"
+    # Mixed member statuses: no single derivable coverage, so it stays
+    # unknown (null) - never upgraded to covered.
+    state = _aedar_selected_state()
+    state["aggregates"][("member", "22003")]["A104"]["coverage"] = "pending_review"
+    result = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(state), "commune", "22001", members,
+        ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert result["comparisons"][0]["group_coverage_status"] is None
+    # A uniform lesser status is reflected as published, not upgraded.
+    state = _aedar_selected_state()
+    for code in ("22001", "22002", "22003"):
+        state["aggregates"][("member", code)]["A104"]["coverage"] = "uncovered_no_address_origins"
+    result = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(state), "commune", "22001", members,
+        ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
+    assert result["comparisons"][0]["group_coverage_status"] == "uncovered_no_address_origins"
+

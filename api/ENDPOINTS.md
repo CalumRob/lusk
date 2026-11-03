@@ -35,8 +35,8 @@ adds its correlation `id`. `POST /api/resources/read-batch` validates all items
 before returning results and returns no partial result if any item fails. Both
 execute on one `READ ONLY REPEATABLE READ` snapshot. The batch is limited to 12
 items, 200,000 preflight work units, and 8 MB serialized output. Supported intents
-are `facts`, `fixed_comparison` with the closed `default` context, and bounded
-`selected_comparison` with at most 1,500 unique typed territory members. Facts
+are `facts`, `fixed_comparison` with its declared closed comparison context, and
+bounded `selected_comparison` with at most 1,500 unique typed territory members. Facts
 coordinates and optional fields are producer-declared; status, availability,
 descriptor, axis, and provenance metadata remain mandatory where declared.
 Comparison fields use the closed comparison-result vocabulary.
@@ -211,9 +211,18 @@ Searches the retained published territory reference with bounded query inputs.
 - AEDAR aggregate and fixed-comparison reads are available only through the
   semantic single/batch grammar; the retired source-grain GET routes were
   adapters over the same caller-owned snapshot readers.
-  AEDAR comparisons return focal values and their selected reference only:
-  direct EPCI/Bretagne aggregates, pooled density-class references, or the
-  existing same-level medians. AEDAR peer/rank fields are not selectable.
+  AEDAR fixed comparisons return focal values and their declared reference:
+  direct EPCI/Bretagne aggregates, pooled density-class references, or — for
+  EPCI/département same-level contexts — the Région's own direct published
+  aggregate (« Moyenne de Bretagne »); the same-level median summaries are
+  retired. AEDAR publishes no peer/rank rows and fixed contexts grant no rank
+  fields. `selected_comparison` on `aedar_territorial_aggregate` computes, per
+  request on one committed snapshot, the address-weighted mean of the
+  same-level members' published aggregates (weights = `n_addresses`) for each
+  requested `typequ`/`measure` cell — scalar readings and per-cell curve readings
+  alike — plus the opt-in direction-aware focal `rank`/`rank_size`/`rank_ties`
+  within the selection (ties share rank; the focal must be a member to receive a
+  rank). Unknown or partial members fail closed naming the failed member.
 
 ## Retired route families
 
