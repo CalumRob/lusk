@@ -8,7 +8,6 @@ import {
 } from '../fiche/sousGroupes'
 import type { LectureSousGroupe, SousGroupeRendu } from '../fiche/sousGroupes'
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   histoiresEconomieFixture,
   histoiresHabitatFixture,
@@ -47,7 +46,6 @@ function payloadDe(
     territoires: territoiresFixture,
     indicateurs,
     histoires,
-    apercu: apercuAvecNAFixture,
     runReport: runReportFraisFixture,
     vintages: vintagesFixture,
     programmes: null,

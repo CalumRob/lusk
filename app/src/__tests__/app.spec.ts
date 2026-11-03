@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest'
 
 import App from '../App.vue'
 import {
-  apercuAvecNAFixture,
   chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
@@ -28,7 +27,6 @@ const payloadFixture: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,

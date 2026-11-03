@@ -41,7 +41,6 @@ function payloadAvec(categories: string[]): Payload {
     territoires: [],
     indicateurs: indicateursMobiliteFixture,
     histoires: [],
-    apercu: null,
     runReport: null,
     vintages: null,
     programmes: null,
@@ -93,7 +92,7 @@ describe('verifierPariteListes — le payload committé (#439)', () => {
       const cles = Object.entries(metadata.indicator_pages ?? {}).filter(([, page]) => page.family === 'list').map(([cle]) => cle)
       if (!cles.length) continue
       const faits = JSON.parse(readFileSync(join(publicDir, `indicateurs_${theme}.json`), 'utf8')) as unknown as Indicateur[]
-      verifierPariteListes({ territoires: [], indicateurs: faits, histoires: [], apercu: null, runReport: null, vintages: null, programmes: null, themeMetadata: { [theme]: metadata } })
+      verifierPariteListes({ territoires: [], indicateurs: faits, histoires: [], runReport: null, vintages: null, programmes: null, themeMetadata: { [theme]: metadata } })
       pagesListes.push(`${theme}:${cles.join(',')}`)
     }
     expect(pagesListes).toEqual([

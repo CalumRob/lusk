@@ -9,7 +9,6 @@ import OngletTheme from '../components/fiche/OngletTheme.vue'
 import { LIBELLE_HANDOFF, handoffExploration } from '../fiche/explorationHandoff'
 import { routes } from '../router'
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   indicateursHabitatFixture,
@@ -79,7 +78,6 @@ function payloadOnglet(): Payload {
     territoires: territoiresFixture,
     indicateurs: indicateursHabitatFixture,
     histoires: [],
-    apercu: null,
     runReport: runReportFraisFixture,
     vintages: vintagesFixture,
     programmes: null,
@@ -92,7 +90,6 @@ function payloadProgrammes(): Payload {
     territoires: territoiresFixture,
     indicateurs: indicateursProgrammesFixture,
     histoires: [],
-    apercu: null,
     runReport: null,
     vintages: null,
     programmes: null,
@@ -232,7 +229,6 @@ describe('le câblage fiche de la passarelle (#409)', () => {
           territoires: territoiresFixture,
           indicateurs: indicateursDemographieFixture,
           histoires: histoiresDemographieFixture,
-          apercu: apercuAvecNAFixture,
           runReport: runReportFraisFixture,
           vintages: vintagesFixture,
           programmes: null,

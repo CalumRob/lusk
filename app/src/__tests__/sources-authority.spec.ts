@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { sourceRecords } from '../payload/selectors'
-import { apercuAvecNAFixture, histoiresDemographieFixture, indicateursDemographieFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures, territoiresFixture, vintagesFixture } from '../payload/fixtures'
+import { histoiresDemographieFixture, indicateursDemographieFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures, territoiresFixture, vintagesFixture } from '../payload/fixtures'
 import type { Payload } from '../payload/types'
 
 const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: apercuAvecNAFixture,
   runReport: null,
   vintages: vintagesFixture,
   programmes: null,

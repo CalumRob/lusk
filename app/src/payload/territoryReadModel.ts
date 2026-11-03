@@ -603,7 +603,6 @@ export function payloadDepuisModeleTerritoire(model: TerritoryReadModel): Payloa
     territoires: model.territories,
     indicateurs: themes.flatMap((theme) => theme.indicators),
     histoires: themes.flatMap((theme) => theme.histories),
-    apercu: null,
     runReport: null,
     vintages: null,
     programmes: null,

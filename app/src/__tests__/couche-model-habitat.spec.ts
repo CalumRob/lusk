@@ -23,7 +23,6 @@ function payloadAvec(indicateurs: Indicateur[], histoires: Payload['histoires'])
     territoires: territoiresFixture,
     indicateurs,
     histoires,
-    apercu: null,
     runReport: null,
     vintages: vintagesFixture,
     programmes: null,

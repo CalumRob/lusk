@@ -182,7 +182,7 @@ const staticPayload: Payload = {
   indicateurs: indicateursDemographieFixture.map((row) => row.key === 'densite'
     ? { ...row, value: 123456, rang_epci: 1, rang_epci_n: 1, rang_dep: 1, rang_dep_n: 1, rang_reg: 1, rang_reg_n: 1 }
     : row),
-  histoires: [], apercu: [], runReport: null, vintages: [], programmes: null,
+  histoires: [], runReport: null, vintages: [], programmes: null,
 }
 const communeMasks = {
   type: 'FeatureCollection' as const,

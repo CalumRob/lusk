@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   metadonneesThemesFixtures,
@@ -18,10 +17,12 @@ import type { Territoire, ThemeMetadata } from '../payload/types'
  * progressive store, PRD #296): one named file in, its typed section out.
  * Same fetchImpl injection, same per-file validators, same « 404 = table
  * absente » contract (ADR-0013) — only the granularity changes. The
- * reference-table dependency holds for the theme / apercu
+ * reference-table dependency holds for the theme
  * files: the caller passes the VALIDATED territoires, exactly the ordering
  * constraint the loader already respects. chargerPayload() behavior is
  * locked by payload-loader.spec.ts, unchanged by this ticket.
+ * #894: 'apercu' is not a file anymore — the retired apercu.json has no
+ * per-file entry (see the dedicated test below).
  */
 
 /** A fetch stub keyed by file name — returns fixture JSON or a configurable response. */
@@ -44,7 +45,6 @@ const fichiersDemographie = {
   'indicateurs_demographie.json': indicateursDemographieFixture,
   'histoires_demographie.json': histoiresDemographieFixture,
   'theme_demographie.json': metadonneesThemesFixtures.demographie,
-  'apercu.json': apercuAvecNAFixture,
   'run-report.json': runReportFraisFixture,
   'vintages.json': vintagesFixture,
 }
@@ -67,9 +67,6 @@ describe('chargerFichier — the per-file seam', () => {
     const histoires = await chargerFichier('histoires_demographie', territoires, options)
     expect(histoires).toHaveLength(histoiresDemographieFixture.length)
 
-    const apercu = await chargerFichier('apercu', territoires, options)
-    expect(apercu).toEqual(apercuAvecNAFixture)
-
     const runReport = await chargerFichier('run-report', options)
     expect(runReport).toEqual(runReportFraisFixture)
 
@@ -85,6 +82,14 @@ describe('chargerFichier — the per-file seam', () => {
     expect(nom).toBe('programmes')
   })
 
+  it('has no per-file entry for the retired apercu.json (#894) — the name is not a file anymore', () => {
+    // Le type Fichier ne contient plus 'apercu' : aucun chargeur ne peut
+    // plus demander ce fichier (le typage l'interdit, testé ci-dessous).
+    // @ts-expect-error — 'apercu' n'est plus un Fichier depuis #894
+    const nom: Fichier = 'apercu'
+    expect(nom).toBe('apercu')
+  })
+
   it('treats a 404 on an optional file as absent — the « 404 = table absente » contract (ADR-0013)', async () => {
     const sansOptionnels = { 'territoires.json': territoiresFixture }
     const options = optionsPour(sansOptionnels)
@@ -92,7 +97,6 @@ describe('chargerFichier — the per-file seam', () => {
 
     await expect(chargerFichier('run-report', options)).resolves.toBeNull()
     await expect(chargerFichier('vintages', options)).resolves.toBeNull()
-    await expect(chargerFichier('apercu', territoires, options)).resolves.toBeNull()
     await expect(chargerFichier('indicateurs_habitat', territoires, options)).resolves.toBeNull()
     await expect(chargerFichier('histoires_habitat', territoires, options)).resolves.toBeNull()
     await expect(chargerFichier('theme_habitat', options)).resolves.toBeNull()
@@ -136,13 +140,12 @@ describe('chargerFichier — the per-file seam', () => {
   it('treats a null body on an optional file as absent — l\u2019absence honnête, jamais une erreur (relecture #297)', async () => {
     // Un corps null (HTTP 200) sur un fichier optionnel est le même contrat
     // que le 404 : la table est simplement absente — les validateurs
-    // optionnels (validerRapportRun / validerApercu…) acceptent null et
+    // optionnels (validerRapportRun…) acceptent null et
     // retournent null, le chemin ne change pas.
-    const options = optionsPour({ 'territoires.json': territoiresFixture, 'run-report.json': null, 'apercu.json': null })
-    const territoires = await territoiresValides({ 'territoires.json': territoiresFixture, 'run-report.json': null, 'apercu.json': null })
+    const options = optionsPour({ 'territoires.json': territoiresFixture, 'run-report.json': null })
 
     await expect(chargerFichier('run-report', options)).resolves.toBeNull()
-    await expect(chargerFichier('apercu', territoires, options)).resolves.toBeNull()
+    await expect(chargerFichier('vintages', options)).resolves.toBeNull()
   })
 
   it('raises a typed fetch error on network failure', async () => {

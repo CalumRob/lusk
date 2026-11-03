@@ -863,7 +863,7 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
           availability: 'observed', entries: [{ detail: sigle, rider, sources: source }], relationships: [] }],
       }, target).indicateurs
       const payload: Payload = { territoires: territoiresFixture, indicateurs: adapted, histoires: [],
-        apercu: null, runReport: null, vintages: [], programmes: null }
+        runReport: null, vintages: [], programmes: null }
       return { rawRider: adapted[0]?.rider,
         badge: programmesPourTerritoire(payload, target.territoire).badges.find((item) => item.sigle === sigle) }
     }

@@ -449,7 +449,7 @@ const payloadCarte = computed(() => {
   if (ongletProgrammes.value) {
     return { ...current, themeMetadata: { ...current.themeMetadata,
       programmes: mapThemeMetadata.value?.theme === 'programmes'
-        ? mapThemeMetadata.value : current.themeMetadata?.programmes }, apercu: [],
+        ? mapThemeMetadata.value : current.themeMetadata?.programmes },
       // #893 — la section programmes ne porte QUE le cohort natif de l'API
       // (aucun repli sur l'ancien programmes.json) ; mapGrantFacts est vide
       // tant que l'acquisition native n'est pas prête (jamais de repli).
@@ -457,7 +457,7 @@ const payloadCarte = computed(() => {
       mapGrantFacts: mapStatus.value === 'ready' ? mapGrantFacts.value : [] }
   }
   const theme = selection.value
-  if (!theme) return { ...current, apercu: [] }
+  if (!theme) return current
   const indicateurs = current.indicateurs.filter((row) => row.theme !== theme)
   const histoires = current.histoires.filter((row) => row.theme !== theme)
   const acquired = mapStatus.value === 'ready' ? mapFacts.value.map((row) =>
@@ -466,7 +466,7 @@ const payloadCarte = computed(() => {
       ? { ...row, comparaisonApi: { rang: territoryRank.value.rank.rank,
           taille: territoryRank.value.rank.rankSize, portee: territoryRank.value.rank.scope } } : row) : []
   return { ...current, themeMetadata: { ...current.themeMetadata, [theme]: mapThemeMetadata.value?.theme === theme
-    ? mapThemeMetadata.value : current.themeMetadata?.[theme] }, apercu: [], indicateurs: [...indicateurs, ...acquired],
+    ? mapThemeMetadata.value : current.themeMetadata?.[theme] }, indicateurs: [...indicateurs, ...acquired],
     histoires: [...histoires, ...mapStories.value] as typeof current.histoires }
 })
 

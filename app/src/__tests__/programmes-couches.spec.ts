@@ -38,7 +38,6 @@ const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: [],
   histoires: [],
-  apercu: [],
   runReport: null,
   vintages: null,
   programmes: { mapMemberships: mapMembershipsProgrammesFixture },

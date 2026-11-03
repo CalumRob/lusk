@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   histoiresEconomieFixture,
   histoiresHabitatFixture,
@@ -51,7 +50,6 @@ const payloadSixThemes: Payload = {
     ...histoiresEconomieFixture,
     ...histoiresMilieuxFixture,
   ],
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture, // porte la ligne mobilite_snapshot — le fait que chaque onglet s'appropriait
   programmes: null,

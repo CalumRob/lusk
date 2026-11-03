@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
-  apercuAvecNAFixture,
   histoiresEconomieFixture,
   indicateursEconomieFixture,
   metadonneesThemesFixtures,
@@ -29,7 +28,6 @@ const payloadEconomie: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursEconomieFixture,
   histoires: histoiresEconomieFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,
