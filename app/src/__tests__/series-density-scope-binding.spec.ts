@@ -336,3 +336,89 @@ describe('invariants de rang exactes au seam (#892)', () => {
     expect(read.comparison?.scope?.kind).toBe('explicit_selection')
   })
 })
+
+describe('identité d’axe, tuple de rang, repli de résumé (#892)', () => {
+  async function acquirePrix(mutate?: (data: Record<string, any>) => void) {
+    vi.stubGlobal('fetch', serveWithMutation(mutate))
+    try {
+      return { read: await createOrderedSeriesSemanticSession().acquire(input) as any, rejected: undefined as unknown }
+    } catch (cause) {
+      return { read: undefined as any, rejected: cause }
+    }
+  }
+  const premierAxe = (data: Record<string, any>) =>
+    data.result.axis_comparisons.find((a: any) => a.status === 'available' && a.member_ranks.length > 0)
+
+  it('axe manquant, invalide, dupliqué ou non déclaré : rejeté', async () => {
+    for (const [label, mutate] of [
+      ['axe absent', (data: any) => { delete premierAxe(data).axis }],
+      ['axe non texte', (data: any) => { premierAxe(data).axis = 2025 }],
+      ['axe dupliqué', (data: any) => { data.result.axis_comparisons.push({ ...premierAxe(data) }) }],
+      ['axe non déclaré (1999)', (data: any) => { premierAxe(data).axis = '1999' }],
+    ] as const) {
+      const { read, rejected } = await acquirePrix(mutate)
+      expect(read, label).toBeUndefined()
+      expect(rejected, label).toBeInstanceOf(SeriesComparisonRejectedError)
+    }
+  })
+
+  it('couverture clairsemée valide : un axe publié unavailable (0 éligible) reste admis', async () => {
+    const { read, rejected } = await acquirePrix((data) => {
+      const axe = data.result.axis_comparisons.find((a: any) => a.status === 'available')
+      axe.status = 'unavailable'
+      axe.value = null; axe.min = null; axe.max = null
+      axe.eligible_count = 0
+      axe.missing_count = axe.selected_member_count
+      axe.member_ranks = axe.member_ranks.map((r: any) => ({ territory_id: r.territory_id, rank: null, rank_size: null, rank_ties: null }))
+    })
+    expect(rejected).toBeUndefined()
+    expect(read.comparison.axis_comparisons.some((a: any) => a.status === 'unavailable' && a.eligible_count === 0)).toBe(true)
+  })
+
+  it('tuple de rang all-or-nothing : rank null avec size/ties renseignés est rejeté', async () => {
+    for (const [label, patch] of [
+      ['rank_size renseigné', (r: any) => ({ ...r, rank: null, rank_size: r.rank_size ?? 3, rank_ties: null })],
+      ['rank_ties renseigné', (r: any) => ({ ...r, rank: null, rank_size: null, rank_ties: r.rank_ties ?? 1 })],
+    ] as const) {
+      const { read, rejected } = await acquirePrix((data) => {
+        const axe = premierAxe(data)
+        axe.member_ranks[0] = patch(axe.member_ranks[0])
+      })
+      expect(read, label).toBeUndefined()
+      expect(rejected, label).toBeInstanceOf(SeriesComparisonRejectedError)
+    }
+  })
+
+  it('tuple valide : membre non mesuré all-null admis, membre classé all-renseigné admis', async () => {
+    const { read, rejected } = await acquirePrix()
+    expect(rejected).toBeUndefined()
+    for (const axe of read.comparison.axis_comparisons) {
+      for (const rang of axe.member_ranks) {
+        const valeurs = [rang.rank, rang.rank_size, rang.rank_ties]
+        expect(valeurs.every((v) => v === null) || valeurs.every((v) => v !== null), 'tuple all-or-nothing').toBe(true)
+      }
+    }
+  })
+
+  it('résumé fixe : point déclaré publié -> point conservé (prix_m2 2025)', async () => {
+    const { read, rejected } = await acquirePrix()
+    expect(rejected).toBeUndefined()
+    expect(read.comparison.point).toBe('2025')
+  })
+
+  it('résumé fixe OCS-GE : point déclaré 2025 non publié -> repli dernier axe publié (M3), valeur/rang de M3', async () => {
+    // artif_par_habitant : axes publiés = états M2/M3, point déclaré = 2025
+    const artifInput = { resource: 'artif_par_habitant', level: 'commune' as const, focal, territories }
+    vi.stubGlobal('fetch', serveWithMutation())
+    const read = await createOrderedSeriesSemanticSession().acquire(artifInput)
+    const axes = read.comparison?.axis_comparisons?.map((a: any) => a.axis)
+    expect(axes).toEqual(['M2', 'M3'])
+    // repli producteur (snapshot_reads.py:1707-1713) : point effectif = M3
+    expect(read.comparison?.point).toBe('M3')
+    const axeM3 = read.comparison?.axis_comparisons?.find((a: any) => a.axis === 'M3')
+    expect(read.comparison?.value).toBe(axeM3?.value)
+    const rangFocalM3 = axeM3?.member_ranks?.find((r: any) => r.territory_id === focal.territoire)
+    expect(read.comparison?.rank).toBe(rangFocalM3?.rank ?? null)
+    expect(read.comparison?.comparable_count).toBe(axeM3?.eligible_count)
+  })
+})
