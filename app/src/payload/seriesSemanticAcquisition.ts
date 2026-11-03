@@ -193,6 +193,12 @@ function publicationMismatch(comparisonData: Row, facts: OrderedSeriesFactsEvide
   return null
 }
 
+/** Classe de densité du focal ACQUIS, lue dans la référence validée. */
+function focalDensityClassOf(input: { focal: Territoire; territories: readonly Territoire[] }): string | null {
+  return input.territories.find((territory) =>
+    territory.territoire === input.focal.territoire && territory.type === input.focal.type)?.classe_densite_code ?? null
+}
+
 function scopedMembers(input: {
   level: TerritoireType; territories: readonly Territoire[]; departmentId?: string; epciId?: string
 }): Array<{ type: TerritoireType; id: string }> | null {
@@ -213,6 +219,7 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
   declaredSourceIds: Set<string>; resolvedCohortType: string
   resolvedCohortMembers: Array<{ id: string; type: string }>; cohortIsFiltered: boolean
   focal: { id: string; type: string }; resource: string
+  focalDensityClass: string | null
 }, requestedMembers: Array<{ type: TerritoireType; id: string }> | null): OrderedSeriesRead['comparison'] {
   const result = comparisonData.result
   const target = comparisonData.target
@@ -251,6 +258,14 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
   if (scope.territory_type !== undefined && expectedScopeType !== undefined &&
       scope.territory_type !== expectedScopeType) {
     throw new Error('Type du périmètre de comparaison incompatible')
+  }
+  // #892 recheck : une portée density_class doit correspondre à la classe du
+  // focal ACQUIS (référence validée) — un code différent est une évidence
+  // incohérente, rejetée ici (comparaison seule, faits admis conservés) :
+  // jamais de label de classe revendiqué à tort côté app.
+  if (scope.kind === 'density_class' && text(scope.density_class_code) &&
+      scope.density_class_code !== facts.focalDensityClass) {
+    throw new Error('Classe de densité déclarée par la comparaison incohérente avec le territoire focal')
   }
   let expectedMembers: Set<string> | undefined
   let exactPopulation = false
@@ -390,6 +405,7 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
         resolvedCohortMembers: admittedFocal.resolved_cohort_members,
         cohortIsFiltered: admittedFocal.cohort_is_filtered,
         focal: admittedFocal.territory, resource: input.resource,
+        focalDensityClass: focalDensityClassOf(input),
       }, members)
       const result = attachAdmittedComparison(admittedFocal, comparison, comparisonData, input)
       if (entries.cohortGenerations.get(key) === generation) entries.comparisons.set(compareKey, result)
@@ -526,6 +542,7 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
       declaredSourceIds, resolvedCohortType: resolvedCohort.territory_type,
       resolvedCohortMembers: cohortMembers, cohortIsFiltered: facts.cohort_is_filtered,
       focal: facts.territory, resource: input.resource,
+      focalDensityClass: focalDensityClassOf(input),
     }, members)
     const result = attachAdmittedComparison(facts, comparison, comparisonData, input)
     if (entries.cohortGenerations.get(key) === generation) {
@@ -831,5 +848,6 @@ export async function reacquireOrderedSeriesComparison(input: {
     resolvedCohortMembers: input.facts.resolved_cohort_members,
     cohortIsFiltered: input.facts.cohort_is_filtered,
     focal: input.facts.territory, resource: input.resource,
+    focalDensityClass: focalDensityClassOf(input),
   }, members)
 }

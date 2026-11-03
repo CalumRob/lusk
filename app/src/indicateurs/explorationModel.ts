@@ -233,7 +233,12 @@ export function modeleExploration(facts: readonly Indicateur[], facet: Compariso
   const lowRows = all.filter((row) => row.value === Math.min(...all.map((item) => item.value))).map(project)
   const density = estimerDensite(distribution)
   const selected = all.find((row) => row.territoire.territoire === requested.territoire)?.value ?? null
-  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre }, rows, median, distribution, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: facet.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
+  // #892 recheck : un filtre COMBINÉ département+EPCI nomme les DEUX identités
+  // sourcées de l'URL (l'intersection réelle), jamais le département seul.
+  const partiesPortee: string[] = []
+  if (requested.departement) partiesPortee.push(`Département ${requested.departement}`)
+  if (requested.epci) partiesPortee.push(`EPCI ${requested.epci}`)
+  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre }, rows, median, distribution, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: partiesPortee.length ? partiesPortee.join(' · ') : 'Bretagne', direction: facet.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
 }
 
 /**

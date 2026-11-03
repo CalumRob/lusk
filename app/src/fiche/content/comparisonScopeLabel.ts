@@ -30,13 +30,23 @@ export function semanticComparisonScopeLabel(
   return null
 }
 
+const TYPE_NEUTRAL: Record<string, string> = {
+  commune: 'communes',
+  epci: 'EPCI',
+  departement: 'départements',
+  region: 'région',
+}
+
 /** Producer-declared scope of a native API comparison read (fixed_comparison /
  *  selected_comparison). The PUBLISHED label wins when the producer sends one;
  *  a density_class scope resolves through the validated territory reference's
- *  public density label (only when the codes match the focal target — never a
- *  hardcoded class); same_level goes through semanticComparisonScopeLabel; an
- *  explicit_selection keeps the URL-scope fallback (the selection IS the
- *  listed universe). */
+ *  public density label ONLY when the codes match the acquired focal (a
+ *  mismatch is rejected at the acquisition seam — never claimed here);
+ *  same_level gets a NEUTRAL declared-scope wording (no spatial claim like
+ *  « EPCI bretons », avoided by CONTEXT.md « Partie bretonne d'un EPCI »);
+ *  an explicit_selection keeps the URL-scope fallback (the selection IS the
+ *  listed universe). Null/missing target or unknown kind → null, never an
+ *  invented label. */
 export function apiComparisonScopeLabel(
   scope: {
     kind?: unknown
@@ -50,12 +60,16 @@ export function apiComparisonScopeLabel(
 ): string | null {
   if (!scope) return null
   if (typeof scope.label === 'string' && scope.label) return scope.label
-  if (!target) return null
   if (scope.kind === 'explicit_selection') return selectionFallback
+  if (!target) return null
   if (scope.kind === 'density_class' && scope.territory_type === 'commune' &&
       typeof scope.density_class_code === 'string' &&
       scope.density_class_code === target.classe_densite_code) {
     return target.classe_densite_libelle_public ?? null
   }
-  return semanticComparisonScopeLabel(scope, target.type)
+  if (scope.kind === 'same_level' && scope.territory_type === target.type &&
+      TYPE_NEUTRAL[target.type]) {
+    return `même niveau territorial (${TYPE_NEUTRAL[target.type]})`
+  }
+  return null
 }

@@ -22,6 +22,7 @@ import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } from '@/indicateurs/etatUrl'
 import { PayloadError, validerCatalogueNavigateur } from '@/payload/validate'
 import { apiComparisonScopeLabel, semanticComparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
+import { rangScopeNoteCopy } from '@/fiche/content/comparisonWording'
 import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerCohortePageScalaire, chargerComparaisonsScalaires,
   chargerFaitFocalPageScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees,
@@ -1558,13 +1559,23 @@ const raccordementComparisonScopeLabel = computed(() => {
 const rangScopeNote = computed(() => {
   if (!model.value || !seriesPageApiActive.value || !orderedSeriesAdapter.value) return null
   if (!model.value.rows.some((row) => row.rang !== null)) return null
-  const scope = serieLecture.value?.comparison?.scope
+  const read = serieLecture.value
+  const scope = read?.comparison?.scope
   if (!scope) return null
-  const target = payload.value.territoires.find((territory) => territory.territoire === porte.value.territoire)
-  const label = apiComparisonScopeLabel(scope, target ?? null, model.value.scopeLabel)
+  // le focal EXACT vient de la lecture acquise (serieLecture.territory), jamais
+  // d'une devinette d'URL : sans ?territoire=, le chargeur a choisi un repli,
+  // c'est CE focal acquis qui porte la classe de densité de la portée
+  const acquiredFocal = read?.territory
+  const target = acquiredFocal
+    ? payload.value.territoires.find((territory) =>
+        territory.territoire === acquiredFocal.id && territory.type === acquiredFocal.type) ?? null
+    : null
+  const label = apiComparisonScopeLabel(scope, target, model.value.scopeLabel)
   if (!label || label === model.value.scopeLabel) return null
   const count = typeof scope.member_count === 'number' ? scope.member_count : null
-  return `Rangs publiés par l’API — portée : ${label}${count !== null ? ` (${count} territoires classés)` : ''}`
+  // copy partagée : portée déclarée + cohorte (member_count) — le nombre classé
+  // (rank_size) reste dans les cellules de rang, jamais confondu ici
+  return rangScopeNoteCopy(label, count)
 })
 // Le chemin complet de la trajectoire (#438), dans le MÊME périmètre résolu
 // que le modèle par détail — le détail (actif) pilote carte/extrêmes/tableau
@@ -1816,6 +1827,6 @@ watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niv
   </section>
 </template>
 <style scoped>
-.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.comparison-table-scroll{max-width:100%;overflow-x:auto}.rang-scope-note{margin:0 0 8px;font-size:.85rem;color:var(--text-secondary)}
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.comparison-table-scroll{max-width:100%;overflow-x:auto}.rang-scope-note{margin:0 0 8px;font:var(--text-body-sm);color:var(--text-primary)}
 .indicateur-page{min-height:100%;padding:clamp(24px,5vw,64px) max(16px,calc((100% - 1200px)/2));color:var(--text-primary)}header{max-width:760px}h1{font:var(--text-h1);margin:.3rem 0 1rem}h2{font:var(--text-h3)}.sur-titre{color:var(--indicateur-strong);font:var(--text-overline);text-transform:uppercase}.vues{display:flex;gap:24px;margin:32px 0;border-bottom:1px solid var(--border-default);padding-bottom:12px}.vues button.active{border-bottom:0;box-shadow:inset 0 -3px 0 var(--indicateur-accent);border-radius:0;font-weight:700}.hero,.extremes{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.hero article,.extremes article,aside{padding:24px;background:var(--surface-primary);border:1px solid var(--border-default);border-radius:12px;margin-bottom:16px}.median strong{display:block;font:600 clamp(3rem,9vw,7rem)/1 var(--font-ui);margin:20px 0}.median small{font:var(--text-body)}.density{width:100%;height:170px;border-bottom:2px solid var(--indicateur-line)}.density path{fill:none;stroke:var(--indicateur-accent);stroke-width:4}.point-highlight{fill:var(--status-error)}.extremes article{display:flex;flex-direction:column;gap:8px}.indicator-date-caveat{margin:0 0 16px;color:var(--text-secondary)}.controls{display:flex;gap:16px;flex-wrap:wrap;margin:24px 0}label{display:flex;flex-direction:column;gap:4px}select,input{padding:8px;border:1px solid var(--border-default);border-radius:6px}table{width:100%;border-collapse:collapse;background:var(--surface-primary)}th,td{padding:12px;border-bottom:1px solid var(--border-subtle);text-align:left}tr.selection{background:var(--indicateur-soft)}button{border:0;background:none;color:var(--accent-primary);cursor:pointer}.carte-indicateur,.map-wrap{min-height:540px}.map-wrap{position:relative;height:540px}.map-wrap :deep(.map-explorer){height:100%}dt{font-weight:700;margin-top:12px}dd{margin:0}@media(max-width:700px){.hero,.extremes{grid-template-columns:1fr}table{font-size:.85rem}}
 </style>
