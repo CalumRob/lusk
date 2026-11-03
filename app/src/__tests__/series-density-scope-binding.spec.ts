@@ -230,3 +230,109 @@ describe('région fixed_comparison : fail-closed (niveau non supporté par les r
     expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
   })
 })
+
+describe('invariants de rang exactes au seam (#892)', () => {
+  async function acquireFixedCommune(mutate?: (data: Record<string, any>) => void) {
+    vi.stubGlobal('fetch', serveWithMutation(mutate))
+    try {
+      return { read: await createOrderedSeriesSemanticSession().acquire(input) as any, rejected: undefined as unknown }
+    } catch (cause) {
+      return { read: undefined as any, rejected: cause }
+    }
+  }
+
+  it('density_class : un ID de rang d’une AUTRE classe (même compte, dans la cohorte résolue) est rejeté', async () => {
+    // 22002 est dans la cohorte résolue (faits) mais classe 5, pas la classe 7 du focal 22001
+    expect(territories.find((t) => t.territoire === '22002')!.classe_densite_code)
+      .not.toBe(focal.classe_densite_code)
+    const { read, rejected } = await acquireFixedCommune((data) => {
+      const axe = data.result.axis_comparisons.find((a: any) => a.member_ranks.length > 1)
+      axe.member_ranks[0] = { ...axe.member_ranks[0], territory_id: '22002' }
+    })
+    expect(read).toBeUndefined()
+    expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+  })
+
+  it('density_class : la cohorte exacte = membres de la classe du focal (sous-ensemble éligible valide admis)', async () => {
+    const { read, rejected } = await acquireFixedCommune()
+    expect(rejected).toBeUndefined()
+    const scope = read.comparison?.scope
+    expect(scope?.kind).toBe('density_class')
+    // chaque rang publié appartient à la classe du focal (résolue via la référence validée)
+    const classe = new Map(territories.map((t) => [t.territoire, t.classe_densite_code ?? null]))
+    for (const axe of read.comparison?.axis_comparisons ?? []) {
+      for (const rang of axe.member_ranks) {
+        expect(classe.get(rang.territory_id), `${rang.territory_id} hors classe`).toBe(scope.density_class_code)
+      }
+      expect(axe.selected_member_count).toBe(scope.member_count)
+    }
+  })
+
+  it('seuil available/unavailable exact par axe : unavailable avec >= 2 éligibles est rejeté', async () => {
+    const { rejected } = await acquireFixedCommune((data) => {
+      const axe = data.result.axis_comparisons.find((a: any) => a.status === 'available')
+      axe.status = 'unavailable'
+      axe.value = null; axe.min = null; axe.max = null
+      // eligible_count >= 2 conservé : incohérent avec unavailable (producteur : available = eligible >= 2)
+      expect(axe.eligible_count).toBeGreaterThanOrEqual(2)
+      axe.member_ranks = axe.member_ranks.map((r: any) => ({ territory_id: r.territory_id, rank: null, rank_size: null, rank_ties: null }))
+    })
+    expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+  })
+
+  it('seuil : available avec < 2 éligibles est rejeté ; unavailable avec 0/1 éligibles est admis', async () => {
+    const { rejected: rejete } = await acquireFixedCommune((data) => {
+      const axe = data.result.axis_comparisons.find((a: any) => a.status === 'available')
+      axe.eligible_count = 1
+      axe.missing_count = axe.selected_member_count - 1
+      // rankedCount doit suivre l'éligibilité : un seul rang porté
+      const mesures = axe.member_ranks.map((r: any, i: number) => i === 0 ? r : { ...r, rank: null, rank_size: null, rank_ties: null })
+      axe.member_ranks = mesures
+    })
+    expect(rejete).toBeInstanceOf(SeriesComparisonRejectedError)
+
+    const { read, rejected } = await acquireFixedCommune((data) => {
+      const axe = data.result.axis_comparisons.find((a: any) => a.status === 'available')
+      axe.status = 'unavailable'
+      axe.value = null; axe.min = null; axe.max = null
+      axe.eligible_count = 1
+      axe.missing_count = axe.selected_member_count - 1
+      axe.member_ranks = axe.member_ranks.map((r: any) => ({ territory_id: r.territory_id, rank: null, rank_size: null, rank_ties: null }))
+    })
+    expect(rejected).toBeUndefined()
+    expect(read.comparison?.axis_comparisons.some((a: any) => a.status === 'unavailable' && a.eligible_count === 1)).toBe(true)
+  })
+
+  it('écho de sélection : doublon [A,…,A] rejeté même à longueur égale', async () => {
+    vi.stubGlobal('fetch', serveWithMutation((data) => {
+      const s = data.selection as any[]
+      s[s.length - 1] = { ...s[0] } // doublon du premier, dernier perdu : même longueur
+    }))
+    let rejected: unknown
+    try {
+      await createOrderedSeriesSemanticSession().acquire({ ...input, departmentId: '22' })
+    } catch (cause) { rejected = cause }
+    expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+  })
+
+  it('écho de sélection : membre remplacé par un étranger (même longueur) rejeté', async () => {
+    vi.stubGlobal('fetch', serveWithMutation((data) => {
+      const s = data.selection as any[]
+      s[0] = { territory_type: 'commune', territory_id: '29001' } // hors département 22 demandé
+    }))
+    let rejected: unknown
+    try {
+      await createOrderedSeriesSemanticSession().acquire({ ...input, departmentId: '22' })
+    } catch (cause) { rejected = cause }
+    expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+  })
+
+  it('écho de sélection valide (ensemble exact, ordre quelconque) admis', async () => {
+    vi.stubGlobal('fetch', serveWithMutation((data) => {
+      const s = data.selection as any[]
+      data.selection = [...s].reverse() // ordre différent, même ensemble
+    }))
+    const read = await createOrderedSeriesSemanticSession().acquire({ ...input, departmentId: '22' })
+    expect(read.comparison?.scope?.kind).toBe('explicit_selection')
+  })
+})
