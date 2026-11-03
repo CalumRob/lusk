@@ -114,16 +114,19 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
       }
       const [detail] = item.coordinates.detail
       const [period] = item.coordinates.period
-      const memberIds = item.intent.members.map((member: Record<string, string>) => member.id)
+      const memberIds: string[] = item.intent.members.map((member: Record<string, string>) => member.id)
       // Contrat producteur FIDELE (api/observed_collections.py) : eligible =
       // membres MESURÉS à la coordonnée comparée (jamais memberIds.length — un
       // membre no_record compte en missing) ; status available ssi eligible >= 2,
       // sinon « unavailable » + reason fewer_than_two_comparable_values et
       // median/rank/rank_size null. Le rang du focal est le rang de concurrence
       // (direction high) sur les valeurs éligibles ; rank_size = eligible_count.
-      const valeurDe = (id: string) => factsOverride.find((fact) =>
-        fact.key === item.resource && fact.territoire === id && fact.detail === detail &&
-        fact.dimension === period && fact.value !== null)?.value
+      const valeurDe = (id: string): number | undefined => {
+        const brut = factsOverride.find((fact) =>
+          fact.key === item.resource && fact.territoire === id && fact.detail === detail &&
+          fact.dimension === period && fact.value !== null)?.value
+        return typeof brut === 'number' ? brut : undefined
+      }
       const values = memberIds.map(valeurDe).filter((v): v is number => v !== undefined)
       const focalId = item.target.id as string
       const focalValue = memberIds.includes(focalId) ? valeurDe(focalId) : undefined
@@ -134,7 +137,7 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
         ? (sorted.length % 2 ? sorted[Math.floor(sorted.length / 2)]! : (sorted[sorted.length / 2 - 1]! + sorted[sorted.length / 2]!) / 2)
         : null
       const rank = enough && focalValue !== undefined
-        ? 1 + values.filter((v) => v > focalValue).length
+        ? 1 + values.filter((v: number) => v > focalValue).length
         : null
       return new Response(JSON.stringify({ ...marker, target: item.target,
         selection: memberIds.map((territory_id: string) => ({ territory_type: 'commune', territory_id })),
