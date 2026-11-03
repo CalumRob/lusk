@@ -1,15 +1,27 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import {
-  indicateursMobiliteFixture,
+  histoiresDemographieFixture,
+  histoiresEconomieFixture,
+  histoiresHabitatFixture,
+  histoiresMilieuxFixture,
   histoiresMobiliteFixture,
+  indicateursDemographieFixture,
+  indicateursEconomieFixture,
+  indicateursHabitatFixture,
+  indicateursMilieuxFixture,
+  indicateursMobiliteFixture,
+  indicateursProgrammesFixture,
   metadonneesThemesFixtures,
   territoiresFixture,
+  vintagesFixture,
 } from '@/payload/fixtures'
+import { THEMES_CANONIQUES, type Theme } from '@/payload/types'
 import {
   payloadDepuisModeleTerritoire,
   validerModeleTerritoire,
@@ -18,6 +30,7 @@ import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import CahierMotorisationFigure from '@/fiche/prototype/CahierMotorisationFigure.vue'
 import { remplacerFaitsScalaires } from '@/payload/scalarCohort'
+import { territoryModelBuffer } from '../../scripts/territory-model-dev'
 
 /**
  * #868 — couverture conservée du VALIDATEUR de l'artefact modèle de lecture par
@@ -448,5 +461,90 @@ describe('artefact modèle de lecture par territoire — contrat producteur/réc
       brut,
       'territoires/commune/22001.json',
     )).toThrow(/rampe comparée.*incomplète/)
+  })
+})
+
+/**
+ * #891 — le chemin MANUEL de régénération des modèles depuis les JSON publiés
+ * est retiré (app/scripts/publish-territory-model.mjs + la commande
+ * generate:territory-model), tandis que le VALIDATEUR d'artefacts reste :
+ * validate:territory-model et son aide de parité canonique
+ * (scripts/territory-model-dev.ts), seule lectrice retenue de territoires.json /
+ * vintages.json / theme_*.json / projections Mobilité, et elle n'est utilisée
+ * que par la branche de parité optionnelle du validateur — jamais pour publier.
+ */
+describe('contrat CLI et branche de parité canonique du validateur (#891)', () => {
+  it('retire le wrapper generate:territory-model mais garde validate:territory-model', () => {
+    const appRoot = process.cwd()
+    const pkg = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect('generate:territory-model' in pkg.scripts).toBe(false)
+    expect(pkg.scripts['validate:territory-model']).toBe('node scripts/validate-territory-model.mjs')
+    expect(existsSync(resolve(appRoot, 'scripts', 'publish-territory-model.mjs'))).toBe(false)
+    expect(existsSync(resolve(appRoot, 'scripts', 'validate-territory-model.mjs'))).toBe(true)
+    expect(existsSync(resolve(appRoot, 'scripts', 'territory-model-dev.ts'))).toBe(true)
+  })
+
+  it('la branche de parité canonique projette toujours un modèle validable depuis une racine fixture', async () => {
+    const racine = mkdtempSync(join(tmpdir(), 'lusk-canonique-'))
+    try {
+      writeFileSync(join(racine, 'territoires.json'), JSON.stringify(territoiresFixture))
+      writeFileSync(join(racine, 'vintages.json'), JSON.stringify(vintagesFixture))
+      const indicateurs: Record<Theme, unknown[]> = {
+        mobilite: indicateursMobiliteFixture,
+        demographie: indicateursDemographieFixture,
+        habitat: indicateursHabitatFixture,
+        economie: indicateursEconomieFixture,
+        milieux: indicateursMilieuxFixture,
+        programmes: indicateursProgrammesFixture,
+      }
+      const histoires: Record<Theme, unknown[]> = {
+        mobilite: histoiresMobiliteFixture,
+        demographie: histoiresDemographieFixture,
+        habitat: histoiresHabitatFixture,
+        economie: histoiresEconomieFixture,
+        milieux: histoiresMilieuxFixture,
+        programmes: [],
+      }
+      for (const theme of THEMES_CANONIQUES) {
+        writeFileSync(join(racine, `indicateurs_${theme}.json`), JSON.stringify(indicateurs[theme]))
+        writeFileSync(join(racine, `histoires_${theme}.json`), JSON.stringify(histoires[theme]))
+        writeFileSync(join(racine, `theme_${theme}.json`), JSON.stringify(metadonneesThemesFixtures[theme]))
+      }
+
+      const buffer = await territoryModelBuffer(racine, 'commune', '22001')
+      expect(buffer).not.toBeNull()
+      const brut = JSON.parse(buffer!.toString('utf8')) as {
+        schema_version: string
+        snapshot_id: string
+        territory: { territoire: string }
+        themes: Record<string, unknown>
+      }
+      expect(brut.schema_version).toBe('1')
+      expect(brut.territory.territoire).toBe('22001')
+      expect(Object.keys(brut.themes).sort()).toEqual([...THEMES_CANONIQUES].sort())
+      const snapshotAttendu = vintagesFixture
+        .map((vintage) => vintage.date_reference)
+        .filter((date): date is string => Boolean(date))
+        .sort()
+        .at(-1)
+      expect(brut.snapshot_id).toBe(snapshotAttendu)
+
+      // le modèle reconstruit depuis la racine canonique traverse le validateur
+      // d'artefact exactement comme la branche de parité de validate-territory-model.mjs
+      const modele = validerModeleTerritoire(
+        brut,
+        'legacy-commune-22001.json',
+        { type: 'commune', territoire: '22001' },
+      )
+      expect(modele.territory).toMatchObject({ type: 'commune', territoire: '22001' })
+      expect(modele.themes.mobilite).toBeDefined()
+
+      // un territoire absent de la référence ne produit aucune projection
+      expect(await territoryModelBuffer(racine, 'commune', '99999')).toBeNull()
+    } finally {
+      rmSync(racine, { recursive: true, force: true })
+    }
   })
 })
