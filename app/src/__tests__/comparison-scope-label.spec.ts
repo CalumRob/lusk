@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { apiComparisonScopeLabel } from '../fiche/content/comparisonScopeLabel'
+import { apiComparisonScopeLabel, comparisonScopeLabel, semanticComparisonScopeLabel } from '../fiche/content/comparisonScopeLabel'
 import { rangScopeNoteCopy } from '../fiche/content/comparisonWording'
 import type { Territoire } from '../payload/types'
 
@@ -60,6 +60,23 @@ describe('apiComparisonScopeLabel — portée déclarée par la lecture API', ()
     expect(apiComparisonScopeLabel(null, communeFocal, 'Bretagne')).toBeNull()
     expect(apiComparisonScopeLabel(undefined, communeFocal, 'Bretagne')).toBeNull()
     expect(apiComparisonScopeLabel({ kind: 'autre' }, communeFocal, 'Bretagne')).toBeNull()
+  })
+})
+
+describe('les DEUX formatters partagés : aucun fallback ne revendique un EPCI breton (CONTEXT « Partie bretonne d’un EPCI »)', () => {
+  it('comparisonScopeLabel (kind map) : epcis-bretagne = libellé neutre, jamais « EPCI bretons »', () => {
+    const label = comparisonScopeLabel('epcis-bretagne', null, null)
+    expect(label).toBe('EPCI du périmètre de comparaison')
+    expect(label).not.toMatch(/EPCI bretons?/i)
+  })
+  it('semanticComparisonScopeLabel : same_level epci = libellé neutre partagé', () => {
+    const label = semanticComparisonScopeLabel({ kind: 'same_level', territory_type: 'epci' }, 'epci')
+    expect(label).toBe('même niveau territorial (EPCI)')
+    expect(label).not.toMatch(/bretons?/i)
+  })
+  it('apiComparisonScopeLabel délègue au formatter partagé (pas de copie dupliquée)', () => {
+    expect(apiComparisonScopeLabel({ kind: 'same_level', territory_type: 'epci' }, { type: 'epci' }, 'Bretagne'))
+      .toBe(semanticComparisonScopeLabel({ kind: 'same_level', territory_type: 'epci' }, 'epci'))
   })
 })
 

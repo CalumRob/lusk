@@ -69,3 +69,64 @@ describe('density_class comparison scope — fail-closed au seam de binding (#89
     })
   }
 })
+
+describe('matrice intent de requête -> scope.kind (#892 fail-closed)', () => {
+  // Contrat producteur (api/snapshot_reads.py _comparison_cohort) :
+  //   selected_comparison        -> explicit_selection
+  //   fixed_comparison commune   -> density_class
+  //   fixed_comparison epci/dept -> same_level
+  const focalDept = territories.find((t) => t.territoire === '22' && t.type === 'departement')!
+  const inputs: Record<string, any> = {
+    fixedCommune: { resource: 'prix_m2', level: 'commune', focal, territories },
+    selectedCommune: { resource: 'prix_m2', level: 'commune', focal, territories, departmentId: '22' },
+    // branche same_level : fixed_comparison au niveau département (ressource
+    // programmes, une seule vintage publiée au niveau département)
+    fixedDepartement: { resource: 'subventions_annuelles', level: 'departement', focal: focalDept, territories },
+  }
+  // kind attendu par intent (contrat producteur _comparison_cohort)
+  const expectedByInput: Record<string, string> = {
+    fixedCommune: 'density_class',
+    selectedCommune: 'explicit_selection',
+    fixedDepartement: 'same_level',
+  }
+
+  async function acquireWith(nom: string, kindOverride?: string | null) {
+    const mutate = kindOverride === undefined ? undefined
+      : (scope: Record<string, any>) => {
+        if (kindOverride === null) delete scope.kind
+        else scope.kind = kindOverride
+      }
+    vi.stubGlobal('fetch', serveWithScopeMutation(mutate))
+    try {
+      return { read: await createOrderedSeriesSemanticSession().acquire(inputs[nom]) as any, rejected: undefined as unknown }
+    } catch (cause) {
+      return { read: undefined as any, rejected: cause }
+    }
+  }
+
+  for (const nom of Object.keys(inputs)) {
+    it(`${nom} : la portée valide « ${expectedByInput[nom]} » est admise`, async () => {
+      const { read, rejected } = await acquireWith(nom)
+      expect(rejected).toBeUndefined()
+      expect(read.comparison?.scope?.kind).toBe(expectedByInput[nom])
+    })
+    for (const kind of ['inconnu', 'same_level', 'density_class', 'explicit_selection']) {
+      if (kind === expectedByInput[nom]) continue
+      it(`${nom} : kind « ${kind} » (connu mais faux) ou inconnu est rejeté, comparaison seule`, async () => {
+        const { read, rejected } = await acquireWith(nom, kind)
+        expect(read, `kind ${kind} sur ${nom}`).toBeUndefined()
+        expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+        expect((rejected as SeriesComparisonRejectedError).facts.scope_series.length).toBeGreaterThan(0)
+      })
+    }
+    it(`${nom} : kind absent est rejeté`, async () => {
+      const { rejected } = await acquireWith(nom, null)
+      expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+    })
+  }
+
+  it('selected_comparison avec same_level ET sélection échoée ne passe plus (cas signalé)', async () => {
+    const { rejected } = await acquireWith('selectedCommune', 'same_level')
+    expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+  })
+})
