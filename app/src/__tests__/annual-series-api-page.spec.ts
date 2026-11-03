@@ -412,6 +412,71 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     } finally { wrapper.unmount() }
   })
 
+  it('unfiltered commune route: the rank scope note carries the API-declared density class, the caption keeps the listed universe (#892)', async () => {
+    // Toutes les communes du fixture partagent la classe de densité de 22001 :
+    // le fixed_comparison non filtré du producteur résout alors scope density_class
+    // (api/snapshot_reads.py) — la cohorte de rang est la classe, pas la région.
+    const classe = densiteDepuisReference('22001')
+    expect(classe.classe_densite_code).toBeTruthy()
+    const territories = territoiresFixture.map((territory) =>
+      territory.type === 'commune' ? { ...territory, ...classe } : territory)
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territories
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, (item, resource) =>
+        nativeReadFixture(item, resource, { territories }))
+    })
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const monterPrix = async (url: string) => {
+      const router = createRouter({ history: createMemoryHistory(), routes })
+      await router.push(url)
+      await router.isReady()
+      return mount(IndicateurView, { global: { plugins: [router], provide: {
+        [PAYLOAD_CHARGER_KEY]: loader,
+        [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+      } } })
+    }
+    const wrapper = await monterPrix('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune')
+    try {
+      await flushPromises()
+      // la légende du tableau garde l'univers LISTÉ (toutes les communes de l'URL)
+      const caption = wrapper.find('.comparison-table-scroll caption')
+      expect(caption.text()).toContain('Bretagne')
+      // les rangs sont présents (publiés par l'API à l'axe 2025)
+      const cells = wrapper.findAll('.comparison-table-scroll tbody tr')
+        .map((row) => row.findAll('td')[2]!.text().trim())
+      expect(cells.length).toBeGreaterThan(0)
+      expect(cells.every((cell) => /^\d+(er|e) \/ \d+$/.test(cell))).toBe(true)
+      // la note nomme la portée DÉCLARÉE du rang : la classe de densité publiée du
+      // territoire focal + le member_count de la cohorte API — jamais « Bretagne »
+      const note = wrapper.get('[data-testid="rang-scope-note"]')
+      expect(note.text()).toContain(classe.classe_densite_libelle_public!)
+      expect(note.text()).toContain('4') // member_count de la cohorte density_class
+      // la note nomme la classe de densité, pas l'univers listé « Bretagne »
+      expect(note.text()).toContain('portée : communes rurales')
+    } finally { wrapper.unmount() }
+
+    // cas filtré (sélection explicite = l'univers listé) : légende seule, pas de note parasite
+    const wrapperFiltre = await monterPrix('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22&detail=2022')
+    try {
+      await flushPromises()
+      expect(wrapperFiltre.find('.comparison-table-scroll caption').text()).toContain('Département 22')
+      // rangs présents à 2022 (22001 et 22002 mesurées, eligible = 2) mais la portée
+      // est la sélection explicite = l'univers listé : aucune note de portée séparée
+      const cells = wrapperFiltre.findAll('.comparison-table-scroll tbody tr')
+        .map((row) => row.findAll('td')[2]!.text().trim())
+      expect(cells.length).toBe(2)
+      expect(cells.every((cell) => /^\d+(er|e) \/ \d+$/.test(cell))).toBe(true)
+      expect(wrapperFiltre.find('[data-testid="rang-scope-note"]').exists()).toBe(false)
+    } finally { wrapperFiltre.unmount() }
+  })
+
   it('retains admitted prix_m2 cohort facts when a warm same-cohort focal read gets HTTP 503', async () => {
       const requests: Array<{ items: Array<Record<string, any>>; status: number }> = []
     let admittedCohort: Record<string, any> | undefined
