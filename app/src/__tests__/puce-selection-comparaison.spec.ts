@@ -109,21 +109,21 @@ describe('PuceSelectionComparaison — la puce de sélection dans l’en-tête c
     wrapper.unmount()
   })
 
-  it('émet la valeur d’URL du preset choisi, de la sélection vide, et du retour au défaut', async () => {
+  it('émet la Sélection choisie (typée) : preset, vide explicite, et retour au défaut', async () => {
     const wrapper = monter({ etat: 'defaut' })
     await wrapper.get('.puce-selection__trigger').trigger('click')
     const entrees = wrapper.findAll('[role="menuitemradio"]')
 
     await entrees[2]!.trigger('click')
-    expect(wrapper.emitted('choisir')?.[0]).toEqual(['bretagne'])
+    expect(wrapper.emitted('choisir')?.[0]).toEqual([{ etat: 'preset', preset: 'bretagne' }])
 
     await wrapper.get('.puce-selection__trigger').trigger('click')
     await wrapper.findAll('[role="menuitemradio"]')[4]!.trigger('click')
-    expect(wrapper.emitted('choisir')?.[1]).toEqual([''])
+    expect(wrapper.emitted('choisir')?.[1]).toEqual([{ etat: 'vide' }])
 
     await wrapper.get('.puce-selection__trigger').trigger('click')
     await wrapper.findAll('[role="menuitemradio"]')[0]!.trigger('click')
-    expect(wrapper.emitted('choisir')?.[2]).toEqual([undefined])
+    expect(wrapper.emitted('choisir')?.[2]).toEqual([{ etat: 'defaut' }])
     wrapper.unmount()
   })
 
@@ -154,7 +154,7 @@ describe('PuceSelectionComparaison — la puce de sélection dans l’en-tête c
     expect(puce.attributes('aria-expanded')).toBe('true')
     await wrapper.findAll('[role="menuitemradio"]')[1]!.trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    expect(wrapper.emitted('choisir')?.[0]).toEqual(['epci'])
+    expect(wrapper.emitted('choisir')?.[0]).toEqual([{ etat: 'preset', preset: 'epci' }])
     wrapper.unmount()
   })
 

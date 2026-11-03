@@ -22,6 +22,7 @@ import type {
   PresetComparaisonOption,
   SelectionComparaison,
 } from '@/fiche/comparisonContext'
+import { serialiserSelection } from '@/fiche/comparisonContext'
 
 const props = defineProps<{
   selection: SelectionComparaison
@@ -34,12 +35,12 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** Valeur d’URL à écrire dans ?comparaison= — undefined retire le paramètre (défaut). */
-  (e: 'choisir', valeur: string | undefined): void
+  /** La Sélection choisie, typée — la vue la sérialise dans ?comparaison= (absent vs vide explicite préservés). */
+  (e: 'choisir', selection: SelectionComparaison): void
 }>()
 
 interface EntreeMenu {
-  valeur: string | undefined
+  selection: SelectionComparaison
   label: string
   description: string | null
   actif: boolean
@@ -47,19 +48,19 @@ interface EntreeMenu {
 
 const entrees = computed<readonly EntreeMenu[]>(() => [
   {
-    valeur: undefined,
+    selection: { etat: 'defaut' },
     label: props.libelleDefaut ? `Par défaut : ${props.libelleDefaut}` : 'Contexte par défaut',
     description: null,
     actif: props.selection.etat === 'defaut',
   },
   ...props.presets.map((preset) => ({
-    valeur: preset.preset as string,
+    selection: { etat: 'preset', preset: preset.preset } as SelectionComparaison,
     label: preset.label,
     description: preset.description,
     actif: props.selection.etat === 'preset' && props.selection.preset === preset.preset,
   })),
   {
-    valeur: '',
+    selection: { etat: 'vide' },
     label: 'Aucune comparaison',
     description: null,
     actif: props.selection.etat === 'vide',
@@ -117,7 +118,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
 
 function choisir(entree: EntreeMenu): void {
   ouvert.value = false
-  emit('choisir', entree.valeur)
+  emit('choisir', entree.selection)
   void nextTick(() => triggerRef.value?.focus())
 }
 </script>
@@ -152,13 +153,13 @@ function choisir(entree: EntreeMenu): void {
     >
       <button
         v-for="(entree, index) in entrees"
-        :key="entree.valeur ?? 'defaut'"
+        :key="serialiserSelection(entree.selection) ?? 'defaut'"
         :ref="enregistrerOption"
         type="button"
         role="menuitemradio"
         class="puce-selection__option"
         :aria-checked="entree.actif ? 'true' : 'false'"
-        :aria-describedby="entree.description ? `${menuId}-${entree.valeur ?? 'defaut'}-help` : undefined"
+        :aria-describedby="entree.description ? `${menuId}-${serialiserSelection(entree.selection) ?? 'defaut'}-help` : undefined"
         :title="entree.description ?? undefined"
         @click="choisir(entree)"
         @keydown.enter.prevent="choisir(entree)"
@@ -173,7 +174,7 @@ function choisir(entree: EntreeMenu): void {
         <span class="puce-selection__option-label">{{ entree.label }}</span>
         <span
           v-if="entree.description"
-          :id="`${menuId}-${entree.valeur ?? 'defaut'}-help`"
+          :id="`${menuId}-${serialiserSelection(entree.selection) ?? 'defaut'}-help`"
           class="puce-selection__option-help"
         >{{ entree.description }}</span>
       </button>

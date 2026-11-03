@@ -51,6 +51,7 @@ import {
   serialiserSelection,
   territoireReferencePourComparaison,
 } from '@/fiche/comparisonContext'
+import type { SelectionComparaison } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
 import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
@@ -329,10 +330,12 @@ function libellePorteeSemantic(comparison: unknown, target: Territoire): string 
   return null
 }
 
-/** Presets du menu rapide de la puce d'en-tête (la Région n'en a aucun). */
+/** Presets du menu rapide de la puce d'en-tête (la Région n'en a aucun ;
+ *  un preset n'est proposé que s'il résout réellement pour ce territoire). */
 const presetsSelection = computed(() => presetsDisponibles({
   territoire: territoire.value,
   contextes: contextesComparaison.value,
+  territoires: referenceTerritoire.reference.value ?? [],
 }))
 const libelleDefautSelection = computed(() => {
   const resolution = resolutionDefaut.value
@@ -346,9 +349,12 @@ const libelleActifSelection = computed(() => {
 const controleSelectionVisible = computed(() =>
   Boolean(territoire.value && territoire.value.type !== 'region' && referenceTerritoire.reference.value))
 
-/** Écrit la sélection choisie par la puce dans ?comparaison= (partageable). */
-function choisirSelection(valeur: string | undefined): void {
+/** Écrit la sélection choisie par la puce dans ?comparaison= (partageable) :
+ *  absent (défaut) vs chaîne vide (vide explicite) sont préservés par la
+ *  sérialisation canonique. */
+function choisirSelection(selectionChoisie: SelectionComparaison): void {
   const query = { ...route.query }
+  const valeur = serialiserSelection(selectionChoisie)
   if (valeur === undefined) delete query[PARAM_COMPARAISON]
   else query[PARAM_COMPARAISON] = valeur
   void router.replace({ query })
