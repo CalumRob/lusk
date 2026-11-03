@@ -874,12 +874,9 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
       est_chaine_non_vide(page[[x]]), logical(1)))) {
       manquer("indicator_pages", "le descripteur scalaire est incomplet")
     }
-    if (!is.null(page$read_model) &&
-        (!is.logical(page$read_model) || length(page$read_model) != 1L ||
-         is.na(page$read_model))) {
-      manquer(paste0("indicator_pages.", indicator_key, ".read_model"),
-              "read_model doit être un booléen")
-    }
+    # #900 — `read_model` n'est plus un champ validé : le marqueur est retiré
+    # avec les artefacts de modèles de lecture commités (plus aucun lecteur
+    # navigateur, cible ou validateur ne le consulte).
     if (!page$indicator %in% cles_indicateurs) {
       manquer("indicator_pages", "l'indicateur n'appartient pas au registre")
     }

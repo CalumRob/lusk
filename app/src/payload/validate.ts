@@ -2565,7 +2565,8 @@ export function validerThemeMetadata(
       const page = raw as LigneBrute
       exiger(page['vintage'] === undefined, fichier, 0, `« indicator_pages.${key}.vintage » est interdit : la fraîcheur vient des source_records`)
       exiger(page['indicator'] === key, fichier, 0, `« indicator_pages.${key}.indicator » doit correspondre à sa clé`)
-      exiger(page['read_model'] === undefined || typeof page['read_model'] === 'boolean', fichier, 0, `« indicator_pages.${key}.read_model » doit être booléen`)
+      // #900 — `read_model` n'est plus un champ du contrat : le marqueur est
+      // retiré avec les artefacts de modèles de lecture (plus aucun lecteur).
       exiger(page['completeness'] === undefined || estChaineNonVide(page['completeness']), fichier, 0, `« indicator_pages.${key}.completeness » doit être renseigné`)
       exiger(page['absence_semantics'] === undefined || page['absence_semantics'] === 'no_record', fichier, 0, `« indicator_pages.${key}.absence_semantics » est invalide`)
       exiger(page['absence_semantics'] === undefined || page['completeness'] === 'may_be_missing', fichier, 0, `« indicator_pages.${key}.absence_semantics » requiert may_be_missing`)
@@ -2608,7 +2609,7 @@ export function validerThemeMetadata(
           ...(page['absence_semantics'] === undefined ? {} : { absence_semantics: page['absence_semantics'] as 'no_record' }),
           ...(page['series_dataset_id'] === undefined ? {} : { series_dataset_id: page['series_dataset_id'] as string }),
          ...(page['series_publication'] === undefined ? {} : { series_publication: page['series_publication'] as 'legacy' | 'owned' }),
-         ...(page['read_model'] === undefined ? {} : { read_model: page['read_model'] as boolean }), detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, ...(comparison === undefined ? {} : { comparison: comparison as IndicatorPageMetadataBase['comparison'] }) }
+         detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, ...(comparison === undefined ? {} : { comparison: comparison as IndicatorPageMetadataBase['comparison'] }) }
        const extensionKey = family
        const extensionBrute = page[extensionKey]
        exiger(extensionBrute === undefined || estObjet(extensionBrute), fichier, 0, `« indicator_pages.${key}.${family} » doit être un objet`)

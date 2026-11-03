@@ -1026,8 +1026,8 @@ export interface IndicatorPageMetadataBase {
   /** Stable identity and compatibility path for an ordered-series publication. */
   series_dataset_id?: string
   series_publication?: 'legacy' | 'owned'
-  /** Whether the pipeline publishes an independent route-scoped read model. */
-  read_model?: boolean
+  // #900 — the `read_model` marker is retired with the committed read-model
+  // artifacts: no browser route, producer target or validator reads it.
   detail?: string | null
   label: string
   definition: string

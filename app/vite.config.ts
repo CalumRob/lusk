@@ -18,10 +18,10 @@ import { copierPayloadEnBuild } from './scripts/copy-payload-build'
 // The published payload lives at the repo root (public/data/ — ADR-0004) and
 // nginx aliases /data/ to it in production. In dev and in `vite preview` there
 // is no nginx, so the /data/ fetch (the loader's default baseUrl) 404s. This
-// middleware serves the same published files from the same path. #868: the
-// browser no longer requests per-territory read models, so no in-memory
-// projection of modeles-lecture/ exists here anymore — nothing is written
-// and neither `npm run dev` nor `npm run build` regenerates the pipeline.
+// middleware serves the same published files from the same path. #868/#900:
+// the browser no longer requests per-territory read models and the committed
+// modeles-lecture/ trees are retired — nothing is written here and neither
+// `npm run dev` nor `npm run build` regenerates the pipeline.
 const racineApp = path.resolve(fileURLToPath(new URL('.', import.meta.url)))
 const racineDepot = path.resolve(racineApp, '..')
 const racineDependancesReelle = realpathSync(path.resolve(racineApp, 'node_modules'))

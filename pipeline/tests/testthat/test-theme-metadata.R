@@ -221,17 +221,13 @@ test_that("valider_theme_metadata : les pages scalaires rejettent les cinq déri
   }
 })
 
-test_that("valider_theme_metadata : read_model est un opt-in booléen conservé", {
+test_that("valider_theme_metadata : le marqueur read_model est retiré du contrat (#900)", {
+  # Aucun lecteur ne consulte plus ce champ (navigateur depuis #871, graphe
+  # depuis #890, validateurs d'artefacts supprimés en #900) : il n'est plus
+  # validé — une valeur obsolète ne doit plus faire échouer la métadonnée.
   meta <- lire_metadata("theme-demographie-valide.json")
-  meta$indicator_pages$densite$read_model <- TRUE
-  validee <- valider_theme_metadata(meta)
-  expect_true(isTRUE(validee$indicator_pages$densite$read_model))
-
-  for (value in list("oui", 1, NA, c(TRUE, FALSE))) {
-    meta <- lire_metadata("theme-demographie-valide.json")
-    meta$indicator_pages$densite$read_model <- value
-    expect_error(valider_theme_metadata(meta), "read_model")
-  }
+  meta$indicator_pages$densite$read_model <- "oui"
+  expect_no_error(valider_theme_metadata(meta))
 })
 
 # Les libellés payload-owned (issue #318) — les trois cartes de vocabulaire

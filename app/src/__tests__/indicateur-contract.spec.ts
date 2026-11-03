@@ -13,20 +13,15 @@ describe('contrat des pages d’indicateur', () => {
     expect(metadata.indicator_pages!.densite.direction).toBe('high')
   })
 
-  it('keeps the read-model opt-in in the validated page contract', () => {
+  it('ignore le marqueur read_model retiré : plus validé, plus transmis (#900)', () => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
-    ;(metadata.indicator_pages!.densite as any).read_model = true
+    // A stale non-boolean marker from a pre-#900 publication no longer fails
+    // validation: the field is out of the contract entirely.
+    ;(metadata.indicator_pages!.densite as any).read_model = 'oui'
 
     const validee = validerThemeMetadata(metadata, 'theme_demographie.json')
 
-    expect((validee.indicator_pages!.densite as any).read_model).toBe(true)
-  })
-
-  it.each([null, 'oui', 1, []])('rejette un read_model non booléen (%j)', (value) => {
-    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
-    ;(metadata.indicator_pages!.densite as any).read_model = value
-
-    expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).toThrow()
+    expect('read_model' in (validee.indicator_pages!.densite as object)).toBe(false)
   })
 
   it.each([

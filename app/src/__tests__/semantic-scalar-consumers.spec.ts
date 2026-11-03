@@ -217,7 +217,6 @@ describe('ordinary scalar consumers on semantic resources', () => {
           const stalePage = presentation.indicator_pages.densite
           stalePage.unit = 'ancienne unité éditoriale'
           stalePage.direction = 'low'
-          stalePage.read_model = false
           delete stalePage.family
           stalePage.sources = ['stale_editorial_source']
           presentation.sources.densite = 'stale_editorial_source'

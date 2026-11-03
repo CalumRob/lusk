@@ -70,11 +70,11 @@ test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses vingt
     c(sans_voiture = "%", une_voiture = "%", deux_plus = "%"))
 })
 
-test_that("le ratio bornes par station-service opte pour son modèle de lecture avec ses deux sources", {
+test_that("le ratio bornes par station-service déclare ses deux sources (#900 : plus de marqueur read_model)", {
   meta <- lire_theme_metadata("mobilite")
   page <- meta$indicator_pages$bornes_ev_par_station_service
 
-  expect_true(isTRUE(page$read_model))
+  expect_null(page$read_model)
   expect_identical(
     unlist(page$sources, use.names = FALSE),
     c("bpe_b316", "bornes-recharges")
@@ -182,26 +182,15 @@ test_that("parité pages scalaires ↔ faits committés : niveaux publiés, unit
   }
 })
 
-test_that("la page Mobilité optée a son manifeste et son artefact de lecture committés", {
-  manifeste_path <- file.path(racine_public, "modeles-lecture", "manifest.json")
-  modele_path <- file.path(
-    racine_public, "modeles-lecture", "indicateurs", "mobilite",
-    "bornes_ev_par_station_service.json"
-  )
-  expect_true(file.exists(manifeste_path))
-  expect_true(file.exists(modele_path))
-
-  manifeste <- jsonlite::fromJSON(manifeste_path, simplifyVector = FALSE)
-  expect_true(
-    "bornes_ev_par_station_service" %in% unlist(manifeste$routes$mobilite,
-                                                   use.names = FALSE)
-  )
-
-  modele <- jsonlite::fromJSON(modele_path, simplifyVector = FALSE)
-  expect_identical(modele$theme, "mobilite")
-  expect_identical(modele$indicator, "bornes_ev_par_station_service")
-  expect_setequal(names(modele$source_records), c("bpe_b316", "bornes-recharges"))
-  expect_gt(length(modele$facts), 0L)
+test_that("les artefacts modeles-lecture sont retirés de public/data et app/dist/data (#900)", {
+  skip_if_not(dir.exists(racine_public), "public/data absent — la racine du dépôt est introuvable")
+  racine_repo <- testthat::test_path("..", "..", "..")
+  for (racine in c(racine_public, file.path(racine_repo, "app", "dist", "data"))) {
+    expect_false(file.exists(file.path(racine, "modeles-lecture")),
+                 info = racine)
+    expect_false(file.exists(file.path(racine, "modeles-lecture", "manifest.json")),
+                 info = racine)
+  }
 })
 
 test_that("la provenance B316 et IRVE publiée suit les manifests canoniques", {
