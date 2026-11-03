@@ -8,7 +8,7 @@
  * validate_payload(): drift on the pipeline side must surface here as a
  * loud type/validation error, never as silent wrong figures.
  * #894: apercu.json is RETIRED source-only — no browser type, loader or
- * validator references it anymore (the committed file stays on disk unread);
+ * validator references it anymore (the committed artifact is deleted with #903);
  * the R-side in-memory `apercu` table and apercu.parquet remain the producer
  * contract.
  *

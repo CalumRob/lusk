@@ -370,8 +370,9 @@ test_that("#894 : un run peuplé écrit apercu.parquet sous la règle non-vide m
   on.exit(unlink(cible, recursive = TRUE))
   dir.create(cible)
 
-  # la relique : un apercu.json périmé encore présent (artefact commité — #894
-  # ne le supprime pas) ; le run ne doit NI le réécrire NI le supprimer
+  # la relique : un apercu.json périmé encore présent (par ex. servi par
+  # un ancien déploiement — l'artefact commité est supprimé depuis #903, mais
+  # le run ne fait aucun cleanup) ; il ne doit NI être réécrit NI supprimé
   writeLines('[{"territoire":"99999","type":"commune","key":"relique","value":1,"unit":"u"}]',
              file.path(cible, "apercu.json"))
   relique_avant <- readBin(file.path(cible, "apercu.json"), "raw",
