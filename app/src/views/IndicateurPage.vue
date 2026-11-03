@@ -1418,8 +1418,11 @@ const requested = computed(() => ({ niveau: niveauRoute.value, ...(etatUrl.value
 const model = computed(() => {
   const dispatch = familyDispatch.value
   if (!dispatch) return null
+  // #892 : plus de chemin usePublishedRanks — les rangs statiques ne sont
+  // jamais lus ; les modes API écrasent ensuite les rangs calculés par la
+  // comparaison API (comparaisonApi / memberRanks ci-dessous).
   const calculated = modeleExploration(facts.value, dispatch.facet, payload.value.territoires,
-    requested.value, niveauMemorise.value, profileMode.value || pageScalaireApiActive.value || sparseCollectionPageActive.value)
+    requested.value, niveauMemorise.value)
   if (sparseCollectionPageActive.value) {
     const evidence = sparseCollectionComparison.value
     const rank = typeof evidence?.rank === 'number' ? evidence.rank : null
@@ -1466,7 +1469,7 @@ const model = computed(() => {
   const comparisonRanks = new Map((profileComparison.value?.memberRanks ?? []).map((item) => [item.territoryId, item]))
   const completeComparisonRows = requested.value.recherche
     ? modeleExploration(facts.value, dispatch.facet, payload.value.territoires,
-      { ...requested.value, recherche: undefined, tri: 'nom', ordre: 'asc' }, niveauMemorise.value, true).rows
+      { ...requested.value, recherche: undefined, tri: 'nom', ordre: 'asc' }, niveauMemorise.value).rows
     : calculated.rows
   const eligibleIds = new Set(completeComparisonRows.map((row) => row.territoire.territoire))
   const rankedIds = new Set([...comparisonRanks.values()].filter((item) => item.rank !== null).map((item) => item.territoryId))

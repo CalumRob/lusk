@@ -292,6 +292,9 @@ function lireSexe(ligne: LigneBrute, fichier: string, i: number): Sexe | null {
 
 function lireRang(ligne: LigneBrute, champ: string, fichier: string, i: number): number | null {
   const valeur = ligne[champ]
+  // #892 : la colonne est OMISE des futures projections JSON — absente, elle
+  // lit null (les JSON commités qui la portent encore gardent leur valeur).
+  if (valeur === undefined) return null
   exiger(estRang(valeur), fichier, i, `« ${champ} » doit être un rang ordinal (entier ≥ 1, 1 = meilleur) ou null`)
   return valeur
 }
@@ -303,6 +306,8 @@ function lireTailleGroupe(
   i: number,
 ): number | null {
   const valeur = ligne[champ]
+  // #892 : idem — absente des futures projections, elle lit null.
+  if (valeur === undefined) return null
   exiger(estTailleGroupe(valeur), fichier, i, `« ${champ} » doit être la taille du groupe (entier ≥ 1) ou null`)
   return valeur
 }
@@ -645,14 +650,15 @@ export function validerIndicateurs(
     const rang_reg_n = lireTailleGroupe(ligne, 'rang_reg_n', fichier, ligneIndexee)
 
     // Le contrat ordinal (ADR-0015) : chaque rang porte la taille de SON groupe
-    // (le « / Y » du rendu) — les deux présents ou absents ensemble, et un rang
-    // ne dépasse jamais la taille de son groupe (competition ranking).
-    for (const [colonne, taille] of [
-      ['rang_epci', rang_epci_n],
-      ['rang_dep', rang_dep_n],
-      ['rang_reg', rang_reg_n],
+    // (le « / Y » du rendu) — les deux présents ou absents ensemble (une colonne
+    // absente des futures projections, #892, lit null des deux côtés), et un rang
+    // ne dépasse jamais la taille de son groupe (competition ranking). Une paire
+    // PRÉSENTE malformée échoue toujours, fort.
+    for (const [colonne, position, taille] of [
+      ['rang_epci', rang_epci, rang_epci_n],
+      ['rang_dep', rang_dep, rang_dep_n],
+      ['rang_reg', rang_reg, rang_reg_n],
     ] as const) {
-      const position = ligne[colonne] as number | null
       if (position === null && taille !== null) {
         throw erreur(fichier, ligneIndexee, `« ${colonne} » est null mais « ${colonne}_n » est porté — le rang et sa taille vont ensemble`)
       }

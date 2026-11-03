@@ -10,7 +10,6 @@
 import type {
   ApercuRow,
   ColonneRang,
-  ColonneTailleRang,
   Histoire,
   HistoireDemographie,
   HistoireEconomie,
@@ -63,13 +62,6 @@ const SUFFIXE_RANG: Record<ColonneRang, string> = {
   rang_epci: "de l'EPCI",
   rang_dep: 'du département',
   rang_reg: 'de la région',
-}
-
-/** The group-size column paired with each rank column (ADR-0015 — the « / Y »). */
-const TAILLE_RANG: Record<ColonneRang, ColonneTailleRang> = {
-  rang_epci: 'rang_epci_n',
-  rang_dep: 'rang_dep_n',
-  rang_reg: 'rang_reg_n',
 }
 
 /** Le nombre ordinal français : 1er, 2e, 3e… (jamais « 1e », jamais « 2er »). */
@@ -507,51 +499,37 @@ function codesComparaison(payload: Payload, ref: Territoire): string[] {
   return codesDe('commune')
 }
 
-/** The rank columns, nearest comparison group first (EPCI → département → région). */
-const COLONNES_RANG: readonly ColonneRang[] = ['rang_epci', 'rang_dep', 'rang_reg']
-
 /**
- * The rank-in-context chip of the nearest available comparison group: a
- * commune shows its EPCI rank, an EPCI its regional rank, the région none.
- * A null rank at every level → null (no chip). The group size of the chosen
- * level is always carried (« 1er/41 de l'EPCI », ADR-0015).
+ * The rank-in-context chip (#892): ONLY the producer/API comparison rank
+ * (`comparaisonApi`) renders, with its declared exact scope (« portee »).
+ * The legacy fixed-scope static columns (rang_epci / rang_dep / rang_reg and
+ * their paired _n) are retired from the browser fallback: a row carrying only
+ * them shows NO chip — absent API comparison evidence means null, never a
+ * relabelled or substituted rank from another scope, even when stale committed
+ * rows still carry values.
  */
 export function rangEnContexte(indicateur: Indicateur): string | null {
-  if (indicateur.comparaisonApi) return formaterRangApi(indicateur.comparaisonApi.rang, indicateur.comparaisonApi.taille, indicateur.comparaisonApi.portee)
-  for (const colonne of COLONNES_RANG) {
-    const libelle = formaterRang(indicateur[colonne], indicateur[TAILLE_RANG[colonne]], colonne)
-    if (libelle !== null) return libelle
-  }
-  return null
+  if (!indicateur.comparaisonApi) return null
+  return formaterRangApi(indicateur.comparaisonApi.rang, indicateur.comparaisonApi.taille, indicateur.comparaisonApi.portee)
 }
 
-/** The structured rank-in-context facts of the nearest available comparison
- *  group — the numeric rank + group size + the formatted chip. The grammar
- *  seam (#371) reads these to dress the chip with its direction glyph and its
- *  quiet rank-position accent; the iteration mirrors rangEnContexte (nearest
- *  group first), the facts it returns are the ones the chip needs. */
+/** The structured rank-in-context facts of the API comparison — the numeric
+ *  rank + group size + the formatted chip. The grammar seam (#371) reads
+ *  these to dress the chip with its direction glyph and its quiet
+ *  rank-position accent. No API comparison evidence → null (no chip, #892). */
 export interface DetailsRang {
   /** The ordinal position (1 = best, ADR-0015). */
   rang: number
-  /** The group size of the chosen level (« / Y »), or null when absent. */
+  /** The group size of the comparison (« / Y »), or null when absent. */
   taille: number | null
-  /** The formatted chip, e.g. « 3e/41 de l'EPCI ». */
+  /** The formatted chip, e.g. « 3e/41 · communes de l’EPCI ». */
   libelle: string
 }
 
 export function detailsRangEnContexte(indicateur: Indicateur): DetailsRang | null {
-  if (indicateur.comparaisonApi) {
-    const { rang, taille, portee } = indicateur.comparaisonApi
-    return { rang, taille, libelle: formaterRangApi(rang, taille, portee) }
-  }
-  for (const colonne of COLONNES_RANG) {
-    const rang = indicateur[colonne]
-    if (rang === null) continue
-    const taille = indicateur[TAILLE_RANG[colonne]]
-    const libelle = formaterRang(rang, taille, colonne)
-    if (libelle !== null) return { rang, taille, libelle }
-  }
-  return null
+  if (!indicateur.comparaisonApi) return null
+  const { rang, taille, portee } = indicateur.comparaisonApi
+  return { rang, taille, libelle: formaterRangApi(rang, taille, portee) }
 }
 
 function formaterRangApi(rang: number, taille: number | null, portee: string | null): string {

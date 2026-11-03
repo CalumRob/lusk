@@ -174,7 +174,7 @@ export function hauteurDensite(density: readonly DensitePoint[], value: number |
   return before.y + (after.y - before.y) * fraction
 }
 
-export function modeleExploration(facts: readonly Indicateur[], facet: ComparisonFacet, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string, usePublishedRanks = false): ModeleExploration {
+export function modeleExploration(facts: readonly Indicateur[], facet: ComparisonFacet, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string): ModeleExploration {
   // La cascade explicite → mémorisé → repli est l'unique règle de la machine
   // URL (#508), partagée avec l'applier de la Page d'indicateur.
   const niveau = resoudreNiveau(requested.niveau, remembered, facet.levels)
@@ -187,19 +187,14 @@ export function modeleExploration(facts: readonly Indicateur[], facet: Compariso
   // la médiane et la densité lisent la même série triée que avant #437.
   const distribution = [...values].sort((a, b) => a - b)
   const median = mediane(distribution)
-  const rangsCalcules = usePublishedRanks ? null : rangsExAequo(values, facet.direction)
-  const publishedRank = (row: typeof all[number]) => {
-    const field = row.territoire.type === 'commune'
-      ? row.territoire.epci ? 'rang_epci' : 'rang_reg'
-      : row.territoire.type === 'epci' || row.territoire.type === 'departement' ? 'rang_reg' : null
-    return field ? { rank: row.fact[field], size: row.fact[`${field}_n`] } : { rank: null, size: null }
-  }
-  const ranks = new Map(all.map((row, index) => [row.territoire.territoire, usePublishedRanks
-    ? publishedRank(row).rank
-    : rangsCalcules![index]] as const))
-  const rankSizes = new Map(all.map((row) => [row.territoire.territoire, usePublishedRanks
-    ? publishedRank(row).size
-    : all.length] as const))
+  // #892 : le repli sur les colonnes de rang statiques (rang_epci/rang_reg et
+  // leurs _n) est RETIRÉ — les rangs du tableau sont toujours le classement
+  // ex-aequo directionnel calculé sur les valeurs (#437). Les rangs publiés
+  // par l'API arrivent par comparaisonApi et écrasent ces rangs calculés dans
+  // les modes API de la page (voir IndicateurPage).
+  const rangsCalcules = rangsExAequo(values, facet.direction)
+  const ranks = new Map(all.map((row, index) => [row.territoire.territoire, rangsCalcules[index]] as const))
+  const rankSizes = new Map(all.map((row) => [row.territoire.territoire, all.length] as const))
   const project = (row: typeof all[number]): LigneExploration => ({ territoire: row.territoire, value: row.value, rang: ranks.get(row.territoire.territoire) ?? null, rangTaille: rankSizes.get(row.territoire.territoire) ?? null, fiche: lienFiche(row.territoire, facet.theme), highlighted: row.territoire.territoire === requested.territoire })
   const filtered = all.filter((row) => !requested.recherche || row.territoire.nom.toLocaleLowerCase('fr').includes(requested.recherche.toLocaleLowerCase('fr')))
   const tri = requested.tri ?? 'nom'

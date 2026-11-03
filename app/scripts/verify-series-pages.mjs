@@ -303,9 +303,9 @@ try {
         territories: territoiresFixture, selected: focal.territoire, facet: facetQuery })
       const requested = { niveau: level, ...(department ? { departement: department } : {}),
         ...(epci ? { epci } : {}), territoire: focal.territoire }
-      const exploration = modeleExploration(facts, dispatch.facet, territoiresFixture, requested, undefined, false)
+      const exploration = modeleExploration(facts, dispatch.facet, territoiresFixture, requested)
       const rankSorted = modeleExploration(facts, dispatch.facet, territoiresFixture,
-        { ...requested, tri: 'rang', ordre: 'asc' }, undefined, false)
+        { ...requested, tri: 'rang', ordre: 'asc' })
       const trajectory = dispatch.family === 'trajectory'
         ? modeleTrajectoire(facts, dispatch.facet, boundPage.trajectory.endpoints, territoiresFixture,
           { niveau: level, territoire: focal.territoire }, [], null, { nativeSeries: true,
