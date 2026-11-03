@@ -502,8 +502,9 @@ describe('artefact modèle de lecture par territoire — contrat producteur/réc
  * est retiré (app/scripts/publish-territory-model.mjs + la commande
  * generate:territory-model), tandis que le VALIDATEUR d'artefacts reste :
  * validate:territory-model et son aide de parité canonique
- * (scripts/territory-model-dev.ts), seule lectrice retenue de territoires.json /
- * vintages.json / theme_*.json / projections Mobilité, et elle n'est utilisée
+ * (scripts/territory-model-dev.ts), seule lectrice de ces entrées JSON dans la
+ * chaîne modèle/parité (d'autres lectrices actives existent ailleurs : carte,
+ * sources, référence territoriale, recovery serving), et elle n'est utilisée
  * que par la branche de parité optionnelle du validateur — jamais pour publier.
  */
 describe('contrat CLI et branche de parité canonique du validateur (#891)', () => {
