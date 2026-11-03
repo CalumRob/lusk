@@ -340,7 +340,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       if (file === 'theme_habitat') return metadataHabitat
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       if (String(input) === '/api/resources') return nativeCatalogueResponse()
       const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
       return nativeBatchResponse(body.items, (item, resource) => {

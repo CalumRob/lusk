@@ -118,7 +118,7 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
       // Contrat producteur (api/migrations/030…) : rank_size = eligible_count =
       // nb de membres MESURÉS à la coordonnée comparée — jamais memberIds.length
       // (un membre no_record est compté en missing, pas en éligible).
-      const eligible = memberIds.filter((id) => factsOverride.some((fact) =>
+      const eligible = memberIds.filter((id: string) => factsOverride.some((fact) =>
         fact.key === item.resource && fact.territoire === id && fact.detail === detail &&
         fact.dimension === period && fact.value !== null)).length
       return new Response(JSON.stringify({ ...marker, target: item.target,
