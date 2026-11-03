@@ -22,6 +22,7 @@ try {
       const button = page.locator('.page-heading .bouton-comparaison__declencheur').first()
       await button.waitFor()
       assert.equal(await button.locator('.bouton-comparaison__type').innerText(), token)
+      assert.match(await button.getAttribute('aria-label') ?? '', /^Comparaison : .+/u)
       assert(!(await button.innerText()).includes('·'))
       await button.click()
       const panel = page.locator('.bouton-comparaison__menu')
@@ -43,7 +44,7 @@ try {
             textRects.push(...range.getClientRects())
           }
           return {
-            panel: { left: rect.left, right: rect.right, width: rect.width, height: rect.height,
+            panel: { left: rect.left, right: rect.right, top: rect.top, width: rect.width, height: rect.height,
               clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
               clientHeight: element.clientHeight, scrollHeight: element.scrollHeight,
               border, padding, whiteSpace: css.whiteSpace },
@@ -51,6 +52,7 @@ try {
               right: Math.max(...rects.map((box) => box.right)) },
             text: { left: Math.min(...textRects.map((box) => box.left)),
               right: Math.max(...textRects.map((box) => box.right)),
+              top: Math.min(...textRects.map((box) => box.top)),
               bottom: Math.max(...textRects.map((box) => box.bottom)) },
             bottom: rect.bottom,
             descendantOverflow: [...element.querySelectorAll('*')].some((node) => node.scrollWidth > node.clientWidth + 1),
@@ -64,7 +66,8 @@ try {
         assert(contents.left >= box.left + box.border + box.padding - 1
           && contents.right <= box.right - box.border - box.padding + 1, JSON.stringify(geometry))
         assert(text.left >= contents.left && text.right <= contents.right + 1
-          && text.bottom < geometry.bottom - box.border, JSON.stringify(geometry))
+          && text.top >= box.top + box.border + box.padding
+          && text.bottom < geometry.bottom - box.border - box.padding, JSON.stringify(geometry))
         assert(!(await panel.innerText()).includes('·'))
         reports.push({ width, query, token, ...geometry })
       }
