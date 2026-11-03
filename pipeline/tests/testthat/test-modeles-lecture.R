@@ -4,13 +4,15 @@
 # manifeste_modeles_lecture et modeles_territoire du graphe) comme la voie
 # manuelle (#891 : scripts/publish-territory-models.R ->
 # publier_modeles_territoire_depuis_json, ainsi que les builders/publieurs de
-# modèles de territoire). Les artefacts déjà publiés (public/data/modeles-
-# lecture/**, app/dist/data/**) et leurs validateurs (validate:territory-model,
-# validateurs d'artefacts d'indicateurs et leurs tests de contrat) restent
-# inchangés. Ce module ne garde que les helpers encore appelé hors génération :
-# verifier_integrite_projections_acces_batiments (scripts/publish-building-
-# comparisons.R) et construire_payload_territoire_programmes (cible
-# projection_programmes du graphe).
+# modèles de territoire). Issue #900 : les artefacts publiés eux-mêmes
+# (public/data/modeles-lecture/**, app/dist/data/**), leurs validateurs
+# (validate:territory-model, validateurs d'artefacts d'indicateurs) et le
+# module R modeles_lecture.R sont retirés à leur tour. Les deux helpers encore
+# vivants hors génération ont été déplacés vers leur module propriétaire :
+# verifier_integrite_projections_acces_batiments -> R/distribution_acces_
+# batiments.R (appelé par scripts/publish-building-comparisons.R) et
+# construire_payload_territoire_programmes -> R/theme_programmes_faits.R
+# (appelé par la cible projection_programmes du graphe).
 
 test_that("la génération planifiée des modèles de lecture est retirée du paquet (#890)", {
   ns <- asNamespace("lusk")
@@ -58,6 +60,14 @@ test_that("les helpers retenus hors génération restent dans le paquet", {
   # projection_programmes du graphe
   expect_true(exists("construire_payload_territoire_programmes",
                      envir = ns, inherits = FALSE))
+})
+
+test_that("le module modeles_lecture.R et les artefacts commités sont retirés (#900)", {
+  racine <- pkgload::pkg_path()
+  expect_false(file.exists(file.path(racine, "R", "modeles_lecture.R")))
+  # les artefacts eux-mêmes ne sont plus là (source public/ et copie dist/)
+  expect_false(file.exists(file.path(racine, "..", "public", "data", "modeles-lecture")))
+  expect_false(file.exists(file.path(racine, "..", "app", "dist", "data", "modeles-lecture")))
 })
 
 reference_projections <- function() {

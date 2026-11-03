@@ -350,11 +350,11 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
       )
     ))
 
-    # Issue #890 : la projection de lecture par Page d'indicateur
-    # (modeles_lecture_<thème>, pilotée par le registre read_model de la
+    # Issues #890/#900 : la projection de lecture par Page d'indicateur
+    # (modeles_lecture_<thème>, pilotée par l'ancien registre read_model de la
     # métadonnée) n'est plus câblée ici — la génération planifiée des modèles
-    # de lecture est retirée du graphe. Le champ read_model reste un champ
-    # validé des métadonnées épinglées (validation des artefacts publiés).
+    # de lecture est retirée du graphe, et le champ read_model comme les
+    # artefacts publiés modeles-lecture/** sont retirés en #900.
   }
 
   # LE RACCORDEMENT NATIONAL (#728) : les pins versionnés du package (enveloppe,
@@ -1091,13 +1091,13 @@ for (t in THEMES_RUN) {
   precedent <- as.name(paste0("publie_", t$theme))
 }
 
-# Issues #890/#891 : les modèles de lecture ne sont plus générés du tout — la
-# voie planifiée (cible agrégée modeles_territoire, manifeste_modeles_lecture
-# et cibles par thème modeles_lecture_<thème> dans grappe_theme) comme la voie
-# manuelle (script publish-territory-models.R et son aide JSON) sont retirées.
-# Aucun chemin n'écrit plus sous modeles-lecture/** : les artefacts publiés et
-# leurs validateurs restent inchangés. La chaîne Programmes ci-dessus
-# (projection_programmes comprise) garde sa reachability inchangée.
+# Issues #890/#891/#900 : les modèles de lecture ne sont plus générés du tout
+# — la voie planifiée (cible agrégée modeles_territoire, manifeste_modeles_
+# lecture et cibles par thème modeles_lecture_<thème> dans grappe_theme) comme
+# la voie manuelle (script publish-territory-models.R et son aide JSON) sont
+# retirées, et les artefacts publiés modeles-lecture/** supprimés en #900.
+# Aucun chemin n'écrit plus sous modeles-lecture/**. La chaîne Programmes
+# ci-dessus (projection_programmes comprise) garde sa reachability inchangée.
 
 rapports <- list()
 precedent <- NULL

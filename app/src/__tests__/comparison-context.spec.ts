@@ -10,7 +10,7 @@ import {
 import type {
   TerritoryComparisonContext,
   TerritoryComparisonMode,
-} from '@/payload/territoryReadModel'
+} from '@/fiche/comparisonContext'
 import { territoiresFixture } from '@/payload/fixtures'
 
 function contexte(mode: TerritoryComparisonMode): TerritoryComparisonContext {

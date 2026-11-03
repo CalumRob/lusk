@@ -154,9 +154,9 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   expect_equal(appels$geometrie, 1)
   expect_equal(appels$vintages_json, 1)
   expect_equal(appels$meta, 1)
-  # #890/#891 : plus aucune étape de run ne génère de modèles de lecture
-  # (planifié ou manuel depuis JSON) — l'agrégat territorial n'est plus publié
-  # que comme artefact retenu, validé côté app (validate:territory-model).
+  # #890/#891/#900 : plus aucune étape de run ne génère de modèles de lecture
+  # (planifié ou manuel depuis JSON), et les artefacts commités sont supprimés
+  # en #900 — aucun validateur d'artefact ne reste côté app.
   expect_identical(appels$vintages_json_vus, faux_vintages)
 
   # la donnée du compute vient de construire_donnees_brut

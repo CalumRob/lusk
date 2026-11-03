@@ -13,8 +13,9 @@ import { installApiRoutes, makeApiHandlers } from './overflow-api-routes.mjs'
 // — both intercepted here with the same fixture builders/contracts used by the app
 // tests; any other API traffic fails closed (HTTP 599), so nothing reaches Vite's
 // public API proxy. The retired per-theme facts routes are likewise fail-closed.
-// The checked-in read-model artifact is used only as offline fixture material for
-// the static content check.
+// #900 : the committed read-model artifacts are retired — the static plain-Cahier
+// content check is built from the suite's current native fixtures
+// (src/payload/fixtures.ts), never from a published model file.
 // Run: npm run verify:mobile-cahier-overflow. If Playwright has no cached
 // browser, run `npx playwright-core install chromium`; alternatively set
 // PLAYWRIGHT_CHROMIUM_EXECUTABLE to an installed Chromium executable.
@@ -298,8 +299,13 @@ try {
   const baseUrl = server.resolvedUrls.local[0]
   const { CAHIER_FIGURE_RAIL: railContract } =
     await server.ssrLoadModule('/src/fiche/cahierFigureGrammaire.ts')
-  const { payloadDepuisModeleTerritoire, validerModeleTerritoire } =
-    await server.ssrLoadModule('/src/payload/territoryReadModel.ts')
+  const {
+    territoiresFixture,
+    indicateursMobiliteFixture,
+    histoiresMobiliteFixture,
+    vintagesFixture,
+    metadonneesThemesFixtures,
+  } = await server.ssrLoadModule('/src/payload/fixtures.ts')
   const { territoryFactsFor } = await server.ssrLoadModule('/src/fiche/content/territoryFacts.ts')
   const { resolveMobiliteThemeContent } = await server.ssrLoadModule('/src/fiche/content/themeContent.ts')
   const { cahierPaginationFor } = await server.ssrLoadModule('/src/fiche/prototype/cahierPagination.ts')
@@ -317,16 +323,20 @@ try {
   ))
   const aedarContract = semanticContracts.resources.find(({ resource_id }) => resource_id === 'aedar_territorial_aggregate')
   assert(aedarContract?.source_id, 'AEDAR semantic resource contract must declare its source_id')
-  const publishedModel = JSON.parse(await readFile(
-    resolve(repoRoot, 'public/data/modeles-lecture/territoires/commune/35238.json'), 'utf8',
-  ))
-  const model = validerModeleTerritoire(publishedModel, 'territoires/commune/35238.json', {
-    type: 'commune', territoire: '35238',
-  })
-  model.cohortTerritories = JSON.parse(await readFile(resolve(repoRoot, 'public/data/territoires.json'), 'utf8'))
-  const plainPayload = payloadDepuisModeleTerritoire(model)
-  const plainFacts = territoryFactsFor(plainPayload, '35238')
-  assert(plainFacts, 'Published territory model must resolve Mobilité facts for the plain Cahier check')
+  // #900 : plus d'artefact commité — le contrôle de mise en page « plain Cahier »
+  // s'appuie sur les fixtures natives courantes (payload/fixtures.ts), exactement
+  // comme les specs navigateur ; le contrôle d'overflow indépendant est conservé.
+  const plainPayload = {
+    territoires: territoiresFixture,
+    indicateurs: indicateursMobiliteFixture,
+    histoires: histoiresMobiliteFixture,
+    runReport: null,
+    vintages: vintagesFixture,
+    programmes: null,
+    themeMetadata: { mobilite: metadonneesThemesFixtures.mobilite },
+  }
+  const plainFacts = territoryFactsFor(plainPayload, '22001')
+  assert(plainFacts, 'Native fixture payload must resolve Mobilité facts for the plain Cahier check')
   const plainContent = resolveMobiliteThemeContent(plainFacts, plainPayload.themeMetadata?.mobilite)
   const plainPagination = cahierPaginationFor(plainPayload, plainContent, true)
   // Fixture read-batch pour les lectures non-AEDAR (thème Mobilité) : contrat sémantique,

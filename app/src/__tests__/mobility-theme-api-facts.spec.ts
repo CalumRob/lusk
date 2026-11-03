@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
-import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
+import type { TerritoryComparisonContext } from '@/fiche/comparisonContext'
 import { metadonneesThemesFixtures, histoiresMobiliteFixture } from '@/payload/fixtures'
 import type { Payload } from '@/payload/types'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'

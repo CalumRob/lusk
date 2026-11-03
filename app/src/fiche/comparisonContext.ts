@@ -1,4 +1,3 @@
-import type { TerritoryComparisonContext, TerritoryComparisonMode } from '@/payload/territoryReadModel'
 import type { Territoire, TerritoireType } from '@/payload/types'
 import type { LocationQuery } from 'vue-router'
 import type { InjectionKey } from 'vue'
@@ -6,10 +5,56 @@ import type { Ref } from 'vue'
 import { buildingScopeLabel, COMPARISON_MODE_DESCRIPTIONS } from '@/fiche/content/comparisonWording'
 import { comparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 
-// The comparison vocabulary is shared with the published per-territory
-// artifact's contract (payload/territoryReadModel.ts — producer-side only
-// since #868); type-only re-export, no runtime dependency on the model.
-export type { TerritoryComparisonContext, TerritoryComparisonFact, TerritoryComparisonMode } from '@/payload/territoryReadModel'
+// #900 — the comparison vocabulary used to be re-exported type-only from the
+// per-territory read-model artifact contract (producer-side only since #868).
+// That artifact module and its committed trees are retired, so the fiche
+// layer now owns these types outright: no runtime dependency on any committed
+// model remains.
+export type TerritoryComparisonMode = 'densite' | 'epci' | 'bretagne'
+
+export interface TerritoryComparisonFact {
+  key: string
+  detail: string | null
+  sex: string | null
+  dimension: string | null
+  origin: 'indicator' | 'derived'
+  direction: 'plus-est-mieux' | 'moins-est-mieux'
+  rank: { position: number; size: number } | null
+  reference: { kind: 'mean' | 'median'; value: number } | null
+}
+
+export interface TerritoryComparisonContext {
+  mode: TerritoryComparisonMode
+  scope: {
+    kind:
+      | 'communes-densite'
+      | 'communes-epci'
+      | 'communes-bretagne'
+      | 'epcis-bretagne'
+      | 'departements-bretagne'
+    label: string
+  }
+  facts: TerritoryComparisonFact[]
+  buildingDistribution: {
+    label: string
+    totalBuildings: number
+    cells: Array<{
+      breadthBucket: string
+      depthBucket: string
+      buildingCount: number
+      share: number
+    }>
+  } | null
+  accessRamp: {
+    label: string
+    totalBuildings: number
+    points: Array<{
+      mode: 'c' | 'b' | 't'
+      quantile: number
+      accessibleTypes: number
+    }>
+  } | null
+}
 
 export const PARAM_COMPARAISON = 'comparaison'
 
@@ -171,9 +216,10 @@ export function territoireReferencePourComparaison(options: {
 /**
  * Resolve the URL's comparison mode against the destination commune.
  *
- * The URL carries a mode, never a frozen peer list. The read model therefore
- * supplies the destination-relative projection and this seam only decides
- * which already-published projection is allowed to cross into content.
+ * The URL carries a mode, never a frozen peer list. Since #868 the contexts
+ * are derived from the validated territory reference alone (no committed
+ * read model exists anymore, #900); this seam only decides which derived
+ * projection is allowed to cross into content.
  */
 export function resoudreContexteComparaison(options: {
   territoire: Territoire | null
@@ -186,8 +232,8 @@ export function resoudreContexteComparaison(options: {
   }
   if (territoire.type === 'epci' || territoire.type === 'departement') {
     // These levels keep one fixed Bretagne comparison universe. They do not
-    // accept a communal URL mode, but their read models still publish the
-    // precomputed context needed to render comparison references.
+    // accept a communal URL mode, but their reference-derived context is still
+    // needed to render comparison references.
     return {
       mode: null,
       contexte: contextes.bretagne ?? null,

@@ -236,6 +236,40 @@ construire_indicateurs_programmes <- function(membres, subventions) {
                   vintage_date_reference, vintage_date_publication)
 }
 
+# construire_payload_territoire_programmes ------------------------------------
+# Programmes publie historiquement un payload partagé {membres, subventions},
+# distinct du contrat indicateurs/histoires des fiches. Cet adaptateur garde ce
+# contrat de publication intact et expose seulement la projection nécessaire à
+# l'agrégateur atomique par territoire (cible projection_programmes du graphe).
+# (#900 : déplacé depuis l'ancien module modeles_lecture.R, retiré avec les
+# artefacts de modèles de lecture commités.)
+construire_payload_territoire_programmes <- function(programmes, territoires) {
+  if (!is.list(programmes) || !is.data.frame(programmes$membres) ||
+      !is.data.frame(programmes$subventions)) {
+    stop("Modèles de territoire : payload Programmes incomplet.", call. = FALSE)
+  }
+  if (!is.data.frame(territoires) ||
+      !all(c("territoire", "type") %in% names(territoires))) {
+    stop("Modèles de territoire : référence de territoires invalide pour Programmes.",
+         call. = FALSE)
+  }
+  list(
+    territoires = territoires,
+    indicateurs = construire_indicateurs_programmes(
+      programmes$membres, programmes$subventions
+    ),
+    histoires = data.frame(
+      territoire = character(), type = character(), theme = character(),
+      stringsAsFactors = FALSE
+    ),
+    profils_acces_bpe = NULL,
+      distribution_acces_batiments = NULL,
+      rampe_acces_batiments = NULL,
+      distribution_acces_batiments_comparaisons = NULL,
+      rampe_acces_batiments_comparaisons = NULL
+  )
+}
+
 # coalesce_na -------------------------------------------------------------------
 # L'étiquette « ∅ » d'un détail/année NA dans un message d'erreur (jamais « NA »
 # cru dans une phrase destinée au diagnostic).
