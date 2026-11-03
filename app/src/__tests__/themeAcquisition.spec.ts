@@ -158,6 +158,86 @@ describe('theme acquisition cache', () => {
       ])
     } finally { vi.unstubAllGlobals() }
   })
+
+  it('never issues selected_comparison intents for resources that do not declare it — AEDAR stays honestly unavailable before the #859/#904 serving slice', async () => {
+    // Ressource de type AEDAR : le catalogue ne déclare QUE facts + fixed_comparison
+    // (contrat API réel : intents == ("facts", "fixed_comparison")). Aucune lecture
+    // selected_comparison ne peut donc jamais lui être adressée.
+    const aedarLike = {
+      resource_id: 'aedar_aggregate_demo', theme_id: 'mobilite', indicator_id: 'aedar_aggregate_demo',
+      label: 'AEDAR (démo)', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: ['aedar'],
+      shapes: ['declared_profile'], target_kinds: ['territory'], fields: ['value', 'status'],
+      intents: ['facts', 'fixed_comparison'],
+    }
+    const scalar = {
+      resource_id: 'offre_tc', theme_id: 'mobilite', indicator_id: 'offre_tc',
+      label: 'Offre TC', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: ['korrigo'],
+      shapes: ['scalar'], target_kinds: ['territory'], fields: ['value', 'status'],
+      intents: ['facts', 'fixed_comparison', 'selected_comparison'],
+    }
+    const catalogue = [aedarLike, scalar]
+    const requests: Array<{ items: Array<Record<string, any>> }> = []
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') {
+        return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: catalogue }))
+      }
+      if (String(url) === '/api/resources/read-batch') {
+        const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(request)
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: request.items.map((item) => ({
+          id: item.id,
+          resource: item.resource,
+          data: {
+            resource: item.resource,
+            target: item.target,
+            contract: 'indicator-comparison-v1',
+            indicator_id: item.resource,
+            shape: 'scalar',
+            content_version: 'synthetic-v1',
+            reference_content_version: 'synthetic-ref-v1',
+            selection: item.intent.kind === 'selected_comparison'
+              ? item.intent.members.map(({ type, id }: { type: string; id: string }) => ({ territory_type: type, territory_id: id }))
+              : null,
+            scope: item.intent.kind === 'selected_comparison'
+              ? { kind: 'explicit_selection', member_count: item.intent.members.length }
+              : { kind: 'density_class', territory_type: 'commune', density_class_code: '1', member_count: 2 },
+            result: {
+              indicator_id: item.resource, source_facet: item.resource, status: 'available', direction: 'high',
+              unit: '%', selected_member_count: 2, eligible_count: 2, missing_count: 0, median: 0.5, rank: 1, rank_size: 2,
+            },
+          },
+        })) }))
+      }
+      throw new Error(`Unexpected request: ${String(url)}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const selection = [
+        { territory_type: 'commune' as const, territory_id: '22001' },
+        { territory_type: 'commune' as const, territory_id: '22002' },
+      ]
+      const comparison = await acquireThemeComparison('commune', '22001', 'mobilite', selection)
+      const sent = requests.flatMap((request) => request.items)
+
+      // La passe selected ne contient AUCUNE lecture pour la ressource AEDAR —
+      // ni selected_comparison, ni une autre intention implicite.
+      expect(sent.filter((item) => item.resource === aedarLike.resource_id)).toEqual([])
+      expect(sent.filter((item) => item.intent.kind === 'selected_comparison').map((item) => item.resource))
+        .toEqual([scalar.resource_id])
+      expect(sent.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+      expect(comparison.comparison_reads?.map((read) => read.resource)).toEqual([scalar.resource_id])
+
+      // Le défaut déclaré (fixed_comparison) continue de servir les deux ressources :
+      // l’indisponibilité selected de l’AEDAR n’est ni fabriquée ni implicite.
+      requests.length = 0
+      const fixed = await acquireThemeComparison('commune', '22001', 'mobilite', undefined)
+      const fixedSent = requests.flatMap((request) => request.items)
+      expect(fixedSent.every((item) => item.intent.kind === 'fixed_comparison')).toBe(true)
+      expect(fixedSent.map((item) => item.resource).sort()).toEqual([aedarLike.resource_id, scalar.resource_id].sort())
+      expect(fixed.comparison_reads?.map((read) => read.resource).sort())
+        .toEqual([aedarLike.resource_id, scalar.resource_id].sort())
+    } finally { vi.unstubAllGlobals() }
+  })
   it.each([
     {
       label: 'an EPCI plus one of its communes',
