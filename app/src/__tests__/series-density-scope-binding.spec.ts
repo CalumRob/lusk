@@ -421,4 +421,48 @@ describe('identité d’axe, tuple de rang, repli de résumé (#892)', () => {
     expect(read.comparison?.rank).toBe(rangFocalM3?.rank ?? null)
     expect(read.comparison?.comparable_count).toBe(axeM3?.eligible_count)
   })
+
+  it('OCS-GE : axes publiés RÉORDONNÉS [M3, M2] -> rejet (pas de résumé M2 erroné)', async () => {
+    const artifInput = { resource: 'artif_par_habitant', level: 'commune' as const, focal, territories }
+    vi.stubGlobal('fetch', serveWithMutation((data) => {
+      data.result.axis_comparisons = [...data.result.axis_comparisons].reverse()
+    }))
+    let rejected: unknown
+    try { await createOrderedSeriesSemanticSession().acquire(artifInput) } catch (cause) { rejected = cause }
+    expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+  })
+
+  it('axes publiés en sous-ensemble ordonné valide (axe du milieu retiré) -> admis', async () => {
+    const { read, rejected } = await acquirePrix((data) => {
+      data.result.axis_comparisons = data.result.axis_comparisons.filter((a: any) => a.axis !== '2023')
+    })
+    expect(rejected).toBeUndefined()
+    expect(read.comparison.axis_comparisons.map((a: any) => a.axis)).toEqual(['2021', '2022', '2024', '2025'])
+    expect(read.comparison.point).toBe('2025')
+  })
+
+  it('axes prix_m2 réordonnés -> rejet', async () => {
+    const { read, rejected } = await acquirePrix((data) => {
+      data.result.axis_comparisons = [...data.result.axis_comparisons].reverse()
+    })
+    expect(read).toBeUndefined()
+    expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+  })
+
+  it('fixed_comparison avec selection non null -> rejet (producteur : selection null, snapshot_reads.py:1886-1888)', async () => {
+    const { read, rejected } = await acquirePrix((data) => {
+      data.selection = [{ territory_type: 'commune', territory_id: focal.territoire }]
+    })
+    expect(read).toBeUndefined()
+    expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+  })
+
+  it('selected_comparison avec selection null -> rejet (écho attendu)', async () => {
+    vi.stubGlobal('fetch', serveWithMutation((data) => { data.selection = null }))
+    let rejected: unknown
+    try {
+      await createOrderedSeriesSemanticSession().acquire({ ...input, departmentId: '22' })
+    } catch (cause) { rejected = cause }
+    expect(rejected).toBeInstanceOf(SeriesComparisonRejectedError)
+  })
 })
