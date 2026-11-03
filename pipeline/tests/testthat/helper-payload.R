@@ -47,7 +47,19 @@ verifier_non_derivee <- function(parquet, json, nom) {
 # cinq thèmes non-mobilité : il n'y a plus de parquet par-thème à relire en
 # retour. La projection JSON se compare donc directement à la table EN MÉMOIRE
 # dont elle est issue — même rigueur, colonne pour colonne, valeur pour valeur.
-verifier_projection_sur_table <- function(table, json, nom) {
+# `colonnes_retirees` (#892) : l'asymétrie VOULUE de la projection JSON — ces
+# colonnes sont ABSENTES du JSON (futures projections) mais PRÉSENTES dans la
+# table canonique (en mémoire / parquet retenu) ; le reste se compare bit à bit,
+# et AUCUNE autre colonne ne peut manquer (les noms doivent coïncider exactement).
+verifier_projection_sur_table <- function(table, json, nom,
+                                          colonnes_retirees = character()) {
+  if (length(colonnes_retirees)) {
+    testthat::expect_false(any(colonnes_retirees %in% names(json)),
+                           info = paste(nom, "— colonne retirée encore présente dans le JSON"))
+    testthat::expect_true(all(colonnes_retirees %in% names(table)),
+                          info = paste(nom, "— colonne canonique absente de la table en mémoire"))
+    table <- table[, setdiff(names(table), colonnes_retirees), drop = FALSE]
+  }
   verifier_non_derivee(table, json, nom)
 }
 
