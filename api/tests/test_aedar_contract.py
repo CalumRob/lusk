@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from api import aedar_reads, semantic_resource_reader
-from api.resource_catalogue import default_resource_catalogue, validate_resource_item
+from api.resource_catalogue import (default_resource_catalogue,
+                                     discover_indicator_resources, validate_resource_item)
 from api.resource_requests import ResourceReadItem
 
 
@@ -15,7 +16,7 @@ def test_aedar_semantic_dispatch_is_declared_typed_and_bounded():
     resource = default_resource_catalogue.__wrapped__().resources_by_id["aedar_territorial_aggregate"]
     assert resource.resource_kind == "aedar_source_grain"
     assert resource.axes == ("typequ", "measure", "context")
-    assert resource.intents == ("facts", "fixed_comparison")
+    assert resource.intents == ("facts", "fixed_comparison", "selected_comparison")
     assert resource.allowed_levels == ("commune", "epci", "departement", "region")
     assert resource.context_values == ("density_class", "epci", "bretagne", "same_level")
     dispatch_source = inspect.getsource(semantic_resource_reader.SemanticResourceReader)
@@ -451,3 +452,98 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
     state["mode"]="legacy_rank"
     legacy=TestClient(main.app).post("/api/resources/read",json=payload())
     assert legacy.status_code==503
+
+
+def test_aedar_measure_facets_cover_every_registered_measure_with_declared_directions():
+    from api.aedar_models import AEDAR_MEASURE_KEYS
+    catalogue = default_resource_catalogue.__wrapped__()
+    resource = catalogue.resources_by_id["aedar_territorial_aggregate"]
+    # The producer declaration is exact per measure: an in-scope selected-
+    # comparison measure cannot be silently omitted from the facet registry.
+    assert set(resource.measure_facets) == set(AEDAR_MEASURE_KEYS)
+    for measure, facet in resource.measure_facets.items():
+        assert set(facet) == {"facet", "direction", "ranked"}
+        assert facet["direction"] in ("high", "low")
+        assert isinstance(facet["ranked"], bool)
+        # ADR-0015 conventions: diversity and volume readings are
+        # higher-is-better and carry selection rank chips; per-cell curve
+        # readings show their group mean and are never ranked.
+        statistic = measure.rsplit("_", 1)[1]
+        if statistic == "share":
+            assert facet == {"facet": "diversity", "direction": "high", "ranked": True}
+        elif statistic == "mean":
+            assert facet == {"facet": "volume", "direction": "high", "ranked": True}
+        else:
+            assert facet == {"facet": "distribution", "direction": "high", "ranked": False}
+    public = next(item for item in catalogue.discovery_payload()["resources"]
+                  if item["resource_id"] == "aedar_territorial_aggregate")
+    assert set(public["measure_facets"]) == set(AEDAR_MEASURE_KEYS)
+    assert "selected_comparison" in public["intents"]
+
+
+def test_aedar_selected_comparison_grants_rank_fields_only_for_the_selected_intent():
+    catalogue = default_resource_catalogue.__wrapped__()
+    target = {"kind": "territory", "type": "commune", "id": "22001"}
+    members = [{"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"}]
+    coordinates = {"typequ": ["A104"], "measure": ["count_5_walk_mean"]}
+    selected = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate", "target": target,
+        "coordinates": coordinates,
+        "fields": ["group_value", "value", "rank", "rank_size", "rank_ties"],
+        "intent": {"kind": "selected_comparison", "members": members},
+    })
+    resource = validate_resource_item(selected, catalogue)
+    assert resource.resource_id == "aedar_territorial_aggregate"
+    # Fixed AEDAR contexts stay reference-only: no rank fields are granted.
+    for intent in ({"kind": "fixed_comparison", "context": "same_level"},
+                   {"kind": "facts"}):
+        item = ResourceReadItem.model_validate({
+            "resource": "aedar_territorial_aggregate", "target": target,
+            "coordinates": coordinates, "fields": ["rank"], "intent": intent,
+        })
+        with pytest.raises(ValueError, match="field is not declared"):
+            validate_resource_item(item, catalogue)
+    # member_ranks is not an AEDAR projection; peers/rank rows stay unpublished.
+    not_granted = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate", "target": target,
+        "coordinates": coordinates, "fields": ["member_ranks"],
+        "intent": {"kind": "selected_comparison", "members": members},
+    })
+    with pytest.raises(ValueError, match="field is not declared"):
+        validate_resource_item(not_granted, catalogue)
+
+
+def test_aedar_measure_facet_declaration_fails_closed_when_incomplete(tmp_path):
+    import json
+    import shutil
+    root = Path(__file__).resolve().parents[2]
+    metadata = root / "pipeline/inst/extdata/theme-metadata"
+    contract = json.loads((root / "pipeline/inst/extdata/semantic-resource-contracts.json")
+                          .read_text(encoding="utf-8"))
+    shutil.copytree(metadata, tmp_path / "theme-metadata")
+    base = tmp_path / "semantic-resource-contracts.json"
+
+    def discover():
+        return discover_indicator_resources(tmp_path / "theme-metadata", base)
+
+    # A facet map missing one registered measure cannot load.
+    broken = json.loads(json.dumps(contract))
+    broken["resources"][0]["measure_facets"].pop("count_5_walk_mean")
+    base.write_text(json.dumps(broken), encoding="utf-8")
+    with pytest.raises(ValueError, match="Incomplete measure facets"):
+        discover()
+
+    # selected_comparison without the complete map cannot load either.
+    missing = json.loads(json.dumps(contract))
+    del missing["resources"][0]["measure_facets"]
+    base.write_text(json.dumps(missing), encoding="utf-8")
+    with pytest.raises(ValueError, match="Incomplete measure facets"):
+        discover()
+
+    # An invalid direction or facet shape is rejected.
+    invalid = json.loads(json.dumps(contract))
+    invalid["resources"][0]["measure_facets"]["count_5_walk_mean"]["direction"] = "sideways"
+    base.write_text(json.dumps(invalid), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid measure facet"):
+        discover()
+
