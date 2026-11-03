@@ -177,7 +177,7 @@ describe('région fixed_comparison : fail-closed (niveau non supporté par les r
     native_descriptor: { label: 'Prix', unit: '€/m²', direction: 'low', axis_kind: 'year', axis_values: [], comparison_point: null },
     descriptor: { descriptor_version: 'dv1' },
     content_version: 'cv1', reference_content_version: 'rv1',
-    role_axes: [], declared_source_ids: new Set(['s1']),
+    role_axes: [], declared_source_ids: ['s1'],
     resolved_cohort_type: 'region', resolved_cohort_members: [], cohort_is_filtered: false,
   }
   const regionInput = { resource: 'prix_m2', level: 'region' as const, focal: territories.find((t) => t.territoire === '53')!, territories, facts: regionFacts }
@@ -192,7 +192,7 @@ describe('région fixed_comparison : fail-closed (niveau non supporté par les r
         results: [{ id: item.id, resource: item.resource, data: comparisonData }] }, { status: 200 })
     })
   }
-  const baseComparison = {
+  const baseComparison: Record<string, any> = {
     resource: 'prix_m2', target: { kind: 'territory', type: 'region', id: '53' },
     content_version: 'cv1', reference_content_version: 'rv1',
     scope: null,
