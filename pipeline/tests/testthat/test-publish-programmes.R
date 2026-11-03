@@ -268,8 +268,9 @@ test_that("un run à tables VIDES n'écrit RIEN et laisse la sentinelle INTACTE 
   dir.create(sortie, recursive = TRUE)
   on.exit(unlink(racine, recursive = TRUE), add = TRUE)
 
-  # la relique : un programmes.json périmé encore présent (artefact commité —
-  # #893 ne le supprime pas) ; le run ne doit NI le récrire NI le supprimer
+  # la relique : un programmes.json périmé encore présent (par ex. servi par
+  # un ancien déploiement — l'artefact commité est supprimé depuis #902, mais
+  # le run ne fait aucun cleanup) ; il ne doit NI être réécrit NI supprimé
   writeLines('{"membres": [], "subventions": [], "relique": true}',
              file.path(sortie, "programmes.json"))
 
