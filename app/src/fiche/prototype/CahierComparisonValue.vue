@@ -11,8 +11,11 @@ const props = withDefaults(
     namedReference?: TerritorialScalarReference | null
     to?: RouteLocationRaw | null
     maximumFractionDigits?: number
+    /** Loi de nommage portée par la légende de la figure (#860 ruling) :
+     *  statistique en un mot + portée résolue (« moyenne des communes de … »). */
+    scopeLabel?: string | null
   }>(),
-  { to: null, maximumFractionDigits: 1 },
+  { to: null, maximumFractionDigits: 1, scopeLabel: null },
 )
 
 function formatNumber(value: number, maximumFractionDigits = 1): string {
@@ -37,6 +40,7 @@ function comparisonText(): string | null {
     <span v-if="comparisonText()" class="cahier-comparison-value__reference">
       Groupe comparé :
       <strong class="region-emphasis">{{ comparisonText() }}</strong>
+      <span v-if="scopeLabel" class="cahier-comparison-value__scope"> — {{ scopeLabel }}</span>
     </span>
     <span v-if="fact?.comparison && !namedReference" class="cahier-comparison-value__rank">
       <CahierRank
@@ -62,6 +66,10 @@ function comparisonText(): string | null {
   font: var(--type-figure-comparison);
   letter-spacing: normal;
   text-align: center;
+  /* #860 — la marque de pair porte désormais la portée résolue (texte long) :
+     contain: inline-size empêche ce texte d'inflate la largeur intrinsèque
+     des cellules de grille étroites (mobile) ; le contenu s'enroule en place. */
+  contain: inline-size;
 }
 
 .cahier-comparison-value--named { grid-template-rows: auto; }
@@ -71,6 +79,10 @@ function comparisonText(): string | null {
   max-width: 100%;
   white-space: normal;
   overflow-wrap: break-word;
+}
+
+.cahier-comparison-value__scope {
+  color: var(--cahier-default, var(--text-tertiary));
 }
 
 .cahier-comparison-value__rank {

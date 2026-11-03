@@ -472,7 +472,10 @@ describe('Variante E — partage de l’espace public', () => {
     // retained public-space/parking readings own the figure-lecture slots.
     expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(3)
     expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(4)
-    expect(wrapper.text()).toContain('Groupe comparé')
+    // #860 (ruling) — une seule légende par figure : la note « Groupe comparé »
+    // séparée est retirée ; la loi de nommage vit dans la légende de la figure.
+    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(0)
+    expect(wrapper.text()).toContain('médiane des communes de EPCI X')
   })
 
   it('renders the settled circular map plate contract', async () => {
@@ -528,8 +531,11 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.find('.plate-subfigure--road .cahier-network-bar-chart__unit').text()).toBe('%')
     expect(wrapper.findAll('.map-panel h4')).toHaveLength(0)
     expect(wrapper.find('.cahier-figure-lecture').exists()).toBe(true)
-    expect(wrapper.find('.cahier-network-bar-chart__reference-key').text()).toContain('Groupe comparé')
+    // #860 (ruling) — la clé de référence de la figure porte la loi de nommage
+    // (statistique + portée résolue), pas un « Groupe comparé » générique.
+    expect(wrapper.find('.cahier-network-bar-chart__reference-key').text()).toContain('médiane des communes de EPCI X')
     expect(wrapper.findAll('.cahier-network-bar-chart__reference-key')).toHaveLength(1)
+    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(0)
     await wrapper.find('.cahier-network-bar-row--bike').trigger('mouseenter')
     expect(wrapper.find('.plate-network-tooltip').exists()).toBe(true)
     expect(wrapper.find('.cahier-network-bar-row--car').classes()).toContain('cahier-network-bar-row--dimmed')

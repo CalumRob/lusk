@@ -21,6 +21,8 @@ const props = defineProps<{
   evidence: SharingNetworksEvidence | CyclingOfferEvidence | SharingParkingEvidence
   targets: readonly ExplorationTarget[]
   networkFigureVariant?: 'traces'
+  /** Portée résolue de la comparaison — portée par les marques de pair de la figure (#860). */
+  comparisonLabel?: string | null
 }>()
 
 type Reading = { key: string; fact: ContentFact }
@@ -204,6 +206,7 @@ function parkingShare(fact: ContentFact): string {
                 :fact="network.length.fact"
                 :maximum-fraction-digits="fractionDigits(network.length)"
                 :to="routeFor(network.length)"
+                :scope-label="props.comparisonLabel"
               />
             </template>
           </CahierFigureScalar>
@@ -234,6 +237,7 @@ function parkingShare(fact: ContentFact): string {
             :fact="props.evidence.totalLength.fact"
             :maximum-fraction-digits="fractionDigits(props.evidence.totalLength)"
             :to="routeFor(props.evidence.totalLength)"
+            :scope-label="props.comparisonLabel"
           />
         </template>
       </CahierFigureScalar>
@@ -282,6 +286,7 @@ function parkingShare(fact: ContentFact): string {
               :fact="row.length.fact"
               :maximum-fraction-digits="fractionDigits(row.length)"
               :to="routeFor(row.length)"
+              :scope-label="props.comparisonLabel"
             />
           </template>
         </CahierFigureScalar>
@@ -300,6 +305,7 @@ function parkingShare(fact: ContentFact): string {
               :fact="row.density.fact"
               :maximum-fraction-digits="fractionDigits(row.density)"
               :to="routeFor(row.density)"
+              :scope-label="props.comparisonLabel"
             />
           </template>
         </CahierFigureScalar>
@@ -321,6 +327,7 @@ function parkingShare(fact: ContentFact): string {
             :fact="props.evidence.bikePerCar.fact"
             :maximum-fraction-digits="fractionDigits(props.evidence.bikePerCar)"
             :to="routeFor(props.evidence.bikePerCar)"
+            :scope-label="props.comparisonLabel"
           />
         </template>
       </CahierFigureScalar>
@@ -357,6 +364,7 @@ function parkingShare(fact: ContentFact): string {
                 :fact="reading.fact.fact"
                 :maximum-fraction-digits="fractionDigits(reading.fact)"
                 :to="routeFor(reading.fact)"
+                :scope-label="props.comparisonLabel"
               />
             </template>
           </CahierFigureScalar>

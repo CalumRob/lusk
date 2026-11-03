@@ -18,7 +18,7 @@ import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierProse from './CahierProse.vue'
-import CahierComparisonNote from './CahierComparisonNote.vue'
+
 import type { CahierNetworkBarRow } from './CahierNetworkBarChart.vue'
 import CahierNetworkBarChart from './CahierNetworkBarChart.vue'
 import CahierMapGallery from './CahierMapGallery.vue'
@@ -134,7 +134,9 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
   const reference = network.length.fact.comparison?.reference
   if (reference?.value !== null && reference?.value !== undefined) {
     rows.push({
-      label: 'Groupe comparé',
+      // #860 — la légende de la figure porte la loi de nommage (statistique +
+      // portée résolue), pas un « Groupe comparé » générique.
+      label: props.evidence?.comparisonLabel ?? 'Groupe comparé',
       value: formatNumber(reference.value, 2),
       marker: 'dot',
       markerColor: 'var(--cahier-region-emphasis)',
@@ -346,7 +348,7 @@ async function inspect(mode: ModeKey): Promise<void> {
               :rows="roadSurfaceRows"
               :maximum="1"
               unit="%"
-              :reference-label="props.evidence?.comparisonLabel ? 'Groupe comparé' : null"
+              :reference-label="props.evidence?.comparisonLabel ?? null"
               aria-label="Emprise routière"
             />
           </div>
@@ -375,7 +377,6 @@ async function inspect(mode: ModeKey): Promise<void> {
              <CahierProse v-if="figureLectureBlocks.length > 0" :blocks="figureLectureBlocks" />
              <p v-if="props.sources?.length" class="plate-sources">Sources : {{ props.sources.join(' · ') }}</p>
            </CahierFigureLecture>
-           <CahierComparisonNote :label="props.evidence?.comparisonLabel ?? null" />
            <PassarelleExploration
             v-if="props.explorationTo"
             class="plate-exploration"

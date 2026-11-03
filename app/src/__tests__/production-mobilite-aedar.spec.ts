@@ -317,10 +317,11 @@ describe('VarianteCahierLibre — AEDAR access', () => {
     // The reference values land in the tooltip note per mode.
     await wrapper.find('.aedar-ramp [aria-label="Temps d\'accès : 15 min"]').trigger('focus')
     expect(wrapper.find('.aedar-ramp [role="tooltip"]').text()).toContain('EPCI X : 2,5')
-    const note = wrapper.get('[data-section="aedar-access"] .cahier-comparison-note')
-    expect(wrapper.get('.aedar-analysis').element.compareDocumentPosition(note.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(note.text()).toBe('Groupe comparé : moyennes des adresses résidentielles de EPCI X')
-    expect(wrapper.findAll('[data-section="aedar-access"] .cahier-comparison-note')).toHaveLength(1)
+    // #860 (ruling) — une seule légende par figure : la note « Groupe comparé »
+    // séparée est retirée ; la loi de nommage vit dans la légende des modes
+    // (entrée « peer » libellée) et dans les marques de pair des figures.
+    expect(wrapper.findAll('[data-section="aedar-access"] .cahier-comparison-note')).toHaveLength(0)
+    expect(sharedRampLegend[5]!.text()).toContain('EPCI X')
 
   })
 
@@ -589,12 +590,15 @@ describe('ProductionMobiliteAedar', () => {
       .toBeLessThan(overviewHtml.indexOf('class="cahier-evidence-source"'))
     expect(overviewHtml.indexOf('cahier-evidence-source'))
       .toBeLessThan(overviewHtml.indexOf('cahier-figure-scalar'))
-    expect(scalars.map((scalar) => scalar.get('.cahier-comparison-value').text())).toEqual(['Groupe comparé : 2,5', 'Groupe comparé : 2,5'])
+    // #860 (ruling) — la marque de pair de la figure porte la loi de nommage :
+    // « Groupe comparé : <valeur> — <statistique + portée résolue> », une seule légende.
+    expect(scalars.map((scalar) => scalar.get('.cahier-comparison-value').text())).toEqual([
+      'Groupe comparé : 2,5 — moyenne des adresses résidentielles de EPCI X',
+      'Groupe comparé : 2,5 — moyenne des adresses résidentielles de EPCI X',
+    ])
     expect(scalars[0]!.attributes('aria-label')).toContain('Moyenne — EPCI X : 2,5 types / adresse')
     expect(overview.text()).toContain('15 minutes (moyenne par adresse)')
-    const comparisonNotes = overview.findAll('.cahier-comparison-note')
-    expect(comparisonNotes).toHaveLength(1)
-    expect(comparisonNotes[0]!.text()).toBe('Groupe comparé : moyenne des adresses résidentielles de EPCI X')
+    expect(overview.findAll('.cahier-comparison-note')).toHaveLength(0)
     expect(overview.find('.cahier-rank').exists()).toBe(false)
     expect(overview.get('.argument-copy').text()).not.toContain('5 types')
     const exploration = overview.get('.cahier-section-footer button.passarelle-exploration')

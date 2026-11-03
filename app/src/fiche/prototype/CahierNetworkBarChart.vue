@@ -140,7 +140,10 @@ function labelColor(row: CahierNetworkBarRow): string {
 .cahier-network-bar-chart__header,
 .cahier-network-bar-row {
   display: grid;
-  grid-template-columns: minmax(152px, .85fr) minmax(120px, 1.35fr) max-content;
+  /* #860 — la 3e colonne peut porter la loi de nommage (statistique + portée,
+     longue) : minmax(0, max-content) la laisse rétrécir et s'enrouler en mobile
+     au lieu d'étirer toute la grille. */
+  grid-template-columns: minmax(152px, .85fr) minmax(120px, 1.35fr) minmax(0, max-content);
   gap: var(--space-2);
   align-items: center;
 }
@@ -172,7 +175,13 @@ function labelColor(row: CahierNetworkBarRow): string {
   color: var(--color-figure-reference);
   font-size: var(--type-figure-tick-size);
   letter-spacing: normal;
-  white-space: nowrap;
+  /* #860 — la clé porte la loi de nommage (statistique + portée résolue),
+     possiblement longue : elle s'enroule (capée à 40ch) au lieu d'inflate la
+     colonne max-content de la grille et de déborder en mobile. */
+  max-inline-size: 40ch;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: end;
 }
 
 .cahier-network-bar-chart__reference-key i {
@@ -263,7 +272,7 @@ function labelColor(row: CahierNetworkBarRow): string {
 @media (max-width: 760px) {
   .cahier-network-bar-chart__header,
   .cahier-network-bar-row {
-    grid-template-columns: minmax(96px, .8fr) minmax(78px, 1fr) max-content;
+    grid-template-columns: minmax(96px, .8fr) minmax(78px, 1fr) minmax(0, max-content);
   }
 }
 </style>

@@ -3,7 +3,6 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import type { ContentFact, ExplorationTarget, SharingNetworksEvidence } from '@/fiche/content/themeContent'
 import { routePourCibleExploration } from '@/fiche/explorationHandoff'
-import CahierComparisonNote from './CahierComparisonNote.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
@@ -55,11 +54,10 @@ function ariaForFact(fact: ContentFact): string {
             :fact="props.evidence.roadSurface.fact"
             :maximum-fraction-digits="0"
             :to="routeFor(props.evidence.roadSurface)"
+            :scope-label="props.evidence.comparisonLabel"
           />
         </template>
       </CahierFigureScalar>
-
-      <CahierComparisonNote :label="props.evidence.comparisonLabel" />
     </CahierFigureFrame>
     <CahierFigureLecture>
       <CahierProse :blocks="props.evidence.roadSurfaceLecture" />
