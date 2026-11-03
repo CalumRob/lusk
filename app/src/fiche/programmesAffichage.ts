@@ -10,9 +10,10 @@
  * vocabulary (sigle → French nom) lives in the APP (ADR-0013 : « les mots
  * sont l'app »), jamais dans le payload.
  *
- * The former Aperçu identity helpers (libelleApercu / formaterValeurApercu)
- * died with the Aperçu tab (the #400 verdict: remove) — population, density,
- * area and composition anchors are gone completely, never a persistent header.
+ * The former Aperçu identity helpers died with the Aperçu tab (the #400
+ * verdict: remove; formaterValeurApercu's last code home, the map popup,
+ * went with the retired apercu.json in #894) — population, density, area and
+ * composition anchors are gone completely, never a persistent header.
  */
 
 import type { SigleProgramme } from '@/payload/types'
