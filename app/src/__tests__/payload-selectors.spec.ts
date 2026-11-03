@@ -2,9 +2,7 @@
 
 import {
   histoiresDemographieFixture,
-  histoiresHabitatFixture,
   indicateursDemographieFixture,
-  indicateursHabitatFixture,
   runReportEchecFixture,
   runReportManuelFixture,
   territoiresFixture,
@@ -13,7 +11,6 @@ import {
 import {
   formaterRang,
   ligneFraicheur,
-  themesPresent,
   trouverTerritoire,
 } from '../payload/selectors'
 import type { Payload } from '../payload/types'
@@ -34,31 +31,9 @@ const payloadDemographie: Payload = {
   programmes: null,
 }
 
-describe('themesPresent — the payload-driven tab bar (ADR-0007)', () => {
-  it('returns only the themes present in the payload, in canonical order', () => {
-    const payload: Payload = {
-      ...payloadDemographie,
-      indicateurs: [...indicateursDemographieFixture, ...indicateursHabitatFixture],
-      histoires: [...histoiresDemographieFixture, ...histoiresHabitatFixture],
-    }
-
-    expect(themesPresent(payload)).toEqual(['demographie', 'habitat'])
-  })
-
-  it('never renders a theme that has no data (dead tabs never render)', () => {
-    expect(themesPresent(payloadDemographie)).toEqual(['demographie'])
-  })
-
-  it('keeps the canonical order even when only the last theme exists', () => {
-    const payload: Payload = {
-      ...payloadDemographie,
-      indicateurs: indicateursHabitatFixture,
-      histoires: histoiresHabitatFixture,
-    }
-
-    expect(themesPresent(payload)).toEqual(['habitat'])
-  })
-})
+// #901 — le helper themesPresent (barre d'onglets lue dans les lignes de
+// faits) est retiré avec son dernier consommateur : les onglets viennent du
+// registre canonique THEMES_CANONIQUES (voir payload-contract.spec.ts).
 
 // #894 — the apercuPourTerritoire selector is gone with the retired
 // apercu.json: no selector reads an Aperçu table anymore (the tab itself is
