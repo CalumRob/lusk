@@ -51,11 +51,12 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
     const source = readFileSync(join(process.cwd(), 'src/components/fiche/BoutonComparaison.vue'), 'utf8')
     expect(source).toMatch(/\.bouton-comparaison__declencheur:active,\s*\.bouton-comparaison__option:active\s*\{[^}]*background:/)
   })
-  it('affiche juste « Comparaison » en visible ; la portée active ride dans le nom accessible', () => {
+  it('affiche l’identité Comparaison et le type EPCI, jamais la portée entière sur la face', () => {
     const wrapper = monter({ etat: 'defaut' })
     const bouton = wrapper.get('.bouton-comparaison__declencheur')
 
     expect(bouton.find('.bouton-comparaison__texte').text()).toBe('Comparaison')
+    expect(bouton.find('.bouton-comparaison__type').text()).toBe('EPCI')
     // aucune prose de portée en visible
     expect(bouton.text()).not.toContain('communes de EPCI X')
     expect(bouton.attributes('aria-label')).toBe('Comparaison : communes de EPCI X')
@@ -63,6 +64,19 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
     expect(bouton.attributes('aria-expanded')).toBe('false')
     // « Sélection » n'est jamais du copy UI (visible ni accessible)
     expect(wrapper.html()).not.toContain('Sélection')
+    wrapper.unmount()
+  })
+
+  it.each([
+    [{ etat: 'preset', preset: 'densite' }, 'Densité INSEE'],
+    [{ etat: 'preset', preset: 'bretagne' }, 'Bretagne'],
+    [{ etat: 'vide' }, 'Aucune'],
+    [{ etat: 'membres', membres: [{ territory_type: 'commune', territory_id: '22001' }] }, '1 membre'],
+    [{ etat: 'membres', membres: [{ territory_type: 'commune', territory_id: '22001' }, { territory_type: 'commune', territory_id: '22002' }] }, '2 membres'],
+  ] as const)('montre le type ou le nombre de membres sans ouvrir le menu (%s)', (selection, token) => {
+    const wrapper = monter(selection)
+    expect(wrapper.get('.bouton-comparaison__type').text()).toBe(token)
+    expect(wrapper.get('.bouton-comparaison__declencheur').text()).not.toContain('·')
     wrapper.unmount()
   })
 
@@ -89,11 +103,13 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
 
     const entrees = wrapper.findAll('[role="menuitemradio"]')
     expect(entrees.map((e) => e.find('.bouton-comparaison__option-label').text())).toEqual([
-      'communes de EPCI X',
-      'communes bretonnes',
-      'grands centres urbains bretons',
+      'EPCI',
+      'Bretagne',
+      'Densité INSEE',
       'Aucune comparaison',
     ])
+    expect(entrees[0]!.get('.bouton-comparaison__option-scope').text()).toBe('communes de EPCI X')
+    expect(wrapper.get('[role="menu"]').text()).not.toContain('·')
     expect(wrapper.text()).not.toContain('Par défaut')
     // état défaut → le preset niveau-natif (epci) est l'entrée cochée
     expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['true', 'false', 'false', 'false'])
@@ -107,7 +123,8 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
     expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['false', 'false', 'true', 'false'])
     const densite = entrees[2]!
     expect(densite.attributes('aria-describedby')).toBeTruthy()
-    expect(presetActif.get(`#${densite.attributes('aria-describedby')}`).text()).toContain('Classe définie par l’Insee')
+    expect(presetActif.get(`#${densite.attributes('aria-describedby')}`).text()).toBe('grands centres urbains bretons')
+    expect(densite.attributes('title')).toContain('Classe définie par l’Insee')
     presetActif.unmount()
 
     const vide = monter({ etat: 'vide' }, { libelleActif: 'Aucune comparaison' })

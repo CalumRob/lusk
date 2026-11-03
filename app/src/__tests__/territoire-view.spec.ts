@@ -1687,10 +1687,12 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     const entrees = wrapper.findAll('[role="menuitemradio"]')
     const labels = entrees.map((e) => e.find('.bouton-comparaison__option-label').text())
     expect(labels).toEqual([
+      'EPCI', 'Bretagne', 'Densité INSEE', 'Aucune comparaison',
+    ])
+    expect(entrees.slice(0, 3).map((entry) => entry.get('.bouton-comparaison__option-scope').text())).toEqual([
       contextesReference('22001').epci!.scope.label,
       contextesReference('22001').bretagne!.scope.label,
       contextesReference('22001').densite!.scope.label,
-      'Aucune comparaison',
     ])
     expect(wrapper.text()).not.toContain('Par défaut')
     // param absent → le preset niveau-natif (epci) est coché

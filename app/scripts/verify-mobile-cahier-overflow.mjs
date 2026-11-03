@@ -446,18 +446,44 @@ try {
     })
     assert(menuBounds.left >= 0 && menuBounds.right <= menuBounds.viewport,
       `Menu hors du viewport à ${width}px : ${JSON.stringify(menuBounds)}`)
+    // Fixture de géométrie : une portée longue et un mot insécable doivent se
+    // composer, pas être masqués. Une boîte de span peut tenir même si son texte
+    // déborde (héritage nowrap du heading, régression de la première passe).
+    await page.locator('.bouton-comparaison__option-scope').first().evaluate((element) => {
+      element.textContent = `communes d’une communauté de communes au nom particulièrement long ${'Territoire'.repeat(8)}`
+    })
     const options = page.locator('.bouton-comparaison__menu [role="menuitemradio"]')
     for (const option of await options.all()) {
       await option.hover()
-      const contained = await option.evaluate((element) => {
-        const menu = element.closest('[role="menu"]').getBoundingClientRect()
-        return [element, ...element.querySelectorAll('span')].every((node) => {
+      const geometry = await option.evaluate((element) => {
+        const panel = element.closest('[role="menu"]')
+        const menu = panel.getBoundingClientRect()
+        const style = getComputedStyle(panel)
+        const contained = [element, ...element.querySelectorAll('span')].every((node) => {
           const rect = node.getBoundingClientRect()
-          return !rect.width || (rect.left >= menu.left && rect.right <= menu.right
-            && rect.top >= menu.top && rect.bottom <= menu.bottom)
+          const range = document.createRange()
+          range.selectNodeContents(node)
+          const textRects = [...range.getClientRects()]
+          return !rect.width || ([rect, ...textRects].every((box) =>
+            box.left >= menu.left + 1 && box.right <= menu.right - 1
+            && box.top >= menu.top + 1 && box.bottom <= menu.bottom - 1)
+            && node.scrollWidth <= node.clientWidth + 1)
         })
+        const range = document.createRange()
+        range.selectNodeContents(panel)
+        const rects = [...range.getClientRects()].filter((rect) => rect.width)
+        return {
+          panel: { width: menu.width, left: menu.left, right: menu.right, height: menu.height,
+            clientWidth: panel.clientWidth, scrollWidth: panel.scrollWidth,
+            clientHeight: panel.clientHeight, scrollHeight: panel.scrollHeight,
+            padding: style.padding, border: style.borderWidth, whiteSpace: style.whiteSpace },
+          contents: { left: Math.min(...rects.map((rect) => rect.left)),
+            right: Math.max(...rects.map((rect) => rect.right)) },
+          contained: contained && panel.scrollWidth <= panel.clientWidth && panel.scrollHeight <= panel.clientHeight,
+        }
       })
-      assert(contained, `Entrée hors du menu à ${width}px : ${await option.innerText()}`)
+      assert(geometry.contained, `Contenu hors du panneau à ${width}px : ${JSON.stringify(geometry)}`)
+      if (width === 390 || width === 1440) console.log(`Panneau ${width}px : ${JSON.stringify(geometry)}`)
     }
     await trigger.press('Escape')
     const marks = await page.locator('#section-aedar-car-overview .cahier-comparison-value').evaluateAll((elements) =>

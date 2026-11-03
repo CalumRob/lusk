@@ -2,9 +2,10 @@
 /**
  * BoutonComparaison — le contrôle de comparaison de la fiche, assis dans le
  * page-heading collant du Cahier (juste à gauche du titre « {thème} ·
- * {territoire} », #860 ruling propriétaire 2026-11-03) : face laconique
- * « Comparaison » ; la portée active ne se lit que dans le nom accessible
- * (aria-label), jamais en prose visible. « Sélection » reste du vocabulaire
+ * {territoire} », #860 ruling propriétaire 2026-11-03, seconde passe) :
+ * identité « Comparaison » + type ou nombre de membres, même fermé ;
+ * la portée active ne se lit que dans le nom accessible
+ * (aria-label) et dans la seconde ligne du preset. « Sélection » reste du vocabulaire
  * de glossaire, jamais du copy UI.
  *
  * Le menu ne porte AUCUNE entrée « Par défaut » : quand le paramètre d'URL est
@@ -45,6 +46,18 @@ const props = defineProps<{
   presets: readonly PresetComparaisonOption[]
 }>()
 
+// Titres éditoriaux des types ; les portées factuelles restent celles des presets.
+const typeLabels: Record<PresetComparaison, string> = {
+  epci: 'EPCI', bretagne: 'Bretagne', densite: 'Densité INSEE',
+}
+const typeActif = computed(() => {
+  const selection = props.selection
+  if (selection.etat === 'vide') return 'Aucune'
+  if (selection.etat === 'membres') return `${selection.membres.length} membre${selection.membres.length === 1 ? '' : 's'}`
+  const preset = selection.etat === 'preset' ? selection.preset : props.presetDefaut
+  return preset ? typeLabels[preset] : 'Aucune'
+})
+
 const emit = defineEmits<{
   /** La sélection choisie, typée — la vue la sérialise dans ?comparaison=. */
   (e: 'choisir', selection: SelectionComparaison): void
@@ -54,13 +67,15 @@ interface EntreeMenu {
   selection: SelectionComparaison
   label: string
   description: string | null
+  scope: string | null
   actif: boolean
 }
 
 const entrees = computed<readonly EntreeMenu[]>(() => [
   ...props.presets.map((preset) => ({
     selection: { etat: 'preset', preset: preset.preset } as SelectionComparaison,
-    label: preset.label,
+    label: typeLabels[preset.preset],
+    scope: preset.label,
     description: preset.description,
     actif: props.selection.etat === 'preset'
       ? props.selection.preset === preset.preset
@@ -70,6 +85,7 @@ const entrees = computed<readonly EntreeMenu[]>(() => [
     selection: { etat: 'vide' },
     label: 'Aucune comparaison',
     description: null,
+    scope: null,
     actif: props.selection.etat === 'vide',
   },
 ])
@@ -148,6 +164,7 @@ function choisir(entree: EntreeMenu): void {
       @keydown.esc.stop="fermer"
     >
       <span class="bouton-comparaison__texte">Comparaison</span>
+      <span class="bouton-comparaison__type">{{ typeActif }}</span>
       <AppIcon :icone="ChevronDown" :taille="12" class="bouton-comparaison__fleche" :class="{ 'is-open': ouvert }" aria-hidden="true" />
     </button>
     <div
@@ -165,7 +182,7 @@ function choisir(entree: EntreeMenu): void {
         role="menuitemradio"
         class="bouton-comparaison__option"
         :aria-checked="entree.actif ? 'true' : 'false'"
-        :aria-describedby="entree.description ? `${menuId}-${serialiserSelection(entree.selection)}-help` : undefined"
+        :aria-describedby="entree.scope ? `${menuId}-${serialiserSelection(entree.selection)}-help` : undefined"
         :title="entree.description ?? undefined"
         @click="choisir(entree)"
         @keydown.enter.prevent="choisir(entree)"
@@ -177,12 +194,14 @@ function choisir(entree: EntreeMenu): void {
         @keydown.esc.stop="fermer"
       >
         <span class="bouton-comparaison__coche" aria-hidden="true">{{ entree.actif ? '✓' : '' }}</span>
-        <span class="bouton-comparaison__option-label">{{ entree.label }}</span>
-        <span
-          v-if="entree.description"
-          :id="`${menuId}-${serialiserSelection(entree.selection)}-help`"
-          class="bouton-comparaison__option-help"
-        >{{ entree.description }}</span>
+        <span class="bouton-comparaison__option-copy">
+          <span class="bouton-comparaison__option-label">{{ entree.label }}</span>
+          <span
+            v-if="entree.scope"
+            :id="`${menuId}-${serialiserSelection(entree.selection)}-help`"
+            class="bouton-comparaison__option-scope"
+          >{{ entree.scope }}</span>
+        </span>
       </button>
     </div>
   </div>
@@ -200,7 +219,7 @@ function choisir(entree: EntreeMenu): void {
 .bouton-comparaison__declencheur {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -208,11 +227,18 @@ function choisir(entree: EntreeMenu): void {
   color: var(--cahier-theme-strong, var(--red, var(--accent-primary)));
   font: inherit;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
 }
+
+.bouton-comparaison__texte {
+  color: var(--muted, var(--text-tertiary));
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bouton-comparaison__type { font-variant-numeric: tabular-nums; }
 
 .bouton-comparaison__declencheur:hover {
   color: var(--red, var(--accent-primary));
@@ -242,24 +268,31 @@ function choisir(entree: EntreeMenu): void {
   top: calc(100% + 4px);
   inset-inline-end: 0;
   z-index: var(--z-popover);
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   box-sizing: border-box;
   inline-size: min(20rem, calc(100vw - 2 * var(--space-4)));
-  padding: var(--space-1);
+  padding: var(--space-2);
   border: 1px solid var(--red-soft, color-mix(in oklab, var(--cahier-default, var(--muted)) 18%, transparent));
   border-radius: 2px;
   background: var(--paper, var(--surface-primary));
-  box-shadow: 0 10px 30px rgb(18 28 27 / 16%);
+  box-shadow: var(--shadow-default);
+  /* Le heading est nowrap. Le panneau possède sa propre composition de texte,
+     y compris les nœuds texte dont les boîtes seules masquaient le débordement. */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .bouton-comparaison__option {
   display: grid;
-  grid-template-columns: 1em minmax(0, 1fr);
-  align-items: baseline;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  align-items: start;
   gap: var(--space-2);
   min-block-size: 36px;
-  padding: var(--space-2) var(--space-3);
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding: var(--space-3) var(--space-2);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -268,6 +301,28 @@ function choisir(entree: EntreeMenu): void {
   text-align: start;
   cursor: pointer;
   overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.bouton-comparaison__option + .bouton-comparaison__option {
+  border-top: 1px solid var(--red-soft, var(--border-subtle));
+}
+
+.bouton-comparaison__option-copy {
+  display: grid;
+  min-inline-size: 0;
+  gap: var(--space-1);
+}
+
+.bouton-comparaison__option-label {
+  font: 600 11px/1.3 var(--font-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.bouton-comparaison__option-scope {
+  color: var(--muted, var(--text-tertiary));
+  font: 400 13px/1.4 var(--font-ui);
 }
 
 .bouton-comparaison__option:hover {
@@ -285,22 +340,9 @@ function choisir(entree: EntreeMenu): void {
 }
 
 .bouton-comparaison__coche {
-  flex-shrink: 0;
-  inline-size: 1em;
+  inline-size: 1rem;
+  line-height: 1.3;
   color: var(--red, var(--accent-primary));
-}
-
-.bouton-comparaison__option-help {
-  display: none;
-  grid-column: 2;
-  color: var(--muted, var(--text-tertiary));
-  font: var(--text-caption);
-  line-height: 1.35;
-}
-
-.bouton-comparaison__option:hover .bouton-comparaison__option-help,
-.bouton-comparaison__option:focus-visible .bouton-comparaison__option-help {
-  display: block;
 }
 
 @media (pointer: coarse) {
