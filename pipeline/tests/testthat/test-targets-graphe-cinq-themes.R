@@ -61,7 +61,7 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
   # commande du graphe n'appelle un générateur de modèles de lecture
   expect_false(any(grepl("modeles-lecture", manifeste$command, fixed = TRUE)))
   expect_false(any(grepl(
-    "publier_modeles_lecture|publier_manifeste_modeles_lecture|publier_modeles_territoire_complet",
+    "publier_modeles_lecture|publier_manifeste_modeles_lecture|publier_modeles_territoire_complet|publier_modeles_territoire_depuis_json",
     manifeste$command
   )))
 
