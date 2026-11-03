@@ -7,7 +7,7 @@
 // CLI/parity helpers and package script must be gone, and the shared
 // comparison types must live in the fiche layer — not in a deleted module.
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -95,14 +95,29 @@ describe('outillage artefact-only retiré (#900)', () => {
       ['grep', '-l', 'modeles-lecture', '--', 'app/src', 'app/scripts', 'app/vite.config.ts'],
       { cwd: repoRoot, encoding: 'utf8' },
     )
-    // Only no-request assertions may keep the string (route specs, reference
-    // comments); no spec or script may READ a committed file from the tree.
-    const allowed = sources.stdout.split('\n').filter(Boolean)
-    for (const file of allowed) {
+    // Remaining mentions are no-request assertions and history comments only:
+    // nothing may read a committed file from the retired tree (fs read of a
+    // modeles-lecture path, or an ssrLoadModule of the deleted artifact module).
+    const mentions = sources.stdout.split('\n').filter(Boolean)
+      // This spec is the deletion contract itself: it names the retired paths.
+      .filter((file) => file !== 'app/src/__tests__/model-artifacts-retired.spec.ts')
+    for (const file of mentions) {
       const content = readFileSync(path.join(repoRoot, file), 'utf8')
-      expect(content.includes("readFileSync") && content.includes('modeles-lecture'), file).toBe(false)
-      expect(content.includes('ssrLoadModule(\'/src/payload/territoryReadModel.ts\')'), file).toBe(false)
+      expect(/readFile(Sync)?\([^)]*modeles-lecture/s.test(content), file).toBe(false)
+      expect(content.includes("public/data/modeles-lecture"), file).toBe(false)
+      expect(/ssrLoadModule\([^)]*territoryReadModel/s.test(content), file).toBe(false)
     }
+  })
+
+  it('conserve les assertions de non-requête vers /data/modeles-lecture/ (#900)', () => {
+    const routeSpec = readFileSync(
+      path.join(appRoot, 'src', '__tests__', 'indicator-read-model-route.spec.ts'), 'utf8',
+    )
+    expect(routeSpec).toMatch(/url\.includes\('\/data\/modeles-lecture\/'\)[\s\S]{0,80}toBe\(false\)/)
+    const profileScript = readFileSync(
+      path.join(appRoot, 'scripts', 'verify-profile-pages.mjs'), 'utf8',
+    )
+    expect(profileScript).toMatch(/includes\('\/data\/modeles-lecture\/'\)[\s\S]{0,80}undefined/)
   })
 })
 
