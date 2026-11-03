@@ -248,27 +248,42 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
       throw new Error('Sélection de comparaison incompatible avec la population API résolue')
     }
   }
-  const scope = comparisonData.scope
-  if (!record(scope) || !text(scope.kind) ||
-      !Number.isInteger(scope.member_count) || scope.member_count < 1) {
-    throw new Error('Périmètre de comparaison sémantique incompatible')
-  }
-  // #892 fail-closed : le kind de la portée répond à l'INTENT de la requête
-  // d'acquisition (contrat producteur api/snapshot_reads.py _comparison_cohort),
-  // jamais aux filtres devinés ni aux libellés :
-  //   selected_comparison          -> explicit_selection
-  //   fixed_comparison commune     -> density_class (+ code = classe du focal)
-  //   fixed_comparison epci/dept   -> same_level
-  //   fixed_comparison région      -> aucune portée publiée (scope absent)
+  // #892 fail-closed — contrat de portée PAR KIND, dérivé de l'INTENT de la
+  // requête d'acquisition (contrat producteur api/snapshot_reads.py
+  // _comparison_cohort), jamais des filtres devinés ni des libellés :
+  //   selected_comparison        -> explicit_selection (écho de sélection exact)
+  //   fixed_comparison commune   -> density_class + territory_type 'commune' +
+  //                                 density_class_code non vide = classe du focal acquis
+  //   fixed_comparison epci/dept -> same_level + territory_type EXACT du niveau
+  //   fixed_comparison région    -> aucune comparaison publiée : fail-closed
+  //     (les ressources série ordinaires n'acceptent pas la région ; le
+  //     raccordement régional relève de son propre contrat owner)
   const expectedKind = requestedMembers !== null
     ? 'explicit_selection'
     : facts.resolvedCohortType === 'commune' ? 'density_class'
       : (facts.resolvedCohortType === 'epci' || facts.resolvedCohortType === 'departement') ? 'same_level'
         : null
   if (expectedKind === null) {
-    if (record(scope)) throw new Error('Portée publiée pour un niveau sans comparaison')
-  } else if (scope.kind !== expectedKind) {
+    throw new Error('Comparaison publiée indisponible pour ce niveau (région non supportée)')
+  }
+  const scope = comparisonData.scope
+  if (!record(scope) || !text(scope.kind) ||
+      !Number.isInteger(scope.member_count) || scope.member_count < 1) {
+    throw new Error('Périmètre de comparaison sémantique incompatible')
+  }
+  if (scope.kind !== expectedKind) {
     throw new Error(`Portée de comparaison « ${String(scope.kind)} » invalide — « ${expectedKind} » attendu pour cette requête`)
+  }
+  // champs d'identité requis PAR KIND (producteur : snapshot_reads.py:160-192)
+  if (expectedKind === 'density_class' &&
+      (scope.territory_type !== 'commune' || !text(scope.density_class_code) ||
+        scope.density_class_code !== facts.focalDensityClass)) {
+    throw new Error('Portée density_class invalide ou incohérente avec le territoire focal')
+  }
+  if (expectedKind === 'same_level' && scope.territory_type !== facts.resolvedCohortType) {
+    // territory_type est REQUIS pour same_level (snapshot_reads.py:172-174) :
+    // absent ou erroné -> rejet précoce, l'identité de cohorte est vérifiée
+    throw new Error('Portée same_level sans territory_type exact du niveau acquis')
   }
   const selectedTypes = requestedMembers ? [...new Set(requestedMembers.map((member) => member.type))] : []
   const expectedScopeType = selectedTypes.length === 1 ? selectedTypes[0] : facts.resolvedCohortType
@@ -276,24 +291,15 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
       scope.territory_type !== expectedScopeType) {
     throw new Error('Type du périmètre de comparaison incompatible')
   }
-  // #892 recheck (fail-closed) : le producteur valide émet une portée
-  // density_class AVEC territory_type 'commune' ET un density_class_code non
-  // vide, égal à la classe du focal acquis (api/snapshot_reads.py:160-171,
-  // api/theme-read-contract.md:103-104). Champ absent, code vide, mauvais
-  // type ou code différent = évidence malformée : rejetée ici, comparaison
-  // seule (faits admis conservés) — jamais de rang ni de note sans portée
-  // exacte établie.
-  if (scope.kind === 'density_class' &&
-      (scope.territory_type !== 'commune' || !text(scope.density_class_code) ||
-        scope.density_class_code !== facts.focalDensityClass)) {
-    throw new Error('Portée density_class de la comparaison invalide ou incohérente avec le territoire focal')
-  }
   let expectedMembers: Set<string> | undefined
   let exactPopulation = false
   if (requestedMembers) {
     expectedMembers = new Set(requestedMembers.map((member) => member.id))
     exactPopulation = true
-  } else if (!facts.cohortIsFiltered && scope.territory_type === facts.resolvedCohortType) {
+  } else if (!facts.cohortIsFiltered) {
+    // fixed : la cohorte résolue est TOUJOURS l'identité de référence des rangs
+    // (même si un champ de portée était absent plus haut, le kind requis l'a
+    // déjà fait rejeter ; ici on vérifie IDs et compte)
     expectedMembers = new Set(facts.resolvedCohortMembers.map((member) => member.id))
     exactPopulation = scope.kind === 'same_level'
     if (exactPopulation && scope.member_count !== facts.resolvedCohortMembers.length) {
