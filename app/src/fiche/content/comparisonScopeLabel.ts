@@ -17,7 +17,20 @@ export function comparisonScopeLabel(
   }
 }
 
-/** Presentation for an API-declared same-level scope; the type and scope kind come from that read. */
+const TYPE_NEUTRAL: Record<string, string> = {
+  commune: 'communes',
+  epci: 'EPCI',
+  departement: 'départements',
+  region: 'région',
+}
+
+/**
+ * Presentation for an API-declared same-level scope; the type and scope kind
+ * come from that read. The fallback wording is NEUTRAL and names the declared
+ * scope only — never a spatial claim like « EPCI bretons », avoided by
+ * CONTEXT.md (« Partie bretonne d'un EPCI » : un EPCI transfrontalier n'est
+ * pas entièrement breton).
+ */
 export function semanticComparisonScopeLabel(
   scope: { kind?: unknown; territory_type?: unknown } | null,
   targetType: string,
@@ -25,16 +38,8 @@ export function semanticComparisonScopeLabel(
 ): string | null {
   if (publishedLabel) return publishedLabel
   if (scope?.kind !== 'same_level' || scope.territory_type !== targetType) return null
-  if (targetType === 'epci') return comparisonScopeLabel('epcis-bretagne', null, null)
-  if (targetType === 'departement') return comparisonScopeLabel('departements-bretagne', null, null)
-  return null
-}
-
-const TYPE_NEUTRAL: Record<string, string> = {
-  commune: 'communes',
-  epci: 'EPCI',
-  departement: 'départements',
-  region: 'région',
+  const typeWording = TYPE_NEUTRAL[targetType]
+  return typeWording ? `même niveau territorial (${typeWording})` : null
 }
 
 /** Producer-declared scope of a native API comparison read (fixed_comparison /
@@ -67,9 +72,7 @@ export function apiComparisonScopeLabel(
       scope.density_class_code === target.classe_densite_code) {
     return target.classe_densite_libelle_public ?? null
   }
-  if (scope.kind === 'same_level' && scope.territory_type === target.type &&
-      TYPE_NEUTRAL[target.type]) {
-    return `même niveau territorial (${TYPE_NEUTRAL[target.type]})`
-  }
-  return null
+  // same_level : libellé neutre partagé (semanticComparisonScopeLabel), sans
+  // aucune revendication spatiale
+  return semanticComparisonScopeLabel(scope, target.type)
 }

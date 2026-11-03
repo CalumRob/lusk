@@ -259,13 +259,17 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
       scope.territory_type !== expectedScopeType) {
     throw new Error('Type du périmètre de comparaison incompatible')
   }
-  // #892 recheck : une portée density_class doit correspondre à la classe du
-  // focal ACQUIS (référence validée) — un code différent est une évidence
-  // incohérente, rejetée ici (comparaison seule, faits admis conservés) :
-  // jamais de label de classe revendiqué à tort côté app.
-  if (scope.kind === 'density_class' && text(scope.density_class_code) &&
-      scope.density_class_code !== facts.focalDensityClass) {
-    throw new Error('Classe de densité déclarée par la comparaison incohérente avec le territoire focal')
+  // #892 recheck (fail-closed) : le producteur valide émet une portée
+  // density_class AVEC territory_type 'commune' ET un density_class_code non
+  // vide, égal à la classe du focal acquis (api/snapshot_reads.py:160-171,
+  // api/theme-read-contract.md:103-104). Champ absent, code vide, mauvais
+  // type ou code différent = évidence malformée : rejetée ici, comparaison
+  // seule (faits admis conservés) — jamais de rang ni de note sans portée
+  // exacte établie.
+  if (scope.kind === 'density_class' &&
+      (scope.territory_type !== 'commune' || !text(scope.density_class_code) ||
+        scope.density_class_code !== facts.focalDensityClass)) {
+    throw new Error('Portée density_class de la comparaison invalide ou incohérente avec le territoire focal')
   }
   let expectedMembers: Set<string> | undefined
   let exactPopulation = false
