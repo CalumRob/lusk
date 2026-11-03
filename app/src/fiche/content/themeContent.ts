@@ -577,8 +577,6 @@ type ComparisonContext = {
   reference: { kind: 'mean' | 'median'; value: number } | null
 }
 
-type ComparisonPopulation = 'territoires' | 'bâtiments'
-
 function comparisonScopeLabel(
   comparison: ComparisonContext | null,
   territory: TerritoryIdentity,
@@ -590,26 +588,13 @@ function comparisonScopeLabel(
 function comparisonLabel(
   comparison: ComparisonContext | null,
   territory: TerritoryIdentity,
-  statistic: 'moyenne' | 'médiane' =
-    comparison?.reference?.kind === 'mean' ? 'moyenne' : 'médiane',
-  population: ComparisonPopulation = 'territoires',
 ): string | null {
   const scopeLabel = comparisonScopeLabel(comparison, territory)
   if (!scopeLabel) return null
-  const objectLabel = population === 'bâtiments'
-    ? `des bâtiments des ${scopeLabel}`
-    : `des ${scopeLabel}`
-  const label = `${statistic} ${objectLabel}`
+  // Le kind est adapté du statistic servi, pas inféré de la famille visuelle.
+  const statistic = comparison?.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane'
+  const label = `${statistic} · ${scopeLabel}`
   return comparison?.reference ? label : `Comparaison indisponible — ${label}`
-}
-
-function statisticForFact(fact: NumericFact): 'moyenne' | 'médiane' {
-  return fact.comparisonBasis === 'territory-median' ? 'médiane' : 'moyenne'
-}
-
-function populationForFact(fact: NumericFact): ComparisonPopulation {
-  return fact.comparisonBasis === 'building-weighted-mean' ||
-    fact.comparisonBasis === 'pooled-building-mean' ? 'bâtiments' : 'territoires'
 }
 
 function sharingIntroduction(): readonly TextBlock[] {
@@ -679,8 +664,6 @@ function comparisonLabelForFacts(
   return comparisonLabel(
     comparedFact?.comparison ?? null,
     territory,
-    comparedFact ? statisticForFact(comparedFact) : undefined,
-    comparedFact ? populationForFact(comparedFact) : undefined,
   )
 }
 
