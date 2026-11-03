@@ -13,7 +13,7 @@
  * - histoires: the story row per territoire, soldes numbers
  * - run-report: mode + ISO timestamp + per-source statuts
  * (#894: no apercu document anymore — the apercu.json projection is retired
- * source-only; the committed file stays on disk unread, and the R-side
+ * source-only, the committed artifact deleted with #903, and the R-side
  * in-memory `apercu` table + apercu.parquet remain the producer contract)
  * - vintages: the shared source table, one row per dataset — two ISO dates or
  *   null (base roulante / pas encore mise en ligne), like vintage_date_*

@@ -13,8 +13,7 @@
  * data or the run report (which keep loading in the background, one
  * fetch per session, and simply never gate this render; the shared
  * programmes.json is no longer requested or read since #893 (artifact deleted with #902), and neither is
- * apercu.json since #894 — its committed file stays on disk, intentionally
- * unread).
+ * apercu.json since #894 (artifact deleted with #903).
  *
  * The département chips and the EPCI filter live in the URL query
  * (?departement=, ?epci= — shareable, back-button friendly, like ?theme= on

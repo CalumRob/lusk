@@ -367,8 +367,9 @@ describe('chargerPayload — the retired apercu.json (#894)', () => {
     const demandees: string[] = []
     const fetchImpl = async (url: string) => {
       demandees.push(url)
-      // un apercu.json périmé est encore servi (artefact commité non
-      // supprimé) : le chargeur ne doit NI le demander NI le valider
+      // un apercu.json périmé est encore servi (ex. par un ancien
+      // déploiement — l'artefact commité est supprimé depuis #903) : le
+      // chargeur ne doit NI le demander NI le valider
       return stubFetch({
         ...fichiersDemographie,
         'apercu.json': [{ territoire: '22001', type: 'commune', key: 'population', value: 2000, unit: 'hab.' }],

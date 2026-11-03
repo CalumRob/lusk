@@ -26,7 +26,8 @@
  * loader path requests or validates them — the fiche/map read the Programmes
  * facts through the API-backed theme files and native reads; the Aperçu
  * product tab is retired and no production path read its JSON (a stale
- * committed apercu.json stays on disk, unread).
+ * committed apercu.json is deleted (#903) — no file stays on disk to be
+ * left unread).
  *
  * The reference-table dependency holds for any caller of the per-file entry
  * point that needs it: theme files (indicateurs_<theme>, histoires_<theme>)
@@ -94,8 +95,9 @@ export type Fichier =
   | 'territoires-metadata'
   | 'run-report'
   | 'vintages'
-  // #894 — 'apercu' n'est plus un fichier : la projection apercu.json est
-  // retirée source-only, jamais demandée ni validée (relique committée non lue)
+  // #894/#903 — 'apercu' n'est plus un fichier : la projection apercu.json est
+  // retirée source-only (#894), l'artefact commité supprimé (#903) — jamais
+  // demandée ni validée
   | `indicateurs_${Theme}`
   | `histoires_${Theme}`
   | `theme_${Theme}`
