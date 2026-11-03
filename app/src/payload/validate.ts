@@ -290,11 +290,20 @@ function lireSexe(ligne: LigneBrute, fichier: string, i: number): Sexe | null {
   return valeur
 }
 
+/**
+ * The six legacy fixed-scope rank columns (#892): ONE block per row — either
+ * all six are present (the committed form; null values allowed) or none is
+ * (the future projection). A partial omission is a malformed source shape,
+ * never normalized to null.
+ */
+const COLONNES_RANG_BLOC = [
+  'rang_epci', 'rang_epci_n',
+  'rang_dep', 'rang_dep_n',
+  'rang_reg', 'rang_reg_n',
+] as const
+
 function lireRang(ligne: LigneBrute, champ: string, fichier: string, i: number): number | null {
   const valeur = ligne[champ]
-  // #892 : la colonne est OMISE des futures projections JSON — absente, elle
-  // lit null (les JSON commités qui la portent encore gardent leur valeur).
-  if (valeur === undefined) return null
   exiger(estRang(valeur), fichier, i, `« ${champ} » doit être un rang ordinal (entier ≥ 1, 1 = meilleur) ou null`)
   return valeur
 }
@@ -306,8 +315,6 @@ function lireTailleGroupe(
   i: number,
 ): number | null {
   const valeur = ligne[champ]
-  // #892 : idem — absente des futures projections, elle lit null.
-  if (valeur === undefined) return null
   exiger(estTailleGroupe(valeur), fichier, i, `« ${champ} » doit être la taille du groupe (entier ≥ 1) ou null`)
   return valeur
 }
@@ -642,28 +649,46 @@ export function validerIndicateurs(
     exiger(rider === null || rider === undefined || estChaine(rider), fichier, ligneIndexee,
       '« rider » doit être une chaîne ou null')
 
-    const rang_epci = lireRang(ligne, 'rang_epci', fichier, ligneIndexee)
-    const rang_dep = lireRang(ligne, 'rang_dep', fichier, ligneIndexee)
-    const rang_reg = lireRang(ligne, 'rang_reg', fichier, ligneIndexee)
-    const rang_epci_n = lireTailleGroupe(ligne, 'rang_epci_n', fichier, ligneIndexee)
-    const rang_dep_n = lireTailleGroupe(ligne, 'rang_dep_n', fichier, ligneIndexee)
-    const rang_reg_n = lireTailleGroupe(ligne, 'rang_reg_n', fichier, ligneIndexee)
+    // #892 : les six colonnes de rang forment UN BLOC par ligne — soit les six
+    // sont présentes (forme commise : les valeurs null sont admises), soit
+    // aucune (projection future, lue null). Une omission PARTIELLE est une
+    // forme malformée : rejetée fort, JAMAIS normalisée en null.
+    const rangPresentes = COLONNES_RANG_BLOC.filter((colonne) => ligne[colonne] !== undefined)
+    exiger(
+      rangPresentes.length === 0 || rangPresentes.length === COLONNES_RANG_BLOC.length,
+      fichier,
+      ligneIndexee,
+      `les six colonnes de rang vont ensemble — ${rangPresentes.length} présente(s) sur 6 (${rangPresentes.join(', ') || 'aucune'})`,
+    )
+    let rang_epci: number | null = null
+    let rang_dep: number | null = null
+    let rang_reg: number | null = null
+    let rang_epci_n: number | null = null
+    let rang_dep_n: number | null = null
+    let rang_reg_n: number | null = null
+    if (rangPresentes.length === COLONNES_RANG_BLOC.length) {
+      rang_epci = lireRang(ligne, 'rang_epci', fichier, ligneIndexee)
+      rang_dep = lireRang(ligne, 'rang_dep', fichier, ligneIndexee)
+      rang_reg = lireRang(ligne, 'rang_reg', fichier, ligneIndexee)
+      rang_epci_n = lireTailleGroupe(ligne, 'rang_epci_n', fichier, ligneIndexee)
+      rang_dep_n = lireTailleGroupe(ligne, 'rang_dep_n', fichier, ligneIndexee)
+      rang_reg_n = lireTailleGroupe(ligne, 'rang_reg_n', fichier, ligneIndexee)
 
-    // Le contrat ordinal (ADR-0015) : chaque rang porte la taille de SON groupe
-    // (le « / Y » du rendu) — les deux présents ou absents ensemble (une colonne
-    // absente des futures projections, #892, lit null des deux côtés), et un rang
-    // ne dépasse jamais la taille de son groupe (competition ranking). Une paire
-    // PRÉSENTE malformée échoue toujours, fort.
-    for (const [colonne, position, taille] of [
-      ['rang_epci', rang_epci, rang_epci_n],
-      ['rang_dep', rang_dep, rang_dep_n],
-      ['rang_reg', rang_reg, rang_reg_n],
-    ] as const) {
-      if (position === null && taille !== null) {
-        throw erreur(fichier, ligneIndexee, `« ${colonne} » est null mais « ${colonne}_n » est porté — le rang et sa taille vont ensemble`)
-      }
-      if (position !== null && (taille === null || position > taille)) {
-        throw erreur(fichier, ligneIndexee, `« ${colonne} » (${position}) dépasse la taille de son groupe « ${colonne}_n » (${taille ?? 'null'})`)
+      // Le contrat ordinal (ADR-0015) : chaque rang porte la taille de SON groupe
+      // (le « / Y » du rendu) — les deux présents ou null ensemble, et un rang
+      // ne dépasse jamais la taille de son groupe (competition ranking). Une
+      // paire PRÉSENTE malformée échoue toujours, fort.
+      for (const [colonne, position, taille] of [
+        ['rang_epci', rang_epci, rang_epci_n],
+        ['rang_dep', rang_dep, rang_dep_n],
+        ['rang_reg', rang_reg, rang_reg_n],
+      ] as const) {
+        if (position === null && taille !== null) {
+          throw erreur(fichier, ligneIndexee, `« ${colonne} » est null mais « ${colonne}_n » est porté — le rang et sa taille vont ensemble`)
+        }
+        if (position !== null && (taille === null || position > taille)) {
+          throw erreur(fichier, ligneIndexee, `« ${colonne} » (${position}) dépasse la taille de son groupe « ${colonne}_n » (${taille ?? 'null'})`)
+        }
       }
     }
 

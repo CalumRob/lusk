@@ -1427,8 +1427,26 @@ const model = computed(() => {
     const evidence = sparseCollectionComparison.value
     const rank = typeof evidence?.rank === 'number' ? evidence.rank : null
     const rankSize = typeof evidence?.rank_size === 'number' ? evidence.rank_size : null
-    const rows = calculated.rows.map((row) => row.territoire.territoire === sparseCollectionComparisonTarget.value
-      ? { ...row, rang: rank, rangTaille: rankSize } : row)
+    // #892 (revue P2) : la comparaison API de la collection clairsemée ne porte
+    // QUE le rang du territoire focal (la requête selected_comparison cible le
+    // focal — aucune évidence de rang par membre pour les pairs). Les pairs
+    // gardent donc rang/rangTaille null : aucun rang calculé localement affiché,
+    // aucune appartenance ni taille de groupe fabriquée. Seul le focal affiche
+    // le rang API, à sa portée exacte déclarée.
+    let rows = calculated.rows.map((row) => row.territoire.territoire === sparseCollectionComparisonTarget.value
+      ? { ...row, rang: rank, rangTaille: rankSize }
+      : { ...row, rang: null, rangTaille: null })
+    if (requested.value.tri === 'rang') {
+      // tri par rang : le focal noté par l'API en tête, les pairs sans rang à
+      // la fin — la même convention null-last que les branches scalaire/profil
+      // (l'ordre nom/valeur, lui, reste l'exploration légitime inchangée).
+      const factor = requested.value.ordre === 'desc' ? -1 : 1
+      rows = [...rows].sort((left, right) => {
+        if (left.rang === null) return right.rang === null ? 0 : 1
+        if (right.rang === null) return -1
+        return factor * (left.rang - right.rang)
+      })
+    }
     return { ...calculated,
       median: evidence?.status === 'available' && typeof evidence.median === 'number' ? evidence.median : null,
       rows }
