@@ -7,7 +7,6 @@ import { chargerPayload } from '../payload/loader'
 import { indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture } from '../payload/fixtures'
 import type { HistoireMobilite, Payload } from '../payload/types'
 import {
-  apercuPourTerritoire,
   formaterRang,
   histoireEconomiePourTerritoire,
   ligneFraicheur,
@@ -43,10 +42,10 @@ function chargerPayloadCommite(): Promise<Payload> {
   const fichiers: Record<string, unknown> = {}
   // #893 — programmes.json n'est plus servi au seam : le fichier commité
   // reste sur disque (non supprimé), mais aucun chargeur ne le demande.
+  // #894 — idem pour apercu.json : relique committée, jamais demandée.
   for (const nom of [
     'territoires.json',
     'territoires-metadata.json',
-    'apercu.json',
     'indicateurs_mobilite.json',
     'histoires_mobilite.json',
     'indicateurs_demographie.json',
@@ -242,15 +241,15 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(malEstampilles).toEqual([])
   })
 
-  it('renders the Aperçu from the apercu table (never derives it)', async () => {
+  it('never requests the retired apercu.json — the committed file stays on disk but unread (#894)', async () => {
     const payload = obtenirPayload()
 
-    const lignes = apercuPourTerritoire(payload, '22001')
-    expect(lignes.map((l) => l.key)).toContain('population')
-    expect(lignes.find((l) => l.key === 'population')).toMatchObject({
-      value: 589,
-      unit: 'hab.',
-    })
+    // le fichier commité EXISTE toujours (aucune suppression d'artefact) …
+    const commite = JSON.parse(readFileSync(join(dataDir, 'apercu.json'), 'utf-8')) as unknown[]
+    expect(commite.length).toBeGreaterThan(0)
+    // … mais le seam ne l'a JAMAIS demandé, et le payload n'a plus de section apercu
+    expect(demandeesCommite).not.toContain('apercu.json')
+    expect('apercu' in payload).toBe(false)
   })
 
   it('drives the theme tab bar from the payload (all five themes are built)', async () => {

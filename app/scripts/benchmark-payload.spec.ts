@@ -76,7 +76,6 @@ const payload: Payload = {
   territoires: validation.value.territoires,
   indicateurs: ingestion.value.indicateurs,
   histoires: ingestion.value.histoires,
-  apercu: null,
   runReport: null,
   vintages: null,
   programmes: null,

@@ -2,7 +2,6 @@
 
 import { echelleContexte } from '../fiche/echelleContexte'
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   runReportFraisFixture,
@@ -22,7 +21,6 @@ const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,

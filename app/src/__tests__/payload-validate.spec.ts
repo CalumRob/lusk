@@ -1,7 +1,6 @@
 ﻿import { describe, expect, it } from 'vitest'
 
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   histoiresEconomieFixture,
   histoiresMilieuxFixture,
@@ -97,7 +96,6 @@ function documentsBruts(overrides: Partial<DocumentsBruts> = {}): DocumentsBruts
     territoires: territoiresFixture,
     indicateurs: indicateursDemographieFixture,
     histoires: histoiresDemographieFixture,
-    apercu: apercuAvecNAFixture,
     runReport: runReportFraisFixture,
     vintages: vintagesFixture,
     ...overrides,
@@ -151,7 +149,6 @@ describe('parsePayload — accepts the contract shape', () => {
     expect(payload.territoires).toHaveLength(9)
     expect(payload.indicateurs).toHaveLength(indicateursDemographieFixture.length)
     expect(payload.histoires).toHaveLength(9)
-    expect(payload.apercu).toHaveLength(apercuAvecNAFixture.length)
     expect(payload.runReport?.mode).toBe('full')
     expect(payload).toSatisfy((p: Payload) => p.territoires.every((t) => t.nom.length > 0))
   })
@@ -162,11 +159,9 @@ describe('parsePayload — accepts the contract shape', () => {
     expect(payload.runReport).toBeNull()
   })
 
-  it('accepts a null apercu value (NA = non calculable) and null ranks', () => {
+  it('accepts null ranks (NA = no comparison group at that level)', () => {
     const payload = parsePayload(documentsBruts())
 
-    const na = (payload.apercu ?? []).find((a) => a.value === null)
-    expect(na).toBeDefined()
     const epci = payload.indicateurs.find((i) => i.territoire === '200000001')
     expect(epci?.rang_epci).toBeNull()
   })
@@ -397,13 +392,6 @@ describe('parsePayload — accepts the contract shape', () => {
     delete (histoires[0] as Partial<HistoireDemographie>).taux_solde_migratoire
 
     attendErreurValidation(documentsBruts({ histoires }))
-  })
-
-  it('rejects duplicate apercu rows (territoire × key)', () => {
-    const apercu = JSON.parse(JSON.stringify(apercuAvecNAFixture)) as typeof apercuAvecNAFixture
-    apercu.push({ ...apercu[0] })
-
-    attendErreurValidation(documentsBruts({ apercu }))
   })
 
   it('rejects a run-report missing its timestamp', () => {
@@ -996,6 +984,14 @@ describe('parsePayload — the retired programmes.json (#893)', () => {
     const payload = parsePayload(documentsBruts())
 
     expect(payload.programmes).toBeNull()
+  })
+})
+
+describe('parsePayload — the retired apercu.json (#894)', () => {
+  it('never parses an apercu document — no section, no validator exists for it', () => {
+    const payload = parsePayload(documentsBruts())
+
+    expect('apercu' in payload).toBe(false)
   })
 })
 

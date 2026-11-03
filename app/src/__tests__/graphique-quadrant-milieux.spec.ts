@@ -7,7 +7,6 @@ import * as echarts from 'echarts/core'
 
 import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilieux.vue'
 import {
-  apercuAvecNAFixture,
   histoiresMilieuxFixture,
   indicateursMilieuxFixture,
   runReportFraisFixture,
@@ -273,7 +272,6 @@ describe('GraphiqueQuadrantMilieux — the Milieux quadrant story chart', () => 
       territoires: territoiresFixture,
       indicateurs: indicateursMilieuxFixture,
       histoires: histoiresMilieuxFixture,
-      apercu: apercuAvecNAFixture,
       runReport: runReportFraisFixture,
       vintages: vintagesFixture,
       programmes: null,

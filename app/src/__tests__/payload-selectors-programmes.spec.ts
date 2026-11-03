@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   indicateursProgrammesFixture,
@@ -132,7 +131,6 @@ function payloadAvecFaits(
     territoires,
     indicateurs: [...indicateursDemographieFixture, ...faits],
     histoires: histoiresDemographieFixture,
-    apercu: apercuAvecNAFixture,
     runReport: runReportFrais,
     vintages: vintagesFrais,
     programmes: null,

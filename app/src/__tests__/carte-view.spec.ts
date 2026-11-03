@@ -12,7 +12,6 @@ import type { ChargerGeometrie } from '../geo/useGeometrie'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import type { Masques } from '../geo/types'
 import {
-  apercuFixture,
   chargerAvec,
   histoiresDemographieFixture,
   histoiresHabitatFixture,
@@ -383,7 +382,6 @@ const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: apercuFixture,
   runReport: null,
   vintages: vintagesFixture,
   programmes: null,

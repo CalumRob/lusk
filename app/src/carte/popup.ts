@@ -14,7 +14,7 @@
  * what the cursor sits on, before the click opens the full popup.
  */
 
-import type { ApercuRow, Payload, Theme } from '../payload/types'
+import type { Payload, Theme } from '../payload/types'
 import {
   formaterValeur,
   rangEnContexte,
@@ -28,22 +28,10 @@ export interface KpiPopup {
   valeur: string
   unite: string
   /** The rank-in-context chip (« Xᵉ / Y dans l'EPCI », ADR-0015) — carried by
-   *  the indicateur rows only; null for story scalars and the Aperçu rows
+   *  the indicateur rows only; null for story scalars
    *  (CONTEXT.md §Rang : les rangs vivent sur les indicateurs du thème). */
   rang: string | null
   provenance?: string
-}
-
-/** French display utility retained for other Aperçu consumers. */
-export function formaterValeurApercu(ligne: ApercuRow): string | null {
-  if (ligne.value === null) return null
-  const estPourcent = ligne.unit === '%'
-  const brut = estPourcent ? ligne.value * 100 : ligne.value
-  const fixe = brut.toFixed(estPourcent ? 0 : 2)
-  const [entiers, decPart = ''] = fixe.split('.')
-  const decs = decPart.replace(/0+$/, '')
-  const groupes = entiers.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
-  return decs ? `${groupes},${decs}` : groupes
 }
 
 /** The active layer's row for a territory — the valeur + unit + rank-in-context

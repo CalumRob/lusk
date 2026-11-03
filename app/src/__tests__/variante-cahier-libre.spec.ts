@@ -82,7 +82,6 @@ const payload: Payload = {
       .map((row) => ({ ...row, territoire: '22002' })),
   ],
   histoires: histoiresMobiliteFixture,
-  apercu: null,
   runReport: null,
   vintages: vintagesFixture,
   programmes: null,

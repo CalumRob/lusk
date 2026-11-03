@@ -43,7 +43,6 @@ import type { InjectionKey, Ref } from 'vue'
 import { chargerFichier } from './loader'
 import type { Fichier } from './loader'
 import type {
-  ApercuRow,
   Histoire,
   Indicateur,
   Payload,
@@ -91,7 +90,6 @@ function payloadVide(): Payload {
     territoryMetadata: null,
     indicateurs: [],
     histoires: [],
-    apercu: null,
     runReport: null,
     vintages: null,
     programmes: null,
@@ -117,12 +115,13 @@ const SANS_REFERENCE = new Set<Fichier>([
 // #893 — 'programmes' n'est plus un fichier : la projection programmes.json est
 // retirée ; la section native de la carte (mapMemberships) vient de
 // l'acquisition sémantique API, pas du magasin de fichiers.
+// #894 — 'apercu' n'est plus un fichier non plus : la projection apercu.json
+// est retirée source-only, jamais démarrée ni attendue par aucun wait-set.
 const TOUS_LES_FICHIERS: Fichier[] = [
   'territoires',
   'territoires-metadata',
   'run-report',
   'vintages',
-  'apercu',
   ...THEMES_CANONIQUES.flatMap(
     (theme) => [`indicateurs_${theme}`, `histoires_${theme}`, `theme_${theme}`] as Fichier[],
   ),
@@ -172,9 +171,6 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         break
       case 'vintages':
         p.vintages = valeur as Vintage[] | null
-        break
-      case 'apercu':
-        p.apercu = valeur as ApercuRow[] | null
         break
       default:
         // Un thème absent (null) ne contribue aucune ligne — l'état vide honnête.

@@ -9,11 +9,11 @@ import { MENTION_DECLARATION_SANS_PAGE } from '../methodes/sources'
 import { chargerAvec, histoiresHabitatFixture, histoiresMobiliteFixture, indicateursHabitatFixture, indicateursMobiliteFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures } from '../payload/fixtures'
 import type { ChargerFichier } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
-import { apercuAvecNAFixture, histoiresDemographieFixture, indicateursDemographieFixture, territoiresFixture, vintagesFixture } from '../payload/fixtures'
+import { histoiresDemographieFixture, indicateursDemographieFixture, territoiresFixture, vintagesFixture } from '../payload/fixtures'
 import { routes } from '../router'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 
-const payload: Payload = { territoires: territoiresFixture, indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture, apercu: apercuAvecNAFixture, runReport: null, vintages: vintagesFixture, programmes: null }
+const payload: Payload = { territoires: territoiresFixture, indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture, runReport: null, vintages: vintagesFixture, programmes: null }
 
 function payloadAvecFichesSources(): Payload {
   const demographie = structuredClone(metadonneesThemesFixtures.demographie)

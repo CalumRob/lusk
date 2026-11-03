@@ -1,7 +1,6 @@
 ﻿import { describe, expect, it } from 'vitest'
 
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   histoiresHabitatFixture,
   indicateursDemographieFixture,
@@ -12,7 +11,6 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import {
-  apercuPourTerritoire,
   formaterRang,
   ligneFraicheur,
   themesPresent,
@@ -31,7 +29,6 @@ const payloadDemographie: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportEchecFixture,
   vintages: vintagesFixture,
   programmes: null,
@@ -63,26 +60,9 @@ describe('themesPresent — the payload-driven tab bar (ADR-0007)', () => {
   })
 })
 
-describe('apercuPourTerritoire — the Aperçu tab assembly (ADR-0007)', () => {
-  it('returns the basic stats for a territory, in payload order', () => {
-    const lignes = apercuPourTerritoire(payloadDemographie, '22001')
-
-    expect(lignes.map((l) => l.key)).toEqual(['population', 'densite', 'part_65_plus'])
-    expect(lignes[0]).toMatchObject({ key: 'population', value: 2000, unit: 'hab.' })
-  })
-
-  it('NA-gates null values — a KPI not computable for the territory is skipped', () => {
-    // 22002's part_65_plus is null in the fixture (non calculable)
-    const lignes = apercuPourTerritoire(payloadDemographie, '22002')
-
-    expect(lignes.map((l) => l.key)).toEqual(['population', 'densite'])
-    expect(lignes.every((l) => l.value !== null)).toBe(true)
-  })
-
-  it('returns an empty array for an unknown territory', () => {
-    expect(apercuPourTerritoire(payloadDemographie, '99999')).toEqual([])
-  })
-})
+// #894 — the apercuPourTerritoire selector is gone with the retired
+// apercu.json: no selector reads an Aperçu table anymore (the tab itself is
+// retired since #408).
 
 describe('formaterRang — the rank-in-context chip (ADR-0015)', () => {
   it('formats the ordinal position with its group size ("1er/41 de l’EPCI")', () => {

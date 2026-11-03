@@ -8,7 +8,6 @@ import CommunesView from '../views/CommunesView.vue'
 import DepartementsView from '../views/DepartementsView.vue'
 import EpcisView from '../views/EpcisView.vue'
 import {
-  apercuAvecNAFixture,
   chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
@@ -32,7 +31,6 @@ const payloadDemographie: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,

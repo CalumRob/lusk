@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  apercuAvecNAFixture,
   histoiresMilieuxFixture,
   indicateursMilieuxFixture,
   runReportFraisFixture,
@@ -29,7 +28,6 @@ const payloadMilieux: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursMilieuxFixture,
   histoires: histoiresMilieuxFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,

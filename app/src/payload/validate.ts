@@ -11,8 +11,10 @@
  *   value number|null (NA = non calculable), two ISO vintage dates, theme in
  *   the canonical set, no duplicate (territoire × key × detail) rows
  * - histoires: the story row per territoire, soldes numbers
- * - apercu: one row per (territoire × key), value number|null
  * - run-report: mode + ISO timestamp + per-source statuts
+ * (#894: no apercu document anymore — the apercu.json projection is retired
+ * source-only; the committed file stays on disk unread, and the R-side
+ * in-memory `apercu` table + apercu.parquet remain the producer contract)
  * - vintages: the shared source table, one row per dataset — two ISO dates or
  *   null (base roulante / pas encore mise en ligne), like vintage_date_*
  * - referential integrity: facts only cite known territoires, and their
@@ -24,7 +26,6 @@
  */
 
 import type {
-  ApercuRow,
   DistributionAccesBatimentsRow,
   DistributionAccesBatimentsAvailability,
   RampeAccesBatimentsRow,
@@ -1571,44 +1572,6 @@ function lireHistoireMilieux(
 }
 
 /**
- * The apercu basic-stats table (ADR-0007). Optional (404 → null), like the
- * run report: since #116 the pipeline only publishes apercu.json when a
- * theme HAS an aperçu — absent, the Aperçu element is simply not built,
- * never a fetch error.
- */
-export function validerApercu(
-  brut: unknown,
-  fichier: string,
-  territoires: Territoire[],
-): ApercuRow[] | null {
-  if (brut === null) return null
-  exiger(Array.isArray(brut), fichier, 0, 'la table apercu doit être un tableau')
-  const lignes = brut as unknown[]
-  const reference = indexerReference(territoires)
-  const vus = new Set<string>()
-
-  return lignes.map((ligne, i) => {
-    const ligneIndexee = i + 1
-    exiger(estObjet(ligne), fichier, ligneIndexee, 'chaque ligne doit être un objet')
-    verifierReference(ligne, reference, fichier, ligneIndexee)
-
-    const territoire = ligne['territoire'] as string
-    const type = lireType(ligne, fichier, ligneIndexee)
-    const key = lireChaine(ligne, 'key', fichier, ligneIndexee)
-
-    const cle = `${territoire}\u0000${key}`
-    exiger(!vus.has(cle), fichier, ligneIndexee, `ligne en double (territoire × key) pour « ${key} » de « ${territoire} »`)
-    vus.add(cle)
-
-    const value = ligne['value']
-    exiger(estValeur(value), fichier, ligneIndexee, '« value » doit être un nombre ou null')
-    const unit = lireChaine(ligne, 'unit', fichier, ligneIndexee)
-
-    return { territoire, type, key, value, unit }
-  })
-}
-
-/**
  * The bounded Mobilité BPE projection: one row per non-empty profile and
  * territory, with one deterministic exemplar. The full TYPEQU universe stays
  * pipeline-side; this file contains only displayable profile summaries.
@@ -2146,7 +2109,6 @@ export function validerVintages(brut: unknown, fichier: string): Vintage[] | nul
   territoiresMetadata?: unknown
   indicateurs: unknown
   histoires: unknown
-  apercu: unknown
   runReport: unknown
   vintages?: unknown
 }): Payload {
@@ -2157,7 +2119,6 @@ export function validerVintages(brut: unknown, fichier: string): Vintage[] | nul
   verifierClassesDensite(territoires, territoryMetadata)
   const indicateurs = validerIndicateurs(documents.indicateurs, 'indicateurs', territoires)
   const histoires = validerHistoires(documents.histoires, 'histoires', territoires)
-  const apercu = validerApercu(documents.apercu, 'apercu.json', territoires)
   const runReport = validerRapportRun(documents.runReport, 'run-report.json')
   const vintages = validerVintages(documents.vintages ?? null, 'vintages.json')
   // #627 - the retired BPE profile / building distribution / access-ramp
@@ -2166,12 +2127,14 @@ export function validerVintages(brut: unknown, fichier: string): Vintage[] | nul
   // #893 - no programmes document either: programmes.json is retired, the
   // programmes section stays null here (the map's native cohort is acquired
   // separately through the API, never parsed from a static file).
+  // #894 - no apercu document either: apercu.json is retired source-only, no
+  // section and no validator exist for it (the R-side in-memory `apercu`
+  // table + apercu.parquet remain the producer contract).
   return {
     territoires,
     territoryMetadata,
     indicateurs,
     histoires,
-    apercu,
     runReport,
     vintages,
     programmes: null,

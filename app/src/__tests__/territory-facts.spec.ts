@@ -84,7 +84,6 @@ const payload: Payload = {
     row('29001', 0.1),
   ],
   histoires: [],
-  apercu: null,
   runReport: null,
   vintages: [
     {

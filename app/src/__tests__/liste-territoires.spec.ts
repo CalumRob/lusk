@@ -8,7 +8,6 @@ import ListeTerritoires from '../components/ListeTerritoires.vue'
 import type { ConfigListe } from '../listes/listes'
 import type { Fichier } from '../payload/loader'
 import {
-  apercuAvecNAFixture,
   chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
@@ -48,7 +47,6 @@ const payloadDemographie: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,

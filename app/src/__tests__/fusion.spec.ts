@@ -47,7 +47,6 @@ const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: [],
   runReport: null,
   vintages: vintagesFixture,
   programmes: null,

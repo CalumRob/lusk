@@ -34,7 +34,6 @@ function payloadAvec(faits: typeof indicateursProgrammesFixture): Payload {
     territoires: territoiresFixture,
     indicateurs: faits,
     histoires: [],
-    apercu: null,
     runReport: null,
     vintages: null,
     programmes: null,

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, beforeEach, vi } from 'vitest'
 import IndicateurView from '../views/IndicateurView.vue'
 import RepereFamilyOutlet from '../components/indicateurs/RepereFamilyOutlet.vue'
 import { dispatchIndicatorFamily } from '../indicateurs/familySeam'
-import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, indicateursMobiliteFixture, indicateursProgrammesFixture, indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
+import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, indicateursMobiliteFixture, indicateursProgrammesFixture, indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 
 import type { Payload, FamilleFigure, IndicatorPageMetadata } from '../payload/types'
@@ -15,7 +15,7 @@ import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import type { Fichier } from '../payload/loader'
 import { nativeBatchResponse, nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
 
-const payload: Payload = { territoires: [...territoiresFixture, { territoire: 'e', type: 'epci', nom: 'EPCI test', departement: null, epci: null }], indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture, apercu: apercuAvecNAFixture, runReport: runReportFraisFixture, vintages: vintagesFixture, programmes: null, themeMetadata: { demographie: metadonneesThemesFixtures.demographie } }
+const payload: Payload = { territoires: [...territoiresFixture, { territoire: 'e', type: 'epci', nom: 'EPCI test', departement: null, epci: null }], indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture, runReport: runReportFraisFixture, vintages: vintagesFixture, programmes: null, themeMetadata: { demographie: metadonneesThemesFixtures.demographie } }
 const networkRequests: string[] = []
 const semanticReadItems: Array<Record<string, any>> = []
 let collectionComparisonFailures = 0
