@@ -27,8 +27,10 @@ source-grain resource in the same single/batch grammar: `typequ` and `measure`
 are coordinates and fixed comparisons use the declared comparison context.
 AEDAR reference reads use the canonical territory-reference scope: commune EPCI
 and Bretagne values are direct source aggregates, density-class values come from
-the pooled producer artifact, and EPCI/departement same-level presets use
-published medians. AEDAR does not serve peer rows or ranks.
+the pooled producer artifact, and EPCI/departement same-level presets read the
+Région's own direct published aggregate (« Moyenne de Bretagne »); the retired
+same-level median summaries are no longer served. AEDAR publishes no peer rows
+or ranks.
 The four selected-reading resources for Démographie, Économie/Emploi, Habitat,
 and Milieux expose the already-published reading facts. Producer-declared ranked
 activity evidence, Milieux source absences, and Milieux source bindings are separate
@@ -100,6 +102,31 @@ the unified semantic resource contract (`/api/resources/read` and
 Legacy
 service/building accessibility and Mobility snapshot-derived reading resources
 are retired; they are not represented as semantic resources.
+
+## AEDAR selected comparisons
+
+`aedar_territorial_aggregate` also accepts `selected_comparison` on a territory
+target with `typequ`/`measure` coordinates. The selection must be same-level as
+the focal territory: every member is resolved against the published territory
+reference in the same snapshot, and unknown, mistyped, mixed-level or partial
+members fail closed (404/422) naming the failed member. For each requested
+TYPEQU × measure cell the response returns the group statistic computed per
+request: the address-weighted mean of the members' published aggregate values
+(weights = published `n_addresses`) — exactly the pooled address aggregate of
+the selection, reported as `statistic: "pooled"` with the summed source counts —
+for scalar readings and per-cell curve readings alike. The group coverage is
+derived from the members' published coverage statuses, never fabricated:
+`covered` only when every member is covered; a lesser status is reflected as
+published when the members agree on it, and a disagreement has no single
+derivable coverage and stays unknown (`null`) rather than being upgraded.
+The focal receives
+`rank`, `rank_size` and `rank_ties` (opt-in via `fields`) only when it is itself
+a member and the measure's producer-declared facet is ranked: a direction-aware
+flat ordinal within the selection, ties sharing the rank, using the declared
+per-measure facets/directions (`measure_facets` in the catalogue). Curve
+readings (min/max/deciles) return their group mean with null rank fields. One
+request reads one committed repeatable-read snapshot; no peer/rank rows are
+published (#810 stance intact).
 
 ## Declared-profile comparisons
 

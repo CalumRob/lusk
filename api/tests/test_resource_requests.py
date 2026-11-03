@@ -105,6 +105,11 @@ def test_comparison_capabilities_remain_declared_for_comparable_shapes():
         assert "fixed_comparison" in resource.intents
         assert "selected_comparison" in resource.intents
     assert catalogue.resources_by_id["raccordement_reference"].intents == ("facts",)
+    # The AEDAR source-grain family is in scope for request-time selected
+    # comparisons (#768/#859): it cannot be silently omitted from the inventory.
+    aedar = catalogue.resources_by_id["aedar_territorial_aggregate"]
+    assert "fixed_comparison" in aedar.intents
+    assert "selected_comparison" in aedar.intents
 
 
 def test_dynamic_series_coordinates_defer_value_membership_to_published_descriptor():
