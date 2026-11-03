@@ -220,6 +220,7 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
   resolvedCohortMembers: Array<{ id: string; type: string }>; cohortIsFiltered: boolean
   focal: { id: string; type: string }; resource: string
   focalDensityClass: string | null
+  territories: readonly Territoire[]
 }, requestedMembers: Array<{ type: TerritoireType; id: string }> | null): OrderedSeriesRead['comparison'] {
   const result = comparisonData.result
   const target = comparisonData.target
@@ -235,11 +236,21 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
   }
   if (requestedMembers) {
     const selection = comparisonData.selection
-    if (!Array.isArray(selection) || selection.length !== requestedMembers.length ||
-        !selection.every((member: Row) => record(member) &&
-          requestedMembers.some((requested) => requested.type === member.territory_type &&
-            requested.id === member.territory_id))) {
+    // écho d'identité EXACT et unique : ensemble identique, sans doublon ni
+    // remplacement (l'ordre n'est pas sémantique — le producteur trie, on
+    // accepte tout ordre mais jamais [A,A] pour [A,B])
+    if (!Array.isArray(selection) || selection.length !== requestedMembers.length) {
       throw new Error('Écho de sélection de comparaison incompatible')
+    }
+    const selectionKeys = selection.map((member: Row) =>
+      record(member) && text(member.territory_type) && text(member.territory_id)
+        ? `${member.territory_type}\u0000${member.territory_id}` : null)
+    const requestedKeys = requestedMembers.map((member) => `${member.type}\u0000${member.id}`)
+    if (selectionKeys.some((key) => key === null) ||
+        new Set(selectionKeys).size !== selectionKeys.length ||
+        (selectionKeys as string[]).some((key) => !requestedKeys.includes(key)) ||
+        requestedKeys.some((key) => !(selectionKeys as string[]).includes(key))) {
+      throw new Error('Écho de sélection de comparaison incompatible (doublon, manquant ou remplacé)')
     }
     const requestedIds = new Set(requestedMembers.map((member) => member.id))
     const resolvedIds = new Set(facts.resolvedCohortMembers.map((member) => member.id))
@@ -297,12 +308,29 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
     expectedMembers = new Set(requestedMembers.map((member) => member.id))
     exactPopulation = true
   } else if (!facts.cohortIsFiltered) {
-    // fixed : la cohorte résolue est TOUJOURS l'identité de référence des rangs
-    // (même si un champ de portée était absent plus haut, le kind requis l'a
-    // déjà fait rejeter ; ici on vérifie IDs et compte)
-    expectedMembers = new Set(facts.resolvedCohortMembers.map((member) => member.id))
-    exactPopulation = scope.kind === 'same_level'
-    if (exactPopulation && scope.member_count !== facts.resolvedCohortMembers.length) {
+    // fixed : la cohorte résolue est TOUJOURS l'identité de référence des rangs.
+    // Pour density_class, la cohorte de comparaison est le SOUS-ENSEMBLE de la
+    // classe de densité, résolu depuis la RÉFÉRENCE validée (champs d'identité
+    // de classe publiés) — jamais depuis un calcul navigateur. Tout membre de
+    // la cohorte résolue doit figurer dans la référence, sinon on ne peut pas
+    // établir la cohorte exacte : rejet avec le gap précis, pas d'inférence.
+    if (scope.kind === 'density_class') {
+      const classes = new Map(facts.territories.map((territory) =>
+        [territory.territoire, territory.classe_densite_code ?? null] as const))
+      const membresClasse: string[] = []
+      for (const member of facts.resolvedCohortMembers) {
+        const classe = classes.get(member.id)
+        if (classe === undefined) {
+          throw new Error(`Référence validée ne couvre pas la cohorte résolue (membre ${member.id} sans classe de densité publiée)`)
+        }
+        if (classe === scope.density_class_code) membresClasse.push(member.id)
+      }
+      expectedMembers = new Set(membresClasse)
+    } else {
+      expectedMembers = new Set(facts.resolvedCohortMembers.map((member) => member.id))
+    }
+    exactPopulation = true
+    if (scope.member_count !== expectedMembers.size) {
       throw new Error('Population native de comparaison incohérente avec la cohorte résolue')
     }
   }
@@ -340,8 +368,12 @@ function bindComparisonEvidence(comparisonData: Row, facts: {
           candidate.value > candidate.max || candidate.eligible_count < 2) {
         throw new Error(`Agrégat de comparaison incohérent (${axis})`)
       }
-    } else if (candidate.value !== null || candidate.min !== null || candidate.max !== null) {
-      throw new Error(`Comparaison indisponible porteuse de valeurs (${axis})`)
+    } else if (candidate.value !== null || candidate.min !== null || candidate.max !== null ||
+        // seuil exact du producteur (series_comparison_projection.py:111 :
+        // available = eligible >= 2) — un unavailable avec >= 2 éligibles
+        // est incohérent, rejeté
+        candidate.eligible_count >= 2) {
+      throw new Error(`Comparaison indisponible incohérente (${axis})`)
     }
     const rankIds = new Set<string>()
     for (const rank of candidate.member_ranks) {
@@ -433,6 +465,7 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
         cohortIsFiltered: admittedFocal.cohort_is_filtered,
         focal: admittedFocal.territory, resource: input.resource,
         focalDensityClass: focalDensityClassOf(input),
+        territories: input.territories,
       }, members)
       const result = attachAdmittedComparison(admittedFocal, comparison, comparisonData, input)
       if (entries.cohortGenerations.get(key) === generation) entries.comparisons.set(compareKey, result)
@@ -570,6 +603,7 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
       resolvedCohortMembers: cohortMembers, cohortIsFiltered: facts.cohort_is_filtered,
       focal: facts.territory, resource: input.resource,
       focalDensityClass: focalDensityClassOf(input),
+      territories: input.territories,
     }, members)
     const result = attachAdmittedComparison(facts, comparison, comparisonData, input)
     if (entries.cohortGenerations.get(key) === generation) {
@@ -876,5 +910,6 @@ export async function reacquireOrderedSeriesComparison(input: {
     cohortIsFiltered: input.facts.cohort_is_filtered,
     focal: input.facts.territory, resource: input.resource,
     focalDensityClass: focalDensityClassOf(input),
+    territories: input.territories,
   }, members)
 }
