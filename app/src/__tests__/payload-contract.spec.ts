@@ -43,7 +43,8 @@ function chargerPayloadCommite(): Promise<Payload> {
   // #893/#902 — programmes.json n'est plus servi au seam : l'artefact commité
   // est SUPPRIMÉ des deux copies suivies (public/ et app/dist/), et aucun
   // chargeur ne le demande.
-  // #894 — idem pour apercu.json : relique committée, jamais demandée.
+  // #894/#903 — idem pour apercu.json : l'artefact commité est SUPPRIMÉ des
+  // deux copies suivies (public/ et app/dist/), et aucun chargeur ne le demande.
   for (const nom of [
     'territoires.json',
     'territoires-metadata.json',
@@ -242,13 +243,16 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(malEstampilles).toEqual([])
   })
 
-  it('never requests the retired apercu.json — the committed file stays on disk but unread (#894)', async () => {
+  it('the retired apercu.json is absent and never requested or regenerated (#894 retired, #903 deleted)', async () => {
     const payload = obtenirPayload()
 
-    // le fichier commité EXISTE toujours (aucune suppression d'artefact) …
-    const commite = JSON.parse(readFileSync(join(dataDir, 'apercu.json'), 'utf-8')) as unknown[]
-    expect(commite.length).toBeGreaterThan(0)
-    // … mais le seam ne l'a JAMAIS demandé, et le payload n'a plus de section apercu
+    // l'artefact commité est SUPPRIMÉ des deux copies suivies (#903) : ni la
+    // source public/ ni la copie dist/ ne le portent — et comme le build ne
+    // fait que recopier public/data → dist/data (copy-payload-build.ts), la
+    // copie de build ne peut PAS le recréer
+    expect(existsSync(join(dataDir, 'apercu.json'))).toBe(false)
+    expect(existsSync(join(process.cwd(), 'dist', 'data', 'apercu.json'))).toBe(false)
+    // le seam ne l'a JAMAIS demandé, et le payload n'a plus de section apercu
     expect(demandeesCommite).not.toContain('apercu.json')
     expect('apercu' in payload).toBe(false)
   })
