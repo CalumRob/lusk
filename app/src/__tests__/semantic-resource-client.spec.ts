@@ -5,16 +5,35 @@ import type { SemanticReadItem } from '../payload/semanticResourceClient'
 afterEach(() => vi.unstubAllGlobals())
 
 describe('semantic read batches', () => {
-  it('conserve uniquement l’identité du membre nommé par un refus du producteur', async () => {
+  // Formulations réellement émises par api/aedar_reads.py (#859/#904).
+  it.each([
+    [404, 'Unknown selected comparison member commune/22002'],
+    [422, 'Selected comparison member type does not match commune/22002'],
+    [422, 'Selected comparison member commune/22002 is not same-level as the focal territory'],
+    [422, 'Selected comparison member commune/22002 has no published AEDAR aggregate for typequ A104'],
+    [422, 'Selected comparison member commune/22002 has no published value for measure private_key at typequ A104'],
+    [422, 'Selected comparison member\n type does not match\tcommune/22002'],
+  ])('conserve uniquement l’identité nommée par le refus producteur %s : %s', async (status, detail) => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      detail: 'Selected comparison member commune/22002 has no published value for measure private_key',
-    }), { status: 422 })))
+      detail,
+    }), { status })))
     const lecture: SemanticReadItem = { resource: 'densite', target: { kind: 'territory', type: 'commune', id: '22001' },
       intent: { kind: 'selected_comparison', members: [{ type: 'commune', id: '22002' }] } }
     const error = await lireRessourcesBatch([lecture]).catch((cause: unknown) => cause)
     expect(error).toBeInstanceOf(SemanticMemberError)
-    expect(error).toMatchObject({ member: { type: 'commune', id: '22002' }, status: 422 })
+    expect(error).toMatchObject({ member: { type: 'commune', id: '22002' }, status })
     expect((error as Error).message).not.toContain('private_key')
+  })
+  it.each([
+    { detail: 'Unknown selected territory' },
+    { detail: 'selected comparison members must be unique' },
+    { detail: [{ loc: ['body', 'items', 0, 'intent', 'members'], msg: 'selected comparison members must be unique' }] },
+  ])('ne déduit aucun membre d’un refus sans identité typée : %j', async (body) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 422 })))
+    const error = await lireRessourcesBatch([{ resource: 'densite', target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'selected_comparison', members: [{ type: 'commune', id: '22002' }] } }]).catch((cause: unknown) => cause)
+    expect(error).not.toBeInstanceOf(SemanticMemberError)
+    expect((error as Error).message).toContain('HTTP 422')
   })
   it('garde un échec HTTP générique quand le refus ne nomme pas une identité typée', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>indisponible</html>', { status: 422 })))
