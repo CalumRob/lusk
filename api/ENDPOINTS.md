@@ -231,9 +231,15 @@ Searches the retained published territory reference with bounded query inputs.
   fixed declared contexts rank the focal's registry-wide reading within the
   context's resolved peer group beside the declared reference value, and
   selections keep the address-weighted pooled statistic over the members'
-  readings. Per-cell measures keep the selected-only rank boundary (#904): the
-  fixed intent grants `rank`/`rank_size`/`rank_ties` on the aggregate facets
-  only.
+  readings. A reading is available only under the fiche's compatibility law
+  (complete TYPEQU registry, shared source provenance, every row `covered`,
+  agreeing positive address population, valid observed counts and values —
+  CONTEXT.md « Moyennes d'accès en voiture AEDAR »); members/peers failing it
+  are honestly unavailable (`status: "not_available"`, null rank fields) and
+  ineligible for the rank — `rank_size` reflects the eligible population, never
+  a zero-filled or fabricated value. Per-cell measures keep the selected-only
+  rank boundary (#904): the fixed intent grants `rank`/`rank_size`/`rank_ties`
+  on the aggregate facets only.
 
 ## Retired route families
 

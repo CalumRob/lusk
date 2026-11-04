@@ -1,6 +1,6 @@
 """Source-grain AEDAR aggregate, fixed-comparison and selected-comparison snapshots."""
 
-from math import fsum
+from math import fsum, isfinite
 
 from fastapi import HTTPException
 
@@ -114,32 +114,72 @@ _AEDAR_AGGREGATE_RECORDS_SQL = """SELECT territory_id,
        count(*) AS n_rows,
        count((measures->>%s)::double precision) AS n_measured,
        sum((measures->>%s)::double precision) AS total,
+       min((measures->>%s)::double precision) AS v_min,
+       max((measures->>%s)::double precision) AS v_max,
        min(n_addresses) AS na_min, max(n_addresses) AS na_max,
        sum(n_observed)::bigint AS observed_sum,
        count(DISTINCT coverage_status) AS n_coverage,
-       min(coverage_status) AS coverage_status
+       min(coverage_status) AS coverage_status,
+       count(DISTINCT (source_id,vintage_id,source_url,licence,attribution,
+                      reference_date,publication_date)) AS n_provenance,
+       count(*) FILTER (WHERE coverage_status IS DISTINCT FROM 'covered') AS n_uncovered,
+       count(*) FILTER (WHERE n_observed IS NULL OR n_observed < 0
+                          OR n_observed > n_addresses) AS n_bad_observed
 FROM aedar_territorial_aggregate
 WHERE territory_type=%s AND territory_id=ANY(%s::text[])
 GROUP BY territory_id"""
 
 
+def _aedar_aggregate_available(n_rows, n_measured, v_min, v_max, na_min, na_max,
+                               n_provenance, n_uncovered, n_bad_observed,
+                               registry_size, underlying):
+    """The fiche's compatibility law for one territory's registry-wide sum.
+
+    Mirrors `carAccessMeans` (app/src/fiche/content/aedarAccessSection.ts) and
+    CONTEXT.md « Moyennes d'accès en voiture AEDAR »: the reading is available
+    only over the complete TYPEQU registry, with one shared source
+    vintage/provenance across all rows, every row `covered`, an agreeing
+    positive address population, valid observed counts (0 <= n_observed <=
+    n_addresses) and finite non-negative per-type values (<= 1 for share
+    readings). Incomplete, uncovered or unknown evidence never becomes a
+    partial sum or a fabricated zero — the reading is honestly unavailable.
+    """
+    return bool(
+        n_rows == registry_size
+        and n_provenance == 1
+        and n_uncovered == 0
+        and na_min == na_max and na_max is not None and na_max > 0
+        and n_bad_observed == 0
+        and n_measured == registry_size
+        and v_min is not None
+        and isfinite(v_min) and isfinite(v_max)
+        and v_min >= 0
+        and (not underlying.endswith("_share") or v_max <= 1)
+    )
+
+
 def _aedar_aggregate_records(conn, territory_type, territory_ids, underlying, registry_size):
     """Per-territory registry-wide sum of one per-type measure, aggregated in SQL.
 
-    A territory's reading is the sum over its complete published registry; an
-    incomplete universe yields no partial sum — the reading stays unknown,
-    never a fabricated partial value (ADR-0039's 2026-11-04 amendment, #914).
+    A territory's reading is the sum over its complete published registry and
+    is available only under the full compatibility law above; otherwise it
+    stays unknown, never a partial value (ADR-0039's 2026-11-04 amendment,
+    #914).
     """
     cursor = conn.execute(_AEDAR_AGGREGATE_RECORDS_SQL,
-                          (underlying, underlying, territory_type, sorted(set(territory_ids))))
+                          (underlying, underlying, underlying, underlying,
+                           territory_type, sorted(set(territory_ids))))
     records = {}
     for row in cursor.fetchall():
-        (territory_id, n_rows, n_measured, total, na_min, na_max,
-         observed_sum, n_coverage, coverage) = row
-        complete = n_rows == registry_size and na_min == na_max
+        (territory_id, n_rows, n_measured, total, v_min, v_max, na_min, na_max,
+         observed_sum, n_coverage, coverage, n_provenance, n_uncovered,
+         n_bad_observed) = row
+        available = _aedar_aggregate_available(
+            n_rows, n_measured, v_min, v_max, na_min, na_max,
+            n_provenance, n_uncovered, n_bad_observed, registry_size, underlying)
         records[territory_id] = {
-            "value": float(total) if complete and n_measured == registry_size else None,
-            "complete": complete,
+            "value": float(total) if available else None,
+            "available": available,
             "n_addresses": na_max if na_min == na_max else None,
             "n_observed": observed_sum,
             "coverage_status": coverage if n_coverage == 1 else None,
@@ -164,8 +204,6 @@ def _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry
                                       registry_size).get(group_id)
     if record is None:
         raise HTTPException(404, "No published result for this fixed context")
-    if not record["complete"]:
-        raise HTTPException(503, "AEDAR aggregate publication is incomplete for the reference territory")
     return {
         "value": record["value"],
         "n_addresses": record["n_addresses"],
@@ -177,29 +215,39 @@ def _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry
 
 _AEDAR_POOLED_GROUP_SQL = """SELECT count(*) AS n_rows, count(value) AS n_measured,
        sum(value) AS total,
+       min(value) AS v_min, max(value) AS v_max,
        min(n_addresses) AS na_min, max(n_addresses) AS na_max,
        sum(n_observed)::bigint AS observed_sum,
        count(DISTINCT statistic) AS n_statistic, min(statistic) AS statistic,
-       count(DISTINCT coverage_status) AS n_coverage, min(coverage_status) AS coverage_status
+       count(DISTINCT coverage_status) AS n_coverage, min(coverage_status) AS coverage_status,
+       count(*) FILTER (WHERE coverage_status IS DISTINCT FROM 'covered') AS n_uncovered
 FROM aedar_comparison_group
 WHERE comparison_context='density_class' AND group_id=%s AND territory_type='commune' AND measure=%s"""
 
 
 def _aedar_pooled_group_aggregate(conn, group_id, underlying, registry_size):
-    """Registry-wide sum of the pooled density artifact's per-type rows."""
+    """Registry-wide sum of the pooled density artifact's per-type rows.
+
+    Same availability law as the per-territory sums: the artifact must cover
+    the complete registry, stay covered, keep an agreeing positive address
+    population and valid finite non-negative per-type values (<= 1 for share
+    readings); otherwise the pooled reading is honestly unavailable, never a
+    partial sum.
+    """
     row = conn.execute(_AEDAR_POOLED_GROUP_SQL, (group_id, underlying)).fetchone()
     if not row or not row[0]:
         raise HTTPException(404, "No published result for this fixed context")
-    (n_rows, n_measured, total, na_min, na_max, observed_sum,
-     n_statistic, statistic, n_coverage, coverage) = row
-    if n_rows != registry_size or n_statistic != 1 or na_min != na_max:
-        raise HTTPException(503, "AEDAR pooled publication is incomplete for the aggregate reading")
+    (n_rows, n_measured, total, v_min, v_max, na_min, na_max, observed_sum,
+     n_statistic, statistic, n_coverage, coverage, n_uncovered) = row
+    available = _aedar_aggregate_available(
+        n_rows, n_measured, v_min, v_max, na_min, na_max,
+        1, n_uncovered, 0, registry_size, underlying) and n_statistic == 1
     return {
-        "value": float(total) if n_measured == n_rows else None,
-        "n_addresses": na_max,
+        "value": float(total) if available else None,
+        "n_addresses": na_max if na_min == na_max else None,
         "n_observed": observed_sum,
         "coverage_status": coverage if n_coverage == 1 else None,
-        "statistic": statistic,
+        "statistic": statistic if n_statistic == 1 else None,
     }
 
 
@@ -361,7 +409,11 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
     and tie count are computed per request over the context's resolved peer
     group from published per-type rows in the same committed snapshot — no
     peer/rank rows are published (#810 stance intact; ADR-0039's 2026-11-04
-    amendment, #914).
+    amendment, #914). A reading is available only under the fiche's full
+    compatibility law (complete registry, shared provenance, all rows
+    covered, agreeing positive address population, valid observed counts and
+    values); peers failing it are honestly unavailable and ineligible for the
+    rank.
     """
     underlying = AEDAR_AGGREGATE_READINGS[measure]
     registry_size = _aedar_registry_size(conn)
@@ -401,17 +453,17 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
     focal_record = peer_records.get(territory_id)
     if focal_record is None:
         raise HTTPException(404, "No published focal AEDAR value")
-    if not focal_record["complete"]:
-        raise HTTPException(503, "AEDAR aggregate publication is incomplete for the focal territory")
     provenance = _aedar_focal_provenance(conn, territory_type, territory_id)
     direction = facet["direction"]
     focal_value = focal_record["value"]
     rank = rank_size = rank_ties = None
     if focal_value is not None:
-        # Peers without a complete measured registry are not comparable and
-        # stay out of the rank; ties share the focal's rank.
+        # Peers whose rows do not satisfy the compatibility law are honestly
+        # unavailable: they are ineligible for the rank (never zeroed or
+        # ranked), and rank_size reflects the eligible population; ties share
+        # the focal's rank.
         comparable = {peer_id: record["value"] for peer_id, record in peer_records.items()
-                      if record["value"] is not None}
+                      if record["available"]}
         better = sum(1 for value in comparable.values()
                      if (value > focal_value if direction == "high" else value < focal_value))
         rank = better + 1
@@ -649,6 +701,11 @@ def _aedar_selected_aggregate_snapshot(conn, territory_type, territory_id, resol
     and the focal receives a direction-aware rank within the selection when it
     is itself a member. Computed per request from one committed snapshot; no
     peer/rank rows are published (ADR-0039's 2026-11-04 amendment, #914).
+    A reading is available only under the fiche's full compatibility law
+    (complete registry, shared provenance, all rows covered, agreeing positive
+    address population, valid observed counts and values); members failing it
+    are honestly unavailable, ineligible for the rank and excluded from the
+    pooled statistic - never converted to zero or ranked.
     """
     registry_size = _aedar_registry_size(conn)
     underlying_by_measure = {measure: AEDAR_AGGREGATE_READINGS[measure] for measure in measure_list}
@@ -668,21 +725,24 @@ def _aedar_selected_aggregate_snapshot(conn, territory_type, territory_id, resol
         facet = facets[measure]
         underlying = underlying_by_measure[measure]
         records = member_records[underlying]
+        # A member whose rows do not satisfy the compatibility law contributes
+        # no comparable value: its reading is honestly unavailable and the
+        # member is ineligible — never converted to zero, never ranked, and
+        # excluded from the pooled statistic (family contract semantics).
         values = []
         for level, code in resolved:
             record = records.get(code)
-            if (record is None or not record["complete"] or record["value"] is None
-                    or record["n_addresses"] is None or record["n_addresses"] <= 0):
-                raise HTTPException(422, f"Selected comparison member {level}/{code} has no published aggregate reading for measure {measure}")
+            if record is None or not record["available"]:
+                continue
             values.append((code, record["value"], int(record["n_addresses"]), int(record["n_observed"] or 0)))
-        statuses = {records[code]["coverage_status"] for _, code in resolved}
+        statuses = {records[code]["coverage_status"] for _, code in resolved
+                    if records.get(code) is not None and records[code]["available"]}
         group_coverage = next(iter(statuses)) if len(statuses) == 1 else None
         total_weight = sum(weight for _, _, weight, _ in values)
-        group_value = fsum(value * weight for _, value, weight, _ in values) / total_weight
+        group_value = (fsum(value * weight for _, value, weight, _ in values) / total_weight
+                       if total_weight > 0 else None)
         total_observed = sum(observed for _, _, _, observed in values)
         focal_record = focal_records[underlying]
-        if focal_record is not None and not focal_record["complete"]:
-            raise HTTPException(503, "AEDAR aggregate publication is incomplete for the focal territory")
         focal_value = focal_record["value"] if focal_record else None
         rank = rank_size = rank_ties = None
         if facet["ranked"] and territory_id in member_ids and focal_value is not None:

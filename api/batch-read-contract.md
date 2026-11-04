@@ -140,19 +140,33 @@ without a `typequ` coordinate, and are computed per request from published
 per-type rows in `aedar_territorial_aggregate` — never published as new rows
 (#810 stance intact):
 
+An aggregate reading is available only when the territory's published rows
+satisfy the same compatibility law as the fiche's displayed sums (CONTEXT.md
+« Moyennes d'accès en voiture AEDAR »): the complete TYPEQU registry is
+present, all rows share one source vintage/provenance (`source_id`,
+`vintage_id`, `source_url`, `licence`, `attribution`, reference/publication
+dates), every row is `covered`, the address population agrees and is positive,
+every observed count is valid (`0 ≤ n_observed ≤ n_addresses`), and every
+per-type value is a finite number ≥ 0 (≤ 1 for share readings). Incomplete,
+uncovered or unknown evidence never becomes a partial sum or a fabricated
+zero: the reading is honestly unavailable (null value, `status:
+"not_available"`).
+
 - `fixed_comparison` keeps each declared context's reference semantics (the
   direct EPCI/Bretagne/Région aggregate, or the pooled density artifact summed
   over the registry) and adds the opt-in `rank`/`rank_size`/`rank_ties`: a
   direction-aware flat ordinal of the focal's registry-wide reading within the
   context's resolved peer group (the EPCI's communes, all Breton communes, the
   density class, or the same-level territories), ties sharing the rank. Peers
-  without a complete measured registry are not comparable and stay out of the
-  rank; an incomplete registry never yields a partial sum.
+  whose rows fail the law are ineligible: never converted to zero or ranked,
+  and `rank_size` reflects the eligible population.
 - `selected_comparison` keeps #859's address-weighted pooled semantics over
   each member's registry-wide reading (weights = published `n_addresses`) —
   exactly the pooled address aggregate of the selection — with the focal rank
-  when it is a member, and fails closed naming any member without a complete
-  measured registry.
+  when it is a member and available. Members failing the law contribute no
+  comparable value: they are excluded from the pooled statistic and the rank
+  (`rank_size` counts the eligible members) while the requested membership
+  stays truthful in `scope.member_count`.
 
 Per-cell measures are unchanged: fixed contexts stay reference-only for them
 (#904) and only `selected_comparison` serves their ranks. Mixing aggregate

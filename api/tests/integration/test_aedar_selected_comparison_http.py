@@ -62,12 +62,15 @@ def _seed_aedar(publisher):
                ('sel-c2','commune','Commune 2','22','sel-e1','D1','Dense'),
                ('sel-c3','commune','Commune 3','22','sel-e2','D2','Peu dense'),
                ('sel-c4','commune','Commune 4','22','sel-e2','D2','Peu dense'),
+               ('sel-c5','commune','Commune 5','22','sel-e1','D1','Dense'),
+               ('sel-c6','commune','Commune 6','22','sel-e1','D1','Dense'),
+               ('sel-c7','commune','Commune 7','22','sel-e2','D2','Peu dense'),
                ('sel-e1','epci','EPCI 1','22',NULL,NULL,NULL),
                ('sel-e2','epci','EPCI 2','22',NULL,NULL,NULL),
                ('22','departement','Département 22',NULL,NULL,NULL,NULL),
                ('53','region','Bretagne',NULL,NULL,NULL,NULL)""")
     publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count)"
-                      " VALUES ('territory_reference','b' || repeat('0',63),8)")
+                      " VALUES ('territory_reference','b' || repeat('0',63),11)")
 
     rows = [
         # communes: n_addresses weights 10 / 30 / 10. The TYPEQU registry of the
@@ -126,6 +129,27 @@ def _seed_aedar(publisher):
                         "count_15_car_share": 0.9}),
         _aggregate_row("region", "53", "B207", 1000, 800,
                        {"count_15_car_mean": 15.0, "count_15_car_share": 0.5}),
+        # Availability-law anomalies (#914 follow-up): each of these communes
+        # has a complete {A104, B207} registry but fails one fiche condition,
+        # so its registry-wide aggregate reading is honestly unavailable.
+        # sel-c5: mixed coverage (B207 not "covered") -> ineligible.
+        _aggregate_row("commune", "sel-c5", "A104", 20, 18,
+                       {"count_15_car_mean": 9.0, "count_15_car_share": 0.3}),
+        {**_aggregate_row("commune", "sel-c5", "B207", 20, 17,
+                          {"count_15_car_mean": 5.0, "count_15_car_share": 0.2}),
+         "coverage_status": "pending_review"},
+        # sel-c6: divergent provenance (B207 on another vintage) -> ineligible.
+        _aggregate_row("commune", "sel-c6", "A104", 20, 18,
+                       {"count_15_car_mean": 10.0, "count_15_car_share": 0.35}),
+        {**_aggregate_row("commune", "sel-c6", "B207", 20, 16,
+                          {"count_15_car_mean": 5.0, "count_15_car_share": 0.25}),
+         "vintage_id": "2026-v2"},
+        # sel-c7: a share above 1 (volume rows stay valid) -> ineligible for
+        # meanDiversity only; meanVolume 30.0 remains available.
+        _aggregate_row("commune", "sel-c7", "A104", 10, 8,
+                       {"count_15_car_mean": 20.0, "count_15_car_share": 1.5}),
+        _aggregate_row("commune", "sel-c7", "B207", 10, 8,
+                       {"count_15_car_mean": 10.0, "count_15_car_share": 0.4}),
     ]
     for row in rows:
         publisher.execute(
@@ -424,9 +448,10 @@ def test_fixed_aggregate_reading_returns_direct_reference_peer_rank_and_ties(aed
     assert comparison["group_coverage_status"] == "covered"
     assert comparison["value"] == pytest.approx(18.0) and comparison["status"] == "measured"
     assert (comparison["rank"], comparison["rank_size"], comparison["rank_ties"]) == (2, 2, 1)
-    # Bretagne context: the rank reads over all Breton communes whose registry
-    # is complete (sel-c4 has no B207 row and stays out); the reference is the
-    # Région's direct aggregate (30 + 15 = 45.0).
+    # Bretagne context: the rank reads over all Breton communes whose rows
+    # satisfy the compatibility law (sel-c4 incomplete, sel-c5/sel-c6
+    # incompatible stay out; sel-c7's volume rows are valid); the reference is
+    # the Région's direct aggregate (30 + 15 = 45.0).
     bretagne = aedar_http.post("/api/resources/read", json=_aggregate_item(
         measures=("meanVolume",), fields=["group_value", "value", "rank", "rank_size", "rank_ties"],
         context="bretagne"))
@@ -435,6 +460,14 @@ def test_fixed_aggregate_reading_returns_direct_reference_peer_rank_and_ties(aed
     assert comparison["group_id"] == "53" and comparison["territory_type"] == "region"
     assert comparison["statistic"] == "direct" and comparison["group_value"] == pytest.approx(45.0)
     assert comparison["value"] == pytest.approx(18.0)
+    # Eligible volume peers: sel-c1 18.0, sel-c2/sel-c3/sel-c7 30.0 -> 4e/4.
+    assert (comparison["rank"], comparison["rank_size"], comparison["rank_ties"]) == (4, 4, 1)
+    # For the diversity reading sel-c7 is ineligible (share 1.5 > 1) -> 3e/3.
+    bretagne_diversity = aedar_http.post("/api/resources/read", json=_aggregate_item(
+        measures=("meanDiversity",), fields=["value", "rank", "rank_size", "rank_ties"],
+        context="bretagne"))
+    assert bretagne_diversity.status_code == 200, bretagne_diversity.text
+    comparison = bretagne_diversity.json()["comparison"]
     assert (comparison["rank"], comparison["rank_size"], comparison["rank_ties"]) == (3, 3, 1)
     # The diversity reading reads the same machinery over count_15_car_share.
     diversity = aedar_http.post("/api/resources/read", json=_aggregate_item(
@@ -512,11 +545,17 @@ def test_selected_aggregate_returns_pooled_weighted_readings_and_ranks(aedar_htt
     assert volume["value"] == pytest.approx(18.0)
     assert (volume["rank"], volume["rank_size"], volume["rank_ties"]) == (3, 3, 1)
     # The focal must be a member to receive a rank; sel-c4's incomplete
-    # registry fails closed naming the member.
+    # registry makes it honestly unavailable: ineligible, never ranked, and
+    # excluded from the pooled statistic (which reads over sel-c1 only).
     with_c4 = aedar_http.post("/api/resources/read", json=_aggregate_item(
         measures=("meanVolume",),
-        members=[{"type": "commune", "id": "sel-c1"}, {"type": "commune", "id": "sel-c4"}]))
-    assert with_c4.status_code == 422 and "commune/sel-c4" in with_c4.json()["detail"]
+        members=[{"type": "commune", "id": "sel-c1"}, {"type": "commune", "id": "sel-c4"}],
+        fields=["group_value", "value", "rank", "rank_size", "rank_ties"]))
+    assert with_c4.status_code == 200, with_c4.text
+    entry = with_c4.json()["comparisons"][0]
+    assert entry["group_value"] == pytest.approx(18.0)  # eligible member only
+    assert entry["group_n_addresses"] == 10
+    assert (entry["rank"], entry["rank_size"], entry["rank_ties"]) == (1, 1, 1)
     without_focal = aedar_http.post("/api/resources/read", json=_aggregate_item(
         measures=("meanDiversity",),
         members=[{"type": "commune", "id": "sel-c2"}, {"type": "commune", "id": "sel-c3"}],
@@ -526,6 +565,72 @@ def test_selected_aggregate_returns_pooled_weighted_readings_and_ranks(aedar_htt
     assert entry["group_value"] == pytest.approx(1.2)
     assert entry["value"] == pytest.approx(0.75)  # the focal's own published reading
     assert entry["rank"] is None and entry["rank_size"] is None and entry["rank_ties"] is None
+
+
+def test_aggregate_availability_law_marks_incompatible_rows_unavailable(aedar_http):
+    """Fiche-law availability for aggregate readings, both intents (#914).
+
+    Mixed coverage (sel-c5), divergent provenance (sel-c6) and a share above 1
+    (sel-c7, diversity only) make the registry-wide reading honestly
+    unavailable: ineligible members/peers are skipped by the rank (rank_size
+    = eligible population) and never zeroed or ranked; an incompatible focal
+    returns not_available with null rank fields.
+    """
+    # status is mandatory and always present; the rest are the selectable fields.
+    fields = ["group_value", "value", "rank", "rank_size", "rank_ties"]
+    # Fixed intent, incompatible focal (sel-c5 mixed coverage), bretagne
+    # context: the reading is unavailable, the Région reference still reads.
+    response = aedar_http.post("/api/resources/read", json=_aggregate_item(
+        target_id="sel-c5", measures=("meanVolume",), fields=fields, context="bretagne"))
+    assert response.status_code == 200, response.text
+    comparison = response.json()["comparison"]
+    assert comparison["value"] is None and comparison["status"] == "not_available"
+    assert comparison["rank"] is None and comparison["rank_size"] is None and comparison["rank_ties"] is None
+    assert comparison["group_value"] == pytest.approx(45.0)
+    # Fixed intent, eligible focal: incompatible peers are skipped (epci
+    # context peers of sel-e1 are sel-c1/c2 eligible, sel-c5/c6 not).
+    response = aedar_http.post("/api/resources/read", json=_aggregate_item(
+        target_id="sel-c1", measures=("meanVolume",), fields=fields, context="epci"))
+    assert response.status_code == 200, response.text
+    comparison = response.json()["comparison"]
+    assert comparison["value"] == pytest.approx(18.0)
+    assert (comparison["rank"], comparison["rank_size"], comparison["rank_ties"]) == (2, 2, 1)
+    # Selected intent over members including the incompatible ones: the pooled
+    # statistic and rank read over the eligible members only.
+    members = [{"type": "commune", "id": "sel-c1"}, {"type": "commune", "id": "sel-c2"},
+               {"type": "commune", "id": "sel-c5"}, {"type": "commune", "id": "sel-c6"}]
+    response = aedar_http.post("/api/resources/read", json=_aggregate_item(
+        measures=("meanVolume",), members=members, fields=fields))
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["scope"]["member_count"] == 4  # requested membership stays truthful
+    entry = body["comparisons"][0]
+    # Eligible: sel-c1 18.0 (w10), sel-c2 30.0 (w30) -> pooled 27.0, rank 2e/2.
+    assert entry["group_value"] == pytest.approx((18.0 * 10 + 30.0 * 30) / 40)
+    assert entry["group_n_addresses"] == 40
+    assert (entry["rank"], entry["rank_size"], entry["rank_ties"]) == (2, 2, 1)
+    # Divergent provenance (sel-c6) as the focal: unavailable, no rank.
+    response = aedar_http.post("/api/resources/read", json=_aggregate_item(
+        target_id="sel-c6", measures=("meanVolume",), members=members, fields=fields))
+    assert response.status_code == 200, response.text
+    entry = response.json()["comparisons"][0]
+    assert entry["value"] is None and entry["status"] == "not_available"
+    assert entry["rank"] is None and entry["rank_size"] is None
+    # Share above 1 (sel-c7): diversity unavailable, volume still available.
+    response = aedar_http.post("/api/resources/read", json=_aggregate_item(
+        target_id="sel-c7", measures=("meanDiversity", "meanVolume"),
+        members=[{"type": "commune", "id": "sel-c7"}, {"type": "commune", "id": "sel-c2"}],
+        fields=fields))
+    assert response.status_code == 200, response.text
+    by_measure = {entry["measure"]: entry for entry in response.json()["comparisons"]}
+    assert by_measure["meanDiversity"]["value"] is None
+    assert by_measure["meanDiversity"]["status"] == "not_available"
+    assert by_measure["meanDiversity"]["rank"] is None
+    assert by_measure["meanVolume"]["value"] == pytest.approx(30.0)
+    assert by_measure["meanVolume"]["status"] == "measured"
+    # Both members are volume-eligible (30.0, 30.0): the focal shares rank 1.
+    assert (by_measure["meanVolume"]["rank"], by_measure["meanVolume"]["rank_size"],
+            by_measure["meanVolume"]["rank_ties"]) == (1, 2, 2)
 
 
 def test_fixed_same_level_returns_the_region_direct_aggregate(aedar_http):
