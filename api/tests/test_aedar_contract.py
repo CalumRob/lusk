@@ -1,4 +1,5 @@
 import inspect
+from math import fsum
 from pathlib import Path
 
 import pytest
@@ -620,6 +621,22 @@ class _AedarSelectedConnection:
         self.state = state
         self.queries = []
 
+    def _territory_records(self, territory_type, territory_id):
+        """All published aggregate records of one territory in the fixture."""
+        out = {}
+        for key, records in self.state["aggregates"].items():
+            if key[0] in ("focal", "member") and key[1] == territory_id \
+                    and self.state["reference"].get(territory_id) == territory_type:
+                out.update(records)
+            elif key[0] == "direct" and len(key) == 3 and key[1] == territory_type \
+                    and key[2] == territory_id:
+                out.update(records)
+        return out
+
+    def _registry_size(self):
+        return len({typequ for records in self.state["aggregates"].values()
+                    for typequ in records})
+
     def execute(self, sql, params=None):
         self.queries.append(sql)
         s = sql
@@ -628,10 +645,80 @@ class _AedarSelectedConnection:
 
                 "cmp-v1", "2026-v1", "aed-v1", "ref-v1", "inputs-v1", {"address_origins": "sha"},
                 1, 0, "reference_only", "aed-v1", "ref-v1")])
+        if "count(DISTINCT typequ)" in s:
+            return _AedarSelectedRows(["n"], [(self._registry_size(),)])
+        if "GROUP BY territory_id" in s and "aedar_territorial_aggregate" in s:
+            # Registry-wide aggregate records (one set-wise SQL aggregate).
+            underlying, _again, territory_type, ids = params
+            rows = []
+            for territory_id in ids:
+                records = self._territory_records(territory_type, territory_id)
+                if not records:
+                    continue
+                values = [record["measures"].get(underlying) for record in records.values()]
+                addresses = [record["n_addresses"] for record in records.values()]
+                observed = [record["n_observed"] for record in records.values()]
+                coverages = [record["coverage"] for record in records.values()]
+                measured = sum(1 for value in values if value is not None)
+                total = fsum(value for value in values if value is not None) if measured else None
+                rows.append((territory_id, len(records), measured, total, min(addresses),
+                             max(addresses), sum(observed), len(set(coverages)), min(coverages)))
+            return _AedarSelectedRows(["territory_id", "n_rows", "n_measured", "total",
+                "na_min", "na_max", "observed_sum", "n_coverage", "coverage_status"], rows)
+        if "LIMIT 1" in s and "aedar_territorial_aggregate" in s:
+            territory_type, territory_id = params
+            records = self._territory_records(territory_type, territory_id)
+            columns = ["source_id", "vintage_id", "source_url", "licence", "attribution",
+                       "reference_date", "publication_date"]
+            if not records:
+                return _AedarSelectedRows(columns, [])
+            return _AedarSelectedRows(columns,
+                [("aedar_bretagne", "2026-v1", "https://example.test", "ODbL", "AEDAR",
+                  None, "2026-09-30")])
+        if "FROM aedar_comparison_group" in s and "count(*)" in s:
+            group_id, underlying = params
+            rows = [row for row in self.state.get("group_rows", ())
+                    if row["group_id"] == group_id and row["measure"] == underlying]
+            columns = ["n_rows", "n_measured", "total", "na_min", "na_max", "observed_sum",
+                       "n_statistic", "statistic", "n_coverage", "coverage_status"]
+            if not rows:
+                return _AedarSelectedRows(columns, [])
+            values = [row["value"] for row in rows]
+            measured = sum(1 for value in values if value is not None)
+            total = fsum(value for value in values if value is not None) if measured else None
+            return _AedarSelectedRows(columns, [(
+                len(rows), measured, total,
+                min(row["n_addresses"] for row in rows), max(row["n_addresses"] for row in rows),
+                sum(row["n_observed"] for row in rows),
+                len({row["statistic"] for row in rows}), min(row["statistic"] for row in rows),
+                len({row["coverage_status"] for row in rows}),
+                min(row["coverage_status"] for row in rows))])
+        if "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id=%s" in s:
+            row = next((r for r in self.state["ref_rows"] if r[0] == params[0]), None)
+            return _AedarSelectedRows(["territory_id", "territory_type", "density_class_code"],
+                [(row[0], row[1], row[4])] if row else [])
+        if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in s:
+            return _AedarSelectedRows(["territory_id", "territory_type", "department_id",
+                "epci_id", "density_class_code"], [tuple(row) for row in self.state["ref_rows"]])
         if "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY" in s:
             ids = params[0]
             return _AedarSelectedRows(["territory_id", "territory_type"],
                 [(code, self.state["reference"][code]) for code in ids if code in self.state["reference"]])
+        if "SELECT epci_id,density_class_code FROM territory_reference" in s:
+            row = next((r for r in self.state["ref_rows"]
+                        if r[0] == params[1] and r[1] == params[0]), None)
+            return _AedarSelectedRows(["epci_id", "density_class_code"],
+                [(row[3], row[4])] if row else [])
+        if "SELECT territory_id FROM territory_reference WHERE" in s:
+            if "epci_id=%s" in s:
+                rows = [r for r in self.state["ref_rows"] if r[1] == "commune" and r[3] == params[0]]
+            elif "density_class_code=%s" in s:
+                rows = [r for r in self.state["ref_rows"] if r[1] == "commune" and r[4] == params[0]]
+            elif s.rstrip().endswith("territory_type=%s"):
+                rows = [r for r in self.state["ref_rows"] if r[1] == params[0]]
+            else:
+                rows = [r for r in self.state["ref_rows"] if r[1] == "commune"]
+            return _AedarSelectedRows(["territory_id"], [(row[0],) for row in rows])
         if "SELECT 1 FROM territory_reference" in s:
             return _AedarSelectedRows(["one"], [(1,)])
         if "SELECT t.epci_id,r.territory_id" in s:
@@ -686,54 +773,102 @@ class _AedarSelectedConnection:
 
 
 def _aedar_selected_state():
+    # TYPEQU registry of the fixture: A104 + B207 (the published registry size
+    # the aggregate readings sum over). The 15-minute car share/mean columns
+    # drive the registry-wide aggregate readings meanDiversity / meanVolume.
+    communes = {
+        # Original per-cell fixture values plus the 15-minute car share/mean
+        # columns that drive the registry-wide aggregate readings.
+        "22001": {"A104": {"count_5_walk_mean": 5.0, "count_5_walk_decile1": 1.0,
+                           "count_15_car_share": 0.5, "count_15_car_mean": 12.0},
+                  "B207": {"count_5_walk_mean": 2.0, "count_5_walk_decile1": 0.5,
+                           "count_15_car_share": 0.25, "count_15_car_mean": 6.0},
+                  "n_addresses": 10, "n_observed": {"A104": 9, "B207": 9}},
+        "22002": {"A104": {"count_5_walk_mean": 8.0, "count_5_walk_decile1": 2.0,
+                           "count_15_car_share": 0.8, "count_15_car_mean": 20.0},
+                  "B207": {"count_5_walk_mean": 4.0, "count_5_walk_decile1": 1.0,
+                           "count_15_car_share": 0.4, "count_15_car_mean": 10.0},
+                  "n_addresses": 30, "n_observed": {"A104": 25, "B207": 25}},
+        "22003": {"A104": {"count_5_walk_mean": 8.0, "count_5_walk_decile1": 4.0,
+                           "count_15_car_share": 0.8, "count_15_car_mean": 20.0},
+                  "B207": {"count_5_walk_mean": 4.0, "count_5_walk_decile1": 3.0,
+                           "count_15_car_share": 0.4, "count_15_car_mean": 10.0},
+                  "n_addresses": 10, "n_observed": {"A104": 8, "B207": 8}},
+    }
+    # meanDiversity / meanVolume per commune: 22001 -> 0.75 / 18.0,
+    # 22002 and 22003 -> 1.2 / 30.0 (a tie behind the focal).
+    aggregates = {}
+    for code, spec in communes.items():
+        records = {}
+        for typequ in ("A104", "B207"):
+            records[typequ] = {
+                "label": "Alimentation" if typequ == "A104" else "Santé",
+                "n_addresses": spec["n_addresses"],
+                "n_observed": spec["n_observed"][typequ],
+                "coverage": "covered",
+                "measures": dict(spec[typequ]),
+            }
+        aggregates[("focal", code)] = records
+        aggregates[("member", code)] = {key: dict(value) for key, value in records.items()}
+    aggregates[("focal", "E1")] = aggregates[("member", "E1")] = {
+        "A104": {"label": "Alimentation", "n_addresses": 500, "n_observed": 400,
+                 "coverage": "covered",
+                 "measures": {"count_5_walk_mean": 6.0, "count_15_car_share": 0.6,
+                              "count_15_car_mean": 15.0}},
+        "B207": {"label": "Santé", "n_addresses": 500, "n_observed": 380,
+                 "coverage": "covered",
+                 "measures": {"count_15_car_share": 0.3, "count_15_car_mean": 8.0}},
+    }
+    # EPCI E1 registry-wide readings: diversity 0.9, volume 23.0.
+    aggregates[("focal", "E2")] = aggregates[("member", "E2")] = {
+        "A104": {"label": "Alimentation", "n_addresses": 200, "n_observed": 150,
+                 "coverage": "covered",
+                 "measures": {"count_15_car_share": 0.7, "count_15_car_mean": 18.0}},
+        "B207": {"label": "Santé", "n_addresses": 200, "n_observed": 140,
+                 "coverage": "covered",
+                 "measures": {"count_15_car_share": 0.35, "count_15_car_mean": 9.0}},
+    }
+    # EPCI E2 registry-wide readings: diversity 1.05, volume 27.0.
+    aggregates[("direct", "region", "53")] = {
+        "A104": {"label": "Alimentation", "n_addresses": 1000, "n_observed": 900,
+                 "coverage": "covered",
+                 "measures": {"count_5_walk_mean": 13.0, "count_15_car_share": 0.9,
+                              "count_15_car_mean": 30.0}},
+        "B207": {"label": "Santé", "n_addresses": 1000, "n_observed": 800,
+                 "coverage": "covered",
+                 "measures": {"count_15_car_share": 0.5, "count_15_car_mean": 15.0}},
+    }
+    # Région registry-wide readings: diversity 1.4, volume 45.0.
     return {
         "reference": {"22001": "commune", "22002": "commune", "22003": "commune",
-                      "E1": "epci", "53": "region"},
+                      "E1": "epci", "E2": "epci", "22": "departement", "53": "region"},
         "epci": "E1",
-        "aggregates": {
-            ("focal", "22001"): {
-                "A104": {"label": "Alimentation", "n_addresses": 10, "n_observed": 9,
-                         "coverage": "covered",
-                         "measures": {"count_5_walk_mean": 5.0, "count_5_walk_decile1": 1.0}},
-                "B207": {"label": "Santé", "n_addresses": 10, "n_observed": 9,
-                         "coverage": "covered",
-                         "measures": {"count_5_walk_mean": 2.0, "count_5_walk_decile1": 0.5}},
-            },
-            ("member", "22001"): {
-                "A104": {"label": "Alimentation", "n_addresses": 10, "n_observed": 9,
-                         "coverage": "covered",
-                         "measures": {"count_5_walk_mean": 5.0, "count_5_walk_decile1": 1.0}},
-                "B207": {"label": "Santé", "n_addresses": 10, "n_observed": 9,
-                         "coverage": "covered",
-                         "measures": {"count_5_walk_mean": 2.0, "count_5_walk_decile1": 0.5}},
-            },
-            ("member", "22002"): {
-                "A104": {"label": "Alimentation", "n_addresses": 30, "n_observed": 25,
-                         "coverage": "covered",
-                         "measures": {"count_5_walk_mean": 8.0, "count_5_walk_decile1": 2.0}},
-                "B207": {"label": "Santé", "n_addresses": 30, "n_observed": 25,
-                         "coverage": "covered",
-                         "measures": {"count_5_walk_mean": 4.0, "count_5_walk_decile1": 1.0}},
-            },
-            ("member", "22003"): {
-                "A104": {"label": "Alimentation", "n_addresses": 10, "n_observed": 8,
-                         "coverage": "covered",
-                         "measures": {"count_5_walk_mean": 8.0, "count_5_walk_decile1": 4.0}},
-                "B207": {"label": "Santé", "n_addresses": 10, "n_observed": 8,
-                         "coverage": "covered",
-                         "measures": {"count_5_walk_mean": 4.0, "count_5_walk_decile1": 3.0}},
-            },
-            ("focal", "E1"): {
-                "A104": {"label": "Alimentation", "n_addresses": 500, "n_observed": 400,
-                         "coverage": "covered",
-                         "measures": {"count_5_walk_mean": 6.0}},
-            },
-            ("direct", "region", "53"): {
-                "A104": {"label": "Alimentation", "n_addresses": 1000, "n_observed": 900,
-                         "coverage": "covered",
-                         "measures": {"count_5_walk_mean": 13.0}},
-            },
-        },
+        # (territory_id, territory_type, department_id, epci_id, density_class_code)
+        "ref_rows": [
+            ("22001", "commune", "22", "E1", "D1"),
+            ("22002", "commune", "22", "E1", "D1"),
+            ("22003", "commune", "22", "E2", "D2"),
+            ("E1", "epci", "22", None, None),
+            ("E2", "epci", "22", None, None),
+            ("22", "departement", None, None, None),
+            ("53", "region", None, None, None),
+        ],
+        "aggregates": aggregates,
+        # Pooled density-class artifact rows for the registry-wide sums.
+        "group_rows": [
+            {"group_id": "D1", "typequ": "A104", "measure": "count_15_car_mean",
+             "value": 16.0, "n_addresses": 40, "n_observed": 34,
+             "coverage_status": "covered", "statistic": "pooled"},
+            {"group_id": "D1", "typequ": "B207", "measure": "count_15_car_mean",
+             "value": 8.0, "n_addresses": 40, "n_observed": 33,
+             "coverage_status": "covered", "statistic": "pooled"},
+            {"group_id": "D1", "typequ": "A104", "measure": "count_15_car_share",
+             "value": 0.65, "n_addresses": 40, "n_observed": 34,
+             "coverage_status": "covered", "statistic": "pooled"},
+            {"group_id": "D1", "typequ": "B207", "measure": "count_15_car_share",
+             "value": 0.3, "n_addresses": 40, "n_observed": 33,
+             "coverage_status": "covered", "statistic": "pooled"},
+        ],
     }
 
 
@@ -928,4 +1063,205 @@ def test_aedar_selected_comparison_derives_group_coverage_honestly():
         _AedarSelectedConnection(state), "commune", "22001", members,
         ["A104"], ["count_5_walk_mean"], None, _aedar_facets())
     assert result["comparisons"][0]["group_coverage_status"] == "uncovered_no_address_origins"
+
+
+def test_aedar_fixed_aggregate_reading_serves_direct_reference_and_peer_rank():
+    from fastapi import HTTPException
+    conn = _AedarSelectedConnection(_aedar_selected_state())
+    facets = _aedar_facets()
+    # Commune 22001, ambient EPCI context, registry-wide volume reading:
+    # meanVolume = count_15_car_mean summed over the complete registry (18.0).
+    result = aedar_reads._aedar_comparison_snapshot(
+        conn, "commune", "22001", "epci", None, "meanVolume",
+        ["group_value", "value", "rank", "rank_size", "rank_ties"], facets)
+    comparison = result["comparison"]
+    assert comparison["comparison_context"] == "epci"
+    assert comparison["measure"] == "meanVolume" and comparison["typequ"] is None
+    assert comparison["typequ_label"] is None
+    # The reference keeps its declared semantics: the EPCI's own direct
+    # published aggregate summed over the registry (15 + 8 = 23.0).
+    assert comparison["statistic"] == "direct"
+    assert comparison["group_id"] == "E1" and comparison["territory_type"] == "epci"
+    assert comparison["group_value"] == pytest.approx(23.0)
+    assert comparison["group_n_addresses"] == 500
+    assert comparison["group_n_observed"] == 780
+    assert comparison["group_coverage_status"] == "covered"
+    assert comparison["value"] == pytest.approx(18.0) and comparison["status"] == "measured"
+    # Request-time rank over the context's resolved peer group (the EPCI's
+    # communes 22001/22002 -> 18.0, 30.0): 2e/2, one tie at the focal value.
+    assert (comparison["rank"], comparison["rank_size"], comparison["rank_ties"]) == (2, 2, 1)
+    assert result["content_version"] == "cmp-v1" and result["source_snapshot_id"] == "2026-v1"
+    # Bretagne context: peers are all Breton communes (18, 30, 30 -> 3e/3),
+    # the reference is the Région's direct aggregate (30 + 15 = 45.0).
+    bretagne = aedar_reads._aedar_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", "bretagne",
+        None, "meanVolume", None, facets)["comparison"]
+    assert bretagne["group_value"] == pytest.approx(45.0)
+    assert bretagne["group_id"] == "53" and bretagne["territory_type"] == "region"
+    assert (bretagne["rank"], bretagne["rank_size"], bretagne["rank_ties"]) == (3, 3, 1)
+    assert bretagne["value"] == pytest.approx(18.0)
+    # The diversity reading reads the same machinery over count_15_car_share.
+    diversity = aedar_reads._aedar_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", "epci",
+        None, "meanDiversity", None, facets)["comparison"]
+    assert diversity["value"] == pytest.approx(0.75)
+    assert diversity["group_value"] == pytest.approx(0.9)
+    assert (diversity["rank"], diversity["rank_size"], diversity["rank_ties"]) == (2, 2, 1)
+    # Field projection drops the unselected optional rank/value fields.
+    projected = aedar_reads._aedar_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", "epci",
+        None, "meanVolume", ["group_value", "rank"], facets)["comparison"]
+    assert projected["group_value"] == pytest.approx(23.0) and projected["rank"] == 2
+    assert "value" not in projected and "rank_size" not in projected and "rank_ties" not in projected
+    # Preflight validates marker and territory without reading facts.
+    pre = aedar_reads._aedar_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", "epci",
+        None, "meanVolume", None, facets, preflight_only=True)
+    assert pre == {"content_version": "cmp-v1", "reference_content_version": "ref-v1"}
+
+
+def test_aedar_fixed_aggregate_same_level_and_density_contexts():
+    facets = _aedar_facets()
+    # EPCI same-level: the reference is the Région's direct aggregate; the
+    # rank reads over all Breton EPCIs (E1 23.0, E2 27.0 -> 2e/2).
+    same_level = aedar_reads._aedar_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "epci", "E1", "same_level",
+        None, "meanVolume", None, facets)["comparison"]
+    assert same_level["statistic"] == "direct"
+    assert same_level["group_id"] == "53" and same_level["territory_type"] == "region"
+    assert same_level["group_value"] == pytest.approx(45.0)
+    assert same_level["value"] == pytest.approx(23.0)
+    assert (same_level["rank"], same_level["rank_size"], same_level["rank_ties"]) == (2, 2, 1)
+    # Density class: the reference is the pooled address artifact summed over
+    # the registry (16 + 8 = 24.0); peers are the density class communes.
+    density = aedar_reads._aedar_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", "density_class",
+        None, "meanVolume", None, facets)["comparison"]
+    assert density["statistic"] == "pooled"
+    assert density["group_id"] == "D1" and density["territory_type"] == "commune"
+    assert density["group_value"] == pytest.approx(24.0)
+    assert density["group_n_addresses"] == 40 and density["group_n_observed"] == 67
+    assert (density["rank"], density["rank_size"], density["rank_ties"]) == (2, 2, 1)
+    diversity = aedar_reads._aedar_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", "density_class",
+        None, "meanDiversity", None, facets)["comparison"]
+    assert diversity["group_value"] == pytest.approx(0.95)
+    assert diversity["value"] == pytest.approx(0.75)
+
+
+def test_aedar_fixed_aggregate_rejects_malformed_coordinate_shapes():
+    from fastapi import HTTPException
+    conn = _AedarSelectedConnection(_aedar_selected_state())
+    facets = _aedar_facets()
+    # An aggregate reading takes no typequ coordinate.
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_comparison_snapshot(
+            conn, "commune", "22001", "epci", "A104", "meanVolume", None, facets)
+    assert err.value.status_code == 422 and "typequ" in err.value.detail
+    # A per-cell measure still requires its TYPEQU coordinate.
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_comparison_snapshot(
+            conn, "commune", "22001", "epci", None, "count_5_walk_mean", None, facets)
+    assert err.value.status_code == 422
+    # Unknown measures stay rejected; a missing facet declaration fails closed.
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_comparison_snapshot(
+            conn, "commune", "22001", "epci", None, "bogus", None, facets)
+    assert err.value.status_code == 422
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_comparison_snapshot(
+            conn, "commune", "22001", "epci", None, "meanVolume", None, {})
+    assert err.value.status_code == 503
+    # Per-cell measures keep #904's boundary: rank fields are not selectable.
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_comparison_snapshot(
+            conn, "commune", "22001", "epci", "A104", "count_5_walk_mean", ["rank"], facets)
+    assert err.value.status_code == 422
+
+
+def test_aedar_selected_aggregate_returns_pooled_weighted_readings_and_ranks():
+    from fastapi import HTTPException
+    members = [("commune", "22001"), ("commune", "22002"), ("commune", "22003")]
+    conn = _AedarSelectedConnection(_aedar_selected_state())
+    result = aedar_reads._aedar_selected_comparison_snapshot(
+        conn, "commune", "22001", members, None, ["meanDiversity", "meanVolume"],
+        ["group_value", "value", "rank", "rank_size", "rank_ties"], _aedar_facets())
+    assert result["scope"] == {"kind": "explicit_selection", "member_count": 3,
+                               "territory_type": "commune"}
+    by_measure = {entry["measure"]: entry for entry in result["comparisons"]}
+    assert set(by_measure) == {"meanDiversity", "meanVolume"}
+    diversity = by_measure["meanDiversity"]
+    # Each member's reading is the registry-wide sum: 0.75 / 1.2 / 1.2; the
+    # group statistic keeps #859's address-weighted pooled semantics.
+    assert diversity["typequ"] is None and diversity["typequ_label"] is None
+    assert diversity["statistic"] == "pooled"
+    assert diversity["direction"] == "high" and diversity["comparison_facet"] == "diversity"
+    assert diversity["group_value"] == pytest.approx((0.75 * 10 + 1.2 * 30 + 1.2 * 10) / 50)
+    assert diversity["group_n_addresses"] == 50 and diversity["group_n_observed"] == 84
+    assert diversity["group_coverage_status"] == "covered"
+    assert diversity["value"] == pytest.approx(0.75) and diversity["status"] == "measured"
+    # Direction-aware focal rank within the selection: 0.75 < 1.2 = 1.2 -> 3e/3.
+    assert (diversity["rank"], diversity["rank_size"], diversity["rank_ties"]) == (3, 3, 1)
+    volume = by_measure["meanVolume"]
+    assert volume["comparison_facet"] == "volume"
+    assert volume["group_value"] == pytest.approx((18.0 * 10 + 30.0 * 30 + 30.0 * 10) / 50)
+    assert volume["value"] == pytest.approx(18.0)
+    assert (volume["rank"], volume["rank_size"], volume["rank_ties"]) == (3, 3, 1)
+    # Field projection drops the unselected optional fields.
+    projected = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", members,
+        None, ["meanVolume"], ["group_value", "rank"], _aedar_facets())
+    entry = projected["comparisons"][0]
+    assert entry["group_value"] == pytest.approx(27.6) and entry["rank"] == 3
+    assert "value" not in entry and "rank_size" not in entry and "rank_ties" not in entry
+    # The focal must be a member to receive a rank; the group stat still reads
+    # over exactly the requested membership (weights 30 + 10).
+    without_focal = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001",
+        [("commune", "22002"), ("commune", "22003")], None, ["meanDiversity"],
+        ["group_value", "value", "rank", "rank_size", "rank_ties"], _aedar_facets())
+    entry = without_focal["comparisons"][0]
+    assert entry["group_value"] == pytest.approx(1.2)
+    assert entry["value"] == pytest.approx(0.75)
+    assert entry["rank"] is None and entry["rank_size"] is None and entry["rank_ties"] is None
+    # Preflight only validates marker, focal and members without reading facts.
+    pre = aedar_reads._aedar_selected_comparison_snapshot(
+        _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", members,
+        None, ["meanDiversity"], None, _aedar_facets(), preflight_only=True)
+    assert pre == {"content_version": "cmp-v1", "reference_content_version": "ref-v1"}
+
+
+def test_aedar_selected_aggregate_fails_closed_naming_the_failed_member():
+    from fastapi import HTTPException
+    members = [("commune", "22001"), ("commune", "22002"), ("commune", "22003")]
+    facets = _aedar_facets()
+    # A member whose registry is incomplete yields no partial sum: 422 naming it.
+    state = _aedar_selected_state()
+    del state["aggregates"][("member", "22003")]["B207"]
+    del state["aggregates"][("focal", "22003")]["B207"]
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_selected_comparison_snapshot(
+            _AedarSelectedConnection(state), "commune", "22001", members, None,
+            ["meanVolume"], None, facets)
+    assert err.value.status_code == 422 and "commune/22003" in err.value.detail
+    # A member with an unmeasured (null) aggregate reading is equally closed.
+    state = _aedar_selected_state()
+    state["aggregates"][("member", "22003")]["B207"]["measures"]["count_15_car_mean"] = None
+    state["aggregates"][("focal", "22003")]["B207"]["measures"]["count_15_car_mean"] = None
+    with pytest.raises(HTTPException) as err:
+        aedar_reads._aedar_selected_comparison_snapshot(
+            _AedarSelectedConnection(state), "commune", "22001", members, None,
+            ["meanVolume"], None, facets)
+    assert err.value.status_code == 422 and "commune/22003" in err.value.detail
+    # Coordinate-shape rejections: mixed, unknown, missing or conflicting axes.
+    for typequ, measures in ((["A104"], ["meanVolume", "count_5_walk_mean"]),
+                             (None, ["bogus"]),
+                             (None, []),
+                             (["A104"], ["meanDiversity"]),
+                             (None, ["count_5_walk_mean"])):
+        with pytest.raises(HTTPException) as err:
+            aedar_reads._aedar_selected_comparison_snapshot(
+                _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001",
+                members, typequ, measures, None, facets)
+        assert err.value.status_code == 422
 

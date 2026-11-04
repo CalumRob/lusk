@@ -153,6 +153,7 @@ class SemanticResourceReader:
             return estimate
         if resource.resource_kind == "aedar_source_grain":
             from api.aedar_reads import (_aedar_comparison_snapshot,
+                _aedar_fixed_peer_ids,
                 _aedar_selected_comparison_snapshot,
                 _aedar_territorial_aggregate_snapshot)
             coordinates = item.coordinates or {}
@@ -160,22 +161,38 @@ class SemanticResourceReader:
             measures = coordinates.get("measure")
             # (a) Request-shape validation runs first: a malformed request must
             # fail with 422 rather than be misreported as a publication problem.
+            from api.aedar_models import (AEDAR_AGGREGATE_READINGS,
+                                          AEDAR_COMPARISON_MEASURE_KEYS, AEDAR_MEASURE_KEYS)
             if measures:
-                from api.aedar_models import AEDAR_MEASURE_KEYS
-                if not set(measures) <= AEDAR_MEASURE_KEYS:
+                if not set(measures) <= AEDAR_COMPARISON_MEASURE_KEYS:
                     raise HTTPException(422, "Coordinate measure is not declared for AEDAR")
-            if item.intent.kind == "fixed_comparison" and not (
-                    typequ and len(typequ) == 1 and measures and len(measures) == 1):
-                raise HTTPException(422, "AEDAR comparison requires one TYPEQU and one measure coordinate")
-            if item.intent.kind == "selected_comparison" and not (typequ and measures):
-                raise HTTPException(422, "AEDAR selected comparison requires typequ and measure coordinates")
+                if item.intent.kind == "facts" and not set(measures) <= AEDAR_MEASURE_KEYS:
+                    raise HTTPException(422, "Aggregate readings are comparison facets, not facts")
+            aggregate = bool(measures) and set(measures) <= set(AEDAR_AGGREGATE_READINGS)
+            if measures and not aggregate and not set(measures) <= AEDAR_MEASURE_KEYS:
+                raise HTTPException(422, "Coordinate measure mixes aggregate readings with per-cell measures")
+            if item.intent.kind == "fixed_comparison":
+                if not measures or len(measures) != 1:
+                    raise HTTPException(422, "AEDAR comparison requires one measure coordinate")
+                if aggregate and typequ:
+                    raise HTTPException(422, "Aggregate readings are registry-wide and take no typequ coordinate")
+                if not aggregate and not (typequ and len(typequ) == 1):
+                    raise HTTPException(422, "AEDAR comparison requires one TYPEQU and one measure coordinate")
+            if item.intent.kind == "selected_comparison":
+                if not measures:
+                    raise HTTPException(422, "AEDAR selected comparison requires measure coordinates")
+                if aggregate and typequ:
+                    raise HTTPException(422, "Aggregate readings are registry-wide and take no typequ coordinate")
+                if not aggregate and not typequ:
+                    raise HTTPException(422, "AEDAR selected comparison requires typequ and measure coordinates")
             # (b) Publication preflight runs second: an absent, stale or
             # incompatible publication fails closed with 503, matching the
             # retired legacy routes and the documented endpoint contract, so a
             # valid request is never reported as malformed.
             if item.intent.kind == "fixed_comparison":
                 _aedar_comparison_snapshot(conn, item.target.type, item.target.id,
-                    item.intent.context, typequ[0], measures[0], item.fields, preflight_only=True)
+                    item.intent.context, typequ[0] if typequ else None, measures[0], item.fields,
+                    resource.measure_facets, preflight_only=True)
             elif item.intent.kind == "selected_comparison":
                 _aedar_selected_comparison_snapshot(conn, item.target.type, item.target.id,
                     [(member.type, member.id) for member in item.intent.members],
@@ -192,8 +209,17 @@ class SemanticResourceReader:
                 if known != set(typequ):
                     raise HTTPException(422, "Coordinate value is not present in the published AEDAR descriptor")
             if item.intent.kind == "fixed_comparison":
+                if aggregate:
+                    # One set-wise SQL aggregate over the resolved fixed-context
+                    # peer group (ADR-0021 scope), plus one comparison entry.
+                    return 1 + len(_aedar_fixed_peer_ids(conn, item.target.type,
+                                                         item.target.id, item.intent.context))
                 return 1
             if item.intent.kind == "selected_comparison":
+                if aggregate:
+                    # One set-wise SQL aggregate per member, plus one projected
+                    # comparison entry per requested aggregate reading.
+                    return max(1, len(item.intent.members)) + max(1, len(measures)) + 1
                 # Bounded read work: one aggregate row per member and TYPEQU,
                 # plus one projected comparison entry per TYPEQU x measure.
                 return (max(1, len(item.intent.members)) * max(1, len(typequ))
@@ -388,8 +414,10 @@ class SemanticResourceReader:
                 _aedar_territorial_aggregate_snapshot)
             coordinates = item.coordinates or {}
             if item.intent.kind == "fixed_comparison":
+                typequ = coordinates.get("typequ")
                 data = _aedar_comparison_snapshot(conn, item.target.type, item.target.id,
-                    item.intent.context, coordinates["typequ"][0], coordinates["measure"][0], item.fields)
+                    item.intent.context, typequ[0] if typequ else None, coordinates["measure"][0],
+                    item.fields, resource.measure_facets)
             elif item.intent.kind == "selected_comparison":
                 data = _aedar_selected_comparison_snapshot(conn, item.target.type, item.target.id,
                     [(member.type, member.id) for member in item.intent.members],
