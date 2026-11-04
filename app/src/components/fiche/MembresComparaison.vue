@@ -33,7 +33,7 @@ function ajouter(territoire: Territoire) {
     </ul>
     <p v-else role="status">Aucun membre : aucune comparaison.</p>
     <label :for="rechercheId">Ajouter un territoire du même niveau</label>
-    <input :id="rechercheId" v-model="recherche" type="search" autocomplete="off" placeholder="Nom ou identifiant" />
+    <input :id="rechercheId" v-model="recherche" type="search" autocomplete="off" aria-label="Rechercher un territoire du même niveau" placeholder="Nom ou identifiant" />
     <p v-if="recherche.trim()" role="status">{{ resultats.length ? `${resultats.length} résultat${resultats.length > 1 ? 's' : ''}` : 'Aucun territoire trouvé à ce niveau.' }}<span v-if="resultats.length > visibles.length"> — Précisez la recherche pour voir les suivants.</span></p>
     <ul v-if="visibles.length" class="membres-comparaison__liste">
       <li v-for="resultat in visibles" :key="resultat.territoire">

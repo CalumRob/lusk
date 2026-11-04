@@ -79,6 +79,7 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
     const initial = { etat: 'membres', membres: [{ territory_type: 'commune', territory_id: '1' }] }
     expect(wrapper.emitted('choisir')?.at(-1)).toEqual([initial])
     await wrapper.setProps({ selection: initial as SelectionComparaison })
+    expect(wrapper.get('input[type="search"]').attributes('aria-label')).toBe('Rechercher un territoire du même niveau')
     expect(wrapper.get('.bouton-comparaison__type').text()).toBe('1 membre')
     await wrapper.get('input[type="search"]').setValue('erdeven')
     expect(wrapper.findAll('[data-testid="ajouter-membre"]').map((item) => item.text())).toEqual(['Ajouter Erdeven'])
