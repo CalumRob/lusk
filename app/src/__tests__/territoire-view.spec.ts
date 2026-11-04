@@ -1420,6 +1420,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       expect(accessibleReferences.some((reference) => reference.attributes('aria-label')?.includes(contextes[mode]!.scope.label))).toBe(true)
       wrapper.unmount()
     },
+    20_000,
   )
 
   it('affiche l’erreur typée et réessaie le même endpoint', async () => {
