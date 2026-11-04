@@ -3,7 +3,7 @@
  * BoutonComparaison — le contrôle de comparaison de la fiche, assis dans le
  * page-heading collant du Cahier (juste à gauche du titre « {thème} ·
  * {territoire} », #860 ruling propriétaire 2026-11-03, seconde passe) :
- * identité « Comparaison » + type ou nombre de membres, même fermé ;
+ * identité « Comparaison » + type ou « Personnalisé », même fermé ;
  * la portée active ne se lit que dans le nom accessible
  * (aria-label) et dans la seconde ligne du preset. « Sélection » reste du vocabulaire
  * de glossaire, jamais du copy UI.
@@ -53,7 +53,7 @@ const typeLabels: Record<PresetComparaison, string> = {
 const typeActif = computed(() => {
   const selection = props.selection
   if (selection.etat === 'vide') return 'Aucune'
-  if (selection.etat === 'membres') return `${selection.membres.length} membre${selection.membres.length === 1 ? '' : 's'}`
+  if (selection.etat === 'membres') return 'Personnalisé'
   const preset = selection.etat === 'preset' ? selection.preset : props.presetDefaut
   return preset ? typeLabels[preset] : 'Aucune'
 })
@@ -61,10 +61,13 @@ const typeActif = computed(() => {
 const emit = defineEmits<{
   /** La sélection choisie, typée — la vue la sérialise dans ?comparaison=. */
   (e: 'choisir', selection: SelectionComparaison): void
+  (e: 'construire'): void
 }>()
 
 interface EntreeMenu {
+  key: string
   selection: SelectionComparaison
+  ouvrirConstructeur?: boolean
   label: string
   description: string | null
   scope: string | null
@@ -73,6 +76,7 @@ interface EntreeMenu {
 
 const entrees = computed<readonly EntreeMenu[]>(() => [
   ...props.presets.map((preset) => ({
+    key: `preset:${preset.preset}`,
     selection: { etat: 'preset', preset: preset.preset } as SelectionComparaison,
     label: typeLabels[preset.preset],
     scope: preset.label,
@@ -82,6 +86,16 @@ const entrees = computed<readonly EntreeMenu[]>(() => [
       : props.selection.etat === 'defaut' && props.presetDefaut === preset.preset,
   })),
   {
+    key: 'personnalise',
+    selection: props.selection,
+    ouvrirConstructeur: true,
+    label: 'Personnalisé',
+    description: null,
+    scope: null,
+    actif: props.selection.etat === 'membres',
+  },
+  {
+    key: 'vide',
     selection: { etat: 'vide' },
     label: 'Aucune comparaison',
     description: null,
@@ -141,8 +155,11 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
 
 function choisir(entree: EntreeMenu): void {
   ouvert.value = false
-  emit('choisir', entree.selection)
-  void nextTick(() => triggerRef.value?.focus())
+  if (entree.ouvrirConstructeur) emit('construire')
+  else if (entree.selection) {
+    emit('choisir', entree.selection)
+    void nextTick(() => triggerRef.value?.focus())
+  }
 }
 </script>
 
@@ -176,7 +193,7 @@ function choisir(entree: EntreeMenu): void {
     >
       <button
         v-for="(entree, index) in entrees"
-        :key="serialiserSelection(entree.selection) ?? 'defaut'"
+        :key="entree.key"
         :ref="enregistrerOption"
         type="button"
         role="menuitemradio"
@@ -224,7 +241,7 @@ function choisir(entree: EntreeMenu): void {
   box-sizing: border-box;
   block-size: 1.3em;
   padding: 0 var(--space-1);
-  border: 1px solid var(--red-soft, var(--border-subtle));
+  border: 1px solid var(--border-default, var(--border-subtle));
   border-radius: 2px;
   background: var(--paper, var(--surface-primary));
   color: var(--cahier-theme-strong, var(--red, var(--accent-primary)));
@@ -253,7 +270,7 @@ function choisir(entree: EntreeMenu): void {
 
 .bouton-comparaison__declencheur:focus-visible,
 .bouton-comparaison__option:focus-visible {
-  outline: 2px solid var(--red, var(--accent-primary));
+  outline: var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -270,7 +287,7 @@ function choisir(entree: EntreeMenu): void {
 .bouton-comparaison__menu {
   position: absolute;
   top: calc(100% + 4px);
-  inset-inline-end: 0;
+  inset-inline-end: 1px;
   z-index: var(--z-popover);
   display: grid;
   grid-template-columns: minmax(0, 1fr);

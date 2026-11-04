@@ -12,6 +12,7 @@ import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import BoutonComparaison from '@/components/fiche/BoutonComparaison.vue'
+import ConstructeurComparaison from '@/components/fiche/ConstructeurComparaison.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import {
   CONTROLE_COMPARAISON_KEY,
@@ -78,6 +79,8 @@ const route = useRoute()
  *  s'assied dans le page-heading collant, à gauche du titre thème·territoire.
  *  `null` (prototype hors fiche, Région) : aucun bouton. */
 const controleComparaison = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
+const demandeConstructeur = ref(0)
+function ouvrirConstructeur(): void { demandeConstructeur.value++ }
 
 const rootRef = ref<HTMLElement | null>(null)
 const activeFigure = ref('')
@@ -391,15 +394,26 @@ onBeforeUnmount(() => {
                 >
                   <!-- #860 : « Comparaison », aligné à droite, immédiatement à
                        gauche du titre thème·territoire dans le heading collant. -->
-                  <BoutonComparaison
-                    v-if="controleComparaison"
-                    class="page-heading-comparaison"
-                    :selection="controleComparaison.selection"
-                    :libelle-actif="controleComparaison.libelleActif"
-                    :preset-defaut="controleComparaison.presetDefaut"
-                    :presets="controleComparaison.presets"
-                    @choisir="controleComparaison.choisir"
-                  />
+                  <span v-if="controleComparaison" class="page-heading-comparaison-controls">
+                    <BoutonComparaison
+                      class="page-heading-comparaison"
+                      :selection="controleComparaison.selection"
+                      :libelle-actif="controleComparaison.libelleActif"
+                      :preset-defaut="controleComparaison.presetDefaut"
+                      :presets="controleComparaison.presets"
+                      @choisir="controleComparaison.choisir"
+                      @construire="ouvrirConstructeur"
+                    />
+                    <ConstructeurComparaison
+                      :selection="controleComparaison.selection"
+                      :focal="controleComparaison.focal"
+                      :territoires="controleComparaison.territoires"
+                      :presets="controleComparaison.presets"
+                      :preset-defaut="controleComparaison.presetDefaut"
+                      :demande-ouverture="demandeConstructeur"
+                      @choisir="controleComparaison.choisir"
+                    />
+                  </span>
                   <span class="page-heading-theme">{{ props.content.label }}</span>
                   <span class="page-heading-context-separator" aria-hidden="true">·</span>
                   <span class="page-heading-territory" :title="props.content.territory.name">{{ props.content.territory.name }}</span>
@@ -877,16 +891,18 @@ onBeforeUnmount(() => {
 .cahier--indexed-sections .page-heading-index { color: var(--red); font: 500 12px/1.3 var(--font-ui); font-variant-numeric: tabular-nums; }
 .cahier--indexed-sections .page-heading-index small { margin-left: 3px; color: var(--muted); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); }
 .cahier--indexed-sections .page-heading-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.cahier--indexed-sections .page-heading-context { display: flex; align-items: baseline; justify-self: end; gap: 6px; max-width: min(32vw, 18rem); min-width: 0; font-family: var(--font-ui); font-size: var(--text-cahier-min-size); line-height: 1.3; white-space: nowrap; }
+.cahier--indexed-sections .page-heading-context { display: flex; align-items: baseline; justify-self: end; gap: 6px; max-width: min(42vw, 24rem); min-width: 0; font-family: var(--font-ui); font-size: var(--text-cahier-min-size); line-height: 1.3; white-space: nowrap; }
 .cahier--indexed-sections .page-heading-theme { flex: none; color: var(--cahier-theme-strong); font-weight: 600; }
 .cahier--indexed-sections .page-heading-context-separator { flex: none; color: var(--muted); }
 .cahier--indexed-sections .page-heading-territory { min-width: 0; overflow: hidden; color: var(--accent-primary); font-weight: 600; text-align: right; text-overflow: ellipsis; }
 /* #860 — le bouton « Comparaison » reste centré dans la rangée du heading
    (align-items: baseline) sans l'épaissir ; le territoire tronque à sa droite. */
 .cahier--indexed-sections .page-heading-comparaison { position: static; align-self: center; flex: none; margin-inline-end: var(--space-2); }
+.cahier--indexed-sections .page-heading-comparaison-controls { display: contents; }
 /* Réserver la colonne de contexte indépendamment du contrôle : son apparition
    ne doit pas réduire le titre et lui ajouter une ligne sur ordinateur. */
-.cahier--indexed-sections .page-heading-context { position: relative; inline-size: min(32vw, 18rem); }
+.cahier--indexed-sections .page-heading-context { position: relative; inline-size: min(42vw, 24rem); }
+.cahier--indexed-sections .page-heading-comparaison-controls .constructeur-comparaison { margin-inline-end: var(--space-6); }
 .cahier--indexed-sections .page-heading h2 {
   max-width: none;
   text-align: left;
@@ -1113,11 +1129,18 @@ onBeforeUnmount(() => {
   .cahier--indexed-sections .page-heading-context {
     grid-column: 2;
     grid-row: 1;
+    gap: 0;
     max-width: 100%;
     inline-size: 100%;
   }
+  .cahier--indexed-sections .page-heading-theme { margin-inline-start: 4px; }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 10px; }
+}
+@media (max-width: 639px) {
+  .cahier--indexed-sections .page-heading-context-separator { display: none; }
+  .cahier--indexed-sections .page-heading-theme { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .cahier--indexed-sections .page-heading-comparaison-controls .constructeur-comparaison { margin-inline-end: var(--space-2); }
 }
 @media (prefers-reduced-motion: reduce) {
   .cahier * { scroll-behavior: auto !important; }

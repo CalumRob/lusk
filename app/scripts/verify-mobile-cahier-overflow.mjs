@@ -476,7 +476,7 @@ try {
     for (const option of await options.all()) {
       await option.hover()
       const geometry = await option.evaluate((element) => {
-        const panel = element.closest('[role="menu"]')
+        const panel = element.closest('.bouton-comparaison__menu')
         const menu = panel.getBoundingClientRect()
         const style = getComputedStyle(panel)
         const contained = [element, ...element.querySelectorAll('span')].every((node) => {
@@ -1497,6 +1497,33 @@ try {
       const restored = await page.evaluate(() => [document.documentElement.scrollWidth, document.body.scrollWidth])
       assert.deepEqual(restored, [width, width], 'restoring the mutation should restore mobile geometry')
     }
+
+    // #861 : après les assertions d'acquisition du défaut ci-dessus, pour ne
+    // pas confondre leurs compteurs avec les lectures de cette nouvelle sélection.
+    const builderTrigger = page.locator('.page-heading [aria-label="Construire un groupe de comparaison"]').first()
+    await builderTrigger.click()
+    const searchMember = page.locator('dialog[open] .membres-comparaison input[type="search"]')
+    await searchMember.waitFor({ state: 'visible' })
+    await searchMember.fill('22002')
+    await page.getByTestId('ajouter-membre').click()
+    await page.locator('dialog[open] .membres-comparaison li').filter({ hasText: 'Andel' }).waitFor()
+    const builder = await page.locator('dialog[open].cahier-dialog').evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      const targets = [...element.querySelectorAll('.membres-comparaison button, input')]
+      return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, position: style.position,
+        viewportHeight: innerHeight, overflow: element.scrollWidth > element.clientWidth,
+        modal: element.getAttribute('aria-modal'),
+        targets: targets.map((target) => target.getBoundingClientRect().height) }
+    })
+    assert(!builder.overflow && builder.left >= 0 && builder.right <= width && builder.top >= 0 && builder.bottom <= builder.viewportHeight,
+      `Constructeur hors du viewport à ${width}px : ${JSON.stringify(builder)}`)
+    assert.equal(builder.modal, 'true', 'Le constructeur doit être un dialogue modal')
+    assert(builder.targets.every((height) => height >= 44), `Cibles constructeur <44px : ${JSON.stringify(builder)}`)
+    assert.equal(builder.position, 'fixed', 'Le constructeur doit utiliser la couche modale native')
+    if (width === 390 || width === 1440) await page.screenshot({ path: resolve(evidenceDir, `issue861-constructeur-${width}.png`), fullPage: false })
+    await page.getByRole('button', { name: 'Fermer la fenêtre', exact: true }).click()
+    assert.equal(await builderTrigger.getAttribute('aria-expanded'), 'false')
 
     let plainMarginLayout = null
     if (width === 601 || width === 760) {
