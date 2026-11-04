@@ -6,7 +6,6 @@ import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilie
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import type { HistoireMilieux } from '../payload/types'
 import {
-  apercuAvecNAFixture,
   histoiresMilieuxFixture,
   indicateursMilieuxFixture,
   metadonneesThemesFixtures,
@@ -32,7 +31,6 @@ const payloadMilieux: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursMilieuxFixture,
   histoires: histoiresMilieuxFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,

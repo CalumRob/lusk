@@ -153,6 +153,7 @@ class SemanticResourceReader:
             return estimate
         if resource.resource_kind == "aedar_source_grain":
             from api.aedar_reads import (_aedar_comparison_snapshot,
+                _aedar_selected_comparison_snapshot,
                 _aedar_territorial_aggregate_snapshot)
             coordinates = item.coordinates or {}
             typequ = coordinates.get("typequ")
@@ -166,6 +167,8 @@ class SemanticResourceReader:
             if item.intent.kind == "fixed_comparison" and not (
                     typequ and len(typequ) == 1 and measures and len(measures) == 1):
                 raise HTTPException(422, "AEDAR comparison requires one TYPEQU and one measure coordinate")
+            if item.intent.kind == "selected_comparison" and not (typequ and measures):
+                raise HTTPException(422, "AEDAR selected comparison requires typequ and measure coordinates")
             # (b) Publication preflight runs second: an absent, stale or
             # incompatible publication fails closed with 503, matching the
             # retired legacy routes and the documented endpoint contract, so a
@@ -173,6 +176,10 @@ class SemanticResourceReader:
             if item.intent.kind == "fixed_comparison":
                 _aedar_comparison_snapshot(conn, item.target.type, item.target.id,
                     item.intent.context, typequ[0], measures[0], item.fields, preflight_only=True)
+            elif item.intent.kind == "selected_comparison":
+                _aedar_selected_comparison_snapshot(conn, item.target.type, item.target.id,
+                    [(member.type, member.id) for member in item.intent.members],
+                    typequ, measures, item.fields, resource.measure_facets, preflight_only=True)
             elif item.intent.kind == "facts":
                 _aedar_territorial_aggregate_snapshot(conn, item.target.type,
                     item.target.id, typequ, None, 100, 0, preflight_only=True)
@@ -186,6 +193,11 @@ class SemanticResourceReader:
                     raise HTTPException(422, "Coordinate value is not present in the published AEDAR descriptor")
             if item.intent.kind == "fixed_comparison":
                 return 1
+            if item.intent.kind == "selected_comparison":
+                # Bounded read work: one aggregate row per member and TYPEQU,
+                # plus one projected comparison entry per TYPEQU x measure.
+                return (max(1, len(item.intent.members)) * max(1, len(typequ))
+                        + max(1, len(typequ)) * max(1, len(measures)))
             if item.intent.kind == "facts":
                 count = conn.execute("SELECT count(*) FROM aedar_territorial_aggregate WHERE territory_type=%s AND territory_id=%s AND (%s::text[] IS NULL OR typequ=ANY(%s))",
                     (item.target.type, item.target.id, typequ, typequ)).fetchone()[0]
@@ -372,11 +384,17 @@ class SemanticResourceReader:
             return self._typed_reading_read(conn, item, resource)
         if resource.resource_kind == "aedar_source_grain":
             from api.aedar_reads import (_aedar_comparison_snapshot,
+                _aedar_selected_comparison_snapshot,
                 _aedar_territorial_aggregate_snapshot)
             coordinates = item.coordinates or {}
             if item.intent.kind == "fixed_comparison":
                 data = _aedar_comparison_snapshot(conn, item.target.type, item.target.id,
                     item.intent.context, coordinates["typequ"][0], coordinates["measure"][0], item.fields)
+            elif item.intent.kind == "selected_comparison":
+                data = _aedar_selected_comparison_snapshot(conn, item.target.type, item.target.id,
+                    [(member.type, member.id) for member in item.intent.members],
+                    coordinates.get("typequ"), coordinates.get("measure"), item.fields,
+                    resource.measure_facets)
             else:
                 data = _aedar_territorial_aggregate_snapshot(conn, item.target.type,
                     item.target.id, coordinates.get("typequ"), item.fields, 100, 0)

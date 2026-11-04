@@ -4,9 +4,11 @@
  *
  * Same fixture in both languages (docs/architecture.md §Testing): 4 communes
  * across 2 EPCIs in 2 départements + la région (9 territoires), covering the
- * four Story quadrants, a rank tie, NA ranks, NA apercu KPIs, a missing theme
- * and the run-report variants. The values locked by the R contract test are
+ * four Story quadrants, a rank tie, NA ranks, a missing theme and the
+ * run-report variants. The values locked by the R contract test are
  * mirrored exactly (territoire codes, noms, populations, densités, ranks).
+ * #894: no apercu fixture anymore — the apercu.json browser projection is
+ * retired (the R-side apercu table/parquet contract is mirrored R-side only).
  *
  * These are RAW row shapes — exactly what the JSON files in public/data/
  * contain. They feed the validators (app's half of validate_payload()) and
@@ -15,7 +17,6 @@
 
 import type { Fichier } from './loader'
 import type {
-  ApercuRow,
   Histoire,
   IndicatorPageMetadata,
   Indicateur,
@@ -137,52 +138,6 @@ export const histoiresDemographieFixture: Histoire[] = [
   { territoire: '29', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
   { territoire: '53', type: 'region', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 0.9965122072700558, taux_solde_migratoire: 0.4982561036350279, classification: 'attire-renouvelle' },
 ]
-
-/**
- * Aperçu basic stats (ADR-0007): one row per (territoire × key).
- * Values mirror the R fixture output (population 22001 = 2000, 200000001 =
- * 2400, 53 = 8400; densite 22001 = 200; part_65_plus 22001 = 0.15).
- */
-export const apercuFixture: ApercuRow[] = [
-  { territoire: '22001', type: 'commune', key: 'population', value: 2000, unit: 'hab.' },
-  { territoire: '22002', type: 'commune', key: 'population', value: 400, unit: 'hab.' },
-  { territoire: '29001', type: 'commune', key: 'population', value: 3000, unit: 'hab.' },
-  { territoire: '29002', type: 'commune', key: 'population', value: 3000, unit: 'hab.' },
-  { territoire: '200000001', type: 'epci', key: 'population', value: 2400, unit: 'hab.' },
-  { territoire: '200000002', type: 'epci', key: 'population', value: 6000, unit: 'hab.' },
-  { territoire: '22', type: 'departement', key: 'population', value: 2400, unit: 'hab.' },
-  { territoire: '29', type: 'departement', key: 'population', value: 6000, unit: 'hab.' },
-  { territoire: '53', type: 'region', key: 'population', value: 8400, unit: 'hab.' },
-  { territoire: '22001', type: 'commune', key: 'densite', value: 200, unit: 'hab/km²' },
-  { territoire: '22002', type: 'commune', key: 'densite', value: 50, unit: 'hab/km²' },
-  { territoire: '29001', type: 'commune', key: 'densite', value: 150, unit: 'hab/km²' },
-  { territoire: '29002', type: 'commune', key: 'densite', value: 150, unit: 'hab/km²' },
-  { territoire: '200000001', type: 'epci', key: 'densite', value: 133.33333333333334, unit: 'hab/km²' },
-  { territoire: '200000002', type: 'epci', key: 'densite', value: 150, unit: 'hab/km²' },
-  { territoire: '22', type: 'departement', key: 'densite', value: 133.33333333333334, unit: 'hab/km²' },
-  { territoire: '29', type: 'departement', key: 'densite', value: 150, unit: 'hab/km²' },
-  { territoire: '53', type: 'region', key: 'densite', value: 144.82758620689654, unit: 'hab/km²' },
-  { territoire: '22001', type: 'commune', key: 'part_65_plus', value: 0.15, unit: '%' },
-  { territoire: '22002', type: 'commune', key: 'part_65_plus', value: 0.175, unit: '%' },
-  { territoire: '29001', type: 'commune', key: 'part_65_plus', value: 0.18333333333333332, unit: '%' },
-  { territoire: '29002', type: 'commune', key: 'part_65_plus', value: 0.23333333333333334, unit: '%' },
-  { territoire: '200000001', type: 'epci', key: 'part_65_plus', value: 0.15416666666666667, unit: '%' },
-  { territoire: '200000002', type: 'epci', key: 'part_65_plus', value: 0.20833333333333334, unit: '%' },
-  { territoire: '22', type: 'departement', key: 'part_65_plus', value: 0.15416666666666667, unit: '%' },
-  { territoire: '29', type: 'departement', key: 'part_65_plus', value: 0.20833333333333334, unit: '%' },
-  { territoire: '53', type: 'region', key: 'part_65_plus', value: 0.19285714285714287, unit: '%' },
-]
-
-/**
- * Aperçu variant with an NA KPI — value null = not computable for that
- * territory (e.g. a part with no reliable base). The Aperçu selector must
- * NA-gate it away.
- */
-export const apercuAvecNAFixture: ApercuRow[] = apercuFixture.map((ligne) =>
-  ligne.territoire === '22002' && ligne.key === 'part_65_plus'
-    ? { ...ligne, value: null }
-    : ligne,
-)
 
 /** Run report all-frais (the committed shape, CONTEXT.md §Run report). */
 export const runReportFraisFixture: RunReport = {
@@ -1263,8 +1218,6 @@ export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unk
         return payload.runReport
       case 'vintages':
         return payload.vintages
-      case 'apercu':
-        return payload.apercu
       default:
         if (fichier.startsWith('indicateurs_')) {
           const theme = fichier.slice('indicateurs_'.length) as Theme

@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest'
 import FigureOffreCyclable from '../components/fiche/FigureOffreCyclable.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
-  apercuAvecNAFixture,
   histoiresMobiliteFixture,
   indicateursMobiliteFixture,
   metadonneesThemesFixtures,
@@ -31,7 +30,6 @@ const payloadMobilite: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursMobiliteFixture,
   histoires: histoiresMobiliteFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,

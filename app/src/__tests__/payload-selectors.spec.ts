@@ -1,21 +1,16 @@
 ﻿import { describe, expect, it } from 'vitest'
 
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
-  histoiresHabitatFixture,
   indicateursDemographieFixture,
-  indicateursHabitatFixture,
   runReportEchecFixture,
   runReportManuelFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
 import {
-  apercuPourTerritoire,
   formaterRang,
   ligneFraicheur,
-  themesPresent,
   trouverTerritoire,
 } from '../payload/selectors'
 import type { Payload } from '../payload/types'
@@ -31,58 +26,18 @@ const payloadDemographie: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportEchecFixture,
   vintages: vintagesFixture,
   programmes: null,
 }
 
-describe('themesPresent — the payload-driven tab bar (ADR-0007)', () => {
-  it('returns only the themes present in the payload, in canonical order', () => {
-    const payload: Payload = {
-      ...payloadDemographie,
-      indicateurs: [...indicateursDemographieFixture, ...indicateursHabitatFixture],
-      histoires: [...histoiresDemographieFixture, ...histoiresHabitatFixture],
-    }
+// #901 — le helper themesPresent (barre d'onglets lue dans les lignes de
+// faits) est retiré avec son dernier consommateur : les onglets viennent du
+// registre canonique THEMES_CANONIQUES (voir payload-contract.spec.ts).
 
-    expect(themesPresent(payload)).toEqual(['demographie', 'habitat'])
-  })
-
-  it('never renders a theme that has no data (dead tabs never render)', () => {
-    expect(themesPresent(payloadDemographie)).toEqual(['demographie'])
-  })
-
-  it('keeps the canonical order even when only the last theme exists', () => {
-    const payload: Payload = {
-      ...payloadDemographie,
-      indicateurs: indicateursHabitatFixture,
-      histoires: histoiresHabitatFixture,
-    }
-
-    expect(themesPresent(payload)).toEqual(['habitat'])
-  })
-})
-
-describe('apercuPourTerritoire — the Aperçu tab assembly (ADR-0007)', () => {
-  it('returns the basic stats for a territory, in payload order', () => {
-    const lignes = apercuPourTerritoire(payloadDemographie, '22001')
-
-    expect(lignes.map((l) => l.key)).toEqual(['population', 'densite', 'part_65_plus'])
-    expect(lignes[0]).toMatchObject({ key: 'population', value: 2000, unit: 'hab.' })
-  })
-
-  it('NA-gates null values — a KPI not computable for the territory is skipped', () => {
-    // 22002's part_65_plus is null in the fixture (non calculable)
-    const lignes = apercuPourTerritoire(payloadDemographie, '22002')
-
-    expect(lignes.map((l) => l.key)).toEqual(['population', 'densite'])
-    expect(lignes.every((l) => l.value !== null)).toBe(true)
-  })
-
-  it('returns an empty array for an unknown territory', () => {
-    expect(apercuPourTerritoire(payloadDemographie, '99999')).toEqual([])
-  })
-})
+// #894 — the apercuPourTerritoire selector is gone with the retired
+// apercu.json: no selector reads an Aperçu table anymore (the tab itself is
+// retired since #408).
 
 describe('formaterRang — the rank-in-context chip (ADR-0015)', () => {
   it('formats the ordinal position with its group size ("1er/41 de l’EPCI")', () => {

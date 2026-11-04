@@ -171,15 +171,18 @@ projection_json_indicateurs <- function(indicateurs) {
 }
 # publish ---------------------------------------------------------------------
 # Étape 5 : publication. Upsert du payload vers la cible. Deux backends :
-#   - "static" (défaut, issue #10, ADR-0004) : écrit les tables en parquet
-#     (l'artefact canonique téléchargeable) ET leurs projections JSON (ce que
-#     l'app Vue fetch), vers le home public du payload (public/data/ à la
-#     racine du dépôt — là où Pages et l'app lisent). Les deux sérialisations
-#     sortent des MÊMES tables en mémoire : le test d'égalité (test-publish.R)
-#     verrouille la non-dérive — pour les thèmes retirés (#757) il compare la
-#     projection JSON à la table en mémoire, pour la Mobilité il compare JSON
-#     et parquet l'un à l'autre (dérive impossible, pas juste improbable —
-#     ADR-0004).
+#   - "static" (défaut, issue #10, ADR-0004) : écrit les tables vers le home
+#     public du payload (public/data/ à la racine du dépôt — là où Pages et
+#     l'app lisent), en parquet (l'artefact canonique téléchargeable) et/ou en
+#     projection JSON (ce que l'app Vue fetch) — SELON la table, pas les deux
+#     formats partout : les règles par projection sont détaillées ci-dessous
+#     (pas de parquet par thème hors Mobilité, #757 ; pas de apercu.json
+#     depuis #894, le parquet apercu.parquet reste). Chaque sérialisation
+#     écrite sort de la MÊME table en mémoire : le test d'égalité
+#     (test-publish.R) verrouille la non-dérive — pour les thèmes retirés
+#     (#757) il compare la projection JSON à la table en mémoire, pour la
+#     Mobilité il compare JSON et parquet l'un à l'autre (dérive impossible,
+#     pas juste improbable — ADR-0004).
 #   - "parquet" (local, comportement historique inchangé) : parquet seul.
 # Sémantique d'upsert documentée : le payload EST l'état complet des fiches —
 # écrire écrase, donc relancer ne duplique jamais. Le backend Supabase
@@ -190,8 +193,9 @@ projection_json_indicateurs <- function(indicateurs) {
 # jamais dessus et que l'app récupère par thème. La référence des territoires
 # (les noms réels — la dimension que l'app joint), la table apercu (les stats
 # de base de l'onglet Aperçu, issue #32) et les vintages restent partagés :
-# territoires.parquet/.json, apercu.parquet/.json, vintages.parquet (écrit par
-# run_pipeline). Le thème se lit sur le payload lui-même (la colonne `theme`
+# territoires.parquet/.json, apercu.parquet (la projection apercu.json est
+# retirée depuis #894 — source-only, aucun lecteur navigateur), vintages.parquet
+# (écrit par run_pipeline). Le thème se lit sur le payload lui-même (la colonne `theme`
 # des deux tables de faits) : publish ne peut pas écrire un thème différent de
 # celui des données.
 # Issue #757 : la sérialisation PARQUET par thème est RETIRÉE pour les cinq
@@ -201,7 +205,8 @@ projection_json_indicateurs <- function(indicateurs) {
 # disparaît. La Mobilité reste l'exception (#619) : elle écrit toujours
 # indicateurs_mobilite.parquet / histoires_mobilite.parquet. Les fichiers
 # partagés (territoires, apercu, vintages) et les parquets BPE dédiés ne sont
-# pas concernés.
+# pas concernés ; depuis #894 seule la projection JSON apercu.json disparaît
+# (le parquet apercu.parquet reste).
 
 publish <- function(payload, cible = "public/data", backend = "static") {
   if (backend == "supabase") {
@@ -246,6 +251,8 @@ publish <- function(payload, cible = "public/data", backend = "static") {
   # Démographie par `[]`. La table du payload reste présente et vide (le
   # contrat, validate_payload l'exige) ; publish ne la sérialise que lorsqu'elle
   # porte des lignes.
+  # Issue #894 : seule la sérialisation PARQUET partagée reste — la projection
+  # JSON apercu.json n'est plus écrite (voir le backend static ci-dessous).
   if (nrow(payload$apercu) > 0) {
     ecrire_parquet_si_modifie(payload$apercu,
                                file.path(cible, "apercu.parquet"))
@@ -296,7 +303,8 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     # Les projections JSON : générées depuis les MÊMES tables en mémoire que
     # le parquet — le test d'égalité (test-publish.R) verrouille la
     # non-dérive, à l'asymétrie #892 près pour les indicateurs (les six
-    # colonnes de rang y sont omises du JSON seulement). Un tableau = un
+    # colonnes de rang y sont omises du JSON seulement) et à l'omission #894
+    # de la table partagée apercu (parquet retenu, JSON retiré). Un tableau = un
     # tableau JSON (dataframe = "rows" : une liste d'objets, la forme native
     # de fetch().json() côté app).
     # digits = 17 : assez de décimales pour qu'un double relu en JSON soit
@@ -316,9 +324,11 @@ publish <- function(payload, cible = "public/data", backend = "static") {
                       paste0("indicateurs_", theme, ".json"))
     ecrire_projection(payload$histoires, paste0("histoires_", theme, ".json"))
     ecrire_projection(payload$territoires, "territoires.json")
-    if (nrow(payload$apercu) > 0) {
-      ecrire_projection(payload$apercu, "apercu.json")
-    }
+    # #894 : la projection navigateur apercu.json est RETIRÉE (source-only) —
+    # plus aucun chemin ne l'écrit. La table canonique en mémoire et le
+    # parquet partagé apercu.parquet (écrit plus haut, règle non-vide #116)
+    # restent inchangés ; un apercu.json périmé préexistant est une relique :
+    # ni réécrit ni supprimé par le run.
     if ("profils_acces_bpe" %in% names(payload) &&
         !is.null(payload$profils_acces_bpe)) {
       ecrire_projection(payload$profils_acces_bpe, "profils_acces_bpe.json")

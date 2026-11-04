@@ -44,7 +44,6 @@ const payloadRaccordement: Payload = {
   territoires: territoiresRaccordementFixture,
   indicateurs: indicateursRaccordementFixture,
   histoires: [],
-  apercu: null,
   runReport: null,
   vintages: null,
   programmes: null,

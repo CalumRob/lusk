@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { contenuTooltip, formaterValeurApercu, kpisPourPopup } from '../carte/popup'
+import { contenuTooltip, kpisPourPopup } from '../carte/popup'
 import type { Couche } from '../carte/coucheModel'
 import {
-  apercuAvecNAFixture,
-  apercuFixture,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   territoiresFixture,
@@ -56,36 +54,23 @@ const coucheTrancheMoin15: Couche = {
   storyKey: null,
 }
 
-function payloadAvecApercu(apercu = apercuFixture): Payload {
+function payloadDemographie(): Payload {
   return {
     territoires: territoiresFixture,
     indicateurs: indicateursDemographieFixture,
     histoires: histoiresDemographieFixture,
-    apercu,
     runReport: null,
     vintages: vintagesFixture,
     programmes: null,
   }
 }
 
-describe('formaterValeurApercu — French display of an Aperçu row', () => {
-  it('formats a % unit as a whole number (fraction × 100)', () => {
-    expect(formaterValeurApercu({ territoire: '22001', type: 'commune', key: 'part_65_plus', value: 0.15, unit: '%' })).toBe('15')
-  })
-
-  it('formats a raw value with thin-space thousands and a comma decimal', () => {
-    expect(formaterValeurApercu({ territoire: '22001', type: 'commune', key: 'population', value: 2000, unit: 'hab.' })).toBe('2 000')
-    expect(formaterValeurApercu({ territoire: '22001', type: 'commune', key: 'densite', value: 133.333, unit: 'hab/km²' })).toBe('133,33')
-  })
-
-  it('returns null for a null value (non calculable)', () => {
-    expect(formaterValeurApercu({ territoire: '22001', type: 'commune', key: 'population', value: null, unit: 'hab.' })).toBeNull()
-  })
-})
+// #894 — formaterValeurApercu is gone with the retired apercu.json: the map
+// popup had no production caller left (it reads only the active layer's row).
 
 describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
   it('leads with the active layer — its value, NO rank chip from legacy static columns (#892)', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     const kpis = kpisPourPopup(payload, '22001', 'demographie', coucheDensite)
 
     // la ligne commise porte rang_epci 1/2 — le repli statique est retiré :
@@ -100,7 +85,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
   })
 
   it('shows the API comparison rank with its exact declared scope when comparaisonApi is present (#892)', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     const ligne = payload.indicateurs.find((l) => l.territoire === '22001' && l.key === 'densite')!
     const avecApi: Indicateur = {
       ...ligne,
@@ -117,7 +102,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
   })
 
   it('a story scalar deduplicated with the indicateur table (part_passoires) shows its ordinal rank', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     // la couche que le modèle émet pour un scalaire de Story présent dans les
     // DEUX tables (issue #315) : source 'indicateur' — la jointure riche
     // (valeur + rang + vintage), jamais une couche muette
@@ -183,7 +168,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
   })
 
   it('a story-scalar layer shows its value without an invented rank', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     const kpis = kpisPourPopup(payload, '22001', 'demographie', coucheTauxSoldeNaturel)
 
     expect(kpis).toHaveLength(1)
@@ -196,7 +181,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
   })
 
   it('reads a grouped detail layer by clef + detail — no rank chip from static columns (#892, ADR-0019)', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     const kpis = kpisPourPopup(payload, '22001', 'demographie', coucheTrancheMoin15)
 
     expect(kpis[0]).toEqual({ libelle: 'Moins de 15 ans', valeur: '30', unite: '%', rang: null })
@@ -207,7 +192,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
       { territoire: '22001', type: 'commune', theme: 'demographie', key: 'structure_age', detail: '40-54', sex: 'F', value: 0.09, unit: '%', rang_epci: 1, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, vintage_source: 'INSEE', vintage_version: '2023', vintage_date_reference: '2023-01-01', vintage_date_publication: '2026-06-30' },
       { territoire: '22001', type: 'commune', theme: 'demographie', key: 'structure_age', detail: '40-54', sex: 'M', value: 0.06, unit: '%', rang_epci: 1, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, vintage_source: 'INSEE', vintage_version: '2023', vintage_date_reference: '2023-01-01', vintage_date_publication: '2026-06-30' },
     ]
-    const payload = { ...payloadAvecApercu(), indicateurs: lignes }
+    const payload = { ...payloadDemographie(), indicateurs: lignes }
     const couche: Couche = { ...coucheTrancheMoin15, detail: '40-54', libelle: '40 à 54 ans' }
 
     // issue #390 : la carte reste groupée par key + detail (jamais par sexe) ;
@@ -222,7 +207,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
   })
 
   it('an EPCI row with only a static regional rank shows no chip (#892 — plus de repli rang_reg)', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     const kpis = kpisPourPopup(payload, '200000001', 'demographie', coucheDensite)
 
     expect(kpis[0]?.valeur).toBe('133,33')
@@ -230,7 +215,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
   })
 
   it('a layer row with no rank column at all (la région) shows the value without a rank', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     const kpis = kpisPourPopup(payload, '53', 'demographie', coucheDensite)
 
     expect(kpis[0]?.valeur).toBe('144,83')
@@ -238,7 +223,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
   })
 
   it('a layer row whose value is null shows the honest « — », never a made-up number', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     const coucheTrajectoireArtif: Couche = {
       source: 'histoire',
       clef: 'trajectoire_artif_par_habitant',
@@ -275,22 +260,22 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
     expect(kpis[0]?.rang).toBeNull()
   })
 
-  it('neutral popup has no Aperçu KPI rows even when the payload still contains them', () => {
-    const payload = payloadAvecApercu()
+  it('neutral popup has no KPI rows without a layer (ADR-0019 — no Aperçu overview since #894)', () => {
+    const payload = payloadDemographie()
     const kpis = kpisPourPopup(payload, '29001', null, null)
 
     expect(kpis).toEqual([])
   })
 
-  it('neutral popup stays free of Aperçu rows even when some are unavailable', () => {
-    const payload = payloadAvecApercu(apercuAvecNAFixture)
+  it('neutral popup stays free of KPI rows on a territory with NA rows too', () => {
+    const payload = payloadDemographie()
     const kpis = kpisPourPopup(payload, '22002', null, null)
 
     expect(kpis).toEqual([])
   })
 
   it('a territory with no payload rows gets an honest short popup', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     const kpis = kpisPourPopup(payload, '99999', 'demographie', coucheDensite)
 
     expect(kpis).toHaveLength(0)
@@ -299,7 +284,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
 
 describe('contenuTooltip — the hover tooltip (audit #208 item 57)', () => {
   it('names the territory and shows the active layer value', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     expect(contenuTooltip(payload, '22001', 'demographie', coucheDensite)).toEqual({
       nom: 'Commune A1',
       valeur: '200',
@@ -307,7 +292,7 @@ describe('contenuTooltip — the hover tooltip (audit #208 item 57)', () => {
   })
 
   it('shows a story scalar for a story layer (source histoire)', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     expect(contenuTooltip(payload, '22001', 'demographie', coucheTauxSoldeNaturel)).toEqual({
       nom: 'Commune A1',
       valeur: '5,98',
@@ -315,12 +300,12 @@ describe('contenuTooltip — the hover tooltip (audit #208 item 57)', () => {
   })
 
   it('shows the name only without a layer (no theme drives the map)', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     expect(contenuTooltip(payload, '22001', null, null)).toEqual({ nom: 'Commune A1', valeur: null })
   })
 
   it('falls back to the territoire code when the payload has no name row', () => {
-    const payload = payloadAvecApercu()
+    const payload = payloadDemographie()
     expect(contenuTooltip(payload, '99999', 'demographie', coucheDensite)).toEqual({
       nom: '99999',
       valeur: null,

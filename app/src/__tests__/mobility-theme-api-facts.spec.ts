@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
-import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
+import type { TerritoryComparisonContext } from '@/fiche/comparisonContext'
 import { metadonneesThemesFixtures, histoiresMobiliteFixture } from '@/payload/fixtures'
 import type { Payload } from '@/payload/types'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
@@ -16,7 +16,7 @@ const context: TerritoryComparisonContext = { mode: 'densite', scope: {
   kind: 'communes-densite', label: 'Source-defined group' }, facts: [], buildingDistribution: null, accessRamp: null }
 const payload: Payload = {
   territoires: [{ territoire: '22001', type: 'commune', nom: 'Commune', departement: '22', epci: null }],
-  indicateurs: [], histoires: histoiresMobiliteFixture, apercu: null, runReport: null,
+  indicateurs: [], histoires: histoiresMobiliteFixture, runReport: null,
   vintages: [], programmes: null, themeMetadata: metadonneesThemesFixtures,
 }
 const response = (): any => ({

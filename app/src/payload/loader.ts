@@ -21,16 +21,17 @@
  * the theme's metadata (theme_<theme>.json, issue #309, wired by #313): a
  * present theme REQUIRES its metadata file — 404 is drift, loud. run-report
  * and vintages.json are optional — a 404 means the static-rhythm freshness
- * claim, never an error. So is apercu.json (issue #122): since #116 the
- * pipeline only publishes it when a theme HAS an aperçu — a 404 means the
- * Aperçu element is simply not built, never an error. The shared
- * programmes.json projection is RETIRED (#893): no file entry exists for it
- * and no loader path requests or validates it — the fiche/map read the
- * Programmes facts through the API-backed theme files and native reads.
+ * claim, never an error. The shared programmes.json projection is RETIRED
+ * (#893) and so is apercu.json (#894): no file entry exists for either and no
+ * loader path requests or validates them — the fiche/map read the Programmes
+ * facts through the API-backed theme files and native reads; the Aperçu
+ * product tab is retired and no production path read its JSON (a stale
+ * committed apercu.json is deleted (#903) — no file stays on disk to be
+ * left unread).
  *
  * The reference-table dependency holds for any caller of the per-file entry
  * point that needs it: theme files (indicateurs_<theme>, histoires_<theme>)
- * and apercu validate AGAINST the validated territoires table —
+ * validate AGAINST the validated territoires table —
  * the ordering constraint of the loader, kept (chargerFichier('indicateurs_
  * habitat', territoires)). theme_<theme>.json does NOT validate against the
  * table (validerThemeMetadata is self-contained) — its per-file entry takes
@@ -41,7 +42,6 @@
  */
 
 import type {
-  ApercuRow,
   Histoire,
   Indicateur,
   Payload,
@@ -55,7 +55,6 @@ import type {
 import { THEMES_CANONIQUES } from './types'
 import {
   PayloadError,
-  validerApercu,
   validerHistoires,
   validerIndicateurs,
   validerRapportRun,
@@ -96,7 +95,9 @@ export type Fichier =
   | 'territoires-metadata'
   | 'run-report'
   | 'vintages'
-  | 'apercu'
+  // #894/#903 — 'apercu' n'est plus un fichier : la projection apercu.json est
+  // retirée source-only (#894), l'artefact commité supprimé (#903) — jamais
+  // demandée ni validée
   | `indicateurs_${Theme}`
   | `histoires_${Theme}`
   | `theme_${Theme}`
@@ -155,7 +156,6 @@ const VALIDER_PAR_FICHIER = new Map<Fichier, ValiderFichier>([
   ['territoires-metadata', (brut, fichier) => validerTerritoiresMetadata(brut, fichier)],
   ['run-report', (brut, fichier) => validerRapportRun(brut, fichier)],
   ['vintages', (brut, fichier) => validerVintages(brut, fichier)],
-  ['apercu', (brut, fichier, territoires) => validerApercu(brut, fichier, territoires)],
 ])
 
 // Les fichiers de thème (ADR-0007) : les mêmes validateurs par thème, la
@@ -191,7 +191,7 @@ function exigerReference(nom: Fichier, territoires: Territoire[] | undefined): a
  * Fetch + validate ONE named file — the per-file seam of the progressive
  * store (issue #297). Returns the typed section, or null for an optional
  * file absent by 404 (the « 404 = table absente » contract, ADR-0013).
- * Theme / apercu files validate AGAINST the reference table:
+ * Theme files validate AGAINST the reference table:
  * pass the VALIDATED territoires (chargerFichier('indicateurs_habitat',
  * territoires)) — the ordering constraint of the loader, kept.
  */
@@ -199,11 +199,6 @@ export async function chargerFichier(nom: 'territoires', options?: ChargerOption
 export async function chargerFichier(nom: 'territoires-metadata', options?: ChargerOptions): Promise<TerritoryMetadata | null>
 export async function chargerFichier(nom: 'run-report', options?: ChargerOptions): Promise<RunReport | null>
 export async function chargerFichier(nom: 'vintages', options?: ChargerOptions): Promise<Vintage[] | null>
-export async function chargerFichier(
-  nom: 'apercu',
-  territoires: Territoire[],
-  options?: ChargerOptions,
-): Promise<ApercuRow[] | null>
 export async function chargerFichier(
   nom: `indicateurs_${Theme}`,
   territoires: Territoire[],
@@ -276,7 +271,6 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
     themeMetadata[theme] = metadataTheme
   }
 
-  const apercu = await chargerFichier('apercu', territoires, options)
   const runReport = await chargerFichier('run-report', options)
   const vintages = await chargerFichier('vintages', options)
 
@@ -289,12 +283,15 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
   // passent par les fichiers du thème + l'API, et la section native de la
   // carte — mapMemberships — est acquise séparément par l'acquisition
   // sémantique de la carte).
+  // #894 — idem pour apercu : plus de section, aucun apercu.json n'est
+  // demandé ni validé (la projection navigateur est retirée source-only ;
+  // le contrat producteur R — table `apercu` en mémoire + apercu.parquet —
+  // est inchangé).
   const payload = {
     territoires,
     territoryMetadata,
     indicateurs,
     histoires,
-    apercu,
     runReport,
     vintages,
     programmes: null,

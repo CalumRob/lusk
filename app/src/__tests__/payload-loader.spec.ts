@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   histoiresHabitatFixture,
   indicateursDemographieFixture,
@@ -42,7 +41,6 @@ const fichiersDemographie = {
   'indicateurs_demographie.json': indicateursDemographieFixture,
   'histoires_demographie.json': histoiresDemographieFixture,
   'theme_demographie.json': metadonneesThemesFixtures.demographie,
-  'apercu.json': apercuAvecNAFixture,
   'run-report.json': runReportFraisFixture,
   'vintages.json': vintagesFixture,
 }
@@ -69,7 +67,6 @@ describe('chargerPayload — the single seam', () => {
     expect(payload.territoires).toHaveLength(9)
     expect(payload.indicateurs).toHaveLength(indicateursDemographieFixture.length)
     expect(payload.histoires).toHaveLength(9)
-    expect(payload.apercu).toHaveLength(apercuAvecNAFixture.length)
     expect(payload.runReport).toEqual(runReportFraisFixture)
     // #627 - the retired BPE profile / building projections no longer cross
     // the loader seam, even when a stale file is still published.
@@ -137,16 +134,19 @@ describe('chargerPayload — the single seam', () => {
     expect(payload.runReport).toBeNull()
   })
 
-  it('treats a missing apercu.json (404) as absent — the Aperçu element is simply not built (issue #122)', async () => {
-    // Depuis #116 le pipeline ne crée apercu.json que quand un thème a un
-    // aperçu (seul Démographie le peuple) : un environnement où seuls des
-    // thèmes sans aperçu ont tourné n'a pas le fichier — absent, jamais
-    // une erreur de chargement.
-    const { 'apercu.json': _apercu, ...sansApercu } = fichiersDemographie
+  it('never requests apercu.json on the full load — the retired Aperçu file has no loader path (#894)', async () => {
+    // #894 : la projection apercu.json est retirée source-only — aucun chemin
+    // de chargement ne la demande (ni présente : voir le test dédié plus bas
+    // avec une relique servie).
+    const demandees: string[] = []
+    const fetchImpl = async (url: string) => {
+      demandees.push(url)
+      return stubFetch(fichiersDemographie)(url)
+    }
 
-    const payload = await chargerPayload(optionsPour(sansApercu))
+    await chargerPayload({ baseUrl: 'data/', fetchImpl })
 
-    expect(payload.apercu).toBeNull()
+    expect(demandees).not.toContain('data/apercu.json')
   })
 
   it('raises a typed fetch error when a required file is missing', async () => {
@@ -349,8 +349,9 @@ describe('chargerPayload — the retired programmes.json (#893)', () => {
     const demandees: string[] = []
     const fetchImpl = async (url: string) => {
       demandees.push(url)
-      // un programmes.json périmé est encore servi (artefact commité non
-      // supprimé) : le chargeur ne doit NI le demander NI le valider
+      // un programmes.json périmé est encore servi (ex. par un ancien
+      // déploiement — l'artefact commité est supprimé depuis #902) : le
+      // chargeur ne doit NI le demander NI le valider
       return stubFetch({ ...fichiersDemographie, 'programmes.json': { membres: [], subventions: [] } })(url)
     }
 
@@ -358,5 +359,27 @@ describe('chargerPayload — the retired programmes.json (#893)', () => {
 
     expect(demandees).not.toContain('data/programmes.json')
     expect(payload.programmes).toBeNull()
+  })
+})
+
+describe('chargerPayload — the retired apercu.json (#894)', () => {
+  it('never requests or validates apercu.json, even when a stale file is still served', async () => {
+    const demandees: string[] = []
+    const fetchImpl = async (url: string) => {
+      demandees.push(url)
+      // un apercu.json périmé est encore servi (ex. par un ancien
+      // déploiement — l'artefact commité est supprimé depuis #903) : le
+      // chargeur ne doit NI le demander NI le valider
+      return stubFetch({
+        ...fichiersDemographie,
+        'apercu.json': [{ territoire: '22001', type: 'commune', key: 'population', value: 2000, unit: 'hab.' }],
+      })(url)
+    }
+
+    const payload = await chargerPayload({ baseUrl: 'data/', fetchImpl })
+
+    expect(demandees).not.toContain('data/apercu.json')
+    // la section n'existe plus dans le payload navigateur
+    expect('apercu' in payload).toBe(false)
   })
 })

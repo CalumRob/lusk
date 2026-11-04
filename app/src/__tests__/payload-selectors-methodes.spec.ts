@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import { SOURCES_METHODES } from '../methodes/sources'
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   territoiresFixture,
@@ -29,7 +28,6 @@ function payloadAvec(vintages: Payload['vintages']): Payload {
     territoires: territoiresFixture,
     indicateurs: indicateursDemographieFixture,
     histoires: histoiresDemographieFixture,
-    apercu: apercuAvecNAFixture,
     runReport: null,
     vintages,
     programmes: null,

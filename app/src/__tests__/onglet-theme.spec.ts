@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   histoiresEconomieFixture,
   histoiresHabitatFixture,
@@ -38,7 +37,6 @@ const payloadDemographie: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,

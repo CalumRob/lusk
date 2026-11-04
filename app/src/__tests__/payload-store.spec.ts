@@ -3,7 +3,6 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  apercuAvecNAFixture,
   chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
@@ -30,7 +29,6 @@ const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,
@@ -265,11 +263,11 @@ describe('le store progressif — la gating par wait-set', () => {
     // production consumer and an injected test loader — the eager start is
     // the explicit no-wait-set form, never an injection side effect. The
     // COMPLETE expected request set is pinned (not a toContain sample), so a
-    // missing or extra start is caught: the five shared files (programmes.json
-    // is retired since #893 — never started), presence discovery
-    // (indicateurs_) for every canonical theme, and — per the documented
-    // absence-chaining contract — the histoires/theme pair ONLY for the
-    // fixture's present theme (Démographie).
+    // missing or extra start is caught: the four shared files (programmes.json
+    // is retired since #893 and apercu.json since #894 — never started),
+    // presence discovery (indicateurs_) for every canonical theme, and — per
+    // the documented absence-chaining contract — the histoires/theme pair ONLY
+    // for the fixture's present theme (Démographie).
     const demandes: Fichier[] = []
     await monter(
       async (fichier) => {
@@ -284,7 +282,6 @@ describe('le store progressif — la gating par wait-set', () => {
       'territoires-metadata',
       'run-report',
       'vintages',
-      'apercu',
       ...THEMES_CANONIQUES.map((theme) => `indicateurs_${theme}` as Fichier),
       'histoires_demographie',
       'theme_demographie',

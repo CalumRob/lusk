@@ -4,15 +4,18 @@
  *
  * These interfaces match the JSON projections published to public/data/
  * (indicateurs_<theme>.json, histoires_<theme>.json, territoires.json,
- * apercu.json, run-report.json) field for field. They are the app's half of
+ * run-report.json) field for field. They are the app's half of
  * validate_payload(): drift on the pipeline side must surface here as a
  * loud type/validation error, never as silent wrong figures.
+ * #894: apercu.json is RETIRED source-only — no browser type, loader or
+ * validator references it anymore (the committed artifact is deleted with #903);
+ * the R-side in-memory `apercu` table and apercu.parquet remain the producer
+ * contract.
  *
  * Semantics locked by the contract:
  * - ranks are direction-aware ordinals ≥ 1 (1 = best, ADR-0015), each with its
  *   group-size column (« / Y »); null = no comparison group at that level
  * - value null = not computable for that territory
- * - keys of unbuilt themes are ABSENT from apercu (not null)
  * - two vintage dates per indicator: reference + publication
  * - territoires.epci is the SIREN for communes, null otherwise
  */
@@ -404,15 +407,6 @@ export interface HistoireMilieux extends LectureResolueBase {
 
 export type Histoire = HistoireDemographie | HistoireHabitat | HistoireEconomie | HistoireMobilite | HistoireMilieux
 
-/** One basic-stat row per (territoire × key) — the Aperçu tab renders it, never derives it. */
-export interface ApercuRow {
-  territoire: string
-  type: TerritoireType
-  key: string
-  value: number | null
-  unit: string
-}
-
 /** The closed BPE access-profile vocabulary emitted by the Mobilité pipeline. */
 export const PROFILS_ACCES_BPE = [
   'acces-pied-tc',
@@ -648,13 +642,9 @@ export interface Payload {
   territoryMetadata?: TerritoryMetadata | null
   indicateurs: Indicateur[]
   histoires: Histoire[]
-  /**
-   * The Aperçu basic-stats table (apercu.json) — optional; null = the file
-   * is absent (404 — issue #122: since #116 the pipeline only publishes it
-   * when a theme HAS an aperçu, so absence means « not built », never an
-   * error).
-   */
-  apercu: ApercuRow[] | null
+  // #894 — plus de section apercu côté navigateur : la projection apercu.json
+  // est retirée source-only (aucun loader/validateur ne la demande) ; le
+  // contrat producteur reste côté R (table `apercu` en mémoire + apercu.parquet).
   runReport: RunReport | null
   /** The shared vintage table (vintages.json) — optional, like run-report. */
   vintages: Vintage[] | null
@@ -1036,8 +1026,8 @@ export interface IndicatorPageMetadataBase {
   /** Stable identity and compatibility path for an ordered-series publication. */
   series_dataset_id?: string
   series_publication?: 'legacy' | 'owned'
-  /** Whether the pipeline publishes an independent route-scoped read model. */
-  read_model?: boolean
+  // #900 — the `read_model` marker is retired with the committed read-model
+  // artifacts: no browser route, producer target or validator reads it.
   detail?: string | null
   label: string
   definition: string

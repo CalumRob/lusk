@@ -65,8 +65,10 @@ test_that("le backend par défaut est 'static' vers le home public du payload", 
 })
 
 test_that("publish(backend = 'static') écrit le JSON des faits de tous les thèmes + le parquet partagé", {
-  # #757 : les faits des thèmes retirés ne partent plus qu'en JSON ; les tables
-  # partagées (territoires, apercu) gardent parquet + JSON.
+  # #757 : les faits des thèmes retirés ne partent plus qu'en JSON. La table
+  # partagée territoires garde parquet + JSON ; la table partagée apercu garde
+  # SON parquet sous la règle non-vide — mais PLUS de projection JSON depuis
+  # #894 (source-only : le navigateur ne la lit plus).
   payload <- compute_payload(load_fixture())
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
@@ -77,10 +79,12 @@ test_that("publish(backend = 'static') écrit le JSON des faits de tous les thè
     expect_false(file.exists(file.path(cible, paste0(nom, ".parquet"))), info = nom)
     expect_true(file.exists(file.path(cible, paste0(nom, ".json"))), info = nom)
   }
-  for (nom in c("territoires", "apercu")) {
-    expect_true(file.exists(file.path(cible, paste0(nom, ".parquet"))), info = nom)
-    expect_true(file.exists(file.path(cible, paste0(nom, ".json"))), info = nom)
-  }
+  expect_true(file.exists(file.path(cible, "territoires.parquet")))
+  expect_true(file.exists(file.path(cible, "territoires.json")))
+  # #894 : apercu.parquet est toujours écrit (table peuplée par Démographie),
+  # apercu.json N'EST PLUS écrit — aucun chemin ne le crée
+  expect_true(file.exists(file.path(cible, "apercu.parquet")))
+  expect_false(file.exists(file.path(cible, "apercu.json")))
 })
 
 test_that("publish écrit la projection BPE bornée quand le payload la porte", {
@@ -120,11 +124,18 @@ test_that("le JSON se relit exactement comme les tables en mémoire / parquet �
 
   publish(payload, cible)
 
-  for (nom in c("territoires", "apercu")) {
-    parquet <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
-    json <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
-    verifier_non_derivee(parquet, json, nom)
-  }
+  # la table partagée territoires, écrite dans les deux formats, se compare
+  # parquet contre JSON
+  parquet <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
+  json <- jsonlite::fromJSON(file.path(cible, "territoires.json"))
+  verifier_non_derivee(parquet, json, "territoires")
+  # #894 : apercu n'a PLUS de projection JSON à comparer — le parquet partagé
+  # se compare à la table EN MÉMOIRE dont il est issu (même contrat de
+  # non-dérive, appliqué mémoire → parquet comme #893), et aucun apercu.json
+  # n'existe
+  parquet_apercu <- nanoparquet::read_parquet(file.path(cible, "apercu.parquet"))
+  verifier_non_derivee(parquet_apercu, payload$apercu, "apercu")
+  expect_false(file.exists(file.path(cible, "apercu.json")))
   # #892 : la projection JSON des indicateurs omet EXACTEMENT les six colonnes
   # de rang à portée fixe — la table canonique EN MÉMOIRE les conserve.
   verifier_projection_sur_table(
@@ -184,7 +195,10 @@ test_that("la publication est par thème : le thème du payload nomme les fichie
   expect_true(file.exists(file.path(cible, "indicateurs_demographie.json")))
   expect_true(file.exists(file.path(cible, "histoires_demographie.json")))
   expect_true(file.exists(file.path(cible, "territoires.json")))
-  expect_true(file.exists(file.path(cible, "apercu.json")))
+  # #894 : la projection JSON apercu est retirée — seul le parquet partagé
+  # reste (écrit sous la règle non-vide, la table Démographie peuple l'aperçu)
+  expect_false(file.exists(file.path(cible, "apercu.json")))
+  expect_true(file.exists(file.path(cible, "apercu.parquet")))
   # #757 : le parquet par-thème est retiré pour un thème non-mobilité
   expect_false(file.exists(file.path(cible, "indicateurs_demographie.parquet")))
   expect_false(file.exists(file.path(cible, "histoires_demographie.parquet")))
@@ -245,7 +259,8 @@ test_that("le payload Habitat publie les JSON par thème + la référence partag
   # issue #116 : l'Aperçu d'Habitat est vide par design — la table partagée
   # apercu n'est NI écrite NI écrasée par un thème sans aperçu (seul
   # Démographie la peuple ; le test de la sentinelle plus bas verrouille la
-  # non-écrasement d'un aperçu existant).
+  # non-écrasement d'un aperçu existant). #894 : idem pour la projection JSON,
+  # qui n'est de toute façon plus écrite par aucun thème.
   payload <- payload_habitat()
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
@@ -262,7 +277,7 @@ test_that("le payload Habitat publie les JSON par thème + la référence partag
   # aucun fichier Démographie écrit par un run Habitat
   expect_false(file.exists(file.path(cible, "indicateurs_demographie.parquet")))
   expect_false(file.exists(file.path(cible, "histoires_demographie.parquet")))
-  # le fichier partagé de l'Aperçu n'existe pas après un run Habitat
+  # les fichiers partagés de l'Aperçu n'existent pas après un run Habitat
   expect_false(file.exists(file.path(cible, "apercu.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.json")))
 })
@@ -312,11 +327,14 @@ test_that("publish est un upsert pour le payload Habitat : relancer ne duplique 
   expect_equal(nrow(histoires), nrow(payload$histoires))
 })
 
-# issue #116 : apercu.json est un fichier PARTAGÉ (pas par-thème) — seule la
-# table Démographie le peuple. Un thème sans aperçu (Habitat, Économie) ne doit
-# NI écrire NI écraser le fichier partagé : la table du payload reste présente
-# et vide (le contrat, validate_payload l'exige), publish ne la sérialise que
-# lorsqu'elle porte des lignes.
+# issue #116 : la table apercu est un fichier PARTAGÉ (pas par-thème) — seule
+# la table Démographie la peuple. Un thème sans aperçu (Habitat, Économie) ne
+# doit NI écrire NI écraser le fichier partagé : la table du payload reste
+# présente et vide (le contrat, validate_payload l'exige), publish ne la
+# sérialise que lorsqu'elle porte des lignes.
+# issue #894 : la projection JSON apercu.json n'est PLUS écrite du tout
+# (source-only) — un apercu.json périmé préexistant est une relique : ni
+# réécrit ni supprimé par le run.
 
 test_that("un thème sans aperçu laisse INTACT l'apercu déjà publié (sentinelle, issue #116)", {
   payload <- payload_habitat() # apercu vide par design
@@ -325,6 +343,7 @@ test_that("un thème sans aperçu laisse INTACT l'apercu déjà publié (sentine
   dir.create(cible)
 
   # la sentinelle : l'aperçu peuplé qu'un run Démographie aurait publié
+  # (parquet canonique + relique JSON périmée depuis #894)
   apercu_demo <- compute_payload(load_fixture())$apercu
   jsonlite::write_json(apercu_demo, file.path(cible, "apercu.json"),
                        dataframe = "rows", na = "null",
@@ -339,9 +358,40 @@ test_that("un thème sans aperçu laisse INTACT l'apercu déjà publié (sentine
 
   publish(payload, cible)
 
-  # la sentinelle est INTACTE : ni écrasée (par `[]`), ni supprimée
+  # la sentinelle est INTACTE : ni écrasée (par `[]`), ni supprimée — la
+  # relique JSON comme le parquet canonique
   expect_identical(octets("apercu.json"), json_avant)
   expect_identical(octets("apercu.parquet"), parquet_avant)
+})
+
+test_that("#894 : un run peuplé écrit apercu.parquet sous la règle non-vide mais JAMAIS apercu.json — la relique reste intacte", {
+  payload <- compute_payload(load_fixture()) # Démographie peuple l'aperçu
+  cible <- tempfile("pub-")
+  on.exit(unlink(cible, recursive = TRUE))
+  dir.create(cible)
+
+  # la relique : un apercu.json périmé encore présent (par ex. servi par
+  # un ancien déploiement — l'artefact commité est supprimé depuis #903, mais
+  # le run ne fait aucun cleanup) ; il ne doit NI être réécrit NI supprimé
+  writeLines('[{"territoire":"99999","type":"commune","key":"relique","value":1,"unit":"u"}]',
+             file.path(cible, "apercu.json"))
+  relique_avant <- readBin(file.path(cible, "apercu.json"), "raw",
+                           n = file.info(file.path(cible, "apercu.json"))$size)
+
+  publish(payload, cible) # backend static
+
+  # le parquet partagé est écrit (règle non-vide inchangée, #116) et égale la
+  # table EN MÉMOIRE dont il est issu — le contrat de non-dérive, ADR-0004
+  expect_true(file.exists(file.path(cible, "apercu.parquet")))
+  parquet <- nanoparquet::read_parquet(file.path(cible, "apercu.parquet"))
+  verifier_non_derivee(parquet, payload$apercu, "apercu")
+  # AUCUN apercu.json n'est créé par le run — et la relique préexistante est
+  # laissée EXACTEMENT telle quelle (ni réécrite ni supprimée)
+  expect_identical(
+    readBin(file.path(cible, "apercu.json"), "raw",
+            n = file.info(file.path(cible, "apercu.json"))$size),
+    relique_avant
+  )
 })
 
 test_that("un thème sans aperçu ne crée jamais les fichiers partagés apercu (issue #116)", {
@@ -357,7 +407,8 @@ test_that("un thème sans aperçu ne crée jamais les fichiers partagés apercu 
   }
   expect_true(file.exists(file.path(cible, "territoires.parquet")))
   expect_true(file.exists(file.path(cible, "territoires.json")))
-  # mais JAMAIS apercu : le fichier partagé ne naît pas d'un thème sans aperçu
+  # mais JAMAIS apercu : les fichiers partagés ne naissent pas d'un thème
+  # sans aperçu (parquet sous la règle non-vide #116 ; JSON retiré #894)
   expect_false(file.exists(file.path(cible, "apercu.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.json")))
 })

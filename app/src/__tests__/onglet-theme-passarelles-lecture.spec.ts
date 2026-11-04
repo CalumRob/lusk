@@ -8,7 +8,6 @@ import OngletTheme from '../components/fiche/OngletTheme.vue'
 import { passarellesLecture } from '../fiche/explorationHandoff'
 import { routes } from '../router'
 import {
-  apercuAvecNAFixture,
   histoiresDemographieFixture,
   histoiresEconomieFixture,
   histoiresMilieuxFixture,
@@ -131,7 +130,6 @@ function payloadPour(theme: 'demographie' | 'milieux' | 'mobilite' | 'economie',
   return {
     territoires: territoiresFixture,
     ...parTheme,
-    apercu: apercuAvecNAFixture,
     runReport: runReportFraisFixture,
     vintages: vintagesFixture,
     programmes: null,

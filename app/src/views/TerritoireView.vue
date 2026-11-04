@@ -114,7 +114,6 @@ const payloadReference = computed<Payload | null>(() => {
     territoryMetadata: null,
     indicateurs: [],
     histoires: [],
-    apercu: null,
     runReport: null,
     vintages: null,
     programmes: null,

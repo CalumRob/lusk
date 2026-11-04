@@ -36,7 +36,6 @@ function payloadAvec(signature: string[]): Payload {
     territoires: [],
     indicateurs: indicateursHabitatFixture,
     histoires: [],
-    apercu: null,
     runReport: null,
     vintages: null,
     programmes: null,

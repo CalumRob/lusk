@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest'
 import FigureTrajectoire from '@/components/fiche/FigureTrajectoire.vue'
 import OngletTheme from '@/components/fiche/OngletTheme.vue'
 import {
-  apercuAvecNAFixture,
   indicateursHabitatFixture,
   runReportFraisFixture,
   territoiresFixture,
@@ -49,7 +48,6 @@ function payload(indicateurs: Indicateur[], themeMetadata: Payload['themeMetadat
     territoires: territoiresFixture,
     indicateurs,
     histoires: [],
-    apercu: apercuAvecNAFixture,
     runReport: runReportFraisFixture,
     vintages: vintagesFixture,
     programmes: null,

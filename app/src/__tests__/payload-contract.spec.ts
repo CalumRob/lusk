@@ -1,17 +1,16 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { chargerPayload } from '../payload/loader'
 import { indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture } from '../payload/fixtures'
+import { THEMES_CANONIQUES } from '../payload/types'
 import type { HistoireMobilite, Payload } from '../payload/types'
 import {
-  apercuPourTerritoire,
   formaterRang,
   histoireEconomiePourTerritoire,
   ligneFraicheur,
-  themesPresent,
 } from '../payload/selectors'
 
 /**
@@ -41,12 +40,14 @@ const demandeesCommite: string[] = []
 /** Serve the committed payload through the seam, from disk — no network. */
 function chargerPayloadCommite(): Promise<Payload> {
   const fichiers: Record<string, unknown> = {}
-  // #893 — programmes.json n'est plus servi au seam : le fichier commité
-  // reste sur disque (non supprimé), mais aucun chargeur ne le demande.
+  // #893/#902 — programmes.json n'est plus servi au seam : l'artefact commité
+  // est SUPPRIMÉ des deux copies suivies (public/ et app/dist/), et aucun
+  // chargeur ne le demande.
+  // #894/#903 — idem pour apercu.json : l'artefact commité est SUPPRIMÉ des
+  // deux copies suivies (public/ et app/dist/), et aucun chargeur ne le demande.
   for (const nom of [
     'territoires.json',
     'territoires-metadata.json',
-    'apercu.json',
     'indicateurs_mobilite.json',
     'histoires_mobilite.json',
     'indicateurs_demographie.json',
@@ -242,27 +243,35 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(malEstampilles).toEqual([])
   })
 
-  it('renders the Aperçu from the apercu table (never derives it)', async () => {
+  it('the retired apercu.json is absent and never requested or regenerated (#894 retired, #903 deleted)', async () => {
     const payload = obtenirPayload()
 
-    const lignes = apercuPourTerritoire(payload, '22001')
-    expect(lignes.map((l) => l.key)).toContain('population')
-    expect(lignes.find((l) => l.key === 'population')).toMatchObject({
-      value: 589,
-      unit: 'hab.',
-    })
+    // l'artefact commité est SUPPRIMÉ des deux copies suivies (#903) : ni la
+    // source public/ ni la copie dist/ ne le portent — et comme le build ne
+    // fait que recopier public/data → dist/data (copy-payload-build.ts), la
+    // copie de build ne peut PAS le recréer
+    expect(existsSync(join(dataDir, 'apercu.json'))).toBe(false)
+    expect(existsSync(join(process.cwd(), 'dist', 'data', 'apercu.json'))).toBe(false)
+    // le seam ne l'a JAMAIS demandé, et le payload n'a plus de section apercu
+    expect(demandeesCommite).not.toContain('apercu.json')
+    expect('apercu' in payload).toBe(false)
   })
 
-  it('drives the theme tab bar from the payload (all five themes are built)', async () => {
+  it('the canonical registry THEMES_CANONIQUES is the tab-bar authority — six supported themes (#901)', async () => {
     const payload = obtenirPayload()
 
-    expect(themesPresent(payload)).toEqual([
+    expect([...THEMES_CANONIQUES]).toEqual([
       'mobilite',
       'demographie',
       'habitat',
       'economie',
       'milieux',
+      'programmes',
     ])
+    // Tout thème porté par le payload committé est un thème du registre (la
+    // validation l'impose en amont) — le registre ne dérive jamais du payload.
+    const themesDuPayload = new Set([...payload.indicateurs, ...payload.histoires].map((ligne) => ligne.theme))
+    expect([...themesDuPayload].every((theme) => (THEMES_CANONIQUES as readonly string[]).includes(theme))).toBe(true)
   })
 
   it('loads the committed theme_<theme>.json metadata for all five built themes (#311, #313)', async () => {
@@ -485,13 +494,16 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(payload.vintages?.find((v) => v.id === 'epci')?.date_publication).toBeNull()
   })
 
-  it('never requests the retired programmes.json — the committed file stays on disk but unread (#893)', async () => {
+  it('the retired programmes.json is absent and never requested or regenerated (#893 retired, #902 deleted)', async () => {
     const payload = obtenirPayload()
 
-    // le fichier commité EXISTE toujours (aucune suppression d'artefact) …
-    const commite = JSON.parse(readFileSync(join(dataDir, 'programmes.json'), 'utf-8')) as { membres: unknown[] }
-    expect(commite.membres.length).toBeGreaterThan(0)
-    // … mais le seam ne l'a JAMAIS demandé, et la section reste null
+    // l'artefact commité est SUPPRIMÉ des deux copies suivies (#902) : ni la
+    // source public/ ni la copie dist/ ne le portent — et comme le build ne
+    // fait que recopier public/data → dist/data (copy-payload-build.ts), la
+    // copie de build ne peut PAS le recréer
+    expect(existsSync(join(dataDir, 'programmes.json'))).toBe(false)
+    expect(existsSync(join(process.cwd(), 'dist', 'data', 'programmes.json'))).toBe(false)
+    // le seam ne l'a JAMAIS demandé, et la section reste null
     expect(demandeesCommite).not.toContain('programmes.json')
     expect(payload.programmes).toBeNull()
   })

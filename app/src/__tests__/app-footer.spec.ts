@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest'
 
 import AppFooter from '../components/AppFooter.vue'
 import {
-  apercuAvecNAFixture,
   chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
@@ -34,7 +33,6 @@ const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
   histoires: histoiresDemographieFixture,
-  apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,

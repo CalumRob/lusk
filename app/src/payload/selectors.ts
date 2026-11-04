@@ -8,7 +8,6 @@
  */
 
 import type {
-  ApercuRow,
   ColonneRang,
   Histoire,
   HistoireDemographie,
@@ -25,37 +24,15 @@ import type {
   SourceRecord,
   SourceVintageRecord,
 } from './types'
-import { THEMES_CANONIQUES } from './types'
 import { SOURCES_METHODES, datasetDeSource } from '@/methodes/sources'
 import { THEMES_CONSTRUITS, THEMES_METHODES } from '@/methodes/indicateurs'
 import type { ThemeConstruit } from '@/methodes/indicateurs'
 import { CONTENU_CATALOGUE_INDICATEURS } from '@/indicateurs/catalogueContent'
 
-/**
- * Which themes exist in the payload, in canonical order (ADR-0007: Aperçu
- * always first, then the themes present in the payload — dead tabs never
- * render). Presence is read from the facts tables: a theme exists as soon as
- * it contributes rows.
- */
-export function themesPresent(payload: Payload): Theme[] {
-  const presents = new Set<Theme>()
-  for (const ligne of payload.indicateurs) presents.add(ligne.theme)
-  for (const ligne of payload.histoires) presents.add(ligne.theme)
-  return THEMES_CANONIQUES.filter((theme) => presents.has(theme))
-}
-
-/**
- * The Aperçu tab's basic stats for a territory (ADR-0007): the rows of the
- * apercu table for that territory, NA-gated — a null value (non calculable
- * pour ce territoire) is skipped, never rendered. Payload order preserved.
- * An absent apercu table (404 → null, issue #122) reads as no rows — the
- * tab renders the honest empty state, never an error.
- */
-export function apercuPourTerritoire(payload: Payload, territoire: string): ApercuRow[] {
-  return (payload.apercu ?? []).filter(
-    (ligne) => ligne.territoire === territoire && ligne.value !== null,
-  )
-}
+// #901 — le helper themesPresent (présence lue dans les lignes de faits) est
+// retiré avec son dernier consommateur (la barre d'onglets de la carte) :
+// les onglets viennent du REGISTRE canonique THEMES_CANONIQUES (la même
+// autorité que la fiche), jamais de la présence de lignes.
 
 /** The comparison group label for each rank column (the chip's suffix). */
 const SUFFIXE_RANG: Record<ColonneRang, string> = {

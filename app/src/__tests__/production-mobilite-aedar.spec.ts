@@ -26,7 +26,6 @@ const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursMobiliteFixture,
   histoires: histoiresMobiliteFixture,
-  apercu: null,
   runReport: null,
   vintages: vintagesFixture,
   programmes: null,
