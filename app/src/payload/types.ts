@@ -625,10 +625,10 @@ export interface Payload {
   programmes: ProgrammesPayload | null
   /** API-admitted map grant projection at the producer-declared comparison point. */
   mapGrantFacts?: Indicateur[]
-  // #627 - the retired BPE profile / building distribution / access-ramp
-  // projections no longer cross the browser payload seam; their row types
-  // remain for the per-territory model-artifact validator (producer/recovery
-  // asset) and the artifact-contract validators.
+  // #627 / #910 - the retired BPE profile, building distribution, and
+  // access-ramp projections no longer cross the browser payload seam. The
+  // remaining grid/ramp row types serve their current artifact-contract
+  // validators only; no per-territory model validator consumes them.
   /**
    * The producer per-theme metadata files (theme_<theme>.json, issue #309,
    * wired by #313) — keyed by theme, present themes only. These retain factual
