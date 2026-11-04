@@ -1078,7 +1078,6 @@ export interface BadgeProgramme {
 export interface AxeSubvention {
   libelle: string
   montant: number
-  comparaison?: Pick<Indicateur, 'comparaisonApi' | 'unit'>
 }
 
 /**
@@ -1311,8 +1310,7 @@ export function programmesPourTerritoire(payload: Payload, territoire: string): 
               l.territoire === territoire &&
               l.dimension === String(annee),
           )
-          .map((l) => ({ libelle: l.detail ?? '', montant: l.value ?? 0,
-            ...(l.comparaisonApi ? { comparaison: { comparaisonApi: l.comparaisonApi, unit: l.unit } } : {}) }))
+          .map((l) => ({ libelle: l.detail ?? '', montant: l.value ?? 0 }))
           .sort((a, b) => b.montant - a.montant || a.libelle.localeCompare(b.libelle, 'fr'))
       : null
     subventionsFiche = {

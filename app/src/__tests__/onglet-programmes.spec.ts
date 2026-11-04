@@ -9,7 +9,6 @@ import {
   territoiresFixture,
 } from '../payload/fixtures'
 import type { Payload } from '../payload/types'
-import { lignesAvecComparaisonApi } from '../payload/themeFactsAdapter'
 
 /**
  * BlocProgrammes — le bloc du SIXIÈME thème (#408), l'onglet premier et par
@@ -58,28 +57,21 @@ function montage(payload: Payload, territoire: string, metadataStatus?: 'loading
 }
 
 describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
-  it('rend la comparaison auprès de sa facette collection lorsqu’elle est révélée', async () => {
-    const index = 5
-    const base = indicateursProgrammesFixture.find((row) => row.key === 'subventions_par_domaine')!
-    const domains = Array.from({ length: 6 }, (_, i) => ({ ...base, detail: `Domaine ${i}`,
-      value: (6 - i) * 100, collectionFacet: { detail: `domain-${i}`, observation_period: '2025' } }))
-    const rows = lignesAvecComparaisonApi([
-      ...indicateursProgrammesFixture.filter((row) => row.key !== 'subventions_par_domaine'), ...domains,
-    ], { results: [{ indicator_id: 'subventions_par_domaine', status: 'available', direction: 'high',
-      source_facet: { detail: `domain-${index}`, observation_period: '2025' },
-      median: 150, rank: 2, rank_size: 4 }], profile_comparisons: [] }, 'communes de la sélection')
-    const wrapper = montage(payloadAvec(rows), '22001')
-    expect(wrapper.findAll('.figure-indicateur-comparaison')).toHaveLength(0)
+  it('ne rend aucun repère de comparaison sur la page Programmes, même avec une preuve et après révélation', async () => {
+    const base = indicateursProgrammesFixture.find((ligne) => ligne.key === 'subventions_par_domaine')!
+    const axes = Array.from({ length: 6 }, (_, index) => ({ ...base, detail: `Domaine ${index}`,
+      dimension: '2025', value: 600 - index * 100,
+      ...(index === 5 ? { comparaisonApi: { rang: 1, taille: 4, portee: 'communes de la sélection',
+        direction: 'high' as const, reference: { kind: 'median' as const, value: 150 } } } : {}) }))
+    const lignesAvecPreuveHorsPerimetre = [
+      ...indicateursProgrammesFixture.filter((ligne) => ligne.key !== 'subventions_par_domaine'), ...axes,
+    ]
+    const wrapper = montage(payloadAvec(lignesAvecPreuveHorsPerimetre), '22001')
+    expect(wrapper.findAll('.subvention-axe .figure-indicateur-comparaison')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('Groupe comparé')
     await wrapper.get('.subvention-reveler').trigger('click')
-    const row = wrapper.findAll('.subvention-axe').find((row) => row.text().includes(`Domaine ${index}`))!
-    expect(row.get('.subvention-axe-montant').text()).toContain(String((6 - index) * 100))
-    const mark = row.get('.figure-indicateur-comparaison')
-    expect(mark.text()).toContain('Groupe comparé : 150 €')
-    expect(mark.text()).toContain('2e/4')
-    expect(mark.attributes('aria-label')).toContain('Médiane des communes de la sélection')
-    expect(mark.attributes('aria-label')).toContain('plus = mieux')
-    expect(wrapper.text()).not.toContain('communes de la sélection')
-    expect(wrapper.findAll('.figure-indicateur-comparaison')).toHaveLength(1)
+    expect(wrapper.findAll('.subvention-axe .figure-indicateur-comparaison')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('Groupe comparé')
   })
   it('porte les sous-groupes app-owned même si la présentation upstream est périmée', () => {
     const upstreamStale = structuredClone(payloadPlein)

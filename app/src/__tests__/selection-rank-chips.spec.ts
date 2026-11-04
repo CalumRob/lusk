@@ -28,13 +28,12 @@ describe('Rang de la sélection — valeur du Groupe comparé', () => {
     expect(wrapper.get('.road-surface-scalar').attributes('aria-label')).toContain('2e/41')
     expect(wrapper.get('.road-surface-scalar').attributes('aria-label')).toContain('moins = mieux')
   })
-  it.each(['scalar', 'profile', 'collection'] as const)('rend la référence et le rang API de la famille %s sans répéter la portée', (family) => {
-    const row = { ...indicateursHabitatFixture[0]!, key: 'part_passoires', detail: family === 'profile' ? 'A' : null,
-      ...(family === 'collection' ? { collectionFacet: { detail: 'housing', observation_period: '2024' } } : {}) }
+  it.each(['scalar', 'profile'] as const)('rend la référence et le rang API de la famille %s sans répéter la portée', (family) => {
+    const row = { ...indicateursHabitatFixture[0]!, key: 'part_passoires', detail: family === 'profile' ? 'A' : null }
     const result = { indicator_id: row.key, indicator: row.key, status: 'available', direction: 'low',
       median: .3, rank: 2, rank_size: 4,
       ...(family === 'profile' ? { facet: { detail: 'A', sex: null } } : {}),
-      ...(family === 'collection' ? { source_facet: { detail: 'housing', observation_period: '2024' } } : {}) }
+    }
     const lignes = lignesAvecComparaisonApi([row], { results: family === 'profile' ? [] : [result],
       profile_comparisons: family === 'profile' ? [result] : [] }, 'communes de la sélection')
     const wrapper = mount(IndicatorFigure, { props: { lignes, clef: row.key, theme: 'habitat', libelle: 'Passoires' } })

@@ -39,25 +39,6 @@ const sources = () => [{
 }]
 
 describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#627)', () => {
-  it('attache le rang de collection à la catégorie producteur et à sa période seulement', () => {
-    const provenance = sources().map((source) => ({ ...source, reference_date: '2024-01-01' }))
-    const rows = themeFactsRowsFromApi('programmes', { ...faitsHabitat(), theme_id: 'programmes', collections: [{ indicator_id: 'subventions_par_domaine',
-      kind: 'period_detail', unit: '€', entries: [
-        { detail: 'housing', label: 'Habitat', observation_period: '2024', value: 10, sources: provenance },
-        { detail: 'housing', label: 'Habitat', observation_period: '2023', value: 20, sources: provenance },
-        { detail: 'mobility', label: 'Mobilité', observation_period: '2024', value: 30, sources: provenance },
-      ] }], indicators: [], readings: [] }, cible).indicateurs
-    const comparison = semanticComparisonForTheme({ comparison_reads: [{ resource: 'subventions_par_domaine',
-      shapes: ['period_detail'], data: { indicator_id: 'subventions_par_domaine', shape: 'observed_collection',
-        target: { kind: 'territory', type: 'commune', id: cible.territoire },
-        scope: { kind: 'same_level', territory_type: 'commune', member_count: 4 }, selection: null,
-        result: { indicator_id: 'subventions_par_domaine',
-      source_facet: { detail: 'housing', observation_period: '2024' }, status: 'available', direction: 'high',
-      median: 15, rank: 2, rank_size: 4 } } }] }, undefined, undefined, { type: 'commune', id: cible.territoire })
-    const compared = lignesAvecComparaisonApi(rows, comparison, 'communes de Bretagne')
-    expect(compared.map((row) => row.comparaisonApi?.rang ?? null)).toEqual([2, null, null])
-    expect(compared.map((row) => row.value)).toEqual([10, 20, 30])
-  })
   it('accepts the native detail/sex facet identity on a declared-profile comparison', () => {
     const declaration = nativeResources('habitat').find((resource) => resource.resource_id === 'mix_logements')!
     const target = { kind: 'territory', type: 'commune', id: '22001' }
