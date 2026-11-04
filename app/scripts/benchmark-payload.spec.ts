@@ -10,7 +10,6 @@ import type { Payload } from '../src/payload/types'
 import {
   validerHistoires,
   validerIndicateurs,
-  validerRampeAccesBatiments,
   validerTerritoires,
 } from '../src/payload/validate'
 
@@ -19,7 +18,6 @@ const files = {
   territoires: 'territoires.json',
   indicateurs: 'indicateurs_mobilite.json',
   histoires: 'histoires_mobilite.json',
-  rampe: 'rampe_acces_batiments.json',
 } as const
 
 function timed<T>(run: () => T): { value: T; milliseconds: number } {
@@ -50,7 +48,6 @@ const validation = timed(() => {
     territoires,
     indicateurs: validerIndicateurs(parse.value.indicateurs, files.indicateurs, territoires),
     histoires: validerHistoires(parse.value.histoires, files.histoires, territoires),
-    rampe: validerRampeAccesBatiments(parse.value.rampe, files.rampe, territoires),
   }
 })
 
@@ -69,7 +66,6 @@ const payload: Payload = {
   runReport: null,
   vintages: null,
   programmes: null,
-  rampeAccesBatiments: validation.value.rampe,
   themeMetadata: {},
 }
 const content = timed(() => {
@@ -108,7 +104,6 @@ console.log(
         territories: validation.value.territoires.length,
         indicators: validation.value.indicateurs.length,
         readings: validation.value.histoires.length,
-        accessRamp: validation.value.rampe?.length ?? 0,
       },
       representativeTerritory: {
         id: '35238',

@@ -407,38 +407,6 @@ export interface HistoireMilieux extends LectureResolueBase {
 
 export type Histoire = HistoireDemographie | HistoireHabitat | HistoireEconomie | HistoireMobilite | HistoireMilieux
 
-export const RAMPE_ACCES_BATIMENTS_X_LABEL = 'Part cumulée des bâtiments'
-export const RAMPE_ACCES_BATIMENTS_Y_LABEL = 'types d’équipements accessibles'
-export const RAMPE_ACCES_BATIMENTS_QUANTILE_COUNT = 11
-export const RAMPE_ACCES_BATIMENTS_MODE_LABELS = {
-  c: 'Voiture',
-  b: 'À vélo + TC',
-  t: 'À pied + TC',
-} as const
-
-/** One quantile point of the compact three-mode access-ramp projection. */
-export interface RampeAccesBatimentsRow {
-  territoire: string
-  type: TerritoireType
-  availability: 'complete' | 'incomplete' | 'absent'
-  total_buildings: number
-  mode: 'c' | 'b' | 't'
-  mode_label: string
-  quantile: number | null
-  quantile_label: string | null
-  accessible_types: number | null
-  x_axis_label: string
-  y_axis_label: string
-  source_id: string
-  source: string
-  version: string
-  date_reference: string
-  date_publication: string
-  comparison_label: string | null
-  comparison_total_buildings: number | null
-  comparison_accessible_types: number | null
-}
-
 /**
  * The programme sigles of the payload contract (ADR-0013, the ANCT/DGALN
  * sources of the MANIFEST_PROGRAMMES_COMPLET): the two commune labels (ACV,
