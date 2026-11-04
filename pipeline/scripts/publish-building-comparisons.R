@@ -26,26 +26,21 @@ if (!file.exists(reference_file)) {
 }
 reference <- jsonlite::fromJSON(reference_file)
 source <- targets::tar_read(brut_mobilite)
-if (is.null(source$accessibilite_batiments) ||
-    is.null(source$rampe_acces_batiments)) {
-  stop("The Mobilité source target lacks building-level evidence.", call. = FALSE)
+if (is.null(source$rampe_acces_batiments)) {
+  stop("The Mobilité source target lacks building ramp evidence.", call. = FALSE)
 }
 projections <- construire_contextes_acces_batiments(
-  source$accessibilite_batiments,
+  NULL,
   source$rampe_acces_batiments,
   base_epci = NULL,
   territoires_reference = reference
 )
 verifier_integrite_projections_acces_batiments(list(
   territoires = reference,
-  distribution_acces_batiments_comparaisons = projections$distribution,
   rampe_acces_batiments_comparaisons = projections$rampe
 ))
 
 publier_comparaisons_acces_batiments(projections, output)
-for (kind in c("distribution", "rampe")) {
-  cat(sprintf("%s: %d rows\n", file.path(output, paste0(
-    if (kind == "distribution") "distribution_acces_batiments_comparaisons" else
-      "rampe_acces_batiments_comparaisons", ".parquet"
-  )), nrow(projections[[kind]])))
-}
+cat(sprintf("%s: %d rows\n",
+            file.path(output, "rampe_acces_batiments_comparaisons.parquet"),
+            nrow(projections$rampe)))

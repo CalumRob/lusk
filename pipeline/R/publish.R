@@ -8,7 +8,6 @@ publier_comparaisons_acces_batiments <- function(projections, cible) {
     stop("Répertoire de publication introuvable : ", cible, call. = FALSE)
   }
   noms <- c(
-    distribution = "distribution_acces_batiments_comparaisons",
     rampe = "rampe_acces_batiments_comparaisons"
   )
   if (!all(names(noms) %in% names(projections)) ||
@@ -257,25 +256,11 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     ecrire_parquet_si_modifie(payload$apercu,
                                file.path(cible, "apercu.parquet"))
   }
-  if ("distribution_acces_batiments" %in% names(payload) &&
-      !is.null(payload$distribution_acces_batiments)) {
-    ecrire_parquet_si_modifie(
-      payload$distribution_acces_batiments,
-      file.path(cible, "distribution_acces_batiments.parquet")
-    )
-  }
   if ("rampe_acces_batiments" %in% names(payload) &&
       !is.null(payload$rampe_acces_batiments)) {
     ecrire_parquet_si_modifie(
       payload$rampe_acces_batiments,
       file.path(cible, "rampe_acces_batiments.parquet")
-    )
-  }
-  if ("distribution_acces_batiments_comparaisons" %in% names(payload) &&
-      !is.null(payload$distribution_acces_batiments_comparaisons)) {
-    ecrire_parquet_si_modifie(
-      payload$distribution_acces_batiments_comparaisons,
-      file.path(cible, "distribution_acces_batiments_comparaisons.parquet")
     )
   }
   if ("rampe_acces_batiments_comparaisons" %in% names(payload) &&
@@ -316,25 +301,11 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     # parquet partagé apercu.parquet (écrit plus haut, règle non-vide #116)
     # restent inchangés ; un apercu.json périmé préexistant est une relique :
     # ni réécrit ni supprimé par le run.
-    if ("distribution_acces_batiments" %in% names(payload) &&
-        !is.null(payload$distribution_acces_batiments)) {
-      ecrire_projection(
-        payload$distribution_acces_batiments,
-        "distribution_acces_batiments.json"
-      )
-    }
     if ("rampe_acces_batiments" %in% names(payload) &&
         !is.null(payload$rampe_acces_batiments)) {
       ecrire_projection(
         payload$rampe_acces_batiments,
         "rampe_acces_batiments.json"
-      )
-    }
-    if ("distribution_acces_batiments_comparaisons" %in% names(payload) &&
-        !is.null(payload$distribution_acces_batiments_comparaisons)) {
-      ecrire_projection(
-        payload$distribution_acces_batiments_comparaisons,
-        "distribution_acces_batiments_comparaisons.json"
       )
     }
     if ("rampe_acces_batiments_comparaisons" %in% names(payload) &&
