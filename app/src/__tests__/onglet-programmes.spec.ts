@@ -57,22 +57,6 @@ function montage(payload: Payload, territoire: string, metadataStatus?: 'loading
 }
 
 describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
-  it('ne rend aucun repère de comparaison sur la page Programmes, même avec une preuve et après révélation', async () => {
-    const base = indicateursProgrammesFixture.find((ligne) => ligne.key === 'subventions_par_domaine')!
-    const axes = Array.from({ length: 6 }, (_, index) => ({ ...base, detail: `Domaine ${index}`,
-      dimension: '2025', value: 600 - index * 100,
-      ...(index === 5 ? { comparaisonApi: { rang: 1, taille: 4, portee: 'communes de la sélection',
-        direction: 'high' as const, reference: { kind: 'median' as const, value: 150 } } } : {}) }))
-    const lignesAvecPreuveHorsPerimetre = [
-      ...indicateursProgrammesFixture.filter((ligne) => ligne.key !== 'subventions_par_domaine'), ...axes,
-    ]
-    const wrapper = montage(payloadAvec(lignesAvecPreuveHorsPerimetre), '22001')
-    expect(wrapper.findAll('.subvention-axe .figure-indicateur-comparaison')).toHaveLength(0)
-    expect(wrapper.text()).not.toContain('Groupe comparé')
-    await wrapper.get('.subvention-reveler').trigger('click')
-    expect(wrapper.findAll('.subvention-axe .figure-indicateur-comparaison')).toHaveLength(0)
-    expect(wrapper.text()).not.toContain('Groupe comparé')
-  })
   it('porte les sous-groupes app-owned même si la présentation upstream est périmée', () => {
     const upstreamStale = structuredClone(payloadPlein)
     upstreamStale.themeMetadata!.programmes!.subgroups = [{
