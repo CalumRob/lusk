@@ -1,0 +1,37 @@
+{
+  "territory": { "territory_type": "commune", "territory_id": "22001" },
+  "content_version": "cmp-v1",
+  "source_snapshot_id": "2026-v1",
+  "aedar_content_version": "aed-v1",
+  "reference_content_version": "ref-v1",
+  "input_content_version": "inputs-v1",
+  "input_identity": { "address_origins": "sha" },
+  "selection": [
+    { "territory_type": "commune", "territory_id": "22001" },
+    { "territory_type": "commune", "territory_id": "22002" },
+    { "territory_type": "commune", "territory_id": "22003" }
+  ],
+  "scope": { "kind": "explicit_selection", "member_count": 3, "territory_type": "commune" },
+  "comparisons": [
+    {
+      "comparison_context": "selected_comparison", "group_id": null, "territory_type": "commune",
+      "typequ": "A104", "typequ_label": "Alimentation", "source_id": "aedar_bretagne",
+      "vintage_id": "2026-v1", "source_url": "https://example.test", "licence": "ODbL", "attribution": "AEDAR",
+      "reference_date": null, "publication_date": "2026-09-30", "measure": "count_5_walk_decile1",
+      "statistic": "pooled", "direction": "high", "comparison_facet": "distribution", "group_value": 2.2,
+      "group_n_addresses": 50, "group_n_observed": 42, "group_coverage_status": "covered",
+      "status": "measured", "n_addresses": 10, "n_observed": 9, "coverage_status": "covered",
+      "rank": null, "rank_size": null, "rank_ties": null
+    },
+    {
+      "comparison_context": "selected_comparison", "group_id": null, "territory_type": "commune",
+      "typequ": "A104", "typequ_label": "Alimentation", "source_id": "aedar_bretagne",
+      "vintage_id": "2026-v1", "source_url": "https://example.test", "licence": "ODbL", "attribution": "AEDAR",
+      "reference_date": null, "publication_date": "2026-09-30", "measure": "count_5_walk_mean",
+      "statistic": "pooled", "direction": "high", "comparison_facet": "volume", "group_value": 7.4,
+      "group_n_addresses": 50, "group_n_observed": 42, "group_coverage_status": "covered",
+      "status": "measured", "n_addresses": 10, "n_observed": 9, "coverage_status": "covered",
+      "rank": 3, "rank_size": 3, "rank_ties": 1
+    }
+  ]
+}

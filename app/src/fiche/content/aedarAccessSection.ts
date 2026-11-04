@@ -3,6 +3,8 @@
  * wording; the renderer lays sections out through the shared Cahier primitives.
  */
 import type { AedarFetchResult } from './aedarApiClient'
+import { aedarComparisonCell, aedarGroupValue } from './aedarComparisonClient'
+import type { AedarComparisonEvidence, AedarComparisonRequest } from './aedarComparisonClient'
 import { aedarTimeRampEvidence, AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from './aedarTimeRampFacts'
 import { AEDAR_EQUIPMENT_BUCKET_THRESHOLD, classifyAedarEquipmentTypes } from './aedarEquipmentBuckets'
 import { AEDAR_TYPEQU_BPE_YEAR, AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
@@ -52,8 +54,29 @@ export interface AedarReferenceEvidence {
 
 export interface AedarAccessSectionOptions {
   reference?: AedarReferenceEvidence | null
+  comparison?: AedarComparisonEvidence | null
+  comparisonRequest?: AedarComparisonRequest | null
+  comparisonPending?: boolean
+  comparisonAccessibleLabel?: string | null
   /** Supplied by the production Mobility cahier when it displays published loss maps. */
   lossMapMetadata?: AedarDiversityLossMapMetadata
+}
+
+function compatibleComparison(data: AedarReady, options: AedarAccessSectionOptions): AedarComparisonEvidence | null {
+  const comparison = options.comparison
+  return comparison?.contentVersion === data.contentVersion && comparison.referenceContentVersion === data.referenceContentVersion
+    ? comparison : null
+}
+
+/** Additivity is valid for group means, never for ranks. Require every source TYPEQU. */
+function groupTotal(data: AedarReady, comparison: AedarComparisonEvidence, measure: string): number | null {
+  const codes = new Set(data.facts.map((fact) => fact.typequ))
+  if (data.facts.length !== AEDAR_TYPEQU_REGISTRY.length || !AEDAR_TYPEQU_REGISTRY.every(({ code }) => codes.has(code))) return null
+  const denominators = data.facts.map((fact) => aedarComparisonCell(comparison, fact.typequ, measure)?.group_n_addresses)
+  if (!denominators[0] || !denominators.every((count) => count === denominators[0])) return null
+  const values = data.facts.map((fact) => aedarGroupValue(comparison, fact, measure))
+  return values.every((value) => value !== null && Number.isFinite(value) && value >= 0)
+    ? (values as number[]).reduce((sum, value) => sum + value, 0) : null
 }
 
 function virtualResponse(data: AedarReady, territory: { type: string; id: string }) {
@@ -123,8 +146,16 @@ export function aedarAccessSection(
         territory: reference.territory,
       })
     : null
-  const referenceLabel = reference ? `Moyenne de ${reference.label}` : null
-  const ramps = values.map((ramp) => rampEvidence(ramp, referenceValues, referenceLabel))
+  const comparison = compatibleComparison(data, options)
+  const referenceLabel = comparison?.label ?? (reference ? `Moyenne de ${reference.label}` : null)
+  const ramps = values.map((ramp) => {
+    const evidence = rampEvidence(ramp, referenceValues, referenceLabel)
+    if (!comparison) return evidence
+    const reference = Object.fromEntries(Object.keys(ramp.territory).map((mode) => [mode,
+      ramp.xAxis.values.map((horizon) => groupTotal(data, comparison, `count_${horizon}_${mode}_${ramp.rampKey === 'diversity' ? 'share' : 'mean'}`)),
+    ])) as unknown as Record<AedarRampMode, readonly (number | null)[]>
+    return { ...evidence, reference, referenceLabel }
+  })
   const diversity = ramps.find((ramp) => ramp.rampKey === 'diversity')
   const horizonIndex = diversity?.xAxis.values.indexOf(AEDAR_PROTOTYPE_HORIZON_MINUTES) ?? -1
   const carDiversity = horizonIndex >= 0 ? diversity?.territory.car[horizonIndex] : null
@@ -260,7 +291,7 @@ function carOverviewProse(horizonMinutes: number): readonly TextBlock[] {
   return [[
     text(`La diversité décrit le nombre de différents types d’équipements (catégories BPE) accessibles sur un total de ${AEDAR_TYPEQU_REGISTRY.length} catégories recensées. Ici, elle est définie sur la base de trajets de ${horizonMinutes} minutes. Les carreaux de la carte sont colorés en fonction de la diversité médiane des adresses qu’ils couvrent.`),
   ], [
-    text('Le nombre d’établissements ci-dessous décrit le volume de l’offre, y compris plusieurs établissements d’un même type. Ces moyennes incluent les adresses sans accès.'),
+    text('Le nombre d’établissements ci-dessous décrit le volume de l’offre, y compris plusieurs établissements d’un même type. Ces moyennes incluent les adresses sans accès. Pour une sélection, la moyenne du groupe est pondérée par le nombre d’adresses résidentielles de chaque territoire ; les courbes suivent cette règle cellule par cellule. Le classement des moyennes d’ensemble n’est pas disponible.'),
   ]]
 }
 
@@ -291,12 +322,23 @@ export function aedarCarAccessOverviewSection(
   const referenceMeans = reference && sameSourceClock && sameAedarPublication(reference.data, data)
     ? carAccessMeans(reference.data, reference.territory)
     : null
+  const comparison = compatibleComparison(data, options)
   const scalars = AEDAR_CAR_OVERVIEW_SCALAR_READINGS.map((reading) => {
     const value = means[reading.key]
-    const referenceValue = referenceMeans?.[reading.key] ?? null
+    const referenceValue = comparison ? groupTotal(data, comparison, `count_${horizonMinutes}_car_${reading.key === 'meanDiversity' ? 'share' : 'mean'}`)
+      : referenceMeans?.[reading.key] ?? null
     return {
       ...reading, value,
-      reference: reference && value !== null && referenceValue !== null ? {
+      // #914 owns ranks of these sums. Per-TYPEQU ranks cannot establish them.
+      rankUnavailableLabel: referenceValue !== null ? 'Classement indisponible' : null,
+      // Keep an explicit mark inside every scalar while a requested group is
+      // pending, rejected, or simply has no comparable published cell.
+      comparisonUnavailableLabel: (options.comparisonRequest || reference || comparison || options.comparisonPending) && referenceValue === null
+        ? 'Groupe comparé : Indisponible' : null,
+      comparisonAccessibleLabel: options.comparisonRequest?.label ?? (reference ? `Moyenne de ${reference.label}` : options.comparisonAccessibleLabel ?? null),
+      reference: comparison && value !== null && referenceValue !== null ? {
+        kind: 'selection-mean' as const, label: comparison.label, value: referenceValue, unit: reading.unit,
+      } : reference && value !== null && referenceValue !== null ? {
         kind: 'territory-mean' as const,
         territory: { ...reference.territory, name: reference.label },
         label: `Moyenne — ${reference.label}`, value: referenceValue, unit: reading.unit,
@@ -314,8 +356,8 @@ export function aedarCarAccessOverviewSection(
       mapFigureTitle: carOverviewMapFigureTitle(horizonMinutes),
       meanDiversity, meanVolume, nAddresses, scalars,
       scalarFigureTitle: carOverviewScalarFigureTitle(horizonMinutes),
-      comparisonLabel: reference && scalars.some((scalar) => scalar.reference !== null)
-        ? `Moyenne de ${reference.label}` : null,
+      comparisonLabel: scalars.some((scalar) => scalar.reference !== null)
+        ? comparison?.label ?? (reference ? `Moyenne de ${reference.label}` : null) : null,
       unitIntroduction: carOverviewUnitIntroduction(territory, nAddresses, source?.source_url ?? null),
       availability, source: means.source,
       prose: carOverviewProse(horizonMinutes),
@@ -386,7 +428,7 @@ export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentPr
   }
 }
 
-export function aedarEquipmentExplorerSection(data: AedarReady): AedarEquipmentExplorerSection {
+export function aedarEquipmentExplorerSection(data: AedarReady, options: AedarAccessSectionOptions = {}): AedarEquipmentExplorerSection {
   return {
     key: 'aedar-equipment-explorer',
     label: AEDAR_EQUIPMENT_EXPLORER_SECTION_LABEL,
@@ -394,6 +436,9 @@ export function aedarEquipmentExplorerSection(data: AedarReady): AedarEquipmentE
     indicators: [],
     evidence: {
       kind: 'aedar-equipment-explorer',
+      comparison: compatibleComparison(data, options),
+      comparisonRequest: options.comparisonRequest,
+      reference: options.reference && sameAedarPublication(data, options.reference.data) ? options.reference : null,
       contentVersion: data.contentVersion,
       referenceContentVersion: data.referenceContentVersion,
       facts: data.facts,
@@ -441,7 +486,7 @@ export function aedarPrototypeSections(
   const carOverview = aedarCarAccessOverviewSection(data, territory, options)
   const access = aedarAccessSection(data, territory, options)
   const equipmentProfile = aedarEquipmentProfileSection(data)
-  const equipmentExplorer = aedarEquipmentExplorerSection(data)
+  const equipmentExplorer = aedarEquipmentExplorerSection(data, options)
   if (options.lossMapMetadata) {
     return [carOverview, aedarDiversityLossSection(options.lossMapMetadata, territory, aedarEvidenceSource(data)), access, equipmentProfile, equipmentExplorer]
   }

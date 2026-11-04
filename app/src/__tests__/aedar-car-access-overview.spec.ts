@@ -71,6 +71,35 @@ function epciReference(): AedarReferenceEvidence {
 }
 
 describe('AEDAR car access overview', () => {
+  it('lit les cellules de la sélection pour les moyennes et les rampes sans emprunter leurs rangs TYPEQU (#914)', () => {
+    const data = ready()
+    const comparison = { label: 'Moyenne de la sélection', contentVersion: data.contentVersion,
+      referenceContentVersion: data.referenceContentVersion,
+      cells: data.facts.flatMap((fact, index) => Object.keys(fact.measures).map((measure) => ({
+        ...fact, measure, statistic: 'pooled' as const, group_coverage_status: 'covered',
+        group_n_addresses: 50, group_n_observed: 42,
+        group_value: index === 0 ? (measure.endsWith('_share') ? 0.5 : 1) : 0,
+        rank: 3, rank_size: 3, rank_ties: 1, direction: 'high' as const,
+      }))) }
+    const sections = aedarPrototypeSections(data, territory, { comparison })
+    expect(sections[0].evidence!.scalars.map((s) => s.reference?.value)).toEqual([0.5, 1])
+    expect(sections[0].evidence!.scalars[0]!.reference).toMatchObject({ label: 'Moyenne de la sélection' })
+    expect(sections[0].evidence!.scalars[0]!.reference).not.toHaveProperty('rank')
+    expect(sections[0].evidence!.scalars[0]!.rankUnavailableLabel).toBe('Classement indisponible')
+    expect(sections[1].evidence!.ramps[0]!.reference!.car).toEqual([0.5, 0.5, 0.5, 0.5])
+    expect(sections[1].evidence!.ramps[1]!.reference!.car).toEqual([1, 1, 1, 1])
+    expect(sections[3].evidence!.comparison).toBe(comparison)
+    const stale = aedarPrototypeSections(data, territory, { comparison: { ...comparison, contentVersion: 'stale' } })
+    expect(stale[0].evidence!.scalars.map((s) => s.reference)).toEqual([null, null])
+    expect(stale[1].evidence!.ramps[0]!.reference).toBeNull()
+    const partial = aedarPrototypeSections(data, territory, { comparison: { ...comparison,
+      cells: comparison.cells.filter((cell, index) => !(index === 0 || cell.typequ === data.facts[0]!.typequ && cell.measure === 'count_15_car_share')) } })
+    expect(partial[0].evidence!.scalars[0]!.reference).toBeNull()
+    expect(partial[1].evidence!.ramps[0]!.reference!.car).toEqual([0.5, 0.5, null, 0.5])
+    const inconsistentWeights = aedarPrototypeSections(data, territory, { comparison: { ...comparison,
+      cells: comparison.cells.map((cell) => cell.typequ === data.facts[0]!.typequ ? { ...cell, group_n_addresses: 100 } : cell) } })
+    expect(inconsistentWeights[0].evidence!.scalars.map((s) => s.reference)).toEqual([null, null])
+  })
   it('keeps the 15-minute time-ramp readings on the overview address means, with independent EPCI denominators', () => {
     const [overview, access] = aedarPrototypeSections(ready(), territory, { reference: epciReference() })
     const [diversity, volume] = access.evidence!.ramps
@@ -117,6 +146,9 @@ describe('AEDAR car access overview', () => {
     expect(section.evidence!.scalars.map((scalar) => scalar.reference)).toEqual([null, null])
     expect(section.evidence!.comparisonLabel).toBeNull()
     expect(section.evidence!.meanVolume).toBeCloseTo(7 / 3)
+    if (kind === 'publication') {
+      expect(aedarPrototypeSections(ready(), territory, { reference })[3].evidence!.reference).toBeNull()
+    }
   })
 
   it('provides real address means for diversity and total volume at 15 minutes, not mean volume per type', () => {
@@ -143,6 +175,24 @@ describe('AEDAR car access overview', () => {
     expect(section.evidence!.meanVolume).toBeNull()
     expect(section.evidence!.prose.flat().map((segment) => segment.value).join('')).toContain('diversité médiane')
   })
+
+  it.each(['pending', 'failed', 'missing-cell'] as const)(
+    'retains a scalar unavailable mark during a %s comparison read', (state) => {
+      const data = ready()
+      const section = aedarCarAccessOverviewSection(data, territory, {
+        comparisonRequest: { intent: { kind: 'fixed_comparison', context: 'density_class' }, label: 'Moyenne de la classe de densité' },
+        ...(state === 'missing-cell' ? { comparison: { label: 'Moyenne de la classe de densité',
+          contentVersion: data.contentVersion, referenceContentVersion: data.referenceContentVersion, cells: [] } } : {}),
+      })
+      expect(section.evidence!.scalars.map((scalar) => scalar.reference)).toEqual([null, null])
+      expect(section.evidence!.scalars.map((scalar) => scalar.comparisonUnavailableLabel)).toEqual([
+        'Groupe comparé : Indisponible', 'Groupe comparé : Indisponible',
+      ])
+      expect(section.evidence!.scalars.map((scalar) => scalar.comparisonAccessibleLabel)).toEqual([
+        'Moyenne de la classe de densité', 'Moyenne de la classe de densité',
+      ])
+    },
+  )
 
   it.each(['addresses', 'territory', 'source', 'coverage', 'duplicate', 'unknown type'])('rejects incompatible %s without producing a fabricated mean', (kind) => {
     const data = ready()

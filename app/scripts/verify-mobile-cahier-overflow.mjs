@@ -1283,17 +1283,18 @@ try {
     const coreProjections = chunk(AEDAR_CORE_MEASURE_KEYS, 32)
     const detailProjections = chunk(AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, 32)
     // #860 — défaut niveau-natif : la commune lit aussi les agrégats AEDAR core
-    // de SON EPCI (référence de comparaison), sans détail explorer.
+    // de SON EPCI. #863 : le Bac à sable lit aussi ses quantiles, sans relire
+    // les moyennes déjà acquises dans la projection core de la référence.
     const communeCible = territoryReference.find((t) => t.territoire === '35238')
     const epciReference = communeCible?.epci
       ? territoryReference.find((t) => t.type === 'epci' && t.territoire === communeCible.epci)
       : null
-    const expectedAedarBatches = coreProjections.length + detailProjections.length + (epciReference ? coreProjections.length : 0)
+    const expectedAedarBatches = coreProjections.length + detailProjections.length + (epciReference ? coreProjections.length + detailProjections.length : 0)
     assert.equal(readCalls.aedarBatches, expectedAedarBatches,
       `Expected ${expectedAedarBatches} semantic read-batch POSTs for the core/detail field projections (focal + référence EPCI) at ${width}px; got ${readCalls.aedarBatches}.`)
     const expectedTypequPartitions = chunk(AEDAR_TYPEQU_REGISTRY.map(({ code }) => code), 100)
     const expectedAedarItems = coreProjections.length * expectedTypequPartitions.length + detailProjections.length
-      + (epciReference ? coreProjections.length * expectedTypequPartitions.length : 0)
+      + (epciReference ? coreProjections.length * expectedTypequPartitions.length + detailProjections.length : 0)
     assert.equal(readCalls.aedarItems.length, expectedAedarItems,
       `Expected ${expectedAedarItems} AEDAR resource items across the core universe, explorer projections and EPCI reference at ${width}px; got ${readCalls.aedarItems.length}.`)
     const expectedProjections = [
@@ -1301,7 +1302,7 @@ try {
       ...detailProjections.map((keys) => ({
         fields: keys.map((key) => `measures.${key}`),
         partitions: [[AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU]],
-        reference: false,
+        reference: Boolean(epciReference),
       })),
     ]
     for (const projection of expectedProjections) {

@@ -475,12 +475,15 @@ onBeforeUnmount(() => {
                         :icon="CarFront"
                         tone="c"
                         color-value
-                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : ''}`"
+                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : scalar.comparisonUnavailableLabel ? ` ${scalar.comparisonAccessibleLabel ?? 'Moyenne du groupe comparé'} indisponible.` : ''}`"
                       >
-                        <template v-if="scalar.reference" #reference>
+                        <template v-if="scalar.reference || scalar.comparisonUnavailableLabel" #reference>
                           <CahierComparisonValue
+                            v-if="scalar.reference"
                             :named-reference="scalar.reference"
                           />
+                          <span v-else class="cahier-figure-comparison">{{ scalar.comparisonUnavailableLabel }}</span>
+                          <span v-if="scalar.rankUnavailableLabel" class="cahier-figure-comparison">{{ scalar.rankUnavailableLabel }}</span>
                         </template>
                       </CahierFigureScalar>
                     </div>
