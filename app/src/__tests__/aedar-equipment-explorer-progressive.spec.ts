@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { flushPromises, shallowMount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,6 +7,13 @@ import { AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from '@/fiche/content/aedarTimeRa
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
 import type { AedarFact, AedarFetchResult } from '@/fiche/content/aedarApiClient'
 import type { AedarEquipmentExplorerEvidence } from '@/fiche/content/themeContent'
+import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import AccessRampFigureCahier from '@/fiche/prototype/AccessRampFigureCahier.vue'
+import AedarEquipmentQuantileFigureCahier from '@/fiche/prototype/AedarEquipmentQuantileFigureCahier.vue'
+
+vi.mock('@/fiche/content/aedarComparisonClient', async (original) => ({
+  ...await original<typeof import('@/fiche/content/aedarComparisonClient')>(), fetchAedarComparison: vi.fn(),
+}))
 
 vi.mock('@/fiche/content/aedarApiClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/fiche/content/aedarApiClient')>()
@@ -53,7 +60,35 @@ const selectedFact = (wrapper: ReturnType<typeof shallowMount>) =>
   ((wrapper.vm.$ as any).setupState as { selectedFact: AedarFact }).selectedFact
 
 describe('AEDAR selected TYPEQU hydration identity', () => {
-  beforeEach(() => { vi.mocked(fetchAedarAggregates).mockReset() })
+  beforeEach(() => { vi.mocked(fetchAedarAggregates).mockReset(); vi.mocked(fetchAedarComparison).mockReset() })
+
+  it('applique la sélection au volume et aux quantiles du Bac à sable, puis efface le groupe désactivé', async () => {
+    const first = deferred<Awaited<ReturnType<typeof fetchAedarComparison>>>()
+    vi.mocked(fetchAedarAggregates).mockResolvedValue(ready('territory-a', 'same-content', 'same-reference', 2))
+    vi.mocked(fetchAedarComparison).mockReturnValueOnce(first.promise)
+    const base = evidence('territory-a')
+    const request = { intent: { kind: 'selected_comparison' as const,
+      members: [{ territory_type: 'commune' as const, territory_id: 'territory-a' }] }, label: 'Moyenne de la sélection' }
+    const wrapper = shallowMount(AedarEquipmentExplorerCahier, { props: { evidence: { ...base, comparisonRequest: request } } })
+    await flushPromises()
+    expect(fetchAedarComparison).toHaveBeenCalledWith('commune', 'territory-a', expect.objectContaining({
+      typequ: ['B207'], intent: request.intent, expectedContentVersion: 'same-content', expectedReferenceContentVersion: 'same-reference',
+      measures: expect.arrayContaining(['count_15_car_mean', 'count_15_car_decile1']),
+    }))
+    const comparison = { label: request.label, contentVersion: base.contentVersion, referenceContentVersion: base.referenceContentVersion,
+      cells: [{ ...fact('territory-a'), measure: 'count_15_car_mean', statistic: 'pooled' as const, group_coverage_status: 'covered',
+        group_n_addresses: 10, group_n_observed: 10,
+        group_value: 7.4, rank: 1, rank_size: 1, rank_ties: 1, direction: 'high' as const }] }
+    first.resolve({ status: 'ready', evidence: comparison })
+    await flushPromises()
+    const ramp = wrapper.findComponent(AccessRampFigureCahier).props('timeRamp')
+    expect(ramp!.comparisonLabel).toBe('Moyenne de la sélection')
+    expect(ramp!.series[0]!.points[2]!.referenceValue).toBe(7.4)
+    expect(wrapper.findComponent(AedarEquipmentQuantileFigureCahier).props('comparison')).toEqual(comparison)
+    await wrapper.setProps({ evidence: base })
+    expect(wrapper.findComponent(AccessRampFigureCahier).props('timeRamp')!.comparisonLabel).toBeNull()
+    wrapper.unmount()
+  })
 
   it('rejects a late same-TYPEQU result from the previous territory even when publication tokens match', async () => {
     const requests: Array<ReturnType<typeof deferred<AedarFetchResult>>> = []

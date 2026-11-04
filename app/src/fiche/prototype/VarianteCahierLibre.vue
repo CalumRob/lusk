@@ -463,10 +463,13 @@ onBeforeUnmount(() => {
                         color-value
                         :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : ''}`"
                       >
-                        <template v-if="scalar.reference" #reference>
+                        <template v-if="scalar.reference || scalar.comparisonUnavailableLabel" #reference>
                           <CahierComparisonValue
+                            v-if="scalar.reference"
                             :named-reference="scalar.reference"
                           />
+                          <span v-else class="cahier-figure-comparison">{{ scalar.comparisonUnavailableLabel }}</span>
+                          <span v-if="scalar.rankUnavailableLabel" class="cahier-figure-comparison">{{ scalar.rankUnavailableLabel }}</span>
                         </template>
                       </CahierFigureScalar>
                     </div>

@@ -1,4 +1,9 @@
 ﻿import { flushPromises, mount } from '@vue/test-utils'
+import { ref } from 'vue'
+import { CONTROLE_COMPARAISON_KEY } from '@/fiche/comparisonContext'
+import type { ControleComparaison } from '@/fiche/comparisonContext'
+import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import type { AedarComparisonResult } from '@/fiche/content/aedarComparisonClient'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -21,6 +26,54 @@ import {
 import type { Payload } from '@/payload/types'
 import { routes } from '@/router'
 import { carInlineLegend } from './fixtures/aedar-car-inline-legend'
+
+vi.mock('@/fiche/content/aedarComparisonClient', async (original) => ({
+  ...await original<typeof import('@/fiche/content/aedarComparisonClient')>(), fetchAedarComparison: vi.fn(),
+}))
+
+it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte une sélection tardive', async () => {
+  let complete!: (value: AedarComparisonResult) => void
+  vi.mocked(fetchAedarComparison).mockReturnValueOnce(new Promise((resolve) => { complete = resolve }))
+  const control = ref<ControleComparaison>({ selection: { etat: 'membres', membres: [
+    { territory_type: 'commune', territory_id: '22001' }, { territory_type: 'commune', territory_id: '22002' },
+  ] }, libelleActif: 'Sélection', presetDefaut: 'epci', presets: [], choisir: () => {} })
+  const content = baseContent()
+  const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
+    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+    aedarReferenceData: aedarReferenceReady, aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' } },
+  global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
+  await flushPromises()
+  expect(fetchAedarComparison).toHaveBeenCalledWith('commune', '22001', expect.objectContaining({
+    intent: { kind: 'selected_comparison', members: control.value.selection.etat === 'membres' ? control.value.selection.membres : [] },
+  }))
+  expect(wrapper.text()).toContain('Chargement du groupe comparé')
+  const before = wrapper.findComponent(VarianteCahierLibre).props('content')
+  const beforeOverview = before.units[0].sections[0].evidence
+  if (beforeOverview?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
+  expect(beforeOverview.meanDiversity).toBe(5)
+  expect(beforeOverview.scalars[0]!.reference).toBeNull()
+  control.value = { ...control.value, selection: { etat: 'vide' }, libelleActif: null }
+  await flushPromises()
+  complete({ status: 'ready', evidence: { contentVersion: aedarReady.contentVersion,
+    referenceContentVersion: aedarReady.referenceContentVersion, label: 'Moyenne de la sélection', cells: [] } })
+  await flushPromises()
+  const after = wrapper.findComponent(VarianteCahierLibre).props('content')
+  const afterOverview = after.units[0].sections[0].evidence
+  if (afterOverview?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
+  expect(afterOverview.scalars[0]!.reference).toBeNull()
+  expect(afterOverview.meanDiversity).toBe(5)
+  expect(wrapper.text()).not.toContain('Chargement du groupe comparé')
+  vi.mocked(fetchAedarComparison).mockResolvedValueOnce({ status: 'error', message: 'commune/nope indisponible' })
+  control.value = { ...control.value, selection: { etat: 'membres', membres: [{ territory_type: 'commune', territory_id: 'nope' }] } }
+  await flushPromises()
+  expect(wrapper.text()).toContain('Groupe comparé indisponible : commune/nope')
+  vi.mocked(fetchAedarComparison).mockResolvedValueOnce({ status: 'ready', evidence: { contentVersion: aedarReady.contentVersion,
+    referenceContentVersion: aedarReady.referenceContentVersion, label: 'Moyenne de la sélection', cells: [] } })
+  await wrapper.get('button').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).not.toContain('commune/nope indisponible')
+  wrapper.unmount()
+})
 
 const payload: Payload = {
   territoires: territoiresFixture,

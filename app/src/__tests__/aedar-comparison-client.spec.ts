@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import captured from './fixtures/aedar-selected-comparison-captured.json'
 
 // Bridge of #904's guarded HTTP fixture: 10, 30 and 10 addresses,
 // published means 5, 8 and 8; the API serves 7.4 and focal rank 3/3.
@@ -30,6 +31,19 @@ const options = { intent: { kind: 'selected_comparison' as const, members }, lab
 afterEach(() => vi.unstubAllGlobals())
 
 describe('lecture AEDAR de la Sélection', () => {
+  it('admet la réponse capturée du lecteur API #904, scalaire et courbe sur le même instantané', async () => {
+    // Captured with python -B from _aedar_selected_comparison_snapshot using
+    // api/tests/test_aedar_contract.py's _AedarSelectedConnection,
+    // _aedar_selected_state and _aedar_facets. No live/serving database.
+    mockResponse({ ...captured, resource: 'aedar_territorial_aggregate', target: { kind: 'territory', type: 'commune', id: '22001' } })
+    const result = await fetchAedarComparison('commune', '22001', { ...options,
+      intent: { kind: 'selected_comparison', members: captured.selection as typeof members },
+      measures: ['count_5_walk_mean', 'count_5_walk_decile1'], expectedContentVersion: 'aed-v1', expectedReferenceContentVersion: 'ref-v1' })
+    expect(result).toMatchObject({ status: 'ready', evidence: { cells: [
+      expect.objectContaining({ measure: 'count_5_walk_decile1', group_value: 2.2, rank: null }),
+      expect.objectContaining({ measure: 'count_5_walk_mean', group_value: 7.4, rank: 3, rank_size: 3 }),
+    ] } })
+  })
   it('réutilise une lecture réussie seulement pour la même sélection, les mêmes coordonnées et publications', async () => {
     const fetcher = mockResponse(envelope)
     await fetchAedarComparison('commune', 'sel-c1', options)

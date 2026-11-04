@@ -90,7 +90,10 @@ export interface AedarCarAccessOverviewScalar {
   label: string
   value: number | null
   unit: string
-  reference: import('./territoryFacts').TerritorialScalarReference | null
+  reference: import('./territoryFacts').TerritorialScalarReference
+    | { kind: 'selection-mean'; label: string; value: number; unit: string } | null
+  rankUnavailableLabel?: string | null
+  comparisonUnavailableLabel?: string | null
 }
 
 export interface AedarCarAccessOverviewEvidence {
@@ -170,6 +173,9 @@ export interface AedarEquipmentQuantileStatistic {
 
 export interface AedarEquipmentExplorerEvidence {
   kind: 'aedar-equipment-explorer'
+  comparison?: import('./aedarComparisonClient').AedarComparisonEvidence | null
+  comparisonRequest?: import('./aedarComparisonClient').AedarComparisonRequest | null
+  reference?: import('./aedarAccessSection').AedarReferenceEvidence | null
   contentVersion: string
   referenceContentVersion: string
   facts: readonly AedarFact[]
