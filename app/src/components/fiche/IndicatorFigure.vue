@@ -21,6 +21,7 @@ import {
   phraseRaccordement,
 } from '@/payload/selectors'
 import type { Indicateur, Theme } from '@/payload/types'
+import ValeurComparaison from './ValeurComparaison.vue'
 import type { DirectionRang } from '@/methodes/indicateurs'
 import {
   accentPositionRang,
@@ -161,6 +162,7 @@ const segments = computed<Segment[]>(() => {
           <span class="tranche-libelle">{{ labelsDetail?.[ligne.detail ?? ''] }}</span>
           <span class="tranche-valeur">{{ formaterValeur(ligne) ?? '—' }}</span>
           <span v-if="ligne.unit" class="tranche-unite">{{ ligne.unit }}</span>
+          <ValeurComparaison v-if="ligne.comparaisonApi?.reference" :ligne="ligne" />
         </li>
       </ul>
     </div>
@@ -173,7 +175,8 @@ const segments = computed<Segment[]>(() => {
     <p v-if="phrase" class="figure-indicateur-prose">{{ phrase }}</p>
     <figcaption class="figure-indicateur-libelle">{{ libelle }}</figcaption>
     <p v-if="premiere?.rider" class="figure-indicateur-rider">{{ premiere.rider }}</p>
-    <PuceRang v-if="puce && !multi" :puce="puce" />
+    <ValeurComparaison v-if="premiere?.comparaisonApi?.reference && !multi" :ligne="premiere" />
+    <PuceRang v-else-if="puce && !multi" :puce="puce" />
     <p v-if="vintage" class="estampille-vintage">{{ vintage }}</p>
   </figure>
 </template>

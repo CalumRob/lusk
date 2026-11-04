@@ -1161,9 +1161,12 @@ export function lignesAvecComparaisonApi(lignes: Indicateur[], comparison: unkno
     })
     if (!match) return row
     validerResultatComparaison(match, profiles.includes(match) ? { shape: 'profile' } : {})
-    if (match.status !== 'available' || match.rank === null || match.rank === undefined) return row
-    return { ...row, comparaisonApi: { rang: match.rank as number, taille: match.rank_size as number | null,
-      portee, direction: match.direction as 'high' | 'low' } }
+    if (match.status !== 'available') return row
+    const reference = finite(match.mean) ? { kind: 'mean' as const, value: match.mean }
+      : finite(match.median) ? { kind: 'median' as const, value: match.median } : undefined
+    if (match.rank == null && !reference) return row
+    return { ...row, comparaisonApi: { rang: (match.rank as number | null) ?? null, taille: (match.rank_size as number | null) ?? null,
+      portee, direction: match.direction as 'high' | 'low', ...(reference ? { reference } : {}) } }
   })
 }
 
