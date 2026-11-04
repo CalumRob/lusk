@@ -1,16 +1,7 @@
-# distribution_acces_batiments -------------------------------------------------
-# La distribution bivariée de l'accès aux équipements au niveau du bâtiment
-# (issue #550). La source est l'export porté
-# Accessibility_by_mode_bretagne_v2.csv : une ligne par batiment_groupe_id et
-# une colonne transit_walk_<TYPEQU> par type BPE. Les deux dimensions sont
-# calculées sur la MÊME ligne : breadth = nombre de colonnes strictement
-# positives, depth = somme des comptes d'équipements.
-#
-# La matrice bâtiment × équipement reste une matière INTERNE. Le seul résultat
-# qui franchit le seam analytique est une grille de cellules agrégées, avec le
-# dénominateur, l'état de disponibilité, les bornes et les libellés portés par
-# chaque ligne. Le renderer ne connaît donc ni les codes TYPEQU ni des tranches
-# illustratives.
+# Accessibilité des bâtiments — rampe conservée jusqu'à #912.
+# La grille bivariée et son contrat sont retirés par #911. Le lecteur de
+# l'export, la normalisation multi-mode et les comparaisons de la rampe
+# restent nécessaires ; leurs identités de source ne changent pas.
 
 # The building export is an implementation input of the same carried analysis
 # already cited by the other Mobilité facts. It keeps an operational manifest id
@@ -30,10 +21,7 @@ DISTRIBUTION_ACCES_BATIMENTS_VERSION <- MOBILITE_SNAPSHOT_VERSION
 DISTRIBUTION_ACCES_BATIMENTS_DATE_REFERENCE <- MOBILITE_SNAPSHOT_DATE_REFERENCE
 DISTRIBUTION_ACCES_BATIMENTS_DATE_PUBLICATION <- MOBILITE_SNAPSHOT_DATE_PUBLICATION
 DISTRIBUTION_ACCES_BATIMENTS_LICENCE <- MOBILITE_SNAPSHOT_LICENCE
-DISTRIBUTION_ACCES_BATIMENTS_MODE <- "t"
-DISTRIBUTION_ACCES_BATIMENTS_MODE_LABEL <- "À pied + TC"
 DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL <- "types d’équipements accessibles"
-DISTRIBUTION_ACCES_BATIMENTS_DEPTH_LABEL <- "équipements accessibles"
 
 # La rampe d'accès est la distribution marginale du nombre de types accessibles
 # par bâtiment, les trois modes étant classés séparément. Elle ne réutilise pas
@@ -47,39 +35,6 @@ RAMPE_ACCES_BATIMENTS_MODES <- tibble::tribble(
   "c", "Voiture",
   "b", "À vélo + TC",
   "t", "À pied + TC"
-)
-
-# Les quantiles observés sur les 1 235 417 bâtiments (breadth : Q25 = 4,
-# médiane = 17, Q75 = 32, Q90 = 43 ; depth : Q25 = 5, médiane = 28,
-# Q75 = 98, Q90 = 269) sont arrondis en tranches lisibles. Les zéros restent
-# une classe explicite et la dernière tranche reste ouverte pour depth.
-DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS <- tibble::tribble(
-  ~key, ~min_value, ~max_value, ~label,
-  "0",       0,  0,  "0",
-  "1-9",     1,  9,  "1–9",
-  "10-24",  10, 24,  "10–24",
-  "25-39",  25, 39,  "25–39",
-  "40-53",  40, 53,  "40–53"
-)
-
-DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS <- tibble::tribble(
-  ~key, ~min_value, ~max_value, ~label,
-  "0",       0,    0,  "0",
-  "1-9",     1,    9,  "1–9",
-  "10-49",  10,   49,  "10–49",
-  "50-199", 50,  199,  "50–199",
-  "200-499",200, 499,  "200–499",
-  "500+",   500,   NA,  "500 ou +"
-)
-
-CLES_DISTRIBUTION_ACCES_BATIMENTS <- c(
-  "territoire", "type", "availability", "total_buildings",
-  "breadth_bucket", "breadth_min", "breadth_max", "breadth_label",
-  "depth_bucket", "depth_min", "depth_max", "depth_label",
-  "building_count", "share", "mode", "mode_label",
-  "breadth_axis_label", "depth_axis_label", "source_id", "source",
-  "version", "date_reference", "date_publication", "comparison_label",
-  "comparison_total_buildings", "comparison_building_count", "comparison_share"
 )
 
 CLES_RAMPE_ACCES_BATIMENTS <- c(
@@ -1082,141 +1037,6 @@ agreger_rampe_acces_batiments <- function(
   dplyr::bind_rows(courbes, absents) %>%
     dplyr::select(dplyr::all_of(CLES_RAMPE_ACCES_BATIMENTS)) %>%
     dplyr::arrange(type, territoire, mode, quantile)
-}
-
-# verifier_contrat_distribution_acces_batiments -------------------------------
-verifier_contrat_distribution_acces_batiments <- function(distribution) {
-  if (!is.data.frame(distribution) ||
-      !identical(names(distribution), CLES_DISTRIBUTION_ACCES_BATIMENTS)) {
-    stop("Distribution bâtiments invalide — colonnes inattendues.", call. = FALSE)
-  }
-  if (nrow(distribution) == 0) {
-    stop("Distribution bâtiments invalide — aucune ligne.", call. = FALSE)
-  }
-  if (any(!distribution$type %in% c("commune", "epci", "departement", "region"))) {
-    stop("Distribution bâtiments invalide — type de territoire inconnu.", call. = FALSE)
-  }
-  if (any(!distribution$availability %in% c("complete", "incomplete", "absent"))) {
-    stop("Distribution bâtiments invalide — état de disponibilité inconnu.", call. = FALSE)
-  }
-  metadonnees <- c(
-    "mode", "mode_label", "breadth_axis_label", "depth_axis_label",
-    "source_id", "source", "version", "date_reference", "date_publication"
-  )
-  for (colonne in metadonnees) {
-    if (any(is.na(distribution[[colonne]]) |
-            !nzchar(as.character(distribution[[colonne]])))) {
-      stop("Distribution bâtiments invalide — la métadonnée « ", colonne,
-           " » est vide.", call. = FALSE)
-    }
-  }
-  if (any(distribution$mode != DISTRIBUTION_ACCES_BATIMENTS_MODE) ||
-      any(distribution$mode_label != DISTRIBUTION_ACCES_BATIMENTS_MODE_LABEL) ||
-      any(distribution$breadth_axis_label != DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL) ||
-      any(distribution$depth_axis_label != DISTRIBUTION_ACCES_BATIMENTS_DEPTH_LABEL)) {
-    stop("Distribution bâtiments invalide — métadonnée d'axe ou de mode incohérente.",
-         call. = FALSE)
-  }
-
-  completes <- distribution$availability == "complete"
-  absents <- distribution$availability == "absent"
-  if (any(distribution$total_buildings[completes] < 1 |
-          !is.finite(distribution$total_buildings[completes]) |
-          distribution$total_buildings[completes] != floor(distribution$total_buildings[completes]))) {
-    stop("Distribution bâtiments invalide — un dénominateur complet est invalide.",
-         call. = FALSE)
-  }
-  if (any(!is.na(distribution$share[completes]) &
-          (distribution$share[completes] < 0 | distribution$share[completes] > 1))) {
-    stop("Distribution bâtiments invalide — une part n'est pas dans [0, 1].",
-         call. = FALSE)
-  }
-  if (any(!is.na(distribution$building_count[completes]) &
-          (distribution$building_count[completes] < 0 |
-           distribution$building_count[completes] != floor(distribution$building_count[completes])))) {
-    stop("Distribution bâtiments invalide — un compte de cellule est invalide.",
-         call. = FALSE)
-  }
-  avec_comparaison <- !is.na(distribution$comparison_label)
-  if (any(!avec_comparaison &
-          (!is.na(distribution$comparison_total_buildings) |
-           !is.na(distribution$comparison_building_count) |
-           !is.na(distribution$comparison_share)))) {
-    stop("Distribution bâtiments invalide — valeurs comparées sans libellé.",
-         call. = FALSE)
-  }
-  if (any(avec_comparaison &
-          (is.na(distribution$comparison_total_buildings) |
-           distribution$comparison_total_buildings < 1 |
-           distribution$comparison_total_buildings != floor(distribution$comparison_total_buildings) |
-           is.na(distribution$comparison_building_count) |
-           distribution$comparison_building_count < 0 |
-           distribution$comparison_building_count > distribution$comparison_total_buildings |
-           distribution$comparison_building_count != floor(distribution$comparison_building_count) |
-           is.na(distribution$comparison_share) |
-           distribution$comparison_share < 0 |
-           distribution$comparison_share > 1))) {
-    stop("Distribution bâtiments invalide — une valeur comparée est invalide.",
-         call. = FALSE)
-  }
-  if (any(distribution$total_buildings[absents] != 0) ||
-      any(!is.na(distribution$building_count[absents])) ||
-      any(!is.na(distribution$share[absents])) ||
-      any(!is.na(distribution$comparison_label[absents])) ||
-      any(!is.na(distribution$comparison_total_buildings[absents])) ||
-      any(!is.na(distribution$comparison_building_count[absents])) ||
-      any(!is.na(distribution$comparison_share[absents]))) {
-    stop("Distribution bâtiments invalide — une absence porte des valeurs de cellule.",
-         call. = FALSE)
-  }
-
-  identite <- paste(distribution$territoire, distribution$type, sep = "::")
-  groupes <- split(seq_len(nrow(distribution)), identite)
-  for (indices in groupes) {
-    etat <- unique(distribution$availability[indices])
-    if (length(etat) != 1L) {
-      stop("Distribution bâtiments invalide — états mélangés pour un territoire.",
-           call. = FALSE)
-    }
-    if (etat == "absent") {
-      if (length(indices) != 1L) {
-        stop("Distribution bâtiments invalide — une absence doit tenir sur une ligne.",
-             call. = FALSE)
-      }
-      next
-    }
-    cellules <- distribution[indices, , drop = FALSE]
-    if (nrow(cellules) != nrow(DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS) *
-        nrow(DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS)) {
-      stop("Distribution bâtiments invalide — grille incomplète.", call. = FALSE)
-    }
-    metadonnees_groupe <- c(
-      "total_buildings", "mode", "mode_label", "breadth_axis_label",
-      "depth_axis_label", "source_id", "source", "version", "date_reference",
-      "date_publication", "comparison_label", "comparison_total_buildings"
-    )
-    for (colonne in metadonnees_groupe) {
-      if (length(unique(cellules[[colonne]])) != 1L) {
-        stop("Distribution bâtiments invalide — métadonnée divergente dans un territoire.",
-             call. = FALSE)
-      }
-    }
-    if (anyDuplicated(cellules[c("breadth_bucket", "depth_bucket")])) {
-      stop("Distribution bâtiments invalide — cellule dupliquée.", call. = FALSE)
-    }
-    if (abs(sum(cellules$share) - 1) > 1e-12 ||
-        sum(cellules$building_count) != cellules$total_buildings[[1]]) {
-      stop("Distribution bâtiments invalide — les cellules ne recomposent pas le total.",
-           call. = FALSE)
-    }
-    if (!is.na(cellules$comparison_label[[1L]]) &&
-        (abs(sum(cellules$comparison_share) - 1) > 1e-12 ||
-         sum(cellules$comparison_building_count) != cellules$comparison_total_buildings[[1L]])) {
-      stop("Distribution bâtiments invalide — les cellules comparées ne recomposent pas le total.",
-           call. = FALSE)
-    }
-  }
-  invisible(distribution)
 }
 
 # verifier_contrat_rampe_acces_batiments --------------------------------------
