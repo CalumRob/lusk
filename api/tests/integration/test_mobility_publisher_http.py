@@ -165,8 +165,15 @@ def test_mobility_profile_publisher_output_is_served_over_http():
             singleton = client.post(comparison_url, json={"theme_id": "mobilite", "selection": [
                 {"territory_type": "commune", "territory_id": territory}]})
             assert singleton.status_code == 200, singleton.text
-            assert all(row["status"] == "unavailable" and row["eligible_count"] == 1
-                       for row in singleton.json()["profile_comparisons"])
+            # #917: a 1-member profile selection pairs on that member's value as the
+            # median; rank fields stay null below two comparable values.
+            singleton_rows = {row["indicator"]: row for row in singleton.json()["profile_comparisons"]}
+            for indicator, detail in comparison_details.items():
+                row = singleton_rows[indicator]
+                cell = next(cell for cell in body["indicators"] if cell["indicator_id"] == indicator
+                            and cell["dimensions"]["detail"] == detail)
+                assert row["status"] == "available" and row["eligible_count"] == 1
+                assert row["median"] == cell["value"] and row["rank"] is None
             with pool.connection() as conn:
                 outside_id = conn.execute("""SELECT territory_id FROM territory_reference
                     WHERE territory_type='commune' AND density_class_code='D_TEST' AND territory_id<>%s
