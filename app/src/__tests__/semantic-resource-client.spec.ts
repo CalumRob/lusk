@@ -1,10 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { chargerCatalogueRessources, lireRessourcesBatch } from '../payload/semanticResourceClient'
+import { chargerCatalogueRessources, lireRessourcesBatch, SemanticMemberError } from '../payload/semanticResourceClient'
 import type { SemanticReadItem } from '../payload/semanticResourceClient'
 
 afterEach(() => vi.unstubAllGlobals())
 
 describe('semantic read batches', () => {
+  it('conserve uniquement l’identité du membre nommé par un refus du producteur', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      detail: 'Selected comparison member commune/22002 has no published value for measure private_key',
+    }), { status: 422 })))
+    const lecture: SemanticReadItem = { resource: 'densite', target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'selected_comparison', members: [{ type: 'commune', id: '22002' }] } }
+    const error = await lireRessourcesBatch([lecture]).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(SemanticMemberError)
+    expect(error).toMatchObject({ member: { type: 'commune', id: '22002' }, status: 422 })
+    expect((error as Error).message).not.toContain('private_key')
+  })
+  it('garde un échec HTTP générique quand le refus ne nomme pas une identité typée', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>indisponible</html>', { status: 422 })))
+    await expect(lireRessourcesBatch([{ resource: 'densite', target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'facts' } }])).rejects.toThrow('HTTP 422')
+  })
   it('accepts native producer discovery with an unthemed AEDAR resource beside a scalar', async () => {
     const catalogue = { contract: 'semantic-resource-catalogue-v1', resources: [
       { resource_id: 'aedar_territorial_aggregate', theme_id: '', indicator_id: 'aedar_territorial_aggregate',

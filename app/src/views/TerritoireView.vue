@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SemanticMemberError } from '@/payload/semanticResourceClient'
 /**
  * La fiche d'identité — the shell (site-map.md §Fiche + layouts.md §2).
  *
@@ -244,28 +245,23 @@ const typeValide = computed(
  * niveau-natif, jamais la densité). Le paramètre ne porte plus un mode figé :
  * la référence résolue décide quels membres tapés partent en acquisition.
  */
-const resolutionSelection = computed(() => {
+const entreeResolutionSelection = computed(() => {
   const reference = referenceTerritoire.reference.value
   if (!reference || !territoire.value) return null
-  return resoudreSelectionComparaison({
+  return {
     territoire: territoire.value,
-    demande: route.query[PARAM_COMPARAISON],
     contextes: contextesComparaison.value,
     territoires: reference,
-  })
+  }
 })
+const resolutionSelection = computed(() => entreeResolutionSelection.value
+  ? resoudreSelectionComparaison({ ...entreeResolutionSelection.value, demande: route.query[PARAM_COMPARAISON] })
+  : null)
 
-/** Le contexte par défaut niveau-natif (entrée « Par défaut » de la puce d'en-tête). */
-const resolutionDefaut = computed(() => {
-  const reference = referenceTerritoire.reference.value
-  if (!reference || !territoire.value) return null
-  return resoudreSelectionComparaison({
-    territoire: territoire.value,
-    demande: undefined,
-    contextes: contextesComparaison.value,
-    territoires: reference,
-  })
-})
+/** Le contexte par défaut niveau-natif (preset coché quand l'URL est absente). */
+const resolutionDefaut = computed(() => entreeResolutionSelection.value
+  ? resoudreSelectionComparaison({ ...entreeResolutionSelection.value, demande: undefined })
+  : null)
 
 /**
  * #860 — les membres tapés envoyés à la passe selected_comparison : une
@@ -283,6 +279,17 @@ const membresAcquisition = computed<readonly ThemeSelectionMember[] | null | und
   }
   return membres
 })
+
+const membreComparaisonIndisponible = ref<string | null>(null)
+function nommerEchecMembre(error: unknown): void {
+  membreComparaisonIndisponible.value = null
+  if (!(error instanceof SemanticMemberError)) return
+  // N'attribuer l'échec qu'à un membre effectivement demandé, nommé par la référence.
+  const membre = membresAcquisition.value?.find((item) =>
+    item.territory_type === error.member.type && item.territory_id === error.member.id)
+  if (membre) membreComparaisonIndisponible.value = referenceTerritoire.reference.value?.find((item) =>
+    item.type === membre.territory_type && item.territoire === membre.territory_id)?.nom ?? membre.territory_id
+}
 
 function libellePorteeSemantic(comparison: unknown, target: Territoire): string | null {
   if (typeof comparison !== 'object' || comparison === null || Array.isArray(comparison)) return null
@@ -357,8 +364,10 @@ const controleComparaison = computed<ControleComparaison | null>(() => {
   if (!controleSelectionVisible.value) return null
   const resolution = resolutionSelection.value
   const defaut = resolutionDefaut.value
-  if (!resolution || !defaut) return null
+  if (!resolution || !defaut || !territoire.value) return null
   return {
+    focal: territoire.value,
+    territoires: referenceTerritoire.reference.value ?? [],
     selection: resolution.selection,
     libelleActif: libelleActifSelection.value,
     presetDefaut: defaut.preset,
@@ -548,6 +557,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
     let cancelled = false
     onCleanup(() => { cancelled = true })
     statutComparaison.value = 'loading'
+    membreComparaisonIndisponible.value = null
     faitsThemeRows.value = faitsThemeRows.value
       ? lignesAvecComparaisonApi(faitsThemeRows.value, null, null) : null
     // Pendant le chargement de la nouvelle sélection, le nuage de l'ancienne
@@ -578,11 +588,12 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
         faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
           comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
        statutComparaison.value = nativeComparison?.cohort_error || comparison?.reading_cloud_error ? 'error' : 'ready'
-    } catch {
-       if (!cancelled && request === sequenceComparaison) {
-         faitsThemeRows.value = faitsThemeRows.value?.map(({ comparaisonApi: _rank, ...row }) => row) ?? null
-         statutComparaison.value = 'error'
-       }
+    } catch (error) {
+      if (!cancelled && request === sequenceComparaison) {
+        nommerEchecMembre(error)
+        faitsThemeRows.value = faitsThemeRows.value?.map(({ comparaisonApi: _rank, ...row }) => row) ?? null
+        statutComparaison.value = 'error'
+      }
     }
   }, { immediate: true })
 
@@ -729,6 +740,7 @@ watch([productionMobilite, typeRoute, idRoute, () => membresAcquisition.value,
     mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
     mobilityCurveComparison.value = null
     mobilityComparisonStatus.value = 'loading'
+    membreComparaisonIndisponible.value = null
     void cacheAcquisition.select(typeRoute.value, idRoute.value, 'mobilite', explicitSelection).then((acquired) => {
       if (request !== comparisonRequestSequence || controller.signal.aborted || !mobilityFocal.value) return
       const data = acquired.comparisons.get(cleSelectionComparaison(explicitSelection))
@@ -739,12 +751,13 @@ watch([productionMobilite, typeRoute, idRoute, () => membresAcquisition.value,
        mobilityCurveComparison.value = updated.mobility.selectedTrajectoryComparison ?? null
       mobilityComparisonStatus.value = 'ready'
       settled = true
-    }).catch(() => {
+    }).catch((error: unknown) => {
       settled = true
-       if (request === comparisonRequestSequence && !controller.signal.aborted) {
-         lastComparisonKey = null
-         mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value!)
-         mobilityCurveComparison.value = null
+      if (request === comparisonRequestSequence && !controller.signal.aborted) {
+        nommerEchecMembre(error)
+        lastComparisonKey = null
+        mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value!)
+        mobilityCurveComparison.value = null
         mobilityComparisonStatus.value = 'error'
       }
     })
@@ -934,6 +947,7 @@ watch(
         role="alert"
       >
         <p>Les comparaisons de ce thème ne sont pas disponibles.</p>
+        <p v-if="membreComparaisonIndisponible">Données indisponibles pour {{ membreComparaisonIndisponible }}. Le résumé du groupe n’est pas affiché ; les données du territoire restent visibles.</p>
         <button type="button" @click="retryThemeComparison">Réessayer</button>
       </div>
       <div v-if="selection !== 'mobilite' && statutAcquisition === 'ready' && preuvesThemeIndisponibles"

@@ -398,6 +398,8 @@ onBeforeUnmount(() => {
                     :libelle-actif="controleComparaison.libelleActif"
                     :preset-defaut="controleComparaison.presetDefaut"
                     :presets="controleComparaison.presets"
+                    :focal="controleComparaison.focal"
+                    :territoires="controleComparaison.territoires"
                     @choisir="controleComparaison.choisir"
                   />
                   <span class="page-heading-theme">{{ props.content.label }}</span>

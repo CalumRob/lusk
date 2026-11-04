@@ -90,6 +90,13 @@ export async function chargerCatalogueRessources(): Promise<SemanticResourceDecl
   return resources
 }
 
+/** Identité signalée par le producteur ; jamais son message technique en copy UI. */
+export class SemanticMemberError extends PayloadError {
+  constructor(path: string, status: number, readonly member: { type: string; id: string }) {
+    super('fetch', path, `Membre de comparaison indisponible : ${member.type}/${member.id}.`, status)
+  }
+}
+
 async function poster(path: string, body: RecordValue): Promise<unknown> {
   let response: Response
   try {
@@ -97,8 +104,18 @@ async function poster(path: string, body: RecordValue): Promise<unknown> {
   } catch (cause) {
     throw new PayloadError('fetch', path, `Lecture sémantique indisponible : ${cause instanceof Error ? cause.message : String(cause)}`)
   }
-  if (!response.ok) throw new PayloadError('fetch', path,
-    `Lecture sémantique indisponible (HTTP ${response.status}).`, response.status)
+  if (!response.ok) {
+    // Les erreurs membre 404/422 du contrat nomment une identité typée.
+    // Un corps illisible ou un autre échec reste l'erreur HTTP générique.
+    if (response.status === 404 || response.status === 422) {
+      const error: unknown = await response.json().catch(() => null)
+      const identity = isRecord(error) && typeof error.detail === 'string'
+        ? /\bmember (commune|epci|departement|region)\/([\w-]+)\b/i.exec(error.detail) : null
+      if (identity) throw new SemanticMemberError(path, response.status, { type: identity[1]!, id: identity[2]! })
+    }
+    throw new PayloadError('fetch', path,
+      `Lecture sémantique indisponible (HTTP ${response.status}).`, response.status)
+  }
   return readJson(response, path)
 }
 

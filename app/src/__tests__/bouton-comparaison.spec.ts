@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import BoutonComparaison from '../components/fiche/BoutonComparaison.vue'
 import type {
@@ -47,6 +47,53 @@ afterEach(() => {
 })
 
 describe('BoutonComparaison — face « Comparaison » du page-heading collant (#860 ruling)', () => {
+  it('garde le focus dans le sheet mobile, bloque le fond et rend le focus à la fermeture', async () => {
+    const media = vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true } as MediaQueryList)
+    const wrapper = monter({ etat: 'vide' }, { focal: { type: 'commune', territoire: '1', nom: 'Étel' }, territoires: [] })
+    const overflow = document.body.style.overflow
+    await wrapper.get('.bouton-comparaison__declencheur').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="dialog"]').attributes('aria-modal')).toBe('true')
+    expect(document.body.style.overflow).toBe('hidden')
+    const fermer = wrapper.get('[aria-label="Fermer la comparaison"]')
+    expect(document.activeElement).toBe(fermer.element)
+    await fermer.trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(wrapper.get('input[type="search"]').element)
+    await wrapper.get('input[type="search"]').trigger('keydown', { key: 'Tab' })
+    expect(document.activeElement).toBe(fermer.element)
+    await fermer.trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(document.body.style.overflow).toBe(overflow)
+    expect(document.activeElement).toBe(wrapper.get('.bouton-comparaison__declencheur').element)
+    wrapper.unmount()
+    media.mockRestore()
+  })
+  it('construit un groupe explicite : focal retirable, recherche au même niveau et nombre actif', async () => {
+    const focal = { type: 'commune', territoire: '1', nom: 'Étel' }
+    const wrapper = monter({ etat: 'defaut' }, {
+      focal,
+      territoires: [focal, { ...focal, territoire: '2', nom: 'Erdeven' }, { type: 'epci', territoire: 'E', nom: 'Erdeven communauté' }],
+    })
+    await wrapper.get('.bouton-comparaison__declencheur').trigger('click')
+    await wrapper.get('[data-testid="personnaliser-comparaison"]').trigger('click')
+    const initial = { etat: 'membres', membres: [{ territory_type: 'commune', territory_id: '1' }] }
+    expect(wrapper.emitted('choisir')?.at(-1)).toEqual([initial])
+    await wrapper.setProps({ selection: initial as SelectionComparaison })
+    expect(wrapper.get('.bouton-comparaison__type').text()).toBe('1 membre')
+    await wrapper.get('input[type="search"]').setValue('erdeven')
+    expect(wrapper.findAll('[data-testid="ajouter-membre"]').map((item) => item.text())).toEqual(['Ajouter Erdeven'])
+    await wrapper.get('[data-testid="ajouter-membre"]').trigger('click')
+    expect(wrapper.emitted('choisir')?.at(-1)).toEqual([{ etat: 'membres', membres: [
+      { territory_type: 'commune', territory_id: '1' }, { territory_type: 'commune', territory_id: '2' },
+    ] }])
+    await wrapper.get('[aria-label="Retirer Étel"]').trigger('click')
+    expect(wrapper.emitted('choisir')?.at(-1)).toEqual([{ etat: 'vide' }])
+    await wrapper.setProps({ selection: { etat: 'vide' } })
+    expect(wrapper.find('[aria-label="Retirer Étel"]').exists()).toBe(false)
+    await wrapper.get('[aria-label="Fermer la comparaison"]').trigger('click')
+    expect(wrapper.find('input[type="search"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('porte un état pressé papier sur le déclencheur et chaque option (DESIGN §6)', () => {
     const source = readFileSync(join(process.cwd(), 'src/components/fiche/BoutonComparaison.vue'), 'utf8')
     expect(source).toMatch(/\.bouton-comparaison__declencheur:active,\s*\.bouton-comparaison__option:active\s*\{[^}]*background:/)

@@ -250,7 +250,7 @@ function selectedTrajectoryComparison(
       !finite(result.mean) || !finite(result.selected_member_count) || !finite(result.eligible_count) ||
       result.selected_member_count < 2 || result.eligible_count !== result.selected_member_count ||
       !Array.isArray(result.comparison_sources) || result.comparison_sources.length === 0 ||
-      !context?.scope.label) throw new Error('Comparaison moyenne de trajectoire Mobilité invalide')
+      (!context?.scope.label && !expectedSelection?.length)) throw new Error('Comparaison moyenne de trajectoire Mobilité invalide')
   const meanCurve = result.mean_curve
   const sourceScope = isRecord(meanCurve) && isRecord(meanCurve.scope) ? meanCurve.scope : null
   const envelopeScope = envelope && isRecord(envelope.scope) ? envelope.scope : null
@@ -263,7 +263,7 @@ function selectedTrajectoryComparison(
       sourceScope.territory_type === facts.territory.type &&
       text(sourceScope.density_class_code) && sourceScope.density_class_code === facts.territory.densityClassCode &&
       envelopeScope.density_class_code === sourceScope.density_class_code
-    : (context?.mode === 'epci' || context?.mode === 'bretagne')
+    : (context?.mode === 'epci' || context?.mode === 'bretagne' || (!context && expectedSelection !== undefined))
       ? envelopeScope?.kind === 'explicit_selection' && sourceScope?.kind === 'explicit_selection' &&
         expectedKeys.length >= 2 && actualSelection.length === expectedKeys.length &&
         actualSelection.every((key, index) => key === expectedKeys[index]) &&
@@ -300,7 +300,8 @@ function selectedTrajectoryComparison(
     source_id: source.source_id, name: source.source_name, version: source.version,
     reference_date: source.reference_date, publication_date: source.publication_date,
   })))
-  return { statistic: 'mean', scope: context.scope,
+  return { statistic: 'mean', scope: context?.scope ?? { kind: 'selection',
+    territoryIds: expectedSelection?.map((member) => member.territory_id), label: 'Groupe comparé' },
     selectedMemberCount: result.selected_member_count, eligibleCount: result.eligible_count,
     modelZeroReasonCounts: reasons as Record<string, number>, sourceLineage: lineage,
     points: points.map((point) => ({ key: 'raccordement_courbe', detail: point.axis as string,

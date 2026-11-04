@@ -476,7 +476,7 @@ try {
     for (const option of await options.all()) {
       await option.hover()
       const geometry = await option.evaluate((element) => {
-        const panel = element.closest('[role="menu"]')
+        const panel = element.closest('.bouton-comparaison__menu')
         const menu = panel.getBoundingClientRect()
         const style = getComputedStyle(panel)
         const contained = [element, ...element.querySelectorAll('span')].every((node) => {
@@ -1497,6 +1497,34 @@ try {
       const restored = await page.evaluate(() => [document.documentElement.scrollWidth, document.body.scrollWidth])
       assert.deepEqual(restored, [width, width], 'restoring the mutation should restore mobile geometry')
     }
+
+    // #861 : après les assertions d'acquisition du défaut ci-dessus, pour ne
+    // pas confondre leurs compteurs avec les lectures de cette nouvelle sélection.
+    await trigger.click()
+    await page.getByTestId('personnaliser-comparaison').click()
+    const searchMember = page.locator('.membres-comparaison input[type="search"]')
+    await searchMember.waitFor({ state: 'visible' })
+    await searchMember.fill('22002')
+    await page.getByTestId('ajouter-membre').click()
+    await page.locator('.membres-comparaison li').filter({ hasText: 'Andel' }).waitFor()
+    const builder = await page.locator('.bouton-comparaison__menu').evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      const targets = [...element.querySelectorAll('.membres-comparaison button, input')]
+      return { left: box.left, right: box.right, bottom: box.bottom, position: style.position,
+        viewportHeight: innerHeight, overflow: element.scrollWidth > element.clientWidth,
+        targets: targets.map((target) => target.getBoundingClientRect().height) }
+    })
+    assert(!builder.overflow && builder.left >= 0 && builder.right <= width,
+      `Constructeur hors du viewport à ${width}px : ${JSON.stringify(builder)}`)
+    assert(builder.targets.every((height) => height >= 44), `Cibles constructeur <44px : ${JSON.stringify(builder)}`)
+    if (width < 640) assert(builder.position === 'fixed' && Math.abs(builder.bottom - builder.viewportHeight) < 1,
+      `Le constructeur mobile doit être un bottom sheet : ${JSON.stringify(builder)}`)
+    else assert(builder.position === 'fixed' && builder.bottom < builder.viewportHeight,
+      'Le constructeur desktop doit être un dropdown ancré au contrôle, pas un sheet')
+    if (width === 390 || width === 1440) await page.screenshot({ path: resolve(evidenceDir, `issue861-constructeur-${width}.png`), fullPage: false })
+    await page.getByRole('button', { name: 'Fermer la comparaison', exact: true }).click()
+    assert.equal(await trigger.getAttribute('aria-expanded'), 'false')
 
     let plainMarginLayout = null
     if (width === 601 || width === 760) {

@@ -1641,6 +1641,61 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 })
 
 describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison » dans le page-heading collant du Cahier', () => {
+  it('nomme le membre refusé par le producteur, ferme le résumé du groupe et conserve les faits focaux (#861)', async () => {
+    const servir = nativeSemanticFetch()
+    let refuser = false
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/resources/read-batch' && refuser) {
+        const { items } = JSON.parse(String(init?.body))
+        if (items.some((item: any) => item.intent.kind === 'selected_comparison')) {
+          return new Response(JSON.stringify({ detail: 'Selected comparison member commune/22002 has no published value' }), { status: 422 })
+        }
+      }
+      return servir(input, init)
+    }))
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
+    await flushPromises()
+    expect(wrapper.find('.transit-point--territory').exists()).toBe(true)
+    refuser = true
+    await router.push('/territoire/commune/22001?theme=mobilite&comparaison=commune:22001,commune:22002')
+    await flushPromises()
+    expect(wrapper.get('.etat-erreur[role="alert"]').text()).toContain(cibleReference('22002').nom)
+    expect(wrapper.find('.transit-point--territory').exists()).toBe(true)
+    expect(wrapper.find('.transit-point--comparison').exists()).toBe(false)
+    refuser = false
+    await wrapper.get('.etat-erreur[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.etat-erreur[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.transit-point--comparison').exists()).toBe(true)
+    wrapper.unmount()
+  }, 20_000)
+  it('construit au même niveau, acquiert les membres visibles et recharge le lien partagé sans réinsérer le focal (#861)', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
+    await flushPromises()
+    await wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
+    await wrapper.get('[data-testid="personnaliser-comparaison"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.comparaison).toBe('commune:22001')
+    await wrapper.get('input[type="search"]').setValue('22002')
+    await wrapper.get('[data-testid="ajouter-membre"]').trigger('click')
+    await flushPromises()
+    await wrapper.get(`[aria-label="Retirer ${cibleReference('22001').nom}"]`).trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.comparaison).toBe('commune:22002')
+    expect(requests.flat().filter((item) => item.intent.kind === 'selected_comparison').at(-1)!.intent.members)
+      .toEqual([{ type: 'commune', id: '22002' }])
+    const lien = router.currentRoute.value.fullPath
+    wrapper.unmount()
+    const reload = await monter(lien, chargerReferenceReelle)
+    await flushPromises()
+    expect(reload.router.currentRoute.value.query.comparaison).toBe('commune:22002')
+    await reload.wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
+    expect(reload.wrapper.get('.membres-comparaison').text()).toContain(cibleReference('22002').nom)
+    expect(reload.wrapper.find(`[aria-label="Retirer ${cibleReference('22001').nom}"]`).exists()).toBe(false)
+    reload.wrapper.unmount()
+  }, 20_000)
   it('assied le bouton dans le page-heading collant, à gauche du titre thème·territoire, avec la portée par défaut niveau-natif', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
@@ -1657,7 +1712,7 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     // face laconique « Comparaison » ; la portée ride dans le nom accessible
     expect(bouton.find('.bouton-comparaison__texte').text()).toBe('Comparaison')
     expect(bouton.attributes('aria-label')).toBe(`Comparaison : ${porteeDefaut}`)
-    expect(bouton.attributes('aria-haspopup')).toBe('menu')
+    expect(bouton.attributes('aria-haspopup')).toBe('dialog')
     // aligné à droite, immédiatement à gauche du titre « thème · territoire »
     const contexte = heading.get('.page-heading-context')
     expect(contexte.element.firstElementChild).toBe(wrapper.find('.bouton-comparaison').element)
