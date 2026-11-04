@@ -10,8 +10,9 @@ const props = withDefaults(
     fact: NumericFact
     to?: RouteLocationRaw | null
     placement?: 'inline' | 'comparison' | 'access'
+    decorative?: boolean
   }>(),
-  { to: null, placement: 'inline' },
+  { to: null, placement: 'inline', decorative: false },
 )
 
 function rankText(fact: NumericFact): string | null {
@@ -54,7 +55,8 @@ function rankStyle(seed: string): Record<string, string> {
       :class="[`cahier-rank--${props.placement}`, { 'is-extreme': isExtreme(props.fact) }]"
       :style="rankStyle(props.fact.key)"
       :title="rankDescription(props.fact) ?? undefined"
-      :aria-label="rankDescription(props.fact) ?? undefined"
+      :aria-label="props.decorative ? undefined : rankDescription(props.fact) ?? undefined"
+      :aria-hidden="props.decorative ? 'true' : undefined"
     ><span aria-hidden="true">{{ comparisonRank(props.fact)?.glyphe }} </span>{{ rankText(props.fact) }}</RouterLink>
     <span
       v-else
@@ -63,7 +65,8 @@ function rankStyle(seed: string): Record<string, string> {
       :style="rankStyle(props.fact.key)"
       :title="rankDescription(props.fact) ?? undefined"
       role="img"
-      :aria-label="rankDescription(props.fact) ?? undefined"
+      :aria-label="props.decorative ? undefined : rankDescription(props.fact) ?? undefined"
+      :aria-hidden="props.decorative ? 'true' : undefined"
     ><span aria-hidden="true">{{ comparisonRank(props.fact)?.glyphe }} </span>{{ rankText(props.fact) }}</span>
   </template>
 </template>

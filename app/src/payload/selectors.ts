@@ -504,7 +504,7 @@ export interface DetailsRang {
   libelleCourt: string
 }
 
-export function detailsRangEnContexte(indicateur: Indicateur): DetailsRang | null {
+export function detailsRangEnContexte(indicateur: Pick<Indicateur, 'comparaisonApi'>): DetailsRang | null {
   if (!indicateur.comparaisonApi) return null
   const { rang, taille, portee } = indicateur.comparaisonApi
   if (rang === null) return null
@@ -1078,6 +1078,7 @@ export interface BadgeProgramme {
 export interface AxeSubvention {
   libelle: string
   montant: number
+  comparaison?: Pick<Indicateur, 'comparaisonApi' | 'unit'>
 }
 
 /**
@@ -1310,7 +1311,8 @@ export function programmesPourTerritoire(payload: Payload, territoire: string): 
               l.territoire === territoire &&
               l.dimension === String(annee),
           )
-          .map((l) => ({ libelle: l.detail ?? '', montant: l.value ?? 0 }))
+          .map((l) => ({ libelle: l.detail ?? '', montant: l.value ?? 0,
+            ...(l.comparaisonApi ? { comparaison: { comparaisonApi: l.comparaisonApi, unit: l.unit } } : {}) }))
           .sort((a, b) => b.montant - a.montant || a.libelle.localeCompare(b.libelle, 'fr'))
       : null
     subventionsFiche = {

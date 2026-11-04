@@ -28,6 +28,7 @@ import { ExternalLink } from 'lucide-vue-next'
 
 import AppIcon from '@/components/AppIcon.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
+import ValeurComparaison from '@/components/fiche/ValeurComparaison.vue'
 import { handoffExploration } from '@/fiche/explorationHandoff'
 import { cadrageSousGroupeFiche, sousGroupeFiche } from '@/fiche/content/ficheGrammar'
 import { NOMS_THEMES } from '@/fiche/onglets'
@@ -192,6 +193,7 @@ const lienProvenance = computed(() => {
             <ul class="subvention-axes">
               <li v-for="axe in axesTete" :key="axe.libelle" class="subvention-axe">
                 <span class="subvention-axe-montant">{{ formaterMontant(axe.montant) }}</span>
+                <ValeurComparaison v-if="axe.comparaison" :ligne="axe.comparaison" />
                 <span class="subvention-axe-libelle">{{ axe.libelle }}</span>
               </li>
             </ul>
@@ -207,6 +209,7 @@ const lienProvenance = computed(() => {
             <ul v-if="revele" class="subvention-axes subvention-axes--reste">
               <li v-for="axe in axesReste" :key="axe.libelle" class="subvention-axe">
                 <span class="subvention-axe-montant">{{ formaterMontant(axe.montant) }}</span>
+                <ValeurComparaison v-if="axe.comparaison" :ligne="axe.comparaison" />
                 <span class="subvention-axe-libelle">{{ axe.libelle }}</span>
               </li>
             </ul>
@@ -377,6 +380,8 @@ const lienProvenance = computed(() => {
 
 .subvention-axe {
   display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
   font: var(--text-body-sm);
@@ -388,6 +393,7 @@ const lienProvenance = computed(() => {
 }
 
 .subvention-axe-libelle {
+  margin-left: auto;
   text-align: right;
   color: var(--text-secondary);
 }

@@ -5,7 +5,7 @@ import { detailsRangEnContexte, formaterValeur } from '@/payload/selectors'
 import { puceRangDirection } from '@/fiche/figureGrammaire'
 import PuceRang from './PuceRang.vue'
 
-const props = defineProps<{ ligne: Indicateur }>()
+const props = defineProps<{ ligne: Pick<Indicateur, 'comparaisonApi' | 'unit'> }>()
 const comparison = computed(() => props.ligne.comparaisonApi)
 const referenceText = computed(() => comparison.value?.reference
   ? `${formaterValeur({ value: comparison.value.reference.value, unit: props.ligne.unit })}${props.ligne.unit ? ` ${props.ligne.unit}` : ''}` : null)
@@ -27,7 +27,7 @@ const accessibleName = computed(() => `Groupe comparé : ${referenceText.value}.
 <template>
   <span v-if="referenceText !== null" class="figure-indicateur-comparaison" role="img" :aria-label="accessibleName">
     Groupe comparé : <strong>{{ referenceText }}</strong>
-    <PuceRang v-if="chip" :puce="chip" />
+    <PuceRang v-if="chip" :puce="chip" decorative />
   </span>
 </template>
 

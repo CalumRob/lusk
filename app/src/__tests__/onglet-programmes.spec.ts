@@ -9,6 +9,7 @@ import {
   territoiresFixture,
 } from '../payload/fixtures'
 import type { Payload } from '../payload/types'
+import { lignesAvecComparaisonApi } from '../payload/themeFactsAdapter'
 
 /**
  * BlocProgrammes — le bloc du SIXIÈME thème (#408), l'onglet premier et par
@@ -57,6 +58,27 @@ function montage(payload: Payload, territoire: string, metadataStatus?: 'loading
 }
 
 describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
+  it.each([0, 5])('rend la comparaison auprès du domaine %i, y compris après révélation', async (index) => {
+    const base = indicateursProgrammesFixture.find((row) => row.key === 'subventions_par_domaine')!
+    const domains = Array.from({ length: 6 }, (_, i) => ({ ...base, detail: `Domaine ${i}`,
+      value: (6 - i) * 100, collectionFacet: { detail: `domain-${i}`, observation_period: '2025' } }))
+    const rows = lignesAvecComparaisonApi([
+      ...indicateursProgrammesFixture.filter((row) => row.key !== 'subventions_par_domaine'), ...domains,
+    ], { results: [{ indicator_id: 'subventions_par_domaine', status: 'available', direction: 'high',
+      source_facet: { detail: `domain-${index}`, observation_period: '2025' },
+      median: 150, rank: 2, rank_size: 4 }], profile_comparisons: [] }, 'communes de la sélection')
+    const wrapper = montage(payloadAvec(rows), '22001')
+    if (index === 5) await wrapper.get('.subvention-reveler').trigger('click')
+    const row = wrapper.findAll('.subvention-axe').find((row) => row.text().includes(`Domaine ${index}`))!
+    expect(row.get('.subvention-axe-montant').text()).toContain(String((6 - index) * 100))
+    const mark = row.get('.figure-indicateur-comparaison')
+    expect(mark.text()).toContain('Groupe comparé : 150 €')
+    expect(mark.text()).toContain('2e/4')
+    expect(mark.attributes('aria-label')).toContain('Médiane des communes de la sélection')
+    expect(mark.attributes('aria-label')).toContain('plus = mieux')
+    expect(wrapper.text()).not.toContain('communes de la sélection')
+    expect(wrapper.findAll('.figure-indicateur-comparaison')).toHaveLength(1)
+  })
   it('porte les sous-groupes app-owned même si la présentation upstream est périmée', () => {
     const upstreamStale = structuredClone(payloadPlein)
     upstreamStale.themeMetadata!.programmes!.subgroups = [{

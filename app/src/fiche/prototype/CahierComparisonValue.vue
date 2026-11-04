@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { RouteLocationRaw } from 'vue-router'
+import { RouterLink } from 'vue-router'
 
 import type { NumericFact, TerritorialScalarReference } from '@/fiche/content/territoryFacts'
 import CahierRank from './CahierRank.vue'
@@ -44,15 +45,15 @@ function comparisonAccessibleName(): string {
     class="cahier-comparison-value cahier-figure-comparison"
     :class="{ 'cahier-comparison-value--named': namedReference }"
   >
-    <span v-if="comparisonText()" class="cahier-comparison-value__reference" :role="to ? 'group' : 'img'" :aria-label="comparisonAccessibleName()">
+    <component v-if="comparisonText()" :is="to ? RouterLink : 'span'" class="cahier-comparison-value__reference" :to="to || undefined" :target="to ? '_blank' : undefined" :rel="to ? 'noopener noreferrer' : undefined" :role="to ? undefined : 'img'" :aria-label="comparisonAccessibleName()">
       Groupe comparé :
       <strong class="region-emphasis">{{ comparisonText() }}</strong>
       <CahierRank
         v-if="fact && !namedReference"
         :fact="fact"
-        :to="to"
+        decorative
       />
-    </span>
+    </component>
   </p>
 </template>
 

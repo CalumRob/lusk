@@ -7,6 +7,7 @@ import { indicateursHabitatFixture } from '../payload/fixtures'
 import IndicatorFigure from '../components/fiche/IndicatorFigure.vue'
 import { lignesAvecComparaisonApi } from '../payload/themeFactsAdapter'
 import CahierRoadSurfaceFigure from '../fiche/prototype/CahierRoadSurfaceFigure.vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 function fact(): NumericFact {
   return {
@@ -41,6 +42,8 @@ describe('Rang de la sélection — valeur du Groupe comparé', () => {
     expect(mark.text()).toContain('Groupe comparé : 30 %')
     expect(mark.text()).toContain('2e/4')
     expect(mark.attributes('aria-label')).toContain('Médiane des communes de la sélection')
+    expect(mark.findAll('[aria-label]')).toHaveLength(0)
+    expect(mark.get('.puce-rang').attributes('aria-hidden')).toBe('true')
     expect(wrapper.text()).not.toContain('communes de la sélection')
   })
   it('ne rend aucun rang API pour un groupe de zéro ou un membre, sans restaurer les colonnes statiques', () => {
@@ -71,7 +74,7 @@ describe('Rang de la sélection — valeur du Groupe comparé', () => {
     native.comparison!.rank = { position, size }
     const wrapper = mount(CahierComparisonValue, { props: { fact: native } })
     expect(wrapper.get('.cahier-rank').text()).toContain(`${position}e/${size}`)
-    expect(wrapper.get('.cahier-rank').attributes('aria-label')).toContain(label)
+    expect(wrapper.get('.cahier-comparison-value__reference').attributes('aria-label')).toContain(label)
     expect(wrapper.text()).not.toContain(label)
   })
   it('place le rang directionnel auprès de la valeur, avec portée et statistique dans le nom accessible seulement', () => {
@@ -84,7 +87,27 @@ describe('Rang de la sélection — valeur du Groupe comparé', () => {
     expect(mark.attributes('aria-label')).toContain('Médiane des communes de Rennes Métropole')
     const chip = wrapper.get('.cahier-rank')
     expect(chip.attributes('title')).toContain('moins = mieux')
-    expect(chip.attributes('aria-label')).toContain('communes de Rennes Métropole')
+    expect(chip.attributes('aria-label')).toBeUndefined()
+    expect(chip.attributes('aria-hidden')).toBe('true')
+  })
+
+  it.each([false, true])('donne un seul nom complet au repère Cahier (lien : %s)', async (linked) => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+    await router.push('/')
+    const wrapper = mount(CahierComparisonValue, { props: { fact: fact(), to: linked ? '/' : null },
+      global: { plugins: [router] } })
+    const mark = wrapper.get('.cahier-comparison-value__reference')
+    expect(mark.attributes('aria-label')).toContain('Groupe comparé : 30 %')
+    expect(mark.attributes('aria-label')).toContain('2e/41 — moins = mieux')
+    expect(mark.attributes('aria-label')).toContain('Médiane des communes de Rennes Métropole')
+    expect(mark.findAll('[aria-label]')).toHaveLength(0)
+    expect(mark.get('.cahier-rank').attributes('aria-hidden')).toBe('true')
+    expect(mark.findAll('a')).toHaveLength(0)
+    if (linked) {
+      expect(mark.element.tagName).toBe('A')
+      expect(mark.attributes('href')).toBe('/')
+      expect(mark.attributes('target')).toBe('_blank')
+    }
   })
 
   it('actualise le rang et sa portée sans conserver la sélection précédente, puis masque le rang du singleton', async () => {

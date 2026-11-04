@@ -16,11 +16,13 @@ import type { PuceRangDirection } from '@/fiche/figureGrammaire'
 defineProps<{
   /** La puce de rang directionnelle (glyphe + rang + phrase accessible). */
   puce: PuceRangDirection
+  /** La puce est déjà incluse dans le nom accessible de son repère parent. */
+  decorative?: boolean
 }>()
 </script>
 
 <template>
-  <span class="puce-rang" role="img" :aria-label="puce.phrase" :title="puce.phrase">
+  <span class="puce-rang" :role="decorative ? undefined : 'img'" :aria-label="decorative ? undefined : puce.phrase" :aria-hidden="decorative ? 'true' : undefined" :title="decorative ? undefined : puce.phrase">
     <span class="puce-rang-glyphe" aria-hidden="true">{{ puce.glyphe + ' ' }}</span>
     <span class="puce-rang-texte">{{ puce.rang }}</span>
   </span>
