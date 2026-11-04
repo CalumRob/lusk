@@ -1,23 +1,9 @@
-# test-modeles-lecture -----------------------------------------------------------
-# Issues #890 + #891 : toute la GÉNÉRATION des modèles de lecture est retirée du
-# paquet — la voie planifiée (#890 : cibles modeles_lecture_<thème>,
-# manifeste_modeles_lecture et modeles_territoire du graphe) comme la voie
-# manuelle (#891 : scripts/publish-territory-models.R ->
-# publier_modeles_territoire_depuis_json, ainsi que les builders/publieurs de
-# modèles de territoire). Issue #900 : les artefacts publiés eux-mêmes
-# (public/data/modeles-lecture/**, app/dist/data/**), leurs validateurs
-# (validate:territory-model, validateurs d'artefacts d'indicateurs) et le
-# module R modeles_lecture.R sont retirés à leur tour. Les deux helpers encore
-# vivants hors génération ont été déplacés vers leur module propriétaire :
-# verifier_integrite_projections_acces_batiments -> R/distribution_acces_
-# batiments.R (appelé par scripts/publish-building-comparisons.R) et
-# construire_payload_territoire_programmes -> R/theme_programmes_faits.R
-# (appelé par la cible projection_programmes du graphe).
+# Les générations de modèles (#890/#891) et leurs artefacts (#900) sont retirés.
+# Le contrôle des anciennes projections bâtiment est retiré avec la rampe
+# (#912) ; l'adaptateur Programmes reste utilisé par projection_programmes.
 
 test_that("la génération planifiée des modèles de lecture est retirée du paquet (#890)", {
   ns <- asNamespace("lusk")
-  # les générateurs/publieurs d'indicateurs et de manifeste, devenus
-  # injoignables depuis le graphe, ne font plus partie du paquet
   for (fonction in c("construire_modele_indicateur", "publier_modele_indicateur",
                      "publier_modeles_lecture", "construire_manifeste_modeles_lecture",
                      "publier_manifeste_modeles_lecture")) {
@@ -27,7 +13,6 @@ test_that("la génération planifiée des modèles de lecture est retirée du pa
 
 test_that("le rafraîchissement manuel depuis les JSON publiés est retiré (#891)", {
   ns <- asNamespace("lusk")
-  # builders/publieurs de modèles de territoire : plus aucun appelant
   for (fonction in c("publier_modeles_territoire_depuis_json",
                      "publier_modeles_territoire_complet",
                      "publier_modeles_territoire",
@@ -38,9 +23,6 @@ test_that("le rafraîchissement manuel depuis les JSON publiés est retiré (#89
                      "identifiant_snapshot_territoires")) {
     expect_false(exists(fonction, envir = ns, inherits = FALSE), info = fonction)
   }
-  # plus aucun script CLI : rien ne peut plus relire territoires.json,
-  # vintages.json, les theme_*.json ou les projections Mobilité pour
-  # reconstruire un modèle de territoire
   racine <- pkgload::pkg_path()
   expect_false(file.exists(file.path(racine, "scripts", "publish-territory-models.R")))
   sources <- list.files(file.path(racine, "R"), pattern = "[.]R$", full.names = TRUE)
@@ -50,117 +32,14 @@ test_that("le rafraîchissement manuel depuis les JSON publiés est retiré (#89
   expect_false(any(grepl("publier_modeles_territoire_depuis_json", texte, fixed = TRUE)))
 })
 
-test_that("les helpers retenus hors génération restent dans le paquet", {
-  ns <- asNamespace("lusk")
-  # contrôle d'intégrité des projections bâtiment, encore appelé par
-  # scripts/publish-building-comparisons.R (publieur manuel retenu)
-  expect_true(exists("verifier_integrite_projections_acces_batiments",
-                     envir = ns, inherits = FALSE))
-  # adaptateur du payload Programmes, encore appelé par la cible
-  # projection_programmes du graphe
+test_that("l'adaptateur Programmes reste dans son module propriétaire", {
   expect_true(exists("construire_payload_territoire_programmes",
-                     envir = ns, inherits = FALSE))
+                     envir = asNamespace("lusk"), inherits = FALSE))
 })
 
 test_that("le module modeles_lecture.R et les artefacts commités sont retirés (#900)", {
   racine <- pkgload::pkg_path()
   expect_false(file.exists(file.path(racine, "R", "modeles_lecture.R")))
-  # les artefacts eux-mêmes ne sont plus là (source public/ et copie dist/)
   expect_false(file.exists(file.path(racine, "..", "public", "data", "modeles-lecture")))
   expect_false(file.exists(file.path(racine, "..", "app", "dist", "data", "modeles-lecture")))
-})
-
-reference_projections <- function() {
-  tibble::tribble(
-    ~territoire, ~type, ~nom, ~departement, ~epci,
-    "22001", "commune", "Commune A", "22", "200000001",
-    "22002", "commune", "Commune B", "22", "200000001",
-    "200000001", "epci", "EPCI X", "22", NA_character_,
-    "22", "departement", "Département 22", "22", NA_character_,
-    "53", "region", "Bretagne", NA_character_, NA_character_
-  )
-}
-
-rampe_projections <- function(territoire = "22001",
-                              modes = c("epci", "bretagne")) {
-  tibble::tibble(
-    territoire = territoire, type = "commune",
-    comparison_mode = modes,
-    scope_kind = c("communes-epci", "communes-bretagne")[seq_along(modes)],
-    scope_label = c("communes de EPCI X", "communes bretonnes")[seq_along(modes)],
-    mode = "t", quantile = 0.5,
-    comparison_total_buildings = 10L * seq_along(modes),
-    comparison_accessible_types = 3L + seq_along(modes)
-  )
-}
-
-test_that("verifier_integrite_projections_acces_batiments accepte des projections cohérentes", {
-  payload <- list(
-    territoires = reference_projections(),
-    rampe_acces_batiments_comparaisons = rampe_projections()
-  )
-  expect_identical(verifier_integrite_projections_acces_batiments(payload), payload)
-  # sans aucune projection, rien à contrôler
-  vide <- list(territoires = reference_projections())
-  expect_identical(verifier_integrite_projections_acces_batiments(vide), vide)
-})
-
-test_that("verifier_integrite_projections_acces_batiments rejette les projections incohérentes", {
-  construit <- function(rampe = rampe_projections(),
-                        territoires = reference_projections()) {
-    list(
-      territoires = territoires,
-      rampe_acces_batiments_comparaisons = rampe
-    )
-  }
-
-  expect_error(
-    verifier_integrite_projections_acces_batiments(
-      list(territoires = data.frame(x = 1))
-    ),
-    "référence territoriale invalide"
-  )
-
-  expect_error(
-    verifier_integrite_projections_acces_batiments(
-      construit(rampe = rampe_projections(territoire = "99999"))
-    ),
-    "territoire inconnu dans la projection bâtiment"
-  )
-
-  inconnu <- rampe_projections()
-  inconnu$comparison_mode <- "contexte-inconnu"
-  expect_error(
-    verifier_integrite_projections_acces_batiments(construit(rampe = inconnu)),
-    "mode de comparaison inconnu"
-  )
-
-  # sans classes de densité dans la référence, le mode `densite` n'est
-  # résoluble pour aucune commune
-  expect_error(
-    verifier_integrite_projections_acces_batiments(
-      construit(rampe = rampe_projections(modes = "densite"))
-    ),
-    "indisponible pour le territoire"
-  )
-
-  perimetre <- rampe_projections()
-  perimetre$scope_label[[1L]] <- "communes bretonnes"
-  expect_error(
-    verifier_integrite_projections_acces_batiments(construit(rampe = perimetre)),
-    "périmètre ou une identité incohérente"
-  )
-
-  double <- dplyr::bind_rows(rampe_projections(), rampe_projections())
-  expect_error(
-    verifier_integrite_projections_acces_batiments(construit(rampe = double)),
-    "ligne en double"
-  )
-
-  sans_point <- rampe_projections()
-  sans_point$quantile <- NULL
-  expect_error(
-    verifier_integrite_projections_acces_batiments(construit(rampe = sans_point)),
-    "points de rampe"
-  )
 })

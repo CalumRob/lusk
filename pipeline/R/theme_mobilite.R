@@ -196,8 +196,7 @@ VINTAGES_MOBILITE_OCSGE_RESEAUX <- tibble::tribble(
 # source dans vintages.json. Depuis l'issue #486, les DEUX faits construits du
 # raccordement voyagent à leurs côtés.
 vintages_mobilite <- function() {
-  ids_techniques <- c(DISTRIBUTION_ACCES_BATIMENTS_MANIFEST_ID,
-                      IDS_OCSGE_RESEAUX)
+  ids_techniques <- IDS_OCSGE_RESEAUX
   dplyr::bind_rows(
     vintages_depuis_manifest(
       MANIFEST_MOBILITE[
@@ -1549,10 +1548,9 @@ theme_mobilite <- function() {
     # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
     # payload, jamais un recompute des tables de faits
     metadata = function() lire_theme_metadata("mobilite"),
-    # L'export bâtiment reste une entrée du manifeste pour l'ingestion, mais
-    # n'est pas un vintage public distinct : les projections citent le snapshot
-    # porté et la table partagée doit retirer l'ancien id s'il existe déjà.
-    retire_vintages = DISTRIBUTION_ACCES_BATIMENTS_MANIFEST_ID,
+    # L'export bâtiment retiré ne doit pas subsister dans les vintages partagés
+    # issus d'une publication antérieure. Les faits conservés citent le snapshot.
+    retire_vintages = "accessibilite_batiments",
     # LE TRAIT RACCORDEMENT (issue #486) : le graphe le voit et câble la
     # chaîne de calcul — les épingles du package en cibles de fichiers, la
     # cible raccordement_mobilite (le calcul, persisté), la publication
