@@ -29,7 +29,6 @@ const payload: Payload = {
   runReport: null,
   vintages: vintagesFixture,
   programmes: null,
-  profilsAccesBpe: [],
   rampesAccesBatiments: [],
   reseauxMobilite: null,
   themeMetadata: metadonneesThemesFixtures,

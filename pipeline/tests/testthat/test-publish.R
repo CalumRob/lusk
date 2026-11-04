@@ -87,7 +87,7 @@ test_that("publish(backend = 'static') écrit le JSON des faits de tous les thè
   expect_false(file.exists(file.path(cible, "apercu.json")))
 })
 
-test_that("publish écrit la projection BPE bornée quand le payload la porte", {
+test_that("publish ne recrée pas la projection BPE retirée", {
   payload <- compute_payload(load_fixture())
   payload$profils_acces_bpe <- tibble::tibble(
     territoire = "22001", type = "commune", profil = "velo-compense",
@@ -101,11 +101,9 @@ test_that("publish écrit la projection BPE bornée quand le payload la porte", 
 
   publish(payload, cible)
 
-  expect_true(file.exists(file.path(cible, "profils_acces_bpe.parquet")))
-  expect_true(file.exists(file.path(cible, "profils_acces_bpe.json")))
-  parquet <- nanoparquet::read_parquet(file.path(cible, "profils_acces_bpe.parquet"))
-  json <- jsonlite::fromJSON(file.path(cible, "profils_acces_bpe.json"))
-  verifier_non_derivee(parquet, json, "profils_acces_bpe")
+  expect_false(file.exists(file.path(cible, "profils_acces_bpe.parquet")))
+  expect_false(file.exists(file.path(cible, "profils_acces_bpe_univers.parquet")))
+  expect_false(file.exists(file.path(cible, "profils_acces_bpe.json")))
 })
 
 # verifier_non_derivee (vivante dans helper-payload.R — partagée avec

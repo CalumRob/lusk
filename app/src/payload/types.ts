@@ -407,37 +407,6 @@ export interface HistoireMilieux extends LectureResolueBase {
 
 export type Histoire = HistoireDemographie | HistoireHabitat | HistoireEconomie | HistoireMobilite | HistoireMilieux
 
-/** The closed BPE access-profile vocabulary emitted by the Mobilité pipeline. */
-export const PROFILS_ACCES_BPE = [
-  'acces-pied-tc',
-  'velo-compense',
-  'voiture-requise',
-  'inaccessible-20-minutes',
-] as const
-
-export type ProfilAccesBpe = (typeof PROFILS_ACCES_BPE)[number]
-
-export const LIBELLES_PROFILS_ACCES_BPE: Readonly<Record<ProfilAccesBpe, string>> = {
-  'voiture-requise': 'La voiture est requise',
-  'acces-pied-tc': 'Accès à pied ou en TC possible',
-  'velo-compense': 'Le vélo compense',
-  'inaccessible-20-minutes': 'Inaccessible ou presque en 20 minutes',
-}
-
-/** One bounded public row per (territoire × profile), with at most one exemplar. */
-export interface ProfilAccesBpeRow {
-  territoire: string
-  type: TerritoireType
-  profil: ProfilAccesBpe
-  profil_libelle: string
-  nombre_typequ: number
-  exemplar_typequ: string
-  exemplar_libelle: string
-  exemplar_c: number
-  exemplar_b: number
-  exemplar_t: number
-}
-
 /** Availability state of a published building-distribution territory. */
 export type DistributionAccesBatimentsAvailability = 'complete' | 'incomplete' | 'absent'
 

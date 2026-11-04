@@ -262,7 +262,6 @@ construire_payload_territoire_programmes <- function(programmes, territoires) {
       territoire = character(), type = character(), theme = character(),
       stringsAsFactors = FALSE
     ),
-    profils_acces_bpe = NULL,
       distribution_acces_batiments = NULL,
       rampe_acces_batiments = NULL,
       distribution_acces_batiments_comparaisons = NULL,

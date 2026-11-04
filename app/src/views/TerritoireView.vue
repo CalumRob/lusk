@@ -112,7 +112,6 @@ const payloadReference = computed<Payload | null>(() => {
     runReport: null,
     vintages: null,
     programmes: null,
-    profilsAccesBpe: null,
     distributionAccesBatiments: null,
     rampeAccesBatiments: null,
     themeMetadata,
