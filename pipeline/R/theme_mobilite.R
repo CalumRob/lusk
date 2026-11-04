@@ -190,10 +190,9 @@ VINTAGES_MOBILITE_OCSGE_RESEAUX <- tibble::tribble(
 # vintages_mobilite ------------------------------------------------------------
 # Le builder de vintages du thème : la projection générique depuis le
 # manifeste — une source, SA référence (l'instantané de l'analyse) et SA
-# publication (le portage), jamais alignées. L'export bâtiment est conservé
-# dans le manifeste comme entrée opérationnelle, mais ses projections publiques
-# citent mobilite_snapshot : il ne doit donc pas devenir une seconde ligne de
-# source dans vintages.json. Depuis l'issue #486, les DEUX faits construits du
+# publication (le portage), jamais alignées. L'export bâtiment retiré en #912
+# n'est plus une entrée opérationnelle ; les faits conservés continuent de
+# citer mobilite_snapshot. Depuis l'issue #486, les DEUX faits construits du
 # raccordement voyagent à leurs côtés.
 vintages_mobilite <- function() {
   ids_techniques <- IDS_OCSGE_RESEAUX

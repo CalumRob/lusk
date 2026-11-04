@@ -504,10 +504,12 @@ The standalone AEDAR prototype’s mutually exclusive assignment of every type i
 _Avoid_: profil 53 types (the legacy universe), access requirement (overstates what first-match means about a particular journey), unreachable (the profile only reports the published threshold)
 
 **Calibration de l’univers**:
+**Historical (#910/#912, 2026-11-04):** the following definition records the retired 53-type profile calibration, not the current AEDAR 235-code contract or B316 denominator.
  The fixed access calibration chosen for the pooled territory × Type d’équipement BPE distribution: one flat threshold `U = 25 %` applied identically to `c`, `b`, and `t`, with no entropy-balancing objective. The calibration uses the 53-type universe carried by the BPE24-backed mobility snapshot. It applies unchanged to every territory and type and is not recalculated at display time or separately for an amenity. A territory’s own profile counts may be uneven.
 _Avoid_: seuil local, seuil par équipement, seuil dynamique
 
 **Rareté de profil**:
+**Historical (#910/#912, 2026-11-04):** this exemplar-selection policy belonged to the retired legacy profile producer; it is not an active AEDAR rule.
 The proportion of comparable territories in which the same Type d’équipement BPE receives the same Profil d’accès, measured in the territory’s declared comparison context and excluding unavailable cases. A lower proportion makes a type a more distinctive exemplar when profile-specific signal strength is tied; the Région has no such peer universe.
 _Avoid_: fréquence brute (group sizes differ), exception (rarity describes a profile, not an error)
 
