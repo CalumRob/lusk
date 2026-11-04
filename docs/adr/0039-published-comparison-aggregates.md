@@ -26,6 +26,16 @@ eligibility counts; every new statistic is computed per request from published
 facts in one committed snapshot. Scalar, profile, series and collection families
 are unchanged (median references, published aggregates).
 
+**AEDAR aggregate-reading ranks (owner-approved 2026-11-04, #768):** the AEDAR overview
+aggregate readings (the registry-wide diversity and volume sums the fiche displays) gain
+request-time comparison ranks in BOTH intents — fixed declared contexts (ambient) and
+selected comparisons. The aggregates are computed per request from published per-type
+rows (sum over the registry per member; the group statistic keeps #859's address-weighted
+pooled semantics), and `rank`/`rank_size`/`rank_ties` become selectable for the AEDAR
+fixed intent on the aggregate facets only. Per-cell measures keep #904's boundary
+(selected ranks only). Publications remain reference-only — #810's publication stance is
+unchanged.
+
 ## Decision
 
 For every currently offered comparison context, compute its peer-derived numeric results from canonical pipeline data and publish them as a comparison projection. The API serves those published results for current contexts instead of loading all peer facts and recomputing their aggregates per request. This applies across current comparison families, including scalar/profile, ordered-series, numeric period/detail collections, and AEDAR fixed-context comparisons. The inventory is contract-tested so an in-scope family cannot silently be omitted.
