@@ -58,13 +58,13 @@ function labelColor(row: CahierNetworkBarRow): string {
 
 <template>
   <div class="cahier-network-bar-chart" :aria-label="props.ariaLabel">
-    <div class="cahier-network-bar-chart__header" aria-hidden="true">
+    <div class="cahier-network-bar-chart__header">
       <span />
       <span />
       <span class="cahier-network-bar-chart__header-meta">
         <span class="cahier-network-bar-chart__unit">{{ props.unit }}</span>
-        <span v-if="props.referenceLabel" class="cahier-network-bar-chart__reference-key">
-          <i aria-hidden="true" />{{ props.referenceLabel }}
+        <span v-if="props.referenceLabel" class="cahier-network-bar-chart__reference-key" role="img" :aria-label="`Groupe comparé : ${props.referenceLabel}`">
+          <i aria-hidden="true" />Groupe comparé
         </span>
       </span>
     </div>
@@ -140,7 +140,8 @@ function labelColor(row: CahierNetworkBarRow): string {
 .cahier-network-bar-chart__header,
 .cahier-network-bar-row {
   display: grid;
-  grid-template-columns: minmax(152px, .85fr) minmax(120px, 1.35fr) max-content;
+  /* La clé de référence se replie sur les petites grilles sans les élargir. */
+  grid-template-columns: minmax(152px, .85fr) minmax(120px, 1.35fr) minmax(0, max-content);
   gap: var(--space-2);
   align-items: center;
 }
@@ -172,7 +173,11 @@ function labelColor(row: CahierNetworkBarRow): string {
   color: var(--color-figure-reference);
   font-size: var(--type-figure-tick-size);
   letter-spacing: normal;
-  white-space: nowrap;
+  /* La portée complète reste uniquement dans le nom accessible. */
+  max-inline-size: 40ch;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: end;
 }
 
 .cahier-network-bar-chart__reference-key i {
@@ -263,7 +268,7 @@ function labelColor(row: CahierNetworkBarRow): string {
 @media (max-width: 760px) {
   .cahier-network-bar-chart__header,
   .cahier-network-bar-row {
-    grid-template-columns: minmax(96px, .8fr) minmax(78px, 1fr) max-content;
+    grid-template-columns: minmax(96px, .8fr) minmax(78px, 1fr) minmax(0, max-content);
   }
 }
 </style>

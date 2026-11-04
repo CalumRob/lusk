@@ -26,10 +26,6 @@ const comparisonSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierComparisonValue.vue'),
   'utf8',
 )
-const comparisonNoteSource = readFileSync(
-  join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierComparisonNote.vue'),
-  'utf8',
-)
 const mapPanelSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierMapPanel.vue'),
   'utf8',
@@ -94,7 +90,6 @@ describe('Cahier typography roles', () => {
     expect(cssRule(figureCss, '.cahier-figure-scalar-value')).toContain('letter-spacing: normal')
     expect(cssRule(figureCss, '.cahier-figure-scalar-reference')).toContain('letter-spacing: normal')
     expect(cssRule(comparisonSource, '.cahier-comparison-value')).toContain('letter-spacing: normal')
-    expect(cssRule(comparisonNoteSource, '.cahier-comparison-note')).toContain('letter-spacing: normal')
     expect(cssRule(layoutCss, '.cahier-figure-title')).toContain('letter-spacing: normal')
   })
 

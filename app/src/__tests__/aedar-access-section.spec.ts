@@ -180,13 +180,13 @@ describe('aedarAccessSection', () => {
     })
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     for (const ramp of section.evidence.ramps) {
-      expect(ramp.referenceLabel).toBe('EPCI X')
+      expect(ramp.referenceLabel).toBe('Moyenne de EPCI X')
       expect(Object.keys(ramp.reference ?? {}).sort()).toEqual([...AEDAR_RAMP_MODES].sort())
     }
     // Ten reference types contribute 0.25 each, all remaining types have zero access.
     expect(section.evidence.ramps[0]?.reference?.car).toEqual([2.5, 2.5, 2.5, 2.5])
     expect(section.evidence.ramps[1]?.reference?.walk).toEqual([2.5, 2.5, 2.5, 2.5])
-    expect(section.evidence.comparisonLabel).toBe('moyennes des adresses résidentielles de EPCI X')
+    expect(section.evidence.comparisonLabel).toBe('Moyenne de EPCI X')
     expect(section.evidence.availability).toBe('complete')
   })
 

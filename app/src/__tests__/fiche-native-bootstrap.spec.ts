@@ -130,13 +130,20 @@ describe('fiche — bootstrap natif lean depuis la référence territoire (#868)
       const faitsAvant = lecturesFaits(requetes, annual.resource_id).length
       expect(faitsAvant).toBeGreaterThan(0)
 
-      // Cas de comparaison réel : la portée EPCI déclenche une lecture selected_comparison.
+      // Cas de comparaison réel (#860) : la portée EPCI — déjà le défaut
+      // niveau-natif de la commune — déclenche une lecture selected_comparison
+      // avec la cohorte communale développée de SON EPCI.
+      const reference = JSON.parse(lireDonnee('territoires.json')) as Array<Record<string, any>>
+      const epciCommunes = reference
+        .filter((t) => t.type === 'commune' && t.epci === '200067460')
+        .map((t) => ({ type: 'commune' as const, id: t.territoire }))
+        .sort((a, b) => a.id.localeCompare(b.id))
       await router.push('/territoire/commune/22001?theme=programmes&comparaison=epci')
       await flushPromises()
       const selections = requetes.flatMap((requete) => requete.items ?? [])
         .filter((item) => item.intent.kind === 'selected_comparison')
       expect(selections.length).toBeGreaterThan(0)
-      expect(selections[0]!.intent.members).toEqual([{ type: 'epci', id: '200067460' }])
+      expect(selections[0]!.intent.members).toEqual(epciCommunes)
 
       // Navigation réelle : l'autre commune rend SON identité depuis la référence
       // et relit ses faits natifs — toujours aucun accès statique.

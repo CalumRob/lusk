@@ -4,17 +4,18 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { describe, expect, it } from 'vitest'
 
-import ContexteSwitcher from '../components/fiche/ContexteSwitcher.vue'
+import EchelleTerritoriale from '../components/fiche/EchelleTerritoriale.vue'
 import { territoiresFixture } from '../payload/fixtures'
 import { routes } from '../router'
 import type { Territoire } from '../payload/types'
 
 /**
- * ContexteSwitcher — the rank-in-context ladder (site-map.md §Fiche):
- * commune → son EPCI → son département → la région. It receives the computed
- * ladder (echelleContexte — pure, tested separately) and renders the steps as
- * fiche links, the current territory as a non-link with aria-current="page",
- * chevrons between steps. Steps that don't apply never reach this component.
+ * EchelleTerritoriale — l'échelle territoriale de la fiche (site-map.md
+ * §Fiche, renommé de ContexteSwitcher en #860) : commune → son EPCI → son
+ * département → la région. It receives the computed ladder (echelleContexte —
+ * pure, tested separately) and renders the steps as fiche links, the current
+ * territory as a non-link with aria-current="page", chevrons between steps.
+ * Steps that don't apply never reach this component.
  *
  * Fixture references: [3] Commune C (29002), [5] EPCI Y, [7] Département 29,
  * [8] Bretagne — the full ladder of Commune C.
@@ -22,13 +23,13 @@ import type { Territoire } from '../payload/types'
 
 function monter(echelons: Territoire[]) {
   const router = createRouter({ history: createMemoryHistory(), routes })
-  return mount(ContexteSwitcher, {
+  return mount(EchelleTerritoriale, {
     props: { echelons },
     global: { plugins: [router] },
   })
 }
 
-describe('ContexteSwitcher — the context ladder UI', () => {
+describe('EchelleTerritoriale — the échelle territoriale ladder UI', () => {
   it('renders the parent steps as links to their fiche, in order', () => {
     const wrapper = monter([territoiresFixture[3], territoiresFixture[5], territoiresFixture[7], territoiresFixture[8]])
 
@@ -55,14 +56,19 @@ describe('ContexteSwitcher — the context ladder UI', () => {
     const wrapper = monter([territoiresFixture[0], territoiresFixture[4], territoiresFixture[8]])
 
     // 2 séparateurs pour 3 échelons, placés entre les étapes
-    expect(wrapper.findAll('.contexte-switcher-separateur')).toHaveLength(2)
+    expect(wrapper.findAll('.echelle-territoriale-separateur')).toHaveLength(2)
+  })
+
+  it('names the nav for assistive tech (échelle territoriale, pas « contexte »)', () => {
+    const wrapper = monter([territoiresFixture[8]])
+    expect(wrapper.find('nav').attributes('aria-label')).toBe('Échelle territoriale')
   })
 
   it('renders a single step (la région) without separators or links', () => {
     const wrapper = monter([territoiresFixture[8]])
 
     expect(wrapper.findAll('a')).toHaveLength(0)
-    expect(wrapper.findAll('.contexte-switcher-separateur')).toHaveLength(0)
+    expect(wrapper.findAll('.echelle-territoriale-separateur')).toHaveLength(0)
     expect(wrapper.find('[aria-current="page"]').text()).toBe('Bretagne')
   })
 

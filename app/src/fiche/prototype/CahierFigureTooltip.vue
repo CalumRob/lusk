@@ -40,6 +40,8 @@ withDefaults(
         v-for="row in rows"
         :key="`${row.label}-${row.value}-${row.note ?? ''}`"
         class="cahier-figure-tooltip-row"
+        :role="row.ariaLabel ? 'group' : undefined"
+        :aria-label="row.ariaLabel"
         :class="`cahier-figure-tooltip-row--${row.tone ?? 'neutral'}`"
       >
         <dt>

@@ -339,6 +339,11 @@ try {
   assert(plainFacts, 'Native fixture payload must resolve Mobilité facts for the plain Cahier check')
   const plainContent = resolveMobiliteThemeContent(plainFacts, plainPayload.themeMetadata?.mobilite)
   const plainPagination = cahierPaginationFor(plainPayload, plainContent, true)
+  // Le scénario navigateur 35238 démarre avec le référentiel d’identités conservé,
+  // distinct des fixtures plain ci-dessus. Aucun modèle numérique retiré requis.
+  const territoryReference = JSON.parse(await readFile(
+    resolve(repoRoot, 'public/data/territoires.json'), 'utf8',
+  ))
   // Fixture read-batch pour les lectures non-AEDAR (thème Mobilité) : contrat sémantique,
   // jamais l'ancienne route theme-facts retirée.
   function themeBatchResponse(request) {
@@ -435,6 +440,85 @@ try {
       throw error
     }
     await page.locator('#section-aedar-equipment-explorer').waitFor({ state: 'visible' })
+
+    // #860 : chemin Mobilité de production, pas un montage du contrôle isolé.
+    const trigger = page.locator('.page-heading .bouton-comparaison__declencheur').first()
+    assert(await trigger.isVisible(), `Comparaison absent du Cahier de production à ${width}px`)
+    const heading = await trigger.evaluate((button) => {
+      const root = button.closest('.bouton-comparaison')
+      const heading = button.closest('.page-heading')
+      const theme = heading.querySelector('.page-heading-theme')
+      const style = getComputedStyle(button)
+      const separation = theme.getBoundingClientRect().left - button.getBoundingClientRect().right
+      const withButton = heading.getBoundingClientRect().height
+      root.style.display = 'none'
+      const withoutButton = heading.getBoundingClientRect().height
+      root.style.removeProperty('display')
+      return { withButton, withoutButton, separation, border: style.borderLeftWidth, radius: style.borderRadius }
+    })
+    assert.equal(heading.withButton, heading.withoutButton, `Le bouton agrandit le heading à ${width}px : ${JSON.stringify(heading)}`)
+    assert(heading.separation >= 12 && heading.border === '1px' && heading.radius === '2px',
+      `Le contrôle doit être carré, bordé et séparé du titre à ${width}px : ${JSON.stringify(heading)}`)
+    await trigger.click()
+    const menuBounds = await page.locator('.bouton-comparaison__menu').evaluate((element) => {
+      const { left, right } = element.getBoundingClientRect()
+      return { left, right, viewport: innerWidth }
+    })
+    assert(menuBounds.left >= 0 && menuBounds.right <= menuBounds.viewport,
+      `Menu hors du viewport à ${width}px : ${JSON.stringify(menuBounds)}`)
+    // Fixture de géométrie : une portée longue et un mot insécable doivent se
+    // composer, pas être masqués. Une boîte de span peut tenir même si son texte
+    // déborde (héritage nowrap du heading, régression de la première passe).
+    await page.locator('.bouton-comparaison__option-scope').first().evaluate((element) => {
+      element.textContent = `communes d’une communauté de communes au nom particulièrement long ${'Territoire'.repeat(8)}`
+    })
+    const options = page.locator('.bouton-comparaison__menu [role="menuitemradio"]')
+    for (const option of await options.all()) {
+      await option.hover()
+      const geometry = await option.evaluate((element) => {
+        const panel = element.closest('[role="menu"]')
+        const menu = panel.getBoundingClientRect()
+        const style = getComputedStyle(panel)
+        const contained = [element, ...element.querySelectorAll('span')].every((node) => {
+          const rect = node.getBoundingClientRect()
+          const range = document.createRange()
+          range.selectNodeContents(node)
+          const textRects = [...range.getClientRects()]
+          return !rect.width || ([rect, ...textRects].every((box) =>
+            box.left >= menu.left + 1 && box.right <= menu.right - 1
+            && box.top >= menu.top + 1 && box.bottom <= menu.bottom - 1)
+            && node.scrollWidth <= node.clientWidth + 1)
+        })
+        const range = document.createRange()
+        range.selectNodeContents(panel)
+        const rects = [...range.getClientRects()].filter((rect) => rect.width)
+        return {
+          panel: { width: menu.width, left: menu.left, right: menu.right, height: menu.height,
+            clientWidth: panel.clientWidth, scrollWidth: panel.scrollWidth,
+            clientHeight: panel.clientHeight, scrollHeight: panel.scrollHeight,
+            padding: style.padding, border: style.borderWidth, whiteSpace: style.whiteSpace },
+          contents: { left: Math.min(...rects.map((rect) => rect.left)),
+            right: Math.max(...rects.map((rect) => rect.right)) },
+          contained: contained && panel.scrollWidth <= panel.clientWidth && panel.scrollHeight <= panel.clientHeight,
+        }
+      })
+      assert(geometry.contained, `Contenu hors du panneau à ${width}px : ${JSON.stringify(geometry)}`)
+      if (width === 390 || width === 1440) console.log(`Panneau ${width}px : ${JSON.stringify(geometry)}`)
+    }
+    await trigger.press('Escape')
+    const marks = await page.locator('#section-aedar-car-overview .cahier-comparison-value').evaluateAll((elements) =>
+      elements.map((element) => ({
+        width: element.getBoundingClientRect().width,
+        height: element.getBoundingClientRect().height,
+        text: element.textContent.trim(),
+        overflow: element.scrollWidth > element.clientWidth + 1,
+      })))
+    assert.equal(marks.length, 2, 'Les deux scalaires AEDAR doivent porter leur référence')
+    for (const mark of marks) {
+      assert(mark.width >= 80 && mark.height < 160 && !mark.overflow,
+        `Marque de pair réduite à une colonne de caractères à ${width}px : ${JSON.stringify(mark)}`)
+    }
+    console.log(`Comparaison ${width}px: ${JSON.stringify({ heading, marks })}`)
 
     const w3Visual = await page.evaluate(() => {
       const waffle = document.querySelector('.aedar-waffle')
@@ -1198,31 +1282,49 @@ try {
       values.slice(index * size, (index + 1) * size))
     const coreProjections = chunk(AEDAR_CORE_MEASURE_KEYS, 32)
     const detailProjections = chunk(AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, 32)
-    const expectedAedarBatches = coreProjections.length + detailProjections.length
+    // #860 — défaut niveau-natif : la commune lit aussi les agrégats AEDAR core
+    // de SON EPCI (référence de comparaison), sans détail explorer.
+    const communeCible = territoryReference.find((t) => t.territoire === '35238')
+    const epciReference = communeCible?.epci
+      ? territoryReference.find((t) => t.type === 'epci' && t.territoire === communeCible.epci)
+      : null
+    const expectedAedarBatches = coreProjections.length + detailProjections.length + (epciReference ? coreProjections.length : 0)
     assert.equal(readCalls.aedarBatches, expectedAedarBatches,
-      `Expected ${expectedAedarBatches} semantic read-batch POSTs for the current core/detail field projections at ${width}px; got ${readCalls.aedarBatches}.`)
+      `Expected ${expectedAedarBatches} semantic read-batch POSTs for the core/detail field projections (focal + référence EPCI) at ${width}px; got ${readCalls.aedarBatches}.`)
     const expectedTypequPartitions = chunk(AEDAR_TYPEQU_REGISTRY.map(({ code }) => code), 100)
     const expectedAedarItems = coreProjections.length * expectedTypequPartitions.length + detailProjections.length
+      + (epciReference ? coreProjections.length * expectedTypequPartitions.length : 0)
     assert.equal(readCalls.aedarItems.length, expectedAedarItems,
-      `Expected ${expectedAedarItems} AEDAR resource items across the core universe and explorer projections at ${width}px; got ${readCalls.aedarItems.length}.`)
+      `Expected ${expectedAedarItems} AEDAR resource items across the core universe, explorer projections and EPCI reference at ${width}px; got ${readCalls.aedarItems.length}.`)
     const expectedProjections = [
-      ...coreProjections.map((keys) => ({ fields: keys.map((key) => `measures.${key}`), partitions: expectedTypequPartitions })),
+      ...coreProjections.map((keys) => ({ fields: keys.map((key) => `measures.${key}`), partitions: expectedTypequPartitions, reference: Boolean(epciReference) })),
       ...detailProjections.map((keys) => ({
         fields: keys.map((key) => `measures.${key}`),
         partitions: [[AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU]],
+        reference: false,
       })),
     ]
     for (const projection of expectedProjections) {
       const items = readCalls.aedarItems.filter((item) => JSON.stringify(item.fields) === JSON.stringify(projection.fields))
-      assert.equal(items.length, projection.partitions.length,
+      assert.equal(items.length, projection.partitions.length * (projection.reference ? 2 : 1),
         `Unexpected TYPEQU partition count for AEDAR projection at ${width}px: ${JSON.stringify(projection.fields)}`)
-      for (const [index, item] of items.entries()) {
+      const focal = items.filter((item) => item.target.type === 'commune')
+      const reference = items.filter((item) => item.target.type === 'epci')
+      assert.equal(focal.length, projection.partitions.length, `Focal AEDAR items at ${width}px`)
+      assert.equal(reference.length, projection.reference ? projection.partitions.length : 0, `EPCI reference AEDAR items at ${width}px`)
+      for (const [index, item] of focal.entries()) {
         assert.equal(item.id, `aedar-${index}`, `Unexpected AEDAR item id at ${width}px, projection index ${index}`)
         assert.equal(item.resource, 'aedar_territorial_aggregate', `Unexpected AEDAR resource at ${width}px, item ${index}`)
         assert.deepEqual(item.target, { kind: 'territory', type: 'commune', id: '35238' },
-          `Unexpected AEDAR target at ${width}px, item ${index}`)
+          `Unexpected focal AEDAR target at ${width}px, item ${index}`)
         assert.deepEqual(item.typequ, projection.partitions[index],
           `AEDAR TYPEQU range mismatch at ${width}px, item ${index}; fixture must cover the registered codes in producer order.`)
+      }
+      for (const [index, item] of reference.entries()) {
+        assert.deepEqual(item.target, { kind: 'territory', type: 'epci', id: epciReference.territoire },
+          `Unexpected EPCI reference AEDAR target at ${width}px, item ${index}`)
+        assert.deepEqual(item.typequ, projection.partitions[index],
+          `Reference AEDAR TYPEQU range mismatch at ${width}px, item ${index}.`)
       }
     }
 

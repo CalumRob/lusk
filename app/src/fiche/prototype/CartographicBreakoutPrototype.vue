@@ -18,7 +18,7 @@ import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierProse from './CahierProse.vue'
-import CahierComparisonNote from './CahierComparisonNote.vue'
+
 import type { CahierNetworkBarRow } from './CahierNetworkBarChart.vue'
 import CahierNetworkBarChart from './CahierNetworkBarChart.vue'
 import CahierMapGallery from './CahierMapGallery.vue'
@@ -120,6 +120,7 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
           : formatNumber(props.cyclingEvidence.protectedDensity.fact.value, 2),
         tone: 'b',
         note: comparisonNoteFor(props.cyclingEvidence.protectedDensity),
+        ariaLabel: comparisonAriaFor(props.cyclingEvidence.protectedDensity),
       },
       {
         label: props.cyclingEvidence.sharedDensity.label.split(' — ')[0] ?? props.cyclingEvidence.sharedDensity.label,
@@ -128,13 +129,16 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
           : formatNumber(props.cyclingEvidence.sharedDensity.fact.value, 2),
         tone: 'b',
         note: comparisonNoteFor(props.cyclingEvidence.sharedDensity),
+        ariaLabel: comparisonAriaFor(props.cyclingEvidence.sharedDensity),
       },
     )
   }
   const reference = network.length.fact.comparison?.reference
   if (reference?.value !== null && reference?.value !== undefined) {
     rows.push({
+      // #860, troisième passe : nom bref en visible, portée uniquement en aria.
       label: 'Groupe comparé',
+      ariaLabel: `Groupe comparé : ${props.evidence?.comparisonLabel ?? ''} : ${formatNumber(reference.value, 2)}`,
       value: formatNumber(reference.value, 2),
       marker: 'dot',
       markerColor: 'var(--cahier-region-emphasis)',
@@ -147,7 +151,13 @@ function comparisonNoteFor(fact: CyclingOfferEvidence['protectedDensity']): stri
   const reference = fact.fact.comparison?.reference
   return reference?.value === null || reference?.value === undefined
     ? undefined
-    : `${props.evidence?.comparisonLabel ?? 'Groupe comparé'} : ${formatNumber(reference.value, 2)}`
+    : `Groupe comparé : ${formatNumber(reference.value, 2)}`
+}
+
+function comparisonAriaFor(fact: CyclingOfferEvidence['protectedDensity']): string | undefined {
+  const reference = fact.fact.comparison?.reference
+  if (!reference) return undefined
+  return `${fact.label} : ${fact.fact.value === null ? 'Indisponible' : formatNumber(fact.fact.value, 2)}. Groupe comparé : ${props.cyclingEvidence?.comparisonLabel ?? ''} : ${formatNumber(reference.value, 2)}`
 }
 
 const networkBarUnit = computed(() => networkFor('bike')?.length.fact.unit ?? networkFor('car')?.length.fact.unit ?? '')
@@ -346,7 +356,7 @@ async function inspect(mode: ModeKey): Promise<void> {
               :rows="roadSurfaceRows"
               :maximum="1"
               unit="%"
-              :reference-label="props.evidence?.comparisonLabel ? 'Groupe comparé' : null"
+              :reference-label="props.evidence?.comparisonLabel ?? null"
               aria-label="Emprise routière"
             />
           </div>
@@ -375,7 +385,6 @@ async function inspect(mode: ModeKey): Promise<void> {
              <CahierProse v-if="figureLectureBlocks.length > 0" :blocks="figureLectureBlocks" />
              <p v-if="props.sources?.length" class="plate-sources">Sources : {{ props.sources.join(' · ') }}</p>
            </CahierFigureLecture>
-           <CahierComparisonNote :label="props.evidence?.comparisonLabel ?? null" />
            <PassarelleExploration
             v-if="props.explorationTo"
             class="plate-exploration"

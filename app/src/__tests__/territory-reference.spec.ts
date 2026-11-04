@@ -173,7 +173,12 @@ describe('fiche montée — bootstrap référence sur la route (#868)', () => {
       t.territoire === referenceValidee.find((c) => c.territoire === '22002')!.epci)!
     const selections = lots.flat().filter((item) => item.intent.kind === 'selected_comparison')
     expect(selections.length).toBeGreaterThan(0)
-    expect(selections.at(-1)!.intent.members).toEqual([{ type: 'epci', id: epci22002.territoire }])
+    // #860 — la sélection typée vise la cohorte communale développée de SON EPCI
+    const epci22002Communes = referenceValidee
+      .filter((t) => t.type === 'commune' && t.epci === epci22002.territoire)
+      .map((t) => ({ type: 'commune' as const, id: t.territoire }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+    expect(selections.at(-1)!.intent.members).toEqual(epci22002Communes)
 
     // Une seule lecture de la référence pour toute la navigation ; jamais de
     // modèle par territoire ni de tables numériques globales.

@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+﻿import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -308,18 +308,23 @@ describe('VarianteCahierLibre — AEDAR access', () => {
       'Vélo (LTS4)',
       'Transports en commun',
       'À pied',
-      'EPCI X',
+      'Groupe comparé',
     ])
     const referenceMark = sharedRampLegend[5]!.find('.cahier-figure-legend-mark')
     expect(referenceMark.classes()).toContain('cahier-figure-legend-mark--dash')
 
     // The reference values land in the tooltip note per mode.
     await wrapper.find('.aedar-ramp [aria-label="Temps d\'accès : 15 min"]').trigger('focus')
-    expect(wrapper.find('.aedar-ramp [role="tooltip"]').text()).toContain('EPCI X : 2,5')
-    const note = wrapper.get('[data-section="aedar-access"] .cahier-comparison-note')
-    expect(wrapper.get('.aedar-analysis').element.compareDocumentPosition(note.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(note.text()).toBe('Groupe comparé : moyennes des adresses résidentielles de EPCI X')
-    expect(wrapper.findAll('[data-section="aedar-access"] .cahier-comparison-note')).toHaveLength(1)
+    expect(wrapper.find('.aedar-ramp [role="tooltip"]').text()).toContain('Groupe comparé : 2,5')
+    expect(wrapper.find('.aedar-ramp [role="tooltip"]').text()).not.toContain('EPCI X')
+    expect(wrapper.find('.aedar-ramp [role="tooltip"]').html()).toContain('Moyenne de EPCI X')
+    // #860 (ruling) — une seule légende par figure : la note « Groupe comparé »
+    // séparée est retirée ; la loi de nommage vit dans la légende des modes
+    // (entrée « peer » libellée) et dans les marques de pair des figures.
+    expect(wrapper.findAll('[data-section="aedar-access"] .cahier-comparison-note')).toHaveLength(0)
+    expect(sharedRampLegend[5]!.text()).toBe('Groupe comparé')
+    expect(sharedRampLegend[5]!.attributes('aria-label')).toBe('Groupe comparé : Moyenne de EPCI X')
+    expect(wrapper.findAll('[title]').every((element) => !element.attributes('title')?.includes('EPCI X'))).toBe(true)
 
   })
 
@@ -381,7 +386,7 @@ describe('ProductionMobiliteAedar', () => {
       return { ok: true, json: async () => lossInlineLegend(mode) }
     }))
     const wrapper = mount(ProductionMobiliteAedar, { props: {
-      content, pagination: cahierPaginationFor(payload, content), comparisonOptions: [],
+      content, pagination: cahierPaginationFor(payload, content), 
       aedarData: null, aedarStatus: 'loading', retryAedar: () => {},
     }, global: { plugins: [router] } })
     await flushPromises()
@@ -396,7 +401,7 @@ describe('ProductionMobiliteAedar', () => {
     await router.push({ path: '/territoire/commune/22001' })
     await router.isReady()
     const wrapper = mount(ProductionMobiliteAedar, { props: {
-      content, pagination: cahierPaginationFor(payload, content), comparisonOptions: [],
+      content, pagination: cahierPaginationFor(payload, content), 
       aedarData: null, aedarStatus: 'loading', retryAedar: () => {},
     }, global: { plugins: [router] } })
     await flushPromises()
@@ -474,7 +479,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: { ...aedarReady, facts: aedarFacts(10, { canonicalUniverse: true }) },
         aedarStatus: 'ready',
         retryAedar: () => {},
@@ -566,7 +571,7 @@ describe('ProductionMobiliteAedar', () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     const wrapper = mount(ProductionMobiliteAedar, {
       props: {
-        content, pagination: cahierPaginationFor(payload, content), comparisonOptions: [],
+        content, pagination: cahierPaginationFor(payload, content), 
         aedarData: { ...aedarReady, facts: aedarFacts(10, { canonicalUniverse: true }) },
         aedarStatus: 'ready', retryAedar: () => {},
         aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' },
@@ -588,12 +593,15 @@ describe('ProductionMobiliteAedar', () => {
       .toBeLessThan(overviewHtml.indexOf('class="cahier-evidence-source"'))
     expect(overviewHtml.indexOf('cahier-evidence-source'))
       .toBeLessThan(overviewHtml.indexOf('cahier-figure-scalar'))
-    expect(scalars.map((scalar) => scalar.get('.cahier-comparison-value').text())).toEqual(['Groupe comparé : 2,5', 'Groupe comparé : 2,5'])
+    // #860 (ruling) — la marque de pair de la figure porte la loi de nommage :
+    // « Groupe comparé : <valeur> — <statistique + portée résolue> », une seule légende.
+    expect(scalars.map((scalar) => scalar.get('.cahier-comparison-value').text())).toEqual([
+      'Groupe comparé : 2,5',
+      'Groupe comparé : 2,5',
+    ])
     expect(scalars[0]!.attributes('aria-label')).toContain('Moyenne — EPCI X : 2,5 types / adresse')
     expect(overview.text()).toContain('15 minutes (moyenne par adresse)')
-    const comparisonNotes = overview.findAll('.cahier-comparison-note')
-    expect(comparisonNotes).toHaveLength(1)
-    expect(comparisonNotes[0]!.text()).toBe('Groupe comparé : moyenne des adresses résidentielles de EPCI X')
+    expect(overview.findAll('.cahier-comparison-note')).toHaveLength(0)
     expect(overview.find('.cahier-rank').exists()).toBe(false)
     expect(overview.get('.argument-copy').text()).not.toContain('5 types')
     const exploration = overview.get('.cahier-section-footer button.passarelle-exploration')
@@ -609,7 +617,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: null,
         aedarStatus: 'loading',
         retryAedar: () => {},
@@ -632,7 +640,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: { status: 'error', error: { code: 'publication-unavailable', message: 'N/A' } },
         aedarStatus: 'error',
         retryAedar: () => { retrySpy.called = true },
@@ -657,7 +665,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: aedarReady,
         aedarStatus: 'ready',
         retryAedar: () => {},
@@ -762,7 +770,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: aedarExplorerReady(),
         aedarStatus: 'ready',
         retryAedar: () => {},
@@ -848,7 +856,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: aedarReady,
         aedarStatus: 'ready',
         retryAedar: () => {},
@@ -865,7 +873,7 @@ describe('ProductionMobiliteAedar', () => {
     const section = ((cahierProps.content as ThemeContent).units[0].sections as readonly ContentSection[]).find((candidate) => candidate.key === 'aedar-access') as AedarAccessSection
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     for (const ramp of section.evidence.ramps) {
-      expect(ramp.referenceLabel).toBe('EPCI X')
+      expect(ramp.referenceLabel).toBe('Moyenne de EPCI X')
     }
     // Ten reference types contribute 0.25 each, all remaining types have zero access.
     expect(section.evidence.ramps[0]?.reference?.car).toEqual([2.5, 2.5, 2.5, 2.5])
@@ -879,7 +887,7 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content,
         pagination: cahierPaginationFor(payload, content),
-        comparisonOptions: [],
+        
         aedarData: aedarReady,
         aedarStatus: 'ready',
         retryAedar: () => {},

@@ -8,14 +8,14 @@
  * only lays those two inputs out as the existing Cahier exploration.
  */
 import { CarFront } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
+import BoutonComparaison from '@/components/fiche/BoutonComparaison.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import {
-  OPTIONS_COMPARAISON_KEY,
+  CONTROLE_COMPARAISON_KEY,
 } from '@/fiche/comparisonContext'
-import type { OptionContexteComparaison } from '@/fiche/comparisonContext'
 import type {
   AedarAccessEvidence,
   AedarEquipmentExplorerEvidence,
@@ -44,7 +44,6 @@ import CahierProse from './CahierProse.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
-import CahierComparisonNote from './CahierComparisonNote.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import CahierRoadSurfaceFigure from './CahierRoadSurfaceFigure.vue'
@@ -71,12 +70,14 @@ const props = defineProps<{
   networkFigureVariant?: 'traces'
   showMapPrototype?: boolean
   aedarAccessEnabled?: boolean
-  comparisonOptions?: readonly OptionContexteComparaison[]
   aedarStatus?: 'loading' | 'ready' | 'error'
 }>()
 const route = useRoute()
 
-provide(OPTIONS_COMPARAISON_KEY, computed(() => props.comparisonOptions ?? []))
+/** #860 (ruling 2026-11-03) — le contrôle de comparaison fourni par la fiche
+ *  s'assied dans le page-heading collant, à gauche du titre thème·territoire.
+ *  `null` (prototype hors fiche, Région) : aucun bouton. */
+const controleComparaison = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 
 const rootRef = ref<HTMLElement | null>(null)
 const activeFigure = ref('')
@@ -228,7 +229,8 @@ function aedarAccessModeLegendEntries(evidence: AedarAccessEvidence): readonly F
     })),
     ...(referenceLabel ? [{
       key: 'reference',
-      label: referenceLabel,
+      label: 'Groupe comparé',
+      ariaLabel: `Groupe comparé : ${referenceLabel}`,
       marker: 'dash' as const,
       tone: 'peer',
     }] : []),
@@ -387,6 +389,17 @@ onBeforeUnmount(() => {
                   v-if="props.layoutVariant === 'indexed-sections'"
                   class="page-heading-context"
                 >
+                  <!-- #860 : « Comparaison », aligné à droite, immédiatement à
+                       gauche du titre thème·territoire dans le heading collant. -->
+                  <BoutonComparaison
+                    v-if="controleComparaison"
+                    class="page-heading-comparaison"
+                    :selection="controleComparaison.selection"
+                    :libelle-actif="controleComparaison.libelleActif"
+                    :preset-defaut="controleComparaison.presetDefaut"
+                    :presets="controleComparaison.presets"
+                    @choisir="controleComparaison.choisir"
+                  />
                   <span class="page-heading-theme">{{ props.content.label }}</span>
                   <span class="page-heading-context-separator" aria-hidden="true">·</span>
                   <span class="page-heading-territory" :title="props.content.territory.name">{{ props.content.territory.name }}</span>
@@ -451,11 +464,12 @@ onBeforeUnmount(() => {
                         :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : ''}`"
                       >
                         <template v-if="scalar.reference" #reference>
-                          <CahierComparisonValue :named-reference="scalar.reference" />
+                          <CahierComparisonValue
+                            :named-reference="scalar.reference"
+                          />
                         </template>
                       </CahierFigureScalar>
                     </div>
-                    <CahierComparisonNote :label="aedarCarAccessOverviewEvidenceFor(section)!.comparisonLabel" />
                   </figure>
                 </aside>
               </section>
@@ -549,6 +563,8 @@ onBeforeUnmount(() => {
                         />
                       </figure>
                     </div>
+                    <!-- #860 — la légende des modes porte déjà la référence
+                         (entrée dash « peer ») : aucune seconde légende. -->
                     <CahierFigureLegend
                       class="aedar-access-mode-selector"
                       :entries="aedarAccessModeLegendEntries(aedarAccessEvidenceFor(section)!)"
@@ -558,7 +574,6 @@ onBeforeUnmount(() => {
                       label="Modes de déplacement pour les deux lectures"
                       @toggle="toggleAedarAccessMode"
                     />
-                    <CahierComparisonNote :label="aedarAccessEvidenceFor(section)!.comparisonLabel" />
                   </div>
 
                   <div
@@ -610,11 +625,11 @@ onBeforeUnmount(() => {
                           :evidence="section.evidence"
                           :targets="section.explorationTargets"
                          :network-figure-variant="props.networkFigureVariant"
+                         :comparison-label="section.evidence.comparisonLabel"
                          />
                         <CahierFigureLecture>
                           <CahierProse :blocks="section.evidence.figureLecture" />
                         </CahierFigureLecture>
-                         <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                       </figure>
                     </div>
                     <figure
@@ -626,11 +641,11 @@ onBeforeUnmount(() => {
                         :evidence="section.evidence"
                         :targets="section.explorationTargets"
                         :network-figure-variant="props.networkFigureVariant"
+                        :comparison-label="section.evidence.comparisonLabel"
                       />
                       <CahierFigureLecture>
                         <CahierProse :blocks="section.evidence.figureLecture" />
                       </CahierFigureLecture>
-                      <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                     </figure>
                   </template>
 
@@ -642,11 +657,11 @@ onBeforeUnmount(() => {
                      <CahierSharingFigure
                        :evidence="section.evidence"
                        :targets="section.explorationTargets"
+                       :comparison-label="section.evidence.comparisonLabel"
                      />
                      <CahierFigureLecture>
                        <CahierProse :blocks="section.evidence.figureLecture" />
                      </CahierFigureLecture>
-                     <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                    </figure>
 
                     <figure
@@ -657,11 +672,11 @@ onBeforeUnmount(() => {
                     <CahierSharingFigure
                       :evidence="section.evidence"
                       :targets="section.explorationTargets"
+                      :comparison-label="section.evidence.comparisonLabel"
                     />
                     <CahierFigureLecture>
                       <CahierProse :blocks="section.evidence.figureLecture" />
                     </CahierFigureLecture>
-                    <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                    </figure>
 
                    <figure v-else-if="section.evidence?.kind === 'motorisation'" class="evidence-side evidence-figure">
@@ -866,6 +881,12 @@ onBeforeUnmount(() => {
 .cahier--indexed-sections .page-heading-theme { flex: none; color: var(--cahier-theme-strong); font-weight: 600; }
 .cahier--indexed-sections .page-heading-context-separator { flex: none; color: var(--muted); }
 .cahier--indexed-sections .page-heading-territory { min-width: 0; overflow: hidden; color: var(--accent-primary); font-weight: 600; text-align: right; text-overflow: ellipsis; }
+/* #860 — le bouton « Comparaison » reste centré dans la rangée du heading
+   (align-items: baseline) sans l'épaissir ; le territoire tronque à sa droite. */
+.cahier--indexed-sections .page-heading-comparaison { position: static; align-self: center; flex: none; margin-inline-end: var(--space-2); }
+/* Réserver la colonne de contexte indépendamment du contrôle : son apparition
+   ne doit pas réduire le titre et lui ajouter une ligne sur ordinateur. */
+.cahier--indexed-sections .page-heading-context { position: relative; inline-size: min(32vw, 18rem); }
 .cahier--indexed-sections .page-heading h2 {
   max-width: none;
   text-align: left;
@@ -1093,6 +1114,7 @@ onBeforeUnmount(() => {
     grid-column: 2;
     grid-row: 1;
     max-width: 100%;
+    inline-size: 100%;
   }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 10px; }

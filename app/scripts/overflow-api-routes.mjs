@@ -68,8 +68,11 @@ export function makeApiHandlers(deps) {
       }
       if (themeItems.length) deps.readCalls.themeBatches += 1
       const results = []
-      if (themeItems.length) results.push(...deps.themeBatch({ items: themeItems }).results)
-      if (aedarItems.length) results.push(...deps.aedarBatch({ items: aedarItems }).results)
+      // Compat : themeBatch/aedarBatch peuvent renvoyer un Response (fixture
+      // native) ou un simple { results } (contrôle sans navigateur).
+      const batchResults = async (batch) => (batch && typeof batch.json === 'function' ? (await batch.json()).results : batch?.results) ?? []
+      if (themeItems.length) results.push(...await batchResults(deps.themeBatch({ items: themeItems })))
+      if (aedarItems.length) results.push(...await batchResults(deps.aedarBatch({ items: aedarItems })))
       await route.fulfill({ status: 200, contentType: 'application/json',
         body: JSON.stringify({ contract: 'semantic-read-batch-v1', results }) })
     },

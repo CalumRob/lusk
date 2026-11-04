@@ -107,11 +107,33 @@ describe('AccessRampFigureCahier time ramp', () => {
     expect(lines.filter((line) => line.classes().includes('access-ramp-line--comparison'))).toHaveLength(3)
     await wrapper.find('[aria-label="Temps d\'accès : 15 min"]').trigger('focus')
     expect(wrapper.find('[role="tooltip"]').text()).toContain('15 min')
-    expect(wrapper.find('[role="tooltip"]').text()).toContain('Territoire test · Voiture')
+    expect(wrapper.find('[role="tooltip"]').findAll('dt').map((row) => row.text())).toContain('Voiture')
     expect(wrapper.find('[role="tooltip"]').text()).toContain('4 types')
-    expect(wrapper.find('[role="tooltip"]').text()).toContain('Territoires comparables : Indisponible')
-    expect(wrapper.find('[role="tooltip"]').text()).toContain('Territoire test · À pied')
-    expect(wrapper.find('[role="tooltip"]').text()).toContain('Territoires comparables : 1')
+    expect(wrapper.find('[role="tooltip"]').text()).toContain('Groupe comparé : Indisponible')
+    expect(wrapper.find('[role="tooltip"]').findAll('dt').map((row) => row.text())).toContain('À pied')
+    expect(wrapper.find('[role="tooltip"]').text()).toContain('Groupe comparé : 1')
+    expect(wrapper.find('[role="tooltip"]').text()).not.toContain('Territoires comparables')
+    expect(wrapper.find('[role="tooltip"]').findAll('[aria-label]').some((row) => row.attributes('aria-label')?.includes('Territoires comparables'))).toBe(true)
+  })
+
+  it.each([
+    ['Allineuc', null],
+    ['Allineuc', 'Territoires comparables'],
+    ['BOULANGERIE (B207)', null],
+    ['BOULANGERIE (B207)', 'Territoires comparables'],
+  ] as const)('limite le tooltip au mode et garde le contexte %s en aria (référence %s)', async (context, comparisonLabel) => {
+    const wrapper = mount(AccessRampFigureCahier, {
+      props: { timeRamp: timeRamp({ comparisonLabel }), territoryName: context },
+    })
+    await wrapper.find('[aria-label="Temps d\'accès : 15 min"]').trigger('focus')
+    const tooltip = wrapper.get('[role="tooltip"]')
+    expect(tooltip.findAll('dt').map((row) => row.text())).toEqual(['Voiture'])
+    expect(tooltip.text()).not.toContain(context)
+    expect(tooltip.text()).not.toContain('·')
+    expect(tooltip.get('.cahier-figure-tooltip-row').attributes('aria-label')).toContain(`${context} : Voiture`)
+    expect(wrapper.get('.access-ramp-svg').attributes('aria-label')).toContain(context)
+    expect(tooltip.findAll('[title]').every((element) => !element.attributes('title')?.includes('·'))).toBe(true)
+    wrapper.unmount()
   })
 
   it('uses a zero baseline and integer y-axis ticks for fractional ramp values', () => {
@@ -154,9 +176,10 @@ describe('AccessRampFigureCahier time ramp', () => {
     // One legend entry per mode (line marker in the mode color) plus the reference dash.
     const items = wrapper.findAll('.access-ramp-cahier--time .cahier-figure-legend-item')
     expect(items).toHaveLength(3)
-    expect(items.map((item) => item.text())).toEqual(['Voiture', 'À pied', 'Territoires comparables'])
+    expect(items.map((item) => item.text())).toEqual(['Voiture', 'À pied', 'Groupe comparé'])
+    expect(items[2]!.attributes('aria-label')).toBe('Groupe comparé : Territoires comparables')
     const legend = wrapper.findComponent(CahierFigureLegend)
-    expect(legend.props('entries').map((entry: { label: string }) => entry.label)).toEqual(['Voiture', 'À pied', 'Territoires comparables'])
+    expect(legend.props('entries').map((entry: { label: string }) => entry.label)).toEqual(['Voiture', 'À pied', 'Groupe comparé'])
     expect(legend.props('markColors')).toEqual({
       car: 'var(--cahier-mode-car)',
       walk: 'color-mix(in srgb, var(--cahier-mode-foot) 55%, var(--paper))',

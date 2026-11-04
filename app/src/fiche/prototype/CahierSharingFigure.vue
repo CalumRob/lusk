@@ -21,6 +21,8 @@ const props = defineProps<{
   evidence: SharingNetworksEvidence | CyclingOfferEvidence | SharingParkingEvidence
   targets: readonly ExplorationTarget[]
   networkFigureVariant?: 'traces'
+  /** Portée résolue de la comparaison — portée par les marques de pair de la figure (#860). */
+  comparisonLabel?: string | null
 }>()
 
 type Reading = { key: string; fact: ContentFact }

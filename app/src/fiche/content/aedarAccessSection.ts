@@ -123,7 +123,7 @@ export function aedarAccessSection(
         territory: reference.territory,
       })
     : null
-  const referenceLabel = reference?.label ?? null
+  const referenceLabel = reference ? `Moyenne de ${reference.label}` : null
   const ramps = values.map((ramp) => rampEvidence(ramp, referenceValues, referenceLabel))
   const diversity = ramps.find((ramp) => ramp.rampKey === 'diversity')
   const horizonIndex = diversity?.xAxis.values.indexOf(AEDAR_PROTOTYPE_HORIZON_MINUTES) ?? -1
@@ -157,7 +157,7 @@ export function aedarAccessSection(
       ],
       ramps,
       comparisonLabel: referenceLabel && ramps.some((ramp) => ramp.reference !== null)
-        ? `moyennes des adresses résidentielles de ${referenceLabel}` : null,
+        ? referenceLabel : null,
       sectionProse: [[
         text(`La diversité décrit le nombre de différents types d'équipements (catégories BPE) accessibles sur un total de ${AEDAR_TYPEQU_REGISTRY.length} catégories recensées. Le nombre d’établissements ci-dessous décrit le volume de l’offre, y compris plusieurs établissements d’un même type. Les deux variables sont ici présentées pour chaque mode (sélectionnable via la légende) aux horizons de 5, 10, 15 et 20 minutes pour élucider l'importance que peuvent avoir les temps de trajet dans l'accessibilité des différents modes.`),
       ]],
@@ -315,7 +315,7 @@ export function aedarCarAccessOverviewSection(
       meanDiversity, meanVolume, nAddresses, scalars,
       scalarFigureTitle: carOverviewScalarFigureTitle(horizonMinutes),
       comparisonLabel: reference && scalars.some((scalar) => scalar.reference !== null)
-        ? `moyenne des adresses résidentielles de ${reference.label}` : null,
+        ? `Moyenne de ${reference.label}` : null,
       unitIntroduction: carOverviewUnitIntroduction(territory, nAddresses, source?.source_url ?? null),
       availability, source: means.source,
       prose: carOverviewProse(horizonMinutes),

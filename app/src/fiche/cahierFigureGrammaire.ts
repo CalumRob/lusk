@@ -321,6 +321,8 @@ export type FigureLegendMarker = 'icon' | 'line' | 'dot' | 'dash' | 'square' | '
 export interface FigureLegendEntry {
   key: string
   label: string
+  /** Nom complet réservé aux technologies d’assistance (portée de comparaison). */
+  ariaLabel?: string
   marker: FigureLegendMarker
   iconKey?: string
   tone?: string
@@ -331,6 +333,7 @@ export type CahierTooltipTone = 't' | 'b' | 'c' | 'neutral'
 
 export interface CahierTooltipRow {
   label: string
+  ariaLabel?: string
   value: string
   tone?: CahierTooltipTone
   icon?: Component

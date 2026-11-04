@@ -1,10 +1,11 @@
 /**
- * The context switcher's ladder (site-map.md §Fiche — internal navigation):
- * commune → son EPCI → son département → la région — the rank-in-context
+ * The échelle territoriale ladder (site-map.md §Fiche — internal navigation):
+ * commune → son EPCI → son département → la région — the territory's own
  * ladder, powered by `territoires.epci`. Steps that don't apply are omitted:
  * an EPCI has no EPCI parent (its ladder starts at itself → département →
  * région), the région has no parents (only itself). Pure — payload in,
- * ordered echelons out.
+ * ordered echelons out. (#860 : the component is EchelleTerritoriale — the old
+ * « ContexteSwitcher » name collided with the comparison « Contexte ».)
  */
 
 import { trouverTerritoire } from '@/payload/selectors'

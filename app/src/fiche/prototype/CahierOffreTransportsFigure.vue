@@ -61,7 +61,7 @@ const comparisonLabel = computed(() => {
   const comparison = props.comparisonTrajectory
   if (!comparison) return ''
   const statistic = comparison.statistic === 'mean' ? 'Moyenne' : comparison.statistic
-  return `${statistic} · ${comparison.scope.label} · ${comparison.eligibleCount}`
+  return `${statistic} des ${comparison.scope.label}`
 })
 const markerPoint = computed(() => props.metadata?.marker
   ? props.trajectory.find(item => item.fact.detail === props.metadata?.marker?.detail && item.fact.value !== null)
@@ -119,7 +119,7 @@ function yPosition(value: number): number {
       </div>
       <figcaption class="transit-legend">
         <span class="transit-legend-territory" role="img" aria-label="Série du territoire"><span aria-hidden="true" />Territoire</span>
-        <span v-if="comparisonTrajectory" class="transit-legend-comparison" role="img" :aria-label="comparisonLabel"><span aria-hidden="true" />{{ comparisonLabel }}</span>
+        <span v-if="comparisonTrajectory" class="transit-legend-comparison" role="img" :aria-label="`Groupe comparé : ${comparisonLabel}`"><span aria-hidden="true" />Groupe comparé</span>
       </figcaption>
     </figure>
     <p v-else class="transit-unavailable">Trajectoire indisponible.</p>
