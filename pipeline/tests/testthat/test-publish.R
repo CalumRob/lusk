@@ -96,6 +96,9 @@ test_that("publish ne recrée pas la projection BPE retirée", {
     exemplar_libelle = "Spécialiste en dermatologie vénéréologie",
     exemplar_c = 0.1, exemplar_b = 0.4, exemplar_t = 0.1
   )
+  payload$profils_acces_bpe_univers <- tibble::tibble(
+    territoire = "22001", type = "commune", typequ = "D267"
+  )
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
 
