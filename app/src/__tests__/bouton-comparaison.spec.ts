@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import BoutonComparaison from '../components/fiche/BoutonComparaison.vue'
 import type {
@@ -47,52 +47,12 @@ afterEach(() => {
 })
 
 describe('BoutonComparaison — face « Comparaison » du page-heading collant (#860 ruling)', () => {
-  it('garde le focus dans le sheet mobile, bloque le fond et rend le focus à la fermeture', async () => {
-    const media = vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true } as MediaQueryList)
-    const wrapper = monter({ etat: 'vide' }, { focal: { type: 'commune', territoire: '1', nom: 'Étel' }, territoires: [] })
-    const overflow = document.body.style.overflow
+  it('garde les presets, Personnalisé et aucune comparaison dans son menu — sans liste ni recherche', async () => {
+    const wrapper = monter({ etat: 'defaut' })
     await wrapper.get('.bouton-comparaison__declencheur').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[role="dialog"]').attributes('aria-modal')).toBe('true')
-    expect(document.body.style.overflow).toBe('hidden')
-    const fermer = wrapper.get('[aria-label="Fermer la comparaison"]')
-    expect(document.activeElement).toBe(fermer.element)
-    await fermer.trigger('keydown', { key: 'Tab', shiftKey: true })
-    expect(document.activeElement).toBe(wrapper.get('input[type="search"]').element)
-    await wrapper.get('input[type="search"]').trigger('keydown', { key: 'Tab' })
-    expect(document.activeElement).toBe(fermer.element)
-    await fermer.trigger('keydown', { key: 'Escape' })
-    await flushPromises()
-    expect(document.body.style.overflow).toBe(overflow)
-    expect(document.activeElement).toBe(wrapper.get('.bouton-comparaison__declencheur').element)
-    wrapper.unmount()
-    media.mockRestore()
-  })
-  it('construit un groupe explicite : focal retirable, recherche au même niveau et nombre actif', async () => {
-    const focal = { type: 'commune', territoire: '1', nom: 'Étel' }
-    const wrapper = monter({ etat: 'defaut' }, {
-      focal,
-      territoires: [focal, { ...focal, territoire: '2', nom: 'Erdeven' }, { type: 'epci', territoire: 'E', nom: 'Erdeven communauté' }],
-    })
-    await wrapper.get('.bouton-comparaison__declencheur').trigger('click')
-    await wrapper.get('[data-testid="personnaliser-comparaison"]').trigger('click')
-    const initial = { etat: 'membres', membres: [{ territory_type: 'commune', territory_id: '1' }] }
-    expect(wrapper.emitted('choisir')?.at(-1)).toEqual([initial])
-    await wrapper.setProps({ selection: initial as SelectionComparaison })
-    expect(wrapper.get('input[type="search"]').attributes('aria-label')).toBe('Rechercher un territoire du même niveau')
-    expect(wrapper.get('.bouton-comparaison__type').text()).toBe('1 membre')
-    await wrapper.get('input[type="search"]').setValue('erdeven')
-    expect(wrapper.findAll('[data-testid="ajouter-membre"]').map((item) => item.text())).toEqual(['Ajouter Erdeven'])
-    await wrapper.get('[data-testid="ajouter-membre"]').trigger('click')
-    expect(wrapper.emitted('choisir')?.at(-1)).toEqual([{ etat: 'membres', membres: [
-      { territory_type: 'commune', territory_id: '1' }, { territory_type: 'commune', territory_id: '2' },
-    ] }])
-    await wrapper.get('[aria-label="Retirer Étel"]').trigger('click')
-    expect(wrapper.emitted('choisir')?.at(-1)).toEqual([{ etat: 'vide' }])
-    await wrapper.setProps({ selection: { etat: 'vide' } })
-    expect(wrapper.find('[aria-label="Retirer Étel"]').exists()).toBe(false)
-    await wrapper.get('[aria-label="Fermer la comparaison"]').trigger('click')
+    expect(wrapper.find('.membres-comparaison').exists()).toBe(false)
     expect(wrapper.find('input[type="search"]').exists()).toBe(false)
+    expect(wrapper.findAll('[role="menuitemradio"]')).toHaveLength(5)
     wrapper.unmount()
   })
   it('porte un état pressé papier sur le déclencheur et chaque option (DESIGN §6)', () => {
@@ -119,8 +79,8 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
     [{ etat: 'preset', preset: 'densite' }, 'Densité INSEE'],
     [{ etat: 'preset', preset: 'bretagne' }, 'Bretagne'],
     [{ etat: 'vide' }, 'Aucune'],
-    [{ etat: 'membres', membres: [{ territory_type: 'commune', territory_id: '22001' }] }, '1 membre'],
-    [{ etat: 'membres', membres: [{ territory_type: 'commune', territory_id: '22001' }, { territory_type: 'commune', territory_id: '22002' }] }, '2 membres'],
+    [{ etat: 'membres', membres: [{ territory_type: 'commune', territory_id: '22001' }] }, 'Personnalisé'],
+    [{ etat: 'membres', membres: [{ territory_type: 'commune', territory_id: '22001' }, { territory_type: 'commune', territory_id: '22002' }] }, 'Personnalisé'],
   ] as const)('montre le type ou le nombre de membres sans ouvrir le menu (%s)', (selection, token) => {
     const wrapper = monter(selection)
     expect(wrapper.get('.bouton-comparaison__type').text()).toBe(token)
@@ -154,13 +114,14 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
       'EPCI',
       'Bretagne',
       'Densité INSEE',
+      'Personnalisé',
       'Aucune comparaison',
     ])
     expect(entrees[0]!.get('.bouton-comparaison__option-scope').text()).toBe('communes de EPCI X')
     expect(wrapper.get('[role="menu"]').text()).not.toContain('·')
     expect(wrapper.text()).not.toContain('Par défaut')
     // état défaut → le preset niveau-natif (epci) est l'entrée cochée
-    expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['true', 'false', 'false', 'false'])
+    expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['true', 'false', 'false', 'false', 'false'])
     wrapper.unmount()
   })
 
@@ -168,7 +129,7 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
     const presetActif = monter({ etat: 'preset', preset: 'densite' }, { libelleActif: 'grands centres urbains bretons' })
     await presetActif.get('.bouton-comparaison__declencheur').trigger('click')
     const entrees = presetActif.findAll('[role="menuitemradio"]')
-    expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['false', 'false', 'true', 'false'])
+    expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['false', 'false', 'true', 'false', 'false'])
     const densite = entrees[2]!
     expect(densite.attributes('aria-describedby')).toBeTruthy()
     expect(presetActif.get(`#${densite.attributes('aria-describedby')}`).text()).toBe('grands centres urbains bretons')
@@ -178,8 +139,23 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
     const vide = monter({ etat: 'vide' }, { libelleActif: 'Aucune comparaison' })
     await vide.get('.bouton-comparaison__declencheur').trigger('click')
     expect(vide.findAll('[role="menuitemradio"]').map((e) => e.attributes('aria-checked')))
-      .toEqual(['false', 'false', 'false', 'true'])
+      .toEqual(['false', 'false', 'false', 'false', 'true'])
     vide.unmount()
+  })
+
+  it('coche Personnalisé et ouvre le constructeur sans le traiter comme une portée', async () => {
+    const custom: SelectionComparaison = { etat: 'membres', membres: [
+      { territory_type: 'commune', territory_id: '22001' },
+    ] }
+    const wrapper = monter(custom)
+    await wrapper.get('.bouton-comparaison__declencheur').trigger('click')
+    const customEntry = wrapper.findAll('[role="menuitemradio"]')[3]!
+    expect(customEntry.get('.bouton-comparaison__option-label').text()).toBe('Personnalisé')
+    expect(customEntry.attributes('aria-checked')).toBe('true')
+    await customEntry.trigger('click')
+    expect(wrapper.emitted('construire')).toHaveLength(1)
+    expect(wrapper.emitted('choisir')).toBeUndefined()
+    wrapper.unmount()
   })
 
   it('émet la Sélection typée choisie : preset, vide explicite, preset du défaut', async () => {
@@ -191,7 +167,7 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
     expect(wrapper.emitted('choisir')?.[0]).toEqual([{ etat: 'preset', preset: 'bretagne' }])
 
     await wrapper.get('.bouton-comparaison__declencheur').trigger('click')
-    await wrapper.findAll('[role="menuitemradio"]')[3]!.trigger('click')
+    await wrapper.findAll('[role="menuitemradio"]')[4]!.trigger('click')
     expect(wrapper.emitted('choisir')?.[1]).toEqual([{ etat: 'vide' }])
 
     // choisir le preset coché par défaut écrit le preset explicite dans l'URL

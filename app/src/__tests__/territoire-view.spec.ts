@@ -1653,7 +1653,7 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
       }
       return servir(input, init)
     }))
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=', chargerReferenceReelle)
     await flushPromises()
     expect(wrapper.find('.transit-point--territory').exists()).toBe(true)
     refuser = true
@@ -1672,12 +1672,11 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
   it('construit au même niveau, acquiert les membres visibles et recharge le lien partagé sans réinsérer le focal (#861)', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=', chargerReferenceReelle)
     await flushPromises()
-    await wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
-    await wrapper.get('[data-testid="personnaliser-comparaison"]').trigger('click')
+    await wrapper.get('.page-heading [aria-label="Construire un groupe de comparaison"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query.comparaison).toBe('commune:22001')
+    expect(router.currentRoute.value.query.comparaison).toBe('')
     await wrapper.get('input[type="search"]').setValue('22002')
     await wrapper.get('[data-testid="ajouter-membre"]').trigger('click')
     await flushPromises()
@@ -1691,7 +1690,7 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     const reload = await monter(lien, chargerReferenceReelle)
     await flushPromises()
     expect(reload.router.currentRoute.value.query.comparaison).toBe('commune:22002')
-    await reload.wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
+    await reload.wrapper.get('.page-heading [aria-label="Construire un groupe de comparaison"]').trigger('click')
     expect(reload.wrapper.get('.membres-comparaison').text()).toContain(cibleReference('22002').nom)
     expect(reload.wrapper.find(`[aria-label="Retirer ${cibleReference('22001').nom}"]`).exists()).toBe(false)
     reload.wrapper.unmount()
@@ -1712,10 +1711,13 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     // face laconique « Comparaison » ; la portée ride dans le nom accessible
     expect(bouton.find('.bouton-comparaison__texte').text()).toBe('Comparaison')
     expect(bouton.attributes('aria-label')).toBe(`Comparaison : ${porteeDefaut}`)
-    expect(bouton.attributes('aria-haspopup')).toBe('dialog')
+    expect(bouton.attributes('aria-haspopup')).toBe('menu')
+    expect(heading.find('[aria-label="Construire un groupe de comparaison"]').exists()).toBe(true)
     // aligné à droite, immédiatement à gauche du titre « thème · territoire »
     const contexte = heading.get('.page-heading-context')
-    expect(contexte.element.firstElementChild).toBe(wrapper.find('.bouton-comparaison').element)
+    expect(contexte.element.firstElementChild).toBe(wrapper.find('.page-heading-comparaison-controls').element)
+    expect(wrapper.find('.page-heading-comparaison-controls').element.firstElementChild)
+      .toBe(wrapper.find('.bouton-comparaison').element)
     expect(contexte.get('.page-heading-theme').text()).toBe('Mobilité')
 
     // Le défaut niveau-natif (EPCI de la commune) a déjà été acquis en
@@ -1730,6 +1732,20 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     wrapper.unmount()
   })
 
+  it('ouvre le constructeur depuis Personnalisé sans transformer le défaut en sélection explicite', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
+    await flushPromises()
+    await wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
+    await wrapper.findAll('[role="menuitemradio"]')[3]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.comparaison).toBeUndefined()
+    expect(wrapper.get('dialog[aria-modal="true"]').text()).toContain('Construire un groupe de comparaison')
+    expect(wrapper.get('input[type="search"]').attributes('aria-label')).toBe('Rechercher un territoire du même niveau')
+    wrapper.unmount()
+  }, 20_000)
+
   it('le menu des presets (sans « Par défaut ») pilote l’URL et la passe d’acquisition par thème actif', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
@@ -1741,7 +1757,7 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     const entrees = wrapper.findAll('[role="menuitemradio"]')
     const labels = entrees.map((e) => e.find('.bouton-comparaison__option-label').text())
     expect(labels).toEqual([
-      'EPCI', 'Bretagne', 'Densité INSEE', 'Aucune comparaison',
+      'EPCI', 'Bretagne', 'Densité INSEE', 'Personnalisé', 'Aucune comparaison',
     ])
     expect(entrees.slice(0, 3).map((entry) => entry.get('.bouton-comparaison__option-scope').text())).toEqual([
       contextesReference('22001').epci!.scope.label,
@@ -1750,7 +1766,7 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     ])
     expect(wrapper.text()).not.toContain('Par défaut')
     // param absent → le preset niveau-natif (epci) est coché
-    expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['true', 'false', 'false', 'false'])
+    expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['true', 'false', 'false', 'false', 'false'])
 
     // Choisir le preset Bretagne écrit ?comparaison=bretagne et lance une
     // passe selected_comparison avec toutes les communes bretonnes.
@@ -1769,7 +1785,7 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
 
     // La sélection vide explicite écrit ?comparaison= et part avec [].
     await wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
-    await wrapper.findAll('[role="menuitemradio"]')[3]!.trigger('click')
+    await wrapper.findAll('[role="menuitemradio"]')[4]!.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBe('')
     expect(selectedBatchesWith([]).length).toBeGreaterThan(0)

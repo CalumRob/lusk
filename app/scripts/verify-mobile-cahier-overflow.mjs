@@ -1500,31 +1500,30 @@ try {
 
     // #861 : après les assertions d'acquisition du défaut ci-dessus, pour ne
     // pas confondre leurs compteurs avec les lectures de cette nouvelle sélection.
-    await trigger.click()
-    await page.getByTestId('personnaliser-comparaison').click()
-    const searchMember = page.locator('.membres-comparaison input[type="search"]')
+    const builderTrigger = page.locator('.page-heading [aria-label="Construire un groupe de comparaison"]').first()
+    await builderTrigger.click()
+    const searchMember = page.locator('dialog[open] .membres-comparaison input[type="search"]')
     await searchMember.waitFor({ state: 'visible' })
     await searchMember.fill('22002')
     await page.getByTestId('ajouter-membre').click()
-    await page.locator('.membres-comparaison li').filter({ hasText: 'Andel' }).waitFor()
-    const builder = await page.locator('.bouton-comparaison__menu').evaluate((element) => {
+    await page.locator('dialog[open] .membres-comparaison li').filter({ hasText: 'Andel' }).waitFor()
+    const builder = await page.locator('dialog[open].cahier-dialog').evaluate((element) => {
       const box = element.getBoundingClientRect()
       const style = getComputedStyle(element)
       const targets = [...element.querySelectorAll('.membres-comparaison button, input')]
-      return { left: box.left, right: box.right, bottom: box.bottom, position: style.position,
+      return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, position: style.position,
         viewportHeight: innerHeight, overflow: element.scrollWidth > element.clientWidth,
+        modal: element.getAttribute('aria-modal'),
         targets: targets.map((target) => target.getBoundingClientRect().height) }
     })
-    assert(!builder.overflow && builder.left >= 0 && builder.right <= width,
+    assert(!builder.overflow && builder.left >= 0 && builder.right <= width && builder.top >= 0 && builder.bottom <= builder.viewportHeight,
       `Constructeur hors du viewport à ${width}px : ${JSON.stringify(builder)}`)
+    assert.equal(builder.modal, 'true', 'Le constructeur doit être un dialogue modal')
     assert(builder.targets.every((height) => height >= 44), `Cibles constructeur <44px : ${JSON.stringify(builder)}`)
-    if (width < 640) assert(builder.position === 'fixed' && Math.abs(builder.bottom - builder.viewportHeight) < 1,
-      `Le constructeur mobile doit être un bottom sheet : ${JSON.stringify(builder)}`)
-    else assert(builder.position === 'fixed' && builder.bottom < builder.viewportHeight,
-      'Le constructeur desktop doit être un dropdown ancré au contrôle, pas un sheet')
+    assert.equal(builder.position, 'fixed', 'Le constructeur doit utiliser la couche modale native')
     if (width === 390 || width === 1440) await page.screenshot({ path: resolve(evidenceDir, `issue861-constructeur-${width}.png`), fullPage: false })
-    await page.getByRole('button', { name: 'Fermer la comparaison', exact: true }).click()
-    assert.equal(await trigger.getAttribute('aria-expanded'), 'false')
+    await page.getByRole('button', { name: 'Fermer la fenêtre', exact: true }).click()
+    assert.equal(await builderTrigger.getAttribute('aria-expanded'), 'false')
 
     let plainMarginLayout = null
     if (width === 601 || width === 760) {
