@@ -26,8 +26,6 @@
  */
 
 import type {
-  DistributionAccesBatimentsRow,
-  DistributionAccesBatimentsAvailability,
   RampeAccesBatimentsRow,
   Histoire,
   HistoireEconomie,
@@ -57,10 +55,6 @@ import {
   RAISONS_SAILLANCE,
   THEMES_CANONIQUES,
   TYPES_NOEUD_TEXTE_RICHE,
-  DISTRIBUTION_ACCES_BATIMENTS_MODE_LABEL,
-  DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL,
-  DISTRIBUTION_ACCES_BATIMENTS_DEPTH_LABEL,
-  DISTRIBUTION_ACCES_BATIMENTS_GRID_SIZE,
   RAMPE_ACCES_BATIMENTS_X_LABEL,
   RAMPE_ACCES_BATIMENTS_Y_LABEL,
   RAMPE_ACCES_BATIMENTS_QUANTILE_COUNT,
@@ -1567,205 +1561,6 @@ function lireHistoireMilieux(
   }
 }
 
-/**
- * The compact same-building breadth × depth projection (#550). Bucket labels
- * and boundaries are payload-owned; the validator checks that each cell is
- * internally coherent without recreating the upstream ranges in the renderer.
- */
-export function validerDistributionAccesBatiments(
-  brut: unknown,
-  fichier: string,
-  territoires: Territoire[],
-): DistributionAccesBatimentsRow[] | null {
-  if (brut === null) return null
-  exiger(Array.isArray(brut), fichier, 0, 'la distribution des bâtiments doit être un tableau')
-  const reference = indexerReference(territoires)
-  const vus = new Set<string>()
-
-  const lireNombreNullable = (ligne: LigneBrute, champ: string, i: number): number | null => {
-    const valeur = ligne[champ]
-    exiger(valeur === null || estNombre(valeur), fichier, i, `« ${champ} » doit être un nombre ou null`)
-    return valeur as number | null
-  }
-
-  const lignes = (brut as unknown[]).map((ligne, i): DistributionAccesBatimentsRow => {
-    const ligneIndexee = i + 1
-    exiger(estObjet(ligne), fichier, ligneIndexee, 'chaque cellule doit être un objet')
-    verifierReference(ligne, reference, fichier, ligneIndexee)
-
-    const territoire = ligne['territoire'] as string
-    const type = lireType(ligne, fichier, ligneIndexee)
-    const availability = ligne['availability']
-    exiger(
-      availability === 'complete' || availability === 'incomplete' || availability === 'absent',
-      fichier,
-      ligneIndexee,
-      `« availability » inconnu « ${String(availability)} »`,
-    )
-    const totalBuildings = ligne['total_buildings']
-    exiger(
-      estNombre(totalBuildings) && totalBuildings >= 0 && Number.isInteger(totalBuildings),
-      fichier,
-      ligneIndexee,
-      '« total_buildings » doit être un entier positif ou nul',
-    )
-
-    const lireChaineNullable = (champ: string): string | null => {
-      const valeur = ligne[champ]
-      exiger(valeur === null || estChaineNonVide(valeur), fichier, ligneIndexee, `« ${champ} » doit être une chaîne non vide ou null`)
-      return valeur as string | null
-    }
-    const breadthBucket = lireChaineNullable('breadth_bucket')
-    const breadthMin = lireNombreNullable(ligne, 'breadth_min', ligneIndexee)
-    const breadthMax = lireNombreNullable(ligne, 'breadth_max', ligneIndexee)
-    const breadthLabel = lireChaineNullable('breadth_label')
-    const depthBucket = lireChaineNullable('depth_bucket')
-    const depthMin = lireNombreNullable(ligne, 'depth_min', ligneIndexee)
-    const depthMax = lireNombreNullable(ligne, 'depth_max', ligneIndexee)
-    const depthLabel = lireChaineNullable('depth_label')
-    const buildingCount = lireNombreNullable(ligne, 'building_count', ligneIndexee)
-    const share = lireNombreNullable(ligne, 'share', ligneIndexee)
-    const mode = ligne['mode']
-    exiger(mode === 't', fichier, ligneIndexee, '« mode » doit être « t »')
-    const modeLabel = lireChaine(ligne, 'mode_label', fichier, ligneIndexee)
-    exiger(modeLabel === DISTRIBUTION_ACCES_BATIMENTS_MODE_LABEL, fichier, ligneIndexee, '« mode_label » incohérent')
-    const breadthAxisLabel = lireChaine(ligne, 'breadth_axis_label', fichier, ligneIndexee)
-    const depthAxisLabel = lireChaine(ligne, 'depth_axis_label', fichier, ligneIndexee)
-    exiger(breadthAxisLabel === DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL, fichier, ligneIndexee, '« breadth_axis_label » incohérent')
-    exiger(depthAxisLabel === DISTRIBUTION_ACCES_BATIMENTS_DEPTH_LABEL, fichier, ligneIndexee, '« depth_axis_label » incohérent')
-    const sourceId = lireChaine(ligne, 'source_id', fichier, ligneIndexee)
-    const source = lireChaine(ligne, 'source', fichier, ligneIndexee)
-    const version = lireChaine(ligne, 'version', fichier, ligneIndexee)
-    const dateReference = lireChaine(ligne, 'date_reference', fichier, ligneIndexee)
-    const datePublication = lireChaine(ligne, 'date_publication', fichier, ligneIndexee)
-    exiger(estDateIso(dateReference), fichier, ligneIndexee, '« date_reference » doit être une date ISO')
-    exiger(estDateIso(datePublication), fichier, ligneIndexee, '« date_publication » doit être une date ISO')
-    const comparisonLabel = lireChaineNullable('comparison_label')
-    const comparisonTotalBuildings = lireNombreNullable(ligne, 'comparison_total_buildings', ligneIndexee)
-    const comparisonBuildingCount = lireNombreNullable(ligne, 'comparison_building_count', ligneIndexee)
-    const comparisonShare = lireNombreNullable(ligne, 'comparison_share', ligneIndexee)
-
-    const cle = `${territoire}\u0000${type}\u0000${breadthBucket ?? ''}\u0000${depthBucket ?? ''}`
-    exiger(!vus.has(cle), fichier, ligneIndexee, 'cellule en double pour ce territoire et ces tranches')
-    vus.add(cle)
-
-    if (availability === 'absent') {
-      exiger(totalBuildings === 0, fichier, ligneIndexee, 'un territoire absent doit avoir zéro bâtiment')
-      exiger(
-        breadthBucket === null && breadthMin === null && breadthMax === null && breadthLabel === null &&
-          depthBucket === null && depthMin === null && depthMax === null && depthLabel === null &&
-          buildingCount === null && share === null && comparisonLabel === null &&
-          comparisonTotalBuildings === null && comparisonBuildingCount === null && comparisonShare === null,
-        fichier,
-        ligneIndexee,
-        'un territoire absent ne doit pas porter de cellule',
-      )
-    } else {
-      exiger(totalBuildings >= 1, fichier, ligneIndexee, 'un territoire présent doit avoir un dénominateur positif')
-      exiger(breadthBucket !== null && breadthMin !== null && breadthLabel !== null, fichier, ligneIndexee, 'la tranche breadth est requise')
-      exiger(depthBucket !== null && depthMin !== null && depthLabel !== null, fichier, ligneIndexee, 'la tranche depth est requise')
-      exiger(breadthMax === null || breadthMax >= breadthMin!, fichier, ligneIndexee, 'les bornes breadth sont incohérentes')
-      exiger(depthMax === null || depthMax >= depthMin!, fichier, ligneIndexee, 'les bornes depth sont incohérentes')
-      exiger(buildingCount !== null && Number.isInteger(buildingCount) && buildingCount >= 0, fichier, ligneIndexee, '« building_count » doit être un entier positif ou nul')
-      exiger(share !== null && share >= 0 && share <= 1, fichier, ligneIndexee, '« share » doit être dans [0, 1]')
-      if (comparisonLabel === null) {
-        exiger(
-          comparisonTotalBuildings === null && comparisonBuildingCount === null && comparisonShare === null,
-          fichier,
-          ligneIndexee,
-          'les valeurs du groupe comparé doivent être absentes avec son libellé',
-        )
-      } else {
-        exiger(comparisonTotalBuildings !== null && Number.isInteger(comparisonTotalBuildings) && comparisonTotalBuildings >= 1, fichier, ligneIndexee, '« comparison_total_buildings » doit être un entier positif')
-        exiger(comparisonBuildingCount !== null && Number.isInteger(comparisonBuildingCount) && comparisonBuildingCount >= 0 && comparisonBuildingCount <= comparisonTotalBuildings, fichier, ligneIndexee, '« comparison_building_count » est invalide')
-        exiger(comparisonShare !== null && comparisonShare >= 0 && comparisonShare <= 1, fichier, ligneIndexee, '« comparison_share » doit être dans [0, 1]')
-      }
-    }
-
-    return {
-      territoire,
-      type,
-      availability: availability as DistributionAccesBatimentsAvailability,
-      total_buildings: totalBuildings as number,
-      breadth_bucket: breadthBucket,
-      breadth_min: breadthMin,
-      breadth_max: breadthMax,
-      breadth_label: breadthLabel,
-      depth_bucket: depthBucket,
-      depth_min: depthMin,
-      depth_max: depthMax,
-      depth_label: depthLabel,
-      building_count: buildingCount,
-      share,
-      mode,
-      mode_label: modeLabel,
-      breadth_axis_label: breadthAxisLabel,
-      depth_axis_label: depthAxisLabel,
-      source_id: sourceId,
-      source,
-      version,
-      date_reference: dateReference,
-      date_publication: datePublication,
-      comparison_label: comparisonLabel,
-      comparison_total_buildings: comparisonTotalBuildings,
-      comparison_building_count: comparisonBuildingCount,
-      comparison_share: comparisonShare,
-    }
-  })
-
-  const groupes = new Map<string, DistributionAccesBatimentsRow[]>()
-  for (const ligne of lignes) {
-    const cle = `${ligne.territoire}\u0000${ligne.type}`
-    const groupe = groupes.get(cle) ?? []
-    groupe.push(ligne)
-    groupes.set(cle, groupe)
-  }
-  for (const groupe of groupes.values()) {
-    const etat = groupe[0]!.availability
-    exiger(groupe.every((ligne) => ligne.availability === etat), fichier, 0, 'états mélangés pour un territoire')
-    if (etat !== 'absent') {
-      const total = groupe[0]!.total_buildings
-      exiger(
-        groupe.length === DISTRIBUTION_ACCES_BATIMENTS_GRID_SIZE,
-        fichier,
-        0,
-        'la grille de cellules est incomplète',
-      )
-      exiger(
-        groupe.every((ligne) =>
-          ligne.total_buildings === total &&
-          ligne.mode === groupe[0]!.mode &&
-          ligne.mode_label === groupe[0]!.mode_label &&
-          ligne.breadth_axis_label === groupe[0]!.breadth_axis_label &&
-          ligne.depth_axis_label === groupe[0]!.depth_axis_label &&
-          ligne.source_id === groupe[0]!.source_id &&
-          ligne.source === groupe[0]!.source &&
-          ligne.version === groupe[0]!.version &&
-           ligne.date_reference === groupe[0]!.date_reference &&
-           ligne.date_publication === groupe[0]!.date_publication &&
-           ligne.comparison_label === groupe[0]!.comparison_label &&
-           ligne.comparison_total_buildings === groupe[0]!.comparison_total_buildings,
-        ),
-        fichier,
-        0,
-        'les métadonnées ou le dénominateur divergent dans un territoire',
-      )
-      const compte = groupe.reduce((somme, ligne) => somme + (ligne.building_count ?? 0), 0)
-      const part = groupe.reduce((somme, ligne) => somme + (ligne.share ?? 0), 0)
-      exiger(compte === total, fichier, 0, 'les cellules ne recomposent pas total_buildings')
-      exiger(Math.abs(part - 1) <= 1e-12, fichier, 0, 'les parts de cellules ne recomposent pas 1')
-      if (groupe[0]!.comparison_label !== null) {
-        const comparisonTotal = groupe[0]!.comparison_total_buildings!
-        const comparisonCount = groupe.reduce((somme, ligne) => somme + (ligne.comparison_building_count ?? 0), 0)
-        const comparisonPart = groupe.reduce((somme, ligne) => somme + (ligne.comparison_share ?? 0), 0)
-        exiger(comparisonCount === comparisonTotal, fichier, 0, 'les cellules comparées ne recomposent pas comparison_total_buildings')
-        exiger(Math.abs(comparisonPart - 1) <= 1e-12, fichier, 0, 'les parts comparées ne recomposent pas 1')
-      }
-    }
-  }
-  return lignes
-}
-
 /** Validate the compact three-mode access-ramp quantile projection. */
 export function validerRampeAccesBatiments(
   brut: unknown,
@@ -1865,7 +1660,7 @@ export function validerRampeAccesBatiments(
     return {
       territoire,
       type,
-      availability: availability as DistributionAccesBatimentsAvailability,
+      availability: availability as RampeAccesBatimentsRow['availability'],
       total_buildings: totalBuildings as number,
       mode,
       mode_label: modeLabel,
