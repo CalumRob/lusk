@@ -109,6 +109,9 @@ def collection_comparison(conn, descriptor, territory_type, territory_id, cohort
             facet[1],list(dict.fromkeys([*members,territory_id])))).fetchall() if valid else []
     peers = [row for row in rows if row[0] in members]
     values = [row[1] for row in peers]
+    # #917: with exactly one comparable member the group median IS that member's
+    # value; ranks still require two comparable values and are never invented.
+    comparable = len(values)>=1
     enough = len(values)>=2
     focal = next((row[1] for row in rows if row[0]==territory_id),None)
     rank = (1+sum(value>focal if descriptor["direction"]=="high" else value<focal for value in values)
@@ -118,12 +121,12 @@ def collection_comparison(conn, descriptor, territory_type, territory_id, cohort
     return {"indicator_id":descriptor["indicator_id"],"theme_id":descriptor["theme_id"],
         "label":descriptor["label"],"unit":descriptor["unit"],"descriptor_version":descriptor["descriptor_version"],
         "source_facet":{"detail":facet[0],"observation_period":period_values[0]},
-        "direction":descriptor["direction"],"statistic":"median","status":"available" if enough else "unavailable",
-        "reason":None if enough else "fewer_than_two_comparable_values" if valid else "unsupported_comparison_contract",
+        "direction":descriptor["direction"],"statistic":"median","status":"available" if comparable else "unavailable",
+        "reason":None if comparable else "fewer_than_two_comparable_values" if valid else "unsupported_comparison_contract",
         **({"selected_member_count":len(members)} if "selected_member_count" in selected else {}),
         **({"eligible_count":len(values)} if "eligible_count" in selected else {}),
         **({"missing_count":len(members)-len(values)} if "missing_count" in selected else {}),
-        **({"median":median(values) if enough else None} if "median" in selected else {}),
+        **({"median":median(values) if comparable else None} if "median" in selected else {}),
         **({"rank":rank} if "rank" in selected else {}),
         **({"rank_size":len(values) if rank is not None else None} if "rank_size" in selected else {}),
         "comparison_sources":list(sources.values()),**marker}
@@ -233,17 +236,20 @@ def _published_collection_comparison(conn, descriptor, territory_type, territory
             raise HTTPException(503,"Observed collection comparison source metadata is incomplete")
         sources=[{"source_id":r[0],"name":r[1],"vintage_id":r[2],"version":r[3],
                   "reference_date":r[4],"publication_date":r[5]} for r in metadata]
+    # #917: the published group median is served whenever at least one member is
+    # comparable (the publication already stores it); ranks stay below two.
+    comparable = group[3] >= 1
     enough = group[3] >= 2
     rank = focal[3] if focal and focal[2]=="measured" else None
     return {"indicator_id":indicator,"theme_id":descriptor["theme_id"],"label":descriptor["label"],
         "unit":descriptor["unit"],"descriptor_version":descriptor["descriptor_version"],
          "source_facet":{"detail":facet[0],"observation_period":facet[1]},
-        "direction":descriptor["direction"],"statistic":"median","status":"available" if enough else "unavailable",
-        "reason":None if enough else "fewer_than_two_comparable_values",
+        "direction":descriptor["direction"],"statistic":"median","status":"available" if comparable else "unavailable",
+        "reason":None if comparable else "fewer_than_two_comparable_values",
         **({"selected_member_count":len(expected)} if "selected_member_count" in selected else {}),
         **({"eligible_count":group[3]} if "eligible_count" in selected else {}),
         **({"missing_count":group[4]} if "missing_count" in selected else {}),
-        **({"median":group[1] if enough else None} if "median" in selected else {}),
+        **({"median":group[1] if comparable else None} if "median" in selected else {}),
         **({"rank":rank if enough else None} if "rank" in selected else {}),
         **({"rank_size":focal[5] if rank and enough else None} if "rank_size" in selected else {}),
         "comparison_sources":sources,**marker}

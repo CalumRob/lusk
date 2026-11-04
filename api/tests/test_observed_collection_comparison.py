@@ -214,7 +214,8 @@ def test_theme_collection_only_route_passes_exact_fixed_context(monkeypatch):
     assert observed == [("density_class", "A", "commune")]
 
 
-def test_fixed_comparison_preserves_sparse_unavailable_result():
+def test_fixed_comparison_serves_singleton_median_but_keeps_rank_unavailable():
+    """#917: one comparable member IS the group median; ranks stay below two."""
     class Sparse(PublishedConnection):
         def execute(self, sql, params=None):
             if "FROM observed_collection_comparison_group\n" in sql:
@@ -226,9 +227,11 @@ def test_fixed_comparison_preserves_sparse_unavailable_result():
             return super().execute(sql, params)
     result = collection_comparison(Sparse(), DESCRIPTOR, "commune", "c1", "commune", ("c1", "c2"),
                                    ("density_class", "A", "commune"))
-    assert result["status"] == "unavailable"
-    assert result["reason"] == "fewer_than_two_comparable_values"
-    assert result["median"] is None and result["rank"] is None
+    assert result["status"] == "available"
+    assert result["reason"] is None
+    assert result["median"] == 10.
+    assert result["rank"] is None and result["rank_size"] is None
+    assert (result["eligible_count"], result["missing_count"]) == (1, 1)
 
 
 def test_period_detail_field_selection_projects_value_and_keeps_sparse_provenance():
@@ -290,3 +293,59 @@ def test_anchored_membership_preflight_counts_resolved_anchor_rows():
     estimate = collection_snapshot(conn, descriptor, "commune", "c1", preflight_only=True)
     assert estimate["work_units"] == 241
     assert not any("SELECT t.territory_id" in sql for sql, _ in conn.calls)
+
+
+def test_fixed_comparison_without_comparable_values_stays_unavailable():
+    class Empty(PublishedConnection):
+        def execute(self, sql, params=None):
+            if "FROM observed_collection_comparison_group\n" in sql:
+                return Cursor(("median", None, 2, 0, 2, 0, "collection-v1", "ref-v1",True))
+            if "FROM observed_collection_comparison_territory" in sql:
+                return Cursor(("c1", None, "not_published", None, None, None, "collection-v1", "ref-v1",True))
+            if "FROM observed_collection_comparison_lineage" in sql:
+                return Cursor(rows=[])
+            return super().execute(sql, params)
+    result = collection_comparison(Empty(), DESCRIPTOR, "commune", "c1", "commune", ("c1", "c2"),
+                                   ("density_class", "A", "commune"))
+    assert result["status"] == "unavailable"
+    assert result["reason"] == "fewer_than_two_comparable_values"
+    assert result["median"] is None and result["rank"] is None and result["rank_size"] is None
+
+
+def test_selected_singleton_member_serves_its_value_as_median_without_rank():
+    """#917 dynamic path: a 1-member selection pairs on that member's value."""
+    class Singleton:
+        def __init__(self): self.sql = []
+        def execute(self, sql, params=None):
+            self.sql.append(sql)
+            if "FROM period_detail_observation o" in sql:
+                return Cursor(rows=[("c1", 600., "source", "Dataset", "v1", "2025", None, None)])
+            if "FROM observed_collection_publication p" in sql:
+                return Cursor(("collection-v1", "ref-v1", "ref-v1"))
+            raise AssertionError(sql)
+
+    result = collection_comparison(Singleton(), DESCRIPTOR, "commune", "c1", "commune", ("c1",),
+        coordinates={"detail": ["housing"], "period": ["2024"]})
+    assert result["status"] == "available" and result["reason"] is None
+    assert result["median"] == 600.
+    assert result["rank"] is None and result["rank_size"] is None
+    assert (result["selected_member_count"], result["eligible_count"], result["missing_count"]) == (1, 1, 0)
+
+
+def test_selected_comparison_without_comparable_values_stays_unavailable():
+    class Empty:
+        def __init__(self): self.sql = []
+        def execute(self, sql, params=None):
+            self.sql.append(sql)
+            if "FROM period_detail_observation o" in sql:
+                return Cursor(rows=[])
+            if "FROM observed_collection_publication p" in sql:
+                return Cursor(("collection-v1", "ref-v1", "ref-v1"))
+            raise AssertionError(sql)
+
+    result = collection_comparison(Empty(), DESCRIPTOR, "commune", "c1", "commune", ("c1", "c2"),
+        coordinates={"detail": ["housing"], "period": ["2024"]})
+    assert result["status"] == "unavailable"
+    assert result["reason"] == "fewer_than_two_comparable_values"
+    assert result["median"] is None and result["rank"] is None and result["rank_size"] is None
+    assert (result["selected_member_count"], result["eligible_count"], result["missing_count"]) == (2, 0, 2)
