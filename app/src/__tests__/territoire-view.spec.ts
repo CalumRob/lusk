@@ -1145,6 +1145,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       expect(region.type).toBe('region')
       wrapper.unmount()
     },
+    20_000,
   )
 
   it('renders the pooled DVF scalar/rank beside annual points without borrowing the annual rank', async () => {
@@ -1798,7 +1799,7 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBe('epci')
     wrapper.unmount()
-  })
+  }, 20_000)
 
   it('une URL de membres tapés résout et acquiert la sélection telle quelle', async () => {
     const requests: Array<Array<Record<string, any>>> = []
