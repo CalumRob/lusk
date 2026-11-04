@@ -144,7 +144,7 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
     const point = series.points.find((candidate) => candidate.xValue === cut.xValue)
     if (!point) return []
     return [{
-      label: `${props.territoryName} · ${series.label}`,
+      label: series.label,
       value: point.value === null ? 'Indisponible' : `${formatNumber(point.value)}${unit ? ` ${unit}` : ''}`,
       tone: TIME_MODE_TONES[series.key] ?? 'neutral',
       icon: TIME_MODE_ICONS[series.key],
@@ -152,8 +152,8 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
         ? `Groupe comparé : ${point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${unit ? ` ${unit}` : ''}`}`
         : undefined,
       ariaLabel: timeRamp.comparisonLabel
-        ? `${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}. Groupe comparé : ${timeRamp.comparisonLabel} : ${point.referenceValue === null ? 'Indisponible' : formatNumber(point.referenceValue)} ${unit}`
-        : undefined,
+        ? `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}. Groupe comparé : ${timeRamp.comparisonLabel} : ${point.referenceValue === null ? 'Indisponible' : formatNumber(point.referenceValue)} ${unit}`
+        : `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)} ${unit}`,
     }]
   })
 })
