@@ -1,4 +1,4 @@
-import { flushPromises, shallowMount } from '@vue/test-utils'
+import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -68,8 +68,8 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
     vi.mocked(fetchAedarComparison).mockReturnValueOnce(first.promise)
     const base = evidence('territory-a')
     const request = { intent: { kind: 'selected_comparison' as const,
-      members: [{ territory_type: 'commune' as const, territory_id: 'territory-a' }] }, label: 'Moyenne de la sélection' }
-    const wrapper = shallowMount(AedarEquipmentExplorerCahier, { props: { evidence: { ...base, comparisonRequest: request } } })
+      members: ['territory-a', 'territory-b', 'territory-c'].map((territory_id) => ({ territory_type: 'commune' as const, territory_id })) }, label: 'Moyenne de la sélection' }
+    const wrapper = mount(AedarEquipmentExplorerCahier, { props: { evidence: { ...base, comparisonRequest: request } } })
     await flushPromises()
     expect(fetchAedarComparison).toHaveBeenCalledWith('commune', 'territory-a', expect.objectContaining({
       typequ: ['B207'], intent: request.intent, expectedContentVersion: 'same-content', expectedReferenceContentVersion: 'same-reference',
@@ -77,13 +77,25 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
     }))
     const comparison = { label: request.label, contentVersion: base.contentVersion, referenceContentVersion: base.referenceContentVersion,
       cells: [{ ...fact('territory-a'), measure: 'count_15_car_mean', statistic: 'pooled' as const, group_coverage_status: 'covered',
-        group_n_addresses: 10, group_n_observed: 10,
-        group_value: 7.4, rank: 1, rank_size: 1, rank_ties: 1, direction: 'high' as const }] }
+        group_n_addresses: 30, group_n_observed: 30,
+        group_value: 7.4, rank: 2, rank_size: 3, rank_ties: 1, direction: 'high' as const }] }
     first.resolve({ status: 'ready', evidence: comparison })
     await flushPromises()
     const ramp = wrapper.findComponent(AccessRampFigureCahier).props('timeRamp')
     expect(ramp!.comparisonLabel).toBe('Moyenne de la sélection')
     expect(ramp!.series[0]!.points[2]!.referenceValue).toBe(7.4)
+    expect(ramp!.series[0]!.points[2]!.referenceNote).toBe('Rang du territoire : 2e/3, plus est mieux')
+    expect(wrapper.find('.aedar-equipment-comparison').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Groupe comparé : 7,4')
+    const rampCut = wrapper.findAll('.access-ramp-cut-hitbox').find((button) => button.attributes('aria-label')?.includes('15 min'))
+    expect(rampCut).toBeDefined()
+    await rampCut!.trigger('focus')
+    const tooltip = wrapper.get('[role="tooltip"]')
+    expect(tooltip.text()).toContain('Groupe comparé : 7,4')
+    expect(tooltip.text()).toContain('Rang du territoire : 2e/3, plus est mieux')
+    expect(tooltip.get('.cahier-figure-tooltip-row').attributes('aria-label')).toContain('Moyenne de la sélection')
+    expect(tooltip.get('.cahier-figure-tooltip-row').attributes('aria-label')).toContain('Rang du territoire : 2e/3, plus est mieux')
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Rang du territoire : 2e/3, plus est mieux')
     expect(wrapper.findComponent(AedarEquipmentQuantileFigureCahier).props('comparison')).toEqual(comparison)
     await wrapper.setProps({ evidence: base })
     expect(wrapper.findComponent(AccessRampFigureCahier).props('timeRamp')!.comparisonLabel).toBeNull()

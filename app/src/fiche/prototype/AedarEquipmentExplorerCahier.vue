@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import type { AedarFact } from '@/fiche/content/aedarApiClient'
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
-import { aedarGroupValue, fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import { aedarComparisonCell, aedarGroupValue, fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
 import type { AedarComparisonEvidence } from '@/fiche/content/aedarComparisonClient'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
@@ -21,7 +21,6 @@ import AedarTravelTimeSelector from './AedarTravelTimeSelector.vue'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import AedarEquipmentQuantileFigureCahier from './AedarEquipmentQuantileFigureCahier.vue'
 import CahierActionButton from './CahierActionButton.vue'
-import AedarEquipmentComparisonCahier from './AedarEquipmentComparisonCahier.vue'
 
 const props = defineProps<{
   evidence: AedarEquipmentExplorerEvidence
@@ -168,6 +167,13 @@ const volumeRamp = computed<TimeRampFigureData>(() => {
       xLabel: `${horizon} min`,
       value: readAedarCountMeasure(selectedFact.value, horizon, mode, 'mean'),
       referenceValue: groupValue(horizon, mode, 'mean'),
+      referenceNote: (() => {
+        const cell = aedarComparisonCell(activeComparison.value, selectedBaseFact.value?.typequ, `count_${horizon}_${mode}_mean`)
+        if (groupValue(horizon, mode, 'mean') === null || !cell?.rank || !cell.rank_size || cell.rank_size < 2) return null
+        const rank = `${cell.rank === 1 ? '1er' : `${cell.rank}e`}/${cell.rank_size}`
+        const direction = cell.direction === 'low' ? 'moins est mieux' : 'plus est mieux'
+        return `Rang du territoire : ${rank}, ${direction}${cell.rank_ties && cell.rank_ties > 1 ? ', ex æquo' : ''}`
+      })(),
     })),
   }))
   const values = series.flatMap((item) => item.points.map((point) => point.value))
@@ -245,9 +251,7 @@ function chooseType(fact: AedarFact): void {
           :selected-modes="selectedModes"
           :show-mode-legend="false"
         />
-        <AedarEquipmentComparisonCahier v-if="comparisonLabel" :fact="selectedFact" :comparison="activeComparison"
-          :reference-fact="referenceDetail" :label="comparisonLabel" :horizon-minutes="horizonMinutes" :selected-modes="selectedModes" />
-      </figure>
+        </figure>
 
       <figure class="aedar-equipment-explorer-figure">
         <figcaption class="cahier-figure-title cahier-baseline-anchor">

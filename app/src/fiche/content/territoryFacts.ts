@@ -148,6 +148,8 @@ export interface TimeRampPoint {
   xLabel: string
   value: number | null
   referenceValue: number | null
+  /** Optional reading detail for the active point (kept in its tooltip, never as a curve chip). */
+  referenceNote?: string | null
 }
 
 export interface TimeRampSeries {

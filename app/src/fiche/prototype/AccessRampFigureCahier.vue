@@ -149,10 +149,11 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
       tone: TIME_MODE_TONES[series.key] ?? 'neutral',
       icon: TIME_MODE_ICONS[series.key],
       note: timeRamp.comparisonLabel
-        ? `Groupe comparé : ${point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${unit ? ` ${unit}` : ''}`}`
+        ? [`Groupe comparé : ${point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${unit ? ` ${unit}` : ''}`}`,
+          point.referenceNote].filter(Boolean).join('. ')
         : undefined,
       ariaLabel: timeRamp.comparisonLabel
-        ? `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}. Groupe comparé : ${timeRamp.comparisonLabel} : ${point.referenceValue === null ? 'Indisponible' : formatNumber(point.referenceValue)} ${unit}`
+        ? `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}. Groupe comparé : ${timeRamp.comparisonLabel} : ${point.referenceValue === null ? 'Indisponible' : formatNumber(point.referenceValue)} ${unit}${point.referenceNote ? `. ${point.referenceNote}` : ''}`
         : `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)} ${unit}`,
     }]
   })
@@ -164,7 +165,7 @@ const timeAccessibleLabel = computed(() => {
     .map((series) => `${series.label} : ${series.points.map((point) => `${point.xLabel} ${point.value === null ? 'indisponible' : formatNumber(point.value)}`).join(', ')}`)
     .join(' ; ')
   const referenceText = props.timeRamp.comparisonLabel
-    ? ` Référence ${props.timeRamp.comparisonLabel} : ${visibleTimeSeries.value.map((series) => `${series.label} ${series.points.map((point) => `${point.xLabel} ${point.referenceValue === null ? 'indisponible' : formatNumber(point.referenceValue)}`).join(', ')}`).join(' ; ')}`
+    ? ` Référence ${props.timeRamp.comparisonLabel} : ${visibleTimeSeries.value.map((series) => `${series.label} ${series.points.map((point) => `${point.xLabel} ${point.referenceValue === null ? 'indisponible' : formatNumber(point.referenceValue)}${point.referenceNote ? `, ${point.referenceNote}` : ''}`).join(', ')}`).join(' ; ')}`
     : ''
   return `${props.territoryName}. ${props.timeRamp.yAxis.label ?? ''}${unit ? ` (${unit})` : ''} selon ${props.timeRamp.xAxis.label ?? ''}, par mode de déplacement. ${seriesText}.${referenceText}`
 })
