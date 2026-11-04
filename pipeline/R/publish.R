@@ -257,19 +257,6 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     ecrire_parquet_si_modifie(payload$apercu,
                                file.path(cible, "apercu.parquet"))
   }
-  # Le profil BPE est une projection publique bornée du thème Mobilité. Il est
-  # optionnel pour les autres thèmes et absent signifie « élément non construit »
-  # (comme l'aperçu), jamais une table vide fabriquée par publish.
-  if ("profils_acces_bpe" %in% names(payload) &&
-      !is.null(payload$profils_acces_bpe)) {
-    ecrire_parquet_si_modifie(payload$profils_acces_bpe,
-                               file.path(cible, "profils_acces_bpe.parquet"))
-  }
-  if ("profils_acces_bpe_univers" %in% names(payload) &&
-      !is.null(payload$profils_acces_bpe_univers)) {
-    ecrire_parquet_si_modifie(payload$profils_acces_bpe_univers,
-                               file.path(cible, "profils_acces_bpe_univers.parquet"))
-  }
   if ("distribution_acces_batiments" %in% names(payload) &&
       !is.null(payload$distribution_acces_batiments)) {
     ecrire_parquet_si_modifie(
@@ -329,10 +316,6 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     # parquet partagé apercu.parquet (écrit plus haut, règle non-vide #116)
     # restent inchangés ; un apercu.json périmé préexistant est une relique :
     # ni réécrit ni supprimé par le run.
-    if ("profils_acces_bpe" %in% names(payload) &&
-        !is.null(payload$profils_acces_bpe)) {
-      ecrire_projection(payload$profils_acces_bpe, "profils_acces_bpe.json")
-    }
     if ("distribution_acces_batiments" %in% names(payload) &&
         !is.null(payload$distribution_acces_batiments)) {
       ecrire_projection(

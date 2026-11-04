@@ -11,7 +11,6 @@ import {
   validerDistributionAccesBatiments,
   validerHistoires,
   validerIndicateurs,
-  validerProfilsAccesBpe,
   validerRampeAccesBatiments,
   validerTerritoires,
 } from '../src/payload/validate'
@@ -21,7 +20,6 @@ const files = {
   territoires: 'territoires.json',
   indicateurs: 'indicateurs_mobilite.json',
   histoires: 'histoires_mobilite.json',
-  profils: 'profils_acces_bpe.json',
   distribution: 'distribution_acces_batiments.json',
   rampe: 'rampe_acces_batiments.json',
 } as const
@@ -54,7 +52,6 @@ const validation = timed(() => {
     territoires,
     indicateurs: validerIndicateurs(parse.value.indicateurs, files.indicateurs, territoires),
     histoires: validerHistoires(parse.value.histoires, files.histoires, territoires),
-    profils: validerProfilsAccesBpe(parse.value.profils, files.profils, territoires),
     distribution: validerDistributionAccesBatiments(
       parse.value.distribution,
       files.distribution,
@@ -79,7 +76,6 @@ const payload: Payload = {
   runReport: null,
   vintages: null,
   programmes: null,
-  profilsAccesBpe: validation.value.profils,
   distributionAccesBatiments: validation.value.distribution,
   rampeAccesBatiments: validation.value.rampe,
   themeMetadata: {},
@@ -120,7 +116,6 @@ console.log(
         territories: validation.value.territoires.length,
         indicators: validation.value.indicateurs.length,
         readings: validation.value.histoires.length,
-        bpeProfiles: validation.value.profils?.length ?? 0,
         buildingDistribution: validation.value.distribution?.length ?? 0,
         accessRamp: validation.value.rampe?.length ?? 0,
       },

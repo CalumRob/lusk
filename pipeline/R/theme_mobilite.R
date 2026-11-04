@@ -383,15 +383,6 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   moyennes_acces_territoires <- construire_moyennes_acces_territoires(
     snapshot, base_epci
   )
-  # Le Type d'équipement BPE : la matrice complète reste un artefact interne
-  # (territoire × TYPEQU × c/b/t × profil), sa projection bornée sera la
-  # seule matière BPE du payload public.
-  matrice_profils_acces_bpe <- construire_matrice_profils_acces_bpe(
-    snapshot, base_epci
-  )
-  profils_acces_bpe <- construire_projection_profils_acces_bpe(
-    matrice_profils_acces_bpe
-  )
   distribution_acces_batiments <- if (
     "accessibilite_batiments" %in% names(donnees) &&
       !is.null(donnees$accessibilite_batiments)
@@ -560,10 +551,6 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "offre_territoires.rds"))
   readr::write_rds(moyennes_acces_territoires,
                    file.path(sortie, "moyennes_acces_territoires.rds"))
-  readr::write_rds(matrice_profils_acces_bpe,
-                   file.path(sortie, "matrice_profils_acces_bpe.rds"))
-  readr::write_rds(profils_acces_bpe,
-                   file.path(sortie, "profils_acces_bpe.rds"))
   if (!is.null(distribution_acces_batiments)) {
     readr::write_rds(
       distribution_acces_batiments,
@@ -614,11 +601,6 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     offre_territoires = offre_territoires,
     tot_loss_territoires = tot_loss_territoires,
     moyennes_acces_territoires = moyennes_acces_territoires,
-    matrice_profils_acces_bpe = matrice_profils_acces_bpe,
-      profils_acces_bpe_univers = matrice_profils_acces_bpe %>%
-        dplyr::distinct(territoire, type, typequ) %>%
-        dplyr::arrange(type, territoire, typequ),
-      profils_acces_bpe = profils_acces_bpe,
       distribution_acces_batiments = distribution_acces_batiments,
       rampe_acces_batiments = rampe_acces_batiments,
       distribution_acces_batiments_comparaisons =
@@ -1432,15 +1414,6 @@ validations_mobilite <- list(
     }
     invisible(payload)
   },
-  # la projection BPE est optionnelle pour les fixtures historiques, mais
-  # lorsqu'elle est présente elle porte exactement sa forme bornée — aucun
-  # tableau interne ou profil vide ne doit franchir le seam public
-  function(payload) {
-    if (!"profils_acces_bpe" %in% names(payload) ||
-        is.null(payload$profils_acces_bpe)) return(invisible(payload))
-    verifier_contrat_projection_profils_acces_bpe(payload$profils_acces_bpe)
-    invisible(payload)
-  },
   # La grille bâtiment × équipement est une projection compacte optionnelle :
   # ses bornes et ses libellés sont des faits de payload, et la matrice source
   # ne doit jamais franchir la publication.
@@ -1489,7 +1462,7 @@ validations_mobilite <- list(
 # raccordement #486 — avec rangs + estampilles T7, les 5
 # parts d'isolation portant l'estampille snapshot),
 # histoires (les deux story keys), territoires (référence partagée), la
-# projection BPE bornée et apercu (vide — gating). Validé par la validation
+# apercu (vide — gating). Validé par la validation
 # GÉNÉRIQUE avec les tables
 # déclaratives du thème — un payload invalide s'arrête là.
 construire_payload_mobilite <- function(analytiques, base_epci, vintages,
@@ -1510,7 +1483,6 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages,
     histoires = resoudre_histoires(
       compute_histoires_mobilite(analytiques, vintages), "mobilite"),
     territoires = reference_territoires(territoires),
-    profils_acces_bpe = analytiques$profils_acces_bpe,
     distribution_acces_batiments = analytiques$distribution_acces_batiments,
     rampe_acces_batiments = analytiques$rampe_acces_batiments,
     distribution_acces_batiments_comparaisons =

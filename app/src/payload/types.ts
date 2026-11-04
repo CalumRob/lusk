@@ -407,37 +407,6 @@ export interface HistoireMilieux extends LectureResolueBase {
 
 export type Histoire = HistoireDemographie | HistoireHabitat | HistoireEconomie | HistoireMobilite | HistoireMilieux
 
-/** The closed BPE access-profile vocabulary emitted by the Mobilité pipeline. */
-export const PROFILS_ACCES_BPE = [
-  'acces-pied-tc',
-  'velo-compense',
-  'voiture-requise',
-  'inaccessible-20-minutes',
-] as const
-
-export type ProfilAccesBpe = (typeof PROFILS_ACCES_BPE)[number]
-
-export const LIBELLES_PROFILS_ACCES_BPE: Readonly<Record<ProfilAccesBpe, string>> = {
-  'voiture-requise': 'La voiture est requise',
-  'acces-pied-tc': 'Accès à pied ou en TC possible',
-  'velo-compense': 'Le vélo compense',
-  'inaccessible-20-minutes': 'Inaccessible ou presque en 20 minutes',
-}
-
-/** One bounded public row per (territoire × profile), with at most one exemplar. */
-export interface ProfilAccesBpeRow {
-  territoire: string
-  type: TerritoireType
-  profil: ProfilAccesBpe
-  profil_libelle: string
-  nombre_typequ: number
-  exemplar_typequ: string
-  exemplar_libelle: string
-  exemplar_c: number
-  exemplar_b: number
-  exemplar_t: number
-}
-
 /** Availability state of a published building-distribution territory. */
 export type DistributionAccesBatimentsAvailability = 'complete' | 'incomplete' | 'absent'
 
@@ -656,10 +625,10 @@ export interface Payload {
   programmes: ProgrammesPayload | null
   /** API-admitted map grant projection at the producer-declared comparison point. */
   mapGrantFacts?: Indicateur[]
-  // #627 - the retired BPE profile / building distribution / access-ramp
-  // projections no longer cross the browser payload seam; their row types
-  // remain for the per-territory model-artifact validator (producer/recovery
-  // asset) and the artifact-contract validators.
+  // #627 / #910 - the retired BPE profile, building distribution, and
+  // access-ramp projections no longer cross the browser payload seam. The
+  // remaining grid/ramp row types serve their current artifact-contract
+  // validators only; no per-territory model validator consumes them.
   /**
    * The producer per-theme metadata files (theme_<theme>.json, issue #309,
    * wired by #313) — keyed by theme, present themes only. These retain factual
