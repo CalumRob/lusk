@@ -10,10 +10,10 @@
 # (les 5 parts d'isolation, div_loss et la Story arrivent au ticket #138) et ne
 # PUBLIE rien par lui-même : il lie les pièces existantes.
 
-test_that("MANIFEST_MOBILITE : les dix-huit sources du thème, les 11 colonnes standard", {
+test_that("MANIFEST_MOBILITE : les dix-sept sources conservées, les 11 colonnes standard", {
   m <- MANIFEST_MOBILITE
 
-  # le manifeste est un tibble de QUATORZE lignes : le snapshot porté + les
+  # le manifeste conserve le snapshot porté et les sources de mobilité actuelles :
   # quatre sources de l'étage demande/réseaux (issue #139 : voitures/ménage RP,
   # réseaux t/c OSM + réseaux b Geovelo depuis #222/#228, limites communales)
   # + les quatre sources du sous-bloc « L'offre de mobilité alternative »

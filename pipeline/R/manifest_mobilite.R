@@ -454,11 +454,6 @@ MANIFEST_MOBILITE_BATIMENTS <- tibble::tribble(
   "manuel", "fichier"
 )
 
-# MANIFEST_MOBILITE_ACCESSIBILITE_BATIMENTS -------------------------------------
-# L'export bâtiment par équipement est une entrée opérationnelle de l'analyse
-# portée : le fichier est copié dans data/raw avant le run et le mode manuel
-# empêche le cron de le remplacer. Ses projections publiques réutilisent la
-# source/vintage mobilite_snapshot plutôt que de publier une seconde source.
 # MANIFEST_MOBILITE_BORNES -----------------------------------------------------
 # Le fragment BORNES (issue #140, « Bornes de recharge ») : le fichier
 # consolidé IRVE (Etalab, federé sur data.bretagne.bzh, schéma 2.2.0) — les
