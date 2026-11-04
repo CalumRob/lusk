@@ -109,7 +109,7 @@ test_that("publish ne recrée pas la projection BPE retirée", {
   expect_false(file.exists(file.path(cible, "profils_acces_bpe.json")))
 })
 
-test_that("publish ne recrée pas la grille retirée même si un ancien payload la fournit, et conserve la rampe", {
+test_that("publish ne recrée ni la grille ni la rampe legacy malgré leur présence dans un payload", {
   payload <- compute_payload(load_fixture())
   payload$distribution_acces_batiments <- tibble::tibble(legacy_grid = 1L)
   payload$distribution_acces_batiments_comparaisons <- tibble::tibble(legacy_grid = 1L)
@@ -126,10 +126,12 @@ test_that("publish ne recrée pas la grille retirée même si un ancien payload 
                  "distribution_acces_batiments_comparaisons.parquet")) {
     expect_false(file.exists(file.path(cible, name)), info = name)
   }
-  expect_true(file.exists(file.path(cible, "rampe_acces_batiments.json")))
-  expect_true(file.exists(file.path(cible, "rampe_acces_batiments.parquet")))
-  expect_true(file.exists(file.path(cible, "rampe_acces_batiments_comparaisons.json")))
-  expect_true(file.exists(file.path(cible, "rampe_acces_batiments_comparaisons.parquet")))
+  for (name in c("rampe_acces_batiments.json",
+                 "rampe_acces_batiments.parquet",
+                 "rampe_acces_batiments_comparaisons.json",
+                 "rampe_acces_batiments_comparaisons.parquet")) {
+    expect_false(file.exists(file.path(cible, name)), info = name)
+  }
 })
 
 # verifier_non_derivee (vivante dans helper-payload.R — partagée avec
