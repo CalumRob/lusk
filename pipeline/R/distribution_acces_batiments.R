@@ -137,21 +137,6 @@ lire_accessibilite_batiments <- function(
 # Joint l'export de comptes à la couche bâtiments sur l'identité BDNB. Une
 # identité absente d'un côté ou de l'autre est une corruption : une jointure
 # partielle ferait varier silencieusement le dénominateur de la figure.
-normaliser_accessibilite_batiments <- function(
-    accessibilite,
-    batiments,
-    registre = lire_correspondances_typequ()) {
-  modes <- normaliser_accessibilite_batiments_modes(
-    accessibilite, batiments, registre, modes = "t"
-  )
-  modes %>%
-    dplyr::transmute(
-      batiment_groupe_id, commune,
-      breadth = breadth_t,
-      depth = depth_t
-    )
-}
-
 # normaliser_accessibilite_batiments_modes --------------------------------------
 # Même garde d'identité et de valeurs que la projection t, mais conserve les
 # trois largeurs de panier nécessaires à la rampe. La fonction reste interne au
@@ -266,27 +251,6 @@ normaliser_accessibilite_batiments_modes <- function(
     dplyr::left_join(table_batiments, by = "batiment_groupe_id") %>%
     dplyr::relocate(commune, .after = batiment_groupe_id) %>%
     dplyr::arrange(commune, batiment_groupe_id)
-}
-
-classer_distribution_batiments <- function(valeurs, bins, axe) {
-  resultat <- vapply(valeurs, function(valeur) {
-    trouve <- which(
-      valeur >= bins$min_value &
-        (is.na(bins$max_value) | valeur <= bins$max_value)
-    )
-    if (length(trouve) != 1L) {
-      stop("Distribution bâtiments — valeur hors des bornes de l'axe ", axe,
-           " : ", valeur, ".", call. = FALSE)
-    }
-    bins$key[[trouve]]
-  }, character(1))
-  unname(resultat)
-}
-
-territoires_distribution_acces_batiments <- function(base_epci) {
-  contexte <- contexte_comparaison_acces_batiments(base_epci)
-  contexte %>%
-    dplyr::select(territoire, type)
 }
 
 contexte_comparaison_acces_batiments <- function(
@@ -672,24 +636,6 @@ construire_contextes_acces_batiments <- function(
     dplyr::filter(!is.na(actual_member_code)) %>%
     dplyr::distinct()
 
-  mapped_distribution <- if (is.data.frame(batiments) && nrow(batiments) > 0L) {
-    batiments %>%
-      dplyr::transmute(
-        commune = as.character(commune),
-        breadth = as.integer(breadth), depth = as.integer(depth)
-      ) %>%
-      dplyr::left_join(base, by = "commune") %>%
-      dplyr::mutate(
-        breadth_bucket = classer_distribution_batiments(
-          breadth, DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS, "breadth"
-        ),
-        depth_bucket = classer_distribution_batiments(
-          depth, DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS, "depth"
-        )
-      )
-  } else {
-    tibble::tibble()
-  }
   mapped_rampe <- if (is.data.frame(rampe) && nrow(rampe) > 0L) {
     rampe %>%
       dplyr::transmute(
@@ -749,13 +695,6 @@ construire_contextes_acces_batiments <- function(
     joined
   }
 
-  empty_distribution <- tibble::tibble(
-    territoire = character(), type = character(),
-    comparison_mode = character(), scope_kind = character(),
-    scope_label = character(), breadth_bucket = character(),
-    depth_bucket = character(), comparison_total_buildings = integer(),
-    comparison_building_count = integer(), comparison_share = numeric()
-  )
   empty_rampe <- tibble::tibble(
     territoire = character(), type = character(),
     comparison_mode = character(), scope_kind = character(),
@@ -763,76 +702,6 @@ construire_contextes_acces_batiments <- function(
     comparison_total_buildings = integer(),
     comparison_accessible_types = numeric()
   )
-
-  distribution <- if (nrow(mapped_distribution) > 0L) {
-    distribution_values <- dplyr::bind_rows(
-      expand_members(mapped_distribution, "commune"),
-      expand_members(mapped_distribution, "epci"),
-      expand_members(mapped_distribution, "departement")
-    )
-    if (nrow(distribution_values) == 0L) {
-      empty_distribution
-    } else {
-      utilisables <- distribution_values %>%
-        dplyr::group_by(
-          .data$territoire, .data$comparison_mode, .data$scope_kind,
-          .data$scope_label
-        ) %>%
-        dplyr::summarise(
-          member_count = dplyr::n_distinct(.data$actual_member_code),
-          .groups = "drop"
-        ) %>%
-        dplyr::filter(.data$member_count >= 2L)
-      if (nrow(utilisables) == 0L) {
-        empty_distribution
-      } else {
-        valeurs_utilisables <- distribution_values %>%
-          dplyr::semi_join(
-            utilisables,
-            by = c("territoire", "comparison_mode", "scope_kind", "scope_label")
-          )
-        cles <- c(
-          "territoire", "type", "comparison_mode", "scope_kind", "scope_label"
-        )
-        totaux <- valeurs_utilisables %>%
-          dplyr::group_by(dplyr::across(dplyr::all_of(cles))) %>%
-          dplyr::summarise(
-            comparison_total_buildings = dplyr::n(),
-            .groups = "drop"
-          )
-        comptes <- valeurs_utilisables %>%
-          dplyr::group_by(
-            .data$territoire, .data$type, .data$comparison_mode,
-            .data$scope_kind, .data$scope_label,
-            .data$breadth_bucket, .data$depth_bucket
-          ) %>%
-          dplyr::summarise(
-            comparison_building_count = dplyr::n(),
-            .groups = "drop"
-          )
-        tidyr::crossing(
-          totaux,
-          tidyr::crossing(
-            breadth_bucket = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key,
-            depth_bucket = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key
-          )
-        ) %>%
-          dplyr::left_join(
-            comptes,
-            by = c(cles, "breadth_bucket", "depth_bucket")
-          ) %>%
-          dplyr::mutate(
-            comparison_building_count = as.integer(
-              dplyr::coalesce(.data$comparison_building_count, 0L)
-            ),
-            comparison_share = .data$comparison_building_count /
-              .data$comparison_total_buildings
-          )
-      }
-    }
-  } else {
-    empty_distribution
-  }
 
   rampe <- if (nrow(mapped_rampe) > 0L) {
     rampe_values <- dplyr::bind_rows(
@@ -901,10 +770,7 @@ construire_contextes_acces_batiments <- function(
       dplyr::arrange(.data$type, .data$territoire, .data$comparison_mode)
   }
 
-  list(
-    distribution = attribuer_destinations(distribution),
-    rampe = attribuer_destinations(rampe)
-  )
+  list(rampe = attribuer_destinations(rampe))
 }
 
 # verifier_integrite_projections_acces_batiments -------------------------------
@@ -1026,34 +892,10 @@ verifier_integrite_projections_acces_batiments <- function(payload) {
   }
 
   verifier_table(
-    payload$distribution_acces_batiments_comparaisons,
-    "distribution_acces_batiments_comparaisons", "distribution"
-  )
-  verifier_table(
     payload$rampe_acces_batiments_comparaisons,
     "rampe_acces_batiments_comparaisons", "rampe"
   )
   invisible(payload)
-}
-
-membres_comparaison_acces_batiments <- function(mapped, scopes) {
-  scope_rows <- scopes %>%
-    dplyr::filter(!is.na(scope_key)) %>%
-    dplyr::distinct(scope_key, comparison_label)
-  dplyr::bind_rows(lapply(scope_rows$scope_key, function(scope_key) {
-    membres <- if (startsWith(scope_key, "communes-epci:")) {
-      code_epci <- sub("^communes-epci:", "", scope_key)
-      mapped %>% dplyr::filter(epci == code_epci)
-    } else if (scope_key == "epcis-bretagne") {
-      mapped %>% dplyr::filter(!is.na(epci) & nzchar(epci))
-    } else {
-      mapped
-    }
-    membres %>%
-      dplyr::mutate(scope_key = scope_key) %>%
-      dplyr::select(scope_key, breadth_bucket, depth_bucket,
-                    breadth, depth)
-  }))
 }
 
 membres_comparaison_rampe_acces_batiments <- function(mapped, scopes) {
@@ -1073,207 +915,6 @@ membres_comparaison_rampe_acces_batiments <- function(mapped, scopes) {
       dplyr::mutate(scope_key = scope_key) %>%
       dplyr::select(scope_key, breadth_c, breadth_b, breadth_t)
   }))
-}
-
-# agreger_distribution_acces_batiments ---------------------------------------
-# Produit 5 × 6 cellules pour chaque territoire couvert. Les territoires sans
-# bâtiment joignent une ligne « absent » explicite ; ils ne reçoivent jamais une
-# grille de zéros qui prétendrait avoir observé des bâtiments.
-agreger_distribution_acces_batiments <- function(
-    batiments,
-    base_epci,
-    registre = lire_correspondances_typequ(),
-    territoires_reference = NULL) {
-  verifier_contrat_bpe_typequ(registre)
-  requis <- c("commune", "breadth", "depth")
-  manquantes <- setdiff(requis, names(batiments))
-  if (length(manquantes) > 0) {
-    stop("Distribution bâtiments — colonne(s) manquante(s) : ",
-         paste(manquantes, collapse = ", "), ".", call. = FALSE)
-  }
-  if (nrow(batiments) == 0) {
-    stop("Distribution bâtiments — aucun bâtiment à agréger.", call. = FALSE)
-  }
-
-  base <- base_epci %>%
-    dplyr::transmute(
-      commune = as.character(CODGEO),
-      epci = as.character(EPCI),
-      departement = as.character(DEP)
-    ) %>%
-    dplyr::filter(departement %in% DEPT_BRETAGNE)
-  mapped <- batiments %>%
-    dplyr::transmute(
-      commune = as.character(commune), breadth = as.integer(breadth),
-      depth = as.integer(depth)
-    ) %>%
-    dplyr::left_join(base, by = "commune")
-  if (any(is.na(mapped$departement))) {
-    stop("Distribution bâtiments — un code commune absent du référentiel Bretagne.",
-         call. = FALSE)
-  }
-
-  mapped <- mapped %>%
-    dplyr::mutate(
-      breadth_bucket = classer_distribution_batiments(
-        breadth, DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS, "breadth"
-      ),
-      depth_bucket = classer_distribution_batiments(
-        depth, DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS, "depth"
-      )
-    )
-  membres <- dplyr::bind_rows(
-    mapped %>% dplyr::transmute(
-      territoire = commune, type = "commune", breadth_bucket, depth_bucket
-    ),
-    mapped %>% dplyr::filter(!is.na(epci) & nzchar(epci)) %>%
-      dplyr::transmute(
-        territoire = epci, type = "epci", breadth_bucket, depth_bucket
-      ),
-    mapped %>% dplyr::transmute(
-      territoire = departement, type = "departement", breadth_bucket, depth_bucket
-    ),
-    mapped %>% dplyr::transmute(
-      territoire = "53", type = "region", breadth_bucket, depth_bucket
-    )
-  )
-
-  scopes <- contexte_comparaison_acces_batiments(
-    base_epci,
-    territoires_reference = territoires_reference
-  )
-  groupes <- membres %>%
-    dplyr::count(territoire, type, name = "total_buildings") %>%
-    dplyr::left_join(
-      scopes %>% dplyr::select(territoire, type, scope_key, comparison_label),
-      by = c("territoire", "type")
-    )
-  comptes <- membres %>%
-    dplyr::count(territoire, type, breadth_bucket, depth_bucket,
-                 name = "building_count")
-  grille <- tidyr::crossing(
-    breadth_bucket = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key,
-    depth_bucket = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key
-  )
-  cellules <- tidyr::crossing(groupes, grille) %>%
-    dplyr::left_join(
-      comptes,
-      by = c("territoire", "type", "breadth_bucket", "depth_bucket")
-    ) %>%
-    dplyr::mutate(
-      building_count = as.integer(dplyr::coalesce(building_count, 0L)),
-      share = building_count / total_buildings,
-      availability = "complete"
-    ) %>%
-    dplyr::left_join(
-      DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS %>%
-        dplyr::rename(
-          breadth_bucket = key,
-          breadth_min = min_value, breadth_max = max_value,
-          breadth_label = label
-        ),
-      by = "breadth_bucket"
-    ) %>%
-    dplyr::left_join(
-      DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS %>%
-        dplyr::rename(
-          depth_bucket = key,
-          depth_min = min_value, depth_max = max_value,
-          depth_label = label
-      ),
-      by = "depth_bucket"
-    )
-
-  reference_members <- membres_comparaison_acces_batiments(
-    mapped %>% dplyr::mutate(
-      breadth_bucket = classer_distribution_batiments(
-        breadth, DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS, "breadth"
-      ),
-      depth_bucket = classer_distribution_batiments(
-        depth, DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS, "depth"
-      )
-    ),
-    scopes
-  )
-  reference_scopes <- scopes %>%
-    dplyr::filter(!is.na(scope_key)) %>%
-    dplyr::distinct(scope_key, comparison_label)
-  reference_totals <- reference_scopes %>%
-    dplyr::left_join(
-      reference_members %>% dplyr::count(scope_key, name = "comparison_total_buildings"),
-      by = "scope_key"
-    ) %>%
-    dplyr::mutate(
-      comparison_total_buildings = as.integer(
-        dplyr::coalesce(comparison_total_buildings, 0L)
-      )
-    )
-  reference_cells <- tidyr::crossing(
-    reference_scopes %>% dplyr::select(scope_key),
-    grille
-  ) %>%
-    dplyr::left_join(
-      reference_members %>%
-        dplyr::count(scope_key, breadth_bucket, depth_bucket,
-                     name = "comparison_building_count"),
-      by = c("scope_key", "breadth_bucket", "depth_bucket")
-    ) %>%
-    dplyr::left_join(
-      reference_totals %>% dplyr::select(
-        scope_key, comparison_total_buildings, comparison_label
-      ),
-      by = "scope_key"
-    ) %>%
-    dplyr::mutate(
-      comparison_building_count = as.integer(
-        dplyr::coalesce(comparison_building_count, 0L)
-      ),
-      comparison_share = dplyr::if_else(
-        comparison_total_buildings > 0L,
-        comparison_building_count / comparison_total_buildings,
-        NA_real_
-      )
-    )
-
-  cellules <- cellules %>%
-    dplyr::left_join(
-      reference_cells,
-      by = c("scope_key", "breadth_bucket", "depth_bucket")
-    ) %>%
-    dplyr::mutate(
-      comparison_label = dplyr::coalesce(comparison_label.y, comparison_label.x)
-    ) %>%
-    dplyr::select(-comparison_label.x, -comparison_label.y)
-
-  attendus <- scopes %>% dplyr::select(territoire, type, comparison_label)
-  absents <- attendus %>%
-    dplyr::anti_join(groupes, by = c("territoire", "type")) %>%
-    dplyr::mutate(
-      total_buildings = 0L,
-      breadth_bucket = NA_character_,
-      breadth_min = NA_real_, breadth_max = NA_real_, breadth_label = NA_character_,
-      depth_bucket = NA_character_,
-      depth_min = NA_real_, depth_max = NA_real_, depth_label = NA_character_,
-      building_count = NA_integer_, share = NA_real_, availability = "absent",
-      comparison_label = NA_character_,
-      comparison_total_buildings = NA_integer_,
-      comparison_building_count = NA_integer_, comparison_share = NA_real_
-    )
-
-  dplyr::bind_rows(cellules, absents) %>%
-    dplyr::mutate(
-      mode = DISTRIBUTION_ACCES_BATIMENTS_MODE,
-      mode_label = DISTRIBUTION_ACCES_BATIMENTS_MODE_LABEL,
-      breadth_axis_label = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL,
-      depth_axis_label = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_LABEL,
-      source_id = DISTRIBUTION_ACCES_BATIMENTS_SOURCE_ID,
-       source = DISTRIBUTION_ACCES_BATIMENTS_SOURCE,
-      version = DISTRIBUTION_ACCES_BATIMENTS_VERSION,
-      date_reference = DISTRIBUTION_ACCES_BATIMENTS_DATE_REFERENCE,
-      date_publication = DISTRIBUTION_ACCES_BATIMENTS_DATE_PUBLICATION
-    ) %>%
-    dplyr::select(dplyr::all_of(CLES_DISTRIBUTION_ACCES_BATIMENTS)) %>%
-    dplyr::arrange(type, territoire, breadth_bucket, depth_bucket)
 }
 
 # agreger_rampe_acces_batiments -----------------------------------------------
