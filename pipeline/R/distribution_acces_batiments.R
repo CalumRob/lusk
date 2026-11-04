@@ -306,13 +306,10 @@ contexte_comparaison_acces_batiments <- function(
 }
 
 # construire_contextes_acces_batiments ----------------------------------------
-# Les tables historiques portent une seule comparaison canonique par territoire.
-# Les modèles de lecture ont besoin des trois mondes applicables à une commune,
-# mais la rampe ne peut pas être recomposée à partir de quantiles déjà agrégés.
-# Cette projection conserve donc la matière bâtiment jusqu'à l'agrégation de
-# chaque contexte, puis publie une petite table dédiée au modèle de lecture.
+# La rampe ne peut pas être recomposée à partir de quantiles déjà agrégés.
+# La projection conservée garde la matière bâtiment jusqu'à l'agrégation de
+# chaque contexte applicable, puis publie les comparaisons de la rampe.
 construire_contextes_acces_batiments <- function(
-    batiments,
     rampe,
     base_epci,
     classes_densite = NULL,

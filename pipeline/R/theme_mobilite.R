@@ -397,7 +397,7 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   }
   contextes_rampe <- if (!is.null(rampe_acces_batiments)) {
     construire_contextes_acces_batiments(
-      NULL, donnees$rampe_acces_batiments, base_epci,
+      donnees$rampe_acces_batiments, base_epci,
       classes_densite = classes_densite,
       territoires_reference = reference_territoires(territoires)
     )$rampe

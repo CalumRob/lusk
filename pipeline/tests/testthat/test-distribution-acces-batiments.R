@@ -208,11 +208,6 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
   )
   expect_equal(names(contextes_sans_epci), c("densite", "bretagne"))
 
-  batiments <- tibble::tibble(
-    commune = c("22001", "22001", "22002", "22004", "29011"),
-    breadth = c(1L, 2L, 3L, 4L, 4L),
-    depth = c(1L, 2L, 3L, 4L, 4L)
-  )
   rampe <- tibble::tibble(
     commune = c("22001", "22001", "22002", "22004", "29011"),
     breadth_c = c(1, 2, 3, 4, 4),
@@ -221,7 +216,7 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
   )
 
   projections <- construire_contextes_acces_batiments(
-    batiments, rampe, base, classes,
+    rampe, base, classes,
     territoires_reference = reference
   )
   density_ramp <- projections$rampe[
@@ -249,16 +244,11 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
   # Deux bâtiments dans la seule commune de l'EPCI Z ne forment toujours pas
   # un groupe de comparaison : le dénominateur est le nombre de communes,
   # jamais le nombre de lignes bâtiment.
-  batiments_groupe_insuffisant <- dplyr::bind_rows(
-    batiments[batiments$commune == "29011", , drop = FALSE],
-    batiments[batiments$commune == "29011", , drop = FALSE]
-  )
   rampe_groupe_insuffisant <- dplyr::bind_rows(
     rampe[rampe$commune == "29011", , drop = FALSE],
     rampe[rampe$commune == "29011", , drop = FALSE]
   )
   projections_groupe_insuffisant <- construire_contextes_acces_batiments(
-    batiments_groupe_insuffisant,
     rampe_groupe_insuffisant,
     base,
     classes,
@@ -276,9 +266,11 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
     ))
   ]
   projections_sans_densite <- construire_contextes_acces_batiments(
-    batiments, rampe, base,
+    rampe, base,
     territoires_reference = reference_sans_densite
   )
+  expect_false(any(projections_sans_densite$rampe$comparison_mode == "densite"))
+  expect_true(any(projections_sans_densite$rampe$comparison_mode == "epci"))
 })
 
 test_that("les projections refusent un référentiel de densité incomplet ou ambigu", {
@@ -293,23 +285,19 @@ test_that("les projections refusent un référentiel de densité incomplet ou am
     DENS7 = c("1", "1"),
     LIBDENS7 = c("Grands centres urbains", "Grands centres urbains")
   )
-  batiments <- tibble::tibble(
-    commune = c("22001", "22002"), breadth = c(1L, 2L), depth = c(1L, 2L)
-  )
-
   expect_error(
-    construire_contextes_acces_batiments(batiments, NULL, base),
+    construire_contextes_acces_batiments(NULL, base),
     "référentiel de densité"
   )
 
   expect_error(
-    construire_contextes_acces_batiments(batiments, NULL, base, classes[-1, ]),
+    construire_contextes_acces_batiments(NULL, base, classes[-1, ]),
     "sans classe de densité"
   )
 
   expect_error(
     construire_contextes_acces_batiments(
-      batiments, NULL, base, dplyr::bind_rows(classes, classes[1, ])
+      NULL, base, dplyr::bind_rows(classes, classes[1, ])
     ),
     "jointure communale ambiguë"
   )

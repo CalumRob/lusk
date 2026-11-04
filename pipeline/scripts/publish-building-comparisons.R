@@ -30,7 +30,6 @@ if (is.null(source$rampe_acces_batiments)) {
   stop("The Mobilité source target lacks building ramp evidence.", call. = FALSE)
 }
 projections <- construire_contextes_acces_batiments(
-  NULL,
   source$rampe_acces_batiments,
   base_epci = NULL,
   territoires_reference = reference
