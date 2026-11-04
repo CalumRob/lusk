@@ -186,14 +186,19 @@ producer-derived: it includes exact vintage source IDs where a declared source
 record covers multiple distinct territorial snapshots, so app provenance
 validation need not infer IDs from names, dates, or page metadata.
 
-At least two measured/eligible values are required for a declared-profile median
-and rank. Below that threshold the comparison is `unavailable` with
-`fewer_than_two_comparable_values`; median and focal/peer ranks are null, while
-selected/eligible/missing counts and typed member identities remain truthful when
-requested. Suppressed, unsupported, unavailable, and unpublished cells are not
-converted to zero or ranked. Published peer status totals must reconcile with the
-group's eligible/missing counts; malformed, incomplete, stale, or impossible
-publication evidence, or impossible rank/tie spans fail closed with `503`.
+The group median is served whenever at least one member is comparable: with
+exactly one comparable member the median IS that member's value (singleton median,
+#917, owner decision 2026-11-04), exactly like scalar comparisons. Rank fields
+(`rank`/`rank_size`/`rank_ties` and peer `member_ranks`) still require at least
+two comparable values and stay null below that threshold; with zero comparable
+values the comparison is `unavailable` with `fewer_than_two_comparable_values` and
+a null median, while selected/eligible/missing counts and typed member identities
+remain truthful when requested. The same amended rule applies to numeric
+period/detail collection comparisons. Suppressed, unsupported, unavailable, and
+unpublished cells are not converted to zero or ranked. Published peer status totals
+must reconcile with the group's eligible/missing counts; malformed, incomplete,
+stale, or impossible publication evidence, or impossible rank/tie spans fail
+closed with `503`.
 
 Profile, scalar, and territory-reference publications have independent clocks.
 Profile comparison responses bind `profile_content_version` and
