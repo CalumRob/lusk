@@ -65,7 +65,11 @@ def test_aedar_semantic_coordinates_and_fixed_comparison_intent_are_closed_and_b
     assert "aedar_content_version" in source
     assert "reference_content_version" in source
     assert "aedar_comparison_territory" not in source
-    assert "rank_ties" not in source
+    # #904's boundary for per-cell measures stays exact: the fixed intent's
+    # base optional fields remain rank-free; request-time rank fields enter
+    # only through the aggregate-reading branch (ADR-0039's 2026-11-04
+    # amendment, #914).
+    assert aedar_reads._AEDAR_COMPARISON_OPTIONAL_FIELDS == {"group_value", "value"}
     schema = (Path(__file__).resolve().parents[1] / "schema.sql").read_text(encoding="utf-8")
     migration = (Path(__file__).resolve().parents[1] / "migrations" / "032_aedar_fixed_comparisons.sql").read_text(encoding="utf-8")
     for table in ("aedar_comparison_publication", "aedar_comparison_group", "aedar_comparison_territory"):
@@ -458,12 +462,15 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
 
 
 def test_aedar_measure_facets_cover_every_registered_measure_with_declared_directions():
-    from api.aedar_models import AEDAR_MEASURE_KEYS
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS
     catalogue = default_resource_catalogue.__wrapped__()
     resource = catalogue.resources_by_id["aedar_territorial_aggregate"]
-    # The producer declaration is exact per measure: an in-scope selected-
-    # comparison measure cannot be silently omitted from the facet registry.
-    assert set(resource.measure_facets) == set(AEDAR_MEASURE_KEYS)
+    # The producer declaration is exact per measure AND per aggregate reading:
+    # an in-scope comparison coordinate cannot be silently omitted from the
+    # facet registry (fail-closed; #768/#859 and the 2026-11-04 aggregate-ranks
+    # amendment, #914).
+    expected = set(AEDAR_MEASURE_KEYS) | set(AEDAR_AGGREGATE_READINGS)
+    assert set(resource.measure_facets) == expected
     for measure, facet in resource.measure_facets.items():
         assert set(facet) == {"facet", "direction", "ranked"}
         assert facet["direction"] in ("high", "low")
@@ -471,6 +478,13 @@ def test_aedar_measure_facets_cover_every_registered_measure_with_declared_direc
         # ADR-0015 conventions: diversity and volume readings are
         # higher-is-better and carry selection rank chips; per-cell curve
         # readings show their group mean and are never ranked.
+        if measure in AEDAR_AGGREGATE_READINGS:
+            # Registry-wide overview aggregate readings (#914): the diversity
+            # and volume sums over the complete TYPEQU registry are ranked
+            # high-is-better comparison facets in both intents.
+            expected_facet = {"meanDiversity": "diversity", "meanVolume": "volume"}[measure]
+            assert facet == {"facet": expected_facet, "direction": "high", "ranked": True}
+            continue
         statistic = measure.rsplit("_", 1)[1]
         if statistic == "share":
             assert facet == {"facet": "diversity", "direction": "high", "ranked": True}
@@ -480,29 +494,45 @@ def test_aedar_measure_facets_cover_every_registered_measure_with_declared_direc
             assert facet == {"facet": "distribution", "direction": "high", "ranked": False}
     public = next(item for item in catalogue.discovery_payload()["resources"]
                   if item["resource_id"] == "aedar_territorial_aggregate")
-    assert set(public["measure_facets"]) == set(AEDAR_MEASURE_KEYS)
+    assert set(public["measure_facets"]) == expected
+    assert public["measure_facets"]["meanDiversity"] == {
+        "facet": "diversity", "direction": "high", "ranked": True}
+    assert public["measure_facets"]["meanVolume"] == {
+        "facet": "volume", "direction": "high", "ranked": True}
     assert "selected_comparison" in public["intents"]
 
 
-def test_aedar_selected_comparison_grants_rank_fields_only_for_the_selected_intent():
+def test_aedar_comparison_grants_rank_fields_per_intent_and_aggregate_boundary():
     catalogue = default_resource_catalogue.__wrapped__()
     target = {"kind": "territory", "type": "commune", "id": "22001"}
     members = [{"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"}]
-    coordinates = {"typequ": ["A104"], "measure": ["count_5_walk_mean"]}
-    selected = ResourceReadItem.model_validate({
+    per_cell = {"typequ": ["A104"], "measure": ["count_5_walk_mean"]}
+    aggregate = {"measure": ["meanDiversity", "meanVolume"]}
+    # The selected intent keeps #904's grant: rank fields for per-cell
+    # measures and for the aggregate readings alike.
+    for coordinates in (per_cell, aggregate):
+        selected = ResourceReadItem.model_validate({
+            "resource": "aedar_territorial_aggregate", "target": target,
+            "coordinates": coordinates,
+            "fields": ["group_value", "value", "rank", "rank_size", "rank_ties"],
+            "intent": {"kind": "selected_comparison", "members": members},
+        })
+        assert validate_resource_item(selected, catalogue).resource_id == "aedar_territorial_aggregate"
+    # ADR-0039's 2026-11-04 amendment (#914): the fixed intent grants the rank
+    # fields on the aggregate facets ONLY.
+    fixed_aggregate = ResourceReadItem.model_validate({
         "resource": "aedar_territorial_aggregate", "target": target,
-        "coordinates": coordinates,
-        "fields": ["group_value", "value", "rank", "rank_size", "rank_ties"],
-        "intent": {"kind": "selected_comparison", "members": members},
+        "coordinates": aggregate, "fields": ["rank", "rank_size", "rank_ties"],
+        "intent": {"kind": "fixed_comparison", "context": "epci"},
     })
-    resource = validate_resource_item(selected, catalogue)
-    assert resource.resource_id == "aedar_territorial_aggregate"
-    # Fixed AEDAR contexts stay reference-only: no rank fields are granted.
+    assert validate_resource_item(fixed_aggregate, catalogue).resource_id == "aedar_territorial_aggregate"
+    # Per-cell measures keep #904's exact boundary: fixed and facts intents
+    # reject rank fields for non-aggregate facets.
     for intent in ({"kind": "fixed_comparison", "context": "same_level"},
                    {"kind": "facts"}):
         item = ResourceReadItem.model_validate({
             "resource": "aedar_territorial_aggregate", "target": target,
-            "coordinates": coordinates, "fields": ["rank"], "intent": intent,
+            "coordinates": per_cell, "fields": ["rank"], "intent": intent,
         })
         with pytest.raises(ValueError, match="field is not declared"):
             validate_resource_item(item, catalogue)
@@ -536,6 +566,13 @@ def test_aedar_measure_facet_declaration_fails_closed_when_incomplete(tmp_path):
     with pytest.raises(ValueError, match="Incomplete measure facets"):
         discover()
 
+    # A facet map missing one aggregate reading cannot load either (#914).
+    broken_aggregate = json.loads(json.dumps(contract))
+    broken_aggregate["resources"][0]["measure_facets"].pop("meanDiversity")
+    base.write_text(json.dumps(broken_aggregate), encoding="utf-8")
+    with pytest.raises(ValueError, match="Incomplete measure facets"):
+        discover()
+
     # selected_comparison without the complete map cannot load either.
     missing = json.loads(json.dumps(contract))
     del missing["resources"][0]["measure_facets"]
@@ -547,6 +584,19 @@ def test_aedar_measure_facet_declaration_fails_closed_when_incomplete(tmp_path):
     invalid = json.loads(json.dumps(contract))
     invalid["resources"][0]["measure_facets"]["count_5_walk_mean"]["direction"] = "sideways"
     base.write_text(json.dumps(invalid), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid measure facet"):
+        discover()
+
+    # Aggregate readings must be declared ranked and high-is-better (#914).
+    unranked = json.loads(json.dumps(contract))
+    unranked["resources"][0]["measure_facets"]["meanVolume"] = {
+        "facet": "volume", "direction": "high", "ranked": False}
+    base.write_text(json.dumps(unranked), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid measure facet"):
+        discover()
+    low = json.loads(json.dumps(contract))
+    low["resources"][0]["measure_facets"]["meanDiversity"]["direction"] = "low"
+    base.write_text(json.dumps(low), encoding="utf-8")
     with pytest.raises(ValueError, match="Invalid measure facet"):
         discover()
 
@@ -690,8 +740,9 @@ def _aedar_selected_state():
 def _aedar_facets():
     # Mirror the declared producer taxonomy exactly: share -> diversity,
     # mean -> volume (both ranked, higher-is-better); min/max/deciles ->
-    # distribution curve readings, never ranked.
-    from api.aedar_models import AEDAR_MEASURE_KEYS
+    # distribution curve readings, never ranked; the registry-wide aggregate
+    # readings (#914) are ranked high-is-better diversity/volume facets.
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS
     facets = {}
     for measure in AEDAR_MEASURE_KEYS:
         statistic = measure.rsplit("_", 1)[1]
@@ -701,6 +752,10 @@ def _aedar_facets():
             facets[measure] = {"facet": "volume", "direction": "high", "ranked": True}
         else:
             facets[measure] = {"facet": "distribution", "direction": "high", "ranked": False}
+    for reading in AEDAR_AGGREGATE_READINGS:
+        facets[reading] = {
+            "facet": "diversity" if reading == "meanDiversity" else "volume",
+            "direction": "high", "ranked": True}
     return facets
 
 

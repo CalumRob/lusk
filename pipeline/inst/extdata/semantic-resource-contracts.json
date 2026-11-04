@@ -322,7 +322,9 @@
         "count_5_walk_max": {"facet": "distribution", "direction": "high", "ranked": false},
         "count_5_walk_mean": {"facet": "volume", "direction": "high", "ranked": true},
         "count_5_walk_min": {"facet": "distribution", "direction": "high", "ranked": false},
-        "count_5_walk_share": {"facet": "diversity", "direction": "high", "ranked": true}
+        "count_5_walk_share": {"facet": "diversity", "direction": "high", "ranked": true},
+        "meanDiversity": {"facet": "diversity", "direction": "high", "ranked": true},
+        "meanVolume": {"facet": "volume", "direction": "high", "ranked": true}
       },
       "intents": ["facts", "fixed_comparison", "selected_comparison"]
     }
