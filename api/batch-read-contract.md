@@ -29,8 +29,9 @@ AEDAR reference reads use the canonical territory-reference scope: commune EPCI
 and Bretagne values are direct source aggregates, density-class values come from
 the pooled producer artifact, and EPCI/departement same-level presets read the
 Région's own direct published aggregate (« Moyenne de Bretagne »); the retired
-same-level median summaries are no longer served. AEDAR publishes no peer rows
-or ranks.
+same-level median summaries are no longer served. AEDAR publishes no peer or
+rank rows: every request-time statistic — including the aggregate-reading ranks
+below — is computed per request from published facts in one committed snapshot.
 The four selected-reading resources for Démographie, Économie/Emploi, Habitat,
 and Milieux expose the already-published reading facts. Producer-declared ranked
 activity evidence, Milieux source absences, and Milieux source bindings are separate
@@ -127,6 +128,36 @@ per-measure facets/directions (`measure_facets` in the catalogue). Curve
 readings (min/max/deciles) return their group mean with null rank fields. One
 request reads one committed repeatable-read snapshot; no peer/rank rows are
 published (#810 stance intact).
+
+## AEDAR aggregate-reading comparisons (#914)
+
+The registry-wide overview readings the fiche displays — `meanDiversity` (the
+sum of `count_15_car_share` over the complete published TYPEQU registry) and
+`meanVolume` (the sum of `count_15_car_mean`) — are declared ranked
+high-is-better comparison facets in the producer `measure_facets` map alongside
+the 312 per-cell measures. They are requested through the `measure` coordinate
+without a `typequ` coordinate, and are computed per request from published
+per-type rows in `aedar_territorial_aggregate` — never published as new rows
+(#810 stance intact):
+
+- `fixed_comparison` keeps each declared context's reference semantics (the
+  direct EPCI/Bretagne/Région aggregate, or the pooled density artifact summed
+  over the registry) and adds the opt-in `rank`/`rank_size`/`rank_ties`: a
+  direction-aware flat ordinal of the focal's registry-wide reading within the
+  context's resolved peer group (the EPCI's communes, all Breton communes, the
+  density class, or the same-level territories), ties sharing the rank. Peers
+  without a complete measured registry are not comparable and stay out of the
+  rank; an incomplete registry never yields a partial sum.
+- `selected_comparison` keeps #859's address-weighted pooled semantics over
+  each member's registry-wide reading (weights = published `n_addresses`) —
+  exactly the pooled address aggregate of the selection — with the focal rank
+  when it is a member, and fails closed naming any member without a complete
+  measured registry.
+
+Per-cell measures are unchanged: fixed contexts stay reference-only for them
+(#904) and only `selected_comparison` serves their ranks. Mixing aggregate
+readings with per-cell measures in one request, or adding a `typequ` coordinate
+to an aggregate reading, is rejected with `422`.
 
 ## Declared-profile comparisons
 
