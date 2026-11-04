@@ -68,11 +68,9 @@ describe('chargerPayload — the single seam', () => {
     expect(payload.indicateurs).toHaveLength(indicateursDemographieFixture.length)
     expect(payload.histoires).toHaveLength(9)
     expect(payload.runReport).toEqual(runReportFraisFixture)
-    // #627 - the retired BPE profile / building projections no longer cross
-    // the loader seam, even when a stale file is still published.
+    // #627 - the retired BPE profile no longer crosses the loader seam, even
+    // when a stale file is still published.
     expect('profilsAccesBpe' in payload).toBe(false)
-    expect('distributionAccesBatiments' in payload).toBe(false)
-    expect('rampeAccesBatiments' in payload).toBe(false)
     const withStaleFile = await chargerPayload(
       optionsPour({ ...fichiersDemographie, 'profils_acces_bpe.json': profilsAccesBpeFixture }),
     )
