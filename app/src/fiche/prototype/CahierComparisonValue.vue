@@ -26,6 +26,14 @@ function comparisonText(): string | null {
     ? `${formatNumber(value * 100, 0)} %`
     : formatNumber(value, props.maximumFractionDigits)
 }
+
+function comparisonAccessibleName(): string {
+  const comparison = props.fact?.comparison
+  const statistic = comparison?.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane'
+  const description = props.namedReference?.label
+    ?? (comparison?.scope.label ? `${statistic} des ${comparison.scope.label}` : null)
+  return `Groupe comparé : ${comparisonText()}${description ? `. ${description}` : ''}`
+}
 </script>
 
 <template>
@@ -34,7 +42,7 @@ function comparisonText(): string | null {
     class="cahier-comparison-value cahier-figure-comparison"
     :class="{ 'cahier-comparison-value--named': namedReference }"
   >
-    <span v-if="comparisonText()" class="cahier-comparison-value__reference">
+    <span v-if="comparisonText()" class="cahier-comparison-value__reference" role="img" :aria-label="comparisonAccessibleName()">
       Groupe comparé :
       <strong class="region-emphasis">{{ comparisonText() }}</strong>
     </span>
@@ -63,7 +71,7 @@ function comparisonText(): string | null {
   letter-spacing: normal;
   text-align: center;
   grid-template-columns: minmax(0, 1fr);
-  /* Les parents donnent une largeur disponible explicite ; la portée ne doit
+  /* Les parents donnent une largeur disponible explicite ; la référence ne doit
      pas élargir les colonnes intrinsèques des scalaires inline. */
   contain: inline-size;
 }

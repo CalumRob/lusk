@@ -215,18 +215,22 @@ function choisir(entree: EntreeMenu): void {
   flex-shrink: 0;
 }
 
-/* Face laconique en petites capitales, comme le sommaire mobile du Cahier. */
+/* Contrôle carré du Cahier. La bordure est incluse dans la hauteur de ligne
+   existante : elle ne doit pas épaissir le heading au pointeur fin. */
 .bouton-comparaison__declencheur {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  box-sizing: border-box;
+  block-size: 1.3em;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--red-soft, var(--border-subtle));
+  border-radius: 2px;
+  background: var(--paper, var(--surface-primary));
   color: var(--cahier-theme-strong, var(--red, var(--accent-primary)));
   font: inherit;
   font-weight: 700;
+  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
 }

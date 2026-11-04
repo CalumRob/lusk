@@ -130,10 +130,14 @@ describe('figures des unités Mobilité ajoutées', () => {
       await flushPromises()
       const names = wrapper.findAll('.cahier-network-bar-chart__reference-key')
       expect(names.length).toBeGreaterThan(0)
-      for (const name of names) expect(name.text()).toBe(`${word} des communes de EPCI X`)
+      for (const name of names) {
+        expect(name.text()).toBe('Groupe comparé')
+        expect(name.attributes('aria-label')).toBe(`Groupe comparé : ${word} des communes de EPCI X`)
+      }
       for (const mark of wrapper.findAll('.cahier-comparison-value__reference')) {
         expect(mark.text()).not.toMatch(/Moyenne|Médiane|EPCI|·/)
         expect(mark.text()).toMatch(/^Groupe comparé :/)
+        expect(mark.attributes('aria-label')).toContain(`${word} des communes de EPCI X`)
       }
       wrapper.unmount()
     },
@@ -489,7 +493,7 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.find('.sharing-parking-evidence').exists()).toBe(true)
     expect(wrapper.find('.road-surface-figure').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Part du territoire couverte par des polygones d’usage routier de tout type.')
-    expect(wrapper.text()).toContain('Médiane des')
+    expect(wrapper.text()).not.toContain('Médiane des')
     expect(wrapper.find('.sharing-network-figure').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Trois longueurs, un horizon')
     expect(wrapper.text()).not.toContain('Le point d’arrivée varie avec la longueur du réseau.')
@@ -502,7 +506,7 @@ describe('Variante E — partage de l’espace public', () => {
     // #860 (ruling) — une seule légende par figure : la note « Groupe comparé »
     // séparée est retirée ; la loi de nommage vit dans la légende de la figure.
     expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(0)
-    expect(wrapper.text()).toContain('Médiane des communes de EPCI X')
+    expect(wrapper.text()).not.toContain('Médiane des communes de EPCI X')
   })
 
   it('renders the settled circular map plate contract', async () => {
@@ -560,12 +564,16 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.find('.cahier-figure-lecture').exists()).toBe(true)
     // #860 (ruling) — la clé de référence de la figure porte la loi de nommage
     // (statistique + portée résolue), pas un « Groupe comparé » générique.
-    expect(wrapper.find('.cahier-network-bar-chart__reference-key').text()).toContain('Médiane des communes de EPCI X')
+    expect(wrapper.find('.cahier-network-bar-chart__reference-key').text()).toBe('Groupe comparé')
+    expect(wrapper.find('.cahier-network-bar-chart__reference-key').attributes('aria-label')).toContain('Médiane des communes de EPCI X')
+    expect(wrapper.find('.cahier-network-bar-chart__reference-key').element.closest('[aria-hidden="true"]')).toBeNull()
     expect(wrapper.findAll('.cahier-network-bar-chart__reference-key')).toHaveLength(1)
     expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(0)
     await wrapper.find('.cahier-network-bar-row--bike').trigger('mouseenter')
     expect(wrapper.find('.plate-network-tooltip').exists()).toBe(true)
-    expect(wrapper.find('.plate-network-tooltip').text()).toContain('Médiane des communes de EPCI X')
+    expect(wrapper.find('.plate-network-tooltip').text()).toContain('Groupe comparé')
+    expect(wrapper.find('.plate-network-tooltip').text()).not.toContain('Médiane des communes de EPCI X')
+    expect(wrapper.find('.plate-network-tooltip').html()).toContain('Médiane des communes de EPCI X')
     expect(wrapper.find('.cahier-network-bar-row--car').classes()).toContain('cahier-network-bar-row--dimmed')
     await wrapper.find('.map-panel--bike').trigger('mouseenter')
     expect(wrapper.find('.map-panel--car').classes()).toContain('map-panel--dimmed')

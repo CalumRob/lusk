@@ -229,7 +229,8 @@ function aedarAccessModeLegendEntries(evidence: AedarAccessEvidence): readonly F
     })),
     ...(referenceLabel ? [{
       key: 'reference',
-      label: referenceLabel,
+      label: 'Groupe comparé',
+      ariaLabel: `Groupe comparé : ${referenceLabel}`,
       marker: 'dash' as const,
       tone: 'peer',
     }] : []),
@@ -882,7 +883,7 @@ onBeforeUnmount(() => {
 .cahier--indexed-sections .page-heading-territory { min-width: 0; overflow: hidden; color: var(--accent-primary); font-weight: 600; text-align: right; text-overflow: ellipsis; }
 /* #860 — le bouton « Comparaison » reste centré dans la rangée du heading
    (align-items: baseline) sans l'épaissir ; le territoire tronque à sa droite. */
-.cahier--indexed-sections .page-heading-comparaison { position: static; align-self: center; flex: none; }
+.cahier--indexed-sections .page-heading-comparaison { position: static; align-self: center; flex: none; margin-inline-end: var(--space-2); }
 /* Réserver la colonne de contexte indépendamment du contrôle : son apparition
    ne doit pas réduire le titre et lui ajouter une ligne sur ordinateur. */
 .cahier--indexed-sections .page-heading-context { position: relative; inline-size: min(32vw, 18rem); }

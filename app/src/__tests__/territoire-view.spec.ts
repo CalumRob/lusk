@@ -1403,10 +1403,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   }, 20_000)
 
   it.each(['epci', 'bretagne'] as const)(
-    'la loi de nommage %s portée par les légendes des figures du cahier (note « Groupe comparé » retirée)', async (mode) => {
-      // #860 (ruling 2026-11-03) — une seule légende par figure : la note
-      // séparée est retirée ; la portée résolue vit dans les marques de pair
-      // (CahierComparisonValue) et les légendes des figures.
+    'la portée %s est nommée par le contrôle, jamais répétée visuellement par les figures', async (mode) => {
       const requests: Array<Array<Record<string, any>>> = []
       vi.stubGlobal('fetch', nativeSemanticFetch(requests))
       const { wrapper } = await monter(
@@ -1417,7 +1414,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       const contextes = contextesReference('22001')
       const labels = wrapper.findAll('.cahier-comparison-value__scope, .cahier-figure-legend-label, .cahier-network-bar-chart__reference-key')
         .map((el) => el.text())
-      expect(labels.some((texte) => texte.includes(contextes[mode]!.scope.label))).toBe(true)
+      expect(labels.some((texte) => texte.includes(contextes[mode]!.scope.label))).toBe(false)
+      const accessibleReferences = wrapper.findAll('.cahier-network-bar-chart__reference-key, .cahier-figure-legend-item[aria-label]')
+      expect(accessibleReferences.some((reference) => reference.attributes('aria-label')?.includes(contextes[mode]!.scope.label))).toBe(true)
       wrapper.unmount()
     },
   )

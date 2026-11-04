@@ -124,7 +124,8 @@ const timeLegend = computed<readonly FigureLegendEntry[]>(() => [
   })),
   ...(props.timeRamp?.comparisonLabel ? [{
     key: 'reference',
-    label: props.timeRamp.comparisonLabel,
+    label: 'Groupe comparé',
+    ariaLabel: `Groupe comparé : ${props.timeRamp.comparisonLabel}`,
     marker: 'dash' as const,
     tone: 'peer' as const,
   }] : []),
@@ -148,7 +149,10 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
       tone: TIME_MODE_TONES[series.key] ?? 'neutral',
       icon: TIME_MODE_ICONS[series.key],
       note: timeRamp.comparisonLabel
-        ? `${timeRamp.comparisonLabel} : ${point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${unit ? ` ${unit}` : ''}`}`
+        ? `Groupe comparé : ${point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${unit ? ` ${unit}` : ''}`}`
+        : undefined,
+      ariaLabel: timeRamp.comparisonLabel
+        ? `${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}. Groupe comparé : ${timeRamp.comparisonLabel} : ${point.referenceValue === null ? 'Indisponible' : formatNumber(point.referenceValue)} ${unit}`
         : undefined,
     }]
   })

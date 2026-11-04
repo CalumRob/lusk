@@ -309,19 +309,23 @@ describe('VarianteCahierLibre — AEDAR access', () => {
       'Vélo (LTS4)',
       'Transports en commun',
       'À pied',
-      'Moyenne de EPCI X',
+      'Groupe comparé',
     ])
     const referenceMark = sharedRampLegend[5]!.find('.cahier-figure-legend-mark')
     expect(referenceMark.classes()).toContain('cahier-figure-legend-mark--dash')
 
     // The reference values land in the tooltip note per mode.
     await wrapper.find('.aedar-ramp [aria-label="Temps d\'accès : 15 min"]').trigger('focus')
-    expect(wrapper.find('.aedar-ramp [role="tooltip"]').text()).toContain('EPCI X : 2,5')
+    expect(wrapper.find('.aedar-ramp [role="tooltip"]').text()).toContain('Groupe comparé : 2,5')
+    expect(wrapper.find('.aedar-ramp [role="tooltip"]').text()).not.toContain('EPCI X')
+    expect(wrapper.find('.aedar-ramp [role="tooltip"]').html()).toContain('Moyenne de EPCI X')
     // #860 (ruling) — une seule légende par figure : la note « Groupe comparé »
     // séparée est retirée ; la loi de nommage vit dans la légende des modes
     // (entrée « peer » libellée) et dans les marques de pair des figures.
     expect(wrapper.findAll('[data-section="aedar-access"] .cahier-comparison-note')).toHaveLength(0)
-    expect(sharedRampLegend[5]!.text()).toBe('Moyenne de EPCI X')
+    expect(sharedRampLegend[5]!.text()).toBe('Groupe comparé')
+    expect(sharedRampLegend[5]!.attributes('aria-label')).toBe('Groupe comparé : Moyenne de EPCI X')
+    expect(wrapper.findAll('[title]').every((element) => !element.attributes('title')?.includes('EPCI X'))).toBe(true)
 
   })
 

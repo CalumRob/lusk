@@ -345,8 +345,9 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(rendered.find('[data-series="reference"]').exists()).toBe(false)
     expect(rendered.findAll('.transit-point--comparison').map((point) => point.attributes('data-value')))
       .toEqual(synthetic.comparisonData.result.mean_curve.points.map((point: any) => String(point.value)))
-    expect(rendered.find('.transit-legend-comparison').text()).toContain(context.scope.label)
-    expect(rendered.find('.transit-legend-comparison').text()).toContain('Moyenne')
+    expect(rendered.find('.transit-legend-comparison').text()).toBe('Groupe comparé')
+    expect(rendered.find('.transit-legend-comparison').attributes('aria-label')).toContain(context.scope.label)
+    expect(rendered.find('.transit-legend-comparison').attributes('aria-label')).toContain('Moyenne')
     expect(synthetic.factsData.synthetic_fixture).toMatchObject({ publication_parity: false })
     expect(compared.mobility.namedTrajectoryReferences.some((reference) =>
       reference.id === synthetic.referenceData.reference.id)).toBe(true)

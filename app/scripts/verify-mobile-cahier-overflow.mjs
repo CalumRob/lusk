@@ -432,13 +432,18 @@ try {
     const heading = await trigger.evaluate((button) => {
       const root = button.closest('.bouton-comparaison')
       const heading = button.closest('.page-heading')
+      const theme = heading.querySelector('.page-heading-theme')
+      const style = getComputedStyle(button)
+      const separation = theme.getBoundingClientRect().left - button.getBoundingClientRect().right
       const withButton = heading.getBoundingClientRect().height
       root.style.display = 'none'
       const withoutButton = heading.getBoundingClientRect().height
       root.style.removeProperty('display')
-      return { withButton, withoutButton }
+      return { withButton, withoutButton, separation, border: style.borderLeftWidth, radius: style.borderRadius }
     })
     assert.equal(heading.withButton, heading.withoutButton, `Le bouton agrandit le heading à ${width}px : ${JSON.stringify(heading)}`)
+    assert(heading.separation >= 12 && heading.border === '1px' && heading.radius === '2px',
+      `Le contrôle doit être carré, bordé et séparé du titre à ${width}px : ${JSON.stringify(heading)}`)
     await trigger.click()
     const menuBounds = await page.locator('.bouton-comparaison__menu').evaluate((element) => {
       const { left, right } = element.getBoundingClientRect()

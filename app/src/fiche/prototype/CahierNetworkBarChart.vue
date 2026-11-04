@@ -58,13 +58,13 @@ function labelColor(row: CahierNetworkBarRow): string {
 
 <template>
   <div class="cahier-network-bar-chart" :aria-label="props.ariaLabel">
-    <div class="cahier-network-bar-chart__header" aria-hidden="true">
+    <div class="cahier-network-bar-chart__header">
       <span />
       <span />
       <span class="cahier-network-bar-chart__header-meta">
         <span class="cahier-network-bar-chart__unit">{{ props.unit }}</span>
-        <span v-if="props.referenceLabel" class="cahier-network-bar-chart__reference-key">
-          <i aria-hidden="true" />{{ props.referenceLabel }}
+        <span v-if="props.referenceLabel" class="cahier-network-bar-chart__reference-key" role="img" :aria-label="`Groupe comparé : ${props.referenceLabel}`">
+          <i aria-hidden="true" />Groupe comparé
         </span>
       </span>
     </div>
@@ -140,9 +140,7 @@ function labelColor(row: CahierNetworkBarRow): string {
 .cahier-network-bar-chart__header,
 .cahier-network-bar-row {
   display: grid;
-  /* #860 — la 3e colonne peut porter la loi de nommage (statistique + portée,
-     longue) : minmax(0, max-content) la laisse rétrécir et s'enrouler en mobile
-     au lieu d'étirer toute la grille. */
+  /* La clé de référence se replie sur les petites grilles sans les élargir. */
   grid-template-columns: minmax(152px, .85fr) minmax(120px, 1.35fr) minmax(0, max-content);
   gap: var(--space-2);
   align-items: center;
@@ -175,9 +173,7 @@ function labelColor(row: CahierNetworkBarRow): string {
   color: var(--color-figure-reference);
   font-size: var(--type-figure-tick-size);
   letter-spacing: normal;
-  /* #860 — la clé porte la loi de nommage (statistique + portée résolue),
-     possiblement longue : elle s'enroule (capée à 40ch) au lieu d'inflate la
-     colonne max-content de la grille et de déborder en mobile. */
+  /* La portée complète reste uniquement dans le nom accessible. */
   max-inline-size: 40ch;
   white-space: normal;
   overflow-wrap: anywhere;

@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core'
 
 // Self-check sur le serveur vivant : ne démarre, n'arrête et ne modifie aucun serveur.
 const origin = process.env.COMPARISON_PREVIEW_ORIGIN ?? 'http://localhost:5174'
-const evidence = resolve('../.scratch/comparison-second-pass')
+const evidence = resolve('../.scratch/comparison-third-pass')
 await mkdir(evidence, { recursive: true })
 const browser = await chromium.launch({ headless: true })
 const reports = []
@@ -24,6 +24,20 @@ try {
       assert.equal(await button.locator('.bouton-comparaison__type').innerText(), token)
       assert.match(await button.getAttribute('aria-label') ?? '', /^Comparaison : .+/u)
       assert(!(await button.innerText()).includes('·'))
+      const control = await button.evaluate((element) => {
+        const heading = element.closest('.page-heading')
+        const root = element.closest('.bouton-comparaison')
+        const css = getComputedStyle(element)
+        const separation = heading.querySelector('.page-heading-theme').getBoundingClientRect().left
+          - element.getBoundingClientRect().right
+        const withControl = heading.getBoundingClientRect().height
+        root.style.display = 'none'
+        const withoutControl = heading.getBoundingClientRect().height
+        root.style.removeProperty('display')
+        return { separation, border: css.borderLeftWidth, radius: css.borderRadius, withControl, withoutControl }
+      })
+      assert(control.separation >= 12 && control.border === '1px' && control.radius === '2px', JSON.stringify(control))
+      assert.equal(control.withControl, control.withoutControl, JSON.stringify(control))
       await button.click()
       const panel = page.locator('.bouton-comparaison__menu')
       for (const option of await panel.locator('[role="menuitemradio"]').all()) {
@@ -69,12 +83,18 @@ try {
           && text.top >= box.top + box.border + box.padding
           && text.bottom < geometry.bottom - box.border - box.padding, JSON.stringify(geometry))
         assert(!(await panel.innerText()).includes('·'))
-        reports.push({ width, query, token, ...geometry })
+        reports.push({ width, query, token, control, ...geometry })
       }
       if (query === null) await page.screenshot({ path: resolve(evidence, `panel-${width}.png`) })
       await button.press('Escape')
       const marks = await page.locator('.cahier-comparison-value__reference').allTextContents()
       assert(marks.every((text) => !/Médiane|Moyenne|·/.test(text)))
+      const figureReferences = await page.locator('.cahier-network-bar-chart__reference-key, .cahier-figure-legend-item[aria-label^="Groupe comparé"], .transit-legend-comparison').evaluateAll((elements) =>
+        elements.map((element) => ({ text: element.textContent.trim(), aria: element.getAttribute('aria-label'), title: element.getAttribute('title') })))
+      assert(figureReferences.every((reference) => reference.text === 'Groupe comparé'
+        && reference.aria?.startsWith('Groupe comparé : ') && !reference.title), JSON.stringify(figureReferences))
+      const figureTitles = await page.locator('.evidence-figure [title], .map-breakout [title], .aedar-car-overview-scalars [title]').evaluateAll((elements) => elements.map((element) => element.getAttribute('title')))
+      assert(figureTitles.every((title) => !/Rennes Métropole|Moyenne de|Médiane des/u.test(title)), JSON.stringify(figureTitles))
       await page.close()
     }
   }
