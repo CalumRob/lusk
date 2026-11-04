@@ -383,18 +383,6 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   moyennes_acces_territoires <- construire_moyennes_acces_territoires(
     snapshot, base_epci
   )
-  distribution_acces_batiments <- if (
-    "accessibilite_batiments" %in% names(donnees) &&
-      !is.null(donnees$accessibilite_batiments)
-  ) {
-    agreger_distribution_acces_batiments(
-      donnees$accessibilite_batiments,
-      base_epci,
-      territoires_reference = reference_territoires(territoires)
-    )
-  } else {
-    NULL
-  }
   rampe_acces_batiments <- if (
     "rampe_acces_batiments" %in% names(donnees) &&
       !is.null(donnees$rampe_acces_batiments)
@@ -407,20 +395,13 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   } else {
     NULL
   }
-  contextes_acces_batiments <- if (
-    "accessibilite_batiments" %in% names(donnees) ||
-      "rampe_acces_batiments" %in% names(donnees)
-  ) {
+  contextes_rampe <- if (!is.null(rampe_acces_batiments)) {
     construire_contextes_acces_batiments(
-      donnees$accessibilite_batiments,
-      donnees$rampe_acces_batiments,
-      base_epci,
+      donnees$rampe_acces_batiments, base_epci,
       classes_densite = classes_densite,
       territoires_reference = reference_territoires(territoires)
-    )
-  } else {
-    list(distribution = NULL, rampe = NULL)
-  }
+    )$rampe
+  } else NULL
   acces_rangs <- construire_rangs_acces(acces_territoires, territoires)
   isolation_rangs <- construire_rangs_isolation(isolation_territoires,
                                                 territoires)
@@ -551,27 +532,15 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "offre_territoires.rds"))
   readr::write_rds(moyennes_acces_territoires,
                    file.path(sortie, "moyennes_acces_territoires.rds"))
-  if (!is.null(distribution_acces_batiments)) {
-    readr::write_rds(
-      distribution_acces_batiments,
-      file.path(sortie, "distribution_acces_batiments.rds")
-    )
-  }
   if (!is.null(rampe_acces_batiments)) {
     readr::write_rds(
       rampe_acces_batiments,
       file.path(sortie, "rampe_acces_batiments.rds")
     )
   }
-  if (!is.null(contextes_acces_batiments$distribution)) {
+  if (!is.null(contextes_rampe)) {
     readr::write_rds(
-      contextes_acces_batiments$distribution,
-      file.path(sortie, "distribution_acces_batiments_comparaisons.rds")
-    )
-  }
-  if (!is.null(contextes_acces_batiments$rampe)) {
-    readr::write_rds(
-      contextes_acces_batiments$rampe,
+      contextes_rampe,
       file.path(sortie, "rampe_acces_batiments_comparaisons.rds")
     )
   }
@@ -601,12 +570,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     offre_territoires = offre_territoires,
     tot_loss_territoires = tot_loss_territoires,
     moyennes_acces_territoires = moyennes_acces_territoires,
-      distribution_acces_batiments = distribution_acces_batiments,
       rampe_acces_batiments = rampe_acces_batiments,
-      distribution_acces_batiments_comparaisons =
-        contextes_acces_batiments$distribution,
-      rampe_acces_batiments_comparaisons =
-        contextes_acces_batiments$rampe
+      rampe_acces_batiments_comparaisons = contextes_rampe
   )
 }
 
@@ -1414,17 +1379,6 @@ validations_mobilite <- list(
     }
     invisible(payload)
   },
-  # La grille bâtiment × équipement est une projection compacte optionnelle :
-  # ses bornes et ses libellés sont des faits de payload, et la matrice source
-  # ne doit jamais franchir la publication.
-  function(payload) {
-    if (!"distribution_acces_batiments" %in% names(payload) ||
-        is.null(payload$distribution_acces_batiments)) return(invisible(payload))
-    verifier_contrat_distribution_acces_batiments(
-      payload$distribution_acces_batiments
-    )
-    invisible(payload)
-  },
   # La rampe marginale est une seconde projection de la même source : elle
   # porte les trois modes, onze quantiles et aucun bâtiment individuel.
   function(payload) {
@@ -1483,10 +1437,7 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages,
     histoires = resoudre_histoires(
       compute_histoires_mobilite(analytiques, vintages), "mobilite"),
     territoires = reference_territoires(territoires),
-    distribution_acces_batiments = analytiques$distribution_acces_batiments,
     rampe_acces_batiments = analytiques$rampe_acces_batiments,
-    distribution_acces_batiments_comparaisons =
-      analytiques$distribution_acces_batiments_comparaisons,
     rampe_acces_batiments_comparaisons =
       analytiques$rampe_acces_batiments_comparaisons,
     apercu = assemble_apercu(territoires, construire_apercu_mobilite(territoires))

@@ -39,84 +39,6 @@ distribution_batiments_fixture <- function() {
   )
 }
 
-test_that("normaliser_accessibilite_batiments calcule breadth et depth sur le même bâtiment", {
-  fx <- distribution_batiments_fixture()
-
-  resultat <- normaliser_accessibilite_batiments(
-    fx$accessibilite,
-    fx$batiments,
-    registre_distribution_fixture()
-  )
-
-  expect_named(resultat, c("batiment_groupe_id", "commune", "breadth", "depth"))
-  expect_equal(resultat$commune, c("22001", "22001", "29011"))
-  expect_equal(resultat$breadth, c(1L, 2L, 0L))
-  expect_equal(resultat$depth, c(1L, 12L, 0L))
-})
-
-test_that("agreger_distribution_acces_batiments publie une grille complète par territoire", {
-  fx <- distribution_batiments_fixture()
-  batiments <- normaliser_accessibilite_batiments(
-    fx$accessibilite,
-    fx$batiments,
-    registre_distribution_fixture()
-  )
-
-  resultat <- agreger_distribution_acces_batiments(
-    batiments,
-    fx$base_epci,
-    registre_distribution_fixture()
-  )
-
-  expect_named(resultat, CLES_DISTRIBUTION_ACCES_BATIMENTS)
-  expect_true(all(resultat$availability[resultat$availability != "absent"] == "complete"))
-  expect_equal(nrow(resultat), 7L * 5L * 6L + 1L)
-
-  cellule <- resultat[
-    resultat$territoire == "22001" &
-      resultat$breadth_bucket == "1-9" &
-      resultat$depth_bucket == "1-9", , drop = FALSE
-  ]
-  expect_equal(nrow(cellule), 1L)
-  expect_equal(cellule$building_count, 1L)
-  expect_equal(cellule$total_buildings, 2L)
-  expect_equal(cellule$share, 0.5)
-  expect_equal(cellule$breadth_label, "1–9")
-  expect_equal(cellule$depth_label, "1–9")
-  expect_equal(cellule$mode, "t")
-  expect_equal(cellule$mode_label, "À pied + TC")
-  expect_equal(cellule$source_id, "mobilite_snapshot")
-  expect_equal(cellule$source, MOBILITE_SNAPSHOT_SOURCE)
-  expect_equal(cellule$version, "2026-02")
-  expect_equal(cellule$date_reference, "2026-02-28")
-  expect_equal(cellule$date_publication, "2026-08-06")
-  expect_equal(cellule$comparison_label, "communes de l'EPCI")
-  expect_equal(cellule$comparison_total_buildings, 2L)
-  expect_equal(cellule$comparison_building_count, 1L)
-  expect_equal(cellule$comparison_share, 0.5)
-
-  verifier_contrat_distribution_acces_batiments(resultat)
-})
-
-test_that("les bornes de la distribution sont les tranches documentées", {
-  expect_equal(
-    DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key,
-    c("0", "1-9", "10-24", "25-39", "40-53")
-  )
-  expect_equal(
-    DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key,
-    c("0", "1-9", "10-49", "50-199", "200-499", "500+")
-  )
-  expect_equal(
-    DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL,
-    "types d’équipements accessibles"
-  )
-  expect_equal(
-    DISTRIBUTION_ACCES_BATIMENTS_DEPTH_LABEL,
-    "équipements accessibles"
-  )
-})
-
 test_that("agreger_rampe_acces_batiments publie onze points monotones par mode", {
   fx <- distribution_batiments_fixture()
   batiments <- normaliser_accessibilite_batiments_modes(
@@ -197,7 +119,7 @@ test_that("les valeurs d'accessibilité manquantes ou non entières échouent", 
   fx <- distribution_batiments_fixture()
 
   expect_error(
-    normaliser_accessibilite_batiments(
+    normaliser_accessibilite_batiments_modes(
       dplyr::select(fx$accessibilite, -transit_walk_A129),
       fx$batiments,
       registre_distribution_fixture()
@@ -208,7 +130,7 @@ test_that("les valeurs d'accessibilité manquantes ou non entières échouent", 
   absent <- fx$accessibilite
   absent$transit_walk_A128[[1]] <- NA_character_
   expect_error(
-    normaliser_accessibilite_batiments(
+    normaliser_accessibilite_batiments_modes(
       absent, fx$batiments, registre_distribution_fixture()
     ),
     "valeur manquante"
@@ -217,7 +139,7 @@ test_that("les valeurs d'accessibilité manquantes ou non entières échouent", 
   fraction <- fx$accessibilite
   fraction$transit_walk_A128[[1]] <- "1.5"
   expect_error(
-    normaliser_accessibilite_batiments(
+    normaliser_accessibilite_batiments_modes(
       fraction, fx$batiments, registre_distribution_fixture()
     ),
     "entière"
@@ -286,11 +208,6 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
   )
   expect_equal(names(contextes_sans_epci), c("densite", "bretagne"))
 
-  batiments <- tibble::tibble(
-    commune = c("22001", "22001", "22002", "22004", "29011"),
-    breadth = c(1L, 2L, 3L, 4L, 4L),
-    depth = c(1L, 2L, 3L, 4L, 4L)
-  )
   rampe <- tibble::tibble(
     commune = c("22001", "22001", "22002", "22004", "29011"),
     breadth_c = c(1, 2, 3, 4, 4),
@@ -299,32 +216,9 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
   )
 
   projections <- construire_contextes_acces_batiments(
-    batiments, rampe, base, classes,
+    rampe, base, classes,
     territoires_reference = reference
   )
-  density_distribution <- projections$distribution[
-    projections$distribution$territoire == "22001" &
-      projections$distribution$comparison_mode == "densite", , drop = FALSE
-  ]
-  expect_equal(nrow(density_distribution), 5L * 6L)
-  expect_equal(sum(density_distribution$comparison_building_count), 4L)
-  expect_equal(unique(density_distribution$comparison_total_buildings), 4L)
-  expect_equal(unique(density_distribution$scope_kind), "communes-densite")
-  epci_distribution <- projections$distribution[
-    projections$distribution$territoire == "22001" &
-      projections$distribution$comparison_mode == "epci", , drop = FALSE
-  ]
-  expect_equal(sum(epci_distribution$comparison_building_count), 3L)
-  expect_equal(unique(epci_distribution$scope_label), "communes de CA EPCI X")
-  # The same cohort is materialized once but published on every member's fiche.
-  epci_neighbor <- projections$distribution[
-    projections$distribution$territoire == "22002" &
-      projections$distribution$comparison_mode == "epci", , drop = FALSE
-  ]
-  expect_equal(epci_neighbor$comparison_building_count,
-               epci_distribution$comparison_building_count)
-  expect_equal(epci_neighbor$scope_label, epci_distribution$scope_label)
-
   density_ramp <- projections$rampe[
     projections$rampe$territoire == "22001" &
       projections$rampe$comparison_mode == "densite" &
@@ -343,20 +237,6 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
                density_ramp$comparison_accessible_types)
 
   expect_false(any(
-    projections$distribution$territoire == "22003" &
-      projections$distribution$comparison_mode == "epci"
-  ))
-  bretagne_distribution <- projections$distribution[
-    projections$distribution$territoire == "22001" &
-      projections$distribution$comparison_mode == "bretagne", , drop = FALSE
-  ]
-  expect_equal(sum(bretagne_distribution$comparison_building_count), 5L)
-  expect_equal(unique(bretagne_distribution$comparison_total_buildings), 5L)
-  expect_false(any(
-    projections$distribution$territoire == "29011" &
-      projections$distribution$comparison_mode == "densite"
-  ))
-  expect_false(any(
     projections$rampe$territoire == "29011" &
       projections$rampe$comparison_mode == "densite"
   ))
@@ -364,25 +244,16 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
   # Deux bâtiments dans la seule commune de l'EPCI Z ne forment toujours pas
   # un groupe de comparaison : le dénominateur est le nombre de communes,
   # jamais le nombre de lignes bâtiment.
-  batiments_groupe_insuffisant <- dplyr::bind_rows(
-    batiments[batiments$commune == "29011", , drop = FALSE],
-    batiments[batiments$commune == "29011", , drop = FALSE]
-  )
   rampe_groupe_insuffisant <- dplyr::bind_rows(
     rampe[rampe$commune == "29011", , drop = FALSE],
     rampe[rampe$commune == "29011", , drop = FALSE]
   )
   projections_groupe_insuffisant <- construire_contextes_acces_batiments(
-    batiments_groupe_insuffisant,
     rampe_groupe_insuffisant,
     base,
     classes,
     territoires_reference = reference
   )
-  expect_false(any(
-    projections_groupe_insuffisant$distribution$territoire == "29011" &
-      projections_groupe_insuffisant$distribution$comparison_mode == "epci"
-  ))
   expect_false(any(
     projections_groupe_insuffisant$rampe$territoire == "29011" &
       projections_groupe_insuffisant$rampe$comparison_mode == "epci"
@@ -395,11 +266,11 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
     ))
   ]
   projections_sans_densite <- construire_contextes_acces_batiments(
-    batiments, rampe, base,
+    rampe, base,
     territoires_reference = reference_sans_densite
   )
-  expect_false(any(projections_sans_densite$distribution$comparison_mode == "densite"))
-  expect_true(any(projections_sans_densite$distribution$comparison_mode == "epci"))
+  expect_false(any(projections_sans_densite$rampe$comparison_mode == "densite"))
+  expect_true(any(projections_sans_densite$rampe$comparison_mode == "epci"))
 })
 
 test_that("les projections refusent un référentiel de densité incomplet ou ambigu", {
@@ -414,23 +285,19 @@ test_that("les projections refusent un référentiel de densité incomplet ou am
     DENS7 = c("1", "1"),
     LIBDENS7 = c("Grands centres urbains", "Grands centres urbains")
   )
-  batiments <- tibble::tibble(
-    commune = c("22001", "22002"), breadth = c(1L, 2L), depth = c(1L, 2L)
-  )
-
   expect_error(
-    construire_contextes_acces_batiments(batiments, NULL, base),
+    construire_contextes_acces_batiments(NULL, base),
     "référentiel de densité"
   )
 
   expect_error(
-    construire_contextes_acces_batiments(batiments, NULL, base, classes[-1, ]),
+    construire_contextes_acces_batiments(NULL, base, classes[-1, ]),
     "sans classe de densité"
   )
 
   expect_error(
     construire_contextes_acces_batiments(
-      batiments, NULL, base, dplyr::bind_rows(classes, classes[1, ])
+      NULL, base, dplyr::bind_rows(classes, classes[1, ])
     ),
     "jointure communale ambiguë"
   )

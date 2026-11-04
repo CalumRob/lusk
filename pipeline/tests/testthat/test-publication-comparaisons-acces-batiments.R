@@ -23,15 +23,17 @@ test_that("les comparaisons de bâtiments publient le même canon Parquet que le
 
   publier_comparaisons_acces_batiments(projections, cible)
 
-  for (kind in c("distribution", "rampe")) {
-    nom <- paste0(if (kind == "distribution")
-      "distribution_acces_batiments_comparaisons" else
-      "rampe_acces_batiments_comparaisons")
-    parquet <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
-    json <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
-    expect_equal(as.list(parquet), as.list(projections[[kind]]), info = kind)
-    verifier_non_derivee(parquet, json, nom)
-  }
+  nom <- "rampe_acces_batiments_comparaisons"
+  parquet <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
+  json <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
+  expect_equal(as.list(parquet), as.list(projections$rampe), info = "rampe")
+  verifier_non_derivee(parquet, json, nom)
+  expect_false(file.exists(file.path(cible,
+                                    "distribution_acces_batiments_comparaisons.json")))
+  expect_false(file.exists(file.path(cible,
+                                    "distribution_acces_batiments_comparaisons.parquet")))
+  # The artifact is not recreated even when a legacy grid comparison is
+  # supplied alongside valid ramp projections.
 
   canon <- file.path(cible, "rampe_acces_batiments_comparaisons.parquet")
   avant <- readBin(canon, "raw", n = file.info(canon)$size)
