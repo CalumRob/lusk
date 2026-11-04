@@ -94,6 +94,7 @@ export interface AedarCarAccessOverviewScalar {
     | { kind: 'selection-mean'; label: string; value: number; unit: string } | null
   rankUnavailableLabel?: string | null
   comparisonUnavailableLabel?: string | null
+  comparisonAccessibleLabel?: string | null
 }
 
 export interface AedarCarAccessOverviewEvidence {

@@ -176,6 +176,24 @@ describe('AEDAR car access overview', () => {
     expect(section.evidence!.prose.flat().map((segment) => segment.value).join('')).toContain('diversité médiane')
   })
 
+  it.each(['pending', 'failed', 'missing-cell'] as const)(
+    'retains a scalar unavailable mark during a %s comparison read', (state) => {
+      const data = ready()
+      const section = aedarCarAccessOverviewSection(data, territory, {
+        comparisonRequest: { intent: { kind: 'fixed_comparison', context: 'density_class' }, label: 'Moyenne de la classe de densité' },
+        ...(state === 'missing-cell' ? { comparison: { label: 'Moyenne de la classe de densité',
+          contentVersion: data.contentVersion, referenceContentVersion: data.referenceContentVersion, cells: [] } } : {}),
+      })
+      expect(section.evidence!.scalars.map((scalar) => scalar.reference)).toEqual([null, null])
+      expect(section.evidence!.scalars.map((scalar) => scalar.comparisonUnavailableLabel)).toEqual([
+        'Groupe comparé : Indisponible', 'Groupe comparé : Indisponible',
+      ])
+      expect(section.evidence!.scalars.map((scalar) => scalar.comparisonAccessibleLabel)).toEqual([
+        'Moyenne de la classe de densité', 'Moyenne de la classe de densité',
+      ])
+    },
+  )
+
   it.each(['addresses', 'territory', 'source', 'coverage', 'duplicate', 'unknown type'])('rejects incompatible %s without producing a fabricated mean', (kind) => {
     const data = ready()
     if (kind === 'addresses') data.facts[1]!.n_addresses = 4

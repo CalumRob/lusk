@@ -30,10 +30,13 @@ const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
   if (selection?.etat === 'membres') return selection.membres.length ? {
     intent: { kind: 'selected_comparison', members: selection.membres }, label: 'Moyenne de la sélection',
   } : null
+  if (selection?.etat === 'vide') return null
   const preset = selection?.etat === 'preset' ? selection.preset : control.value?.presetDefaut
-  return preset === 'densite' && control.value?.libelleActif ? {
-    intent: { kind: 'fixed_comparison', context: 'density_class' }, label: `Moyenne — ${control.value.libelleActif}`,
-  } : null
+  // Commune EPCI/Bretagne and EPCI/département same-level scopes are direct
+  // published territory aggregates supplied by TerritoireView. Only density
+  // class is pooled and therefore requires a fixed-comparison read here.
+  if (preset !== 'densite' || !control.value?.libelleActif) return null
+  return { intent: { kind: 'fixed_comparison', context: 'density_class' }, label: `Moyenne – ${control.value.libelleActif}` }
 })
 const comparison = ref<AedarComparisonEvidence | null>(null)
 const comparisonState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -102,10 +105,14 @@ const transformed = computed(() => {
   const reference = allowDirectReference && referenceTerritoire && referenceData && referenceData.status === 'ready'
     ? { data: referenceData, territory: { type: referenceTerritoire.type, id: referenceTerritoire.id }, label: referenceTerritoire.nom }
     : null
+  const directReferenceExpected = Boolean(allowDirectReference && referenceTerritoire)
+  const directReferenceReady = referenceData?.status === 'ready' && props.aedarReferenceStatus !== 'error'
   const sections = aedarPrototypeSections(focal, props.content.territory, {
     reference,
     comparison: comparison.value,
     comparisonRequest: comparisonRequest.value,
+    comparisonPending: directReferenceExpected && !directReferenceReady,
+    comparisonAccessibleLabel: referenceTerritoire ? `Moyenne de ${referenceTerritoire.nom}` : null,
     lossMapMetadata: lossMapMetadata.value,
   })
   const carOverview = sections.find((section) => section.key === 'aedar-car-overview')

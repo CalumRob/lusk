@@ -21,7 +21,9 @@ const readings = computed(() => props.selectedModes.map((mode) => {
   const direction = cell?.direction === 'low' ? 'moins est mieux' : 'plus est mieux'
   const formatted = value === null ? 'Indisponible' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
   return { mode, modeLabel: AEDAR_RAMP_MODE_LABELS[mode], formatted, rank, glyph: cell?.direction === 'low' ? '↓' : '↑',
-    accessibleName: `${AEDAR_RAMP_MODE_LABELS[mode]}, ${props.horizonMinutes} minutes. Groupe comparé : ${formatted}. ${props.label}.${rank ? ` Rang du territoire : ${rank}, ${direction}${cell?.rank_ties && cell.rank_ties > 1 ? ', ex æquo' : ''}.` : ''}` }
+    // The visible comparison mark names its role once. Screen-reader context
+    // supplies the statistic and resolved scope instead of repeating that role.
+    accessibleName: `${AEDAR_RAMP_MODE_LABELS[mode]}, ${props.horizonMinutes} minutes. ${props.label} : ${formatted}.${rank ? ` Rang du territoire : ${rank}, ${direction}${cell?.rank_ties && cell.rank_ties > 1 ? ', ex æquo' : ''}.` : ''}` }
 }))
 </script>
 

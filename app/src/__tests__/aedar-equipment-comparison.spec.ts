@@ -23,7 +23,9 @@ describe('Bac à sable et Groupe comparé AEDAR', () => {
     expect(wrapper.text()).toContain('Groupe comparé : 7,4')
     expect(wrapper.text()).toContain('↑ 3e/3')
     expect(wrapper.text()).not.toContain('Moyenne de la sélection')
-    expect(wrapper.get('[role="img"]').attributes('aria-label')).toContain('Moyenne de la sélection. Rang du territoire : 3e/3, plus est mieux')
+    const accessibleName = wrapper.get('[role="img"]').attributes('aria-label')!
+    expect(accessibleName).toContain('Moyenne de la sélection : 7,4. Rang du territoire : 3e/3, plus est mieux')
+    expect(accessibleName).not.toContain('Groupe comparé')
     wrapper.unmount()
   })
   it.each([null, 'pending_review'])('montre la référence indisponible sans puce pour une couverture inconnue (%s)', (coverage) => {

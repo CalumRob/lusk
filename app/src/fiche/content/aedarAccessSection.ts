@@ -56,6 +56,8 @@ export interface AedarAccessSectionOptions {
   reference?: AedarReferenceEvidence | null
   comparison?: AedarComparisonEvidence | null
   comparisonRequest?: AedarComparisonRequest | null
+  comparisonPending?: boolean
+  comparisonAccessibleLabel?: string | null
   /** Supplied by the production Mobility cahier when it displays published loss maps. */
   lossMapMetadata?: AedarDiversityLossMapMetadata
 }
@@ -329,7 +331,11 @@ export function aedarCarAccessOverviewSection(
       ...reading, value,
       // #914 owns ranks of these sums. Per-TYPEQU ranks cannot establish them.
       rankUnavailableLabel: referenceValue !== null ? 'Classement indisponible' : null,
-      comparisonUnavailableLabel: (options.comparisonRequest || reference) && referenceValue === null ? 'Groupe comparé : Indisponible' : null,
+      // Keep an explicit mark inside every scalar while a requested group is
+      // pending, rejected, or simply has no comparable published cell.
+      comparisonUnavailableLabel: (options.comparisonRequest || reference || comparison || options.comparisonPending) && referenceValue === null
+        ? 'Groupe comparé : Indisponible' : null,
+      comparisonAccessibleLabel: options.comparisonRequest?.label ?? (reference ? `Moyenne de ${reference.label}` : options.comparisonAccessibleLabel ?? null),
       reference: comparison && value !== null && referenceValue !== null ? {
         kind: 'selection-mean' as const, label: comparison.label, value: referenceValue, unit: reading.unit,
       } : reference && value !== null && referenceValue !== null ? {
