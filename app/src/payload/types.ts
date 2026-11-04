@@ -188,7 +188,10 @@ export interface Indicateur extends Omit<VintageStamp, 'vintage_version'> {
   rang_dep_n: number | null
   rang_reg_n: number | null
   /** Rank returned by the acquired comparison API with its declared exact scope. The ONLY rank the UI renders a chip from (#892). */
-  comparaisonApi?: { rang: number; taille: number | null; portee: string | null; direction?: 'high' | 'low' }
+  comparaisonApi?: { rang: number | null; taille: number | null; portee: string | null; direction?: 'high' | 'low';
+    reference?: { kind: 'median' | 'mean'; value: number } }
+  /** Producer coordinates retained independently of a collection's display label. */
+  collectionFacet?: { detail: string; observation_period: string }
 }
 
 /**

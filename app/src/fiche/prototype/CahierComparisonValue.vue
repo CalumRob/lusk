@@ -3,6 +3,7 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import type { NumericFact, TerritorialScalarReference } from '@/fiche/content/territoryFacts'
 import CahierRank from './CahierRank.vue'
+import { comparisonRank } from '@/fiche/content/comparisonRank'
 
 const props = withDefaults(
   defineProps<{
@@ -32,7 +33,8 @@ function comparisonAccessibleName(): string {
   const statistic = comparison?.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane'
   const description = props.namedReference?.label
     ?? (comparison?.scope.label ? `${statistic} des ${comparison.scope.label}` : null)
-  return `Groupe comparé : ${comparisonText()}${description ? `. ${description}` : ''}`
+  const rank = !props.namedReference && props.fact ? comparisonRank(props.fact) : null
+  return `Groupe comparé : ${comparisonText()}${rank ? `. Rang ${rank.phrase}` : description ? `. ${description}` : ''}`
 }
 </script>
 
@@ -42,16 +44,13 @@ function comparisonAccessibleName(): string {
     class="cahier-comparison-value cahier-figure-comparison"
     :class="{ 'cahier-comparison-value--named': namedReference }"
   >
-    <span v-if="comparisonText()" class="cahier-comparison-value__reference" role="img" :aria-label="comparisonAccessibleName()">
+    <span v-if="comparisonText()" class="cahier-comparison-value__reference" :role="to ? 'group' : 'img'" :aria-label="comparisonAccessibleName()">
       Groupe comparé :
       <strong class="region-emphasis">{{ comparisonText() }}</strong>
-    </span>
-    <span v-if="fact?.comparison && !namedReference" class="cahier-comparison-value__rank">
       <CahierRank
-        v-if="fact.comparison.rank"
+        v-if="fact && !namedReference"
         :fact="fact"
         :to="to"
-        placement="access"
       />
     </span>
   </p>
@@ -59,24 +58,19 @@ function comparisonAccessibleName(): string {
 
 <style scoped>
 .cahier-comparison-value {
-  display: grid;
-  grid-template-rows: auto minmax(2.5em, auto);
-  justify-items: center;
+  display: flex;
   width: 100%;
   min-width: 0;
-  row-gap: 2px;
   margin: 0;
   color: var(--cahier-default);
   font: var(--type-figure-comparison);
   letter-spacing: normal;
   text-align: center;
-  grid-template-columns: minmax(0, 1fr);
+  justify-content: center;
   /* Les parents donnent une largeur disponible explicite ; la référence ne doit
      pas élargir les colonnes intrinsèques des scalaires inline. */
   contain: inline-size;
 }
-
-.cahier-comparison-value--named { grid-template-rows: auto; }
 
 .cahier-comparison-value__reference {
   min-width: 0;
@@ -85,15 +79,8 @@ function comparisonAccessibleName(): string {
   overflow-wrap: break-word;
 }
 
-.cahier-comparison-value__rank {
-  display: flex;
-  min-width: 0;
-  min-height: 2.5em;
-  align-items: center;
-  justify-content: center;
-  gap: 0.3em;
-  width: 100%;
-  line-height: 1.2;
+.cahier-comparison-value__reference :deep(.cahier-rank) {
+  margin-inline-start: 0.5em;
 }
 
 .cahier-comparison-value .region-emphasis {

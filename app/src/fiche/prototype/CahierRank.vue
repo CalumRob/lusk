@@ -3,6 +3,7 @@ import { RouterLink } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
 
 import type { NumericFact } from '@/fiche/content/territoryFacts'
+import { comparisonRank } from '@/fiche/content/comparisonRank'
 
 const props = withDefaults(
   defineProps<{
@@ -14,15 +15,11 @@ const props = withDefaults(
 )
 
 function rankText(fact: NumericFact): string | null {
-  const rank = fact.comparison?.rank
-  if (!rank) return null
-  return `${rank.position === 1 ? '1er' : `${rank.position}e`}/${rank.size}`
+  return comparisonRank(fact)?.rang ?? null
 }
 
 function rankDescription(fact: NumericFact): string | null {
-  const rank = rankText(fact)
-  if (!rank || !fact.comparison) return null
-  return `${rank} — ${fact.comparison.direction === 'plus-est-mieux' ? 'plus est mieux' : 'moins est mieux'}`
+  return comparisonRank(fact)?.phrase ?? null
 }
 
 function isExtreme(fact: NumericFact): boolean {
@@ -58,14 +55,16 @@ function rankStyle(seed: string): Record<string, string> {
       :style="rankStyle(props.fact.key)"
       :title="rankDescription(props.fact) ?? undefined"
       :aria-label="rankDescription(props.fact) ?? undefined"
-    >{{ rankText(props.fact) }}</RouterLink>
+    ><span aria-hidden="true">{{ comparisonRank(props.fact)?.glyphe }} </span>{{ rankText(props.fact) }}</RouterLink>
     <span
       v-else
       class="cahier-rank rank-emphasis"
       :class="[`cahier-rank--${props.placement}`, { 'is-extreme': isExtreme(props.fact) }]"
       :style="rankStyle(props.fact.key)"
       :title="rankDescription(props.fact) ?? undefined"
-    >{{ rankText(props.fact) }}</span>
+      role="img"
+      :aria-label="rankDescription(props.fact) ?? undefined"
+    ><span aria-hidden="true">{{ comparisonRank(props.fact)?.glyphe }} </span>{{ rankText(props.fact) }}</span>
   </template>
 </template>
 

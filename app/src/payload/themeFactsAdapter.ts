@@ -121,8 +121,10 @@ function validerResultatComparaison(result: Row, data: Row, declaration?: Row): 
   const profilePointFacet = data.shape === 'profile' && isRecord(result.source_facet) &&
     texteNonVide(result.source_facet.detail) &&
     (result.source_facet.sex === null || texteNonVide(result.source_facet.sex))
+  const collectionPointFacet = data.shape === 'observed_collection' && isRecord(result.source_facet) &&
+    texteNonVide(result.source_facet.detail) && texteNonVide(result.source_facet.observation_period)
   if (result.source_facet !== undefined && result.source_facet !== null &&
-      !texteNonVide(result.source_facet) && !profilePointFacet) {
+      !texteNonVide(result.source_facet) && !profilePointFacet && !collectionPointFacet) {
     throw new Error('Facette de comparaison sémantique invalide')
   }
   if (result.status === 'available' && data.shape === 'scalar' &&
@@ -1148,6 +1150,10 @@ export function lignesAvecComparaisonApi(lignes: Indicateur[], comparison: unkno
       // series (for example the resolved current year). Its facet is a fact
       // coordinate, not a label to spread across every point in that series.
       if (item.source_facet !== undefined && item.source_facet !== null) {
+        if (isRecord(item.source_facet)) {
+          return row.collectionFacet?.detail === item.source_facet.detail &&
+            row.collectionFacet?.observation_period === item.source_facet.observation_period
+        }
         const coordinate = row.dimension ?? row.detail
         // Scalar comparisons identify their indicator as the source facet;
         // ordered-series comparisons identify the selected axis coordinate.
@@ -1160,10 +1166,14 @@ export function lignesAvecComparaisonApi(lignes: Indicateur[], comparison: unkno
       return (facet.detail ?? null) === (row.detail ?? null) && (facet.sex ?? null) === (row.sex ?? null)
     })
     if (!match) return row
-    validerResultatComparaison(match, profiles.includes(match) ? { shape: 'profile' } : {})
-    if (match.status !== 'available' || match.rank === null || match.rank === undefined) return row
-    return { ...row, comparaisonApi: { rang: match.rank as number, taille: match.rank_size as number | null,
-      portee, direction: match.direction as 'high' | 'low' } }
+    validerResultatComparaison(match, profiles.includes(match) ? { shape: 'profile' }
+      : row.collectionFacet ? { shape: 'observed_collection' } : {})
+    if (match.status !== 'available') return row
+    const reference = finite(match.mean) ? { kind: 'mean' as const, value: match.mean }
+      : finite(match.median) ? { kind: 'median' as const, value: match.median } : undefined
+    if (match.rank == null && !reference) return row
+    return { ...row, comparaisonApi: { rang: (match.rank as number | null) ?? null, taille: (match.rank_size as number | null) ?? null,
+      portee, direction: match.direction as 'high' | 'low', ...(reference ? { reference } : {}) } }
   })
 }
 
@@ -1219,6 +1229,7 @@ function programmesRows(response: Row, target: { territoire: string; type: Terri
         if (!texteNonVide(entry.observation_period) || !texteNonVide(entry.label) || !finite(entry.value)) throw new Error('Subvention Programmes invalide')
         result.push({ territoire: target.territoire, type: target.type, theme: 'programmes', key: 'subventions_par_domaine',
           detail: entry.label, dimension: entry.observation_period, value: entry.value, unit: collection.unit,
+          ...(texteNonVide(entry.detail) ? { collectionFacet: { detail: entry.detail, observation_period: entry.observation_period } } : {}),
           rider: null, ...vintageSql(entry.sources, entry.label), rang_epci: null, rang_epci_n: null,
           rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null })
       }
