@@ -115,7 +115,7 @@ _AEDAR_AGGREGATE_RECORDS_SQL = """SELECT territory_id,
        count((measures->>%s)::double precision) AS n_measured,
        sum((measures->>%s)::double precision) AS total,
        min(n_addresses) AS na_min, max(n_addresses) AS na_max,
-       sum(n_observed) AS observed_sum,
+       sum(n_observed)::bigint AS observed_sum,
        count(DISTINCT coverage_status) AS n_coverage,
        min(coverage_status) AS coverage_status
 FROM aedar_territorial_aggregate
@@ -178,7 +178,7 @@ def _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry
 _AEDAR_POOLED_GROUP_SQL = """SELECT count(*) AS n_rows, count(value) AS n_measured,
        sum(value) AS total,
        min(n_addresses) AS na_min, max(n_addresses) AS na_max,
-       sum(n_observed) AS observed_sum,
+       sum(n_observed)::bigint AS observed_sum,
        count(DISTINCT statistic) AS n_statistic, min(statistic) AS statistic,
        count(DISTINCT coverage_status) AS n_coverage, min(coverage_status) AS coverage_status
 FROM aedar_comparison_group
