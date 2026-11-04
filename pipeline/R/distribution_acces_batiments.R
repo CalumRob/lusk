@@ -88,13 +88,12 @@ lire_accessibilite_batiments <- function(
   )
 }
 
-# normaliser_accessibilite_batiments ------------------------------------------
+# normaliser_accessibilite_batiments_modes ------------------------------------
 # Joint l'export de comptes à la couche bâtiments sur l'identité BDNB. Une
 # identité absente d'un côté ou de l'autre est une corruption : une jointure
 # partielle ferait varier silencieusement le dénominateur de la figure.
-# normaliser_accessibilite_batiments_modes --------------------------------------
-# Même garde d'identité et de valeurs que la projection t, mais conserve les
-# trois largeurs de panier nécessaires à la rampe. La fonction reste interne au
+# Conserve les trois largeurs de panier nécessaires à la rampe avec les gardes
+# d'identité et de valeurs de la source. La fonction reste interne au
 # pipeline : son résultat n'est jamais publié tel quel.
 normaliser_accessibilite_batiments_modes <- function(
     accessibilite,
