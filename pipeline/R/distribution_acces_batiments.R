@@ -761,7 +761,7 @@ verifier_integrite_projections_acces_batiments <- function(payload) {
     }))
   }))
 
-  verifier_table <- function(table, nom, niveau) {
+  verifier_table <- function(table, nom) {
     if (is.null(table)) return(invisible(NULL))
     if (!is.data.frame(table)) {
       stop("Modèle de territoire : la projection bâtiment `", nom,
@@ -816,29 +816,16 @@ verifier_integrite_projections_acces_batiments <- function(payload) {
            codes[[ligne]], "`.", call. = FALSE)
     }
 
-    if (niveau == "distribution") {
-      requis_cellules <- c("breadth_bucket", "depth_bucket")
-      manquantes_cellules <- setdiff(requis_cellules, names(table))
-      if (length(manquantes_cellules) > 0L) {
-        stop("Modèle de territoire : la projection bâtiment `", nom,
-             "` ne porte pas ses cellules.", call. = FALSE)
-      }
-      signature <- paste(
-        codes, modes, as.character(table$breadth_bucket),
-        as.character(table$depth_bucket), sep = "\r"
-      )
-    } else {
-      requis_points <- c("mode", "quantile")
-      manquantes_points <- setdiff(requis_points, names(table))
-      if (length(manquantes_points) > 0L) {
-        stop("Modèle de territoire : la projection bâtiment `", nom,
-             "` ne porte pas ses points de rampe.", call. = FALSE)
-      }
-      signature <- paste(
-        codes, modes, as.character(table$mode),
-        as.character(table$quantile), sep = "\r"
-      )
+    requis_points <- c("mode", "quantile")
+    manquantes_points <- setdiff(requis_points, names(table))
+    if (length(manquantes_points) > 0L) {
+      stop("Modèle de territoire : la projection bâtiment `", nom,
+           "` ne porte pas ses points de rampe.", call. = FALSE)
     }
+    signature <- paste(
+      codes, modes, as.character(table$mode),
+      as.character(table$quantile), sep = "\r"
+    )
     if (anyDuplicated(signature)) {
       stop("Modèle de territoire : projection bâtiment `", nom,
            "` contient une ligne en double.", call. = FALSE)
@@ -848,7 +835,7 @@ verifier_integrite_projections_acces_batiments <- function(payload) {
 
   verifier_table(
     payload$rampe_acces_batiments_comparaisons,
-    "rampe_acces_batiments_comparaisons", "rampe"
+    "rampe_acces_batiments_comparaisons"
   )
   invisible(payload)
 }

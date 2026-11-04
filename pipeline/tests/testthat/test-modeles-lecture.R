@@ -81,20 +81,6 @@ reference_projections <- function() {
   )
 }
 
-distribution_projections <- function(territoire = "22001",
-                                     modes = c("epci", "bretagne")) {
-  tibble::tibble(
-    territoire = territoire, type = "commune",
-    comparison_mode = modes,
-    scope_kind = c("communes-epci", "communes-bretagne")[seq_along(modes)],
-    scope_label = c("communes de EPCI X", "communes bretonnes")[seq_along(modes)],
-    breadth_bucket = "1-9", depth_bucket = "1-9",
-    comparison_total_buildings = 10L * seq_along(modes),
-    comparison_building_count = 10L * seq_along(modes),
-    comparison_share = 1
-  )
-}
-
 rampe_projections <- function(territoire = "22001",
                               modes = c("epci", "bretagne")) {
   tibble::tibble(
@@ -111,7 +97,6 @@ rampe_projections <- function(territoire = "22001",
 test_that("verifier_integrite_projections_acces_batiments accepte des projections cohérentes", {
   payload <- list(
     territoires = reference_projections(),
-    distribution_acces_batiments_comparaisons = distribution_projections(),
     rampe_acces_batiments_comparaisons = rampe_projections()
   )
   expect_identical(verifier_integrite_projections_acces_batiments(payload), payload)
@@ -121,12 +106,10 @@ test_that("verifier_integrite_projections_acces_batiments accepte des projection
 })
 
 test_that("verifier_integrite_projections_acces_batiments rejette les projections incohérentes", {
-  construit <- function(distribution = distribution_projections(),
-                        rampe = rampe_projections(),
+  construit <- function(rampe = rampe_projections(),
                         territoires = reference_projections()) {
     list(
       territoires = territoires,
-      distribution_acces_batiments_comparaisons = distribution,
       rampe_acces_batiments_comparaisons = rampe
     )
   }
@@ -140,15 +123,15 @@ test_that("verifier_integrite_projections_acces_batiments rejette les projection
 
   expect_error(
     verifier_integrite_projections_acces_batiments(
-      construit(distribution = distribution_projections(territoire = "99999"))
+      construit(rampe = rampe_projections(territoire = "99999"))
     ),
     "territoire inconnu dans la projection bâtiment"
   )
 
-  inconnu <- distribution_projections()
+  inconnu <- rampe_projections()
   inconnu$comparison_mode <- "contexte-inconnu"
   expect_error(
-    verifier_integrite_projections_acces_batiments(construit(distribution = inconnu)),
+    verifier_integrite_projections_acces_batiments(construit(rampe = inconnu)),
     "mode de comparaison inconnu"
   )
 
@@ -156,21 +139,28 @@ test_that("verifier_integrite_projections_acces_batiments rejette les projection
   # résoluble pour aucune commune
   expect_error(
     verifier_integrite_projections_acces_batiments(
-      construit(distribution = distribution_projections(modes = "densite"))
+      construit(rampe = rampe_projections(modes = "densite"))
     ),
     "indisponible pour le territoire"
   )
 
-  perimetre <- distribution_projections()
+  perimetre <- rampe_projections()
   perimetre$scope_label[[1L]] <- "communes bretonnes"
   expect_error(
-    verifier_integrite_projections_acces_batiments(construit(distribution = perimetre)),
+    verifier_integrite_projections_acces_batiments(construit(rampe = perimetre)),
     "périmètre ou une identité incohérente"
   )
 
-  double <- dplyr::bind_rows(distribution_projections(), distribution_projections())
+  double <- dplyr::bind_rows(rampe_projections(), rampe_projections())
   expect_error(
-    verifier_integrite_projections_acces_batiments(construit(distribution = double)),
+    verifier_integrite_projections_acces_batiments(construit(rampe = double)),
     "ligne en double"
+  )
+
+  sans_point <- rampe_projections()
+  sans_point$quantile <- NULL
+  expect_error(
+    verifier_integrite_projections_acces_batiments(construit(rampe = sans_point)),
+    "points de rampe"
   )
 })
