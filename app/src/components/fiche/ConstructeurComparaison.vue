@@ -61,10 +61,13 @@ defineExpose({ ouvrir })
     </button>
     <CahierDialog :open="ouvert" title="Construire un groupe de comparaison" :labelled-by="titreId" @close="fermer">
       <template #toolbar>
-        <div v-if="presets.length" class="constructeur-comparaison__presets" aria-label="Démarrer avec un groupe prédéfini">
+        <div v-if="presets.length" class="constructeur-comparaison__presets" role="group" aria-label="Démarrer avec un groupe prédéfini">
           <button v-for="preset in presets" :key="preset.preset" type="button"
-            :aria-pressed="selection.etat === 'preset' && selection.preset === preset.preset"
+            class="constructeur-comparaison__preset"
+            :aria-pressed="selectionAffichee.etat === 'preset' && selectionAffichee.preset === preset.preset"
             @click="appliquer({ etat: 'preset', preset: preset.preset })">{{ preset.label }}</button>
+          <button type="button" class="constructeur-comparaison__preset"
+            :aria-pressed="selection.etat === 'vide'" @click="appliquer({ etat: 'vide' })">Aucune comparaison</button>
         </div>
       </template>
       <div class="constructeur-comparaison__contenu">
@@ -76,17 +79,17 @@ defineExpose({ ouvrir })
 
 <style scoped>
 .constructeur-comparaison { position: relative; display: inline-flex; align-self: center; flex: 0 0 auto; line-height: 0; }
-.constructeur-comparaison__declencheur { display: grid; place-items: center; inline-size: 1.8em; block-size: 1.3em; padding: 0; border: 1px solid var(--border-default, var(--border-subtle)); border-radius: 2px; background: var(--paper, var(--surface-primary)); color: var(--cahier-theme-strong, var(--red, var(--accent-primary))); cursor: pointer; }
+.constructeur-comparaison__declencheur { display: grid; place-items: center; inline-size: 1.8em; block-size: 1.3em; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--cahier-theme-strong, var(--red, var(--accent-primary))); cursor: pointer; }
 .constructeur-comparaison__declencheur:hover { background: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 8%, transparent); }
 .constructeur-comparaison__declencheur:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .constructeur-comparaison__presets { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
-.constructeur-comparaison__presets button { min-block-size: 36px; padding: 0 var(--space-3); border: 1px solid var(--border-subtle, var(--border)); border-radius: 2px; background: transparent; color: inherit; font: 400 13px/1.35 var(--font-ui); cursor: pointer; }
-.constructeur-comparaison__presets button[aria-pressed="true"] { background: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 12%, transparent); font-weight: 700; }
+.constructeur-comparaison__preset { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 36px; padding: var(--space-1) var(--space-2); border: 1px solid color-mix(in oklab, var(--cahier-default) 22%, transparent); border-radius: 0; background: transparent; color: var(--cahier-default); font: var(--type-figure-label); cursor: pointer; }
+.constructeur-comparaison__preset[aria-pressed="true"] { border-color: var(--brand-500); color: var(--brand-600); background: color-mix(in oklab, var(--brand-200) 24%, transparent); }
+.constructeur-comparaison__preset:focus-visible { outline: 2px solid var(--red, var(--accent-primary)); outline-offset: 2px; }
 .constructeur-comparaison__contenu { min-width: 0; }
-.constructeur-comparaison__contenu :deep(.membres-comparaison__liste) { max-block-size: min(34dvh, 18rem); overflow: auto; }
 @media (max-width: 639px) {
   .constructeur-comparaison__declencheur { inline-size: 44px; block-size: 44px; }
   .constructeur-comparaison__presets { gap: var(--space-1); }
-  .constructeur-comparaison__presets button { min-block-size: 44px; }
+  .constructeur-comparaison__preset { min-block-size: 44px; }
 }
 </style>

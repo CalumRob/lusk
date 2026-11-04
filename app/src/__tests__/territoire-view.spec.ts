@@ -1742,7 +1742,7 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBeUndefined()
     expect(wrapper.get('dialog[aria-modal="true"]').text()).toContain('Construire un groupe de comparaison')
-    expect(wrapper.get('input[type="search"]').attributes('aria-label')).toBe('Rechercher un territoire du même niveau')
+    expect(wrapper.get('input[type="search"]').attributes('aria-label')).toBe('Rechercher un territoire')
     wrapper.unmount()
   }, 20_000)
 

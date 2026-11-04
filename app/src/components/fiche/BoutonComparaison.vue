@@ -241,9 +241,9 @@ function choisir(entree: EntreeMenu): void {
   box-sizing: border-box;
   block-size: 1.3em;
   padding: 0 var(--space-1);
-  border: 1px solid var(--border-default, var(--border-subtle));
-  border-radius: 2px;
-  background: var(--paper, var(--surface-primary));
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--cahier-theme-strong, var(--red, var(--accent-primary)));
   font: inherit;
   font-weight: 700;

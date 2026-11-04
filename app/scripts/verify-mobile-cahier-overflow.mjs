@@ -448,17 +448,24 @@ try {
       const root = button.closest('.bouton-comparaison')
       const heading = button.closest('.page-heading')
       const theme = heading.querySelector('.page-heading-theme')
+      const title = heading.querySelector('.page-heading-context-title')
+      const context = heading.querySelector('.page-heading-context')
       const style = getComputedStyle(button)
       const separation = theme.getBoundingClientRect().left - button.getBoundingClientRect().right
       const withButton = heading.getBoundingClientRect().height
       root.style.display = 'none'
       const withoutButton = heading.getBoundingClientRect().height
       root.style.removeProperty('display')
-      return { withButton, withoutButton, separation, border: style.borderLeftWidth, radius: style.borderRadius }
+      const builderStyle = getComputedStyle(heading.querySelector('.constructeur-comparaison__declencheur'))
+      return { withButton, withoutButton, separation, border: style.borderLeftWidth, radius: style.borderRadius,
+        builderBorder: builderStyle.borderLeftWidth, titleAlign: getComputedStyle(title).textAlign,
+        titleRight: title.getBoundingClientRect().right, contextRight: context.getBoundingClientRect().right }
     })
-    assert.equal(heading.withButton, heading.withoutButton, `Le bouton agrandit le heading à ${width}px : ${JSON.stringify(heading)}`)
-    assert(heading.separation >= 12 && heading.border === '1px' && heading.radius === '2px',
-      `Le contrôle doit être carré, bordé et séparé du titre à ${width}px : ${JSON.stringify(heading)}`)
+    assert(heading.withButton <= heading.withoutButton + 1,
+      `Les contrôles agrandissent le heading à ${width}px : ${JSON.stringify(heading)}`)
+    assert(heading.separation >= 12 && heading.border === '0px' && heading.radius === '0px' &&
+      heading.builderBorder === '0px' && heading.titleAlign === 'right' && Math.abs(heading.titleRight - heading.contextRight) < 1,
+      `Contrôles sans cadre, séparés du titre aligné à droite à ${width}px : ${JSON.stringify(heading)}`)
     await trigger.click()
     const menuBounds = await page.locator('.bouton-comparaison__menu').evaluate((element) => {
       const { left, right } = element.getBoundingClientRect()
@@ -1506,7 +1513,7 @@ try {
     await searchMember.waitFor({ state: 'visible' })
     await searchMember.fill('22002')
     await page.getByTestId('ajouter-membre').click()
-    await page.locator('dialog[open] .membres-comparaison li').filter({ hasText: 'Andel' }).waitFor()
+    await page.locator('dialog[open] .membres-comparaison__table tr').filter({ hasText: 'Andel' }).waitFor()
     const builder = await page.locator('dialog[open].cahier-dialog').evaluate((element) => {
       const box = element.getBoundingClientRect()
       const style = getComputedStyle(element)
@@ -1514,11 +1521,15 @@ try {
       return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, position: style.position,
         viewportHeight: innerHeight, overflow: element.scrollWidth > element.clientWidth,
         modal: element.getAttribute('aria-modal'),
+        searchFirst: Boolean(element.querySelector('input[type="search"]')?.compareDocumentPosition(element.querySelector('.membres-comparaison__table')) & Node.DOCUMENT_POSITION_FOLLOWING),
+        hasMemberTable: Boolean(element.querySelector('.membres-comparaison__table')),
         targets: targets.map((target) => target.getBoundingClientRect().height) }
     })
     assert(!builder.overflow && builder.left >= 0 && builder.right <= width && builder.top >= 0 && builder.bottom <= builder.viewportHeight,
       `Constructeur hors du viewport à ${width}px : ${JSON.stringify(builder)}`)
     assert.equal(builder.modal, 'true', 'Le constructeur doit être un dialogue modal')
+    assert(builder.hasMemberTable && builder.searchFirst,
+      'La recherche doit précéder le tableau des membres dans le modal')
     assert(builder.targets.every((height) => height >= 44), `Cibles constructeur <44px : ${JSON.stringify(builder)}`)
     assert.equal(builder.position, 'fixed', 'Le constructeur doit utiliser la couche modale native')
     if (width === 390 || width === 1440) await page.screenshot({ path: resolve(evidenceDir, `issue861-constructeur-${width}.png`), fullPage: false })
