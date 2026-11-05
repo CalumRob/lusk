@@ -72,7 +72,8 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
     // Selected reads support a matrix; fixed reads declare one cell per item.
     const cellBudget = selected ? Math.max(1, Math.min(100, Math.floor(400 / options.measures.length),
       Math.floor(20000 / Math.max(1, members!.length)))) : 1
-    const items = []
+    const items: Array<{ id: string; resource: string; target: { kind: string; type: AedarTerritoryType; id: string };
+      coordinates: { typequ: string[]; measure: string[] }; intent: typeof intent; fields: string[] }> = []
     const measureGroups = selected ? [options.measures] : options.measures.map((measure) => [measure])
     for (const measures of measureGroups) for (let start = 0; start < options.typequ.length; start += cellBudget) {
       items.push({ id: `aedar-comparison-${items.length}`, resource: 'aedar_territorial_aggregate',
@@ -82,10 +83,12 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
     const cells: AedarComparisonCell[] = []
     let comparisonVersion: string | undefined
     // Keep batches small enough even for large selections (preflight work counts
-    // members × cells). At most one request is in flight; no partial publication.
+    // members × cells). Read-batch items are stateless, so issue every batch
+    // concurrently and publish only after the complete set validates.
     const batchSize = selected ? Math.max(1, Math.min(8, Math.floor(80000 / Math.max(1, members!.length * cellBudget)))) : 12
-    for (let start = 0; start < items.length; start += batchSize) {
-      const batch = items.slice(start, start + batchSize)
+    const batches = Array.from({ length: Math.ceil(items.length / batchSize) }, (_, index) =>
+      items.slice(index * batchSize, (index + 1) * batchSize))
+    const responses = await Promise.all(batches.map(async (batch) => {
       const response = await fetcher('/api/resources/read-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: batch }), signal: options.signal })
       if (!response.ok) {
@@ -94,8 +97,11 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
       }
       const body: unknown = await response.json()
       if (!record(body) || body.contract !== 'semantic-read-batch-v1' || !Array.isArray(body.results) || body.results.length !== batch.length) invalid()
+      return { batch, body: body as Record<string, unknown> }
+    }))
+    for (const { batch, body } of responses) {
       const seen = new Set<string>()
-      for (const result of body.results) {
+      for (const result of body.results as unknown[]) {
         if (!record(result) || typeof result.id !== 'string' || seen.has(result.id)) invalid()
         seen.add(result.id)
         const item = batch.find((item) => item.id === result.id)

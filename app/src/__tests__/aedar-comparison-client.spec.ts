@@ -87,4 +87,22 @@ describe('lecture AEDAR de la Sélection', () => {
     expect(result).toMatchObject({ status: 'ready', evidence: { cells: [expect.objectContaining({ group_value: 13, statistic: 'direct' })] } })
     expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string).items[0].fields).toEqual(['group_value'])
   })
+  it('lance les lots fixed_comparison en parallèle et conserve le nombre minimal de lots de 12 cellules', async () => {
+    const typequ = Array.from({ length: 25 }, (_, index) => `T${index}`)
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      ({ ok: false, json: async () => ({ detail: 'fixture stop' }) }) as Response)
+    vi.stubGlobal('fetch', fetcher)
+    const resultPromise = fetchAedarComparison('commune', '22001', { ...options,
+      intent: { kind: 'fixed_comparison', context: 'density_class' }, typequ,
+      measures: ['count_5_walk_mean'], label: 'Classe de densité' })
+    // All 3 requests (ceil(25 cells / 12)) are dispatched before any response
+    // is awaited; the prior loop issued one request at a time.
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    const result = await resultPromise
+    expect(result).toMatchObject({ status: 'error' })
+    const dispatched = fetcher.mock.calls.flatMap(([, init]) =>
+      JSON.parse(init!.body as string).items as Array<{ coordinates: { typequ: string[]; measure: string[] } }>)
+    expect(dispatched).toHaveLength(25)
+    expect(dispatched.every((item) => item.coordinates.typequ.length === 1 && item.coordinates.measure.length === 1)).toBe(true)
+  })
 })
