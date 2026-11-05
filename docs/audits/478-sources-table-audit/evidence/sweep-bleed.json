@@ -1,0 +1,224 @@
+[
+  {
+    "largeur": 320,
+    "page": "sources",
+    "scroll": 320,
+    "client": 0,
+    "coquilleDroite": 320,
+    "maxRight": 374,
+    "pire": "article.source-record",
+    "pireTexte": "Jeu de donnéesINSEE — Série historique du recensementÉditeur",
+    "debordementCoquille": 54
+  },
+  {
+    "largeur": 340,
+    "page": "sources",
+    "scroll": 340,
+    "client": 0,
+    "coquilleDroite": 340,
+    "maxRight": 374,
+    "pire": "article.source-record",
+    "pireTexte": "Jeu de donnéesINSEE — Série historique du recensementÉditeur",
+    "debordementCoquille": 34
+  },
+  {
+    "largeur": 360,
+    "page": "sources",
+    "scroll": 360,
+    "client": 0,
+    "coquilleDroite": 360,
+    "maxRight": 374,
+    "pire": "article.source-record",
+    "pireTexte": "Jeu de donnéesINSEE — Série historique du recensementÉditeur",
+    "debordementCoquille": 14
+  },
+  {
+    "largeur": 375,
+    "page": "sources",
+    "scroll": 375,
+    "client": 0,
+    "coquilleDroite": 375,
+    "maxRight": 374,
+    "pire": "article.source-record",
+    "pireTexte": "Jeu de donnéesINSEE — Série historique du recensementÉditeur",
+    "debordementCoquille": -1
+  },
+  {
+    "largeur": 390,
+    "page": "sources",
+    "scroll": 390,
+    "client": 0,
+    "coquilleDroite": 390,
+    "maxRight": 374,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 420,
+    "page": "sources",
+    "scroll": 420,
+    "client": 0,
+    "coquilleDroite": 420,
+    "maxRight": 404,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 480,
+    "page": "sources",
+    "scroll": 480,
+    "client": 0,
+    "coquilleDroite": 480,
+    "maxRight": 464,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 560,
+    "page": "sources",
+    "scroll": 560,
+    "client": 0,
+    "coquilleDroite": 560,
+    "maxRight": 544,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 640,
+    "page": "sources",
+    "scroll": 640,
+    "client": 0,
+    "coquilleDroite": 640,
+    "maxRight": 624,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 700,
+    "page": "sources",
+    "scroll": 700,
+    "client": 0,
+    "coquilleDroite": 700,
+    "maxRight": 684,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 768,
+    "page": "sources",
+    "scroll": 768,
+    "client": 0,
+    "coquilleDroite": 768,
+    "maxRight": 752,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 768,
+    "page": "methodes-mobilite",
+    "scroll": 768,
+    "tableW": 1348,
+    "coquilleW": 736,
+    "deborde": 612
+  },
+  {
+    "largeur": 820,
+    "page": "sources",
+    "scroll": 820,
+    "client": 0,
+    "coquilleDroite": 820,
+    "maxRight": 804,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 900,
+    "page": "sources",
+    "scroll": 900,
+    "client": 0,
+    "coquilleDroite": 900,
+    "maxRight": 884,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 1024,
+    "page": "sources",
+    "scroll": 1024,
+    "client": 0,
+    "coquilleDroite": 1024,
+    "maxRight": 1008,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 1024,
+    "page": "methodes-mobilite",
+    "scroll": 1024,
+    "tableW": 1348,
+    "coquilleW": 992,
+    "deborde": 356
+  },
+  {
+    "largeur": 1100,
+    "page": "sources",
+    "scroll": 1100,
+    "client": 0,
+    "coquilleDroite": 1100,
+    "maxRight": 1084,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 1280,
+    "page": "sources",
+    "scroll": 1280,
+    "client": 0,
+    "coquilleDroite": 1240,
+    "maxRight": 1224,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 1440,
+    "page": "sources",
+    "scroll": 1440,
+    "client": 0,
+    "coquilleDroite": 1320,
+    "maxRight": 1304,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  },
+  {
+    "largeur": 1440,
+    "page": "methodes-mobilite",
+    "scroll": 1440,
+    "tableW": 1348,
+    "coquilleW": 1168,
+    "deborde": 180
+  },
+  {
+    "largeur": 1920,
+    "page": "sources",
+    "scroll": 1920,
+    "client": 0,
+    "coquilleDroite": 1560,
+    "maxRight": 1544,
+    "pire": "h1.",
+    "pireTexte": "Sources",
+    "debordementCoquille": -16
+  }
+]

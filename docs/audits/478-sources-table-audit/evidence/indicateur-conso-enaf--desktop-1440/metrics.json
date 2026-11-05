@@ -1,0 +1,27 @@
+{
+  "page": "/indicateurs/milieux/conso_enaf_annuel",
+  "largeur": 1440,
+  "viewport": {
+    "innerWidth": 1440,
+    "innerHeight": 900
+  },
+  "scrollLargeurDoc": 1440,
+  "clientLargeurDoc": 1440,
+  "debordementHorizontal": 0,
+  "coquilleDroite": null,
+  "maxDroiteContenu": 0,
+  "pireContenu": "",
+  "debordementCoquille": null,
+  "sectionsMilimesVides": 0,
+  "debordants": [],
+  "hauteurPagePx": 62519,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 0,
+  "lignes": [],
+  "tableLargeurPx": null,
+  "conteneurLargeurPx": null,
+  "fichesIndicateur": [],
+  "titrePage": "Consommation d’ENAF — série annuelle",
+  "url": "/indicateurs/milieux/conso_enaf_annuel?detail=2024&niveau=commune"
+}

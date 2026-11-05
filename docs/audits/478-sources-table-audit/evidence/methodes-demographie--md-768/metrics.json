@@ -1,0 +1,171 @@
+{
+  "page": "/methodologie?onglet=sources&section=demographie",
+  "largeur": 768,
+  "viewport": {
+    "innerWidth": 768,
+    "innerHeight": 1024
+  },
+  "scrollLargeurDoc": 768,
+  "clientLargeurDoc": 768,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 768,
+  "maxDroiteContenu": 1155,
+  "pireContenu": "table.sources-tableau",
+  "debordementCoquille": 387,
+  "sectionsMilimesVides": 0,
+  "debordants": [
+    {
+      "sel": "button.onglet",
+      "left": 663,
+      "right": 769
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-building2-icon",
+      "left": 789,
+      "right": 807
+    },
+    {
+      "sel": "path",
+      "left": 797,
+      "right": 800
+    },
+    {
+      "sel": "span",
+      "left": 815,
+      "right": 879
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-trees-icon",
+      "left": 915,
+      "right": 933
+    },
+    {
+      "sel": "table.sources-tableau",
+      "left": 16,
+      "right": 1155
+    },
+    {
+      "sel": "thead",
+      "left": 17,
+      "right": 1154
+    },
+    {
+      "sel": "tr",
+      "left": 17,
+      "right": 1154
+    },
+    {
+      "sel": "th",
+      "left": 688,
+      "right": 841
+    },
+    {
+      "sel": "th.colonne-lien",
+      "left": 1090,
+      "right": 1154
+    },
+    {
+      "sel": "span.visuellement-cache",
+      "left": 1105,
+      "right": 1106
+    },
+    {
+      "sel": "tbody",
+      "left": 17,
+      "right": 1154
+    },
+    {
+      "sel": "tr.source-jeu",
+      "left": 17,
+      "right": 1154
+    },
+    {
+      "sel": "td.cellule-fraicheur",
+      "left": 688,
+      "right": 841
+    },
+    {
+      "sel": "td.cellule-licence",
+      "left": 1005,
+      "right": 1090
+    },
+    {
+      "sel": "td.colonne-lien",
+      "left": 1090,
+      "right": 1154
+    },
+    {
+      "sel": "a.lien-donnees",
+      "left": 1106,
+      "right": 1138
+    },
+    {
+      "sel": "svg.lucide.lucide-external-link-icon.lucide-external-link",
+      "left": 1114,
+      "right": 1130
+    }
+  ],
+  "hauteurPagePx": 1456,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 4,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Série historique du recensement",
+      "nomLen": 39,
+      "themes": [
+        "Démographie",
+        "Milieux"
+      ],
+      "indicateurs": [
+        "Densité de population",
+        "Évolution de la population depuis 1968"
+      ],
+      "hauteurLignePx": 176,
+      "hauteurCelluleIndicateurs": 151
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Ménages (dossier complet)",
+      "nomLen": 33,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [
+        "Taille moyenne des ménages"
+      ],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": 84
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Population par sexe et âge (PRINC)",
+      "nomLen": 42,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [
+        "Structure par âge"
+      ],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": 42
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+      "nomLen": 54,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": null
+    }
+  ],
+  "tableLargeurPx": 1139,
+  "conteneurLargeurPx": 736,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=demographie"
+}
