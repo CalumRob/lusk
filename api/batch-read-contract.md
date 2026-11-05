@@ -146,11 +146,21 @@ satisfy the same compatibility law as the fiche's displayed sums (CONTEXT.md
 present, all rows share one source vintage/provenance (`source_id`,
 `vintage_id`, `source_url`, `licence`, `attribution`, reference/publication
 dates), every row is `covered`, the address population agrees and is positive,
-every observed count is valid (`0 ≤ n_observed ≤ n_addresses`), and every
-per-type value is a finite number ≥ 0 (≤ 1 for share readings). Incomplete,
-uncovered or unknown evidence never becomes a partial sum or a fabricated
-zero: the reading is honestly unavailable (null value, `status:
-"not_available"`).
+every observed count is valid (`0 ≤ n_observed ≤ n_addresses`, NULL counts as
+bad), and every per-type value is a finite number ≥ 0 (≤ 1 for share
+readings). Incomplete, uncovered or unknown evidence never becomes a partial
+sum or a fabricated zero: the reading is honestly unavailable (null value,
+`status: "not_available"`).
+
+Both aggregate shapes implement this law through one mechanism — per-territory
+rows of `aedar_territorial_aggregate` and the pooled density rows of
+`aedar_comparison_group` emit the same normalized law inputs to one law
+(#914 amendment, 2026-11-05). On the pooled artifact, provenance uniformity
+is a publication-level tie (the artifact publishes atomically against one
+committed AEDAR content version, enforced by its publication trigger) and the
+statistic is schema-CHECKed to `pooled`; a pooled row with NULL `n_observed`
+passes the table CHECK but counts as invalid here, exactly as on the
+territorial path, so such a pooled reading is honestly unavailable.
 
 - `fixed_comparison` keeps each declared context's reference semantics (the
   direct EPCI/Bretagne/Région aggregate, or the pooled density artifact summed

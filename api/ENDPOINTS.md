@@ -237,9 +237,18 @@ Searches the retained published territory reference with bounded query inputs.
   CONTEXT.md « Moyennes d'accès en voiture AEDAR »); members/peers failing it
   are honestly unavailable (`status: "not_available"`, null rank fields) and
   ineligible for the rank — `rank_size` reflects the eligible population, never
-  a zero-filled or fabricated value. Per-cell measures keep the selected-only
-  rank boundary (#904): the fixed intent grants `rank`/`rank_size`/`rank_ties`
-  on the aggregate facets only.
+  a zero-filled or fabricated value. Both aggregate shapes — per-territory
+  rows in `aedar_territorial_aggregate` and the pooled density rows in
+  `aedar_comparison_group` — flow through one availability law over one
+  normalized input record (#914 amendment, 2026-11-05): on the pooled
+  artifact, provenance uniformity is a publication-level tie (the artifact
+  publishes atomically against one committed AEDAR content version) and the
+  statistic is schema-CHECKed to `pooled`, while observed-count validity
+  (`0 ≤ n_observed ≤ n_addresses`, NULL counts as bad) is computed honestly
+  for both shapes — a pooled row with NULL `n_observed` makes the reading
+  honestly unavailable, never silently served. Per-cell measures keep the
+  selected-only rank boundary (#904): the fixed intent grants
+  `rank`/`rank_size`/`rank_ties` on the aggregate facets only.
 
 ## Retired route families
 
