@@ -69,7 +69,7 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
     const base = evidence('territory-a')
     const request = { intent: { kind: 'selected_comparison' as const,
       members: ['territory-a', 'territory-b', 'territory-c'].map((territory_id) => ({ territory_type: 'commune' as const, territory_id })) }, label: 'Moyenne de la sélection' }
-    const wrapper = mount(AedarEquipmentExplorerCahier, { props: { evidence: { ...base, comparisonRequest: request } } })
+    const wrapper = mount(AedarEquipmentExplorerCahier, { props: { evidence: { ...base, comparisonRequest: request }, comparisonVisible: true } })
     await flushPromises()
     expect(fetchAedarComparison).toHaveBeenCalledWith('commune', 'territory-a', expect.objectContaining({
       typequ: ['B207'], intent: request.intent, expectedContentVersion: 'same-content', expectedReferenceContentVersion: 'same-reference',
@@ -107,6 +107,8 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
     const groupedBars = wrapper.findAll('.cahier-grouped-vertical-bar-chart__bar').length
     expect(groupedBars).toBeGreaterThan(1)
     await comparisonToggle!.trigger('click')
+    expect(wrapper.emitted('update:comparisonVisible')?.at(-1)).toEqual([false])
+    await wrapper.setProps({ comparisonVisible: false })
     expect(wrapper.find('.access-ramp-line--comparison').exists()).toBe(false)
     expect(wrapper.findComponent(AedarEquipmentQuantileFigureCahier).props('comparisonVisible')).toBe(false)
     expect(wrapper.findAll('.cahier-grouped-vertical-bar-chart__bar')).toHaveLength(groupedBars - base.distributionStatistics.length)
@@ -114,6 +116,8 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
     expect(wrapper.find('.cahier-grouped-vertical-bar-chart__svg').attributes('aria-label')).toContain('Groupe comparé : Voiture')
     expect(wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!.attributes('aria-pressed')).toBe('false')
     await wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!.trigger('click')
+    expect(wrapper.emitted('update:comparisonVisible')?.at(-1)).toEqual([true])
+    await wrapper.setProps({ comparisonVisible: true })
     expect(wrapper.find('.access-ramp-line--comparison').exists()).toBe(true)
     await wrapper.setProps({ evidence: base })
     expect(wrapper.findComponent(AccessRampFigureCahier).props('timeRamp')!.comparisonLabel).toBeNull()

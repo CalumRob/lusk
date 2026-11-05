@@ -26,10 +26,12 @@ const props = defineProps<{
   evidence: AedarEquipmentExplorerEvidence
   selectedModes?: readonly AedarRampMode[]
   selectedHorizon?: AedarEquipmentHorizon | null
+  comparisonVisible?: boolean
 }>()
 const emit = defineEmits<{
   'update:selectedModes': [modes: readonly AedarRampMode[]]
   'update:selectedHorizon': [horizon: AedarEquipmentHorizon]
+  'update:comparisonVisible': [visible: boolean]
 }>()
 
 const HORIZONS = AEDAR_EQUIPMENT_BUCKET_HORIZONS
@@ -132,7 +134,8 @@ const localHorizonMinutes = ref<AedarEquipmentHorizon>(props.evidence.initialHor
 const horizonMinutes = computed(() => props.selectedHorizon ?? localHorizonMinutes.value)
 const localSelectedModes = ref<AedarRampMode[]>([...AEDAR_DEFAULT_VISIBLE_RAMP_MODES])
 const selectedModes = computed(() => props.selectedModes ?? localSelectedModes.value)
-const comparisonVisible = ref(true)
+const localComparisonVisible = ref(true)
+const comparisonVisible = computed(() => props.comparisonVisible ?? localComparisonVisible.value)
 const pickerOpen = ref(false)
 const search = ref('')
 
@@ -194,7 +197,9 @@ const volumeRamp = computed<TimeRampFigureData>(() => {
 
 function toggleMode(key: string): void {
   if (key === 'comparison') {
-    comparisonVisible.value = !comparisonVisible.value
+    const next = !comparisonVisible.value
+    if (props.comparisonVisible !== undefined) emit('update:comparisonVisible', next)
+    else localComparisonVisible.value = next
     return
   }
   const next = toggleAedarRampModeSelection(selectedModes.value, key as AedarRampMode)

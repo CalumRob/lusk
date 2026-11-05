@@ -198,6 +198,17 @@ describe('AccessRampFigureCahier time ramp', () => {
     expect(label).toContain('Référence Territoires comparables')
   })
 
+  it('uses the shared legend toggle for the comparison curve without removing its accessible reading', async () => {
+    const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Territoire test' } })
+    const comparisonToggle = wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!
+    expect(comparisonToggle.attributes('aria-pressed')).toBe('true')
+    await comparisonToggle.trigger('click')
+    expect(wrapper.findAll('.access-ramp-line--comparison')).toHaveLength(0)
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Référence Territoires comparables')
+    expect(wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!.attributes('aria-pressed')).toBe('false')
+    wrapper.unmount()
+  })
+
   it('renders modes only, without reference lines, when no comparison label exists', () => {
     const wrapper = mount(AccessRampFigureCahier, {
       props: { timeRamp: timeRamp({ comparisonLabel: null }), territoryName: 'Territoire test' },

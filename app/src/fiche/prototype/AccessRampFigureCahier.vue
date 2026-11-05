@@ -26,8 +26,8 @@ const props = withDefaults(defineProps<{
   territoryName: string
   selectedModes?: readonly AedarRampMode[]
   showModeLegend?: boolean
-  comparisonVisible?: boolean
-}>(), { showModeLegend: true, comparisonVisible: true })
+  comparisonVisible?: boolean | null
+}>(), { showModeLegend: true, comparisonVisible: null })
 const emit = defineEmits<{ 'update:selectedModes': [modes: readonly AedarRampMode[]] }>()
 
 const WIDTH = 640
@@ -88,7 +88,7 @@ function toggleTimeMode(key: string): void {
   else selectedTimeModes.value = selected
 }
 const timeYAxis = computed(() => cahierIntegerYAxisScale(visibleTimeSeries.value.flatMap((series) =>
-  series.points.flatMap((point) => [point.value, point.referenceValue]),
+  series.points.flatMap((point) => comparisonVisible.value ? [point.value, point.referenceValue] : [point.value]),
 )))
 const measuredYTickLabels = computed(() => timeYAxis.value.ticks.map((value) =>
   `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}`))
