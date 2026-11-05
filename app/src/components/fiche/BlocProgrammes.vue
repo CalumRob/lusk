@@ -15,7 +15,7 @@
  *   - indicateurs_programmes.json — les faits, via programmesPourTerritoire
  *     (la dérivation en échelle : jointure relationnelle + voix honnêtes,
  *     ADR-0013 ; le total poolé est calculé côté pipeline) ;
- *   - histoires_programmes.json — vide : le thème sans lecture n'en invente
+ *   - aucune table de lecture : le thème n'en invente pas
  *     jamais une.
  *
  * Les états : un territoire sans aucun fait rend l'état vide honnête (« Aucun

@@ -246,7 +246,9 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
     if (indicateursTheme === null) continue
 
     const histoiresTheme = await chargerFichier(`histoires_${theme}`, territoires, options)
-    if (histoiresTheme === null) {
+    // Programmes has no published reading table: its producer contract is
+    // facts-only, so absence of a serialized empty histories file is expected.
+    if (histoiresTheme === null && theme !== 'programmes') {
       throw new PayloadError(
         'validation',
         `histoires_${theme}.json`,
@@ -267,7 +269,7 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
     }
 
     indicateurs.push(...indicateursTheme)
-    histoires.push(...histoiresTheme)
+    if (histoiresTheme !== null) histoires.push(...histoiresTheme)
     themeMetadata[theme] = metadataTheme
   }
 

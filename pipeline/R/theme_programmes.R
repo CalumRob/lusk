@@ -530,9 +530,9 @@ construire_analytiques_programmes <- function(donnees, base_epci,
 # TABLE (ecrire_parquets_programmes — le contrat « 404 = table absente », le
 # précédent apercu #116 ; la projection navigateur programmes.json est retirée
 # depuis #893), publie la
-# PAIRE HERMÉTIQUE du sixième thème (#408 : indicateurs_programmes.json +
-# histoires_programmes.json — l'app rend son onglet par défaut de SES propres
-# faits, jamais d'une lecture cross-thème) et retourne le payload, comme
+# projection de faits du sixième thème (#408 : indicateurs_programmes.json —
+# l'app rend son onglet par défaut de SES propres faits, jamais d'une lecture
+# cross-thème) et retourne le payload, comme
 # run_pipeline l'attend. Les métadonnées (theme_programmes.json) sont publiées
 # par run_pipeline via le trait `metadata` du descripteur.
 publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
