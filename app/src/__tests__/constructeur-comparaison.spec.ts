@@ -31,6 +31,9 @@ describe('ConstructeurComparaison — modal indépendante, lecture seule puis é
     expect(wrapper.emitted('choisir')).toBeUndefined()
     expect(wrapper.find('[aria-label="Retirer Étel"]').exists()).toBe(true)
     expect(wrapper.find('[aria-label="Retirer Erdeven"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="Ajouter Andel"]').exists()).toBe(true)
+    expect(wrapper.findAll('.membres-comparaison__table tbody tr')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="ajouter-membre"]').exists()).toBe(false)
     expect(wrapper.findAll('.constructeur-comparaison__preset').map((item) => item.text()))
       .toEqual(['EPCI · communes de l’EPCI', 'Bretagne', 'Aucune comparaison'])
     expect(wrapper.findAll('.constructeur-comparaison__preset').map((item) => item.attributes('aria-pressed')))
@@ -39,11 +42,12 @@ describe('ConstructeurComparaison — modal indépendante, lecture seule puis é
       .toBe('Rechercher un territoire')
     expect(wrapper.find('input[type="search"]').element.compareDocumentPosition(wrapper.find('table').element) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy()
-    expect(wrapper.find('table').find('th[scope="row"]').text()).toContain('Étel')
-    expect(wrapper.find('table').find('th[scope="row"]').text()).toContain('Territoire de la fiche')
+    expect(wrapper.find('table tbody tr').text()).toContain('Étel')
+    expect(wrapper.find('table tbody tr').text()).toContain('Territoire de la fiche')
     await wrapper.get('input[type="search"]').setValue('andel')
-    expect(wrapper.findAll('[data-testid="ajouter-membre"]').map((item) => item.text())).toEqual(['Ajouter Andel'])
-    await wrapper.get('[data-testid="ajouter-membre"]').trigger('click')
+    expect(wrapper.findAll('.membres-comparaison__table tbody tr')).toHaveLength(1)
+    expect(wrapper.get('[aria-label="Ajouter Andel"]').text()).toBe('Ajouter')
+    await wrapper.get('[aria-label="Ajouter Andel"]').trigger('click')
     const custom = { etat: 'membres', membres: [
       { territory_type: 'commune', territory_id: '1' }, { territory_type: 'commune', territory_id: '2' },
       { territory_type: 'commune', territory_id: '3' },
@@ -51,6 +55,9 @@ describe('ConstructeurComparaison — modal indépendante, lecture seule puis é
     expect(wrapper.emitted('choisir')?.at(-1)).toEqual([custom])
     await wrapper.setProps({ selection: custom as SelectionComparaison })
     expect(wrapper.find('[aria-label="Retirer Andel"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="Ajouter Étel"]').exists()).toBe(false)
+    await wrapper.get('input[type="search"]').setValue('')
+    expect(wrapper.findAll('.membres-comparaison__table tbody tr')).toHaveLength(3)
     await wrapper.get('[aria-label="Retirer Étel"]').trigger('click')
     expect(wrapper.emitted('choisir')?.at(-1)).toEqual([{ etat: 'membres', membres: [
       { territory_type: 'commune', territory_id: '2' }, { territory_type: 'commune', territory_id: '3' },
@@ -69,7 +76,7 @@ describe('ConstructeurComparaison — modal indépendante, lecture seule puis é
     expect(wrapper.emitted('choisir')).toBeUndefined()
     expect(wrapper.find('[aria-label="Retirer Étel"]').exists()).toBe(false)
     await wrapper.get('input[type="search"]').setValue('andel')
-    await wrapper.get('[data-testid="ajouter-membre"]').trigger('click')
+    await wrapper.get('[aria-label="Ajouter Andel"]').trigger('click')
     expect(wrapper.emitted('choisir')?.at(-1)).toEqual([{ etat: 'membres', membres: [
       { territory_type: 'commune', territory_id: '1' }, { territory_type: 'commune', territory_id: '3' },
     ] }])

@@ -14,8 +14,13 @@ const props = defineProps<{
   presets: readonly PresetComparaisonOption[]
   presetDefaut: PresetComparaison | null
   demandeOuverture?: number
+  masquerDeclencheur?: boolean
+  focusRetour?: HTMLElement | null
 }>()
-const emit = defineEmits<{ choisir: [selection: SelectionComparaison] }>()
+const emit = defineEmits<{
+  choisir: [selection: SelectionComparaison]
+  ouverte: [ouverte: boolean]
+}>()
 const ouvert = ref(false)
 const titreId = useId()
 const declencheur = ref<HTMLButtonElement | null>(null)
@@ -28,13 +33,17 @@ const membres = computed(() => membresConstructeur(selectionAffichee.value, prop
 watch(() => props.demandeOuverture, (demande, precedente) => {
   if (demande !== undefined && demande !== precedente) ouvrir()
 })
+watch(ouvert, (value) => emit('ouverte', value))
 
 function ouvrir(): void {
+  if (ouvert.value) {
+    return
+  }
   ouvert.value = true
 }
 function fermer(): void {
   ouvert.value = false
-  void nextTick(() => declencheur.value?.focus())
+  void nextTick(() => (props.focusRetour ?? declencheur.value)?.focus())
 }
 function appliquer(selection: SelectionComparaison): void {
   // An explicit-empty group stays empty until an actual edit. Its first add
@@ -53,8 +62,8 @@ defineExpose({ ouvrir })
 </script>
 
 <template>
-  <div class="constructeur-comparaison">
-    <button ref="declencheur" class="constructeur-comparaison__declencheur" type="button"
+  <div class="constructeur-comparaison" :class="{ 'constructeur-comparaison--sans-declencheur': masquerDeclencheur }">
+    <button v-if="!masquerDeclencheur" ref="declencheur" class="constructeur-comparaison__declencheur" type="button"
       aria-label="Construire un groupe de comparaison" aria-haspopup="dialog"
       :aria-expanded="ouvert" @click="ouvrir">
       <SlidersHorizontal :size="15" aria-hidden="true" />
@@ -79,6 +88,7 @@ defineExpose({ ouvrir })
 
 <style scoped>
 .constructeur-comparaison { position: relative; display: inline-flex; align-self: center; flex: 0 0 auto; line-height: 0; }
+.constructeur-comparaison--sans-declencheur { display: contents; }
 .constructeur-comparaison__declencheur { display: grid; place-items: center; inline-size: 1.8em; block-size: 1.3em; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--cahier-theme-strong, var(--red, var(--accent-primary))); cursor: pointer; }
 .constructeur-comparaison__declencheur:hover { background: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 8%, transparent); }
 .constructeur-comparaison__declencheur:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }

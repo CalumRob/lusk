@@ -7,7 +7,7 @@
  * targets. CahierPagination owns the presentation sequence. This component
  * only lays those two inputs out as the existing Cahier exploration.
  */
-import { CarFront } from 'lucide-vue-next'
+import { CarFront, SlidersHorizontal } from 'lucide-vue-next'
 import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -80,7 +80,14 @@ const route = useRoute()
  *  `null` (prototype hors fiche, Région) : aucun bouton. */
 const controleComparaison = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 const demandeConstructeur = ref(0)
-function ouvrirConstructeur(): void { demandeConstructeur.value++ }
+const focusRetourConstructeur = ref<HTMLElement | null>(null)
+const constructeurOuvert = ref(false)
+function ouvrirConstructeur(source: HTMLButtonElement | MouseEvent | null): void {
+  if (!source) return
+  const target = source instanceof MouseEvent ? source.currentTarget : source
+  if (target instanceof HTMLElement) focusRetourConstructeur.value = target
+  demandeConstructeur.value++
+}
 
 const rootRef = ref<HTMLElement | null>(null)
 const activeFigure = ref('')
@@ -403,15 +410,12 @@ onBeforeUnmount(() => {
                       @choisir="controleComparaison.choisir"
                       @construire="ouvrirConstructeur"
                     />
-                    <ConstructeurComparaison
-                      :selection="controleComparaison.selection"
-                      :focal="controleComparaison.focal"
-                      :territoires="controleComparaison.territoires"
-                      :presets="controleComparaison.presets"
-                      :preset-defaut="controleComparaison.presetDefaut"
-                      :demande-ouverture="demandeConstructeur"
-                      @choisir="controleComparaison.choisir"
-                    />
+                    <button type="button" class="page-heading-builder-trigger"
+                      aria-label="Construire un groupe de comparaison" aria-haspopup="dialog"
+                      :aria-expanded="constructeurOuvert"
+                      @click="ouvrirConstructeur">
+                      <SlidersHorizontal :size="15" aria-hidden="true" />
+                    </button>
                   </span>
                   <span class="page-heading-context-title">
                     <span class="page-heading-theme">{{ props.content.label }}</span>
@@ -765,6 +769,18 @@ onBeforeUnmount(() => {
           <RouterLink class="sources-link" to="/sources">Voir toutes les sources</RouterLink>
         </section>
       </main>
+      <ConstructeurComparaison v-if="controleComparaison"
+        :selection="controleComparaison.selection"
+        :focal="controleComparaison.focal"
+        :territoires="controleComparaison.territoires"
+        :presets="controleComparaison.presets"
+        :preset-defaut="controleComparaison.presetDefaut"
+        :demande-ouverture="demandeConstructeur"
+        :masquer-declencheur="true"
+        :focus-retour="focusRetourConstructeur"
+        @ouverte="constructeurOuvert = $event"
+        @choisir="controleComparaison.choisir"
+      />
     </div>
   </article>
 </template>
@@ -901,6 +917,9 @@ onBeforeUnmount(() => {
    (align-items: baseline) sans l'épaissir ; le territoire tronque à sa droite. */
 .cahier--indexed-sections .page-heading-comparaison { position: static; align-self: center; flex: none; margin-inline-end: var(--space-2); }
 .cahier--indexed-sections .page-heading-comparaison-controls { display: flex; align-items: baseline; flex: 0 0 auto; }
+.page-heading-builder-trigger { display: grid; place-items: center; flex: 0 0 auto; inline-size: 1.8em; block-size: 1.3em; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--cahier-theme-strong); cursor: pointer; }
+.page-heading-builder-trigger:hover { background: color-mix(in srgb, var(--cahier-theme) 8%, transparent); }
+.page-heading-builder-trigger:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 /* Réserver la colonne de contexte indépendamment du contrôle : son apparition
    ne doit pas réduire le titre et lui ajouter une ligne sur ordinateur. */
 .cahier--indexed-sections .page-heading-context { position: relative; inline-size: min(42vw, 24rem); }
@@ -1144,6 +1163,7 @@ onBeforeUnmount(() => {
   .cahier--indexed-sections .page-heading-context-title { flex: 1 1 auto; min-width: 0; }
   .cahier--indexed-sections .page-heading-theme { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .cahier--indexed-sections .page-heading-comparaison-controls .constructeur-comparaison { margin-inline-end: var(--space-2); }
+  .page-heading-builder-trigger { inline-size: 44px; block-size: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .cahier * { scroll-behavior: auto !important; }

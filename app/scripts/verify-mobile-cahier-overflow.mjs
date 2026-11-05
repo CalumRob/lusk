@@ -456,7 +456,7 @@ try {
       root.style.display = 'none'
       const withoutButton = heading.getBoundingClientRect().height
       root.style.removeProperty('display')
-      const builderStyle = getComputedStyle(heading.querySelector('.constructeur-comparaison__declencheur'))
+      const builderStyle = getComputedStyle(heading.querySelector('.page-heading-builder-trigger'))
       return { withButton, withoutButton, separation, border: style.borderLeftWidth, radius: style.borderRadius,
         builderBorder: builderStyle.borderLeftWidth, titleAlign: getComputedStyle(title).textAlign,
         titleRight: title.getBoundingClientRect().right, contextRight: context.getBoundingClientRect().right }
@@ -1511,9 +1511,12 @@ try {
     await builderTrigger.click()
     const searchMember = page.locator('dialog[open] .membres-comparaison input[type="search"]')
     await searchMember.waitFor({ state: 'visible' })
+    assert.equal(await searchMember.getAttribute('aria-label'), 'Rechercher un territoire')
     await searchMember.fill('22002')
-    await page.getByTestId('ajouter-membre').click()
+    const addMember = page.locator('dialog[open] .membres-comparaison__table button[aria-label^="Ajouter"]').first()
+    await addMember.click()
     await page.locator('dialog[open] .membres-comparaison__table tr').filter({ hasText: 'Andel' }).waitFor()
+    await searchMember.fill('')
     const builder = await page.locator('dialog[open].cahier-dialog').evaluate((element) => {
       const box = element.getBoundingClientRect()
       const style = getComputedStyle(element)
@@ -1523,6 +1526,7 @@ try {
         modal: element.getAttribute('aria-modal'),
         searchFirst: Boolean(element.querySelector('input[type="search"]')?.compareDocumentPosition(element.querySelector('.membres-comparaison__table')) & Node.DOCUMENT_POSITION_FOLLOWING),
         hasMemberTable: Boolean(element.querySelector('.membres-comparaison__table')),
+        tableScroll: (() => { const scroller = element.querySelector('.membres-comparaison__table-scroll'); return { client: scroller.clientHeight, scroll: scroller.scrollHeight, max: getComputedStyle(scroller).maxHeight } })(),
         targets: targets.map((target) => target.getBoundingClientRect().height) }
     })
     assert(!builder.overflow && builder.left >= 0 && builder.right <= width && builder.top >= 0 && builder.bottom <= builder.viewportHeight,
@@ -1530,11 +1534,14 @@ try {
     assert.equal(builder.modal, 'true', 'Le constructeur doit être un dialogue modal')
     assert(builder.hasMemberTable && builder.searchFirst,
       'La recherche doit précéder le tableau des membres dans le modal')
+    assert(builder.tableScroll.scroll > builder.tableScroll.client && builder.tableScroll.max !== 'none',
+      `Le tableau de tous les territoires doit être dans une zone scrollable à hauteur bornée : ${JSON.stringify(builder.tableScroll)}`)
     assert(builder.targets.every((height) => height >= 44), `Cibles constructeur <44px : ${JSON.stringify(builder)}`)
     assert.equal(builder.position, 'fixed', 'Le constructeur doit utiliser la couche modale native')
     if (width === 390 || width === 1440) await page.screenshot({ path: resolve(evidenceDir, `issue861-constructeur-${width}.png`), fullPage: false })
     await page.getByRole('button', { name: 'Fermer la fenêtre', exact: true }).click()
-    assert.equal(await builderTrigger.getAttribute('aria-expanded'), 'false')
+    assert.equal(await page.locator('.constructeur-comparaison dialog[open]').count(), 0,
+      'Le modal singleton doit être fermé après un seul clic')
 
     let plainMarginLayout = null
     if (width === 601 || width === 760) {

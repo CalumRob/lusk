@@ -61,7 +61,7 @@ const typeActif = computed(() => {
 const emit = defineEmits<{
   /** La sélection choisie, typée — la vue la sérialise dans ?comparaison=. */
   (e: 'choisir', selection: SelectionComparaison): void
-  (e: 'construire'): void
+  (e: 'construire', declencheur: HTMLButtonElement | null): void
 }>()
 
 interface EntreeMenu {
@@ -155,7 +155,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
 
 function choisir(entree: EntreeMenu): void {
   ouvert.value = false
-  if (entree.ouvrirConstructeur) emit('construire')
+  if (entree.ouvrirConstructeur) emit('construire', triggerRef.value)
   else if (entree.selection) {
     emit('choisir', entree.selection)
     void nextTick(() => triggerRef.value?.focus())
