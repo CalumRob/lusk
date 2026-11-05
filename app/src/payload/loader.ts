@@ -1,50 +1,12 @@
 /**
- * THE SINGLE SEAM — the only module in the app that touches the raw JSON
- * payload (docs/architecture.md §The fiche payload). Nothing else imports
- * this. It fetches the JSON projections from the /data/ hosting, validates
- * each file against the contract (the app's half of validate_payload(),
- * validate.ts) and parses the merged result into a typed Payload.
- *
- * Two entry points (issue #297 — the T1 prefactor of the progressive store,
- * PRD #296 « la page d'abord, le reste en arrière-plan ») :
- * - chargerFichier(nom) — ONE named file in, its typed section out (or null
- *   for an optional file absent by 404). The per-file seam the store ticket
- *   builds on; nothing consumes it yet.
- * - chargerPayload(options) — the assembled payload: all files, today's
- *   all-or-nothing semantics. Implemented on top of chargerFichier — same
- *   order, same errors, byte for byte.
- *
- * Theme discovery is payload-driven (ADR-0007): the canonical themes are
- * tried in order, a 404 on indicateurs_<theme>.json means the theme is
- * absent (dead tab — never an error), while a present theme without its
- * histoires file is contract drift (loud). The same presence rule holds for
- * the theme's metadata (theme_<theme>.json, issue #309, wired by #313): a
- * present theme REQUIRES its metadata file — 404 is drift, loud. run-report
- * and vintages.json are optional — a 404 means the static-rhythm freshness
- * claim, never an error. The shared programmes.json projection is RETIRED
- * (#893) and so is apercu.json (#894): no file entry exists for either and no
- * loader path requests or validates them — the fiche/map read the Programmes
- * facts through the API-backed theme files and native reads; the Aperçu
- * product tab is retired and no production path read its JSON (a stale
- * committed apercu.json is deleted (#903) — no file stays on disk to be
- * left unread).
- *
- * The reference-table dependency holds for any caller of the per-file entry
- * point that needs it: theme files (indicateurs_<theme>, histoires_<theme>)
- * validate AGAINST the validated territoires table —
- * the ordering constraint of the loader, kept (chargerFichier('indicateurs_
- * habitat', territoires)). theme_<theme>.json does NOT validate against the
- * table (validerThemeMetadata is self-contained) — its per-file entry takes
- * no reference; the presence rule lives in chargerPayload and the store.
- *
- * Failure is typed (PayloadError, validate.ts): kind 'fetch' for transport
- * problems (the UI's error state), kind 'validation' for contract drift.
+ * Fetch and validate one named JSON projection from the /data/ hosting.
+ * Progressive route/store readers use this per-file boundary; no whole-payload
+ * assembly path is provided here.
  */
 
 import type {
   Histoire,
   Indicateur,
-  Payload,
   RunReport,
   Territoire,
   Theme,
@@ -62,11 +24,6 @@ import {
   validerTerritoiresMetadata,
   validerCatalogueNavigateur,
   validerVintages,
-  verifierPariteLibelles,
-  verifierPariteTrajectoires,
-  verifierPariteDistributions,
-  verifierPariteListes,
-  verifierClassesDensite,
 } from './validate'
 
 /** The minimal Response surface the loader needs (fetch() satisfies it). */
@@ -169,7 +126,7 @@ for (const theme of THEMES_CANONIQUES) {
   )
   // La métadonnée du thème (issue #309/#313) — le validateur est autonome
   // (aucune table de référence) ; la règle de présence vit dans
-  // chargerPayload et le store, jamais ici. #868 : le fichier servi est la
+  // les routes et stores consommateurs, jamais ici. #868 : le fichier servi est la
   // projection navigateur → point d'entrée 'navigateur' explicite.
   VALIDER_PAR_FICHIER.set(`theme_${theme}`, (brut, fichier) =>
     validerCatalogueNavigateur(brut, fichier),
@@ -231,90 +188,4 @@ export async function chargerFichier(
   // l'erreur typée (relecture #297), jamais devenir un null silencieux.
   if (brut === null && !FICHIERS_MANDATOIRES.has(nom)) return null
   return VALIDER_PAR_FICHIER.get(nom)!(brut, `${nom}.json`, territoires)
-}
-
-export async function chargerPayload(options: ChargerOptions = {}): Promise<Payload> {
-  const territoires = await chargerFichier('territoires', options)
-  const territoryMetadata = await chargerFichier('territoires-metadata', options)
-  verifierClassesDensite(territoires, territoryMetadata, 'territoires.json')
-  const indicateurs: Indicateur[] = []
-  const histoires: Histoire[] = []
-  const themeMetadata: Partial<Record<Theme, ThemeMetadata>> = {}
-
-  for (const theme of THEMES_CANONIQUES) {
-    const indicateursTheme = await chargerFichier(`indicateurs_${theme}`, territoires, options)
-    if (indicateursTheme === null) continue
-
-    // Programmes is a facts-only theme: its former serialized empty history
-    // table is retired, so this assembly never requests it.
-    const histoiresTheme = theme === 'programmes'
-      ? []
-      : await chargerFichier(`histoires_${theme}`, territoires, options)
-    // Programmes has no published reading table: its producer contract is
-    // facts-only, so absence of a serialized empty histories file is expected.
-    if (histoiresTheme === null) {
-      throw new PayloadError(
-        'validation',
-        `histoires_${theme}.json`,
-        `Le thème « ${theme} » publie des indicateurs sans histoires (histoires_${theme}.json introuvable)`,
-      )
-    }
-
-    // La règle de présence des métadonnées (issue #313) : un thème présent
-    // REQUIERT son theme_<theme>.json — 404 = dérive typée, jamais une
-    // absence silencieuse (le même contrat que les histoires).
-    const metadataTheme = await chargerFichier(`theme_${theme}`, options)
-    if (metadataTheme === null) {
-      throw new PayloadError(
-        'validation',
-        `theme_${theme}.json`,
-        `Le thème « ${theme} » publie des indicateurs sans métadonnées (theme_${theme}.json introuvable)`,
-      )
-    }
-
-    indicateurs.push(...indicateursTheme)
-    if (histoiresTheme !== null) histoires.push(...histoiresTheme)
-    themeMetadata[theme] = metadataTheme
-  }
-
-  const runReport = await chargerFichier('run-report', options)
-  const vintages = await chargerFichier('vintages', options)
-
-  // La parité bidirectionnelle libellés ↔ payload (issue #318) : chaque ligne
-  // (key, detail) publiée a son libellé dans les métadonnées du thème — et
-  // aucun libellé déclaré n'est mort. Une dérive échoue FORT ici, jamais au
-  // rendu (la fiche et la carte ne retombent jamais sur la clé brute).
-  // #893 — programmes: null, toujours : aucun programmes.json n'est demandé
-  // ni validé (la projection partagée est retirée ; les faits Programmes
-  // passent par les fichiers du thème + l'API, et la section native de la
-  // carte — mapMemberships — est acquise séparément par l'acquisition
-  // sémantique de la carte).
-  // #894 — idem pour apercu : plus de section, aucun apercu.json n'est
-  // demandé ni validé (la projection navigateur est retirée source-only ;
-  // le contrat producteur R — table `apercu` en mémoire + apercu.parquet —
-  // est inchangé).
-  const payload = {
-    territoires,
-    territoryMetadata,
-    indicateurs,
-    histoires,
-    runReport,
-    vintages,
-    programmes: null,
-    themeMetadata,
-  }
-  verifierPariteLibelles(payload)
-  // La parité trajectoires ↔ faits publiés (#438) : le chemin déclaré d'une
-  // page trajectoire est exactement ce que le pipeline publie — jamais une
-  // année morte, jamais une année publiée absente (miroir R à la publication).
-  verifierPariteTrajectoires(payload)
-  // La parité distributions ↔ faits publiés (#440) : la signature déclarée
-  // couvre exactement les détails publiés de sa clé (miroir R à la publication).
-  verifierPariteDistributions(payload)
-  // La parité listes ↔ faits publiés (#439) : les catégories déclarées d'un
-  // profil couvrent exactement les détails publiés de sa clé (miroir R à la
-  // publication) — jamais une ligne morte dans le profil.
-  verifierPariteListes(payload)
-
-  return payload
 }

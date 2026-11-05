@@ -2345,7 +2345,8 @@ function lireCarteChaines(ligne: LigneBrute, champ: string, fichier: string): Re
  * aucun libellé de détail déclaré n'est mort (chaque détail déclaré est
  * publié quelque part). La fiche et la carte ne retombent JAMAIS sur la clé
  * brute : c'est cette garde qui garantit que le vocabulaire vit dans les
- * métadonnées. Appelée par le loader à l'assemblage (chargerPayload).
+ * métadonnées. Les contrats indépendants restent vérifiés à leur frontière
+ * propriétaire; cette Payload-wide garde est conservée pour ses tests ciblés.
  *
  * Issue #362 — la parité des classifications, UNIDIRECTIONNELLE (publié →
  * libellé) : chaque valeur `classification` non nulle publiée dans

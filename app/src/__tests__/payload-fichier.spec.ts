@@ -19,8 +19,7 @@ import type { Territoire, ThemeMetadata } from '../payload/types'
  * absente » contract (ADR-0013) — only the granularity changes. The
  * reference-table dependency holds for the theme
  * files: the caller passes the VALIDATED territoires, exactly the ordering
- * constraint the loader already respects. chargerPayload() behavior is
- * locked by payload-loader.spec.ts, unchanged by this ticket.
+ * constraint owned by the progressive per-file boundary.
  * #894: 'apercu' is not a file anymore — the retired apercu.json has no
  * per-file entry (see the dedicated test below).
  */
@@ -130,7 +129,7 @@ describe('chargerFichier — the per-file seam', () => {
     // Un corps null sur territoires.json (HTTP 200) est une dérive du contrat,
     // pas une absence : le fichier mandataire ne doit JAMAIS contourner son
     // validateur — le type lie « null » serait un payload muet dans
-    // chargerPayload() (le territoire de référence perdu sans erreur).
+    // le chemin per-file (le territoire de référence perdu sans erreur).
     const options = optionsPour({ 'territoires.json': null })
     const erreur = await chargerFichier('territoires', options).catch((cause: unknown) => cause)
     expect(erreur).toBeInstanceOf(PayloadError)
