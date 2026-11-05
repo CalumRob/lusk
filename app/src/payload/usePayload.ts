@@ -220,8 +220,9 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
    * always kicked first), so the reference settles before its dependents.
    * histoires_<theme> additionally chains off its indicateurs pair: a theme
    * ABSENT by 404 has no histoires to fetch (ADR-0007, payload-driven
-   * discovery), while a theme PRESENT without its histoires file is contract
-   * drift — the typed validation error, loud.
+   * discovery), while a reading-bearing theme PRESENT without its histoires
+   * file is contract drift — the typed validation error, loud. Facts-only
+   * Programmes has no history file and resolves as absent without fetching.
    */
   // Le nom générique Fichier (union) ne satisfait pas les surcharges typées
   // du loader — on appelle la signature d'implémentation, dont le contrat est
