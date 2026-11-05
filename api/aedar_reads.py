@@ -1,6 +1,7 @@
 """Source-grain AEDAR aggregate, fixed-comparison and selected-comparison snapshots."""
 
 from math import fsum, isfinite
+from typing import NamedTuple
 
 from fastapi import HTTPException
 
@@ -110,7 +111,61 @@ def _aedar_registry_size(conn):
     return size
 
 
-_AEDAR_AGGREGATE_RECORDS_SQL = """SELECT territory_id,
+# --- One aggregate mechanism, two thin SQL adapters (#914 owner amendment,
+# 2026-11-05) ---------------------------------------------------------------
+#
+# Both registry-wide aggregate readings flow through ONE normalized law-input
+# record, ONE availability law and ONE assembler. The territorial adapter
+# reads `aedar_territorial_aggregate` (per-territory per-typequ rows with full
+# provenance columns); the pooled adapter reads the density_class pooled
+# artifact `aedar_comparison_group` (single-value rows without provenance
+# columns). Both SQL bodies emit the same law-input tuple, in this order:
+# n_rows, n_measured, total, v_min, v_max, na_min, na_max, observed_sum,
+# n_provenance, n_uncovered, n_bad_observed, n_statistic, statistic, coverage,
+# n_coverage.
+
+# Structural guarantee of the pooled density artifact: the table carries no
+# provenance columns at all (api/schema.sql), and the artifact publishes
+# atomically against one committed `aedar_content_version` (enforced by the
+# `check_aedar_comparison_publication` trigger). Provenance is therefore
+# uniform BY PUBLICATION — the same precedent as the merged #904 per-cell
+# path, which serves density group values with the focal territorial row's
+# provenance. The law input is this named constant, never a per-row count.
+_AEDAR_POOLED_PUBLICATION_PROVENANCE_TIE = 1
+
+# Structural guarantee of the pooled density artifact: `statistic` is
+# schema-CHECKed to 'pooled' for the density_class scope
+# (aedar_reference_scope_check), so statistic uniformity is structural, not
+# per-row checkable.
+_AEDAR_POOLED_DENSITY_STATISTIC = "pooled"
+_AEDAR_POOLED_DENSITY_STATISTIC_TIE = 1
+
+# Structural guarantee of the territorial adapter: it reads one territory's own
+# published rows, so the reading's statistic is the direct one by construction.
+_AEDAR_TERRITORIAL_DIRECT_STATISTIC = "direct"
+_AEDAR_TERRITORIAL_DIRECT_STATISTIC_TIE = 1
+
+
+class _AEDARAggregateLawInputs(NamedTuple):
+    """The one normalized law-input record emitted by both aggregate SQL adapters."""
+    n_rows: int
+    n_measured: int
+    total: float | None
+    v_min: float | None
+    v_max: float | None
+    na_min: int | None
+    na_max: int | None
+    observed_sum: int | None
+    n_provenance: int
+    n_uncovered: int
+    n_bad_observed: int
+    n_statistic: int
+    statistic: str | None
+    coverage: str | None
+    n_coverage: int
+
+
+_AEDAR_AGGREGATE_RECORDS_SQL = f"""SELECT territory_id,
        count(*) AS n_rows,
        count((measures->>%s)::double precision) AS n_measured,
        sum((measures->>%s)::double precision) AS total,
@@ -118,72 +173,84 @@ _AEDAR_AGGREGATE_RECORDS_SQL = """SELECT territory_id,
        max((measures->>%s)::double precision) AS v_max,
        min(n_addresses) AS na_min, max(n_addresses) AS na_max,
        sum(n_observed)::bigint AS observed_sum,
-       count(DISTINCT coverage_status) AS n_coverage,
-       min(coverage_status) AS coverage_status,
        count(DISTINCT (source_id,vintage_id,source_url,licence,attribution,
                       reference_date,publication_date)) AS n_provenance,
        count(*) FILTER (WHERE coverage_status IS DISTINCT FROM 'covered') AS n_uncovered,
        count(*) FILTER (WHERE n_observed IS NULL OR n_observed < 0
-                          OR n_observed > n_addresses) AS n_bad_observed
+                          OR n_observed > n_addresses) AS n_bad_observed,
+       {_AEDAR_TERRITORIAL_DIRECT_STATISTIC_TIE} AS n_statistic,
+       '{_AEDAR_TERRITORIAL_DIRECT_STATISTIC}' AS statistic,
+       min(coverage_status) AS coverage,
+       count(DISTINCT coverage_status) AS n_coverage
 FROM aedar_territorial_aggregate
 WHERE territory_type=%s AND territory_id=ANY(%s::text[])
 GROUP BY territory_id"""
 
 
-def _aedar_aggregate_available(n_rows, n_measured, v_min, v_max, na_min, na_max,
-                               n_provenance, n_uncovered, n_bad_observed,
-                               registry_size, underlying):
-    """The fiche's compatibility law for one territory's registry-wide sum.
+def _aedar_aggregate_available(inputs, registry_size, underlying):
+    """The fiche's compatibility law over one normalized law-input record.
 
-    Mirrors `carAccessMeans` (app/src/fiche/content/aedarAccessSection.ts) and
+    Applied once, over the single record type both adapters emit. Mirrors
+    `carAccessMeans` (app/src/fiche/content/aedarAccessSection.ts) and
     CONTEXT.md « Moyennes d'accès en voiture AEDAR »: the reading is available
     only over the complete TYPEQU registry, with one shared source
-    vintage/provenance across all rows, every row `covered`, an agreeing
-    positive address population, valid observed counts (0 <= n_observed <=
-    n_addresses) and finite non-negative per-type values (<= 1 for share
-    readings). Incomplete, uncovered or unknown evidence never becomes a
-    partial sum or a fabricated zero — the reading is honestly unavailable.
+    vintage/provenance across all rows, one uniform statistic, every row
+    `covered`, an agreeing positive address population, valid observed counts
+    (0 <= n_observed <= n_addresses; NULL counts as bad) and finite
+    non-negative per-type values (<= 1 for share readings). Incomplete,
+    uncovered or unknown evidence never becomes a partial sum or a fabricated
+    zero — the reading is honestly unavailable.
     """
     return bool(
-        n_rows == registry_size
-        and n_provenance == 1
-        and n_uncovered == 0
-        and na_min == na_max and na_max is not None and na_max > 0
-        and n_bad_observed == 0
-        and n_measured == registry_size
-        and v_min is not None
-        and isfinite(v_min) and isfinite(v_max)
-        and v_min >= 0
-        and (not underlying.endswith("_share") or v_max <= 1)
+        inputs.n_rows == registry_size
+        and inputs.n_provenance == 1
+        and inputs.n_statistic == 1
+        and inputs.n_uncovered == 0
+        and inputs.na_min == inputs.na_max and inputs.na_max is not None and inputs.na_max > 0
+        and inputs.n_bad_observed == 0
+        and inputs.n_measured == registry_size
+        and inputs.v_min is not None
+        and isfinite(inputs.v_min) and isfinite(inputs.v_max)
+        and inputs.v_min >= 0
+        and (not underlying.endswith("_share") or inputs.v_max <= 1)
     )
 
 
+def _aedar_aggregate_reading(inputs, registry_size, underlying):
+    """Assemble one registry-wide aggregate reading's response fields.
+
+    The single assembler behind every call site: the direct reference
+    aggregate, the pooled density reference, the peer-rank population and the
+    selected members/focal.
+    """
+    available = _aedar_aggregate_available(inputs, registry_size, underlying)
+    return {
+        "value": float(inputs.total) if available else None,
+        "available": available,
+        "n_addresses": inputs.na_max if inputs.na_min == inputs.na_max else None,
+        "n_observed": inputs.observed_sum,
+        "coverage_status": inputs.coverage if inputs.n_coverage == 1 else None,
+        "statistic": inputs.statistic if inputs.n_statistic == 1 else None,
+    }
+
+
 def _aedar_aggregate_records(conn, territory_type, territory_ids, underlying, registry_size):
-    """Per-territory registry-wide sum of one per-type measure, aggregated in SQL.
+    """Territorial adapter: per-territory law inputs from `aedar_territorial_aggregate`.
 
     A territory's reading is the sum over its complete published registry and
     is available only under the full compatibility law above; otherwise it
     stays unknown, never a partial value (ADR-0039's 2026-11-04 amendment,
-    #914).
+    #914). All law inputs — including provenance uniformity and observed
+    validity — are computed in SQL.
     """
     cursor = conn.execute(_AEDAR_AGGREGATE_RECORDS_SQL,
                           (underlying, underlying, underlying, underlying,
                            territory_type, sorted(set(territory_ids))))
     records = {}
     for row in cursor.fetchall():
-        (territory_id, n_rows, n_measured, total, v_min, v_max, na_min, na_max,
-         observed_sum, n_coverage, coverage, n_provenance, n_uncovered,
-         n_bad_observed) = row
-        available = _aedar_aggregate_available(
-            n_rows, n_measured, v_min, v_max, na_min, na_max,
-            n_provenance, n_uncovered, n_bad_observed, registry_size, underlying)
-        records[territory_id] = {
-            "value": float(total) if available else None,
-            "available": available,
-            "n_addresses": na_max if na_min == na_max else None,
-            "n_observed": observed_sum,
-            "coverage_status": coverage if n_coverage == 1 else None,
-        }
+        territory_id, *law_inputs = row
+        records[territory_id] = _aedar_aggregate_reading(
+            _AEDARAggregateLawInputs(*law_inputs), registry_size, underlying)
     return records
 
 
@@ -199,56 +266,53 @@ def _aedar_focal_provenance(conn, territory_type, territory_id):
 
 
 def _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry_size):
-    """Registry-wide sum of a direct reference territory's published rows."""
+    """Registry-wide sum of a direct reference territory's published rows.
+
+    A thin consumer of the territorial adapter: the assembled record already
+    carries the direct statistic.
+    """
     record = _aedar_aggregate_records(conn, reference_type, [group_id], underlying,
                                       registry_size).get(group_id)
     if record is None:
         raise HTTPException(404, "No published result for this fixed context")
-    return {
-        "value": record["value"],
-        "n_addresses": record["n_addresses"],
-        "n_observed": record["n_observed"],
-        "coverage_status": record["coverage_status"],
-        "statistic": "direct",
-    }
+    return record
 
 
-_AEDAR_POOLED_GROUP_SQL = """SELECT count(*) AS n_rows, count(value) AS n_measured,
+_AEDAR_POOLED_GROUP_SQL = f"""SELECT count(*) AS n_rows, count(value) AS n_measured,
        sum(value) AS total,
        min(value) AS v_min, max(value) AS v_max,
        min(n_addresses) AS na_min, max(n_addresses) AS na_max,
        sum(n_observed)::bigint AS observed_sum,
-       count(DISTINCT statistic) AS n_statistic, min(statistic) AS statistic,
-       count(DISTINCT coverage_status) AS n_coverage, min(coverage_status) AS coverage_status,
-       count(*) FILTER (WHERE coverage_status IS DISTINCT FROM 'covered') AS n_uncovered
+       {_AEDAR_POOLED_PUBLICATION_PROVENANCE_TIE} AS n_provenance,
+       count(*) FILTER (WHERE coverage_status IS DISTINCT FROM 'covered') AS n_uncovered,
+       count(*) FILTER (WHERE n_observed IS NULL OR n_observed < 0
+                          OR n_observed > n_addresses) AS n_bad_observed,
+       {_AEDAR_POOLED_DENSITY_STATISTIC_TIE} AS n_statistic,
+       '{_AEDAR_POOLED_DENSITY_STATISTIC}' AS statistic,
+       min(coverage_status) AS coverage,
+       count(DISTINCT coverage_status) AS n_coverage
 FROM aedar_comparison_group
 WHERE comparison_context='density_class' AND group_id=%s AND territory_type='commune' AND measure=%s"""
 
 
 def _aedar_pooled_group_aggregate(conn, group_id, underlying, registry_size):
-    """Registry-wide sum of the pooled density artifact's per-type rows.
+    """Pooled adapter: one density group's law inputs as one normalized record.
 
-    Same availability law as the per-territory sums: the artifact must cover
-    the complete registry, stay covered, keep an agreeing positive address
-    population and valid finite non-negative per-type values (<= 1 for share
-    readings); otherwise the pooled reading is honestly unavailable, never a
-    partial sum.
+    Same availability law as the per-territory sums, applied once over the
+    same record: the artifact must cover the complete registry, stay covered,
+    keep an agreeing positive address population and valid finite non-negative
+    per-type values (<= 1 for share readings); otherwise the pooled reading is
+    honestly unavailable, never a partial sum. n_bad_observed is computed
+    honestly in SQL — a NULL n_observed row passes the schema CHECK but counts
+    as bad here, exactly matching territorial semantics (#914 amendment: such a
+    pooled reading is honestly unavailable, never silently served).
+    Provenance and statistic uniformity are structural publication/schema
+    guarantees (the named constants above), not per-row counts.
     """
     row = conn.execute(_AEDAR_POOLED_GROUP_SQL, (group_id, underlying)).fetchone()
     if not row or not row[0]:
         raise HTTPException(404, "No published result for this fixed context")
-    (n_rows, n_measured, total, v_min, v_max, na_min, na_max, observed_sum,
-     n_statistic, statistic, n_coverage, coverage, n_uncovered) = row
-    available = _aedar_aggregate_available(
-        n_rows, n_measured, v_min, v_max, na_min, na_max,
-        1, n_uncovered, 0, registry_size, underlying) and n_statistic == 1
-    return {
-        "value": float(total) if available else None,
-        "n_addresses": na_max if na_min == na_max else None,
-        "n_observed": observed_sum,
-        "coverage_status": coverage if n_coverage == 1 else None,
-        "statistic": statistic if n_statistic == 1 else None,
-    }
+    return _aedar_aggregate_reading(_AEDARAggregateLawInputs(*row), registry_size, underlying)
 
 
 def _aedar_fixed_peer_ids(conn, territory_type, territory_id, context):
@@ -409,11 +473,13 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
     and tie count are computed per request over the context's resolved peer
     group from published per-type rows in the same committed snapshot — no
     peer/rank rows are published (#810 stance intact; ADR-0039's 2026-11-04
-    amendment, #914). A reading is available only under the fiche's full
-    compatibility law (complete registry, shared provenance, all rows
-    covered, agreeing positive address population, valid observed counts and
-    values); peers failing it are honestly unavailable and ineligible for the
-    rank.
+    amendment, #914). Both the reference and the peer/focal readings flow
+    through the one aggregate mechanism (one normalized law-input record, one
+    law, one assembler — see above); a reading is available only under the
+    fiche's full compatibility law (complete registry, shared provenance, all
+    rows covered, agreeing positive address population, valid observed counts
+    and values); peers failing it are honestly unavailable and ineligible for
+    the rank.
     """
     underlying = AEDAR_AGGREGATE_READINGS[measure]
     registry_size = _aedar_registry_size(conn)
@@ -701,7 +767,9 @@ def _aedar_selected_aggregate_snapshot(conn, territory_type, territory_id, resol
     and the focal receives a direction-aware rank within the selection when it
     is itself a member. Computed per request from one committed snapshot; no
     peer/rank rows are published (ADR-0039's 2026-11-04 amendment, #914).
-    A reading is available only under the fiche's full compatibility law
+    Every member/focal reading flows through the one aggregate mechanism (one
+    normalized law-input record, one law, one assembler — see above): a
+    reading is available only under the fiche's full compatibility law
     (complete registry, shared provenance, all rows covered, agreeing positive
     address population, valid observed counts and values); members failing it
     are honestly unavailable, ineligible for the rank and excluded from the

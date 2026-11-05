@@ -679,14 +679,17 @@ class _AedarSelectedConnection:
                             if obs is None or obs < 0 or obs > na)
                 if "n_statistic" in s:
                     # Unified normalized law-input tuple (#914 amendment): the
-                    # territorial shape's statistic is structurally "direct".
+                    # territorial shape's statistic is the named structural
+                    # guarantee of the territorial adapter.
                     rows.append((territory_id, len(records), measured, total,
                                  min(present) if present else None,
                                  max(present) if present else None,
                                  min(addresses), max(addresses), sum(observed),
                                  len(set(provenances)),
                                  sum(1 for coverage in coverages if coverage != "covered"),
-                                 n_bad, 1, "direct", min(coverages), len(set(coverages))))
+                                 n_bad, aedar_reads._AEDAR_TERRITORIAL_DIRECT_STATISTIC_TIE,
+                                 aedar_reads._AEDAR_TERRITORIAL_DIRECT_STATISTIC,
+                                 min(coverages), len(set(coverages))))
                 else:
                     rows.append((territory_id, len(records), measured, total,
                                  min(present) if present else None,
@@ -754,8 +757,11 @@ class _AedarSelectedConnection:
                     len(rows), measured, total,
                     min(present) if present else None, max(present) if present else None,
                     min(addresses), max(addresses), observed_sum,
-                    1, n_uncovered, n_bad, 1, "pooled", min(coverages),
-                    len(set(coverages)))])
+                    aedar_reads._AEDAR_POOLED_PUBLICATION_PROVENANCE_TIE,
+                    n_uncovered, n_bad,
+                    aedar_reads._AEDAR_POOLED_DENSITY_STATISTIC_TIE,
+                    aedar_reads._AEDAR_POOLED_DENSITY_STATISTIC,
+                    min(coverages), len(set(coverages)))])
             return _AedarSelectedRows(columns, [(
                 len(rows), measured, total,
                 min(present) if present else None, max(present) if present else None,
