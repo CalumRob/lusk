@@ -675,18 +675,37 @@ class _AedarSelectedConnection:
                 measured = sum(1 for value in values if value is not None)
                 present = [value for value in values if value is not None]
                 total = fsum(present) if present else None
-                rows.append((territory_id, len(records), measured, total,
-                             min(present) if present else None,
-                             max(present) if present else None,
-                             min(addresses), max(addresses), sum(observed),
-                             len(set(coverages)), min(coverages),
-                             len(set(provenances)),
-                             sum(1 for coverage in coverages if coverage != "covered"),
-                             sum(1 for obs, na in zip(observed, addresses)
-                                 if obs is None or obs < 0 or obs > na)))
-            return _AedarSelectedRows(["territory_id", "n_rows", "n_measured", "total",
-                "v_min", "v_max", "na_min", "na_max", "observed_sum", "n_coverage",
-                "coverage_status", "n_provenance", "n_uncovered", "n_bad_observed"], rows)
+                n_bad = sum(1 for obs, na in zip(observed, addresses)
+                            if obs is None or obs < 0 or obs > na)
+                if "n_statistic" in s:
+                    # Unified normalized law-input tuple (#914 amendment): the
+                    # territorial shape's statistic is structurally "direct".
+                    rows.append((territory_id, len(records), measured, total,
+                                 min(present) if present else None,
+                                 max(present) if present else None,
+                                 min(addresses), max(addresses), sum(observed),
+                                 len(set(provenances)),
+                                 sum(1 for coverage in coverages if coverage != "covered"),
+                                 n_bad, 1, "direct", min(coverages), len(set(coverages))))
+                else:
+                    rows.append((territory_id, len(records), measured, total,
+                                 min(present) if present else None,
+                                 max(present) if present else None,
+                                 min(addresses), max(addresses), sum(observed),
+                                 len(set(coverages)), min(coverages),
+                                 len(set(provenances)),
+                                 sum(1 for coverage in coverages if coverage != "covered"),
+                                 n_bad))
+            if "n_statistic" in s:
+                columns = ["territory_id", "n_rows", "n_measured", "total", "v_min",
+                           "v_max", "na_min", "na_max", "observed_sum", "n_provenance",
+                           "n_uncovered", "n_bad_observed", "n_statistic", "statistic",
+                           "coverage", "n_coverage"]
+            else:
+                columns = ["territory_id", "n_rows", "n_measured", "total",
+                           "v_min", "v_max", "na_min", "na_max", "observed_sum", "n_coverage",
+                           "coverage_status", "n_provenance", "n_uncovered", "n_bad_observed"]
+            return _AedarSelectedRows(columns, rows)
         if "LIMIT 1" in s and "aedar_territorial_aggregate" in s:
             territory_type, territory_id = params
             records = self._territory_records(territory_type, territory_id)
@@ -701,9 +720,21 @@ class _AedarSelectedConnection:
             group_id, underlying = params
             rows = [row for row in self.state.get("group_rows", ())
                     if row["group_id"] == group_id and row["measure"] == underlying]
-            columns = ["n_rows", "n_measured", "total", "v_min", "v_max", "na_min", "na_max",
-                       "observed_sum", "n_statistic", "statistic", "n_coverage",
-                       "coverage_status", "n_uncovered"]
+            unified = "n_bad_observed" in s
+            if unified:
+                # Unified normalized law-input tuple (#914 amendment): the
+                # pooled artifact's provenance is a publication-level tie and
+                # its statistic is schema-CHECKed to "pooled"; n_bad_observed
+                # is computed honestly (a NULL n_observed counts as bad,
+                # exactly like the territorial path).
+                columns = ["n_rows", "n_measured", "total", "v_min", "v_max", "na_min",
+                           "na_max", "observed_sum", "n_provenance", "n_uncovered",
+                           "n_bad_observed", "n_statistic", "statistic", "coverage",
+                           "n_coverage"]
+            else:
+                columns = ["n_rows", "n_measured", "total", "v_min", "v_max", "na_min", "na_max",
+                           "observed_sum", "n_statistic", "statistic", "n_coverage",
+                           "coverage_status", "n_uncovered"]
             if not rows:
                 return _AedarSelectedRows(columns, [])
             values = [row["value"] for row in rows]
@@ -711,14 +742,26 @@ class _AedarSelectedConnection:
             measured = len(present)
             total = fsum(present) if present else None
             coverages = [row["coverage_status"] for row in rows]
+            addresses = [row["n_addresses"] for row in rows]
+            observed = [row["n_observed"] for row in rows]
+            # SQL sum() ignores NULLs.
+            observed_sum = sum(obs for obs in observed if obs is not None)
+            n_uncovered = sum(1 for coverage in coverages if coverage != "covered")
+            if unified:
+                n_bad = sum(1 for obs, na in zip(observed, addresses)
+                            if obs is None or obs < 0 or obs > na)
+                return _AedarSelectedRows(columns, [(
+                    len(rows), measured, total,
+                    min(present) if present else None, max(present) if present else None,
+                    min(addresses), max(addresses), observed_sum,
+                    1, n_uncovered, n_bad, 1, "pooled", min(coverages),
+                    len(set(coverages)))])
             return _AedarSelectedRows(columns, [(
                 len(rows), measured, total,
                 min(present) if present else None, max(present) if present else None,
-                min(row["n_addresses"] for row in rows), max(row["n_addresses"] for row in rows),
-                sum(row["n_observed"] for row in rows),
+                min(addresses), max(addresses), observed_sum,
                 len({row["statistic"] for row in rows}), min(row["statistic"] for row in rows),
-                len(set(coverages)), min(coverages),
-                sum(1 for coverage in coverages if coverage != "covered"))])
+                len(set(coverages)), min(coverages), n_uncovered)])
         if "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id=%s" in s:
             row = next((r for r in self.state["ref_rows"] if r[0] == params[0]), None)
             return _AedarSelectedRows(["territory_id", "territory_type", "density_class_code"],
@@ -893,6 +936,16 @@ def _aedar_selected_state():
              "coverage_status": "covered", "statistic": "pooled"},
             {"group_id": "D1", "typequ": "B207", "measure": "count_15_car_share",
              "value": 0.3, "n_addresses": 40, "n_observed": 33,
+             "coverage_status": "covered", "statistic": "pooled"},
+            # D2 (the density class of commune 22003) carries a pooled row with
+            # NULL n_observed: the schema CHECK admits it, but the unified law
+            # computes n_bad_observed honestly, so D2's pooled reading is
+            # honestly unavailable (#914 amendment, 2026-11-05).
+            {"group_id": "D2", "typequ": "A104", "measure": "count_15_car_mean",
+             "value": 16.0, "n_addresses": 40, "n_observed": 34,
+             "coverage_status": "covered", "statistic": "pooled"},
+            {"group_id": "D2", "typequ": "B207", "measure": "count_15_car_mean",
+             "value": 8.0, "n_addresses": 40, "n_observed": None,
              "coverage_status": "covered", "statistic": "pooled"},
         ],
     }
@@ -1381,4 +1434,65 @@ def test_aedar_aggregate_availability_law_matches_the_fiche_conditions():
     comparison = result["comparison"]
     assert comparison["value"] == pytest.approx(18.0)
     assert (comparison["rank"], comparison["rank_size"], comparison["rank_ties"]) == (2, 2, 1)
+
+
+def test_aedar_aggregate_law_reads_one_normalized_record_for_both_shapes():
+    """One law over one normalized law-input record, for both SQL shapes (#914).
+
+    The two aggregate adapters — territorial per-territory rows and the pooled
+    density group — emit the same normalized tuple, and the availability law
+    is applied once over it. Every condition fails closed: incomplete
+    registry, split provenance, mixed statistic, uncovered rows, disagreeing
+    or non-positive address population, bad observed counts, unmeasured
+    values, non-finite or negative values, and shares above 1.
+    """
+    law_inputs = aedar_reads._AEDARAggregateLawInputs
+    law = aedar_reads._aedar_aggregate_available
+    base = dict(n_rows=2, n_measured=2, total=24.0, v_min=8.0, v_max=16.0,
+                na_min=40, na_max=40, observed_sum=67, n_provenance=1,
+                n_uncovered=0, n_bad_observed=0, n_statistic=1,
+                statistic="pooled", coverage="covered", n_coverage=1)
+    # The pooled shape and the territorial shape (statistic "direct") flow
+    # through the very same law over the same normalized record type.
+    assert law(law_inputs(**base), 2, "count_15_car_mean") is True
+    assert law(law_inputs(**{**base, "statistic": "direct"}), 2, "count_15_car_mean") is True
+    # Each law input fails closed on its own.
+    for field, value in (("n_rows", 1), ("n_measured", 1), ("n_provenance", 2),
+                         ("n_statistic", 2), ("n_uncovered", 1), ("n_bad_observed", 1),
+                         ("na_min", 41), ("na_max", None), ("v_min", None),
+                         ("v_min", -0.5), ("v_max", float("inf"))):
+        assert law(law_inputs(**{**base, field: value}), 2, "count_15_car_mean") is False
+    # Share readings cap the per-type values at 1; the volume reading does not.
+    assert law(law_inputs(**{**base, "v_max": 1.5}), 2, "count_15_car_share") is False
+    assert law(law_inputs(**{**base, "v_max": 1.0}), 2, "count_15_car_share") is True
+    assert law(law_inputs(**{**base, "v_max": 1.5}), 2, "count_15_car_mean") is True
+
+
+def test_aedar_pooled_group_null_observed_row_is_honestly_unavailable():
+    """A pooled density row with NULL n_observed is honestly bad (#914 amendment).
+
+    The schema CHECK admits a NULL n_observed on `aedar_comparison_group`, but
+    the unified aggregate mechanism computes n_bad_observed in SQL exactly
+    like the territorial path, so the pooled registry-wide reading is honestly
+    unavailable (value null) — never silently served as a sum.
+    """
+    state = _aedar_selected_state()  # D2 carries a NULL n_observed pooled row
+    conn = _AedarSelectedConnection(state)
+    record = aedar_reads._aedar_pooled_group_aggregate(conn, "D2", "count_15_car_mean", 2)
+    assert record["value"] is None and record["available"] is False
+    assert record["statistic"] == "pooled"
+    # End to end: the fixed density_class reference reads honestly unavailable
+    # (group_value null) while the territorial focal (22003, in D2) still
+    # reads its own registry-wide sum and ranks within its peer group.
+    result = aedar_reads._aedar_comparison_snapshot(
+        conn, "commune", "22003", "density_class", None, "meanVolume",
+        ["group_value", "value", "status", "rank", "rank_size", "rank_ties"],
+        _aedar_facets())
+    comparison = result["comparison"]
+    assert comparison["comparison_context"] == "density_class"
+    assert comparison["group_id"] == "D2" and comparison["statistic"] == "pooled"
+    assert comparison["group_value"] is None
+    assert comparison["value"] == pytest.approx(30.0)
+    assert comparison["status"] == "measured"
+    assert (comparison["rank"], comparison["rank_size"], comparison["rank_ties"]) == (1, 1, 1)
 

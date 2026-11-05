@@ -65,12 +65,13 @@ def _seed_aedar(publisher):
                ('sel-c5','commune','Commune 5','22','sel-e1','D1','Dense'),
                ('sel-c6','commune','Commune 6','22','sel-e1','D1','Dense'),
                ('sel-c7','commune','Commune 7','22','sel-e2','D2','Peu dense'),
+               ('sel-c8','commune','Commune 8','22','sel-e2','D3','Dense'),
                ('sel-e1','epci','EPCI 1','22',NULL,NULL,NULL),
                ('sel-e2','epci','EPCI 2','22',NULL,NULL,NULL),
                ('22','departement','Département 22',NULL,NULL,NULL,NULL),
                ('53','region','Bretagne',NULL,NULL,NULL,NULL)""")
     publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count)"
-                      " VALUES ('territory_reference','b' || repeat('0',63),11)")
+                      " VALUES ('territory_reference','b' || repeat('0',63),12)")
 
     rows = [
         # communes: n_addresses weights 10 / 30 / 10. The TYPEQU registry of the
@@ -150,6 +151,14 @@ def _seed_aedar(publisher):
                        {"count_15_car_mean": 20.0, "count_15_car_share": 1.5}),
         _aggregate_row("commune", "sel-c7", "B207", 10, 8,
                        {"count_15_car_mean": 10.0, "count_15_car_share": 0.4}),
+        # sel-c8 (density class D3): complete registry but mixed coverage, so
+        # its own reading is honestly unavailable and it stays an ineligible
+        # peer in the epci/bretagne rank populations (#914 amendment fixture).
+        _aggregate_row("commune", "sel-c8", "A104", 20, 18,
+                       {"count_15_car_mean": 12.0, "count_15_car_share": 0.35}),
+        {**_aggregate_row("commune", "sel-c8", "B207", 20, 16,
+                          {"count_15_car_mean": 6.0, "count_15_car_share": 0.25}),
+         "coverage_status": "pending_review"},
     ]
     for row in rows:
         publisher.execute(
@@ -176,17 +185,23 @@ def _seed_aedar(publisher):
     # count_15_car_* rows back the registry-wide aggregate readings (#914):
     # pooled meanDiversity = 0.65 + 0.3 = 0.95, pooled meanVolume = 16 + 8 = 24.
     group_rows = [
-        ("A104", "count_5_walk_mean", 7.4, 50, 42),
-        ("A104", "count_15_car_mean", 16.0, 40, 34),
-        ("B207", "count_15_car_mean", 8.0, 40, 33),
-        ("A104", "count_15_car_share", 0.65, 40, 34),
-        ("B207", "count_15_car_share", 0.3, 40, 33),
+        ("D1", "A104", "count_5_walk_mean", 7.4, 50, 42),
+        ("D1", "A104", "count_15_car_mean", 16.0, 40, 34),
+        ("D1", "B207", "count_15_car_mean", 8.0, 40, 33),
+        ("D1", "A104", "count_15_car_share", 0.65, 40, 34),
+        ("D1", "B207", "count_15_car_share", 0.3, 40, 33),
+        # D3 (the density class of sel-c8) carries a pooled row with NULL
+        # n_observed on B207: the schema CHECK admits it, but the unified
+        # aggregate law counts it as bad, so D3's pooled registry-wide reading
+        # is honestly unavailable (#914 amendment, 2026-11-05).
+        ("D3", "A104", "count_15_car_mean", 16.0, 15, 14),
+        ("D3", "B207", "count_15_car_mean", 8.0, 15, None),
     ]
-    for typequ, measure, value, n_addresses, n_observed in group_rows:
+    for group_id, typequ, measure, value, n_addresses, n_observed in group_rows:
         publisher.execute("""INSERT INTO aedar_comparison_group(comparison_context,group_id,territory_type,
             typequ,measure,statistic,value,n_addresses,n_observed,coverage_status)
-            VALUES ('density_class','D1','commune',%s,%s,'pooled',%s,%s,%s,'covered')""",
-            (typequ, measure, value, n_addresses, n_observed))
+            VALUES ('density_class',%s,'commune',%s,%s,'pooled',%s,%s,%s,'covered')""",
+            (group_id, typequ, measure, value, n_addresses, n_observed))
     publisher.execute("""INSERT INTO aedar_comparison_publication(singleton,content_version,
         source_snapshot_id,aedar_content_version,reference_content_version,input_content_version,
         input_identity,group_row_count,territory_row_count,publication_mode)
@@ -513,6 +528,37 @@ def test_fixed_aggregate_same_level_and_density_contexts(aedar_http):
     comparison = density_diversity.json()["comparison"]
     assert comparison["group_value"] == pytest.approx(0.95)  # 0.65 + 0.3 pooled shares
     assert comparison["value"] == pytest.approx(0.75)
+
+
+def test_fixed_aggregate_density_pooled_null_observed_row_is_unavailable(aedar_http):
+    """A pooled density row with NULL n_observed is honestly bad (#914 amendment).
+
+    The schema CHECK on `aedar_comparison_group` admits a NULL n_observed, but
+    the unified aggregate mechanism computes n_bad_observed in SQL exactly
+    like the territorial path, so the pooled registry-wide reading of D3 is
+    honestly unavailable (group_value null) — never silently served as a sum.
+    """
+    response = aedar_http.post("/api/resources/read", json=_aggregate_item(
+        target_id="sel-c8", measures=("meanVolume",),
+        fields=["group_value", "value", "status", "rank", "rank_size", "rank_ties"],
+        context="density_class"))
+    assert response.status_code == 200, response.text
+    comparison = response.json()["comparison"]
+    assert comparison["comparison_context"] == "density_class"
+    assert comparison["group_id"] == "D3" and comparison["statistic"] == "pooled"
+    # The D3 pooled artifact's B207 row has NULL n_observed -> n_bad_observed=1
+    # -> the pooled reading fails the law: honestly unavailable, not 24.0.
+    assert comparison["group_value"] is None
+    assert comparison["group_n_addresses"] == 15 and comparison["group_n_observed"] == 14
+    # The focal's own territorial rows also fail the law (mixed coverage).
+    assert comparison["value"] is None and comparison["status"] == "not_available"
+    assert comparison["rank"] is None and comparison["rank_size"] is None
+    assert comparison["rank_ties"] is None
+    # Control: the D1 pooled artifact (all observed counts valid) still serves.
+    control = aedar_http.post("/api/resources/read", json=_aggregate_item(
+        measures=("meanVolume",), fields=["group_value"], context="density_class"))
+    assert control.status_code == 200, control.text
+    assert control.json()["comparison"]["group_value"] == pytest.approx(24.0)
 
 
 def test_selected_aggregate_returns_pooled_weighted_readings_and_ranks(aedar_http):
