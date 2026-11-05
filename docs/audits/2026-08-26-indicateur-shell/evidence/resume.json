@@ -1,0 +1,1593 @@
+{
+  "resume": {
+    "date": "2026-08-26T01:35:25.187Z",
+    "base": "http://localhost:5481",
+    "dist": "E:\\Temp\\opencode\\pocock-workers\\lusk\\issue-481\\app\\dist",
+    "scenarios": 43,
+    "assertions": {
+      "total": 255,
+      "rouges": 9
+    },
+    "rougeDetails": [
+      {
+        "id": "A10-cible-tactile-24px",
+        "ok": false,
+        "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+      },
+      {
+        "id": "A10-cible-tactile-24px",
+        "ok": false,
+        "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+      },
+      {
+        "id": "A10-cible-tactile-24px",
+        "ok": false,
+        "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+      },
+      {
+        "id": "A10-cible-tactile-24px",
+        "ok": false,
+        "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+      },
+      {
+        "id": "A10-cible-tactile-24px",
+        "ok": false,
+        "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+      },
+      {
+        "id": "A10-cible-tactile-24px",
+        "ok": false,
+        "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+      },
+      {
+        "id": "A3b-ligne-surlignee",
+        "ok": false,
+        "detail": "table générique présente ; ligne .selection au nom du territoire=false"
+      },
+      {
+        "id": "A10-cible-tactile-24px",
+        "ok": false,
+        "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+      },
+      {
+        "id": "A10-cible-tactile-24px",
+        "ok": false,
+        "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+      }
+    ],
+    "scenarios_en_erreur": []
+  },
+  "resultats": [
+    {
+      "nom": "shell-mobilite-offre_tc-390",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Part des bâtiments près d’un arrêt (à 500 m) » ; sur-titre « Mobilité » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(107, 163, 181) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à mobile : 358px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        },
+        {
+          "id": "A5-sans-debordement-mobile",
+          "ok": true,
+          "detail": "docScrollW=390 vs innerW=390"
+        }
+      ]
+    },
+    {
+      "nom": "shell-habitat-mix_logements-390",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Mix de logements » ; sur-titre « Habitat » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(201, 143, 110) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à mobile : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        },
+        {
+          "id": "A5-sans-debordement-mobile",
+          "ok": true,
+          "detail": "docScrollW=390 vs innerW=390"
+        }
+      ]
+    },
+    {
+      "nom": "shell-demographie-structure_age-390",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Structure par âge » ; sur-titre « Démographie » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(142, 133, 196) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à mobile : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        },
+        {
+          "id": "A5-sans-debordement-mobile",
+          "ok": true,
+          "detail": "docScrollW=390 vs innerW=390"
+        }
+      ]
+    },
+    {
+      "nom": "shell-habitat-distribution_dpe-390",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Distribution des étiquettes DPE (A à G) » ; sur-titre « Habitat » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(201, 143, 110) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à mobile : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        },
+        {
+          "id": "A5-sans-debordement-mobile",
+          "ok": true,
+          "detail": "docScrollW=390 vs innerW=390"
+        }
+      ]
+    },
+    {
+      "nom": "shell-milieux-artif_par_habitant-390",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Intensité état » ; sur-titre « Milieux » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(169, 154, 94) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à mobile : 228px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        },
+        {
+          "id": "A5-sans-debordement-mobile",
+          "ok": true,
+          "detail": "docScrollW=390 vs innerW=390"
+        }
+      ]
+    },
+    {
+      "nom": "shell-mobilite-reseaux-390",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Réseaux à pied / vélo / voiture » ; sur-titre « Mobilité » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(107, 163, 181) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à mobile : 228px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        },
+        {
+          "id": "A5-sans-debordement-mobile",
+          "ok": true,
+          "detail": "docScrollW=390 vs innerW=390"
+        }
+      ]
+    },
+    {
+      "nom": "shell-demographie-evolution_1968-390",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Évolution de la population depuis 1968 » ; sur-titre « Démographie » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(142, 133, 196) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à mobile : 358px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        },
+        {
+          "id": "A5-sans-debordement-mobile",
+          "ok": true,
+          "detail": "docScrollW=390 vs innerW=390"
+        }
+      ]
+    },
+    {
+      "nom": "shell-economie-chomage-390",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Chômage (population active) » ; sur-titre « Économie/Emploi » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(217, 164, 65) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à mobile : 358px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        },
+        {
+          "id": "A5-sans-debordement-mobile",
+          "ok": true,
+          "detail": "docScrollW=390 vs innerW=390"
+        }
+      ]
+    },
+    {
+      "nom": "tactile-handoff-rennes-mobilite-390",
+      "genre": "tactile-mobile"
+    },
+    {
+      "nom": "shell-mobilite-offre_tc-1024",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Part des bâtiments près d’un arrêt (à 500 m) » ; sur-titre « Mobilité » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(107, 163, 181) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à demi-bureau : 488px 488px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-habitat-mix_logements-1024",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Mix de logements » ; sur-titre « Habitat » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(201, 143, 110) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à demi-bureau : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-demographie-structure_age-1024",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Structure par âge » ; sur-titre « Démographie » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(142, 133, 196) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à demi-bureau : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-habitat-distribution_dpe-1024",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Distribution des étiquettes DPE (A à G) » ; sur-titre « Habitat » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(201, 143, 110) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à demi-bureau : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-milieux-artif_par_habitant-1024",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Intensité état » ; sur-titre « Milieux » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(169, 154, 94) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à demi-bureau : 423px 423px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-mobilite-reseaux-1024",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Réseaux à pied / vélo / voiture » ; sur-titre « Mobilité » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(107, 163, 181) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à demi-bureau : 423px 423px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-demographie-evolution_1968-1024",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Évolution de la population depuis 1968 » ; sur-titre « Démographie » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(142, 133, 196) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à demi-bureau : 488px 488px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-economie-chomage-1024",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Chômage (population active) » ; sur-titre « Économie/Emploi » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(217, 164, 65) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à demi-bureau : 488px 488px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-mobilite-offre_tc-1440",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Part des bâtiments près d’un arrêt (à 500 m) » ; sur-titre « Mobilité » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(107, 163, 181) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à bureau : 592px 592px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-habitat-mix_logements-1440",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Mix de logements » ; sur-titre « Habitat » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(201, 143, 110) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à bureau : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-demographie-structure_age-1440",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Structure par âge » ; sur-titre « Démographie » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(142, 133, 196) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à bureau : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-demographie-structure_age-1440-interaction",
+      "genre": "interaction-vues",
+      "assertions": [
+        {
+          "id": "A2-sync-url-vues",
+          "ok": true,
+          "detail": "?vue=carte:true ; ?vue=indicateur:true ; retour sans vue:true"
+        }
+      ]
+    },
+    {
+      "nom": "shell-habitat-distribution_dpe-1440",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Distribution des étiquettes DPE (A à G) » ; sur-titre « Habitat » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(201, 143, 110) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à bureau : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-habitat-distribution_dpe-1440-interaction",
+      "genre": "interaction-vues",
+      "assertions": [
+        {
+          "id": "A2-sync-url-vues",
+          "ok": true,
+          "detail": "?vue=carte:true ; ?vue=indicateur:true ; retour sans vue:true"
+        }
+      ]
+    },
+    {
+      "nom": "shell-milieux-artif_par_habitant-1440",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Intensité état » ; sur-titre « Milieux » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(169, 154, 94) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à bureau : 527px 527px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-mobilite-reseaux-1440",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Réseaux à pied / vélo / voiture » ; sur-titre « Mobilité » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(107, 163, 181) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à bureau : 527px 527px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-demographie-evolution_1968-1440",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Évolution de la population depuis 1968 » ; sur-titre « Démographie » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(142, 133, 196) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à bureau : 592px 592px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-economie-chomage-1440",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Chômage (population active) » ; sur-titre « Économie/Emploi » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(217, 164, 65) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à bureau : 592px 592px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-mobilite-offre_tc-1920",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Part des bâtiments près d’un arrêt (à 500 m) » ; sur-titre « Mobilité » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(107, 163, 181) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à grand-bureau : 592px 592px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-habitat-mix_logements-1920",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Mix de logements » ; sur-titre « Habitat » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(201, 143, 110) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à grand-bureau : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-demographie-structure_age-1920",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Structure par âge » ; sur-titre « Démographie » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(142, 133, 196) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à grand-bureau : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-habitat-distribution_dpe-1920",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Distribution des étiquettes DPE (A à G) » ; sur-titre « Habitat » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(201, 143, 110) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à grand-bureau : n/a"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-milieux-artif_par_habitant-1920",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Intensité état » ; sur-titre « Milieux » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(169, 154, 94) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à grand-bureau : 527px 527px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-mobilite-reseaux-1920",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Réseaux à pied / vélo / voiture » ; sur-titre « Mobilité » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(107, 163, 181) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à grand-bureau : 527px 527px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-demographie-evolution_1968-1920",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Évolution de la population depuis 1968 » ; sur-titre « Démographie » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(142, 133, 196) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à grand-bureau : 592px 592px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "shell-economie-chomage-1920",
+      "genre": "shell",
+      "assertions": [
+        {
+          "id": "A1-hierarchie",
+          "ok": true,
+          "detail": "h1×1 « Chômage (population active) » ; sur-titre « Économie/Emploi » ; définition true"
+        },
+        {
+          "id": "A1-note-contexte",
+          "ok": true,
+          "detail": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne."
+        },
+        {
+          "id": "A2-onglets-etat-actif",
+          "ok": true,
+          "detail": "boutons=Repères|Carte|L’indicateur ; actifs=1 ; border=3px/rgb(217, 164, 65) ; weight=700"
+        },
+        {
+          "id": "A2-vues-nommees",
+          "ok": true,
+          "detail": "aria-label nav « Vues de l’indicateur »"
+        },
+        {
+          "id": "A6-responsive-hero",
+          "ok": true,
+          "detail": "colonnes hero à grand-bureau : 592px 592px"
+        },
+        {
+          "id": "A7-focus-visible",
+          "ok": true,
+          "detail": "élément « Carte » outline=solid/2px shadow=false"
+        }
+      ]
+    },
+    {
+      "nom": "handoff-commune-35238-mobilite",
+      "genre": "handoff",
+      "assertions": [
+        {
+          "id": "A3-anciennes-internes",
+          "ok": true,
+          "detail": "23 passarelles, 0 hors /indicateurs/"
+        },
+        {
+          "id": "A8-nouvelle-fenetre",
+          "ok": true,
+          "detail": "23 ancres : 0 sans target=_blank, 0 sans rel noopener/noreferrer"
+        },
+        {
+          "id": "A3-contrat-url",
+          "ok": true,
+          "detail": "0 sans territoire=35238 ; 0 niveau incorrect (attendu: commune)"
+        },
+        {
+          "id": "A3-continuite-arrivee",
+          "ok": true,
+          "detail": "URL http://localhost:5481/indicateurs/mobilite/tot_loss_t?territoire=35238&niveau=commune ; note contient « Rennes »=true ; territoire conservé=true"
+        },
+        {
+          "id": "A3b-ligne-surlignee",
+          "ok": true,
+          "detail": "table générique présente ; ligne .selection au nom du territoire=true"
+        },
+        {
+          "id": "A4-liens-inverses-lentille",
+          "ok": true,
+          "detail": "2 liens inverses échantillonnés, tous avec ?theme=mobilite : true"
+        },
+        {
+          "id": "A10-cible-tactile-24px",
+          "ok": false,
+          "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+        }
+      ]
+    },
+    {
+      "nom": "handoff-commune-35238-habitat",
+      "genre": "handoff",
+      "assertions": [
+        {
+          "id": "A3-anciennes-internes",
+          "ok": true,
+          "detail": "7 passarelles, 0 hors /indicateurs/"
+        },
+        {
+          "id": "A8-nouvelle-fenetre",
+          "ok": true,
+          "detail": "7 ancres : 0 sans target=_blank, 0 sans rel noopener/noreferrer"
+        },
+        {
+          "id": "A3-contrat-url",
+          "ok": true,
+          "detail": "0 sans territoire=35238 ; 0 niveau incorrect (attendu: commune)"
+        },
+        {
+          "id": "A3-continuite-arrivee",
+          "ok": true,
+          "detail": "URL http://localhost:5481/indicateurs/habitat/mix_logements?territoire=35238&niveau=commune&detail=principales ; note contient « Rennes »=true ; territoire conservé=true"
+        },
+        {
+          "id": "A4-liens-inverses-lentille",
+          "ok": true,
+          "detail": "aucun lien inverse sur cette famille (ni extrêmes ni table) — critère non applicable ici"
+        },
+        {
+          "id": "A10-cible-tactile-24px",
+          "ok": false,
+          "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+        }
+      ]
+    },
+    {
+      "nom": "handoff-commune-35238-demographie",
+      "genre": "handoff",
+      "assertions": [
+        {
+          "id": "A3-anciennes-internes",
+          "ok": true,
+          "detail": "4 passarelles, 0 hors /indicateurs/"
+        },
+        {
+          "id": "A8-nouvelle-fenetre",
+          "ok": true,
+          "detail": "4 ancres : 0 sans target=_blank, 0 sans rel noopener/noreferrer"
+        },
+        {
+          "id": "A3-contrat-url",
+          "ok": true,
+          "detail": "0 sans territoire=35238 ; 0 niveau incorrect (attendu: commune)"
+        },
+        {
+          "id": "A3-continuite-arrivee",
+          "ok": true,
+          "detail": "URL http://localhost:5481/indicateurs/demographie/structure_age?territoire=35238&niveau=commune&detail=%3C15&sex=F ; note contient « Rennes »=true ; territoire conservé=true"
+        },
+        {
+          "id": "A4-liens-inverses-lentille",
+          "ok": true,
+          "detail": "aucun lien inverse sur cette famille (ni extrêmes ni table) — critère non applicable ici"
+        },
+        {
+          "id": "A10-cible-tactile-24px",
+          "ok": false,
+          "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+        }
+      ]
+    },
+    {
+      "nom": "handoff-commune-22001-mobilite",
+      "genre": "handoff",
+      "assertions": [
+        {
+          "id": "A3-anciennes-internes",
+          "ok": true,
+          "detail": "23 passarelles, 0 hors /indicateurs/"
+        },
+        {
+          "id": "A8-nouvelle-fenetre",
+          "ok": true,
+          "detail": "23 ancres : 0 sans target=_blank, 0 sans rel noopener/noreferrer"
+        },
+        {
+          "id": "A3-contrat-url",
+          "ok": true,
+          "detail": "0 sans territoire=22001 ; 0 niveau incorrect (attendu: commune)"
+        },
+        {
+          "id": "A3-continuite-arrivee",
+          "ok": true,
+          "detail": "URL http://localhost:5481/indicateurs/mobilite/tot_loss_t?territoire=22001&niveau=commune ; note contient « Allineuc »=true ; territoire conservé=true"
+        },
+        {
+          "id": "A3b-ligne-surlignee",
+          "ok": true,
+          "detail": "table générique présente ; ligne .selection au nom du territoire=true"
+        },
+        {
+          "id": "A4-liens-inverses-lentille",
+          "ok": true,
+          "detail": "2 liens inverses échantillonnés, tous avec ?theme=mobilite : true"
+        },
+        {
+          "id": "A10-cible-tactile-24px",
+          "ok": false,
+          "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+        }
+      ]
+    },
+    {
+      "nom": "handoff-epci-243500139-mobilite",
+      "genre": "handoff",
+      "assertions": [
+        {
+          "id": "A3-anciennes-internes",
+          "ok": true,
+          "detail": "23 passarelles, 0 hors /indicateurs/"
+        },
+        {
+          "id": "A8-nouvelle-fenetre",
+          "ok": true,
+          "detail": "23 ancres : 0 sans target=_blank, 0 sans rel noopener/noreferrer"
+        },
+        {
+          "id": "A3-contrat-url",
+          "ok": true,
+          "detail": "0 sans territoire=243500139 ; 0 niveau incorrect (attendu: epci)"
+        },
+        {
+          "id": "A3-continuite-arrivee",
+          "ok": true,
+          "detail": "URL http://localhost:5481/indicateurs/mobilite/tot_loss_t?territoire=243500139&niveau=epci ; note contient « Rennes Métropole »=true ; territoire conservé=true"
+        },
+        {
+          "id": "A3b-ligne-surlignee",
+          "ok": true,
+          "detail": "table générique présente ; ligne .selection au nom du territoire=true"
+        },
+        {
+          "id": "A4-liens-inverses-lentille",
+          "ok": true,
+          "detail": "2 liens inverses échantillonnés, tous avec ?theme=mobilite : true"
+        },
+        {
+          "id": "A10-cible-tactile-24px",
+          "ok": false,
+          "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+        }
+      ]
+    },
+    {
+      "nom": "handoff-epci-243500139-programmes",
+      "genre": "handoff",
+      "assertions": [
+        {
+          "id": "A3-anciennes-internes",
+          "ok": true,
+          "detail": "1 passarelles, 0 hors /indicateurs/"
+        },
+        {
+          "id": "A8-nouvelle-fenetre",
+          "ok": true,
+          "detail": "1 ancres : 0 sans target=_blank, 0 sans rel noopener/noreferrer"
+        },
+        {
+          "id": "A3-contrat-url",
+          "ok": true,
+          "detail": "0 sans territoire=243500139 ; 0 niveau incorrect (attendu: epci)"
+        },
+        {
+          "id": "A3-continuite-arrivee",
+          "ok": true,
+          "detail": "URL http://localhost:5481/indicateurs/programmes/subventions_annuelles?territoire=243500139&niveau=epci&dimension=2025 ; note contient « Rennes Métropole »=true ; territoire conservé=true"
+        },
+        {
+          "id": "A3b-ligne-surlignee",
+          "ok": true,
+          "detail": "table générique présente ; ligne .selection au nom du territoire=true"
+        },
+        {
+          "id": "A4-liens-inverses-lentille",
+          "ok": true,
+          "detail": "2 liens inverses échantillonnés, tous avec ?theme=programmes : true"
+        },
+        {
+          "id": "A10-cible-tactile-24px",
+          "ok": false,
+          "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+        }
+      ]
+    },
+    {
+      "nom": "handoff-departement-35-milieux",
+      "genre": "handoff",
+      "assertions": [
+        {
+          "id": "A3-anciennes-internes",
+          "ok": true,
+          "detail": "3 passarelles, 0 hors /indicateurs/"
+        },
+        {
+          "id": "A8-nouvelle-fenetre",
+          "ok": true,
+          "detail": "3 ancres : 0 sans target=_blank, 0 sans rel noopener/noreferrer"
+        },
+        {
+          "id": "A3-contrat-url",
+          "ok": true,
+          "detail": "0 sans territoire=35 ; 0 niveau incorrect (attendu: departement)"
+        },
+        {
+          "id": "A3-continuite-arrivee",
+          "ok": true,
+          "detail": "URL http://localhost:5481/indicateurs/milieux/artif_par_habitant?territoire=35&niveau=departement&detail=2025 ; note contient « Ille-et-Vilaine »=true ; territoire conservé=true"
+        },
+        {
+          "id": "A3b-ligne-surlignee",
+          "ok": false,
+          "detail": "table générique présente ; ligne .selection au nom du territoire=false"
+        },
+        {
+          "id": "A4-liens-inverses-lentille",
+          "ok": true,
+          "detail": "2 liens inverses échantillonnés, tous avec ?theme=milieux : true"
+        },
+        {
+          "id": "A10-cible-tactile-24px",
+          "ok": false,
+          "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+        }
+      ]
+    },
+    {
+      "nom": "handoff-region-53-economie",
+      "genre": "handoff",
+      "assertions": [
+        {
+          "id": "A3-anciennes-internes",
+          "ok": true,
+          "detail": "3 passarelles, 0 hors /indicateurs/"
+        },
+        {
+          "id": "A8-nouvelle-fenetre",
+          "ok": true,
+          "detail": "3 ancres : 0 sans target=_blank, 0 sans rel noopener/noreferrer"
+        },
+        {
+          "id": "A3-contrat-url",
+          "ok": true,
+          "detail": "0 sans territoire=53 ; 0 niveau incorrect (attendu: ABSENT — Région)"
+        },
+        {
+          "id": "A3-continuite-arrivee",
+          "ok": true,
+          "detail": "URL http://localhost:5481/indicateurs/economie/effectifs_salaries?territoire=53&niveau=departement ; note contient « Bretagne »=true ; territoire conservé=true"
+        },
+        {
+          "id": "A4-liens-inverses-lentille",
+          "ok": true,
+          "detail": "2 liens inverses échantillonnés, tous avec ?theme=economie : true"
+        },
+        {
+          "id": "A10-cible-tactile-24px",
+          "ok": false,
+          "detail": "hauteur minimale d'ancre = 17px (seuil WCAG 2.5.8 AA = 24px ; repère confort 44px)"
+        }
+      ]
+    }
+  ]
+}

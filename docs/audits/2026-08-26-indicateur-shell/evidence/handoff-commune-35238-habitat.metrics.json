@@ -1,0 +1,189 @@
+{
+  "genre": "handoff",
+  "ficheUrl": "http://localhost:5481/territoire/commune/35238?theme=habitat",
+  "theme": "habitat",
+  "spec": {
+    "type": "commune",
+    "id": "35238",
+    "nom": "Rennes",
+    "sansNiveau": false
+  },
+  "inventaire": {
+    "total": 7,
+    "ancres": [
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/habitat/mix_logements?territoire=35238&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.512421 0.0252774 0.0397027)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/habitat/statut?territoire=35238&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.512421 0.0252774 0.0397027)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/habitat/type?territoire=35238&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.512421 0.0252774 0.0397027)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/habitat/distribution_dpe?territoire=35238&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.512421 0.0252774 0.0397027)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/habitat/part_passoires?territoire=35238&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.512421 0.0252774 0.0397027)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/habitat/age_du_bati?territoire=35238&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.512421 0.0252774 0.0397027)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/habitat/prix_m2?territoire=35238&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.512421 0.0252774 0.0397027)",
+        "textDecoration": "underline"
+      }
+    ],
+    "navLectures": [],
+    "grilleGroupes": [
+      {
+        "groupe": "composition-du-parc",
+        "passarelles": [
+          {
+            "href": "/indicateurs/habitat/mix_logements?territoire=35238&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/habitat/statut?territoire=35238&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/habitat/type?territoire=35238&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      },
+      {
+        "groupe": "etat-energetique-du-parc",
+        "passarelles": [
+          {
+            "href": "/indicateurs/habitat/distribution_dpe?territoire=35238&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/habitat/part_passoires?territoire=35238&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/habitat/age_du_bati?territoire=35238&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      },
+      {
+        "groupe": "marche",
+        "passarelles": [
+          {
+            "href": "/indicateurs/habitat/prix_m2?territoire=35238&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      }
+    ]
+  },
+  "survol": {
+    "avant": "oklab(0.512421 0.0252774 0.0397027)",
+    "apres": "rgb(201, 143, 110)",
+    "change": true,
+    "focus": {
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": null
+    }
+  },
+  "arrivee": {
+    "url": "http://localhost:5481/indicateurs/habitat/mix_logements?territoire=35238&niveau=commune&detail=principales",
+    "queryTerritoire": "35238",
+    "queryNiveau": "commune",
+    "note": "Votre territoire : Rennes — comparaison sur les communes de Bretagne.",
+    "noteContientNom": true,
+    "horsPerimetre": false,
+    "tablePresente": false,
+    "ligneSurlignee": false,
+    "memeOrigine": true
+  },
+  "inversesEchantillon": []
+}

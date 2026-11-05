@@ -1,0 +1,91 @@
+{
+  "genre": "shell",
+  "url": "http://localhost:5481/indicateurs/mobilite/reseaux",
+  "viewport": {
+    "nom": "demi-bureau",
+    "width": 1024,
+    "height": 768
+  },
+  "famille": "list",
+  "mesures": {
+    "titre": "Lusk — Observatoire des territoires bretons",
+    "h1Count": 1,
+    "h1Texte": "Réseaux à pied / vélo / voiture",
+    "h1FontSize": "30.72px",
+    "h1FontFamily": "\"Manrope Variable\"",
+    "headerOrdre": [
+      "en-tete-interieur"
+    ],
+    "surTitreTexte": "Mobilité",
+    "surTitreCouleur": "oklab(0.502599 -0.0384263 -0.0263984)",
+    "definitionPresente": true,
+    "noteContexte": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne.",
+    "vuesAriaLabel": "Vues de l’indicateur",
+    "vuesBoutons": [
+      {
+        "libelle": "Repères",
+        "actif": true,
+        "hauteur": 20,
+        "largeur": 65,
+        "borderBottomWidth": "3px",
+        "borderBottomColor": "rgb(107, 163, 181)",
+        "fontWeight": "700",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "Carte",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 45,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "L’indicateur",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 79,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      }
+    ],
+    "heroPresent": true,
+    "medianFontFamily": "\"Newsreader Variable\"",
+    "medianFontSizePx": "92.16px",
+    "densitySvgPresente": true,
+    "extremesLiens": [
+      "/territoire/commune/35238?theme=mobilite"
+    ],
+    "tableLignes": 1202,
+    "tableLigneSelection": null,
+    "tableScrollW": 862,
+    "tableClientW": 862,
+    "tableParentOverflowX": "visible",
+    "controlsFlexWrap": "wrap",
+    "paddingGaucheSection": "16px",
+    "paddingDroiteSection": "16px",
+    "contentMaxWidth": 1024,
+    "innerW": 1024,
+    "docScrollW": 1024,
+    "accentVar": "#6BA3B5",
+    "manropeChargee": true,
+    "newsreaderChargee": true,
+    "selectNiveauOptions": [
+      "commune",
+      "epci",
+      "departement"
+    ],
+    "heroColonnes": "423px 423px",
+    "heroColonneUnique": false
+  },
+  "focus": {
+    "element": "Carte",
+    "outlineStyle": "solid",
+    "outlineWidth": "2px",
+    "boxShadow": null
+  }
+}
