@@ -221,20 +221,21 @@ function aedarEquipmentProfileEvidenceFor(section: ContentSection) {
 }
 
 function aedarAccessModeLegendEntries(evidence: AedarAccessEvidence): readonly FigureLegendEntry[] {
-  const referenceLabel = evidence.ramps.find((ramp) => ramp.referenceLabel)?.referenceLabel
+  const referenceLabel = evidence.comparisonLabel ?? evidence.ramps.find((ramp) => ramp.referenceLabel)?.referenceLabel ?? null
   return [
     ...AEDAR_RAMP_MODES.map((mode) => ({
       key: mode,
       label: AEDAR_RAMP_MODE_LABELS[mode],
       marker: 'line' as const,
     })),
-    ...(referenceLabel ? [{
+    {
       key: 'reference',
       label: 'Groupe comparé',
-      ariaLabel: `Groupe comparé : ${referenceLabel}`,
+      ariaLabel: `Groupe comparé : ${referenceLabel ?? 'Indisponible'}`,
       marker: 'dash' as const,
       tone: 'peer',
-    }] : []),
+      persistentToggle: true,
+    },
   ]
 }
 
@@ -284,6 +285,7 @@ function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureDa
     series,
     provenance: ramp.provenance,
     comparisonLabel: ramp.referenceLabel,
+    comparisonLayerSupported: true,
   }
 }
 function sourceLabel(source: { source: string; version: string }): string {
@@ -578,7 +580,7 @@ onBeforeUnmount(() => {
                       :entries="aedarAccessModeLegendEntries(aedarAccessEvidenceFor(section)!)"
                       :mark-colors="aedarAccessModeColors"
                        :selected-keys="[...aedarAccessSelectedModes, ...(aedarAccessComparisonVisible ? ['reference'] : [])]"
-                       :toggle-keys="[...AEDAR_RAMP_MODES, ...(aedarAccessEvidenceFor(section)!.comparisonLabel ? ['reference'] : [])]"
+                       :toggle-keys="AEDAR_RAMP_MODES"
                        label="Modes de déplacement et groupe comparé pour les deux rampes"
                       @toggle="toggleAedarAccessMode"
                     />

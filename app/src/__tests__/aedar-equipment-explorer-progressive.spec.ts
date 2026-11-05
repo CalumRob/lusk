@@ -153,6 +153,24 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
     wrapper.unmount()
   }, 30000)
 
+  it('keeps the sandbox comparison toggle and unavailable values when no comparison read exists', async () => {
+    vi.mocked(fetchAedarAggregates).mockResolvedValue({ status: 'error', error: { code: 'network', message: 'offline' } })
+    const base = evidence('territory-a')
+    const wrapper = mount(AedarEquipmentExplorerCahier, { props: { evidence: base } })
+    await flushPromises()
+    const toggle = wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')
+    expect(toggle).toBeDefined()
+    expect(toggle!.attributes('aria-label')).toBe('Groupe comparé : Indisponible')
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Référence Indisponible')
+    const rampPoint = wrapper.find('[aria-label="Temps d\'accès : 15 min"]')
+    await rampPoint.trigger('click')
+    expect(wrapper.find('[role="tooltip"]').text()).toContain('Groupe comparé : Indisponible')
+    const distribution = wrapper.find('.cahier-grouped-vertical-bar-chart__svg')
+    expect(distribution.attributes('aria-label')).toContain('Groupe comparé : Voiture : Indisponible')
+    expect(wrapper.text()).not.toContain('Groupe comparé indisponible :')
+    wrapper.unmount()
+  })
+
   it('restarts the read when publication identity changes on the same territory', async () => {
     const requests: Array<ReturnType<typeof deferred<AedarFetchResult>>> = []
     vi.mocked(fetchAedarAggregates).mockImplementation(() => {

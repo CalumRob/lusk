@@ -165,6 +165,8 @@ export interface TimeRampFigureData {
   series: readonly TimeRampSeries[]
   provenance: FactProvenance | null
   comparisonLabel: string | null
+  /** The figure supports a comparison layer even when its current values are unavailable. */
+  comparisonLayerSupported?: boolean
 }
 
 export interface TerritoryIdentity {

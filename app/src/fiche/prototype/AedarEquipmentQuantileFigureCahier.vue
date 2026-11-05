@@ -21,6 +21,7 @@ const props = defineProps<{
   referenceFact?: AedarFact | null
   comparisonLabel?: string | null
   comparisonVisible?: boolean
+  comparisonLayerSupported?: boolean
 }>()
 
 function formatNumber(value: number): string {
@@ -43,7 +44,7 @@ const figure = computed<CahierGroupedVerticalBarFigureData>(() => ({
     color: AEDAR_TIME_MODE_COLORS[mode] ?? 'var(--cahier-theme-strong)',
     values: props.evidence.distributionStatistics.map((statistic) =>
       readAedarCountMeasure(props.fact, props.horizonMinutes, mode, statistic.key)),
-  }, ...(props.comparisonLabel ? [{
+  }, ...(props.comparisonLayerSupported === true || Boolean(props.comparisonLabel) || Boolean(props.comparison) ? [{
     key: `${mode}-reference`, label: `Groupe comparé : ${AEDAR_RAMP_MODE_LABELS[mode]}`,
     color: `color-mix(in srgb, ${AEDAR_TIME_MODE_COLORS[mode]} 45%, transparent)`,
     values: props.evidence.distributionStatistics.map((statistic) => {
@@ -57,7 +58,7 @@ const figure = computed<CahierGroupedVerticalBarFigureData>(() => ({
   xAxisTitle: props.evidence.distributionAxisTitle,
   yAxisTitle: props.evidence.distributionYAxisTitle,
   description: props.fact
-    ? `${props.fact.typequ_label} (${props.fact.typequ}). ${props.evidence.distributionFigureTitle} à ${props.horizonMinutes} minutes. ${props.evidence.distributionDescription}${props.comparisonLabel ? ` Groupe comparé : ${props.comparisonLabel}.` : ''}`
+    ? `${props.fact.typequ_label} (${props.fact.typequ}). ${props.evidence.distributionFigureTitle} à ${props.horizonMinutes} minutes. ${props.evidence.distributionDescription}${props.comparisonLayerSupported === true || Boolean(props.comparisonLabel) || Boolean(props.comparison) ? ` Groupe comparé : ${props.comparisonLabel ?? 'Indisponible'}.` : ''}`
     : props.evidence.distributionUnavailableDescription,
   formatValue: formatEstablishmentCount,
   formatAxisTick: formatNumber,

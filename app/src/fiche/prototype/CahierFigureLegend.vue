@@ -29,7 +29,7 @@ function chipStyle(key: string): Record<string, string> | undefined {
 <template>
   <ul class="cahier-figure-legend" :aria-label="props.label">
     <li v-for="entry in props.entries" :key="entry.key" class="cahier-figure-legend-item" :aria-label="entry.ariaLabel">
-      <button v-if="props.toggleKeys?.includes(entry.key)" class="cahier-figure-legend-toggle" type="button" :aria-label="entry.ariaLabel" :aria-pressed="props.selectedKeys?.includes(entry.key) ?? false" @click="emit('toggle', entry.key)">
+      <button v-if="props.toggleKeys?.includes(entry.key) || entry.persistentToggle" class="cahier-figure-legend-toggle" type="button" :aria-label="entry.ariaLabel" :aria-pressed="props.selectedKeys?.includes(entry.key) ?? false" @click="emit('toggle', entry.key)">
       <CahierFigureLegendMark
         :entry="entry"
         :icons="props.icons"

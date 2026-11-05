@@ -152,8 +152,8 @@ const modeEntries = computed<FigureLegendEntry[]>(() => [...AEDAR_RAMP_MODES.map
   key: mode,
   label: AEDAR_RAMP_MODE_LABELS[mode],
   marker: 'line',
-} as const)), ...(comparisonLabel.value ? [{ key: 'comparison', label: 'Groupe comparé',
-  ariaLabel: `Groupe comparé : ${comparisonLabel.value}`, marker: 'dash', tone: 'peer' } as const] : [])])
+} as const)), { key: 'comparison', label: 'Groupe comparé',
+  ariaLabel: `Groupe comparé : ${comparisonLabel.value ?? 'Indisponible'}`, marker: 'dash', tone: 'peer', persistentToggle: true } as const])
 const modeColors = Object.fromEntries(AEDAR_RAMP_MODES.map((mode) => [mode, AEDAR_TIME_MODE_COLORS[mode]]))
 
 const filteredFacts = computed(() => {
@@ -192,6 +192,7 @@ const volumeRamp = computed<TimeRampFigureData>(() => {
     series,
     provenance: null,
     comparisonLabel: comparisonLabel.value,
+    comparisonLayerSupported: true,
   }
 })
 
@@ -279,6 +280,7 @@ function chooseType(fact: AedarFact): void {
           :reference-fact="referenceDetail"
           :comparison-label="comparisonLabel"
           :comparison-visible="comparisonVisible"
+          :comparison-layer-supported="true"
         />
       </figure>
     </div>
@@ -287,8 +289,8 @@ function chooseType(fact: AedarFact): void {
       class="aedar-equipment-explorer-modes"
       :entries="modeEntries"
       :mark-colors="modeColors"
-      :selected-keys="[...selectedModes, ...(comparisonVisible && comparisonLabel ? ['comparison'] : [])]"
-      :toggle-keys="[...AEDAR_RAMP_MODES, ...(comparisonLabel ? ['comparison'] : [])]"
+      :selected-keys="[...selectedModes, ...(comparisonVisible ? ['comparison'] : [])]"
+      :toggle-keys="AEDAR_RAMP_MODES"
       label="Modes de déplacement et groupe comparé"
       @toggle="toggleMode"
     />

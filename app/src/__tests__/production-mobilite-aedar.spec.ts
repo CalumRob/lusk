@@ -436,6 +436,7 @@ describe('VarianteCahierLibre — AEDAR access', () => {
       'Vélo (LTS4)',
       'Transports en commun',
       'À pied',
+      'Groupe comparé',
     ])
 
     // The tooltip reads one row per mode.

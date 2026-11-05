@@ -37,4 +37,18 @@ describe('CahierFigureLegend', () => {
     expect(wrapper.find('.cahier-figure-legend-mark--square').exists()).toBe(true)
     expect(wrapper.find('.cahier-figure-legend-mark--square').attributes('style')).toContain('color: var(--cahier-mode-foot)')
   })
+
+  it('keeps a supported layer toggle available when its data is unavailable', async () => {
+    const wrapper = mount(CahierFigureLegend, { props: {
+      entries: [{ key: 'reference', label: 'Groupe comparé', ariaLabel: 'Groupe comparé : Indisponible',
+        marker: 'dash', persistentToggle: true }],
+      selectedKeys: ['reference'],
+    } })
+    const toggle = wrapper.get('button.cahier-figure-legend-toggle')
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(toggle.attributes('aria-label')).toBe('Groupe comparé : Indisponible')
+    await toggle.trigger('click')
+    expect(wrapper.emitted('toggle')).toEqual([['reference']])
+    wrapper.unmount()
+  })
 })
