@@ -908,15 +908,15 @@ onBeforeUnmount(() => {
 .cahier--indexed-sections .page-heading-index { color: var(--red); font: 500 12px/1.3 var(--font-ui); font-variant-numeric: tabular-nums; }
 .cahier--indexed-sections .page-heading-index small { margin-left: 3px; color: var(--muted); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); }
 .cahier--indexed-sections .page-heading-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.cahier--indexed-sections .page-heading-context { display: flex; align-items: baseline; justify-self: end; justify-content: space-between; gap: 6px; max-width: min(42vw, 24rem); min-width: 0; font-family: var(--font-ui); font-size: var(--text-cahier-min-size); line-height: 1.3; white-space: nowrap; }
-.cahier--indexed-sections .page-heading-context-title { display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; min-width: 0; margin-inline-start: auto; text-align: right; }
+.cahier--indexed-sections .page-heading-context { display: flex; align-items: center; justify-self: end; justify-content: space-between; gap: 6px; max-width: min(42vw, 24rem); min-width: 0; font-family: var(--font-ui); font-size: var(--text-cahier-min-size); line-height: 1.3; white-space: nowrap; }
+.cahier--indexed-sections .page-heading-context-title { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; margin-inline-start: auto; text-align: right; }
 .cahier--indexed-sections .page-heading-theme { flex: none; color: var(--cahier-theme-strong); font-weight: 600; }
 .cahier--indexed-sections .page-heading-context-separator { flex: none; color: var(--muted); }
 .cahier--indexed-sections .page-heading-territory { min-width: 0; overflow: hidden; color: var(--accent-primary); font-weight: 600; text-align: right; text-overflow: ellipsis; }
 /* #860 — le bouton « Comparaison » reste centré dans la rangée du heading
    (align-items: baseline) sans l'épaissir ; le territoire tronque à sa droite. */
 .cahier--indexed-sections .page-heading-comparaison { position: static; align-self: center; flex: none; margin-inline-end: var(--space-2); }
-.cahier--indexed-sections .page-heading-comparaison-controls { display: flex; align-items: baseline; flex: 0 0 auto; }
+.cahier--indexed-sections .page-heading-comparaison-controls { display: flex; align-items: center; flex: 0 0 auto; }
 .page-heading-builder-trigger { display: grid; place-items: center; flex: 0 0 auto; inline-size: 1.8em; block-size: 1.3em; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--cahier-theme-strong); cursor: pointer; }
 .page-heading-builder-trigger:hover { background: color-mix(in srgb, var(--cahier-theme) 8%, transparent); }
 .page-heading-builder-trigger:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
