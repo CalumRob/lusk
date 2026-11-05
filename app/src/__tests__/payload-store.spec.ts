@@ -291,6 +291,39 @@ describe('le store progressif — la gating par wait-set', () => {
 })
 
 describe('le store progressif — échecs scopés (option C)', () => {
+  it('honors an explicit legacy Programmes histories name as absent without fetching it', async () => {
+    const demandes: Fichier[] = []
+    const wrapper = await monter(
+      async (fichier) => {
+        demandes.push(fichier)
+        return chargerAvec(payload)(fichier)
+      },
+      ['territoires', 'histoires_programmes'],
+      ['territoires', 'histoires_programmes'],
+    )
+
+    expect(demandes).not.toContain('histoires_programmes')
+    expect(wrapper.vm.etat.erreur.value).toBeNull()
+    expect(wrapper.vm.etat.payload.value?.histoires).toEqual([])
+  })
+
+  it('le défaut accepte un thème Programmes facts-only sans demander son ancien fichier histoires', async () => {
+    const demandes: Fichier[] = []
+    const wrapper = await monter(async (fichier) => {
+      demandes.push(fichier)
+      if (fichier === 'indicateurs_programmes') return [{ theme: 'programmes', key: 'subventions_annuelles' }]
+      if (fichier === 'theme_programmes') return metadonneesThemesFixtures.programmes
+      return chargerAvec(payload)(fichier)
+    })
+
+    expect(demandes).toContain('indicateurs_programmes')
+    expect(demandes).toContain('theme_programmes')
+    expect(demandes).not.toContain('histoires_programmes')
+    expect(wrapper.vm.etat.erreur.value).toBeNull()
+    expect(wrapper.vm.etat.payload.value?.themeMetadata?.programmes).toEqual(metadonneesThemesFixtures.programmes)
+    expect(wrapper.vm.etat.payload.value?.histoires).toEqual(histoiresDemographieFixture)
+  })
+
   it('un échec d’arrière-plan laisse erreur null et la section absente — la page vit', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     // Le fichier qui échoue est le SUJET du test : démarrage explicite —

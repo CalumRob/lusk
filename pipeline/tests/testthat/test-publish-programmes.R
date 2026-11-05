@@ -171,14 +171,11 @@ test_that("un run peuplé écrit les DEUX parquets par table et NE crée AUCUN p
   expect_true(file.exists(file.path(sortie, "programmes_subventions.parquet")))
   # Issue #408 : Programmes et subventions est le SIXIÈME thème — le run
   # publie SON theme_programmes.json (le canon épinglé, via le trait
-  # `metadata` du descripteur) ET sa paire hermétique de faits
+  # `metadata` du descripteur) et sa projection de faits
   expect_true(file.exists(file.path(sortie, "theme_programmes.json")))
   expect_true(file.exists(file.path(sortie, "indicateurs_programmes.json")))
-  expect_true(file.exists(file.path(sortie, "histoires_programmes.json")))
-  # la paire hermétique : les histoires sont VIDES (le thème sans lecture),
+  expect_false(file.exists(file.path(sortie, "histoires_programmes.json")))
   # les faits portent les trois clés du registre
-  histoires <- jsonlite::fromJSON(file.path(sortie, "histoires_programmes.json"))
-  expect_length(histoires, 0L)
   faits <- jsonlite::fromJSON(file.path(sortie, "indicateurs_programmes.json"))
   expect_setequal(unique(faits$key), c("couverture_programmes", "subventions_annuelles",
                                        "subventions_par_domaine"))

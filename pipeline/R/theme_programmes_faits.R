@@ -1,8 +1,8 @@
 # theme_programmes_faits --------------------------------------------------------
 # Les faits du SIXIÈME thème (issue #408) : Programmes et subventions cesse
 # d'être un simple contrat de publication partagé (ADR-0013) et publie SA
-# paire hermétique — indicateurs_programmes.json + histoires_programmes.json —
-# qui est DÉSORMAIS la seule entrée navigateur des faits du thème : la table
+# projection indicateurs_programmes.json, seule entrée statique de ce thème :
+# la table
 # cross-thème partagée programmes.json est retirée (#893), la carte lit ses
 # adhésions/subventions via les lectures sémantiques natives de l'API.
 #
@@ -273,11 +273,9 @@ coalesce_na <- function(x) {
 }
 
 # ecrire_theme_programmes -------------------------------------------------------
-# La publication de la PAIRE hermétique du thème (#408, le précédent apercu
-# #116 — le contrat « 404 = thème absent ») :
+# La publication de la projection de faits du thème (#408) :
 #   - indicateurs_programmes.json : la projection JSON des faits ;
-#   - histoires_programmes.json : le tableau VIDE — le thème sans lecture
-#     (le loader exige la présence de la paire dès que les faits existent) ;
+#   - aucun histoires_programmes.json : Programmes ne publie pas de lecture ;
 #   - la sentinelle : zéro fait → RIEN n'est écrit (un run vide n'invente pas
 #     un thème construit, n'écrase jamais une publication existante).
 ecrire_theme_programmes <- function(indicateurs, sortie = "public/data") {
@@ -289,11 +287,6 @@ ecrire_theme_programmes <- function(indicateurs, sortie = "public/data") {
     indicateurs,
     file.path(sortie, "indicateurs_programmes.json"),
     dataframe = "rows", na = "null", digits = 17, pretty = TRUE
-  )
-  jsonlite::write_json(
-    list(),
-    file.path(sortie, "histoires_programmes.json"),
-    dataframe = "rows", na = "null", digits = 17, pretty = TRUE, auto_unbox = TRUE
   )
   invisible(indicateurs)
 }
