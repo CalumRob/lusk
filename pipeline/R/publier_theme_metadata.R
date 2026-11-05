@@ -97,8 +97,8 @@ publier_theme_metadata <- function(metadata, sortie = "public/data",
                                    contexte = "producteur") {
   # #868 : validation STRICTE du contrat producteur complet AVANT projection
   # (contexte "producteur" par défaut — un canon sans story_keys ni figure est une
-  # dérive et échoue). Seule une re-publication d'une entrée DÉJÀ projetée (ex. la
-  # copie de travail de materialize_serving_artifacts) passe contexte = "navigateur".
+  # dérive et échoue). Seule une re-publication d'une entrée DÉJÀ projetée
+  # passe contexte = "navigateur".
   valider_theme_metadata(metadata, vintages = vintages,
                          directions_module = directions_module,
                          contexte = contexte)

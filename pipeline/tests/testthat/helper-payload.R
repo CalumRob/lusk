@@ -63,6 +63,20 @@ verifier_projection_sur_table <- function(table, json, nom,
   verifier_non_derivee(table, json, nom)
 }
 
+# Lecture des fixtures commises uniquement : ce lecteur n'est pas une voie de
+# reconstruction/publication. Les materializers courants prennent les résultats
+# producteurs en mémoire dans le graphe targets.
+lire_faits_commis <- function(source, theme, kind) {
+  if (!is.character(theme) || length(theme) != 1L || is.na(theme) || !nzchar(theme))
+    stop("Committed payload theme is required", call.=FALSE)
+  extension <- if (theme_parquet_retire(theme)) ".json" else ".parquet"
+  path <- file.path(source, paste0(kind, "_", theme, extension))
+  if (!file.exists(path))
+    stop("Committed payload input is missing: ", basename(path), call.=FALSE)
+  if (identical(extension, ".json")) jsonlite::fromJSON(path, simplifyVector=TRUE)
+  else nanoparquet::read_parquet(path)
+}
+
 # lire_indicateurs_commis -------------------------------------------------------
 # Les faits canoniques d'un thème depuis le snapshot commis (public/data). #757 :
 # la Mobilité garde son parquet de faits (#619) ; les cinq thèmes non-mobilité

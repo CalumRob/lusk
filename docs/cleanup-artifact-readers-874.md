@@ -1,5 +1,11 @@
 # Audit des lecteurs d'artefacts et de champs — #874
 
+**Mise à jour 2026-11-05 :** la voie manuelle de reconstruction depuis le payload
+commis est retirée avec accord propriétaire. Les mentions de
+`materialize_serving_artifacts.R` ci-dessous décrivent l'audit daté et ne
+constituent plus une obligation de recovery actuelle. Le graphe targets et les publishers canoniques
+restent en place; aucune suppression de données n'est autorisée par ce retrait.
+
 **Type :** audit source/artifact en lecture seule; aucun changement runtime, aucune suppression, régénération ou opération live.\
 **Source figée :** `bcf4d8ef1c0f9a06829f9d83f3be45bcad2ce14e` (02-11-2026), branche `issue/874-artifact-reader-audit-20261102`.\
 **Périmètre parent :** #619 et #827; liés #627 et #587. Les parents restent ouverts. Les conclusions sont des preuves sur le checkout épinglé, pas une acceptation déployée.

@@ -1,5 +1,12 @@
 # Structured product-data consumer inventory (#587 / #627)
 
+**Update 2026-11-05:** the owner retired the manual committed-payload reconstruction
+tool (`materialize_serving_artifacts.R`), its CLI and exclusive test/smoke paths.
+Earlier recovery-reader references below are superseded by this retirement.
+Normal targets materializers, database publishers and the two Programmes Parquets
+remain. No numerical JSON or other data is deleted by this change; last-reader
+checks are still required before any further artifact retirement.
+
 **Status:** source-and-artifact reconciliation at `f45445ecbb5455c01113ebee90697f84af75056e` (2026-10-23), **updated by #868 (2026-10-30)** for the fiche row below, **and by #871/#872/#873 (2026-11-02)** for the indicator read-model, Sources navigation, scalar-cohort flag and standalone-carte rows below, **and by #890/#891 (2026-11-03)** for the read-model producer row below, **and by #902 (2026-11-03)** for the programmes.json artifact rows below, **and by #903 (2026-11-03)** for the apercu.json artifact row below, **and by #901 (2026-11-03)** for the standalone-carte tab/presence row below. This is Step 1 of the approved #587 plan, not migration acceptance, a production check, approval to delete artifacts, or permission to close #587/#627. It supersedes the stale route/status descriptions in the 2026-09-28/#590 discovery baseline and the 2026-10-07 portion of the #627 ledger; historical measurements below are not current route contracts. Dated evidence stays as written; each "current" claim below names the change that last settled it.
 
 ## Serving boundary and evidence
