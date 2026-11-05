@@ -2,8 +2,7 @@
 # La publication des DEUX tables canoniques du thème Programmes (ADR-0013 :
 # les lignes d'adhésion du ticket #175 et les agrégats de subventions du
 # ticket #176) — les parquets PAR TABLE écrits par le seam de publication du
-# thème (publier_programmes) vers la cible de récupération/serving
-# (materialize_serving_artifacts.R).
+# thème (publier_programmes), consommés par le publisher des tables Programmes.
 #
 # Issue #893 : la projection navigateur partagée programmes.json est RETIRÉE
 # (source-only) — le navigateur lit les faits du thème via l'API ; les parquets
@@ -165,7 +164,7 @@ test_that("un run peuplé écrit les DEUX parquets par table et NE crée AUCUN p
 
   # les artefacts canoniques : un parquet PAR TABLE (le format parquet ne
   # tient qu'une table — programmes_membres / programmes_subventions, les
-  # entrées de récupération de materialize_serving_artifacts.R) — et AUCUN
+  # entrées du publisher des tables Programmes) — et AUCUN
   # programmes.json : la projection navigateur partagée est retirée (#893)
   expect_false(file.exists(file.path(sortie, "programmes.json")))
   expect_true(file.exists(file.path(sortie, "programmes_membres.parquet")))

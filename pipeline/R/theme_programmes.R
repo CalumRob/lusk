@@ -580,8 +580,8 @@ publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
 # apercu #116 — le contrat « 404 = table absente ») :
 #   - un parquet PAR TABLE (le format parquet ne tient qu'une table) :
 #     programmes_membres.parquet / programmes_subventions.parquet — les
-#     artefacts canoniques téléchargeables (ADR-0004) et les entrées de
-#     récupération/serving de materialize_serving_artifacts.R ;
+#     artefacts canoniques téléchargeables (ADR-0004) et les entrées du
+#     publisher des tables Programmes ;
 #   - la projection navigateur PARTAGÉE programmes.json n'est PLUS écrite
 #     (issue #893 — source-only : le navigateur lit les faits du sixième thème
 #     via l'API, indicateurs_programmes.json restant l'entrée de la paire

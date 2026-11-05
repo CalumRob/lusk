@@ -1,5 +1,11 @@
 # #627 — current numeric-consumer reconciliation
 
+**Update 2026-11-05:** the owner retired the manual committed-payload reconstruction
+tool (`materialize_serving_artifacts.R`), its CLI and exclusive test/smoke paths.
+References below to that reader are historical, not current recovery requirements.
+Normal targets materializers, database publishers and their canonical inputs remain;
+this does not establish permission to delete numerical JSON or other data.
+
 **Status:** refreshed for the #843 fiche integration against merged #846 (2026-10-23). This is an inventory and execution boundary, not a full numeric cutover, publication proof, deletion approval, public acceptance, or closure of #627/#587. See the [broader structured-consumer inventory](structured-consumer-inventory.md) for identity/bootstrap, metadata, Sources, run-report, geometry, model-producer, and operational dispositions.
 
 **Union note (#871/#872/#873, 2026-11-02):** the wave-1 code merges are complete and reconciled in the broader inventory — #871 retired the browser indicator read-model/manifest readers and the `VITE_SCALAR_COHORT_API` switch (route admission is producer discovery; hot shared-store metadata enriches but never authorizes), #872 made Sources consumer navigation truthful (three-valued `kind`, shared-catalogue page membership, visible no-current-page cue owned in `methodes/sources.ts`), and #873 made injected payload test-loaders keep production's demand-driven default while the standalone carte explicitly requests the theme sections its tab bar renders. The dated evidence in the sections below (including the 2026-10-23/26 records naming then-live readers such as the read-model manifest and the scalar-cohort switch) stays as written history; where a section describes a reader as current that #871/#872 retired, the broader inventory's dated "current disposition" wins.
