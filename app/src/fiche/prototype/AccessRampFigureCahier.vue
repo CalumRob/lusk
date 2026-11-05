@@ -26,7 +26,8 @@ const props = withDefaults(defineProps<{
   territoryName: string
   selectedModes?: readonly AedarRampMode[]
   showModeLegend?: boolean
-}>(), { showModeLegend: true })
+  comparisonVisible?: boolean
+}>(), { showModeLegend: true, comparisonVisible: true })
 const emit = defineEmits<{ 'update:selectedModes': [modes: readonly AedarRampMode[]] }>()
 
 const WIDTH = 640
@@ -71,9 +72,15 @@ function timeSeriesColor(key: string): string {
 }
 const timePoints = computed(() => props.timeRamp?.series[0]?.points ?? [])
 const selectedTimeModes = ref(new Set<string>(AEDAR_DEFAULT_VISIBLE_RAMP_MODES))
+const localComparisonVisible = ref(true)
 const visibleTimeModes = computed(() => new Set(props.selectedModes ?? [...selectedTimeModes.value]))
+const comparisonVisible = computed(() => props.comparisonVisible ?? localComparisonVisible.value)
 const visibleTimeSeries = computed(() => (props.timeRamp?.series ?? []).filter((series) => visibleTimeModes.value.has(series.key)))
 function toggleTimeMode(key: string): void {
+  if (key === 'reference') {
+    localComparisonVisible.value = !comparisonVisible.value
+    return
+  }
   const selected = new Set(visibleTimeModes.value)
   if (selected.has(key)) selected.delete(key)
   else selected.add(key)
@@ -198,7 +205,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
             <line class="access-ramp-axis" :x1="figureGeometry.margin.left" :x2="figureGeometry.width - figureGeometry.margin.right" :y1="figureGeometry.height - figureGeometry.margin.bottom" :y2="figureGeometry.height - figureGeometry.margin.bottom" />
           </g>
           <g v-for="series in visibleTimeSeries" :key="series.key">
-            <template v-if="timeRamp.comparisonLabel">
+            <template v-if="timeRamp.comparisonLabel && comparisonVisible">
               <path v-for="(path, index) in timePaths(series.points, true)" :key="`ref-${index}`" class="access-ramp-line access-ramp-line--comparison access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :style="{ stroke: timeSeriesColor(series.key) }" :d="path" aria-hidden="true" />
             </template>
             <path v-for="(path, index) in timePaths(series.points)" :key="`value-${index}`" class="access-ramp-line access-ramp-line--territory access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :style="{ stroke: timeSeriesColor(series.key) }" :d="path" aria-hidden="true" />
@@ -211,7 +218,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
         <CahierFigureTooltip v-if="selectedTimeCut" class="access-ramp-tooltip cahier-figure-tooltip--chart" :title="selectedTimeCut.xLabel" :rows="timeTooltipRows" :anchor="timeTooltipAnchor" aria-live="polite" />
       </div>
     </template>
-    <CahierFigureLegend v-if="props.showModeLegend" :entries="timeLegend" :mark-colors="timeLegendMarkColors" :selected-keys="[...visibleTimeModes]" :toggle-keys="timeRamp.series.map((series) => series.key)" label="Modes de déplacement et référence" @toggle="toggleTimeMode" />
+    <CahierFigureLegend v-if="props.showModeLegend" :entries="timeLegend" :mark-colors="timeLegendMarkColors" :selected-keys="[...visibleTimeModes, ...(comparisonVisible ? ['reference'] : [])]" :toggle-keys="[...timeRamp.series.map((series) => series.key), ...(timeRamp.comparisonLabel ? ['reference'] : [])]" label="Modes de déplacement et référence" @toggle="toggleTimeMode" />
   </CahierFigureFrame>
 </template>
 

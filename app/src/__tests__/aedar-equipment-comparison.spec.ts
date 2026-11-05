@@ -26,7 +26,7 @@ describe('Quantiles AEDAR du Bac à sable', () => {
     expect(figure.series[1]!.values[0]).toBeNull()
     expect(wrapper.get('svg[role="img"]').attributes('aria-label')).toContain('Moyenne de la sélection')
     expect(wrapper.text()).not.toContain('Moyenne de la sélection')
-    expect(wrapper.text()).toContain('À droite de chaque paire de barres : Groupe comparé')
+    expect(wrapper.text()).not.toContain('À droite de chaque paire de barres : Groupe comparé')
     wrapper.unmount()
   })
 })

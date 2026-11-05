@@ -20,6 +20,7 @@ const props = defineProps<{
   comparison?: AedarComparisonEvidence | null
   referenceFact?: AedarFact | null
   comparisonLabel?: string | null
+  comparisonVisible?: boolean
 }>()
 
 function formatNumber(value: number): string {
@@ -64,10 +65,5 @@ const figure = computed<CahierGroupedVerticalBarFigureData>(() => ({
 </script>
 
 <template>
-  <CahierGroupedVerticalBarChart :figure="figure" />
-  <p v-if="comparisonLabel" class="aedar-quantile-comparison-note">À droite de chaque paire de barres : Groupe comparé.</p>
+  <CahierGroupedVerticalBarChart :figure="figure" :hidden-series-keys="comparisonVisible === false ? figure.series.filter((series) => series.key.endsWith('-reference')).map((series) => series.key) : []" />
 </template>
-
-<style scoped>
-.aedar-quantile-comparison-note { margin: 0; color: var(--cahier-default); font: var(--type-figure-label); text-align: center; }
-</style>

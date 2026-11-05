@@ -75,10 +75,12 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
       typequ: ['B207'], intent: request.intent, expectedContentVersion: 'same-content', expectedReferenceContentVersion: 'same-reference',
       measures: expect.arrayContaining(['count_15_car_mean', 'count_15_car_decile1']),
     }))
+    const comparisonCell = (measure: string) => ({ ...fact('territory-a'), measure, statistic: 'pooled' as const,
+      group_coverage_status: 'covered', group_n_addresses: 30, group_n_observed: 30,
+      group_value: 7.4, rank: 2, rank_size: 3, rank_ties: 1, direction: 'high' as const })
     const comparison = { label: request.label, contentVersion: base.contentVersion, referenceContentVersion: base.referenceContentVersion,
-      cells: [{ ...fact('territory-a'), measure: 'count_15_car_mean', statistic: 'pooled' as const, group_coverage_status: 'covered',
-        group_n_addresses: 30, group_n_observed: 30,
-        group_value: 7.4, rank: 2, rank_size: 3, rank_ties: 1, direction: 'high' as const }] }
+      cells: [comparisonCell('count_15_car_mean'), ...base.distributionStatistics.map((statistic) =>
+        comparisonCell(`count_15_car_${statistic.key}`))] }
     first.resolve({ status: 'ready', evidence: comparison })
     await flushPromises()
     const ramp = wrapper.findComponent(AccessRampFigureCahier).props('timeRamp')
@@ -97,6 +99,22 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
     expect(tooltip.get('.cahier-figure-tooltip-row').attributes('aria-label')).toContain('Rang du territoire : 2e/3, plus est mieux')
     expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Rang du territoire : 2e/3, plus est mieux')
     expect(wrapper.findComponent(AedarEquipmentQuantileFigureCahier).props('comparison')).toEqual(comparison)
+    const comparisonToggle = wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')
+    expect(comparisonToggle).toBeDefined()
+    expect(comparisonToggle!.attributes('aria-pressed')).toBe('true')
+    expect(comparisonToggle!.attributes('aria-label')).toBe('Groupe comparé : Moyenne de la sélection')
+    expect(wrapper.text()).not.toContain('À droite de chaque paire de barres')
+    const groupedBars = wrapper.findAll('.cahier-grouped-vertical-bar-chart__bar').length
+    expect(groupedBars).toBeGreaterThan(1)
+    await comparisonToggle!.trigger('click')
+    expect(wrapper.find('.access-ramp-line--comparison').exists()).toBe(false)
+    expect(wrapper.findComponent(AedarEquipmentQuantileFigureCahier).props('comparisonVisible')).toBe(false)
+    expect(wrapper.findAll('.cahier-grouped-vertical-bar-chart__bar')).toHaveLength(groupedBars - base.distributionStatistics.length)
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Référence Moyenne de la sélection')
+    expect(wrapper.find('.cahier-grouped-vertical-bar-chart__svg').attributes('aria-label')).toContain('Groupe comparé : Voiture')
+    expect(wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!.attributes('aria-pressed')).toBe('false')
+    await wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!.trigger('click')
+    expect(wrapper.find('.access-ramp-line--comparison').exists()).toBe(true)
     await wrapper.setProps({ evidence: base })
     expect(wrapper.findComponent(AccessRampFigureCahier).props('timeRamp')!.comparisonLabel).toBeNull()
     wrapper.unmount()
