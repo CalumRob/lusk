@@ -71,9 +71,9 @@ function basculer(territoire: Territoire, action: 'ajouter' | 'retirer') {
 small { display: block; color: var(--muted, var(--text-secondary)); font-size: .85em; font-weight: 400; }
 input { box-sizing: border-box; inline-size: 100%; min-inline-size: 0; min-block-size: 44px; padding: var(--space-2); border: 1px solid var(--red-soft, var(--border-default)); border-radius: 2px; background: var(--paper, var(--surface-primary)); color: inherit; font: inherit; }
 .membres-comparaison__colonne button { flex: 0 0 auto; min-block-size: 44px; padding: var(--space-1) var(--space-2); border: 0; border-radius: 0; font: inherit; text-align: start; cursor: pointer; overflow-wrap: anywhere; }
-.membres-comparaison__colonne--dedans button { background: transparent; color: var(--muted, var(--text-secondary)); }
-.membres-comparaison__colonne--dehors button { background: color-mix(in oklab, var(--brand-200) 24%, transparent); color: var(--brand-600); }
-.membres-comparaison__colonne--dehors button:hover { background: color-mix(in oklab, var(--brand-200) 40%, transparent); }
+.membres-comparaison__colonne--dedans button { background: transparent; color: var(--red, var(--accent-primary)); }
+.membres-comparaison__colonne--dehors button { background: transparent; color: var(--brand-600); }
+.membres-comparaison__colonne--dehors button:active { background: transparent; }
 button:hover { text-decoration: underline; }
 button:active { background: var(--surface-tertiary); }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--red, var(--accent-primary)); outline-offset: 2px; }
