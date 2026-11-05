@@ -10,10 +10,10 @@
 # (les 5 parts d'isolation, div_loss et la Story arrivent au ticket #138) et ne
 # PUBLIE rien par lui-même : il lie les pièces existantes.
 
-test_that("MANIFEST_MOBILITE : les dix-huit sources du thème, les 11 colonnes standard", {
+test_that("MANIFEST_MOBILITE : les dix-sept sources conservées, les 11 colonnes standard", {
   m <- MANIFEST_MOBILITE
 
-  # le manifeste est un tibble de QUATORZE lignes : le snapshot porté + les
+  # le manifeste conserve le snapshot porté et les sources de mobilité actuelles :
   # quatre sources de l'étage demande/réseaux (issue #139 : voitures/ménage RP,
   # réseaux t/c OSM + réseaux b Geovelo depuis #222/#228, limites communales)
   # + les quatre sources du sous-bloc « L'offre de mobilité alternative »
@@ -28,13 +28,13 @@ test_that("MANIFEST_MOBILITE : les dix-huit sources du thème, les 11 colonnes s
   # fragment korrigo) et la couche bâtiments porte elle-même code_commune_insee
   # (plus de jointure spatiale aux polygones communaux).
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 18L)
+  expect_equal(nrow(m), 17L)
   expect_equal(nrow(m), length(unique(m$id)))
   expect_setequal(m$id,
                   c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                     IDS_OCSGE_RESEAUX,
                     "amenagements_cyclables", "communes_limites", "korrigo",
-                    "batiments_residentiels", "accessibilite_batiments",
+                    "batiments_residentiels",
                     "bornes-recharges",
                    "stationnement-velo", "bpe_b316", "cog_passage",
                    "sncf_voyageurs", "dila_bdl"))
@@ -166,12 +166,7 @@ test_that("vintages_mobilite : dix-sept sources publiques incluent la production
   expect_equal(snap$date_publication, "2026-08-06")
   expect_true(as.Date(snap$date_reference) <= as.Date(snap$date_publication))
 
-  access <- MANIFEST_MOBILITE_ACCESSIBILITE_BATIMENTS
-  expect_equal(access$source, snap$source)
-  expect_equal(access$vintage, snap$version)
-  expect_equal(access$date_reference, snap$date_reference)
-  expect_equal(access$date_publication, snap$date_publication)
-  expect_false(any(v$id == DISTRIBUTION_ACCES_BATIMENTS_MANIFEST_ID))
+  expect_false("accessibilite_batiments" %in% v$id)
 
   # la demande : RP 2023 (le millésime du recensement), référence au 1er
   # janvier 2023, publication à la mise en ligne du tableau LOG T12
@@ -818,9 +813,7 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                       "offre_tc_communes", "bornes_communes",
                       "stationnement_velo_communes",
                          "offre_cyclable_communes", "offre_territoires",
-                         "tot_loss_territoires", "moyennes_acces_territoires",
-                            "rampe_acces_batiments",
-                            "rampe_acces_batiments_comparaisons"))
+                          "tot_loss_territoires", "moyennes_acces_territoires"))
   expect_equal(res$nb_buildings_territoires$value, 100)
   expect_equal(res$isolation_territoires$value, 0.1)
   expect_equal(res$div_loss_territoires$delta, 1)
@@ -1978,12 +1971,12 @@ test_that("verifier_contrat_manifest_mobilite : le manifeste concaténé passe s
   # le manifeste réel passe sa propre validation de contrat
   expect_true(verifier_contrat_manifest_mobilite(MANIFEST_MOBILITE))
 
-   # un manifeste amputé d'une source échoue bruyamment (les DIX-HUIT sources du
+    # un manifeste amputé d'une source échoue bruyamment (les DIX-SEPT sources du
   # thème — le snapshot + les quatre de l'étage demande/réseaux (#139) + les
   # quatre du sous-bloc (#140) + la table de passage COG partagée (#222/#227)
   # + les deux sources du raccordement (#485))
   defectueux <- MANIFEST_MOBILITE[MANIFEST_MOBILITE$id != "batiments_residentiels", ]
-    expect_error(verifier_contrat_manifest_mobilite(defectueux), "DIX-HUIT")
+     expect_error(verifier_contrat_manifest_mobilite(defectueux), "DIX-SEPT")
 
   # un id dupliqué échoue
   defectueux <- MANIFEST_MOBILITE

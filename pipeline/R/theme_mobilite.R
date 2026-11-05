@@ -190,14 +190,12 @@ VINTAGES_MOBILITE_OCSGE_RESEAUX <- tibble::tribble(
 # vintages_mobilite ------------------------------------------------------------
 # Le builder de vintages du thème : la projection générique depuis le
 # manifeste — une source, SA référence (l'instantané de l'analyse) et SA
-# publication (le portage), jamais alignées. L'export bâtiment est conservé
-# dans le manifeste comme entrée opérationnelle, mais ses projections publiques
-# citent mobilite_snapshot : il ne doit donc pas devenir une seconde ligne de
-# source dans vintages.json. Depuis l'issue #486, les DEUX faits construits du
+# publication (le portage), jamais alignées. L'export bâtiment retiré en #912
+# n'est plus une entrée opérationnelle ; les faits conservés continuent de
+# citer mobilite_snapshot. Depuis l'issue #486, les DEUX faits construits du
 # raccordement voyagent à leurs côtés.
 vintages_mobilite <- function() {
-  ids_techniques <- c(DISTRIBUTION_ACCES_BATIMENTS_MANIFEST_ID,
-                      IDS_OCSGE_RESEAUX)
+  ids_techniques <- IDS_OCSGE_RESEAUX
   dplyr::bind_rows(
     vintages_depuis_manifest(
       MANIFEST_MOBILITE[
@@ -383,25 +381,6 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   moyennes_acces_territoires <- construire_moyennes_acces_territoires(
     snapshot, base_epci
   )
-  rampe_acces_batiments <- if (
-    "rampe_acces_batiments" %in% names(donnees) &&
-      !is.null(donnees$rampe_acces_batiments)
-  ) {
-    agreger_rampe_acces_batiments(
-      donnees$rampe_acces_batiments,
-      base_epci,
-      territoires_reference = reference_territoires(territoires)
-    )
-  } else {
-    NULL
-  }
-  contextes_rampe <- if (!is.null(rampe_acces_batiments)) {
-    construire_contextes_acces_batiments(
-      donnees$rampe_acces_batiments, base_epci,
-      classes_densite = classes_densite,
-      territoires_reference = reference_territoires(territoires)
-    )$rampe
-  } else NULL
   acces_rangs <- construire_rangs_acces(acces_territoires, territoires)
   isolation_rangs <- construire_rangs_isolation(isolation_territoires,
                                                 territoires)
@@ -532,18 +511,6 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "offre_territoires.rds"))
   readr::write_rds(moyennes_acces_territoires,
                    file.path(sortie, "moyennes_acces_territoires.rds"))
-  if (!is.null(rampe_acces_batiments)) {
-    readr::write_rds(
-      rampe_acces_batiments,
-      file.path(sortie, "rampe_acces_batiments.rds")
-    )
-  }
-  if (!is.null(contextes_rampe)) {
-    readr::write_rds(
-      contextes_rampe,
-      file.path(sortie, "rampe_acces_batiments_comparaisons.rds")
-    )
-  }
 
   list(
     mobilite_communes = mobilite_communes,
@@ -569,9 +536,7 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     offre_cyclable_communes = offre_cyclable_communes,
     offre_territoires = offre_territoires,
     tot_loss_territoires = tot_loss_territoires,
-    moyennes_acces_territoires = moyennes_acces_territoires,
-      rampe_acces_batiments = rampe_acces_batiments,
-      rampe_acces_batiments_comparaisons = contextes_rampe
+    moyennes_acces_territoires = moyennes_acces_territoires
   )
 }
 
@@ -1379,14 +1344,6 @@ validations_mobilite <- list(
     }
     invisible(payload)
   },
-  # La rampe marginale est une seconde projection de la même source : elle
-  # porte les trois modes, onze quantiles et aucun bâtiment individuel.
-  function(payload) {
-    if (!"rampe_acces_batiments" %in% names(payload) ||
-        is.null(payload$rampe_acces_batiments)) return(invisible(payload))
-    verifier_contrat_rampe_acces_batiments(payload$rampe_acces_batiments)
-    invisible(payload)
-  },
   # la GRILLE de la courbe du raccordement : les 73 détails déclarés « t0000 »
   # → « t0360 » par pas de cinq minutes — un détail hors grille ou mal formé est une
   # corruption, jamais une courbe qui ment sur son axe
@@ -1437,9 +1394,6 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages,
     histoires = resoudre_histoires(
       compute_histoires_mobilite(analytiques, vintages), "mobilite"),
     territoires = reference_territoires(territoires),
-    rampe_acces_batiments = analytiques$rampe_acces_batiments,
-    rampe_acces_batiments_comparaisons =
-      analytiques$rampe_acces_batiments_comparaisons,
     apercu = assemble_apercu(territoires, construire_apercu_mobilite(territoires))
   )
 
@@ -1593,10 +1547,9 @@ theme_mobilite <- function() {
     # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
     # payload, jamais un recompute des tables de faits
     metadata = function() lire_theme_metadata("mobilite"),
-    # L'export bâtiment reste une entrée du manifeste pour l'ingestion, mais
-    # n'est pas un vintage public distinct : les projections citent le snapshot
-    # porté et la table partagée doit retirer l'ancien id s'il existe déjà.
-    retire_vintages = DISTRIBUTION_ACCES_BATIMENTS_MANIFEST_ID,
+    # L'export bâtiment retiré ne doit pas subsister dans les vintages partagés
+    # issus d'une publication antérieure. Les faits conservés citent le snapshot.
+    retire_vintages = "accessibilite_batiments",
     # LE TRAIT RACCORDEMENT (issue #486) : le graphe le voit et câble la
     # chaîne de calcul — les épingles du package en cibles de fichiers, la
     # cible raccordement_mobilite (le calcul, persisté), la publication

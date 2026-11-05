@@ -328,9 +328,8 @@ normaliser_stationnement_velo <- function(velo_brut) {
 # lue dans le cache (le nom de fichier du manifeste par id — jamais un chemin
 # codé en dur) puis normalisée. Retourne la liste nommée (la forme que
 # construire_donnees_mobilite assemble à mobilite_snapshot) : les arrêts GTFS
-# (korrigo), la couche bâtiments (batiments_residentiels), l'export bâtiment par
-# équipement (accessibilite_batiments), les bornes IRVE (bornes_recharges) et le
-# hub vélo (stationnement_velo).
+# (korrigo), la couche bâtiments (batiments_residentiels), les bornes IRVE
+# (bornes_recharges) et le hub vélo (stationnement_velo).
 construire_sources_offre_mobilite <- function(cache = "data/raw") {
   fichier <- function(id) {
     MANIFEST_MOBILITE$fichier[MANIFEST_MOBILITE$id == id]
@@ -340,25 +339,11 @@ construire_sources_offre_mobilite <- function(cache = "data/raw") {
       file.path(cache, fichier("batiments_residentiels"))
       )
   )
-  accessibilite <- lire_accessibilite_batiments(
-    file.path(cache, fichier("accessibilite_batiments")),
-    modes = c("c", "b", "t")
-  )
-  accessibilite_modes <- normaliser_accessibilite_batiments_modes(
-    accessibilite, batiments
-  )
   list(
     korrigo = normaliser_stops_gtfs(
       lire_stops_gtfs(file.path(cache, fichier("korrigo")))
     ),
     batiments_residentiels = batiments,
-    accessibilite_batiments = accessibilite_modes %>%
-      dplyr::transmute(
-        batiment_groupe_id, commune,
-        breadth = breadth_t,
-        depth = depth_t
-      ),
-    rampe_acces_batiments = accessibilite_modes,
     bornes_recharges = normaliser_bornes_recharges(
       lire_bornes_recharges(file.path(cache, fichier("bornes-recharges")))
     ),

@@ -454,33 +454,6 @@ MANIFEST_MOBILITE_BATIMENTS <- tibble::tribble(
   "manuel", "fichier"
 )
 
-# MANIFEST_MOBILITE_ACCESSIBILITE_BATIMENTS -------------------------------------
-# L'export bâtiment par équipement est une entrée opérationnelle de l'analyse
-# portée : le fichier est copié dans data/raw avant le run et le mode manuel
-# empêche le cron de le remplacer. Ses projections publiques réutilisent la
-# source/vintage mobilite_snapshot plutôt que de publier une seconde source.
-MANIFEST_MOBILITE_ACCESSIBILITE_BATIMENTS <- tibble::tribble(
-  ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
-  ~date_publication, ~licence, ~note, ~mode, ~type,
-   DISTRIBUTION_ACCES_BATIMENTS_MANIFEST_ID,
-  DISTRIBUTION_ACCES_BATIMENTS_SOURCE,
-  paste0("data/raw/", DISTRIBUTION_ACCES_BATIMENTS_FICHIER),
-  DISTRIBUTION_ACCES_BATIMENTS_FICHIER,
-   MOBILITE_SNAPSHOT_VERSION,
-  DISTRIBUTION_ACCES_BATIMENTS_DATE_REFERENCE,
-  DISTRIBUTION_ACCES_BATIMENTS_DATE_PUBLICATION,
-  DISTRIBUTION_ACCES_BATIMENTS_LICENCE,
-   paste0(
-     "Fichier d'entrée de l'analyse portée « Vingt minutes sans voiture » : ",
-     "les colonnes car_<TYPEQU>, bike_<TYPEQU> et transit_walk_<TYPEQU> ",
-     "portent les comptes d'équipements par bâtiment et par mode, avec le ",
-     "cap de 20 minutes déclaré par le producteur. Le fichier est conservé ",
-     "dans data/raw ; la matrice complète n'est jamais envoyée au client. ",
-     "Les projections publiées réutilisent le source/vintage mobilite_snapshot."
-   ),
-  "manuel", "fichier"
-)
-
 # MANIFEST_MOBILITE_BORNES -----------------------------------------------------
 # Le fragment BORNES (issue #140, « Bornes de recharge ») : le fichier
 # consolidé IRVE (Etalab, federé sur data.bretagne.bzh, schéma 2.2.0) — les
@@ -782,7 +755,6 @@ MANIFEST_MOBILITE <- dplyr::bind_rows(
   MANIFEST_MOBILITE_COMMUNES_LIMITES,
   MANIFEST_MOBILITE_KORRIGO,
   MANIFEST_MOBILITE_BATIMENTS,
-  MANIFEST_MOBILITE_ACCESSIBILITE_BATIMENTS,
   MANIFEST_MOBILITE_BORNES,
   MANIFEST_MOBILITE_STATIONNEMENT_VELO,
   MANIFEST_MOBILITE_BPE_B316,
@@ -1307,37 +1279,6 @@ verifier_contrat_mobilite_stationnement_velo <- function(fragment) {
 }
 
 
-# verifier_contrat_mobilite_accessibilite_batiments ------------------------------
-verifier_contrat_mobilite_accessibilite_batiments <- function(manifest) {
-  if (!inherits(manifest, "tbl_df") || nrow(manifest) != 1L ||
-       manifest$id[[1]] != DISTRIBUTION_ACCES_BATIMENTS_MANIFEST_ID) {
-    stop("Contrat Mobilité accessibilité bâtiments violé — une source unique est attendue.",
-         call. = FALSE)
-  }
-  ligne <- manifest[1, ]
-  if (ligne$fichier[[1]] != DISTRIBUTION_ACCES_BATIMENTS_FICHIER ||
-      ligne$url[[1]] != paste0("data/raw/", DISTRIBUTION_ACCES_BATIMENTS_FICHIER)) {
-    stop("Contrat Mobilité accessibilité bâtiments violé — fichier porté inattendu.",
-         call. = FALSE)
-  }
-  if (ligne$mode[[1]] != "manuel" || ligne$type[[1]] != "fichier") {
-    stop("Contrat Mobilité accessibilité bâtiments violé — mode manuel et type fichier attendus.",
-         call. = FALSE)
-  }
-  if (ligne$licence[[1]] != DISTRIBUTION_ACCES_BATIMENTS_LICENCE) {
-    stop("Contrat Mobilité accessibilité bâtiments violé — licence inattendue.",
-         call. = FALSE)
-  }
-  if (ligne$source[[1]] != DISTRIBUTION_ACCES_BATIMENTS_SOURCE ||
-      ligne$vintage[[1]] != DISTRIBUTION_ACCES_BATIMENTS_VERSION ||
-      ligne$date_reference[[1]] != DISTRIBUTION_ACCES_BATIMENTS_DATE_REFERENCE ||
-      ligne$date_publication[[1]] != DISTRIBUTION_ACCES_BATIMENTS_DATE_PUBLICATION) {
-    stop("Contrat Mobilité accessibilité bâtiments violé — source/vintage mobilite_snapshot attendus.",
-         call. = FALSE)
-  }
-  invisible(TRUE)
-}
-
 # verifier_contrat_mobilite_ocsge_reseaux ----------------------------------------
 # Le contrat des quatre états OCS-GE utilisés par la clé séparée : les ids,
 # archives, licence, mode et type sont épinglés ; chaque millésime du fichier
@@ -1385,12 +1326,11 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   if (!inherits(manifest, "tbl_df")) {
     manquer("forme", "le manifeste doit être un tibble")
   }
-  if (nrow(manifest) != 18L) {
-    manquer("forme", paste0("le manifeste concaténé porte DIX-HUIT sources (le ",
+  if (nrow(manifest) != 17L) {
+    manquer("forme", paste0("le manifeste concaténé porte DIX-SEPT sources (le ",
                             "snapshot + les quatre de l'étage demande/réseaux ",
                              "(#139) + les quatre états OCS-GE routiers (#552) + ",
-                             "les quatre du sous-bloc (#140) + l'export ",
-                             "accessibilité (#550) + la ",
+                              "les quatre du sous-bloc (#140) + la ",
                             "BPE B316 et la table de passage COG partagée + ",
                             "les deux sources du raccordement (#485 : le rail ",
                             "SNCF national et la DILA BDL)), pas ",
@@ -1400,7 +1340,7 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   attendus <- c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                 IDS_OCSGE_RESEAUX, "amenagements_cyclables", "communes_limites",
                 "korrigo",
-                 "batiments_residentiels", "accessibilite_batiments",
+                  "batiments_residentiels",
                  "bornes-recharges",
                 "stationnement-velo", "bpe_b316", "cog_passage",
                 "sncf_voyageurs", "dila_bdl")
@@ -1417,8 +1357,6 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
     manifest[manifest$id == "korrigo", ])
   verifier_contrat_mobilite_batiments(
     manifest[manifest$id == "batiments_residentiels", ])
-  verifier_contrat_mobilite_accessibilite_batiments(
-    manifest[manifest$id == "accessibilite_batiments", ])
   verifier_contrat_mobilite_bornes(
     manifest[manifest$id == "bornes-recharges", ])
   verifier_contrat_mobilite_stationnement_velo(

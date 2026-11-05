@@ -29,7 +29,6 @@ const payload: Payload = {
   runReport: null,
   vintages: vintagesFixture,
   programmes: null,
-  rampesAccesBatiments: [],
   reseauxMobilite: null,
   themeMetadata: metadonneesThemesFixtures,
 } as unknown as Payload

@@ -1,6 +1,6 @@
 # ADR-0036: Means for interactive building-access peer curves
 
-- **Status:** accepted
+- **Status:** superseded for the legacy building-access ramp (2026-11-04); historical decision retained below
 - **Decision:** product owner, 2026-09-27
 - **Supersedes:** ADR-0034's fixed-scope, pooled-building peer ramp rule
 - **Parent:** ADR-0033 (R/Parquet authority and bounded read-only serving)
@@ -11,7 +11,7 @@ in Variant E's building-access distribution set use the comparison metric type
 French syntax; neither the data pipeline nor the figure renderer composes a
 literal such as "Groupe comparé — moyenne".
 
-The ramp retains **eleven positions for each of three modes**. Each territory's
+**Historical decision (superseded 2026-11-04):** The legacy ramp retained **eleven positions for each of three modes**. Each territory's
 position is its R-published quantile of buildings. For every position and mode,
 the selected group's point is the mean of its members' corresponding points,
 weighted by each member's **ramp `total_buildings`**. It describes an average
@@ -34,6 +34,16 @@ once. The focal territory is neither added to nor removed from the peer set
 automatically: membership is exactly what the person selected, after resolving
 overlaps. Reject unbounded, unknown or partially published selections; a serving
 read must use one committed publication. There is no browser database access.
+
+**Narrow supersession (product owner, 2026-11-04; implemented by #912):** the
+legacy quantile building ramp and its peer-comparison projection are retired.
+They are not retained product contracts and must not be produced or published.
+This supersedes only the legacy ramp retention decision and its associated
+projection semantics above. It does not change AEDAR's independent `Rampe
+temporelle`, aggregate API, 235-code registry, producers, maps, or shared
+`sharedAccessRampFigureCahier` renderer; nor does it alter the building
+distribution grid decision, BPE25 B316 denominator, `offre_tc`,
+`mobilite_snapshot`, or raccordement contracts.
 
 This ADR changes the meaning of the peer comparison, not the selected
 territory's quantiles. A pure serving calculation and focused tests may precede

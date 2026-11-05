@@ -261,9 +261,7 @@ construire_payload_territoire_programmes <- function(programmes, territoires) {
     histoires = data.frame(
       territoire = character(), type = character(), theme = character(),
       stringsAsFactors = FALSE
-    ),
-      rampe_acces_batiments = NULL,
-      rampe_acces_batiments_comparaisons = NULL
+    )
   )
 }
 
