@@ -58,11 +58,13 @@ function chargerPayloadCommite(): Promise<Payload> {
     'histoires_economie.json',
     'indicateurs_milieux.json',
     'histoires_milieux.json',
+    'indicateurs_programmes.json',
     'theme_demographie.json',
     'theme_habitat.json',
     'theme_economie.json',
     'theme_mobilite.json',
     'theme_milieux.json',
+    'theme_programmes.json',
     'run-report.json',
     'vintages.json',
   ]) {
@@ -274,12 +276,22 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect([...themesDuPayload].every((theme) => (THEMES_CANONIQUES as readonly string[]).includes(theme))).toBe(true)
   })
 
-  it('loads the committed theme_<theme>.json metadata for all five built themes (#311, #313)', async () => {
+  it('loads Programmes facts and metadata without requesting a histories artifact', async () => {
+    const payload = obtenirPayload()
+
+    expect(demandeesCommite).toContain('indicateurs_programmes.json')
+    expect(demandeesCommite).toContain('theme_programmes.json')
+    expect(demandeesCommite).not.toContain('histoires_programmes.json')
+    expect(payload.indicateurs.some((ligne) => ligne.theme === 'programmes')).toBe(true)
+    expect(payload.themeMetadata?.programmes?.theme).toBe('programmes')
+  })
+
+  it('loads the committed theme_<theme>.json metadata for all six built themes (#311, #313)', async () => {
     const payload = obtenirPayload()
 
     // Chaque thème construit (présent dans les faits) porte SA métadonnée
     // validée — le fichier theme_<theme>.json committé, clé par thème.
-    for (const theme of ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const) {
+    for (const theme of ['demographie', 'habitat', 'economie', 'mobilite', 'milieux', 'programmes'] as const) {
       expect(payload.themeMetadata?.[theme], `métadonnées « ${theme} » absentes`).toBeDefined()
       expect(payload.themeMetadata?.[theme]?.theme).toBe(theme)
     }

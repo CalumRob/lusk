@@ -111,7 +111,7 @@ const SANS_REFERENCE = new Set<Fichier>([
   ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier),
 ])
 
-/** The full file set — no-arg `usePayload()` waits for exactly this. */
+/** The legacy full start set; Programmes has facts/metadata but no stories file. */
 // #893 — 'programmes' n'est plus un fichier : la projection programmes.json est
 // retirée ; la section native de la carte (mapMemberships) vient de
 // l'acquisition sémantique API, pas du magasin de fichiers.
@@ -123,7 +123,9 @@ const TOUS_LES_FICHIERS: Fichier[] = [
   'run-report',
   'vintages',
   ...THEMES_CANONIQUES.flatMap(
-    (theme) => [`indicateurs_${theme}`, `histoires_${theme}`, `theme_${theme}`] as Fichier[],
+    (theme) => theme === 'programmes'
+      ? [`indicateurs_${theme}`, `theme_${theme}`] as Fichier[]
+      : [`indicateurs_${theme}`, `histoires_${theme}`, `theme_${theme}`] as Fichier[],
   ),
 ]
 
@@ -230,6 +232,10 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
   ) => Promise<unknown>
 
   function construire(nom: Fichier): Promise<unknown> {
+    // Programmes has no reading table. Keep the legacy file name accepted for
+    // explicit callers, but resolve its honest absence without requesting JSON.
+    if (nom === 'histoires_programmes') return Promise.resolve(null)
+
     // Les métadonnées (theme_<theme>.json, #313) sont autoportantes (le
     // validateur ne prend aucune référence) : leur fetch ne lit jamais la
     // table territoriale. La règle de présence (un thème qui publie ses faits

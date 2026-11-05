@@ -567,8 +567,9 @@ publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
   # — un run vide ne doit JAMAIS clobber la publication existante (issue #178)
   ecrire_parquets_programmes(payload, sortie)
 
-  # la paire hermétique du sixième thème (#408) : zéro fait → rien n'est
-  # écrit (l'absence honnête du thème — jamais un thème inventé)
+  # les faits du sixième thème (#408) : zéro fait → rien n'est écrit
+  # (l'absence honnête du thème — jamais un thème inventé) ; aucun fichier de
+  # lecture n'est publié puisque Programmes n'a pas de lecture.
   indicateurs_theme <- construire_indicateurs_programmes(membres, subventions)
   ecrire_theme_programmes(indicateurs_theme, sortie)
 
@@ -582,10 +583,11 @@ publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
 #     programmes_membres.parquet / programmes_subventions.parquet — les
 #     artefacts canoniques téléchargeables (ADR-0004) et les entrées du
 #     publisher des tables Programmes ;
-#   - la projection navigateur PARTAGÉE programmes.json n'est PLUS écrite
-#     (issue #893 — source-only : le navigateur lit les faits du sixième thème
-#     via l'API, indicateurs_programmes.json restant l'entrée de la paire
-#     hermétique) ; un programmes.json périmé préexistant n'est NI réécrit NI
+  #   - la projection navigateur PARTAGÉE programmes.json n'est PLUS écrite
+  #     (issue #893 — source-only : le navigateur lit les faits du sixième thème
+  #     via l'API ; indicateurs_programmes.json reste la projection statique des
+  #     faits pour ses consommateurs legacy/test) ; un programmes.json périmé
+  #     n'est NI réécrit NI
 #     supprimé par le run ;
 #   - la sentinelle : un payload dont AUCUNE table ne porte de lignes n'écrit
 #     RIEN et ne touche à aucun fichier existant — un run vide n'écrase jamais

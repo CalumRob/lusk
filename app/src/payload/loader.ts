@@ -245,10 +245,14 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
     const indicateursTheme = await chargerFichier(`indicateurs_${theme}`, territoires, options)
     if (indicateursTheme === null) continue
 
-    const histoiresTheme = await chargerFichier(`histoires_${theme}`, territoires, options)
+    // Programmes is a facts-only theme: its former serialized empty history
+    // table is retired, so this assembly never requests it.
+    const histoiresTheme = theme === 'programmes'
+      ? []
+      : await chargerFichier(`histoires_${theme}`, territoires, options)
     // Programmes has no published reading table: its producer contract is
     // facts-only, so absence of a serialized empty histories file is expected.
-    if (histoiresTheme === null && theme !== 'programmes') {
+    if (histoiresTheme === null) {
       throw new PayloadError(
         'validation',
         `histoires_${theme}.json`,
