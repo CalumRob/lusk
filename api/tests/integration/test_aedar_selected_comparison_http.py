@@ -540,7 +540,7 @@ def test_fixed_aggregate_density_pooled_null_observed_row_is_unavailable(aedar_h
     """
     response = aedar_http.post("/api/resources/read", json=_aggregate_item(
         target_id="sel-c8", measures=("meanVolume",),
-        fields=["group_value", "value", "status", "rank", "rank_size", "rank_ties"],
+        fields=["group_value", "value", "rank", "rank_size", "rank_ties"],
         context="density_class"))
     assert response.status_code == 200, response.text
     comparison = response.json()["comparison"]
