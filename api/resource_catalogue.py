@@ -44,8 +44,9 @@ class IndicatorResource:
     storage_relation: str | None = None
     publication_table: str | None = None
     side_relations: tuple[dict, ...] = ()
-    # Producer-declared per-measure comparison facets (AEDAR source grain):
-    # measure key -> {"facet", "direction", "ranked"}.
+    # Producer-declared comparison facets (AEDAR source grain): per-cell
+    # measure key or registry-wide aggregate reading key ->
+    # {"facet", "direction", "ranked"}.
     measure_facets: dict[str, dict] = field(default_factory=dict)
 
 
@@ -164,10 +165,14 @@ _COMPARABLE_SHAPES = frozenset({
 _COHORT_FACT_SHAPES = frozenset({
     "scalar", "declared_profile", "ordered_series", "period_detail", "anchored_membership",
 })
-# Request-time AEDAR selection ranks (ADR-0039 amendment, #768/#859): the
-# focal rank, group size and tie count are computed per request from published
-# aggregates; fixed AEDAR contexts stay reference-only and grant no rank fields.
-_AEDAR_SELECTED_COMPARISON_FIELDS = frozenset({"rank", "rank_size", "rank_ties"})
+# Request-time AEDAR comparison ranks (ADR-0039 amendments, #768/#859 and the
+# 2026-11-04 aggregate-ranks amendment, #914): the focal rank, group size and
+# tie count are computed per request from published aggregates. The selected
+# intent grants them for every declared facet; the fixed intent grants them on
+# the registry-wide aggregate readings only — per-cell measures keep #904's
+# reference-only boundary.
+_AEDAR_COMPARISON_RANK_FIELDS = frozenset({"rank", "rank_size", "rank_ties"})
+_AEDAR_SELECTED_COMPARISON_FIELDS = _AEDAR_COMPARISON_RANK_FIELDS
 
 
 def _declared_source_identities(page, source_records, fallback):
@@ -216,6 +221,16 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         elif (resource.resource_kind == "aedar_source_grain"
                 and item.intent.kind == "selected_comparison"):
             supported = set(resource.fields) | set(_AEDAR_SELECTED_COMPARISON_FIELDS)
+        elif (resource.resource_kind == "aedar_source_grain"
+                and item.intent.kind == "fixed_comparison"):
+            from api.aedar_models import AEDAR_AGGREGATE_READINGS
+            supported = set(resource.fields)
+            measures = (item.coordinates or {}).get("measure") or []
+            if measures and set(measures) <= set(AEDAR_AGGREGATE_READINGS):
+                # ADR-0039's 2026-11-04 amendment (#914): the fixed intent
+                # grants request-time rank fields on the registry-wide
+                # aggregate readings only; per-cell measures stay rejected.
+                supported |= set(_AEDAR_COMPARISON_RANK_FIELDS)
         else:
             supported = (set(resource.fields) if resource.resource_kind != "indicator" else {
             "focal_value", "median", "rank", "rank_size", "rank_ties",
@@ -276,11 +291,14 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
 def _declared_measure_facets(declaration, resource_id) -> dict[str, dict]:
     """Validate and project producer per-measure comparison facets.
 
-    A declared facet map must cover exactly the registered AEDAR measure
-    vocabulary, so a selected-comparison measure cannot be silently omitted;
+    A declared facet map must cover exactly the registered AEDAR comparison
+    vocabulary — the 312 per-cell measures plus the registry-wide aggregate
+    readings — so a selected-comparison coordinate cannot be silently omitted;
     an `aedar_source_grain` resource that declares `selected_comparison` must
     declare the complete map (ADR-0039's AEDAR selection-comparison amendment,
-    #768/#859). Directions follow the ADR-0015 vocabulary (`high`/`low`).
+    #768/#859, and the 2026-11-04 aggregate-ranks amendment, #914). Directions
+    follow the ADR-0015 vocabulary (`high`/`low`); the aggregate readings are
+    ranked high-is-better facets.
     """
     declared = declaration.get("measure_facets")
     intents = tuple(declaration.get("intents", ("facts",)))
@@ -290,8 +308,8 @@ def _declared_measure_facets(declaration, resource_id) -> dict[str, dict]:
         return {}
     if declaration.get("kind") != "aedar_source_grain" or not isinstance(declared, dict):
         raise ValueError(f"Invalid measure facets for producer resource: {resource_id}")
-    from api.aedar_models import AEDAR_MEASURE_KEYS
-    if set(declared) != set(AEDAR_MEASURE_KEYS):
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS
+    if set(declared) != set(AEDAR_MEASURE_KEYS) | set(AEDAR_AGGREGATE_READINGS):
         raise ValueError(f"Incomplete measure facets for producer resource: {resource_id}")
     facets = {}
     for measure, facet in declared.items():
@@ -300,6 +318,11 @@ def _declared_measure_facets(declaration, resource_id) -> dict[str, dict]:
                 or not facet["facet"].replace("_", "").isalnum()
                 or facet["direction"] not in ("high", "low")
                 or not isinstance(facet["ranked"], bool)):
+            raise ValueError(f"Invalid measure facet declaration for producer resource: {resource_id}")
+        if measure in AEDAR_AGGREGATE_READINGS and (facet["direction"] != "high"
+                                                    or not facet["ranked"]):
+            # Registry-wide overview aggregate readings are ranked
+            # high-is-better comparison facets (ADR-0039, 2026-11-04, #914).
             raise ValueError(f"Invalid measure facet declaration for producer resource: {resource_id}")
         facets[measure] = dict(facet)
     return facets

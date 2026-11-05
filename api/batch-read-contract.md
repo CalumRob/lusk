@@ -29,8 +29,9 @@ AEDAR reference reads use the canonical territory-reference scope: commune EPCI
 and Bretagne values are direct source aggregates, density-class values come from
 the pooled producer artifact, and EPCI/departement same-level presets read the
 Région's own direct published aggregate (« Moyenne de Bretagne »); the retired
-same-level median summaries are no longer served. AEDAR publishes no peer rows
-or ranks.
+same-level median summaries are no longer served. AEDAR publishes no peer or
+rank rows: every request-time statistic — including the aggregate-reading ranks
+below — is computed per request from published facts in one committed snapshot.
 The four selected-reading resources for Démographie, Économie/Emploi, Habitat,
 and Milieux expose the already-published reading facts. Producer-declared ranked
 activity evidence, Milieux source absences, and Milieux source bindings are separate
@@ -127,6 +128,60 @@ per-measure facets/directions (`measure_facets` in the catalogue). Curve
 readings (min/max/deciles) return their group mean with null rank fields. One
 request reads one committed repeatable-read snapshot; no peer/rank rows are
 published (#810 stance intact).
+
+## AEDAR aggregate-reading comparisons (#914)
+
+The registry-wide overview readings the fiche displays — `meanDiversity` (the
+sum of `count_15_car_share` over the complete published TYPEQU registry) and
+`meanVolume` (the sum of `count_15_car_mean`) — are declared ranked
+high-is-better comparison facets in the producer `measure_facets` map alongside
+the 312 per-cell measures. They are requested through the `measure` coordinate
+without a `typequ` coordinate, and are computed per request from published
+per-type rows in `aedar_territorial_aggregate` — never published as new rows
+(#810 stance intact):
+
+An aggregate reading is available only when the territory's published rows
+satisfy the same compatibility law as the fiche's displayed sums (CONTEXT.md
+« Moyennes d'accès en voiture AEDAR »): the complete TYPEQU registry is
+present, all rows share one source vintage/provenance (`source_id`,
+`vintage_id`, `source_url`, `licence`, `attribution`, reference/publication
+dates), every row is `covered`, the address population agrees and is positive,
+every observed count is valid (`0 ≤ n_observed ≤ n_addresses`, NULL counts as
+bad), and every per-type value is a finite number ≥ 0 (≤ 1 for share
+readings). Incomplete, uncovered or unknown evidence never becomes a partial
+sum or a fabricated zero: the reading is honestly unavailable (null value,
+`status: "not_available"`).
+
+Both aggregate shapes implement this law through one mechanism — per-territory
+rows of `aedar_territorial_aggregate` and the pooled density rows of
+`aedar_comparison_group` emit the same normalized law inputs to one law
+(#914 amendment, 2026-11-05). On the pooled artifact, provenance uniformity
+is a publication-level tie (the artifact publishes atomically against one
+committed AEDAR content version, enforced by its publication trigger) and the
+statistic is schema-CHECKed to `pooled`; a pooled row with NULL `n_observed`
+passes the table CHECK but counts as invalid here, exactly as on the
+territorial path, so such a pooled reading is honestly unavailable.
+
+- `fixed_comparison` keeps each declared context's reference semantics (the
+  direct EPCI/Bretagne/Région aggregate, or the pooled density artifact summed
+  over the registry) and adds the opt-in `rank`/`rank_size`/`rank_ties`: a
+  direction-aware flat ordinal of the focal's registry-wide reading within the
+  context's resolved peer group (the EPCI's communes, all Breton communes, the
+  density class, or the same-level territories), ties sharing the rank. Peers
+  whose rows fail the law are ineligible: never converted to zero or ranked,
+  and `rank_size` reflects the eligible population.
+- `selected_comparison` keeps #859's address-weighted pooled semantics over
+  each member's registry-wide reading (weights = published `n_addresses`) —
+  exactly the pooled address aggregate of the selection — with the focal rank
+  when it is a member and available. Members failing the law contribute no
+  comparable value: they are excluded from the pooled statistic and the rank
+  (`rank_size` counts the eligible members) while the requested membership
+  stays truthful in `scope.member_count`.
+
+Per-cell measures are unchanged: fixed contexts stay reference-only for them
+(#904) and only `selected_comparison` serves their ranks. Mixing aggregate
+readings with per-cell measures in one request, or adding a `typequ` coordinate
+to an aggregate reading, is rejected with `422`.
 
 ## Declared-profile comparisons
 
