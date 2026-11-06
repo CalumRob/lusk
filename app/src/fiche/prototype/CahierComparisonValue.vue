@@ -9,6 +9,7 @@ const props = withDefaults(
     fact?: NumericFact
     /** A named mean (direct territory or selection); its identity stays in the accessible label. */
     namedReference?: Pick<TerritorialScalarReference, 'label' | 'value' | 'unit'> | null
+    servedRank?: { position: number; size: number; direction: import('@/methodes/indicateurs').DirectionRang; key: string } | null
     to?: RouteLocationRaw | null
     maximumFractionDigits?: number
   }>(),
@@ -38,7 +39,7 @@ function comparisonAccessibleName(): string {
 
 <template>
   <p
-    v-if="comparisonText() || fact?.comparison?.rank"
+    v-if="comparisonText() || fact?.comparison?.rank || servedRank?.position"
     class="cahier-comparison-value cahier-figure-comparison"
     :class="{ 'cahier-comparison-value--named': namedReference }"
   >
@@ -46,10 +47,11 @@ function comparisonAccessibleName(): string {
       Groupe comparé :
       <strong class="region-emphasis">{{ comparisonText() }}</strong>
     </span>
-    <span v-if="fact?.comparison && !namedReference" class="cahier-comparison-value__rank">
+    <span v-if="(fact?.comparison && !namedReference) || servedRank" class="cahier-comparison-value__rank">
       <CahierRank
-        v-if="fact.comparison.rank"
+        v-if="fact?.comparison?.rank || servedRank?.size && servedRank.size >= 2 && servedRank.position > 0"
         :fact="fact"
+        :served-rank="servedRank"
         :to="to"
         placement="access"
       />

@@ -31,6 +31,22 @@ const options = { intent: { kind: 'selected_comparison' as const, members }, lab
 afterEach(() => vi.unstubAllGlobals())
 
 describe('lecture AEDAR de la Sélection', () => {
+  it('acquiert les 40 lectures agrégées en une requête de lot sans coordonnée TYPEQU', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      ({ ok: false, json: async () => ({ detail: 'fixture stop' }) }) as Response)
+    vi.stubGlobal('fetch', fetcher)
+    const measures = ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) => [5, 10, 15, 20]
+      .flatMap((horizon) => ['Diversity', 'Volume'].map((kind) => mode === 'car' && horizon === 15
+        ? kind === 'Diversity' ? 'meanDiversity' : 'meanVolume' : `${mode}${horizon}${kind}`)))
+    const result = await fetchAedarComparison('commune', '22001', { ...options,
+      intent: { kind: 'fixed_comparison', context: 'density_class' }, label: 'Classe de densité', typequ: [], measures })
+    expect(result.status).toBe('error')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    const items = JSON.parse(fetcher.mock.calls[0]![1]!.body as string).items
+    expect(items).toHaveLength(40)
+    expect(items.every((item: { coordinates: Record<string, unknown> }) => !('typequ' in item.coordinates))).toBe(true)
+    expect(items.map((item: { coordinates: { measure: string[] } }) => item.coordinates.measure[0])).toEqual(measures)
+  })
   it('admet la réponse capturée du lecteur API #904, scalaire et courbe sur le même instantané', async () => {
     // Captured with python -B from _aedar_selected_comparison_snapshot using
     // api/tests/test_aedar_contract.py's _AedarSelectedConnection,
@@ -61,6 +77,17 @@ describe('lecture AEDAR de la Sélection', () => {
     expect(item.intent).toEqual({ kind: 'selected_comparison', members: members.map((m) => ({ type: m.territory_type, id: m.territory_id })) })
     expect(item.coordinates).toEqual({ typequ: ['A104'], measure: ['count_5_walk_mean'] })
     expect(item.fields).toEqual(['group_value', 'rank', 'rank_size', 'rank_ties'])
+  })
+  it('accepte les rangs agrégés avec direction sélectionnée et sans direction fixe', async () => {
+    const selected = { ...envelope, comparisons: [{ ...cell, typequ: null, measure: 'meanDiversity' }] }
+    mockResponse(selected)
+    expect(await fetchAedarComparison('commune', 'sel-c1', { ...options, typequ: [], measures: ['meanDiversity'] }))
+      .toMatchObject({ status: 'ready', evidence: { cells: [expect.objectContaining({ rank: 3, rank_size: 3, rank_ties: 1, direction: 'high' })] } })
+    const fixed = { ...envelope, selection: undefined, scope: undefined, comparisons: undefined,
+      comparison: { ...cell, typequ: null, measure: 'meanDiversity', comparison_context: 'density_class', direction: undefined } }
+    mockResponse(fixed)
+    expect(await fetchAedarComparison('commune', 'sel-c1', { ...options, intent: { kind: 'fixed_comparison', context: 'density_class' }, typequ: [], measures: ['meanDiversity'] }))
+      .toMatchObject({ status: 'ready', evidence: { cells: [expect.objectContaining({ rank: 3, rank_size: 3, rank_ties: 1 })] } })
   })
   it.each([
     { ...envelope, aedar_content_version: 'stale' },

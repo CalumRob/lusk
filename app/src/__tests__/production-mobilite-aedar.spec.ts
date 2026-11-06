@@ -96,7 +96,7 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
   const originalFetch = globalThis.fetch
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input) === '/api/resources/read-batch') {
-      const body = JSON.parse(String(init?.body)) as { items: Array<{ id: string; target: { type: string; id: string }; coordinates: { typequ: string[]; measure: string[] } }> }
+      const body = JSON.parse(String(init?.body)) as { items: Array<{ id: string; target: { type: string; id: string }; coordinates: { measure: string[] } }> }
       const results = body.items.map((item) => ({ id: item.id, data: {
         resource: 'aedar_territorial_aggregate', target: { kind: 'territory', ...item.target },
         territory: { territory_type: item.target.type, territory_id: item.target.id },
@@ -104,15 +104,15 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
         reference_content_version: aedarReady.referenceContentVersion,
         selection: members,
         scope: { kind: 'explicit_selection', member_count: members.length, territory_type: 'commune' },
-        comparisons: item.coordinates.typequ.flatMap((typequ) => item.coordinates.measure.map((measure) => {
-          const fact = aedarReady.facts.find((candidate) => candidate.typequ === typequ)!
+        comparisons: item.coordinates.measure.map((measure) => {
+          const fact = aedarReady.facts[0]!
           const capturedCell = selectedComparisonCaptured.comparisons.find((candidate) => candidate.measure === 'count_5_walk_mean')!
-          return { ...capturedCell, ...fact, typequ, measure,
+          return { ...capturedCell, ...fact, typequ: null, measure,
             comparison_context: 'selected_comparison', statistic: 'pooled',
-            group_value: measure.endsWith('_share') ? 7.4 / AEDAR_TYPEQU_REGISTRY.length : capturedCell.group_value,
+            group_value: measure === 'meanDiversity' || measure.endsWith('Diversity') ? 7.4 : 1739,
             group_n_addresses: 200, group_n_observed: 180, group_coverage_status: 'covered',
             rank: null, rank_size: null, rank_ties: null, direction: 'high' }
-        })),
+        }),
       } }))
       return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results }) } as Response
     }
@@ -128,10 +128,14 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
   const overview = rendered.units[0].sections[0].evidence
   if (overview?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
   expect(overview.scalars[0]!.reference?.value).toBeCloseTo(7.4)
-  expect(overview.scalars[1]!.reference?.value).toBeCloseTo(7.4 * AEDAR_TYPEQU_REGISTRY.length)
+  expect(overview.scalars[1]!.reference?.value).toBeCloseTo(1739)
   expect(overview.scalars[0]!.comparisonUnavailableLabel).toBeNull()
   const requests = vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')
-  expect(requests.length).toBeGreaterThan(0)
+  expect(requests).toHaveLength(1)
+  const batch = JSON.parse(String(requests[0]![1]?.body))
+  expect(batch.items).toHaveLength(1)
+  expect(batch.items[0].coordinates.measure).toHaveLength(40)
+  expect(batch.items[0].coordinates).not.toHaveProperty('typequ')
   expect(JSON.parse(String(requests[0]![1]?.body)).items[0]).toMatchObject({
     resource: 'aedar_territorial_aggregate',
     target: { kind: 'territory', type: 'commune', id: '22001' },
@@ -181,7 +185,10 @@ it.each([
   expect(overview.scalars[0]!.reference).toMatchObject({
     kind: 'territory-mean', territory: { type: referenceType === 'EPCI' ? 'epci' : 'region', id: referenceId },
   })
-  expect(fetchAedarComparison).not.toHaveBeenCalled()
+  expect(fetchAedarComparison).toHaveBeenCalledWith(territoryType, content.territory.code, expect.objectContaining({
+    intent: { kind: 'fixed_comparison', context: preset === 'epci' ? 'epci' : 'bretagne' },
+  }))
+  expect(overview.meanDiversity).toBe(5)
   wrapper.unmount()
 })
 
@@ -797,6 +804,45 @@ describe('ProductionMobiliteAedar', () => {
     expect(exploration.text()).toBe('En savoir plus')
     expect(exploration.attributes('disabled')).toBeDefined()
     expect(exploration.attributes('href')).toBeUndefined()
+  })
+
+  it.each([
+    ['fixed ambient', 2, 3, 'Classe de densité'],
+    ['selected', 1, 3, 'Moyenne de la sélection'],
+    ['singleton', 1, 1, 'Classe de densité'],
+    ['suppressed', null, null, 'Classe de densité'],
+  ])('renders served overview ranks in the real cahier DOM (%s)', async (label, position, size, comparisonLabel) => {
+    const content = baseContent()
+    const control = ref<ControleComparaison>({ selection: label === 'selected' ? { etat: 'membres', membres: [
+      { territory_type: 'commune', territory_id: content.territory.code }, { territory_type: 'commune', territory_id: '22002' },
+    ] } : { etat: 'preset', preset: 'densite' },
+      libelleActif: label === 'selected' ? 'Sélection' : 'Classe de densité', presetDefaut: 'epci', presets: [], choisir: () => {} })
+    vi.mocked(fetchAedarComparison).mockResolvedValue({ status: 'ready', evidence: {
+      label: comparisonLabel, contentVersion: aedarReady.contentVersion,
+      referenceContentVersion: aedarReady.referenceContentVersion,
+      cells: ['meanDiversity', 'meanVolume'].map((measure) => ({
+        typequ: null, measure, source_id: 'aedar_bretagne', vintage_id: '2026-v1', reference_date: '2026-01-01', publication_date: '2026-09-30',
+        group_value: 2.5, group_coverage_status: 'covered', group_n_addresses: 100, group_n_observed: 90,
+        statistic: 'pooled', rank: position, rank_size: size, rank_ties: position === null ? null : 1,
+      })),
+    } })
+    const wrapper = mount(ProductionMobiliteAedar, { props: {
+      content, pagination: cahierPaginationFor(payload, content), aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+    }, global: { plugins: [createRouter({ history: createMemoryHistory(), routes })], provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control } } })
+    await flushPromises()
+    const scalars = wrapper.findAll('[data-section="aedar-car-overview"] .cahier-figure-scalar')
+    expect(scalars).toHaveLength(2)
+    expect(scalars[0]!.get('.cahier-comparison-value').text()).toContain('Groupe comparé : 2,5')
+    if (size !== null && size >= 2) {
+      expect(scalars[0]!.get('.cahier-rank').text()).toBe(`${position === 1 ? '1er' : '2e'}/${size}`)
+      expect(scalars[0]!.attributes('aria-label')).toContain(`Rang ${position} sur ${size}`)
+      expect(scalars[0]!.get('.cahier-rank').attributes('aria-hidden')).toBe('true')
+    } else {
+      expect(scalars[0]!.find('.cahier-rank').exists()).toBe(false)
+      expect(scalars[0]!.attributes('aria-label')).not.toContain('Rang')
+    }
+    expect(scalars[0]!.attributes('aria-label')).toContain(`${comparisonLabel} : 2,5`)
+    wrapper.unmount()
   })
 
   it('keeps the cahier stable without a loading banner while AEDAR data loads', async () => {

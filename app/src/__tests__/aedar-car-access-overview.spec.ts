@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import { aedarCarAccessOverviewSection, aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
 import type { AedarReferenceEvidence } from '@/fiche/content/aedarAccessSection'
+import { AEDAR_AGGREGATE_READING_MEASURES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
 import type { TerritoryIdentity } from '@/fiche/content/territoryFacts'
 
@@ -71,21 +72,21 @@ function epciReference(): AedarReferenceEvidence {
 }
 
 describe('AEDAR car access overview', () => {
-  it('lit les cellules de la sélection pour les moyennes et les rampes sans emprunter leurs rangs TYPEQU (#914)', () => {
+  it('lit les agrégats servis pour les moyennes et les rampes sans sommer les cellules TYPEQU (#931)', () => {
     const data = ready()
     const comparison = { label: 'Moyenne de la sélection', contentVersion: data.contentVersion,
       referenceContentVersion: data.referenceContentVersion,
-      cells: data.facts.flatMap((fact, index) => Object.keys(fact.measures).map((measure) => ({
-        ...fact, measure, statistic: 'pooled' as const, group_coverage_status: 'covered',
+      cells: Object.entries(AEDAR_AGGREGATE_READING_MEASURES).map(([measure, source]) => ({
+        ...data.facts[0]!, typequ: null, measure, statistic: 'pooled' as const, group_coverage_status: 'covered',
         group_n_addresses: 50, group_n_observed: 42,
-        group_value: index === 0 ? (measure.endsWith('_share') ? 0.5 : 1) : 0,
-        rank: 3, rank_size: 3, rank_ties: 1, direction: 'high' as const,
-      }))) }
+        group_value: source.endsWith('_share') ? 0.5 : 1,
+        rank: null, rank_size: null, rank_ties: null, direction: 'high' as const,
+      })) }
     const sections = aedarPrototypeSections(data, territory, { comparison })
     expect(sections[0].evidence!.scalars.map((s) => s.reference?.value)).toEqual([0.5, 1])
     expect(sections[0].evidence!.scalars[0]!.reference).toMatchObject({ label: 'Moyenne de la sélection' })
     expect(sections[0].evidence!.scalars[0]!.reference).not.toHaveProperty('rank')
-    expect(sections[0].evidence!.scalars[0]!.rankUnavailableLabel).toBe('Classement indisponible')
+    expect(sections[0].evidence!.scalars[0]!.rank).toBeNull()
     expect(sections[1].evidence!.ramps[0]!.reference!.car).toEqual([0.5, 0.5, 0.5, 0.5])
     expect(sections[1].evidence!.ramps[1]!.reference!.car).toEqual([1, 1, 1, 1])
     expect(sections[3].evidence!.comparison).toBe(comparison)
@@ -93,12 +94,16 @@ describe('AEDAR car access overview', () => {
     expect(stale[0].evidence!.scalars.map((s) => s.reference)).toEqual([null, null])
     expect(stale[1].evidence!.ramps[0]!.reference).toBeNull()
     const partial = aedarPrototypeSections(data, territory, { comparison: { ...comparison,
-      cells: comparison.cells.filter((cell, index) => !(index === 0 || cell.typequ === data.facts[0]!.typequ && cell.measure === 'count_15_car_share')) } })
+      cells: comparison.cells.filter((cell) => cell.measure !== 'meanDiversity') } })
     expect(partial[0].evidence!.scalars[0]!.reference).toBeNull()
     expect(partial[1].evidence!.ramps[0]!.reference!.car).toEqual([0.5, 0.5, null, 0.5])
-    const inconsistentWeights = aedarPrototypeSections(data, territory, { comparison: { ...comparison,
-      cells: comparison.cells.map((cell) => cell.typequ === data.facts[0]!.typequ ? { ...cell, group_n_addresses: 100 } : cell) } })
-    expect(inconsistentWeights[0].evidence!.scalars.map((s) => s.reference)).toEqual([null, null])
+    const unavailable = aedarPrototypeSections(data, territory, { comparison: { ...comparison,
+      cells: comparison.cells.map((cell) => ({ ...cell, group_value: null })) } })
+    expect(unavailable[0].evidence!.scalars.map((s) => s.reference)).toEqual([null, null])
+    const perTypeOnly = aedarPrototypeSections(data, territory, { comparison: { ...comparison,
+      cells: [{ ...comparison.cells[0]!, typequ: data.facts[0]!.typequ, measure: 'count_15_car_share',
+        group_value: 999, rank: 1, rank_size: 3, rank_ties: 1 }] } })
+    expect(perTypeOnly[0].evidence!.scalars.map((s) => s.reference)).toEqual([null, null])
   })
   it('keeps the 15-minute time-ramp readings on the overview address means, with independent EPCI denominators', () => {
     const [overview, access] = aedarPrototypeSections(ready(), territory, { reference: epciReference() })
