@@ -202,6 +202,7 @@ function scalairesStoryDe(metadata: ThemeMetadata, histoiresDuTheme: Histoire[],
  * payload-owned maps (indicator_labels / detail_labels / param_labels).
  */
 export function couchesDuTheme(payload: Payload, theme: Theme, admitted?: {
+  /** Resource IDs admitted by native discovery, including its map policy. */
   indicatorIds: ReadonlySet<string>
   scalarIds?: ReadonlySet<string>
   storyFields: ReadonlySet<string>
@@ -226,7 +227,7 @@ export function couchesDuTheme(payload: Payload, theme: Theme, admitted?: {
   // L'ordre des figures d'indicateurs — le registre des métadonnées (l'ordre
   // de la fiche, payload-owned), filtré aux clés que le payload publie.
   const clesIndicateurs = meta.indicator_keys.filter((clef) =>
-    estCoucheCartographiable(meta, clef) && (!admitted || admitted.indicatorIds.has(clef)) &&
+    (admitted ? admitted.indicatorIds.has(clef) : estCoucheCartographiable(meta, clef)) &&
     (admitted ? true : payload.indicateurs.some((ligne) => ligne.theme === theme && ligne.key === clef)),
   )
 

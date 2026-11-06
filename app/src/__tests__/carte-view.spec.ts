@@ -33,6 +33,13 @@ import { routes } from '../router'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { NATIVE_API_FIXTURE_NOTICE } from './fixtures/nativeApiScenarios'
+import { nativeResources } from './helpers/semanticApiFixtures'
+
+function nativeMapCapabilities(theme: string, indicator: string) {
+  const resource = nativeResources(theme).find((candidate) => candidate.resource_id === indicator)
+  if (!resource) throw new Error(`Map fixture resource is not producer-declared: ${theme}/${indicator}`)
+  return { map_eligible: resource.map_eligible, counts_available: resource.counts_available }
+}
 
 const resourceShapes: Record<string, Record<string, { shape: string; source: string; levels?: string[] }>> = {
   demographie: {
@@ -167,6 +174,7 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
           : spec.shape === 'typed_reading' ? [['groupe', metadata.subgroups.filter((g: any) => g.reading).map((g: any) => g.reading.story_key)]] : []
       const source = page?.sources?.[0] ?? spec.source
       return { resource_id: id, theme_id: theme, indicator_id: id, label: metadata.indicator_labels?.[id] ?? id,
+        ...nativeMapCapabilities(theme, id),
         unit: page?.unit ?? (spec.shape === 'anchored_membership' ? 'adhésion' : ''),
         direction: page?.comparison?.direction ?? page?.direction ?? 'high', allowed_levels: allowed, sources: [source],
         shapes: [spec.shape], axes, axis_values: axisValues, target_kinds: ['territory', 'territory_cohort'],
@@ -535,6 +543,7 @@ describe('CarteView — la carte avec fond publié', () => {
     const metadata = JSON.parse(await (await import('node:fs/promises')).readFile('../public/data/theme_demographie.json', 'utf8'))
     const page = metadata.indicator_pages.densite
     const resource = { resource_id: 'densite', theme_id: 'demographie', indicator_id: 'densite', label: 'Densité',
+      ...nativeMapCapabilities('demographie', 'densite'),
       unit: page.unit, direction: page.direction, allowed_levels: metadata.scalar_contracts.densite.allowed_levels,
       sources: page.sources, shapes: ['scalar'], target_kinds: ['territory', 'territory_cohort'],
       fields: ['value', 'support_count', 'denominator_count'], intents: ['facts', 'fixed_comparison', 'selected_comparison'] }

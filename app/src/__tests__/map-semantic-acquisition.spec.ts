@@ -8,6 +8,7 @@ const declaration = (shape: string): SemanticResourceDeclaration => ({
   resource_id: 'densite', indicator_id: 'densite', theme_id: 'demographie', label: 'Densité', unit: 'hab/km²',
   direction: 'high', allowed_levels: ['commune'], target_kinds: ['territory_cohort'], intents: ['facts'],
   shapes: [shape], sources: ['source-a'], fields: ['value'],
+  map_eligible: shape === 'typed_reading' ? null : true, counts_available: false,
 })
 const territories = [
   { territoire: '22001', type: 'commune' as const, nom: 'A', departement: null, epci: null },
@@ -37,6 +38,32 @@ describe('map cohort adapter', () => {
     expect(discovered).toHaveBeenCalledWith([])
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(result.facts).toEqual([])
+  })
+
+  it('does not request a producer-excluded map resource even when presentation includes its identity', async () => {
+    const excluded = { ...declaration('scalar'), map_eligible: false }
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      contract: 'semantic-resource-catalogue-v1', resources: [excluded],
+    })))
+    vi.stubGlobal('fetch', fetcher)
+
+    const result = await acquireMapThemeFacts('demographie', 'commune', territories, ['densite'])
+    expect(result.declarations).toEqual([])
+    expect(result.facts).toEqual([])
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith('/api/resources')
+  })
+
+  it('fails before requesting map facts when discovery omits indicator map policy', async () => {
+    const undeclared = declaration('scalar')
+    delete undeclared.map_eligible
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      contract: 'semantic-resource-catalogue-v1', resources: [undeclared],
+    })))
+    vi.stubGlobal('fetch', fetcher)
+
+    await expect(acquireMapThemeFacts('demographie', 'commune', territories, ['densite']))
+      .rejects.toMatchObject({ kind: 'validation', file: '/api/resources' })
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith('/api/resources')
   })
 
   it('sends thirteen matching resources in one batch and admits each response by request position', async () => {

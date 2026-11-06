@@ -7,6 +7,7 @@ import { periodDetailCohortFacts } from './sparseCollectionPage'
 import { orderedSeriesAdapterFor, orderedSeriesFacts } from './orderedSeriesAdapter'
 import { chargerCatalogueRessources, lireRessourcesBatch } from './semanticResourceClient'
 import type { SemanticReadItem, SemanticResourceDeclaration } from './semanticResourceClient'
+import { PayloadError } from './validate'
 
 type Row = Record<string, unknown>
 const isRecord = (value: unknown): value is Row => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -255,7 +256,16 @@ export async function acquireMapThemeFacts(theme: Theme, level: TerritoireType,
       resource.shapes.includes('anchored_membership') || (theme === 'programmes' && resource.shapes.includes('ordered_series'))) &&
     resource.allowed_levels.includes(level) &&
     resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts') &&
-    (resource.shapes.some((shape) => ['scalar', 'declared_profile', 'period_detail', 'anchored_membership', 'typed_reading', 'ordered_series'].includes(shape))))
+     (resource.shapes.some((shape) => ['scalar', 'declared_profile', 'period_detail', 'anchored_membership', 'typed_reading', 'ordered_series'].includes(shape))))
+    .filter((resource) => {
+      // Selected-reading fields have their own declared numeric bindings. Map
+      // policy applies to indicator resources, not to these semantic groups.
+      if (resource.shapes.includes('typed_reading')) return true
+      if (typeof resource.map_eligible !== 'boolean') {
+        throw new PayloadError('validation', '/api/resources', `L’éligibilité carte de « ${resource.resource_id} » est mal déclarée.`)
+      }
+      return resource.map_eligible
+    })
   onDiscovered?.(candidates)
   const output: MapSemanticFacts = { facts: [], stories: [], memberships: [], grants: [], declarations: [], axes: {},
     identity: { contentVersion: '', referenceContentVersion: '' }, identities: {}, nativeContracts: {} }

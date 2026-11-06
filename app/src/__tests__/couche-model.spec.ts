@@ -83,6 +83,20 @@ function clefDe(entree: EntreeCouches): string {
 describe('couchesDuTheme — Démographie (fixture)', () => {
   const payload = payloadAvec(indicateursDemographieFixture, histoiresDemographieFixture, 'demographie')
 
+  it('uses native map admission rather than a conflicting browser map policy', () => {
+    const staleMetadata: Payload = { ...payload, themeMetadata: { demographie: {
+      ...metadonneesThemesFixtures.demographie,
+      map_layers: { densite: false },
+    } } }
+    const result = couchesDuTheme(staleMetadata, 'demographie', {
+      indicatorIds: new Set(['densite']), scalarIds: new Set(['densite']), storyFields: new Set(),
+    })
+
+    expect(result.entrees).toEqual([expect.objectContaining({ type: 'couche',
+      couche: expect.objectContaining({ clef: 'densite' }),
+    })])
+  })
+
   it('leads with the declared story scalars — the default is the FIRST reading param (taux_solde_naturel)', () => {
     const couches = couchesDuTheme(payload, 'demographie')
 
