@@ -898,7 +898,9 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
       const pageCourante = PAGES_INDICATEUR_COURANTES.has(`${consumer.theme}/${consumer.key}`)
       record.consumers.push({
         key: consumer.key,
-        label: LIBELLES_INDICATEURS_APP[consumer.theme]?.[consumer.key] ?? metadata?.indicator_labels[consumer.key] ?? THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.label ?? consumer.key,
+        label: LIBELLES_INDICATEURS_APP[consumer.theme]?.[consumer.key] ??
+          metadata?.indicator_labels[consumer.key] ??
+          THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.label ?? consumer.key,
         theme: consumer.theme,
         caveat: page?.caveats ?? metadata?.indicator_caveats?.[consumer.key] ?? THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.caveat ?? null,
         kind: pageCourante ? 'indicator' : 'declaration',
