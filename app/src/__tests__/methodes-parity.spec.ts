@@ -35,7 +35,7 @@ import type { ThemeConstruit } from '../methodes/indicateurs'
  * Le « thème présent dans la payload » est déterminé par EXISTENCE des
  * fichiers commis, jamais par leur contenu : indicateurs_economie.json pèse
  * 82 Mo — le matérialiser (JSON.parse) reproduirait le flake de
- * payload-contract.spec.ts. Un readdir + une expression régulière sur le nom
+ * les tests per-file commis. Un readdir + une expression régulière sur le nom
  * suffisent, en quelques millisecondes.
  */
 

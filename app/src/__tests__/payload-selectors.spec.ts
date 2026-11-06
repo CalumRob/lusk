@@ -33,7 +33,7 @@ const payloadDemographie: Payload = {
 
 // #901 — le helper themesPresent (barre d'onglets lue dans les lignes de
 // faits) est retiré avec son dernier consommateur : les onglets viennent du
-// registre canonique THEMES_CANONIQUES (voir payload-contract.spec.ts).
+// registre canonique THEMES_CANONIQUES (voir payload-committed-files.spec.ts).
 
 // #894 — the apercuPourTerritoire selector is gone with the retired
 // apercu.json: no selector reads an Aperçu table anymore (the tab itself is

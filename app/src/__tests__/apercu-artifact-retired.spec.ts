@@ -9,9 +9,7 @@
 // anymore. The R-side producer contract (in-memory `apercu` table +
 // apercu.parquet, written only when non-empty, #116) is untouched:
 // pipeline/R/publish.R keeps its apercu.parquet write and has no apercu.json
-// write path. The synthetic stale-response coverage in payload-loader.spec.ts
-// (an old deployment may still serve the name) stays, without requiring any
-// committed relic.
+// write path. The per-file loader has no apercu file entry.
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
@@ -98,11 +96,4 @@ describe('aucun lecteur d’artefact commité dans les sources app (#903)', () =
     }
   })
 
-  it('conserve la couverture « relique périmée servie, jamais demandée » de payload-loader.spec.ts (#894/#903)', () => {
-    const loaderSpec = readFileSync(
-      path.join(appRoot, 'src', '__tests__', 'payload-loader.spec.ts'), 'utf8',
-    )
-    expect(loaderSpec).toMatch(/'apercu\.json':/)
-    expect(loaderSpec).toMatch(/not\.toContain\('data\/apercu\.json'\)/)
-  })
 })
