@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
-    "benchmark:payload": "vitest run --config scripts/vitest.benchmark.config.ts",
     "verify:profile-pages": "node scripts/verify-profile-pages.mjs",
     "verify:ordinary-scalar-pages": "node scripts/verify-ordinary-scalar-pages.mjs",
     "verify:series-pages": "node scripts/verify-series-pages.mjs",
