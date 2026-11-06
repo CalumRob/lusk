@@ -143,9 +143,9 @@ describe('Cahier typography roles', () => {
     )
   })
 
-  it('uses the existing mint brand token only for the numeric comparison reference', () => {
+  it('uses the existing light mint token only for the numeric comparison reference', () => {
     expect(cssRule(comparisonSource, '.cahier-comparison-value .region-emphasis'))
-      .toContain('color: var(--brand-500)')
+      .toContain('color: var(--brand-200)')
     expect(cssRule(comparisonSource, '.cahier-comparison-value'))
       .toContain('color: var(--cahier-default)')
     expect(comparisonSource).toContain('Groupe comparé :')

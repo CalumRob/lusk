@@ -97,7 +97,7 @@ function comparisonAccessibleName(): string {
 }
 
 .cahier-comparison-value .region-emphasis {
-  color: var(--brand-500);
+  color: var(--brand-200);
   font-weight: 700;
 }
 </style>
