@@ -91,12 +91,16 @@ database. Do not point them at `lusk`; each script verifies the database and
 role, creates a random schema, runs fresh `api/schema.sql`, grants only that
 schema to the read role, and cleans up only its own schema when
 `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`. `public` and other schemas are never
-changed. Do not reuse serving credentials. The Habitat and Economy proofs read
-canonical producer artifacts from `LUSK_TEST_CANONICAL_DATA_DIR` but copy their
-required inputs to a private temporary fixture before any materializer writes.
-The Milieux proof similarly copies its selected inputs, reads the canonical
-CONSOENAF source and processed OCS window read-only, and writes only in its
-temporary fixture. None copies `data/raw` or runs a pipeline build.
+changed. Do not reuse serving credentials. The Habitat, Economy and Milieux
+proofs read current producer-owned scalar/profile/series/typed-reading
+generations from `LUSK_TEST_CANONICAL_DATA_DIR`, including the required current
+pointers, manifests, provenance and dependency companions. Stage complete
+validated generations in the private test fixture; the retired numerical
+`indicateurs_*.json` / `histoires_*.json` browser exports are not inputs. Milieux
+source-absence evidence remains a separate source-owned input. Programme proofs
+use their canonical membership/grant Parquets and existing R projectors for
+temporary test expectations. These paths do not copy `data/raw`, reconstruct
+from browser JSON, or run a pipeline build.
 
 Run from `pipeline/` on the trusted workstation after the database and role are
 ready. Store credentials in a private libpq passfile (not the repository or
