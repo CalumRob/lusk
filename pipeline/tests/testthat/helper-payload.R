@@ -41,57 +41,81 @@ verifier_non_derivee <- function(parquet, json, nom) {
   }
 }
 
-# verifier_projection_sur_table -------------------------------------------------
-# Le contrat de non-dérive (issue #10, ADR-0004) appliqué à la projection JSON
-# SEULE. Depuis #757, la sérialisation parquet par-thème est retirée pour les
-# cinq thèmes non-mobilité : il n'y a plus de parquet par-thème à relire en
-# retour. La projection JSON se compare donc directement à la table EN MÉMOIRE
-# dont elle est issue — même rigueur, colonne pour colonne, valeur pour valeur.
-# `colonnes_retirees` (#892) : l'asymétrie VOULUE de la projection JSON — ces
-# colonnes sont ABSENTES du JSON (futures projections) mais PRÉSENTES dans la
-# table canonique (en mémoire / parquet retenu) ; le reste se compare bit à bit,
-# et AUCUNE autre colonne ne peut manquer (les noms doivent coïncider exactement).
-verifier_projection_sur_table <- function(table, json, nom,
-                                          colonnes_retirees = character()) {
-  if (length(colonnes_retirees)) {
-    testthat::expect_false(any(colonnes_retirees %in% names(json)),
-                           info = paste(nom, "— colonne retirée encore présente dans le JSON"))
-    testthat::expect_true(all(colonnes_retirees %in% names(table)),
-                          info = paste(nom, "— colonne canonique absente de la table en mémoire"))
-    table <- table[, setdiff(names(table), colonnes_retirees), drop = FALSE]
-  }
-  verifier_non_derivee(table, json, nom)
-}
-
-# Lecture des fixtures commises uniquement : ce lecteur n'est pas une voie de
-# reconstruction/publication. Les materializers courants prennent les résultats
-# producteurs en mémoire dans le graphe targets.
-lire_faits_commis <- function(source, theme, kind) {
+# payload_producteur_fixture ----------------------------------------------------
+# Fixture seam des tests : les cinq thèmes sans Parquet de faits thématique sont
+# produits par leurs builders avec les fixtures d'entrée déjà présentes dans
+# testthat. Mobilité reste l'unique exception avec ses Parquets conservés
+# (#619). Programmes reprend ses deux Parquets d'entrée conservés puis appelle
+# le vrai builder des faits ; aucun ancien JSON numérique ni RDS de secours.
+payload_producteur_fixture <- function(
+    theme,
+    public = file.path(pkgload::pkg_path(), "..", "public", "data")) {
   if (!is.character(theme) || length(theme) != 1L || is.na(theme) || !nzchar(theme))
-    stop("Committed payload theme is required", call.=FALSE)
-  extension <- if (theme_parquet_retire(theme)) ".json" else ".parquet"
-  path <- file.path(source, paste0(kind, "_", theme, extension))
-  if (!file.exists(path))
-    stop("Committed payload input is missing: ", basename(path), call.=FALSE)
-  if (identical(extension, ".json")) jsonlite::fromJSON(path, simplifyVector=TRUE)
-  else nanoparquet::read_parquet(path)
+    stop("Producer fixture theme is required", call.=FALSE)
+  if (!theme %in% THEMES_METADATA)
+    stop("Unknown producer fixture theme: ", theme, call.=FALSE)
+
+  switch(theme,
+    demographie = compute_payload(load_fixture()),
+    habitat = payload_habitat(),
+    economie = construire_payload_economie(
+      fixture_analytiques_economie(), base_epci_economie, vintages_economie()),
+    milieux = compute_payload(
+      communes_fixture_milieux_ocsge(), theme=theme_milieux()),
+    mobilite = list(
+      indicateurs=nanoparquet::read_parquet(
+        file.path(public, "indicateurs_mobilite.parquet")),
+      histoires=nanoparquet::read_parquet(
+        file.path(public, "histoires_mobilite.parquet"))),
+    programmes = {
+      membres_path <- file.path(public, "programmes_membres.parquet")
+      subventions_path <- file.path(public, "programmes_subventions.parquet")
+      if (!file.exists(membres_path) || !file.exists(subventions_path))
+        stop("Retained Programmes producer Parquets are required", call.=FALSE)
+      list(indicateurs=construire_indicateurs_programmes(
+        nanoparquet::read_parquet(membres_path),
+        nanoparquet::read_parquet(subventions_path)))
+    }
+  )
 }
 
-# lire_indicateurs_commis -------------------------------------------------------
-# Les faits canoniques d'un thème depuis le snapshot commis (public/data). #757 :
-# la Mobilité garde son parquet de faits (#619) ; les cinq thèmes non-mobilité
-# ne sont plus servis qu'en JSON — leur projection commise, paritaire (ADR-0004),
-# sert de source de fixture producteur. La bascule est dérivée du prédicat
-# theme_parquet_retire(), jamais d'une liste recopiée.
-lire_indicateurs_commis <- function(theme,
-                                    public = file.path(pkgload::pkg_path(), "..", "public", "data")) {
-  lire_faits_commis(public, theme, "indicateurs")
+lire_faits_producteur_fixture <- function(
+    theme, kind,
+    public = file.path(pkgload::pkg_path(), "..", "public", "data")) {
+  if (!kind %in% c("indicateurs", "histoires"))
+    stop("Producer fixture kind must be 'indicateurs' or 'histoires'", call.=FALSE)
+  payload <- payload_producteur_fixture(theme, public)
+  value <- payload[[kind]]
+  if (is.null(value))
+    stop("Producer fixture has no ", kind, " table for theme ", theme, call.=FALSE)
+  value
 }
 
-# lire_histoires_commis ---------------------------------------------------------
-# Même contrat que lire_indicateurs_commis, pour la table des histoires d'un
-# thème (voir #757).
-lire_histoires_commis <- function(theme,
-                                  public = file.path(pkgload::pkg_path(), "..", "public", "data")) {
-  lire_faits_commis(public, theme, "histoires")
+lire_indicateurs_producteur_fixture <- function(theme, public = file.path(
+    pkgload::pkg_path(), "..", "public", "data")) {
+  lire_faits_producteur_fixture(theme, "indicateurs", public)
+}
+
+lire_histoires_producteur_fixture <- function(theme, public = file.path(
+    pkgload::pkg_path(), "..", "public", "data")) {
+  lire_faits_producteur_fixture(theme, "histoires", public)
+}
+
+territoires_producteur_fixture <- function(themes, public = file.path(
+    pkgload::pkg_path(), "..", "public", "data")) {
+  canonical <- nanoparquet::read_parquet(file.path(public, "territoires.parquet"))
+  tables <- lapply(themes, function(theme)
+    payload_producteur_fixture(theme, public)$territoires)
+  tables <- Filter(is.data.frame, tables)
+  id_column <- if ("territoire" %in% names(canonical)) "territoire" else "code"
+  if (id_column == "code") names(canonical)[names(canonical) == "code"] <- "territoire"
+  tables <- lapply(tables, function(table) {
+    if (!"territoire" %in% names(table) && "code" %in% names(table))
+      names(table)[names(table) == "code"] <- "territoire"
+    table
+  })
+  combined <- dplyr::bind_rows(canonical, tables)
+  combined <- combined[!duplicated(as.character(combined$territoire)), , drop=FALSE]
+  rownames(combined) <- NULL
+  combined
 }

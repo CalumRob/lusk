@@ -16,10 +16,10 @@ test_that("verrou raccordement : les sorties réelles passent couverture, domain
   base_epci <- file.path(racine, "data", "raw", "extracted",
                          "EPCI_au_01-01-2025.xlsx")
   payload <- file.path(racine, "public", "data",
-                       "indicateurs_mobilite.json")
+                       "indicateurs_mobilite.parquet")
   skip_if_not(file.exists(zip_cog), "le cache des données réelles n'est pas présent")
   skip_if_not(file.exists(base_epci), "le référentiel EPCI extrait n'est pas présent")
-  skip_if_not(file.exists(payload), "le payload publié du raccordement est absent")
+  skip_if_not(file.exists(payload), "le Parquet Mobilité conservé est absent")
 
   sortie <- tempfile("verrou-raccordement-")
   dir.create(sortie)

@@ -237,17 +237,18 @@ verifier_raccordement_reel <- function(artefact, payload) {
                  tolerance = 5e-4)
 
   # Le calcul ci-dessus n'est pas encore la preuve de publication : le verrou
-  # lit aussi le JSON produit par publish, passé par une cible format = "file".
+  # lit aussi le Parquet Mobilité conservé (#619), passé par une cible format
+  # = "file". Les projections numériques JSON ont été retirées.
   verifier_vrai(file.exists(payload),
                 "raccordement — payload publié",
-                paste("le JSON des indicateurs est absent :", payload))
-  publie <- jsonlite::fromJSON(payload, simplifyVector = TRUE)
+                paste("le Parquet Mobilité est absent :", payload))
+  publie <- nanoparquet::read_parquet(payload)
   verifier_vrai(is.data.frame(publie) && all(c("theme", "key", "type", "detail",
                                                "vintage_source", "vintage_version",
                                                "vintage_date_reference",
                                                "vintage_date_publication") %in% names(publie)),
-                "raccordement — payload publié",
-                "le JSON ne porte pas les colonnes de faits et d'estampille")
+                 "raccordement — payload publié",
+                 "le Parquet ne porte pas les colonnes de faits et d'estampille")
   cles <- c("raccordement_tc", "raccordement_courbe", "raccordement_reference")
   raccordement <- publie[publie$theme == "mobilite" & publie$key %in% cles,
                          , drop = FALSE]

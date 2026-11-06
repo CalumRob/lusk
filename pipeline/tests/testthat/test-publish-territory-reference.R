@@ -71,15 +71,16 @@ test_that("retained scalar snapshot is assembled without legacy service-share pr
   dir.create(artifacts)
   on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
   vintages <- nanoparquet::read_parquet(file.path(root, "vintages.parquet"))
-  territories <- nanoparquet::read_parquet(file.path(root, "territoires.parquet"))
+  territories <- territoires_producteur_fixture(
+    c("economie", "demographie", "mobilite", "habitat"), root)
   for (theme in c("economie", "demographie", "mobilite", "habitat")) {
-    payload <- list(indicateurs=lire_indicateurs_commis(theme, root), territoires=territories)
+    payload <- payload_producteur_fixture(theme, root)
+    payload$territoires <- territories
     metadata <- jsonlite::fromJSON(file.path(root, paste0("theme_", theme, ".json")),
       simplifyVector=FALSE)
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme, artifacts)
   }
-  reference <- project_territory_reference(nanoparquet::read_parquet(
-    file.path(root, "territoires.parquet")))
+  reference <- project_territory_reference(territories)
   snapshot <- project_retained_scalar_snapshot(root, reference, artifacts)
   ids <- as.character(snapshot$scalar$descriptors$indicator_id)
   expect_true(length(ids) > 0L)

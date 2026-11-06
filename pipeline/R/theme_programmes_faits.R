@@ -1,7 +1,7 @@
 # theme_programmes_faits --------------------------------------------------------
 # Les faits du SIXIÈME thème (issue #408) : Programmes et subventions cesse
-# d'être un simple contrat de publication partagé (ADR-0013) et publie SA
-# projection indicateurs_programmes.json, seule entrée statique de ce thème :
+# d'être un simple contrat de publication partagé (ADR-0013). Ses faits sont
+# conservés dans le payload producteur et calculés depuis les Parquets sources :
 # la table
 # cross-thème partagée programmes.json est retirée (#893), la carte lit ses
 # adhésions/subventions via les lectures sémantiques natives de l'API.

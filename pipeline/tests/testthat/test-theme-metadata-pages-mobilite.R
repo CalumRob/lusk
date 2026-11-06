@@ -161,11 +161,10 @@ test_that("publier_theme_metadata : les vingt pages passent le seam et survivent
   expect_identical(checked_in$scalar_contracts, relu$scalar_contracts)
 })
 
-test_that("parité pages scalaires ↔ faits committés : niveaux publiés, unité honnête, direction du calcul (#461)", {
+test_that("parité pages scalaires ↔ Parquet Mobilité conservé : niveaux, unité et direction (#461)", {
   skip_if_not(dir.exists(racine_public), "public/data absent — la racine du dépôt est introuvable")
   meta <- lire_theme_metadata("mobilite")
-  faits <- jsonlite::fromJSON(file.path(racine_public, "indicateurs_mobilite.json"),
-                              simplifyDataFrame = TRUE)
+  faits <- nanoparquet::read_parquet(file.path(racine_public, "indicateurs_mobilite.parquet"))
   for (cle in PAGES_SCALAIRES_MOBILITE) {
     page <- meta$indicator_pages[[cle]]
     lignes <- faits[faits$key == cle, ]

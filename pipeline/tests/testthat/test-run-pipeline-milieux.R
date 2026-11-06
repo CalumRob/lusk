@@ -113,31 +113,26 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
   expect_true(all(is.na(etat$value)))
   expect_true(all(etat$unit == "m²/hab"))
 
-  # les fichiers par thème + la référence partagée + vintages + rapport.
+  # la référence partagée + vintages + rapport ; les faits restent dans les
+  # sorties producteur en mémoire.
   # L'Aperçu est vide par design : le fichier partagé apercu n'est NI écrit
   # NI écrasé par un thème sans aperçu (issue #116). Issue #311 : les
   # métadonnées du thème partent avec le run (theme_milieux.json).
-  for (f in c("indicateurs_milieux.json", "histoires_milieux.json",
-              "territoires.parquet", "territoires.json",
+  for (f in c("territoires.parquet", "territoires.json",
               "vintages.parquet", "run-report.json",
               "theme_milieux.json")) {
     expect_true(file.exists(file.path(cible, f)), info = f)
   }
+  expect_false(file.exists(file.path(cible, "indicateurs_milieux.json")))
+  expect_false(file.exists(file.path(cible, "histoires_milieux.json")))
   # #757 : le parquet par-thème est retiré pour les cinq thèmes non-mobilité
   expect_false(file.exists(file.path(cible, "indicateurs_milieux.parquet")))
   expect_false(file.exists(file.path(cible, "histoires_milieux.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.json")))
 
-  # #757 : les faits partent en JSON seul — le JSON relit exactement le payload
-  ind <- jsonlite::fromJSON(file.path(cible, "indicateurs_milieux.json"))
-  expect_equal(nrow(ind), nrow(payload$indicateurs))
-  expect_equal(ind$value, payload$indicateurs$value)
-  # les histoires se relisent : une ligne par territoire, la lecture et les
-  # forces de l'Histoire (#174) — #757 : plus de parquet, la projection JSON se
-  # compare à la table EN MÉMOIRE (le helper gère les colonnes entièrement NA)
-  hist <- jsonlite::fromJSON(file.path(cible, "histoires_milieux.json"))
-  verifier_projection_sur_table(payload$histoires, hist, "histoires_milieux")
+  # Les assertions détaillées sur valeur, unité et absence honnête ci-dessus
+  # utilisent directement les sorties producteur, pas une projection retirée.
 
   # vintages.parquet : une ligne par source du manifeste Milieux (les quatorze,
   # OCS-GE et patchs correctifs compris — #234 amendé #243), et les ids RETIRÉS
@@ -183,17 +178,20 @@ test_that("un re-run Milieux écrase sans dupliquer (upsert, idempotence)", {
     .package = "lusk"
   )
 
-  run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible,
-               noms_epci_geo_api = NULL)
-  run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible,
-               noms_epci_geo_api = NULL)
+  premier <- run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible,
+                          noms_epci_geo_api = NULL)
+  second <- run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible,
+                         noms_epci_geo_api = NULL)
 
-  # le payload EST l'état complet : relancer écrase, ne duplique jamais
-  # #757 : les faits Milieux partent en JSON seul
-  ind <- jsonlite::fromJSON(file.path(cible, "indicateurs_milieux.json"))
+  # Le payload en mémoire est l'état complet et reste stable au re-run ; aucun
+  # fichier numérique par thème ne réapparaît.
+  ind <- second$indicateurs
   ref <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
   expect_equal(nrow(ind), 160)  # 10 territoires x (2 lignes d'état + 14 annuels)
   expect_equal(anyDuplicated(ind[c("territoire", "key", "detail")]), 0L)
+  expect_identical(second$indicateurs, premier$indicateurs)
+  expect_false(file.exists(file.path(cible, "indicateurs_milieux.json")))
+  expect_false(file.exists(file.path(cible, "histoires_milieux.json")))
   expect_equal(nrow(ref), 10)
 })
 

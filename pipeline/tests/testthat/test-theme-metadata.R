@@ -851,26 +851,31 @@ test_that("verifier_parite_trajectoires : le canon Milieux épinglé est en pari
   expect_no_error(verifier_parite_trajectoires(meta, faits_trajectoires_milieux()))
 })
 
-test_that("verifier_parite_trajectoires : le payload COMMITTÉ et les descripteurs épinglés sont en parité (#438)", {
-  # Le payload COMMITTÉ est l'artefact que l'app fetch — la même lecture que
-  # la parité des libellés, et le miroir exact de verifierPariteTrajectoires
-  # au chargement de l'app : chaque page trajectoire épinglée couvre
-  # EXACTEMENT les détails publiés de sa clé.
+test_that("verifier_parite_trajectoires : les sorties producteur de fixture couvrent leurs axes déclarés (#438)", {
+  # Les faits numériques ne sont plus lus depuis un snapshot JSON. Chaque
+  # contrat est vérifié contre la sortie de son producteur de fixture.
   racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
   expect_true(dir.exists(racine_public), info = "public/data absent - la racine du dépôt est introuvable")
 
   pages_trajectoires <- 0L
   for (theme in THEMES_METADATA) {
-    # Pair each incumbent published payload with its own metadata snapshot;
-    # current package metadata may declare a candidate axis not present in the
-    # static compatibility bundle.
-    metadata_path <- file.path(racine_public, paste0("theme_", theme, ".json"))
-    meta <- if (file.exists(metadata_path))
-      jsonlite::fromJSON(metadata_path, simplifyVector = FALSE) else lire_theme_metadata(theme)
+    meta <- lire_theme_metadata(theme)
     cles <- names(meta$indicator_pages)
     if (!any(vapply(meta$indicator_pages, function(p) identical(p$family, "trajectory"), logical(1L)))) next
 
-    faits <- jsonlite::fromJSON(file.path(racine_public, paste0("indicateurs_", theme, ".json")))
+    faits <- lire_indicateurs_producteur_fixture(theme, racine_public)
+    if (identical(theme, "mobilite")) {
+      # The retained Mobility Parquet remains unchanged, but its incumbent
+      # raccordement curve has the prior axis. Rebuild the owner-owned rows
+      # from the byte-pinned producer artifact for the current trajectory
+      # contract rather than treating that Parquet as a fixture clone.
+      raccordement <- lire_artefact_raccordement_national()
+      raccordement_faits <- lignes_indicateurs_raccordement_national(
+        raccordement$calculation, vintages_mobilite())
+      faits <- dplyr::bind_rows(
+        faits[!faits$key %in% raccordement_faits$key, , drop=FALSE],
+        raccordement_faits)
+    }
     verifier_parite_trajectoires(meta, faits)
     pages_trajectoires <- pages_trajectoires +
       sum(vapply(meta$indicator_pages, function(p) identical(p$family, "trajectory"), logical(1L)))
@@ -964,12 +969,9 @@ test_that("verifier_parite_distributions : le canon Habitat épinglé est en par
   expect_no_error(verifier_parite_distributions(meta, faits_distributions_habitat()))
 })
 
-test_that("verifier_parite_distributions : le payload COMMITTÉ est en parité et distribution_dpe est LA SEULE distribution publiée (#440)", {
-  # Le payload COMMITTÉ est l'artefact que l'app fetch — le miroir exact de
-  # verifierPariteDistributions au chargement de l'app. L'énumération est le
-  # devoir : distribution_dpe (Habitat) est la SEULE page de famille
-  # « distribution » publiée à travers les six thèmes — jamais une famille
-  # orpheline, jamais une seconde distribution non déclarée.
+test_that("verifier_parite_distributions : la sortie producteur Habitat couvre distribution_dpe (#440)", {
+  # L'énumération vient des contrats producteurs et de la sortie de fixture,
+  # pas d'une projection JSON retirée.
   racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
   expect_true(dir.exists(racine_public), info = "public/data absent - la racine du dépôt est introuvable")
 
@@ -980,7 +982,7 @@ test_that("verifier_parite_distributions : le payload COMMITTÉ est en parité e
     if (is.null(cles)) next
     pour_theme <- cles[vapply(meta$indicator_pages, function(p) identical(p$family, "distribution"), logical(1L))]
     if (!length(pour_theme)) next
-    faits <- jsonlite::fromJSON(file.path(racine_public, paste0("indicateurs_", theme, ".json")))
+    faits <- lire_indicateurs_producteur_fixture(theme, racine_public)
     verifier_parite_distributions(meta, faits)
     pages_distribution[[paste(theme, pour_theme, sep = ":")]] <- pour_theme
   }
@@ -1074,12 +1076,9 @@ test_that("verifier_parite_listes : une catégorie morte ou un détail publié a
     "absent des catégories")
 })
 
-test_that("verifier_parite_listes : le payload COMMITTÉ est en parité et les DEUX listes publiées sont déclarées (#439, #462)", {
-  # Le payload COMMITTÉ est l'artefact que l'app fetch — le miroir exact de
-  # verifierPariteListes au chargement de l'app. L'énumération est le devoir :
-  # les deux pages reseaux (Mobilité), puis subventions_par_domaine (#462), sont
-  # les pages de famille « list » publiées à travers les SIX thèmes — jamais une
-  # famille orpheline, jamais une liste non déclarée.
+test_that("verifier_parite_listes : les sorties producteur Mobilité et Programmes couvrent les listes déclarées (#439, #462)", {
+  # Mobilité est l'unique thème dont le Parquet de faits reste publié (#619).
+  # Programmes reconstruit ses faits depuis ses Parquets d'entrée retenus.
   racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
   expect_true(dir.exists(racine_public), info = "public/data absent - la racine du dépôt est introuvable")
 
@@ -1090,7 +1089,7 @@ test_that("verifier_parite_listes : le payload COMMITTÉ est en parité et les D
     if (is.null(cles)) next
     pour_theme <- cles[vapply(meta$indicator_pages, function(p) identical(p$family, "list"), logical(1L))]
     if (!length(pour_theme)) next
-    faits <- jsonlite::fromJSON(file.path(racine_public, paste0("indicateurs_", theme, ".json")))
+    faits <- lire_indicateurs_producteur_fixture(theme, racine_public)
     verifier_parite_listes(meta, faits)
     for (page in pour_theme) {
       pages_listes[[paste(theme, page, sep = ":")]] <- page
@@ -1112,7 +1111,7 @@ test_that("verifier_parite_listes : le payload COMMITTÉ est en parité et les D
 # des domaines verrouillé bruyamment, la facette déclarée dans l'axe, et la
 # publication RÉELLE du canon (le trait `metadata` du descripteur).
 
-test_that("la page liste subventions_par_domaine publie valablement contre le payload committé (#462)", {
+test_that("la page liste subventions_par_domaine valide les faits reconstruits des Parquets producteurs (#462)", {
   meta <- lire_theme_metadata("programmes")
   page <- meta$indicator_pages$subventions_par_domaine
 
@@ -1123,10 +1122,9 @@ test_that("la page liste subventions_par_domaine publie valablement contre le pa
 
   racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
   skip_if_not(dir.exists(racine_public), "public/data absent - la racine du dépôt est introuvable")
-  faits <- jsonlite::fromJSON(file.path(racine_public, "indicateurs_programmes.json"))
+  faits <- lire_indicateurs_producteur_fixture("programmes", racine_public)
 
-  # la parité listes ↔ faits COMMITTÉS — le miroir exact de
-  # verifierPariteListes au chargement de l'app
+  # la parité listes ↔ faits du producteur, reconstruits depuis ses artefacts
   expect_error(verifier_parite_listes(meta, faits), NA)
 
   # l'énumération LOUDE : les 39 domaines déclarés SONT les détails publiés,

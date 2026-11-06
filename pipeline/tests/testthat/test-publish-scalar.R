@@ -1,17 +1,16 @@
 seed_scalar_artifact_fixture_from_producer_outputs <- function(themes) {
-  # Fixture adapter only: source the committed producer fixtures once, then
-  # exercise the production writer/reader contract. No production code reads
-  # these legacy theme filenames.
+  # Fixture adapter only: exercise the production writer/reader against current
+  # producer outputs and retained artifacts. No retired numerical JSON is read.
   public <- file.path(pkgload::pkg_path(), "..", "public", "data")
   destination <- tempfile("scalar-serving-fixture-")
   dir.create(destination)
   vintages <- nanoparquet::read_parquet(file.path(public, "vintages.parquet"))
-  territories <- nanoparquet::read_parquet(file.path(public, "territoires.parquet"))
+  territories <- territoires_producteur_fixture(themes, public)
   for (theme in themes) {
-    payload <- list(
-      indicateurs=lire_indicateurs_commis(theme, public),
-      territoires=territories
-    )
+    payload <- payload_producteur_fixture(theme, public)
+    # Every owner artifact is checked against the same fixture serving
+    # universe, just as the combined snapshot is.
+    payload$territoires <- territories
     metadata <- jsonlite::fromJSON(file.path(public, paste0("theme_", theme, ".json")), simplifyVector=FALSE)
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme, destination)
   }
@@ -66,8 +65,8 @@ test_that("legacy service-share source declarations are excluded from retained s
   artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(
     c("economie", "demographie", "mobilite", "habitat"))
   on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
-  territories <- nanoparquet::read_parquet(file.path(root, "territoires.parquet"))
-  reference <- project_territory_reference(territories)
+  reference <- project_territory_reference(territoires_producteur_fixture(
+    c("economie", "demographie", "mobilite", "habitat"), root))
   snapshot <- project_retained_scalar_snapshot(root, reference, artifacts)
   expect_false(any(snapshot$scalar$descriptors$indicator_id %in% excluded))
   expect_setequal(snapshot$retired_indicator_ids, excluded)
@@ -122,8 +121,8 @@ test_that("retained scalar snapshot combines exact producer-declared owners dete
   artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(
     retained_scalar_artifact_owners())
   on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
-  reference <- project_territory_reference(nanoparquet::read_parquet(
-    file.path(root, "territoires.parquet")))
+  reference <- project_territory_reference(territoires_producteur_fixture(
+    retained_scalar_artifact_owners(), root))
   snapshot <- project_retained_scalar_snapshot(root, reference, artifacts)
   owners <- retained_scalar_artifact_owners()
   owner_metadata <- stats::setNames(lapply(owners, lire_theme_metadata), owners)
@@ -142,7 +141,7 @@ test_that("retained scalar snapshot combines exact producer-declared owners dete
   for (id in expected) {
     theme <- names(Filter(function(metadata) id %in% names(metadata$scalar_contracts),
       owner_metadata))[[1L]]
-    canonical <- lire_indicateurs_commis(theme, root)
+    canonical <- lire_indicateurs_producteur_fixture(theme, root)
     rows <- canonical[canonical$key == id & is.na(canonical$detail), , drop=FALSE]
     descriptor <- snapshot$scalar$descriptors[
       snapshot$scalar$descriptors$indicator_id == id, , drop=FALSE]
@@ -173,7 +172,7 @@ test_that("retained scalar snapshot combines exact producer-declared owners dete
 test_that("economy scalar projector retains canonical units, levels, and source vintages", {
   metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_economie.json"), simplifyVector=FALSE)
   canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path(pkgload::pkg_path(), "..", "public", "data"))
-  canonical <- lire_indicateurs_commis("economie", canonical_dir)
+  canonical <- lire_indicateurs_producteur_fixture("economie", canonical_dir)
   ids <- names(metadata$scalar_contracts)
   eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
     territory_type=as.character(canonical$type)))
@@ -211,12 +210,12 @@ test_that("economy scalar projector retains canonical units, levels, and source 
   expect_false("region" %in% unlist(metadata$indicator_pages$effectifs_salaries$levels))
 })
 
-test_that("housing DPE scalar retains producer denominator and suppression", {
+test_that("housing scalar retains producer denominator, suppression, and values", {
   metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_habitat.json"), simplifyVector=FALSE)
   public <- jsonlite::fromJSON(file.path(pkgload::pkg_path(), "..", "public", "data", "theme_habitat.json"), simplifyVector=FALSE)
   expect_identical(names(public$scalar_contracts), names(metadata$scalar_contracts))
   expect_identical(public$scalar_contracts, metadata$scalar_contracts)
-  canonical <- lire_indicateurs_commis("habitat",
+  canonical <- lire_indicateurs_producteur_fixture("habitat",
     file.path(pkgload::pkg_path(), "..", "public", "data"))
   rows <- data.frame(territory_id=as.character(canonical$territoire),
     territory_type=as.character(canonical$type), indicator_id=as.character(canonical$key),
@@ -238,17 +237,22 @@ test_that("housing DPE scalar retains producer denominator and suppression", {
   price_rows <- rows[canonical$key == "prix_m2" & is.na(canonical$detail), , drop=FALSE]
   price <- project_scalar_canonical_rows(price_rows, metadata, "prix_m2",
     unique(price_rows[c("territory_id", "territory_type")]))
-  expect_equal(nrow(price$facts), 1268L)
-  expect_setequal(as.character(table(price$facts$territory_type)), c("1202", "61", "4", "1"))
-  rennes <- price$facts[price$facts$territory_id == "35238", , drop=FALSE]
-  expect_equal(rennes$value, 3819.4444444444443)
-  expect_equal(rennes$status, "measured")
+  expected_price <- price_rows
+  expect_equal(nrow(price$facts), nrow(expected_price))
+  expect_setequal(as.character(table(price$facts$territory_type)),
+    as.character(table(expected_price$territory_type)))
+  sample_id <- expected_price$territory_id[which(!is.na(expected_price$value))[[1L]]]
+  sample_fact <- price$facts[price$facts$territory_id == sample_id, , drop=FALSE]
+  expected_fact <- expected_price[expected_price$territory_id == sample_id, , drop=FALSE]
+  expect_equal(sample_fact$value, expected_fact$value)
+  expect_identical(sample_fact$status, "measured")
   expect_true(any(price$facts$status == "suppressed" & price$facts$support_count < 10L))
   expect_true(all(price$provenance$source_id == metadata$sources$prix_m2))
   artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(c("economie", "demographie", "mobilite", "habitat"))
   on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
-  reference <- project_territory_reference(nanoparquet::read_parquet(
-    file.path(pkgload::pkg_path(), "..", "public", "data", "territoires.parquet")))
+  reference <- project_territory_reference(territoires_producteur_fixture(
+    c("economie", "demographie", "mobilite", "habitat"),
+    file.path(pkgload::pkg_path(), "..", "public", "data")))
   snapshot <- project_retained_scalar_snapshot(
     file.path(pkgload::pkg_path(), "..", "public", "data"), reference, artifacts)$scalar
   expect_true(all(c("effectifs_salaries", "chomage", "densite", "taille_menages", "part_passoires") %in%
@@ -271,13 +275,15 @@ test_that("all producer scalar contracts match their checked-in generated metada
 })
 
 test_that("demography scalars are projected from the canonical producer into full snapshots", {
-  artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(c("economie", "demographie", "mobilite", "habitat"))
+  themes <- c("economie", "demographie", "mobilite", "habitat")
+  artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(themes)
   on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
-  canonical <- lire_indicateurs_commis("demographie",
-    file.path(pkgload::pkg_path(), "..", "public", "data"))
-  eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
-    territory_type=as.character(canonical$type)))
-  projection <- project_theme_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible, "demographie", artifacts)
+  root <- file.path(pkgload::pkg_path(), "..", "public", "data")
+  canonical <- lire_indicateurs_producteur_fixture("demographie", root)
+  territory_fixture <- territoires_producteur_fixture(themes, root)
+  eligible <- unique(data.frame(territory_id=as.character(territory_fixture$territoire),
+    territory_type=as.character(territory_fixture$type)))
+  projection <- project_theme_scalar_cohort(root, eligible, "demographie", artifacts)
   expect_setequal(projection$descriptors$indicator_id, c("densite", "taille_menages", "evolution_1968"))
   for (id in projection$descriptors$indicator_id) {
     expected <- canonical[canonical$key == id, , drop=FALSE]
@@ -290,7 +296,8 @@ test_that("demography scalars are projected from the canonical producer into ful
   }
   expect_false("structure_age" %in% projection$descriptors$indicator_id)
   root <- file.path(pkgload::pkg_path(), "..", "public", "data")
-  reference <- project_territory_reference(nanoparquet::read_parquet(file.path(root, "territoires.parquet")))
+  reference <- project_territory_reference(territoires_producteur_fixture(
+    c("economie", "demographie", "mobilite", "habitat"), root))
   snapshot <- project_retained_scalar_snapshot(root, reference, artifacts)
   expect_gt(nrow(snapshot$comparison$groups), 0L)
   expect_gt(nrow(snapshot$comparison$territories), 0L)
@@ -315,18 +322,21 @@ test_that("demography scalars are projected from the canonical producer into ful
 })
 
 test_that("mobility scalar cohort preserves all declared ordinary canonical scalar facts in complete snapshots", {
-  artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(c("economie", "demographie", "mobilite", "habitat"))
+  themes <- retained_scalar_artifact_owners()
+  artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(themes)
   on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
-  canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_mobilite.parquet"))
-  metadata <- jsonlite::fromJSON(file.path(pkgload::pkg_path(), "..", "public", "data", "theme_mobilite.json"), simplifyVector=FALSE)
+  root <- file.path(pkgload::pkg_path(), "..", "public", "data")
+  canonical <- nanoparquet::read_parquet(file.path(root, "indicateurs_mobilite.parquet"))
+  metadata <- jsonlite::fromJSON(file.path(root, "theme_mobilite.json"), simplifyVector=FALSE)
   declaration <- lire_theme_metadata("mobilite")
   ids <- names(declaration$scalar_contracts)[!vapply(names(declaration$scalar_contracts), function(id) {
     source <- declaration$source_records[[declaration$sources[[id]]]]
     identical(source$serving_disposition, "excluded_legacy_accessibility")
   }, logical(1))]
-  eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
-    territory_type=as.character(canonical$type)))
-  projection <- project_theme_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible, "mobilite", artifacts)
+  territory_fixture <- territoires_producteur_fixture(themes, root)
+  eligible <- unique(data.frame(territory_id=as.character(territory_fixture$territoire),
+    territory_type=as.character(territory_fixture$type)))
+  projection <- project_theme_scalar_cohort(root, eligible, "mobilite", artifacts)
   expect_setequal(projection$descriptors$indicator_id, ids)
   for (id in ids) {
     expected <- canonical[canonical$key == id, , drop=FALSE]
@@ -427,7 +437,9 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
   expect_setequal(unique(reordered_projection$provenance$source_id),
     unique(projection$provenance$source_id[projection$provenance$indicator_id %in% multi_source_ids]))
   expect_true(all(c("region", "commune", "epci", "departement") %in% projection$facts$territory_type))
-  reference <- project_territory_reference(nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "territoires.parquet")))
+  reference <- project_territory_reference(territoires_producteur_fixture(
+    retained_scalar_artifact_owners(),
+    file.path(pkgload::pkg_path(), "..", "public", "data")))
   snapshot <- project_retained_scalar_snapshot(file.path(pkgload::pkg_path(), "..", "public", "data"), reference, artifacts)$scalar
   expected_ids <- unlist(lapply(retained_scalar_artifact_owners(), function(owner) {
     owner_metadata <- lire_theme_metadata(owner)

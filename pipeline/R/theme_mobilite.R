@@ -1414,8 +1414,9 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages,
 # conventionnel ; absent ou périmé, la lecture s'arrête bruyamment — les parts
 # ne se recalculent QUE quand leurs entrées figées changent, jamais au fil des
 # republications), assemble le payload, le valide et le publie via la
-# machinerie PARTAGÉE publish (backend "static" par défaut — parquet +
-# projections JSON + vintages). Retourne le payload, comme run_pipeline
+# machinerie PARTAGÉE publish (backend "static" par défaut — Parquets Mobilité,
+# ressources partagées et vintages ; les projections numériques JSON sont
+# retirées). Retourne le payload, comme run_pipeline
 # l'attend.
 publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
                              sortie = "public/data",
