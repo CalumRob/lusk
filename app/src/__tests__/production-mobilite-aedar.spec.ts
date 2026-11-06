@@ -36,7 +36,7 @@ vi.mock('@/fiche/content/aedarComparisonClient', async (original) => ({
 it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte une sélection tardive', async () => {
   let complete!: (value: AedarComparisonResult) => void
   vi.mocked(fetchAedarComparison).mockReturnValueOnce(new Promise((resolve) => { complete = resolve }))
-  const control = ref<ControleComparaison>({ selection: { etat: 'membres', membres: [
+  const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === '22001')!, territoires: payload.territoires, selection: { etat: 'membres', membres: [
     { territory_type: 'commune', territory_id: '22001' }, { territory_type: 'commune', territory_id: '22002' },
   ] }, libelleActif: 'Sélection', presetDefaut: 'epci', presets: [], choisir: () => {} })
   const content = baseContent()
@@ -91,7 +91,7 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
     { territory_type: 'commune' as const, territory_id: '22001' },
     { territory_type: 'commune' as const, territory_id: '22002' },
   ]
-  const control = ref<ControleComparaison>({ selection: { etat: 'membres', membres: members },
+  const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === '22001')!, territoires: payload.territoires, selection: { etat: 'membres', membres: members },
     libelleActif: 'Sélection', presetDefaut: 'epci', presets: [], choisir: () => {} })
   const originalFetch = globalThis.fetch
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -147,7 +147,7 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
 it('demande la classe de densité publiée pour le preset density-class', async () => {
   vi.mocked(fetchAedarComparison).mockResolvedValue({ status: 'error', message: 'fixture unavailable' })
   const content = baseContent()
-  const control = ref<ControleComparaison>({ selection: { etat: 'preset', preset: 'densite' }, libelleActif: 'Communes peu denses',
+  const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === content.territory.code)!, territoires: payload.territoires, selection: { etat: 'preset', preset: 'densite' }, libelleActif: 'Communes peu denses',
     presetDefaut: 'epci', presets: [], choisir: () => {} })
   const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
     aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {} },
@@ -171,7 +171,7 @@ it.each([
   const referenceFacts = aedarFacts(10, { territoryId: referenceId, territoryType: referenceType === 'EPCI' ? 'epci' : 'commune', value: 0.25 })
     .map((fact) => ({ ...fact, territory_type: (referenceType === 'EPCI' ? 'epci' : 'region') as AedarTerritoryType }))
   const referenceData = { ...aedarReferenceReady, facts: referenceFacts }
-  const control = ref<ControleComparaison>({ selection: { etat: 'preset', preset }, libelleActif: 'Portée résolue',
+  const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === content.territory.code)!, territoires: payload.territoires, selection: { etat: 'preset', preset }, libelleActif: 'Portée résolue',
     presetDefaut: 'bretagne', presets: [], choisir: () => {} })
   const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
     aedarData: data, aedarStatus: 'ready', retryAedar: () => {}, aedarReferenceTerritoire: {
@@ -194,7 +194,7 @@ it.each([
 
 it('garde un état sans groupe dans chaque scalaire pendant puis après l’échec de la référence directe', async () => {
   const content = baseContent()
-  const control = ref<ControleComparaison>({ selection: { etat: 'preset', preset: 'epci' }, libelleActif: 'EPCI X',
+  const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === '22001')!, territoires: payload.territoires, selection: { etat: 'preset', preset: 'epci' }, libelleActif: 'EPCI X',
     presetDefaut: 'epci', presets: [], choisir: () => {} })
   const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
     aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {}, aedarReferenceTerritoire: {

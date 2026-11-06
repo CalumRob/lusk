@@ -63,6 +63,7 @@ function onNativeClose() {
     class="cahier-dialog"
     aria-modal="true"
     :aria-labelledby="props.labelledBy"
+    @cancel.prevent="close"
     @close="onNativeClose"
     @click="(event) => { if (event.target === event.currentTarget) close() }"
   >

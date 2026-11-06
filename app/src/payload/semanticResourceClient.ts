@@ -90,6 +90,13 @@ export async function chargerCatalogueRessources(): Promise<SemanticResourceDecl
   return resources
 }
 
+/** Identité signalée par le producteur ; jamais son message technique en copy UI. */
+export class SemanticMemberError extends PayloadError {
+  constructor(path: string, status: number, readonly member: { type: string; id: string }) {
+    super('fetch', path, `Membre de comparaison indisponible : ${member.type}/${member.id}.`, status)
+  }
+}
+
 async function poster(path: string, body: RecordValue): Promise<unknown> {
   let response: Response
   try {
@@ -97,8 +104,22 @@ async function poster(path: string, body: RecordValue): Promise<unknown> {
   } catch (cause) {
     throw new PayloadError('fetch', path, `Lecture sémantique indisponible : ${cause instanceof Error ? cause.message : String(cause)}`)
   }
-  if (!response.ok) throw new PayloadError('fetch', path,
-    `Lecture sémantique indisponible (HTTP ${response.status}).`, response.status)
+  if (!response.ok) {
+    // Les erreurs membre 404/422 du contrat nomment une identité typée.
+    // Un corps illisible ou un autre échec reste l'erreur HTTP générique.
+    if (response.status === 404 || response.status === 422) {
+      const error: unknown = await response.json().catch(() => null)
+      // api/aedar_reads.py : identité immédiatement après « member », ou après
+      // « member type does not match ». Le reste (mesure/typequ/motif) n'est
+      // jamais du copy UI. resource_requests.py borne l'identifiant à 32
+      // caractères mais ne le restreint pas aux seuls chiffres/word chars.
+      const identity = isRecord(error) && typeof error.detail === 'string'
+        ? /\bselected comparison member(?: type does not match)? (commune|epci|departement|region)\/(\S{1,32})(?=\s|$)/i.exec(error.detail.replace(/\s+/gu, ' ')) : null
+      if (identity) throw new SemanticMemberError(path, response.status, { type: identity[1]!, id: identity[2]! })
+    }
+    throw new PayloadError('fetch', path,
+      `Lecture sémantique indisponible (HTTP ${response.status}).`, response.status)
+  }
   return readJson(response, path)
 }
 

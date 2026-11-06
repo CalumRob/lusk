@@ -90,6 +90,8 @@ export type PresetComparaison = (typeof PRESETS_COMPARAISON)[number]
  * `null` = aucun contrôle (la Région n'a aucune comparaison).
  */
 export interface ControleComparaison {
+  focal: Territoire
+  territoires: readonly Territoire[]
   selection: SelectionComparaison
   /** Libellé de la portée active (nom accessible du bouton). */
   libelleActif: string | null
