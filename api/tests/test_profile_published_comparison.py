@@ -286,14 +286,16 @@ def test_fixed_detail_fails_closed_on_missing_or_invalid_local_publication_rows(
     assert error.value.status_code == 503
 
 
-def test_profile_detail_preserves_unavailable_contract_below_two_eligible():
+def test_profile_detail_serves_singleton_median_but_keeps_ranks_null_below_two():
+    """#917: one comparable member IS the profile group median; ranks stay below two."""
     conn = DetailConnection(group=[("housing_profile", "old", "", "median", 10.0, 2, 1, 1, 1, "profile-v1", "ref-v1")],
         territory=[("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 1, "profile-v1", "ref-v1")])
     result = main._published_profile_comparison_results(conn, [PROFILE],
         ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1")["housing_profile"]
-    assert result["status"] == "unavailable"
-    assert result["reason"] == "fewer_than_two_comparable_values"
-    assert (result["median"], result["rank"], result["rank_size"], result["rank_ties"]) == (None, None, None, None)
+    assert result["status"] == "available"
+    assert result["reason"] is None
+    assert result["median"] == 10.0
+    assert (result["rank"], result["rank_size"], result["rank_ties"]) == (None, None, None)
 
 
 def test_theme_uses_fixed_context_for_profile_only_filtered_default(monkeypatch):
@@ -466,3 +468,86 @@ def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages
     assert len([sql for sql, _ in dynamic.sql if "JOIN scalar_observation_source os" in sql]) == 1
     assert len([sql for sql, _ in dynamic.sql if "JOIN profile_observation_source os" in sql]) == 1
     assert not any("comparison_publication" in sql for sql, _ in dynamic.sql)
+
+
+def test_fixed_detail_without_comparable_values_stays_unavailable_with_null_member_ranks():
+    class EmptyConn(DetailConnection):
+        def execute(self, sql, params=None):
+            if "FROM comparison_source_lineage l" in sql:
+                return Cursor(rows=[])
+            return super().execute(sql, params)
+    conn = EmptyConn(
+        group=[("housing_profile", "old", "", "median", None, 2, 0, 2, 0, "profile-v1", "ref-v1")],
+        territory=[("housing_profile", "old", "", "c1", None, "not_available", None, None, None, "profile-v1", "ref-v1")],
+        member_rows=[
+            ("housing_profile", "old", "", "c1", "not_available", None, None, None, "profile-v1", "ref-v1", True),
+            ("housing_profile", "old", "", "c2", "not_available", None, None, None, "profile-v1", "ref-v1", True),
+        ])
+    result = main._published_profile_comparison_results(conn, [PROFILE],
+        ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1",
+        selected_fields=("median", "member_ranks"))["housing_profile"]
+    assert result["status"] == "unavailable"
+    assert result["reason"] == "fewer_than_two_comparable_values"
+    assert result["median"] is None
+    assert [(row["territory_id"], row["rank"], row["rank_size"], row["rank_ties"])
+            for row in result["member_ranks"]] == [("c1", None, None, None), ("c2", None, None, None)]
+
+
+def test_fixed_detail_singleton_serves_median_and_nulls_member_ranks_below_two():
+    conn = DetailConnection(
+        group=[("housing_profile", "old", "", "median", 10.0, 2, 1, 1, 1, "profile-v1", "ref-v1")],
+        territory=[("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 1, "profile-v1", "ref-v1")],
+        member_rows=[
+            ("housing_profile", "old", "", "c1", "measured", 1, 1, 1, "profile-v1", "ref-v1", True),
+            ("housing_profile", "old", "", "c2", "not_available", None, None, None, "profile-v1", "ref-v1", True),
+        ])
+    result = main._published_profile_comparison_results(conn, [PROFILE],
+        ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1",
+        selected_fields=("median", "rank", "rank_size", "rank_ties", "member_ranks"))["housing_profile"]
+    assert result["status"] == "available" and result["reason"] is None
+    assert result["median"] == 10.0
+    assert (result["rank"], result["rank_size"], result["rank_ties"]) == (None, None, None)
+    assert [(row["territory_id"], row["rank"], row["rank_size"], row["rank_ties"])
+            for row in result["member_ranks"]] == [("c1", None, None, None), ("c2", None, None, None)]
+
+
+def test_custom_profile_comparison_serves_singleton_median_without_rank():
+    """#917 dynamic profile path: a 1-member selection pairs on that member's value."""
+    class Conn:
+        def __init__(self): self.sql = []
+        def execute(self, sql, params=None):
+            self.sql.append(sql)
+            if "SELECT d.indicator_id,d.comparison_detail" in sql:
+                return Cursor(rows=[("housing_profile", "old", None, "%", "stock", "pd1", False, "%")])
+            if "SELECT d.indicator_id,o.territory_id,o.value,o.status" in sql:
+                return Cursor(rows=[("housing_profile", "c1", 8.0, "measured")])
+            if "SELECT DISTINCT p.indicator_id,os.source_id" in sql:
+                return Cursor()
+            raise AssertionError(sql)
+    result = main._profile_comparison_results(Conn(), [PROFILE], ("c1",),
+        "commune", "c1", fixed_context=None)[0]
+    assert result["status"] == "available" and result["reason"] is None
+    assert result["median"] == 8.0
+    assert result["rank"] is None and result["rank_size"] is None and result["rank_ties"] is None
+    assert (result["selected_member_count"], result["eligible_count"], result["missing_count"]) == (1, 1, 0)
+
+
+def test_dpe_fixed_wrapper_serves_scalar_singleton_median_without_rank(monkeypatch):
+    """#917: a scalar-backed profile's fixed path serves the linked scalar's singleton median."""
+    dpe = {**PROFILE, "indicator": "dpe_profile", "comparison_scalar": "part_passoires",
+        "comparison_point": None, "required_scalar_version": "scalar-v1"}
+    scalar_rows = [("part_passoires", "Part passoires", "%", "low", "part_passoires", ["commune"], "sdv1")]
+    class Conn(DetailConnection):
+        def execute(self, sql, params=None):
+            if "FROM scalar_descriptor WHERE indicator_id=ANY" in sql:
+                return Cursor(rows=scalar_rows)
+            return super().execute(sql, params)
+    monkeypatch.setattr(main, "_published_scalar_comparison_results", lambda *a, **kw: {
+        "part_passoires": {"status": "available", "reason": None, "selected_member_count": 2,
+            "eligible_count": 1, "missing_count": 1, "focal_value": 10.0, "median": 10.0,
+            "rank": 1, "rank_size": 1, "rank_ties": 1, "comparison_sources": []}})
+    result = main._profile_comparison_results(Conn(), [dpe], ("c1", "c2"), "commune", "c1",
+        ("density_class", "A", "commune"))[0]
+    assert result["status"] == "available" and result["reason"] is None
+    assert result["median"] == 10.0
+    assert result["rank"] is None and result["rank_size"] is None and result["rank_ties"] is None

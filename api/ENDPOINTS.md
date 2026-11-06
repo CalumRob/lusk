@@ -39,7 +39,10 @@ are `facts`, `fixed_comparison` with its declared closed comparison context, and
 bounded `selected_comparison` with at most 1,500 unique typed territory members. Facts
 coordinates and optional fields are producer-declared; status, availability,
 descriptor, axis, and provenance metadata remain mandatory where declared.
-Comparison fields use the closed comparison-result vocabulary.
+Comparison fields use the closed comparison-result vocabulary. For declared-profile
+and numeric period/detail collection comparisons, `median` is served when exactly one
+member is comparable (the singleton median, #917); `rank`/`rank_size`/`rank_ties` and
+peer `member_ranks` remain null until at least two members are comparable.
 Owned ordered-series comparisons additionally accept the requested-only
 `axis_comparisons` projection: it returns API-owned comparison values, eligibility,
 missing counts, ranks/ties, and lineage for the axes already present in the comparison

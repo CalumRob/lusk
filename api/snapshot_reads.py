@@ -467,15 +467,19 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
                 or status not in ("measured", "suppressed", "unsupported", "not_available", "not_published")
                 ):
             raise HTTPException(503, "Published profile comparison result is invalid")
+        # #917: with exactly one comparable member the profile group median IS that
+        # member's value (the publication already stores it); rank fields still
+        # require two comparable values and stay null below that.
+        comparable = eligible >= 1
         enough = eligible >= 2
-        output[profile["indicator"]] = {**({"median":med if enough else None} if "median" in selected else {}),
+        output[profile["indicator"]] = {**({"median":med if comparable else None} if "median" in selected else {}),
             **({"focal_value":value if status == "measured" else None} if "focal_value" in selected else {}),
             **({"rank":rank if enough else None} if "rank" in selected else {}),
             **({"rank_size":rank_size if enough and status == "measured" else None} if "rank_size" in selected else {}),
             **({"rank_ties":ties if enough and status == "measured" else None} if "rank_ties" in selected else {}),
             **({"eligible_count":eligible} if "eligible_count" in selected else {}),
-            "status": "available" if enough else "unavailable",
-            "reason": None if enough else "fewer_than_two_comparable_values",
+            "status": "available" if comparable else "unavailable",
+            "reason": None if comparable else "fewer_than_two_comparable_values",
             **({"selected_member_count":member_count} if "selected_member_count" in selected else {}),
             "comparison_sources": source_map.get(profile["indicator"], [])}
         if "member_ranks" in selected:
@@ -614,6 +618,8 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
                        and focal_row[1] is not None else None)
         better = sum(v > focal_value if direction == "high" else v < focal_value for _, v in values) if focal_value is not None else None
         ties = sum(v == focal_value for _, v in values) if focal_value is not None else None
+        # #917: a single comparable member IS the group median; ranks stay below two.
+        comparable = len(values) >= 1
         enough = len(values) >= 2
         result = {"indicator": indicator, "facet": facet, "label": profile["label"],
             "unit": unit, "direction": direction, "statistic": "median",
@@ -622,11 +628,11 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
             "required_scalar_version": profile.get("required_scalar_version"),
             "source_facet_label": profile.get("source_facet_label"),
             "denominator_semantics": profile.get("denominator_semantics"),
-            "status": "available" if enough else "unavailable",
-            "reason": None if enough else "fewer_than_two_comparable_values",
+            "status": "available" if comparable else "unavailable",
+            "reason": None if comparable else "fewer_than_two_comparable_values",
             "selected_member_count": len(members), "eligible_count": len(values),
             "focal_value": focal_value, "focal_in_selection": territory_id in members,
-            "median": median([v for _, v in values]) if enough else None,
+            "median": median([v for _, v in values]) if comparable else None,
             "rank": better + 1 if enough and territory_id in members and focal_value is not None else None,
             "rank_size": len(values) if enough and territory_id in members and focal_value is not None else None,
             "rank_ties": ties if enough and territory_id in members and focal_value is not None else None,
@@ -663,6 +669,9 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
                 raise HTTPException(503, "Published scalar profile comparison is incomplete")
             point = profile.get("comparison_point") or {}
             scalar_descriptor = next((r for r in scalar_descriptors if r[0] == profile["comparison_scalar"]), None)
+            # #917: the linked scalar's singleton median is served for the profile
+            # too; the profile's own rank fields still require two comparable values.
+            comparable = published["eligible_count"] >= 1
             enough = published["eligible_count"] >= 2
             profile_result_fields = {field: value for field, value in published.items()
                 if field != "missing_count"}
@@ -674,8 +683,8 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
                 "required_scalar_version": profile.get("required_scalar_version"),
                 "source_facet_label": scalar_descriptor[1] if scalar_descriptor else None,
                 "denominator_semantics": profile.get("denominator_semantics"), "focal_in_selection": territory_id in members,
-                **profile_result_fields, "status": "available" if enough else "unavailable",
-                "reason": None if enough else "fewer_than_two_comparable_values"}
+                **profile_result_fields, "status": "available" if comparable else "unavailable",
+                "reason": None if comparable else "fewer_than_two_comparable_values"}
             requested_profile_fields=None if selected_fields is None else set(selected_fields)
             for field in ("median","focal_value","rank","rank_size","rank_ties",
                           "eligible_count","missing_count","selected_member_count"):
@@ -684,7 +693,7 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
                 if field in published and (requested_profile_fields is None or field in requested_profile_fields):
                     profile_result[field]=(published[field] if field in ("eligible_count","missing_count","selected_member_count")
                                            or field not in {"median","rank","rank_size","rank_ties","focal_value"}
-                                           else published[field] if enough else None)
+                                           else published[field] if (comparable if field == "median" else enough) else None)
             if selected_fields is not None:
                 profile_result=_project_comparison_result_fields(profile_result,selected_fields)
             output.append(profile_result)
