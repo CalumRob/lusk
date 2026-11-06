@@ -10,8 +10,8 @@ export interface AedarComparisonCell extends Omit<Pick<AedarFact, 'typequ' | 'so
   measure: string
   group_value: number | null
   group_coverage_status: string | null
-  group_n_addresses: number
-  group_n_observed: number
+  group_n_addresses: number | null
+  group_n_observed: number | null
   statistic: 'direct' | 'pooled'
   rank?: number | null
   rank_size?: number | null
@@ -127,9 +127,13 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
             || row.comparison_context !== (options.intent.kind === 'selected_comparison' ? 'selected_comparison' : options.intent.context)
             || (row.statistic !== 'direct' && row.statistic !== 'pooled') || (selected && row.statistic !== 'pooled')
             || !(row.group_value === null || finite(row.group_value))
-            || !Number.isInteger(row.group_n_addresses) || (row.group_n_addresses as number) <= 0
-            || !Number.isInteger(row.group_n_observed) || (row.group_n_observed as number) < 0
-            || (row.group_n_observed as number) > (row.group_n_addresses as number)
+             || (aggregate
+               ? !((row.group_n_addresses === null || (Number.isInteger(row.group_n_addresses) && (row.group_n_addresses as number) >= 0))
+                 && (row.group_n_observed === null || (Number.isInteger(row.group_n_observed) && (row.group_n_observed as number) >= 0))
+                 && (row.group_value === null || (Number.isInteger(row.group_n_addresses) && (row.group_n_addresses as number) > 0)))
+               : !Number.isInteger(row.group_n_addresses) || (row.group_n_addresses as number) <= 0
+                 || !Number.isInteger(row.group_n_observed) || (row.group_n_observed as number) < 0
+                 || (row.group_n_observed as number) > (row.group_n_addresses as number))
             || !(row.group_coverage_status === null || typeof row.group_coverage_status === 'string')
             || !nonempty(row.source_id) || !nonempty(row.vintage_id)
             || !(row.reference_date === null || typeof row.reference_date === 'string')

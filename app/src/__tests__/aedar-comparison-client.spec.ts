@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
 import captured from './fixtures/aedar-selected-comparison-captured.json'
+const aggregateMeasures = ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) => [5, 10, 15, 20]
+  .flatMap((horizon) => ['Diversity', 'Volume'].map((kind) => mode === 'car' && horizon === 15
+    ? kind === 'Diversity' ? 'meanDiversity' : 'meanVolume' : `${mode}${horizon}${kind}`)))
 
 // Bridge of #904's guarded HTTP fixture: 10, 30 and 10 addresses,
 // published means 5, 8 and 8; the API serves 7.4 and focal rank 3/3.
@@ -35,9 +38,7 @@ describe('lecture AEDAR de la Sélection', () => {
     const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
       ({ ok: false, json: async () => ({ detail: 'fixture stop' }) }) as Response)
     vi.stubGlobal('fetch', fetcher)
-    const measures = ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) => [5, 10, 15, 20]
-      .flatMap((horizon) => ['Diversity', 'Volume'].map((kind) => mode === 'car' && horizon === 15
-        ? kind === 'Diversity' ? 'meanDiversity' : 'meanVolume' : `${mode}${horizon}${kind}`)))
+    const measures = aggregateMeasures
     const result = await fetchAedarComparison('commune', '22001', { ...options,
       intent: { kind: 'fixed_comparison', context: 'density_class' }, label: 'Classe de densité', typequ: [], measures })
     expect(result.status).toBe('error')
@@ -46,6 +47,91 @@ describe('lecture AEDAR de la Sélection', () => {
     expect(items).toHaveLength(40)
     expect(items.every((item: { coordinates: Record<string, unknown> }) => !('typequ' in item.coordinates))).toBe(true)
     expect(items.map((item: { coordinates: { measure: string[] } }) => item.coordinates.measure[0])).toEqual(measures)
+  })
+  it('valide le groupe agrégé fixed avec sommes observées dépassant les adresses et 40 valeurs distinctes', async () => {
+    const measures = aggregateMeasures
+    const request = { ...options, intent: { kind: 'fixed_comparison' as const, context: 'density_class' as const },
+      label: 'Classe', typequ: [], measures }
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const { items } = JSON.parse(String(init?.body))
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results: items.map((item: any) => {
+        const measure = item.coordinates.measure[0]
+        const index = measures.indexOf(measure)
+        return { id: item.id, data: { resource: item.resource, target: item.target,
+          content_version: 'comparison-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1',
+          comparison: { ...cell, typequ: null, measure, comparison_context: 'density_class',
+            group_value: index + 0.25, group_n_addresses: 40, group_n_observed: 67,
+            rank: 2, rank_size: 3, rank_ties: 1, direction: undefined } } }
+      }) }) } as Response
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const result = await fetchAedarComparison('commune', 'sel-c1', request)
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('Expected a ready aggregate response')
+    expect(result.evidence.cells).toHaveLength(40)
+    for (const [index, measure] of measures.entries()) {
+      expect(result.evidence.cells.find((candidate) => candidate.measure === measure)).toMatchObject({
+        typequ: null, measure, group_value: index + 0.25, group_n_addresses: 40, group_n_observed: 67,
+        rank: 2, rank_size: 3, rank_ties: 1,
+      })
+    }
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body)).items).toHaveLength(40)
+  })
+  it('valide un lot agrégé selected de 40 mesures, direction high et indisponibilité par mesure', async () => {
+    const measures = aggregateMeasures
+    const request = { ...options, typequ: [], measures }
+    let allIneligible = false
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const { items } = JSON.parse(String(init?.body))
+      const item = items[0]
+      const comparisons = measures.map((measure, index) => {
+        const unavailable = allIneligible || index === 1
+        return { ...cell, typequ: null, measure, direction: 'high',
+          group_value: unavailable ? null : 12 + index, group_n_addresses: unavailable ? 0 : 40,
+          group_n_observed: unavailable ? 0 : 67, group_coverage_status: unavailable ? null : 'covered',
+          rank: unavailable ? null : 2, rank_size: unavailable ? null : 3, rank_ties: unavailable ? null : 1 }
+      })
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
+        resource: item.resource, target: item.target, content_version: 'comparison-v1', aedar_content_version: 'facts-v1',
+        reference_content_version: 'reference-v1', selection: members,
+        scope: { kind: 'explicit_selection', member_count: members.length }, comparisons,
+      } }] }) } as Response
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const result = await fetchAedarComparison('commune', 'sel-c1', request)
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('Expected a ready aggregate response')
+    expect(result.evidence.cells).toHaveLength(40)
+    expect(result.evidence.cells.find((candidate) => candidate.measure === measures[0])).toMatchObject({
+      group_value: 12, group_n_addresses: 40, group_n_observed: 67, direction: 'high', rank: 2, rank_size: 3,
+    })
+    expect(result.evidence.cells.find((candidate) => candidate.measure === measures[1])).toMatchObject({
+      group_value: null, group_n_addresses: 0, group_n_observed: 0, direction: 'high', rank: null,
+    })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body)).items).toHaveLength(1)
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body)).items[0].coordinates.measure).toHaveLength(40)
+    allIneligible = true
+    const empty = await fetchAedarComparison('commune', 'sel-c1', { ...request, label: 'Moyenne sans membre admissible' })
+    expect(empty.status).toBe('ready')
+    if (empty.status !== 'ready') throw new Error('Expected an unavailable aggregate response')
+    expect(empty.evidence.cells).toHaveLength(40)
+    expect(empty.evidence.cells[0]).toMatchObject({ group_value: null, group_n_addresses: 0,
+      group_n_observed: 0, rank: null, rank_size: null, rank_ties: null })
+  })
+  it('accepte un agrégat fixe indisponible aux adresses incompatibles mais refuse le dépassement per-TYPEQU', async () => {
+    const fixedData = { ...envelope, selection: undefined, scope: undefined, comparisons: undefined,
+      comparison: { ...cell, typequ: null, measure: 'meanDiversity', comparison_context: 'density_class',
+        group_value: null, group_n_addresses: null, group_n_observed: null, group_coverage_status: null,
+        rank: null, rank_size: null, rank_ties: null, direction: undefined } }
+    mockResponse(fixedData)
+    expect(await fetchAedarComparison('commune', 'sel-c1', { ...options,
+      intent: { kind: 'fixed_comparison', context: 'density_class' }, typequ: [], measures: ['meanDiversity'] }))
+      .toMatchObject({ status: 'ready', evidence: { cells: [expect.objectContaining({ group_value: null, group_n_addresses: null, group_n_observed: null })] } })
+
+    mockResponse({ ...envelope, comparisons: [{ ...cell, group_n_observed: 51 }] })
+    expect(await fetchAedarComparison('commune', 'sel-c1', options)).toMatchObject({ status: 'error' })
   })
   it('admet la réponse capturée du lecteur API #904, scalaire et courbe sur le même instantané', async () => {
     // Captured with python -B from _aedar_selected_comparison_snapshot using
