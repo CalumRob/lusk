@@ -226,8 +226,9 @@ Searches the retained published territory reference with bounded query inputs.
   alike — plus the opt-in direction-aware focal `rank`/`rank_size`/`rank_ties`
   within the selection (ties share rank; the focal must be a member to receive a
   rank). Unknown or partial members fail closed naming the failed member.
-  The registry-wide aggregate readings (`meanDiversity`, `meanVolume` — the sums
-  of the 15-minute car share/mean over the complete published TYPEQU registry,
+  The 40 registry-wide aggregate readings (five displayed modes × four horizons
+  × diversity/share and volume/mean; car/15-minute retains `meanDiversity` and
+  `meanVolume`),
   requested via the `measure` coordinate without `typequ`) are computed the same
   way per request from published per-type rows, never published, and gain the
   opt-in rank fields in BOTH intents (#914, ADR-0039's 2026-11-04 amendment):
