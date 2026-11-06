@@ -109,8 +109,9 @@ describe('OngletTheme — the two app-owned subgroups (3 indicateurs)', () => {
     const wrapper = await monter('22001', histoiresEconomieFixture, indicateurs)
 
     const effectifs = wrapper.find('.figure-indicateur[data-clef="effectifs_salaries"]')
-    // effectifs_salaries : plus = mieux → glyphe ▲ (issue #371)
-    expect(effectifs.find('.puce-rang').text()).toBe("▲ 29e/38 · communes de l'EPCI X")
+    // effectifs_salaries : conserver le rang et la portée sans glyphe visible.
+    expect(effectifs.find('.puce-rang').text()).toBe("29e/38 · communes de l'EPCI X")
+    expect(effectifs.find('.puce-rang').text()).not.toMatch(/[▲▼↑↓]/)
   })
 })
 

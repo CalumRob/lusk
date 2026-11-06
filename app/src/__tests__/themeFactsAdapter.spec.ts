@@ -1102,7 +1102,9 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
         clef: 'prix_m2', theme: 'habitat', libelle: 'Prix médian au mètre carré', lignes: ranked,
       } })
       const chip = figure.find('.puce-rang')
-      expect(figure.find('.puce-rang-glyphe').text().trim()).toBe('▼')
+      expect(figure.find('.puce-rang-glyphe').exists()).toBe(false)
+      expect(chip.text()).toContain('1er/2 · Classe publiée')
+      expect(chip.text()).not.toMatch(/[▲▼↑↓]/)
       expect(chip.attributes('aria-label')).toBe('1er/2 · Classe publiée — moins = mieux')
     } finally {
       method.direction = publishedDirection

@@ -51,6 +51,7 @@ function comparisonAccessibleName(): string {
       <CahierRank
         v-if="fact && !namedReference"
         :fact="fact"
+        placement="comparison"
         decorative
       />
     </component>
@@ -78,10 +79,6 @@ function comparisonAccessibleName(): string {
   max-width: 100%;
   white-space: normal;
   overflow-wrap: break-word;
-}
-
-.cahier-comparison-value__reference :deep(.cahier-rank) {
-  margin-inline-start: 0.5em;
 }
 
 .cahier-comparison-value .region-emphasis {

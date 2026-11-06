@@ -23,7 +23,6 @@ defineProps<{
 
 <template>
   <span class="puce-rang" :role="decorative ? undefined : 'img'" :aria-label="decorative ? undefined : puce.phrase" :aria-hidden="decorative ? 'true' : undefined" :title="decorative ? undefined : puce.phrase">
-    <span class="puce-rang-glyphe" aria-hidden="true">{{ puce.glyphe + ' ' }}</span>
     <span class="puce-rang-texte">{{ puce.rang }}</span>
   </span>
 </template>
@@ -43,11 +42,6 @@ defineProps<{
 }
 
 /* Le glyphe de direction — purement visuel, l'aria-label porte la phrase. */
-.puce-rang-glyphe {
-  margin-right: 0.3em;
-  font-weight: 700;
-}
-
 .puce-rang-texte {
   white-space: normal;
 }

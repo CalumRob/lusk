@@ -57,7 +57,7 @@ function rankStyle(seed: string): Record<string, string> {
       :title="rankDescription(props.fact) ?? undefined"
       :aria-label="props.decorative ? undefined : rankDescription(props.fact) ?? undefined"
       :aria-hidden="props.decorative ? 'true' : undefined"
-    ><span aria-hidden="true">{{ comparisonRank(props.fact)?.glyphe }} </span>{{ rankText(props.fact) }}</RouterLink>
+    >{{ rankText(props.fact) }}</RouterLink>
     <span
       v-else
       class="cahier-rank rank-emphasis"
@@ -67,13 +67,13 @@ function rankStyle(seed: string): Record<string, string> {
       role="img"
       :aria-label="props.decorative ? undefined : rankDescription(props.fact) ?? undefined"
       :aria-hidden="props.decorative ? 'true' : undefined"
-    ><span aria-hidden="true">{{ comparisonRank(props.fact)?.glyphe }} </span>{{ rankText(props.fact) }}</span>
+    >{{ rankText(props.fact) }}</span>
   </template>
 </template>
 
 <style scoped>
 .cahier-rank {
-  color: var(--color-figure-reference);
+  color: var(--brand-200);
   font: var(--type-figure-comparison);
   font-weight: 700;
   line-height: 1.2;
@@ -86,7 +86,7 @@ function rankStyle(seed: string): Record<string, string> {
   width: 100%;
 }
 
-.cahier-rank--comparison { text-align: right; }
+.cahier-rank--comparison { text-align: center; }
 .cahier-rank--access { text-align: center; }
 
 .cahier-rank.is-extreme {

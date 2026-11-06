@@ -76,7 +76,7 @@ describe('IndicatorFigure — the single-value figure', () => {
     expect(wrapper.find('.puce-rang').exists()).toBe(false)
   })
 
-  it('renders the rank-in-context chip from the API comparison, with its direction glyph and accessible phrase (#892)', () => {
+  it('renders the API rank without a visible direction glyph and keeps its accessible phrase (#892)', () => {
     const avecApi = {
       ...ligne('densite'),
       comparaisonApi: { rang: 1, taille: 2, portee: "communes de l'EPCI X" },
@@ -84,15 +84,14 @@ describe('IndicatorFigure — the single-value figure', () => {
     const wrapper = monter({ clef: 'densite', lignes: [avecApi] })
 
     const puce = wrapper.find('.puce-rang')
-    // le glyphe ▲ (plus = mieux) accompagne le rang, jamais sans texte accessible
-    expect(puce.text()).toBe("▲ 1er/2 · communes de l'EPCI X")
+    expect(puce.text()).toBe("1er/2 · communes de l'EPCI X")
+    expect(puce.text()).not.toMatch(/[▲▼↑↓]/)
     // le nom accessible fiable : role="img" + aria-label portent la phrase
-    // complète (un span générique nu avec aria-label ne le porterait pas) ;
-    // le glyphe est purement décoratif (aria-hidden).
+    // complète (un span générique nu avec aria-label ne le porterait pas).
     expect(puce.attributes('role')).toBe('img')
     expect(puce.attributes('title')).toBe("1er/2 · communes de l'EPCI X — plus = mieux")
     expect(puce.attributes('aria-label')).toBe("1er/2 · communes de l'EPCI X — plus = mieux")
-    expect(puce.find('.puce-rang-glyphe').attributes('aria-hidden')).toBe('true')
+    expect(puce.find('.puce-rang-glyphe').exists()).toBe(false)
   })
 
   it('renders no chip when every rank is null (the région ranks nowhere)', () => {
