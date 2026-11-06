@@ -243,7 +243,7 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
   }, identities: {}, nativeContracts: {} }
 }
 
-/** Producer-discovered, one bounded cohort read per at most 12 resources. */
+/** Producer-discovered cohort reads are budgeted by the API, not client chunks. */
 export async function acquireMapThemeFacts(theme: Theme, level: TerritoireType,
   territories: readonly Territoire[], layerIndicatorIds: readonly string[],
   readingParams: readonly { storyKey: string; params: string[] }[] = [],
@@ -259,8 +259,8 @@ export async function acquireMapThemeFacts(theme: Theme, level: TerritoireType,
   onDiscovered?.(candidates)
   const output: MapSemanticFacts = { facts: [], stories: [], memberships: [], grants: [], declarations: [], axes: {},
     identity: { contentVersion: '', referenceContentVersion: '' }, identities: {}, nativeContracts: {} }
-  for (let start = 0; start < candidates.length; start += 12) {
-    const declarations = candidates.slice(start, start + 12)
+  {
+    const declarations = candidates
     const items: SemanticReadItem[] = declarations.map((resource) => ({ resource: resource.resource_id,
       // The standalone map reads the full all-Bretagne cohort: the filters are
       // declared explicitly null, mirroring the page-side scalar cohort reads
