@@ -19,6 +19,7 @@ import {
   indicateursDemographieFixture,
   indicateursHabitatFixture,
   membresProgrammesFixture,
+  metadonneesThemesFixtures,
   subventionsProgrammesFixture,
   territoiresFixture,
   vintagesFixture,
@@ -30,6 +31,8 @@ import { THEMES_CANONIQUES } from '../payload/types'
 import type { Histoire, HistoireDemographie, Indicateur, MembreProgramme, Payload, SubventionProgramme } from '../payload/types'
 import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
+import { THEME_METADATA_CHARGER_KEY } from '../payload/themeCatalogue'
+import type { ChargerMetadonneesTheme } from '../payload/themeCatalogue'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { NATIVE_API_FIXTURE_NOTICE } from './fixtures/nativeApiScenarios'
@@ -161,17 +164,19 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
     const shapes = resourceShapes[theme] ?? {}
     return Object.entries(shapes).map(([id, spec]) => {
       const page = metadata.indicator_pages?.[id]
+      const native = nativeResources(theme).find((resource) => resource.resource_id === id)
       const allowed = spec.levels ?? page?.levels ?? ['commune', 'epci', 'departement']
       const facts = p.indicateurs.filter((row) => row.key === id && row.theme === theme)
       const details = [...new Set(facts.map((row) => row.detail).filter((value): value is string => Boolean(value)))]
       const sexes = [...new Set(facts.map((row) => row.sex).filter(Boolean))] as string[]
-      const axes = spec.shape === 'declared_profile' ? ['detail', ...(sexes.length ? ['sex'] : [])] :
+      const axes = spec.shape === 'typed_reading' ? native?.axes ?? ['groupe'] :
+        spec.shape === 'declared_profile' ? ['detail', ...(sexes.length ? ['sex'] : [])] :
         spec.shape === 'ordered_series' ? ['year'] : spec.shape === 'anchored_membership' ? ['membership'] :
-          spec.shape === 'typed_reading' ? ['groupe'] : []
+          []
       const axisValues = spec.shape === 'declared_profile'
         ? [['detail', details], ...(sexes.length ? [['sex', sexes]] : [])]
         : spec.shape === 'anchored_membership' ? [['detail', ['ACV', 'PVD', 'CRTE', "Territoires d'industrie", 'ORT']]]
-          : spec.shape === 'typed_reading' ? [['groupe', metadata.subgroups.filter((g: any) => g.reading).map((g: any) => g.reading.story_key)]] : []
+          : spec.shape === 'typed_reading' ? native?.axis_values ?? [] : []
       const source = page?.sources?.[0] ?? spec.source
       return { resource_id: id, theme_id: theme, indicator_id: id, label: metadata.indicator_labels?.[id] ?? id,
         ...nativeMapCapabilities(theme, id),
@@ -179,7 +184,7 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
         direction: page?.comparison?.direction ?? page?.direction ?? 'high', allowed_levels: allowed, sources: [source],
         shapes: [spec.shape], axes, axis_values: axisValues, target_kinds: ['territory', 'territory_cohort'],
         fields: spec.shape === 'anchored_membership' ? ['detail', 'label', 'rider', 'anchor_count', 'availability']
-          : spec.shape === 'typed_reading' ? metadata.semantic_resources?.find((r: any) => r.resource_id === id)?.fields ?? []
+          : spec.shape === 'typed_reading' ? native?.fields ?? []
             : spec.shape === 'scalar' ? ['value'] : spec.shape === 'declared_profile' ? ['value'] : ['value'],
         intents: ['facts', ...(spec.shape === 'scalar' ? ['fixed_comparison', 'selected_comparison'] : [])] }
     })
@@ -258,8 +263,12 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
                 sources: [source(row)] } }) }
         } else if (resource.shapes[0] === 'declared_profile') {
           const rows = p.indicateurs.filter((row) => row.key === item.resource && row.type === type)
-          const details = resource.axis_values.find((axis: any[]) => axis[0] === 'detail')?.[1] ?? []
-          const sexes = resource.axis_values.find((axis: any[]) => axis[0] === 'sex')?.[1] ?? [null]
+          const axisValues = (name: string): string[] => {
+            const values: unknown = resource.axis_values.find((axis: any[]) => axis[0] === name)?.[1]
+            return Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string') : []
+          }
+          const details = axisValues('detail')
+          const sexes = axisValues('sex')
           data = { ...identity, descriptor: { indicator: item.resource, label: resource.label, unit: resource.unit,
             allowed_levels: resource.allowed_levels, completeness: 'sparse', descriptor_version: 'map-profile-v1',
             comparison_scalar: null, required_scalar_version: null, denominator_semantics: 'fixture',
@@ -439,6 +448,7 @@ function chargerPayloadAvec(p: Payload): ChargerFichier {
 async function monter(overrides: {
   chargerPayload?: ChargerFichier
   chargerGeometrie?: ChargerGeometrie
+  chargerMetadata?: ChargerMetadonneesTheme
   chemin?: string
   apiFetch?: boolean
   apiPayload?: Payload
@@ -461,6 +471,7 @@ async function monter(overrides: {
       provide: {
         [PAYLOAD_CHARGER_KEY]: chargerPayload,
         [GEOMETRIE_CHARGER_KEY]: overrides.chargerGeometrie ?? (async () => masquesCommunes),
+        ...(overrides.chargerMetadata ? { [THEME_METADATA_CHARGER_KEY]: overrides.chargerMetadata } : {}),
       },
     },
   })
@@ -588,6 +599,38 @@ describe('CarteView — la carte avec fond publié', () => {
     expect(apiCalls).toBe(2)
     expect(joined().features.find((f) => f.properties.territoire === '22001')?.properties.valeur).toBe(9876)
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
+    wrapper.unmount()
+  })
+
+  it('keeps native map facts and layers when selected label metadata is unavailable', async () => {
+    const chargerMetadata = vi.fn(async () => { throw new Error('catalogue unavailable') })
+    const { wrapper } = await monter({ chemin: '/carte?theme=demographie', chargerMetadata })
+
+    expect(chargerMetadata).toHaveBeenCalledWith('demographie')
+    expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
+    const layers = wrapper.findAll('.carte-sidebar-couche')
+    expect(layers.length).toBeGreaterThan(0)
+    expect(layers.map((layer) => layer.text())).toContain('Densité de population')
+    expect(layers.map((layer) => layer.text())).toContain('Fait disponible')
+    const map = maplibreMock.instancesCarteMaple.at(-1)
+    const joined = map?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as
+      { features: { properties: { territoire: string; valeur: number | null } }[] }
+    expect(joined.features.find((item) => item.properties.territoire === '22001')?.properties.valeur).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('does not let stale catalogue policy or labels override native layer admission', async () => {
+    const stale = structuredClone(metadonneesThemesFixtures.demographie)
+    stale.indicator_keys = ['taille_menages']
+    stale.map_layers = { densite: false, structure_age: false }
+    stale.indicator_labels.densite = 'Ancien label de densité'
+    const chargerMetadata = vi.fn(async () => stale)
+    const { wrapper } = await monter({ chemin: '/carte?theme=demographie', chargerMetadata })
+
+    const layers = wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text())
+    expect(layers).toContain('Densité de population')
+    expect(layers).not.toContain('Ancien label de densité')
+    expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -1153,11 +1196,10 @@ describe('CarteView — #901 : onglets + admission ?theme= depuis le REGISTRE TH
 
     expect(wrapper.findAll('[role="tab"]').map((o) => o.text().trim())).toEqual(ONGLETS_REGISTRE)
     expect(fichiersNumeriques(demandes)).toEqual([])
-    // Le démarrage reste demand-driven et étroit : wait-set + les 6 métadonnées.
+    // Bootstrap stays narrow: the wait-set only; a selected catalogue is not an eager payload read.
     expect(new Set(demandes)).toEqual(new Set([
       'territoires',
       'run-report',
-      ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as const),
     ]))
   })
 
@@ -1394,8 +1436,9 @@ describe('CarteView — #901 : magasin partagé CHAUD (aucun chargeur injecté �
 
     // Phase 1 — the real card reuses the warmed shared metadata store.
     const { router, wrapper } = await monterSurMagasinChaud()
-    // No retained-data reads are needed after the shared store is warm.
-    expect(demandesData.slice(marqueur).filter((u) => u.startsWith('/data/'))).toEqual([])
+    // Only the selected catalogue is read for typed-field labels; no other theme is warmed here.
+    expect(demandesData.slice(marqueur).filter((u) => u.startsWith('/data/')))
+      .toEqual(['/data/theme_demographie.json'])
     // 6 onglets du registre, URL canonique conservée.
     expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
     expect(router.currentRoute.value.query.theme).toBe('demographie')
@@ -1416,7 +1459,8 @@ describe('CarteView — #901 : magasin partagé CHAUD (aucun chargeur injecté �
     await wrapper2.findAll('.carte-sidebar-couche').find((b) => b.text().includes('Densité'))!.trigger('click')
     await flushPromises()
     expect(valeur22001()).toBeNull()
-    expect(demandesData.slice(marqueur2).filter((u) => u.startsWith('/data/'))).toEqual([])
+    expect(demandesData.slice(marqueur2).filter((u) => u.startsWith('/data/')))
+      .toEqual(['/data/theme_demographie.json'])
 
     // Retry restores the same synthetic API value without reading numeric files.
     apiEnEchec = false
@@ -1426,7 +1470,8 @@ describe('CarteView — #901 : magasin partagé CHAUD (aucun chargeur injecté �
     await wrapper2.findAll('.carte-sidebar-couche').find((b) => b.text().includes('Densité'))!.trigger('click')
     await flushPromises()
     expect(valeur22001()).toBe(73)
-    expect(demandesData.slice(marqueur2).filter((u) => u.startsWith('/data/'))).toEqual([])
+    expect(demandesData.slice(marqueur2).filter((u) => u.startsWith('/data/')))
+      .toEqual(['/data/theme_demographie.json'])
 
     wrapper2.unmount()
     harness.unmount()

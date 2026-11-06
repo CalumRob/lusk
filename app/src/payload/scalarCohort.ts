@@ -444,7 +444,7 @@ function sameFilters(actual: unknown, expected: string | null): boolean {
 }
 
 function adapterCohorteScalaire(data: Row, declaration: SemanticResourceDeclaration | undefined,
-  indicator: string, theme: Theme, page: IndicatorPageMetadata, level: TerritoireType,
+  indicator: string, theme: Theme, page: IndicatorPageMetadata | undefined, level: TerritoireType,
   territories: Territoire[], scope: { department?: string; epci?: string }, identity?: ScalarIdentity,
   countsAvailable = true, nativePageDescriptor = false,
   onNativeContract?: (contract: NativeThemeFactContract) => void): Indicateur[] {
@@ -464,9 +464,9 @@ function adapterCohorteScalaire(data: Row, declaration: SemanticResourceDeclarat
       !isNonEmptyText(data.content_version) || !isNonEmptyText(data.reference_content_version) ||
        data.reference_content_version !== cohort.reference_content_version || !isRecord(descriptor) ||
        descriptor.indicator_id !== indicator || descriptor.theme_id !== theme || !isNonEmptyText(descriptor.label) ||
-        descriptor.unit !== (nativePageDescriptor ? resource.unit : page.unit) ||
-        descriptor.direction !== (nativePageDescriptor ? resource.direction : (page.comparison?.direction ?? page.direction)) ||
-        descriptor.comparison_facet !== (nativePageDescriptor ? indicator : (page.comparison?.indicator ?? indicator)) ||
+        descriptor.unit !== (nativePageDescriptor ? resource.unit : page?.unit) ||
+        descriptor.direction !== (nativePageDescriptor ? resource.direction : (page?.comparison?.direction ?? page?.direction)) ||
+        descriptor.comparison_facet !== (nativePageDescriptor ? indicator : (page?.comparison?.indicator ?? indicator)) ||
         (nativePageDescriptor && !['high', 'low'].includes(String(descriptor.direction))) ||
        !Array.isArray(descriptor.allowed_levels) || !descriptor.allowed_levels.includes(level) ||
        !['sparse', 'dense_complete'].includes(String(descriptor.completeness)) ||
@@ -581,7 +581,7 @@ export function adapterCohorteScalairePourCarte(input: {
   declaration: SemanticResourceDeclaration
   indicator: string
   theme: Theme
-  page: IndicatorPageMetadata
+  page?: IndicatorPageMetadata
   level: TerritoireType
   territories: Territoire[]
 }): { facts: Indicateur[]; identity: ScalarIdentity; nativeContract: NativeThemeFactContract } {

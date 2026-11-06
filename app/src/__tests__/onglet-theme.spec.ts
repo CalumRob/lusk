@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 
 import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
+import FigureCompacte from '../components/fiche/FigureCompacte.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
   histoiresDemographieFixture,
@@ -16,6 +17,7 @@ import {
   indicateursMilieuxFixture,
   indicateursMobiliteFixture,
   indicateursProgrammesFixture,
+  metadonneesHabitatAvecPagesFixture,
   metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
@@ -101,6 +103,28 @@ describe('OngletTheme — the shared app-owned subgroup grammar (Démographie)',
     expect(figure.text()).not.toContain('Ancien libellé du catalogue')
     expect(figure.text()).not.toContain('Ancienne étiquette')
     expect(figure.find('[data-etiquette="C"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps native profile rendering ahead of a stale page-family label', async () => {
+    const staleMetadata = metadonneesHabitatAvecPagesFixture(['statut'])
+    if (!staleMetadata.indicator_pages?.statut) throw new Error('Habitat statut page fixture missing')
+    staleMetadata.indicator_pages.statut.family = 'scalar'
+    const indicators = indicateursHabitatFixture.map((row) => row.key === 'statut'
+      ? { ...row, nativeContract: { shapes: ['declared_profile'] } }
+      : row)
+    const wrapper = mount(OngletTheme, {
+      props: {
+        theme: 'habitat', territoire: '22001', metadataStatus: 'ready',
+        payload: { ...payloadDemographie, indicateurs: indicators,
+          histoires: histoiresHabitatFixture, themeMetadata: { habitat: staleMetadata } },
+      },
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    await flushPromises()
+
+    const figure = wrapper.findAllComponents(FigureCompacte).find((item) => item.props('clef') === 'statut')
+    expect(figure?.props('famille')).toBe('composition')
     wrapper.unmount()
   })
 

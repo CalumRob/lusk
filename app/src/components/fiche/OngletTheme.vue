@@ -5,10 +5,9 @@
  * app-owned fiche content and the resolved producer readings — there are no
  * per-theme branches. The app grammar owns subgroup order, headings, editorial
  * framing, indicator order, compact figures and reading copy; two fact-bearing
- * framing clauses retain their producer metadata reader. Producer rows own
- * reading identity and values. Theme metadata remains for the theme label,
- * factual labels and indicator-page contracts used by the fiche and other
- * consumers.
+ * framing clauses retain their verified producer metadata reader. Producer
+ * rows own reading identity and values. Metadata enriches factual labels and
+ * contracts but never supplies stable display structure.
  *
  * The block consumes the payload selectors and the shared subgroup mapper —
  * never raw JSON, never a theme branch.
@@ -61,7 +60,7 @@ const metadataVerified = computed(() => props.metadataStatus === undefined
   ? Boolean(props.payload.themeMetadata?.[props.theme])
   : props.metadataStatus === 'ready')
 // The tab's display name is app-owned content (NOMS_THEMES), never a copy of
-// the producer's theme label; the theme identity and its facts stay payload-owned.
+// the producer's theme label.
 const nomTheme = computed(() => NOMS_THEMES[props.theme])
 
 // Resolve factual labels from the verified catalogue or native descriptor;
@@ -119,15 +118,14 @@ function figuresGrille(groupe: SousGroupeRenduComplet) {
   )
 }
 
-/** Prefer the verified page contract; otherwise use app presentation or native shape. */
+/** App grammar owns declared figure families; native shape handles other resources. */
 function familleFigure(clef: string): FamilleFigure {
-  if (metadataVerified.value) return metadata.value?.indicator_pages?.[clef]?.family ?? 'scalar'
   const ficheFigure = sousGroupesFiche(props.theme).find((groupe) => groupe.figure?.indicator === clef)?.figure
   if (ficheFigure) return ficheFigure.family
   const shapes = nativeContract(clef)?.shapes ?? []
   if (shapes.includes('ordered_series')) return 'trajectory'
   if (shapes.includes('declared_profile')) return 'composition'
-  return 'scalar'
+  return metadataVerified.value ? metadata.value?.indicator_pages?.[clef]?.family ?? 'scalar' : 'scalar'
 }
 
 /** A trajectory's optional comparison series and marker are data-contract fields. */
