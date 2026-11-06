@@ -326,6 +326,8 @@ export interface FigureLegendEntry {
   marker: FigureLegendMarker
   iconKey?: string
   tone?: string
+  /** A supported layer keeps its toggle even when its observations are unavailable. */
+  persistentToggle?: boolean
 }
 
 /** Les tons des lignes de détail partagées par tous les tooltips du Cahier. */

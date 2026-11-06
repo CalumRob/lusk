@@ -86,6 +86,7 @@ let observer: IntersectionObserver | null = null
 const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
 const unit = computed(() => units.value[0] ?? null)
 const aedarAccessSelectedModes = ref<AedarRampMode[]>([...AEDAR_DEFAULT_VISIBLE_RAMP_MODES])
+const aedarAccessComparisonVisible = ref(true)
 function initialAedarEquipmentHorizon(): AedarEquipmentHorizon | null {
   for (const currentUnit of props.content.units) {
     for (const section of currentUnit.sections as readonly ContentSection[]) {
@@ -220,24 +221,29 @@ function aedarEquipmentProfileEvidenceFor(section: ContentSection) {
 }
 
 function aedarAccessModeLegendEntries(evidence: AedarAccessEvidence): readonly FigureLegendEntry[] {
-  const referenceLabel = evidence.ramps.find((ramp) => ramp.referenceLabel)?.referenceLabel
+  const referenceLabel = evidence.comparisonLabel ?? evidence.ramps.find((ramp) => ramp.referenceLabel)?.referenceLabel ?? null
   return [
     ...AEDAR_RAMP_MODES.map((mode) => ({
       key: mode,
       label: AEDAR_RAMP_MODE_LABELS[mode],
       marker: 'line' as const,
     })),
-    ...(referenceLabel ? [{
+    {
       key: 'reference',
       label: 'Groupe comparé',
-      ariaLabel: `Groupe comparé : ${referenceLabel}`,
+      ariaLabel: `Groupe comparé : ${referenceLabel ?? 'Indisponible'}`,
       marker: 'dash' as const,
       tone: 'peer',
-    }] : []),
+      persistentToggle: true,
+    },
   ]
 }
 
 function toggleAedarAccessMode(key: string): void {
+  if (key === 'reference') {
+    aedarAccessComparisonVisible.value = !aedarAccessComparisonVisible.value
+    return
+  }
   aedarAccessSelectedModes.value = toggleAedarRampModeSelection(aedarAccessSelectedModes.value, key as AedarRampMode)
 }
 
@@ -279,6 +285,7 @@ function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureDa
     series,
     provenance: ramp.provenance,
     comparisonLabel: ramp.referenceLabel,
+    comparisonLayerSupported: true,
   }
 }
 function sourceLabel(source: { source: string; version: string }): string {
@@ -461,12 +468,15 @@ onBeforeUnmount(() => {
                         :icon="CarFront"
                         tone="c"
                         color-value
-                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : ''}`"
+                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : scalar.comparisonUnavailableLabel ? ` ${scalar.comparisonAccessibleLabel ?? 'Moyenne du groupe comparé'} indisponible.` : ''}`"
                       >
-                        <template v-if="scalar.reference" #reference>
+                        <template v-if="scalar.reference || scalar.comparisonUnavailableLabel" #reference>
                           <CahierComparisonValue
+                            v-if="scalar.reference"
                             :named-reference="scalar.reference"
                           />
+                          <span v-else class="cahier-figure-comparison">{{ scalar.comparisonUnavailableLabel }}</span>
+                          <span v-if="scalar.rankUnavailableLabel" class="cahier-figure-comparison">{{ scalar.rankUnavailableLabel }}</span>
                         </template>
                       </CahierFigureScalar>
                     </div>
@@ -560,18 +570,18 @@ onBeforeUnmount(() => {
                           :territory-name="aedarAccessEvidenceFor(section)!.territory.name"
                           v-model:selected-modes="aedarAccessSelectedModes"
                           :show-mode-legend="false"
+                          :comparison-visible="aedarAccessComparisonVisible"
                         />
                       </figure>
                     </div>
-                    <!-- #860 — la légende des modes porte déjà la référence
-                         (entrée dash « peer ») : aucune seconde légende. -->
-                    <CahierFigureLegend
+                     <!-- The shared legend controls modes and the comparison curve on both ramps. -->
+                     <CahierFigureLegend
                       class="aedar-access-mode-selector"
                       :entries="aedarAccessModeLegendEntries(aedarAccessEvidenceFor(section)!)"
                       :mark-colors="aedarAccessModeColors"
-                      :selected-keys="aedarAccessSelectedModes"
-                      :toggle-keys="AEDAR_RAMP_MODES"
-                      label="Modes de déplacement pour les deux lectures"
+                       :selected-keys="[...aedarAccessSelectedModes, ...(aedarAccessComparisonVisible ? ['reference'] : [])]"
+                       :toggle-keys="AEDAR_RAMP_MODES"
+                       label="Modes de déplacement et groupe comparé pour les deux rampes"
                       @toggle="toggleAedarAccessMode"
                     />
                   </div>
@@ -606,6 +616,7 @@ onBeforeUnmount(() => {
                       :evidence="aedarEquipmentExplorerEvidenceFor(section)!"
                       v-model:selected-modes="aedarAccessSelectedModes"
                       v-model:selected-horizon="aedarSelectedHorizon"
+                      v-model:comparison-visible="aedarAccessComparisonVisible"
                     />
                   </div>
 

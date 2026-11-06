@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,6 +7,13 @@ import { AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from '@/fiche/content/aedarTimeRa
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
 import type { AedarFact, AedarFetchResult } from '@/fiche/content/aedarApiClient'
 import type { AedarEquipmentExplorerEvidence } from '@/fiche/content/themeContent'
+import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import AccessRampFigureCahier from '@/fiche/prototype/AccessRampFigureCahier.vue'
+import AedarEquipmentQuantileFigureCahier from '@/fiche/prototype/AedarEquipmentQuantileFigureCahier.vue'
+
+vi.mock('@/fiche/content/aedarComparisonClient', async (original) => ({
+  ...await original<typeof import('@/fiche/content/aedarComparisonClient')>(), fetchAedarComparison: vi.fn(),
+}))
 
 vi.mock('@/fiche/content/aedarApiClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/fiche/content/aedarApiClient')>()
@@ -53,7 +60,69 @@ const selectedFact = (wrapper: ReturnType<typeof shallowMount>) =>
   ((wrapper.vm.$ as any).setupState as { selectedFact: AedarFact }).selectedFact
 
 describe('AEDAR selected TYPEQU hydration identity', () => {
-  beforeEach(() => { vi.mocked(fetchAedarAggregates).mockReset() })
+  beforeEach(() => { vi.mocked(fetchAedarAggregates).mockReset(); vi.mocked(fetchAedarComparison).mockReset() })
+
+  it('applique la sélection au volume et aux quantiles du Bac à sable, puis efface le groupe désactivé', async () => {
+    const first = deferred<Awaited<ReturnType<typeof fetchAedarComparison>>>()
+    vi.mocked(fetchAedarAggregates).mockResolvedValue(ready('territory-a', 'same-content', 'same-reference', 2))
+    vi.mocked(fetchAedarComparison).mockReturnValueOnce(first.promise)
+    const base = evidence('territory-a')
+    const request = { intent: { kind: 'selected_comparison' as const,
+      members: ['territory-a', 'territory-b', 'territory-c'].map((territory_id) => ({ territory_type: 'commune' as const, territory_id })) }, label: 'Moyenne de la sélection' }
+    const wrapper = mount(AedarEquipmentExplorerCahier, { props: { evidence: { ...base, comparisonRequest: request }, comparisonVisible: true } })
+    await flushPromises()
+    expect(fetchAedarComparison).toHaveBeenCalledWith('commune', 'territory-a', expect.objectContaining({
+      typequ: ['B207'], intent: request.intent, expectedContentVersion: 'same-content', expectedReferenceContentVersion: 'same-reference',
+      measures: expect.arrayContaining(['count_15_car_mean', 'count_15_car_decile1']),
+    }))
+    const comparisonCell = (measure: string) => ({ ...fact('territory-a'), measure, statistic: 'pooled' as const,
+      group_coverage_status: 'covered', group_n_addresses: 30, group_n_observed: 30,
+      group_value: 7.4, rank: 2, rank_size: 3, rank_ties: 1, direction: 'high' as const })
+    const comparison = { label: request.label, contentVersion: base.contentVersion, referenceContentVersion: base.referenceContentVersion,
+      cells: [comparisonCell('count_15_car_mean'), ...base.distributionStatistics.map((statistic) =>
+        comparisonCell(`count_15_car_${statistic.key}`))] }
+    first.resolve({ status: 'ready', evidence: comparison })
+    await flushPromises()
+    const ramp = wrapper.findComponent(AccessRampFigureCahier).props('timeRamp')
+    expect(ramp!.comparisonLabel).toBe('Moyenne de la sélection')
+    expect(ramp!.series[0]!.points[2]!.referenceValue).toBe(7.4)
+    expect(ramp!.series[0]!.points[2]!.referenceNote).toBe('Rang du territoire : 2e/3, plus est mieux')
+    expect(wrapper.find('.aedar-equipment-comparison').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Groupe comparé : 7,4')
+    const rampCut = wrapper.findAll('.access-ramp-cut-hitbox').find((button) => button.attributes('aria-label')?.includes('15 min'))
+    expect(rampCut).toBeDefined()
+    await rampCut!.trigger('focus')
+    const tooltip = wrapper.get('[role="tooltip"]')
+    expect(tooltip.text()).toContain('Groupe comparé : 7,4')
+    expect(tooltip.text()).toContain('Rang du territoire : 2e/3, plus est mieux')
+    expect(tooltip.get('.cahier-figure-tooltip-row').attributes('aria-label')).toContain('Moyenne de la sélection')
+    expect(tooltip.get('.cahier-figure-tooltip-row').attributes('aria-label')).toContain('Rang du territoire : 2e/3, plus est mieux')
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Rang du territoire : 2e/3, plus est mieux')
+    expect(wrapper.findComponent(AedarEquipmentQuantileFigureCahier).props('comparison')).toEqual(comparison)
+    const comparisonToggle = wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')
+    expect(comparisonToggle).toBeDefined()
+    expect(comparisonToggle!.attributes('aria-pressed')).toBe('true')
+    expect(comparisonToggle!.attributes('aria-label')).toBe('Groupe comparé : Moyenne de la sélection')
+    expect(wrapper.text()).not.toContain('À droite de chaque paire de barres')
+    const groupedBars = wrapper.findAll('.cahier-grouped-vertical-bar-chart__bar').length
+    expect(groupedBars).toBeGreaterThan(1)
+    await comparisonToggle!.trigger('click')
+    expect(wrapper.emitted('update:comparisonVisible')?.at(-1)).toEqual([false])
+    await wrapper.setProps({ comparisonVisible: false })
+    expect(wrapper.find('.access-ramp-line--comparison').exists()).toBe(false)
+    expect(wrapper.findComponent(AedarEquipmentQuantileFigureCahier).props('comparisonVisible')).toBe(false)
+    expect(wrapper.findAll('.cahier-grouped-vertical-bar-chart__bar')).toHaveLength(groupedBars - base.distributionStatistics.length)
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Référence Moyenne de la sélection')
+    expect(wrapper.find('.cahier-grouped-vertical-bar-chart__svg').attributes('aria-label')).toContain('Groupe comparé : Voiture')
+    expect(wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!.attributes('aria-pressed')).toBe('false')
+    await wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!.trigger('click')
+    expect(wrapper.emitted('update:comparisonVisible')?.at(-1)).toEqual([true])
+    await wrapper.setProps({ comparisonVisible: true })
+    expect(wrapper.find('.access-ramp-line--comparison').exists()).toBe(true)
+    await wrapper.setProps({ evidence: base })
+    expect(wrapper.findComponent(AccessRampFigureCahier).props('timeRamp')!.comparisonLabel).toBeNull()
+    wrapper.unmount()
+  })
 
   it('rejects a late same-TYPEQU result from the previous territory even when publication tokens match', async () => {
     const requests: Array<ReturnType<typeof deferred<AedarFetchResult>>> = []
@@ -83,6 +152,24 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
     expect(selectedFact(wrapper).measures.count_15_car_min).toBe(22)
     wrapper.unmount()
   }, 30000)
+
+  it('keeps the sandbox comparison toggle and unavailable values when no comparison read exists', async () => {
+    vi.mocked(fetchAedarAggregates).mockResolvedValue({ status: 'error', error: { code: 'network', message: 'offline' } })
+    const base = evidence('territory-a')
+    const wrapper = mount(AedarEquipmentExplorerCahier, { props: { evidence: base } })
+    await flushPromises()
+    const toggle = wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')
+    expect(toggle).toBeDefined()
+    expect(toggle!.attributes('aria-label')).toBe('Groupe comparé : Indisponible')
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Référence Indisponible')
+    const rampPoint = wrapper.find('[aria-label="Temps d\'accès : 15 min"]')
+    await rampPoint.trigger('click')
+    expect(wrapper.find('[role="tooltip"]').text()).toContain('Groupe comparé : Indisponible')
+    const distribution = wrapper.find('.cahier-grouped-vertical-bar-chart__svg')
+    expect(distribution.attributes('aria-label')).toContain('Groupe comparé : Voiture : Indisponible')
+    expect(wrapper.text()).not.toContain('Groupe comparé indisponible :')
+    wrapper.unmount()
+  })
 
   it('restarts the read when publication identity changes on the same territory', async () => {
     const requests: Array<ReturnType<typeof deferred<AedarFetchResult>>> = []

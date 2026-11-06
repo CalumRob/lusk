@@ -198,6 +198,32 @@ describe('AccessRampFigureCahier time ramp', () => {
     expect(label).toContain('Référence Territoires comparables')
   })
 
+  it('uses the shared legend toggle for the comparison curve without removing its accessible reading', async () => {
+    const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Territoire test' } })
+    const comparisonToggle = wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!
+    expect(comparisonToggle.attributes('aria-pressed')).toBe('true')
+    await comparisonToggle.trigger('click')
+    expect(wrapper.findAll('.access-ramp-line--comparison')).toHaveLength(0)
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Référence Territoires comparables')
+    expect(wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!.attributes('aria-pressed')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('keeps the comparison toggle and honest unavailable layer when its data is missing', async () => {
+    const data = timeRamp({ comparisonLabel: null, comparisonLayerSupported: true,
+      series: timeRamp().series.map((series) => ({ ...series,
+        points: series.points.map((point) => ({ ...point, referenceValue: null })) })) })
+    const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: data, territoryName: 'Territoire test' } })
+    const toggle = wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')
+    expect(toggle).toBeDefined()
+    expect(toggle!.attributes('aria-label')).toBe('Groupe comparé : Indisponible')
+    expect(wrapper.findAll('.access-ramp-line--comparison')).toHaveLength(0)
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Référence Indisponible')
+    await wrapper.find('[aria-label="Temps d\'accès : 15 min"]').trigger('click')
+    expect(wrapper.find('[role="tooltip"]').text()).toContain('Groupe comparé : Indisponible')
+    wrapper.unmount()
+  })
+
   it('renders modes only, without reference lines, when no comparison label exists', () => {
     const wrapper = mount(AccessRampFigureCahier, {
       props: { timeRamp: timeRamp({ comparisonLabel: null }), territoryName: 'Territoire test' },

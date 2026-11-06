@@ -26,7 +26,8 @@ const props = withDefaults(defineProps<{
   territoryName: string
   selectedModes?: readonly AedarRampMode[]
   showModeLegend?: boolean
-}>(), { showModeLegend: true })
+  comparisonVisible?: boolean | null
+}>(), { showModeLegend: true, comparisonVisible: null })
 const emit = defineEmits<{ 'update:selectedModes': [modes: readonly AedarRampMode[]] }>()
 
 const WIDTH = 640
@@ -71,9 +72,16 @@ function timeSeriesColor(key: string): string {
 }
 const timePoints = computed(() => props.timeRamp?.series[0]?.points ?? [])
 const selectedTimeModes = ref(new Set<string>(AEDAR_DEFAULT_VISIBLE_RAMP_MODES))
+const localComparisonVisible = ref(true)
 const visibleTimeModes = computed(() => new Set(props.selectedModes ?? [...selectedTimeModes.value]))
+const comparisonVisible = computed(() => props.comparisonVisible ?? localComparisonVisible.value)
+const comparisonLayerSupported = computed(() => props.timeRamp?.comparisonLayerSupported ?? Boolean(props.timeRamp?.comparisonLabel))
 const visibleTimeSeries = computed(() => (props.timeRamp?.series ?? []).filter((series) => visibleTimeModes.value.has(series.key)))
 function toggleTimeMode(key: string): void {
+  if (key === 'reference') {
+    localComparisonVisible.value = !comparisonVisible.value
+    return
+  }
   const selected = new Set(visibleTimeModes.value)
   if (selected.has(key)) selected.delete(key)
   else selected.add(key)
@@ -81,7 +89,7 @@ function toggleTimeMode(key: string): void {
   else selectedTimeModes.value = selected
 }
 const timeYAxis = computed(() => cahierIntegerYAxisScale(visibleTimeSeries.value.flatMap((series) =>
-  series.points.flatMap((point) => [point.value, point.referenceValue]),
+  series.points.flatMap((point) => comparisonVisible.value ? [point.value, point.referenceValue] : [point.value]),
 )))
 const measuredYTickLabels = computed(() => timeYAxis.value.ticks.map((value) =>
   `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}`))
@@ -122,12 +130,13 @@ const timeLegend = computed<readonly FigureLegendEntry[]>(() => [
     label: series.label,
     marker: 'line' as const,
   })),
-  ...(props.timeRamp?.comparisonLabel ? [{
+  ...(comparisonLayerSupported.value ? [{
     key: 'reference',
     label: 'Groupe comparé',
-    ariaLabel: `Groupe comparé : ${props.timeRamp.comparisonLabel}`,
+    ariaLabel: `Groupe comparé : ${props.timeRamp?.comparisonLabel ?? 'Indisponible'}`,
     marker: 'dash' as const,
     tone: 'peer' as const,
+    persistentToggle: true,
   }] : []),
 ])
 const timeLegendMarkColors = computed<Readonly<Record<string, string>>>(() => Object.fromEntries(
@@ -148,11 +157,12 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
       value: point.value === null ? 'Indisponible' : `${formatNumber(point.value)}${unit ? ` ${unit}` : ''}`,
       tone: TIME_MODE_TONES[series.key] ?? 'neutral',
       icon: TIME_MODE_ICONS[series.key],
-      note: timeRamp.comparisonLabel
-        ? `Groupe comparé : ${point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${unit ? ` ${unit}` : ''}`}`
+      note: comparisonLayerSupported.value
+        ? [`Groupe comparé : ${point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${unit ? ` ${unit}` : ''}`}`,
+          point.referenceNote].filter(Boolean).join('. ')
         : undefined,
-      ariaLabel: timeRamp.comparisonLabel
-        ? `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}. Groupe comparé : ${timeRamp.comparisonLabel} : ${point.referenceValue === null ? 'Indisponible' : formatNumber(point.referenceValue)} ${unit}`
+      ariaLabel: comparisonLayerSupported.value
+        ? `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}. Groupe comparé : ${timeRamp.comparisonLabel ?? 'Indisponible'} : ${point.referenceValue === null ? 'Indisponible' : formatNumber(point.referenceValue)} ${unit}${point.referenceNote ? `. ${point.referenceNote}` : ''}`
         : `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)} ${unit}`,
     }]
   })
@@ -163,8 +173,8 @@ const timeAccessibleLabel = computed(() => {
   const seriesText = visibleTimeSeries.value
     .map((series) => `${series.label} : ${series.points.map((point) => `${point.xLabel} ${point.value === null ? 'indisponible' : formatNumber(point.value)}`).join(', ')}`)
     .join(' ; ')
-  const referenceText = props.timeRamp.comparisonLabel
-    ? ` Référence ${props.timeRamp.comparisonLabel} : ${visibleTimeSeries.value.map((series) => `${series.label} ${series.points.map((point) => `${point.xLabel} ${point.referenceValue === null ? 'indisponible' : formatNumber(point.referenceValue)}`).join(', ')}`).join(' ; ')}`
+  const referenceText = comparisonLayerSupported.value
+    ? ` Référence ${props.timeRamp.comparisonLabel ?? 'Indisponible'} : ${visibleTimeSeries.value.map((series) => `${series.label} ${series.points.map((point) => `${point.xLabel} ${point.referenceValue === null ? 'indisponible' : formatNumber(point.referenceValue)}${point.referenceNote ? `, ${point.referenceNote}` : ''}`).join(', ')}`).join(' ; ')}`
     : ''
   return `${props.territoryName}. ${props.timeRamp.yAxis.label ?? ''}${unit ? ` (${unit})` : ''} selon ${props.timeRamp.xAxis.label ?? ''}, par mode de déplacement. ${seriesText}.${referenceText}`
 })
@@ -197,7 +207,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
             <line class="access-ramp-axis" :x1="figureGeometry.margin.left" :x2="figureGeometry.width - figureGeometry.margin.right" :y1="figureGeometry.height - figureGeometry.margin.bottom" :y2="figureGeometry.height - figureGeometry.margin.bottom" />
           </g>
           <g v-for="series in visibleTimeSeries" :key="series.key">
-            <template v-if="timeRamp.comparisonLabel">
+            <template v-if="comparisonLayerSupported && comparisonVisible">
               <path v-for="(path, index) in timePaths(series.points, true)" :key="`ref-${index}`" class="access-ramp-line access-ramp-line--comparison access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :style="{ stroke: timeSeriesColor(series.key) }" :d="path" aria-hidden="true" />
             </template>
             <path v-for="(path, index) in timePaths(series.points)" :key="`value-${index}`" class="access-ramp-line access-ramp-line--territory access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :style="{ stroke: timeSeriesColor(series.key) }" :d="path" aria-hidden="true" />
@@ -210,7 +220,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
         <CahierFigureTooltip v-if="selectedTimeCut" class="access-ramp-tooltip cahier-figure-tooltip--chart" :title="selectedTimeCut.xLabel" :rows="timeTooltipRows" :anchor="timeTooltipAnchor" aria-live="polite" />
       </div>
     </template>
-    <CahierFigureLegend v-if="props.showModeLegend" :entries="timeLegend" :mark-colors="timeLegendMarkColors" :selected-keys="[...visibleTimeModes]" :toggle-keys="timeRamp.series.map((series) => series.key)" label="Modes de déplacement et référence" @toggle="toggleTimeMode" />
+    <CahierFigureLegend v-if="props.showModeLegend" :entries="timeLegend" :mark-colors="timeLegendMarkColors" :selected-keys="[...visibleTimeModes, ...(comparisonVisible && comparisonLayerSupported ? ['reference'] : [])]" :toggle-keys="timeRamp.series.map((series) => series.key)" label="Modes de déplacement et référence" @toggle="toggleTimeMode" />
   </CahierFigureFrame>
 </template>
 

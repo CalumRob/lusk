@@ -7,8 +7,8 @@ import CahierRank from './CahierRank.vue'
 const props = withDefaults(
   defineProps<{
     fact?: NumericFact
-    /** A named territory mean is not a peer-group median or a ranked comparison. */
-    namedReference?: TerritorialScalarReference | null
+    /** A named mean (direct territory or selection); its identity stays in the accessible label. */
+    namedReference?: Pick<TerritorialScalarReference, 'label' | 'value' | 'unit'> | null
     to?: RouteLocationRaw | null
     maximumFractionDigits?: number
   }>(),
@@ -97,7 +97,7 @@ function comparisonAccessibleName(): string {
 }
 
 .cahier-comparison-value .region-emphasis {
-  color: var(--color-figure-reference);
+  color: var(--brand-200);
   font-weight: 700;
 }
 </style>
