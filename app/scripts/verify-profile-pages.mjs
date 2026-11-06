@@ -73,6 +73,7 @@ function descriptorFor(spec) {
 function makeDeclarations(specs) {
   const profiles = specs.map((spec) => ({
     resource_id: spec.indicator, theme_id: spec.theme, indicator_id: spec.indicator,
+    map_eligible: spec.metadata.map_layers?.[spec.indicator] !== false, counts_available: false,
     label: `API label ${spec.indicator}`, unit: spec.page.unit,
     direction: spec.page.comparison?.direction ?? spec.page.direction,
     allowed_levels: spec.page.levels, sources: spec.page.sources,
@@ -83,6 +84,8 @@ function makeDeclarations(specs) {
   }))
   const scalars = specs.filter((spec) => spec.scalar).map((spec) => ({
     resource_id: spec.scalar, theme_id: spec.theme, indicator_id: spec.scalar,
+    map_eligible: spec.metadata.map_layers?.[spec.scalar] !== false,
+    counts_available: spec.metadata.scalar_contracts?.[spec.scalar]?.counts_available ?? false,
     label: `API label ${spec.scalar}`, unit: spec.page.comparison.unit,
     direction: spec.page.comparison.direction, allowed_levels: spec.page.levels,
     sources: spec.page.sources, shapes: ['scalar'], target_kinds: ['territory', 'territory_cohort'],
@@ -460,7 +463,9 @@ try {
   const baseUrl = server.resolvedUrls.local[0]
   const { territoiresFixture } = await server.ssrLoadModule('/src/payload/fixtures.ts')
   const metadataByTheme = Object.fromEntries(await Promise.all(['demographie', 'habitat', 'mobilite'].map(async (theme) => {
-    const text = await readFile(resolve(repoRoot, 'public/data', `theme_${theme}.json`), 'utf8')
+    // Offline API-fixture construction uses the producer contract, not the
+    // reduced browser projection. This does not bundle it into browser code.
+    const text = await readFile(resolve(repoRoot, 'pipeline/inst/extdata/theme-metadata', `theme_${theme}.json`), 'utf8')
     return [theme, JSON.parse(text)]
   })))
   const specs = getSpecs(metadataByTheme)
