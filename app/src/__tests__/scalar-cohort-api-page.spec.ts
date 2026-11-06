@@ -35,6 +35,8 @@ function declaration(theme: string, indicator: string): SemanticResourceDeclarat
     allowed_levels: contract?.allowed_levels ?? page.levels,
     sources: page.sources, shapes: ['scalar'], target_kinds: ['territory', 'territory_cohort'],
     fields: ['value', 'support_count', 'denominator_count'],
+    map_eligible: raw.map_layers?.[indicator] !== false,
+    counts_available: contract?.counts_available ?? false,
     intents: ['facts', 'fixed_comparison', 'selected_comparison'],
   }
 }
@@ -197,9 +199,10 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     expect(identity).toEqual({ contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' })
   })
 
-  it('requests only producer-declared counts and accepts a focal outside the exact page cohort', async () => {
+  it('uses discovery count capability without browser scalar contracts and accepts a focal outside the cohort', async () => {
     const indicator = 'densite'
     const metadata = validerCatalogueNavigateur(themeRaw('demographie'), 'theme_demographie.json')
+    delete metadata.scalar_contracts
     const page = pageFor('demographie', indicator)
     const focal = territoiresFixture.find((territory) => territory.territoire === '29001')!
     const fetcher = installCatalogueAndReads([declaration('demographie', indicator)], (item) => scalarData(
@@ -237,6 +240,37 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     expect(request.items[0]).toMatchObject({ resource: indicator, fields: ['value'],
       target: { kind: 'territory_cohort', type: 'commune', department_id: '22', epci_id: '200000001' },
       intent: { kind: 'facts' } })
+  })
+
+  it.each([
+    ['demographie', 'densite', false],
+    ['habitat', 'part_passoires', true],
+  ] as const)('requests %s/%s counts from discovery, not conflicting browser metadata', async (theme, indicator, available) => {
+    const raw = themeRaw(theme)
+    raw.scalar_contracts[indicator].counts_available = !available
+    const metadata = validerCatalogueNavigateur(raw, `theme_${theme}.json`)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const fetcher = installCatalogueAndReads([declaration(theme, indicator)], (item) => scalarData(theme, indicator, item))
+
+    const result = await chargerCohortePageScalaire(indicator, theme, metadata, focal, 'commune', territoiresFixture,
+      { department: '22', epci: '200000001' })
+    const read = fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')!
+    const request = JSON.parse((read[1] as RequestInit).body as string)
+    expect(request.items[0].fields).toEqual(available ? ['value', 'support_count', 'denominator_count'] : ['value'])
+    expect(result.facts[0]?.support_count).toBe(available ? 41 : undefined)
+  })
+
+  it('fails before reading facts when discovery omits count capability instead of using browser metadata', async () => {
+    const indicator = 'densite'
+    const metadata = validerCatalogueNavigateur(themeRaw('demographie'), 'theme_demographie.json')
+    const missingCapability = declaration('demographie', indicator)
+    delete missingCapability.counts_available
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const fetcher = installCatalogueAndReads([missingCapability], (item) => scalarData('demographie', indicator, item))
+
+    await expect(chargerCohortePageScalaire(indicator, 'demographie', metadata, focal, 'commune', territoiresFixture,
+      { department: '22', epci: '200000001' })).rejects.toMatchObject({ kind: 'validation', file: '/api/resources' })
+    expect(fetcher.mock.calls.some(([url]) => String(url) === '/api/resources/read-batch')).toBe(false)
   })
 
   it('adapts selected peer ranks without changing typed selection or losing focal-outside evidence', async () => {

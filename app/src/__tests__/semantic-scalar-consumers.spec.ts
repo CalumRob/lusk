@@ -70,6 +70,8 @@ function resource(theme: string, indicator: string) {
     fields: ['value', 'support_count', 'denominator_count'],
     intents: ['facts', 'fixed_comparison', 'selected_comparison'],
     resource_kind: 'indicator',
+    map_eligible: file.map_layers?.[indicator] !== false,
+    counts_available: contract.counts_available,
   }
 }
 
@@ -220,6 +222,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
           delete stalePage.family
           stalePage.sources = ['stale_editorial_source']
           presentation.sources.densite = 'stale_editorial_source'
+          presentation.scalar_contracts.densite.counts_available = true
           presentation.source_records.stale_editorial_source = {
             dataset: 'Ancienne source éditoriale', publisher: 'Ancien éditeur',
             url: 'https://example.invalid/stale', licence: 'Licence inconnue', vintage: 'ancien', freshness: 'ancienne horloge',

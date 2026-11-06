@@ -561,7 +561,7 @@ async ([discovered, isProfile, active, currentTheme, currentIndicator, selectedI
       chargementScalaireFocalApi.value = true
       try {
         const focalFact = await chargerFaitFocalPageScalaire(result.declaration, currentIndicator,
-          currentTheme as Theme, metadataScalaireApi.value, focal, payloadLegacy.value.territoires,
+          currentTheme as Theme, focal, payloadLegacy.value.territoires,
           result.identity, result.contract)
         if (sequence === sequenceScalaireApi) {
           faitsScalaireApi.value = focalFact ? [...result.facts, focalFact] : result.facts

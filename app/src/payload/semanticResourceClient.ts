@@ -18,6 +18,10 @@ export interface SemanticResourceDeclaration {
   dynamic_axes?: string[]
   fields: string[]
   intents: string[]
+  /** Producer map policy; null for non-indicator semantic resources. */
+  map_eligible?: boolean | null
+  /** Scalar-facet capability, not the presence of an observed count. */
+  counts_available?: boolean
 }
 
 export interface SemanticTerritoryTarget {
@@ -76,6 +80,9 @@ export async function chargerCatalogueRessources(): Promise<SemanticResourceDecl
         typeof candidate.direction !== 'string' || !strings(candidate.allowed_levels) ||
         !strings(candidate.sources) || !strings(candidate.shapes) || !strings(candidate.target_kinds) ||
         !strings(candidate.fields) || !strings(candidate.intents) ||
+        (candidate.map_eligible !== undefined && candidate.map_eligible !== null &&
+          typeof candidate.map_eligible !== 'boolean') ||
+        (candidate.counts_available !== undefined && typeof candidate.counts_available !== 'boolean') ||
         (candidate.target_ids !== undefined && !strings(candidate.target_ids)) ||
         (candidate.axes !== undefined && !strings(candidate.axes)) ||
         (candidate.dynamic_axes !== undefined && !strings(candidate.dynamic_axes)) ||

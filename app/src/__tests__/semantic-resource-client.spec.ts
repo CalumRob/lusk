@@ -31,12 +31,14 @@ describe('semantic read batches', () => {
         shapes: ['aedar_source_grain'], axes: ['typequ', 'measure', 'context'], axis_values: [],
         target_kinds: ['territory'], target_ids: [], dynamic_axes: [], fields: ['group_value', 'value'],
         intents: ['facts', 'fixed_comparison'], resource_kind: 'aedar_source_grain',
+        map_eligible: null, counts_available: false,
         context_values: ['density_class', 'epci', 'bretagne', 'same_level'], evidence: [] },
       { resource_id: 'densite', theme_id: 'demographie', indicator_id: 'densite', label: 'Densité', unit: 'hab/km²',
         direction: 'high', allowed_levels: ['commune'], sources: ['serie_historique'], shapes: ['scalar'],
         axes: [], axis_values: [], target_kinds: ['territory', 'territory_cohort'], target_ids: [], dynamic_axes: [],
         fields: ['value', 'support_count', 'denominator_count'],
         intents: ['facts', 'fixed_comparison', 'selected_comparison'], resource_kind: 'scalar',
+        map_eligible: true, counts_available: false,
         context_values: [], evidence: [] },
     ] }
     const fetcher = vi.fn(async () => new Response(JSON.stringify(catalogue)))
@@ -44,6 +46,25 @@ describe('semantic read batches', () => {
 
     await expect(chargerCatalogueRessources()).resolves.toEqual(catalogue.resources)
     expect(fetcher).toHaveBeenCalledWith('/api/resources')
+  })
+
+  it.each([
+    ['map_eligible', 'yes'],
+    ['map_eligible', 0],
+    ['counts_available', 'false'],
+    ['counts_available', null],
+  ])('rejects malformed producer capability %s=%s', async (field, value) => {
+    const declaration = {
+      resource_id: 'fixture', theme_id: 'demographie', indicator_id: 'fixture',
+      label: 'Fixture', unit: 'fixture-unit', direction: 'none', allowed_levels: [],
+      sources: [], shapes: ['scalar'], target_kinds: [], fields: [], intents: [],
+      map_eligible: true, counts_available: false, [field]: value,
+    }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      contract: 'semantic-resource-catalogue-v1', resources: [declaration],
+    }))))
+
+    await expect(chargerCatalogueRessources()).rejects.toMatchObject({ kind: 'validation' })
   })
 
   it('pairs repeated resources by unique item identity, regardless of response order', async () => {

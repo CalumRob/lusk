@@ -419,10 +419,10 @@ function itemScalaire(indicator: string, level: TerritoireType,
     intent: { kind: 'facts' } }
 }
 
-function contractCountsAvailable(metadata: ThemeMetadata, indicator: string): boolean {
-  const declaration = isRecord(metadata.scalar_contracts) ? metadata.scalar_contracts[indicator] : undefined
-  if (!isRecord(declaration) || typeof declaration.counts_available !== 'boolean') {
-    throw new PayloadError('validation', 'theme metadata', `La disponibilité des comptes de « ${indicator} » est mal déclarée.`)
+function contractCountsAvailable(declaration: SemanticResourceDeclaration | undefined, indicator: string): boolean {
+  if (!declaration || declaration.resource_id !== indicator || declaration.indicator_id !== indicator ||
+      !declaration.shapes.includes('scalar') || typeof declaration.counts_available !== 'boolean') {
+    throw new PayloadError('validation', '/api/resources', `La disponibilité des comptes de « ${indicator} » est mal déclarée.`)
   }
   return declaration.counts_available
 }
@@ -632,8 +632,8 @@ async function chargerCohortesEtComparaisonsScalaires(
       !declaration.intents.includes(comparisonRead.kind === 'fixed' ? 'fixed_comparison' : 'selected_comparison'))) {
     throw new PayloadError('validation', path, 'La ressource scalaire ne déclare pas cette comparaison territoriale.')
   }
-  const countsByIndicator = new Map(indicators.map((indicator) => [indicator,
-    projectProducerCounts ? contractCountsAvailable(metadata, indicator) : true] as const))
+  const countsByIndicator = new Map(indicators.map((indicator, index) => [indicator,
+    projectProducerCounts ? contractCountsAvailable(pages[index]?.declaration, indicator) : true] as const))
   const items = indicators.flatMap((indicator) => [itemScalaire(indicator, level, scope, countsByIndicator.get(indicator)),
     ...(comparisonRead ? [itemComparaisonScalaire(indicator, focal!, comparisonRead)] : [])])
   const data = await lireRessourcesBatch(items)
@@ -698,12 +698,12 @@ export async function chargerCohortePageScalaire(
 
 /** Read the selected territory separately when it is outside the page's bounded cohort. */
 export async function chargerFaitFocalPageScalaire(
-  declaration: SemanticResourceDeclaration, indicator: string, theme: Theme, metadata: ThemeMetadata,
+  declaration: SemanticResourceDeclaration, indicator: string, theme: Theme,
   focal: Territoire, territories: Territoire[], identity: ScalarCohortsWithComparisons['identity'],
   contract: NativeThemeFactContract,
 ): Promise<Indicateur | null> {
   const path = '/api/resources/read-batch'
-  const countsAvailable = contractCountsAvailable(metadata, indicator)
+  const countsAvailable = contractCountsAvailable(declaration, indicator)
   const fields = countsAvailable ? ['value', 'support_count', 'denominator_count'] : ['value']
   if (declaration.resource_id !== indicator || declaration.indicator_id !== indicator || declaration.theme_id !== theme ||
       declaration.shapes.length !== 1 || declaration.shapes[0] !== 'scalar' ||
