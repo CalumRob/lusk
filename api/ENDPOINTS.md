@@ -33,8 +33,8 @@ editorial source list.
 single-read request and each batch item have the same fields; only a batch item
 adds its correlation `id`. `POST /api/resources/read-batch` validates all items
 before returning results and returns no partial result if any item fails. Both
-execute on one `READ ONLY REPEATABLE READ` snapshot. The batch is limited to 12
-items, 200,000 preflight work units, and 8 MB serialized output. Supported intents
+execute on one `READ ONLY REPEATABLE READ` snapshot. Nonempty batches have no
+item-count ceiling and are bounded by 200,000 preflight work units and 8 MB serialized output. Supported intents
 are `facts`, `fixed_comparison` with its declared closed comparison context, and
 bounded `selected_comparison` with at most 1,500 unique typed territory members. Facts
 coordinates and optional fields are producer-declared; status, availability,
@@ -150,7 +150,7 @@ These are the model fields reachable from request bodies, including nested and d
 | `ResourceReadItem` | `coordinates` | no | object |
 | `ResourceReadItem` | `fields` | no | array of string; max items: `32` |
 | `ResourceReadItem` | `intent` | yes | one of FactsIntent / FixedComparisonIntent / SelectedComparisonIntent |
-| `ResourceBatchRequest` | `items` | yes | array of ResourceBatchItem; min items: `1`; max items: `12` |
+| `ResourceBatchRequest` | `items` | yes | array of ResourceBatchItem; min items: `1` |
 | `TerritoryTarget` | `kind` | yes | string; const: `territory` |
 | `TerritoryTarget` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
 | `TerritoryTarget` | `id` | yes | string; min chars: `1`; max chars: `32` |

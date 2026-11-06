@@ -7,14 +7,13 @@ from fastapi import HTTPException
 from api.resource_catalogue import validate_resource_item
 
 
-MAX_ITEMS = 12
 MAX_WORK_UNITS = 200_000
 MAX_RESPONSE_BYTES = 8_000_000
 
 
 def _validate(items, catalogue):
-    if not 1 <= len(items) <= MAX_ITEMS:
-        raise HTTPException(422, f"Resource batch requires 1-{MAX_ITEMS} items")
+    if not items:
+        raise HTTPException(422, "Resource batch requires at least one item")
     for item in items:
         try:
             validate_resource_item(item, catalogue)
@@ -35,7 +34,8 @@ def _read_snapshot(pool, items, catalogue, preflight, read, *, batch):
                 estimate = preflight(connection, item, MAX_WORK_UNITS - work_units)
                 if not isinstance(estimate, int) or estimate < 0:
                     raise HTTPException(503, "Resource preflight returned an invalid work estimate")
-                work_units += estimate
+                # Every item consumes at least one unit, including fixed-cost reads.
+                work_units += max(1, estimate)
                 if work_units > MAX_WORK_UNITS:
                     raise HTTPException(413, "Resource request exceeds the bounded work limit")
             for item in items:

@@ -105,8 +105,8 @@ async function poster(path: string, body: RecordValue): Promise<unknown> {
 /** A semantic read-batch retains request-local correlation and resource identity. */
 export async function lireRessourcesBatch(items: SemanticReadItem[]): Promise<RecordValue[]> {
   const path = '/api/resources/read-batch'
-  if (!items.length || items.length > 12) {
-    throw new PayloadError('validation', path, 'Le lot sémantique doit contenir de 1 à 12 lectures.')
+  if (!items.length) {
+    throw new PayloadError('validation', path, 'Le lot sémantique doit contenir au moins une lecture.')
   }
   const requests = items.map((item, index) => ({ ...item, id: `scalar-${index}-${item.resource}` }))
   const raw = await poster(path, { items: requests })

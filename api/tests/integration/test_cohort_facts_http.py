@@ -1519,3 +1519,12 @@ def test_source_binding_only_projection_keeps_milieux_facts_and_absence_partitio
         "milieux_selected_reading", **cohort_kwargs, item_id="cohort-source-bindings")])
     assert cohort_batch.status_code == 200, cohort_batch.text
     assert cohort_batch.json()["results"][0]["data"] == cohort.json()
+
+
+def test_forty_inexpensive_reads_succeed_in_one_ordered_http_batch(cohort_http):
+    items = [cohort_http.item("densite", fields=["value"], item_id=f"density-{index}")
+             for index in range(40)]
+    response = cohort_http.batch(items)
+    assert response.status_code == 200, response.text
+    assert [result["id"] for result in response.json()["results"]] == [item["id"] for item in items]
+    assert all(result["resource"] == "densite" for result in response.json()["results"])

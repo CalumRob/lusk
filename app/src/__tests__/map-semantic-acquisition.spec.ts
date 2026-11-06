@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { factsCarteDepuisLectureCohorte } from '../payload/mapSemanticAcquisition'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { acquireMapThemeFacts, factsCarteDepuisLectureCohorte } from '../payload/mapSemanticAcquisition'
 import { valeurHistoireParTerritoire } from '../carte/fusion'
 import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 import type { IndicatorPageMetadata, Territoire } from '../payload/types'
@@ -25,6 +25,49 @@ function cohort(declaration: SemanticResourceDeclaration, observations: Record<s
 }
 
 describe('map cohort adapter', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('returns empty facts for an empty matching catalogue without requesting a batch', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      contract: 'semantic-resource-catalogue-v1', resources: [],
+    })))
+    vi.stubGlobal('fetch', fetcher)
+    const discovered = vi.fn()
+    const result = await acquireMapThemeFacts('demographie', 'commune', territories, ['not-declared'], [], discovered)
+    expect(discovered).toHaveBeenCalledWith([])
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(result.facts).toEqual([])
+  })
+
+  it('sends thirteen matching resources in one batch and admits each response by request position', async () => {
+    const declarations = Array.from({ length: 13 }, (_, index) => ({
+      ...declaration('scalar'), resource_id: `indicator_${index}`, indicator_id: `indicator_${index}`,
+      label: `Resource ${index}`, fields: ['value', 'support_count', 'denominator_count'],
+    }))
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources: declarations,
+      }))
+      const request = JSON.parse(init?.body as string) as { items: Array<{ id: string; resource: string }> }
+      expect(request.items).toHaveLength(13)
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: request.items.map((item) => {
+        const resource = declarations.find((candidate) => candidate.resource_id === item.resource)!
+        const data = { ...cohort(resource, []), observations: [], descriptor: { indicator_id: resource.indicator_id,
+          theme_id: 'demographie', label: resource.label, unit: resource.unit, direction: 'high',
+          comparison_facet: resource.indicator_id, allowed_levels: ['commune'], completeness: 'sparse',
+          denominator_semantics: 'population', descriptor_version: 'descriptor-v1' } }
+        return { id: item.id, resource: item.resource, data }
+      }) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const pages = Object.fromEntries(declarations.map((item) => [item.indicator_id, scalarPage]))
+    const result = await acquireMapThemeFacts('demographie', 'commune', territories,
+      declarations.map((item) => item.indicator_id), [], undefined, pages)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(result.declarations.map((item) => item.resource_id)).toEqual(declarations.map((item) => item.resource_id))
+    expect(result.identities).toHaveProperty('indicator_12')
+  })
+
   it('adapts API scalar evidence, including zero, status, source clocks and missing members', () => {
     const resource = declaration('scalar')
     const data = { ...cohort(resource, [{ territory: { id: '22001', type: 'commune', name: 'A' },

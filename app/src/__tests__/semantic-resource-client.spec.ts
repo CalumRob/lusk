@@ -5,6 +5,24 @@ import type { SemanticReadItem } from '../payload/semanticResourceClient'
 afterEach(() => vi.unstubAllGlobals())
 
 describe('semantic read batches', () => {
+  it('sends forty reads together and returns data in request order', async () => {
+    const items: SemanticReadItem[] = Array.from({ length: 40 }, (_, index) => ({
+      resource: 'densite', target: { kind: 'territory', type: 'commune', id: `220${String(index).padStart(2, '0')}` },
+      intent: { kind: 'facts' },
+    }))
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const request = JSON.parse(init?.body as string) as { items: Array<SemanticReadItem & { id: string }> }
+      expect(request.items).toHaveLength(40)
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [...request.items].reverse().map((item) => ({
+        id: item.id, resource: item.resource, data: { resource: item.resource, target: item.target, ordinal: Number(item.id.split('-')[1]) },
+      })) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const result = await lireRessourcesBatch(items)
+    expect(result).toHaveLength(40)
+    expect(result.map((entry) => entry.ordinal)).toEqual(Array.from({ length: 40 }, (_, index) => index))
+  })
+
   it('accepts native producer discovery with an unthemed AEDAR resource beside a scalar', async () => {
     const catalogue = { contract: 'semantic-resource-catalogue-v1', resources: [
       { resource_id: 'aedar_territorial_aggregate', theme_id: '', indicator_id: 'aedar_territorial_aggregate',

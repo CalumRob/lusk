@@ -2,7 +2,7 @@
 
 `GET /api/resources` exposes the producer-derived retained-resource catalogue.
 `POST /api/resources/read` reads one declared item; `POST /api/resources/read-batch`
-composes up to 12 such items under one PostgreSQL `READ ONLY REPEATABLE READ`
+composes a nonempty collection of such items under one PostgreSQL `READ ONLY REPEATABLE READ`
 transaction. A batch response is
 `{"contract":"semantic-read-batch-v1","results":[{"id":"...","data":{...}}]}`.
 Each item has a unique request-local `id` plus the same `resource`, typed `target`,
@@ -93,10 +93,12 @@ accept cohort targets; comparisons remain territory-targeted.
 
 Before any data read, preflight bounds the actual selected members, axes, facts, and
 evidence/lineage work within the shared 200,000-unit limit. A single read and every
-item in a batch use one read-only repeatable-read snapshot. The existing 12-item
-batch and 8 MB serialized-response limits still apply; the output cap is enforced after
+item in a batch use one read-only repeatable-read snapshot. The
+8 MB serialized-response limit still applies; the output cap is enforced after
 native response serialization, and any invalid or stale dependency rejects the whole
-batch without partial results.
+batch without partial results. There is no independent item-count ceiling:
+preflight charges at least one work unit per item in addition to estimated
+selected work, and the whole request remains bounded by 200,000 work units.
 The AEDAR territorial aggregates and fixed comparisons are read only through
 the unified semantic resource contract (`/api/resources/read` and
 `/api/resources/read-batch`); the legacy GET routes are retired and return 404.
