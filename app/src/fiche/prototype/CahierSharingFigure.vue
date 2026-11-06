@@ -13,6 +13,7 @@ import type {
 } from '@/fiche/content/themeContent'
 import { routePourCibleExploration } from '@/fiche/explorationHandoff'
 import CahierComparisonValue from './CahierComparisonValue.vue'
+import { comparisonRank } from '@/fiche/content/comparisonRank'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierNetworkFigure from './CahierNetworkFigure.vue'
@@ -116,16 +117,17 @@ function routeFor(fact: ContentFact): RouteLocationRaw | null {
 }
 
 function ariaForFact(fact: ContentFact): string {
-  return `${fact.label} : ${formatFact(fact)}`
+  const rank = comparisonRank(fact.fact)
+  return `${fact.label} : ${formatFact(fact)}${rank ? `. Rang ${rank.phrase}` : ''}`
 }
 
 function ariaValue(reading: Reading): string {
-  return `${reading.fact.label} : ${formatFact(reading.fact)}`
+  return ariaForFact(reading.fact)
 }
 
 function networkAriaLabel(): string {
   return networks.value
-    .map((network) => `${network.label}, ${formatFact(network.length)}`)
+    .map((network) => `${network.label}, ${ariaForFact(network.length)}`)
     .join(' · ')
 }
 
