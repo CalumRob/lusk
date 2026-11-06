@@ -21,7 +21,7 @@ export interface PresentationPageIndicateur {
   readonly href: string
   /** Page-reader/layout identity supplied by the producer/API seam, not availability. */
   readonly layoutFamily: FamillePresentationPage
-  /** Figure grammar remains a separate producer declaration (e.g. profile + pyramid). */
+  /** Renderer compatibility is curated in the app catalogue, independently of API shape. */
   readonly figureFamily: IndicatorPageMetadata['family']
 }
 
@@ -35,7 +35,8 @@ export function presentationPageIndicateur(
   resourceKey: string,
   nativeLabel: string,
   layoutFamily: FamillePresentationPage,
-  figureFamily: IndicatorPageMetadata['family'],
+  /** Kept optional for callers compiled against the original helper signature. */
+  _legacyFigureFamily?: IndicatorPageMetadata['family'],
 ): PresentationPageIndicateur | null {
   const themeContent = CONTENU_CATALOGUE_INDICATEURS.find((candidate) => candidate.theme === theme)
   if (!themeContent) return null
@@ -55,7 +56,7 @@ export function presentationPageIndicateur(
       subgroupLabel: subgroup.label,
       href: `/indicateurs/${theme}/${page.resourceKey}`,
       layoutFamily,
-      figureFamily,
+      figureFamily: page.figureFamily,
     }
   }
 

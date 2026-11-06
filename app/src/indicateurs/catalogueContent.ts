@@ -1,4 +1,5 @@
 import type { Theme } from '@/payload/types'
+import type { IndicatorPageMetadata } from '@/payload/types'
 
 export { CONTENU_SOUS_GROUPES_FICHE } from '@/fiche/content/ficheGrammar'
 
@@ -7,6 +8,8 @@ export interface PageCatalogueContent {
   /** The producer resource key bound to this product page and its URL. */
   readonly resourceKey: string
   readonly label: string
+  /** Renderer compatibility is app-owned; facts and native shape remain API-owned. */
+  readonly figureFamily: IndicatorPageMetadata['family']
 }
 
 export interface SousGroupeCatalogueContent {
@@ -35,31 +38,31 @@ export const CONTENU_CATALOGUE_INDICATEURS = [
         key: 'partage-de-lespace-public',
         label: 'Le partage de l’espace public',
         pages: [
-          { resourceKey: 'reseaux', label: 'Réseaux à pied / vélo / voiture' },
-          { resourceKey: 'reseaux_par_habitant', label: 'Longueur du réseau par habitant' },
-          { resourceKey: 'surface_reseaux_routiers', label: 'Part du territoire consacré aux réseaux routiers' },
-          { resourceKey: 'places_stationnement_velo_1000', label: 'Places de stationnement vélo pour 1 000 hab.' },
-          { resourceKey: 'places_stationnement_voiture_1000', label: 'Places de stationnement voiture pour 1 000 hab.' },
-          { resourceKey: 'stationnement_velo_par_voiture', label: 'Places de stationnement vélo pour 1 place voiture' },
-          { resourceKey: 'offre_cyclable', label: 'L’offre cyclable' },
+          { resourceKey: 'reseaux', label: 'Réseaux à pied / vélo / voiture', figureFamily: 'list' },
+          { resourceKey: 'reseaux_par_habitant', label: 'Longueur du réseau par habitant', figureFamily: 'list' },
+          { resourceKey: 'surface_reseaux_routiers', label: 'Part du territoire consacré aux réseaux routiers', figureFamily: 'scalar' },
+          { resourceKey: 'places_stationnement_velo_1000', label: 'Places de stationnement vélo pour 1 000 hab.', figureFamily: 'scalar' },
+          { resourceKey: 'places_stationnement_voiture_1000', label: 'Places de stationnement voiture pour 1 000 hab.', figureFamily: 'scalar' },
+          { resourceKey: 'stationnement_velo_par_voiture', label: 'Places de stationnement vélo pour 1 place voiture', figureFamily: 'scalar' },
+          { resourceKey: 'offre_cyclable', label: 'L’offre cyclable', figureFamily: 'composition' },
         ],
       },
       {
         key: 'motorisation',
         label: 'La motorisation',
         pages: [
-          { resourceKey: 'voitures_menage', label: 'Voitures par ménage' },
-          { resourceKey: 'bornes_recharge', label: 'Bornes de recharge pour véhicules électriques' },
-          { resourceKey: 'bornes_ev_par_station_service', label: 'Bornes de recharge par station-service' },
+          { resourceKey: 'voitures_menage', label: 'Voitures par ménage', figureFamily: 'composition' },
+          { resourceKey: 'bornes_recharge', label: 'Bornes de recharge pour véhicules électriques', figureFamily: 'scalar' },
+          { resourceKey: 'bornes_ev_par_station_service', label: 'Bornes de recharge par station-service', figureFamily: 'scalar' },
         ],
       },
       {
         key: 'offre-transports-commun',
         label: 'L’offre de transports en commun',
         pages: [
-          { resourceKey: 'offre_tc', label: 'Part des bâtiments près d’un arrêt (à 500 m)' },
-          { resourceKey: 'raccordement_tc', label: 'Population bretonne joignable en 90 minutes en TC' },
-          { resourceKey: 'raccordement_courbe', label: 'Courbe cumulative — population bretonne joignable en TC' },
+          { resourceKey: 'offre_tc', label: 'Part des bâtiments près d’un arrêt (à 500 m)', figureFamily: 'scalar' },
+          { resourceKey: 'raccordement_tc', label: 'Population bretonne joignable en 90 minutes en TC', figureFamily: 'scalar' },
+          { resourceKey: 'raccordement_courbe', label: 'Courbe cumulative — population bretonne joignable en TC', figureFamily: 'trajectory' },
         ],
       },
     ],
@@ -72,16 +75,16 @@ export const CONTENU_CATALOGUE_INDICATEURS = [
         key: 'etat-de-la-population',
         label: 'État de la population',
         pages: [
-          { resourceKey: 'densite', label: 'Densité de population' },
-          { resourceKey: 'structure_age', label: 'Structure par âge' },
-          { resourceKey: 'taille_menages', label: 'Taille moyenne des ménages' },
+          { resourceKey: 'densite', label: 'Densité de population', figureFamily: 'scalar' },
+          { resourceKey: 'structure_age', label: 'Structure par âge', figureFamily: 'pyramid' },
+          { resourceKey: 'taille_menages', label: 'Taille moyenne des ménages', figureFamily: 'scalar' },
         ],
       },
       {
         key: 'trajectoire-demographique',
         label: 'Trajectoire démographique',
         pages: [
-          { resourceKey: 'evolution_1968', label: 'Évolution de la population depuis 1968' },
+          { resourceKey: 'evolution_1968', label: 'Évolution de la population depuis 1968', figureFamily: 'scalar' },
         ],
       },
     ],
@@ -94,25 +97,25 @@ export const CONTENU_CATALOGUE_INDICATEURS = [
         key: 'composition-du-parc',
         label: 'La composition du parc',
         pages: [
-          { resourceKey: 'mix_logements', label: 'Mix de logements' },
-          { resourceKey: 'statut', label: 'Statut d’occupation' },
-          { resourceKey: 'type', label: 'Type de logement' },
+          { resourceKey: 'mix_logements', label: 'Mix de logements', figureFamily: 'composition' },
+          { resourceKey: 'statut', label: 'Statut d’occupation', figureFamily: 'composition' },
+          { resourceKey: 'type', label: 'Type de logement', figureFamily: 'composition' },
         ],
       },
       {
         key: 'etat-energetique-du-parc',
         label: 'L’état énergétique du parc',
         pages: [
-          { resourceKey: 'distribution_dpe', label: 'Distribution des étiquettes DPE (A à G)' },
-          { resourceKey: 'part_passoires', label: 'Part de passoires thermiques' },
-          { resourceKey: 'age_du_bati', label: 'Âge du bâti' },
+          { resourceKey: 'distribution_dpe', label: 'Distribution des étiquettes DPE (A à G)', figureFamily: 'distribution' },
+          { resourceKey: 'part_passoires', label: 'Part de passoires thermiques', figureFamily: 'scalar' },
+          { resourceKey: 'age_du_bati', label: 'Âge du bâti', figureFamily: 'composition' },
         ],
       },
       {
         key: 'marche',
         label: 'Le marché',
         pages: [
-          { resourceKey: 'prix_m2', label: 'Médiane prix au m²' },
+          { resourceKey: 'prix_m2', label: 'Médiane prix au m²', figureFamily: 'trajectory' },
         ],
       },
     ],
@@ -125,15 +128,15 @@ export const CONTENU_CATALOGUE_INDICATEURS = [
         key: 'sante-et-taille',
         label: 'Santé et taille du tissu productif',
         pages: [
-          { resourceKey: 'effectifs_salaries', label: 'Effectifs salariés (lieu de travail)' },
-          { resourceKey: 'chomage', label: 'Chômage (population active)' },
+          { resourceKey: 'effectifs_salaries', label: 'Effectifs salariés (lieu de travail)', figureFamily: 'scalar' },
+          { resourceKey: 'chomage', label: 'Chômage (population active)', figureFamily: 'scalar' },
         ],
       },
       {
         key: 'structure-verte',
         label: 'La structure verte',
         pages: [
-          { resourceKey: 'eco_activites', label: 'Part des éco-activités' },
+          { resourceKey: 'eco_activites', label: 'Part des éco-activités', figureFamily: 'scalar' },
         ],
       },
     ],
@@ -146,8 +149,8 @@ export const CONTENU_CATALOGUE_INDICATEURS = [
         key: 'artificialisation',
         label: 'L’artificialisation',
         pages: [
-          { resourceKey: 'artif_par_habitant', label: 'Intensité état' },
-          { resourceKey: 'conso_enaf_annuel', label: 'Consommation d’ENAF — série annuelle' },
+          { resourceKey: 'artif_par_habitant', label: 'Intensité état', figureFamily: 'trajectory' },
+          { resourceKey: 'conso_enaf_annuel', label: 'Consommation d’ENAF — série annuelle', figureFamily: 'trajectory' },
         ],
       },
     ],
@@ -160,8 +163,8 @@ export const CONTENU_CATALOGUE_INDICATEURS = [
         key: 'subventions',
         label: 'Subventions attribuées',
         pages: [
-          { resourceKey: 'subventions_annuelles', label: 'Subventions régionales attribuées' },
-          { resourceKey: 'subventions_par_domaine', label: 'Subventions régionales par domaine' },
+          { resourceKey: 'subventions_annuelles', label: 'Subventions régionales attribuées', figureFamily: 'scalar' },
+          { resourceKey: 'subventions_par_domaine', label: 'Subventions régionales par domaine', figureFamily: 'list' },
         ],
       },
     ],

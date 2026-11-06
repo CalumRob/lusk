@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chargerCohorteScalaire, chargerCohortePageScalaire, chargerCohortesScalaires, chargerRangScalaire,
-  chargerComparaisonsScalaires, indicateursScalairesEnregistres, pagesScalairesEnregistrees, remplacerFaitsScalaires,
-  validerEnregistrementScalaires } from '../payload/scalarCohort'
+  chargerCohortePageScalaireNative, chargerComparaisonsScalaires, indicateursScalairesEnregistres,
+  pagesScalairesEnregistrees, remplacerFaitsScalaires, validerEnregistrementScalaires } from '../payload/scalarCohort'
 import { territoiresFixture, indicateursEconomieFixture } from '../payload/fixtures'
 import { validerCatalogueNavigateur } from '../payload/validate'
 import type { SemanticReadItem, SemanticResourceDeclaration } from '../payload/semanticResourceClient'
@@ -166,6 +166,28 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     const scalarPages = pagesScalairesEnregistrees(metadata, registered)
     expect(scalarPages).not.toContain('prix_m2')
     expect(() => validerEnregistrementScalaires(metadata, scalarPages)).not.toThrow()
+  })
+
+  it('acquires an ordinary scalar page from native discovery and descriptor without theme page metadata', async () => {
+    const indicator = 'densite'
+    const resource = { ...declaration('demographie', indicator), unit: 'API unit' }
+    const fetcher = installCatalogueAndReads([resource], (item) => scalarData('demographie', indicator, item,
+      { unit: 'API unit', observations: [
+        { territory: '22001', status: 'measured', value: 87 },
+        { territory: '22002', status: 'measured', value: 91 },
+      ] }))
+
+    const acquired = await chargerCohortePageScalaireNative(indicator, 'demographie', 'commune',
+      territoiresFixture, { department: '22' }, [resource])
+    const request = JSON.parse((fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')?.[1] as RequestInit).body as string)
+    expect(request.items[0]).toMatchObject({ resource: indicator,
+      target: { kind: 'territory_cohort', type: 'commune', department_id: '22' },
+      intent: { kind: 'facts' } })
+    expect(acquired.contract).toMatchObject({ label: 'Libellé API éditorialement distinct', unit: 'API unit',
+      direction: 'high', contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' })
+    expect(acquired.facts.map(({ territoire, value }) => [territoire, value])).toEqual([
+      ['22001', 87], ['22002', 91],
+    ])
   })
 
   it('reads native values, missing status, support, denominator, and complete provenance for a filtered page cohort', async () => {

@@ -637,7 +637,7 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     wrapper.unmount()
   })
 
-  it('découvre le profil par le catalogue producteur même si famille et marqueur éditoriaux manquent', async () => {
+  it('découvre le profil API même si les métadonnées éditoriales ne déclarent ni famille ni contrat', async () => {
     const spec = profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!
     const saved = spec.metadata.profile_contracts
     const savedPage = spec.metadata.indicator_pages?.[spec.indicator]
@@ -649,9 +649,9 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
         'territoire=22001&niveau=commune')
       await flushPromises()
       expect(transport.calls.some(({ url }) => url === '/api/resources')).toBe(true)
-      expect(transport.profileFactsCalls).toHaveLength(0)
-      expect(mounted.wrapper.find('[role="alert"]').exists()).toBe(true)
-      expect(mounted.wrapper.find('[role="alert"] button').text()).toContain('Réessayer')
+      expect(transport.profileFactsCalls).toHaveLength(1)
+      expect(mounted.wrapper.find('[role="alert"]').exists()).toBe(false)
+      expect(mounted.wrapper.find('[data-testid="profile-comparison-state"]').exists()).toBe(true)
       expect(mounted.staticFiles.some((file) => file.startsWith('indicateurs_'))).toBe(false)
       expect(transport.calls.some(({ url }) => url.startsWith('/data/indicateurs_'))).toBe(false)
       expect(transport.calls.some(({ url }) => url.includes('/data/modeles-lecture/')),
@@ -678,7 +678,7 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     mounted.wrapper.unmount()
   })
 
-  it('réessaie la découverte du catalogue et les échecs transport/validation des métadonnées via le bouton réel', async () => {
+  it('réessaie la découverte du catalogue mais tolère une absence ou une invalidité des explications éditoriales', async () => {
     const spec = profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!
     const catalogue = createTransport({ failCatalogues: 1 })
     const cataloguePage = await mountPage(spec.theme, spec.indicator, catalogue)
@@ -697,11 +697,9 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
       const metadataPage = await mountPage(spec.theme, spec.indicator, transport, undefined,
         failure === 'transport' ? { failThemeMetadata: 1 } : { invalidThemeMetadata: 1 })
       await flushPromises()
-      expect(metadataPage.wrapper.find('[role="alert"] button').exists(), failure).toBe(true)
-      expect(metadataPage.staticFiles.some((file) => file.startsWith('indicateurs_'))).toBe(false)
-      await metadataPage.wrapper.get('[role="alert"] button').trigger('click')
-      await flushPromises()
+      expect(metadataPage.wrapper.find('[role="alert"]').exists(), failure).toBe(false)
       expect(transport.profileFactsCalls, failure).toHaveLength(1)
+      expect(metadataPage.wrapper.text(), failure).toContain(`API source ${spec.page.sources[0]}`)
       expect(metadataPage.staticFiles.some((file) => file.startsWith('indicateurs_'))).toBe(false)
       metadataPage.wrapper.unmount()
     }

@@ -444,7 +444,9 @@ function sameFilters(actual: unknown, expected: string | null): boolean {
 }
 
 function adapterCohorteScalaire(data: Row, declaration: SemanticResourceDeclaration | undefined,
-  indicator: string, theme: Theme, page: IndicatorPageMetadata | undefined, level: TerritoireType,
+  indicator: string, theme: Theme, page: (Pick<IndicatorPageMetadata, 'unit' | 'direction'> &
+    { comparison?: Pick<NonNullable<IndicatorPageMetadata['comparison']>, 'unit' | 'direction' | 'indicator'> }) | undefined,
+  level: TerritoireType,
   territories: Territoire[], scope: { department?: string; epci?: string }, identity?: ScalarIdentity,
   countsAvailable = true, nativePageDescriptor = false,
   onNativeContract?: (contract: NativeThemeFactContract) => void): Indicateur[] {
@@ -694,6 +696,35 @@ export async function chargerCohortePageScalaire(
   const declaration = result.declarations[0]
   if (!contract || !declaration) throw new PayloadError('validation', '/api/resources/read-batch', 'Le descripteur scalaire natif est absent.')
   return { facts: result.facts, identity: result.identity, contract, declaration }
+}
+
+/** Indicator-page scalar acquisition is bound directly to API discovery and
+ * its native descriptor; it does not require the redundant theme page file. */
+export async function chargerCohortePageScalaireNative(
+  indicator: string, theme: Theme, level: TerritoireType, territories: Territoire[],
+  scope: { department?: string; epci?: string }, catalogueOverride?: SemanticResourceDeclaration[],
+): Promise<{ facts: Indicateur[]; identity: ScalarCohortsWithComparisons['identity'];
+  contract: NativeThemeFactContract; declaration: SemanticResourceDeclaration }> {
+  const path = '/api/resources/read-batch'
+  const catalogue = catalogueOverride ?? await chargerCatalogueRessources()
+  const declaration = catalogue.find((resource) => resource.resource_id === indicator)
+  const countsAvailable = contractCountsAvailable(declaration, indicator)
+  const fields = countsAvailable ? ['value', 'support_count', 'denominator_count'] : ['value']
+  const resource = requireScalarResource(declaration, indicator, theme, level, fields)
+  const [data] = await lireRessourcesBatch([itemScalaire(indicator, level, scope, countsAvailable)])
+  if (!isRecord(data)) throw new PayloadError('validation', path, 'La cohorte scalaire native est absente du lot.')
+  const identity: ScalarIdentity = {}
+  let contract: NativeThemeFactContract | undefined
+  const facts = adapterCohorteScalaire(data, resource, indicator, theme,
+    { unit: resource.unit, direction: resource.direction as 'high' | 'low' }, level, territories,
+    scope, identity, countsAvailable, true, (native) => { contract = native })
+  if (!contract || !identity.contentVersion || !identity.referenceContentVersion) {
+    throw new PayloadError('validation', path, 'Le descripteur scalaire natif ou son identité de publication sont absents.')
+  }
+  return { facts, identity: { contentVersion: identity.contentVersion,
+    referenceContentVersion: identity.referenceContentVersion,
+    ...(identity.descriptorVersion ? { descriptorVersion: identity.descriptorVersion } : {}),
+    ...(identity.comparisonFacet ? { comparisonFacet: identity.comparisonFacet } : {}) }, contract, declaration: resource }
 }
 
 /** Read the selected territory separately when it is outside the page's bounded cohort. */
