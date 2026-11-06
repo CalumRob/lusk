@@ -131,14 +131,17 @@ published (#810 stance intact).
 
 ## AEDAR aggregate-reading comparisons (#914)
 
-The registry-wide overview readings the fiche displays — `meanDiversity` (the
-sum of `count_15_car_share` over the complete published TYPEQU registry) and
-`meanVolume` (the sum of `count_15_car_mean`) — are declared ranked
-high-is-better comparison facets in the producer `measure_facets` map alongside
-the 312 per-cell measures. They are requested through the `measure` coordinate
-without a `typequ` coordinate, and are computed per request from published
-per-type rows in `aedar_territorial_aggregate` — never published as new rows
-(#810 stance intact):
+The 40 registry-wide aggregate readings are the cross-product of the five
+displayed modes (`walk`, `transit`, `bike_lts2`, `bike_lts4`, `car`), four
+horizons (5, 10, 15, 20 minutes), and diversity/share plus volume/mean. The
+separate signed `transit_gain` measure family is not part of this display
+inventory. Names are `<mode><horizon>Diversity` or `<mode><horizon>Volume`,
+except the existing car/15-minute names `meanDiversity` and `meanVolume`,
+which remain compatible. The producer contract declares all 40 as ranked
+high-is-better facets alongside the 312 per-cell measures. They use the
+existing `measure` coordinate without `typequ` and are computed per request
+from published per-type rows in `aedar_territorial_aggregate` — never
+published as new rows (#810 stance intact):
 
 An aggregate reading is available only when the territory's published rows
 satisfy the same compatibility law as the fiche's displayed sums (CONTEXT.md

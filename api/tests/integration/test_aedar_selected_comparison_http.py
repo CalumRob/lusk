@@ -34,6 +34,29 @@ MEASURES = ("count_5_walk_mean", "count_5_walk_share", "count_15_car_mean", "cou
 
 
 def _aggregate_row(territory_type, territory_id, typequ, n_addresses, n_observed, measures):
+    # Non-car15 proof coordinates have deliberately distinguishable source
+    # values so a wrong mode/horizon mapping cannot pass as a valid sum.
+    transit10 = {
+        "sel-c1": (0.11, 1.1), "sel-c2": (0.30, 3.3), "sel-c3": (0.20, 2.2),
+        "sel-c4": (0.10, 1.0), "sel-c5": (0.20, 2.0), "sel-c6": (0.25, 2.5),
+        "sel-c7": (0.40, 4.0), "sel-c8": (0.20, 2.0),
+        "sel-e1": (0.30, 3.0), "sel-e2": (0.50, 5.0), "22": (0.60, 6.0),
+        "53": (0.70, 7.0),
+    }.get(territory_id, (0.0, 0.0))
+    per_type_share, per_type_mean = transit10
+    if typequ == "B207":
+        per_type_share = {"sel-c1": .22, "sel-c2": .40, "sel-c3": .30,
+                          "sel-c4": .15, "sel-c5": .25, "sel-c6": .30,
+                          "sel-c7": .45, "sel-c8": .25,
+                          "sel-e1": .35, "sel-e2": .55, "22": .65,
+                          "53": .75}.get(territory_id, .1)
+        per_type_mean = {"sel-c1": 2.2, "sel-c2": 4.4, "sel-c3": 3.3,
+                         "sel-c4": 1.5, "sel-c5": 2.5, "sel-c6": 3.0,
+                         "sel-c7": 4.5, "sel-c8": 2.5,
+                         "sel-e1": 3.5, "sel-e2": 5.5, "22": 6.5,
+                         "53": 7.5}.get(territory_id, 1.0)
+    measures = {**measures, "count_10_transit_share": per_type_share,
+                "count_10_transit_mean": per_type_mean}
     return {
         "territory_type": territory_type,
         "territory_id": territory_id,
@@ -182,7 +205,7 @@ def _seed_aedar(publisher):
         (len(rows),))
     # Pooled density-class reference rows keep the reference-only marker valid
     # (group_row_count must match and stay >= 1); no peer/rank rows exist. The
-    # count_15_car_* rows back the registry-wide aggregate readings (#914):
+    # count_15_car_* rows back the original registry-wide aggregate readings (#914):
     # pooled meanDiversity = 0.65 + 0.3 = 0.95, pooled meanVolume = 16 + 8 = 24.
     group_rows = [
         ("D1", "A104", "count_5_walk_mean", 7.4, 50, 42),
@@ -190,18 +213,30 @@ def _seed_aedar(publisher):
         ("D1", "B207", "count_15_car_mean", 8.0, 40, 33),
         ("D1", "A104", "count_15_car_share", 0.65, 40, 34),
         ("D1", "B207", "count_15_car_share", 0.3, 40, 33),
+        ("D1", "A104", "count_10_transit_share", 0.25, 40, 34),
+        ("D1", "B207", "count_10_transit_share", 0.35, 40, 33),
+        ("D1", "A104", "count_10_transit_mean", 2.0, 40, 34),
+        ("D1", "B207", "count_10_transit_mean", 3.0, 40, 33),
         # D3 (the density class of sel-c8) carries a pooled row with NULL
         # n_observed on B207: the schema CHECK admits it, but the unified
         # aggregate law counts it as bad, so D3's pooled registry-wide reading
         # is honestly unavailable (#914 amendment, 2026-11-05).
         ("D3", "A104", "count_15_car_mean", 16.0, 15, 14),
         ("D3", "B207", "count_15_car_mean", 8.0, 15, None),
+        ("D3", "A104", "count_10_transit_share", 0.2, 15, 14),
+        ("D3", "B207", "count_10_transit_share", 0.3, 15, None),
+        # Only one TYPEQU row: incomplete registry must not yield a partial sum.
+        ("D3", "A104", "count_10_transit_mean", 2.0, 15, 14),
+        # Full registry but uncovered evidence must also fail closed.
+        ("D2", "A104", "count_10_transit_mean", 2.0, 10, 9),
+        ("D2", "B207", "count_10_transit_mean", 3.0, 10, 8),
     ]
     for group_id, typequ, measure, value, n_addresses, n_observed in group_rows:
         publisher.execute("""INSERT INTO aedar_comparison_group(comparison_context,group_id,territory_type,
             typequ,measure,statistic,value,n_addresses,n_observed,coverage_status)
-            VALUES ('density_class',%s,'commune',%s,%s,'pooled',%s,%s,%s,'covered')""",
-            (group_id, typequ, measure, value, n_addresses, n_observed))
+            VALUES ('density_class',%s,'commune',%s,%s,'pooled',%s,%s,%s,%s)""",
+            (group_id, typequ, measure, value, n_addresses, n_observed,
+             "pending_review" if group_id == "D2" else "covered"))
     publisher.execute("""INSERT INTO aedar_comparison_publication(singleton,content_version,
         source_snapshot_id,aedar_content_version,reference_content_version,input_content_version,
         input_identity,group_row_count,territory_row_count,publication_mode)
@@ -559,6 +594,52 @@ def test_fixed_aggregate_density_pooled_null_observed_row_is_unavailable(aedar_h
         measures=("meanVolume",), fields=["group_value"], context="density_class"))
     assert control.status_code == 200, control.text
     assert control.json()["comparison"]["group_value"] == pytest.approx(24.0)
+
+
+def test_fixed_density_non_car15_aggregates_map_to_declared_sources_and_fail_closed(aedar_http):
+    # New 10-minute transit coordinates exercise the fixed adapter, not merely
+    # the legacy car15 aliases. Distinct source values detect swapped mappings.
+    share = aedar_http.post("/api/resources/read", json=_aggregate_item(
+        measures=("transit10Diversity",), fields=["group_value", "value"], context="density_class"))
+    mean = aedar_http.post("/api/resources/read", json=_aggregate_item(
+        measures=("transit10Volume",), fields=["group_value", "value"], context="density_class"))
+    assert share.status_code == 200, share.text
+    assert mean.status_code == 200, mean.text
+    assert share.json()["comparison"]["group_value"] == pytest.approx(.60)
+    assert mean.json()["comparison"]["group_value"] == pytest.approx(5.0)
+    assert share.json()["comparison"]["measure"] == "transit10Diversity"
+    assert mean.json()["comparison"]["measure"] == "transit10Volume"
+
+    # Separate pooled-law failures: D3 share has NULL observed evidence, D3
+    # volume is missing a TYPEQU row, and D2 volume is uncovered. Group
+    # availability is asserted independently of each focal reading's status.
+    for target, measure in (("sel-c8", "transit10Diversity"),
+                            ("sel-c8", "transit10Volume"),
+                            ("sel-c3", "transit10Volume")):
+        failed = aedar_http.post("/api/resources/read", json=_aggregate_item(
+            target_id=target, measures=(measure,), fields=["group_value"],
+            context="density_class"))
+        assert failed.status_code == 200, failed.text
+        assert failed.json()["comparison"]["group_value"] is None
+
+
+def test_selected_non_car15_aggregate_readings_are_address_weighted_and_ranked(aedar_http):
+    members = [{"type": "commune", "id": code} for code in ("sel-c1", "sel-c2", "sel-c3")]
+    response = aedar_http.post("/api/resources/read", json=_aggregate_item(
+        measures=("transit10Diversity", "transit10Volume"), members=members,
+        fields=["group_value", "value", "rank", "rank_size", "rank_ties"]))
+    assert response.status_code == 200, response.text
+    by_measure = {item["measure"]: item for item in response.json()["comparisons"]}
+    assert set(by_measure) == {"transit10Diversity", "transit10Volume"}
+    share, mean = by_measure["transit10Diversity"], by_measure["transit10Volume"]
+    # Source sums by member are .33/.70/.50 and 3.3/7.7/5.5; weights are
+    # 10/30/10. Both facet semantics and source mapping are exercised end to end.
+    assert share["group_value"] == pytest.approx((.33 * 10 + .70 * 30 + .50 * 10) / 50)
+    assert mean["group_value"] == pytest.approx((3.3 * 10 + 7.7 * 30 + 5.5 * 10) / 50)
+    assert share["value"] == pytest.approx(.33) and share["comparison_facet"] == "diversity"
+    assert mean["value"] == pytest.approx(3.3) and mean["comparison_facet"] == "volume"
+    assert (share["rank"], share["rank_size"], share["rank_ties"]) == (3, 3, 1)
+    assert (mean["rank"], mean["rank_size"], mean["rank_ties"]) == (3, 3, 1)
 
 
 def test_selected_aggregate_returns_pooled_weighted_readings_and_ranks(aedar_http):

@@ -483,7 +483,7 @@ def test_aedar_measure_facets_cover_every_registered_measure_with_declared_direc
             # Registry-wide overview aggregate readings (#914): the diversity
             # and volume sums over the complete TYPEQU registry are ranked
             # high-is-better comparison facets in both intents.
-            expected_facet = {"meanDiversity": "diversity", "meanVolume": "volume"}[measure]
+            expected_facet = "diversity" if AEDAR_AGGREGATE_READINGS[measure].endswith("_share") else "volume"
             assert facet == {"facet": expected_facet, "direction": "high", "ranked": True}
             continue
         statistic = measure.rsplit("_", 1)[1]
@@ -501,6 +501,50 @@ def test_aedar_measure_facets_cover_every_registered_measure_with_declared_direc
     assert public["measure_facets"]["meanVolume"] == {
         "facet": "volume", "direction": "high", "ranked": True}
     assert "selected_comparison" in public["intents"]
+
+
+def test_aedar_aggregate_reading_inventory_covers_displayed_modes_and_horizons():
+    from api.aedar_models import (AEDAR_AGGREGATE_HORIZONS, AEDAR_AGGREGATE_MODES,
+                                  AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS)
+    # Independent source-coordinate pins (pipeline/R/aedar_aggregates.R): do
+    # not derive the expected inventory from the mapping's own declarations.
+    source_modes = ("walk", "transit", "bike_lts2", "bike_lts4", "car")
+    source_horizons = (5, 10, 15, 20)
+    assert AEDAR_AGGREGATE_MODES == source_modes
+    assert AEDAR_AGGREGATE_HORIZONS == source_horizons
+    assert "transit_gain" not in source_modes
+    assert "count_10_transit_gain_share" in AEDAR_MEASURE_KEYS
+    expected = {
+        (mode, horizon, kind)
+        for mode in source_modes
+        for horizon in source_horizons
+        for kind in ("diversity", "volume")
+    }
+    actual = set()
+    for name, source in AEDAR_AGGREGATE_READINGS.items():
+        kind = "diversity" if source.endswith("_share") else "volume"
+        stem = source.removeprefix("count_").removesuffix("_share").removesuffix("_mean")
+        horizon, mode = stem.split("_", 1)
+        actual.add((mode, int(horizon), kind))
+        assert source in AEDAR_MEASURE_KEYS
+    assert len(AEDAR_AGGREGATE_READINGS) == 40
+    assert actual == expected
+    expected_names = {
+        ("meanDiversity" if (mode, horizon, kind) == ("car", 15, "diversity") else
+         "meanVolume" if (mode, horizon, kind) == ("car", 15, "volume") else
+         f"{mode}{horizon}{'Diversity' if kind == 'diversity' else 'Volume'}")
+        for mode, horizon, kind in expected
+    }
+    assert set(AEDAR_AGGREGATE_READINGS) == expected_names
+    assert AEDAR_AGGREGATE_READINGS["meanDiversity"] == "count_15_car_share"
+    assert AEDAR_AGGREGATE_READINGS["meanVolume"] == "count_15_car_mean"
+    producer = default_resource_catalogue.__wrapped__().resources_by_id[
+        "aedar_territorial_aggregate"]
+    assert len(set(producer.measure_facets) & set(AEDAR_AGGREGATE_READINGS)) == 40
+    assert all(producer.measure_facets[name] == {
+        "facet": kind, "direction": "high", "ranked": True}
+        for name, source in AEDAR_AGGREGATE_READINGS.items()
+        for kind in ("diversity" if source.endswith("_share") else "volume",))
 
 
 def test_aedar_comparison_grants_rank_fields_per_intent_and_aggregate_boundary():
@@ -974,7 +1018,7 @@ def _aedar_facets():
             facets[measure] = {"facet": "distribution", "direction": "high", "ranked": False}
     for reading in AEDAR_AGGREGATE_READINGS:
         facets[reading] = {
-            "facet": "diversity" if reading == "meanDiversity" else "volume",
+            "facet": "diversity" if AEDAR_AGGREGATE_READINGS[reading].endswith("_share") else "volume",
             "direction": "high", "ranked": True}
     return facets
 
