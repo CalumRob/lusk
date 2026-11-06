@@ -384,8 +384,8 @@ export async function chargerComparaisonsScalaires(indicators: string[], theme: 
   const path = '/api/resources/read-batch'
   validateComparisonRequest(request, focal, territories)
   if (!indicators.length) return {}
-  if (indicators.length > 12 || new Set(indicators).size !== indicators.length) {
-    throw new PayloadError('validation', path, 'Le lot de comparaisons scalaires doit contenir au plus 12 ressources distinctes.')
+  if (new Set(indicators).size !== indicators.length) {
+    throw new PayloadError('validation', path, 'Le lot de comparaisons scalaires doit contenir des ressources distinctes.')
   }
   if (request.scope.memberCount < 2 && !includeMemberRanks) {
     return Object.fromEntries(indicators.map((indicator) => [indicator, null]))
@@ -614,13 +614,9 @@ async function chargerCohortesEtComparaisonsScalaires(
 ): Promise<ScalarCohortsWithComparisons> {
   validerEnregistrementScalaires(metadata, indicators)
   const path = '/api/resources/read-batch'
-  if (indicators.length > 12) throw new PayloadError('validation', path, 'Le lot scalaire dépasse la limite de 12 ressources.')
   if (comparison && !focal) throw new PayloadError('validation', path, 'Une comparaison scalaire nécessite un territoire focal publié.')
   if (comparison && focal) validateComparisonRequest(comparison, focal, territories)
   const comparisonRead = comparison && comparison.scope.memberCount >= 2 ? comparison : undefined
-  if (comparisonRead && indicators.length * 2 > 12) {
-    throw new PayloadError('validation', path, 'Le lot scalaire et ses comparaisons dépasse la limite de 12 lectures.')
-  }
   if (!indicators.length) return { facts: [], comparisons: {}, nativeContracts: {}, declarations: [],
     identity: { contentVersion: '', referenceContentVersion: '' } }
   const catalogue = catalogueOverride ?? await chargerCatalogueRessources()

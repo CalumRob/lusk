@@ -650,6 +650,7 @@ def test_declared_profile_postgres_api_contract(installation):
             assert alternate_result["source_facet"] == {"detail": "secondaires", "sex": None}
             assert alternate_result["comparison_sources"][0]["source_id"] == "housing_detail"
 
+            # #917: one comparable member IS the group median; ranks stay null below two.
             too_few = client.post('/api/resources/read', json={
                 **selected_cell_item, "fields": ["median", "selected_member_count", "eligible_count",
                     "missing_count", "member_ranks"], "intent": {"kind": "selected_comparison", "members": [
@@ -658,13 +659,28 @@ def test_declared_profile_postgres_api_contract(installation):
             })
             assert too_few.status_code == 200, too_few.text
             too_few_result = too_few.json()["result"]
-            assert (too_few_result["status"], too_few_result["reason"]) == (
-                "unavailable", "fewer_than_two_comparable_values")
+            assert (too_few_result["status"], too_few_result["reason"]) == ("available", None)
             assert (too_few_result["selected_member_count"], too_few_result["eligible_count"],
-                    too_few_result["missing_count"], too_few_result["median"]) == (2, 1, 1, None)
+                    too_few_result["missing_count"], too_few_result["median"]) == (2, 1, 1, pytest.approx(.5))
             assert {row["territory_id"]: (row["rank"], row["rank_size"], row["rank_ties"])
                     for row in too_few_result["member_ranks"]} == {
                 territory: (None, None, None), territory + "n": (None, None, None)}
+
+            single_member = client.post('/api/resources/read', json={
+                **selected_cell_item, "fields": ["median", "rank", "rank_size", "rank_ties",
+                    "selected_member_count", "eligible_count", "missing_count", "member_ranks"],
+                "intent": {"kind": "selected_comparison", "members": [
+                    {"type": "commune", "id": territory}]},
+            })
+            assert single_member.status_code == 200, single_member.text
+            single_result = single_member.json()["result"]
+            assert (single_result["status"], single_result["reason"]) == ("available", None)
+            assert single_result["median"] == pytest.approx(.5)
+            assert (single_result["rank"], single_result["rank_size"], single_result["rank_ties"]) == (None, None, None)
+            assert (single_result["selected_member_count"], single_result["eligible_count"],
+                    single_result["missing_count"]) == (1, 1, 0)
+            assert [(row["territory_id"], row["rank"], row["rank_size"], row["rank_ties"])
+                    for row in single_result["member_ranks"]] == [(territory, None, None, None)]
 
     finally:
         if previous is None:
@@ -732,6 +748,19 @@ def test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, 
             territory_type,facet_id,source_id,vintage_id,comparison_content_version) VALUES
             ('scalar','density_class','D1','commune','part_passoires','dpe_22','dpe_22','scalar-comparison-v1'),
             ('scalar','epci','E1','commune','part_passoires','dpe_22','dpe_22','scalar-comparison-v1')""")
+        # #917: density class D2 holds only 29003, a published singleton group whose
+        # single comparable member is 29003 itself (median = .2).
+        conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,indicator_id,
+            statistic,median,member_count,eligible_count,missing_count,lineage_source_count) VALUES
+            ('density_class','D2','commune','part_passoires','median',.2,1,1,0,1)""")
+        conn.execute("""INSERT INTO scalar_comparison_territory(comparison_context,group_id,territory_type,indicator_id,
+            territory_id,value,status,rank,tie_count,rank_size) VALUES
+            ('density_class','D2','commune','part_passoires','29003',.2,'measured',1,1,1)""")
+        conn.execute("""INSERT INTO comparison_source_lineage(comparison_family,comparison_context,group_id,
+            territory_type,facet_id,source_id,vintage_id,comparison_content_version) VALUES
+            ('scalar','density_class','D2','commune','part_passoires','dpe_22','dpe_22','scalar-comparison-v1')""")
+        conn.execute("""UPDATE scalar_comparison_publication SET group_row_count=3,territory_row_count=5,
+            lineage_row_count=3 WHERE singleton""")
         conn.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,completeness,
             descriptor_version,comparison_direction,comparison_scalar,required_scalar_version,denominator_semantics)
             VALUES ('distribution_dpe','habitat','Distribution DPE','%',ARRAY['commune'],'dense_complete',
@@ -809,13 +838,33 @@ def test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, 
                     {"type": "commune", "id": "29001"}, {"type": "commune", "id": "29004"}]}})
             assert insufficient.status_code == 200, insufficient.text
             insufficient_result = insufficient.json()["result"]
-            assert insufficient_result["status"] == "unavailable"
-            assert insufficient_result["reason"] == "fewer_than_two_comparable_values"
+            # #917: the scalar-backed profile also serves the singleton median;
+            # its rank fields stay null below two comparable values.
+            assert insufficient_result["status"] == "available"
+            assert insufficient_result["reason"] is None
             assert (insufficient_result["eligible_count"], insufficient_result["missing_count"],
-                    insufficient_result["median"]) == (1,1,None)
+                    insufficient_result["median"]) == (1, 1, pytest.approx(.3))
             assert {row["territory_id"]: (row["rank"],row["rank_size"],row["rank_ties"])
                     for row in insufficient_result["member_ranks"]} == {
                 "29001": (None,None,None), "29004": (None,None,None)}
+
+            singleton_fixed = client.post('/api/resources/read', json={
+                "resource": "distribution_dpe",
+                "target": {"kind": "territory", "type": "commune", "id": "29003"},
+                "fields": ["median", "rank", "rank_size", "rank_ties", "selected_member_count",
+                           "eligible_count", "missing_count"],
+                "intent": {"kind": "fixed_comparison", "context": "default"},
+            })
+            assert singleton_fixed.status_code == 200, singleton_fixed.text
+            singleton_result = singleton_fixed.json()["result"]
+            assert singleton_fixed.json()["scope"] == {"kind": "density_class", "density_class_code": "D2",
+                                                        "territory_type": "commune", "member_count": 1}
+            assert (singleton_result["status"], singleton_result["reason"]) == ("available", None)
+            assert singleton_result["median"] == pytest.approx(.2)
+            assert (singleton_result["rank"], singleton_result["rank_size"],
+                    singleton_result["rank_ties"]) == (None, None, None)
+            assert (singleton_result["selected_member_count"], singleton_result["eligible_count"],
+                    singleton_result["missing_count"]) == (1, 1, 0)
 
             cohort_facts = client.post('/api/resources/read', json={
                 "resource": "distribution_dpe",
@@ -1088,3 +1137,122 @@ def test_dpe_published_peer_rows_must_match_group_counts_and_rank_span(
     monkeypatch.setattr(TestClient, "post", inspect_post)
     test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, tmp_path)
     assert exercised, "the captured native DPE selected-comparison request was not exercised"
+
+
+def test_fixed_profile_singleton_group_serves_published_median_without_rank(canonical_db_env):
+    """#917: a published fixed profile group with one comparable member serves its median.
+
+    Rank fields stay null below two comparable values; the publication itself is
+    unchanged (request-time policy only).
+    """
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    with psycopg.connect(canonical_db_env["publish_dsn"]) as conn:
+        conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,epci_id,density_class_code,
+            density_class_label) VALUES
+            ('29001','commune','Focal','E1','D1','Dense'),
+            ('29002','commune','Peer','E1','D1','Dense')""")
+        conn.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('E1','epci','Fixture EPCI')")
+        conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref-v1',3)")
+        conn.execute("INSERT INTO source_dataset VALUES ('housing_src','Housing fixture')")
+        conn.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('housing_src','v1','2026','2026-01-01',NULL)")
+        conn.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,completeness,
+            descriptor_version,comparison_detail,comparison_sex,comparison_direction,denominator_semantics,
+            detail_units_required)
+            VALUES ('mix_logements','habitat','Mix des logements','%',ARRAY['commune'],'dense_complete',
+            'mix-v1','principales',NULL,'high','logements',true)""")
+        conn.execute("INSERT INTO profile_descriptor_source VALUES ('mix_logements','housing_src')")
+        for ordinal, detail in enumerate(('principales', 'secondaires', 'vacants')):
+            conn.execute("INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal,unit) VALUES ('mix_logements','detail',%s,%s,%s,'%%')",
+                (detail, detail, ordinal))
+        # Dense-complete rectangle; only the comparison facet cell differs in availability.
+        for tid, values in (('29001', (.7, .2, .1)), ('29002', (None, .5, .4))):
+            for detail, value in zip(('principales', 'secondaires', 'vacants'), values):
+                conn.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,detail_key,
+                    sex_key,sex_axis_name,value,status) VALUES ('mix_logements',%s,'commune',%s,'',NULL,%s,%s)""",
+                    (tid, detail, value, 'measured' if value is not None else 'not_available'))
+                conn.execute("INSERT INTO profile_observation_source VALUES ('mix_logements',%s,%s,'','housing_src','v1')",
+                    (tid, detail))
+        conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','profiles-v1',6,'ref-v1')")
+        # Published fixed group: two members, exactly one comparable at the facet.
+        conn.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,profile_content_version,
+            reference_content_version,group_row_count,territory_row_count)
+            VALUES (true,'profile-comparison-v1','profiles-v1','ref-v1',2,4)""")
+        conn.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,territory_type,indicator_id,
+            detail_key,sex_key,statistic,median,member_count,eligible_count,missing_count,lineage_source_count,
+            profile_content_version,reference_content_version) VALUES
+            ('density_class','D1','commune','mix_logements','principales','','median',.7,2,1,1,1,'profiles-v1','ref-v1')""")
+        conn.execute("""INSERT INTO profile_comparison_territory(comparison_context,group_id,territory_type,indicator_id,
+            detail_key,sex_key,territory_id,value,status,rank,tie_count,rank_size,
+            profile_content_version,reference_content_version) VALUES
+            ('density_class','D1','commune','mix_logements','principales','','29001',.7,'measured',1,1,1,'profiles-v1','ref-v1'),
+            ('density_class','D1','commune','mix_logements','principales','','29002',NULL,'not_available',NULL,NULL,NULL,'profiles-v1','ref-v1')""")
+        # An explicit selection matching the E1 members resolves to the epci fixed
+        # context, so the same singleton shape is published there too.
+        conn.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,territory_type,indicator_id,
+            detail_key,sex_key,statistic,median,member_count,eligible_count,missing_count,lineage_source_count,
+            profile_content_version,reference_content_version) VALUES
+            ('epci','E1','commune','mix_logements','principales','','median',.7,2,1,1,1,'profiles-v1','ref-v1')""")
+        conn.execute("""INSERT INTO profile_comparison_territory(comparison_context,group_id,territory_type,indicator_id,
+            detail_key,sex_key,territory_id,value,status,rank,tie_count,rank_size,
+            profile_content_version,reference_content_version) VALUES
+            ('epci','E1','commune','mix_logements','principales','','29001',.7,'measured',1,1,1,'profiles-v1','ref-v1'),
+            ('epci','E1','commune','mix_logements','principales','','29002',NULL,'not_available',NULL,NULL,NULL,'profiles-v1','ref-v1')""")
+        conn.execute("""INSERT INTO comparison_source_lineage(comparison_family,comparison_context,group_id,
+            territory_type,facet_id,source_id,vintage_id,comparison_content_version) VALUES
+            ('profile','density_class','D1','commune','mix_logements','housing_src','v1','profile-comparison-v1'),
+            ('profile','epci','E1','commune','mix_logements','housing_src','v1','profile-comparison-v1')""")
+
+    pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
+                          open=True, kwargs={"autocommit": True})
+    previous = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    try:
+        with TestClient(main.app) as client:
+            fixed = client.post('/api/resources/read', json={
+                "resource": "mix_logements",
+                "target": {"kind": "territory", "type": "commune", "id": "29001"},
+                "fields": ["median", "rank", "rank_size", "rank_ties", "selected_member_count",
+                           "eligible_count", "missing_count"],
+                "intent": {"kind": "fixed_comparison", "context": "default"},
+            })
+            assert fixed.status_code == 200, fixed.text
+            assert fixed.json()["scope"]["member_count"] == 2
+            result = fixed.json()["result"]
+            assert (result["status"], result["reason"]) == ("available", None)
+            assert result["median"] == pytest.approx(.7)
+            assert (result["rank"], result["rank_size"], result["rank_ties"]) == (None, None, None)
+            assert (result["selected_member_count"], result["eligible_count"], result["missing_count"]) == (2, 1, 1)
+
+            # The same published group read through a selected comparison that
+            # exactly matches the D1 preset; member_ranks stays all-null below two.
+            selected = client.post('/api/resources/read', json={
+                "resource": "mix_logements",
+                "target": {"kind": "territory", "type": "commune", "id": "29001"},
+                "fields": ["median", "rank", "rank_size", "rank_ties", "selected_member_count",
+                           "eligible_count", "missing_count", "member_ranks"],
+                "intent": {"kind": "selected_comparison", "members": [
+                    {"type": "commune", "id": "29001"}, {"type": "commune", "id": "29002"}]},
+            })
+            assert selected.status_code == 200, selected.text
+            selected_result = selected.json()["result"]
+            assert (selected_result["status"], selected_result["reason"]) == ("available", None)
+            assert selected_result["median"] == pytest.approx(.7)
+            assert (selected_result["rank"], selected_result["rank_size"], selected_result["rank_ties"]) == (None, None, None)
+            assert {row["territory_id"]: (row["rank"], row["rank_size"], row["rank_ties"])
+                    for row in selected_result["member_ranks"]} == {
+                "29001": (None, None, None), "29002": (None, None, None)}
+            # Publications are unchanged: the same committed group row is still there.
+            with psycopg.connect(canonical_db_env["publish_dsn"]) as witness:
+                row = witness.execute("""SELECT median,member_count,eligible_count,missing_count FROM profile_comparison_group
+                    WHERE indicator_id='mix_logements'""").fetchone()
+            assert row == (.7, 2, 1, 1)
+    finally:
+        if previous is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous
+        pool.close()

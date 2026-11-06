@@ -33,13 +33,16 @@ editorial source list.
 single-read request and each batch item have the same fields; only a batch item
 adds its correlation `id`. `POST /api/resources/read-batch` validates all items
 before returning results and returns no partial result if any item fails. Both
-execute on one `READ ONLY REPEATABLE READ` snapshot. The batch is limited to 12
-items, 200,000 preflight work units, and 8 MB serialized output. Supported intents
+execute on one `READ ONLY REPEATABLE READ` snapshot. Nonempty batches have no
+item-count ceiling and are bounded by 200,000 preflight work units and 8 MB serialized output. Supported intents
 are `facts`, `fixed_comparison` with its declared closed comparison context, and
 bounded `selected_comparison` with at most 1,500 unique typed territory members. Facts
 coordinates and optional fields are producer-declared; status, availability,
 descriptor, axis, and provenance metadata remain mandatory where declared.
-Comparison fields use the closed comparison-result vocabulary.
+Comparison fields use the closed comparison-result vocabulary. For declared-profile
+and numeric period/detail collection comparisons, `median` is served when exactly one
+member is comparable (the singleton median, #917); `rank`/`rank_size`/`rank_ties` and
+peer `member_ranks` remain null until at least two members are comparable.
 Owned ordered-series comparisons additionally accept the requested-only
 `axis_comparisons` projection: it returns API-owned comparison values, eligibility,
 missing counts, ranks/ties, and lineage for the axes already present in the comparison
@@ -147,7 +150,7 @@ These are the model fields reachable from request bodies, including nested and d
 | `ResourceReadItem` | `coordinates` | no | object |
 | `ResourceReadItem` | `fields` | no | array of string; max items: `32` |
 | `ResourceReadItem` | `intent` | yes | one of FactsIntent / FixedComparisonIntent / SelectedComparisonIntent |
-| `ResourceBatchRequest` | `items` | yes | array of ResourceBatchItem; min items: `1`; max items: `12` |
+| `ResourceBatchRequest` | `items` | yes | array of ResourceBatchItem; min items: `1` |
 | `TerritoryTarget` | `kind` | yes | string; const: `territory` |
 | `TerritoryTarget` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
 | `TerritoryTarget` | `id` | yes | string; min chars: `1`; max chars: `32` |
@@ -223,8 +226,9 @@ Searches the retained published territory reference with bounded query inputs.
   alike — plus the opt-in direction-aware focal `rank`/`rank_size`/`rank_ties`
   within the selection (ties share rank; the focal must be a member to receive a
   rank). Unknown or partial members fail closed naming the failed member.
-  The registry-wide aggregate readings (`meanDiversity`, `meanVolume` — the sums
-  of the 15-minute car share/mean over the complete published TYPEQU registry,
+  The 40 registry-wide aggregate readings (five displayed modes × four horizons
+  × diversity/share and volume/mean; car/15-minute retains `meanDiversity` and
+  `meanVolume`),
   requested via the `measure` coordinate without `typequ`) are computed the same
   way per request from published per-type rows, never published, and gain the
   opt-in rank fields in BOTH intents (#914, ADR-0039's 2026-11-04 amendment):

@@ -876,6 +876,86 @@ def test_period_detail_selected_comparison_uses_native_selected_facet(cohort_htt
     assert unavailable["reason"] == "fewer_than_two_comparable_values"
 
 
+def test_period_detail_singleton_selection_serves_member_value_as_median(cohort_http):
+    """#917: a 1-member collection selection pairs on that member's value; no rank is invented."""
+    cohort_http.publish(
+        ("UPDATE observed_collection_publication SET content_version='cohort-domain-selected-v1', "
+         "row_count=3,published_at=transaction_timestamp() "
+         "WHERE indicator_id='subventions_par_domaine'", ()),
+        ("INSERT INTO observed_collection_category(indicator_id,detail_key,label,ordinal,source_id) "
+         "VALUES ('subventions_par_domaine','mobility','Mobilité',1,'cohort-source')", ()),
+        ("INSERT INTO period_detail_observation(indicator_id,territory_id,territory_type,detail_key,"
+         "observation_period,value,source_id,vintage_id) VALUES "
+         "('subventions_par_domaine','cohort-c1','commune','mobility','2024',600,'cohort-source','cohort-v1'),"
+         "('subventions_par_domaine','cohort-c3','commune','mobility','2024',300,'cohort-source','cohort-v1')", ()),
+    )
+    singleton = cohort_http.client.post("/api/resources/read", json={
+        "resource": "subventions_par_domaine",
+        "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+        "fields": ["median", "rank", "rank_size", "selected_member_count", "eligible_count", "missing_count"],
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "commune", "id": "cohort-c1"},
+        ]},
+        "coordinates": {"detail": ["mobility"], "period": ["2024"]},
+    })
+    assert singleton.status_code == 200, singleton.text
+    result = singleton.json()["result"]
+    assert (result["status"], result["reason"]) == ("available", None)
+    assert result["median"] == 600.0
+    assert result["rank"] is None and result["rank_size"] is None
+    assert (result["selected_member_count"], result["eligible_count"], result["missing_count"]) == (1, 1, 0)
+    assert result["source_facet"] == {"detail": "mobility", "observation_period": "2024"}
+
+
+def test_period_detail_fixed_singleton_group_serves_published_median_without_rank(cohort_http):
+    """#917 published path: a fixed group with one comparable member serves its published median."""
+    cohort_http.publish(
+        ("UPDATE observed_collection_publication SET published_at=transaction_timestamp() "
+         "WHERE indicator_id='subventions_par_domaine'", ()),
+        ("UPDATE observed_collection_descriptor SET direction='high',comparison_detail='education',"
+         "comparison_period='2025' WHERE indicator_id='subventions_par_domaine'", ()),
+        ("INSERT INTO observed_collection_comparison_publication(indicator_id,content_version,"
+         "collection_content_version,reference_content_version,group_row_count,territory_row_count,"
+         "lineage_row_count,lineage_complete) VALUES "
+         "('subventions_par_domaine','cohort-fixed-comparison-v1','cohort-domain-v1','cohort-reference-v1',1,2,1,true)", ()),
+        ("INSERT INTO observed_collection_comparison_group(indicator_id,comparison_context,group_id,"
+         "territory_type,detail_key,observation_period,statistic,median,member_count,eligible_count,"
+         "missing_count,lineage_source_count,collection_content_version,reference_content_version) VALUES "
+         "('subventions_par_domaine','density_class','D1','commune','education','2025','median',125.0,2,1,1,1,"
+         "'cohort-domain-v1','cohort-reference-v1')", ()),
+        ("INSERT INTO observed_collection_comparison_territory(indicator_id,comparison_context,group_id,"
+         "territory_type,detail_key,observation_period,territory_id,value,status,rank,tie_count,rank_size,"
+         "collection_content_version,reference_content_version) VALUES "
+         "('subventions_par_domaine','density_class','D1','commune','education','2025','cohort-c1',125.0,'measured',1,1,1,"
+         "'cohort-domain-v1','cohort-reference-v1'),"
+         "('subventions_par_domaine','density_class','D1','commune','education','2025','cohort-c2',NULL,'not_published',NULL,NULL,NULL,"
+         "'cohort-domain-v1','cohort-reference-v1')", ()),
+        ("INSERT INTO observed_collection_comparison_lineage(indicator_id,comparison_context,group_id,"
+         "territory_type,detail_key,observation_period,source_id,vintage_id,comparison_content_version) VALUES "
+         "('subventions_par_domaine','density_class','D1','commune','education','2025','cohort-source','cohort-v1',"
+         "'cohort-fixed-comparison-v1')", ()),
+    )
+    fixed = cohort_http.client.post("/api/resources/read", json={
+        "resource": "subventions_par_domaine",
+        "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+        "fields": ["median", "rank", "rank_size", "selected_member_count", "eligible_count", "missing_count"],
+        "intent": {"kind": "fixed_comparison", "context": "default"},
+    })
+    assert fixed.status_code == 200, fixed.text
+    result = fixed.json()["result"]
+    assert (result["status"], result["reason"]) == ("available", None)
+    assert result["median"] == 125.0
+    assert result["rank"] is None and result["rank_size"] is None
+    assert (result["selected_member_count"], result["eligible_count"], result["missing_count"]) == (2, 1, 1)
+    assert result["source_facet"] == {"detail": "education", "observation_period": "2025"}
+    # The published group is unchanged by the request-time policy: same median row.
+    import psycopg
+    with psycopg.connect(cohort_http.publish_dsn) as witness:
+        row = witness.execute("""SELECT median,member_count,eligible_count,missing_count
+            FROM observed_collection_comparison_group WHERE indicator_id='subventions_par_domaine'""").fetchone()
+    assert row == (125.0, 2, 1, 1)
+
+
 def test_anchored_membership_cohort_keeps_rider_and_source_anchor_counts(cohort_http):
     response = cohort_http.read("couverture_programmes", department_id="29", epci_id="cohort-e29",
         coordinates={"membership": ["ACV"]},
@@ -1439,3 +1519,12 @@ def test_source_binding_only_projection_keeps_milieux_facts_and_absence_partitio
         "milieux_selected_reading", **cohort_kwargs, item_id="cohort-source-bindings")])
     assert cohort_batch.status_code == 200, cohort_batch.text
     assert cohort_batch.json()["results"][0]["data"] == cohort.json()
+
+
+def test_forty_inexpensive_reads_succeed_in_one_ordered_http_batch(cohort_http):
+    items = [cohort_http.item("densite", fields=["value"], item_id=f"density-{index}")
+             for index in range(40)]
+    response = cohort_http.batch(items)
+    assert response.status_code == 200, response.text
+    assert [result["id"] for result in response.json()["results"]] == [item["id"] for item in items]
+    assert all(result["resource"] == "densite" for result in response.json()["results"])

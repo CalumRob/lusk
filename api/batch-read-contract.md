@@ -2,7 +2,7 @@
 
 `GET /api/resources` exposes the producer-derived retained-resource catalogue.
 `POST /api/resources/read` reads one declared item; `POST /api/resources/read-batch`
-composes up to 12 such items under one PostgreSQL `READ ONLY REPEATABLE READ`
+composes a nonempty collection of such items under one PostgreSQL `READ ONLY REPEATABLE READ`
 transaction. A batch response is
 `{"contract":"semantic-read-batch-v1","results":[{"id":"...","data":{...}}]}`.
 Each item has a unique request-local `id` plus the same `resource`, typed `target`,
@@ -93,10 +93,12 @@ accept cohort targets; comparisons remain territory-targeted.
 
 Before any data read, preflight bounds the actual selected members, axes, facts, and
 evidence/lineage work within the shared 200,000-unit limit. A single read and every
-item in a batch use one read-only repeatable-read snapshot. The existing 12-item
-batch and 8 MB serialized-response limits still apply; the output cap is enforced after
+item in a batch use one read-only repeatable-read snapshot. The
+8 MB serialized-response limit still applies; the output cap is enforced after
 native response serialization, and any invalid or stale dependency rejects the whole
-batch without partial results.
+batch without partial results. There is no independent item-count ceiling:
+preflight charges at least one work unit per item in addition to estimated
+selected work, and the whole request remains bounded by 200,000 work units.
 The AEDAR territorial aggregates and fixed comparisons are read only through
 the unified semantic resource contract (`/api/resources/read` and
 `/api/resources/read-batch`); the legacy GET routes are retired and return 404.
@@ -131,14 +133,17 @@ published (#810 stance intact).
 
 ## AEDAR aggregate-reading comparisons (#914)
 
-The registry-wide overview readings the fiche displays — `meanDiversity` (the
-sum of `count_15_car_share` over the complete published TYPEQU registry) and
-`meanVolume` (the sum of `count_15_car_mean`) — are declared ranked
-high-is-better comparison facets in the producer `measure_facets` map alongside
-the 312 per-cell measures. They are requested through the `measure` coordinate
-without a `typequ` coordinate, and are computed per request from published
-per-type rows in `aedar_territorial_aggregate` — never published as new rows
-(#810 stance intact):
+The 40 registry-wide aggregate readings are the cross-product of the five
+displayed modes (`walk`, `transit`, `bike_lts2`, `bike_lts4`, `car`), four
+horizons (5, 10, 15, 20 minutes), and diversity/share plus volume/mean. The
+separate signed `transit_gain` measure family is not part of this display
+inventory. Names are `<mode><horizon>Diversity` or `<mode><horizon>Volume`,
+except the existing car/15-minute names `meanDiversity` and `meanVolume`,
+which remain compatible. The producer contract declares all 40 as ranked
+high-is-better facets alongside the 312 per-cell measures. They use the
+existing `measure` coordinate without `typequ` and are computed per request
+from published per-type rows in `aedar_territorial_aggregate` — never
+published as new rows (#810 stance intact):
 
 An aggregate reading is available only when the territory's published rows
 satisfy the same compatibility law as the fiche's displayed sums (CONTEXT.md
@@ -241,14 +246,19 @@ producer-derived: it includes exact vintage source IDs where a declared source
 record covers multiple distinct territorial snapshots, so app provenance
 validation need not infer IDs from names, dates, or page metadata.
 
-At least two measured/eligible values are required for a declared-profile median
-and rank. Below that threshold the comparison is `unavailable` with
-`fewer_than_two_comparable_values`; median and focal/peer ranks are null, while
-selected/eligible/missing counts and typed member identities remain truthful when
-requested. Suppressed, unsupported, unavailable, and unpublished cells are not
-converted to zero or ranked. Published peer status totals must reconcile with the
-group's eligible/missing counts; malformed, incomplete, stale, or impossible
-publication evidence, or impossible rank/tie spans fail closed with `503`.
+The group median is served whenever at least one member is comparable: with
+exactly one comparable member the median IS that member's value (singleton median,
+#917, owner decision 2026-11-04), exactly like scalar comparisons. Rank fields
+(`rank`/`rank_size`/`rank_ties` and peer `member_ranks`) still require at least
+two comparable values and stay null below that threshold; with zero comparable
+values the comparison is `unavailable` with `fewer_than_two_comparable_values` and
+a null median, while selected/eligible/missing counts and typed member identities
+remain truthful when requested. The same amended rule applies to numeric
+period/detail collection comparisons. Suppressed, unsupported, unavailable, and
+unpublished cells are not converted to zero or ranked. Published peer status totals
+must reconcile with the group's eligible/missing counts; malformed, incomplete,
+stale, or impossible publication evidence, or impossible rank/tie spans fail
+closed with `503`.
 
 Profile, scalar, and territory-reference publications have independent clocks.
 Profile comparison responses bind `profile_content_version` and

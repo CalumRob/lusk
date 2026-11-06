@@ -13,16 +13,24 @@ AEDAR_MEASURE_KEYS = {
     for statistic in ("share", "min", "max", *(f"decile{i}" for i in range(1, 10)), "mean")
 }
 
-# Registry-wide overview aggregate readings served as request-time comparison
-# facets (ADR-0039's 2026-11-04 aggregate-ranks amendment, #914): each reading
-# is the sum of its per-type measure over the complete published TYPEQU
-# registry of a member, computed per request from `aedar_territorial_aggregate`
-# — never a new publication. meanDiversity = Σ count_15_car_share
-# (types / address); meanVolume = Σ count_15_car_mean (establishments /
-# address); both are high-is-better ranked comparison facets.
+# Registry-wide aggregate readings: sum the per-type share/mean over the
+# complete TYPEQU registry. The 5 displayed mode identities and 4 horizons
+# are a projection of the producer's existing measure coordinates; the
+# additional transit_gain family is intentionally not a display mode.
+AEDAR_AGGREGATE_MODES = ("walk", "transit", "bike_lts2", "bike_lts4", "car")
+AEDAR_AGGREGATE_HORIZONS = (5, 10, 15, 20)
+
+def _aedar_aggregate_key(mode, horizon, kind):
+    if mode == "car" and horizon == 15:
+        return "meanDiversity" if kind == "diversity" else "meanVolume"
+    return f"{mode}{horizon}{'Diversity' if kind == 'diversity' else 'Volume'}"
+
 AEDAR_AGGREGATE_READINGS = {
-    "meanDiversity": "count_15_car_share",
-    "meanVolume": "count_15_car_mean",
+    _aedar_aggregate_key(mode, horizon, kind):
+        f"count_{horizon}_{mode}_{'share' if kind == 'diversity' else 'mean'}"
+    for mode in AEDAR_AGGREGATE_MODES
+    for horizon in AEDAR_AGGREGATE_HORIZONS
+    for kind in ("diversity", "volume")
 }
 
 # The full comparison `measure` coordinate vocabulary: the 312 per-cell

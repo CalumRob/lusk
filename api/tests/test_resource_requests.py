@@ -61,6 +61,20 @@ def test_batch_item_ids_are_required_unique_and_extra_selectors_forbidden():
         ResourceReadItem.model_validate({**read, "where": {"column": "value"}})
 
 
+def test_batch_schema_accepts_forty_items_and_still_requires_nonempty_unique_ids():
+    read = {
+        "resource": "densite",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "intent": {"kind": "facts"},
+    }
+    request = ResourceBatchRequest.model_validate({"items": [
+        {"id": f"read-{index}", **read} for index in range(40)
+    ]})
+    assert len(request.items) == 40
+    with pytest.raises(ValidationError):
+        ResourceBatchRequest.model_validate({"items": []})
+
+
 def test_named_reference_uses_its_producer_declared_non_territory_identity():
     catalogue = default_resource_catalogue()
     resource = catalogue.resources_by_id["raccordement_reference"]

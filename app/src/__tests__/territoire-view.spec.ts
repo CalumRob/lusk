@@ -737,7 +737,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     expect(themeRequests[0]?.every((item) => themeByResource.get(item.resource) === 'programmes')).toBe(true)
     expect(Object.values(warmedCounts).every((count) => count > 0)).toBe(true)
-    expect(requests.every((items) => items.length >= 1 && items.length <= 12)).toBe(true)
+    expect(requests.every((items) => items.length >= 1)).toBe(true)
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
 
     for (const [theme, heading] of [
@@ -905,7 +905,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     const passoires = nativeResources('habitat').find((resource) => resource.resource_id === 'part_passoires')!
     expect(wrapper.get(`[data-clef="${passoires.resource_id}"] .valeur-numerique`).text()).toBe('13')
-    expect(requests.every((items) => items.length >= 1 && items.length <= 12)).toBe(true)
+    expect(requests.every((items) => items.length >= 1)).toBe(true)
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
     wrapper.unmount()
   })
