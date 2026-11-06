@@ -702,10 +702,11 @@ rapport_theme <- function(theme, mode = MODE_RUN, sortie = SORTIE_RUN,
 #   - `args` : la liste nommée des CHEMINS que le verrou lit — nom = le
 #     paramètre de la fonction, valeur = l'id de la source du manifeste du
 #     thème (créé en cible fichier_<theme>_<id>, à hash de contenu — la
-#     précision du skip par source) OU le sentinelle "epci" (le référentiel
-#     partagé extrait, fichier_epci_extrait). La cible de fichiers passée en
-#     ARGUMENT est la dépendance : le manifeste résout le chemin, la commande
-#     ne hard-code JAMAIS un nom de fichier.
+#     précision du skip par source), le sentinelle "epci" (le référentiel
+#     partagé extrait, fichier_epci_extrait), ou "published" (l'artefact de
+#     faits du thème conservé selon le contrat publish). La cible de fichiers
+#     passée en ARGUMENT est la dépendance : le manifeste résout les sources ;
+#     les autres chemins dérivent du descripteur et du contrat de publication.
 VERIFICATIONS_RUN <- list(
   mobilite = list(
     list(slug = "mobilite_passage_cog",
@@ -815,9 +816,10 @@ fichier_source <- function(theme_nom, id, manifeste, sources,
 # reçoit SES entrées en ARGUMENTS — les cibles de fichiers PAR SOURCE
 # (fichier_<theme>_<id>, dédupliquées entre verrous du thème, ordonnées
 # après le téléchargement), ou le brut du thème (`sur_brut`), ou le
-# référentiel partagé (la sentinelle "epci"). Passer la cible en argument EST
-# la dépendance — le manifeste résout le chemin, la commande ne hard-code
-# jamais un nom de fichier.
+# référentiel partagé (la sentinelle "epci") ou l'artefact produit conservé
+# (la sentinelle "published"). Passer la cible en argument EST la dépendance —
+# le manifeste résout les sources ; le contrat de publication indique quels
+# thèmes ont encore un Parquet de faits par thème.
 verifications_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN) {
   spec <- VERIFICATIONS_RUN[[theme$theme]]
   if (is.null(spec)) return(list())
@@ -839,9 +841,16 @@ verifications_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN) {
         # la vérification suit SA fraîcheur
         appels[[param]] <- as.name(paste0("raccordement_", theme$theme))
       } else if (identical(id, "published")) {
-        # La vérification du raccordement lit le JSON publié, mais le chemin
-        # est lui-même une cible de fichiers ordonnée après la publication :
-        # une dérive du payload ne peut pas laisser le verrou frais.
+        # Seuls les propriétaires qui conservent leur Parquet de faits par
+        # thème peuvent fournir cette entrée. Échouer ici, plutôt que de
+        # fabriquer un chemin plausible vers un artefact retiré.
+        if (!theme$theme %in% THEMES_METADATA ||
+            theme_parquet_retire(theme$theme)) {
+          stop("Verification 'published' has no retained theme artifact for owner ",
+               theme$theme, call. = FALSE)
+        }
+        # La cible de fichiers est ordonnée après publie_<theme> : toute
+        # modification de l'artefact publié réexécute le verrou.
         cible_payload <- as.name(paste0("fichier_payload_", theme$theme))
         if (!id %in% deja) {
           cibles <- c(cibles, list(
@@ -849,7 +858,7 @@ verifications_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN) {
               as.character(cible_payload),
               bquote({
                 .(as.name(paste0("publie_", theme$theme)))
-                .(file.path(sortie, paste0("indicateurs_", theme$theme, ".json")))
+                .(file.path(sortie, paste0("indicateurs_", theme$theme, ".parquet")))
               }),
               format = "file"
             )

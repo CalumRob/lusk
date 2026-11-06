@@ -76,14 +76,48 @@ test_that("structure : le trait câble les épingles, la cible de calcul et la c
   expect_true(any(grepl("raccordement_mobilite",
                         deparse(publie$command$expr), fixed = TRUE)))
 
+  sortie <- tempfile("sortie-struct-")
   verifs <- env$verifications_theme(theme = theme_mobilite(),
                                     cache = tempfile("cache-struct-"),
-                                    sortie = tempfile("sortie-struct-"))
+                                    sortie = sortie)
   noms_verifs <- vapply(verifs, function(t) t$name, character(1))
   expect_true("fichier_payload_mobilite" %in% noms_verifs)
+  expect_identical(verifs[[which(noms_verifs == "fichier_payload_mobilite")]]$settings$format,
+                   "file")
   verif <- verifs[[which(noms_verifs == "verif_mobilite_raccordement")]]
   expect_true(any(grepl("fichier_payload_mobilite",
                         deparse(verif$command$expr), fixed = TRUE)))
+
+  # Le chemin est le Parquet conservé par le contrat publish et le target le
+  # résout après la cible de publication, afin que targets suive son contenu.
+  cible_payload <- verifs[[which(noms_verifs == "fichier_payload_mobilite")]]
+  chemin <- eval(cible_payload$command$expr,
+                 envir = list2env(list(publie_mobilite = TRUE)))
+  expect_identical(chemin, file.path(sortie, "indicateurs_mobilite.parquet"))
+  expect_lt(which(noms_verifs == "fichier_payload_mobilite"),
+            which(noms_verifs == "verif_mobilite_raccordement"))
+
+  published_owners <- names(Filter(function(registry) {
+    any(vapply(registry, function(entry) "published" %in% unlist(entry$args),
+               logical(1)))
+  }, env$VERIFICATIONS_RUN))
+  expect_identical(published_owners, "mobilite")
+})
+
+test_that("structure : published échoue pour un propriétaire sans Parquet conservé", {
+  env <- pieces_graphe_raccordement()
+  env$VERIFICATIONS_RUN$economie <- list(list(
+    slug = "economie_published_fixture",
+    verifier = verifier_rangs_economie_reel,
+    args = list(payload = "published")
+  ))
+
+  expect_error(
+    env$verifications_theme(theme = theme_economie(),
+                            cache = tempfile("cache-struct-"),
+                            sortie = tempfile("sortie-struct-")),
+    "no retained theme artifact for owner economie"
+  )
 })
 
 test_that("structure : le mode cron pose cue = never, le mode full non", {
