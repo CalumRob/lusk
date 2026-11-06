@@ -9,6 +9,20 @@ import {
 } from '../methodes/indicateurs'
 import { SOURCES_METHODES, datasetDeSource } from '../methodes/sources'
 import type { DirectionRang } from '../methodes/indicateurs'
+import { nativeResources } from './helpers/semanticApiFixtures'
+import { PRODUCER_THEME_METADATA } from './helpers/producerThemeMetadata'
+
+// Producer indicator identities outside the retained Methods product: the old
+// Mobilité access surface was retired from the app in #870. Some declarations
+// remain as page metadata, others only in the producer's indicator-key roster.
+const INDICATEURS_MOBILITE_RETIRES = [
+  'avg_div_b', 'avg_div_car', 'avg_div_t', 'avg_tot_b', 'avg_tot_car', 'avg_tot_t',
+  'iso_administration', 'iso_alimentation', 'iso_banque', 'iso_ecole', 'iso_sante',
+  'nb_buildings', 'tot_loss_b', 'tot_loss_t',
+  'share_admin_b', 'share_admin_c', 'share_admin_t', 'share_bank_b', 'share_bank_c', 'share_bank_t',
+  'share_food_b', 'share_food_c', 'share_food_t', 'share_health_b', 'share_health_c', 'share_health_t',
+  'share_school_b', 'share_school_c', 'share_school_t',
+] as const
 
 /** The app-owned Methodes registry contains editorial copy and source links, not observations. */
 describe('registre Méthodes — contrat éditorial app-owned', () => {
@@ -18,6 +32,86 @@ describe('registre Méthodes — contrat éditorial app-owned', () => {
     for (const theme of THEMES_CONSTRUITS) {
       expect(typeof THEMES_METHODES[theme].indicateurs).toBe('object')
       expect(Array.isArray(THEMES_METHODES[theme].stories)).toBe(true)
+    }
+  })
+
+  it('aligns documented indicator keys and units with producer pages and the native API catalogue', () => {
+    for (const theme of THEMES_CONSTRUITS) {
+      const producer = PRODUCER_THEME_METADATA[theme]
+      const documented = THEMES_METHODES[theme].indicateurs
+      const pages = producer.indicator_pages ?? {}
+      const apiResources = nativeResources(theme)
+
+      for (const [key, indicator] of Object.entries(documented)) {
+        const page = pages[key]
+        if (page) {
+          expect(producer.indicator_keys, `${theme}.${key} producer key`).toContain(key)
+          expect(page.indicator, `${theme}.${key} producer page identity`).toBe(key)
+          const resource = apiResources.find((candidate) => candidate.resource_id === key &&
+            candidate.resource_kind === 'indicator')
+          expect(resource, `${theme}.${key} native indicator resource`).toBeDefined()
+          expect(resource!.unit, `${theme}.${key} producer/API unit`).toBe(page.unit)
+          expect(indicator.unite, `${theme}.${key} Methods unit`).toBe(page.unit)
+          continue
+        }
+
+        if (theme === 'mobilite' && key === 'raccordement_reference') {
+          // The reference is a named API resource linked by the producer's
+          // raccordement page, not an independent indicator page.
+          expect(pages.raccordement_courbe.trajectory.reference.indicator).toBe(key)
+          const resource = apiResources.find((candidate) => candidate.resource_id === key &&
+            candidate.shapes.includes('named_reference'))
+          expect(resource, `${theme}.${key} named-reference resource`).toBeDefined()
+          expect(indicator.unite, `${theme}.${key} native unit`).toBe(resource!.unit)
+          continue
+        }
+
+        if (theme === 'milieux' && key === 'trajectoire_artif_par_habitant') {
+          // This derived ratio is published inside the typed reading, with no
+          // standalone page/resource (and therefore no producer unit field).
+          const reading = producer.semantic_resources.find((resource: any) =>
+            resource.resource_id === 'milieux_selected_reading')
+          expect(reading?.fields, `${theme}.${key} producer reading field`).toContain(key)
+          expect(producer.indicator_keys).not.toContain(key)
+          expect(pages).not.toHaveProperty(key)
+          expect(apiResources.some((resource) => resource.resource_id === key)).toBe(false)
+          expect(indicator.unite, `${theme}.${key} no standalone unit contract`).toBe('')
+          continue
+        }
+
+        throw new Error(`No producer/API fact contract for Methods indicator ${theme}.${key}`)
+      }
+
+      const excludedIndicators = theme === 'mobilite' ? INDICATEURS_MOBILITE_RETIRES : []
+      for (const key of Object.keys(pages)) {
+        expect(producer.indicator_keys, `${theme}.${key} producer key`).toContain(key)
+        const explicitlyExcluded = (excludedIndicators as readonly string[]).includes(key)
+        expect(Object.hasOwn(documented, key) || explicitlyExcluded,
+          `${theme}.${key} is documented or explicitly excluded`).toBe(true)
+        if (explicitlyExcluded) {
+          expect(apiResources.some((resource) => resource.resource_id === key),
+            `${theme}.${key} retired API route`).toBe(false)
+          expect(Object.hasOwn(documented, key)).toBe(false)
+          continue
+        }
+        const resource = apiResources.find((candidate) => candidate.resource_id === key &&
+          candidate.resource_kind === 'indicator')
+        expect(resource, `${theme}.${key} native producer page`).toBeDefined()
+        expect(resource!.unit, `${theme}.${key} metadata/API unit`).toBe(pages[key].unit)
+      }
+      for (const key of excludedIndicators) {
+        expect(producer.indicator_keys, `${theme}.${key} named producer exclusion`).toContain(key)
+        if (Object.hasOwn(pages, key)) expect(pages, `${theme}.${key} page metadata`).toHaveProperty(key)
+        expect(apiResources.some((resource) => resource.resource_id === key),
+          `${theme}.${key} retired API route`).toBe(false)
+        expect(Object.hasOwn(documented, key)).toBe(false)
+      }
+
+      const producerSupportKeys = theme === 'mobilite' ? ['raccordement_reference'] : []
+      const documentedProducerKeys = Object.keys(documented)
+        .filter((key) => (producer.indicator_keys as string[]).includes(key))
+      expect(new Set(producer.indicator_keys as string[]), `${theme} producer indicator-key roster`)
+        .toEqual(new Set([...documentedProducerKeys, ...excludedIndicators, ...producerSupportKeys]))
     }
   })
 
