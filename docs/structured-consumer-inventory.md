@@ -1,5 +1,18 @@
 # Structured product-data consumer inventory (#587 / #627)
 
+**Numerical export retirement (2026-11-06):** the six `indicateurs_<theme>.json`
+and five remaining `histoires_<theme>.json` browser projections are retired,
+including their `public/data` and committed `app/dist/data` copies and producer
+serialization. Programmes' empty history was already retired by #925. The
+assembled numeric loader was retired by #926. Numerical values/readings still
+exist in producer objects and retained canonical/serving artifacts; their API
+contracts are unchanged. Tests and smoke setup must use their retained producer
+or explicit fixture boundaries, not the retired committed exports. Older keep
+claims for these numerical JSON files below are historical and superseded.
+`theme_<theme>.json`, territory references, geometry, vintages and run-report are
+retained; runtime metadata ownership remains separate work under #827. This is
+source/artifact retirement, not deployment or database publication evidence.
+
 **Update 2026-11-05:** the owner retired the manual committed-payload reconstruction
 tool (`materialize_serving_artifacts.R`), its CLI and exclusive test/smoke paths.
 Earlier recovery-reader references below are superseded by this retirement.

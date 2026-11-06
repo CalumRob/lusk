@@ -1,5 +1,13 @@
 # Audit des lecteurs d'artefacts et de champs — #874
 
+**Mise à jour 2026-11-06 :** les projections numériques navigateur
+`indicateurs_*.json` / `histoires_*.json`, leurs copies commises public/dist et
+leurs sérialisations sont retirées. Les décisions « Keep » ci-dessous pour ces
+exports décrivent l'audit daté, pas une dépendance actuelle. Les tables producteur
+en mémoire et les artefacts canoniques/serving sont conservés, ainsi que les
+métadonnées de thème, références, géométries et horloges. Aucun déploiement,
+publication DB ou effacement de cache n'est impliqué.
+
 **Mise à jour 2026-11-05 :** la voie manuelle de reconstruction depuis le payload
 commis est retirée avec accord propriétaire. Les mentions de
 `materialize_serving_artifacts.R` ci-dessous décrivent l'audit daté et ne

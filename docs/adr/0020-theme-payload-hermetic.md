@@ -1,5 +1,15 @@
 # Theme payloads are hermetic — a theme's files are self-contained; cross-theme facts are precomputed in, never cross-read at runtime
 
+**Serialization retirement (owner-approved, 2026-11-06):** the per-theme
+`indicateurs_*.json` / `histoires_*.json` browser exports are retired for every
+theme, superseding the intermediate Programmes exception below. The original
+decision remains historical context for producer ownership and theme-local
+calculation, not a requirement to write or retain a numerical JSON pair. Current
+browser facts use the semantic API; canonical in-memory facts/readings and
+retained serving artifacts remain. Metadata, territory identity, geometry and
+freshness assets are separate, deliberately retained contracts. This amendment
+does not authorize app-side cross-theme arithmetic or any live publication.
+
 The fiche renders each theme block from exactly two files — `indicateurs_<theme>.json` + `histoires_<theme>.json` — and the « Chargement prioritaire » feature (#296) makes each route wait only on its own wait-set: for a theme, that is exactly its own pair. This architecture is only coherent if a theme's rendering never needs another theme's files at runtime. The first cross-theme fact surfaced in grilling #296: the Milieux story reads **Δpopulation** — a Démographie-series fact — yet the app never touches `indicateurs_demographie` to render Milieux. The pipeline precomputes `delta_population` into the Milieux `histoires` row (the population-sourcing rule of ADR-0014, schema in ADR-0017), so the Milieux block is self-contained in its own pair. The same shape holds everywhere: the Aperçu anchors come from the pipeline-published `apercu` table (never derived in the app); Économie's top-5 LQ ships precomputed (the full matrix never ships); the story clouds read peers *within the same theme's* `histoires` file; the carte layers read each theme's own scalars. The pattern was working implicitly; it is now named and prescriptive.
 
 **Decision (user, 2026-08-10):** a theme's payload is **hermetic**. A theme's rendering reads only its own `indicateurs_<theme>.json` + `histoires_<theme>.json` (plus the shared `territoires` reference and the shared cross-theme tables — `apercu`, `programmes`, `vintages`, `run-report`). Any fact a theme needs from another theme's domain is **precomputed by the pipeline into the consuming theme's own payload at compute time** — never cross-read, never derived in the app. The apparent duplication (Δpopulation ships in both Démographie and Milieux) is the **seam**, not waste: it is what keeps each theme independently loadable, which is what the wait-set architecture depends on.
