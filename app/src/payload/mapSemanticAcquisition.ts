@@ -259,6 +259,7 @@ export async function acquireMapThemeFacts(theme: Theme, level: TerritoireType,
   onDiscovered?.(candidates)
   const output: MapSemanticFacts = { facts: [], stories: [], memberships: [], grants: [], declarations: [], axes: {},
     identity: { contentVersion: '', referenceContentVersion: '' }, identities: {}, nativeContracts: {} }
+  if (!candidates.length) return output
   {
     const declarations = candidates
     const items: SemanticReadItem[] = declarations.map((resource) => ({ resource: resource.resource_id,
