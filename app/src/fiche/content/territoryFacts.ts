@@ -23,6 +23,7 @@ export interface FactProvenance {
 }
 
 export type ComparisonScopeKind =
+  | 'selection'
   | 'communes-densite'
   | 'communes-epci'
   | 'communes-bretagne'

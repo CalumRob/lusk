@@ -448,17 +448,30 @@ try {
       const root = button.closest('.bouton-comparaison')
       const heading = button.closest('.page-heading')
       const theme = heading.querySelector('.page-heading-theme')
+      const title = heading.querySelector('.page-heading-context-title')
+      const context = heading.querySelector('.page-heading-context')
       const style = getComputedStyle(button)
       const separation = theme.getBoundingClientRect().left - button.getBoundingClientRect().right
+      const titleBox = title.getBoundingClientRect()
+      const comparisonBox = button.getBoundingClientRect()
+      const builderBox = heading.querySelector('.page-heading-builder-trigger').getBoundingClientRect()
       const withButton = heading.getBoundingClientRect().height
       root.style.display = 'none'
       const withoutButton = heading.getBoundingClientRect().height
       root.style.removeProperty('display')
-      return { withButton, withoutButton, separation, border: style.borderLeftWidth, radius: style.borderRadius }
+      const builderStyle = getComputedStyle(heading.querySelector('.page-heading-builder-trigger'))
+      return { withButton, withoutButton, separation, border: style.borderLeftWidth, radius: style.borderRadius,
+        builderBorder: builderStyle.borderLeftWidth, titleAlign: getComputedStyle(title).textAlign,
+        titleRight: titleBox.right, contextRight: context.getBoundingClientRect().right,
+        centerDelta: Math.max(Math.abs((titleBox.top + titleBox.bottom) / 2 - (comparisonBox.top + comparisonBox.bottom) / 2),
+          Math.abs((titleBox.top + titleBox.bottom) / 2 - (builderBox.top + builderBox.bottom) / 2)) }
     })
-    assert.equal(heading.withButton, heading.withoutButton, `Le bouton agrandit le heading à ${width}px : ${JSON.stringify(heading)}`)
-    assert(heading.separation >= 12 && heading.border === '1px' && heading.radius === '2px',
-      `Le contrôle doit être carré, bordé et séparé du titre à ${width}px : ${JSON.stringify(heading)}`)
+    assert(heading.withButton <= heading.withoutButton + 1,
+      `Les contrôles agrandissent le heading à ${width}px : ${JSON.stringify(heading)}`)
+    assert(heading.separation >= 12 && heading.border === '0px' && heading.radius === '0px' &&
+      heading.builderBorder === '0px' && heading.titleAlign === 'right' && Math.abs(heading.titleRight - heading.contextRight) < 1,
+      `Contrôles sans cadre, séparés du titre aligné à droite à ${width}px : ${JSON.stringify(heading)}`)
+    assert(heading.centerDelta < 3, `Contrôles et titre doivent partager leur centre vertical à ${width}px : ${JSON.stringify(heading)}`)
     await trigger.click()
     const menuBounds = await page.locator('.bouton-comparaison__menu').evaluate((element) => {
       const { left, right } = element.getBoundingClientRect()
@@ -476,7 +489,7 @@ try {
     for (const option of await options.all()) {
       await option.hover()
       const geometry = await option.evaluate((element) => {
-        const panel = element.closest('[role="menu"]')
+        const panel = element.closest('.bouton-comparaison__menu')
         const menu = panel.getBoundingClientRect()
         const style = getComputedStyle(panel)
         const contained = [element, ...element.querySelectorAll('span')].every((node) => {
@@ -1498,6 +1511,44 @@ try {
       const restored = await page.evaluate(() => [document.documentElement.scrollWidth, document.body.scrollWidth])
       assert.deepEqual(restored, [width, width], 'restoring the mutation should restore mobile geometry')
     }
+
+    // #861 : après les assertions d'acquisition du défaut ci-dessus, pour ne
+    // pas confondre leurs compteurs avec les lectures de cette nouvelle sélection.
+    const builderTrigger = page.locator('.page-heading [aria-label="Construire un groupe de comparaison"]').first()
+    await builderTrigger.click()
+    const searchMember = page.locator('dialog[open] .membres-comparaison input[type="search"]')
+    await searchMember.waitFor({ state: 'visible' })
+    assert.equal(await searchMember.getAttribute('aria-label'), 'Rechercher un territoire')
+    await searchMember.fill('22002')
+    const addMember = page.locator('dialog[open] .membres-comparaison__colonne--dehors button[aria-label^="Ajouter"]').first()
+    await addMember.click()
+    await page.locator('dialog[open] .membres-comparaison__colonne--dedans li').filter({ hasText: 'Andel' }).waitFor()
+    await searchMember.fill('')
+    const builder = await page.locator('dialog[open].cahier-dialog').evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      const targets = [...element.querySelectorAll('.membres-comparaison button, input')]
+      return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, position: style.position,
+        viewportHeight: innerHeight, overflow: element.scrollWidth > element.clientWidth,
+        modal: element.getAttribute('aria-modal'),
+        searchFirst: Boolean(element.querySelector('input[type="search"]')?.compareDocumentPosition(element.querySelector('.membres-comparaison__colonnes')) & Node.DOCUMENT_POSITION_FOLLOWING),
+        hasMemberColumns: element.querySelectorAll('.membres-comparaison__colonne').length === 2,
+        columnScroll: [...element.querySelectorAll('.membres-comparaison__colonne ul')].map((scroller) => ({ client: scroller.clientHeight, scroll: scroller.scrollHeight, max: getComputedStyle(scroller.parentElement).maxHeight })),
+        targets: targets.map((target) => target.getBoundingClientRect().height) }
+    })
+    assert(!builder.overflow && builder.left >= 0 && builder.right <= width && builder.top >= 0 && builder.bottom <= builder.viewportHeight,
+      `Constructeur hors du viewport à ${width}px : ${JSON.stringify(builder)}`)
+    assert.equal(builder.modal, 'true', 'Le constructeur doit être un dialogue modal')
+    assert(builder.hasMemberColumns && builder.searchFirst,
+      'La recherche doit précéder les deux colonnes indépendantes dans le modal')
+    assert(builder.columnScroll.every((column) => column.scroll > column.client && column.max !== 'none'),
+      `Les deux listes doivent défiler indépendamment dans une hauteur bornée : ${JSON.stringify(builder.columnScroll)}`)
+    assert(builder.targets.every((height) => height >= 44), `Cibles constructeur <44px : ${JSON.stringify(builder)}`)
+    assert.equal(builder.position, 'fixed', 'Le constructeur doit utiliser la couche modale native')
+    if (width === 390 || width === 1440) await page.screenshot({ path: resolve(evidenceDir, `issue861-constructeur-${width}.png`), fullPage: false })
+    await page.getByRole('button', { name: 'Fermer la fenêtre', exact: true }).click()
+    assert.equal(await page.locator('.constructeur-comparaison dialog[open]').count(), 0,
+      'Le modal singleton doit être fermé après un seul clic')
 
     let plainMarginLayout = null
     if (width === 601 || width === 760) {
