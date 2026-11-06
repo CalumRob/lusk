@@ -816,6 +816,7 @@ describe('ProductionMobiliteAedar', () => {
     const control = ref<ControleComparaison>({ selection: label === 'selected' ? { etat: 'membres', membres: [
       { territory_type: 'commune', territory_id: content.territory.code }, { territory_type: 'commune', territory_id: '22002' },
     ] } : { etat: 'preset', preset: 'densite' },
+      focal: territoiresFixture.find((territory) => territory.territoire === content.territory.code) ?? territoiresFixture[0]!, territoires: territoiresFixture,
       libelleActif: label === 'selected' ? 'Sélection' : 'Classe de densité', presetDefaut: 'epci', presets: [], choisir: () => {} })
     vi.mocked(fetchAedarComparison).mockResolvedValue({ status: 'ready', evidence: {
       label: comparisonLabel, contentVersion: aedarReady.contentVersion,
@@ -828,7 +829,8 @@ describe('ProductionMobiliteAedar', () => {
     } })
     const wrapper = mount(ProductionMobiliteAedar, { props: {
       content, pagination: cahierPaginationFor(payload, content), aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
-    }, global: { plugins: [createRouter({ history: createMemoryHistory(), routes })], provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control } } })
+    }, global: { plugins: [createRouter({ history: createMemoryHistory(), routes })], provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control },
+      stubs: { ConstructeurComparaison: true, MembresComparaison: true } } })
     await flushPromises()
     const scalars = wrapper.findAll('[data-section="aedar-car-overview"] .cahier-figure-scalar')
     expect(scalars).toHaveLength(2)
