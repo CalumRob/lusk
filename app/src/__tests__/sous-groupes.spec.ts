@@ -133,7 +133,7 @@ describe('sousGroupesPourTerritoire — l’ordre, les labels et les clés vienn
 })
 
 describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à la fiche', () => {
-  it('keeps all six themes on the app grammar when producer subgroup presentation is stale', () => {
+  it('keeps stable app grammar on stale metadata and withholds producer-bound clauses', () => {
     const cases = [
       {
         theme: 'demographie',
@@ -141,7 +141,9 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
         histoires: histoiresDemographieFixture,
         expected: [
           ['etat-de-la-population', 'État de la population', 'La population de la commune : sa taille, sa densité et la structure de ses ménages.'],
-          ['trajectoire-demographique', 'Trajectoire démographique', "L'évolution de la population depuis 1968 et les deux forces qui la portent : le solde naturel et le solde migratoire."],
+          // The observation start year remains producer-bound, like transport
+          // thresholds and grant eligibility; stale metadata cannot supply it.
+          ['trajectoire-demographique', 'Trajectoire démographique', null],
         ],
       },
       {
@@ -151,7 +153,8 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
         expected: [
           ['composition-du-parc', 'La composition du parc', "La composition du parc de logements de la commune : le mix, le statut d'occupation et le type."],
           ['etat-energetique-du-parc', 'L’état énergétique du parc', 'L’état énergétique du parc : la distribution des étiquettes DPE, la part de passoires thermiques et l’âge du bâti.'],
-          ['marche', 'Le marché', 'Le marché immobilier de la commune : la médiane du prix au m² des ventes.'],
+          // The market statistic and its unit are producer-bound, not app copy.
+          ['marche', 'Le marché', null],
         ],
       },
       {
@@ -159,7 +162,8 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
         indicateurs: indicateursEconomieFixture,
         histoires: histoiresEconomieFixture,
         expected: [
-          ['sante-et-taille', 'Santé et taille du tissu productif', "La santé du tissu productif local : l'emploi salarié au lieu de travail et le chômage au sens du recensement."],
+          // Workplace location and census scope are producer-owned facts.
+          ['sante-et-taille', 'Santé et taille du tissu productif', null],
           ['structure-verte', 'La structure verte', 'La place des établissements verts dans le tissu productif.'],
         ],
       },
