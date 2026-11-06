@@ -162,15 +162,15 @@ tryCatch({
   public <- file.path("..", "public", "data")
   artifacts <- tempfile("retained-scalar-artifacts-"); dir.create(artifacts)
   territories <- nanoparquet::read_parquet(file.path(public, "territoires.parquet"))
-  vintages <- nanoparquet::read_parquet(file.path(public, "vintages.parquet"))
   themes <- retained_scalar_artifact_owners()
   for (theme in themes) {
-    payload <- list(indicateurs=lire_indicateurs_commis(theme, public), territoires=territories)
-    # The committed public Parquets are paired with their own producer metadata
-    # vintage; current in-package metadata may have moved source vintages on.
-    metadata <- jsonlite::fromJSON(file.path(public, paste0("theme_", theme, ".json")),
-      simplifyVector=FALSE)
-    materialize_theme_scalar_artifact(payload, metadata, vintages, theme, artifacts)
+    source <- file.path(public,"scalar-serving",theme)
+    if (!file.exists(file.path(source,"scalar-current.json")))
+      stop("Current retained scalar serving artifact is missing for owner ",theme,call.=FALSE)
+    destination <- file.path(artifacts,"scalar-serving")
+    if (!dir.exists(destination)) dir.create(destination)
+    if (!file.copy(source,destination,recursive=TRUE))
+      stop("Could not stage retained scalar serving artifact for owner ",theme,call.=FALSE)
   }
   reference <- project_territory_reference(territories)
   publish_territory_reference_projection(reference,

@@ -33,9 +33,9 @@ work_dir <- file.path(evidence_dir,"work")
 stopifnot(!dir.exists(work_dir))
 dir.create(work_dir)
 required_canonical_files <- file.path(canonical_dir,c("territoires.parquet","vintages.parquet",
-  "histoires_demographie.json","theme_demographie.json"))
+  file.path("typed-reading-serving","demographie","current.json")))
 missing_canonical_files <- required_canonical_files[!file.exists(required_canonical_files)]
-if(length(missing_canonical_files)) stop("Required canonical files missing: ",
+if(length(missing_canonical_files)) stop("Required canonical territory/vintage or typed-reading artifacts missing: ",
   paste(missing_canonical_files,collapse=", "),call.=FALSE)
 required_scalar_owners <- retained_scalar_artifact_owners()
 missing_scalar_owners <- required_scalar_owners[!dir.exists(file.path(scalar_artifact_dir,required_scalar_owners))]
@@ -84,17 +84,13 @@ tryCatch({
   DBI::dbExecute(con,paste0("SET search_path TO ",DBI::dbQuoteIdentifier(con,schema)))
   ddl <- paste(readLines("../api/schema.sql",warn=FALSE),collapse="\n")
   for (statement in split_postgres_sql(ddl)) DBI::dbExecute(con,statement)
-  read_canonical <- function(name) {
-    parquet <- file.path(canonical_dir,paste0(name,".parquet"))
-    json <- file.path(canonical_dir,paste0(name,".json"))
-    if(file.exists(parquet)) return(nanoparquet::read_parquet(parquet))
-    if(file.exists(json)) return(jsonlite::fromJSON(json,simplifyVector=TRUE))
-    stop("Required canonical artifact is missing: ",parquet," or ",json,call.=FALSE)
-  }
-  territories <- read_canonical("territoires"); vintages <- read_canonical("vintages")
-  # Current payloads may retire theme Parquets; the committed JSON is the oracle.
-  histories <- read_canonical("histoires_demographie")
-  stopifnot(nrow(histories)==1268L)
+  territories <- nanoparquet::read_parquet(file.path(canonical_dir,"territoires.parquet"))
+  vintages <- nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))
+  # Read the validated owner-scoped serving grain. Theme-wide numerical JSON
+  # copies were retired; this is the producer artifact consumed by publication.
+  publication <- read_typed_reading_publication_from(canonical_dir,"demographie")
+  canonical <- list(reading=publication$reading,content_version=publication$content_version)
+  stopifnot(nrow(canonical$reading)>0L)
   publish_canonical_territory_reference(con, canonical_dir)
   stopifnot(isTRUE(file.copy(file.path(canonical_dir,"territoires.parquet"),work_dir,overwrite=TRUE)))
   owners <- retained_scalar_artifact_owners()
@@ -120,8 +116,6 @@ tryCatch({
   write.csv(clock_before,file.path(evidence_dir,"source-clock-before-scalar.csv"),row.names=FALSE,na="")
   scalar <- project_retained_scalar_snapshot(work_dir,reference,work_dir)
   scalar_result <- publish_retained_scalar_snapshot(con,scalar,work_dir)$scalar
-  materialize_theme_typed_reading_artifacts(list(histoires=histories,territoires=territories),
-    demographic_metadata,vintages,"demographie",work_dir)
   expected_vintage_id <- paste(source$version[[1L]],source$date_reference[[1L]],sep="/")
   registered_clock <- read_registry_clock()
   registered_clock <- registered_clock[registered_clock$vintage_id==expected_vintage_id,,drop=FALSE]
@@ -134,10 +128,8 @@ tryCatch({
     !DBI::dbGetQuery(con,"SELECT EXISTS(SELECT 1 FROM source_vintage WHERE source_id=$1 AND vintage_id=$1) present",
       params=list(source$id[[1L]] ) )$present[[1L]])
   write.csv(read_registry_clock(),file.path(evidence_dir,"source-clock-after-scalar.csv"),row.names=FALSE,na="")
-  # Publish the newly materialized owner artifact, not a stale pointer from the
-  # canonical source or a theme-wide Parquet.
-  publication <- read_typed_reading_publication_from(work_dir,"demographie")
-  canonical <- list(reading=publication$reading,content_version=publication$content_version)
+  # Publish the validated producer generation, not a reconstructed theme-wide
+  # numerical export.
   registry <- register_typed_reading_artifact_publisher(list(),"demographie",publish_demographic_reading)
   result <- publish_registered_typed_reading(registry,"demographie",canonical,con)
   marker_before_retry <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='demographic_typed_reading'")
@@ -206,10 +198,11 @@ tryCatch({
   actual <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,story_key,salience_reason,periode,
     solde_naturel,solde_migratoire,taux_solde_naturel,taux_solde_migratoire,classification,status
     FROM demographic_typed_reading ORDER BY territory_type,territory_id,groupe")
-  expected <- project_demographic_reading(histories,territories,vintages,demographic_metadata)
+  expected <- canonical$reading
   expected <- expected[order(expected$territory_type,expected$territory_id,expected$groupe),
     names(actual),drop=FALSE]; rownames(actual)<-rownames(expected)<-NULL
-  stopifnot(isTRUE(all.equal(actual,expected,check.attributes=FALSE)),result$row_count==1268L)
+  stopifnot(isTRUE(all.equal(actual,expected,check.attributes=FALSE)),
+    result$row_count==nrow(canonical$reading))
   DBI::dbExecute(con,paste0("GRANT USAGE ON SCHEMA ",DBI::dbQuoteIdentifier(con,schema)," TO ",DBI::dbQuoteIdentifier(con,read_user)))
   DBI::dbExecute(con,paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ",DBI::dbQuoteIdentifier(con,schema)," TO ",DBI::dbQuoteIdentifier(con,read_user)))
   read_con <- DBI::dbConnect(RPostgres::Postgres(),host=config$HOST,port=as.integer(config$PORT),

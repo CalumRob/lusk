@@ -12,20 +12,28 @@ stopifnot(nzchar(read_user),read_user!=config$USER)
 canonical_source <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR",unset="")
 stopifnot(dir.exists(canonical_source))
 
-# All artifact materialization is directed to this bounded writable copy. The
-# canonical public snapshot is read-only input; no raw cache or pipeline build.
+# All publisher output is directed to this bounded writable copy. Current
+# producer-owned serving generations are staged read-only; no theme-wide
+# numerical export or raw cache/pipeline build is needed.
 fixture_dir <- tempfile("economy-reading-canonical-")
 dir.create(fixture_dir)
-canonical_inputs <- c("territoires.parquet","vintages.parquet","vintages.json",
-  "indicateurs_demographie.json","indicateurs_economie.json",
-  "indicateurs_habitat.json","indicateurs_mobilite.parquet",
-  "histoires_economie.json","theme_demographie.json","theme_economie.json",
-  "theme_habitat.json","theme_milieux.json","theme_mobilite.json")
+canonical_inputs <- c("territoires.parquet","vintages.parquet","theme_economie.json")
 missing_inputs <- canonical_inputs[!file.exists(file.path(canonical_source,canonical_inputs))]
-if(length(missing_inputs)) stop("Canonical Economy proof inputs are missing: ",
+if(length(missing_inputs)) stop("Canonical Economy territory/vintage/metadata inputs are missing: ",
   paste(missing_inputs,collapse=", "),call.=FALSE)
 stopifnot(all(file.copy(file.path(canonical_source,canonical_inputs),fixture_dir,overwrite=TRUE)))
 canonical_dir <- normalizePath(fixture_dir,winslash="/",mustWork=TRUE)
+copy_owner_artifact <- function(family,owner) {
+  source <- file.path(canonical_source,family,owner)
+  if(!file.exists(file.path(source,if(family=="scalar-serving") "scalar-current.json" else "current.json")))
+    stop("Current ",family," producer artifact is missing for owner ",owner,call.=FALSE)
+  destination <- file.path(canonical_dir,family)
+  if(!dir.exists(destination)) dir.create(destination,recursive=TRUE)
+  if(!file.copy(source,destination,recursive=TRUE))
+    stop("Could not stage ",family," producer artifact for owner ",owner,call.=FALSE)
+}
+for(owner in retained_scalar_artifact_owners()) copy_owner_artifact("scalar-serving",owner)
+copy_owner_artifact("typed-reading-serving","economie")
 
 con <- DBI::dbConnect(RPostgres::Postgres(),host=config$HOST,port=as.integer(config$PORT),
   dbname=config$DATABASE,user=config$USER)
@@ -39,23 +47,15 @@ tryCatch({
   for(statement in split_postgres_sql(ddl)) DBI::dbExecute(con,statement)
 
   territories <- nanoparquet::read_parquet(file.path(canonical_dir,"territoires.parquet"))
-  vintages <- nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))
-  for(owner in retained_scalar_artifact_owners()) {
-    metadata <- jsonlite::fromJSON(file.path(canonical_dir,paste0("theme_",owner,".json")),simplifyVector=FALSE)
-    payload <- list(indicateurs=lire_indicateurs_commis(owner,canonical_dir),territoires=territories)
-    materialize_theme_scalar_artifact(payload,metadata,vintages,owner,canonical_dir)
-  }
   reference <- publish_canonical_territory_reference(con,canonical_dir)$projection
   scalar <- project_retained_scalar_snapshot(canonical_dir,reference)
   scalar_publication <- publish_retained_scalar_snapshot(con,scalar,canonical_dir)$scalar
   stopifnot(identical(scalar_publication$content_version,
     DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")$content_version[[1L]]))
 
-  histories <- jsonlite::fromJSON(file.path(canonical_dir,"histoires_economie.json"))
-  metadata <- lire_theme_metadata("economie")
-  materialize_theme_typed_reading_artifacts(list(histoires=histories,territoires=territories,
-    indicateurs=lire_indicateurs_commis("economie",canonical_dir),source_vintages=vintages),
-    metadata,vintages,"economie",canonical_dir)
+  # Read the current producer generation directly. Its facts/source grains are
+  # the canonical input to the registered publisher; no browser export is
+  # rebuilt or serialized here.
   canonical <- read_typed_reading_publication_from(canonical_dir,"economie")
   registry <- register_typed_reading_artifact_publisher(list(),"economie",publish_economy_reading_family)
   first <- publish_typed_reading_publication(registry,"economie",canonical,con)

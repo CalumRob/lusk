@@ -29,11 +29,10 @@ tryCatch({
   publish_owned_series("prix_m2")
   for (id in c("conso_enaf_annuel","artif_par_habitant")) publish_owned_series(id)
   vintages <- nanoparquet::read_parquet(file.path(sortie,"vintages.parquet"))
-  # #757 : le parquet par-thème Milieux n'est plus écrit — la projection JSON
-  # du run dir reste l'oracle (même repli que le smoke Habitat).
-  histoires_path <- file.path(sortie,"histoires_milieux.parquet")
-  histories <- if (file.exists(histoires_path)) nanoparquet::read_parquet(histoires_path) else
-    jsonlite::fromJSON(file.path(sortie,"histoires_milieux.json"))
+  # The selected reading is read from its validated owner-scoped generation;
+  # no retired theme-wide numerical export is needed by this smoke.
+  publication <- read_typed_reading_publication_from(sortie,"milieux")
+  histories <- publication$reading
   milieux <- lire_theme_metadata("milieux")
   population <- vintages[vintages$id=="serie_historique",,drop=FALSE]
   population_vintage_id <- paste(as.character(population$version[[1L]]),

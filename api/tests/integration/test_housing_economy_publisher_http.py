@@ -1,7 +1,6 @@
 """Registered Economy reading publisher through shared semantic HTTP reads."""
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
@@ -10,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api import main
+from producer_artifacts import read_scalar_artifact, read_typed_reading_artifact, records
 
 pytestmark = pytest.mark.integration
 
@@ -20,10 +20,15 @@ def test_registered_economy_readings_match_independent_canonical_artifact():
     canonical_dir = Path(os.environ.get("LUSK_TEST_CANONICAL_DATA_DIR", ""))
     if not schema or not read_dsn or not canonical_dir.is_dir():
         pytest.skip("invoked by guarded smoke-housing-economy-postgres.R")
-    histories = json.loads((canonical_dir / "histoires_economie.json").read_text(encoding="utf-8"))
-    indicators = json.loads((canonical_dir / "indicateurs_economie.json").read_text(encoding="utf-8"))
-    vintages = json.loads((canonical_dir / "vintages.json").read_text(encoding="utf-8"))
-    metadata = json.loads((canonical_dir / "theme_economie.json").read_text(encoding="utf-8"))
+    reading_projection = read_typed_reading_artifact(canonical_dir, "economie")
+    selected = records(reading_projection["facts"])
+    source_clock = records(reading_projection["source"])[0]
+    scalar_projection = read_scalar_artifact(canonical_dir, "economie")
+    scalar_facts = records(scalar_projection["facts"])
+    scalar_descriptors = records(scalar_projection["descriptors"])
+    scalar_provenance = records(scalar_projection["provenance"])
+    scalar_datasets = records(scalar_projection["datasets"])
+    scalar_vintages = records(scalar_projection["vintages"])
     parts = urlsplit(read_dsn)
     query = parse_qs(parts.query, keep_blank_values=True)
     query["options"] = [f"-csearch_path={schema}"]
@@ -52,13 +57,15 @@ def test_registered_economy_readings_match_independent_canonical_artifact():
             assert focal is not None
             region_ids = [row[0] for row in conn.execute(
                 "SELECT territory_id FROM territory_reference WHERE territory_type='region' ORDER BY territory_id")]
-        selected = {(row["type"], str(row["territoire"])): row for row in histories
-                    if row["theme"] == "economie"}
+        selected_by_territory = {(row["territory_type"], str(row["territory_id"])): row
+                                 for row in selected}
         targets = [("commune", "35238"), ("epci", focal[1]), ("departement", focal[2])]
         targets.extend(("region", territory_id) for territory_id in region_ids)
         with TestClient(main.app) as client:
-            scalar_source = next(row for row in indicators if row["key"] == "eco_activites"
-                                 and row["type"] == "commune" and str(row["territoire"]) == "35238")
+            scalar_source = next(row for row in scalar_facts if row["indicator_id"] == "eco_activites"
+                                 and row["territory_type"] == "commune" and row["territory_id"] == "35238")
+            scalar_descriptor = next(row for row in scalar_descriptors
+                                     if row["indicator_id"] == "eco_activites")
             scalar = client.post("/api/resources/read", json={
                 "resource": "eco_activites",
                 "target": {"kind": "territory", "type": "commune", "id": "35238"},
@@ -67,20 +74,25 @@ def test_registered_economy_readings_match_independent_canonical_artifact():
             assert scalar.status_code == 200, scalar.text
             scalar_fact = scalar.json()
             assert scalar_fact["value"] == scalar_source["value"]
-            assert scalar_fact["unit"] == scalar_source["unit"] == "%"
-            assert scalar_fact["status"] == "measured"
-            scalar_vintage = next(row for row in vintages
-                                  if row["source"] == scalar_source["vintage_source"])
+            assert scalar_fact["unit"] == scalar_descriptor["unit"]
+            assert scalar_fact["status"] == scalar_source["status"]
+            scalar_source_link = next(row for row in scalar_provenance
+                if row["indicator_id"] == "eco_activites" and row["territory_id"] == "35238")
+            scalar_dataset = next(row for row in scalar_datasets
+                if row["source_id"] == scalar_source_link["source_id"])
+            scalar_vintage = next(row for row in scalar_vintages
+                if row["source_id"] == scalar_source_link["source_id"]
+                and row["vintage_id"] == scalar_source_link["vintage_id"])
             assert scalar_fact["sources"] == [{
-                "source_id": metadata["sources"]["eco_activites"],
-                "name": scalar_source["vintage_source"],
-                "vintage_id": f"{scalar_source['vintage_version']}/{scalar_source['vintage_date_reference']}",
+                "source_id": scalar_source_link["source_id"],
+                "name": scalar_dataset["name"],
+                "vintage_id": scalar_source_link["vintage_id"],
                 "version": scalar_vintage["version"],
-                "reference_date": scalar_source["vintage_date_reference"],
-                "publication_date": scalar_source["vintage_date_publication"],
+                "reference_date": scalar_vintage["reference_date"],
+                "publication_date": scalar_vintage["publication_date"],
             }]
             for level, territory_id in targets:
-                producer_row = selected.get((level, str(territory_id)))
+                producer_row = selected_by_territory.get((level, str(territory_id)))
                 if producer_row is None:
                     continue
                 expected_activities = []
@@ -111,10 +123,9 @@ def test_registered_economy_readings_match_independent_canonical_artifact():
                 assert (fact["groupe"], fact["story_key"], fact["salience_reason"], fact["status"]) == (
                     producer_row["groupe"], producer_row["story_key"], producer_row["salience_reason"],
                     "measured" if expected_activities else "unavailable")
-                source_id = metadata["sources"]["eco_activites"]
-                source = next(row for row in vintages if row["id"] == source_id)
-                vintage_id = f"{source['version']}/{source['date_reference'] or 'NA'}"
-                assert (fact["source_id"], fact["vintage_id"]) == (source_id, vintage_id)
+                assert (fact["source_id"], fact["vintage_id"]) == (
+                    source_clock["id"], producer_row["vintage_id"])
+                assert producer_row["source_id"] == source_clock["id"]
                 actual = payload["ranked_activities"]
                 assert [row["rank"] for row in actual] == [row["rank"] for row in expected_activities]
                 assert [{key: row[key] for key in ("rank", "activity_code", "activity_label", "lq",

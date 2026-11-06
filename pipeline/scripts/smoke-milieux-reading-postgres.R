@@ -8,22 +8,33 @@ stopifnot(all(vapply(config,nzchar,logical(1))),grepl("^lusk_it_[A-Za-z0-9_]+$",
   identical(Sys.getenv("LUSK_TEST_DATABASE_PREFIX"),"lusk_it_"))
 read_user <- Sys.getenv("LUSK_TEST_READ_USER",unset="")
 source_path <- Sys.getenv("LUSK_MILIEUX_CONSO_SOURCE",file.path("data","raw","conso-com.csv"))
-window_path <- Sys.getenv("LUSK_MILIEUX_PROCESSED_WINDOW",unset="")
 canonical_source <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR",unset="")
 stopifnot(nzchar(read_user),read_user!=config$USER,dir.exists(canonical_source),
-  file.exists(source_path),file.exists(window_path))
+  file.exists(source_path))
 
-# Copy only the canonical producer inputs needed to regenerate the artifact
-# directory. The CONSOENAF source file remains a read-only input at source_path.
+# Copy only the current producer-owned serving grains used by the publisher.
+# The CONSOENAF source file remains a read-only input at source_path for the
+# database-time coverage/absence projection.
 fixture_dir <- tempfile("milieux-reading-canonical-")
 dir.create(fixture_dir)
-canonical_inputs <- c("territoires.parquet","vintages.parquet","vintages.json",
-  "indicateurs_milieux.json","histoires_milieux.json","theme_milieux.json")
+canonical_inputs <- c("territoires.parquet","vintages.parquet")
 missing_inputs <- canonical_inputs[!file.exists(file.path(canonical_source,canonical_inputs))]
-if(length(missing_inputs)) stop("Canonical Milieux proof inputs are missing: ",
+if(length(missing_inputs)) stop("Canonical Milieux territory/vintage inputs are missing: ",
   paste(missing_inputs,collapse=", "),call.=FALSE)
 stopifnot(all(file.copy(file.path(canonical_source,canonical_inputs),fixture_dir,overwrite=TRUE)))
 canonical_dir <- normalizePath(fixture_dir,winslash="/",mustWork=TRUE)
+copy_owner_artifact <- function(family,owner) {
+  source <- file.path(canonical_source,family,owner)
+  if(!file.exists(file.path(source,"current.json")))
+    stop("Current ",family," producer artifact is missing for owner ",owner,call.=FALSE)
+  destination <- file.path(canonical_dir,family)
+  if(!dir.exists(destination)) dir.create(destination,recursive=TRUE)
+  if(!file.copy(source,destination,recursive=TRUE))
+    stop("Could not stage ",family," producer artifact for owner ",owner,call.=FALSE)
+}
+copy_owner_artifact("typed-reading-serving","milieux")
+for(owner in c("conso_enaf_annuel","artif_par_habitant"))
+  copy_owner_artifact("series-serving",owner)
 
 con <- DBI::dbConnect(RPostgres::Postgres(),host=config$HOST,port=as.integer(config$PORT),
   dbname=config$DATABASE,user=config$USER)
@@ -38,62 +49,40 @@ tryCatch({
 
   territories <- nanoparquet::read_parquet(file.path(canonical_dir,"territoires.parquet"))
   vintages <- nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))
-  histories_all <- jsonlite::fromJSON(file.path(canonical_dir,"histoires_milieux.json"))
-  indicators_all <- jsonlite::fromJSON(file.path(canonical_dir,"indicateurs_milieux.json"))
-  # Public JSON is a presentation projection and intentionally omits typed OCS
-  # role/component links. Reconstruct one producer-shaped commune from the
-  # retained canonical values, its explicit source vintages, and the existing
-  # processed OCS window record; no serving-table facts are inserted here.
-  focal_id <- "22001"
-  histories <- histories_all[histories_all$type=="commune" & histories_all$territoire==focal_id,,drop=FALSE]
-  indicators <- indicators_all[indicators_all$type=="commune" & indicators_all$territoire==focal_id &
-    indicators_all$key=="artif_par_habitant",,drop=FALSE]
-  state_window <- readRDS(window_path)
-  state_window <- state_window[state_window$code==focal_id,,drop=FALSE]
-  if(nrow(histories)!=1L || nrow(state_window)!=1L || nrow(indicators)!=2L)
-    stop("Canonical OCS fixture requires one actual reading/window and its two producer state records",call.=FALSE)
-  roles <- ifelse(indicators$vintage_version==state_window$millesime_ocsge_debut[[1L]],"M2",
-    ifelse(indicators$vintage_version==state_window$millesime_ocsge_fin[[1L]],"M3",NA_character_))
-  if(anyNA(roles) || anyDuplicated(roles) || !setequal(roles,c("M2","M3")))
-    stop("Canonical OCS source vintages do not match the processed producer window",call.=FALSE)
-  indicators$state_role <- roles
-  indicators$source_components <- vapply(seq_len(nrow(indicators)),function(i) {
-    components <- list(M2=character(),M3=character())
-    components[[roles[[i]]]] <- as.character(indicators$source_reference[[i]])
-    as.character(jsonlite::toJSON(components,auto_unbox=FALSE))
-  },character(1))
-  jsonlite::write_json(indicators,file.path(canonical_dir,"indicateurs_milieux.json"),
-    dataframe="rows",auto_unbox=TRUE,null="null",digits=NA)
   metadata <- lire_theme_metadata("milieux")
+  publication <- read_typed_reading_publication_from(canonical_dir,"milieux")
+  histories <- publication$reading
+  state_projection <- read_owned_series_artifact(
+    file.path(canonical_dir,"series-serving","artif_par_habitant"),"artif_par_habitant")
+  supported_communes <- unique(as.character(state_projection$points$territory_id[
+    state_projection$points$territory_type=="commune"]))
+  if(!length(supported_communes) || !nrow(histories))
+    stop("Current Milieux serving artifacts contain no source-supported commune reading",call.=FALSE)
+  focal_id <- supported_communes[[1L]]
   publish_canonical_territory_reference(con,canonical_dir)
   # Keep the declared CONSOENAF source vintage in the database through its own
   # registered owned-series publisher; the reading absence publisher's FK is
   # bound to that exact producer source/version.
-  series_canonical <- list(indicateurs=indicators_all,histoires=histories_all,vintages=vintages)
-  write_owned_series_artifact(owned_conso_enaf_projection(series_canonical,metadata),
+  conso_projection <- read_owned_series_artifact(
     file.path(canonical_dir,"series-serving","conso_enaf_annuel"),"conso_enaf_annuel")
-  conso_registry <- register_conso_enaf_owned_publisher(list(),metadata)
-  publish_registered_series(conso_registry,"conso_enaf_annuel_owned",series_canonical,
-    owned_series_postgres_adapter(con))
-  write_owned_series_artifact(project_artif_m2m3_projection(indicators,histories,vintages,metadata),
-    file.path(canonical_dir,"series-serving","artif_par_habitant"),"artif_par_habitant")
-  materialize_theme_typed_reading_artifacts(list(histoires=histories,territoires=territories,
-    indicateurs=indicators,source_vintages=vintages),metadata,vintages,"milieux",canonical_dir)
+  conso_adapter <- owned_series_postgres_adapter(con)
+  first_conso <- publish_owned_series_projection(conso_projection,conso_adapter)
+  retry_conso <- publish_owned_series_projection(conso_projection,conso_adapter)
+  stopifnot(first_conso$changed,!retry_conso$changed)
 
   source_absences <- milieux_source_absence_declarations(source_path,territories,vintages,metadata)
-  expected <- project_milieux_reading(histories,vintages,metadata,
-    canonical=list(indicateurs=indicators,histoires=histories,territoires=territories))
-  fact_row <- which(expected$territory_type=="commune")[[1L]]
+  expected <- histories
+  attr(expected,"source_absences") <- source_absences
   absence_row <- 1L
   bindings <- attr(expected,"source_bindings")
-  expected_bindings <- bindings[bindings$territory_id==expected$territory_id[[fact_row]] &
-    bindings$territory_type==expected$territory_type[[fact_row]] & bindings$groupe==expected$groupe[[fact_row]],,drop=FALSE]
   absences <- source_absences
-  manifest <- list(reading=as.list(expected[fact_row,,drop=FALSE]),
-    bindings=lapply(seq_len(nrow(expected_bindings)),function(i)
-      lapply(expected_bindings[i,,drop=FALSE],function(value) if(is.na(value[[1L]])) NULL else as.character(value[[1L]]))),
-    absence=as.list(absences[absence_row,,drop=FALSE]))
-  jsonlite::write_json(manifest,file.path(canonical_dir,"milieux_http_expected.json"),
+  # The HTTP test reads selected facts and bindings from the typed-reading
+  # generation directly. Keep only this source-snapshot-derived absence record
+  # as a small fixture; do not serialize a second numerical reading payload.
+  absence_expected <- lapply(absences[absence_row,,drop=FALSE],function(value)
+    if(is.na(value[[1L]])) NULL else as.character(value[[1L]]))
+  jsonlite::write_json(list(absence=absence_expected),
+    file.path(canonical_dir,"milieux_source_absence_expected.json"),
     auto_unbox=TRUE,null="null",digits=NA)
 
   published <- publish_canonical_milieux_reading(con,canonical_dir,source_path)
