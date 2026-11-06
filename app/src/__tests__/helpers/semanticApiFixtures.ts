@@ -1187,7 +1187,7 @@ export function nativeBatchResponse<T extends Record<string, any>>(
   items: Array<Record<string, any>>,
   read: (item: Record<string, any>, resource: Resource) => T,
 ): Response {
-  if (!Array.isArray(items) || items.length < 1 || items.length > 12) {
+  if (!Array.isArray(items) || items.length < 1) {
     throw new Error('Native semantic fixture batch must contain 1–12 items')
   }
   const ids = items.map((item) => item.id)

@@ -71,7 +71,7 @@ def test_endpoint_request_inventory_check_detects_schema_drift(tmp_path):
     generated = render_inventory(schema)
     examples = (
         ("required request body", "optional request body"),
-        ("max items: `12`", "max items: `11`"),
+        ("array of ResourceBatchItem; min items: `1`", "array of ResourceBatchItem; min items: `0`"),
         ("| `ResourceBatchRequest` | `items` | yes |", "| `ResourceBatchRequest` | `items` | no |"),
         ("| `ResourceReadItem` | `resource` | yes |", "| `ResourceReadItem` | `resource` | no |"),
     )

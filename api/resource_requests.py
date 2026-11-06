@@ -103,7 +103,7 @@ class ResourceBatchItem(ResourceReadItem):
 
 class ResourceBatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    items: list[ResourceBatchItem] = Field(min_length=1, max_length=12)
+    items: list[ResourceBatchItem] = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_unique_ids(self):
