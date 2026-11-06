@@ -28,7 +28,7 @@ import { PAYLOAD_CHARGER_KEY, usePayload } from '../payload/usePayload'
 import type { ChargerFichier } from '../payload/usePayload'
 import type { Fichier } from '../payload/loader'
 import { THEMES_CANONIQUES } from '../payload/types'
-import type { Histoire, HistoireDemographie, Indicateur, MembreProgramme, Payload, SubventionProgramme } from '../payload/types'
+import type { Histoire, HistoireDemographie, Indicateur, MembreProgramme, Payload, SubventionProgramme, Theme } from '../payload/types'
 import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
 import { THEME_METADATA_CHARGER_KEY } from '../payload/themeCatalogue'
@@ -51,6 +51,9 @@ const resourceShapes: Record<string, Record<string, { shape: string; source: str
     evolution_1968: { shape: 'scalar', source: 'serie_historique' },
     taille_menages: { shape: 'scalar', source: 'menages' },
     demographie_selected_reading: { shape: 'typed_reading', source: 'serie_historique', levels: ['commune', 'epci', 'departement', 'region'] },
+  },
+  habitat: {
+    habitat_selected_reading: { shape: 'typed_reading', source: 'dpe', levels: ['commune', 'epci', 'departement'] },
   },
   programmes: {
     couverture_programmes: { shape: 'anchored_membership', source: 'acv' },
@@ -155,7 +158,7 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
   }
   // Preload canonical metadata before mount so fetch() never performs filesystem
   // I/O while Vue is flushing its watchers.
-  await Promise.all(['demographie', 'programmes'].map(loadMetadata))
+  await Promise.all(['demographie', 'habitat', 'programmes'].map(loadMetadata))
   const declarations = async (theme: string) => {
     // #893 — un thème programmes sans faits (aucune ligne indicateurs_programmes)
     // n'a aucune ressource déclarée côté API
@@ -196,7 +199,7 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
     }
     if (url === '/api/resources') {
       try {
-      const resources = [...await declarations('demographie'), ...await declarations('programmes')]
+      const resources = [...await declarations('demographie'), ...await declarations('habitat'), ...await declarations('programmes')]
         return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
       } catch (error) { console.error('catalogue fixture failure', error); throw error }
     }
@@ -449,13 +452,14 @@ async function monter(overrides: {
   chargerPayload?: ChargerFichier
   chargerGeometrie?: ChargerGeometrie
   chargerMetadata?: ChargerMetadonneesTheme
+  apiFetchImpl?: typeof fetch
   chemin?: string
   apiFetch?: boolean
   apiPayload?: Payload
 } = {}) {
   let chargerPayload = overrides.chargerPayload ?? chargerPayloadAvec(payload)
   if (overrides.apiFetch !== false) {
-    vi.stubGlobal('fetch', await fetchCarteApiFixture(overrides.apiPayload ?? payload))
+    vi.stubGlobal('fetch', overrides.apiFetchImpl ?? await fetchCarteApiFixture(overrides.apiPayload ?? payload))
     const chargerPayloadOriginal = chargerPayload
     chargerPayload = async (file: Parameters<ChargerFichier>[0]) => {
       const theme = file.startsWith('theme_') ? file.slice('theme_'.length) : ''
@@ -616,6 +620,108 @@ describe('CarteView — la carte avec fond publié', () => {
     const joined = map?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as
       { features: { properties: { territoire: string; valeur: number | null } }[] }
     expect(joined.features.find((item) => item.properties.territoire === '22001')?.properties.valeur).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('retries only selected-theme labels, recovers them without rereading facts, and keeps the active layer', async () => {
+    const baseFetch = await fetchCarteApiFixture(payload)
+    const requests: string[] = []
+    const apiFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(String(input))
+      return baseFetch(input, init)
+    })
+    let metadataAttempts = 0
+    const chargerMetadata = vi.fn(async (theme: Theme) => {
+      metadataAttempts += 1
+      if (metadataAttempts === 1) throw new Error('catalogue unavailable')
+      const metadata = structuredClone(metadonneesThemesFixtures[theme])
+      if (theme === 'demographie') metadata.param_labels.taux_solde_naturel = 'Libellé récupéré du solde naturel'
+      return metadata
+    })
+    const { wrapper } = await monter({ chemin: '/carte?theme=demographie', chargerMetadata, apiFetchImpl: apiFetch })
+
+    expect(wrapper.find('[data-testid="map-metadata-error"]').text())
+      .toContain('Les couches et leurs valeurs natives restent affichées.')
+    expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text())).toContain('Fait disponible')
+    const densite = wrapper.findAll('.carte-sidebar-couche').find((layer) => layer.text().includes('Densité'))!
+    await densite.trigger('click')
+    const beforeRetryReads = requests.filter((url) => url === '/api/resources' || url === '/api/resources/read-batch')
+
+    await wrapper.find('[data-testid="map-metadata-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(chargerMetadata).toHaveBeenCalledTimes(2)
+    expect(chargerMetadata).toHaveBeenLastCalledWith('demographie')
+    expect(requests.filter((url) => url === '/api/resources' || url === '/api/resources/read-batch'))
+      .toEqual(beforeRetryReads)
+    expect(wrapper.find('[data-testid="map-metadata-error"]').exists()).toBe(false)
+    expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text()))
+      .toContain('Libellé récupéré du solde naturel')
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Densité de population')
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
+    wrapper.unmount()
+  })
+
+  it('does not let a late catalogue response for the former theme replace current labels', async () => {
+    let resolveFormerTheme!: (metadata: typeof metadonneesThemesFixtures.demographie) => void
+    const formerThemeMetadata = new Promise<typeof metadonneesThemesFixtures.demographie>((resolve) => {
+      resolveFormerTheme = resolve
+    })
+    const habitatMetadata = structuredClone(metadonneesThemesFixtures.habitat)
+    habitatMetadata.param_labels.part_passoires = 'Libellé actuel de la part de passoires'
+    const chargerMetadata = vi.fn((theme: Theme) =>
+      theme === 'demographie' ? formerThemeMetadata : Promise.resolve(habitatMetadata))
+    const apiPayload: Payload = { ...payload,
+      indicateurs: [...indicateursDemographieFixture, ...indicateursHabitatFixture],
+      histoires: [...histoiresDemographieFixture, ...histoiresHabitatFixture],
+    }
+    const { wrapper } = await monter({ chemin: '/carte?theme=demographie', chargerMetadata, apiPayload })
+
+    const habitat = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('Habitat'))!
+    await habitat.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text()))
+      .toContain('Libellé actuel de la part de passoires')
+
+    resolveFormerTheme(metadonneesThemesFixtures.demographie)
+    await flushPromises()
+
+    expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text()))
+      .toContain('Libellé actuel de la part de passoires')
+    expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text()))
+      .not.toContain('Fait disponible')
+    wrapper.unmount()
+  })
+
+  it('keeps typed-reading map layers when every native reading is unavailable', async () => {
+    const baseFetch = await fetchCarteApiFixture(payload)
+    const apiFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await baseFetch(input, init)
+      if (String(input) !== '/api/resources/read-batch') return response
+      const body = await response.json() as { results: Array<{ resource: string; data: Record<string, any> }> }
+      for (const result of body.results) {
+        if (result.resource !== 'demographie_selected_reading') continue
+        for (const territory of result.data.territories as Array<{ facts: Array<Record<string, any>> }>) {
+          territory.facts = territory.facts.map((fact) => ({
+            groupe: fact.groupe,
+            story_key: 'identite-de-lecture-native',
+            status: 'unavailable',
+            source: fact.source,
+          }))
+        }
+      }
+      return new Response(JSON.stringify(body))
+    })
+    const { wrapper } = await monter({ chemin: '/carte?theme=demographie', apiFetchImpl: apiFetch })
+
+    expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Solde naturel (‰/an)')
+    const map = maplibreMock.instancesCarteMaple.at(-1)
+    const joined = map?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as
+      { features: { properties: { territoire: string; valeur: number | null } }[] }
+    expect(joined.features.find((feature) => feature.properties.territoire === '22001')?.properties.valeur).toBeNull()
+    expect(joined.features.every((feature) => feature.properties.valeur === null)).toBe(true)
     wrapper.unmount()
   })
 

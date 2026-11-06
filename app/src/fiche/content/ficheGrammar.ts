@@ -75,6 +75,9 @@ export interface FicheReadingGrammar {
   /** Template text and its presentation order; the resolved row remains API-owned. */
   readonly template: readonly NoeudTexteRiche[]
   readonly params: readonly string[]
+  /** Field bindings chosen for map display, not a claim of available values.
+   * Textual reading parameters need not be offered as choropleth choices. */
+  readonly mapFields?: readonly string[]
   readonly figure?: { readonly family: FamilleFigure; readonly indicator: string }
 }
 
@@ -163,6 +166,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       figure: { family: 'scalar', indicator: 'evolution_1968' },
       reading: {
         params: ['periode', 'taux_solde_naturel', 'taux_solde_migratoire', 'classification'],
+        mapFields: ['taux_solde_naturel', 'taux_solde_migratoire'],
         template: [
           texte('Entre '), param('periode'), texte(', la population de '), territoire, texte(' '),
           strong('classification'), texte(' : '), param('taux_solde_naturel'), texte(' par an (naturel), '),
@@ -187,6 +191,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       figure: { family: 'composition', indicator: 'distribution_dpe' },
       reading: {
         params: ['classification', 'part_passoires', 'part_abc', 'n_dpe'],
+        mapFields: ['part_passoires', 'part_abc', 'n_dpe'],
         template: [
           texte('Le parc de '), territoire, texte(' est '), strong('classification'), texte(' : '),
           param('part_passoires'), texte(' de passoires thermiques. '), sources,
@@ -236,6 +241,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       figure: { family: 'comparison-bars', indicator: 'artif_par_habitant' },
       reading: {
         params: ['periode_pop', 'periode_artif', 'delta_population', 'trajectoire_artif_par_habitant', 'classification'],
+        mapFields: ['delta_population'],
         template: [
           texte('Entre '), param('periode_pop'), texte(' et '), param('periode_artif'), texte(', '),
           territoire, texte(' '), strong('classification'), texte(' (trajectoire '),
@@ -279,7 +285,7 @@ export function sousGroupeFiche(theme: Theme, key: string): FicheSubgroupGrammar
 export interface GroupeCouchesCarte {
   readonly key: string
   readonly label: string
-  /** Reading-field order from the shared editorial reading template. */
+  /** Map-display field choices; intersected with the native reading declaration. */
   readonly storyFields: readonly string[]
   /** Resource identities in fiche presentation order. */
   readonly resourceKeys: readonly string[]
@@ -289,7 +295,7 @@ export function groupesCouchesCarte(theme: Theme): readonly GroupeCouchesCarte[]
   return sousGroupesFiche(theme).map((subgroup) => ({
     key: subgroup.key,
     label: subgroup.label,
-    storyFields: [...(subgroup.reading?.params ?? [])],
+    storyFields: [...(subgroup.reading?.mapFields ?? [])],
     resourceKeys: [...subgroup.indicators],
   }))
 }

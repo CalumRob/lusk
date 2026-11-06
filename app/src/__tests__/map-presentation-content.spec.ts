@@ -40,7 +40,7 @@ describe('groupement éditorial des couches carte', () => {
       {
         key: 'trajectoire-demographique',
         label: 'Trajectoire démographique',
-        storyFields: ['periode', 'taux_solde_naturel', 'taux_solde_migratoire', 'classification'],
+        storyFields: ['taux_solde_naturel', 'taux_solde_migratoire'],
         resourceKeys: ['evolution_1968'],
       },
     ])

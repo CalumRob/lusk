@@ -1156,7 +1156,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
     expect(resolveRank).toBeDefined()
 
     const evolutionLayer = wrapper.findAll('.carte-sidebar-couche')
-      .find((button) => button.text().includes('depuis 1968'))
+      .find((button) => button.text().includes('Libellé source différent du libellé éditorial'))
     expect(evolutionLayer).toBeDefined()
     await evolutionLayer!.trigger('click')
     await flushPromises()

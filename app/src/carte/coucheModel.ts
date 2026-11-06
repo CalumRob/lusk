@@ -3,7 +3,7 @@
 import { groupesCouchesCarte } from '../fiche/content/ficheGrammar'
 import { LIBELLES_INDICATEURS_APP } from '../fiche/content/libellesAffichage'
 import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
-import type { Histoire, NativeThemeFactContract, Payload, Theme, ThemeMetadata } from '../payload/types'
+import type { NativeThemeFactContract, Payload, Theme, ThemeMetadata } from '../payload/types'
 import type { CoucheProgramme } from './programmesCouches'
 
 export type SourceCouche = 'indicateur' | 'histoire'
@@ -49,10 +49,6 @@ export interface AdmissionCouchesTheme {
 
 type ReadingBinding = { declaration: SemanticResourceDeclaration; subgroup: string }
 
-function isNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value)
-}
-
 function isText(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
@@ -87,7 +83,7 @@ function labelParam(metadata: ThemeMetadata | undefined, field: string): string 
 function labelIndicator(theme: Theme, metadata: ThemeMetadata | undefined,
   declaration: SemanticResourceDeclaration, contract?: NativeThemeFactContract): string {
   return LIBELLES_INDICATEURS_APP[theme]?.[declaration.indicator_id] ??
-    metadata?.indicator_labels[declaration.indicator_id] ?? contract?.label ?? declaration.label
+    contract?.label ?? declaration.label ?? metadata?.indicator_labels[declaration.indicator_id]
 }
 
 function labelDetail(metadata: ThemeMetadata | undefined, declaration: SemanticResourceDeclaration,
@@ -107,20 +103,21 @@ function detailsDe(declaration: SemanticResourceDeclaration,
 }
 
 function storyFields(payload: Payload, theme: Theme, groupKey: string, fields: readonly string[],
-  bindings: readonly ReadingBinding[]): Array<{ field: string; history: Histoire }> {
+  bindings: readonly ReadingBinding[]): Array<{ field: string; storyKey: string | null }> {
   const binding = bindings.find((candidate) => candidate.subgroup === groupKey)
   if (!binding) return []
   const admittedFields = new Set(binding.declaration.fields)
   const rows = payload.histoires.filter((row) => row.theme === theme &&
     (row as unknown as Record<string, unknown>).groupe === groupKey)
-  const output: Array<{ field: string; history: Histoire }> = []
+  // Observation presence is not eligibility. A sparse/unavailable cohort still
+  // exposes every bound field; only an actual producer row can supply story_key.
+  const storyKey = rows.map((row) => (row as unknown as Record<string, unknown>).story_key).find(isText) ?? null
+  const output: Array<{ field: string; storyKey: string | null }> = []
   const seen = new Set<string>()
   for (const field of fields) {
     if (!admittedFields.has(field) || seen.has(field)) continue
-    const history = rows.find((row) => isNumber((row as unknown as Record<string, unknown>)[field]))
-    if (!history) continue
     seen.add(field)
-    output.push({ field, history })
+    output.push({ field, storyKey })
   }
   return output
 }
@@ -132,7 +129,7 @@ export function couchesDuTheme(payload: Payload, theme: Theme, admitted: Admissi
   const declarations = admitted.declarations.filter((declaration) => declaration.theme_id === theme)
   const bindings = readingBindings(declarations)
   const declaredStories = groups.flatMap((group) => storyFields(payload, theme, group.key, group.storyFields, bindings)
-    .map(({ field, history }) => ({ group, field, history })))
+    .map(({ field, storyKey }) => ({ group, field, storyKey })))
 
   // The map's default is the first numeric reading field in app grammar order.
   const firstStory = declaredStories[0]
@@ -153,7 +150,7 @@ export function couchesDuTheme(payload: Payload, theme: Theme, admitted: Admissi
       : labelParam(metadata, firstStory.field),
     parDefaut: true,
     sousGroupe: firstStory.group.key,
-    storyKey: (firstStory.history as unknown as Record<string, unknown>).story_key as string ?? null,
+    storyKey: firstStory.storyKey,
   } : null
 
   const entrees: EntreeCouches[] = defaultStoryLayer
@@ -164,14 +161,13 @@ export function couchesDuTheme(payload: Payload, theme: Theme, admitted: Admissi
     const fields = storyFields(payload, theme, group.key, group.storyFields, bindings)
       .filter(({ field }) => field !== firstStory?.field)
     if (fields.length) {
-      entrees.push({ type: 'groupe', groupe: { libelle: group.label, couches: fields.map(({ field, history }) => {
+      entrees.push({ type: 'groupe', groupe: { libelle: group.label, couches: fields.map(({ field, storyKey }) => {
         const indicator = nativeIndicators.get(field)
         return { source: indicator ? 'indicateur' : 'histoire', clef: field, detail: null,
           libelle: indicator ? labelIndicator(theme, metadata, indicator, admitted.nativeContracts?.[field])
             : labelParam(metadata, field), parDefaut: false,
           sousGroupe: group.key,
-          storyKey: isText((history as unknown as Record<string, unknown>).story_key)
-            ? (history as unknown as Record<string, unknown>).story_key as string : null }
+          storyKey }
       }) } })
     }
   }

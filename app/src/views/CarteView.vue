@@ -276,8 +276,10 @@ const mapIdentities = ref<Record<string, { contentVersion: string; referenceCont
  * admit zero observations while keeping its descriptor). */
 const mapNativeContracts = ref<Record<string, NativeThemeFactContract>>({})
 const mapStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
+const mapMetadataStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
 const chargerCatalogueTheme = inject(THEME_METADATA_CHARGER_KEY, chargerMetadonneesTheme)
 const retryMapFacts = ref(0)
+const retryMapMetadata = ref(0)
 const territoryRankTarget = ref<Territoire | null>(null)
 const territoryRank = ref<{ territoryId: string; indicator: string; level: Territoire['type']; rank: ScalarComparisonRank } | null>(null)
 const territoryRankStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
@@ -406,18 +408,27 @@ watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, r
 
 // The selected catalogue only fills factual field labels that the typed-reading
 // API does not yet expose. Its failure never gates map facts or native admission.
-watch(selection, async (theme, _old, onCleanup) => {
+watch([selection, retryMapMetadata], async ([theme], _old, onCleanup) => {
   const request = ++mapMetadataSequence
   let cancelled = false
   onCleanup(() => { cancelled = true })
   mapThemeMetadata.value = null
-  if (!theme) return
+  if (!theme) {
+    mapMetadataStatus.value = 'idle'
+    return
+  }
+  mapMetadataStatus.value = 'loading'
   try {
     const metadata = await chargerCatalogueTheme(theme)
-    if (cancelled || request !== mapMetadataSequence || theme !== selection.value || metadata.theme !== theme) return
+    if (cancelled || request !== mapMetadataSequence || theme !== selection.value) return
+    if (metadata.theme !== theme) throw new Error(`Catalogue ${metadata.theme} inattendu pour ${theme}`)
     mapThemeMetadata.value = metadata
+    mapMetadataStatus.value = 'ready'
   } catch {
     // Native API labels/axes remain usable; only absent typed-field wording is withheld.
+    if (!cancelled && request === mapMetadataSequence && theme === selection.value) {
+      mapMetadataStatus.value = 'error'
+    }
   }
 }, { immediate: true })
 
@@ -708,6 +719,12 @@ const classesFond = computed(() =>
             @couche-change="choisirCouche"
             @recherche-territoire="rechercherTerritoire"
           />
+          <div v-if="themeAcquisCarte && mapMetadataStatus === 'error'"
+            class="carte-metadata-erreur" role="alert" data-testid="map-metadata-error">
+            <p>Les libellés complémentaires du thème ne sont pas disponibles. Les couches et leurs valeurs natives restent affichées.</p>
+            <button type="button" class="carte-etat-bouton" data-testid="map-metadata-retry"
+              @click="retryMapMetadata++">Réessayer les libellés</button>
+          </div>
         </template>
       </div>
     </template>
@@ -801,6 +818,35 @@ const classesFond = computed(() =>
 .carte-etat-bouton:hover {
   background: var(--surface-tertiary);
   border-color: var(--brand-500);
+}
+
+.carte-metadata-erreur {
+  position: absolute;
+  z-index: var(--z-sticky);
+  top: var(--space-3);
+  left: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: min(32rem, calc(100% - 2 * var(--space-3)));
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-primary);
+  box-shadow: var(--shadow-default);
+}
+
+.carte-metadata-erreur p {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--text-body-sm);
+}
+
+@media (max-width: 640px) {
+  .carte-metadata-erreur {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .carte-squelette--ligne {

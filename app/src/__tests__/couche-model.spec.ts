@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { couchesDuTheme } from '../carte/coucheModel'
+import { valeurHistoireParTerritoire } from '../carte/fusion'
 import { groupesCouchesCarte } from '../fiche/content/ficheGrammar'
 import type { Couche, EntreeCouches } from '../carte/coucheModel'
 import { histoiresDemographieFixture, histoiresEconomieFixture, histoiresHabitatFixture, histoiresMilieuxFixture,
@@ -36,6 +37,47 @@ function keyOf(entry: EntreeCouches): string[] {
 
 describe('couchesDuTheme — ownership app grammar × native map contract (#827)', () => {
   const stories = histoiresDemographieFixture.map((row) => ({ ...row, mapApiFact: true }))
+
+  it('keeps declared typed-reading layers and their default when the cohort has no observation rows', () => {
+    const payload = payloadAvec([], [])
+    const model = couchesDuTheme(payload, 'demographie', {
+      declarations: [resource('demographie_selected_reading', 'typed_reading', {
+        map_eligible: null,
+        fields: ['groupe', 'story_key', 'periode', 'classification', 'taux_solde_naturel', 'not_a_map_field'],
+        axis_values: [['groupe', ['trajectoire-demographique']]],
+      })],
+    })
+
+    expect(model.entrees.flatMap(keyOf)).toEqual(['taux_solde_naturel'])
+    expect(model.coucheParDefaut).toMatchObject({
+      source: 'histoire', clef: 'taux_solde_naturel', sousGroupe: 'trajectoire-demographique', storyKey: null,
+    })
+    expect(payload.histoires).toEqual([])
+  })
+
+  it('keeps all-unavailable native reading layers, their producer story identity, and null values', () => {
+    const unavailable = {
+      territoire: '22001', type: 'commune', theme: 'demographie',
+      groupe: 'trajectoire-demographique', story_key: 'lecture-native-independante', status: 'unavailable',
+    } as unknown as Payload['histoires'][number]
+    const payload = payloadAvec([], [unavailable])
+    const model = couchesDuTheme(payload, 'demographie', {
+      declarations: [resource('demographie_selected_reading', 'typed_reading', {
+        map_eligible: null,
+        fields: ['groupe', 'story_key', 'periode', 'classification', 'taux_solde_naturel',
+          'taux_solde_migratoire', 'not_a_map_field'],
+        axis_values: [['groupe', ['trajectoire-demographique']]],
+      })],
+    })
+
+    expect(model.entrees.flatMap(keyOf)).toEqual(['taux_solde_naturel', 'taux_solde_migratoire'])
+    expect(model.coucheParDefaut).toMatchObject({
+      clef: 'taux_solde_naturel', sousGroupe: 'trajectoire-demographique', storyKey: 'lecture-native-independante',
+    })
+    expect(valeurHistoireParTerritoire(payload, 'demographie', 'taux_solde_naturel').get('22001'))
+      .toEqual({ value: null, unit: '' })
+    expect(payload.histoires).toEqual([unavailable])
+  })
 
   it('orders app candidates and reading fields, intersected with native identities and eligibility', () => {
     const stale = structuredClone(metadonneesThemesFixtures.demographie)
@@ -175,6 +217,25 @@ describe('couchesDuTheme — ownership app grammar × native map contract (#827)
       expect(model.entrees[0].groupe.couches.map((layer) => layer.libelle))
         .toEqual(['15 à 24 ans — API', 'Moins de 15 ans — API'])
     }
+  })
+
+  it('keeps fact-free app wording first and prefers fresh native factual labels over stale browser labels', () => {
+    const stale = structuredClone(metadonneesThemesFixtures.demographie)
+    stale.indicator_labels.densite = 'Ancien libellé de densité'
+    stale.indicator_labels.evolution_1968 = 'Ancien libellé de trajectoire'
+    const model = couchesDuTheme(payloadAvec([], [], stale), 'demographie', {
+      declarations: [
+        resource('densite', 'scalar', { label: 'Libellé natif récent pour densite' }),
+        resource('evolution_1968', 'scalar', { label: 'Libellé de déclaration récent' }),
+      ],
+      nativeContracts: { evolution_1968: { label: 'Libellé factuel natif récent' } },
+    })
+
+    const layers = model.entrees.flatMap((entry) => entry.type === 'couche' ? [entry.couche] : entry.groupe.couches)
+      .filter((layer): layer is Couche => 'clef' in layer)
+    expect(layers.find((layer) => layer.clef === 'densite')?.libelle).toBe('Densité de population')
+    expect(layers.find((layer) => layer.clef === 'evolution_1968')?.libelle).toBe('Libellé factuel natif récent')
+    expect(layers.map((layer) => layer.libelle)).not.toContain('Ancien libellé de trajectoire')
   })
 
   it('keeps a sparse native scalar descriptor as a candidate without fabricating observations', () => {
