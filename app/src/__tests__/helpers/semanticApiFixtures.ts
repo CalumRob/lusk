@@ -2,6 +2,13 @@ import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import {
+  indicateursDemographieFixture, histoiresDemographieFixture,
+  indicateursHabitatFixture, histoiresHabitatFixture,
+  indicateursEconomieFixture, histoiresEconomieFixture,
+  indicateursOffreCyclableFixture, indicateursMobiliteFixture, histoiresMobiliteFixture,
+  indicateursRaccordementFixture, indicateursMilieuxFixture, histoiresMilieuxFixture,
+} from '../../payload/fixtures'
 
 type Resource = {
   resource_id: string
@@ -353,25 +360,30 @@ function syntheticRaccordementComparison(item: Record<string, any>, resource: Re
     selection: selected, scope, result, synthetic_fixture: raccordementFixtureNotice }
 }
 
-// #868 — the per-territory read model is retired from the browser; synthetic
-// API fixtures now read the retained GLOBAL per-theme tables (the same rows
-// the other static consumers still load), indexed once by territory so the
-// per-member lookups stay O(1) instead of scanning the whole table.
+// Small test cohort only. These rows are the existing payload-layer fixtures,
+// not national observations or a substitute for publication data.
 const publishedRowsByTerritory = new Map<string, Map<string, Record<string, any>[]>>()
+const semanticFixtureRows: Record<string, { indicateurs: Record<string, any>[]; histoires: Record<string, any>[] }> = {
+  demographie: { indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture },
+  habitat: { indicateurs: indicateursHabitatFixture, histoires: histoiresHabitatFixture },
+  economie: { indicateurs: indicateursEconomieFixture, histoires: histoiresEconomieFixture },
+  mobilite: { indicateurs: [...indicateursOffreCyclableFixture, ...indicateursMobiliteFixture,
+    ...indicateursRaccordementFixture], histoires: histoiresMobiliteFixture },
+  milieux: { indicateurs: indicateursMilieuxFixture, histoires: histoiresMilieuxFixture },
+}
 function tableIndex(theme: string, fichier: string): Map<string, Record<string, any>[]> {
   const cacheKey = `${fichier}_${theme}`
   const cached = publishedRowsByTerritory.get(cacheKey)
   if (cached) return cached
   const index = new Map<string, Record<string, any>[]>()
   try {
-    const table: Record<string, any>[] = JSON.parse(readFileSync(
-      resolve(process.cwd(), `../public/data/${fichier}_${theme}.json`), 'utf8'))
+    const table = semanticFixtureRows[theme]?.[fichier as 'indicateurs' | 'histoires'] ?? []
     for (const row of table) {
       const bucket = index.get(row.territoire)
       if (bucket) bucket.push(row)
       else index.set(row.territoire, [row])
     }
-  } catch { /* table absente : aucun fait publié pour ce thème */ }
+  } catch { /* malformed fixture shape; absence remains intentional */ }
   publishedRowsByTerritory.set(cacheKey, index)
   return index
 }

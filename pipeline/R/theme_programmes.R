@@ -567,11 +567,10 @@ publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
   # — un run vide ne doit JAMAIS clobber la publication existante (issue #178)
   ecrire_parquets_programmes(payload, sortie)
 
-  # les faits du sixième thème (#408) : zéro fait → rien n'est écrit
-  # (l'absence honnête du thème — jamais un thème inventé) ; aucun fichier de
-  # lecture n'est publié puisque Programmes n'a pas de lecture.
+  # les faits du sixième thème (#408) restent disponibles dans le payload en
+  # mémoire et dans les parquets canoniques ; aucune projection navigateur.
   indicateurs_theme <- construire_indicateurs_programmes(membres, subventions)
-  ecrire_theme_programmes(indicateurs_theme, sortie)
+  payload$indicateurs <- indicateurs_theme
 
   payload
 }

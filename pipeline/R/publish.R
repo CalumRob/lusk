@@ -58,9 +58,7 @@ ecrire_parquet_si_modifie <- function(table, fichier) {
 # ses parquets de thème (#619). La liste se DÉRIVE du registre canonique des
 # thèmes de données (THEMES_METADATA) plutôt que d'être recopiée : un thème
 # ajouté y entre automatiquement, et le test de complétude de l'inventaire
-# échoue si un thème canonique est oublié. Les projections JSON
-# (indicateurs_<theme>.json / histoires_<theme>.json) restent écrites — seule
-# la sérialisation PARQUET par thème est retirée.
+# échoue si un thème canonique est oublié. Les projections numériques navigateur sont retirées.
 themes_parquet_retires <- function() {
   setdiff(THEMES_METADATA, "mobilite")
 }
@@ -81,18 +79,6 @@ theme_parquet_retire <- function(theme) {
 # (rang exact + portée, rank_field de série ordonnée à sa coordonnée déclarée)
 # les conservent INCHANGÉS. Aucun fichier commité n'est réécrit par cette
 # modification — elle ne gouverne que la prochaine génération.
-COLONNES_RANG_JSON_OMISES <- c(
-  "rang_epci", "rang_epci_n",
-  "rang_dep", "rang_dep_n",
-  "rang_reg", "rang_reg_n"
-)
-
-# La projection JSON des indicateurs sans les colonnes de rang omises (#892).
-# setdiff tolère une table qui ne les porterait pas : elles restent omises.
-projection_json_indicateurs <- function(indicateurs) {
-  indicateurs[, setdiff(names(indicateurs), COLONNES_RANG_JSON_OMISES),
-               drop = FALSE]
-}
 # publish ---------------------------------------------------------------------
 # Étape 5 : publication. Upsert du payload vers la cible. Deux backends :
 #   - "static" (défaut, issue #10, ADR-0004) : écrit les tables vers le home
@@ -194,18 +180,10 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     # BIT À BIT le double du parquet (17 chiffres significatifs suffisent
     # toujours à un aller-retour exact — le défaut jsonlite, 4 chiffres,
     # tronquerait les parts d'âge).
-    ecrire_projection <- function(table, nom) {
-      ecrire_json_si_modifie(table, file.path(cible, nom),
-                             dataframe = "rows", na = "null",
-                             digits = 17, pretty = TRUE)
-    }
     # #892 : la projection JSON des indicateurs omet exactement les six
     # colonnes de rang à portée fixe ; la table en mémoire (et le parquet
     # retenu pour la Mobilité) les conservent — asymétrie voulue, verrouillée
     # par test-publish.R.
-    ecrire_projection(projection_json_indicateurs(payload$indicateurs),
-                      paste0("indicateurs_", theme, ".json"))
-    ecrire_projection(payload$histoires, paste0("histoires_", theme, ".json"))
     ecrire_projection(payload$territoires, "territoires.json")
     # #894 : la projection navigateur apercu.json est RETIRÉE (source-only) —
     # plus aucun chemin ne l'écrit. La table canonique en mémoire et le

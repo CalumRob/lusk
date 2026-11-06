@@ -271,22 +271,3 @@ construire_payload_territoire_programmes <- function(programmes, territoires) {
 coalesce_na <- function(x) {
   ifelse(is.na(x), "∅", x)
 }
-
-# ecrire_theme_programmes -------------------------------------------------------
-# La publication de la projection de faits du thème (#408) :
-#   - indicateurs_programmes.json : la projection JSON des faits ;
-#   - aucun histoires_programmes.json : Programmes ne publie pas de lecture ;
-#   - la sentinelle : zéro fait → RIEN n'est écrit (un run vide n'invente pas
-#     un thème construit, n'écrase jamais une publication existante).
-ecrire_theme_programmes <- function(indicateurs, sortie = "public/data") {
-  if (nrow(indicateurs) == 0L) {
-    return(invisible(indicateurs))
-  }
-  if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
-  jsonlite::write_json(
-    indicateurs,
-    file.path(sortie, "indicateurs_programmes.json"),
-    dataframe = "rows", na = "null", digits = 17, pretty = TRUE
-  )
-  invisible(indicateurs)
-}
