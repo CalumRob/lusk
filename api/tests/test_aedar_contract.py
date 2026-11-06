@@ -506,10 +506,18 @@ def test_aedar_measure_facets_cover_every_registered_measure_with_declared_direc
 def test_aedar_aggregate_reading_inventory_covers_displayed_modes_and_horizons():
     from api.aedar_models import (AEDAR_AGGREGATE_HORIZONS, AEDAR_AGGREGATE_MODES,
                                   AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS)
+    # Independent source-coordinate pins (pipeline/R/aedar_aggregates.R): do
+    # not derive the expected inventory from the mapping's own declarations.
+    source_modes = ("walk", "transit", "bike_lts2", "bike_lts4", "car")
+    source_horizons = (5, 10, 15, 20)
+    assert AEDAR_AGGREGATE_MODES == source_modes
+    assert AEDAR_AGGREGATE_HORIZONS == source_horizons
+    assert "transit_gain" not in source_modes
+    assert "count_10_transit_gain_share" in AEDAR_MEASURE_KEYS
     expected = {
         (mode, horizon, kind)
-        for mode in AEDAR_AGGREGATE_MODES
-        for horizon in AEDAR_AGGREGATE_HORIZONS
+        for mode in source_modes
+        for horizon in source_horizons
         for kind in ("diversity", "volume")
     }
     actual = set()
@@ -530,6 +538,13 @@ def test_aedar_aggregate_reading_inventory_covers_displayed_modes_and_horizons()
     assert set(AEDAR_AGGREGATE_READINGS) == expected_names
     assert AEDAR_AGGREGATE_READINGS["meanDiversity"] == "count_15_car_share"
     assert AEDAR_AGGREGATE_READINGS["meanVolume"] == "count_15_car_mean"
+    producer = default_resource_catalogue.__wrapped__().resources_by_id[
+        "aedar_territorial_aggregate"]
+    assert len(set(producer.measure_facets) & set(AEDAR_AGGREGATE_READINGS)) == 40
+    assert all(producer.measure_facets[name] == {
+        "facet": kind, "direction": "high", "ranked": True}
+        for name, source in AEDAR_AGGREGATE_READINGS.items()
+        for kind in ("diversity" if source.endswith("_share") else "volume",))
 
 
 def test_aedar_comparison_grants_rank_fields_per_intent_and_aggregate_boundary():
