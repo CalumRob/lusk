@@ -331,6 +331,8 @@ export function aedarCarAccessOverviewSection(
         ? aedarAggregateComparisonCell(comparison, reading.key)?.rank_size ?? null : null,
       rankTies: comparison && options.comparisonRequest
         ? aedarAggregateComparisonCell(comparison, reading.key)?.rank_ties ?? null : null,
+      rankDirection: comparison && options.comparisonRequest
+        ? aedarAggregateComparisonCell(comparison, reading.key)?.direction ?? null : null,
       rankUnavailableLabel: null,
       // Keep an explicit mark inside every scalar while a requested group is
       // pending, rejected, or simply has no comparable published cell.

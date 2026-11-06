@@ -493,7 +493,7 @@ onBeforeUnmount(() => {
                           <CahierComparisonValue
                             v-if="scalar.reference"
                             :named-reference="scalar.reference"
-                        :served-rank="scalar.rank && scalar.rankSize && scalar.rankSize >= 2 ? { position: scalar.rank, size: scalar.rankSize, direction: 'plus-est-mieux', key: scalar.key } : null"
+                        :served-rank="scalar.rank && scalar.rankSize && scalar.rankSize >= 2 && scalar.rankDirection ? { position: scalar.rank, size: scalar.rankSize, direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' : 'moins-est-mieux', key: scalar.key } : null"
                           />
                           <span v-else class="cahier-figure-comparison">{{ scalar.comparisonUnavailableLabel }}</span>
                           <span v-if="scalar.rankUnavailableLabel" class="cahier-figure-comparison">{{ scalar.rankUnavailableLabel }}</span>

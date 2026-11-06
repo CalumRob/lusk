@@ -96,6 +96,7 @@ export interface AedarCarAccessOverviewScalar {
   rank?: number | null
   rankSize?: number | null
   rankTies?: number | null
+  rankDirection?: 'high' | 'low' | null
   comparisonUnavailableLabel?: string | null
   comparisonAccessibleLabel?: string | null
 }

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { CONTROLE_COMPARAISON_KEY } from '@/fiche/comparisonContext'
 import type { ControleComparaison } from '@/fiche/comparisonContext'
 import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import { AEDAR_AGGREGATE_READING_KEYS } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarComparisonResult } from '@/fiche/content/aedarComparisonClient'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -27,6 +28,7 @@ import type { Payload } from '@/payload/types'
 import { routes } from '@/router'
 import { carInlineLegend } from './fixtures/aedar-car-inline-legend'
 import selectedComparisonCaptured from './fixtures/aedar-selected-comparison-captured.json'
+import { nativeCatalogueResponse } from './helpers/semanticApiFixtures'
 
 const comparisonClient = vi.hoisted(() => ({ realFetch: undefined as ((...args: any[]) => any) | undefined }))
 vi.mock('@/fiche/content/aedarComparisonClient', async (original) => ({
@@ -95,6 +97,15 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
     libelleActif: 'Sélection', presetDefaut: 'epci', presets: [], choisir: () => {} })
   const originalFetch = globalThis.fetch
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === '/api/resources') {
+      const response = nativeCatalogueResponse()
+      const catalogue = await response.json() as { resources: Array<Record<string, unknown>> }
+      const aggregate = catalogue.resources.find((resource) => resource.resource_id === 'aedar_territorial_aggregate')
+      if (!aggregate) throw new Error('AEDAR aggregate declaration missing from fixture catalogue')
+      aggregate.measure_facets = Object.fromEntries(AEDAR_AGGREGATE_READING_KEYS.map((measure) => [measure,
+        { facet: measure.toLowerCase().includes('diversity') ? 'diversity' : 'volume', direction: 'high', ranked: true }]))
+      return new Response(JSON.stringify(catalogue), { status: response.status })
+    }
     if (String(input) === '/api/resources/read-batch') {
       const body = JSON.parse(String(init?.body)) as { items: Array<{ id: string; target: { type: string; id: string }; coordinates: { measure: string[] } }> }
       const results = body.items.map((item) => ({ id: item.id, data: {
@@ -124,14 +135,16 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
     aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {} },
   global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
   await flushPromises()
-  const rendered = wrapper.findComponent(VarianteCahierLibre).props('content')
-  const overview = rendered.units[0].sections[0].evidence
-  if (overview?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
+    const rendered = wrapper.findComponent(VarianteCahierLibre).props('content')
+    const overview = rendered.units[0].sections[0].evidence
+    if (overview?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
+    expect(overview.scalars[0]!.rankDirection).toBe('high')
   expect(overview.scalars[0]!.reference?.value).toBeCloseTo(7.4)
   expect(overview.scalars[1]!.reference?.value).toBeCloseTo(1739)
   expect(overview.scalars[0]!.comparisonUnavailableLabel).toBeNull()
   const requests = vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')
   expect(requests).toHaveLength(1)
+  expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === '/api/resources')).toHaveLength(1)
   const batch = JSON.parse(String(requests[0]![1]?.body))
   expect(batch.items).toHaveLength(1)
   expect(batch.items[0].coordinates.measure).toHaveLength(40)
@@ -824,7 +837,7 @@ describe('ProductionMobiliteAedar', () => {
       cells: ['meanDiversity', 'meanVolume'].map((measure) => ({
         typequ: null, measure, source_id: 'aedar_bretagne', vintage_id: '2026-v1', reference_date: '2026-01-01', publication_date: '2026-09-30',
         group_value: 2.5, group_coverage_status: 'covered', group_n_addresses: 100, group_n_observed: 90,
-        statistic: 'pooled', rank: position, rank_size: size, rank_ties: position === null ? null : 1,
+        statistic: 'pooled', rank: position, rank_size: size, rank_ties: position === null ? null : 1, direction: 'high',
       })),
     } })
     const wrapper = mount(ProductionMobiliteAedar, { props: {

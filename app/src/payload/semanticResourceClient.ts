@@ -18,6 +18,7 @@ export interface SemanticResourceDeclaration {
   dynamic_axes?: string[]
   fields: string[]
   intents: string[]
+  measure_facets?: Record<string, { facet: string; direction: 'high' | 'low'; ranked: boolean }>
 }
 
 export interface SemanticTerritoryTarget {
@@ -79,6 +80,10 @@ export async function chargerCatalogueRessources(): Promise<SemanticResourceDecl
         (candidate.target_ids !== undefined && !strings(candidate.target_ids)) ||
         (candidate.axes !== undefined && !strings(candidate.axes)) ||
         (candidate.dynamic_axes !== undefined && !strings(candidate.dynamic_axes)) ||
+        (candidate.measure_facets !== undefined && (!isRecord(candidate.measure_facets) ||
+          Object.values(candidate.measure_facets).some((facet) => !isRecord(facet) ||
+            typeof facet.facet !== 'string' || !facet.facet || (facet.direction !== 'high' && facet.direction !== 'low') ||
+            typeof facet.ranked !== 'boolean'))) ||
         (candidate.axis_values !== undefined && (!Array.isArray(candidate.axis_values) || candidate.axis_values.some((entry) =>
           !Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string' || !strings(entry[1])))) ||
         seen.has(candidate.resource_id)) {

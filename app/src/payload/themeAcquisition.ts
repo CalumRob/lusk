@@ -284,7 +284,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
  */
 let catalogueRequest: Promise<SemanticResourceDeclaration[]> | null = null
 let catalogueFetcher: typeof fetch | null = null
-function producerCatalogue(): Promise<SemanticResourceDeclaration[]> {
+export function producerCatalogue(): Promise<SemanticResourceDeclaration[]> {
   // A browser has one stable fetch function for the page lifetime. Keeping its
   // identity with the cached discovery also avoids leaking one test's mocked
   // catalogue into another mounted test that installs a different fetcher.

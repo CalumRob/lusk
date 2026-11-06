@@ -1,5 +1,7 @@
 import type { AedarFact, AedarTerritoryType } from './aedarApiClient'
 import type { MembreSelection } from '../comparisonContext'
+import { producerCatalogue } from '@/payload/themeAcquisition'
+import { AEDAR_AGGREGATE_READING_KEYS } from './aedarTimeRampFacts'
 
 export type AedarComparisonIntent =
   | { kind: 'selected_comparison'; members: readonly MembreSelection[] }
@@ -66,9 +68,12 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
   try {
     const selected = options.intent.kind === 'selected_comparison'
     const members = options.intent.kind === 'selected_comparison' ? options.intent.members : null
-    const aggregate = options.typequ.length === 0 && options.measures.every((measure) => measure === 'meanDiversity' || measure === 'meanVolume'
-      || /^(?:walk|transit|bike_lts2|bike_lts4|car)(?:5|10|15|20)(?:Diversity|Volume)$/.test(measure))
+    const aggregate = options.typequ.length === 0 && options.measures.every((measure) => AEDAR_AGGREGATE_READING_KEYS.includes(measure))
     if (!options.measures.length || (!aggregate && !options.typequ.length) || members?.length === 0) invalid()
+    const aggregateFacets = aggregate
+      ? (await producerCatalogue()).find((resource) => resource.resource_id === 'aedar_territorial_aggregate')?.measure_facets
+      : undefined
+    if (aggregate && (!aggregateFacets || options.measures.some((measure) => !aggregateFacets[measure]))) invalid()
     const intent = options.intent.kind === 'selected_comparison'
       ? { kind: 'selected_comparison', members: options.intent.members.map((m) => ({ type: m.territory_type, id: m.territory_id })) }
       : options.intent
@@ -138,17 +143,22 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
             || !nonempty(row.source_id) || !nonempty(row.vintage_id)
             || !(row.reference_date === null || typeof row.reference_date === 'string')
             || !(row.publication_date === null || typeof row.publication_date === 'string')) invalid()
+          let normalizedDirection: 'high' | 'low' | undefined
           if (selected || aggregate) {
             const rank = [row.rank, row.rank_size, row.rank_ties]
+            const declaration = aggregateFacets?.[row.measure as string]
+            if (aggregate && (!declaration || (selected && row.direction !== declaration.direction))) invalid()
             if (selected && row.direction !== 'high' && row.direction !== 'low') invalid()
+            normalizedDirection = aggregate ? declaration?.direction : row.direction as 'high' | 'low' | undefined
+            if (aggregate && declaration && !declaration.ranked && rank.some((value) => value !== null)) invalid()
             if (aggregate && rank.some((x) => x !== null && !Number.isInteger(x))) invalid()
             if (!rank.every((x) => x === null) && (!rank.every((x) => Number.isInteger(x) && (x as number) > 0)
               || (row.rank as number) + (row.rank_ties as number) - 1 > (row.rank_size as number)
               || (selected && ((row.rank_size as number) > members!.length
               || !members!.some((m) => m.territory_type === type && m.territory_id === id))))) invalid()
           }
-           returned.add(`${row.typequ ?? ''}/${row.measure}`)
-          cells.push(row as unknown as AedarComparisonCell)
+          returned.add(`${row.typequ ?? ''}/${row.measure}`)
+          cells.push({ ...row, ...(normalizedDirection ? { direction: normalizedDirection } : {}) } as unknown as AedarComparisonCell)
         }
       }
     }
