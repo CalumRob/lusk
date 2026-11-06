@@ -333,7 +333,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(wrapper.text()).toContain('Prix')
     } finally { wrapper.unmount() }
   })
-  it('series table ranks come ONLY from published axis_comparisons evidence (#892 P2) — observed axis without comparison shows no rank', async () => {
+  it('sparse series facts filter the missing member while ranks use published axis_comparisons evidence (#892 P2)', async () => {
     // classes de densité réelles sur les communes du fixture (référence commise) :
     // la portée density_class du fixed_comparison doit porter un code valide égal
     // à celui du focal acquis, sinon l'évidence est rejetée au seam (#892 fail-closed)
@@ -346,16 +346,37 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       if (file === 'theme_habitat') return metadataHabitat
       throw new Error(`unexpected static read: ${file}`)
     }
+    let sparseSeriesFacts: Array<Record<string, any>> = []
+    let sparseEvidence: Record<string, any> | undefined
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       if (String(input) === '/api/resources') return nativeCatalogueResponse()
       const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
       return nativeBatchResponse(body.items, (item, resource) => {
         const data = nativeReadFixture(item, resource, { territories })
+        // Faits API compacts de la cohorte : quatre membres, mais 22001 n'a
+        // aucune observation publiée en 2025. Le point reste déclaré, sans
+        // valeur ni provenance, comme une absence de série native.
+        if (item.intent?.kind === 'facts' && Array.isArray(data?.series)) {
+          sparseSeriesFacts = data.series
+          const missingMember = data.series.find((member: any) => member.territory.id === '22001')
+          const missingPoint = missingMember?.points.find((point: any) => point.axis === '2025')
+          if (missingPoint) Object.assign(missingPoint, {
+            value: null, status: 'missing', missing_reason: null, provenance: [],
+          })
+          for (const member of data.series) {
+            const point = member.points.find((candidate: any) => candidate.axis === '2025')
+            if (point && member.territory.id !== '22001') {
+              point.value = ({ '22002': 3000, '29001': 1000, '29002': 2000 } as Record<string, number>)[member.territory.id]
+              point.status = 'measured'
+              point.missing_reason = null
+            }
+          }
+        }
         // Preuve sémantique : l'axe 2024 est OBSERVÉ (faits publiés) mais sa
         // comparaison est publiée « unavailable » (aucun rang publié — forme
-        // valide du contrat, membre_ranks tous null) ; l'axe 2025 porte des
-        // rangs API volontairement inversés par rapport à l'ordre des valeurs,
-        // pour prouver que le rang affiché vient de l'API et non du navigateur.
+        // valide du contrat, membre_ranks tous null) ; l'axe 2025 porte une
+        // médiane/min/max pour les trois faits mesurés et des rangs API explicites,
+        // indépendants de l'ordre des valeurs, jamais recalculés par le navigateur.
         if (item.intent?.kind !== 'facts' && Array.isArray(data?.result?.axis_comparisons)) {
           data.result.axis_comparisons = data.result.axis_comparisons
             .map((comparison: any) => {
@@ -366,11 +387,18 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
                     territory_id: rank.territory_id, rank: null, rank_size: null, rank_ties: null })) }
               }
               if (comparison.axis === '2025') {
-                return { ...comparison, member_ranks: comparison.member_ranks.map((rank: any) => ({
-                  ...rank, rank: rank.rank === null ? null : 4 - rank.rank, rank_ties: rank.rank === null ? null : 1 })) }
+                const fixtureRanks: Record<string, number> = { '22002': 1, '29001': 2, '29002': 3 }
+                return { ...comparison, status: 'available', value: 2000, min: 1000, max: 3000,
+                  selected_member_count: 4, eligible_count: 3, missing_count: 1,
+                  member_ranks: comparison.member_ranks.map((rank: any) => ({
+                    ...rank, rank: fixtureRanks[rank.territory_id] ?? null,
+                    rank_size: fixtureRanks[rank.territory_id] ? 3 : null,
+                    rank_ties: fixtureRanks[rank.territory_id] ? 1 : null,
+                  })) }
               }
               return comparison
             })
+          sparseEvidence = data.result.axis_comparisons.find((comparison: any) => comparison.axis === '2025')
         }
         return data
       })
@@ -389,12 +417,26 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       const rowTerritoire = (row: ReturnType<typeof wrapper.findAll>[number]) =>
         (row.find('td a')?.attributes('href') ?? '').split('?')[0]?.split('/').at(-1) ?? ''
 
-      // --- axe comparé (2025, détail par défaut) : rangs = évidence API exacte
+      // --- axe comparé (2025, détail par défaut) : quatre membres, trois faits/rangs
+      const missing2025 = sparseSeriesFacts.find((member) => member.territory.id === '22001')!
+        .points.find((point: any) => point.axis === '2025')
+      expect(sparseSeriesFacts).toHaveLength(4)
+      expect(missing2025).toMatchObject({ value: null, status: 'missing', missing_reason: null, provenance: [] })
+      expect(sparseEvidence).toMatchObject({ status: 'available', statistic: 'median', value: 2000,
+        min: 1000, max: 3000, selected_member_count: 4, eligible_count: 3, missing_count: 1 })
+      expect(sparseEvidence!.member_ranks).toEqual([
+        { territory_id: '22001', rank: null, rank_size: null, rank_ties: null },
+        { territory_id: '22002', rank: 1, rank_size: 3, rank_ties: 1 },
+        { territory_id: '29001', rank: 2, rank_size: 3, rank_ties: 1 },
+        { territory_id: '29002', rank: 3, rank_size: 3, rank_ties: 1 },
+      ])
       let rows = wrapper.findAll('.comparison-table-scroll tbody tr')
-      expect(rows.length).toBe(3) // 22001 sans valeur à 2025 est exclue du tableau
+      expect(rows.length).toBe(3) // le point 2025 manquant de 22001 filtre cette ligne
+      expect(new Set(rows.map(rowTerritoire))).toEqual(new Set(['22002', '29001', '29002']))
       const focal = rows.find((row) => row.classes().includes('selection'))!
       expect(rowTerritoire(focal)).toBe('22002')
-      // rang API inversé (1er/3) — PAS le rang calculé sur les valeurs (qui donnerait 3e/3, direction low)
+      // Valeurs mesurées : 3000, 1000, 2000 ; le tableau garde les rangs publiés,
+      // non un reclassement local (qui mettrait 22002 dernier, pas premier).
       expect(rankCell(focal)).toBe('1er / 3')
       const parRang = Object.fromEntries(rows.map((row) => [rowTerritoire(row), rankCell(row)]))
       expect(parRang).toEqual({ '22002': '1er / 3', '29001': '2e / 3', '29002': '3e / 3' })
@@ -411,7 +453,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       await router.push({ query: { ...router.currentRoute.value.query, detail: '2024' } })
       await flushPromises()
       rows = wrapper.findAll('.comparison-table-scroll tbody tr')
-      expect(rows.length).toBe(3)
+      expect(rows.length).toBe(4) // 22001 reste mesurée en 2024
       for (const row of rows) {
         expect(rankCell(row)).toBe('')
       }
@@ -455,12 +497,12 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       // la légende du tableau garde l'univers LISTÉ (toutes les communes de l'URL)
       const caption = wrapper.find('.comparison-table-scroll caption')
       expect(caption.text()).toContain('Bretagne')
-      // les rangs sont présents (publiés par l'API à l'axe 2025) — 3 éligibles (22001
-      // sans valeur à 2025) dans une cohorte de 4 membres : les cellules portent /3
+      // Les quatre observations de test sont synthétiques et mesurées ; le rang
+      // API porte donc /4, sans dépendre d'une couverture numérique publiée.
       const cells = wrapper.findAll('.comparison-table-scroll tbody tr')
         .map((row) => row.findAll('td')[2]!.text().trim())
-      expect(cells.length).toBe(3)
-      expect(cells.every((cell) => /^\d+(er|e) \/ 3$/.test(cell))).toBe(true)
+      expect(cells.length).toBe(4)
+      expect(cells.every((cell) => /^\d+(er|e) \/ 4$/.test(cell))).toBe(true)
       // la note nomme la portée DÉCLARÉE du rang (classe de densité du focal acquis)
       // et la COHORTE (member_count = 4) — sans confondre avec les 3 classés (/3)
       const note = wrapper.get('[data-testid="rang-scope-note"]')
@@ -1001,8 +1043,14 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('momentanément indisponibles')
+    const producerResource = nativeResources('milieux').find((resource) =>
+      resource.resource_id === 'artif_par_habitant')!
+    const syntheticFacts = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'facts' } }, producerResource, { territories: territoiresFixture })
+    const expectedValue = (syntheticFacts.points as Array<Record<string, any>>)
+      .find((point) => point.axis === '2025')?.value
     expect(wrapper.find('.trajectoire-territoire-point[data-detail="2025"]').attributes('data-value'))
-      .toBe('2606.028248734476')
+      .toBe(String(expectedValue))
     expect(wrapper.text()).toContain('Comparaison non publiée pour')
   })
 
@@ -1011,11 +1059,9 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const loader: ChargerFichier = async (file) => {
       calls.push(file)
       if (file === 'territoires') return territoiresFixture
-      if (file === 'indicateurs_milieux') return indicateursMilieuxFixture
       if (file === 'theme_milieux') return metadataMilieux
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fixtureFacts = indicateursMilieuxFixture.filter((fact) => fact.key === 'conso_enaf_annuel' && fact.type === 'commune')
     let apiCalls = 0
     let retryEnabled = false
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -1039,7 +1085,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     expect(wrapper.text()).toContain('momentanément indisponibles')
     expect(wrapper.find('.vues').exists()).toBe(true)
     expect(wrapper.text()).toContain('L’indicateur')
-    expect(wrapper.text()).not.toContain(String(fixtureFacts.find((fact) => fact.territoire === '22001' && fact.detail === '2011')?.value))
+    expect(wrapper.find('.trajectoire-territoire-point[data-detail="2011"]').exists()).toBe(false)
     const beforeRetry = apiCalls
     retryEnabled = true
     await wrapper.get('[role="alert"] button').trigger('click')
@@ -1049,7 +1095,14 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     expect(wrapper.find('.vues').exists()).toBe(true)
     expect(wrapper.find('.controls').exists()).toBe(true)
     expect(wrapper.text()).toContain('Consommation')
-    expect(wrapper.text()).toContain('1,83')
+    const annualResource = nativeResources('milieux').find((resource) =>
+      resource.resource_id === 'conso_enaf_annuel')!
+    const expectedSeries = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'facts' } }, annualResource, { territories: territoiresFixture })
+    const expected2011 = (expectedSeries.points as Array<Record<string, any>>)
+      .find((point) => point.axis === '2011')?.value
+    expect(wrapper.find('.trajectoire-territoire-point[data-detail="2011"]').attributes('data-value'))
+      .toBe(String(expected2011))
     expect(wrapper.text()).toContain('Département 22')
     expect(wrapper.text()).not.toContain('Territoire de la série')
     await wrapper.findAll('.vues button')[2].trigger('click')

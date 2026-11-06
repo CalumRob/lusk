@@ -214,9 +214,18 @@ The fifth theme block (added 2026-08-06): the state of the territory's natural m
 _Avoid_: Sols (the superseded name — the land axis alone), Environnement (the pre-block candidate, too broad), Écologie (the research note's working title, not the product term), Aménagement (bureaucratic — a policy, not a state)
 
 **Hermétique**:
-The payload rule that keeps themes independently loadable (ADR-0020, 2026-08-10): a theme's rendering reads only its own `indicateurs_<theme>` + `histoires_<theme>` files (plus the shared `territoires` reference and the shared cross-theme tables — `apercu`, `programmes`, `vintages`, `run-report`). Any fact a theme needs from another theme's domain is **precomputed by the pipeline into the consuming theme's own payload at compute time** — never cross-read, never derived in the app. The apparent duplication (Δpopulation ships in both Démographie and Milieux) is the seam, not waste. It is what the wait-set architecture of « Chargement prioritaire » (#296) depends on: a theme's wait-set is exactly its own pair, never transitive.
+**Current serialization status (2026-11-06):** the numerical browser JSON
+projections described in the historical rule below are retired for all themes.
+Theme-local producer facts/readings and independently acquired API semantics
+remain authoritative; this does not retire their in-memory tables or introduce
+cross-theme browser arithmetic. Theme metadata and shared identity/freshness
+assets remain separately retained. The Programmes-only serialization exception
+below records an intermediate retirement, not a requirement to keep other
+numerical JSON exports.
 
-**Narrow exception (2026-11-06):** Programmes et subventions is a facts-only theme with no reading semantics. Its producer publishes `indicateurs_programmes` facts and `theme_programmes` metadata, but no `histoires_programmes.json`; the former serialized empty array is retired. Its in-memory empty `histoires` producer value is unchanged. The progressive store does not request `histoires_programmes` in its legacy no-argument default; an explicit legacy `Fichier` request resolves as absent without fetching. Other present reading-bearing themes still require their own histories file; absence remains typed contract drift.
+The current ownership rule keeps themes independently acquirable: facts a theme needs from another producer domain remain **producer-owned inputs to the consuming theme**, not arithmetic reconstructed in the app. The apparent duplication (Δpopulation in both Démographie and Milieux) is the ownership seam, not waste. ADR-0020 records the original 2026-08-10 implementation with per-theme numerical JSON pairs and wait-sets; that serialization and its pair-presence requirement are now **superseded**, not a current loading contract.
+
+**Historical intermediate step (#925, superseded):** Programmes' empty history export was retired first, while the other themes temporarily retained their numerical JSON pair requirement. The all-theme retirement supersedes that exception and the remaining file-pair requirement. Programmes' in-memory empty `histoires` value remains a producer fact; no theme now requires a browser `histoires_<theme>.json` file.
 _Avoid_: « charger aussi les indicateurs du thème X » (cross-theme loading — the rejected alternative), « dériver dans l'app » (the app renders; the pipeline computes)
 
 **Se densifier, s'étaler, ou s'en aller**:

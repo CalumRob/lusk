@@ -1,7 +1,7 @@
 # theme_programmes_faits --------------------------------------------------------
 # Les faits du SIXIÈME thème (issue #408) : Programmes et subventions cesse
-# d'être un simple contrat de publication partagé (ADR-0013) et publie SA
-# projection indicateurs_programmes.json, seule entrée statique de ce thème :
+# d'être un simple contrat de publication partagé (ADR-0013). Ses faits sont
+# conservés dans le payload producteur et calculés depuis les Parquets sources :
 # la table
 # cross-thème partagée programmes.json est retirée (#893), la carte lit ses
 # adhésions/subventions via les lectures sémantiques natives de l'API.
@@ -270,23 +270,4 @@ construire_payload_territoire_programmes <- function(programmes, territoires) {
 # cru dans une phrase destinée au diagnostic).
 coalesce_na <- function(x) {
   ifelse(is.na(x), "∅", x)
-}
-
-# ecrire_theme_programmes -------------------------------------------------------
-# La publication de la projection de faits du thème (#408) :
-#   - indicateurs_programmes.json : la projection JSON des faits ;
-#   - aucun histoires_programmes.json : Programmes ne publie pas de lecture ;
-#   - la sentinelle : zéro fait → RIEN n'est écrit (un run vide n'invente pas
-#     un thème construit, n'écrase jamais une publication existante).
-ecrire_theme_programmes <- function(indicateurs, sortie = "public/data") {
-  if (nrow(indicateurs) == 0L) {
-    return(invisible(indicateurs))
-  }
-  if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
-  jsonlite::write_json(
-    indicateurs,
-    file.path(sortie, "indicateurs_programmes.json"),
-    dataframe = "rows", na = "null", digits = 17, pretty = TRUE
-  )
-  invisible(indicateurs)
 }

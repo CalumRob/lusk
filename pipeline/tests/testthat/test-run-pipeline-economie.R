@@ -25,96 +25,6 @@ statuts_economie <- function(status = "frais") {
   )
 }
 
-# La base des EPCI du fixture (la forme de lire_epci) — les 4 communes de la
-# fixture Démographie (2 EPCIs, 2 départements), la référence que
-# squelette_territoires consomme pour bâtir la table des territoires.
-base_epci_economie <- tibble::tribble(
-  ~CODGEO, ~LIBGEO, ~EPCI, ~LIBEPCI, ~DEP, ~REG,
-  "22001", "Commune A1", "200000001", "EPCI X", "22", "53",
-  "22002", "Commune D", "200000001", "EPCI X", "22", "53",
-  "29001", "Commune B", "200000002", "EPCI Y", "29", "53",
-  "29002", "Commune C", "200000002", "EPCI Y", "29", "53"
-)
-
-# La couture analytique mockée : la forme exacte de la liste retournée par
-# construire_analytiques_economie — les tables communales (lq, eco, dortoir,
-# chomage), l'effectif communal et les tables AGRÉGÉES du payload (issue #131)
-# — les agrégats et les histoires sont calculés par les VRAIES fonctions
-# d'agrégation sur la base des EPCI du fixture (le seam est le chaînon, pas le
-# calcul). 4 communes × 3 activités pour LQ, une ligne par commune pour les
-# autres. Les rangs sont des fractions dans [0,1] (la forme de la machinerie
-# partagée).
-fixture_analytiques_economie <- function() {
-  lq <- tibble::tribble(
-    ~commune, ~activity_code, ~activity_label, ~lq, ~n, ~n_c, ~n_a,
-    ~rang_epci, ~rang_dep, ~rang_reg,
-    "22001", "A", "Activité A", 1.5, 2, 10, 6, 0.5, 0.5, 0.4,
-    "22001", "B", "Activité B", 0.5, 3, 10, 8, 0.0, 0.0, 0.0,
-    "22001", "C", "Activité C", 1.2, 2, 10, 4, 0.5, 0.5, 0.4,
-    "22002", "A", "Activité A", 1.0, 4, 10, 6, 0.5, 0.5, 0.4,
-    "22002", "B", "Activité B", 1.2, 5, 10, 8, 0.5, 0.5, 0.4,
-    "22002", "C", "Activité C", 0.8, 3, 10, 4, 0.0, 0.0, 0.0,
-    "29001", "A", "Activité A", 0.8, 6, 10, 6, 0.5, 0.5, 0.4,
-    "29001", "B", "Activité B", 1.8, 7, 10, 8, 0.5, 0.5, 0.4,
-    "29001", "C", "Activité C", 1.1, 4, 10, 4, 0.5, 0.5, 0.4,
-    "29002", "A", "Activité A", 1.1, 8, 10, 6, 0.5, 0.5, 0.4,
-    "29002", "B", "Activité B", 0.9, 9, 10, 8, 0.5, 0.5, 0.4,
-    "29002", "C", "Activité C", 1.4, 3, 10, 4, 0.5, 0.5, 0.4
-  )
-  eco <- tibble::tribble(
-    ~commune, ~departement, ~n_etablissements, ~n_eco, ~n_eco_100, ~n_eco_partial,
-    ~part_economie_verte, ~rang_epci, ~rang_dep, ~rang_reg,
-    "22001", "22", 10, 4, 3, 1, 0.4, 0.5, 0.5, 0.4,
-    "22002", "22", 10, 5, 4, 1, 0.5, 0.5, 0.5, 0.4,
-    "29001", "29", 10, 6, 5, 1, 0.6, 0.5, 0.5, 0.4,
-    "29002", "29", 10, 7, 6, 1, 0.7, 0.5, 0.5, 0.4
-  )
-  dortoir <- tibble::tribble(
-    ~commune, ~departement, ~workplace, ~resident, ~ratio, ~classification,
-    "22001", "22", 2, 10, 0.2, "dortoir-profond",
-    "22002", "22", 6, 10, 0.6, "equilibre",
-    "29001", "29", 8, 10, 0.8, "equilibre",
-    "29002", "29", 7, 10, 0.7, "equilibre"
-  )
-  chomage <- tibble::tribble(
-    ~commune, ~departement, ~chomeurs, ~actifs_occupes, ~population_active,
-    ~taux_chomage, ~rang_epci, ~rang_dep, ~rang_reg,
-    "22001", "22", 2, 8, 10, 0.2, 0.5, 0.5, 0.4,
-    "22002", "22", 1, 9, 10, 0.1, 0.0, 0.0, 0.0,
-    "29001", "29", 3, 7, 10, 0.3, 0.5, 0.5, 0.4,
-    "29002", "29", 4, 6, 10, 0.4, 0.5, 0.5, 0.4
-  )
-  histoires_lq <- lq %>%
-    dplyr::select(commune, activity_code, activity_label, lq, n) %>%
-    dplyr::group_by(commune) %>%
-    dplyr::arrange(dplyr::desc(lq), activity_code, .by_group = TRUE) %>%
-    dplyr::mutate(rang = dplyr::row_number()) %>%
-    dplyr::ungroup() %>%
-    dplyr::select(commune, rang, activity_code, activity_label, lq, n)
-
-  effectifs <- dortoir %>%
-    dplyr::transmute(commune, effectifs_salaries = workplace)
-
-  list(
-    lq = lq,
-    histoires_lq = histoires_lq,
-    m = tibble::tibble(commune = character(), activity_code = character(), m = integer()),
-    lq_emploi_a88 = lq,
-    lq_emploi_a38 = lq,
-    eco_activites = eco,
-    dortoir = dortoir,
-    chomage = chomage,
-    effectifs = effectifs,
-    # les agrégats du payload : les VRAIES fonctions, sur la base du fixture
-    # (EPCI X = 22001 + 22002 · EPCI Y = 29001 + 29002)
-    effectifs_territoires = agreger_effectifs_territoires(effectifs,
-                                                          base_epci_economie),
-    chomage_territoires = agreger_chomage_territoires(chomage, base_epci_economie),
-    eco_territoires = agreger_eco_territoires(eco, base_epci_economie),
-    histoires = construire_histoires_economie_payload(lq, base_epci_economie)
-  )
-}
-
 test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de bout en bout", {
   cible <- tempfile("pub-economie-")
   on.exit(unlink(cible, recursive = TRUE))
@@ -237,48 +147,30 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
     "200000001"
   )
 
-  # les fichiers par thème + la référence partagée + vintages + rapport.
+  # la référence partagée + vintages + rapport ; les projections de faits
+  # numériques sont retirées et le payload reste disponible en mémoire.
   # Issue #116 : l'Aperçu d'un run Économie est vide par design — le fichier
   # partagé apercu n'est NI écrit NI écrasé par un thème sans aperçu (seul
   # Démographie le peuple). Issue #311 : les métadonnées du thème partent
   # avec le run (theme_economie.json).
-  for (f in c("indicateurs_economie.json", "histoires_economie.json",
-              "territoires.parquet", "territoires.json",
+  for (f in c("territoires.parquet", "territoires.json",
               "vintages.parquet", "run-report.json",
               "theme_economie.json")) {
     expect_true(file.exists(file.path(cible, f)), info = f)
   }
+  expect_false(file.exists(file.path(cible, "indicateurs_economie.json")))
+  expect_false(file.exists(file.path(cible, "histoires_economie.json")))
   # #757 : le parquet par-thème est retiré pour les cinq thèmes non-mobilité
   expect_false(file.exists(file.path(cible, "indicateurs_economie.parquet")))
   expect_false(file.exists(file.path(cible, "histoires_economie.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.json")))
 
-  # #757 : les faits partent en JSON seul — le JSON relit exactement le payload
-  ind <- jsonlite::fromJSON(file.path(cible, "indicateurs_economie.json"))
-  expect_equal(nrow(ind), nrow(payload$indicateurs))
-  expect_equal(ind$value, payload$indicateurs$value)
-  hist <- jsonlite::fromJSON(file.path(cible, "histoires_economie.json"))
-  expect_equal(hist$story_key, payload$histoires$story_key)
-
-  # le contrat de non-dérive (ADR-0004, issue #131) : le JSON du payload
-  # Économie se relit colonne pour colonne comme la table EN MÉMOIRE dont il
-  # est issu (#757 : plus de parquet par-thème) — les colonnes entièrement NA
-  # (le `detail` d'un bloc de clés scalaires) et les colonnes multi-lignes des
-  # histoires incluses ; la référence partagée reste parquet contre JSON.
-  # #892 : la projection JSON omet exactement les six colonnes de rang à
-  # portée fixe ; la table en mémoire (comme le parquet retenu) les garde.
-  verifier_projection_sur_table(
-    payload$indicateurs,
-    jsonlite::fromJSON(file.path(cible, "indicateurs_economie.json")),
-    "indicateurs_economie",
-    colonnes_retirees = COLONNES_RANG_JSON_OMISES
-  )
-  verifier_projection_sur_table(
-    payload$histoires,
-    jsonlite::fromJSON(file.path(cible, "histoires_economie.json")),
-    "histoires_economie"
-  )
+  # Les contrats de faits s'attachent aux sorties producteur en mémoire, pas
+  # à une projection JSON retirée. La ressource partagée garde sa parité.
+  expect_true(all(payload$indicateurs$theme == "economie"))
+  expect_setequal(unique(payload$indicateurs$key),
+    c("effectifs_salaries", "chomage", "eco_activites"))
   pq <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
   js <- jsonlite::fromJSON(file.path(cible, "territoires.json"))
   verifier_non_derivee(pq, js, "territoires")
@@ -318,20 +210,24 @@ test_that("un re-run Économie écrase sans dupliquer (upsert, idempotence)", {
     .package = "lusk"
   )
 
-  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
-               noms_epci_geo_api = NULL)
-  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
-               noms_epci_geo_api = NULL)
+  premier <- run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
+                          noms_epci_geo_api = NULL)
+  second <- run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
+                         noms_epci_geo_api = NULL)
 
   # le payload EST l'état complet : relancer écrase, ne duplique jamais —
   # aucune ligne en double, les comptes du premier run sont conservés
-  # #757 : les faits Économie partent en JSON seul
-  ind <- jsonlite::fromJSON(file.path(cible, "indicateurs_economie.json"))
+  # Les tables de faits restent en mémoire et le writer ne crée pas de projection
+  # numérique ; les répétitions n'introduisent aucune duplication.
+  ind <- second$indicateurs
   ref <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
   # 9 territoires (4 communes + 2 EPCIs + 2 départements + la région) ×
   # 3 clés (effectifs_salaries · chomage · eco_activites) — une ligne chacun
   expect_equal(nrow(ind), 9 * 3)
   expect_equal(anyDuplicated(ind[c("territoire", "key", "detail")]), 0L)
+  expect_identical(second$indicateurs, premier$indicateurs)
+  expect_false(file.exists(file.path(cible, "indicateurs_economie.json")))
+  expect_false(file.exists(file.path(cible, "histoires_economie.json")))
   expect_equal(nrow(ref), 4 + 2 + 2 + 1) # communes + EPCIs + départements + région
 })
 

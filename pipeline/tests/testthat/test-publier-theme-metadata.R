@@ -11,9 +11,9 @@
 #     réseau) ;
 #   - le nom du fichier dérive du thème VALIDÉ du contenu, jamais d'un
 #     paramètre — la collision est impossible ;
-#   - publier les métadonnées ne recompute NI ne réécrit les tables de faits :
-#     l'étape n'écrit QUE theme_<theme>.json (les fichiers indicateurs_/
-#     histoires_/territoires restent byte-identical) ;
+#   - publier les métadonnées ne recompute NI ne réécrit les tables canoniques
+#     partagées ; les projections numériques indicateurs_/histoires_ sont
+#     retirées et ne réapparaissent pas ;
 #   - une collision de thème (le contenu déclare le fichier d'un AUTRE thème)
 #     échoue FORT, sans rien écrire — la garde theme_attendu du run ;
 #   - le sixième thème (#408) : Programmes et subventions épingle SON canon et
@@ -76,16 +76,17 @@ test_that("changer les métadonnées ne réécrit PAS les tables de faits", {
   cible <- tempfile("pub-meta-")
   on.exit(unlink(cible, recursive = TRUE))
 
-  # 1) les faits du thème sont publiés (publish réel, le payload du fixture)
+  # 1) le payload producteur passe par publish ; seules les ressources
+  # partagées retenues sont sérialisées, les faits restent en mémoire.
   payload <- compute_payload(load_fixture())
   publish(payload, cible)
+  expect_false(file.exists(file.path(cible, "indicateurs_demographie.json")))
+  expect_false(file.exists(file.path(cible, "histoires_demographie.json")))
   octets <- function(fichier) {
     readBin(file.path(cible, fichier), "raw",
             n = file.info(file.path(cible, fichier))$size)
   }
-  faits_avant <- lapply(c("indicateurs_demographie.json",
-                          "histoires_demographie.json",
-                          "territoires.json"), octets)
+  partages_avant <- lapply(c("territoires.json", "territoires.parquet"), octets)
 
   # 2) la publication des métadonnées — un contenu DIFFÉRENT du précédent
   meta <- lire_theme_metadata("demographie")
@@ -93,12 +94,13 @@ test_that("changer les métadonnées ne réécrit PAS les tables de faits", {
   meta$label <- "Démographie — label modifié"
   publier_theme_metadata(meta, cible)
 
-  # les tables de faits restent byte-identical : l'étape métadonnées n'écrit
-  # QUE theme_<theme>.json, jamais un recompute ni une réécriture des faits
-  faits_apres <- lapply(c("indicateurs_demographie.json",
-                          "histoires_demographie.json",
-                          "territoires.json"), octets)
-  for (i in seq_along(faits_avant)) expect_identical(faits_apres[[i]], faits_avant[[i]])
+  # la publication de métadonnées ne touche pas aux ressources partagées et ne
+  # recrée aucune projection numérique retirée.
+  partages_apres <- lapply(c("territoires.json", "territoires.parquet"), octets)
+  for (i in seq_along(partages_avant))
+    expect_identical(partages_apres[[i]], partages_avant[[i]])
+  expect_false(file.exists(file.path(cible, "indicateurs_demographie.json")))
+  expect_false(file.exists(file.path(cible, "histoires_demographie.json")))
 
   # le fichier de métadonnées, lui, porte la nouvelle valeur (l'upsert de
   # métadonnées ne touche que SA cible)

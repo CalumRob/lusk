@@ -24,11 +24,11 @@ test_that("une valeur changée est à publier", {
 
   publish(payload, a)
   publish(payload, b)
-  # on change la valeur d'un indicateur dans b, puis on relit la projection JSON
-  # (#757 : les faits Démographie ne partent plus qu'en JSON)
-  indicateurs <- jsonlite::fromJSON(file.path(b, "indicateurs_demographie.json"))
-  indicateurs$value[1] <- indicateurs$value[1] + 1
-  jsonlite::write_json(indicateurs, file.path(b, "indicateurs_demographie.json"),
+  # Les faits numériques ne sont plus sérialisés. Une modification de la
+  # référence partagée publiée reste un changement de contenu.
+  territoires <- jsonlite::fromJSON(file.path(b, "territoires.json"))
+  territoires$nom[1] <- paste0(territoires$nom[1], " modifié")
+  jsonlite::write_json(territoires, file.path(b, "territoires.json"),
                        dataframe = "rows", na = "null", digits = 17, pretty = TRUE)
 
   expect_true(detecter_changement(a, b))

@@ -114,16 +114,17 @@ describe('le store progressif — la gating par wait-set', () => {
     expect(wrapper.vm.etat.erreur.value?.message).toContain('libellé INSEE incohérent')
   })
 
-  it('no-arg = le full set : chargement false une fois tout réglé, payload complet', async () => {
+  it('no-arg starts retained files only; legacy numerical sections stay honestly empty', async () => {
     const wrapper = await monter(chargerAvec(payload))
     const { payload: p, erreur, chargement } = wrapper.vm.etat
 
     expect(chargement.value).toBe(false)
     expect(erreur.value).toBeNull()
     expect(p.value?.territoires).toEqual(territoiresFixture)
-    expect(p.value?.indicateurs).toEqual(indicateursDemographieFixture)
-    expect(p.value?.histoires).toEqual(histoiresDemographieFixture)
+    expect(p.value?.indicateurs).toEqual([])
+    expect(p.value?.histoires).toEqual([])
     expect(p.value?.runReport).toEqual(runReportFraisFixture)
+    expect(p.value?.vintages).toEqual(vintagesFixture)
     // La métadonnée du thème présent peuple le payload qui grandit.
     expect(p.value?.themeMetadata?.demographie).toEqual(metadonneesThemesFixtures.demographie)
   })
@@ -258,16 +259,9 @@ describe('le store progressif — la gating par wait-set', () => {
     expect(wrapper.vm.etat.payload.value?.indicateurs).toEqual([])
   })
 
-  it('un chargeur injecté sans wait-set garde le défaut historique du full set (#873)', async () => {
-    // The no-arg form retains the complete legacy default for BOTH the
-    // production consumer and an injected test loader — the eager start is
-    // the explicit no-wait-set form, never an injection side effect. The
-    // COMPLETE expected request set is pinned (not a toContain sample), so a
-    // missing or extra start is caught: the four shared files (programmes.json
-    // is retired since #893 and apercu.json since #894 — never started),
-    // presence discovery (indicateurs_) for every canonical theme, and — per
-    // the documented absence-chaining contract — the histoires/theme pair ONLY
-    // for the fixture's present theme (Démographie).
+  it('un chargeur injecté sans wait-set démarre uniquement les fichiers conservés', async () => {
+    // The complete default set is pinned: shared references/run files plus
+    // each theme's retained metadata, never numerical projections.
     const demandes: Fichier[] = []
     await monter(
       async (fichier) => {
@@ -282,46 +276,40 @@ describe('le store progressif — la gating par wait-set', () => {
       'territoires-metadata',
       'run-report',
       'vintages',
-      ...THEMES_CANONIQUES.map((theme) => `indicateurs_${theme}` as Fichier),
-      'histoires_demographie',
-      'theme_demographie',
+      ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier),
     ])
     expect([...new Set(demandes)].sort()).toEqual([...attendues].sort())
+  })
+
+  it('un chargeur injecté garde l’accès aux lignes numériques mémoire sur demande explicite', async () => {
+    const wrapper = await monter(
+      chargerAvec(payload),
+      ['territoires', 'indicateurs_demographie', 'histoires_demographie'],
+      ['territoires', 'indicateurs_demographie', 'histoires_demographie'],
+    )
+
+    expect(wrapper.vm.etat.erreur.value).toBeNull()
+    expect(wrapper.vm.etat.payload.value?.indicateurs).toEqual(indicateursDemographieFixture)
+    expect(wrapper.vm.etat.payload.value?.histoires).toEqual(histoiresDemographieFixture)
   })
 })
 
 describe('le store progressif — échecs scopés (option C)', () => {
-  it('honors an explicit legacy Programmes histories name as absent without fetching it', async () => {
-    const demandes: Fichier[] = []
-    const wrapper = await monter(
-      async (fichier) => {
-        demandes.push(fichier)
-        return chargerAvec(payload)(fichier)
-      },
-      ['territoires', 'histoires_programmes'],
-      ['territoires', 'histoires_programmes'],
-    )
-
-    expect(demandes).not.toContain('histoires_programmes')
-    expect(wrapper.vm.etat.erreur.value).toBeNull()
-    expect(wrapper.vm.etat.payload.value?.histoires).toEqual([])
-  })
-
-  it('le défaut accepte un thème Programmes facts-only sans demander son ancien fichier histoires', async () => {
+  it('le store injecté accepte des lignes Programmes facts-only sans histoires', async () => {
     const demandes: Fichier[] = []
     const wrapper = await monter(async (fichier) => {
       demandes.push(fichier)
       if (fichier === 'indicateurs_programmes') return [{ theme: 'programmes', key: 'subventions_annuelles' }]
       if (fichier === 'theme_programmes') return metadonneesThemesFixtures.programmes
       return chargerAvec(payload)(fichier)
-    })
+    }, ['territoires', 'indicateurs_programmes', 'theme_programmes'], ['territoires', 'indicateurs_programmes', 'theme_programmes'])
 
     expect(demandes).toContain('indicateurs_programmes')
     expect(demandes).toContain('theme_programmes')
     expect(demandes).not.toContain('histoires_programmes')
     expect(wrapper.vm.etat.erreur.value).toBeNull()
     expect(wrapper.vm.etat.payload.value?.themeMetadata?.programmes).toEqual(metadonneesThemesFixtures.programmes)
-    expect(wrapper.vm.etat.payload.value?.histoires).toEqual(histoiresDemographieFixture)
+    expect(wrapper.vm.etat.payload.value?.histoires).toEqual([])
   })
 
   it('un échec d’arrière-plan laisse erreur null et la section absente — la page vit', async () => {

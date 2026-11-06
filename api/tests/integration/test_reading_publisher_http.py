@@ -1,7 +1,6 @@
 """Canonical selected demographic reading through its public HTTP contract."""
 from __future__ import annotations
 
-import json
 import os
 import re
 from contextlib import contextmanager
@@ -12,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api import main
+from producer_artifacts import read_typed_reading_artifact, records
 
 pytestmark = pytest.mark.integration
 
@@ -22,13 +22,15 @@ def test_canonical_demographic_reading_is_readable_over_http():
     canonical = Path(os.environ.get("LUSK_TEST_CANONICAL_DATA_DIR", ""))
     if not schema or not read_dsn or not canonical.is_dir():
         pytest.skip("invoked by smoke-demographic-reading-postgres.R with guarded schema")
-    expected = json.loads((canonical / "histoires_demographie.json").read_text(encoding="utf-8"))
+    projection = read_typed_reading_artifact(canonical, "demographie")
+    expected = records(projection["facts"])
+    clock = projection["descriptor"]["source_clock"]
     read_ids = {("commune", "35238"), ("epci", "200068120"),
                 ("departement", "35"), ("region", "53"), ("commune", "22006")}
     selected = {}
     for row in expected:
-        key = (row["type"], row["territoire"])
-        if row["theme"] == "demographie" and key in read_ids:
+        key = (row["territory_type"], row["territory_id"])
+        if key in read_ids:
             selected[key] = row
     assert set(selected) == read_ids
 
@@ -48,23 +50,23 @@ def test_canonical_demographic_reading_is_readable_over_http():
                 os.environ["LUSK_TEST_DATABASE_NAME"], os.environ["LUSK_TEST_READ_USER"])
             publication = conn.execute("SELECT content_version,row_count FROM table_publication "
                                        "WHERE table_name='demographic_typed_reading'").fetchone()
-            assert publication and publication[1] == 1268
+            assert publication and publication[1] == len(expected)
         with TestClient(main.app) as client:
-            for (level, territory), old in selected.items():
+            for (level, territory), producer in selected.items():
                 response = client.get(f"/api/territories/{level}/{territory}/themes/demographie/facts")
                 assert response.status_code == 200, response.text
                 body = response.json()
-                reading = next(item for item in body["readings"] if item["groupe"] == old["groupe"])
+                reading = next(item for item in body["readings"] if item["groupe"] == producer["groupe"])
                 for field in ("groupe", "story_key", "salience_reason", "periode", "solde_naturel",
                               "solde_migratoire", "taux_solde_naturel", "taux_solde_migratoire",
                               "classification"):
-                    assert reading[field] == old[field], (level, territory, field)
+                    assert reading[field] == producer[field], (level, territory, field)
                 assert body["complete_theme"] is False
-                assert reading["rate_unit"] == "‰/an"
-                assert reading["provenance"]["source_id"] == "serie_historique"
-                assert reading["provenance"]["source_version"] == "2023"
-                assert reading["provenance"]["source_reference_date"] == "2023-01-01"
-                assert reading["status"] == "measured"
+                assert reading["rate_unit"] == projection["descriptor"]["rate_unit"]
+                assert reading["provenance"]["source_id"] == producer["source_id"] == clock["source_id"]
+                assert reading["provenance"]["source_version"] == clock["version"]
+                assert reading["provenance"]["source_reference_date"] == clock["reference_date"]
+                assert reading["status"] == producer["status"]
 
             with pool.connection() as conn:
                 density, epci = conn.execute("SELECT density_class_code,epci_id FROM territory_reference "
@@ -74,8 +76,8 @@ def test_canonical_demographic_reading_is_readable_over_http():
                     (density,)).fetchall()
                 epci_members = conn.execute("SELECT territory_id,name FROM territory_reference "
                     "WHERE territory_type='commune' AND epci_id=%s ORDER BY name,territory_id",(epci,)).fetchall()
-            expected_by_id = {row["territoire"]:row for row in expected
-                              if row["theme"]=="demographie" and row["type"]=="commune"}
+            expected_by_id = {row["territory_id"]:row for row in expected
+                              if row["territory_type"]=="commune"}
             default = client.post("/api/territories/commune/35238/themes/demographie/comparison",
                                   json={"theme_id":"demographie"})
             assert default.status_code == 200, default.text
@@ -85,14 +87,14 @@ def test_canonical_demographic_reading_is_readable_over_http():
             assert [point["territory"]["territory_id"] for point in default_cloud["points"]] == [
                 row[0] for row in density_members]
             for point in default_cloud["points"]:
-                old = expected_by_id[point["territory"]["territory_id"]]
-                assert point["territory"]["name"] == next(name for code,name in density_members if code==old["territoire"])
-                assert point["periode"] == old["periode"]
-                assert point["taux_solde_naturel"] == old["taux_solde_naturel"]
-                assert point["taux_solde_migratoire"] == old["taux_solde_migratoire"]
+                producer = expected_by_id[point["territory"]["territory_id"]]
+                assert point["territory"]["name"] == next(name for code,name in density_members if code==producer["territory_id"])
+                assert point["periode"] == producer["periode"]
+                assert point["taux_solde_naturel"] == producer["taux_solde_naturel"]
+                assert point["taux_solde_migratoire"] == producer["taux_solde_migratoire"]
                 assert set(point) == {"territory","periode","taux_solde_naturel","taux_solde_migratoire"}
-            assert default_cloud["rate_unit"] == "‰/an"
-            assert default_cloud["source"]["version"] == "2023"
+            assert default_cloud["rate_unit"] == projection["descriptor"]["rate_unit"]
+            assert default_cloud["source"]["version"] == clock["version"]
 
             empty = client.post("/api/territories/commune/35238/themes/demographie/comparison",
                 json={"theme_id":"demographie","selection":[]})
@@ -132,13 +134,13 @@ def test_canonical_habitat_reading_is_readable_over_http():
     canonical = Path(os.environ.get("LUSK_TEST_CANONICAL_DATA_DIR", ""))
     if not schema or not read_dsn or not canonical.is_dir():
         pytest.skip("invoked by smoke-demographic-reading-postgres.R with guarded schema")
-    expected = json.loads((canonical / "histoires_habitat.json").read_text(encoding="utf-8"))
-    vintages = json.loads((canonical / "vintages.json").read_text(encoding="utf-8"))
-    metadata = json.loads((canonical / "theme_habitat.json").read_text(encoding="utf-8"))
+    projection = read_typed_reading_artifact(canonical, "habitat")
+    expected = records(projection["facts"])
+    vintage = records(projection["vintage"])[0]
     read_ids = {("commune", "35238"), ("epci", "200068120"),
                 ("departement", "35"), ("region", "53")}
-    selected = {(row["type"], row["territoire"]): row for row in expected
-                if row["theme"] == "habitat" and (row["type"], row["territoire"]) in read_ids}
+    selected = {(row["territory_type"], row["territory_id"]): row for row in expected
+                if (row["territory_type"], row["territory_id"]) in read_ids}
     assert set(selected) == read_ids
 
     parts = urlsplit(read_dsn)
@@ -188,7 +190,7 @@ def test_canonical_habitat_reading_is_readable_over_http():
             assert unavailable.status_code == 503, unavailable.text
             return
         with TestClient(main.app) as client:
-            for (level, territory), old in selected.items():
+            for (level, territory), producer in selected.items():
                 with pool.connection() as conn:
                     scalar_state = conn.execute("SELECT status FROM scalar_observation "
                         "WHERE indicator_id='part_passoires' AND territory_id=%s", (territory,)).fetchone()
@@ -198,13 +200,14 @@ def test_canonical_habitat_reading_is_readable_over_http():
                         WHERE os.indicator_id='part_passoires' AND os.territory_id=%s""",
                         (territory,)).fetchone()
                 assert scalar_state is not None and bound is not None
-                source_id = metadata["sources"]["part_passoires"]
-                source_vintage = next(row for row in vintages if row["id"] == source_id)
-                expected_vintage_id = f"{source_vintage['version']}/{source_vintage['date_reference'] or 'NA'}"
+                source_id = producer["source_id"]
+                expected_vintage_id = producer["vintage_id"]
+                assert source_id == vintage["id"]
+                assert expected_vintage_id == f"{vintage['version']}/{vintage['reference_date'] or 'NA'}"
                 semantic = client.post("/api/resources/read", json={
                     "resource": "habitat_selected_reading",
                     "target": {"kind": "territory", "type": level, "id": territory},
-                    "coordinates": {"groupe": [old["groupe"]]},
+                    "coordinates": {"groupe": [producer["groupe"]]},
                     "fields": ["groupe", "story_key", "salience_reason", "classification",
                                "part_passoires", "part_abc", "n_dpe", "status", "source_id", "vintage_id"],
                     "intent": {"kind": "facts"},
@@ -213,8 +216,8 @@ def test_canonical_habitat_reading_is_readable_over_http():
                 semantic_fact = semantic.json()["facts"][0]
                 for field in ("groupe", "story_key", "salience_reason", "classification",
                               "part_passoires", "part_abc", "n_dpe"):
-                    assert semantic_fact[field] == old[field]
-                assert semantic_fact["status"] == scalar_state[0]
+                    assert semantic_fact[field] == producer[field]
+                assert semantic_fact["status"] == scalar_state[0] == producer["status"]
                 # The typed fact's source identity is bound to the independently
                 # published scalar observation; the producer record remains the
                 # value oracle, not SQL read back from the typed fact table.
@@ -222,6 +225,9 @@ def test_canonical_habitat_reading_is_readable_over_http():
                 assert bound[1] == expected_vintage_id
                 assert semantic_fact["source_id"] == bound[0]
                 assert semantic_fact["vintage_id"] == bound[1]
+            suppressed_producer = next(row for row in expected
+                if row["territory_type"] == "commune" and row["territory_id"] == "22006"
+                and row["groupe"] == "etat-energetique-du-parc")
             suppressed = client.post("/api/resources/read", json={
                 "resource": "habitat_selected_reading",
                 "target": {"kind": "territory", "type": "commune", "id": "22006"},
@@ -232,7 +238,7 @@ def test_canonical_habitat_reading_is_readable_over_http():
             assert suppressed.status_code == 200, suppressed.text
             suppressed_fact = suppressed.json()["facts"][0]
             assert suppressed_fact["status"] == "suppressed"
-            assert suppressed_fact["n_dpe"] == 24
+            assert suppressed_fact["n_dpe"] == suppressed_producer["n_dpe"]
             assert suppressed_fact["classification"] is None
             assert suppressed_fact["part_passoires"] is None and suppressed_fact["part_abc"] is None
             absent = client.post("/api/resources/read", json={

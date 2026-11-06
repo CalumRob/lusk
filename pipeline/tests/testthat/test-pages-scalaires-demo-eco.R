@@ -6,7 +6,7 @@
 #     famille scalaire (l'héritage #401 : famille absente = scalar) ;
 #   - chaque page déclare SA sémantique publiée : la direction du thème
 #     (DIRECTIONS_ECONOMIE / directions Démographie — chômage low, jamais un
-#     défaut silencieux), l'unité du payload committé, sa source de référence
+#     défaut silencieux), l'unité des faits producteurs de fixture, sa source de référence
 #     et une fiche source complète ;
 #   - la republication depuis le canon est STABLE À L'OCTET près contre
 #     l'artefact commis (public/data/theme_<theme>.json) — un canon édité sans
@@ -34,7 +34,7 @@ test_that("les cinq pages scalaires Démographie + Économie sont déclarées da
                    sort(c("effectifs_salaries", "chomage", "eco_activites")))
 })
 
-test_that("les cinq pages portent la sémantique publiée : famille scalaire, direction du thème, unité du payload, sources complètes (#460)", {
+test_that("les cinq pages portent la sémantique producteur : famille scalaire, direction, unité et sources complètes (#460)", {
   attendues <- list(
     demographie = list(
       pages = c("evolution_1968", "taille_menages"),
@@ -55,10 +55,7 @@ test_that("les cinq pages portent la sémantique publiée : famille scalaire, di
   for (theme in names(attendues)) {
     spec <- attendues[[theme]]
     meta <- lire_theme_metadata(theme)
-    indiques <- jsonlite::fromJSON(
-      file.path(racine_public, paste0("indicateurs_", theme, ".json")),
-      simplifyVector = TRUE
-    )
+    indiques <- lire_indicateurs_producteur_fixture(theme, racine_public)
     unites <- tapply(indiques$unit, indiques$key, unique)
 
     for (cle in spec$pages) {
@@ -69,7 +66,7 @@ test_that("les cinq pages portent la sémantique publiée : famille scalaire, di
       # la direction DÉCLARÉE par le thème (jamais un défaut silencieux)
       expect_identical(page$direction, spec$directions[[cle]],
                        info = paste(theme, cle, ": direction"))
-      # l'unité du payload committé (la même que rendent fiche et Repères)
+      # l'unité de la sortie producteur (la même que rendent fiche et Repères)
       expect_identical(page$unit, unites[[cle]][[1L]],
                        info = paste(theme, cle, ": unité"))
       # la source de référence du thème est dans les sources de la page, et
@@ -119,7 +116,7 @@ test_that("la republication depuis les canons épinglés est stable à l'octet c
   }
 })
 
-test_that("chaque page porte ses faits : une ligne sans détail par territoire publié, exactement une fois (#460)", {
+test_that("chaque page porte ses faits producteurs : une ligne sans détail par territoire, exactement une fois (#460)", {
   racine_public <- file.path(testthat::test_path("..", "..", ".."),
                              "public", "data")
   cles_par_theme <- list(
@@ -128,10 +125,7 @@ test_that("chaque page porte ses faits : une ligne sans détail par territoire p
   )
 
   for (theme in names(cles_par_theme)) {
-    indiques <- jsonlite::fromJSON(
-      file.path(racine_public, paste0("indicateurs_", theme, ".json")),
-      simplifyVector = TRUE
-    )
+    indiques <- lire_indicateurs_producteur_fixture(theme, racine_public)
     territoires <- unique(indiques$territoire)
 
     for (cle in cles_par_theme[[theme]]) {

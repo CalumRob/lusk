@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { NATIVE_API_FIXTURE_NOTICE, NATIVE_API_SCENARIOS } from '../fixtures/nativeApiScenarios'
 
 type Resource = {
   resource_id: string
@@ -83,15 +84,11 @@ if (!raccordementMeasureDate || !raccordementAxisNumericValues.includes(raccorde
     raccordementAxisKeys.some((axis, index) => Number(axis.slice(1)) !== raccordementAxisNumericValues[index])) {
   throw new Error('Current Mobility producer curve declaration is incomplete or inconsistent')
 }
-const raccordementFixtureNotice = {
-  kind: 'synthetic_test_fixture',
-  publication_parity: false,
-  notice: 'Synthetic test-only observations; not real production data or publication parity.',
-} as const
+const raccordementFixtureNotice = NATIVE_API_FIXTURE_NOTICE
 const observedMilieuxCohortFixtureIds = new Set(['22001', '35238'])
 let raccordementFixtureProvenanceCache: Record<string, any> | null = null
 let milieuxAbsenceSnapshotHash: string | null = null
-const publishedReadings = new Map<string, Record<string, any> | null>()
+const syntheticReadings = new Map<string, Record<string, any> | null>()
 const producerMetadata = new Map<string, Record<string, any>>()
 
 function metadataFor(theme: string): Record<string, any> {
@@ -116,7 +113,9 @@ function sourcesFor(resource: Resource, fact?: Record<string, any>, target?: Rec
       publication_date: clock.datePublication ?? null }]
   }
   const metadata = metadataFor(resource.theme_id)
-  const declaredSourceKeys = resource.shapes.includes('typed_reading') ? resource.sources.slice(0, 1) : resource.sources
+  const declaredSourceKeys = typeof fact?.source_id === 'string' && resource.sources.includes(fact.source_id)
+    ? [fact.source_id]
+    : resource.shapes.includes('typed_reading') ? resource.sources.slice(0, 1) : resource.sources
   const sourceKeys = declaredSourceKeys.filter((key) => metadata.source_records?.[key]).length
     ? declaredSourceKeys.filter((key) => metadata.source_records?.[key]) : declaredSourceKeys
   const declared = sourceKeys.flatMap((key) => {
@@ -353,44 +352,192 @@ function syntheticRaccordementComparison(item: Record<string, any>, resource: Re
     selection: selected, scope, result, synthetic_fixture: raccordementFixtureNotice }
 }
 
-// #868 — the per-territory read model is retired from the browser; synthetic
-// API fixtures now read the retained GLOBAL per-theme tables (the same rows
-// the other static consumers still load), indexed once by territory so the
-// per-member lookups stay O(1) instead of scanning the whole table.
-const publishedRowsByTerritory = new Map<string, Map<string, Record<string, any>[]>>()
-function tableIndex(theme: string, fichier: string): Map<string, Record<string, any>[]> {
-  const cacheKey = `${fichier}_${theme}`
-  const cached = publishedRowsByTerritory.get(cacheKey)
-  if (cached) return cached
-  const index = new Map<string, Record<string, any>[]>()
-  try {
-    const table: Record<string, any>[] = JSON.parse(readFileSync(
-      resolve(process.cwd(), `../public/data/${fichier}_${theme}.json`), 'utf8'))
-    for (const row of table) {
-      const bucket = index.get(row.territoire)
-      if (bucket) bucket.push(row)
-      else index.set(row.territoire, [row])
+function observationTarget(target: Record<string, any>): Record<string, any> | null {
+  if (target.kind !== 'territory' || typeof target.type !== 'string' || typeof target.id !== 'string') return null
+  const territory = territories.find((candidate) => candidate.type === target.type && candidate.territoire === target.id)
+  return territory ? { ...target, territory } : null
+}
+
+function syntheticSeed(resource: Resource, target: Record<string, any>, coordinate = ''): number {
+  const identity = `${resource.resource_id}/${target.type}/${target.id}/${coordinate}`
+  return [...identity].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) % 100_003, 7)
+}
+
+function syntheticScalarValue(resource: Resource, target: Record<string, any>, coordinate = ''): number {
+  const scenario = NATIVE_API_SCENARIOS.percentagePages
+  if (resource.resource_id === 'part_passoires' && target.id === scenario.territory) return scenario.passoires
+  if (resource.resource_id === 'chomage' && target.id === scenario.territory) return scenario.unemployment
+  if (resource.resource_id === 'prix_m2' && target.id === NATIVE_API_SCENARIOS.pooledHousingPrice.territory) {
+    return NATIVE_API_SCENARIOS.pooledHousingPrice.value
+  }
+  const seed = syntheticSeed(resource, target, coordinate)
+  if (resource.unit === '%') return 0.05 + (seed % 55) / 100
+  if (resource.unit.includes('€/m²')) return 700 + (seed % 1_700)
+  if (resource.unit.includes('€')) return 500 + (seed % 8_000)
+  return 1 + (seed % 900) / 10
+}
+
+function syntheticAxisValues(resource: Resource): string[] {
+  const declared = resource.axis_values?.flatMap(([, values]) => values) ?? []
+  if (declared.length) return declared
+  const metadata = metadataFor(resource.theme_id)
+  const page = metadata.indicator_pages?.[resource.indicator_id]
+  const list = page?.list?.categories ?? []
+  const details = page?.comparison?.details ?? page?.comparison?.dimensions ?? []
+  return [...new Set([...list, ...details].filter((value: unknown): value is string => typeof value === 'string'))]
+}
+
+function syntheticProfileValue(resource: Resource, target: Record<string, any>, detail: string, index: number): number {
+  const named = NATIVE_API_SCENARIOS.percentagePages
+  if (resource.resource_id === 'mix_logements' && target.id === named.territory) {
+    return named.housingMix[detail as keyof typeof named.housingMix] ?? 0
+  }
+  if (resource.resource_id === 'distribution_dpe' && target.id === named.territory) {
+    return named.dpe[detail as keyof typeof named.dpe] ?? 0
+  }
+  const missing = NATIVE_API_SCENARIOS.profileAbsence
+  if (resource.resource_id === missing.resource && target.id === missing.territory) return 0
+  const page = metadataFor(resource.theme_id).indicator_pages?.[resource.indicator_id]
+  const seed = syntheticSeed(resource, target, detail)
+  const raw = 1 + seed % 25
+  if (page?.family === 'list') return raw * 3
+  return raw / (resource.axis_values?.[0]?.[1]?.length ?? 1) / 100 + index / 1_000
+}
+
+function syntheticObservationFact(resource: Resource, target: Record<string, any>, coordinate?: string | null): Record<string, any> | null {
+  const identity = observationTarget(target)
+  if (!identity) return null
+  const metadata = metadataFor(resource.theme_id)
+  const sourceId = syntheticSourceId(resource, identity.territory, coordinate)
+  const sourceRecord = metadata.source_records?.[sourceId]
+  const clock = sourceRecord?.vintages?.[0]
+  return {
+    territoire: identity.id, type: identity.type, theme: resource.theme_id,
+    key: resource.resource_id, detail: coordinate ?? null,
+    dimension: coordinate ?? null, value: syntheticScalarValue(resource, identity, coordinate ?? ''),
+    unit: resource.unit,
+    ...(sourceId ? { source_id: sourceId } : {}),
+    ...(clock ? { vintage_version: String(clock.version),
+      vintage_date_reference: clock.dateReference ?? null,
+      vintage_date_publication: clock.datePublication ?? null,
+      vintage_source: sourceRecord.publisher ?? sourceRecord.dataset } : {}),
+    synthetic_fixture: NATIVE_API_FIXTURE_NOTICE,
+  }
+}
+
+function syntheticSourceId(resource: Resource, territory: Record<string, any>, coordinate?: string | null): string {
+  const department = territory.departement
+  const sources = resource.sources ?? []
+  const axisYear = coordinate && /^\d{4}$/u.test(coordinate) ? coordinate : undefined
+  const matching = sources.find((source) =>
+    (!department || source.endsWith(`_${department}`) || source.endsWith(`dep${department}`)) &&
+    (!axisYear || !/\d{4}/u.test(source) || source.includes(axisYear)))
+  return matching ?? sources[0] ?? ''
+}
+
+function syntheticIndicators(resource: Resource, target: Record<string, any>): Record<string, any>[] {
+  const identity = observationTarget(target)
+  if (!identity) return []
+  if (resource.resource_id === 'raccordement_courbe') return [] // owner-specific fixture below
+  const profile = resource.shapes.includes('declared_profile')
+  const series = resource.shapes.includes('ordered_series')
+  const periodDetail = resource.shapes.includes('period_detail')
+  const scalar = resource.shapes.includes('scalar')
+  const metadata = metadataFor(resource.theme_id)
+  const period = periodDetail
+    ? metadata.indicator_pages?.[resource.indicator_id]?.comparison?.dimension
+    : undefined
+  if (periodDetail && typeof period !== 'string') {
+    throw new Error(`Missing producer period declaration for ${resource.resource_id}`)
+  }
+  const axisSets = resource.axis_values ?? []
+  const detailAxis = axisSets.find(([axis]) => axis === 'detail' || axis === 'declared_detail')?.[1]
+  const sexAxis = axisSets.find(([axis]) => axis === 'sex')?.[1] ?? []
+  const coordinates = profile && detailAxis?.length
+    ? detailAxis.flatMap((detail) => (sexAxis.length ? sexAxis : [null]).map((sex) => ({ detail, sex })))
+    : (series || periodDetail ? syntheticAxisValues(resource).map((detail) => ({ detail, sex: null })) : [])
+  const facts = coordinates.map(({ detail, sex }, index) => {
+    const fact = syntheticObservationFact(resource, target, periodDetail ? period : detail)!
+    if (periodDetail) fact.detail = detail
+    if (profile) fact.value = syntheticProfileValue(resource, target, detail, index)
+    if (sex !== null) fact.sex = sex
+    if (resource.resource_id === NATIVE_API_SCENARIOS.profileAbsence.resource &&
+        target.id === NATIVE_API_SCENARIOS.profileAbsence.territory) {
+      fact.value = null
+      fact.fact_status = NATIVE_API_SCENARIOS.profileAbsence.status
     }
-  } catch { /* table absente : aucun fait publié pour ce thème */ }
-  publishedRowsByTerritory.set(cacheKey, index)
-  return index
+    return fact
+  })
+  if (scalar || (series && resource.shapes.includes('scalar'))) {
+    const pooled = syntheticObservationFact(resource, target, null)!
+    facts.push(pooled)
+  }
+  if (!facts.length && scalar) facts.push(syntheticObservationFact(resource, target, null)!)
+  return facts
 }
 
-function publishedReading(resource: Resource, target: Record<string, any>): Record<string, any> | undefined {
-  if (target.kind !== 'territory' || typeof target.type !== 'string' || typeof target.id !== 'string') return undefined
-  const key = `${resource.resource_id}/${target.type}/${target.id}`
-  if (publishedReadings.has(key)) return publishedReadings.get(key) ?? undefined
+function syntheticReading(resource: Resource, target: Record<string, any>): Record<string, any> | undefined {
+  const identity = observationTarget(target)
+  if (!identity) return undefined
+  const key = `${resource.resource_id}/${identity.type}/${identity.id}`
+  if (syntheticReadings.has(key)) return syntheticReadings.get(key) ?? undefined
   const group = resource.axis_values?.find(([axis]) => axis === 'groupe')?.[1]?.[0]
-  const reading = (tableIndex(resource.theme_id, 'histoires').get(target.id) ?? [])
-    .find((fact: Record<string, any>) => fact.type === target.type && fact.groupe === group)
-  publishedReadings.set(key, reading ?? null)
+  const metadata = metadataFor(resource.theme_id)
+  const subgroup = metadata.subgroups?.find((item: Record<string, any>) => item.key === group)
+  const storyKey = subgroup?.reading?.story_key ?? metadata.story_keys?.[0] ?? `synthetic-${resource.theme_id}-reading`
+  const sourceId = syntheticSourceId(resource, identity.territory)
+  const reading: Record<string, any> = {
+    territoire: identity.id, type: identity.type, theme: resource.theme_id,
+    // The observation values are synthetic; classification of the reading
+    // follows the producer-owned salience enum rather than inventing a code.
+    groupe: group, story_key: storyKey, salience_reason: 'defaut',
+    status: 'measured', source_id: sourceId,
+    synthetic_fixture: NATIVE_API_FIXTURE_NOTICE,
+  }
+  if (resource.resource_id === 'habitat_selected_reading') {
+    const classifications = Object.keys(metadata.classification_labels ?? {})
+    reading.classification = classifications[syntheticSeed(resource, target) % Math.max(1, classifications.length)]
+    reading.part_passoires = syntheticScalarValue(nativeResources('habitat').find((candidate) => candidate.resource_id === 'part_passoires')!, target)
+    reading.part_abc = 0.58
+    reading.n_dpe = 17
+  }
+  if (resource.resource_id === 'milieux_selected_reading') {
+    const stateResource = nativeResources('milieux').find((candidate) => candidate.resource_id === 'artif_par_habitant')!
+    const states = syntheticIndicators(stateResource, target)
+    const m2 = states.find((fact) => fact.detail === 'M2')
+    const m3 = states.find((fact) => fact.detail === 'M3')
+    const m2Value = Number(m2?.value ?? 1)
+    const m3Value = Number(m3?.value ?? 1)
+    const classifications = Object.keys(metadata.classification_labels ?? {})
+    reading.periode_pop = 'synthetic population period'
+    reading.periode_artif = 'synthetic OCS-GE period'
+    reading.delta_population = syntheticScalarValue(resource, target, 'delta_population')
+    reading.taux_variation_population = syntheticScalarValue(resource, target, 'taux_variation_population')
+    reading.artif_m2_par_habitant = m2Value
+    reading.artif_m3_par_habitant = m3Value
+    reading.trajectoire_artif_par_habitant = m2Value === 0 ? null : m3Value / m2Value
+    reading.classification = classifications[syntheticSeed(resource, target) % Math.max(1, classifications.length)]
+  }
+  if (resource.resource_id === 'demographie_selected_reading') {
+    reading.periode = 'synthetic population period'
+    reading.solde_naturel = syntheticScalarValue(resource, target, 'solde_naturel')
+    reading.solde_migratoire = syntheticScalarValue(resource, target, 'solde_migratoire')
+    reading.taux_solde_naturel = syntheticScalarValue(resource, target, 'taux_solde_naturel')
+    reading.taux_solde_migratoire = -syntheticScalarValue(resource, target, 'taux_solde_migratoire')
+    const classifications = Object.keys(metadata.classification_labels ?? {})
+    reading.classification = classifications[syntheticSeed(resource, target) % Math.max(1, classifications.length)]
+  }
+  if (resource.resource_id === 'economie_selected_reading') {
+    for (let rank = 1; rank <= 5; rank += 1) {
+      reading[`top${rank}_activity_code`] = `T${rank}`
+      reading[`top${rank}_activity_label`] = `Synthetic activity ${rank}`
+      reading[`top${rank}_lq`] = 1 + rank / 10
+      reading[`top${rank}_n`] = 2 + rank
+      reading[`top${rank}_part_parc`] = rank / 10
+    }
+  }
+  syntheticReadings.set(key, reading)
   return reading
-}
-
-function publishedIndicators(resource: Resource, target: Record<string, any>): Record<string, any>[] {
-  if (target.kind !== 'territory' || typeof target.type !== 'string' || typeof target.id !== 'string') return []
-  return (tableIndex(resource.theme_id, 'indicateurs').get(target.id) ?? [])
-    .filter((fact: Record<string, any>) => fact.type === target.type && fact.key === resource.resource_id)
 }
 
 function scalarFixtureFact(resource: Resource, member: Record<string, any>, context: NativeFixtureContext):
@@ -399,8 +546,13 @@ function scalarFixtureFact(resource: Resource, member: Record<string, any>, cont
   const candidates = context.facts
     ? context.facts.filter((fact) => fact.key === resource.resource_id && fact.type === member.type &&
       fact.territoire === member.territoire)
-    : publishedIndicators(resource, target)
+    : syntheticIndicators(resource, target)
   const fact = candidates[0]
+  const forcedStatus = NATIVE_API_SCENARIOS.pooledSeriesSuppression
+  if (context.pooledSeriesSuppression && resource.resource_id === forcedStatus.resource &&
+      member.territoire === forcedStatus.territory) {
+    return { fact, status: forcedStatus.status, value: null }
+  }
   const contract = metadataFor(resource.theme_id).scalar_contracts?.[resource.resource_id] ?? {}
   const status = fact && fact.value !== null && fact.value !== undefined ? 'measured' :
     fact?.fact_status && ['suppressed', 'unsupported', 'not_available', 'not_published'].includes(fact.fact_status)
@@ -486,6 +638,7 @@ function nativeScalarComparison(item: Record<string, any>, resource: Resource,
         density_class_code: focal.classe_densite_code ?? null, member_count: members.length }
       : { kind: 'same_level', territory_type: target.type, member_count: members.length }
   return { resource: resource.resource_id, target: item.target, contract: 'indicator-comparison-v1',
+    synthetic_fixture: NATIVE_API_FIXTURE_NOTICE,
     complete_theme: false, indicator_id: resource.indicator_id, shape: 'scalar',
     content_version: version, reference_content_version: referenceVersion,
     ...(selected ? {} : { comparison_content_version: `${resource.resource_id}-fixture-comparison-v1` }),
@@ -512,6 +665,7 @@ type NativeFixtureContext = {
   facts?: Array<Record<string, any>>
   metadata?: Record<string, any>
   syntheticProfileComparisons?: boolean
+  pooledSeriesSuppression?: boolean
 }
 
 function profileFixtureContract(resource: Resource, metadataOverride?: Record<string, any>) {
@@ -546,12 +700,12 @@ function profileFixtureContract(resource: Resource, metadataOverride?: Record<st
 }
 
 function profileFixtureCells(resource: Resource, member: Record<string, any>, descriptor: Record<string, any>,
-  fixtureFacts?: Array<Record<string, any>>, allowPublishedFallback = true) {
+  fixtureFacts?: Array<Record<string, any>>) {
   const identity = { kind: 'territory', type: member.type, id: member.territoire }
   const facts = fixtureFacts
     ? fixtureFacts.filter((candidate) => candidate.key === resource.resource_id &&
       candidate.type === member.type && candidate.territoire === member.territoire)
-    : allowPublishedFallback ? publishedIndicators(resource, identity) : []
+    : syntheticIndicators(resource, identity)
   const axes = descriptor.axes as Array<{ name: string; key: string; unit: string | null; order: number }>
   const detailAxes = axes.filter((axis) => axis.name === 'detail')
   const sexAxes = axes.filter((axis) => axis.name === 'sex')
@@ -563,17 +717,18 @@ function profileFixtureCells(resource: Resource, member: Record<string, any>, de
     const identifier = [...member.territoire].reduce((sum, char) => sum + char.charCodeAt(0), 0)
     const syntheticValue = 0.2 + ((identifier + detail.order * 13 + sexOrder * 7) % 500) / 1000
     const status = ['measured', 'suppressed', 'unsupported', 'not_available', 'not_published'].includes(candidateStatus)
-      ? candidateStatus : fact?.value === null || (!fact && allowPublishedFallback) ? 'not_available' : 'measured'
+      ? candidateStatus : fact?.value === null ? 'not_available' : 'measured'
     return { detail: detail.key, sex, unit: detail.unit ?? resource.unit,
       denominator_semantics: descriptor.denominator_semantics,
-      status, ...(status === 'measured' ? { value: fact?.value ?? syntheticValue } : { value: null }), sources: [source] }
+      status, ...(status === 'measured' ? { value: fact?.value ?? syntheticValue } : { value: null }),
+      sources: [source], synthetic_fixture: NATIVE_API_FIXTURE_NOTICE }
   }))
 }
 
 function readingFixture(resource: Resource, target: Record<string, any>): Record<string, any>[] {
   const themeMetadata = metadataFor(resource.theme_id)
   const group = resource.axis_values?.find(([axis]) => axis === 'groupe')?.[1]?.[0]
-  const published = publishedReading(resource, target)
+  const published = syntheticReading(resource, target)
   const source = sourceFor(resource, published, target)
   const storyKey = published?.story_key ?? themeMetadata.subgroups?.find((item: Record<string, any>) =>
     item.key === group)?.reading?.story_key ?? themeMetadata.story_keys?.[0]
@@ -645,7 +800,7 @@ function syntheticMilieuxSourceBindings(target: Record<string, any>,
   }]
   const stateResource = nativeResources('milieux').find((candidate) => candidate.resource_id === 'artif_par_habitant')
   if (!stateResource) return bindings
-  const stateRows = publishedIndicators(stateResource, target).filter((fact) => fact.value !== null)
+  const stateRows = syntheticIndicators(stateResource, target).filter((fact) => fact.value !== null)
     .sort((left, right) => Number(left.vintage_version) - Number(right.vintage_version))
   const metadata = metadataFor('milieux')
   const stateDataset = metadata.indicator_pages.artif_par_habitant.series_dataset_id
@@ -685,7 +840,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
   const referenceVersion = 'semantic-reference-fixture-v1'
   const descriptorVersion = `${resource.resource_id}-fixture-descriptor-v1`
   const shapes = resource.shapes
-  const shared = { resource: resource.resource_id, target }
+  const shared = { resource: resource.resource_id, target, synthetic_fixture: NATIVE_API_FIXTURE_NOTICE }
 
   if (resource.resource_kind === 'aedar_source_grain') {
     const typequ = item.coordinates?.typequ ?? []
@@ -741,14 +896,13 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
           const fact = context.facts
             ? matchedFacts?.find((candidate) => candidate.key === profile.scalarId)
             : context.syntheticProfileComparisons ? undefined
-              : publishedIndicators(profile.scalar, territoryTarget).find((candidate) => candidate.key === profile.scalarId)
+              : syntheticIndicators(profile.scalar, territoryTarget).find((candidate) => candidate.key === profile.scalarId)
           const value = context.syntheticProfileComparisons && !context.facts
             ? 0.1 + memberIndex * 0.001
             : fact?.value === null || !fact ? null : Number(fact.value)
           return { member, fact, value }
         }
-        const cell = profileFixtureCells(resource, member, profile.descriptor, context.facts,
-          !context.syntheticProfileComparisons).find((candidate) =>
+        const cell = profileFixtureCells(resource, member, profile.descriptor, context.facts).find((candidate) =>
           candidate.detail === coordinateDetail && candidate.sex === coordinateSex)
         return { member, fact: cell, value: cell?.status === 'measured' ? Number(cell.value) : null }
         })
@@ -830,7 +984,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
             : cohort
           return axes.map((axis: string) => {
             const observations = selectedMembers.map((member) => {
-              const fact = publishedIndicators(resource, { kind: 'territory', type: member.type,
+              const fact = syntheticIndicators(resource, { kind: 'territory', type: member.type,
                 id: member.territoire }).find((row) => (row.detail ?? row.dimension) === axis)
               return { member, fact, value: fact && fact.value !== null ? Number(fact.value) : null }
             })
@@ -901,7 +1055,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     const firstMember = cohortMembers[0]
     const readingTarget = target.kind === 'territory_cohort' && firstMember
       ? { kind: 'territory', type: firstMember.type, id: firstMember.territoire } : target
-    const published = publishedReading(resource, readingTarget)
+    const published = syntheticReading(resource, readingTarget)
     const readingSource = sourceFor(resource, published, readingTarget)
     if (target.kind === 'territory_cohort') {
       const rateLabel = metadataFor(resource.theme_id).param_labels?.taux_solde_naturel ?? ''
@@ -932,7 +1086,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
       reference_date: readingSource.reference_date, publication_date: readingSource.publication_date }
     const reading = facts[0]
     if (resource.resource_id === 'economie_selected_reading' && reading) {
-      const published = publishedReading(resource, target)
+      const published = syntheticReading(resource, target)
       if (!published) throw new Error('Published economy reading evidence is missing')
       const rankedActivities = [1, 2, 3, 4, 5].flatMap((rank) => {
         const activityCode = published?.[`top${rank}_activity_code`]
@@ -992,11 +1146,11 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
     const metadata = metadataFor(resource.theme_id)
     const page = metadata.indicator_pages?.[resource.indicator_id] ?? {}
     const route = metadata.owned_series_routes?.[resource.indicator_id] ?? {}
-    const axisValues = page.comparison?.details ?? page.comparison?.dimensions ?? []
+    const axisValues = resource.axis_values?.[0]?.[1] ?? page.comparison?.details ?? page.comparison?.dimensions ?? []
     const members = territoryReference.filter((member) => member.type === target.type &&
       (!target.department_id || member.departement === target.department_id) &&
       (!target.epci_id || member.epci === target.epci_id))
-    const pointsFor = (member: Record<string, any>) => publishedIndicators(resource,
+    const pointsFor = (member: Record<string, any>) => syntheticIndicators(resource,
       { kind: 'territory', type: member.type, id: member.territoire })
       .filter((fact) => fact.detail != null || fact.dimension != null)
       .map((fact) => {
@@ -1057,7 +1211,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
       reference_content_version: referenceVersion }, content_version: version,
       reference_content_version: referenceVersion, descriptor,
       series: members.map((member) => ({ territory: { id: member.territoire, type: member.type, name: member.nom },
-        availability: 'complete', points: pointsFor(member) })) }
+        availability: 'complete', points: pointsFor(member) })), synthetic_fixture: NATIVE_API_FIXTURE_NOTICE }
     if (shapes.includes('scalar')) {
       const scalar = nativeReadFixture(item, { ...resource, shapes: ['scalar'] }, context)
       const scalarVersions = scalarFacetVersions(resource, version, referenceVersion)
@@ -1101,7 +1255,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
         reference_content_version: referenceVersion }, observations }
   }
 
-  const facts = publishedIndicators(resource, target)
+  const facts = syntheticIndicators(resource, target)
 
   if (shapes.includes('ordered_series')) {
     if (resource.resource_id === 'raccordement_courbe') {
@@ -1239,5 +1393,6 @@ export function nativeBatchResponse<T extends Record<string, any>>(
     }
     return { id: item.id, resource: item.resource, data }
   }).reverse()
-  return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }), { status: 200 })
+    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results,
+      synthetic_fixture: NATIVE_API_FIXTURE_NOTICE }), { status: 200 })
 }

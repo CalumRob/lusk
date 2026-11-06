@@ -5,8 +5,8 @@
 #      la carte indicator_labels du fichier épinglé theme_<theme>.json sont
 #      EXACTEMENT la même vocabulaire — le pipeline déclare ce que la fiche
 #      rend, jamais deux mots pour la même clé ;
-#   2. le payload COMMITTÉ (public/data/indicateurs_<theme>.json) et les
-#      métadonnées épinglées sont en parité bidirectionnelle : chaque ligne
+#   2. les faits issus des producteurs de fixture (le Parquet Mobilité conservé
+#      inclus) et les métadonnées épinglées sont en parité bidirectionnelle : chaque ligne
 #      (key, detail) publiée a son libellé (indicator_labels pour la clé,
 #      detail_labels pour le détail), et aucun libellé de détail déclaré n'est
 #      mort (chaque détail déclaré est publié quelque part dans le payload).
@@ -29,16 +29,16 @@ test_that("indicator_labels du fichier épinglé == la colonne libelle du regist
   }
 })
 
-test_that("parité bidirectionnelle métadonnées épinglées ↔ payload committé : chaque (key, detail) publié a son libellé, aucun libellé mort", {
-  # Le payload COMMITTÉ est l'artefact que l'app fetch (public/data/ à la
-  # racine du dépôt) — la même lecture que payload-contract.spec.ts côté app.
+test_that("parité bidirectionnelle métadonnées épinglées ↔ faits producteurs : chaque (key, detail) a son libellé, aucun libellé mort", {
+  # Les tables numériques navigateur sont retirées. La preuve reste attachée
+  # aux seams producteurs en mémoire ; Mobilité lit seulement son Parquet de
+  # thème conservé (#619), et Programmes reconstruit ses faits depuis ses deux
+  # Parquets producteurs retenus.
   racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
   expect_true(dir.exists(racine_public), info = "public/data absent — la racine du dépôt est introuvable")
 
   for (theme in THEMES_METADATA) {
-    indicateurs <- jsonlite::fromJSON(
-      file.path(racine_public, paste0("indicateurs_", theme, ".json"))
-    )
+    indicateurs <- lire_indicateurs_producteur_fixture(theme, racine_public)
     meta <- lire_theme_metadata(theme)
 
     # payload → métadonnées : chaque ligne publiée porte ses libellés

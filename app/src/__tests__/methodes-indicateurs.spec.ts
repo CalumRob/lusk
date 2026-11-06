@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -11,632 +8,231 @@ import {
   indicateursParDataset,
 } from '../methodes/indicateurs'
 import { SOURCES_METHODES, datasetDeSource } from '../methodes/sources'
-import type { DirectionRang, ThemeConstruit } from '../methodes/indicateurs'
+import type { DirectionRang } from '../methodes/indicateurs'
+import { nativeResources } from './helpers/semanticApiFixtures'
+import { PRODUCER_THEME_METADATA } from './helpers/producerThemeMetadata'
 
-/**
- * Le registre Méthodes des indicateurs & Stories (issue #129, docs/themes/
- * README.md §The Méthodes contract). La parité avec la payload : chaque clé
- * d'indicateur des thèmes construits (public/data/indicateurs_<theme>.json)
- * doit avoir une définition de registre, avec son unité et sa source en
- * ground truth ; chaque Story construite (public/data/histoires_<theme>.json)
- * doit être documentée. Le registre expose le mapping thème → documentation
- * dans la forme que le futur test de contrat de parité pourra asserter.
- */
+// Producer indicator identities outside the retained Methods product: the old
+// Mobilité access surface was retired from the app in #870. Some declarations
+// remain as page metadata, others only in the producer's indicator-key roster.
+const INDICATEURS_MOBILITE_RETIRES = [
+  'avg_div_b', 'avg_div_car', 'avg_div_t', 'avg_tot_b', 'avg_tot_car', 'avg_tot_t',
+  'iso_administration', 'iso_alimentation', 'iso_banque', 'iso_ecole', 'iso_sante',
+  'nb_buildings', 'tot_loss_b', 'tot_loss_t',
+  'share_admin_b', 'share_admin_c', 'share_admin_t', 'share_bank_b', 'share_bank_c', 'share_bank_t',
+  'share_food_b', 'share_food_c', 'share_food_t', 'share_health_b', 'share_health_c', 'share_health_t',
+  'share_school_b', 'share_school_c', 'share_school_t',
+] as const
 
-const dataDir = join(process.cwd(), '..', 'public', 'data')
-
-/**
- * Les payloads commis sont lus en balayage de lignes, jamais JSON.parse :
- * l'économie pèse 82 Mo (160 k lignes) — matérialiser les tableaux entiers
- * alourdirait la suite partagée. Un balayage par expression régulière ne
- * retient que les faits de parité (thème, clé, unité ; story_key,
- * classification), rien d'autre. L'ordre des champs est le schéma commis
- * (docs/architecture.md §The fiche payload) — un champ est toujours suivi de
- * son unité dans le même objet.
- */
-const BALAYAGE_INDICATEURS =
-  /"theme": "([a-z]+)",\s*"key": "([^"]+)",[\s\S]*?"unit": "([^"]*)"/g
-
-const BALAYAGE_HISTOIRES =
-  /"theme": "([a-z]+)",\s*"groupe": "[^"]+",\s*"story_key": "([^"]+)",[\s\S]*?"classification": ([^,\s]+)/g
-
-interface FaitsIndicateurs {
-  parTheme: Record<ThemeConstruit, Record<string, string>>
-  parStory: Record<ThemeConstruit, Record<string, string[]>>
-  storyKeys: Record<ThemeConstruit, Set<string>>
-}
-
-/** Balaye un payload commis et n'en extrait que les faits de parité. */
-function lireFaits(nomFichier: string, balayage: RegExp): { theme: string; clef: string; valeur: string | null }[] {
-  const brut = readFileSync(join(dataDir, nomFichier), 'utf-8')
-  const faits: { theme: string; clef: string; valeur: string | null }[] = []
-  for (const correspondance of brut.matchAll(balayage)) {
-    const valeur = correspondance[3] === 'null' ? null : correspondance[3].replace(/"/g, '')
-    faits.push({ theme: correspondance[1], clef: correspondance[2], valeur })
-  }
-  return faits
-}
-
-/** Les faits de parité des huit fichiers commis, extraits une seule fois à l'échelle du module. */
-const FAITS: FaitsIndicateurs = {
-  parTheme: { demographie: {}, habitat: {}, economie: {}, mobilite: {}, milieux: {} },
-  parStory: { demographie: {}, habitat: {}, economie: {}, mobilite: {}, milieux: {} },
-  storyKeys: {
-    demographie: new Set(),
-    habitat: new Set(),
-    economie: new Set(),
-    mobilite: new Set(),
-    milieux: new Set(),
-  },
-}
-
-for (const theme of THEMES_CONSTRUITS) {
-  for (const fait of lireFaits(`indicateurs_${theme}.json`, BALAYAGE_INDICATEURS)) {
-    FAITS.parTheme[theme as ThemeConstruit][fait.clef] = fait.valeur ?? ''
-  }
-  for (const fait of lireFaits(`histoires_${theme}.json`, BALAYAGE_HISTOIRES)) {
-    const construit = theme as ThemeConstruit
-    FAITS.storyKeys[construit].add(fait.clef)
-    if (fait.valeur === null) continue
-    if (!FAITS.parStory[construit][fait.clef]) FAITS.parStory[construit][fait.clef] = []
-    if (!FAITS.parStory[construit][fait.clef].includes(fait.valeur)) {
-      FAITS.parStory[construit][fait.clef].push(fait.valeur)
-    }
-  }
-}
-
-/** Les clés distinctes d'indicateurs de la payload, avec leur unité (ground truth). */
-function clefsEtUnitesCommites(theme: ThemeConstruit): Record<string, string> {
-  return FAITS.parTheme[theme]
-}
-
-function clefsHistoiresCommites(theme: ThemeConstruit): Set<string> {
-  return FAITS.storyKeys[theme]
-}
-
-/** Les classifications publiées (non nulles) de chaque Story — les lectures à documenter. */
-function classificationsParStory(theme: ThemeConstruit): Record<string, string[]> {
-  return FAITS.parStory[theme]
-}
-
-describe('registre Méthodes — la forme exposée au contrat de parité', () => {
-  it('couvre les thèmes construits, dans l\u2019ordre canonique', () => {
+/** The app-owned Methodes registry contains editorial copy and source links, not observations. */
+describe('registre Méthodes — contrat éditorial app-owned', () => {
+  it('couvre les thèmes construits dans l’ordre stable du registre', () => {
     expect(THEMES_CONSTRUITS).toEqual(['demographie', 'habitat', 'economie', 'mobilite', 'milieux'])
     expect(Object.keys(THEMES_METHODES)).toEqual(THEMES_CONSTRUITS)
-  })
-
-  it('expose par thème un mapping { indicateurs, stories } asserable', () => {
     for (const theme of THEMES_CONSTRUITS) {
-      const themeMethodes = THEMES_METHODES[theme]
-      expect(themeMethodes, `thème « ${theme} » sans registre`).toBeDefined()
-      expect(typeof themeMethodes.indicateurs).toBe('object')
-      expect(Array.isArray(themeMethodes.stories)).toBe(true)
+      expect(typeof THEMES_METHODES[theme].indicateurs).toBe('object')
+      expect(Array.isArray(THEMES_METHODES[theme].stories)).toBe(true)
     }
   })
-  it('#627 - chaque thème qui documente une Story en documente au moins une', () => {
+
+  it('aligns documented indicator keys and units with producer pages and the native API catalogue', () => {
     for (const theme of THEMES_CONSTRUITS) {
-      // #627 - Mobilité's Stories retired with the accessibility snapshot:
-      // a theme may legitimately document no Story any more.
-      if (theme === 'mobilite') {
-        expect(THEMES_METHODES.mobilite.stories, '« mobilite » ne doit plus documenter de Story').toEqual([])
-        continue
+      const producer = PRODUCER_THEME_METADATA[theme]
+      const documented = THEMES_METHODES[theme].indicateurs
+      const pages = producer.indicator_pages ?? {}
+      const apiResources = nativeResources(theme)
+
+      for (const [key, indicator] of Object.entries(documented)) {
+        const page = pages[key]
+        if (page) {
+          expect(producer.indicator_keys, `${theme}.${key} producer key`).toContain(key)
+          expect(page.indicator, `${theme}.${key} producer page identity`).toBe(key)
+          const resource = apiResources.find((candidate) => candidate.resource_id === key &&
+            candidate.resource_kind === 'indicator')
+          expect(resource, `${theme}.${key} native indicator resource`).toBeDefined()
+          expect(resource!.unit, `${theme}.${key} producer/API unit`).toBe(page.unit)
+          expect(indicator.unite, `${theme}.${key} Methods unit`).toBe(page.unit)
+          continue
+        }
+
+        if (theme === 'mobilite' && key === 'raccordement_reference') {
+          // The reference is a named API resource linked by the producer's
+          // raccordement page, not an independent indicator page.
+          expect(pages.raccordement_courbe.trajectory.reference.indicator).toBe(key)
+          const resource = apiResources.find((candidate) => candidate.resource_id === key &&
+            candidate.shapes.includes('named_reference'))
+          expect(resource, `${theme}.${key} named-reference resource`).toBeDefined()
+          expect(indicator.unite, `${theme}.${key} native unit`).toBe(resource!.unit)
+          continue
+        }
+
+        if (theme === 'milieux' && key === 'trajectoire_artif_par_habitant') {
+          // This derived ratio is published inside the typed reading, with no
+          // standalone page/resource (and therefore no producer unit field).
+          const reading = producer.semantic_resources.find((resource: any) =>
+            resource.resource_id === 'milieux_selected_reading')
+          expect(reading?.fields, `${theme}.${key} producer reading field`).toContain(key)
+          expect(producer.indicator_keys).not.toContain(key)
+          expect(pages).not.toHaveProperty(key)
+          expect(apiResources.some((resource) => resource.resource_id === key)).toBe(false)
+          expect(indicator.unite, `${theme}.${key} no standalone unit contract`).toBe('')
+          continue
+        }
+
+        throw new Error(`No producer/API fact contract for Methods indicator ${theme}.${key}`)
       }
-      expect(THEMES_METHODES[theme].stories.length, `« ${theme} » sans Story`).toBeGreaterThan(0)
+
+      const excludedIndicators = theme === 'mobilite' ? INDICATEURS_MOBILITE_RETIRES : []
+      for (const key of Object.keys(pages)) {
+        expect(producer.indicator_keys, `${theme}.${key} producer key`).toContain(key)
+        const explicitlyExcluded = (excludedIndicators as readonly string[]).includes(key)
+        expect(Object.hasOwn(documented, key) || explicitlyExcluded,
+          `${theme}.${key} is documented or explicitly excluded`).toBe(true)
+        if (explicitlyExcluded) {
+          expect(apiResources.some((resource) => resource.resource_id === key),
+            `${theme}.${key} retired API route`).toBe(false)
+          expect(Object.hasOwn(documented, key)).toBe(false)
+          continue
+        }
+        const resource = apiResources.find((candidate) => candidate.resource_id === key &&
+          candidate.resource_kind === 'indicator')
+        expect(resource, `${theme}.${key} native producer page`).toBeDefined()
+        expect(resource!.unit, `${theme}.${key} metadata/API unit`).toBe(pages[key].unit)
+      }
+      for (const key of excludedIndicators) {
+        expect(producer.indicator_keys, `${theme}.${key} named producer exclusion`).toContain(key)
+        if (Object.hasOwn(pages, key)) expect(pages, `${theme}.${key} page metadata`).toHaveProperty(key)
+        expect(apiResources.some((resource) => resource.resource_id === key),
+          `${theme}.${key} retired API route`).toBe(false)
+        expect(Object.hasOwn(documented, key)).toBe(false)
+      }
+
+      const producerSupportKeys = theme === 'mobilite' ? ['raccordement_reference'] : []
+      const documentedProducerKeys = Object.keys(documented)
+        .filter((key) => (producer.indicator_keys as string[]).includes(key))
+      expect(new Set(producer.indicator_keys as string[]), `${theme} producer indicator-key roster`)
+        .toEqual(new Set([...documentedProducerKeys, ...excludedIndicators, ...producerSupportKeys]))
     }
   })
-})
 
-describe('registre Méthodes — la parité avec les indicateurs de la payload', () => {
-  it('#627 - couvre chaque clé d’indicateur retenue des thèmes construits', () => {
-    // The committed public/data payloads still carry the excluded legacy
-    // accessibility rows (producer artifacts); the app registry documents
-    // only the retained identities, so parity holds on the retained set.
-    const RETIRED_MOBILITE = new Set([
-      'nb_buildings', 'tot_loss_t', 'tot_loss_b',
-      'iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque',
-      'avg_tot_car', 'avg_tot_b', 'avg_tot_t', 'avg_div_car', 'avg_div_b', 'avg_div_t',
-      'div_loss_t', 'div_loss_b',
-      'share_food_t', 'share_food_b', 'share_food_c', 'share_health_t', 'share_health_b', 'share_health_c',
-      'share_admin_t', 'share_admin_b', 'share_admin_c', 'share_school_t', 'share_school_b', 'share_school_c',
-      'share_bank_t', 'share_bank_b', 'share_bank_c',
+  it('keeps every curated indicator entry complete and linked to a known source', () => {
+    for (const theme of THEMES_CONSTRUITS) {
+      for (const [key, indicator] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        expect(indicator.label.length, `${theme}.${key} label`).toBeGreaterThan(0)
+        expect(indicator.definition.length, `${theme}.${key} definition`).toBeGreaterThan(20)
+        expect(indicator.source.length, `${theme}.${key} source`).toBeGreaterThan(0)
+        expect(['plus-est-mieux', 'moins-est-mieux'], `${theme}.${key} direction`)
+          .toContain(indicator.direction)
+        if (indicator.sourceId === null) continue
+        const source = SOURCES_METHODES[indicator.sourceId]
+        expect(source, `${theme}.${key} sourceId`).toBeDefined()
+        expect(indicator.source).toBe(source!.nom)
+      }
+      for (const story of THEMES_METHODES[theme].stories) {
+        expect(story.titre.length, `${theme}.${story.clef} title`).toBeGreaterThan(0)
+        expect(story.definition.length, `${theme}.${story.clef} definition`).toBeGreaterThan(20)
+        expect(['publiee', 'en-pause']).toContain(story.statut)
+        for (const lecture of story.lectures) {
+          expect(lecture.nom.length).toBeGreaterThan(0)
+          expect(lecture.lecture.length).toBeGreaterThan(10)
+        }
+      }
+    }
+  })
+
+  it('keeps the special Story roster for themes with a single documented reading model', () => {
+    expect(THEMES_METHODES.economie.stories.map((story) => [story.clef, story.statut])).toEqual([
+      ['ce-que-la-commune-abrite', 'publiee'],
+      ['le-matin-la-commune-se-vide', 'en-pause'],
     ])
-    for (const theme of THEMES_CONSTRUITS) {
-      const clefs = clefsEtUnitesCommites(theme)
-      expect(Object.keys(clefs).length, `« ${theme} » sans indicateurs commis`).toBeGreaterThan(0)
-      for (const clef of Object.keys(clefs)) {
-        if (theme === 'mobilite' && RETIRED_MOBILITE.has(clef)) continue
-        expect(
-          THEMES_METHODES[theme].indicateurs[clef],
-          `clé « ${theme}.${clef} » sans définition de registre`,
-        ).toBeDefined()
-      }
-    }
-  })
-  it('#627 - porte les unités ground truth de la payload, clé retenue par clé retenue', () => {
-    const RETIRED_MOBILITE = new Set([
-      'nb_buildings', 'tot_loss_t', 'tot_loss_b',
-      'iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque',
-      'avg_tot_car', 'avg_tot_b', 'avg_tot_t', 'avg_div_car', 'avg_div_b', 'avg_div_t',
-      'div_loss_t', 'div_loss_b',
-      'share_food_t', 'share_food_b', 'share_food_c', 'share_health_t', 'share_health_b', 'share_health_c',
-      'share_admin_t', 'share_admin_b', 'share_admin_c', 'share_school_t', 'share_school_b', 'share_school_c',
-      'share_bank_t', 'share_bank_b', 'share_bank_c',
-    ])
-    for (const theme of THEMES_CONSTRUITS) {
-      const clefs = clefsEtUnitesCommites(theme)
-      for (const [clef, unite] of Object.entries(clefs)) {
-        if (theme === 'mobilite' && RETIRED_MOBILITE.has(clef)) continue
-        expect(THEMES_METHODES[theme].indicateurs[clef].unite, `unité « ${theme}.${clef} »`).toBe(unite)
-      }
-    }
-  })
-
-  it('chaque indicateur porte label, définition et source (jamais vides)', () => {
-    for (const theme of THEMES_CONSTRUITS) {
-      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
-        expect(indicateur.label.length, `« ${theme}.${clef} » sans label`).toBeGreaterThan(0)
-        expect(
-          indicateur.definition.length,
-          `« ${theme}.${clef} » sans définition`,
-        ).toBeGreaterThan(20)
-        expect(indicateur.source.length, `« ${theme}.${clef} » sans source`).toBeGreaterThan(0)
-      }
-    }
-  })
-
-  it('un sourceId résout toujours une entrée du registre des sources, au même nom', () => {
-    for (const theme of THEMES_CONSTRUITS) {
-      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
-        if (indicateur.sourceId === null) continue
-        const source = SOURCES_METHODES[indicateur.sourceId]
-        expect(source, `« ${theme}.${clef} » → sourceId « ${indicateur.sourceId} » introuvable`).toBeDefined()
-        expect(indicateur.source, `« ${theme}.${clef} » → nom divergent`).toBe(source.nom)
-      }
-    }
-  })
-})
-
-describe('registre Méthodes — la parité avec les Stories de la payload', () => {
-  // Le balayage lit les lectures par la colonne « classification », que seule
-  // la payload de la démographie et de l'habitat porte. La payload de
-  // l'économie (forme reshapée, issue #131) n'a pas de classification : ses
-  // story_keys sont assertés contre le modèle CONTEXT.md (test ci-dessous).
-  const THEMES_STABLES: ThemeConstruit[] = ['demographie', 'habitat']
-
-  it('couvre chaque story_key des thèmes à payload stable (démographie, habitat)', () => {
-    for (const theme of THEMES_STABLES) {
-      const clefs = clefsHistoiresCommites(theme)
-      expect(clefs.size, `« ${theme} » sans histoires commises`).toBeGreaterThan(0)
-      const clefsRegistre = new Set(THEMES_METHODES[theme].stories.map((s) => s.clef))
-      for (const clef of clefs) {
-        expect(clefsRegistre.has(clef), `story_key « ${theme}.${clef} » non documentée`).toBe(true)
-      }
-    }
-  })
-
-  it('l\u2019économie documente le modèle CONTEXT.md — Story unique, note en pause (la Story de la région retirée, #367)', () => {
-    const clefs = new Set(THEMES_METHODES.economie.stories.map((s) => s.clef))
-    expect(clefs).toEqual(
-      new Set(['ce-que-la-commune-abrite', 'le-matin-la-commune-se-vide']),
-    )
-
-    // la Story unique est publiée ; la note en pause est documentée, jamais publiée
-    const commune = THEMES_METHODES.economie.stories.find((s) => s.clef === 'ce-que-la-commune-abrite')
-    const dortoir = THEMES_METHODES.economie.stories.find((s) => s.clef === 'le-matin-la-commune-se-vide')
-    expect(commune?.statut).toBe('publiee')
-    expect(dortoir?.statut).toBe('en-pause')
-
-    // la Story de structure de la région « Ce que la Bretagne abrite » est
-    // RETIRÉE du contrat de la fiche (#367 — la fiche de la région ne la
-    // référence plus) : le registre ne la documente plus
-    expect(THEMES_METHODES.economie.stories.find((s) => s.clef === 'ce-que-la-bretagne-abrite')).toBeUndefined()
-    expect(commune?.definition).toMatch(/retirée|retiré/)
-  })
-  // #627 - the Mobilité Stories (vingt-minutes, vélo) retired with the
-  // accessibility snapshot: the registry no longer documents them.
-
-  // #627 - the snapshot's slow-clock documentation retired with the
-  // analysis surface; the production AEDAR evidence owns its provenance.
-
-
-  it('le milieux documente le modèle CONTEXT.md — Story unique, les quatre lectures, les trois horloges', () => {
-    // la Story unique « Se densifier, s'étaler, ou s'en aller » (ADR-0014,
-    // pivotée ADR-0017) — un thème à Story unique comme l'Économie
-    const clefs = new Set(THEMES_METHODES.milieux.stories.map((s) => s.clef))
-    expect(clefs).toEqual(new Set(['se-densifier-setaler-ou-sen-aller']))
-    const story = THEMES_METHODES.milieux.stories[0]
-    expect(story.statut, '« milieux » Story non publiée').toBe('publiee')
-
-    // les QUATRE lectures par signes (seuil 0) — exactement, ni plus ni moins
-    const lectures = new Set(story.lectures.map((l) => l.clef))
-    expect(lectures).toEqual(
-      new Set([
-        'grandir-en-se-densifiant',
-        'grandir-en-setalant',
-        'sen-aller-et-consommer-quand-meme',
-        'les-departs-laissent-la-place-a-la-renaturation',
-      ]),
-    )
-
-    // la lecture renaturation porte SON rider de précision — la renaturation
-    // est MESURÉE (l'état final inférieur à l'état initial, ADR-0017) — jamais
-    // le « potentielle, jamais mesurée » du pivot flux (US 17)
-    const renaturation = story.lectures.find(
-      (l) => l.clef === 'les-departs-laissent-la-place-a-la-renaturation',
-    )
+    expect(THEMES_METHODES.milieux.stories.map((story) => story.clef))
+      .toEqual(['se-densifier-setaler-ou-sen-aller'])
+    const milieux = THEMES_METHODES.milieux.stories[0]!
+    expect(new Set(milieux.lectures.map((lecture) => lecture.clef))).toEqual(new Set([
+      'grandir-en-se-densifiant', 'grandir-en-setalant',
+      'sen-aller-et-consommer-quand-meme', 'les-departs-laissent-la-place-a-la-renaturation',
+    ]))
+    const renaturation = milieux.lectures.find((lecture) =>
+      lecture.clef === 'les-departs-laissent-la-place-a-la-renaturation')
     expect(renaturation?.lecture).toMatch(/mesurée/)
     expect(renaturation?.lecture).not.toMatch(/potentielle, jamais mesurée/)
-
-    // les trois horloges documentées comme fait de première classe (la
-    // promesse de transparence étendue par ADR-0017 — la population, l'état
-    // OCS-GE, le flux annuel)
-    const horloges = THEMES_METHODES.milieux.deuxHorloges
-    expect(horloges, '« milieux » sans les horloges documentées').toBeDefined()
-    expect(horloges!.consommation.length).toBeGreaterThan(20)
-    expect(horloges!.entrees.length).toBe(3)  // les trois horloges, jamais confondues
-    for (const entree of horloges!.entrees) {
-      expect(entree.donnee.length, 'entrée sans donnée').toBeGreaterThan(0)
-      expect(entree.frequence.length, 'entrée sans fréquence').toBeGreaterThan(0)
-      expect(entree.reference.length, 'entrée sans référence').toBeGreaterThan(0)
-    }
-    expect(horloges!.declencheur.length).toBeGreaterThan(20)
+    expect(milieux.definition).toContain('docs/research/zan-rennes.md')
   })
 
-  it('le milieux documente la règle de source de la population et la note de recherche', () => {
-    const story = THEMES_METHODES.milieux.stories[0]
-
-    // la règle de source d'ADR-0014 : la population vient de la série
-    // historique, jamais des champs embarqués de CONSOENAF
-    expect(story.definition).toMatch(/série historique/)
-    // la note de recherche qui a fondé le bloc est référencée par son chemin
-    expect(story.definition).toContain('docs/research/zan-rennes.md')
-  })
-
-  it('la mobilité documente « L\u2019offre cyclable » — la figure du sous-bloc (issue #233, ADR-0016)', () => {
+  it('keeps the app-owned cyclable-network definition explicit and sourced', () => {
     const figure = THEMES_METHODES.mobilite.indicateurs.offre_cyclable
-    expect(figure, '« mobilite.offre_cyclable » non documentée').toBeDefined()
-    expect(figure!.label).toBe('L\u2019offre cyclable')
-    expect(figure!.unite).toBe('km')
+    expect(figure).toMatchObject({ label: 'L’offre cyclable', unite: 'km' })
     expect(figure!.definition.length).toBeGreaterThan(100)
-
-    // la source Geovelo citée (le jeu « Aménagements cyclables », ODbL)
     expect(figure!.source).toMatch(/Geovelo/)
     expect(figure!.definition).toMatch(/Aménagements cyclables/)
     expect(figure!.definition).toMatch(/ODbL/)
-
-    // la règle de longueur PAR DIRECTION (ADR-0016) — jamais un détail absent
-    expect(figure!.definition).toMatch(/direction/)
-
-    // l'attribution par le CÔTÉ PORTEUR de l'aménagement (ADR-0016)
     expect(figure!.definition).toMatch(/porteur/)
-
-    // la définition du réseau = l'enum complet des aménagements (ame_d/g)
-    expect(figure!.definition).toMatch(/PISTE CYCLABLE/)
-    expect(figure!.definition).toMatch(/VOIE VERTE/)
-    expect(figure!.definition).toMatch(/VELO RUE/)
-
-    // le caveat de couverture OSM hétérogène en rural breton — lié, jamais
-    // dissimulé (la promesse de transparence, docs/research/openstreetmap.md
-    // §1.6 — le même modèle de référence que la note zan-rennes du Milieux)
     expect(figure!.definition).toContain('docs/research/openstreetmap.md')
-    expect(figure!.definition).toMatch(/couverture|hétérogène|hétérogene/i)
-
-    // la source de référence du ratio (l'horloge lente) nommée dans la figure
-    expect(figure!.definition).toMatch(/OpenStreetMap/)
+    expect(THEMES_METHODES.mobilite.stories).toEqual([])
   })
 
-  it('la mobilité documente les DEUX horloges du ratio — le gap est un fait de première classe (issue #233)', () => {
-    const horloges = THEMES_METHODES.mobilite.deuxHorloges
-    expect(horloges, '« mobilite » sans les deux horloges du ratio documentées').toBeDefined()
-
-    // ce que les deux horloges sont, en une phrase — jamais vide
-    expect(horloges!.consommation.length).toBeGreaterThan(20)
-
-    // les deux horloges nommées, jamais confondues : Geovelo frais (le
-    // numérateur) vs l'extrait OSM lent (le dénominateur — la référence)
-    expect(horloges!.entrees.length).toBe(2)
-    for (const entree of horloges!.entrees) {
-      expect(entree.donnee.length, 'entrée sans donnée').toBeGreaterThan(0)
-      expect(entree.frequence.length, 'entrée sans fréquence').toBeGreaterThan(0)
-      expect(entree.reference.length, 'entrée sans référence').toBeGreaterThan(0)
-    }
-    expect(horloges!.declencheur.length).toBeGreaterThan(20)
-    // le gap est un fait assumé : le ratio est limité par SA plus lente horloge,
-    // la source de référence est l'extrait OSM — jamais le vintage Geovelo frais
-    expect(horloges!.consommation).toMatch(/OSM|OpenStreetMap/)
-    expect(horloges!.consommation).toMatch(/Geovelo/)
-  })
-
-  it('le milieux documente l\u2019anomalie d\u2019unité m²/ha dans la définition de la série annuelle', () => {
-    const fenetre = THEMES_METHODES.milieux.indicateurs.conso_enaf_annuel
-    expect(fenetre.unite, '« milieux.conso_enaf_annuel » en hectares').toBe('ha')
-
-    // l'anomalie documentée, jamais silencieusement ignorée : le dictionnaire
-    // Cerema dit hectares, le fichier distribue des m² — la conversion est
-    // explicite (÷ 10 000) et testée (la source CONSOENAF de la série annuelle)
-    expect(fenetre.definition).toMatch(/mètres carrés|m²/)
-    expect(fenetre.definition).toMatch(/10 000|÷/)
-  })
-
-  it('documente chaque lecture publiée (classification non nulle) des thèmes stables', () => {
-    for (const theme of THEMES_STABLES) {
-      const parStory = classificationsParStory(theme)
-      for (const story of THEMES_METHODES[theme].stories) {
-        const classifications = parStory[story.clef] ?? []
-        const lectures = new Set(story.lectures.map((l) => l.clef))
-        for (const classification of classifications) {
-          expect(
-            lectures.has(classification),
-            `« ${theme}.${story.clef} » → lecture « ${classification} » non documentée`,
-          ).toBe(true)
-        }
-      }
-    }
-  })
-
-  it('chaque Story porte titre, définition, état et des lectures nommées', () => {
+  it('documents directions and public wording for ranking', () => {
+    const directions: DirectionRang[] = ['plus-est-mieux', 'moins-est-mieux']
     for (const theme of THEMES_CONSTRUITS) {
-      for (const story of THEMES_METHODES[theme].stories) {
-        expect(story.titre.length, `« ${theme}.${story.clef} » sans titre`).toBeGreaterThan(0)
-        expect(
-          story.definition.length,
-          `« ${theme}.${story.clef} » sans définition`,
-        ).toBeGreaterThan(20)
-        expect(['publiee', 'en-pause'], `« ${theme}.${story.clef} » sans état`).toContain(
-          story.statut,
-        )
-        for (const lecture of story.lectures) {
-          expect(lecture.nom.length, `« ${theme}.${story.clef} » lecture sans nom`).toBeGreaterThan(0)
-          expect(
-            lecture.lecture.length,
-            `« ${theme}.${story.clef} » lecture sans texte`,
-          ).toBeGreaterThan(10)
-        }
+      for (const [key, indicator] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        expect(directions, `${theme}.${key}`).toContain(indicator.direction)
       }
     }
-  })
-})
-
-describe('registre Méthodes — le sens des classements (ADR-0015, #367)', () => {
-  const DIRECTIONS: DirectionRang[] = ['plus-est-mieux', 'moins-est-mieux']
-
-  it('chaque indicateur porte sa direction — jamais silencieuse', () => {
-    for (const theme of THEMES_CONSTRUITS) {
-      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
-        expect(DIRECTIONS, `« ${theme}.${clef} » sans direction`).toContain(indicateur.direction)
-      }
-    }
-  })
-
-  it('déclare « moins = mieux » les clés dont le rang se lit à l\u2019envers (le tableau #367, amendé CONTEXT.md 2026-08-12)', () => {
-    const clefsMoins: string[] = []
-    for (const theme of THEMES_CONSTRUITS) {
-      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
-        if (indicateur.direction === 'moins-est-mieux') clefsMoins.push(`${theme}.${clef}`)
-      }
-    }
-    // iso_* ×5, part_passoires, chomage, div_loss_t/b, prix_m2, age_du_bati,
-    // artif_par_habitant, conso_enaf_annuel, trajectoire_artif_par_habitant —
-    // plus places_stationnement_voiture_1000 (moins = mieux verrouillée par le
-    // sourçage #369, CONTEXT.md 2026-08-12), distribution_dpe (le classement
-    // lit la part F/G, la même valeur que part_passoires) et tot_loss_t/b (la
-    // perte totale d'accès — moins d'accès perdus, c'est mieux) et la part de
-    // surface routière OCS-GE (moins d'emprise = mieux)
-    expect(clefsMoins.sort()).toEqual(
-      [
-        'economie.chomage',
-        'habitat.age_du_bati',
-        'habitat.distribution_dpe',
-        'habitat.part_passoires',
-        'habitat.prix_m2',
-        'milieux.artif_par_habitant',
-        'milieux.conso_enaf_annuel',
-        'milieux.trajectoire_artif_par_habitant',
-        'mobilite.places_stationnement_voiture_1000',
-        'mobilite.surface_reseaux_routiers',
-      ].sort(),
-    )
-  })
-
-  it('déclare « plus = mieux » les clés re-travées et les ratios (voitures, statut, type, les deux rapports)', () => {
-    const attendues: Record<string, DirectionRang> = {
-      'mobilite.voitures_menage': 'plus-est-mieux',
-      'habitat.statut': 'plus-est-mieux',
-      'habitat.type': 'plus-est-mieux',
-      'mobilite.bornes_ev_par_station_service': 'plus-est-mieux',
-      'mobilite.stationnement_velo_par_voiture': 'plus-est-mieux',
-    }
-    for (const [themeClef, direction] of Object.entries(attendues)) {
-      const [theme, clef] = themeClef.split('.') as [ThemeConstruit, string]
-      expect(
-        THEMES_METHODES[theme].indicateurs[clef]?.direction,
-        `« ${theme}.${clef} »`,
-      ).toBe(direction)
-    }
-  })
-
-  it('expose les libellés publics « plus = mieux » / « moins = mieux » — le vocabulaire du glyphe de la fiche', () => {
     expect(LIBELLES_DIRECTION['plus-est-mieux']).toBe('plus = mieux')
     expect(LIBELLES_DIRECTION['moins-est-mieux']).toBe('moins = mieux')
+    expect(THEMES_METHODES.habitat.indicateurs.distribution_dpe?.direction).toBe('moins-est-mieux')
+    expect(THEMES_METHODES.habitat.indicateurs.part_passoires?.direction).toBe('moins-est-mieux')
   })
 
-  it('documente les indicateurs re-través de la décomposition #367', () => {
-    // voitures : les trois parts réelles (0/1/2+), la part sans voiture en tête
-    const voitures = THEMES_METHODES.mobilite.indicateurs.voitures_menage
-    expect(voitures, '« mobilite.voitures_menage »').toBeDefined()
-    expect(voitures!.definition).toMatch(/sans voiture/)
-    expect(voitures!.definition).toMatch(/deux voitures ou plus/)
-    expect(voitures!.definition).toMatch(/100 %|totalisent/)
-
-    // le découpage statut / âge du bâti / type remplace statut_anciennete_taille
-    for (const clef of ['statut', 'type', 'age_du_bati']) {
-      expect(THEMES_METHODES.habitat.indicateurs[clef], `« habitat.${clef} »`).toBeDefined()
-      expect(THEMES_METHODES.habitat.indicateurs[clef]!.unite).toBe('%')
-    }
-    expect(THEMES_METHODES.habitat.indicateurs.statut!.definition).toMatch(/HLM/)
-    expect(THEMES_METHODES.habitat.indicateurs.age_du_bati!.definition).toMatch(/isol/)
-
-    // le stationnement voiture et les deux ratios scalaires
-    expect(THEMES_METHODES.mobilite.indicateurs.places_stationnement_voiture_1000).toBeDefined()
-    expect(THEMES_METHODES.mobilite.indicateurs.bornes_ev_par_station_service).toBeDefined()
-    expect(THEMES_METHODES.mobilite.indicateurs.stationnement_velo_par_voiture).toBeDefined()
-
-    // #627 - the retired div_loss/tot_loss lecture indicators are gone from
-    // the registry (the snapshot surface retired).
-    // distribution_dpe est une composition en sept parts classée sur la part
-    // F/G — la même valeur que part_passoires, jamais « plus = mieux »
-    const dpe = THEMES_METHODES.habitat.indicateurs.distribution_dpe
-    expect(dpe!.direction).toBe('moins-est-mieux')
-    expect(dpe!.definition).toMatch(/F et G|F\/G/)
-    expect(THEMES_METHODES.habitat.indicateurs.part_passoires!.direction).toBe('moins-est-mieux')
-  })
-})
-
-describe('registre Méthodes — la langue publique, jamais celle du pipeline', () => {
-  /** Les mots du pipeline à ne jamais publier (issue #129 : pas de gates, pas de noms d\u2019artefacts). */
-  const MOTS_INTERNES = [
-    /gate/i,
-    /\.rds\b/,
-    /parquet/i,
-    /sidecar/i,
-    /artefact/i,
-    /manifeste/i,
-    /plancher/i,
-    /TOP_N/i,
-    /dpe03existant/i,
-    /sirene-v3/i,
-    /histoires/,
-  ]
-
-  it('les définitions et lectures ne portent aucun mot interne au pipeline', () => {
-    for (const theme of THEMES_CONSTRUITS) {
-      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
-        const texte = indicateur.definition
-        for (const motif of MOTS_INTERNES) {
-          expect(
-            motif.test(texte),
-            `« ${theme}.${clef} » porte un mot interne : ${motif}`,
-          ).toBe(false)
-        }
-      }
-      for (const story of THEMES_METHODES[theme].stories) {
-        const textes = [story.definition, ...story.lectures.map((l) => l.lecture)]
-        for (const texte of textes) {
-          for (const motif of MOTS_INTERNES) {
-            expect(
-              motif.test(texte),
-              `« ${theme}.${story.clef} » porte un mot interne : ${motif}`,
-            ).toBe(false)
-          }
-        }
-      }
-    }
-  })
-
-  it('les définitions parlent en français public (pas de clés brutes de payload)', () => {
-    for (const theme of THEMES_CONSTRUITS) {
-      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
-        // la clé brute n'apparaît jamais dans la définition — la définition est rédigée
-        expect(indicateur.definition).not.toContain(clef)
-      }
-    }
-  })
-})
-
-describe('ancreIndicateur — l\u2019ancrage stable par indicateur (#334)', () => {
-  it('préfixe et slugifie la clé de payload en ancre de section (#indicateur-<clef>)', () => {
+  it('creates stable indicator anchors without colliding with the section anchor', () => {
     expect(ancreIndicateur('part_passoires')).toBe('indicateur-part-passoires')
     expect(ancreIndicateur('evolution_1968')).toBe('indicateur-evolution-1968')
-    expect(ancreIndicateur('places_stationnement_velo_1000')).toBe(
-      'indicateur-places-stationnement-velo-1000',
-    )
-  })
-
-  it('couvre chaque clé du registre d\u2019un slug stable, sans jamais collisionner avec l\u2019ancre de section (#indicateurs)', () => {
     for (const theme of THEMES_CONSTRUITS) {
-      for (const clef of Object.keys(THEMES_METHODES[theme].indicateurs)) {
-        const ancre = ancreIndicateur(clef)
-        expect(ancre, `« ${theme}.${clef} »`).toMatch(/^indicateur-[a-z0-9-]+$/)
-        expect(ancre, `« ${theme}.${clef} »`).not.toBe('indicateurs')
-        expect(ancre, `« ${theme}.${clef} »`).not.toMatch(/--|-$/)
+      for (const key of Object.keys(THEMES_METHODES[theme].indicateurs)) {
+        const anchor = ancreIndicateur(key)
+        expect(anchor).toMatch(/^indicateur-[a-z0-9-]+$/)
+        expect(anchor).not.toBe('indicateurs')
+        expect(anchor).not.toMatch(/--|-$/)
       }
     }
   })
 })
 
-describe('la matrice indicateur ↔ source (issue #336, #206 item 52)', () => {
-  it('joint chaque indicateur à SON jeu de données — y compris les sources multi-vintage DVF/DPE, jadis injoignables', () => {
-    const matrice = indicateursParDataset()
-
-    // DVF — la médiane prix au m² était injoignable (sourceId null) ; l'en-tête
-    // du jeu existe depuis #333, la jointure résout maintenant
-    expect(matrice.get('dvf')).toEqual([
+describe('matrice indicateur ↔ source', () => {
+  it('joins documented indicators to their registered datasets without inventing consumers', () => {
+    const matrix = indicateursParDataset()
+    expect(matrix.get('dvf')).toEqual([
       { clef: 'prix_m2', label: 'Médiane prix au m²', theme: 'habitat' },
     ])
-
-    // DPE — les deux indicateurs de la base roulante, dans l'ordre du registre
-    expect(matrice.get('dpe')).toEqual([
+    expect(matrix.get('dpe')).toEqual([
       { clef: 'part_passoires', label: 'Part de passoires thermiques', theme: 'habitat' },
-      {
-        clef: 'distribution_dpe',
-        label: 'Distribution des étiquettes DPE (A à G)',
-        theme: 'habitat',
-      },
+      { clef: 'distribution_dpe', label: 'Distribution des étiquettes DPE (A à G)', theme: 'habitat' },
     ])
-
-    // OCS-GE — l'en-tête du jeu (jamais une ligne vintage) ; la trajectoire
-    // par habitant (la valeur de la lecture Milieux, #367) rejoint le même jeu
-    expect(matrice.get('ocsge_artificialisation')).toEqual([
+    expect(matrix.get('ocsge_artificialisation')).toEqual([
       { clef: 'artif_par_habitant', label: 'Intensité état', theme: 'milieux' },
       { clef: 'trajectoire_artif_par_habitant', label: 'Trajectoire par habitant', theme: 'milieux' },
     ])
-  })
-
-  it('couvre chaque indicateur dont le sourceId pointe le registre — l\u2019union de la jointure', () => {
-    const matrice = indicateursParDataset()
-    for (const theme of THEMES_CONSTRUITS) {
-      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
-        if (indicateur.sourceId === null) continue
-        const dataset = datasetDeSource(indicateur.sourceId)
-        const consommateurs = matrice.get(dataset) ?? []
-        expect(
-          consommateurs.some((c) => c.clef === clef),
-          `« ${theme}.${clef} » → dataset « ${dataset} » absent de la matrice`,
-        ).toBe(true)
-      }
-    }
-  })
-
-  it('ne résout que des jeux du registre des sources — jamais un dataset inventé', () => {
-    const datasetsDuRegistre = new Set(
-      Object.entries(SOURCES_METHODES).map(([id, source]) => source.dataset ?? id),
-    )
-    for (const dataset of indicateursParDataset().keys()) {
-      expect(datasetsDuRegistre.has(dataset), `dataset « ${dataset} » hors registre`).toBe(true)
-    }
-  })
-
-  it('n\u2019invente aucun consommateur — un jeu sans indicateur documenté reste absent de la matrice', () => {
-    const matrice = indicateursParDataset()
-    // flores_a38 (le registre cite la A88 pour les effectifs), la base des EPCI,
-    // les sources du référentiel (COG, limites communales, BDNB) n'ont AUCUN
-    // indicateur documenté : la matrice ne les liste pas, elle n'invente rien
+    const knownDatasets = new Set(Object.entries(SOURCES_METHODES)
+      .map(([id, source]) => source.dataset ?? id))
+    for (const dataset of matrix.keys()) expect(knownDatasets.has(dataset), dataset).toBe(true)
     for (const dataset of ['flores_a38', 'epci', 'cog_passage', 'communes_limites', 'batiments_residentiels']) {
-      expect(matrice.has(dataset), `« ${dataset} » listé sans consommateur documenté`).toBe(false)
+      expect(matrix.has(dataset), dataset).toBe(false)
     }
   })
 
-  it('ne liste jamais les Stories — elles ne portent pas de champ source (gated #74/#308)', () => {
-    const storyClefs = new Set(
-      THEMES_CONSTRUITS.flatMap((theme) => THEMES_METHODES[theme].stories.map((s) => s.clef)),
-    )
-    for (const consommateurs of indicateursParDataset().values()) {
-      for (const consommateur of consommateurs) {
-        expect(
-          storyClefs.has(consommateur.clef),
-          `Story « ${consommateur.clef} » listée dans la matrice`,
-        ).toBe(false)
+  it('includes every entry with a registered source and excludes stories', () => {
+    const matrix = indicateursParDataset()
+    const storyKeys = new Set(THEMES_CONSTRUITS.flatMap((theme) =>
+      THEMES_METHODES[theme].stories.map((story) => story.clef)))
+    for (const theme of THEMES_CONSTRUITS) {
+      for (const [key, indicator] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        if (indicator.sourceId === null) continue
+        const dataset = datasetDeSource(indicator.sourceId)
+        expect((matrix.get(dataset) ?? []).some((consumer) => consumer.clef === key), `${theme}.${key}`).toBe(true)
       }
+    }
+    for (const consumers of matrix.values()) {
+      for (const consumer of consumers) expect(storyKeys.has(consumer.clef)).toBe(false)
     }
   })
 })

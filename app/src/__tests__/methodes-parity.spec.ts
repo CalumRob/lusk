@@ -1,117 +1,72 @@
-import { readdirSync } from 'node:fs'
-import { join } from 'node:path'
-
 import { describe, expect, it } from 'vitest'
 
-import { THEMES_CONSTRUITS } from '../methodes/indicateurs'
+import { THEMES_CONSTRUITS, THEMES_METHODES } from '../methodes/indicateurs'
 import type { ThemeConstruit } from '../methodes/indicateurs'
+import { THEMES_CANONIQUES } from '../payload/types'
+import { PRODUCER_THEME_METADATA } from './helpers/producerThemeMetadata'
 
 /**
- * Le contrat Méthodes de parité (issue #130, CONTEXT.md → Méthodes : « a
- * theme is not "built" until its sources and variables are documented here,
- * never an afterthought »). Un thème présent dans la payload commise
- * (public/data/indicateurs_<theme>.json) DOIT avoir sa documentation —
- * la section d'un thème expédie avec son payload, jamais après.
- *
- * #408 : Programmes et subventions est le SIXIÈME thème du contrat canonique
- * et vit dans SON descripteur publié theme_programmes.json. Depuis la bascule
- * (#410), c'est CE DESCRIPTEUR — publié par publier_theme_metadata, verrouillé
- * côté app par theme-metadata-parity.spec.ts (parité canon ↔ snapshot) — qui
- * prouve la parité du sixième thème ; sa provenance vit dans ses
- * source_records (#471). Ce fichier ne garde que l'enforcement générique :
- * tout indicateurs_<theme>.json commis doit correspondre à un thème connu.
- *
- * Direction de l'assertion : bidirectionnelle.
- * - payload ⊆ registre (la règle de l'issue #130, l'essentiel) : un thème dont
- *   le payload est commis sans section Méthodes échoue en le nommant. C'est
- *   l'enforcement : quand le payload de la Mobilité part, ce test force sa
- *   documentation à partir avec lui.
- * - registre ⊆ payload (l'inverse, gratuit à asserter) : le registre est
- *   « thèmes construits uniquement » par construction, mais rien ne vérifie à
- *   l'exécution qu'un thème documenté a bien un payload commis — l'inverse
- *   verrouille le contrat des deux côtés (pas de section fantôme pour un
- *   thème dont le payload serait retiré).
- *
- * Le « thème présent dans la payload » est déterminé par EXISTENCE des
- * fichiers commis, jamais par leur contenu : indicateurs_economie.json pèse
- * 82 Mo — le matérialiser (JSON.parse) reproduirait le flake de
- * les tests per-file commis. Un readdir + une expression régulière sur le nom
- * suffisent, en quelques millisecondes.
- */
-
-const dataDir = join(process.cwd(), '..', 'public', 'data')
-
-/**
- * Les thèmes hors registre des thèmes construits mais dont la payload est
- * légitimement commise (#408). L'exemption garde l'ancre de découverte
- * exacte ; la documentation DU sixième thème est prouvée par son descripteur
- * publié (theme_programmes.json, source_records #471), pas ici.
+ * Numeric observations belong to the API, not committed per-theme files.
+ * This contract keeps the app-owned Methodes registry aligned with the
+ * canonical theme roster while leaving Programmes documentation to its owner.
  */
 const THEMES_DOCUMENTATION_DEDIEE = ['programmes'] as const
 
-/** Les thèmes dont un payload est commis — l'existence du fichier, jamais son contenu. */
-function themesDeLaPayload(): string[] {
-  const themes: string[] = []
-  for (const nom of readdirSync(dataDir)) {
-    const correspondance = nom.match(/^indicateurs_([a-z]+)\.json$/)
-    if (correspondance) themes.push(correspondance[1])
-  }
-  return themes.sort()
+// Producer metadata retains old Mobilité Story declarations although the
+// current app surface has no Mobilité Story. Economy's second note is app-owned
+// analysis explicitly paused, not a published producer Story.
+const STORIES_PRODUCTEUR_HORS_REGISTRE = {
+  mobilite: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
+} as const
+const STORIES_METHODES_EN_PAUSE = {
+  economie: ['le-matin-la-commune-se-vide'],
+} as const
+
+function themesSansDocumentation(themes: string[]): string[] {
+  return themes.filter((theme) =>
+    !THEMES_CONSTRUITS.includes(theme as ThemeConstruit) &&
+    !(THEMES_DOCUMENTATION_DEDIEE as readonly string[]).includes(theme))
 }
 
-/**
- * Le cœur de l'enforcement : les thèmes de payload sans documentation
- * Méthodes — tout ce qui n'est ni dans le registre des thèmes construits,
- * ni dans les sections dédiées.
- */
-function themesSansDocumentation(payloadThemes: string[]): string[] {
-  return payloadThemes.filter(
-    (theme) =>
-      !THEMES_CONSTRUITS.includes(theme as ThemeConstruit) &&
-      !(THEMES_DOCUMENTATION_DEDIEE as readonly string[]).includes(theme),
-  )
-}
-
-describe('contrat Méthodes — chaque thème de la payload a sa documentation', () => {
-  it('l\u2019enforcement a des dents : un thème de payload sans section Méthodes est nommé', () => {
-    // Milieux est désormais documentée (issue #177) — le test doit garder sa
-    // dent sur un thème SYNTHÉTIQUE de payload sans section Méthodes : ici
-    // « eau », l'axe eau du cinquième thème (ADR-0014), conçu mais dont le
-    // contrat n'est délibérément PAS verrouillé (v2, gated sur sa recherche).
-    // Le fixe le comportement de détection : sans lui, l'assertion de parité
-    // pourrait passer par vacuité.
-    expect(
-      themesSansDocumentation(['demographie', 'habitat', 'economie', 'mobilite', 'milieux', 'eau']),
-    ).toEqual(['eau'])
+describe('contrat Méthodes — couverture du registre canonique', () => {
+  it('names a synthetic theme that has no Methodes documentation', () => {
+    expect(themesSansDocumentation([
+      'demographie', 'habitat', 'economie', 'mobilite', 'milieux', 'eau',
+    ])).toEqual(['eau'])
   })
 
-  it('découvre les payloads commis — les thèmes construits du registre plus la section dédiée, ni plus ni moins', () => {
-    // L'ancre de la découverte : le registre lui-même (plus la section
-    // dédiée #408), jamais une liste dupliquée. Un fichier
-    // indicateurs_<theme>.json de plus (ou de moins) fait échouer ce test en
-    // nommant le thème dans le diff.
-    expect(new Set(themesDeLaPayload())).toEqual(
-      new Set([...THEMES_CONSTRUITS, ...THEMES_DOCUMENTATION_DEDIEE]),
+  it('covers every canonical theme once, with Programmes documented by its descriptor', () => {
+    expect(new Set([...THEMES_CONSTRUITS, ...THEMES_DOCUMENTATION_DEDIEE])).toEqual(
+      new Set(THEMES_CANONIQUES),
     )
+    expect(THEMES_CONSTRUITS).not.toContain('programmes')
   })
 
-  it('chaque thème présent dans la payload a sa section Méthodes (payload ⊆ registre)', () => {
-    const manquants = themesSansDocumentation(themesDeLaPayload())
-    for (const theme of manquants) {
-      expect(
-        THEMES_CONSTRUITS.includes(theme as ThemeConstruit),
-        `« ${theme} » est dans la payload (indicateurs_${theme}.json) mais n'a pas de section Méthodes — un thème n'est « construit » qu'avec sa documentation (CONTEXT.md → Méthodes).`,
-      ).toBe(true)
-    }
-  })
+  it('matches published Story keys and classification codes to producer-owned contracts', () => {
+    for (const theme of THEMES_CONSTRUITS) {
+      const producer = PRODUCER_THEME_METADATA[theme]
+      const stories = THEMES_METHODES[theme].stories
+      const publishedKeys = stories.filter((story) => story.statut === 'publiee')
+        .map((story) => story.clef).sort()
+      const pausedKeys = stories.filter((story) => story.statut === 'en-pause')
+        .map((story) => story.clef).sort()
+      const producerOnly = STORIES_PRODUCTEUR_HORS_REGISTRE[theme as keyof typeof STORIES_PRODUCTEUR_HORS_REGISTRE] ?? []
+      const paused = STORIES_METHODES_EN_PAUSE[theme as keyof typeof STORIES_METHODES_EN_PAUSE] ?? []
 
-  it('le registre ne documente aucun thème sans payload commise (registre ⊆ payload)', () => {
-    const payload = new Set(themesDeLaPayload())
-    for (const theme of [...THEMES_CONSTRUITS, ...THEMES_DOCUMENTATION_DEDIEE]) {
-      expect(
-        payload.has(theme),
-        `« ${theme} » est documenté dans le registre Méthodes mais n'a pas de payload commise (indicateurs_${theme}.json) — une section Méthodes n'expédie qu'avec son payload.`,
-      ).toBe(true)
+      expect(publishedKeys, `${theme} published producer Story keys`).toEqual(
+        (producer.story_keys as string[]).filter((key) => !(producerOnly as readonly string[]).includes(key)).sort())
+      expect(pausedKeys, `${theme} explicitly paused Methods notes`).toEqual(paused)
+      for (const key of producer.story_keys as string[]) {
+        expect(publishedKeys.includes(key) || (producerOnly as readonly string[]).includes(key),
+          `${theme}.${key} published or explicitly excluded`).toBe(true)
+      }
+      for (const key of producerOnly) expect(producer.story_keys).toContain(key)
+
+      const documentedClassifications = stories.filter((story) => story.statut === 'publiee')
+        .flatMap((story) => story.lectures.map((lecture) => lecture.clef)).sort()
+      const producerClassifications = Object.keys(producer.classification_labels ?? {}).sort()
+      expect(documentedClassifications, `${theme} Methods classification codes`)
+        .toEqual(producerClassifications)
     }
   })
 })

@@ -32,6 +32,7 @@ import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { NATIVE_API_FIXTURE_NOTICE } from './fixtures/nativeApiScenarios'
 
 const resourceShapes: Record<string, Record<string, { shape: string; source: string; levels?: string[] }>> = {
   demographie: {
@@ -125,8 +126,13 @@ function lignesSubventions(subventions: SubventionProgramme[]): Indicateur[] {
 }
 
 /** Mount boundary fixture: producer-shaped catalogue + cohort reads, never static app reads. */
-async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
+async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference = false): Promise<typeof fetch> {
   const metadataByTheme = new Map<string, Record<string, any>>()
+  // Most fixtures use their matching compact reference. The shared-store
+  // integration case opts into the warmed published reference explicitly.
+  const referenceTerritories = usePublishedTerritoryReference
+    ? JSON.parse(await readFile(join(process.cwd(), '..', 'public', 'data', 'territoires.json'), 'utf8')) as Payload['territoires']
+    : p.territoires
   const loadMetadata = async (theme: string) => {
     let metadata = metadataByTheme.get(theme)
     if (!metadata) {
@@ -194,7 +200,7 @@ async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
         if (item.target.kind === 'territory' && item.intent.kind !== 'facts') {
           const page = metadata.indicator_pages[item.resource]
           const selected = item.intent.kind === 'selected_comparison'
-          const selectedMembers = selected ? item.intent.members : p.territoires
+          const selectedMembers = selected ? item.intent.members : referenceTerritories
             .filter((territory) => territory.type === type)
             .map((territory) => ({ type: territory.type, id: territory.territoire }))
           const sourceId = resource.sources[0]
@@ -216,11 +222,11 @@ async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
             selection: selected ? selectedMembers.map((member: any) => ({ territory_type: member.type, territory_id: member.id })) : null,
             scope: { kind: selected ? 'explicit_selection' : type === 'commune' ? 'density_class' : 'same_level',
               territory_type: type, density_class_code: type === 'commune' ?
-                p.territoires.find((territory) => territory.territoire === item.target.id)?.classe_densite_code : undefined,
+                referenceTerritories.find((territory) => territory.territoire === item.target.id)?.classe_densite_code : undefined,
               member_count: selectedMembers.length }, result } })
           continue
         }
-        const members = p.territoires.filter((territory) => territory.type === type)
+        const members = referenceTerritories.filter((territory) => territory.type === type)
         const cohort = { territory_type: type, department_id: null, epci_id: null,
           member_count: members.length, members: members.map((territory) =>
             ({ id: territory.territoire, type: territory.type, name: territory.nom })), reference_content_version: 'map-ref-v1' }
@@ -311,6 +317,7 @@ async function fetchCarteApiFixture(p: Payload): Promise<typeof fetch> {
               availability: entries.length ? 'observed' : 'no_record', entries }
           }) }
         }
+        data.synthetic_fixture = NATIVE_API_FIXTURE_NOTICE
         results.push({ id: item.id, resource: item.resource, data })
       }
       return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }))
@@ -1288,41 +1295,44 @@ describe('CarteView — #901 : onglets + admission ?theme= depuis le REGISTRE TH
 })
 
 describe('CarteView — #901 : magasin partagé CHAUD (aucun chargeur injecté — le seam public réel)', () => {
-  it('store warm via une autre route, puis carte montée sur le magasin de production : zéro nouveau départ statique (12 fichiers numériques inclus), valeurs API utilisées, et panne API sans aucun repli statique', async () => {
+  it('store partagé préchauffé sur les seules références/métadonnées : la carte lit les observations synthétiques API et ne replie jamais', async () => {
     const payloadChaud: Payload = {
       ...payload,
-      indicateurs: [...indicateursDemographieFixture, ...indicateursHabitatFixture],
-      histoires: [...histoiresDemographieFixture, ...histoiresHabitatFixture],
+      indicateurs: [],
+      histoires: [],
     }
-    // Les faits servis par l'API sont décalés (×100) : une valeur rendue à
-    // 20000 prouve la ligne API, jamais la ligne statique chaude (200).
+    // These deliberately synthetic API observations are distinct from any
+    // published values; resource identity, unit, and source clock remain
+    // producer-backed in the catalogue/metadata fixture.
+    const densite = indicateursDemographieFixture.find((row) => row.key === 'densite')!
+    const observationsApi = ['22001', '22002', '29001', '29002'].map((territoire, index) => ({
+      ...densite, territoire, type: 'commune' as const, value: 73 + index,
+      synthetic_fixture: NATIVE_API_FIXTURE_NOTICE,
+    }))
     const payloadApi: Payload = {
       ...payloadChaud,
-      indicateurs: payloadChaud.indicateurs.map((l) =>
-        l.value === null ? l : { ...l, value: l.value * 100 }),
-      histoires: payloadChaud.histoires.map((h) =>
-        Object.fromEntries(Object.entries(h).map(([k, v]) => [k, typeof v === 'number' ? v * 100 : v])) as Payload['histoires'][number]),
+      // Retain synthetic profile cells so the fixture can publish exactly the
+      // producer-declared axes for every cohort read, including background reads.
+      indicateurs: [...indicateursDemographieFixture.filter((row) => row.key !== 'densite'), ...observationsApi],
     }
     const demandesData: string[] = []
     let apiEnEchec = false
-    const fixtureApi = await fetchCarteApiFixture(payloadApi)
+    const fixtureApi = await fetchCarteApiFixture(payloadApi, true)
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.startsWith('/data/')) {
         demandesData.push(url)
         const fichier = url.slice('/data/'.length, -'.json'.length) as Fichier
-        // Les catalogues theme_* servis = les fichiers committés réels (comme
-        // en production) ; les sections numériques viennent du fixture.
-        if (fichier.startsWith('theme_')) {
-          try {
-            return new Response(await readFile(join(process.cwd(), '..', 'public', 'data', `${fichier}.json`), 'utf8'))
-          } catch {
-            return new Response('', { status: 404 })
-          }
+        // This test's shared store is intentionally bounded to retained
+        // references and metadata. Retired numerical projections are not read.
+        if (fichier.startsWith('indicateurs_') || fichier.startsWith('histoires_')) {
+          return new Response('', { status: 404 })
         }
-        const section = await chargerAvec(payloadChaud)(fichier)
-        if (section === null || section === undefined) return new Response('', { status: 404 })
-        return new Response(JSON.stringify(section))
+        try {
+          return new Response(await readFile(join(process.cwd(), '..', 'public', 'data', `${fichier}.json`), 'utf8'))
+        } catch {
+          return new Response('', { status: 404 })
+        }
       }
       // Panne ciblée sur les lectures de cohorts (la découverte réussit :
       // les couches existent, leurs valeurs échouent).
@@ -1330,12 +1340,13 @@ describe('CarteView — #901 : magasin partagé CHAUD (aucun chargeur injecté �
       return fixtureApi(input, init)
     }))
 
-    // Phase 0 — « une autre route » chauffe le magasin partagé de production :
-    // usePayload SANS chargeur injecté (magasinPartage) + chargeur réel (fetch
-    // stubbé, validateurs réels) — seam public, pas un mock du hook.
+    // Phase 0 — a prior route warms the shared production store through its
+    // public seam, but only with retained reference/report/metadata files.
     const harness = mount(defineComponent({
       setup() {
-        const etat = usePayload()
+        const metadata = THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier)
+        const demarrer: Fichier[] = ['territoires', 'territoires-metadata', 'run-report', 'vintages', ...metadata]
+        const etat = usePayload({ attendre: ['territoires', 'run-report'], demarrer })
         return { etat }
       },
       render: () => h('div'),
@@ -1344,12 +1355,12 @@ describe('CarteView — #901 : magasin partagé CHAUD (aucun chargeur injecté �
       expect(harness.vm.etat.chargement.value).toBe(false)
       expect(harness.vm.etat.erreur.value).toBeNull()
     })
-    // Le magasin est bien CHAUD en lignes numériques.
-    expect(harness.vm.etat.payload.value.indicateurs.length).toBeGreaterThan(0)
-    expect(harness.vm.etat.payload.value.histoires.length).toBeGreaterThan(0)
+    // The shared store is warm, while retired numeric sections stay honestly empty.
+    expect(harness.vm.etat.payload.value.territoires.length).toBeGreaterThan(0)
+    expect(harness.vm.etat.payload.value.indicateurs).toEqual([])
+    expect(harness.vm.etat.payload.value.histoires).toEqual([])
     const numeriquesChauffes = demandesData.filter((u) => u.includes('indicateurs_') || u.includes('histoires_'))
-    expect(numeriquesChauffes).toContain('/data/indicateurs_demographie.json')
-    expect(numeriquesChauffes).toContain('/data/histoires_demographie.json')
+    expect(numeriquesChauffes).toEqual([])
     const marqueur = demandesData.length
 
     const monterSurMagasinChaud = async () => {
@@ -1372,21 +1383,21 @@ describe('CarteView — #901 : magasin partagé CHAUD (aucun chargeur injecté �
       return joined?.features.find((f) => f.properties.territoire === '22001')?.properties.valeur ?? null
     }
 
-    // Phase 1 — la carte montée SANS chargeur injecté réutilise le magasin chaud.
+    // Phase 1 — the real card reuses the warmed shared metadata store.
     const { router, wrapper } = await monterSurMagasinChaud()
-    // ZÉRO nouveau départ statique (les 12 fichiers numériques inclus).
+    // No retained-data reads are needed after the shared store is warm.
     expect(demandesData.slice(marqueur).filter((u) => u.startsWith('/data/'))).toEqual([])
     // 6 onglets du registre, URL canonique conservée.
     expect(wrapper.findAll('[role="tab"]')).toHaveLength(6)
     expect(router.currentRoute.value.query.theme).toBe('demographie')
-    // Les valeurs rendues viennent de l'API (×100), pas des lignes statiques chaudes.
+    // The marked synthetic API response—not any static payload—drives the map.
     await wrapper.findAll('.carte-sidebar-couche').find((b) => b.text().includes('Densité'))!.trigger('click')
     await flushPromises()
-    expect(valeur22001()).toBe(200 * 100)
+    expect(valeur22001()).toBe(73)
     const marqueur2 = demandesData.length
 
-    // Phase 2 — panne API (read-batch 503) : AUCUN repli sur les lignes
-    // statiques chaudes (valeur null), état indisponible + Retry, onglets/URL stables.
+    // Phase 2 — API failure: no numeric fallback, unavailable state + Retry,
+    // with tabs/URL stable.
     apiEnEchec = true
     wrapper.unmount()
     const { router: router2, wrapper: wrapper2 } = await monterSurMagasinChaud()
@@ -1398,14 +1409,14 @@ describe('CarteView — #901 : magasin partagé CHAUD (aucun chargeur injecté �
     expect(valeur22001()).toBeNull()
     expect(demandesData.slice(marqueur2).filter((u) => u.startsWith('/data/'))).toEqual([])
 
-    // Retry → l'API revient → valeurs API (×100) de nouveau, toujours zéro statique.
+    // Retry restores the same synthetic API value without reading numeric files.
     apiEnEchec = false
     await wrapper2.find('[role="alert"] button').trigger('click')
     await flushPromises()
     expect(wrapper2.find('[role="alert"]').exists()).toBe(false)
     await wrapper2.findAll('.carte-sidebar-couche').find((b) => b.text().includes('Densité'))!.trigger('click')
     await flushPromises()
-    expect(valeur22001()).toBe(200 * 100)
+    expect(valeur22001()).toBe(73)
     expect(demandesData.slice(marqueur2).filter((u) => u.startsWith('/data/'))).toEqual([])
 
     wrapper2.unmount()

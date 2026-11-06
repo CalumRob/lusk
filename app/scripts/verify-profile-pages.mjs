@@ -329,20 +329,16 @@ async function verifyStandaloneMap(browser, baseUrl, specs, territories, formatV
   }))
   await page.route('**/api/**', (route) => harness.handleApi(route))
   await page.route('**/data/territoires.json', (route) => route.fulfill({ json: territories }))
-  // The test territory reference is intentionally small. Published indicator
-  // files contain the whole region, so filter those real local inputs to the
-  // reference fixture; otherwise loader validation rejects their non-fixture
-  // IDs and correctly withholds every indicator tab.
-  const fixtureIds = new Set(territories.map((territory) => territory.territoire))
+  // Numerical browser exports are retired. Native map acquisition must not
+  // request them, even when API responses fail or the reference is small.
+  const retiredNumericalRequests = []
   await page.route('**/data/indicateurs_*.json', async (route) => {
-    const name = new URL(route.request().url()).pathname.split('/').at(-1)
-    const rows = JSON.parse(await readFile(resolve(repoRoot, 'public/data', name), 'utf8'))
-    await route.fulfill({ json: rows.filter((row) => fixtureIds.has(row.territoire)) })
+    retiredNumericalRequests.push(route.request().url())
+    await route.fulfill({ status: 410, body: 'Retired numerical projection' })
   })
   await page.route('**/data/histoires_*.json', async (route) => {
-    const name = new URL(route.request().url()).pathname.split('/').at(-1)
-    const rows = JSON.parse(await readFile(resolve(repoRoot, 'public/data', name), 'utf8'))
-    await route.fulfill({ json: rows.filter((row) => fixtureIds.has(row.territoire)) })
+    retiredNumericalRequests.push(route.request().url())
+    await route.fulfill({ status: 410, body: 'Retired numerical projection' })
   })
   try {
     await page.goto(`${baseUrl}carte`, { waitUntil: 'domcontentloaded' })
@@ -433,6 +429,7 @@ async function verifyStandaloneMap(browser, baseUrl, specs, territories, formatV
     assert.equal(await canvas.count(), 0, 'navigation unmounts and disposes the real map')
     assert.deepEqual(harness.unexpectedApi, [])
     assert.deepEqual(externalRequests, [])
+    assert.deepEqual(retiredNumericalRequests, [], 'no retired numerical JSON requests')
     assert.deepEqual(errors, [])
     return { checks: ['real WebGL2 canvas and MapLibre module worker', 'TileJSON attribution sanitizer', 'neutral popup', 'search and popup', 'pointer pan',
       'zoom control', 'hover tooltip', 'native layer values and updates', 'mask level', 'resize', 'fiche navigation and cleanup'],

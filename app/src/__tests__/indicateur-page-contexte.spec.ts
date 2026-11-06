@@ -12,12 +12,15 @@ import type { Territoire } from '../payload/types'
 import { routes } from '../router'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
-import { createNativeSemanticApiTransport } from './helpers/nativeSemanticApiTransport'
+import { formaterValeur } from '../payload/selectors'
+import { NATIVE_API_FIXTURE_NOTICE } from './fixtures/nativeApiScenarios'
+import { createNativeSemanticApiTransport, type NativeBatchObserver } from './helpers/nativeSemanticApiTransport'
 
 /**
  * La note de contexte permanente + la contextualisation des compositions
- * (#472) — les tests ROUTÉS contre le VRAI payload committé (public/data/,
- * lu par le chargeur réel et ses validateurs). Deux verrous :
+ * (#472) — parcours routés sur les références et métadonnées conservées;
+ * les observations numériques viennent du fixture API synthétique marqué.
+ * Deux verrous :
  *  1. la note de contexte — UNE ligne discrète sur chaque Page d'indicateur,
  *     dérivée de l'état résolu de l'URL (?territoire/?niveau/?departement),
  *     vivante aux changements d'état sur DEUX familles (scalaire chômage,
@@ -73,8 +76,8 @@ function chargerCommis(fichier: Fichier): Promise<unknown> {
   return cache.get(fichier)!
 }
 
-async function monter(url: string) {
-  vi.stubGlobal('fetch', createNativeSemanticApiTransport())
+async function monter(url: string, observer?: NativeBatchObserver) {
+  vi.stubGlobal('fetch', createNativeSemanticApiTransport(observer))
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(url)
   await router.isReady()
@@ -148,18 +151,31 @@ describe('Pages d’indicateur — note de contexte permanente (#472)', () => {
 
 describe('Pages d’indicateur — contextualisation des compositions (#472)', () => {
   it('mix_logements?territoire=22001 : provenance évidente, parts du territoire face à la médiane du périmètre', async () => {
-    const { wrapper } = await monter('/indicateurs/habitat/mix_logements?territoire=22001')
+    const profileReads: Array<Record<string, any>> = []
+    const observer: NativeBatchObserver = (items, response) => items.forEach((item, index) => {
+      if (item.resource === 'mix_logements' && item.target.kind === 'territory_cohort' && item.intent.kind === 'facts') {
+        profileReads.push(response.results[index].data)
+      }
+    })
+    const { wrapper } = await monter('/indicateurs/habitat/mix_logements?territoire=22001', observer)
     // La provenance du highlight est explicite : c'est LE territoire mis en
     // avant par l'URL, jamais un premier venu silencieux.
     expect(wrapper.find('[data-testid="composition-provenance"]').text()).toBe('Votre territoire : Allineuc')
     // Les parts DU territoire (×100 via le formatage partagé #466).
     const valeurs = wrapper.findAll('.composition-legend li strong').map((el) => el.text())
     expect(valeurs).toEqual(['72%', '12%', '16%'])
-    // Face à la référence du périmètre : la médiane des communes comparées
-    // par segment (Bretagne : principales ≈ 0,8363 → « 84 % », secondaires
-    // ≈ 0,0766 → « 8 % », vacants ≈ 0,0706 → « 7 % »).
+    // Reference medians are derived from the marked, synthetic API cohort.
+    const profile = profileReads.find((read) => read.synthetic_fixture?.kind === 'synthetic_test_fixture')
+    expect(profile?.synthetic_fixture).toMatchObject(NATIVE_API_FIXTURE_NOTICE)
+    const medians = ['principales', 'secondaires', 'vacants'].map((detail) => {
+      const values = profile!.profiles.flatMap((territory: any) => territory.cells
+        .filter((cell: any) => cell.detail === detail && cell.status === 'measured')
+        .map((cell: any) => cell.value as number)).sort((left: number, right: number) => left - right)
+      const middle = Math.floor(values.length / 2)
+      return values.length % 2 ? values[middle]! : (values[middle - 1]! + values[middle]!) / 2
+    })
     const references = wrapper.findAll('.composition-legend li small').map((el) => el.text())
-    expect(references).toEqual(['médiane : 84%', 'médiane : 8%', 'médiane : 7%'])
+    expect(references).toEqual(medians.map((value) => `médiane : ${formaterValeur({ value, unit: '%' })}%`))
     // La légende nomme l'univers comparé dont la médiane est la référence.
     expect(wrapper.find('figcaption').text()).toContain('les communes de Bretagne')
   }, 20000)

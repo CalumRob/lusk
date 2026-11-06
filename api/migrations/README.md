@@ -209,9 +209,11 @@ and the reference dependency on its publication marker. It does not store the
 history row as JSON, recalculate rates in SQL, or publish a candidate pool.
 `smoke-demographic-reading-postgres.R` applies the actual migration over a
 populated territory-reference marker in its guarded disposable schema, then
-publishes all 1,268 canonical Parquet rows and verifies commune/EPCI HTTP output
-against the incumbent `histoires_demographie.json`. No serving database is
- modified by this worker migration rehearsal.
+published all 1,268 canonical Parquet rows and verified commune/EPCI HTTP output
+against the then-incumbent `histoires_demographie.json` in the original rehearsal.
+Since the 2026-11-06 numerical-export retirement, the smoke consumes the validated
+producer-owned typed-reading generation directly; the retired browser JSON is
+not an input. No serving database is modified by this migration rehearsal.
 
 # Migration 021 — selected Economy reading and ordered activity evidence
 

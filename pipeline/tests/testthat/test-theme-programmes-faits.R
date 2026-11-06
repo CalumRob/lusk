@@ -1,6 +1,6 @@
 # test-theme-programmes-faits ---------------------------------------------------
-# Les faits du SIXIÈME thème (issue #408) : la paire hermétique
-# indicateurs_programmes.json. Ce test verrouille :
+# Les faits du SIXIÈME thème (issue #408), conservés dans le payload producteur
+# en mémoire. Ce test verrouille :
 #   - le builder : les adhésions deviennent l'indicateur catégoriel
 #     `couverture_programmes` (le rider « convention valant ORT » sur la ligne
 #     du label, l'estampille de SA source par ligne — les lignes ORT gardent
@@ -10,8 +10,7 @@
 #     (la ventilation communale COMPLÈTE — chaque valeur des tables survit) ;
 #   - les gardes : total poolé = somme des domaines (bruyamment), unicité
 #     (territoire × key × detail × dimension), jamais un rang ;
-#   - l'absence honnête : zéro fait → RIEN n'est écrit (jamais un thème
-#     inventé), et la paire écrite porte des histoires VIDES.
+#   - l'absence honnête : zéro fait → une table vide, sans « zéro » inventé.
 
 membres_faits <- function() {
   tibble::tibble(
@@ -134,47 +133,32 @@ test_that("construire_indicateurs_programmes : une ligne en double échoue fort"
   )
 })
 
-test_that("ecrire_theme_programmes : l'absence honnête — zéro fait n'écrit RIEN", {
-  sortie <- file.path(tempdir(), "faits-programmes-vide")
-  dir.create(sortie, showWarnings = FALSE)
-  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
-
+test_that("construire_indicateurs_programmes : l'absence honnête — zéro fait reste une table vide", {
   ind <- construire_indicateurs_programmes(
     membres_faits()[0L, ], subventions_faits()[0L, ]
   )
   expect_equal(nrow(ind), 0L)
-
-  ecrire_theme_programmes(ind, sortie)
-  expect_false(file.exists(file.path(sortie, "indicateurs_programmes.json")))
-  expect_false(file.exists(file.path(sortie, "histoires_programmes.json")))
+  expect_true(all(c("territoire", "type", "theme", "key", "value", "unit",
+                    "dimension", "detail", "vintage_source") %in% names(ind)))
 })
 
-test_that("ecrire_theme_programmes : publie les faits sans inventer un fichier de lecture", {
-  sortie <- file.path(tempdir(), "faits-programmes-pleins")
-  dir.create(sortie, showWarnings = FALSE)
-  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+test_that("les faits canoniques Programmes reconstruits des Parquets couvrent les détails déclarés", {
+  ind <- lire_indicateurs_producteur_fixture("programmes")
+  meta <- lire_theme_metadata("programmes")
+  expect_error(verifier_parite_listes(meta, ind), NA)
+  expect_setequal(unique(ind$key), c("couverture_programmes",
+                                     "subventions_annuelles",
+                                     "subventions_par_domaine"))
+  expect_true(all(ind$theme == "programmes"))
+  expect_length(unique(ind$detail[ind$key == "subventions_par_domaine"]), 39L)
+  expect_true(all(ind$unit[ind$key == "subventions_annuelles"] == "€"))
+  expect_true(all(ind$unit[ind$key == "subventions_par_domaine"] == "€"))
+  expect_true(all(is.na(as.matrix(ind[grep("^rang_", names(ind), value=TRUE)]))))
 
-  ind <- construire_indicateurs_programmes(membres_faits(), subventions_faits())
-  ecrire_theme_programmes(ind, sortie)
-
-  # indicateurs_programmes.json se relit dans la forme du contrat app
-  relu <- jsonlite::fromJSON(file.path(sortie, "indicateurs_programmes.json"))
-  expect_true(all(relu$theme == "programmes"))
-  expect_setequal(unique(relu$key), c("couverture_programmes",
-                                      "subventions_annuelles",
-                                      "subventions_par_domaine"))
-  # le rider JSON : présent sur la ligne ACV, null ailleurs (na = "null")
-  expect_equal(relu$rider[relu$key == "couverture_programmes" & relu$detail == "ACV"],
-               "convention valant ORT")
-
-  expect_false(file.exists(file.path(sortie, "histoires_programmes.json")))
-
-  # un second appel identique réécrit le même fichier (la projection stable)
-  octets <- function(fichier) {
-    readBin(file.path(sortie, fichier), "raw",
-            n = file.info(file.path(sortie, fichier))$size)
-  }
-  avant <- octets("indicateurs_programmes.json")
-  ecrire_theme_programmes(ind, sortie)
-  expect_identical(octets("indicateurs_programmes.json"), avant)
+  annuelles <- ind[ind$key == "subventions_annuelles" & ind$type == "commune", ]
+  domaines <- ind[ind$key == "subventions_par_domaine", ]
+  somme <- stats::aggregate(value ~ territoire + dimension, domaines, sum)
+  total <- annuelles[match(paste(somme$territoire, somme$dimension),
+    paste(annuelles$territoire, annuelles$dimension)), ]
+  expect_equal(total$value, somme$value)
 })

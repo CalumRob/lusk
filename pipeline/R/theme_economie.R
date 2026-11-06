@@ -393,7 +393,8 @@ construire_payload_economie <- function(analytiques, base_epci, vintages,
 # (base_epci du cache), enchaîne le calcul analytique T1-T6 (construire_analytiques
 # — les artefacts *_rangs.rds sont régénérés sous data/processed/economie/),
 # assemble le payload, le valide et le publie via la machinerie PARTAGÉE
-# publish (backend "static" par défaut — parquet + projections JSON + vintages).
+# publish (backend "static" par défaut — Parquets retenus, ressources partagées
+# et vintages ; les projections de faits numériques sont retirées).
 # Retourne le payload, comme run_pipeline l'attend.
 publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
                              sortie = "public/data",

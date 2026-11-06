@@ -1,5 +1,13 @@
 # #627 — current numeric-consumer reconciliation
 
+**Numerical export retirement (2026-11-06):** all remaining committed
+`indicateurs_*.json` / `histoires_*.json` browser projections and their numerical
+writers are retired. Producer in-memory facts/readings and canonical/serving
+Parquets remain. Earlier mentions below of retained numerical browser exports
+or export-backed verification inputs are historical; retained tests/smokes must
+use producer/fixture contracts instead. Metadata/reference assets are not part
+of this retirement, and no live deployment/publication is claimed.
+
 **Update 2026-11-05:** the owner retired the manual committed-payload reconstruction
 tool (`materialize_serving_artifacts.R`), its CLI and exclusive test/smoke paths.
 References below to that reader are historical, not current recovery requirements.

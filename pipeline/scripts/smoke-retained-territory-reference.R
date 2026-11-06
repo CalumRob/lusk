@@ -27,13 +27,14 @@ first <- publish_territory_reference_projection(projection, adapter)
 second <- publish_territory_reference_projection(projection, adapter)
 stopifnot(isTRUE(first$changed), !isTRUE(second$changed), !isTRUE(second$rebound))
 artifact_dir <- tempfile("retained-scalar-artifacts-"); dir.create(artifact_dir)
-vintages <- nanoparquet::read_parquet(file.path(canonical_dir, "vintages.parquet"))
 for (owner in retained_scalar_artifact_owners()) {
-  canonical <- list(indicateurs=lire_indicateurs_commis(owner, canonical_dir),
-    territoires=nanoparquet::read_parquet(file.path(canonical_dir, "territoires.parquet")))
-  owner_metadata <- jsonlite::fromJSON(file.path(canonical_dir,
-    paste0("theme_", owner, ".json")), simplifyVector=FALSE)
-  materialize_theme_scalar_artifact(canonical, owner_metadata, vintages, owner, artifact_dir)
+  source <- file.path(canonical_dir,"scalar-serving",owner)
+  if (!file.exists(file.path(source,"scalar-current.json")))
+    stop("Current retained scalar serving artifact is missing for owner ",owner,call.=FALSE)
+  destination <- file.path(artifact_dir,"scalar-serving")
+  if (!dir.exists(destination)) dir.create(destination)
+  if (!file.copy(source,destination,recursive=TRUE))
+    stop("Could not stage retained scalar serving artifact for owner ",owner,call.=FALSE)
 }
 snapshot <- project_retained_scalar_snapshot(canonical_dir, projection, artifact_dir)
 published <- publish_retained_scalar_snapshot(con, snapshot, artifact_dir)

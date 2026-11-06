@@ -424,17 +424,20 @@ test_that("production series input is projected from the canonical Parquet and m
   expect_invisible(require_series_publish_opt_in("1"))
 })
 
-test_that("owned ENAF projection preserves its canonical facts and immutable provenance", {
+test_that("owned ENAF projection preserves producer-fixture facts and immutable provenance", {
   root <- testthat::test_path("../../../public/data")
   metadata_path <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
   metadata <- jsonlite::read_json(metadata_path, simplifyVector=FALSE)
   projection <- owned_conso_enaf_projection(list(
-    indicateurs=lire_indicateurs_commis("milieux", root),
+    indicateurs=lire_indicateurs_producteur_fixture("milieux", root),
     vintages=nanoparquet::read_parquet(file.path(root,"vintages.parquet"))), metadata)
   expect_invisible(validate_owned_series_projection(projection))
   expect_identical(projection$descriptor$dataset_id,"conso_enaf_annuel")
-  expect_equal(nrow(projection$points),17724L)
-  expect_equal(sum(projection$points$territory_type=="region"),14L)
+  expected_facts <- lire_indicateurs_producteur_fixture("milieux", root)
+  expected_facts <- expected_facts[expected_facts$key=="conso_enaf_annuel",,drop=FALSE]
+  expect_equal(nrow(projection$points),nrow(expected_facts))
+  expect_equal(sum(projection$points$territory_type=="region"),
+    sum(expected_facts$type=="region"))
   expect_setequal(projection$descriptor$comparison_levels,c("commune", "epci", "departement"))
   expect_true(all(projection$points$dataset_id=="conso_enaf_annuel"))
   expect_equal(nrow(projection$point_provenance),nrow(projection$points))
@@ -542,7 +545,7 @@ test_that("OCS-GE projection uses typed per-role components and retains comparis
     "supported comparison statistic")
   expect_error(project_ordered_series_comparisons(production_projection,comparison_reference,"","r1"),
     "publication identities")
-  old_artifact <- lire_indicateurs_commis("milieux", root)
+  old_artifact <- lire_indicateurs_producteur_fixture("milieux", root)
   old_artifact <- old_artifact[old_artifact$key=="artif_par_habitant",]
   old_artifact$state_role <- NULL
   old_artifact$source_components <- NULL
@@ -552,7 +555,7 @@ test_that("OCS-GE projection uses typed per-role components and retains comparis
 
 test_that("canonical vintage source label is checked against vintage Parquet identity", {
   root <- testthat::test_path("../../../public/data")
-  indicators <- lire_indicateurs_commis("milieux", root)
+  indicators <- lire_indicateurs_producteur_fixture("milieux", root)
   vintages <- nanoparquet::read_parquet(file.path(root, "vintages.parquet"))
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)
   # Keep version and both dates unchanged: only corrupt the human source label.

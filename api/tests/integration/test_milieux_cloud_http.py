@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api import main
+from producer_artifacts import read_owned_series_artifact, read_typed_reading_artifact, records
 
 pytestmark = pytest.mark.integration
 
@@ -20,7 +21,25 @@ def test_registered_milieux_reading_and_source_absence_are_semantic_resources():
     canonical = Path(os.environ.get("LUSK_TEST_CANONICAL_DATA_DIR", ""))
     if not schema or not read_dsn or not canonical.is_dir():
         pytest.skip("invoked by guarded smoke-milieux-reading-postgres.R")
-    expected = json.loads((canonical / "milieux_http_expected.json").read_text(encoding="utf-8"))
+    expected_absence = json.loads(
+        (canonical / "milieux_source_absence_expected.json").read_text(encoding="utf-8")
+    )["absence"]
+    reading_projection = read_typed_reading_artifact(canonical, "milieux")
+    reading_rows = records(reading_projection["facts"])
+    binding_rows = records(reading_projection["source_bindings"])
+    state_projection = read_owned_series_artifact(canonical, "artif_par_habitant")
+    supported_communes = {
+        (str(row["territory_id"]), row["territory_type"])
+        for row in records(state_projection["points"])
+        if row["territory_type"] == "commune"
+    }
+    reading = next((row for row in reading_rows
+                    if (str(row["territory_id"]), row["territory_type"]) in supported_communes), None)
+    assert reading is not None, "current Milieux artifacts have no source-supported commune reading"
+    bindings = [row for row in binding_rows
+                if row["territory_id"] == reading["territory_id"]
+                and row["territory_type"] == reading["territory_type"]
+                and row["groupe"] == reading["groupe"]]
     parts = urlsplit(read_dsn)
     query = parse_qs(parts.query, keep_blank_values=True)
     query["options"] = [f"-csearch_path={schema}"]
@@ -39,7 +58,6 @@ def test_registered_milieux_reading_and_source_absence_are_semantic_resources():
                 "ORDER BY table_name").fetchall()
             assert len(markers) == 2 and markers[0][1] == markers[1][1]
             assert all(row[3] for row in markers)
-        reading = expected["reading"]
         target = {"kind": "territory", "type": reading["territory_type"], "id": reading["territory_id"]}
         request = {
             "resource": "milieux_selected_reading", "target": target,
@@ -66,9 +84,9 @@ def test_registered_milieux_reading_and_source_absence_are_semantic_resources():
                     assert fact[key] == pytest.approx(reading[key]), (key, fact[key], reading[key])
                 else:
                     assert fact[key] == reading[key], (key, fact[key], reading[key])
-            assert payload["source_bindings"] == expected["bindings"]
+            assert payload["source_bindings"] == bindings
 
-            absence = expected["absence"]
+            absence = expected_absence
             absent_request = {
                 "resource": "milieux_selected_reading",
                 "target": {"kind": "territory", "type": absence["territory_type"],

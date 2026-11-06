@@ -11,10 +11,11 @@ import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilie
 import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import { contextesDepuisReference } from '../fiche/comparisonContext'
+import { formaterValeur } from '../payload/selectors'
 import {
   territoiresFixture,
 } from '../payload/fixtures'
-import type { Histoire, Indicateur, Payload, Territoire } from '../payload/types'
+import type { Payload, Territoire } from '../payload/types'
 import { chargerMetadonneesTheme, THEME_METADATA_CHARGER_KEY } from '../payload/themeCatalogue'
 import type { ChargerMetadonneesTheme } from '../payload/themeCatalogue'
 import { TERRITORY_REFERENCE_CHARGER_KEY } from '../payload/territoryReference'
@@ -50,16 +51,32 @@ const chargerReferenceReelle: ChargerReferenceTerritoires = async () => referenc
 const cibleReference = (id: string): Territoire =>
   referenceReelle.find((candidate) => candidate.territoire === id)!
 const contextesReference = (id: string) => contextesDepuisReference(cibleReference(id), referenceReelle)
-const lireDonnee = (relatif: string) =>
-  readFileSync(resolve(process.cwd(), '../public/data', relatif), 'utf8')
-const lignesIndicateursPubliees = (theme: string, id: string): Indicateur[] =>
-  (JSON.parse(lireDonnee(`indicateurs_${theme}.json`)) as Indicateur[])
-    .filter((row) => row.territoire === id)
-const histoirePubliee = (theme: string, id: string): Histoire =>
-  (JSON.parse(lireDonnee(`histoires_${theme}.json`)) as Histoire[])
-    .find((row) => row.territoire === id)!
-const metadataPubliee = (theme: string) =>
-  JSON.parse(lireDonnee(`theme_${theme}.json`)) as Record<string, any>
+const lireMetadataSnapshot = (theme: string) =>
+  JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/theme_${theme}.json`), 'utf8')) as Record<string, any>
+
+function syntheticResourceRead(theme: string, resourceId: string, territoryId = '22001') {
+  const resource = nativeResources(theme).find((candidate) => candidate.resource_id === resourceId)
+  if (!resource) throw new Error(`Missing producer resource ${theme}/${resourceId}`)
+  return nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: territoryId },
+    intent: { kind: 'facts' } }, resource)
+}
+
+function syntheticReadingRead(theme: string, territoryId = '22001'): Record<string, any> {
+  const resource = nativeResources(theme).find((candidate) =>
+    candidate.shapes.includes('typed_reading') && candidate.target_kinds.includes('territory'))
+  if (!resource) throw new Error(`Missing producer reading resource for ${theme}`)
+  const response = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: territoryId },
+    intent: { kind: 'facts' } }, resource)
+  return response.facts?.[0] ?? {}
+}
+
+function syntheticTopActivityLabel(): string {
+  const resource = nativeResources('economie').find((candidate) =>
+    candidate.resource_id === 'economie_selected_reading')!
+  const response = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: '22001' },
+    intent: { kind: 'facts' } }, resource)
+  return response.ranked_activities?.[0]?.activity_label ?? ''
+}
 
 function nativeFicheReadFixture(item: Record<string, any>, resource: Parameters<typeof nativeReadFixture>[1]) {
   return nativeReadFixture(item, resource, { syntheticProfileComparisons: true })
@@ -82,7 +99,7 @@ async function monter(
   chemin: string,
   charger: ChargerReferenceTerritoires = chargerReferenceFixture,
   chargerMetadata: ChargerMetadonneesTheme = async (theme) => validerCatalogueNavigateur(
-    JSON.parse(lireDonnee(`theme_${theme}.json`)),
+    JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/theme_${theme}.json`), 'utf8')),
     `theme_${theme}.json`,
   ),
 ) {
@@ -302,31 +319,18 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         return nativeBatchResponse(items, (item, resource) => {
           const data = nativeReadFixture(item, resource)
           if (item.intent.kind !== 'facts') return data
-          const facts = lignesIndicateursPubliees('programmes', '22001').filter((fact) =>
-            fact.key === resource.resource_id && fact.dimension !== null && fact.dimension !== undefined)
-          if (!facts.length) return data
-          const sourceId = resource.sources[0]!
-          const provenance = (fact: Indicateur) => ({ source_id: sourceId,
-            source_name: fact.vintage_source, vintage_id: `${sourceId}-${fact.vintage_version}`,
-            version: fact.vintage_version, reference_date: fact.vintage_date_reference,
-            publication_date: fact.vintage_date_publication, revision_id: 'fixture-revision',
-            dataset_name: resource.resource_id, revision_hash: 'fixture-revision-hash' })
           if (resource.resource_id === series.resource_id) {
-            const periods = facts.map((fact) => String(fact.dimension))
-            return { ...data, axis_values: periods, axis_numeric_values: periods.map(Number),
-              points: facts.map((fact) => ({ axis: String(fact.dimension), observation_period: String(fact.dimension),
-                // A distinct sentinel proves the native response, not the static row, drives the displayed value.
-                value: 9_999_999, status: 'measured', missing_reason: null,
-                provenance: [provenance(fact)] })) }
+            const points = data.points as Array<Record<string, any>>
+            return { ...data, points: points.map((point) => ({
+              ...point,
+              // A distinct test sentinel proves the native response drives the displayed value.
+              value: 9_999_999,
+            })) }
           }
-          // This distinct amount is a test sentinel on a producer-backed
-          // period/detail observation, not a claim about its published value.
-          return { ...data, unit: resource.unit, entries: facts.map((fact) => ({
-            detail: fact.detail, label: fact.detail, observation_period: String(fact.dimension),
-            value: 9_876, status: 'measured', sources: [{ source_id: sourceId,
-              name: fact.vintage_source, version: fact.vintage_version,
-              reference_date: fact.vintage_date_reference, publication_date: fact.vintage_date_publication }],
+          if (Array.isArray(data.entries)) return { ...data, entries: data.entries.map((entry: Record<string, any>) => ({
+            ...entry, value: 9_876,
           })) }
+          return data
         })
       }
       throw new Error(`Unexpected request: ${url}`)
@@ -349,8 +353,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(alert.exists()).toBe(false)
     expect(text).toContain('10,00 M€')
     expect(text).toContain('Subventions attribuées')
-    expect(text).toContain(lignesIndicateursPubliees('programmes', '22001')
-      .find((fact) => fact.key === series.resource_id)!.vintage_source)
+    const syntheticSeries = syntheticResourceRead('programmes', series.resource_id)
+    const sourceName = (syntheticSeries.points as Array<Record<string, any>>)[0]?.provenance?.[0]?.source_name
+    expect(text).toContain(sourceName)
     expect(text).toContain('9 876 €')
     expect(text).not.toContain('1 600 €')
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
@@ -361,7 +366,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it('keeps the measured Programmes year visible when a legacy no-record axis follows it', async () => {
     const legacy = nativeResources('programmes').find((resource) =>
       resource.resource_id === 'subventions_annuelles')!
-    const producerMetadata = metadataPubliee('programmes')
+    const producerMetadata = lireMetadataSnapshot('programmes')
     const sourceId = legacy.sources[0]!
     const descriptorVintageId = producerMetadata.source_records[sourceId].vintages[0].id
     const requests: Array<Array<Record<string, any>>> = []
@@ -497,7 +502,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const legacy = nativeResources('programmes').find((resource) =>
       resource.resource_id === 'subventions_annuelles')!
     const sourceId = legacy.sources[0]!
-    const vintageId = metadataPubliee('programmes').source_records?.[sourceId]?.vintages?.[0]?.id
+    const vintageId = lireMetadataSnapshot('programmes').source_records?.[sourceId]?.vintages?.[0]?.id
     expect(vintageId).toBeTruthy()
     const descriptorVersion = 'programmes-series-descriptor-v1'
     const publicationVersion = 'programmes-api-facts-sentinel-v1'
@@ -665,7 +670,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   it('ne rend pas la section subventions quand les lectures natives déclarent leur absence', async () => {
-    expect(lignesIndicateursPubliees('programmes', '22001').some((fact) => fact.key === 'subventions_annuelles')).toBe(true)
+    const subventions = nativeResources('programmes').find((resource) =>
+      resource.resource_id === 'subventions_annuelles')!
+    const syntheticFacts = syntheticResourceRead('programmes', subventions.resource_id)
+    expect(Array.isArray(syntheticFacts.points) && syntheticFacts.points.length > 0).toBe(true)
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/resources') return nativeCatalogueResponse()
@@ -702,7 +710,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const requests: Array<Array<Record<string, any>>> = []
     const fetchApi = nativeSemanticFetch(requests)
     vi.stubGlobal('fetch', nativeSemanticFetch())
-    const activityLabel = (histoirePubliee('economie', '22001') as any).top1_activity_label as string
+    const activityLabel = syntheticTopActivityLabel()
     const acquired = await acquireThemeFacts('commune', '22001', 'programmes')
     expect(() => themeFactsRowsFromSemantic('programmes', acquired, {
       territoire: '22001', type: 'commune' })).not.toThrow()
@@ -747,18 +755,23 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       if (theme === 'demographie') {
         // The native typed-reading descriptor publishes rate_unit and cohort facts.
         expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-        expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe('24,45')
+        const syntheticDensity = syntheticResourceRead('demographie', 'densite')
+        expect(syntheticDensity.synthetic_fixture).toMatchObject({ kind: 'synthetic_test_fixture', publication_parity: false })
+        expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe(
+          formaterValeur({ value: syntheticDensity.value, unit: syntheticDensity.unit }),
+        )
       } else if (theme === 'habitat') {
         const passoires = nativeResources(theme).find((resource) => resource.resource_id === 'part_passoires')!
         expect(wrapper.get(`[data-clef="${passoires.resource_id}"] .valeur-numerique`).text()).toBe('13')
       } else if (theme === 'milieux') {
-        const publishedReading = histoirePubliee('milieux', '22001')
-        const period = (publishedReading as any).periode_pop as string
+        const syntheticReading = syntheticReadingRead('milieux')
+        const period = syntheticReading.periode_pop as string
         const visibleResource = nativeResources(theme).find((resource) =>
           resource.shapes.includes('ordered_series') && resource.target_kinds.includes('territory'))!
         expect(wrapper.get('[role="tabpanel"]').text()).toContain(period)
-        expect(wrapper.get('[role="tabpanel"]').text()).toContain(lignesIndicateursPubliees('milieux', '22001')
-          .find((fact) => fact.key === visibleResource.resource_id)!.vintage_source)
+        const syntheticSeries = syntheticResourceRead('milieux', visibleResource.resource_id)
+        const sourceName = (syntheticSeries.points as Array<Record<string, any>>)[0]?.provenance?.[0]?.source_name
+        expect(wrapper.get('[role="tabpanel"]').text()).toContain(sourceName)
       } else if (theme === 'economie') {
         expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
       } else {
@@ -921,8 +934,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const { wrapper } = await monter('/territoire/commune/22001?theme=habitat',
       chargerReferenceReelle)
     const passoires = nativeResources('habitat').find((resource) => resource.resource_id === 'part_passoires')!
-    const sourceLabel = lignesIndicateursPubliees('habitat', '22001').find((fact) =>
-      fact.key === passoires.resource_id)!.vintage_source
+    const passoiresFacts = syntheticResourceRead('habitat', passoires.resource_id)
+    const sourceLabel = passoiresFacts.sources?.[0]?.name
 
     expect(requests.length).toBeGreaterThan(0)
     expect(resolveFirstRead).toBeTypeOf('function')
@@ -953,7 +966,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetchApi)
-    const activityLabel = (histoirePubliee('economie', '22001') as any).top1_activity_label as string
+    const activityLabel = syntheticTopActivityLabel()
     const { wrapper } = await monter('/territoire/commune/22001?theme=economie&comparaison=epci',
       chargerReferenceReelle)
     await flushPromises()
@@ -992,7 +1005,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetchApi)
-    const activityLabel = (histoirePubliee('economie', '22001') as any).top1_activity_label as string
+    const activityLabel = syntheticTopActivityLabel()
     const { router, wrapper } = await monter(
       '/territoire/commune/22001?theme=economie&comparaison=epci',
       chargerReferenceReelle,
@@ -1071,7 +1084,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
           let data = nativeReadFixture(item, resource)
           if (item.intent.kind === 'facts' && item.target.kind === 'territory' &&
               resource.resource_id === rankResource.resource_id && resource.shapes.includes('ordered_series')) {
-            const comparisonPoint = metadataPubliee(theme).indicator_pages?.[resource.indicator_id]?.comparison?.detail
+            const comparisonPoint = lireMetadataSnapshot(theme).indicator_pages?.[resource.indicator_id]?.comparison?.detail
             if (!comparisonPoint) throw new Error(`No producer comparison facet for ${resource.resource_id}`)
             data = { ...data, comparison_point: comparisonPoint }
           }

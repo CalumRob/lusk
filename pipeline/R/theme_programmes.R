@@ -528,11 +528,9 @@ construire_analytiques_programmes <- function(donnees, base_epci,
 #     (le calcul, estampillé hebdomadaire) ;
 # — assemble le payload `list(membres, subventions)`, publie les parquets PAR
 # TABLE (ecrire_parquets_programmes — le contrat « 404 = table absente », le
-# précédent apercu #116 ; la projection navigateur programmes.json est retirée
-# depuis #893), publie la
-# projection de faits du sixième thème (#408 : indicateurs_programmes.json —
-# l'app rend son onglet par défaut de SES propres faits, jamais d'une lecture
-# cross-thème) et retourne le payload, comme
+# précédent apercu #116 ; les projections numériques programmes.json et
+# indicateurs_programmes.json sont retirées), calcule les faits du sixième
+# thème (#408) en mémoire et retourne le payload, comme
 # run_pipeline l'attend. Les métadonnées (theme_programmes.json) sont publiées
 # par run_pipeline via le trait `metadata` du descripteur.
 publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
@@ -567,11 +565,10 @@ publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
   # — un run vide ne doit JAMAIS clobber la publication existante (issue #178)
   ecrire_parquets_programmes(payload, sortie)
 
-  # les faits du sixième thème (#408) : zéro fait → rien n'est écrit
-  # (l'absence honnête du thème — jamais un thème inventé) ; aucun fichier de
-  # lecture n'est publié puisque Programmes n'a pas de lecture.
+  # les faits du sixième thème (#408) restent disponibles dans le payload en
+  # mémoire et dans les parquets canoniques ; aucune projection navigateur.
   indicateurs_theme <- construire_indicateurs_programmes(membres, subventions)
-  ecrire_theme_programmes(indicateurs_theme, sortie)
+  payload$indicateurs <- indicateurs_theme
 
   payload
 }
@@ -583,12 +580,10 @@ publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
 #     programmes_membres.parquet / programmes_subventions.parquet — les
 #     artefacts canoniques téléchargeables (ADR-0004) et les entrées du
 #     publisher des tables Programmes ;
-  #   - la projection navigateur PARTAGÉE programmes.json n'est PLUS écrite
-  #     (issue #893 — source-only : le navigateur lit les faits du sixième thème
-  #     via l'API ; indicateurs_programmes.json reste la projection statique des
-  #     faits pour ses consommateurs legacy/test) ; un programmes.json périmé
-  #     n'est NI réécrit NI
-#     supprimé par le run ;
+#   - les projections navigateur programmes.json et
+#     indicateurs_programmes.json ne sont PLUS écrites (source-only : le
+#     navigateur lit les faits du sixième thème via l'API) ; des artefacts
+#     périmés restent intacts, aucun cleanup n'est du ressort du run ;
 #   - la sentinelle : un payload dont AUCUNE table ne porte de lignes n'écrit
 #     RIEN et ne touche à aucun fichier existant — un run vide n'écrase jamais
 #     la publication précédente (le motif de test-publish.R, issue #116).

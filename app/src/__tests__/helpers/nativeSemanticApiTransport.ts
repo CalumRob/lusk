@@ -2,8 +2,11 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { nativeBatchResponse, nativeCatalogueResponse, nativeReadFixture } from './semanticApiFixtures'
 
+export type NativeBatchObserver = (items: Array<Record<string, any>>, response: Record<string, any>) => void
+
 /** Opt-in, bounded semantic API responses for tests that need a healthy server. */
-export function createNativeSemanticApiTransport(): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
+export function createNativeSemanticApiTransport(observer?: NativeBatchObserver):
+  (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
   return async (input, init) => {
     const url = String(input)
     if (url === '/api/resources') return nativeCatalogueResponse()
@@ -18,7 +21,13 @@ export function createNativeSemanticApiTransport(): (input: RequestInfo | URL, i
     }
     if (url === '/api/resources/read-batch') {
       const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      return nativeBatchResponse(body.items, nativeReadFixture)
+      const response = await nativeBatchResponse(body.items, nativeReadFixture)
+      if (observer) {
+        const wire = await response.clone().json() as Record<string, any>
+        const byId = new Map((wire.results as Array<Record<string, any>>).map((result) => [result.id, result]))
+        observer(body.items, { ...wire, results: body.items.map((item) => byId.get(item.id)) })
+      }
+      return response
     }
     return new Response('', { status: 404 })
   }

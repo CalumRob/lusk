@@ -230,6 +230,8 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
     vintages_demographie = function() faux_vintages,
     compute_payload = function(data, theme = NULL, vintages = NULL) list(),
     publish = function(payload, cible, backend = NULL) invisible(payload),
+    publier_geometrie = function(cible = "public/data", fetch = NULL)
+      invisible(NULL),
     materialize_theme_scalar_artifact = function(...) invisible(NULL),
     materialize_theme_profile_artifacts = function(...) invisible(NULL),
     # le payload stubé ci-dessus ne porte pas les faits de lecture sélectionnés :

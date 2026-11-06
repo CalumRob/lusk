@@ -4,9 +4,10 @@
 # ticket #176) — les parquets PAR TABLE écrits par le seam de publication du
 # thème (publier_programmes), consommés par le publisher des tables Programmes.
 #
-# Issue #893 : la projection navigateur partagée programmes.json est RETIRÉE
-# (source-only) — le navigateur lit les faits du thème via l'API ; les parquets
-# restent les artefacts canoniques. Le contrat verrouillé ici :
+# Issue #893/#881 : la projection navigateur partagée programmes.json et la
+# projection numérique indicateurs_programmes.json sont retirées (source-only).
+# Les faits restent disponibles dans le payload producteur en mémoire ; les
+# Parquets par table restent les artefacts canoniques. Le contrat verrouillé ici :
 #   - un run à tables PEUPLÉES écrit les DEUX parquets et NE CRÉE AUCUN
 #     programmes.json ; un programmes.json périmé préexistant n'est NI réécrit
 #     NI supprimé (aucun cleanup n'est du ressort du run) ;
@@ -157,10 +158,11 @@ test_that("un run peuplé écrit les DEUX parquets par table et NE crée AUCUN p
     statuts = statuts_programmes_pub()
   )
 
-  # le payload retourné porte les DEUX tables (la forme du contrat)
-  expect_named(payload, c("membres", "subventions"))
+  # Le payload retourné porte les deux tables sources et les faits calculés.
+  expect_named(payload, c("membres", "subventions", "indicateurs"))
   expect_true(nrow(payload$membres) > 0)
   expect_true(nrow(payload$subventions) > 0)
+  expect_gt(nrow(payload$indicateurs), 0L)
 
   # les artefacts canoniques : un parquet PAR TABLE (le format parquet ne
   # tient qu'une table — programmes_membres / programmes_subventions, les
@@ -171,12 +173,12 @@ test_that("un run peuplé écrit les DEUX parquets par table et NE crée AUCUN p
   expect_true(file.exists(file.path(sortie, "programmes_subventions.parquet")))
   # Issue #408 : Programmes et subventions est le SIXIÈME thème — le run
   # publie SON theme_programmes.json (le canon épinglé, via le trait
-  # `metadata` du descripteur) et sa projection de faits
+  # `metadata` du descripteur) mais ne sérialise plus ses faits numériques.
   expect_true(file.exists(file.path(sortie, "theme_programmes.json")))
-  expect_true(file.exists(file.path(sortie, "indicateurs_programmes.json")))
+  expect_false(file.exists(file.path(sortie, "indicateurs_programmes.json")))
   expect_false(file.exists(file.path(sortie, "histoires_programmes.json")))
-  # les faits portent les trois clés du registre
-  faits <- jsonlite::fromJSON(file.path(sortie, "indicateurs_programmes.json"))
+  # les faits en mémoire portent les trois clés du registre
+  faits <- payload$indicateurs
   expect_setequal(unique(faits$key), c("couverture_programmes", "subventions_annuelles",
                                        "subventions_par_domaine"))
   expect_true(all(faits$theme == "programmes"))

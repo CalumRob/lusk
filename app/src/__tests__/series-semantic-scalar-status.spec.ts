@@ -18,7 +18,7 @@ describe('dual ordered-series pooled-facet admission', () => {
     const fetcher = vi.fn(async (_path: RequestInfo | URL, init?: RequestInit) => {
       const { items } = JSON.parse(String(init?.body))
       const response = await nativeBatchResponse(items, (item, declaration) =>
-        nativeReadFixture(item, declaration, { territories }))
+        nativeReadFixture(item, declaration, { territories, pooledSeriesSuppression: true }))
       cohortResponse = (await response.clone().json()).results
         .map((result: Record<string, any>) => result.data)
         .find((data: Record<string, any>) => data.target.kind === 'territory_cohort')

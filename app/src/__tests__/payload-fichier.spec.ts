@@ -9,7 +9,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { chargerFichier, type ChargerOptions, type Fichier, type ReponseFetch } from '../payload/loader'
-import { PayloadError } from '../payload/validate'
+import { PayloadError, validerHistoires, validerIndicateurs } from '../payload/validate'
 import type { Territoire, ThemeMetadata } from '../payload/types'
 
 /**
@@ -41,8 +41,6 @@ function optionsPour(fichiers: Record<string, unknown>): ChargerOptions {
 
 const fichiersDemographie = {
   'territoires.json': territoiresFixture,
-  'indicateurs_demographie.json': indicateursDemographieFixture,
-  'histoires_demographie.json': histoiresDemographieFixture,
   'theme_demographie.json': metadonneesThemesFixtures.demographie,
   'run-report.json': runReportFraisFixture,
   'vintages.json': vintagesFixture,
@@ -53,17 +51,19 @@ async function territoiresValides(fichiers: Record<string, unknown> = fichiersDe
   return chargerFichier('territoires', optionsPour(fichiers))
 }
 
-describe('chargerFichier — the per-file seam', () => {
-  it('fetches and validates ONE named file, returning its typed section', async () => {
+describe('chargerFichier — the retained per-file seam', () => {
+  it('fetches and validates retained named files, returning their typed sections', async () => {
     const options = optionsPour(fichiersDemographie)
 
     const territoires = await chargerFichier('territoires', options)
     expect(territoires).toHaveLength(9)
 
-    const indicateurs = await chargerFichier('indicateurs_demographie', territoires, options)
+    // Numerical row shape validation remains available to API adapters and
+    // in-memory consumers, but it no longer crosses the JSON loader boundary.
+    const indicateurs = validerIndicateurs(indicateursDemographieFixture, 'indicateurs_demographie.json', territoires)
     expect(indicateurs).toHaveLength(indicateursDemographieFixture.length)
 
-    const histoires = await chargerFichier('histoires_demographie', territoires, options)
+    const histoires = validerHistoires(histoiresDemographieFixture, 'histoires_demographie.json', territoires)
     expect(histoires).toHaveLength(histoiresDemographieFixture.length)
 
     const runReport = await chargerFichier('run-report', options)
@@ -92,13 +92,28 @@ describe('chargerFichier — the per-file seam', () => {
   it('treats a 404 on an optional file as absent — the « 404 = table absente » contract (ADR-0013)', async () => {
     const sansOptionnels = { 'territoires.json': territoiresFixture }
     const options = optionsPour(sansOptionnels)
-    const territoires = await territoiresValides(sansOptionnels)
 
     await expect(chargerFichier('run-report', options)).resolves.toBeNull()
     await expect(chargerFichier('vintages', options)).resolves.toBeNull()
-    await expect(chargerFichier('indicateurs_habitat', territoires, options)).resolves.toBeNull()
-    await expect(chargerFichier('histoires_habitat', territoires, options)).resolves.toBeNull()
     await expect(chargerFichier('theme_habitat', options)).resolves.toBeNull()
+  })
+
+  it('returns every retired numerical export as absent without making an HTTP request', async () => {
+    const demandes: string[] = []
+    const options: ChargerOptions = {
+      baseUrl: 'data/',
+      fetchImpl: async (url) => {
+        demandes.push(url)
+        return { ok: false, status: 404, json: async () => null }
+      },
+    }
+
+    await expect(chargerFichier('indicateurs_demographie', options)).resolves.toBeNull()
+    await expect(chargerFichier('histoires_demographie', options)).resolves.toBeNull()
+    await expect(chargerFichier('indicateurs_programmes', options)).resolves.toBeNull()
+    await expect(chargerFichier('histoires_programmes', options)).resolves.toBeNull()
+
+    expect(demandes).toEqual([])
   })
 
   it('fetches and validates theme_<theme>.json — the typed ThemeMetadata section (#313)', async () => {
@@ -179,66 +194,31 @@ describe('chargerFichier — the per-file seam', () => {
     ).rejects.toMatchObject({ kind: 'fetch', file: 'vintages.json' })
   })
 
-  it('raises a typed validation error when the file drifts from the contract', async () => {
+  it('the API validator raises a typed error when numerical rows drift from the contract', async () => {
     const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
     // la dérive ordinale classique (ADR-0015) : une fraction (le percentile retiré)
     indicateurs[0].rang_epci = 0.25
 
-    await expect(
-      chargerFichier(
-        'indicateurs_demographie',
-        await territoiresValides(),
-        optionsPour({ ...fichiersDemographie, 'indicateurs_demographie.json': indicateurs }),
-      ),
-    ).rejects.toMatchObject({ kind: 'validation', file: 'indicateurs_demographie.json' })
-  })
-
-  it('validates theme files AGAINST the reference table — a fact citing an unknown territoire is drift', async () => {
-    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
-    ;(indicateurs[0] as { territoire: string }).territoire = '99999'
-
-    await expect(
-      chargerFichier(
-        'indicateurs_demographie',
-        await territoiresValides(),
-        optionsPour({ ...fichiersDemographie, 'indicateurs_demographie.json': indicateurs }),
-      ),
-    ).rejects.toMatchObject({ kind: 'validation', file: 'indicateurs_demographie.json' })
-  })
-
-  it('refuses a theme file without the reference table — a typed error, never a cryptic crash', async () => {
-    // Les surcharges typées interdisent déjà cet appel en TS — le garde
-    // protège les appelants JS / any : la table manquante devient une erreur
-    // typée (le contrat du loader), jamais un TypeError « map is not a
-    // function » venu des entrailles de la validation.
-    const sansReference = chargerFichier as unknown as (
-      nom: 'indicateurs_demographie',
-      options?: ChargerOptions,
-    ) => Promise<unknown>
-
-    const erreur = await sansReference(
-      'indicateurs_demographie',
-      optionsPour(fichiersDemographie),
-    ).catch((cause: unknown) => cause)
+    let erreur: unknown
+    try {
+      validerIndicateurs(indicateurs, 'indicateurs_demographie.json', await territoiresValides())
+    } catch (cause) {
+      erreur = cause
+    }
     expect(erreur).toBeInstanceOf(PayloadError)
     expect(erreur).toMatchObject({ kind: 'validation', file: 'indicateurs_demographie.json' })
   })
 
-  it('refuses a theme file with null territoires — la référence nulle est une erreur typée, jamais un TypeError (relecture #297)', async () => {
-    // Même garde pour null que pour undefined : un appelant JS / any peut
-    // passer null (le type lie du loader, jamais un crash « null is not
-    // iterable » venu d'indexerReference).
-    const avecNull = chargerFichier as unknown as (
-      nom: 'indicateurs_demographie',
-      territoires: null,
-      options?: ChargerOptions,
-    ) => Promise<unknown>
+  it('the API validator rejects numerical rows citing an unknown territoire', async () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    ;(indicateurs[0] as { territoire: string }).territoire = '99999'
 
-    const erreur = await avecNull(
-      'indicateurs_demographie',
-      null,
-      optionsPour(fichiersDemographie),
-    ).catch((cause: unknown) => cause)
+    let erreur: unknown
+    try {
+      validerIndicateurs(indicateurs, 'indicateurs_demographie.json', await territoiresValides())
+    } catch (cause) {
+      erreur = cause
+    }
     expect(erreur).toBeInstanceOf(PayloadError)
     expect(erreur).toMatchObject({ kind: 'validation', file: 'indicateurs_demographie.json' })
   })
