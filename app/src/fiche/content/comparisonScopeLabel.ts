@@ -9,6 +9,7 @@ export function comparisonScopeLabel(
 ): string | null {
   if (publishedLabel) return publishedLabel
   switch (kind) {
+    case 'selection': return null // la portée vient des membres explicites, pas d'un preset
     case 'communes-densite': return null
     case 'communes-epci': return epciName ? `communes de ${epciName}` : 'communes de l’EPCI'
     case 'communes-bretagne': return 'communes bretonnes'
