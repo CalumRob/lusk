@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { lignesLQPour } from '@/fiche/sousGroupes'
 import { FAMILLES_SEMANTIQUES } from '@/payload/types'
 
 // Les SIX thèmes construits (#408) : le canon épinglé de Programmes et
@@ -15,10 +14,6 @@ const themeMetadataR = join(process.cwd(), '..', 'pipeline', 'R', 'theme_metadat
 function lire(dir: string, theme: string): unknown {
   return JSON.parse(readFileSync(join(dir, `theme_${theme}.json`), 'utf8'))
 }
-function lireFaits(theme: string): Array<Record<string, unknown>> {
-  return JSON.parse(readFileSync(join(publicDir, `indicateurs_${theme}.json`), 'utf8'))
-}
-
 describe('métadonnées de thème — autorité canonique et snapshot public', () => {
   it('garde le snapshot public sémantiquement identique au fichier épinglé', () => {
     // Mobilité raccordement: the incumbent public bundle intentionally remains
@@ -52,17 +47,6 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
         expect(groupe, `${theme} subgroup figure not served`).not.toHaveProperty('figure')
       }
       expect(snapshot, theme).toEqual(presentation)
-    }
-  })
-
-  it('keeps incumbent Mobilité curve metadata paired with its own static 11-point facts', () => {
-    const metadata = lire(publicDir, 'mobilite') as { indicator_pages: Record<string, { comparison?: { details?: string[] } }> }
-    const details = metadata.indicator_pages.raccordement_courbe?.comparison?.details ?? []
-    const rows = lireFaits('mobilite').filter((row) => row.key === 'raccordement_courbe')
-    expect(details).toHaveLength(11)
-    expect(rows.length).toBeGreaterThan(0)
-    for (const territoire of new Set(rows.map((row) => row.territoire))) {
-      expect(rows.filter((row) => row.territoire === territoire).map((row) => row.detail)).toEqual(details)
     }
   })
 
@@ -103,24 +87,6 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
     })
   })
 
-  it('résout les cinq lignes du top-5 depuis la figure canonique et une ligne réelle du payload', () => {
-    const metadata = lire(canonicalDir, 'economie') as {
-      subgroups: Array<{ key: string; reading?: { story_key?: string; figure?: { family?: string; indicator?: string } } }>
-    }
-    const reading = metadata.subgroups.find((sg) => sg.key === 'sante-et-taille')!.reading!
-    const histoires = JSON.parse(readFileSync(join(publicDir, 'histoires_economie.json'), 'utf8')) as Array<Record<string, unknown>>
-    const ligneCommune = histoires.find((h) => h.type === 'commune' && h.top5_activity_code !== null)
-    expect(ligneCommune, 'une commune avec ses cinq rangs publiés').toBeDefined()
-    const lecture = {
-      story_key: reading.story_key,
-      histoire: ligneCommune,
-      template: [],
-      parametres: {},
-      figure: reading.figure,
-    } as unknown as Parameters<typeof lignesLQPour>[0]
-    expect(lignesLQPour(lecture).map((l) => l.rang)).toEqual([1, 2, 3, 4, 5])
-  })
-
   it('déclare chaque source actuellement consommée et ses lignes de fraîcheur dans le canon', () => {
     for (const theme of themes) {
       const metadata = lire(canonicalDir, theme) as { sources: Record<string, string>; source_records?: Record<string, { dataset: string; publisher: string; url: string; licence: string; vintage: string; freshness: string; vintages?: unknown[] }> }
@@ -151,22 +117,6 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
         if (family === 'composition') expect(page.composition?.parts.length).toBeGreaterThan(0)
         if (family === 'pyramid') expect(page.comparison?.sex).toMatch(/^[FM]$/)
       }
-    }
-  })
-
-  it('publie la pyramide réelle avec exactement 7 tranches × 2 sexes par territoire', () => {
-    const rows = lireFaits('demographie').filter((row) => row.key === 'structure_age')
-    const grouped = new Map<string, Array<Record<string, unknown>>>()
-    for (const row of rows) {
-      const key = `${row.territoire}|${row.type}`
-      grouped.set(key, [...(grouped.get(key) ?? []), row])
-    }
-    expect(grouped.size).toBeGreaterThan(0)
-    for (const group of grouped.values()) {
-      expect(group).toHaveLength(14)
-      expect(new Set(group.map((row) => `${row.detail}|${row.sex}`)).size).toBe(14)
-      expect(new Set(group.map((row) => row.sex))).toEqual(new Set(['F', 'M']))
-      expect(new Set(group.map((row) => row.unit))).toEqual(new Set(['%']))
     }
   })
 

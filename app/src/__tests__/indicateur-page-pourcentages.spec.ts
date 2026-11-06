@@ -5,10 +5,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Les montures routées lisent le VRAI payload committé : sous charge
-// parallèle, le premier monture dépasse parfois le timeout par défaut — la
-// même famille de flake que #185. Plafond relevé au niveau du fichier,
-// verrous inchangés.
+// The reference files and theme metadata are retained inputs; numerical page
+// observations come from the marked synthetic native-API fixture. Under
+// parallel load the first routed mount can exceed Vitest's default timeout.
 vi.setConfig({ testTimeout: 30_000 })
 
 import IndicateurView from '../views/IndicateurView.vue'
@@ -18,15 +17,16 @@ import type { Territoire } from '../payload/types'
 import { routes } from '../router'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
-import { createNativeSemanticApiTransport } from './helpers/nativeSemanticApiTransport'
+import { formaterValeur } from '../payload/selectors'
+import { NATIVE_API_FIXTURE_NOTICE, NATIVE_API_SCENARIOS } from './fixtures/nativeApiScenarios'
+import { createNativeSemanticApiTransport, type NativeBatchObserver } from './helpers/nativeSemanticApiTransport'
 
 /**
- * Les unités % des Pages d'indicateur (#466) — les tests ROUTÉS contre le
- * VRAI payload committé (public/data/, lu par le chargeur réel et ses
- * validateurs) qui verrouillent le rendu ×100 : les faits publiés portent
- * des fractions (0–1) sous unité « % » ; aucune surface de Repères ne doit
- * plus afficher « 0,13 % » là où la vérité est « 13 % ». Trois pages
- * verrouillées : un scalaire % (chômage), la facette résumée d'une
+ * Les unités % des Pages d'indicateur (#466) — les tests routés vérifient le
+ * rendu ×100 des fractions synthétiques sous l'unité producteur « % » : le
+ * scénario ciblé, le profil et les ressources viennent du contrat API et de
+ * ses métadonnées; aucune valeur n'est revendiquée comme publiée. Trois pages
+ * restent couvertes : un scalaire % (chômage), la facette résumée d'une
  * distribution (distribution_dpe pilotée par part_passoires — signature
  * comprise, ×100 UNE fois), et une composition (mix_logements).
  */
@@ -76,8 +76,8 @@ function chargerCommis(fichier: Fichier): Promise<unknown> {
   return cache.get(fichier)!
 }
 
-async function monter(url: string) {
-  vi.stubGlobal('fetch', createNativeSemanticApiTransport())
+async function monter(url: string, observer?: NativeBatchObserver) {
+  vi.stubGlobal('fetch', createNativeSemanticApiTransport(observer))
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(url)
   await router.isReady()
@@ -111,19 +111,37 @@ beforeEach(() => localStorage.clear())
 
 describe('Pages d’indicateur — unités % rendues ×100 (#466)', () => {
   it('page scalaire % (chômage) : médiane, tableau, extrêmes et marqueur lisent la part en pourcentage', async () => {
-    // Le payload committé porte des fractions sous « % » : la médiane
-    // communale vaut 0,0799… — le visiteur doit lire « 8 % », jamais « 0,08 % ».
-    const wrapper = await monter('/indicateurs/economie/chomage?territoire=22001')
+    const reads: Array<{ item: Record<string, any>; data: Record<string, any> }> = []
+    const observer: NativeBatchObserver = (items, response) => items.forEach((item, index) => {
+      if (item.resource === 'chomage') reads.push({ item, data: response.results[index].data })
+    })
+    const wrapper = await monter('/indicateurs/economie/chomage?territoire=22001', observer)
+    const comparison = reads.find(({ item }) => item.intent.kind !== 'facts')?.data.result
+    const cohort = reads.find(({ item }) => item.intent.kind === 'facts' && item.target.kind === 'territory_cohort')?.data
+    expect(comparison?.synthetic_fixture ?? reads.find(({ item }) => item.intent.kind !== 'facts')?.data.synthetic_fixture)
+      .toMatchObject(NATIVE_API_FIXTURE_NOTICE)
+    expect(typeof comparison?.median).toBe('number')
+    const display = (value: number) => `${formaterValeur({ value, unit: '%' })} %`
     const mediane = wrapper.find('.median strong').text()
-    expect(mediane).toBe('8 %')
-    // Le tableau : la ligne communale 22001 (0,0712…) se lit « 7 % ».
+    expect(mediane.replace(/\s+/g, ' ').trim()).toBe(display(comparison.median))
+    // The displayed comparison and highlighted fact are tied to the explicitly
+    // marked synthetic API observations, not retired published numbers.
     const ligne = ligneDuTableau(wrapper, '22001')
-    expect(ligne.findAll('td')[1]!.text()).toBe('7 %')
-    // Les extrêmes : Tréogan (max 26 %) / Guiler-sur-Goyen (min 2 %).
+    const focal = cohort!.observations.find((observation: any) => observation.territory.id === '22001')
+    expect(focal.value).toBe(NATIVE_API_SCENARIOS.percentagePages.unemployment)
+    expect(ligne.findAll('td')[1]!.text()).toBe(display(focal.value))
+    const measured = cohort!.observations.filter((observation: any) => observation.status === 'measured')
+    const high = measured.reduce((best: any, candidate: any) => candidate.value > best.value ? candidate : best)
+    const low = measured.reduce((best: any, candidate: any) => candidate.value < best.value ? candidate : best)
     const extremes = wrapper.findAll('.extremes article')
-    expect(extremes[0]!.find('a').text()).toContain('· 26 %')
-    expect(extremes[1]!.find('a').text()).toContain('· 2 %')
-    // Le marqueur de densité décrit la valeur corrigée (« : 7 %, »).
+    const highTies = measured.filter((observation: any) => observation.value === high.value).length
+    const lowTies = measured.filter((observation: any) => observation.value === low.value).length
+    expect(extremes[0]!.text()).toContain(`${highTies} territoires à égalité`)
+    expect(extremes[1]!.text()).toContain(`${lowTies} territoires à égalité`)
+    // Synthetic observations deliberately create ties; the UI correctly names
+    // their count instead of picking a fabricated single extreme territory.
+    expect(extremes[0]!.findAll('a')).toHaveLength(0)
+    expect(extremes[1]!.findAll('a')).toHaveLength(0)
     expect(wrapper.find('svg desc').text()).toContain(': 7 %,')
   })
 
@@ -137,11 +155,11 @@ describe('Pages d’indicateur — unités % rendues ×100 (#466)', () => {
     const ligne = ligneDuTableau(wrapper, '22001')
     expect(ligne.findAll('td')[1]!.text()).toBe('13 %')
     // Signature 22001 : A 0,0111→« 1 », C 0,4556→« 46 » (et non « 0,46 » ni « 4600 »).
-    const attendus = { A: '1 %', B: '3 %', C: '46 %', D: '28 %', E: '9 %', F: '6 %', G: '8 %' }
-    for (const [detail, libelle] of Object.entries(attendus)) {
+    expect(NATIVE_API_FIXTURE_NOTICE.publication_parity).toBe(false)
+    for (const [detail, value] of Object.entries(NATIVE_API_SCENARIOS.percentagePages.dpe)) {
       const barre = wrapper.find(`[data-detail="${detail}"] .signature-valeur`)
       expect(barre.exists(), `étiquette ${detail}`).toBe(true)
-      expect(barre.text()).toBe(libelle)
+      expect(barre.text()).toBe(`${formaterValeur({ value, unit: '%' })} %`)
     }
   })
 

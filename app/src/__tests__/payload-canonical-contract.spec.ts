@@ -3,25 +3,26 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-const dataDir = join(process.cwd(), '..', 'public', 'data')
+const canonicalDir = join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata')
 
-describe('payload canonique des lectures', () => {
-  it('publie chaque lecture dans son sous-groupe canonique', () => {
-    const demographie = JSON.parse(
-      readFileSync(join(dataDir, 'histoires_demographie.json'), 'utf-8'),
-    ) as Array<{ groupe: string }>
-    const habitat = JSON.parse(
-      readFileSync(join(dataDir, 'histoires_habitat.json'), 'utf-8'),
-    ) as Array<{ groupe: string }>
+type ReadingMetadata = { key: string; reading?: { story_key?: string } }
 
-    expect(new Set(demographie.map((ligne) => ligne.groupe))).toEqual(
-      new Set(['trajectoire-demographique']),
-    )
-    expect(new Set(habitat.map((ligne) => ligne.groupe))).toEqual(
-      new Set(['etat-energetique-du-parc']),
-    )
-    expect(JSON.stringify({ demographie, habitat })).not.toMatch(
-      /etat-et-dynamique|etat-du-parc/,
-    )
+function readingGroups(theme: string): Array<{ group: string; story: string | undefined }> {
+  const metadata = JSON.parse(readFileSync(join(canonicalDir, `theme_${theme}.json`), 'utf-8')) as {
+    subgroups: ReadingMetadata[]
+  }
+  return metadata.subgroups.flatMap(({ key, reading }) => reading
+    ? [{ group: key, story: reading.story_key }]
+    : [])
+}
+
+describe('producer-owned reading declarations', () => {
+  it('keeps each reading attached to its canonical subgroup and story identity', () => {
+    expect(readingGroups('demographie')).toEqual([{
+      group: 'trajectoire-demographique', story: 'trajectoire-demographique',
+    }])
+    expect(readingGroups('habitat')).toEqual([{
+      group: 'etat-energetique-du-parc', story: 'etat-energetique-du-parc',
+    }])
   })
 })

@@ -5,10 +5,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Les montures routées lisent le VRAI payload committé : sous charge
-// parallèle, le premier monture dépasse parfois le timeout par défaut — la
-// même famille de flake que #185. Plafond relevé au niveau du fichier,
-// verrous inchangés.
+// Retained references and metadata are loaded from the app payload. Numeric
+// facts and comparison evidence come from the marked synthetic API fixture.
+// Under parallel load, the first routed mount can exceed Vitest's default.
 vi.setConfig({ testTimeout: 30_000 })
 
 import IndicateurView from '../views/IndicateurView.vue'
@@ -19,11 +18,14 @@ import type { Territoire } from '../payload/types'
 import { routes } from '../router'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
+import { formaterValeur } from '../payload/selectors'
 import { createNativeSemanticApiTransport } from './helpers/nativeSemanticApiTransport'
 
 /**
- * La Page d'indicateur subventions_annuelles contre le VRAI payload committé
- * (#467) — le verrou routé de la page réparée. Le défaut : le descripteur
+ * La Page d'indicateur subventions_annuelles sur le contrat API natif (#467)
+ * — le verrou routé de la page réparée. Les faits sont synthétiques et les
+ * identités, axes, unités et horloges restent liées aux métadonnées producteur.
+ * Le défaut : le descripteur
  * épinglé déclarait le scalaire `comparison.dimension: "2025"` SANS sa liste
  * fermée `dimensions` ; la réécriture canonique de l'URL (le repli résolu est
  * écrit dans l'URL, contrat Page d'indicateur) produisait alors un paramètre
@@ -111,25 +113,30 @@ function ligneDuTableau(wrapper: ReturnType<typeof mount>, territoire: string) {
 
 beforeEach(() => localStorage.clear())
 
-describe('Page d’indicateur subventions_annuelles — page complète contre le payload committé (#467)', () => {
+describe('Page d’indicateur subventions_annuelles — lecture native complète (#467)', () => {
   it('Repères peuplés : médiane, extrêmes réels et tableau communal — la facette épinglée survit à sa propre réécriture canonique', async () => {
     // #892 : la cellule de rang du tableau porte le rang PUBLIÉ par l'API à
     // l'axe actif — on le lit dans la réponse native servie, puis on vérifie
     // la cellule octet pour octet (jamais la taille du périmètre calculée /725).
     const saine = createNativeSemanticApiTransport()
     let rangApi: { rang: number; taille: number | null } | null = null
+    const capture = { serieCohorte: null as Record<string, any> | null }
     const transport = async (input: RequestInfo | URL, init?: RequestInit) => {
       const reponse = await saine(input, init)
       if (String(input) === '/api/resources/read-batch' && reponse.status === 200) {
         const corps = await reponse.clone().json() as any
         for (const resultat of corps.results ?? []) {
+          if (resultat.resource !== 'subventions_annuelles') continue
           const axes = resultat?.data?.result?.axis_comparisons
-          if (!Array.isArray(axes)) continue
-          const axe = axes.find((a: any) => a.axis === '2025')
-          const membre = axe?.member_ranks?.find((r: any) => r.territory_id === '22001')
-          if (membre?.rank !== null && membre?.rank !== undefined) {
-            rangApi = { rang: membre.rank, taille: membre.rank_size ?? null }
+          if (Array.isArray(axes)) {
+            const axe = axes.find((a: any) => a.axis === '2025')
+            const membre = axe?.member_ranks?.find((r: any) => r.territory_id === '22001')
+            if (membre?.rank !== null && membre?.rank !== undefined) {
+              rangApi = { rang: membre.rank, taille: membre.rank_size ?? null }
+            }
           }
+          if (resultat?.data?.shape === 'ordered_series' && Array.isArray(resultat.data.series) &&
+              resultat.data.cohort?.territory_type === 'commune') capture.serieCohorte = resultat.data
         }
       }
       return reponse
@@ -139,17 +146,31 @@ describe('Page d’indicateur subventions_annuelles — page complète contre le
     const { wrapper, router } = await monter('/indicateurs/programmes/subventions_annuelles?territoire=22001', undefined, transport)
     expect(router.currentRoute.value.query.dimension).toBe('2025')
     expect(wrapper.find('[role="alert"]').exists(), 'aucune facette invalide').toBe(false)
-    // La médiane communale réelle (725 communes comparées).
-    expect(wrapper.find('.median strong').text().replace(/\s+/g, ' ')).toContain('55 867,84')
-    // Les extrêmes réels : Rennes au plus haut, Broons au plus bas.
+    const serieCohorte = capture.serieCohorte
+    expect(serieCohorte?.synthetic_fixture).toMatchObject({ kind: 'synthetic_test_fixture', publication_parity: false })
+    if (!serieCohorte) throw new Error('Synthetic API cohort series was not captured')
+    const points = serieCohorte.series.flatMap((member: any) => member.points
+      .filter((point: any) => point.axis === '2025' && point.status === 'measured')
+      .map((point: any) => ({ ...point, territory: member.territory })))
+    const orderedValues = points.map((point: any) => point.value as number).sort((left: number, right: number) => left - right)
+    const middle = Math.floor(orderedValues.length / 2)
+    const medianeApi = orderedValues.length % 2
+      ? orderedValues[middle]!
+      : (orderedValues[middle - 1]! + orderedValues[middle]!) / 2
+    const medianeAffichee = formaterValeur({ value: medianeApi, unit: '€' })
+    expect(wrapper.find('.median strong').text().replace(/\s+/g, ' ')).toContain(medianeAffichee)
+    const highest = points.reduce((best: any, point: any) => point.value > best.value ? point : best)
+    const lowest = points.reduce((best: any, point: any) => point.value < best.value ? point : best)
     const extremes = wrapper.findAll('.extremes article')
-    expect(extremes[0]!.text()).toContain('Rennes')
-    expect(extremes[0]!.text()).toContain('71 395 030,98')
-    expect(extremes[1]!.text()).toContain('Broons')
-    expect(extremes[1]!.text()).toContain('50 €')
-    // Le tableau porte la ligne communale demandée avec SA valeur publiée.
+    expect(extremes[0]!.text().replace(/\s+/g, ' ')).toContain(
+      `${highest.territory.name} · ${formaterValeur({ value: highest.value, unit: '€' })} €`)
+    expect(extremes[1]!.text().replace(/\s+/g, ' ')).toContain(
+      `${lowest.territory.name} · ${formaterValeur({ value: lowest.value, unit: '€' })} €`)
+    // The table value is the same synthetic API observation for the focal member.
     const ligne = ligneDuTableau(wrapper, '22001')
-    expect(ligne!.findAll('td')[1]!.text().replace(/\s+/g, ' ')).toBe('1 600 €')
+    const focal = points.find((point: any) => point.territory.id === '22001')!
+    expect(ligne!.findAll('td')[1]!.text().replace(/\s+/g, ' ')).toBe(
+      `${formaterValeur({ value: focal.value, unit: '€' })} €`)
     // Rang API exact publié à 2025 pour 22001 (évidence member_ranks), taille
     // d'éligibilité — PAS la taille 725 du périmètre calculée navigateur.
     expect(rangApi).not.toBeNull()
@@ -176,7 +197,8 @@ describe('Page d’indicateur subventions_annuelles — page complète contre le
     expect(wrapper.find('[role="alert"]').exists(), 'aucune facette invalide').toBe(false)
     const cartes = wrapper.findAll('.source-card')
     expect(cartes.length).toBeGreaterThan(0)
-    expect(cartes[0]!.find('h3').text()).toContain('subventions attribuées (SCDL)')
+    const metadata = JSON.parse(readFileSync(join(dataDir, 'theme_programmes.json'), 'utf8'))
+    expect(cartes[0]!.find('h3').text()).toBe(metadata.source_records.subventions_scdl.publisher)
     // Le lien « Voir la fiche source » vise l'ancre du jeu sur /sources —
     // les DEUX bouts de la référence sont verrouillés (le test suivant).
     expect(cartes[0]!.find('a[href="/sources#source-subventions-scdl"]').exists()).toBe(true)
