@@ -93,6 +93,10 @@ export interface AedarCarAccessOverviewScalar {
   reference: import('./territoryFacts').TerritorialScalarReference
     | { kind: 'selection-mean'; label: string; value: number; unit: string } | null
   rankUnavailableLabel?: string | null
+  rank?: number | null
+  rankSize?: number | null
+  rankTies?: number | null
+  rankDirection?: 'high' | 'low' | null
   comparisonUnavailableLabel?: string | null
   comparisonAccessibleLabel?: string | null
 }

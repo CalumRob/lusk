@@ -774,6 +774,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         expect(wrapper.get('[role="tabpanel"]').text()).toContain(sourceName)
       } else if (theme === 'economie') {
         expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
+      } else if (theme === 'mobilite') {
+        // AEDAR fixed aggregate comparisons are a separate, comparison-only read;
+        // this generic native fixture does not publish that response contract.
+        expect(wrapper.find('[role="alert"]').text()).toContain('Groupe comparé indisponible')
       } else {
         expect(wrapper.find('[role="alert"]').exists()).toBe(false)
       }
@@ -1538,7 +1542,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
 
     const aedarReads = () => requests.filter((items) =>
-      items.every((item) => item.resource === 'aedar_territorial_aggregate'))
+      items.every((item) => item.resource === 'aedar_territorial_aggregate' && item.intent?.kind === 'facts'))
     // The legitimate Mobilité semantic plan, derived independently from the
     // fixture catalogue (the same declarations production filters), not from
     // the observed requests: one territory facts item per commune-level

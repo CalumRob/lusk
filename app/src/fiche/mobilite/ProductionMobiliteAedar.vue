@@ -3,7 +3,7 @@ import { computed, inject, ref, watch } from 'vue'
 import { CONTROLE_COMPARAISON_KEY } from '../comparisonContext'
 import { fetchAedarComparison } from '../content/aedarComparisonClient'
 import type { AedarComparisonEvidence, AedarComparisonRequest } from '../content/aedarComparisonClient'
-import { AEDAR_CORE_MEASURE_KEYS } from '../content/aedarTimeRampFacts'
+import { AEDAR_AGGREGATE_READING_KEYS } from '../content/aedarTimeRampFacts'
 import VarianteCahierLibre from '../prototype/VarianteCahierLibre.vue'
 import { aedarPendingPrototypeSections, aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
 import { fetchAedarDiversityLossMapLegend } from '@/fiche/content/aedarDiversityLossMaps'
@@ -32,11 +32,11 @@ const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
   } : null
   if (selection?.etat === 'vide') return null
   const preset = selection?.etat === 'preset' ? selection.preset : control.value?.presetDefaut
-  // Commune EPCI/Bretagne and EPCI/département same-level scopes are direct
-  // published territory aggregates supplied by TerritoireView. Only density
-  // class is pooled and therefore requires a fixed-comparison read here.
-  if (preset !== 'densite' || !control.value?.libelleActif) return null
-  return { intent: { kind: 'fixed_comparison', context: 'density_class' }, label: `Moyenne – ${control.value.libelleActif}` }
+  if (!control.value?.libelleActif || props.content.territory.type === 'region') return null
+  const context = preset === 'densite' ? 'density_class'
+    : preset === 'epci' ? 'epci' : preset === 'bretagne' ? 'bretagne' : null
+  if (!context) return null
+  return { intent: { kind: 'fixed_comparison', context }, label: `Moyenne — ${control.value.libelleActif}` }
 })
 const comparison = ref<AedarComparisonEvidence | null>(null)
 const comparisonState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -54,10 +54,15 @@ watch([comparisonRequest, comparisonFocalIdentity, comparisonRetry], async ([req
   cleanup(() => abort.abort())
   comparisonState.value = 'loading'
   const result = await fetchAedarComparison(props.content.territory.type as AedarTerritoryType, props.content.territory.code, {
-    ...request, typequ: focal.facts.map((fact) => fact.typequ), measures: AEDAR_CORE_MEASURE_KEYS,
+     ...request, typequ: [], measures: AEDAR_AGGREGATE_READING_KEYS,
     expectedContentVersion: focal.contentVersion, expectedReferenceContentVersion: focal.referenceContentVersion, signal: abort.signal,
   })
   if (abort.signal.aborted) return
+  if (!result) {
+    comparisonState.value = 'error'
+    comparisonError.value = 'Comparaison AEDAR indisponible'
+    return
+  }
   comparisonState.value = result.status === 'ready' ? 'ready' : 'error'
   if (result.status === 'ready') comparison.value = result.evidence
   else comparisonError.value = result.message
@@ -101,7 +106,8 @@ const transformed = computed(() => {
   const referenceData = props.aedarReferenceData ?? null
   // The semantic builder checks both publication tokens before drawing reference lines.
   const allowDirectReference = !control.value || (control.value.selection.etat !== 'vide'
-    && control.value.selection.etat !== 'membres' && !comparisonRequest.value)
+    && control.value.selection.etat !== 'membres'
+    && (comparisonRequest.value?.intent.kind !== 'fixed_comparison' || comparisonRequest.value.intent.context !== 'density_class'))
   const reference = allowDirectReference && referenceTerritoire && referenceData && referenceData.status === 'ready'
     ? { data: referenceData, territory: { type: referenceTerritoire.type, id: referenceTerritoire.id }, label: referenceTerritoire.nom }
     : null
@@ -112,7 +118,9 @@ const transformed = computed(() => {
     comparison: comparison.value,
     comparisonRequest: comparisonRequest.value,
     comparisonPending: directReferenceExpected && !directReferenceReady,
-    comparisonAccessibleLabel: referenceTerritoire ? `Moyenne de ${referenceTerritoire.nom}` : null,
+    comparisonAccessibleLabel: comparisonRequest.value?.intent.kind === 'fixed_comparison'
+      && comparisonRequest.value.intent.context !== 'density_class' && referenceTerritoire
+      ? `Moyenne de ${referenceTerritoire.nom}` : referenceTerritoire ? `Moyenne de ${referenceTerritoire.nom}` : null,
     lossMapMetadata: lossMapMetadata.value,
   })
   const carOverview = sections.find((section) => section.key === 'aedar-car-overview')

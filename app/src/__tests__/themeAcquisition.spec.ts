@@ -5,6 +5,7 @@ import {
   cleSelectionComparaison,
   semanticPublicationsCompatible,
   ThemeAcquisitionCache,
+  producerCatalogue,
 } from '../payload/themeAcquisition'
 import type { ThemeKey, ThemeResponse } from '../payload/themeAcquisition'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
@@ -19,6 +20,19 @@ import {
 } from './helpers/semanticApiFixtures'
 
 describe('theme acquisition cache', () => {
+  it('shares producer discovery and retries a failed catalogue request', async () => {
+    const catalogue = { contract: 'semantic-resource-catalogue-v1', resources: [] }
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response('{}', { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(catalogue)))
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      await expect(producerCatalogue()).rejects.toThrow()
+      await expect(producerCatalogue()).resolves.toEqual([])
+      await expect(producerCatalogue()).resolves.toEqual([])
+      expect(fetcher).toHaveBeenCalledTimes(2)
+    } finally { vi.unstubAllGlobals() }
+  })
   it('admits the pooled scalar comparison for a dual-shape Habitat resource', async () => {
     const catalogue = await nativeCatalogueResponse().json()
     catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) => resource.theme_id === 'habitat')
