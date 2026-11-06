@@ -218,14 +218,40 @@ Searches the retained published territory reference with bounded query inputs.
   direct EPCI/Bretagne aggregates, pooled density-class references, or — for
   EPCI/département same-level contexts — the Région's own direct published
   aggregate (« Moyenne de Bretagne »); the same-level median summaries are
-  retired. AEDAR publishes no peer/rank rows and fixed contexts grant no rank
-  fields. `selected_comparison` on `aedar_territorial_aggregate` computes, per
+  retired. AEDAR publishes no peer/rank rows. `selected_comparison` on
+  `aedar_territorial_aggregate` computes, per
   request on one committed snapshot, the address-weighted mean of the
   same-level members' published aggregates (weights = `n_addresses`) for each
   requested `typequ`/`measure` cell — scalar readings and per-cell curve readings
   alike — plus the opt-in direction-aware focal `rank`/`rank_size`/`rank_ties`
   within the selection (ties share rank; the focal must be a member to receive a
   rank). Unknown or partial members fail closed naming the failed member.
+  The registry-wide aggregate readings (`meanDiversity`, `meanVolume` — the sums
+  of the 15-minute car share/mean over the complete published TYPEQU registry,
+  requested via the `measure` coordinate without `typequ`) are computed the same
+  way per request from published per-type rows, never published, and gain the
+  opt-in rank fields in BOTH intents (#914, ADR-0039's 2026-11-04 amendment):
+  fixed declared contexts rank the focal's registry-wide reading within the
+  context's resolved peer group beside the declared reference value, and
+  selections keep the address-weighted pooled statistic over the members'
+  readings. A reading is available only under the fiche's compatibility law
+  (complete TYPEQU registry, shared source provenance, every row `covered`,
+  agreeing positive address population, valid observed counts and values —
+  CONTEXT.md « Moyennes d'accès en voiture AEDAR »); members/peers failing it
+  are honestly unavailable (`status: "not_available"`, null rank fields) and
+  ineligible for the rank — `rank_size` reflects the eligible population, never
+  a zero-filled or fabricated value. Both aggregate shapes — per-territory
+  rows in `aedar_territorial_aggregate` and the pooled density rows in
+  `aedar_comparison_group` — flow through one availability law over one
+  normalized input record (#914 amendment, 2026-11-05): on the pooled
+  artifact, provenance uniformity is a publication-level tie (the artifact
+  publishes atomically against one committed AEDAR content version) and the
+  statistic is schema-CHECKed to `pooled`, while observed-count validity
+  (`0 ≤ n_observed ≤ n_addresses`, NULL counts as bad) is computed honestly
+  for both shapes — a pooled row with NULL `n_observed` makes the reading
+  honestly unavailable, never silently served. Per-cell measures keep the
+  selected-only rank boundary (#904): the fixed intent grants
+  `rank`/`rank_size`/`rank_ties` on the aggregate facets only.
 
 ## Retired route families
 

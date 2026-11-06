@@ -8,10 +8,8 @@ import { territoryFactsFor } from '../src/fiche/content/territoryFacts'
 import { resolveMobiliteThemeContent } from '../src/fiche/content/themeContent'
 import type { Payload } from '../src/payload/types'
 import {
-  validerDistributionAccesBatiments,
   validerHistoires,
   validerIndicateurs,
-  validerRampeAccesBatiments,
   validerTerritoires,
 } from '../src/payload/validate'
 
@@ -20,8 +18,6 @@ const files = {
   territoires: 'territoires.json',
   indicateurs: 'indicateurs_mobilite.json',
   histoires: 'histoires_mobilite.json',
-  distribution: 'distribution_acces_batiments.json',
-  rampe: 'rampe_acces_batiments.json',
 } as const
 
 function timed<T>(run: () => T): { value: T; milliseconds: number } {
@@ -52,12 +48,6 @@ const validation = timed(() => {
     territoires,
     indicateurs: validerIndicateurs(parse.value.indicateurs, files.indicateurs, territoires),
     histoires: validerHistoires(parse.value.histoires, files.histoires, territoires),
-    distribution: validerDistributionAccesBatiments(
-      parse.value.distribution,
-      files.distribution,
-      territoires,
-    ),
-    rampe: validerRampeAccesBatiments(parse.value.rampe, files.rampe, territoires),
   }
 })
 
@@ -76,8 +66,6 @@ const payload: Payload = {
   runReport: null,
   vintages: null,
   programmes: null,
-  distributionAccesBatiments: validation.value.distribution,
-  rampeAccesBatiments: validation.value.rampe,
   themeMetadata: {},
 }
 const content = timed(() => {
@@ -116,8 +104,6 @@ console.log(
         territories: validation.value.territoires.length,
         indicators: validation.value.indicateurs.length,
         readings: validation.value.histoires.length,
-        buildingDistribution: validation.value.distribution?.length ?? 0,
-        accessRamp: validation.value.rampe?.length ?? 0,
       },
       representativeTerritory: {
         id: '35238',

@@ -13,6 +13,22 @@ AEDAR_MEASURE_KEYS = {
     for statistic in ("share", "min", "max", *(f"decile{i}" for i in range(1, 10)), "mean")
 }
 
+# Registry-wide overview aggregate readings served as request-time comparison
+# facets (ADR-0039's 2026-11-04 aggregate-ranks amendment, #914): each reading
+# is the sum of its per-type measure over the complete published TYPEQU
+# registry of a member, computed per request from `aedar_territorial_aggregate`
+# — never a new publication. meanDiversity = Σ count_15_car_share
+# (types / address); meanVolume = Σ count_15_car_mean (establishments /
+# address); both are high-is-better ranked comparison facets.
+AEDAR_AGGREGATE_READINGS = {
+    "meanDiversity": "count_15_car_share",
+    "meanVolume": "count_15_car_mean",
+}
+
+# The full comparison `measure` coordinate vocabulary: the 312 per-cell
+# measures plus the two registry-wide aggregate readings.
+AEDAR_COMPARISON_MEASURE_KEYS = frozenset(AEDAR_MEASURE_KEYS) | frozenset(AEDAR_AGGREGATE_READINGS)
+
 
 class ThemeTerritorySelection(BaseModel):
     territory_type: Literal["commune", "epci", "departement", "region"]

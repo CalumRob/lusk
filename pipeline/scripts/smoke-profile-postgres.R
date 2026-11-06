@@ -18,7 +18,7 @@ if (!requireNamespace("DBI", quietly=TRUE) || !requireNamespace("RPostgres", qui
 scalar_themes <- c("economie","demographie","mobilite","habitat")
 canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path("..","public","data"))
 canonical_parquets <- file.path(canonical_dir, paste0(c("territoires","indicateurs_mobilite",
-  "vintages","rampe_acces_batiments","distribution_acces_batiments"), ".parquet"))
+  "vintages"), ".parquet"))
 canonical_scalars <- file.path(canonical_dir, "scalar-serving", scalar_themes)
 missing <- c(canonical_parquets, canonical_scalars)[!file.exists(c(canonical_parquets, canonical_scalars))]
 if (length(missing))

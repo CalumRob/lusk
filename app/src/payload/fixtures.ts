@@ -1226,11 +1226,13 @@ export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unk
         }
         if (fichier.startsWith('histoires_')) {
           const theme = fichier.slice('histoires_'.length) as Theme
+          // Programmes is facts-only; its retired empty JSON file is not a
+          // synthetic reading table either.
+          if (theme === 'programmes') return null
           const lignes = payload.histoires.filter((l) => l.theme === theme)
           if (lignes.length > 0) return lignes
-          // Le thème PRÉSENT (ses faits sont dans le payload) publie SA table
-          // d'histoires même vide — le sixième thème n'a AUCUNE lecture
-          // (#408, la paire hermétique complète) ; un thème absent reste null.
+          // Un thème PRÉSENT (ses faits sont dans le payload) publie sa table
+          // d'histoires, éventuellement vide; un thème absent reste null.
           const presente = payload.indicateurs.some((l) => l.theme === theme)
           return presente ? [] : null
         }

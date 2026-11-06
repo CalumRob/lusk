@@ -2,8 +2,7 @@
 # La publication des DEUX tables canoniques du thème Programmes (ADR-0013 :
 # les lignes d'adhésion du ticket #175 et les agrégats de subventions du
 # ticket #176) — les parquets PAR TABLE écrits par le seam de publication du
-# thème (publier_programmes) vers la cible de récupération/serving
-# (materialize_serving_artifacts.R).
+# thème (publier_programmes), consommés par le publisher des tables Programmes.
 #
 # Issue #893 : la projection navigateur partagée programmes.json est RETIRÉE
 # (source-only) — le navigateur lit les faits du thème via l'API ; les parquets
@@ -165,21 +164,18 @@ test_that("un run peuplé écrit les DEUX parquets par table et NE crée AUCUN p
 
   # les artefacts canoniques : un parquet PAR TABLE (le format parquet ne
   # tient qu'une table — programmes_membres / programmes_subventions, les
-  # entrées de récupération de materialize_serving_artifacts.R) — et AUCUN
+  # entrées du publisher des tables Programmes) — et AUCUN
   # programmes.json : la projection navigateur partagée est retirée (#893)
   expect_false(file.exists(file.path(sortie, "programmes.json")))
   expect_true(file.exists(file.path(sortie, "programmes_membres.parquet")))
   expect_true(file.exists(file.path(sortie, "programmes_subventions.parquet")))
   # Issue #408 : Programmes et subventions est le SIXIÈME thème — le run
   # publie SON theme_programmes.json (le canon épinglé, via le trait
-  # `metadata` du descripteur) ET sa paire hermétique de faits
+  # `metadata` du descripteur) et sa projection de faits
   expect_true(file.exists(file.path(sortie, "theme_programmes.json")))
   expect_true(file.exists(file.path(sortie, "indicateurs_programmes.json")))
-  expect_true(file.exists(file.path(sortie, "histoires_programmes.json")))
-  # la paire hermétique : les histoires sont VIDES (le thème sans lecture),
+  expect_false(file.exists(file.path(sortie, "histoires_programmes.json")))
   # les faits portent les trois clés du registre
-  histoires <- jsonlite::fromJSON(file.path(sortie, "histoires_programmes.json"))
-  expect_length(histoires, 0L)
   faits <- jsonlite::fromJSON(file.path(sortie, "indicateurs_programmes.json"))
   expect_setequal(unique(faits$key), c("couverture_programmes", "subventions_annuelles",
                                        "subventions_par_domaine"))

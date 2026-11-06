@@ -109,6 +109,31 @@ test_that("publish ne recrée pas la projection BPE retirée", {
   expect_false(file.exists(file.path(cible, "profils_acces_bpe.json")))
 })
 
+test_that("publish ne recrée ni la grille ni la rampe legacy malgré leur présence dans un payload", {
+  payload <- compute_payload(load_fixture())
+  payload$distribution_acces_batiments <- tibble::tibble(legacy_grid = 1L)
+  payload$distribution_acces_batiments_comparaisons <- tibble::tibble(legacy_grid = 1L)
+  payload$rampe_acces_batiments <- tibble::tibble(legacy_ramp = 1L)
+  payload$rampe_acces_batiments_comparaisons <- tibble::tibble(legacy_ramp = 1L)
+  cible <- tempfile("pub-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  publish(payload, cible)
+
+  for (name in c("distribution_acces_batiments.json",
+                 "distribution_acces_batiments.parquet",
+                 "distribution_acces_batiments_comparaisons.json",
+                 "distribution_acces_batiments_comparaisons.parquet")) {
+    expect_false(file.exists(file.path(cible, name)), info = name)
+  }
+  for (name in c("rampe_acces_batiments.json",
+                 "rampe_acces_batiments.parquet",
+                 "rampe_acces_batiments_comparaisons.json",
+                 "rampe_acces_batiments_comparaisons.parquet")) {
+    expect_false(file.exists(file.path(cible, name)), info = name)
+  }
+})
+
 # verifier_non_derivee (vivante dans helper-payload.R — partagée avec
 # test-run-pipeline-economie.R, issue #131) : le contrat de non-dérive
 # (issue #10, ADR-0004).

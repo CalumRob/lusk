@@ -1,6 +1,6 @@
 # test-theme-programmes-faits ---------------------------------------------------
 # Les faits du SIXIÈME thème (issue #408) : la paire hermétique
-# indicateurs_programmes.json + histoires_programmes.json. Ce test verrouille :
+# indicateurs_programmes.json. Ce test verrouille :
 #   - le builder : les adhésions deviennent l'indicateur catégoriel
 #     `couverture_programmes` (le rider « convention valant ORT » sur la ligne
 #     du label, l'estampille de SA source par ligne — les lignes ORT gardent
@@ -149,7 +149,7 @@ test_that("ecrire_theme_programmes : l'absence honnête — zéro fait n'écrit 
   expect_false(file.exists(file.path(sortie, "histoires_programmes.json")))
 })
 
-test_that("ecrire_theme_programmes : la paire hermétique — faits + histoires VIDES (le thème sans lecture)", {
+test_that("ecrire_theme_programmes : publie les faits sans inventer un fichier de lecture", {
   sortie <- file.path(tempdir(), "faits-programmes-pleins")
   dir.create(sortie, showWarnings = FALSE)
   on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
@@ -167,9 +167,7 @@ test_that("ecrire_theme_programmes : la paire hermétique — faits + histoires 
   expect_equal(relu$rider[relu$key == "couverture_programmes" & relu$detail == "ACV"],
                "convention valant ORT")
 
-  # histoires_programmes.json : le tableau VIDE — aucune lecture inventée
-  histoires <- jsonlite::fromJSON(file.path(sortie, "histoires_programmes.json"))
-  expect_length(histoires, 0L)
+  expect_false(file.exists(file.path(sortie, "histoires_programmes.json")))
 
   # un second appel identique réécrit le même fichier (la projection stable)
   octets <- function(fichier) {
