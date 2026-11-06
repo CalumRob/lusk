@@ -11,7 +11,12 @@ seed_scalar_artifact_fixture_from_producer_outputs <- function(themes) {
     # Every owner artifact is checked against the same fixture serving
     # universe, just as the combined snapshot is.
     payload$territoires <- territories
-    metadata <- jsonlite::fromJSON(file.path(public, paste0("theme_", theme, ".json")), simplifyVector=FALSE)
+    metadata <- lire_theme_metadata(theme)
+    # The committed Mobility numeric fixture is an older source/vintage bundle;
+    # its raccordement contract is exercised separately below with that historic
+    # metadata. Do not combine those rows with the current canonical declaration.
+    if (identical(theme, "mobilite"))
+      metadata$scalar_contracts$raccordement_tc <- NULL
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme, destination)
   }
   destination
@@ -132,6 +137,9 @@ test_that("retained scalar snapshot combines exact producer-declared owners dete
       identical(metadata$source_records[[metadata$sources[[id]]]]$serving_disposition,
         "excluded_legacy_accessibility"), logical(1))]
   }), use.names=FALSE)
+  # The checked-in Mobility facts are an older raccordement vintage and are not
+  # a valid fixture for the canonical scalar owner declared by current extdata.
+  expected <- setdiff(expected, "raccordement_tc")
   expect_setequal(snapshot$scalar$descriptors$indicator_id, expected)
   expect_identical(snapshot$scalar, assemble_scalar_snapshot(snapshot$scalar))
   expect_gt(nrow(snapshot$comparison$groups), 0L)
@@ -213,8 +221,10 @@ test_that("economy scalar projector retains canonical units, levels, and source 
 test_that("housing scalar retains producer denominator, suppression, and values", {
   metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_habitat.json"), simplifyVector=FALSE)
   public <- jsonlite::fromJSON(file.path(pkgload::pkg_path(), "..", "public", "data", "theme_habitat.json"), simplifyVector=FALSE)
-  expect_identical(names(public$scalar_contracts), names(metadata$scalar_contracts))
-  expect_identical(public$scalar_contracts, metadata$scalar_contracts)
+  expect_setequal(names(metadata$scalar_contracts), c("prix_m2", "part_passoires"))
+  expect_false(any(c("scalar_contracts", "profile_contracts", "map_layers") %in% names(public)))
+  expect_true("indicator_pages" %in% names(public))
+  expect_true(all(c("prix_m2", "part_passoires") %in% names(public$indicator_pages)))
   canonical <- lire_indicateurs_producteur_fixture("habitat",
     file.path(pkgload::pkg_path(), "..", "public", "data"))
   rows <- data.frame(territory_id=as.character(canonical$territoire),
@@ -263,14 +273,20 @@ test_that("housing scalar retains producer denominator, suppression, and values"
   expect_identical(metadata$indicator_pages$distribution_dpe$comparison$indicator, "part_passoires")
 })
 
-test_that("all producer scalar contracts match their checked-in generated metadata", {
+test_that("canonical scalar contracts remain complete while public projections omit producer fields", {
   root <- pkgload::pkg_path()
   themes <- c("services", "economie", "demographie", "mobilite", "habitat", "milieux", "programmes")
   themes <- themes[file.exists(file.path(root, "inst", "extdata", "theme-metadata", paste0("theme_", themes, ".json")))]
   for (theme in themes) {
     source <- jsonlite::fromJSON(file.path(root, "inst", "extdata", "theme-metadata", paste0("theme_", theme, ".json")), simplifyVector=FALSE)
     generated <- jsonlite::fromJSON(file.path(root, "..", "public", "data", paste0("theme_", theme, ".json")), simplifyVector=FALSE)
-    expect_identical(generated$scalar_contracts, source$scalar_contracts, info=theme)
+    canonical <- lire_theme_metadata(theme)
+    expect_identical(source$scalar_contracts, canonical$scalar_contracts, info=theme)
+    scalar_ids <- names(canonical$scalar_contracts %||% list())
+    expect_true(all(scalar_ids %in% names(canonical$indicator_pages)), info=theme)
+    expect_false(any(c("scalar_contracts", "profile_contracts", "map_layers") %in% names(generated)), info=theme)
+    expect_true("indicator_pages" %in% names(generated), info=theme)
+    expect_true(all(names(generated$indicator_pages) %in% names(canonical$indicator_pages)), info=theme)
   }
 })
 
@@ -327,12 +343,15 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
   on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
   root <- file.path(pkgload::pkg_path(), "..", "public", "data")
   canonical <- nanoparquet::read_parquet(file.path(root, "indicateurs_mobilite.parquet"))
-  metadata <- jsonlite::fromJSON(file.path(root, "theme_mobilite.json"), simplifyVector=FALSE)
-  declaration <- lire_theme_metadata("mobilite")
-  ids <- names(declaration$scalar_contracts)[!vapply(names(declaration$scalar_contracts), function(id) {
-    source <- declaration$source_records[[declaration$sources[[id]]]]
+  metadata <- lire_theme_metadata("mobilite")
+  public_metadata <- jsonlite::fromJSON(file.path(root, "theme_mobilite.json"), simplifyVector=FALSE)
+  ids <- names(metadata$scalar_contracts)[!vapply(names(metadata$scalar_contracts), function(id) {
+    source <- metadata$source_records[[metadata$sources[[id]]]]
     identical(source$serving_disposition, "excluded_legacy_accessibility")
   }, logical(1))]
+  # The static fixture has only the retired raccordement vintage; canonical
+  # scalar serving is covered with its owner-produced rows in the bundle test.
+  ids <- setdiff(ids, "raccordement_tc")
   territory_fixture <- territoires_producteur_fixture(themes, root)
   eligible <- unique(data.frame(territory_id=as.character(territory_fixture$territoire),
     territory_type=as.character(territory_fixture$type)))
@@ -353,12 +372,12 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     expect_true(all(actual$support_count %in% NA_integer_))
     expect_true(all(actual$denominator_count %in% NA_integer_))
   }
-  source_by_id <- unlist(metadata$sources, use.names=TRUE)
+  source_by_id <- unlist(public_metadata$sources, use.names=TRUE)
   for (id in ids) {
     if (!id %in% names(source_by_id)) next
     expected <- canonical[canonical$key == id, , drop=FALSE]
     lineage <- projection$provenance[projection$provenance$indicator_id == id, , drop=FALSE]
-    declared_sources <- unlist(metadata$indicator_pages[[id]]$sources, use.names=FALSE)
+    declared_sources <- unlist(public_metadata$indicator_pages[[id]]$sources, use.names=FALSE)
     expect_true(all(lineage$source_id %in% declared_sources))
     if (length(declared_sources) == 1L)
       expect_true(all(lineage$vintage_id %in% paste(expected$vintage_version,
@@ -366,7 +385,8 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     expect_identical(projection$descriptors$unit[match(id, projection$descriptors$indicator_id)],
       unique(expected$unit))
   }
-  metadata <- jsonlite::fromJSON(file.path(pkgload::pkg_path(), "..", "public", "data", "theme_mobilite.json"), simplifyVector=FALSE)
+  metadata <- lire_theme_metadata("mobilite")
+  public_metadata <- jsonlite::fromJSON(file.path(pkgload::pkg_path(), "..", "public", "data", "theme_mobilite.json"), simplifyVector=FALSE)
   source_vintages <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "vintages.parquet"))
   multi_source_ids <- c("bornes_ev_par_station_service", "stationnement_velo_par_voiture")
   mobility_rows <- data.frame(territory_id=as.character(canonical$territoire),
@@ -376,8 +396,8 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     reference_date=as.character(canonical$vintage_date_reference),
     publication_date=as.character(canonical$vintage_date_publication), stringsAsFactors=FALSE)
   for (id in multi_source_ids) {
-    page_sources <- unlist(metadata$indicator_pages[[id]]$sources, use.names=FALSE)
-    reference_source <- as.character(metadata$sources[[id]])
+    page_sources <- unlist(public_metadata$indicator_pages[[id]]$sources, use.names=FALSE)
+    reference_source <- as.character(public_metadata$sources[[id]])
     expect_true(reference_source %in% page_sources, info=id)
     descriptor <- projection$descriptors[projection$descriptors$indicator_id == id, , drop=FALSE]
     expect_setequal(as.character(descriptor$allowed_sources[[1L]]), page_sources)
@@ -430,7 +450,7 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
   reordered_metadata <- metadata
   for (id in multi_source_ids) {
     reordered_metadata$indicator_pages[[id]]$sources <-
-      as.list(rev(unlist(reordered_metadata$indicator_pages[[id]]$sources, use.names=FALSE)))
+      as.list(rev(unlist(public_metadata$indicator_pages[[id]]$sources, use.names=FALSE)))
   }
   reordered_projection <- project_scalar_canonical_rows(mobility_rows, reordered_metadata,
     multi_source_ids, eligible, source_vintages=source_vintages)
@@ -448,6 +468,7 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
       identical(source$serving_disposition, "excluded_legacy_accessibility")
     }, logical(1))]
   }), use.names=FALSE)
+  expected_ids <- setdiff(expected_ids, "raccordement_tc")
   expect_setequal(snapshot$descriptors$indicator_id, expected_ids)
   expect_gt(length(retained_scalar_artifact_owners()), 0L)
   expect_equal(sum(snapshot$facts$indicator_id %in% ids), nrow(projection$facts))

@@ -209,6 +209,13 @@ test_that("projection_navigateur : le fichier publié exclut les champs hors nav
     for (champ in CHAMPS_HORS_NAVIGATEUR) {
       expect_false(champ %in% names(relu), info = paste(theme, champ))
     }
+    # ces trois contrats sont toujours présents dans le canon producteur, mais
+    # ne font pas partie de la projection navigateur (#827).
+    for (champ in c("scalar_contracts", "profile_contracts", "map_layers")) {
+      expect_false(champ %in% names(relu), info = paste(theme, champ))
+      expect_identical(meta[[champ]], lire_theme_metadata(theme)[[champ]],
+                       info = paste(theme, champ, "canon producteur inchangé"))
+    }
     # le fichier projeté se re-valide via le contexte navigateur explicite, et le
     # contexte producteur strict le refuse (story_keys projeté absent) : la distinction
     # est explicite, jamais devinée par champ absent
@@ -231,6 +238,33 @@ test_that("projection_navigateur : le fichier publié exclut les champs hors nav
       expect_true(any(nzchar(cadrages)), info = theme)
     }
   }
+})
+
+test_that("valider_projection_navigateur accepte les exclusions sans relâcher les faits retenus (#827)", {
+  meta <- lire_theme_metadata("habitat")
+  expect_true(length(meta$scalar_contracts) > 0L)
+  expect_true(length(meta$profile_contracts) > 0L)
+
+  projetee <- projection_navigateur(meta)
+  expect_false(any(c("scalar_contracts", "profile_contracts", "map_layers") %in%
+                     names(projetee)))
+  expect_no_error(valider_projection_navigateur(projetee))
+
+  # Une unité factuelle obligatoire reste contrôlée dans le contexte navigateur.
+  projetee_invalide <- projetee
+  projetee_invalide$indicator_pages$prix_m2$unit <- NULL
+  expect_error(valider_projection_navigateur(projetee_invalide),
+               "descripteur scalaire est incomplet")
+})
+
+test_that("publier_theme_metadata valide encore les contrats canoniques avant leur projection (#827)", {
+  meta <- lire_theme_metadata("mobilite")
+  meta$map_layers$raccordement_tc <- "oui"
+  cible <- tempfile("projection-canon-invalide-")
+  on.exit(unlink(cible, recursive = TRUE), add = TRUE)
+
+  expect_error(publier_theme_metadata(meta, cible), "booléen")
+  expect_false(file.exists(file.path(cible, "theme_mobilite.json")))
 })
 
 # #868 — RED : le canon producteur reste STRICT (contexte par défaut). Un registre

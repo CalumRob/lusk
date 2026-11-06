@@ -67,6 +67,9 @@ CHAMPS_HORS_NAVIGATEUR <- c(
   "building_comparison",       # idem
   "service_share_scalar",      # idem
   "distribution_contracts",    # idem
+  "scalar_contracts",          # contrats producteurs/API des projections scalaires
+  "profile_contracts",         # contrats producteurs/API des projections de profils
+  "map_layers",                # éligibilité cartographique producteur/API
   "owned_series_routes"        # aucun lecteur navigateur ; les lecteurs pipeline passent par le canon extdata
 )
 
