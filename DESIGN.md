@@ -255,6 +255,7 @@ Strategy: **mixed** (extracted from the apps) — borders for structure, soft sh
 | Brand ramp steps 300/600/700/900 unverified | Section 2 | provisional values; anchor + 100/200 fixed | visual QA in primitive showcase |
 | Google Fonts in the two legacy apps | `E:\Website\Dashboard`, `E:\ACI_app` | legacy; Lusk starts clean with Fontsource | no exit planned (legacy) |
 | Map choropleth single-hue ramps (existing pattern) | MapExplorer | legacy pattern; accessibility alternative pending | revisit with map work |
+| Comparison numeric reference in light mint (`--brand-200`, `#83ACA7`) | Cahier comparison numeric value only | Owner-approved visual exception (2026-11-06); approximately 2.49:1 against white, below 4.5:1 and not WCAG AA compliant. The comparison label, ranks, and accessible name remain; this exception does not extend to other text or controls. | Revisit if the owner changes this decision or accessibility remediation is undertaken |
 
 ## 9. The Figure Grammar (inherited production contract; under review)
 
