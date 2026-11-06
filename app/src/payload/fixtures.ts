@@ -10,9 +10,9 @@
  * #894: no apercu fixture anymore — the apercu.json browser projection is
  * retired (the R-side apercu table/parquet contract is mirrored R-side only).
  *
- * These are RAW row shapes — exactly what the JSON files in public/data/
- * contain. They feed the validators (app's half of validate_payload()) and
- * the loader's fetch seam; nothing here touches the fetch layer.
+ * These are producer-shaped rows. They feed the validators (app's half of
+ * validate_payload()) and explicitly injected in-memory store tests; they do
+ * not exercise or recreate numerical JSON networking.
  */
 
 import type { Fichier } from './loader'
@@ -1226,8 +1226,7 @@ export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unk
         }
         if (fichier.startsWith('histoires_')) {
           const theme = fichier.slice('histoires_'.length) as Theme
-          // Programmes is facts-only; its retired empty JSON file is not a
-          // synthetic reading table either.
+          // Programmes has no reading rows; its in-memory legacy slot is absent.
           if (theme === 'programmes') return null
           const lignes = payload.histoires.filter((l) => l.theme === theme)
           if (lignes.length > 0) return lignes

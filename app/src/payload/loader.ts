@@ -5,8 +5,6 @@
  */
 
 import type {
-  Histoire,
-  Indicateur,
   RunReport,
   Territoire,
   Theme,
@@ -17,8 +15,6 @@ import type {
 import { THEMES_CANONIQUES } from './types'
 import {
   PayloadError,
-  validerHistoires,
-  validerIndicateurs,
   validerRapportRun,
   validerTerritoires,
   validerTerritoiresMetadata,
@@ -45,7 +41,9 @@ export interface ChargerOptions {
 /**
  * The per-file vocabulary of the loader — the wait-set vocabulary of the
  * progressive store (PRD #296), the bare file name without the .json suffix:
- * 'territoires', 'run-report', 'indicateurs_demographie', …
+ * 'territoires', 'run-report', 'theme_demographie', … . The legacy numerical
+ * names remain in this vocabulary for injected in-memory stores; the network
+ * loader resolves them as absent because those JSON exports are retired.
  */
 export type Fichier =
   | 'territoires'
@@ -61,15 +59,6 @@ export type Fichier =
 
 /** Les fichiers MANDATOIRES — un 404 dessus est une erreur de chargement, jamais une absence. */
 const FICHIERS_MANDATOIRES: ReadonlySet<Fichier> = new Set<Fichier>(['territoires'])
-
-/** Les fichiers qui se valident SANS la table de référence (les territoires validés). */
-const FICHIERS_SANS_REFERENCE: ReadonlySet<Fichier> = new Set<Fichier>([
-  'territoires',
-  'territoires-metadata',
-  'run-report',
-  'vintages',
-  ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier),
-])
 
 /**
  * The fetch + « 404 = table absente » contract (ADR-0013) : optional files
@@ -106,7 +95,7 @@ async function obtenir(nom: Fichier, options: ChargerOptions): Promise<unknown |
 }
 
 /** One validator per file — the existing per-file validators, attributed to their file. */
-type ValiderFichier = (brut: unknown, fichier: string, territoires: Territoire[]) => unknown | null
+type ValiderFichier = (brut: unknown, fichier: string) => unknown | null
 
 const VALIDER_PAR_FICHIER = new Map<Fichier, ValiderFichier>([
   ['territoires', (brut, fichier) => validerTerritoires(brut, fichier)],
@@ -115,15 +104,10 @@ const VALIDER_PAR_FICHIER = new Map<Fichier, ValiderFichier>([
   ['vintages', (brut, fichier) => validerVintages(brut, fichier)],
 ])
 
-// Les fichiers de thème (ADR-0007) : les mêmes validateurs par thème, la
-// table de référence requise — la découverte reste pilotée par le payload.
+// Les métadonnées de thème (ADR-0007) sont autonomes. Les anciennes
+// projections numériques restent validables par les API adapters via
+// `validerIndicateurs` / `validerHistoires`, jamais par une requête JSON ici.
 for (const theme of THEMES_CANONIQUES) {
-  VALIDER_PAR_FICHIER.set(`indicateurs_${theme}`, (brut, fichier, territoires) =>
-    validerIndicateurs(brut, fichier, territoires),
-  )
-  VALIDER_PAR_FICHIER.set(`histoires_${theme}`, (brut, fichier, territoires) =>
-    validerHistoires(brut, fichier, territoires),
-  )
   // La métadonnée du thème (issue #309/#313) — le validateur est autonome
   // (aucune table de référence) ; la règle de présence vit dans
   // les routes et stores consommateurs, jamais ici. #868 : le fichier servi est la
@@ -133,24 +117,12 @@ for (const theme of THEMES_CANONIQUES) {
   )
 }
 
-/** La table de référence est REQUISE pour les fichiers qui se valident contre elle. */
-function exigerReference(nom: Fichier, territoires: Territoire[] | undefined): asserts territoires is Territoire[] {
-  if (!FICHIERS_SANS_REFERENCE.has(nom) && territoires === undefined) {
-    throw new PayloadError(
-      'validation',
-      `${nom}.json`,
-      `« ${nom}.json » se valide contre la table de référence — passez les territoires validés : chargerFichier(nom, territoires)`,
-    )
-  }
-}
-
 /**
  * Fetch + validate ONE named file — the per-file seam of the progressive
  * store (issue #297). Returns the typed section, or null for an optional
  * file absent by 404 (the « 404 = table absente » contract, ADR-0013).
- * Theme files validate AGAINST the reference table:
- * pass the VALIDATED territoires (chargerFichier('indicateurs_habitat',
- * territoires)) — the ordering constraint of the loader, kept.
+ * Retired numerical names resolve as absent without a request. Their validators
+ * remain available to API adapters through the validation module.
  */
 export async function chargerFichier(nom: 'territoires', options?: ChargerOptions): Promise<Territoire[]>
 export async function chargerFichier(nom: 'territoires-metadata', options?: ChargerOptions): Promise<TerritoryMetadata | null>
@@ -158,14 +130,22 @@ export async function chargerFichier(nom: 'run-report', options?: ChargerOptions
 export async function chargerFichier(nom: 'vintages', options?: ChargerOptions): Promise<Vintage[] | null>
 export async function chargerFichier(
   nom: `indicateurs_${Theme}`,
+  options?: ChargerOptions,
+): Promise<null>
+export async function chargerFichier(
+  nom: `indicateurs_${Theme}`,
   territoires: Territoire[],
   options?: ChargerOptions,
-): Promise<Indicateur[] | null>
+): Promise<null>
+export async function chargerFichier(
+  nom: `histoires_${Theme}`,
+  options?: ChargerOptions,
+): Promise<null>
 export async function chargerFichier(
   nom: `histoires_${Theme}`,
   territoires: Territoire[],
   options?: ChargerOptions,
-): Promise<Histoire[] | null>
+): Promise<null>
 export async function chargerFichier(
   nom: `theme_${Theme}`,
   options?: ChargerOptions,
@@ -175,11 +155,14 @@ export async function chargerFichier(
   territoiresOuOptions?: Territoire[] | ChargerOptions,
   options?: ChargerOptions,
 ): Promise<unknown> {
-  const territoires = Array.isArray(territoiresOuOptions) ? territoiresOuOptions : undefined
   const opts: ChargerOptions = Array.isArray(territoiresOuOptions)
     ? (options ?? {})
     : (territoiresOuOptions ?? {})
-  exigerReference(nom, territoires)
+
+  // Both numerical projections are retired browser exports. Keep accepting
+  // their old names so callers fail closed: no network request and no fake
+  // metadata-presence signal from a 404.
+  if (nom.startsWith('indicateurs_') || nom.startsWith('histoires_')) return null
 
   const brut = await obtenir(nom, opts)
   // Le contournement du validateur n'existe que pour les fichiers OPTIONNELS :
@@ -187,5 +170,5 @@ export async function chargerFichier(
   // contrat, pas une absence — il doit tomber dans son validateur et lever
   // l'erreur typée (relecture #297), jamais devenir un null silencieux.
   if (brut === null && !FICHIERS_MANDATOIRES.has(nom)) return null
-  return VALIDER_PAR_FICHIER.get(nom)!(brut, `${nom}.json`, territoires)
+  return VALIDER_PAR_FICHIER.get(nom)!(brut, `${nom}.json`)
 }

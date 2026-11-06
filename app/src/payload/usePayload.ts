@@ -7,16 +7,17 @@
  * one reactive `Payload` object that GROWS as files land. Acquisition is
  * demand-driven per consumer (#873): each consumer's wait-set is its
  * rendering gate, and the default start request is exactly that wait-set —
- * or the complete legacy set for the no-argument form. A standard
- * territorial wait-set also warms the shared `territoires-metadata` registry
+ * or the complete retained non-numerical set for the no-argument form. A
+ * standard territorial wait-set also warms the shared `territoires-metadata` registry
  * in the background (the published density classes gate); an explicit
  * `demarrer` is a deliberate narrower/wider seam. The production app shares
  * ONE store (one fetch per session, memory-cached); a test injecting a
- * charger gets a fresh store with the SAME demand-driven default (#873) —
- * eager full-store starts are requested explicitly, never implicit.
+ * charger gets a fresh store with the same demand-driven default (#873);
+ * numerical fixture starts are explicit.
  *
  * `usePayload({ attendre: [...] })` starts and waits for that set, while the
- * no-argument form retains the complete legacy set. It returns the same
+ * no-argument form starts the retained references, metadata and run files. It
+ * returns the same
  * `{ payload, erreur, chargement, recharger }` shape, but:
  * - `payload` is always the live growing object — initialized to valid
  *   empty/null sections, populated section by section as each file's promise
@@ -69,11 +70,10 @@ export interface EtatPayload {
 }
 
 export interface OptionsUsePayload {
-  /** The wait-set — the files this consumer BLOCKS on. Default = the full set. */
+  /** The wait-set — the files this consumer BLOCKS on. Default = retained files. */
   attendre?: Fichier[] | Ref<Fichier[]>
-  /** Files to start for this store. Defaults to `attendre`, or the full set
-   *  when no wait-set is given — for production consumers and injected test
-   *  loaders alike (#873: an injected charger never widens the default). */
+  /** Files to start for this store. Defaults to `attendre`, or retained files
+   *  when no wait-set is given — for production and injected loaders alike. */
   demarrer?: Fichier[] | Ref<Fichier[]>
 }
 
@@ -111,22 +111,13 @@ const SANS_REFERENCE = new Set<Fichier>([
   ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier),
 ])
 
-/** The legacy full start set; Programmes has facts/metadata but no stories file. */
-// #893 — 'programmes' n'est plus un fichier : la projection programmes.json est
-// retirée ; la section native de la carte (mapMemberships) vient de
-// l'acquisition sémantique API, pas du magasin de fichiers.
-// #894 — 'apercu' n'est plus un fichier non plus : la projection apercu.json
-// est retirée source-only, jamais démarrée ni attendue par aucun wait-set.
-const TOUS_LES_FICHIERS: Fichier[] = [
+/** Default network start set: retained references, metadata and run files. */
+const FICHIERS_PAR_DEFAUT: Fichier[] = [
   'territoires',
   'territoires-metadata',
   'run-report',
   'vintages',
-  ...THEMES_CANONIQUES.flatMap(
-    (theme) => theme === 'programmes'
-      ? [`indicateurs_${theme}`, `theme_${theme}`] as Fichier[]
-      : [`indicateurs_${theme}`, `histoires_${theme}`, `theme_${theme}`] as Fichier[],
-  ),
+  ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier),
 ]
 
 type EtatFichier = 'en-cours' | 'succes' | 'echec'
@@ -218,38 +209,41 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
    * The promise for ONE file. Ordering constraint kept: files that validate
    * AGAINST the reference table chain off territoires' own entry (which is
    * always kicked first), so the reference settles before its dependents.
-   * histoires_<theme> additionally chains off its indicateurs pair: a theme
-   * ABSENT by 404 has no histoires to fetch (ADR-0007, payload-driven
-   * discovery), while a reading-bearing theme PRESENT without its histoires
-   * file is contract drift — the typed validation error, loud. Facts-only
-   * Programmes has no history file and resolves as absent without fetching.
+   * histoires_<theme> additionally chains off its indicateurs pair in an
+   * injected in-memory store. Production no longer requests any retired
+   * numerical export.
    */
   // Le nom générique Fichier (union) ne satisfait pas les surcharges typées
   // du loader — on appelle la signature d'implémentation, dont le contrat est
-  // le même (le garde exigerReference valide l'argument de référence).
+  // le même.
   const chargerFichierElargi = chargerFichier as (
     nom: Fichier,
     territoires?: Territoire[],
   ) => Promise<unknown>
 
   function construire(nom: Fichier): Promise<unknown> {
-    // Programmes has no reading table. Keep the legacy file name accepted for
-    // explicit callers, but resolve its honest absence without requesting JSON.
-    if (nom === 'histoires_programmes') return Promise.resolve(null)
+    // Every numerical export is retired from browser networking. Injected
+    // in-memory stores can still exercise their legacy typed rows explicitly.
+    if (!chargerInjecte && (nom.startsWith('indicateurs_') || nom.startsWith('histoires_'))) {
+      return Promise.resolve(null)
+    }
 
     // Les métadonnées (theme_<theme>.json, #313) sont autoportantes (le
     // validateur ne prend aucune référence) : leur fetch ne lit jamais la
-    // table territoriale. La règle de présence (un thème qui publie ses faits
-    // publie ses métadonnées) reste portée par la paire du MÊME thème.
+    // table territoriale. En production, elles sont indépendantes des exports
+    // numériques retirés ; les stores injectés gardent la cohérence de leurs
+    // lignes en mémoire.
     if (nom.startsWith('theme_')) {
       const theme = themeDe(nom)
+      const fetchMeta = () => (chargerInjecte ? chargerInjecte(nom) : chargerFichierElargi(nom))
+      if (!chargerInjecte) return fetchMeta()
+
       const indicateurs = etats.get(`indicateurs_${theme}`)
       // A theme's metadata is self-contained: it may be loaded on its own
       // (Sources) or after its indicators. Its own 404 is the honest absence
       // of that metadata (the source-records reader simply skips it) — never
       // a fabricated presence. A theme GENUINELY known present (its indicators
       // landed) without its metadata remains the typed, theme-scoped drift.
-      const fetchMeta = () => (chargerInjecte ? chargerInjecte(nom) : chargerFichierElargi(nom))
       const present = (meta: unknown) => {
         if (meta === null) {
           throw new PayloadError(
@@ -334,10 +328,11 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         entree.valeur = valeur
         peupler(nom, valeur)
         if (nom === 'territoires' || nom === 'territoires-metadata') verifierReferenceDensite()
-        // Reconcile the theme pair on EITHER settlement: an in-flight metadata
-        // request that lands after its indicators (or the reverse) must still
-        // reach the presence check.
-        if (nom.startsWith('indicateurs_') || nom.startsWith('theme_')) verifierPresenceMetadonnees(themeDe(nom))
+        // Reconcile injected legacy rows on EITHER settlement, regardless of
+        // whether metadata or its in-memory indicators land first.
+        if (chargerInjecte && (nom.startsWith('indicateurs_') || nom.startsWith('theme_'))) {
+          verifierPresenceMetadonnees(themeDe(nom))
+        }
       },
       (cause: unknown) => {
         entree.etat = 'echec'
@@ -350,19 +345,19 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         if (entree.erreur.kind === 'validation') {
           console.error(entree.erreur)
         }
-        // A theme that turns out PRESENT (its indicators landed) makes a
-        // metadata-only 404 a real drift, even when that entry settled first.
-        if (nom.startsWith('indicateurs_') || nom.startsWith('theme_')) verifierPresenceMetadonnees(themeDe(nom))
+        if (chargerInjecte && (nom.startsWith('indicateurs_') || nom.startsWith('theme_'))) {
+          verifierPresenceMetadonnees(themeDe(nom))
+        }
       },
     )
   }
 
   /**
-   * Cross-file presence check: a theme whose indicators are genuinely present
-   * must publish its metadata, and a theme known ABSENT must not surface orphan
-   * metadata — in either arrival order.
+   * Cross-file presence check for injected legacy in-memory rows only. The
+   * production API owns numerical presence; retired JSON exports are no signal.
    */
   function verifierPresenceMetadonnees(theme: Theme): void {
+    if (!chargerInjecte) return
     const indicateurs = etats.get(`indicateurs_${theme}`)
     if (!indicateurs || indicateurs.etat !== 'succes') return
     const nom = `theme_${theme}` as Fichier
@@ -388,8 +383,8 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
     console.error(erreur)
   }
 
-  /** Start the requested files; legacy callers retain the complete default. */
-  function demarrer(fichiers: readonly Fichier[] = TOUS_LES_FICHIERS): void {
+  /** Start the requested files; no-argument starts use retained files only. */
+  function demarrer(fichiers: readonly Fichier[] = FICHIERS_PAR_DEFAUT): void {
     // La table de référence d'abord (l'ordre du loader) ; les fichiers sans
     // référence partent en parallèle avec elle.
     for (const fichier of fichiers) lancer(fichier)
@@ -411,7 +406,7 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
     // settles: a theme whose indicators are genuinely present must not keep an
     // absent metadata entry, and a theme known absent must not surface one.
     for (const nom of echoues) {
-      if (nom.startsWith('theme_')) verifierPresenceMetadonnees(themeDe(nom))
+      if (chargerInjecte && nom.startsWith('theme_')) verifierPresenceMetadonnees(themeDe(nom))
     }
   }
 
@@ -442,14 +437,11 @@ export function usePayload({ attendre, demarrer: fichiersADemarrer }: OptionsUse
   const magasin = chargerInjecte
     ? creerMagasin(chargerInjecte)
     : (magasinPartage ??= creerMagasin(null))
-  // #873 — the default start request is demand-driven for EVERY consumer,
-  // injected test loaders included: `attendre` is the default `demarrer`, and
-  // only the no-wait-set form retains the historical full-set default. An
-  // injected charger no longer silently turns a narrow wait-set into a
-  // full-store eager start — a test that genuinely needs background files
-  // requests them explicitly through `demarrer`.
-  const fichiersParDefaut: readonly Fichier[] = lireFichiers(attendre, TOUS_LES_FICHIERS)
-  const attendreEffectif = computed(() => lireFichiers(attendre, TOUS_LES_FICHIERS))
+  // Demand-driven for every consumer, including injected tests: `attendre` is
+  // the default start request. The no-argument default is retained files only;
+  // fixture tests that need legacy numerical rows request them explicitly.
+  const fichiersParDefaut: readonly Fichier[] = lireFichiers(attendre, FICHIERS_PAR_DEFAUT)
+  const attendreEffectif = computed(() => lireFichiers(attendre, FICHIERS_PAR_DEFAUT))
   const demarrerEffectif = computed(() => {
     const fichiers = [...lireFichiers(fichiersADemarrer, fichiersParDefaut)]
     // Un wait-set territorial standard démarre aussi le registre partagé en
