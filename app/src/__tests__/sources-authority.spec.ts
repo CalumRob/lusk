@@ -14,6 +14,26 @@ const payload: Payload = {
 }
 
 describe('sourceRecords — autorité dataset-centric publiée', () => {
+  it('uses the shared app label for ordinary consumer wording instead of a stale producer display label', () => {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+    metadata.indicator_labels.densite = 'Ancien libellé de présentation'
+    const record = sourceRecords({ ...payload, themeMetadata: { demographie: metadata } })
+      .find((source) => source.consumers.some((consumer) => consumer.key === 'densite'))
+
+    expect(record?.consumers.find((consumer) => consumer.key === 'densite')?.label).toBe('Densité de population')
+  })
+
+  it('keeps fact-bearing consumer wording and source observations producer-owned', () => {
+    const metadata = structuredClone(metadonneesMobiliteRaccordementFixture)
+    metadata.indicator_labels.raccordement_tc = 'Libellé de portée actualisé par le producteur'
+    const record = sourceRecords({ ...payload, themeMetadata: { mobilite: metadata } })
+      .find((source) => source.id === 'matrice_temps_mairies')
+
+    expect(record?.consumers.find((consumer) => consumer.key === 'raccordement_tc')?.label)
+      .toBe('Libellé de portée actualisé par le producteur')
+    expect(record?.vintages).toEqual(metadata.source_records?.matrice_temps_mairies?.vintages)
+  })
+
   it('regroupe les lignes vintage et conserve toute la fraîcheur', () => {
     const serie = sourceRecords(payload).find((source) => source.id === 'serie_historique')!
     expect(serie.publisher).toBe('INSEE')
