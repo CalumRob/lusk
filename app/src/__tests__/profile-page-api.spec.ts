@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import { CONTENU_CATALOGUE_INDICATEURS } from '../indicateurs/catalogueContent'
+import { LIBELLES_INDICATEURS_APP } from '../fiche/content/libellesAffichage'
 import { territoiresFixture } from '../payload/fixtures'
 import type { ThemeMetadata, TerritoireType } from '../payload/types'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
@@ -32,7 +33,7 @@ const themeNames = ['demographie', 'habitat', 'mobilite'] as const
 const metadataByTheme = Object.fromEntries(themeNames.map((theme) => [theme,
   JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8')) as ThemeMetadata & JsonRecord]))
 // Canonical metadata seeds the offline producer fixture only. The mounted page
-// receives the reduced public metadata and uses app-owned presentation content.
+// receives the reduced public metadata and binds factual page labels to discovery.
 const producerMetadataByTheme = Object.fromEntries(themeNames.map((theme) => [theme,
   JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata',
     `theme_${theme}.json`), 'utf8')) as JsonRecord]))
@@ -60,7 +61,8 @@ function profileSpecsFromAppContent(): ProfileSpec[] {
         detailUnits[detail] ?? page.comparison?.unit ?? page.unit ?? resource.unit]))
       const scalar = page.comparison?.indicator && page.comparison.indicator !== indicator
         ? page.comparison.indicator : undefined
-      profiles.push({ theme, indicator, family: appPage.figureFamily, title: appPage.label,
+      profiles.push({ theme, indicator, family: appPage.figureFamily,
+        title: LIBELLES_INDICATEURS_APP[theme as keyof typeof LIBELLES_INDICATEURS_APP][indicator] ?? resource.label,
         metadata, resource, page, contract, details, sexes, units, scalar })
     }
   }

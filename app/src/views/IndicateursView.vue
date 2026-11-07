@@ -1,16 +1,33 @@
 <script setup lang="ts">
 /**
  * Catalogue /indicateurs (#409), servi par le contenu éditorial stable de
- * l'application : cette navigation ne dépend ni des métadonnées de thème ni
- * des faits disponibles à l'exécution.
+ * l'application. Producer discovery admits route identities and factual
+ * labels; catalogue membership/order stay app-owned and never infer facts.
  */
-import { groupesCatalogue } from '@/indicateurs/catalogue'
+import { computed, onMounted, ref } from 'vue'
 
-const groupes = groupesCatalogue()
+import { chargerRessourcesCatalogueIndicateurs, groupesCatalogue } from '@/indicateurs/catalogue'
+import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
+
+const ressources = ref<SemanticResourceDeclaration[] | null>(null)
+const erreur = ref(false)
+const groupes = computed(() => ressources.value ? groupesCatalogue(ressources.value) : [])
+
+async function charger(): Promise<void> {
+  ressources.value = null
+  erreur.value = false
+  try {
+    ressources.value = await chargerRessourcesCatalogueIndicateurs()
+  } catch {
+    erreur.value = true
+  }
+}
+
+onMounted(() => { void charger() })
 </script>
 
 <template>
-  <section class="catalogue" aria-busy="false">
+  <section class="catalogue" :aria-busy="ressources === null && !erreur ? 'true' : 'false'">
     <header class="catalogue-entete">
       <h1>Indicateurs</h1>
       <p class="catalogue-sous-titre">
@@ -19,27 +36,36 @@ const groupes = groupesCatalogue()
       </p>
     </header>
 
-    <section
-      v-for="groupe in groupes"
-      :key="groupe.theme"
-      class="catalogue-theme"
-      :data-groupe-theme="groupe.theme"
-      :class="`catalogue-theme--${groupe.theme}`"
-    >
-      <h2>{{ groupe.label }}</h2>
-      <div
-        v-for="sousGroupe in groupe.sousGroupes"
-        :key="sousGroupe.key"
-        class="catalogue-sous-groupe"
+    <p v-if="ressources === null && !erreur" class="catalogue-etat" role="status">
+      Chargement du catalogue des indicateurs…
+    </p>
+    <div v-else-if="erreur" class="catalogue-etat" role="alert">
+      <p>Le catalogue des indicateurs est indisponible.</p>
+      <button type="button" class="catalogue-retry" @click="charger">Réessayer</button>
+    </div>
+    <template v-else>
+      <section
+        v-for="groupe in groupes"
+        :key="groupe.theme"
+        class="catalogue-theme"
+        :data-groupe-theme="groupe.theme"
+        :class="`catalogue-theme--${groupe.theme}`"
       >
-        <h3 data-groupe-sous-groupe :data-clef-sous-groupe="sousGroupe.key">{{ sousGroupe.label }}</h3>
-        <ul class="catalogue-liste">
-          <li v-for="entree in sousGroupe.entrees" :key="entree.indicateur">
-            <RouterLink :to="entree.href">{{ entree.label }}</RouterLink>
-          </li>
-        </ul>
-      </div>
-    </section>
+        <h2>{{ groupe.label }}</h2>
+        <div
+          v-for="sousGroupe in groupe.sousGroupes"
+          :key="sousGroupe.key"
+          class="catalogue-sous-groupe"
+        >
+          <h3 data-groupe-sous-groupe :data-clef-sous-groupe="sousGroupe.key">{{ sousGroupe.label }}</h3>
+          <ul class="catalogue-liste">
+            <li v-for="entree in sousGroupe.entrees" :key="entree.indicateur">
+              <RouterLink :to="entree.href">{{ entree.label }}</RouterLink>
+            </li>
+          </ul>
+        </div>
+      </section>
+    </template>
   </section>
 </template>
 
@@ -56,6 +82,28 @@ const groupes = groupesCatalogue()
 .catalogue-entete {
   max-width: 760px;
   margin-bottom: var(--space-8);
+}
+
+.catalogue-etat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font: var(--text-body);
+  color: var(--text-primary);
+}
+
+.catalogue-etat p { margin: 0; }
+
+.catalogue-retry {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-primary);
+  color: var(--text-primary);
+  font: var(--text-body-sm);
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .catalogue h1 {

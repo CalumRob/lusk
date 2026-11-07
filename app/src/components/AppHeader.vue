@@ -28,15 +28,16 @@
  * "burger doesn't work" bug). Sibling keeps it viewport-sized.
  */
 import { ChevronDown, ExternalLink, Menu, Search, X } from 'lucide-vue-next'
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
 import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
 import LuskBrand from '@/components/LuskBrand.vue'
-import { entreesRechercheIndicateurs } from '@/indicateurs/catalogue'
+import { chargerRessourcesCatalogueIndicateurs, entreesRechercheIndicateurs } from '@/indicateurs/catalogue'
 import type { EntreeRechercheIndicateur } from '@/search/recherche'
 import { usePayload } from '@/payload/usePayload'
+import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 import type { Territoire } from '@/payload/types'
 
 const route = useRoute()
@@ -47,10 +48,19 @@ const { payload, erreur, chargement } = usePayload({ attendre: ['territoires', '
 
 const territoires = computed<Territoire[]>(() => payload.value?.territoires ?? [])
 
-/** Le même contenu app-owned que le catalogue, disponible sans acquisition de faits. */
+/** Native discovery admits indicator routes and supplies fact-bearing labels. */
+const ressourcesIndicateurs = ref<SemanticResourceDeclaration[]>([])
 const entreesIndicateurs = computed<EntreeRechercheIndicateur[]>(() =>
-  entreesRechercheIndicateurs(),
+  entreesRechercheIndicateurs(ressourcesIndicateurs.value),
 )
+
+onMounted(() => {
+  void chargerRessourcesCatalogueIndicateurs()
+    .then((resources) => { ressourcesIndicateurs.value = resources })
+    // Territorial search remains available; indicator routes fail closed when
+    // producer discovery is unavailable, rather than using an app-side list.
+    .catch(() => { ressourcesIndicateurs.value = [] })
+})
 
 const messageErreur = computed(() => (erreur.value ? 'Impossible de charger les territoires.' : null))
 

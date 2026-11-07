@@ -639,14 +639,19 @@ describe('CarteView — la carte avec fond publié', () => {
       return baseFetch(input, init)
     })
     let metadataAttempts = 0
-    const chargerMetadata = vi.fn(async (theme: Theme) => {
+    let rejectMetadataRetry!: (error: Error) => void
+    const chargerMetadata = vi.fn((theme: Theme) => {
       metadataAttempts += 1
-      if (metadataAttempts === 1) throw new Error('catalogue unavailable')
+      if (metadataAttempts === 1) return Promise.reject(new Error('catalogue unavailable'))
+      if (metadataAttempts === 2) return new Promise<typeof metadonneesThemesFixtures.demographie>((_resolve, reject) => {
+        rejectMetadataRetry = reject
+      })
       const metadata = structuredClone(metadonneesThemesFixtures[theme])
       if (theme === 'demographie') metadata.param_labels.taux_solde_naturel = 'Libellé récupéré du solde naturel'
-      return metadata
+      return Promise.resolve(metadata)
     })
     const { wrapper } = await monter({ chemin: '/carte?theme=demographie', chargerMetadata, apiFetchImpl: apiFetch })
+    document.body.append(wrapper.element)
 
     expect(wrapper.find('[data-testid="map-metadata-error"]').text())
       .toContain('Les couches et leurs valeurs natives restent affichées.')
@@ -654,11 +659,43 @@ describe('CarteView — la carte avec fond publié', () => {
     const densite = wrapper.findAll('.carte-sidebar-couche').find((layer) => layer.text().includes('Densité'))!
     await densite.trigger('click')
     const beforeRetryReads = requests.filter((url) => url === '/api/resources' || url === '/api/resources/read-batch')
+    const notice = wrapper.find('[data-testid="map-metadata-notice"]').element
+    const retry = wrapper.find('[data-testid="map-metadata-retry"]')
+    const retryElement = retry.element as HTMLButtonElement
+    retryElement.focus()
 
-    await wrapper.find('[data-testid="map-metadata-retry"]').trigger('click')
+    await retry.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="map-metadata-notice"]').element).toBe(notice)
+    expect(wrapper.find('[data-testid="map-metadata-retry"]').element).toBe(retryElement)
+    expect(document.activeElement).toBe(retryElement)
+    expect(wrapper.find('[data-testid="map-metadata-pending"]').attributes('role')).toBe('status')
+    expect(wrapper.find('[data-testid="map-metadata-pending"]').attributes('aria-live')).toBe('polite')
+    expect(wrapper.find('[data-testid="map-metadata-notice"]').attributes('aria-busy')).toBe('true')
+    expect(wrapper.find('[data-testid="map-metadata-pending"]').text()).toContain('Chargement des libellés')
+    expect(retry.attributes('aria-disabled')).toBe('true')
+    expect(chargerMetadata).toHaveBeenCalledTimes(2)
+    await retry.trigger('click')
+    expect(chargerMetadata).toHaveBeenCalledTimes(2)
+    expect(document.activeElement).toBe(retryElement)
+    expect(requests.filter((url) => url === '/api/resources' || url === '/api/resources/read-batch'))
+      .toEqual(beforeRetryReads)
+
+    rejectMetadataRetry(new Error('catalogue still unavailable'))
     await flushPromises()
 
-    expect(chargerMetadata).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="map-metadata-notice"]').element).toBe(notice)
+    expect(wrapper.find('[data-testid="map-metadata-error"]').attributes('role')).toBe('alert')
+    expect(wrapper.find('[data-testid="map-metadata-error"]').text())
+      .toContain('Les couches et leurs valeurs natives restent affichées.')
+    expect(wrapper.find('[data-testid="map-metadata-retry"]').element).toBe(retryElement)
+    expect(document.activeElement).toBe(retryElement)
+
+    await retry.trigger('click')
+    await flushPromises()
+
+    expect(chargerMetadata).toHaveBeenCalledTimes(3)
     expect(chargerMetadata).toHaveBeenLastCalledWith('demographie')
     expect(requests.filter((url) => url === '/api/resources' || url === '/api/resources/read-batch'))
       .toEqual(beforeRetryReads)

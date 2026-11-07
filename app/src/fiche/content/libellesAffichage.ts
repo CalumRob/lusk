@@ -16,7 +16,6 @@ export const LIBELLES_INDICATEURS_APP: Readonly<Record<Theme, Readonly<Record<st
   demographie: {
     densite: 'Densité de population',
     structure_age: 'Structure par âge',
-    taille_menages: 'Taille moyenne des ménages',
   },
   habitat: {
     mix_logements: 'Mix de logements',
@@ -24,9 +23,7 @@ export const LIBELLES_INDICATEURS_APP: Readonly<Record<Theme, Readonly<Record<st
     age_du_bati: 'Âge du bâti',
     type: 'Type de logement',
   },
-  economie: {
-    eco_activites: 'Part des éco-activités',
-  },
+  economie: {},
   milieux: {},
   programmes: {
     couverture_programmes: 'Couverture programmatique',

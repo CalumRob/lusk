@@ -2,7 +2,7 @@
 
 import { createMemoryHistory, createRouter } from 'vue-router'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import AppHeader from '../components/AppHeader.vue'
 import {
@@ -17,6 +17,7 @@ import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
 import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
+import { nativeResources } from './helpers/semanticApiFixtures'
 
 /**
  * AppHeader (#410 — la bascule atomique): sticky 60px chrome, Lusk wordmark
@@ -66,6 +67,7 @@ async function montage(chemin = '/', options: Record<string, unknown> = {}) {
 afterEach(() => {
   montee?.unmount()
   montee = null
+  vi.unstubAllGlobals()
   document.documentElement.classList.remove('tiroir-verrouille')
   document.body.classList.remove('tiroir-verrouille')
   document.body.innerHTML = ''
@@ -492,7 +494,14 @@ describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
     return new Promise<unknown>(() => {})
   }
 
-  it('cherche les pages app-owned et navigue sans attendre les métadonnées de thème', async () => {
+  it('cherche les pages découvertes nativement sans attendre les catalogues de thème', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe('/api/resources')
+      return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1',
+        resources: nativeResources(),
+      }))
+    }))
     const { router, wrapper } = await montage('/carte', {
       provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },
     })
@@ -515,6 +524,30 @@ describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
     await champ.trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/indicateurs/demographie/densite')
+  })
+
+  it('utilise pour la recherche le libellé factuel modifié dans la découverte native', async () => {
+    const resources = nativeResources().map((resource) => resource.resource_id === 'offre_tc'
+      ? { ...resource, label: 'Part des bâtiments à moins de 350 m d’un arrêt' }
+      : resource)
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe('/api/resources')
+      return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+    }))
+    const { wrapper } = await montage('/carte', {
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },
+    })
+    await flushPromises()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    const champ = wrapper.find('.recherche-superposee input[role="combobox"]')
+    await champ.trigger('focus')
+    await champ.setValue('350 m')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    const groupeIndicateurs = wrapper.find('[role="group"][aria-label="Indicateurs"]')
+    expect(groupeIndicateurs.text()).toContain('Part des bâtiments à moins de 350 m d’un arrêt')
+    expect(groupeIndicateurs.text()).not.toContain('500 m')
   })
 
   it('rend la recherche vivante quand seuls territoires + run-report ont atterri — le reste coule en arrière-plan', async () => {

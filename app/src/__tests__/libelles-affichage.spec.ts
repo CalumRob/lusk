@@ -31,6 +31,24 @@ function publie(theme: Theme): ThemeMetadata {
 
 /** Fact-bearing labels the app must never own (producer declarations). */
 const FACT_BEARING = [
+  // measure, ratio and per-capita scales
+  ['mobilite', 'reseaux_par_habitant'],
+  ['mobilite', 'surface_reseaux_routiers'],
+  ['mobilite', 'places_stationnement_velo_1000'],
+  ['mobilite', 'places_stationnement_voiture_1000'],
+  ['mobilite', 'stationnement_velo_par_voiture'],
+  ['mobilite', 'voitures_menage'],
+  ['mobilite', 'bornes_ev_par_station_service'],
+  ['demographie', 'taille_menages'],
+  ['habitat', 'part_passoires'],
+  ['habitat', 'prix_m2'],
+  ['economie', 'eco_activites'],
+  ['milieux', 'artif_par_habitant'],
+  ['milieux', 'conso_enaf_annuel'],
+  // classification and source/product scope
+  ['habitat', 'distribution_dpe'],
+  ['programmes', 'subventions_annuelles'],
+  ['programmes', 'subventions_par_domaine'],
   // observation boundary / period
   ['demographie', 'evolution_1968'],
   // employment location / unemployment population definitions

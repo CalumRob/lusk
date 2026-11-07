@@ -277,6 +277,7 @@ const mapIdentities = ref<Record<string, { contentVersion: string; referenceCont
 const mapNativeContracts = ref<Record<string, NativeThemeFactContract>>({})
 const mapStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
 const mapMetadataStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
+const mapMetadataRetryPending = ref(false)
 const chargerCatalogueTheme = inject(THEME_METADATA_CHARGER_KEY, chargerMetadonneesTheme)
 const retryMapFacts = ref(0)
 const retryMapMetadata = ref(0)
@@ -408,11 +409,12 @@ watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, r
 
 // The selected catalogue only fills factual field labels that the typed-reading
 // API does not yet expose. Its failure never gates map facts or native admission.
-watch([selection, retryMapMetadata], async ([theme], _old, onCleanup) => {
+watch([selection, retryMapMetadata], async ([theme], [previousTheme], onCleanup) => {
   const request = ++mapMetadataSequence
   let cancelled = false
   onCleanup(() => { cancelled = true })
   mapThemeMetadata.value = null
+  if (theme !== previousTheme) mapMetadataRetryPending.value = false
   if (!theme) {
     mapMetadataStatus.value = 'idle'
     return
@@ -424,13 +426,23 @@ watch([selection, retryMapMetadata], async ([theme], _old, onCleanup) => {
     if (metadata.theme !== theme) throw new Error(`Catalogue ${metadata.theme} inattendu pour ${theme}`)
     mapThemeMetadata.value = metadata
     mapMetadataStatus.value = 'ready'
+    mapMetadataRetryPending.value = false
   } catch {
     // Native API labels/axes remain usable; only absent typed-field wording is withheld.
     if (!cancelled && request === mapMetadataSequence && theme === selection.value) {
       mapMetadataStatus.value = 'error'
+      mapMetadataRetryPending.value = false
     }
   }
 }, { immediate: true })
+
+function retrySelectedMapMetadata(): void {
+  if (mapMetadataStatus.value !== 'error' || mapMetadataRetryPending.value) return
+  // Keep the notice and its focused button mounted until the metadata-only
+  // attempt settles; the map's already admitted native facts are untouched.
+  mapMetadataRetryPending.value = true
+  retryMapMetadata.value++
+}
 
 const payloadCarte = computed(() => {
   const current = payload.value
@@ -719,11 +731,18 @@ const classesFond = computed(() =>
             @couche-change="choisirCouche"
             @recherche-territoire="rechercherTerritoire"
           />
-          <div v-if="themeAcquisCarte && mapMetadataStatus === 'error'"
-            class="carte-metadata-erreur" role="alert" data-testid="map-metadata-error">
-            <p>Les libellés complémentaires du thème ne sont pas disponibles. Les couches et leurs valeurs natives restent affichées.</p>
+          <div v-if="themeAcquisCarte && (mapMetadataStatus === 'error' || mapMetadataRetryPending)"
+            class="carte-metadata-erreur" data-testid="map-metadata-notice"
+            :aria-busy="mapMetadataRetryPending ? 'true' : 'false'">
+            <p v-if="mapMetadataRetryPending" role="status" aria-live="polite" data-testid="map-metadata-pending">
+              Chargement des libellés complémentaires…
+            </p>
+            <p v-else role="alert" data-testid="map-metadata-error">
+              Les libellés complémentaires du thème ne sont pas disponibles. Les couches et leurs valeurs natives restent affichées.
+            </p>
             <button type="button" class="carte-etat-bouton" data-testid="map-metadata-retry"
-              @click="retryMapMetadata++">Réessayer les libellés</button>
+              :aria-disabled="mapMetadataRetryPending ? 'true' : 'false'"
+              @click="retrySelectedMapMetadata">Réessayer les libellés</button>
           </div>
         </template>
       </div>
