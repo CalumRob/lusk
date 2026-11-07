@@ -27,7 +27,7 @@ const expectedCensus = [
 const fixtureSources = (id) => [{ source_id: id, name: `API source ${id}`, vintage_id: `${id}-api-v1`,
   version: 'API-2026', reference_date: '2026-05-04', publication_date: '2026-05-05' }]
 
-function getSpecs(metadataByTheme, appContent, nativeResources) {
+function getSpecs(metadataByTheme, appContent, nativeResources, resolveTitle) {
   const specs = []
   for (const { theme, sousGroupes } of appContent) {
     const metadata = metadataByTheme[theme]
@@ -49,7 +49,9 @@ function getSpecs(metadataByTheme, appContent, nativeResources) {
       const scalarResource = scalar && nativeResources.find((candidate) => candidate.theme_id === theme &&
         candidate.resource_id === scalar && candidate.shapes.includes('scalar'))
       if (scalar && !scalarResource) throw new Error(`Missing native scalar companion ${theme}/${scalar}`)
-      specs.push({ theme, indicator, title: appPage.label, family: appPage.figureFamily,
+      const title = resolveTitle(theme, indicator, `API label ${indicator}`, 'profile')
+      if (!title) throw new Error(`Missing app page presentation for ${theme}/${indicator}`)
+      specs.push({ theme, indicator, title, family: appPage.figureFamily,
         metadata, page, resource, contract, details, sexes, units, scalar, scalarResource })
     }
   }
@@ -385,7 +387,8 @@ async function verifyStandaloneMap(browser, baseUrl, specs, territories, formatV
     await page.waitForURL((url) => url.searchParams.get('theme') === spec.theme)
     const values = []
     for (const detail of spec.details.slice(0, 2)) {
-      const label = spec.metadata.detail_labels[spec.indicator][detail]
+      const label = descriptorFor(spec).axes.find((axis) => axis.name === 'detail' && axis.key === detail)?.label
+      assert(label, `native map axis ${detail} must have a producer label`)
       await sidebar.getByRole('button', { name: label, exact: true }).click()
       await searchFocal()
       const response = harness.factResults.find((result) => result.resource === spec.indicator && result.target.type === focal.type)
@@ -451,6 +454,7 @@ try {
   const baseUrl = server.resolvedUrls.local[0]
   const { territoiresFixture } = await server.ssrLoadModule('/src/payload/fixtures.ts')
   const { CONTENU_CATALOGUE_INDICATEURS } = await server.ssrLoadModule('/src/indicateurs/catalogueContent.ts')
+  const { presentationPageIndicateur } = await server.ssrLoadModule('/src/indicateurs/pagePresentation.ts')
   const nativeCatalogue = JSON.parse(execFileSync('python', ['-c',
     'from api.resource_catalogue import default_resource_catalogue; import json; print(json.dumps(default_resource_catalogue().discovery_payload()))',
   ], { cwd: repoRoot, encoding: 'utf8' }))
@@ -460,7 +464,8 @@ try {
     const text = await readFile(resolve(repoRoot, 'pipeline/inst/extdata/theme-metadata', `theme_${theme}.json`), 'utf8')
     return [theme, JSON.parse(text)]
   })))
-  const specs = getSpecs(metadataByTheme, CONTENU_CATALOGUE_INDICATEURS, nativeCatalogue.resources)
+  const specs = getSpecs(metadataByTheme, CONTENU_CATALOGUE_INDICATEURS, nativeCatalogue.resources,
+    (theme, indicator, nativeLabel, layout) => presentationPageIndicateur(theme, indicator, nativeLabel, layout)?.title)
   const { formaterValeur, formaterRang } = await server.ssrLoadModule('/src/payload/selectors.ts')
   const census = specs.map(({ theme, indicator, family }) => [theme, indicator, family])
   assert.deepEqual(census, expectedCensus, 'The app-owned profile census over native API resources must remain complete and exact')
