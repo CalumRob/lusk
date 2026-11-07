@@ -45,34 +45,14 @@ function ordinaryScalarPageCensus() {
 }
 
 function resource(theme: string, indicator: string) {
-  const file = metadata(theme)
-  const page = file.indicator_pages[indicator]
-  const contract = file.scalar_contracts[indicator]
-  return {
-    resource_id: indicator,
-    theme_id: theme,
-    indicator_id: indicator,
-    label: 'Libellé source différent du libellé éditorial',
-    unit: page.unit,
-    direction: page.comparison?.direction ?? page.direction,
-    allowed_levels: contract.allowed_levels,
-    sources: page.sources,
-    shapes: ['scalar'],
-    axes: [],
-    axis_values: [],
-    target_kinds: ['territory', 'territory_cohort'],
-    target_ids: [],
-    dynamic_axes: [],
-    fields: ['value', 'support_count', 'denominator_count'],
-    intents: ['facts', 'fixed_comparison', 'selected_comparison'],
-    resource_kind: 'indicator',
-    map_eligible: file.map_layers?.[indicator] !== false,
-    counts_available: contract.counts_available,
-  }
+  const declaration = nativeResources().find((candidate) => candidate.theme_id === theme &&
+    candidate.resource_id === indicator && candidate.shapes.includes('scalar'))
+  if (!declaration) throw new Error(`Missing native scalar declaration: ${theme}/${indicator}`)
+  return { ...declaration, label: 'Libellé source différent du libellé éditorial' }
 }
 
 function sourceFor(theme: string, indicator: string) {
-  const source_id = metadata(theme).indicator_pages[indicator].sources[0]
+  const source_id = resource(theme, indicator).sources[0]
   return { source_id, name: 'Source API mesurée', vintage_id: `${source_id}-2026`, version: '2026',
     reference_date: '2026-06-30', publication_date: '2026-07-01' }
 }
@@ -87,7 +67,8 @@ function observation(theme: string, indicator: string, territory: string, status
 
 function cohortResult(theme: string, indicator: string, target: Record<string, unknown>, memberIds: string[], observations: unknown[]) {
   const declaration = resource(theme, indicator)
-  const file = metadata(theme)
+  const producer = producerMetadata(theme)
+  const contract = producer.scalar_contracts?.[indicator] ?? {}
   return { resource: indicator, target,
     shape: 'scalar',
     cohort: { territory_type: target.type, department_id: target.department_id ?? null,
@@ -99,9 +80,9 @@ function cohortResult(theme: string, indicator: string, target: Record<string, u
     content_version: 'scalar-publication-v4',
     reference_content_version: 'reference-v7',
     descriptor: { indicator_id: indicator, theme_id: theme, label: declaration.label,
-      unit: declaration.unit, direction: declaration.direction, comparison_facet: file.scalar_contracts[indicator].comparison_facet,
+      unit: declaration.unit, direction: declaration.direction, comparison_facet: contract.comparison_facet ?? indicator,
       allowed_levels: declaration.allowed_levels, denominator_semantics: 'producer-declared denominator',
-      completeness: file.scalar_contracts[indicator].completeness, descriptor_version: 'scalar-descriptor-v3' },
+      completeness: contract.completeness ?? 'dense_complete', descriptor_version: 'scalar-descriptor-v3' },
     observations }
 }
 
@@ -133,22 +114,24 @@ function scalarComparison(theme: string, item: { target: { type: string; id?: st
   const focalId = item.target.id!
   const focal = valuesById.get(focalId)
   const focalInSelection = members.some((member) => member.id === focalId)
+  const declaration = resource(theme, indicator)
+  const direction = declaration.direction
   const rankFor = (id: string) => {
     const fact = valuesById.get(id)
     if (measured.length < 1 || fact?.status !== 'measured' || fact.value === null) return null
-    return { territory_id: id, rank: 1 + measured.filter((row) => row.value > fact.value!).length,
+    const better = measured.filter((row) => direction === 'high' ? row.value > fact.value! : row.value < fact.value!).length
+    return { territory_id: id, rank: better + 1,
       rank_size: measured.length, rank_ties: measured.filter((row) => row.value === fact.value).length }
   }
   const focalRank = focalInSelection ? rankFor(focalId) : null
-  const page = metadata(theme).indicator_pages[indicator]
   const data = {
     resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
     shape: 'scalar', content_version: 'scalar-publication-v4', reference_content_version: 'reference-v7',
      selection: fixed ? null : members.map((member) => ({ territory_type: member.type, territory_id: member.id })),
      scope: fixed ? { kind: 'same_level', territory_type: item.target.type, member_count: members.length }
        : { kind: 'explicit_selection', member_count: members.length },
-    result: { indicator_id: indicator, status: measured.length ? 'available' : 'unavailable',
-      reason: measured.length ? null : 'no_selected_comparable_values', unit: page.unit, direction: 'high',
+     result: { indicator_id: indicator, status: measured.length ? 'available' : 'unavailable',
+       reason: measured.length ? null : 'no_selected_comparable_values', unit: declaration.unit, direction,
       source_facet: indicator, descriptor_version: 'scalar-descriptor-v3', selected_member_count: members.length,
       eligible_count: measured.length, missing_count: members.length - measured.length,
       focal_value: focal?.status === 'measured' ? focal.value : null, focal_in_selection: focalInSelection,
@@ -218,7 +201,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
           delete stalePage.family
           stalePage.sources = ['stale_editorial_source']
           presentation.sources.densite = 'stale_editorial_source'
-          presentation.scalar_contracts.densite.counts_available = true
+          presentation.scalar_contracts = { densite: { counts_available: true } }
           presentation.source_records.stale_editorial_source = {
             dataset: 'Ancienne source éditoriale', publisher: 'Ancien éditeur',
             url: 'https://example.invalid/stale', licence: 'Licence inconnue', vintage: 'ancien', freshness: 'ancienne horloge',

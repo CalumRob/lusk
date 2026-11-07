@@ -7,10 +7,15 @@ import { chargerCohorteScalaire, chargerCohortePageScalaire, chargerCohortesScal
 import { territoiresFixture, indicateursEconomieFixture } from '../payload/fixtures'
 import { validerCatalogueNavigateur } from '../payload/validate'
 import type { SemanticReadItem, SemanticResourceDeclaration } from '../payload/semanticResourceClient'
+import { nativeResources } from './helpers/semanticApiFixtures'
 
 const themeRaw = (theme: string) => JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8'))
+const producerThemeRaw = (theme: string) => JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata',
+  'theme-metadata', `theme_${theme}.json`), 'utf8'))
 const economy = themeRaw('economie')
 const habitat = themeRaw('habitat')
+const producerEconomy = producerThemeRaw('economie')
+const producerHabitat = producerThemeRaw('habitat')
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
@@ -19,26 +24,16 @@ function pageFor(theme: string, indicator: string) {
 }
 
 function sourceFor(theme: string, indicator: string) {
-  const source_id = themeRaw(theme).indicator_pages[indicator].sources[0]
+  const source_id = declaration(theme, indicator).sources[0]
   return { source_id, name: 'Source API comparée', vintage_id: `${source_id}-2026`, version: '2026',
     reference_date: '2026-06-30', publication_date: '2026-07-01' }
 }
 
 function declaration(theme: string, indicator: string): SemanticResourceDeclaration {
-  const page = pageFor(theme, indicator)
-  const raw = themeRaw(theme)
-  const contract = raw.scalar_contracts?.[indicator]
-  return {
-    resource_id: indicator, theme_id: theme, indicator_id: indicator,
-    label: 'Libellé API éditorialement distinct', unit: page.unit,
-    direction: page.comparison?.direction ?? page.direction,
-    allowed_levels: contract?.allowed_levels ?? page.levels,
-    sources: page.sources, shapes: ['scalar'], target_kinds: ['territory', 'territory_cohort'],
-    fields: ['value', 'support_count', 'denominator_count'],
-    map_eligible: raw.map_layers?.[indicator] !== false,
-    counts_available: contract?.counts_available ?? false,
-    intents: ['facts', 'fixed_comparison', 'selected_comparison'],
-  }
+  const resource = nativeResources().find((candidate) => candidate.theme_id === theme &&
+    candidate.resource_id === indicator && candidate.shapes.includes('scalar'))
+  if (!resource) throw new Error(`Missing API scalar declaration: ${theme}/${indicator}`)
+  return { ...resource, label: 'Libellé API éditorialement distinct' } as unknown as SemanticResourceDeclaration
 }
 
 function membersFor(target: SemanticReadItem['target']) {
@@ -58,7 +53,7 @@ function scalarData(theme: string, indicator: string, item: SemanticReadItem, op
   completeness?: string
   mutate?: (value: Record<string, unknown>) => void
 } = {}) {
-  const page = pageFor(theme, indicator)
+  const resource = declaration(theme, indicator)
   if (item.target.kind === 'named_reference') throw new Error('Unexpected named-reference scalar fixture')
   const members = membersFor(item.target)
   const target = item.target.kind === 'territory_cohort'
@@ -75,10 +70,10 @@ function scalarData(theme: string, indicator: string, item: SemanticReadItem, op
     content_version: options.contentVersion ?? 'scalar-publication-v4',
     reference_content_version: options.referenceVersion ?? 'reference-v7',
     descriptor: { indicator_id: indicator, theme_id: theme,
-      label: 'Libellé API éditorialement distinct', unit: options.unit ?? page.unit,
-      direction: options.direction ?? (page.comparison?.direction ?? page.direction),
-      comparison_facet: options.facet ?? (page.comparison?.indicator ?? indicator),
-      allowed_levels: declaration(theme, indicator).allowed_levels,
+      label: resource.label, unit: options.unit ?? resource.unit,
+      direction: options.direction ?? resource.direction,
+      comparison_facet: options.facet ?? indicator,
+      allowed_levels: resource.allowed_levels,
       denominator_semantics: 'Dénominateur produit, documenté dans la publication',
       completeness: options.completeness ?? 'sparse', descriptor_version: 'scalar-descriptor-v3' },
   observations: (options.observations ?? [{ territory: members[0]!.territoire, status: 'measured', value: 9 }])
@@ -88,7 +83,7 @@ function scalarData(theme: string, indicator: string, item: SemanticReadItem, op
         return { territory: { id: territory, type: reference.type, name: reference.nom }, status, value,
           ...(fields.includes('support_count') ? { support_count: status === 'measured' ? 41 : 7 } : {}),
           ...(fields.includes('denominator_count') ? { denominator_count: 100 } : {}),
-          sources: [{ source_id: page.sources[0], name: 'Source API mesurée', vintage_id: 'source-vintage-2026',
+           sources: [{ source_id: resource.sources[0], name: 'Source API mesurée', vintage_id: 'source-vintage-2026',
             version: '2026', reference_date: '2026-06-30', publication_date: '2026-07-01' }] }
       }),
   }
@@ -113,7 +108,6 @@ function installCatalogueAndReads(resources: SemanticResourceDeclaration[], resp
 
 function comparisonFixture(theme: string, indicator: string, item: SemanticReadItem,
   values: Map<string, { status: string; value: number | null }>) {
-  const page = pageFor(theme, indicator)
   const members = item.intent.kind === 'selected_comparison'
     ? item.intent.members.map((member) => ({ id: member.id, type: member.type }))
     : membersFor(item.target).map((territory) => ({ id: territory.territoire, type: territory.type }))
@@ -121,7 +115,8 @@ function comparisonFixture(theme: string, indicator: string, item: SemanticReadI
     const row = values.get(id)
     return row?.status === 'measured' && row.value !== null ? [{ id, value: row.value }] : []
   })
-  const direction = page.comparison?.direction ?? page.direction
+  const resource = declaration(theme, indicator)
+  const direction = resource.direction
   const sorted = eligible.map((row) => row.value).sort((a, b) => a - b)
   const median = sorted.length === 0 ? null : sorted.length % 2
     ? sorted[(sorted.length - 1) / 2]!
@@ -145,8 +140,8 @@ function comparisonFixture(theme: string, indicator: string, item: SemanticReadI
     scope: isSelected ? { kind: 'explicit_selection', member_count: members.length }
       : { kind: 'same_level', territory_type: targetType, member_count: members.length },
     result: { indicator_id: indicator, status: eligible.length ? 'available' : 'unavailable',
-      reason: eligible.length ? null : 'no_selected_comparable_values', unit: page.unit, direction,
-      source_facet: page.comparison?.indicator ?? indicator, descriptor_version: 'scalar-descriptor-v3',
+      reason: eligible.length ? null : 'no_selected_comparable_values', unit: resource.unit, direction,
+      source_facet: indicator, descriptor_version: 'scalar-descriptor-v3',
       selected_member_count: members.length, eligible_count: eligible.length,
       missing_count: members.length - eligible.length,
       focal_in_selection: focalInSelection,
@@ -160,7 +155,7 @@ function comparisonFixture(theme: string, indicator: string, item: SemanticReadI
 
 describe('ordinary scalar producer declarations and semantic acquisition', () => {
   it('preserves producer registration boundaries without an environment switch (#871)', () => {
-    const registered = indicateursScalairesEnregistres(habitat)
+    const registered = indicateursScalairesEnregistres(producerHabitat)
     expect(registered).toContain('prix_m2')
     const metadata = validerCatalogueNavigateur(habitat, 'theme_habitat.json')
     const scalarPages = pagesScalairesEnregistrees(metadata, registered)
@@ -269,7 +264,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     ['habitat', 'part_passoires', true],
   ] as const)('requests %s/%s counts from discovery, not conflicting browser metadata', async (theme, indicator, available) => {
     const raw = themeRaw(theme)
-    raw.scalar_contracts[indicator].counts_available = !available
+    raw.scalar_contracts = { [indicator]: { counts_available: !available } }
     const metadata = validerCatalogueNavigateur(raw, `theme_${theme}.json`)
     const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
     const fetcher = installCatalogueAndReads([declaration(theme, indicator)], (item) => scalarData(theme, indicator, item))
@@ -372,7 +367,8 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
 
   it('acquires all registered ordinary scalars in one bounded semantic batch and rejects mixed publication identities', async () => {
     const metadata = validerCatalogueNavigateur(economy, 'theme_economie.json')
-    const registered = indicateursScalairesEnregistres(economy).filter((indicator) => metadata.indicator_pages?.[indicator]?.family === 'scalar')
+    const registered = indicateursScalairesEnregistres(producerEconomy)
+      .filter((indicator) => metadata.indicator_pages?.[indicator]?.family === 'scalar')
     const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
     const resources = registered.map((indicator) => declaration('economie', indicator))
     const fetcher = installCatalogueAndReads(resources, (item) => scalarData('economie', item.resource, item, {

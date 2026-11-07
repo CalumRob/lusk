@@ -23,11 +23,13 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
     // they are not app presentation metadata and must not be copied into the
     // public static theme bundle. #868 : la projection navigateur (projection_
     // navigateur, pipeline/R/publier_theme_metadata.R) exclut aussi story_keys et
-    // observed_collection_contracts du snapshot public — registres producer-only
+    // observed_collection_contracts, scalar_contracts, profile_contracts, et
+    // map_layers du snapshot public — registres producer-only
     // que ni le navigateur ni les lecteurs du payload committé ne lisent.
     const horsNavigateur = ['semantic_resources', 'story_keys', 'observed_collection_contracts',
       'indicator_directions', 'selected_reading_contract', 'comparison_scopes', 'building_comparison',
-      'service_share_scalar', 'distribution_contracts', 'owned_series_routes']
+      'service_share_scalar', 'distribution_contracts', 'owned_series_routes', 'scalar_contracts',
+      'profile_contracts', 'map_layers']
     for (const theme of themes.filter((item) => item !== 'mobilite')) {
       const canonical = lire(canonicalDir, theme) as Record<string, unknown>
       const snapshot = lire(publicDir, theme) as Record<string, unknown>

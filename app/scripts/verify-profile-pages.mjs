@@ -18,36 +18,42 @@ const browserArtifactDir = process.env.LUSK_BROWSER_ARTIFACT_DIR
 const headAtStart = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
 const expectedCensus = [
   ['demographie', 'structure_age', 'pyramid'],
+  ['habitat', 'age_du_bati', 'composition'], ['habitat', 'distribution_dpe', 'distribution'],
   ['habitat', 'mix_logements', 'composition'], ['habitat', 'statut', 'composition'],
-  ['habitat', 'age_du_bati', 'composition'], ['habitat', 'type', 'composition'],
-  ['habitat', 'distribution_dpe', 'distribution'],
-  ['mobilite', 'voitures_menage', 'composition'], ['mobilite', 'offre_cyclable', 'composition'],
-  ['mobilite', 'reseaux', 'list'], ['mobilite', 'reseaux_par_habitant', 'list'],
+  ['habitat', 'type', 'composition'],
+  ['mobilite', 'offre_cyclable', 'composition'], ['mobilite', 'reseaux', 'list'],
+  ['mobilite', 'reseaux_par_habitant', 'list'], ['mobilite', 'voitures_menage', 'composition'],
 ]
 const fixtureSources = (id) => [{ source_id: id, name: `API source ${id}`, vintage_id: `${id}-api-v1`,
   version: 'API-2026', reference_date: '2026-05-04', publication_date: '2026-05-05' }]
 
-function getSpecs(metadataByTheme) {
+function getSpecs(metadataByTheme, appContent, nativeResources) {
   const specs = []
-  for (const theme of ['demographie', 'habitat', 'mobilite']) {
+  for (const { theme, sousGroupes } of appContent) {
     const metadata = metadataByTheme[theme]
-    const contracts = metadata.profile_contracts ?? {}
-    for (const [indicator, page] of Object.entries(metadata.indicator_pages ?? {})) {
-      if (!Object.hasOwn(contracts, indicator) &&
-          !(page.family === 'pyramid' && page.pyramid.dimensions.includes('detail'))) continue
-      const contract = contracts[indicator] ?? {}
-      const details = page.comparison?.details ??
-        (page.family === 'distribution' ? page.distribution.signature : Object.keys(metadata.detail_labels[indicator] ?? {}))
-      const sexes = page.comparison?.sexes ?? []
+    for (const group of sousGroupes) for (const appPage of group.pages) {
+      const indicator = appPage.resourceKey
+      const resource = nativeResources.find((candidate) => candidate.theme_id === theme &&
+        candidate.resource_id === indicator && candidate.shapes.includes('declared_profile'))
+      if (!resource) continue
+      const page = metadata.indicator_pages?.[indicator]
+      if (!page) throw new Error(`Missing producer fixture metadata for ${theme}/${indicator}`)
+      const contract = metadata.profile_contracts?.[indicator] ?? {}
+      const details = resource.axis_values?.find(([axis]) => axis === 'detail')?.[1] ?? []
+      const sexes = resource.axis_values?.find(([axis]) => axis === 'sex')?.[1] ?? []
       const detailUnits = contract.detail_units ?? {}
       const units = Object.fromEntries(details.map((detail) => [detail,
-        detailUnits[detail] ?? page.comparison?.unit ?? page.unit]))
+        detailUnits[detail] ?? page.comparison?.unit ?? page.unit ?? resource.unit]))
       const scalar = page.comparison?.indicator && page.comparison.indicator !== indicator
         ? page.comparison.indicator : undefined
-      specs.push({ theme, indicator, metadata, page, contract, details, sexes, units, scalar })
+      const scalarResource = scalar && nativeResources.find((candidate) => candidate.theme_id === theme &&
+        candidate.resource_id === scalar && candidate.shapes.includes('scalar'))
+      if (scalar && !scalarResource) throw new Error(`Missing native scalar companion ${theme}/${scalar}`)
+      specs.push({ theme, indicator, title: appPage.label, family: appPage.figureFamily,
+        metadata, page, resource, contract, details, sexes, units, scalar, scalarResource })
     }
   }
-  return specs
+  return specs.sort((left, right) => `${left.theme}/${left.indicator}`.localeCompare(`${right.theme}/${right.indicator}`))
 }
 
 function descriptorFor(spec) {
@@ -57,10 +63,10 @@ function descriptorFor(spec) {
   ]
   const detail = spec.page.comparison?.detail ?? spec.details[0]
   const point = spec.scalar ? null : { detail, sex: spec.page.comparison?.sex ?? null,
-    direction: spec.page.comparison?.direction ?? spec.page.direction, unit: spec.units[detail] }
+    direction: spec.resource.direction, unit: spec.units[detail] }
   return {
-    indicator: spec.indicator, label: `API label ${spec.indicator}`, unit: spec.page.unit,
-    allowed_levels: spec.contract.allowed_levels ?? spec.page.levels,
+    indicator: spec.indicator, label: `API label ${spec.indicator}`, unit: spec.resource.unit,
+    allowed_levels: spec.resource.allowed_levels,
     completeness: spec.contract.completeness ?? 'dense_complete',
     descriptor_version: `profile-descriptor-${spec.indicator}-v1`,
     denominator_semantics: spec.contract.denominator_semantics ?? `API denominator ${spec.indicator}`,
@@ -71,28 +77,10 @@ function descriptorFor(spec) {
 }
 
 function makeDeclarations(specs) {
-  const profiles = specs.map((spec) => ({
-    resource_id: spec.indicator, theme_id: spec.theme, indicator_id: spec.indicator,
-    map_eligible: spec.metadata.map_layers?.[spec.indicator] !== false, counts_available: false,
-    label: `API label ${spec.indicator}`, unit: spec.page.unit,
-    direction: spec.page.comparison?.direction ?? spec.page.direction,
-    allowed_levels: spec.page.levels, sources: spec.page.sources,
-    shapes: ['declared_profile'], target_kinds: ['territory', 'territory_cohort'],
-    axes: [...new Set(['detail', ...(spec.sexes.length ? ['sex'] : [])])],
-    axis_values: [['detail', spec.details], ...(spec.sexes.length ? [['sex', spec.sexes]] : [])],
-    dynamic_axes: [], fields: ['value'], intents: ['facts', 'fixed_comparison', 'selected_comparison'],
-  }))
-  const scalars = specs.filter((spec) => spec.scalar).map((spec) => ({
-    resource_id: spec.scalar, theme_id: spec.theme, indicator_id: spec.scalar,
-    map_eligible: spec.metadata.map_layers?.[spec.scalar] !== false,
-    counts_available: spec.metadata.scalar_contracts?.[spec.scalar]?.counts_available ?? false,
-    label: `API label ${spec.scalar}`, unit: spec.page.comparison.unit,
-    direction: spec.page.comparison.direction, allowed_levels: spec.page.levels,
-    sources: spec.page.sources, shapes: ['scalar'], target_kinds: ['territory', 'territory_cohort'],
-    axes: [], axis_values: [], dynamic_axes: [], fields: ['value', 'support_count', 'denominator_count'],
-    intents: ['facts', 'fixed_comparison', 'selected_comparison'],
-  }))
-  return [...profiles, ...scalars]
+  return [...new Map(specs.flatMap((spec) => [spec.resource, spec.scalarResource].filter(Boolean))
+    .map((resource) => [`${resource.theme_id}/${resource.resource_id}`, {
+      ...resource, label: `API label ${resource.resource_id}`,
+    }])).values()]
 }
 
 function createApiHarness(specs, territories) {
@@ -137,7 +125,7 @@ function createApiHarness(specs, territories) {
             : 'measured',
           value: suppressDpeSignature && spec.indicator === 'distribution_dpe' && memberIndex === 0 && ['F', 'G'].includes(detail)
             ? null : 0.317 + memberIndex * 0.071 + detailIndex * 0.019 + sexIndex * 0.007,
-          sources: fixtureSources(spec.page.sources[0]),
+          sources: fixtureSources(spec.resource.sources[0]),
         }))) }))
       if (spec.indicator === 'distribution_dpe') suppressDpeSignature = false
       const observations = profiles.find((profile) => profile.territory.id === target.id)?.cells ?? []
@@ -154,9 +142,9 @@ function createApiHarness(specs, territories) {
     if (!specWithScalar) throw new Error(`Unexpected facts resource ${item.resource}`)
     scalarFacts.push(item)
     const scalarDescriptor = { indicator_id: item.resource, theme_id: specWithScalar.theme,
-      label: `API label ${item.resource}`, unit: specWithScalar.page.comparison.unit,
-      direction: specWithScalar.page.comparison.direction, comparison_facet: item.resource,
-      allowed_levels: specWithScalar.page.levels, completeness: 'dense_complete',
+      label: `API label ${item.resource}`, unit: specWithScalar.scalarResource.unit,
+      direction: specWithScalar.scalarResource.direction, comparison_facet: item.resource,
+      allowed_levels: specWithScalar.scalarResource.allowed_levels, completeness: 'dense_complete',
       denominator_semantics: 'API scalar denominator', descriptor_version: `scalar-descriptor-${item.resource}-v1` }
     if (target.kind === 'territory') {
       const territory = members.find((candidate) => candidate.id === target.id)
@@ -166,7 +154,7 @@ function createApiHarness(specs, territories) {
         descriptor: scalarDescriptor, descriptor_version: scalarDescriptor.descriptor_version,
         observation: { territory_id: target.id, territory_type: target.type,
           value: 0.623 + index * 0.023, status: 'measured', support_count: 100 + index, denominator_count: 200 + index,
-          sources: fixtureSources(specWithScalar.page.sources[0]) }, territory }
+          sources: fixtureSources(specWithScalar.scalarResource.sources[0]) }, territory }
     }
     return { resource: item.resource, shape: 'scalar', target,
       content_version: 'scalar-content-v1', reference_content_version: 'reference-api-v1',
@@ -175,7 +163,7 @@ function createApiHarness(specs, territories) {
         member_count: members.length, members, reference_content_version: 'reference-api-v1' },
       observations: members.map((territory, index) => ({ territory: { id: territory.id, type: territory.type, name: territory.name },
         value: 0.623 + index * 0.023, status: 'measured', support_count: 100 + index, denominator_count: 200 + index,
-        sources: fixtureSources(specWithScalar.page.sources[0]) })) }
+        sources: fixtureSources(specWithScalar.scalarResource.sources[0]) })) }
   }
 
   function comparisonData(item) {
@@ -190,8 +178,8 @@ function createApiHarness(specs, territories) {
     const detail = coordinates?.detail?.[0] ?? spec.page.comparison?.detail ?? spec.details[0]
     const sex = coordinates?.sex?.[0] ?? spec.page.comparison?.sex ?? null
     const usesScalar = linkedScalar || Boolean(spec.scalar)
-    const unit = usesScalar ? spec.page.comparison.unit : spec.units[detail]
-    const direction = usesScalar ? spec.page.comparison.direction : spec.page.comparison?.direction ?? spec.page.direction
+    const unit = usesScalar ? spec.scalarResource.unit : spec.units[detail]
+    const direction = usesScalar ? spec.scalarResource.direction : spec.resource.direction
     const detailIndex = spec.details.indexOf(detail)
     const sexIndex = sex === null ? 0 : spec.sexes.indexOf(sex)
     const rankedMembers = selectedMembers.map((member) => {
@@ -223,7 +211,7 @@ function createApiHarness(specs, territories) {
         rank: !enough ? null : 1 + rankedMembers.filter(({ value: candidate }) => direction === 'high' ? candidate > value : candidate < value).length,
         rank_size: !enough ? null : selectedMembers.length,
         rank_ties: !enough ? null : rankedMembers.filter(({ value: candidate }) => candidate === value).length })),
-      comparison_sources: fixtureSources(spec.page.sources[0]) }
+      comparison_sources: fixtureSources(usesScalar ? spec.scalarResource.sources[0] : spec.resource.sources[0]) }
     if (!linkedScalar && spec.scalar) Object.assign(result, {
       source_facet_indicator_id: spec.scalar, source_facet_label: `API label ${spec.scalar}`,
       scalar_descriptor_version: `scalar-descriptor-${spec.scalar}-v1`, required_scalar_version: 'scalar-content-v1',
@@ -462,16 +450,20 @@ try {
   await server.listen()
   const baseUrl = server.resolvedUrls.local[0]
   const { territoiresFixture } = await server.ssrLoadModule('/src/payload/fixtures.ts')
+  const { CONTENU_CATALOGUE_INDICATEURS } = await server.ssrLoadModule('/src/indicateurs/catalogueContent.ts')
+  const nativeCatalogue = JSON.parse(execFileSync('python', ['-c',
+    'from api.resource_catalogue import default_resource_catalogue; import json; print(json.dumps(default_resource_catalogue().discovery_payload()))',
+  ], { cwd: repoRoot, encoding: 'utf8' }))
   const metadataByTheme = Object.fromEntries(await Promise.all(['demographie', 'habitat', 'mobilite'].map(async (theme) => {
     // Offline API-fixture construction uses the producer contract, not the
     // reduced browser projection. This does not bundle it into browser code.
     const text = await readFile(resolve(repoRoot, 'pipeline/inst/extdata/theme-metadata', `theme_${theme}.json`), 'utf8')
     return [theme, JSON.parse(text)]
   })))
-  const specs = getSpecs(metadataByTheme)
+  const specs = getSpecs(metadataByTheme, CONTENU_CATALOGUE_INDICATEURS, nativeCatalogue.resources)
   const { formaterValeur, formaterRang } = await server.ssrLoadModule('/src/payload/selectors.ts')
-  const census = specs.map(({ theme, indicator, page }) => [theme, indicator, page.family])
-  assert.deepEqual(census, expectedCensus, 'The producer-derived profile census must remain complete and exact')
+  const census = specs.map(({ theme, indicator, family }) => [theme, indicator, family])
+  assert.deepEqual(census, expectedCensus, 'The app-owned profile census over native API resources must remain complete and exact')
   const harness = createApiHarness(specs, territoiresFixture)
   browser = await chromium.launch({ headless: true,
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) })
@@ -497,8 +489,8 @@ try {
     const startComparisons = harness.comparisons.length
     await page.goto(`${baseUrl}indicateurs/${spec.theme}/${spec.indicator}?territoire=22001&niveau=commune&vue=reperes`,
       { waitUntil: 'domcontentloaded' })
-    await page.locator('h1').filter({ hasText: `API label ${spec.indicator}` }).waitFor({ state: 'visible', timeout: 15000 })
-    await page.locator(`[data-renderer="${spec.page.family}"]`).first().waitFor({ state: 'visible', timeout: 15000 })
+    await page.locator('h1').filter({ hasText: spec.title }).waitFor({ state: 'visible', timeout: 15000 })
+    await page.locator(`[data-renderer="${spec.family}"]`).first().waitFor({ state: 'visible', timeout: 15000 })
     await page.locator('[data-testid="profile-comparison-summary"]').waitFor({ state: 'visible', timeout: 15000 })
     assert.equal(harness.profileFacts.slice(startFacts).filter((item) => item.resource === spec.indicator).length, 1,
       `${spec.indicator} must acquire exactly one semantic profile cohort`)
@@ -534,7 +526,7 @@ try {
         const detailIndex = spec.details.indexOf(detail)
         const sexIndex = sex === null ? 0 : spec.sexes.indexOf(sex)
         const value = spec.scalar ? 0.623 : 0.317 + detailIndex * 0.019 + sexIndex * 0.007
-        const unit = spec.scalar ? spec.page.comparison.unit : spec.units[detail]
+        const unit = spec.scalar ? spec.scalarResource.unit : spec.units[detail]
         const expectedFact = `${formaterValeur({ value, unit })} ${unit}`
         assert((await cells.nth(1).innerText()).includes(expectedFact),
           `${spec.indicator} peer table must render its selected API fact ${expectedFact}: ${await cells.nth(1).innerText()}`)
@@ -551,7 +543,7 @@ try {
     const sex = spec.page.comparison?.sex ?? null
     const detailIndex = spec.details.indexOf(detail)
     const sexIndex = sex === null ? 0 : spec.sexes.indexOf(sex)
-    const unit = spec.scalar ? spec.page.comparison.unit : spec.units[detail]
+    const unit = spec.scalar ? spec.scalarResource.unit : spec.units[detail]
     const value = spec.scalar ? 0.623 : spec.sexes.length
       ? spec.sexes.reduce((sum, _sex, index) => sum + 0.317 + detailIndex * 0.019 + index * 0.007, 0)
       : 0.317 + detailIndex * 0.019 + sexIndex * 0.007
@@ -661,10 +653,11 @@ try {
     history.pushState({}, '', '/indicateurs/habitat/mix_logements?territoire=22001&niveau=commune&vue=indicateur')
     dispatchEvent(new PopStateEvent('popstate'))
   })
-  await page.locator('h1').filter({ hasText: 'API label mix_logements' }).waitFor({ state: 'visible', timeout: 15000 })
+  const mixTitle = specs.find((spec) => spec.indicator === 'mix_logements').title
+  await page.locator('h1').filter({ hasText: mixTitle }).waitFor({ state: 'visible', timeout: 15000 })
   harness.releaseDelayedProfile()
-  await page.waitForFunction(() => document.querySelector('h1')?.textContent?.includes('API label mix_logements'))
-  assert(!(await page.locator('h1').innerText()).includes('structure_age'), 'A stale profile response must not replace the routed page')
+  await page.waitForFunction((title) => document.querySelector('h1')?.textContent?.includes(title), mixTitle)
+  assert.equal((await page.locator('h1').innerText()).trim(), mixTitle, 'A stale profile response must not replace the routed page')
 
   // Supported non-commune level and regional facts-only boundary.
   await page.goto(`${baseUrl}indicateurs/habitat/mix_logements?territoire=200000001&niveau=epci&vue=reperes`,

@@ -4,10 +4,12 @@ import { join } from 'node:path'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
+import { CONTENU_CATALOGUE_INDICATEURS } from '../indicateurs/catalogueContent'
 import { territoiresFixture } from '../payload/fixtures'
 import type { ThemeMetadata, TerritoireType } from '../payload/types'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { routes } from '../router'
+import { nativeResources } from './helpers/semanticApiFixtures'
 import IndicateurView from '../views/IndicateurView.vue'
 
 type JsonRecord = Record<string, unknown>
@@ -15,8 +17,11 @@ type ProfileSpec = {
   theme: string
   indicator: string
   family: string
+  title: string
   metadata: ThemeMetadata & JsonRecord
+  resource: ReturnType<typeof nativeResources>[number]
   page: NonNullable<ThemeMetadata['indicator_pages']>[string]
+  contract: JsonRecord
   details: string[]
   sexes: string[]
   units: Record<string, string>
@@ -26,60 +31,52 @@ type ProfileSpec = {
 const themeNames = ['demographie', 'habitat', 'mobilite'] as const
 const metadataByTheme = Object.fromEntries(themeNames.map((theme) => [theme,
   JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8')) as ThemeMetadata & JsonRecord]))
+// Canonical metadata seeds the offline producer fixture only. The mounted page
+// receives the reduced public metadata and uses app-owned presentation content.
+const producerMetadataByTheme = Object.fromEntries(themeNames.map((theme) => [theme,
+  JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata',
+    `theme_${theme}.json`), 'utf8')) as JsonRecord]))
+const nativeResourceDeclarations = nativeResources()
 
-function profilesFromProducerMetadata(): ProfileSpec[] {
+function profileSpecsFromAppContent(): ProfileSpec[] {
   const profiles: ProfileSpec[] = []
   for (const theme of themeNames) {
     const metadata = metadataByTheme[theme]
-    const contracts = (metadata.profile_contracts ?? {}) as Record<string, JsonRecord>
-    for (const [indicator, page] of Object.entries(metadata.indicator_pages ?? {})) {
-      const isProfile = Object.hasOwn(contracts, indicator) ||
-        (page.family === 'pyramid' && page.pyramid.dimensions.includes('detail'))
-      if (!isProfile) continue
-      const contract = contracts[indicator] ?? {}
-      const details = page.comparison?.details ??
-        (page.family === 'distribution' ? page.distribution.signature :
-          Object.keys(metadata.detail_labels[indicator] ?? {}))
-      const sexes = page.comparison?.sexes ?? []
+    const producer = producerMetadataByTheme[theme] as JsonRecord
+    const producerPages = producer.indicator_pages as Record<string, ProfileSpec['page']> | undefined
+    const producerContracts = producer.profile_contracts as Record<string, JsonRecord> | undefined
+    const appTheme = CONTENU_CATALOGUE_INDICATEURS.find((candidate) => candidate.theme === theme)
+    for (const group of appTheme?.sousGroupes ?? []) for (const appPage of group.pages) {
+      const indicator = appPage.resourceKey
+      const resource = nativeResourceDeclarations.find((candidate) => candidate.theme_id === theme &&
+        candidate.resource_id === indicator && candidate.shapes.includes('declared_profile'))
+      const page = producerPages?.[indicator]
+      if (!resource || !page) continue
+      const contract = producerContracts?.[indicator] ?? {}
+      const details = resource.axis_values?.find(([axis]) => axis === 'detail')?.[1] ?? []
+      const sexes = resource.axis_values?.find(([axis]) => axis === 'sex')?.[1] ?? []
       const detailUnits = (contract.detail_units ?? {}) as Record<string, string>
       const units = Object.fromEntries(details.map((detail) => [detail,
-        detailUnits[detail] ?? page.comparison?.unit ?? page.unit]))
+        detailUnits[detail] ?? page.comparison?.unit ?? page.unit ?? resource.unit]))
       const scalar = page.comparison?.indicator && page.comparison.indicator !== indicator
         ? page.comparison.indicator : undefined
-      profiles.push({ theme, indicator, family: page.family, metadata, page,
-        details, sexes, units, scalar })
+      profiles.push({ theme, indicator, family: appPage.figureFamily, title: appPage.label,
+        metadata, resource, page, contract, details, sexes, units, scalar })
     }
   }
-  return profiles
+  return profiles.sort((left, right) => `${left.theme}/${left.indicator}`.localeCompare(`${right.theme}/${right.indicator}`))
 }
 
-const profileSpecs = profilesFromProducerMetadata()
+const profileSpecs = profileSpecsFromAppContent()
 const sourceInfo = (id: string) => ({ source_id: id, name: `API source ${id}`,
   vintage_id: `${id}-api-v1`, version: 'API-2026', reference_date: '2026-05-04', publication_date: '2026-05-05' })
 
 function resourceDeclarations(): JsonRecord[] {
-  const profiles = profileSpecs.map((spec) => ({
-    resource_id: spec.indicator, theme_id: spec.theme, indicator_id: spec.indicator,
-    label: `API label ${spec.indicator}`, unit: spec.page.unit,
-    direction: spec.page.comparison?.direction ?? spec.page.direction,
-    allowed_levels: spec.page.levels, sources: spec.page.sources,
-    shapes: ['declared_profile'], target_kinds: ['territory', 'territory_cohort'],
-    axes: [...new Set(['detail', ...(spec.sexes.length ? ['sex'] : [])])],
-    axis_values: [['detail', spec.details], ...(spec.sexes.length ? [['sex', spec.sexes]] : [])],
-    dynamic_axes: [], fields: ['value'], intents: ['facts', 'fixed_comparison', 'selected_comparison'],
-  }))
-  const companions = profileSpecs.filter((spec) => spec.scalar).map((spec) => ({
-    resource_id: spec.scalar!, theme_id: spec.theme, indicator_id: spec.scalar!,
-    label: spec.page.comparison?.label ?? `API label ${spec.scalar}`,
-    unit: spec.page.comparison?.unit ?? spec.page.unit,
-    direction: spec.page.comparison?.direction ?? spec.page.direction,
-    allowed_levels: spec.page.levels, sources: spec.page.sources,
-    shapes: ['scalar'], target_kinds: ['territory', 'territory_cohort'],
-    axes: [], axis_values: [], dynamic_axes: [],
-    fields: ['value', 'support_count', 'denominator_count'],
-    intents: ['facts', 'fixed_comparison', 'selected_comparison'],
-  }))
-  return [...profiles, ...companions]
+  const declarations = [...profileSpecs.map((spec) => spec.resource),
+    ...profileSpecs.flatMap((spec) => spec.scalar
+      ? nativeResourceDeclarations.filter((resource) => resource.resource_id === spec.scalar && resource.theme_id === spec.theme)
+      : [])]
+  return [...new Map(declarations.map((resource) => [resource.resource_id, resource])).values()]
 }
 
 function cohortMembers(type: TerritoireType, department: string | null, epci: string | null) {
@@ -98,15 +95,14 @@ function profileDescriptor(spec: ProfileSpec) {
   const comparisonPoint = spec.scalar ? null : {
     detail: spec.page.comparison?.detail ?? spec.details[0]!,
     sex: spec.page.comparison?.sex ?? null,
-    direction: spec.page.comparison?.direction ?? spec.page.direction,
+    direction: spec.page.comparison?.direction ?? spec.resource.direction,
     unit: spec.units[spec.page.comparison?.detail ?? spec.details[0]!]!,
   }
-  const contract = ((spec.metadata.profile_contracts ?? {}) as Record<string, JsonRecord>)[spec.indicator] ?? {}
   return {
-    indicator: spec.indicator, label: `API label ${spec.indicator}`, unit: spec.page.unit,
-    allowed_levels: spec.page.levels, completeness: contract.completeness ?? 'dense_complete',
+    indicator: spec.indicator, label: spec.resource.label, unit: spec.resource.unit,
+    allowed_levels: spec.resource.allowed_levels, completeness: spec.contract.completeness ?? 'dense_complete',
     descriptor_version: `profile-descriptor-${spec.indicator}-v1`,
-    denominator_semantics: contract.denominator_semantics ?? `API denominator ${spec.indicator}`,
+    denominator_semantics: spec.contract.denominator_semantics ?? `API denominator ${spec.indicator}`,
     comparison_scalar: spec.scalar ?? null, required_scalar_version: spec.scalar ? 'scalar-content-v1' : null,
     comparison_point: comparisonPoint, axes,
   }
@@ -382,11 +378,11 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
   it('découvre la famille par le catalogue producteur et couvre le census exact, sans charger de numérics statiques', async () => {
     expect(profileSpecs.map(({ theme, indicator, family }) => [theme, indicator, family])).toEqual([
       ['demographie', 'structure_age', 'pyramid'],
+      ['habitat', 'age_du_bati', 'composition'], ['habitat', 'distribution_dpe', 'distribution'],
       ['habitat', 'mix_logements', 'composition'], ['habitat', 'statut', 'composition'],
-      ['habitat', 'age_du_bati', 'composition'], ['habitat', 'type', 'composition'],
-      ['habitat', 'distribution_dpe', 'distribution'],
-      ['mobilite', 'voitures_menage', 'composition'], ['mobilite', 'offre_cyclable', 'composition'],
-      ['mobilite', 'reseaux', 'list'], ['mobilite', 'reseaux_par_habitant', 'list'],
+      ['habitat', 'type', 'composition'],
+      ['mobilite', 'offre_cyclable', 'composition'], ['mobilite', 'reseaux', 'list'],
+      ['mobilite', 'reseaux_par_habitant', 'list'], ['mobilite', 'voitures_menage', 'composition'],
     ])
     for (const spec of profileSpecs) {
       const transport = createTransport()
@@ -426,7 +422,7 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
       const { wrapper } = await mountPage(spec.theme, spec.indicator, transport)
       await flushPromises()
       expect(wrapper.find(`[data-renderer="${spec.family}"]`).exists(), spec.indicator).toBe(true)
-      expect(wrapper.text()).toContain(`API label ${spec.indicator}`)
+      expect(wrapper.get('h1').text()).toBe(spec.title)
       expect(wrapper.text()).toContain('API source')
       if (spec.family === 'composition' && spec.page.family === 'composition') {
         const part = spec.page.composition.parts[0]!
@@ -553,7 +549,7 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     await flushPromises()
     expect(retryTransport.profileFactsCalls).toHaveLength(2)
     expect(retryTransport.calls.some(({ url }) => url.startsWith('/data/indicateurs_'))).toBe(false)
-    expect(retryPage.wrapper.text()).toContain('API label mix_logements')
+    expect(retryPage.wrapper.get('h1').text()).toBe(spec.title)
     retryPage.wrapper.unmount()
   })
 
@@ -610,9 +606,9 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     transport.releaseDeferred()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('API label mix_logements')
+    expect(wrapper.get('h1').text()).toBe(profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!.title)
     expect(transport.profileFactsCalls.map((item) => item.resource)).toContain('mix_logements')
-    expect(wrapper.text()).not.toContain('API label structure_age')
+    expect(wrapper.get('h1').text()).not.toBe(profileSpecs.find((candidate) => candidate.indicator === 'structure_age')!.title)
     expect(transport.calls.some(({ url }) => url.startsWith('/data/indicateurs_'))).toBe(false)
     wrapper.unmount()
   })
