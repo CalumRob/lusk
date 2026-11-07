@@ -22,8 +22,7 @@ import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } from '@/indicateurs/etatUrl'
 import { PayloadError, validerCatalogueNavigateur } from '@/payload/validate'
 import { apiComparisonScopeLabel, semanticComparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
-import { presentationPageIndicateur } from '@/indicateurs/pagePresentation'
-import type { FamillePresentationPage } from '@/indicateurs/pagePresentation'
+import { presentationPageDepuisRessource } from '@/indicateurs/pagePresentation'
 import { rangScopeNoteCopy } from '@/fiche/content/comparisonWording'
 import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerCohortePageScalaireNative, chargerComparaisonsScalaires,
@@ -93,8 +92,7 @@ const orderedSeriesAdapter = computed(() => {
   const declaration = catalogueResourcesApi.value?.find((resource) => resource.resource_id === indicator.value)
   const adapter = orderedSeriesAdapterFor(theme.value, indicator.value, declaration)
   if (!adapter || !seriesPageApiActive.value || !declaration) return null
-  const editorial = presentationPageIndicateur(theme.value as Theme, indicator.value,
-    declaration.label, 'trajectory')
+  const editorial = presentationPageDepuisRessource(theme.value as Theme, indicator.value, declaration)
   return editorial && (editorial.figureFamily === 'trajectory' || editorial.figureFamily === 'scalar')
     ? adapter : null
 })
@@ -257,8 +255,7 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
   }
 
   if (binding.declaration) {
-    const page = presentationPageIndicateur(currentTheme as Theme, currentIndicator,
-      binding.declaration.label, 'profile')
+    const page = presentationPageDepuisRessource(currentTheme as Theme, currentIndicator, binding.declaration)
     if (!page) {
       profileDiscoveryComplete.value = true
       profileBootstrapLoading.value = false
@@ -289,7 +286,7 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     resource.intents.includes('facts'))
   const seriesAdapter = orderedSeriesAdapterFor(currentTheme, currentIndicator, seriesResource)
   const seriesPresentation = seriesResource
-    ? presentationPageIndicateur(currentTheme as Theme, currentIndicator, seriesResource.label, 'trajectory') : null
+    ? presentationPageDepuisRessource(currentTheme as Theme, currentIndicator, seriesResource) : null
   if (seriesResource && seriesAdapter && seriesPresentation &&
       ['trajectory', 'scalar'].includes(seriesPresentation.figureFamily)) {
     seriesPageApiActive.value = true
@@ -306,8 +303,7 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     resource.shapes.length === 1 && resource.shapes[0] === 'scalar' &&
     resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
   if (scalarResource) {
-    const scalarPresentation = presentationPageIndicateur(currentTheme as Theme, currentIndicator,
-      scalarResource.label, 'scalar')
+    const scalarPresentation = presentationPageDepuisRessource(currentTheme as Theme, currentIndicator, scalarResource)
     if (scalarPresentation?.figureFamily === 'scalar' &&
         scalarResource.allowed_levels.length > 0) {
       catalogueScalaireApi.value = resources
@@ -325,7 +321,7 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     resource.allowed_levels.length === 1 && resource.allowed_levels[0] === 'commune' &&
     resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
   const sparsePresentation = sparseCollection
-    ? presentationPageIndicateur(currentTheme as Theme, currentIndicator, sparseCollection.label, 'sparse-collection')
+    ? presentationPageDepuisRessource(currentTheme as Theme, currentIndicator, sparseCollection)
     : null
   if (sparseCollection && sparsePresentation?.figureFamily === 'list') {
     sparseCollectionResource.value = sparseCollection
@@ -535,8 +531,7 @@ async ([active, resourceId, resourceLabel, territoryCount, routeLevel, departmen
   profileComparisonTarget.value = null
   profileComparisonError.value = false
   const declaration = declarationProfil.value
-  const editorial = declaration && presentationPageIndicateur(theme.value as Theme, indicator.value,
-    declaration.label, 'profile')
+  const editorial = declaration && presentationPageDepuisRessource(theme.value as Theme, indicator.value, declaration)
   if (!active || !territoryCount || !resourceId || !declaration || !editorial) return
 
   profileFactsLoading.value = true
@@ -868,21 +863,13 @@ const metadataCopy = computed(() => {
     ? { definition: page.definition, calculation: page.calculation, caveats: page.caveats }
     : { definition: '', calculation: '', caveats: '' }
 })
-function layoutForResource(resource: SemanticResourceDeclaration): FamillePresentationPage | null {
-  if (resource.shapes.includes('declared_profile')) return 'profile'
-  if (resource.shapes.includes('period_detail')) return 'sparse-collection'
-  if (resource.shapes.includes('ordered_series')) return 'trajectory'
-  if (resource.shapes.length === 1 && resource.shapes[0] === 'scalar') return 'scalar'
-  return null
-}
 const pagePresentation = computed(() => {
   const resource = catalogueResourcesApi.value?.find((candidate) => candidate.resource_id === indicator.value &&
     candidate.indicator_id === indicator.value && candidate.theme_id === theme.value)
-  const layout = resource && layoutForResource(resource)
-  if (!resource || !layout || !themeValide.value) return null
+  if (!resource || !themeValide.value) return null
   const nativeLabel = descriptorProfil.value?.label ?? serieLecture.value?.native_descriptor?.label ??
-    raccordementApiLecture.value?.metadata.label ?? contratScalairePageNatif.value?.label ?? resource.label
-  return presentationPageIndicateur(theme.value as Theme, indicator.value, nativeLabel, layout)
+    raccordementApiLecture.value?.metadata.label ?? contratScalairePageNatif.value?.label
+  return presentationPageDepuisRessource(theme.value as Theme, indicator.value, resource, nativeLabel ?? resource.label)
 })
 const pageProfilCourante = computed(() => {
   const declaration = declarationProfil.value

@@ -6,12 +6,12 @@
  */
 import { computed, nextTick, onMounted, ref } from 'vue'
 
-import { chargerRessourcesCatalogueIndicateurs, groupesCatalogue } from '@/indicateurs/catalogue'
-import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
+import { groupesCatalogue, useEtatDecouverteIndicateurs } from '@/indicateurs/catalogue'
 
-const ressources = ref<SemanticResourceDeclaration[] | null>(null)
-const statut = ref<'loading' | 'error' | 'ready'>('loading')
-const chargement = ref(false)
+const etatDecouverteIndicateurs = useEtatDecouverteIndicateurs()
+const ressources = etatDecouverteIndicateurs.ressources
+const statut = etatDecouverteIndicateurs.statut
+const chargement = etatDecouverteIndicateurs.chargement
 const succesReessai = ref(false)
 const boutonReessai = ref<HTMLButtonElement | null>(null)
 const statutSuccesReessai = ref<HTMLElement | null>(null)
@@ -21,12 +21,10 @@ async function charger(): Promise<void> {
   if (chargement.value) return
   const reessai = statut.value === 'error'
   const boutonAvaitLeFocus = reessai && document.activeElement === boutonReessai.value
-  chargement.value = true
   succesReessai.value = false
   try {
-    ressources.value = await chargerRessourcesCatalogueIndicateurs()
-    statut.value = 'ready'
-    if (reessai) {
+    await etatDecouverteIndicateurs.charger()
+    if (reessai && statut.value === 'ready') {
       succesReessai.value = true
       await nextTick()
       if (boutonAvaitLeFocus &&
@@ -34,14 +32,10 @@ async function charger(): Promise<void> {
         statutSuccesReessai.value?.focus()
       }
     }
-  } catch {
-    statut.value = 'error'
-  } finally {
-    chargement.value = false
-  }
+  } catch { /* The shared state owns error presentation for both consumers. */ }
 }
 
-onMounted(() => { void charger() })
+onMounted(() => { if (statut.value !== 'ready') void charger() })
 </script>
 
 <template>

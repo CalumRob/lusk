@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { RouterView, useRoute } from 'vue-router'
-import { computed } from 'vue'
+import { computed, provide } from 'vue'
 
 import AppFooter from '@/components/AppFooter.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import { creerEtatDecouverteIndicateurs, ETAT_DECOUVERTE_INDICATEURS_KEY } from '@/indicateurs/catalogue'
 
 const route = useRoute()
+provide(ETAT_DECOUVERTE_INDICATEURS_KEY, creerEtatDecouverteIndicateurs())
 
 /** Full-bleed tool pages (e.g. /carte — issue #67) own the viewport: no
     footer, so the page never scrolls as a whole. */

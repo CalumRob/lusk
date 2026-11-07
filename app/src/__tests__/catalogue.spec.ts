@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import IndicateursView from '../views/IndicateursView.vue'
 import {
-  chargerRessourcesCatalogueIndicateurs,
+  creerEtatDecouverteIndicateurs,
   entreesRechercheIndicateurs,
   groupesCatalogue,
 } from '../indicateurs/catalogue'
@@ -207,8 +207,9 @@ describe('catalogue et recherche — labels factuels liés à la découverte nat
     vi.stubGlobal('fetch', fetcher)
 
     // Discovery only: no observation rows are available to infer these routes or labels.
+    const etat = creerEtatDecouverteIndicateurs()
     const [decouvertes, decouvertesPartagees] = await Promise.all([
-      chargerRessourcesCatalogueIndicateurs(), chargerRessourcesCatalogueIndicateurs(),
+      etat.charger(), etat.charger(),
     ])
     expect(decouvertesPartagees).toBe(decouvertes)
     expect(fetcher).toHaveBeenCalledTimes(1)
@@ -247,6 +248,22 @@ describe('catalogue et recherche — labels factuels liés à la découverte nat
     expect(trajectoire?.entrees).toEqual([])
     expect(entreesRechercheIndicateurs(decouvertesSansEvolution).some(({ href }) =>
       href.endsWith('/evolution_1968'))).toBe(false)
+  })
+
+  it('admits catalogue and search routes only when the native shape matches the app page family', () => {
+    const resources = ressourcesNatives.map((resource) => resource.resource_id === 'prix_m2'
+      ? { ...resource, shapes: ['scalar'] }
+      : resource)
+    const pages = groupesCatalogue(resources).flatMap((groupe) =>
+      groupe.sousGroupes.flatMap((sousGroupe) => sousGroupe.entrees),
+    )
+    const recherche = entreesRechercheIndicateurs(resources)
+
+    expect(pages.some(({ href }) => href === '/indicateurs/habitat/prix_m2')).toBe(false)
+    expect(recherche.some(({ href }) => href === '/indicateurs/habitat/prix_m2')).toBe(false)
+    expect(pages).toHaveLength(30)
+    expect(['reseaux', 'structure_age', 'distribution_dpe', 'raccordement_courbe', 'subventions_par_domaine']
+      .every((key) => pages.some(({ indicateur }) => indicateur === key))).toBe(true)
   })
 
   it('keeps catalogue retry focus through pending and failure, then focuses its success status', async () => {

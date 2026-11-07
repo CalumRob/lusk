@@ -5,6 +5,8 @@
  * editorial display wording can override those labels through libellesAffichage.
  */
 
+import { inject, ref, type InjectionKey, type Ref } from 'vue'
+
 import type { Theme } from '@/payload/types'
 import { chargerCatalogueRessources } from '@/payload/semanticResourceClient'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
@@ -12,6 +14,7 @@ import { LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
 import type { EntreeRechercheIndicateur } from '@/search/recherche'
 
 import { CONTENU_CATALOGUE_INDICATEURS } from './catalogueContent'
+import { presentationPageDepuisRessource } from './pagePresentation'
 
 /** Une entrée du catalogue : une Page d'indicateur à sa route existante. */
 export interface EntreeCatalogue {
@@ -38,25 +41,74 @@ export interface GroupeThemeCatalogue {
 
 const hrefDe = (theme: Theme, resourceKey: string): string => `/indicateurs/${theme}/${resourceKey}`
 
-let discoveryFetcher: typeof fetch | null = null
-let discoveryRequest: Promise<SemanticResourceDeclaration[]> | null = null
+export type StatutDecouverteIndicateurs = 'loading' | 'error' | 'ready'
 
-/** Share the existing producer discovery request between the catalogue and global search. */
-export function chargerRessourcesCatalogueIndicateurs(): Promise<SemanticResourceDeclaration[]> {
-  const fetcher = fetch
-  if (discoveryFetcher !== fetcher) {
-    discoveryFetcher = fetcher
-    discoveryRequest = null
-  }
-  if (!discoveryRequest) {
-    let pending: Promise<SemanticResourceDeclaration[]>
-    pending = chargerCatalogueRessources().catch((error) => {
-      if (discoveryFetcher === fetcher && discoveryRequest === pending) discoveryRequest = null
+/** Per-Vue-app discovery state shared by the persistent shell and catalogue route. */
+export interface EtatDecouverteIndicateurs {
+  readonly ressources: Ref<SemanticResourceDeclaration[] | null>
+  readonly statut: Ref<StatutDecouverteIndicateurs>
+  readonly chargement: Ref<boolean>
+  charger(): Promise<SemanticResourceDeclaration[]>
+}
+
+export const ETAT_DECOUVERTE_INDICATEURS_KEY: InjectionKey<EtatDecouverteIndicateurs> =
+  Symbol('etat-decouverte-indicateurs')
+
+export function creerEtatDecouverteIndicateurs(): EtatDecouverteIndicateurs {
+  const ressources = ref<SemanticResourceDeclaration[] | null>(null)
+  const statut = ref<StatutDecouverteIndicateurs>('loading')
+  const chargement = ref(false)
+  let requete: Promise<SemanticResourceDeclaration[]> | null = null
+  let fetcherRequete: typeof fetch | null = null
+  let generation = 0
+
+  function charger(): Promise<SemanticResourceDeclaration[]> {
+    if (statut.value === 'ready' && ressources.value) return Promise.resolve(ressources.value)
+
+    const fetcher = fetch
+    if (requete && fetcherRequete === fetcher) return requete
+    if (requete && fetcherRequete !== fetcher) {
+      // A newer app/test transport owns subsequent requests; ignore stale completion.
+      generation += 1
+      requete = null
+    }
+
+    const requestGeneration = ++generation
+    fetcherRequete = fetcher
+    chargement.value = true
+    // Retain the error state while a user-initiated retry is pending so the
+    // retry control remains mounted and its disabled/pending announcement works.
+    if (statut.value !== 'error') statut.value = 'loading'
+
+    const pending = chargerCatalogueRessources().then((resources) => {
+      if (generation === requestGeneration) {
+        ressources.value = resources
+        statut.value = 'ready'
+      }
+      return resources
+    }).catch((error: unknown) => {
+      if (generation === requestGeneration) {
+        ressources.value = null
+        statut.value = 'error'
+      }
       throw error
+    }).finally(() => {
+      if (generation === requestGeneration) {
+        chargement.value = false
+        requete = null
+        fetcherRequete = null
+      }
     })
-    discoveryRequest = pending
+    requete = pending
+    return pending
   }
-  return discoveryRequest
+
+  return { ressources, statut, chargement, charger }
+}
+
+/** Components outside the app shell get an isolated state rather than a module singleton. */
+export function useEtatDecouverteIndicateurs(): EtatDecouverteIndicateurs {
+  return inject(ETAT_DECOUVERTE_INDICATEURS_KEY, null) ?? creerEtatDecouverteIndicateurs()
 }
 
 function declarationForPage(
@@ -64,10 +116,7 @@ function declarationForPage(
   theme: Theme,
   resourceKey: string,
 ): SemanticResourceDeclaration | undefined {
-  return resources.find((resource) => resource.theme_id === theme &&
-    resource.resource_id === resourceKey && resource.indicator_id === resourceKey &&
-    resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts') &&
-    resource.allowed_levels.length > 0)
+  return resources.find((resource) => presentationPageDepuisRessource(theme, resourceKey, resource) !== null)
 }
 
 /** Project app-owned organization after native discovery admits each route identity. */

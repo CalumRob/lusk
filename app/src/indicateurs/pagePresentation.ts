@@ -1,5 +1,7 @@
 import { CONTENU_CATALOGUE_INDICATEURS } from './catalogueContent'
 import { LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
+import { orderedSeriesAdapterFor } from '@/payload/orderedSeriesAdapter'
+import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 import type { IndicatorPageMetadata, Theme } from '@/payload/types'
 
 /**
@@ -61,4 +63,45 @@ export function presentationPageIndicateur(
   }
 
   return null
+}
+
+/**
+ * Bind a discovered native resource to the same reader/layout that admits the
+ * routed indicator page. Discovery facts select the native shape; the existing
+ * app page binding decides whether that reader can render the curated figure.
+ */
+export function presentationPageDepuisRessource(
+  theme: Theme,
+  resourceKey: string,
+  resource: SemanticResourceDeclaration,
+  nativeLabel = resource.label,
+): PresentationPageIndicateur | null {
+  if (resource.resource_id !== resourceKey || resource.indicator_id !== resourceKey ||
+      resource.theme_id !== theme || !resource.target_kinds.includes('territory_cohort') ||
+      !resource.intents.includes('facts') || resource.allowed_levels.length === 0) return null
+
+  let layoutFamily: FamillePresentationPage | null = null
+  if (resource.shapes.includes('declared_profile')) {
+    layoutFamily = 'profile'
+  } else if (orderedSeriesAdapterFor(theme, resourceKey, resource)) {
+    layoutFamily = 'trajectory'
+  } else if (resource.shapes.length === 1 && resource.shapes[0] === 'scalar') {
+    layoutFamily = 'scalar'
+  } else if (resource.shapes.length === 1 && resource.shapes[0] === 'period_detail' &&
+      resource.allowed_levels.length === 1 && resource.allowed_levels[0] === 'commune') {
+    layoutFamily = 'sparse-collection'
+  }
+  if (!layoutFamily) return null
+
+  const page = presentationPageIndicateur(theme, resourceKey, nativeLabel, layoutFamily)
+  if (!page) return null
+
+  const compatible = layoutFamily === 'profile'
+    ? ['composition', 'distribution', 'list', 'pyramid'].includes(page.figureFamily)
+    : layoutFamily === 'trajectory'
+      ? ['trajectory', 'scalar'].includes(page.figureFamily)
+      : layoutFamily === 'scalar'
+        ? page.figureFamily === 'scalar'
+        : page.figureFamily === 'list'
+  return compatible ? page : null
 }

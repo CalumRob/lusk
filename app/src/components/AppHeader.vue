@@ -34,10 +34,9 @@ import { useRoute } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
 import LuskBrand from '@/components/LuskBrand.vue'
-import { chargerRessourcesCatalogueIndicateurs, entreesRechercheIndicateurs } from '@/indicateurs/catalogue'
+import { entreesRechercheIndicateurs, useEtatDecouverteIndicateurs } from '@/indicateurs/catalogue'
 import type { EntreeRechercheIndicateur } from '@/search/recherche'
 import { usePayload } from '@/payload/usePayload'
-import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 import type { Territoire } from '@/payload/types'
 
 const route = useRoute()
@@ -49,26 +48,17 @@ const { payload, erreur, chargement } = usePayload({ attendre: ['territoires', '
 const territoires = computed<Territoire[]>(() => payload.value?.territoires ?? [])
 
 /** Native discovery admits indicator routes and supplies fact-bearing labels. */
-const ressourcesIndicateurs = ref<SemanticResourceDeclaration[]>([])
-const etatIndicateurs = ref<'loading' | 'error' | 'ready'>('loading')
-const chargementIndicateurs = ref(false)
+const etatDecouverteIndicateurs = useEtatDecouverteIndicateurs()
+const ressourcesIndicateurs = computed(() => etatDecouverteIndicateurs.ressources.value ?? [])
+const etatIndicateurs = etatDecouverteIndicateurs.statut
+const chargementIndicateurs = etatDecouverteIndicateurs.chargement
 const entreesIndicateurs = computed<EntreeRechercheIndicateur[]>(() =>
   entreesRechercheIndicateurs(ressourcesIndicateurs.value),
 )
 
 async function chargerIndicateursDecouverts(): Promise<void> {
-  if (chargementIndicateurs.value) return
-  chargementIndicateurs.value = true
-  try {
-    ressourcesIndicateurs.value = await chargerRessourcesCatalogueIndicateurs()
-    etatIndicateurs.value = 'ready'
-  } catch {
-    // Keep territorial search available; never infer indicator routes or labels.
-    ressourcesIndicateurs.value = []
-    etatIndicateurs.value = 'error'
-  } finally {
-    chargementIndicateurs.value = false
-  }
+  try { await etatDecouverteIndicateurs.charger() }
+  catch { /* Keep territorial search available; never infer indicator routes or labels. */ }
 }
 
 onMounted(() => { void chargerIndicateursDecouverts() })
