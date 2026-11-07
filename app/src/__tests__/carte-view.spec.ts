@@ -16,8 +16,10 @@ import {
   chargerAvec,
   histoiresDemographieFixture,
   histoiresHabitatFixture,
+  histoiresMilieuxFixture,
   indicateursDemographieFixture,
   indicateursHabitatFixture,
+  indicateursMilieuxFixture,
   membresProgrammesFixture,
   metadonneesThemesFixtures,
   subventionsProgrammesFixture,
@@ -28,7 +30,7 @@ import { PAYLOAD_CHARGER_KEY, usePayload } from '../payload/usePayload'
 import type { ChargerFichier } from '../payload/usePayload'
 import type { Fichier } from '../payload/loader'
 import { THEMES_CANONIQUES } from '../payload/types'
-import type { Histoire, HistoireDemographie, Indicateur, MembreProgramme, Payload, SubventionProgramme, Theme } from '../payload/types'
+import type { Histoire, HistoireDemographie, HistoireMilieux, Indicateur, MembreProgramme, Payload, SubventionProgramme, Theme } from '../payload/types'
 import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
 import { THEME_METADATA_CHARGER_KEY } from '../payload/themeCatalogue'
@@ -44,7 +46,7 @@ function nativeMapCapabilities(theme: string, indicator: string) {
   return { map_eligible: resource.map_eligible, counts_available: resource.counts_available }
 }
 
-const resourceShapes: Record<string, Record<string, { shape: string; source: string; levels?: string[] }>> = {
+const resourceShapes: Record<string, Record<string, { shape: string; source?: string; levels?: string[] }>> = {
   demographie: {
     densite: { shape: 'scalar', source: 'serie_historique' },
     structure_age: { shape: 'declared_profile', source: 'age_detail' },
@@ -54,6 +56,9 @@ const resourceShapes: Record<string, Record<string, { shape: string; source: str
   },
   habitat: {
     habitat_selected_reading: { shape: 'typed_reading', source: 'dpe', levels: ['commune', 'epci', 'departement'] },
+  },
+  milieux: {
+    milieux_selected_reading: { shape: 'typed_reading' },
   },
   programmes: {
     couverture_programmes: { shape: 'anchored_membership', source: 'acv' },
@@ -158,7 +163,7 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
   }
   // Preload canonical metadata before mount so fetch() never performs filesystem
   // I/O while Vue is flushing its watchers.
-  await Promise.all(['demographie', 'habitat', 'programmes'].map(loadMetadata))
+  await Promise.all(['demographie', 'habitat', 'milieux', 'programmes'].map(loadMetadata))
   const declarations = async (theme: string) => {
     // #893 — un thème programmes sans faits (aucune ligne indicateurs_programmes)
     // n'a aucune ressource déclarée côté API
@@ -168,7 +173,7 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
     return Object.entries(shapes).map(([id, spec]) => {
       const page = metadata.indicator_pages?.[id]
       const native = nativeResources(theme).find((resource) => resource.resource_id === id)
-      const allowed = spec.levels ?? page?.levels ?? ['commune', 'epci', 'departement']
+      const allowed = spec.levels ?? page?.levels ?? native?.allowed_levels ?? ['commune', 'epci', 'departement']
       const facts = p.indicateurs.filter((row) => row.key === id && row.theme === theme)
       const details = [...new Set(facts.map((row) => row.detail).filter((value): value is string => Boolean(value)))]
       const sexes = [...new Set(facts.map((row) => row.sex).filter(Boolean))] as string[]
@@ -180,7 +185,8 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
         ? [['detail', details], ...(sexes.length ? [['sex', sexes]] : [])]
         : spec.shape === 'anchored_membership' ? [['detail', ['ACV', 'PVD', 'CRTE', "Territoires d'industrie", 'ORT']]]
           : spec.shape === 'typed_reading' ? native?.axis_values ?? [] : []
-      const source = page?.sources?.[0] ?? spec.source
+      const source = page?.sources?.[0] ?? native?.sources[0] ?? spec.source
+      if (!source) throw new Error(`Native map fixture has no declared source for ${theme}/${id}`)
       return { resource_id: id, theme_id: theme, indicator_id: id, label: metadata.indicator_labels?.[id] ?? id,
         ...nativeMapCapabilities(theme, id),
         unit: page?.unit ?? (spec.shape === 'anchored_membership' ? 'adhésion' : ''),
@@ -199,7 +205,8 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
     }
     if (url === '/api/resources') {
       try {
-      const resources = [...await declarations('demographie'), ...await declarations('habitat'), ...await declarations('programmes')]
+      const resources = [...await declarations('demographie'), ...await declarations('habitat'),
+        ...await declarations('milieux'), ...await declarations('programmes')]
         return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
       } catch (error) { console.error('catalogue fixture failure', error); throw error }
     }
@@ -209,7 +216,8 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
       for (const item of body.items) {
         const theme = String(item.resource).startsWith('demographie_') || item.resource === 'densite' ||
           item.resource === 'evolution_1968' || item.resource === 'taille_menages' || item.resource === 'structure_age'
-          ? 'demographie' : 'programmes'
+          ? 'demographie' : item.resource === 'habitat_selected_reading' ? 'habitat'
+            : item.resource === 'milieux_selected_reading' ? 'milieux' : 'programmes'
         const resource = (await declarations(theme)).find((entry) => entry.resource_id === item.resource)!
         const metadata = await loadMetadata(theme)
         const type = item.target.type as string
@@ -722,6 +730,44 @@ describe('CarteView — la carte avec fond publié', () => {
       { features: { properties: { territoire: string; valeur: number | null } }[] }
     expect(joined.features.find((feature) => feature.properties.territoire === '22001')?.properties.valeur).toBeNull()
     expect(joined.features.every((feature) => feature.properties.valeur === null)).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('renders the populated native Milieux trajectory reading as a selectable map layer', async () => {
+    const apiPayload: Payload = { ...payload,
+      indicateurs: [...indicateursDemographieFixture, ...indicateursMilieuxFixture],
+      histoires: [...histoiresDemographieFixture, ...histoiresMilieuxFixture],
+    }
+    const baseFetch = await fetchCarteApiFixture(apiPayload)
+    const readingBatches: Array<Array<{ resource: string; fields: string[] }>> = []
+    const apiFetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/resources/read-batch') {
+        const body = JSON.parse(String(init?.body)) as { items: Array<{ resource: string; fields: string[] }> }
+        readingBatches.push(body.items)
+      }
+      return baseFetch(input, init)
+    })
+    const { wrapper } = await monter({ chemin: '/carte?theme=milieux', apiPayload, apiFetchImpl })
+
+    expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
+    const layer = wrapper.findAll('.carte-sidebar-couche')
+      .find((button) => button.text().trim() === 'Trajectoire par habitant')
+    expect(layer).toBeDefined()
+    expect(readingBatches.flat().find((item) => item.resource === 'milieux_selected_reading')?.fields)
+      .toContain('trajectoire_artif_par_habitant')
+
+    await layer!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Trajectoire par habitant')
+    const map = maplibreMock.instancesCarteMaple.at(-1)
+    const joined = map?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as
+      { features: { properties: { territoire: string; valeur: number | null } }[] }
+    const expected = histoiresMilieuxFixture.find((history): history is HistoireMilieux =>
+      history.theme === 'milieux' && history.territoire === '22001')!
+      .trajectoire_artif_par_habitant
+    expect(joined.features.find((feature) => feature.properties.territoire === '22001')?.properties.valeur)
+      .toBe(expected)
     wrapper.unmount()
   })
 

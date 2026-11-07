@@ -241,7 +241,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       figure: { family: 'comparison-bars', indicator: 'artif_par_habitant' },
       reading: {
         params: ['periode_pop', 'periode_artif', 'delta_population', 'trajectoire_artif_par_habitant', 'classification'],
-        mapFields: ['delta_population'],
+        mapFields: ['delta_population', 'trajectoire_artif_par_habitant'],
         template: [
           texte('Entre '), param('periode_pop'), texte(' et '), param('periode_artif'), texte(', '),
           territoire, texte(' '), strong('classification'), texte(' (trajectoire '),

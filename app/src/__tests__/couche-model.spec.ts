@@ -172,6 +172,41 @@ describe('couchesDuTheme — ownership app grammar × native map contract (#827)
     }
   })
 
+  it('keeps both app-declared Milieux reading fields for populated, empty, and unavailable native cohorts', () => {
+    const declarations = nativeResources('milieux') as unknown as SemanticResourceDeclaration[]
+    const populated = couchesDuTheme(payloadAvec(indicateursMilieuxFixture, histoiresMilieuxFixture, undefined, 'milieux'),
+      'milieux', { declarations })
+    const readingKeys = (model: ReturnType<typeof couchesDuTheme>) => model.entrees
+      .flatMap((entry) => entry.type === 'couche' ? [entry.couche] : entry.groupe.couches)
+      .filter((layer): layer is Couche => 'clef' in layer && layer.source === 'histoire')
+      .map((layer) => layer.clef)
+
+    expect(readingKeys(populated)).toEqual(['delta_population', 'trajectoire_artif_par_habitant'])
+    expect(populated.coucheParDefaut).toMatchObject({
+      clef: 'delta_population', storyKey: 'se-densifier-setaler-ou-sen-aller',
+    })
+
+    const emptyPayload = payloadAvec([], [], undefined, 'milieux')
+    const empty = couchesDuTheme(emptyPayload, 'milieux', { declarations })
+    expect(readingKeys(empty)).toEqual(['delta_population', 'trajectoire_artif_par_habitant'])
+    expect(empty.coucheParDefaut).toMatchObject({ clef: 'delta_population', storyKey: null })
+    expect(emptyPayload.histoires).toEqual([])
+
+    const unavailable = {
+      territoire: '22001', type: 'commune', theme: 'milieux',
+      groupe: 'artificialisation', story_key: 'se-densifier-setaler-ou-sen-aller', status: 'unavailable',
+    } as unknown as Payload['histoires'][number]
+    const unavailablePayload = payloadAvec([], [unavailable], undefined, 'milieux')
+    const unavailableModel = couchesDuTheme(unavailablePayload, 'milieux', { declarations })
+    expect(readingKeys(unavailableModel)).toEqual(['delta_population', 'trajectoire_artif_par_habitant'])
+    expect(unavailableModel.coucheParDefaut).toMatchObject({
+      clef: 'delta_population', storyKey: 'se-densifier-setaler-ou-sen-aller',
+    })
+    expect(valeurHistoireParTerritoire(unavailablePayload, 'milieux', 'trajectoire_artif_par_habitant').get('22001'))
+      .toEqual({ value: null, unit: '' })
+    expect(unavailablePayload.histoires).toEqual([unavailable])
+  })
+
   it('keeps raccordement map admission on producer eligibility, not its native curve/reference axes', () => {
     const declarations = nativeResources('mobilite') as unknown as SemanticResourceDeclaration[]
     const model = couchesDuTheme(payloadAvec([], [], undefined, 'mobilite'), 'mobilite', {
