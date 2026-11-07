@@ -40,31 +40,13 @@ import { join } from 'node:path'
 import { NATIVE_API_FIXTURE_NOTICE } from './fixtures/nativeApiScenarios'
 import { nativeResources } from './helpers/semanticApiFixtures'
 
-function nativeMapCapabilities(theme: string, indicator: string) {
-  const resource = nativeResources(theme).find((candidate) => candidate.resource_id === indicator)
-  if (!resource) throw new Error(`Map fixture resource is not producer-declared: ${theme}/${indicator}`)
-  return { map_eligible: resource.map_eligible, counts_available: resource.counts_available }
-}
-
-const resourceShapes: Record<string, Record<string, { shape: string; source?: string; levels?: string[] }>> = {
-  demographie: {
-    densite: { shape: 'scalar', source: 'serie_historique' },
-    structure_age: { shape: 'declared_profile', source: 'age_detail' },
-    evolution_1968: { shape: 'scalar', source: 'serie_historique' },
-    taille_menages: { shape: 'scalar', source: 'menages' },
-    demographie_selected_reading: { shape: 'typed_reading', source: 'serie_historique', levels: ['commune', 'epci', 'departement', 'region'] },
-  },
-  habitat: {
-    habitat_selected_reading: { shape: 'typed_reading', source: 'dpe', levels: ['commune', 'epci', 'departement'] },
-  },
-  milieux: {
-    milieux_selected_reading: { shape: 'typed_reading' },
-  },
-  programmes: {
-    couverture_programmes: { shape: 'anchored_membership', source: 'acv' },
-    subventions_annuelles: { shape: 'ordered_series', source: 'subventions_scdl' },
-    subventions_par_domaine: { shape: 'period_detail', source: 'subventions_scdl', levels: ['commune'] },
-  },
+// These ids keep the browser proof bounded; every declaration fact comes from
+// the producer-derived API discovery fixture below.
+const resourceIds: Record<string, readonly string[]> = {
+  demographie: ['densite', 'structure_age', 'evolution_1968', 'taille_menages', 'demographie_selected_reading'],
+  habitat: ['habitat_selected_reading'],
+  milieux: ['milieux_selected_reading'],
+  programmes: ['couverture_programmes', 'subventions_annuelles', 'subventions_par_domaine'],
 }
 const mapMetadataPreload = new Map<string, Record<string, any>>()
 
@@ -145,63 +127,53 @@ function lignesSubventions(subventions: SubventionProgramme[]): Indicateur[] {
 
 /** Mount boundary fixture: producer-shaped catalogue + cohort reads, never static app reads. */
 async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference = false): Promise<typeof fetch> {
-  const metadataByTheme = new Map<string, Record<string, any>>()
+  const producerMetadataByTheme = new Map<string, Record<string, any>>()
+  const catalogueMetadataByTheme = new Map<string, Record<string, any>>()
   // Most fixtures use their matching compact reference. The shared-store
   // integration case opts into the warmed published reference explicitly.
   const referenceTerritories = usePublishedTerritoryReference
     ? JSON.parse(await readFile(join(process.cwd(), '..', 'public', 'data', 'territoires.json'), 'utf8')) as Payload['territoires']
     : p.territoires
-  const loadMetadata = async (theme: string) => {
-    let metadata = metadataByTheme.get(theme)
+  const loadProducerMetadata = async (theme: string) => {
+    let metadata = producerMetadataByTheme.get(theme)
     if (!metadata) {
-      metadata = JSON.parse(await readFile(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8'))
-      mapMetadataPreload.set(theme, metadata!)
+      metadata = JSON.parse(await readFile(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata',
+        'theme-metadata', `theme_${theme}.json`), 'utf8'))
       if (!metadata) throw new Error(`Missing producer metadata for ${theme}`)
-      metadataByTheme.set(theme, metadata)
+      producerMetadataByTheme.set(theme, metadata)
     }
     return metadata!
   }
-  // Preload canonical metadata before mount so fetch() never performs filesystem
-  // I/O while Vue is flushing its watchers.
-  await Promise.all(['demographie', 'habitat', 'milieux', 'programmes'].map(loadMetadata))
+  const loadCatalogueMetadata = async (theme: string) => {
+    let metadata = catalogueMetadataByTheme.get(theme)
+    if (!metadata) {
+      metadata = JSON.parse(await readFile(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8'))
+      if (!metadata) throw new Error(`Missing browser catalogue for ${theme}`)
+      catalogueMetadataByTheme.set(theme, metadata)
+      mapMetadataPreload.set(theme, metadata)
+    }
+    return metadata!
+  }
+  // Preload only the reduced browser projection; API fixture responses below
+  // use canonical producer contracts/discovery separately.
+  await Promise.all(['demographie', 'habitat', 'milieux', 'programmes'].flatMap((theme) =>
+    [loadCatalogueMetadata(theme), loadProducerMetadata(theme)]))
   const declarations = async (theme: string) => {
     // #893 — un thème programmes sans faits (aucune ligne indicateurs_programmes)
     // n'a aucune ressource déclarée côté API
     if (theme === 'programmes' && !p.indicateurs.some((row) => row.theme === 'programmes')) return []
-    const metadata = await loadMetadata(theme)
-    const shapes = resourceShapes[theme] ?? {}
-    return Object.entries(shapes).map(([id, spec]) => {
-      const page = metadata.indicator_pages?.[id]
-      const native = nativeResources(theme).find((resource) => resource.resource_id === id)
-      const allowed = spec.levels ?? page?.levels ?? native?.allowed_levels ?? ['commune', 'epci', 'departement']
-      const facts = p.indicateurs.filter((row) => row.key === id && row.theme === theme)
-      const details = [...new Set(facts.map((row) => row.detail).filter((value): value is string => Boolean(value)))]
-      const sexes = [...new Set(facts.map((row) => row.sex).filter(Boolean))] as string[]
-      const axes = spec.shape === 'typed_reading' ? native?.axes ?? ['groupe'] :
-        spec.shape === 'declared_profile' ? ['detail', ...(sexes.length ? ['sex'] : [])] :
-        spec.shape === 'ordered_series' ? ['year'] : spec.shape === 'anchored_membership' ? ['membership'] :
-          []
-      const axisValues = spec.shape === 'declared_profile'
-        ? [['detail', details], ...(sexes.length ? [['sex', sexes]] : [])]
-        : spec.shape === 'anchored_membership' ? [['detail', ['ACV', 'PVD', 'CRTE', "Territoires d'industrie", 'ORT']]]
-          : spec.shape === 'typed_reading' ? native?.axis_values ?? [] : []
-      const source = page?.sources?.[0] ?? native?.sources[0] ?? spec.source
-      if (!source) throw new Error(`Native map fixture has no declared source for ${theme}/${id}`)
-      return { resource_id: id, theme_id: theme, indicator_id: id, label: metadata.indicator_labels?.[id] ?? id,
-        ...nativeMapCapabilities(theme, id),
-        unit: page?.unit ?? (spec.shape === 'anchored_membership' ? 'adhésion' : ''),
-        direction: page?.comparison?.direction ?? page?.direction ?? 'high', allowed_levels: allowed, sources: [source],
-        shapes: [spec.shape], axes, axis_values: axisValues, target_kinds: ['territory', 'territory_cohort'],
-        fields: spec.shape === 'anchored_membership' ? ['detail', 'label', 'rider', 'anchor_count', 'availability']
-          : spec.shape === 'typed_reading' ? native?.fields ?? []
-            : spec.shape === 'scalar' ? ['value'] : spec.shape === 'declared_profile' ? ['value'] : ['value'],
-        intents: ['facts', ...(spec.shape === 'scalar' ? ['fixed_comparison', 'selected_comparison'] : [])] }
+    const wanted = resourceIds[theme] ?? []
+    const discovered = nativeResources(theme)
+    return wanted.map((id) => {
+      const declaration = discovered.find((resource) => resource.resource_id === id)
+      if (!declaration) throw new Error(`Map fixture resource is not producer-declared: ${theme}/${id}`)
+      return declaration
     })
   }
   const fixtureFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = String(input)
     if (url.startsWith('/data/theme_')) {
-      return new Response(JSON.stringify(await loadMetadata(url.slice('/data/theme_'.length, -5))))
+      return new Response(JSON.stringify(await loadCatalogueMetadata(url.slice('/data/theme_'.length, -5))))
     }
     if (url === '/api/resources') {
       try {
@@ -219,7 +191,7 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
           ? 'demographie' : item.resource === 'habitat_selected_reading' ? 'habitat'
             : item.resource === 'milieux_selected_reading' ? 'milieux' : 'programmes'
         const resource = (await declarations(theme)).find((entry) => entry.resource_id === item.resource)!
-        const metadata = await loadMetadata(theme)
+        const metadata = await loadProducerMetadata(theme)
         const type = item.target.type as string
         if (item.target.kind === 'territory' && item.intent.kind !== 'facts') {
           const page = metadata.indicator_pages[item.resource]
@@ -452,6 +424,18 @@ const payloadProgrammes: Payload = {
   ],
 }
 
+describe('CarteView — la discovery fixture conserve les capacités natives du producteur', () => {
+  it('projette les déclarations API sélectionnées sans recopier éligibilité, axes ou capacités de comptage', async () => {
+    const apiFixture = await fetchCarteApiFixture(payloadProgrammes)
+    const response = await apiFixture('/api/resources')
+    const catalogue = await response.json() as { resources: ReturnType<typeof nativeResources> }
+    const expected = Object.entries(resourceIds).flatMap(([theme, ids]) =>
+      ids.map((id) => nativeResources(theme).find((resource) => resource.resource_id === id)!))
+
+    expect(catalogue.resources).toEqual(expected)
+  })
+})
+
 function chargerPayloadAvec(p: Payload): ChargerFichier {
   return chargerAvec(p)
 }
@@ -564,12 +548,11 @@ describe('CarteView — les états (chargement / erreur / fond indisponible)', (
 describe('CarteView — la carte avec fond publié', () => {
   it('masque le scalaire statique tant que le cohort est indisponible puis récupère via le retry', async () => {
     const metadata = JSON.parse(await (await import('node:fs/promises')).readFile('../public/data/theme_demographie.json', 'utf8'))
-    const page = metadata.indicator_pages.densite
-    const resource = { resource_id: 'densite', theme_id: 'demographie', indicator_id: 'densite', label: 'Densité',
-      ...nativeMapCapabilities('demographie', 'densite'),
-      unit: page.unit, direction: page.direction, allowed_levels: metadata.scalar_contracts.densite.allowed_levels,
-      sources: page.sources, shapes: ['scalar'], target_kinds: ['territory', 'territory_cohort'],
-      fields: ['value', 'support_count', 'denominator_count'], intents: ['facts', 'fixed_comparison', 'selected_comparison'] }
+    const producer = JSON.parse(await readFile(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata',
+      'theme-metadata', 'theme_demographie.json'), 'utf8'))
+    const scalar = producer.scalar_contracts.densite
+    const resource = nativeResources('demographie').find((candidate) => candidate.resource_id === 'densite')
+    if (!resource) throw new Error('Densité map fixture is not producer-declared')
     let apiCalls = 0
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -586,12 +569,13 @@ describe('CarteView — la carte avec fond publié', () => {
             members: members.map((territory) => ({ id: territory.territoire, type: territory.type, name: territory.nom })),
             reference_content_version: 'reference-v1' },
           content_version: 'scalar-v1', reference_content_version: 'reference-v1',
-          descriptor: { indicator_id: 'densite', theme_id: 'demographie', label: 'Densité de population', unit: page.unit,
-            direction: page.direction, comparison_facet: 'densite', allowed_levels: resource.allowed_levels,
-            denominator_semantics: 'Population totale publiée', completeness: 'sparse', descriptor_version: 'scalar-v1' },
+          descriptor: { indicator_id: 'densite', theme_id: 'demographie', label: resource.label, unit: resource.unit,
+            direction: resource.direction, comparison_facet: scalar.comparison_facet,
+            allowed_levels: resource.allowed_levels, denominator_semantics: scalar.denominator_semantics,
+            completeness: scalar.completeness, descriptor_version: 'scalar-v1' },
           observations: [{ territory: { id: fact.territoire, type: fact.type, name: fact.nom }, status: 'measured', value: 9876,
             support_count: 41, denominator_count: 100,
-            sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2026',
+            sources: [{ source_id: resource.sources[0], name: 'Source', vintage_id: 'v1', version: '2026',
               reference_date: null, publication_date: null }] }] }
         return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, resource: 'densite', data }] }))
       }
