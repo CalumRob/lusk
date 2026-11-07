@@ -838,7 +838,7 @@ const classesFond = computed(() =>
 
 .carte-metadata-erreur p {
   margin: 0;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font: var(--text-body-sm);
 }
 
