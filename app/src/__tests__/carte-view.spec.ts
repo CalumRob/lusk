@@ -247,17 +247,20 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
         } else if (resource.shapes[0] === 'declared_profile') {
           const rows = p.indicateurs.filter((row) => row.key === item.resource && row.type === type)
           const axisValues = (name: string): string[] => {
-            const values: unknown = resource.axis_values.find((axis: any[]) => axis[0] === name)?.[1]
+            const values: unknown = resource.axis_values?.find((axis: any[]) => axis[0] === name)?.[1]
             return Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string') : []
           }
           const details = axisValues('detail')
           const sexes = axisValues('sex')
+          const axes = [
+            ...details.map((key, order) => ({ name: 'detail' as const, key, label: key, order, unit: resource.unit })),
+            ...sexes.map((key, order) => ({ name: 'sex' as const, key, label: key, order, unit: null })),
+          ]
           data = { ...identity, descriptor: { indicator: item.resource, label: resource.label, unit: resource.unit,
             allowed_levels: resource.allowed_levels, completeness: 'sparse', descriptor_version: 'map-profile-v1',
             comparison_scalar: null, required_scalar_version: null, denominator_semantics: 'fixture',
             comparison_point: { detail: details[0], sex: sexes[0] ?? null, direction: resource.direction,
-              unit: resource.unit }, axes: details.map((key: string, order: number) => ({ name: 'detail', key, label: key, order, unit: resource.unit }))
-              .concat(sexes.filter(Boolean).map((key: string, order: number) => ({ name: 'sex', key, label: key, order, unit: null }))) },
+              unit: resource.unit }, axes },
             profiles: members.map((territory) => ({ territory: { id: territory.territoire, type, name: territory.nom },
               cells: rows.filter((row) => row.territoire === territory.territoire).map((row) => ({ detail: row.detail,
                 sex: row.sex ?? null, unit: row.unit, denominator_semantics: 'fixture', status: row.fact_status ?? 'measured',

@@ -368,7 +368,7 @@ async function mountPage(theme: string, indicator: string, transport: ReturnType
     [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
   }, stubs: { MapExplorer: {
     name: 'MapExplorer', props: ['payload', 'activeIds', 'theme', 'couche', 'niveau', 'territoireCible', 'requeteZoom', 'masques'],
-    template: '<div data-testid="profile-map" :data-profile-facts="payload.indicateurs.map((fact) => [fact.key, fact.territoire, fact.detail || \'\', fact.sex || \'\', fact.value].join(\':\')).join(\'|\')" />',
+    template: '<div data-testid="profile-map" :data-profile-facts="payload.indicateurs.map((fact) => [fact.key, fact.territoire, fact.detail || \'\', fact.sex || \'\', fact.value].join(\':\')).join(\'|\')" :data-layer-label="couche?.libelle" :data-layer-detail="couche?.detail" />',
   } } } })
   return { wrapper, router, staticFiles }
 }
@@ -563,6 +563,8 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     await flushPromises()
     const ageMap = agePage.wrapper.get('[data-testid="profile-map"]')
     const ageFacts = ageMap.attributes('data-profile-facts')
+    expect(ageMap.attributes('data-layer-label')).toBe('API axis 15-24')
+    expect(ageMap.attributes('data-layer-detail')).toBe('15-24')
     expect(ageFacts).toContain('structure_age:22001:15-24:F:')
     expect(ageFacts).toContain('structure_age:22001:15-24:M:')
     expect(ageFacts).not.toContain('structure_age:22001:<15:')

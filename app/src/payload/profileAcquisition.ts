@@ -874,7 +874,8 @@ export function adapterPageProfilDeclare(pageOrFamily: IndicatorPageMetadata | I
     if (!selectedUnit) return fail('L’unité de la facette sélectionnée est absente du descripteur natif.')
     comparison = {
       indicator: declaration.indicator_id,
-      label: descriptor.label,
+      // The descriptor names the resource; comparison surfaces name the
+      // selected native detail through `labels` below.
       detail: selectedDetail,
       details: details.map((axis) => axis.key),
       sex: selectedSex as 'F' | 'M' | null,
