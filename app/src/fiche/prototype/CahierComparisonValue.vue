@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import type { RouteLocationRaw } from 'vue-router'
+import { RouterLink } from 'vue-router'
 
 import type { NumericFact, TerritorialScalarReference } from '@/fiche/content/territoryFacts'
 import CahierRank from './CahierRank.vue'
+import { comparisonRank } from '@/fiche/content/comparisonRank'
+import { puceRangDirection } from '@/fiche/figureGrammaire'
 
 const props = withDefaults(
   defineProps<{
@@ -33,7 +36,11 @@ function comparisonAccessibleName(): string {
   const statistic = comparison?.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane'
   const description = props.namedReference?.label
     ?? (comparison?.scope.label ? `${statistic} des ${comparison.scope.label}` : null)
-  return `Groupe comparé : ${comparisonText()}${description ? `. ${description}` : ''}`
+  const served = props.servedRank && props.servedRank.size >= 2 && props.servedRank.position > 0
+  const rank = served
+    ? puceRangDirection(`${props.servedRank!.position === 1 ? '1er' : `${props.servedRank!.position}e`}/${props.servedRank!.size}`, props.servedRank!.direction).phrase
+    : !props.namedReference && props.fact ? comparisonRank(props.fact)?.phrase : null
+  return `Groupe comparé : ${comparisonText()}${rank ? `. Rang ${rank}` : ''}${description ? `. ${description}` : ''}`
 }
 </script>
 
@@ -43,59 +50,35 @@ function comparisonAccessibleName(): string {
     class="cahier-comparison-value cahier-figure-comparison"
     :class="{ 'cahier-comparison-value--named': namedReference }"
   >
-    <span v-if="comparisonText()" class="cahier-comparison-value__reference" role="img" :aria-label="comparisonAccessibleName()">
+    <component v-if="comparisonText()" :is="to ? RouterLink : 'span'" class="cahier-comparison-value__reference" :to="to || undefined" :target="to ? '_blank' : undefined" :rel="to ? 'noopener noreferrer' : undefined" :role="to ? undefined : 'img'" :aria-label="comparisonAccessibleName()">
       Groupe comparé :
       <strong class="region-emphasis">{{ comparisonText() }}</strong>
-    </span>
-    <span v-if="(fact?.comparison && !namedReference) || servedRank" class="cahier-comparison-value__rank">
-      <CahierRank
-        v-if="fact?.comparison?.rank || servedRank?.size && servedRank.size >= 2 && servedRank.position > 0"
-        :fact="fact"
-        :served-rank="servedRank"
-        :to="to"
-        placement="access"
-      />
-    </span>
+      <CahierRank v-if="(namedReference && servedRank) || (!namedReference && fact)" :fact="fact" :served-rank="servedRank" placement="comparison" decorative />
+    </component>
   </p>
 </template>
 
 <style scoped>
 .cahier-comparison-value {
-  display: grid;
-  grid-template-rows: auto minmax(2.5em, auto);
-  justify-items: center;
+  display: flex;
   width: 100%;
   min-width: 0;
-  row-gap: 2px;
   margin: 0;
   color: var(--cahier-default);
   font: var(--type-figure-comparison);
   letter-spacing: normal;
   text-align: center;
-  grid-template-columns: minmax(0, 1fr);
+  justify-content: center;
   /* Les parents donnent une largeur disponible explicite ; la référence ne doit
      pas élargir les colonnes intrinsèques des scalaires inline. */
   contain: inline-size;
 }
-
-.cahier-comparison-value--named { grid-template-rows: auto; }
 
 .cahier-comparison-value__reference {
   min-width: 0;
   max-width: 100%;
   white-space: normal;
   overflow-wrap: break-word;
-}
-
-.cahier-comparison-value__rank {
-  display: flex;
-  min-width: 0;
-  min-height: 2.5em;
-  align-items: center;
-  justify-content: center;
-  gap: 0.3em;
-  width: 100%;
-  line-height: 1.2;
 }
 
 .cahier-comparison-value .region-emphasis {

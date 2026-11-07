@@ -3,6 +3,8 @@ import { RouterLink } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
 
 import type { NumericFact } from '@/fiche/content/territoryFacts'
+import { comparisonRank } from '@/fiche/content/comparisonRank'
+import { puceRangDirection } from '@/fiche/figureGrammaire'
 
 const props = withDefaults(
   defineProps<{
@@ -10,21 +12,25 @@ const props = withDefaults(
     servedRank?: { position: number; size: number; direction: import('@/methodes/indicateurs').DirectionRang; key: string } | null
     to?: RouteLocationRaw | null
     placement?: 'inline' | 'comparison' | 'access'
+    decorative?: boolean
   }>(),
-  { to: null, placement: 'inline' },
+  { to: null, placement: 'inline', decorative: false },
 )
 
-function rankText(fact: NumericFact | undefined, servedRank?: { position: number; size: number } | null): string | null {
+function rankText(fact?: NumericFact, servedRank?: { position: number; size: number } | null): string | null {
   const rank = servedRank ?? fact?.comparison?.rank
-  if (!rank) return null
-  return `${rank.position === 1 ? '1er' : `${rank.position}e`}/${rank.size}`
+  if (rank) {
+    if (!Number.isInteger(rank.position) || !Number.isInteger(rank.size) || rank.position < 1 || rank.size < 2 || rank.position > rank.size) return null
+    return `${rank.position === 1 ? '1er' : `${rank.position}e`}/${rank.size}`
+  }
+  return fact ? comparisonRank(fact)?.rang ?? null : null
 }
 
-function rankDescription(fact: NumericFact | undefined, servedRank?: { position: number; size: number; direction: string } | null): string | null {
+function rankDescription(fact?: NumericFact, servedRank?: { position: number; size: number; direction: string } | null): string | null {
   const rank = rankText(fact, servedRank)
   const direction = servedRank?.direction ?? fact?.comparison?.direction
   if (!rank || !direction) return null
-  return `${rank} — ${direction === 'plus-est-mieux' ? 'plus est mieux' : 'moins est mieux'}`
+  return puceRangDirection(rank, direction as import('@/methodes/indicateurs').DirectionRang).phrase
 }
 
 function isExtreme(fact?: NumericFact): boolean {
@@ -59,7 +65,8 @@ function rankStyle(seed: string): Record<string, string> {
       :class="[`cahier-rank--${props.placement}`, { 'is-extreme': isExtreme(props.fact) }]"
       :style="rankStyle(props.fact.key)"
       :title="rankDescription(props.fact, props.servedRank) ?? undefined"
-      :aria-label="rankDescription(props.fact, props.servedRank) ?? undefined"
+      :aria-label="props.decorative ? undefined : rankDescription(props.fact) ?? undefined"
+      :aria-hidden="props.decorative ? 'true' : undefined"
     >{{ rankText(props.fact, props.servedRank) }}</RouterLink>
     <span
       v-else
@@ -67,14 +74,16 @@ function rankStyle(seed: string): Record<string, string> {
       :class="[`cahier-rank--${props.placement}`, { 'is-extreme': isExtreme(props.fact) }]"
       :style="rankStyle(props.fact?.key ?? props.servedRank?.key ?? '')"
       :title="rankDescription(props.fact, props.servedRank) ?? undefined"
-      aria-hidden="true"
+      role="img"
+      :aria-label="props.decorative ? undefined : rankDescription(props.fact, props.servedRank) ?? undefined"
+      :aria-hidden="props.decorative ? 'true' : undefined"
     >{{ rankText(props.fact, props.servedRank) }}</span>
   </template>
 </template>
 
 <style scoped>
 .cahier-rank {
-  color: var(--color-figure-reference);
+  color: var(--brand-200);
   font: var(--type-figure-comparison);
   font-weight: 700;
   line-height: 1.2;
@@ -87,7 +96,7 @@ function rankStyle(seed: string): Record<string, string> {
   width: 100%;
 }
 
-.cahier-rank--comparison { text-align: right; }
+.cahier-rank--comparison { text-align: center; }
 .cahier-rank--access { text-align: center; }
 
 .cahier-rank.is-extreme {
