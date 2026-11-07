@@ -486,8 +486,7 @@ function codesComparaison(payload: Payload, ref: Territoire): string[] {
  * rows still carry values.
  */
 export function rangEnContexte(indicateur: Indicateur): string | null {
-  if (!indicateur.comparaisonApi) return null
-  return formaterRangApi(indicateur.comparaisonApi.rang, indicateur.comparaisonApi.taille, indicateur.comparaisonApi.portee)
+  return detailsRangEnContexte(indicateur)?.libelle ?? null
 }
 
 /** The structured rank-in-context facts of the API comparison — the numeric
@@ -501,12 +500,16 @@ export interface DetailsRang {
   taille: number | null
   /** The formatted chip, e.g. « 3e/41 · communes de l’EPCI ». */
   libelle: string
+  /** Scope-silent page chip; the scope remains in its accessible name. */
+  libelleCourt: string
 }
 
-export function detailsRangEnContexte(indicateur: Indicateur): DetailsRang | null {
+export function detailsRangEnContexte(indicateur: Pick<Indicateur, 'comparaisonApi'>): DetailsRang | null {
   if (!indicateur.comparaisonApi) return null
   const { rang, taille, portee } = indicateur.comparaisonApi
-  return { rang, taille, libelle: formaterRangApi(rang, taille, portee) }
+  if (rang === null) return null
+  if (taille !== null && taille < 2) return null
+  return { rang, taille, libelle: formaterRangApi(rang, taille, portee), libelleCourt: formaterRangApi(rang, taille, null) }
 }
 
 function formaterRangApi(rang: number, taille: number | null, portee: string | null): string {

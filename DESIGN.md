@@ -255,7 +255,7 @@ Strategy: **mixed** (extracted from the apps) — borders for structure, soft sh
 | Brand ramp steps 300/600/700/900 unverified | Section 2 | provisional values; anchor + 100/200 fixed | visual QA in primitive showcase |
 | Google Fonts in the two legacy apps | `E:\Website\Dashboard`, `E:\ACI_app` | legacy; Lusk starts clean with Fontsource | no exit planned (legacy) |
 | Map choropleth single-hue ramps (existing pattern) | MapExplorer | legacy pattern; accessibility alternative pending | revisit with map work |
-| Comparison numeric reference in light mint (`--brand-200`, `#83ACA7`) | Cahier comparison numeric value only | Owner-approved visual exception (2026-11-06); approximately 2.49:1 against white, below 4.5:1 and not WCAG AA compliant. The comparison label, ranks, and accessible name remain; this exception does not extend to other text or controls. | Revisit if the owner changes this decision or accessibility remediation is undertaken |
+| Comparison numeric reference and associated rank text in light mint (`--brand-200`, `#83ACA7`) | Cahier comparison numeric value and its associated rank text only | Owner-approved visual exception (2026-11-06); approximately 2.49:1 against white, below 4.5:1 and not WCAG AA compliant. The neutral comparison label and all other text/controls remain outside the exception. | Revisit if the owner changes this decision or accessibility remediation is undertaken |
 
 ## 9. The Figure Grammar (inherited production contract; under review)
 
@@ -279,7 +279,7 @@ This section records the inherited production contract, not a newly validated or
 Every grid figure shares the same card shell — the app never invents its parts:
 
 - **Payload-owned label** — the label comes from the theme metadata, never hardcoded in the app (ADR-0020). No raw key ever renders.
-- **Rank chip « Xᵉ / Y »** — the direction-aware ordinal (ADR-0015/0021), group size always shown, **with the direction glyph**: ▲ « plus = mieux » / ▼ « moins = mieux ». **The glyph never carries meaning alone** — the full sentence lives in the tooltip and the aria-label (color-blind safe, §2/§8). A chip without its sentence is a defect.
+- **Rank chip « Xᵉ / Y »** — the producer-computed direction-aware ordinal (ADR-0015/0021), group size always shown, with no visible direction arrow. For comparisons, rank appears on a new line after the reference value; the value and rank use existing `--brand-200`, while « Groupe comparé » remains neutral. Owner decision 2026-11-06 supersedes the visible-glyph presentation rule, not ranking semantics. Accessible names remain complete and may retain direction text.
 - **Vintage stamp** — source identity + version + date (§3 caption style): the freshness promise on every card (ADR-0005).
 
 ### The scalar accent
