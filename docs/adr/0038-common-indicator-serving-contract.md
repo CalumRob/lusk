@@ -4,6 +4,14 @@
 - **Parent:** ADR-0033; refines the serving-shape direction in ADR-0035.
 - **Authority:** product owner owns catalogue membership, labels and user-visible semantics. R/Parquet owns computed facts and pipeline metadata. This ADR does not approve production DDL.
 
+**Metadata status note (#827, 2026-11-07):** `scalar_contracts`,
+`profile_contracts`, and `map_layers` remain canonical producer/API contracts,
+although the reduced browser theme projection no longer ships these properties.
+API discovery and R publishers still consume the canonical declarations; browser
+consumers use the resulting native resource descriptors rather than those
+duplicated capability maps. This does not disposition the remaining factual
+theme-catalogue and Sources readers (see the [consumer ledger](../structured-consumer-inventory.md)).
+
 ## Decision
 
 Adopt three shared numeric observation grains—scalar, declared detail/profile, and ordered series/state—plus a narrowly justified structured-evidence grain for observations whose coordinates are semantic rather than an ordinary indicator axis. Use constrained descriptor rows to declare each dataset's shape and axes; do not make a generic nullable-column EAV store or one table per indicator. Common tables are shared across themes, and each physical table is independently versioned. Descriptors and provenance that determine a table's meaning are published in the same atomic table snapshot (or an explicitly declared dependent-table transaction).
