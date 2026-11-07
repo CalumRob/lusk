@@ -346,7 +346,11 @@ async function verifyStandaloneMap(browser, baseUrl, specs, territories, formatV
     await attribution.locator('a[href="https://www.openstreetmap.org/copyright"]').waitFor({ state: 'attached' })
     assert.equal(await attribution.locator('[onclick], [onmouseover]').count(), 0)
     assert.equal(await attribution.getByRole('link', { name: 'Tile provider' }).count(), 1)
-    assert.equal(harness.apiRequests.length, 0, 'neutral map acquires no numerical API facts')
+    const discoveryRequests = harness.apiRequests.filter(({ path, method }) => path === '/api/resources' && method === 'GET')
+    const factReads = harness.apiRequests.filter(({ path, method }) =>
+      path === '/api/resources/read-batch' && method === 'POST')
+    assert.equal(discoveryRequests.length, 1, 'the persistent header may discover searchable indicator identities')
+    assert.equal(factReads.length, 0, 'neutral map acquires no numerical API facts')
 
     async function searchFocal() {
       await sidebar.getByRole('combobox').fill(focal.nom)
@@ -425,7 +429,8 @@ async function verifyStandaloneMap(browser, baseUrl, specs, territories, formatV
     assert.deepEqual(externalRequests, [])
     assert.deepEqual(retiredNumericalRequests, [], 'no retired numerical JSON requests')
     assert.deepEqual(errors, [])
-    return { checks: ['real WebGL2 canvas and MapLibre module worker', 'TileJSON attribution sanitizer', 'neutral popup', 'search and popup', 'pointer pan',
+    return { checks: ['real WebGL2 canvas and MapLibre module worker', 'TileJSON attribution sanitizer',
+      'one intercepted native search-catalogue discovery and zero neutral-map numerical facts', 'neutral popup', 'search and popup', 'pointer pan',
       'zoom control', 'hover tooltip', 'native layer values and updates', 'mask level', 'resize', 'fiche navigation and cleanup'],
       values, screenshot, workerUrls, externalRequests, pageErrors: errors }
   } catch (error) {
