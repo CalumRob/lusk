@@ -73,6 +73,9 @@ const debouncee = ref('')
 const enAttente = ref(false)
 const focusDansChamp = ref(false)
 const actif = ref(-1)
+const champRecherche = ref<HTMLInputElement | null>(null)
+const boutonReessaiIndicateurs = ref<HTMLButtonElement | null>(null)
+const reessaiIndicateursReussi = ref(false)
 
 let minuteur: ReturnType<typeof setTimeout> | null = null
 
@@ -103,9 +106,25 @@ const placeholderRecherche = computed(() => groupee.value
   ? 'Rechercher un territoire ou un indicateur…'
   : 'Rechercher un territoire…')
 
+watch(
+  () => [props.etatIndicateurs, props.reessaiIndicateursEnCours] as const,
+  async ([etat, reessaiEnCours], [ancienEtat, ancienReessaiEnCours]) => {
+    if (ancienEtat !== 'error' || !ancienReessaiEnCours || etat !== 'ready' || reessaiEnCours) return
+
+    const retryOwnedFocus = document.activeElement === boutonReessaiIndicateurs.value
+    reessaiIndicateursReussi.value = true
+    await nextTick()
+    if (retryOwnedFocus &&
+        (document.activeElement === document.body || document.activeElement === document.documentElement)) {
+      champRecherche.value?.focus()
+    }
+  },
+)
+
 watch(requete, (nouvelle) => {
   if (minuteur) clearTimeout(minuteur)
   actif.value = -1
+  reessaiIndicateursReussi.value = false
   if (nouvelle === '') {
     enAttente.value = false
     debouncee.value = ''
@@ -228,6 +247,7 @@ function fermer() {
 
 function demanderReessaiIndicateurs(): void {
   if (props.etatIndicateurs !== 'error' || props.reessaiIndicateursEnCours) return
+  reessaiIndicateursReussi.value = false
   emit('retry-indicateurs')
 }
 
@@ -243,6 +263,7 @@ function surFocusout(e: FocusEvent) {
     <div class="global-search__bar">
       <Search class="global-search__icone" aria-hidden="true" />
       <input
+        ref="champRecherche"
         v-model="requete"
         class="global-search__champ"
         type="text"
@@ -367,6 +388,7 @@ function surFocusout(e: FocusEvent) {
         </p>
         <button
           v-if="props.etatIndicateurs === 'error'"
+          ref="boutonReessaiIndicateurs"
           type="button"
           class="global-search__retry"
           :aria-disabled="props.reessaiIndicateursEnCours ? 'true' : 'false'"
@@ -377,6 +399,15 @@ function surFocusout(e: FocusEvent) {
         </button>
       </div>
     </div>
+    <p
+      v-if="reessaiIndicateursReussi"
+      class="global-search__etat global-search__etat--succes"
+      role="status"
+      aria-live="polite"
+      data-testid="search-indicators-success"
+    >
+      Les indicateurs sont disponibles.
+    </p>
   </div>
 </template>
 

@@ -598,9 +598,9 @@ describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
-  it('signale la découverte indisponible sans verdict indicateur et récupère via le même seam', async () => {
+  it('annonce la récupération, garde la recherche et rend le focus au champ après un retry clavier', async () => {
     const resources = nativeResources().map((resource) => resource.resource_id === 'offre_tc'
-      ? { ...resource, label: 'Part des bâtiments à moins de 350 m d’un arrêt' }
+      ? { ...resource, label: 'Raccordement des bâtiments à moins de 350 m d’un arrêt' }
       : resource)
     let terminerReessai!: (response: Response) => void
     let attempts = 0
@@ -619,11 +619,11 @@ describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
     await wrapper.find('.bouton-recherche').trigger('click')
     const champ = wrapper.find('.recherche-superposee input[role="combobox"]')
     await champ.trigger('focus')
-    await champ.setValue('epci')
+    await champ.setValue('r')
     await new Promise((resolve) => setTimeout(resolve, 300))
 
     expect(wrapper.find('[role="group"][aria-label="Territoires"]').exists()).toBe(true)
-    expect(wrapper.findAll('[role="option"]').some((option) => option.text().includes('EPCI'))).toBe(true)
+    expect(wrapper.findAll('[role="group"][aria-label="Territoires"] [role="option"]').length).toBeGreaterThan(0)
     expect(wrapper.find('[data-testid="search-indicators-error"]').text())
       .toContain('La recherche d’indicateurs est indisponible.')
     expect(wrapper.text()).not.toContain('Aucun résultat trouvé.')
@@ -631,14 +631,16 @@ describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
 
     const retry = wrapper.find('[data-testid="search-indicators-retry"]')
-    const retryButton = retry.element
+    const retryButton = retry.element as HTMLButtonElement
+    retryButton.focus()
     await retry.trigger('click')
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="search-indicators-retry"]').element).toBe(retryButton)
     expect(retry.attributes('aria-disabled')).toBe('true')
     expect(wrapper.find('[data-testid="search-indicators-pending"]').text())
       .toContain('Chargement des indicateurs')
-    expect(wrapper.findAll('[role="option"]').some((option) => option.text().includes('EPCI'))).toBe(true)
+    expect(wrapper.findAll('[role="group"][aria-label="Territoires"] [role="option"]').length).toBeGreaterThan(0)
+    expect(document.activeElement).toBe(retryButton)
     await retry.trigger('click')
     expect(fetcher).toHaveBeenCalledTimes(2)
 
@@ -647,13 +649,59 @@ describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
     })))
     await flushPromises()
     expect(wrapper.find('[data-testid="search-indicators-status"]').exists()).toBe(false)
-
-    await champ.setValue('350 m')
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    const success = wrapper.find('[data-testid="search-indicators-success"]')
+    expect(success.attributes('role')).toBe('status')
+    expect(success.attributes('aria-live')).toBe('polite')
+    expect(document.activeElement).toBe(champ.element)
+    expect((champ.element as HTMLInputElement).value).toBe('r')
+    expect(wrapper.findAll('[role="group"][aria-label="Territoires"] [role="option"]').length).toBeGreaterThan(0)
     expect(wrapper.find('[role="group"][aria-label="Indicateurs"]').text())
-      .toContain('Part des bâtiments à moins de 350 m d’un arrêt')
+      .toContain('Raccordement des bâtiments à moins de 350 m d’un arrêt')
     expect(wrapper.find('[role="group"][aria-label="Indicateurs"]').text()).not.toContain('500 m')
     expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not steal focus moved away from the indicator retry before completion', async () => {
+    const resources = nativeResources()
+    let terminerReessai!: (response: Response) => void
+    let attempts = 0
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      expect(String(input)).toBe('/api/resources')
+      attempts += 1
+      if (attempts === 1) return Promise.reject(new Error('discovery unavailable'))
+      return new Promise<Response>((resolve) => { terminerReessai = resolve })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const { wrapper } = await montage('/carte', {
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },
+    })
+    await flushPromises()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    const champ = wrapper.find('.recherche-superposee input[role="combobox"]')
+    await champ.trigger('focus')
+    await champ.setValue('r')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const retry = wrapper.find('[data-testid="search-indicators-retry"]')
+    const retryButton = retry.element as HTMLButtonElement
+    retryButton.focus()
+    await retry.trigger('click')
+    await flushPromises()
+
+    const autreCommande = document.createElement('button')
+    autreCommande.textContent = 'Autre commande'
+    document.body.append(autreCommande)
+    autreCommande.focus()
+    terminerReessai(new Response(JSON.stringify({
+      contract: 'semantic-resource-catalogue-v1', resources,
+    })))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="search-indicators-success"]').exists()).toBe(true)
+    expect(document.activeElement).toBe(autreCommande)
+    expect((champ.element as HTMLInputElement).value).toBe('r')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    autreCommande.remove()
   })
 
   it('rend la recherche vivante quand seuls territoires + run-report ont atterri — le reste coule en arrière-plan', async () => {
