@@ -248,4 +248,95 @@ describe('catalogue et recherche — labels factuels liés à la découverte nat
     expect(entreesRechercheIndicateurs(decouvertesSansEvolution).some(({ href }) =>
       href.endsWith('/evolution_1968'))).toBe(false)
   })
+
+  it('keeps catalogue retry focus through pending and failure, then focuses its success status', async () => {
+    let rejectRetry!: (error: Error) => void
+    let attempts = 0
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      expect(String(input)).toBe('/api/resources')
+      attempts += 1
+      if (attempts === 1) return Promise.reject(new Error('discovery unavailable'))
+      if (attempts === 2) return new Promise<Response>((_resolve, reject) => { rejectRetry = reject })
+      return Promise.resolve(new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources: nativeResources(),
+      })))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(IndicateursView, {
+      attachTo: document.body,
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+
+    const retry = wrapper.find('.catalogue-retry')
+    const retryButton = retry.element as HTMLButtonElement
+    retryButton.focus()
+    await retry.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.catalogue-retry').element).toBe(retryButton)
+    expect(document.activeElement).toBe(retryButton)
+    expect(retry.attributes('aria-disabled')).toBe('true')
+    expect(wrapper.find('.catalogue-etat [role="status"]').text())
+      .toContain('Chargement du catalogue')
+    expect(wrapper.find('.catalogue').attributes('aria-busy')).toBe('true')
+
+    rejectRetry(new Error('still unavailable'))
+    await flushPromises()
+
+    expect(wrapper.find('.catalogue-retry').element).toBe(retryButton)
+    expect(document.activeElement).toBe(retryButton)
+    expect(wrapper.find('[role="alert"]').text()).toContain('indisponible')
+    expect(retry.attributes('aria-disabled')).toBe('false')
+
+    await retry.trigger('click')
+    await flushPromises()
+
+    const success = wrapper.find('[data-testid="catalogue-retry-success"]')
+    expect(success.text()).toContain('de nouveau disponible')
+    expect(success.attributes('role')).toBe('status')
+    expect(success.attributes('aria-live')).toBe('polite')
+    expect(document.activeElement).toBe(success.element)
+    expect(wrapper.findAll('.catalogue-liste a').length).toBeGreaterThan(0)
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    wrapper.unmount()
+  })
+
+  it('does not steal focus moved away from catalogue retry before success', async () => {
+    let finishRetry!: (response: Response) => void
+    let attempts = 0
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      expect(String(input)).toBe('/api/resources')
+      attempts += 1
+      if (attempts === 1) return Promise.reject(new Error('discovery unavailable'))
+      return new Promise<Response>((resolve) => { finishRetry = resolve })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(IndicateursView, {
+      attachTo: document.body,
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+
+    const retry = wrapper.find('.catalogue-retry')
+    ;(retry.element as HTMLButtonElement).focus()
+    await retry.trigger('click')
+    await flushPromises()
+    const otherControl = document.createElement('button')
+    otherControl.textContent = 'Autre commande'
+    document.body.append(otherControl)
+    otherControl.focus()
+
+    finishRetry(new Response(JSON.stringify({
+      contract: 'semantic-resource-catalogue-v1', resources: nativeResources(),
+    })))
+    await flushPromises()
+
+    expect(document.activeElement).toBe(otherControl)
+    expect(wrapper.find('[data-testid="catalogue-retry-success"]').exists()).toBe(true)
+    wrapper.unmount()
+    otherControl.remove()
+  })
 })

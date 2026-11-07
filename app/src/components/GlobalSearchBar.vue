@@ -40,18 +40,28 @@ const props = withDefaults(
     territoires: Territoire[]
     /** Les entrées du catalogue (#409) — présentes ⇒ résultats groupés. */
     indicateurs?: EntreeRechercheIndicateur[]
+    etatIndicateurs?: 'loading' | 'error' | 'ready'
+    reessaiIndicateursEnCours?: boolean
     chargement?: boolean
     erreur?: string | null
     /** Mode sans navigation (#283) : les résultats émettent select sans
      *  router.push — la carte zoome sur l'entité au lieu d'ouvrir la fiche. */
     sansNavigation?: boolean
   }>(),
-  { chargement: false, erreur: null, sansNavigation: false, indicateurs: undefined },
+  {
+    chargement: false,
+    erreur: null,
+    sansNavigation: false,
+    indicateurs: undefined,
+    etatIndicateurs: 'ready',
+    reessaiIndicateursEnCours: false,
+  },
 )
 
 const emit = defineEmits<{
   select: [territoire: Territoire]
   'select-indicateur': [entree: EntreeRechercheIndicateur]
+  'retry-indicateurs': []
 }>()
 
 const router = useRouter()
@@ -86,6 +96,12 @@ const chargementVisuel = computed(() => enAttente.value || props.chargement)
 const ouvert = computed(
   () => focusDansChamp.value && (debouncee.value.trim() !== '' || props.erreur !== null),
 )
+const libelleRecherche = computed(() => groupee.value
+  ? 'Rechercher un territoire ou un indicateur'
+  : 'Rechercher un territoire par son nom')
+const placeholderRecherche = computed(() => groupee.value
+  ? 'Rechercher un territoire ou un indicateur…'
+  : 'Rechercher un territoire…')
 
 watch(requete, (nouvelle) => {
   if (minuteur) clearTimeout(minuteur)
@@ -210,6 +226,11 @@ function fermer() {
   actif.value = -1
 }
 
+function demanderReessaiIndicateurs(): void {
+  if (props.etatIndicateurs !== 'error' || props.reessaiIndicateursEnCours) return
+  emit('retry-indicateurs')
+}
+
 function surFocusout(e: FocusEvent) {
   const cible = e.currentTarget as Node | null
   const prochain = e.relatedTarget as Node | null
@@ -230,8 +251,8 @@ function surFocusout(e: FocusEvent) {
         aria-autocomplete="list"
         aria-controls="gsb-resultats"
         :aria-activedescendant="actif >= 0 ? `gsb-option-${actif}` : undefined"
-        aria-label="Rechercher un territoire par son nom"
-        placeholder="Rechercher un territoire…"
+        :aria-label="libelleRecherche"
+        :placeholder="placeholderRecherche"
         @focus="focusDansChamp = true"
         @keydown="surKeydown"
       />
@@ -316,10 +337,45 @@ function surFocusout(e: FocusEvent) {
         <CircleAlert aria-hidden="true" />
         <span>{{ props.erreur }}</span>
       </p>
+      <p v-else-if="props.chargement" class="global-search__etat" role="status">
+        Chargement des territoires…
+      </p>
+      <p v-else-if="groupee && props.etatIndicateurs !== 'ready'" class="global-search__etat">
+        Aucun territoire correspondant.
+      </p>
       <p v-else class="global-search__etat">
         <SearchX aria-hidden="true" />
         <span>Aucun résultat trouvé.</span>
       </p>
+      <div
+        v-if="groupee && props.etatIndicateurs !== 'ready'"
+        class="global-search__etat-indicateurs"
+        data-testid="search-indicators-status"
+        :aria-busy="props.etatIndicateurs === 'loading' || props.reessaiIndicateursEnCours ? 'true' : 'false'"
+      >
+        <p
+          v-if="props.etatIndicateurs === 'loading' || props.reessaiIndicateursEnCours"
+          class="global-search__etat"
+          role="status"
+          aria-live="polite"
+          data-testid="search-indicators-pending"
+        >
+          Chargement des indicateurs…
+        </p>
+        <p v-else class="global-search__etat global-search__etat--erreur" role="alert" data-testid="search-indicators-error">
+          La recherche d’indicateurs est indisponible.
+        </p>
+        <button
+          v-if="props.etatIndicateurs === 'error'"
+          type="button"
+          class="global-search__retry"
+          :aria-disabled="props.reessaiIndicateursEnCours ? 'true' : 'false'"
+          data-testid="search-indicators-retry"
+          @click="demanderReessaiIndicateurs"
+        >
+          Réessayer les indicateurs
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -465,5 +521,27 @@ function surFocusout(e: FocusEvent) {
   width: 1rem;
   height: 1rem;
   flex-shrink: 0;
+}
+
+.global-search__etat-indicateurs {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.global-search__retry {
+  min-height: 36px;
+  margin: 0 var(--space-4) var(--space-3);
+  padding: var(--space-2) 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-primary);
+  font: var(--text-body-sm);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.global-search__retry:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 2px;
 }
 </style>

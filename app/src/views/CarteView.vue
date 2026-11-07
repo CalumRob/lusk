@@ -29,7 +29,7 @@
  * jamais sur un état encore en chargement.
  */
 import { AlertCircle, MapPinOff } from 'lucide-vue-next'
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
@@ -278,6 +278,9 @@ const mapNativeContracts = ref<Record<string, NativeThemeFactContract>>({})
 const mapStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
 const mapMetadataStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
 const mapMetadataRetryPending = ref(false)
+const mapMetadataRetrySucceeded = ref(false)
+const mapMetadataRetryButton = ref<HTMLButtonElement | null>(null)
+const mapMetadataRetrySuccessStatus = ref<HTMLElement | null>(null)
 const chargerCatalogueTheme = inject(THEME_METADATA_CHARGER_KEY, chargerMetadonneesTheme)
 const retryMapFacts = ref(0)
 const retryMapMetadata = ref(0)
@@ -414,7 +417,10 @@ watch([selection, retryMapMetadata], async ([theme], [previousTheme], onCleanup)
   let cancelled = false
   onCleanup(() => { cancelled = true })
   mapThemeMetadata.value = null
-  if (theme !== previousTheme) mapMetadataRetryPending.value = false
+  if (theme !== previousTheme) {
+    mapMetadataRetryPending.value = false
+    mapMetadataRetrySucceeded.value = false
+  }
   if (!theme) {
     mapMetadataStatus.value = 'idle'
     return
@@ -424,9 +430,18 @@ watch([selection, retryMapMetadata], async ([theme], [previousTheme], onCleanup)
     const metadata = await chargerCatalogueTheme(theme)
     if (cancelled || request !== mapMetadataSequence || theme !== selection.value) return
     if (metadata.theme !== theme) throw new Error(`Catalogue ${metadata.theme} inattendu pour ${theme}`)
+    const retryButtonHadFocus = mapMetadataRetryPending.value &&
+      document.activeElement === mapMetadataRetryButton.value
     mapThemeMetadata.value = metadata
     mapMetadataStatus.value = 'ready'
+    mapMetadataRetrySucceeded.value = mapMetadataRetryPending.value
     mapMetadataRetryPending.value = false
+    if (retryButtonHadFocus) {
+      await nextTick()
+      if (document.activeElement === document.body || document.activeElement === document.documentElement) {
+        mapMetadataRetrySuccessStatus.value?.focus()
+      }
+    }
   } catch {
     // Native API labels/axes remain usable; only absent typed-field wording is withheld.
     if (!cancelled && request === mapMetadataSequence && theme === selection.value) {
@@ -440,6 +455,7 @@ function retrySelectedMapMetadata(): void {
   if (mapMetadataStatus.value !== 'error' || mapMetadataRetryPending.value) return
   // Keep the notice and its focused button mounted until the metadata-only
   // attempt settles; the map's already admitted native facts are untouched.
+  mapMetadataRetrySucceeded.value = false
   mapMetadataRetryPending.value = true
   retryMapMetadata.value++
 }
@@ -731,16 +747,21 @@ const classesFond = computed(() =>
             @couche-change="choisirCouche"
             @recherche-territoire="rechercherTerritoire"
           />
-          <div v-if="themeAcquisCarte && (mapMetadataStatus === 'error' || mapMetadataRetryPending)"
+          <div v-if="themeAcquisCarte && (mapMetadataStatus === 'error' || mapMetadataRetryPending || mapMetadataRetrySucceeded)"
             class="carte-metadata-erreur" data-testid="map-metadata-notice"
             :aria-busy="mapMetadataRetryPending ? 'true' : 'false'">
             <p v-if="mapMetadataRetryPending" role="status" aria-live="polite" data-testid="map-metadata-pending">
               Chargement des libellés complémentaires…
             </p>
+            <p v-else-if="mapMetadataRetrySucceeded" ref="mapMetadataRetrySuccessStatus"
+              role="status" aria-live="polite" tabindex="-1" data-testid="map-metadata-success">
+              Les libellés complémentaires sont disponibles.
+            </p>
             <p v-else role="alert" data-testid="map-metadata-error">
               Les libellés complémentaires du thème ne sont pas disponibles. Les couches et leurs valeurs natives restent affichées.
             </p>
-            <button type="button" class="carte-etat-bouton" data-testid="map-metadata-retry"
+            <button v-if="!mapMetadataRetrySucceeded" ref="mapMetadataRetryButton"
+              type="button" class="carte-etat-bouton" data-testid="map-metadata-retry"
               :aria-disabled="mapMetadataRetryPending ? 'true' : 'false'"
               @click="retrySelectedMapMetadata">Réessayer les libellés</button>
           </div>

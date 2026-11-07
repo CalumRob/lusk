@@ -4,22 +4,40 @@
  * l'application. Producer discovery admits route identities and factual
  * labels; catalogue membership/order stay app-owned and never infer facts.
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 
 import { chargerRessourcesCatalogueIndicateurs, groupesCatalogue } from '@/indicateurs/catalogue'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 
 const ressources = ref<SemanticResourceDeclaration[] | null>(null)
-const erreur = ref(false)
+const statut = ref<'loading' | 'error' | 'ready'>('loading')
+const chargement = ref(false)
+const succesReessai = ref(false)
+const boutonReessai = ref<HTMLButtonElement | null>(null)
+const statutSuccesReessai = ref<HTMLElement | null>(null)
 const groupes = computed(() => ressources.value ? groupesCatalogue(ressources.value) : [])
 
 async function charger(): Promise<void> {
-  ressources.value = null
-  erreur.value = false
+  if (chargement.value) return
+  const reessai = statut.value === 'error'
+  const boutonAvaitLeFocus = reessai && document.activeElement === boutonReessai.value
+  chargement.value = true
+  succesReessai.value = false
   try {
     ressources.value = await chargerRessourcesCatalogueIndicateurs()
+    statut.value = 'ready'
+    if (reessai) {
+      succesReessai.value = true
+      await nextTick()
+      if (boutonAvaitLeFocus &&
+          (document.activeElement === document.body || document.activeElement === document.documentElement)) {
+        statutSuccesReessai.value?.focus()
+      }
+    }
   } catch {
-    erreur.value = true
+    statut.value = 'error'
+  } finally {
+    chargement.value = false
   }
 }
 
@@ -27,7 +45,7 @@ onMounted(() => { void charger() })
 </script>
 
 <template>
-  <section class="catalogue" :aria-busy="ressources === null && !erreur ? 'true' : 'false'">
+  <section class="catalogue" :aria-busy="chargement || statut === 'loading' ? 'true' : 'false'">
     <header class="catalogue-entete">
       <h1>Indicateurs</h1>
       <p class="catalogue-sous-titre">
@@ -36,14 +54,34 @@ onMounted(() => { void charger() })
       </p>
     </header>
 
-    <p v-if="ressources === null && !erreur" class="catalogue-etat" role="status">
+    <p v-if="statut === 'loading'" class="catalogue-etat" role="status">
       Chargement du catalogue des indicateurs…
     </p>
-    <div v-else-if="erreur" class="catalogue-etat" role="alert">
-      <p>Le catalogue des indicateurs est indisponible.</p>
-      <button type="button" class="catalogue-retry" @click="charger">Réessayer</button>
+    <div v-else-if="statut === 'error'" class="catalogue-etat">
+      <p v-if="chargement" role="status" aria-live="polite">Chargement du catalogue des indicateurs…</p>
+      <p v-else role="alert">Le catalogue des indicateurs est indisponible.</p>
+      <button
+        ref="boutonReessai"
+        type="button"
+        class="catalogue-retry"
+        :aria-disabled="chargement ? 'true' : 'false'"
+        @click="charger"
+      >
+        Réessayer
+      </button>
     </div>
-    <template v-else>
+    <p
+      v-if="succesReessai"
+      ref="statutSuccesReessai"
+      class="catalogue-etat"
+      role="status"
+      aria-live="polite"
+      tabindex="-1"
+      data-testid="catalogue-retry-success"
+    >
+      Le catalogue des indicateurs est de nouveau disponible.
+    </p>
+    <template v-if="statut === 'ready'">
       <section
         v-for="groupe in groupes"
         :key="groupe.theme"

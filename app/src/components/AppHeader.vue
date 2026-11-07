@@ -50,17 +50,28 @@ const territoires = computed<Territoire[]>(() => payload.value?.territoires ?? [
 
 /** Native discovery admits indicator routes and supplies fact-bearing labels. */
 const ressourcesIndicateurs = ref<SemanticResourceDeclaration[]>([])
+const etatIndicateurs = ref<'loading' | 'error' | 'ready'>('loading')
+const chargementIndicateurs = ref(false)
 const entreesIndicateurs = computed<EntreeRechercheIndicateur[]>(() =>
   entreesRechercheIndicateurs(ressourcesIndicateurs.value),
 )
 
-onMounted(() => {
-  void chargerRessourcesCatalogueIndicateurs()
-    .then((resources) => { ressourcesIndicateurs.value = resources })
-    // Territorial search remains available; indicator routes fail closed when
-    // producer discovery is unavailable, rather than using an app-side list.
-    .catch(() => { ressourcesIndicateurs.value = [] })
-})
+async function chargerIndicateursDecouverts(): Promise<void> {
+  if (chargementIndicateurs.value) return
+  chargementIndicateurs.value = true
+  try {
+    ressourcesIndicateurs.value = await chargerRessourcesCatalogueIndicateurs()
+    etatIndicateurs.value = 'ready'
+  } catch {
+    // Keep territorial search available; never infer indicator routes or labels.
+    ressourcesIndicateurs.value = []
+    etatIndicateurs.value = 'error'
+  } finally {
+    chargementIndicateurs.value = false
+  }
+}
+
+onMounted(() => { void chargerIndicateursDecouverts() })
 
 const messageErreur = computed(() => (erreur.value ? 'Impossible de charger les territoires.' : null))
 
@@ -321,8 +332,11 @@ onUnmounted(() => {
         class="recherche-superposee-barre"
         :territoires="territoires"
         :indicateurs="entreesIndicateurs"
+        :etat-indicateurs="etatIndicateurs"
+        :reessai-indicateurs-en-cours="chargementIndicateurs"
         :chargement="chargement"
         :erreur="messageErreur"
+        @retry-indicateurs="chargerIndicateursDecouverts"
         @select="fermerRecherche(); fermer()"
         @select-indicateur="fermerRecherche(); fermer()"
       />
@@ -358,8 +372,11 @@ onUnmounted(() => {
       <GlobalSearchBar
         :territoires="territoires"
         :indicateurs="entreesIndicateurs"
+        :etat-indicateurs="etatIndicateurs"
+        :reessai-indicateurs-en-cours="chargementIndicateurs"
         :chargement="chargement"
         :erreur="messageErreur"
+        @retry-indicateurs="chargerIndicateursDecouverts"
         @select="fermer()"
         @select-indicateur="fermer()"
       />

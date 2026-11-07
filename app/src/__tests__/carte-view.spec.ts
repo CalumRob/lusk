@@ -687,10 +687,54 @@ describe('CarteView — la carte avec fond publié', () => {
     expect(requests.filter((url) => url === '/api/resources' || url === '/api/resources/read-batch'))
       .toEqual(beforeRetryReads)
     expect(wrapper.find('[data-testid="map-metadata-error"]').exists()).toBe(false)
+    const success = wrapper.find('[data-testid="map-metadata-success"]')
+    expect(success.attributes('role')).toBe('status')
+    expect(success.attributes('aria-live')).toBe('polite')
+    expect(document.activeElement).toBe(success.element)
     expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text()))
       .toContain('Libellé récupéré du solde naturel')
     expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Densité de population')
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
+    wrapper.unmount()
+  })
+
+  it('does not steal focus moved away from metadata retry before success', async () => {
+    let resolveMetadataRetry!: (metadata: typeof metadonneesThemesFixtures.demographie) => void
+    let metadataAttempts = 0
+    const chargerMetadata = vi.fn((_theme: Theme) => {
+      metadataAttempts += 1
+      if (metadataAttempts === 1) return Promise.reject(new Error('catalogue unavailable'))
+      return new Promise<typeof metadonneesThemesFixtures.demographie>((resolve) => {
+        resolveMetadataRetry = resolve
+      })
+    })
+    const baseFetch = await fetchCarteApiFixture(payload)
+    const { wrapper } = await monter({
+      chemin: '/carte?theme=demographie',
+      chargerMetadata,
+      apiFetchImpl: baseFetch,
+    })
+    document.body.append(wrapper.element)
+
+    const retry = wrapper.find('[data-testid="map-metadata-retry"]')
+    const retryButton = retry.element as HTMLButtonElement
+    retryButton.focus()
+    await retry.trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(retryButton)
+    expect(wrapper.find('[data-testid="map-metadata-pending"]').exists()).toBe(true)
+
+    const layer = wrapper.findAll('.carte-sidebar-couche')
+      .find((candidate) => candidate.text().includes('Densité'))!
+    const layerButton = layer.element as HTMLButtonElement
+    layerButton.focus()
+    expect(document.activeElement).toBe(layerButton)
+
+    resolveMetadataRetry(structuredClone(metadonneesThemesFixtures.demographie))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="map-metadata-success"]').exists()).toBe(true)
+    expect(document.activeElement).toBe(layerButton)
     wrapper.unmount()
   })
 

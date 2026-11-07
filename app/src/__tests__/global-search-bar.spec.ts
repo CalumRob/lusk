@@ -361,6 +361,8 @@ describe('GlobalSearchBar — la recherche groupée Territoires + Indicateurs (#
 
   it('groupe les résultats sous « Territoires » puis « Indicateurs », avec des titres de groupe accessibles', async () => {
     const { wrapper } = monterGroupee()
+    expect(wrapper.find(INPUT).attributes('aria-label')).toBe('Rechercher un territoire ou un indicateur')
+    expect(wrapper.find(INPUT).attributes('placeholder')).toBe('Rechercher un territoire ou un indicateur…')
     await taper(wrapper, 'densite')
 
     // La requête ne touche que le catalogue : le seul groupe rendu est Indicateurs.
