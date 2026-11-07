@@ -76,6 +76,7 @@ const actif = ref(-1)
 const champRecherche = ref<HTMLInputElement | null>(null)
 const boutonReessaiIndicateurs = ref<HTMLButtonElement | null>(null)
 const reessaiIndicateursReussi = ref(false)
+let focusRechercheApresReessai = false
 
 let minuteur: ReturnType<typeof setTimeout> | null = null
 
@@ -108,10 +109,15 @@ const placeholderRecherche = computed(() => groupee.value
 
 watch(
   () => [props.etatIndicateurs, props.reessaiIndicateursEnCours] as const,
-  async ([etat, reessaiEnCours], [ancienEtat, ancienReessaiEnCours]) => {
-    if (ancienEtat !== 'error' || !ancienReessaiEnCours || etat !== 'ready' || reessaiEnCours) return
+  async ([etat, reessaiEnCours], [, ancienReessaiEnCours]) => {
+    if (!ancienReessaiEnCours || reessaiEnCours) return
+    if (etat !== 'ready') {
+      focusRechercheApresReessai = false
+      return
+    }
 
-    const retryOwnedFocus = document.activeElement === boutonReessaiIndicateurs.value
+    const retryOwnedFocus = focusRechercheApresReessai
+    focusRechercheApresReessai = false
     reessaiIndicateursReussi.value = true
     await nextTick()
     if (retryOwnedFocus &&
@@ -247,6 +253,7 @@ function fermer() {
 
 function demanderReessaiIndicateurs(): void {
   if (props.etatIndicateurs !== 'error' || props.reessaiIndicateursEnCours) return
+  focusRechercheApresReessai = document.activeElement === boutonReessaiIndicateurs.value
   reessaiIndicateursReussi.value = false
   emit('retry-indicateurs')
 }
