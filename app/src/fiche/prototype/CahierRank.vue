@@ -6,27 +6,29 @@ import type { NumericFact } from '@/fiche/content/territoryFacts'
 
 const props = withDefaults(
   defineProps<{
-    fact: NumericFact
+    fact?: NumericFact
+    servedRank?: { position: number; size: number; direction: import('@/methodes/indicateurs').DirectionRang; key: string } | null
     to?: RouteLocationRaw | null
     placement?: 'inline' | 'comparison' | 'access'
   }>(),
   { to: null, placement: 'inline' },
 )
 
-function rankText(fact: NumericFact): string | null {
-  const rank = fact.comparison?.rank
+function rankText(fact: NumericFact | undefined, servedRank?: { position: number; size: number } | null): string | null {
+  const rank = servedRank ?? fact?.comparison?.rank
   if (!rank) return null
   return `${rank.position === 1 ? '1er' : `${rank.position}e`}/${rank.size}`
 }
 
-function rankDescription(fact: NumericFact): string | null {
-  const rank = rankText(fact)
-  if (!rank || !fact.comparison) return null
-  return `${rank} — ${fact.comparison.direction === 'plus-est-mieux' ? 'plus est mieux' : 'moins est mieux'}`
+function rankDescription(fact: NumericFact | undefined, servedRank?: { position: number; size: number; direction: string } | null): string | null {
+  const rank = rankText(fact, servedRank)
+  const direction = servedRank?.direction ?? fact?.comparison?.direction
+  if (!rank || !direction) return null
+  return `${rank} — ${direction === 'plus-est-mieux' ? 'plus est mieux' : 'moins est mieux'}`
 }
 
-function isExtreme(fact: NumericFact): boolean {
-  const rank = fact.comparison?.rank
+function isExtreme(fact?: NumericFact): boolean {
+  const rank = fact?.comparison?.rank
   if (!rank) return false
   const edge = Math.max(1, Math.ceil(rank.size * 0.05))
   return rank.position <= edge || rank.position > rank.size - edge
@@ -47,25 +49,26 @@ function rankStyle(seed: string): Record<string, string> {
 </script>
 
 <template>
-  <template v-if="rankText(props.fact)">
+  <template v-if="rankText(props.fact, props.servedRank)">
     <RouterLink
-      v-if="props.to"
+      v-if="props.to && props.fact"
       :to="props.to"
       target="_blank"
       rel="noopener noreferrer"
       class="cahier-rank rank-emphasis rank-link"
       :class="[`cahier-rank--${props.placement}`, { 'is-extreme': isExtreme(props.fact) }]"
       :style="rankStyle(props.fact.key)"
-      :title="rankDescription(props.fact) ?? undefined"
-      :aria-label="rankDescription(props.fact) ?? undefined"
-    >{{ rankText(props.fact) }}</RouterLink>
+      :title="rankDescription(props.fact, props.servedRank) ?? undefined"
+      :aria-label="rankDescription(props.fact, props.servedRank) ?? undefined"
+    >{{ rankText(props.fact, props.servedRank) }}</RouterLink>
     <span
       v-else
       class="cahier-rank rank-emphasis"
       :class="[`cahier-rank--${props.placement}`, { 'is-extreme': isExtreme(props.fact) }]"
-      :style="rankStyle(props.fact.key)"
-      :title="rankDescription(props.fact) ?? undefined"
-    >{{ rankText(props.fact) }}</span>
+      :style="rankStyle(props.fact?.key ?? props.servedRank?.key ?? '')"
+      :title="rankDescription(props.fact, props.servedRank) ?? undefined"
+      aria-hidden="true"
+    >{{ rankText(props.fact, props.servedRank) }}</span>
   </template>
 </template>
 

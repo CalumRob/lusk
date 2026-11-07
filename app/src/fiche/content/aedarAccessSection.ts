@@ -3,9 +3,9 @@
  * wording; the renderer lays sections out through the shared Cahier primitives.
  */
 import type { AedarFetchResult } from './aedarApiClient'
-import { aedarComparisonCell, aedarGroupValue } from './aedarComparisonClient'
+import { aedarAggregateComparisonCell } from './aedarComparisonClient'
 import type { AedarComparisonEvidence, AedarComparisonRequest } from './aedarComparisonClient'
-import { aedarTimeRampEvidence, AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from './aedarTimeRampFacts'
+import { aedarTimeRampEvidence, AEDAR_AGGREGATE_READING_MEASURES, AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from './aedarTimeRampFacts'
 import { AEDAR_EQUIPMENT_BUCKET_THRESHOLD, classifyAedarEquipmentTypes } from './aedarEquipmentBuckets'
 import { AEDAR_TYPEQU_BPE_YEAR, AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
 import { aedarDiversityLossSection } from './aedarDiversityLossMaps'
@@ -68,15 +68,11 @@ function compatibleComparison(data: AedarReady, options: AedarAccessSectionOptio
     ? comparison : null
 }
 
-/** Additivity is valid for group means, never for ranks. Require every source TYPEQU. */
-function groupTotal(data: AedarReady, comparison: AedarComparisonEvidence, measure: string): number | null {
-  const codes = new Set(data.facts.map((fact) => fact.typequ))
-  if (data.facts.length !== AEDAR_TYPEQU_REGISTRY.length || !AEDAR_TYPEQU_REGISTRY.every(({ code }) => codes.has(code))) return null
-  const denominators = data.facts.map((fact) => aedarComparisonCell(comparison, fact.typequ, measure)?.group_n_addresses)
-  if (!denominators[0] || !denominators.every((count) => count === denominators[0])) return null
-  const values = data.facts.map((fact) => aedarGroupValue(comparison, fact, measure))
-  return values.every((value) => value !== null && Number.isFinite(value) && value >= 0)
-    ? (values as number[]).reduce((sum, value) => sum + value, 0) : null
+/** Group totals and ranks are producer-served registry-wide readings, never client sums. */
+function groupTotal(_data: AedarReady, comparison: AedarComparisonEvidence, measure: string): number | null {
+  const reading = Object.entries(AEDAR_AGGREGATE_READING_MEASURES).find(([, sourceMeasure]) => sourceMeasure === measure)?.[0]
+  const value = reading ? aedarAggregateComparisonCell(comparison, reading)?.group_value : null
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
 }
 
 function virtualResponse(data: AedarReady, territory: { type: string; id: string }) {
@@ -329,13 +325,22 @@ export function aedarCarAccessOverviewSection(
       : referenceMeans?.[reading.key] ?? null
     return {
       ...reading, value,
-      // #914 owns ranks of these sums. Per-TYPEQU ranks cannot establish them.
-      rankUnavailableLabel: referenceValue !== null ? 'Classement indisponible' : null,
+      rank: comparison && options.comparisonRequest
+        ? aedarAggregateComparisonCell(comparison, reading.key)?.rank ?? null : null,
+      rankSize: comparison && options.comparisonRequest
+        ? aedarAggregateComparisonCell(comparison, reading.key)?.rank_size ?? null : null,
+      rankTies: comparison && options.comparisonRequest
+        ? aedarAggregateComparisonCell(comparison, reading.key)?.rank_ties ?? null : null,
+      rankDirection: comparison && options.comparisonRequest
+        ? aedarAggregateComparisonCell(comparison, reading.key)?.direction ?? null : null,
+      rankUnavailableLabel: null,
       // Keep an explicit mark inside every scalar while a requested group is
       // pending, rejected, or simply has no comparable published cell.
       comparisonUnavailableLabel: (options.comparisonRequest || reference || comparison || options.comparisonPending) && referenceValue === null
         ? 'Groupe comparé : Indisponible' : null,
-      comparisonAccessibleLabel: options.comparisonRequest?.label ?? (reference ? `Moyenne de ${reference.label}` : options.comparisonAccessibleLabel ?? null),
+      comparisonAccessibleLabel: options.comparisonRequest?.intent.kind === 'selected_comparison'
+        ? options.comparisonRequest.label
+        : reference ? `Moyenne de ${reference.label}` : options.comparisonAccessibleLabel ?? options.comparisonRequest?.label ?? null,
       reference: comparison && value !== null && referenceValue !== null ? {
         kind: 'selection-mean' as const, label: comparison.label, value: referenceValue, unit: reading.unit,
       } : reference && value !== null && referenceValue !== null ? {

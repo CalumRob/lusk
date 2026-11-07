@@ -81,6 +81,19 @@ describe('semantic read batches', () => {
     expect(fetcher).toHaveBeenCalledWith('/api/resources')
   })
 
+  it('retains valid per-measure facet metadata and fails closed on a malformed declaration', async () => {
+    const resource = { resource_id: 'aedar_territorial_aggregate', theme_id: '', indicator_id: 'aedar_territorial_aggregate',
+      label: 'AEDAR', unit: '', direction: 'none', allowed_levels: ['commune'], sources: [], shapes: ['aedar_source_grain'],
+      target_kinds: ['territory'], fields: ['group_value'], intents: ['fixed_comparison'],
+      measure_facets: { meanDiversity: { facet: 'diversity', direction: 'high', ranked: true } } }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [resource] }))))
+    await expect(chargerCatalogueRessources()).resolves.toEqual([expect.objectContaining({ measure_facets: resource.measure_facets })])
+
+    const malformed = { ...resource, measure_facets: { meanDiversity: { facet: 'diversity', direction: 'up', ranked: true } } }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [malformed] }))))
+    await expect(chargerCatalogueRessources()).rejects.toThrow('mal formée')
+  })
+
   it('pairs repeated resources by unique item identity, regardless of response order', async () => {
     const facts: SemanticReadItem = {
       resource: 'densite',

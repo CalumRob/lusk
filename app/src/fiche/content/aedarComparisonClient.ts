@@ -1,16 +1,19 @@
 import type { AedarFact, AedarTerritoryType } from './aedarApiClient'
 import type { MembreSelection } from '../comparisonContext'
+import { producerCatalogue } from '@/payload/themeAcquisition'
+import { AEDAR_AGGREGATE_READING_KEYS } from './aedarTimeRampFacts'
 
 export type AedarComparisonIntent =
   | { kind: 'selected_comparison'; members: readonly MembreSelection[] }
   | { kind: 'fixed_comparison'; context: 'density_class' | 'epci' | 'bretagne' | 'same_level' }
 
-export interface AedarComparisonCell extends Pick<AedarFact, 'typequ' | 'source_id' | 'vintage_id' | 'reference_date' | 'publication_date'> {
+export interface AedarComparisonCell extends Omit<Pick<AedarFact, 'typequ' | 'source_id' | 'vintage_id' | 'reference_date' | 'publication_date'>, 'typequ'> {
+  typequ: string | null
   measure: string
   group_value: number | null
   group_coverage_status: string | null
-  group_n_addresses: number
-  group_n_observed: number
+  group_n_addresses: number | null
+  group_n_observed: number | null
   statistic: 'direct' | 'pooled'
   rank?: number | null
   rank_size?: number | null
@@ -65,27 +68,32 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
   try {
     const selected = options.intent.kind === 'selected_comparison'
     const members = options.intent.kind === 'selected_comparison' ? options.intent.members : null
-    if (!options.typequ.length || !options.measures.length || members?.length === 0) invalid()
+    const aggregate = options.typequ.length === 0 && options.measures.every((measure) => AEDAR_AGGREGATE_READING_KEYS.includes(measure))
+    if (!options.measures.length || (!aggregate && !options.typequ.length) || members?.length === 0) invalid()
+    const aggregateFacets = aggregate
+      ? (await producerCatalogue()).find((resource) => resource.resource_id === 'aedar_territorial_aggregate')?.measure_facets
+      : undefined
+    if (aggregate && (!aggregateFacets || options.measures.some((measure) => !aggregateFacets[measure]))) invalid()
     const intent = options.intent.kind === 'selected_comparison'
       ? { kind: 'selected_comparison', members: options.intent.members.map((m) => ({ type: m.territory_type, id: m.territory_id })) }
       : options.intent
     // Selected reads support a matrix; fixed reads declare one cell per item.
-    const cellBudget = selected ? Math.max(1, Math.min(100, Math.floor(400 / options.measures.length),
+    const cellBudget = selected && !aggregate ? Math.max(1, Math.min(100, Math.floor(400 / options.measures.length),
       Math.floor(20000 / Math.max(1, members!.length)))) : 1
     const items: Array<{ id: string; resource: string; target: { kind: string; type: AedarTerritoryType; id: string };
-      coordinates: { typequ: string[]; measure: string[] }; intent: typeof intent; fields: string[] }> = []
+      coordinates: { typequ?: string[]; measure: string[] }; intent: typeof intent; fields: string[] }> = []
     const measureGroups = selected ? [options.measures] : options.measures.map((measure) => [measure])
-    for (const measures of measureGroups) for (let start = 0; start < options.typequ.length; start += cellBudget) {
+    for (const measures of measureGroups) for (let start = 0; start < (aggregate ? 1 : options.typequ.length); start += cellBudget) {
       items.push({ id: `aedar-comparison-${items.length}`, resource: 'aedar_territorial_aggregate',
-        target: { kind: 'territory', type, id }, coordinates: { typequ: options.typequ.slice(start, start + cellBudget), measure: [...measures] },
-        intent, fields: selected ? ['group_value', 'rank', 'rank_size', 'rank_ties'] : ['group_value'] })
+        target: { kind: 'territory', type, id }, coordinates: { ...(aggregate ? {} : { typequ: options.typequ.slice(start, start + cellBudget) }), measure: [...measures] },
+        intent, fields: aggregate ? ['group_value', 'rank', 'rank_size', 'rank_ties'] : selected ? ['group_value', 'rank', 'rank_size', 'rank_ties'] : ['group_value'] })
     }
     const cells: AedarComparisonCell[] = []
     let comparisonVersion: string | undefined
     // Keep batches small enough even for large selections (preflight work counts
     // members × cells). Read-batch items are stateless, so issue every batch
     // concurrently and publish only after the complete set validates.
-    const batchSize = selected ? Math.max(1, Math.min(8, Math.floor(80000 / Math.max(1, members!.length * cellBudget)))) : 12
+    const batchSize = aggregate ? items.length : selected ? Math.max(1, Math.min(8, Math.floor(80000 / Math.max(1, members!.length * cellBudget)))) : 12
     const batches = Array.from({ length: Math.ceil(items.length / batchSize) }, (_, index) =>
       items.slice(index * batchSize, (index + 1) * batchSize))
     const responses = await Promise.all(batches.map(async (batch) => {
@@ -115,31 +123,42 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
         if (members && (!record(data.scope) || data.scope.kind !== 'explicit_selection' || data.scope.member_count !== members.length
           || JSON.stringify(data.selection) !== JSON.stringify(members))) invalid()
         const rows = selected ? data.comparisons : [data.comparison]
-        if (!Array.isArray(rows) || rows.length !== item.coordinates.typequ.length * item.coordinates.measure.length) invalid()
+          const expectedRows = (item.coordinates.typequ?.length ?? 1) * item.coordinates.measure.length
+          if (!Array.isArray(rows) || rows.length !== expectedRows) invalid()
         const returned = new Set<string>()
         for (const row of rows) {
-          if (!record(row) || typeof row.typequ !== 'string' || !item.coordinates.typequ.includes(row.typequ)
-            || typeof row.measure !== 'string' || !item.coordinates.measure.includes(row.measure) || returned.has(`${row.typequ}/${row.measure}`)
+           if (!record(row) || (aggregate ? row.typequ !== null : typeof row.typequ !== 'string' || !item.coordinates.typequ!.includes(row.typequ as string))
+             || typeof row.measure !== 'string' || !item.coordinates.measure.includes(row.measure) || returned.has(`${row.typequ ?? ''}/${row.measure}`)
             || row.comparison_context !== (options.intent.kind === 'selected_comparison' ? 'selected_comparison' : options.intent.context)
             || (row.statistic !== 'direct' && row.statistic !== 'pooled') || (selected && row.statistic !== 'pooled')
             || !(row.group_value === null || finite(row.group_value))
-            || !Number.isInteger(row.group_n_addresses) || (row.group_n_addresses as number) <= 0
-            || !Number.isInteger(row.group_n_observed) || (row.group_n_observed as number) < 0
-            || (row.group_n_observed as number) > (row.group_n_addresses as number)
+             || (aggregate
+               ? !((row.group_n_addresses === null || (Number.isInteger(row.group_n_addresses) && (row.group_n_addresses as number) >= 0))
+                 && (row.group_n_observed === null || (Number.isInteger(row.group_n_observed) && (row.group_n_observed as number) >= 0))
+                 && (row.group_value === null || (Number.isInteger(row.group_n_addresses) && (row.group_n_addresses as number) > 0)))
+               : !Number.isInteger(row.group_n_addresses) || (row.group_n_addresses as number) <= 0
+                 || !Number.isInteger(row.group_n_observed) || (row.group_n_observed as number) < 0
+                 || (row.group_n_observed as number) > (row.group_n_addresses as number))
             || !(row.group_coverage_status === null || typeof row.group_coverage_status === 'string')
             || !nonempty(row.source_id) || !nonempty(row.vintage_id)
             || !(row.reference_date === null || typeof row.reference_date === 'string')
             || !(row.publication_date === null || typeof row.publication_date === 'string')) invalid()
-          if (selected) {
+          let normalizedDirection: 'high' | 'low' | undefined
+          if (selected || aggregate) {
             const rank = [row.rank, row.rank_size, row.rank_ties]
-            if (row.direction !== 'high' && row.direction !== 'low') invalid()
+            const declaration = aggregateFacets?.[row.measure as string]
+            if (aggregate && (!declaration || (selected && row.direction !== declaration.direction))) invalid()
+            if (selected && row.direction !== 'high' && row.direction !== 'low') invalid()
+            normalizedDirection = aggregate ? declaration?.direction : row.direction as 'high' | 'low' | undefined
+            if (aggregate && declaration && !declaration.ranked && rank.some((value) => value !== null)) invalid()
+            if (aggregate && rank.some((x) => x !== null && !Number.isInteger(x))) invalid()
             if (!rank.every((x) => x === null) && (!rank.every((x) => Number.isInteger(x) && (x as number) > 0)
               || (row.rank as number) + (row.rank_ties as number) - 1 > (row.rank_size as number)
-              || (row.rank_size as number) > members!.length
-              || !members!.some((m) => m.territory_type === type && m.territory_id === id))) invalid()
+              || (selected && ((row.rank_size as number) > members!.length
+              || !members!.some((m) => m.territory_type === type && m.territory_id === id))))) invalid()
           }
-          returned.add(`${row.typequ}/${row.measure}`)
-          cells.push(row as unknown as AedarComparisonCell)
+          returned.add(`${row.typequ ?? ''}/${row.measure}`)
+          cells.push({ ...row, ...(normalizedDirection ? { direction: normalizedDirection } : {}) } as unknown as AedarComparisonCell)
         }
       }
     }
@@ -157,10 +176,10 @@ export function aedarComparisonCell(evidence: AedarComparisonEvidence | null | u
   if (!evidence) return undefined
   let index = cellIndexes.get(evidence)
   if (!index) {
-    index = new Map(evidence.cells.map((cell) => [`${cell.typequ}/${cell.measure}`, cell]))
+    index = new Map(evidence.cells.map((cell) => [`${cell.typequ ?? ''}/${cell.measure}`, cell]))
     cellIndexes.set(evidence, index)
   }
-  return index.get(`${typequ}/${measure}`)
+  return index.get(`${typequ ?? ''}/${measure}`)
 }
 export function aedarGroupValue(evidence: AedarComparisonEvidence | null | undefined, fact: AedarFact | null | undefined,
   measure: string): number | null {
@@ -168,4 +187,10 @@ export function aedarGroupValue(evidence: AedarComparisonEvidence | null | undef
   return cell && fact && cell.group_coverage_status === 'covered'
     && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const).every((key) => cell[key] === fact[key])
     ? cell.group_value : null
+}
+
+/** Registry-wide aggregate evidence is returned by the producer without a TYPEQU coordinate. */
+export function aedarAggregateComparisonCell(evidence: AedarComparisonEvidence | null | undefined,
+  measure: string): AedarComparisonCell | undefined {
+  return aedarComparisonCell(evidence, undefined, measure)
 }
