@@ -358,10 +358,10 @@ function surFocusout(e: FocusEvent) {
         <CircleAlert aria-hidden="true" />
         <span>{{ props.erreur }}</span>
       </p>
-      <p v-else-if="props.chargement" class="global-search__etat" role="status">
+      <p v-else-if="props.chargement" class="global-search__etat global-search__etat--contraste" role="status">
         Chargement des territoires…
       </p>
-      <p v-else-if="groupee && props.etatIndicateurs !== 'ready'" class="global-search__etat">
+      <p v-else-if="groupee && props.etatIndicateurs !== 'ready'" class="global-search__etat global-search__etat--contraste">
         Aucun territoire correspondant.
       </p>
       <p v-else class="global-search__etat">
@@ -376,7 +376,7 @@ function surFocusout(e: FocusEvent) {
       >
         <p
           v-if="props.etatIndicateurs === 'loading' || props.reessaiIndicateursEnCours"
-          class="global-search__etat"
+          class="global-search__etat global-search__etat--contraste"
           role="status"
           aria-live="polite"
           data-testid="search-indicators-pending"
@@ -546,6 +546,11 @@ function surFocusout(e: FocusEvent) {
 
 .global-search__etat--erreur {
   color: var(--status-error);
+}
+
+.global-search__etat--contraste,
+.global-search__etat--succes {
+  color: var(--text-primary);
 }
 
 .global-search__etat svg {
