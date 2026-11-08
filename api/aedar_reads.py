@@ -514,7 +514,9 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
         group = _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry_size)
     else:
         raise HTTPException(422, "AEDAR comparison context is not declared")
-    peer_ids = _aedar_fixed_peer_ids(conn, territory_type, territory_id, context)
+    wants_rank = bool(_AEDAR_AGGREGATE_RANK_FIELDS & selected)
+    peer_ids = (_aedar_fixed_peer_ids(conn, territory_type, territory_id, context)
+                if wants_rank else [territory_id])
     peer_records = _aedar_aggregate_records(conn, territory_type, peer_ids, underlying, registry_size)
     focal_record = peer_records.get(territory_id)
     if focal_record is None:
@@ -523,7 +525,7 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
     direction = facet["direction"]
     focal_value = focal_record["value"]
     rank = rank_size = rank_ties = None
-    if focal_value is not None:
+    if wants_rank and focal_value is not None:
         # Peers whose rows do not satisfy the compatibility law are honestly
         # unavailable: they are ineligible for the rank (never zeroed or
         # ranked), and rank_size reflects the eligible population; ties share
