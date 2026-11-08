@@ -143,6 +143,14 @@ describe('Cahier typography roles', () => {
     )
   })
 
+  it('uses the existing light mint token only for the numeric comparison reference', () => {
+    expect(cssRule(comparisonSource, '.cahier-comparison-value .region-emphasis'))
+      .toContain('color: var(--brand-200)')
+    expect(cssRule(comparisonSource, '.cahier-comparison-value'))
+      .toContain('color: var(--cahier-default)')
+    expect(comparisonSource).toContain('Groupe comparé :')
+  })
+
   it('keeps Cahier text at or above 11px except for deliberate desktop editorial source stamps', () => {
     const undersized: string[] = []
     const sources = cahierStyleFiles(join(process.cwd(), 'src', 'fiche', 'prototype'))

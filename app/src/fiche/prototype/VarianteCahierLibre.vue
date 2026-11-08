@@ -7,11 +7,12 @@
  * targets. CahierPagination owns the presentation sequence. This component
  * only lays those two inputs out as the existing Cahier exploration.
  */
-import { CarFront } from 'lucide-vue-next'
+import { CarFront, SlidersHorizontal } from 'lucide-vue-next'
 import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import BoutonComparaison from '@/components/fiche/BoutonComparaison.vue'
+import ConstructeurComparaison from '@/components/fiche/ConstructeurComparaison.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import {
   CONTROLE_COMPARAISON_KEY,
@@ -78,6 +79,15 @@ const route = useRoute()
  *  s'assied dans le page-heading collant, à gauche du titre thème·territoire.
  *  `null` (prototype hors fiche, Région) : aucun bouton. */
 const controleComparaison = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
+const demandeConstructeur = ref(0)
+const focusRetourConstructeur = ref<HTMLElement | null>(null)
+const constructeurOuvert = ref(false)
+function ouvrirConstructeur(source: HTMLButtonElement | MouseEvent | null): void {
+  if (!source) return
+  const target = source instanceof MouseEvent ? source.currentTarget : source
+  if (target instanceof HTMLElement) focusRetourConstructeur.value = target
+  demandeConstructeur.value++
+}
 
 const rootRef = ref<HTMLElement | null>(null)
 const activeFigure = ref('')
@@ -86,6 +96,7 @@ let observer: IntersectionObserver | null = null
 const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
 const unit = computed(() => units.value[0] ?? null)
 const aedarAccessSelectedModes = ref<AedarRampMode[]>([...AEDAR_DEFAULT_VISIBLE_RAMP_MODES])
+const aedarAccessComparisonVisible = ref(true)
 function initialAedarEquipmentHorizon(): AedarEquipmentHorizon | null {
   for (const currentUnit of props.content.units) {
     for (const section of currentUnit.sections as readonly ContentSection[]) {
@@ -220,24 +231,29 @@ function aedarEquipmentProfileEvidenceFor(section: ContentSection) {
 }
 
 function aedarAccessModeLegendEntries(evidence: AedarAccessEvidence): readonly FigureLegendEntry[] {
-  const referenceLabel = evidence.ramps.find((ramp) => ramp.referenceLabel)?.referenceLabel
+  const referenceLabel = evidence.comparisonLabel ?? evidence.ramps.find((ramp) => ramp.referenceLabel)?.referenceLabel ?? null
   return [
     ...AEDAR_RAMP_MODES.map((mode) => ({
       key: mode,
       label: AEDAR_RAMP_MODE_LABELS[mode],
       marker: 'line' as const,
     })),
-    ...(referenceLabel ? [{
+    {
       key: 'reference',
       label: 'Groupe comparé',
-      ariaLabel: `Groupe comparé : ${referenceLabel}`,
+      ariaLabel: `Groupe comparé : ${referenceLabel ?? 'Indisponible'}`,
       marker: 'dash' as const,
       tone: 'peer',
-    }] : []),
+      persistentToggle: true,
+    },
   ]
 }
 
 function toggleAedarAccessMode(key: string): void {
+  if (key === 'reference') {
+    aedarAccessComparisonVisible.value = !aedarAccessComparisonVisible.value
+    return
+  }
   aedarAccessSelectedModes.value = toggleAedarRampModeSelection(aedarAccessSelectedModes.value, key as AedarRampMode)
 }
 
@@ -279,6 +295,7 @@ function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureDa
     series,
     provenance: ramp.provenance,
     comparisonLabel: ramp.referenceLabel,
+    comparisonLayerSupported: true,
   }
 }
 function sourceLabel(source: { source: string; version: string }): string {
@@ -389,20 +406,29 @@ onBeforeUnmount(() => {
                   v-if="props.layoutVariant === 'indexed-sections'"
                   class="page-heading-context"
                 >
-                  <!-- #860 : « Comparaison », aligné à droite, immédiatement à
-                       gauche du titre thème·territoire dans le heading collant. -->
-                  <BoutonComparaison
-                    v-if="controleComparaison"
-                    class="page-heading-comparaison"
-                    :selection="controleComparaison.selection"
-                    :libelle-actif="controleComparaison.libelleActif"
-                    :preset-defaut="controleComparaison.presetDefaut"
-                    :presets="controleComparaison.presets"
-                    @choisir="controleComparaison.choisir"
-                  />
-                  <span class="page-heading-theme">{{ props.content.label }}</span>
-                  <span class="page-heading-context-separator" aria-hidden="true">·</span>
-                  <span class="page-heading-territory" :title="props.content.territory.name">{{ props.content.territory.name }}</span>
+                  <!-- #860 : les contrôles précèdent le titre de contexte aligné à droite. -->
+                  <span v-if="controleComparaison" class="page-heading-comparaison-controls">
+                    <BoutonComparaison
+                      class="page-heading-comparaison"
+                      :selection="controleComparaison.selection"
+                      :libelle-actif="controleComparaison.libelleActif"
+                      :preset-defaut="controleComparaison.presetDefaut"
+                      :presets="controleComparaison.presets"
+                      @choisir="controleComparaison.choisir"
+                      @construire="ouvrirConstructeur"
+                    />
+                    <button type="button" class="page-heading-builder-trigger"
+                      aria-label="Construire un groupe de comparaison" aria-haspopup="dialog"
+                      :aria-expanded="constructeurOuvert"
+                      @click="ouvrirConstructeur">
+                      <SlidersHorizontal :size="15" aria-hidden="true" />
+                    </button>
+                  </span>
+                  <span class="page-heading-context-title">
+                    <span class="page-heading-theme">{{ props.content.label }}</span>
+                    <span class="page-heading-context-separator" aria-hidden="true">·</span>
+                    <span class="page-heading-territory" :title="props.content.territory.name">{{ props.content.territory.name }}</span>
+                  </span>
                 </span>
               </header>
 
@@ -461,12 +487,16 @@ onBeforeUnmount(() => {
                         :icon="CarFront"
                         tone="c"
                         color-value
-                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : ''}`"
+                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : scalar.comparisonUnavailableLabel ? ` ${scalar.comparisonAccessibleLabel ?? 'Moyenne du groupe comparé'} indisponible.` : ''}${scalar.rank && scalar.rankSize && scalar.rankSize >= 2 ? ` Rang ${scalar.rank}${scalar.rankTies && scalar.rankTies > 1 ? `, ex æquo avec ${scalar.rankTies} territoires` : ''} sur ${scalar.rankSize}.` : ''}`"
                       >
-                        <template v-if="scalar.reference" #reference>
+                        <template v-if="scalar.reference || scalar.comparisonUnavailableLabel" #reference>
                           <CahierComparisonValue
+                            v-if="scalar.reference"
                             :named-reference="scalar.reference"
+                        :served-rank="scalar.rank && scalar.rankSize && scalar.rankSize >= 2 && scalar.rankDirection ? { position: scalar.rank, size: scalar.rankSize, direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' : 'moins-est-mieux', key: scalar.key } : null"
                           />
+                          <span v-else class="cahier-figure-comparison">{{ scalar.comparisonUnavailableLabel }}</span>
+                          <span v-if="scalar.rankUnavailableLabel" class="cahier-figure-comparison">{{ scalar.rankUnavailableLabel }}</span>
                         </template>
                       </CahierFigureScalar>
                     </div>
@@ -560,18 +590,18 @@ onBeforeUnmount(() => {
                           :territory-name="aedarAccessEvidenceFor(section)!.territory.name"
                           v-model:selected-modes="aedarAccessSelectedModes"
                           :show-mode-legend="false"
+                          :comparison-visible="aedarAccessComparisonVisible"
                         />
                       </figure>
                     </div>
-                    <!-- #860 — la légende des modes porte déjà la référence
-                         (entrée dash « peer ») : aucune seconde légende. -->
-                    <CahierFigureLegend
+                     <!-- The shared legend controls modes and the comparison curve on both ramps. -->
+                     <CahierFigureLegend
                       class="aedar-access-mode-selector"
                       :entries="aedarAccessModeLegendEntries(aedarAccessEvidenceFor(section)!)"
                       :mark-colors="aedarAccessModeColors"
-                      :selected-keys="aedarAccessSelectedModes"
-                      :toggle-keys="AEDAR_RAMP_MODES"
-                      label="Modes de déplacement pour les deux lectures"
+                       :selected-keys="[...aedarAccessSelectedModes, ...(aedarAccessComparisonVisible ? ['reference'] : [])]"
+                       :toggle-keys="AEDAR_RAMP_MODES"
+                       label="Modes de déplacement et groupe comparé pour les deux rampes"
                       @toggle="toggleAedarAccessMode"
                     />
                   </div>
@@ -606,6 +636,7 @@ onBeforeUnmount(() => {
                       :evidence="aedarEquipmentExplorerEvidenceFor(section)!"
                       v-model:selected-modes="aedarAccessSelectedModes"
                       v-model:selected-horizon="aedarSelectedHorizon"
+                      v-model:comparison-visible="aedarAccessComparisonVisible"
                     />
                   </div>
 
@@ -750,6 +781,18 @@ onBeforeUnmount(() => {
           <RouterLink class="sources-link" to="/sources">Voir toutes les sources</RouterLink>
         </section>
       </main>
+      <ConstructeurComparaison v-if="controleComparaison"
+        :selection="controleComparaison.selection"
+        :focal="controleComparaison.focal"
+        :territoires="controleComparaison.territoires"
+        :presets="controleComparaison.presets"
+        :preset-defaut="controleComparaison.presetDefaut"
+        :demande-ouverture="demandeConstructeur"
+        :masquer-declencheur="true"
+        :focus-retour="focusRetourConstructeur"
+        @ouverte="constructeurOuvert = $event"
+        @choisir="controleComparaison.choisir"
+      />
     </div>
   </article>
 </template>
@@ -877,16 +920,22 @@ onBeforeUnmount(() => {
 .cahier--indexed-sections .page-heading-index { color: var(--red); font: 500 12px/1.3 var(--font-ui); font-variant-numeric: tabular-nums; }
 .cahier--indexed-sections .page-heading-index small { margin-left: 3px; color: var(--muted); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); }
 .cahier--indexed-sections .page-heading-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.cahier--indexed-sections .page-heading-context { display: flex; align-items: baseline; justify-self: end; gap: 6px; max-width: min(32vw, 18rem); min-width: 0; font-family: var(--font-ui); font-size: var(--text-cahier-min-size); line-height: 1.3; white-space: nowrap; }
+.cahier--indexed-sections .page-heading-context { display: flex; align-items: center; justify-self: end; justify-content: space-between; gap: 6px; max-width: min(42vw, 24rem); min-width: 0; font-family: var(--font-ui); font-size: var(--text-cahier-min-size); line-height: 1.3; white-space: nowrap; }
+.cahier--indexed-sections .page-heading-context-title { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; margin-inline-start: auto; text-align: right; }
 .cahier--indexed-sections .page-heading-theme { flex: none; color: var(--cahier-theme-strong); font-weight: 600; }
 .cahier--indexed-sections .page-heading-context-separator { flex: none; color: var(--muted); }
 .cahier--indexed-sections .page-heading-territory { min-width: 0; overflow: hidden; color: var(--accent-primary); font-weight: 600; text-align: right; text-overflow: ellipsis; }
 /* #860 — le bouton « Comparaison » reste centré dans la rangée du heading
    (align-items: baseline) sans l'épaissir ; le territoire tronque à sa droite. */
 .cahier--indexed-sections .page-heading-comparaison { position: static; align-self: center; flex: none; margin-inline-end: var(--space-2); }
+.cahier--indexed-sections .page-heading-comparaison-controls { display: flex; align-items: center; flex: 0 0 auto; }
+.page-heading-builder-trigger { display: grid; place-items: center; flex: 0 0 auto; inline-size: 1.8em; block-size: 1.3em; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--cahier-theme-strong); cursor: pointer; }
+.page-heading-builder-trigger:hover { background: color-mix(in srgb, var(--cahier-theme) 8%, transparent); }
+.page-heading-builder-trigger:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 /* Réserver la colonne de contexte indépendamment du contrôle : son apparition
    ne doit pas réduire le titre et lui ajouter une ligne sur ordinateur. */
-.cahier--indexed-sections .page-heading-context { position: relative; inline-size: min(32vw, 18rem); }
+.cahier--indexed-sections .page-heading-context { position: relative; inline-size: min(42vw, 24rem); }
+.cahier--indexed-sections .page-heading-comparaison-controls .constructeur-comparaison { margin-inline-end: var(--space-6); }
 .cahier--indexed-sections .page-heading h2 {
   max-width: none;
   text-align: left;
@@ -1113,11 +1162,20 @@ onBeforeUnmount(() => {
   .cahier--indexed-sections .page-heading-context {
     grid-column: 2;
     grid-row: 1;
+    gap: 0;
     max-width: 100%;
     inline-size: 100%;
   }
+  .cahier--indexed-sections .page-heading-theme { margin-inline-start: 4px; }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 10px; }
+}
+@media (max-width: 639px) {
+  .cahier--indexed-sections .page-heading-context-separator { display: none; }
+  .cahier--indexed-sections .page-heading-context-title { flex: 1 1 auto; min-width: 0; }
+  .cahier--indexed-sections .page-heading-theme { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .cahier--indexed-sections .page-heading-comparaison-controls .constructeur-comparaison { margin-inline-end: var(--space-2); }
+  .page-heading-builder-trigger { inline-size: 44px; block-size: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .cahier * { scroll-behavior: auto !important; }

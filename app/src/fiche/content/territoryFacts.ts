@@ -23,6 +23,7 @@ export interface FactProvenance {
 }
 
 export type ComparisonScopeKind =
+  | 'selection'
   | 'communes-densite'
   | 'communes-epci'
   | 'communes-bretagne'
@@ -148,6 +149,8 @@ export interface TimeRampPoint {
   xLabel: string
   value: number | null
   referenceValue: number | null
+  /** Optional reading detail for the active point (kept in its tooltip, never as a curve chip). */
+  referenceNote?: string | null
 }
 
 export interface TimeRampSeries {
@@ -163,6 +166,8 @@ export interface TimeRampFigureData {
   series: readonly TimeRampSeries[]
   provenance: FactProvenance | null
   comparisonLabel: string | null
+  /** The figure supports a comparison layer even when its current values are unavailable. */
+  comparisonLayerSupported?: boolean
 }
 
 export interface TerritoryIdentity {

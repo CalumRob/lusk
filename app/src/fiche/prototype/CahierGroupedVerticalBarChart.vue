@@ -14,7 +14,9 @@ import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
 
-const props = defineProps<{ figure: CahierGroupedVerticalBarFigureData }>()
+const props = withDefaults(defineProps<{ figure: CahierGroupedVerticalBarFigureData; hiddenSeriesKeys?: readonly string[] }>(), {
+  hiddenSeriesKeys: () => [],
+})
 
 const BASE_FIGURE_GEOMETRY = {
   width: 640,
@@ -37,8 +39,9 @@ function formatAxisTick(value: number): string {
 }
 
 const categoryCount = computed(() => props.figure.categories.length)
-const seriesCount = computed(() => props.figure.series.length)
-const finiteValues = computed(() => props.figure.series.flatMap((series) =>
+const visibleSeries = computed(() => props.figure.series.filter((series) => !props.hiddenSeriesKeys.includes(series.key)))
+const seriesCount = computed(() => visibleSeries.value.length)
+const finiteValues = computed(() => visibleSeries.value.flatMap((series) =>
   series.values.flatMap((value) => value === null || !Number.isFinite(value) ? [] : [value]),
 ))
 const yDomain = computed(() => cahierIntegerYAxisScale(finiteValues.value))
@@ -176,7 +179,7 @@ function categoryHitboxStyle(index: number): Record<string, string> {
             <line v-for="tick in yTicks" :key="`y-${tick.key}`" :x1="figureGeometry.margin.left" :x2="figureGeometry.width - figureGeometry.margin.right" :y1="tick.position" :y2="tick.position" />
             <line class="cahier-grouped-vertical-bar-chart__axis" :x1="figureGeometry.margin.left" :x2="figureGeometry.width - figureGeometry.margin.right" :y1="plotBottom" :y2="plotBottom" />
           </g>
-          <g v-for="(series, seriesIndex) in figure.series" :key="series.key">
+          <g v-for="(series, seriesIndex) in visibleSeries" :key="series.key">
             <template v-for="(category, categoryIndex) in figure.categories" :key="`${series.key}-${category.key}`">
               <template v-if="series.values[categoryIndex] !== null && series.values[categoryIndex] !== undefined && Number.isFinite(series.values[categoryIndex])">
               <rect

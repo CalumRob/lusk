@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
+import { CONTROLE_COMPARAISON_KEY } from '../comparisonContext'
+import { fetchAedarComparison } from '../content/aedarComparisonClient'
+import type { AedarComparisonEvidence, AedarComparisonRequest } from '../content/aedarComparisonClient'
+import { AEDAR_AGGREGATE_READING_KEYS } from '../content/aedarTimeRampFacts'
 import VarianteCahierLibre from '../prototype/VarianteCahierLibre.vue'
 import { aedarPendingPrototypeSections, aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
 import { fetchAedarDiversityLossMapLegend } from '@/fiche/content/aedarDiversityLossMaps'
@@ -19,6 +23,51 @@ const props = defineProps<{
   aedarReferenceData?: AedarFetchResult | null
   aedarReferenceStatus?: 'unavailable' | 'loading' | 'ready' | 'error'
 }>()
+
+const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
+const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
+  const selection = control.value?.selection
+  if (selection?.etat === 'membres') return selection.membres.length ? {
+    intent: { kind: 'selected_comparison', members: selection.membres }, label: 'Moyenne de la sélection',
+  } : null
+  if (selection?.etat === 'vide') return null
+  const preset = selection?.etat === 'preset' ? selection.preset : control.value?.presetDefaut
+  if (!control.value?.libelleActif || props.content.territory.type === 'region') return null
+  const context = preset === 'densite' ? 'density_class'
+    : preset === 'epci' ? 'epci' : preset === 'bretagne' ? 'bretagne' : null
+  if (!context) return null
+  return { intent: { kind: 'fixed_comparison', context }, label: `Moyenne — ${control.value.libelleActif}` }
+})
+const comparison = ref<AedarComparisonEvidence | null>(null)
+const comparisonState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const comparisonError = ref('')
+const comparisonRetry = ref(0)
+const comparisonFocalIdentity = computed(() => props.aedarData?.status === 'ready'
+  ? JSON.stringify([props.content.territory.type, props.content.territory.code, props.aedarData.contentVersion,
+    props.aedarData.referenceContentVersion, props.aedarData.facts.map((fact) => fact.typequ)]) : null)
+watch([comparisonRequest, comparisonFocalIdentity, comparisonRetry], async ([request], _old, cleanup) => {
+  const focal = props.aedarData
+  comparison.value = null
+  comparisonState.value = 'idle'
+  if (!request || focal?.status !== 'ready') return
+  const abort = new AbortController()
+  cleanup(() => abort.abort())
+  comparisonState.value = 'loading'
+  const result = await fetchAedarComparison(props.content.territory.type as AedarTerritoryType, props.content.territory.code, {
+      ...request, typequ: [], measures: AEDAR_AGGREGATE_READING_KEYS,
+      rankMeasures: ['meanDiversity', 'meanVolume'],
+    expectedContentVersion: focal.contentVersion, expectedReferenceContentVersion: focal.referenceContentVersion, signal: abort.signal,
+  })
+  if (abort.signal.aborted) return
+  if (!result) {
+    comparisonState.value = 'error'
+    comparisonError.value = 'Comparaison AEDAR indisponible'
+    return
+  }
+  comparisonState.value = result.status === 'ready' ? 'ready' : 'error'
+  if (result.status === 'ready') comparison.value = result.evidence
+  else comparisonError.value = result.message
+}, { immediate: true })
 
 const lossMapMetadata = ref<AedarDiversityLossMapMetadata>({ status: 'loading', legend: null })
 let lossMapMetadataRequest = 0
@@ -57,11 +106,22 @@ const transformed = computed(() => {
   const referenceTerritoire = props.aedarReferenceTerritoire ?? null
   const referenceData = props.aedarReferenceData ?? null
   // The semantic builder checks both publication tokens before drawing reference lines.
-  const reference = referenceTerritoire && referenceData && referenceData.status === 'ready'
+  const allowDirectReference = !control.value || (control.value.selection.etat !== 'vide'
+    && control.value.selection.etat !== 'membres'
+    && (comparisonRequest.value?.intent.kind !== 'fixed_comparison' || comparisonRequest.value.intent.context !== 'density_class'))
+  const reference = allowDirectReference && referenceTerritoire && referenceData && referenceData.status === 'ready'
     ? { data: referenceData, territory: { type: referenceTerritoire.type, id: referenceTerritoire.id }, label: referenceTerritoire.nom }
     : null
+  const directReferenceExpected = Boolean(allowDirectReference && referenceTerritoire)
+  const directReferenceReady = referenceData?.status === 'ready' && props.aedarReferenceStatus !== 'error'
   const sections = aedarPrototypeSections(focal, props.content.territory, {
     reference,
+    comparison: comparison.value,
+    comparisonRequest: comparisonRequest.value,
+    comparisonPending: directReferenceExpected && !directReferenceReady,
+    comparisonAccessibleLabel: comparisonRequest.value?.intent.kind === 'fixed_comparison'
+      && comparisonRequest.value.intent.context !== 'density_class' && referenceTerritoire
+      ? `Moyenne de ${referenceTerritoire.nom}` : referenceTerritoire ? `Moyenne de ${referenceTerritoire.nom}` : null,
     lossMapMetadata: lossMapMetadata.value,
   })
   const carOverview = sections.find((section) => section.key === 'aedar-car-overview')
@@ -93,6 +153,11 @@ const transformed = computed(() => {
 </script>
 
 <template>
+  <p v-if="comparisonState === 'loading'" class="aedar-comparison-state" role="status">Chargement du groupe comparé…</p>
+  <p v-else-if="comparisonState === 'error'" class="aedar-comparison-state" role="alert">
+    Groupe comparé indisponible : {{ comparisonError }}. <button type="button" @click="comparisonRetry++">Réessayer</button>
+  </p>
+  <p v-else-if="aedarReferenceStatus === 'error' && !comparisonRequest && control?.selection.etat !== 'vide' && control?.selection.etat !== 'membres'" class="aedar-comparison-state" role="status">Groupe comparé indisponible.</p>
   <div v-if="props.aedarStatus === 'error'" class="aedar-state" role="alert">
     <p>Les données AEDAR ne sont pas disponibles.</p>
     <button type="button" @click="props.retryAedar">Réessayer</button>
@@ -110,6 +175,7 @@ const transformed = computed(() => {
 </template>
 
 <style scoped>
+.aedar-comparison-state { margin: var(--space-4) 0; color: var(--text-secondary); font: var(--text-body-sm); }
 .aedar-state { padding: var(--space-8); text-align: center; color: var(--muted); }
 .aedar-state button { margin-top: var(--space-4); padding: var(--space-2) var(--space-4); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--surface-primary); cursor: pointer; }
 .aedar-state button:hover { background: var(--surface-tertiary); }

@@ -18,7 +18,7 @@ import type { FamilleFigure, Indicateur, Theme } from '../payload/types'
  * de corps par famille, sans branche par thème. Ce test exerce le seam
  * FigureCompacte : sélection observable de la famille, couleurs officielles
  * DPE, pyramide des âges, trajectoire, et la régression de la puce de rang
- * directionnelle (#371 — le glyphe ▲/▼ hérité du seam de #367).
+ * directionnelle (#371; la direction est annoncée, sans glyphe visible).
  */
 
 function lignes(theme: Theme, clef: string, territoire = '22001'): Indicateur[] {
@@ -272,29 +272,27 @@ describe('FigureCompacte — régression de la puce de rang directionnelle (#367
     expect(wrapper.find('.puce-rang').exists()).toBe(false)
   })
 
-  it('scalar/densite (plus = mieux) porte le glyphe ▲ dans la phrase accessible — rang de la comparaison API (#892)', () => {
+  it('scalar/densite (plus = mieux) rend le rang API sans glyphe visible (#892)', () => {
     const lignesApi = lignes('demographie', 'densite', '22001')
       .map((l) => ({ ...l, comparaisonApi: { rang: 1, taille: 2, portee: "communes de l'EPCI X" } }))
     const wrapper = monter('scalar', 'densite', 'demographie', '22001', { lignes: lignesApi })
     const puce = wrapper.find('.puce-rang')
     expect(puce.exists()).toBe(true)
-    // le glyphe ▲ (plus = mieux) accompagne le rang, jamais sans texte accessible
-    expect(puce.text()).toBe("▲ 1er/2 · communes de l'EPCI X")
+    expect(puce.text()).toBe("1er/2 · communes de l'EPCI X")
+    expect(puce.text()).not.toMatch(/[▲▼↑↓]/)
     expect(puce.attributes('title')).toBe("1er/2 · communes de l'EPCI X — plus = mieux")
     expect(puce.attributes('aria-label')).toBe("1er/2 · communes de l'EPCI X — plus = mieux")
   })
 
-  it('scalar/surface_reseaux_routiers (moins = mieux) porte le glyphe ▼ — rang API (#892, sens dérivé du registre Méthodes)', () => {
-    // #627 - the iso_* glyph case retired with the legacy accessibility
-    // indicators; the retained low-is-better Mobilité scalar keeps the
-    // direction-glyph coverage.
+  it('scalar/surface_reseaux_routiers (moins = mieux) rend le rang API sans glyphe visible (#892)', () => {
     const lignesApi = lignes('mobilite', 'surface_reseaux_routiers', '22001')
       .map((l) => ({ ...l, comparaisonApi: { rang: 27, taille: 38, portee: "communes de l'EPCI X" } }))
     const wrapper = monter('scalar', 'surface_reseaux_routiers', 'mobilite', '22001', { lignes: lignesApi })
     const puce = wrapper.find('.puce-rang')
     expect(puce.exists()).toBe(true)
-    expect(puce.text()).toContain('▼')
-    // la phrase complète « moins = mieux » porte dans le title + aria-label, jamais le glyphe seul
+    expect(puce.text()).toContain('27e/38')
+    expect(puce.text()).not.toMatch(/[▲▼↑↓]/)
+    // la phrase complète « moins = mieux » reste dans le title + aria-label.
     expect(puce.attributes('aria-label')).toContain('moins = mieux')
     expect(puce.attributes('title')).toContain('moins = mieux')
   })

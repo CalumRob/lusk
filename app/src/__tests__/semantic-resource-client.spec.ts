@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { chargerCatalogueRessources, lireRessourcesBatch } from '../payload/semanticResourceClient'
+import { chargerCatalogueRessources, lireRessourcesBatch, SemanticMemberError } from '../payload/semanticResourceClient'
 import type { SemanticReadItem } from '../payload/semanticResourceClient'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -23,6 +23,41 @@ describe('semantic read batches', () => {
     expect(result.map((entry) => entry.ordinal)).toEqual(Array.from({ length: 40 }, (_, index) => index))
   })
 
+  // Formulations réellement émises par api/aedar_reads.py (#859/#904).
+  it.each([
+    [404, 'Unknown selected comparison member commune/22002'],
+    [422, 'Selected comparison member type does not match commune/22002'],
+    [422, 'Selected comparison member commune/22002 is not same-level as the focal territory'],
+    [422, 'Selected comparison member commune/22002 has no published AEDAR aggregate for typequ A104'],
+    [422, 'Selected comparison member commune/22002 has no published value for measure private_key at typequ A104'],
+    [422, 'Selected comparison member\n type does not match\tcommune/22002'],
+  ])('conserve uniquement l’identité nommée par le refus producteur %s : %s', async (status, detail) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      detail,
+    }), { status })))
+    const lecture: SemanticReadItem = { resource: 'densite', target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'selected_comparison', members: [{ type: 'commune', id: '22002' }] } }
+    const error = await lireRessourcesBatch([lecture]).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(SemanticMemberError)
+    expect(error).toMatchObject({ member: { type: 'commune', id: '22002' }, status })
+    expect((error as Error).message).not.toContain('private_key')
+  })
+  it.each([
+    { detail: 'Unknown selected territory' },
+    { detail: 'selected comparison members must be unique' },
+    { detail: [{ loc: ['body', 'items', 0, 'intent', 'members'], msg: 'selected comparison members must be unique' }] },
+  ])('ne déduit aucun membre d’un refus sans identité typée : %j', async (body) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 422 })))
+    const error = await lireRessourcesBatch([{ resource: 'densite', target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'selected_comparison', members: [{ type: 'commune', id: '22002' }] } }]).catch((cause: unknown) => cause)
+    expect(error).not.toBeInstanceOf(SemanticMemberError)
+    expect((error as Error).message).toContain('HTTP 422')
+  })
+  it('garde un échec HTTP générique quand le refus ne nomme pas une identité typée', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>indisponible</html>', { status: 422 })))
+    await expect(lireRessourcesBatch([{ resource: 'densite', target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'facts' } }])).rejects.toThrow('HTTP 422')
+  })
   it('accepts native producer discovery with an unthemed AEDAR resource beside a scalar', async () => {
     const catalogue = { contract: 'semantic-resource-catalogue-v1', resources: [
       { resource_id: 'aedar_territorial_aggregate', theme_id: '', indicator_id: 'aedar_territorial_aggregate',
@@ -65,6 +100,19 @@ describe('semantic read batches', () => {
     }))))
 
     await expect(chargerCatalogueRessources()).rejects.toMatchObject({ kind: 'validation' })
+  })
+
+  it('retains valid per-measure facet metadata and fails closed on a malformed declaration', async () => {
+    const resource = { resource_id: 'aedar_territorial_aggregate', theme_id: '', indicator_id: 'aedar_territorial_aggregate',
+      label: 'AEDAR', unit: '', direction: 'none', allowed_levels: ['commune'], sources: [], shapes: ['aedar_source_grain'],
+      target_kinds: ['territory'], fields: ['group_value'], intents: ['fixed_comparison'],
+      measure_facets: { meanDiversity: { facet: 'diversity', direction: 'high', ranked: true } } }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [resource] }))))
+    await expect(chargerCatalogueRessources()).resolves.toEqual([expect.objectContaining({ measure_facets: resource.measure_facets })])
+
+    const malformed = { ...resource, measure_facets: { meanDiversity: { facet: 'diversity', direction: 'up', ranked: true } } }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [malformed] }))))
+    await expect(chargerCatalogueRessources()).rejects.toThrow('mal formée')
   })
 
   it('pairs repeated resources by unique item identity, regardless of response order', async () => {

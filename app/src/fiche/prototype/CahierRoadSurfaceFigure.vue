@@ -3,6 +3,7 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import type { ContentFact, ExplorationTarget, SharingNetworksEvidence } from '@/fiche/content/themeContent'
 import { routePourCibleExploration } from '@/fiche/explorationHandoff'
+import { comparisonRank } from '@/fiche/content/comparisonRank'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
@@ -33,7 +34,8 @@ function routeFor(fact: ContentFact): RouteLocationRaw | null {
 }
 
 function ariaForFact(fact: ContentFact): string {
-  return `${fact.label} : ${formatFact(fact)}`
+  const rank = comparisonRank(fact.fact)
+  return `${fact.label} : ${formatFact(fact)}${rank ? `. Rang ${rank.phrase}` : ''}`
 }
 </script>
 

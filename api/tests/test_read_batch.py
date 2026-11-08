@@ -40,10 +40,15 @@ class Repository:
 
 
 def install(monkeypatch, repository, reader, preflight):
+    def read_with_state(conn, item, catalogue=None, *, snapshot_state=None):
+        return reader(conn, item, catalogue)
+    def preflight_with_state(conn, item, catalogue=None, *, work_budget=None, snapshot_state=None):
+        return preflight(conn, item, catalogue, work_budget=work_budget)
     main.app.dependency_overrides[main.get_repository] = lambda: repository
     main.app.dependency_overrides[main.get_resource_catalogue] = default_resource_catalogue
     main.app.dependency_overrides[main.get_semantic_resource_reader] = lambda: type(
-        "InjectedReader", (), {"read": staticmethod(reader), "preflight": staticmethod(preflight)})()
+        "InjectedReader", (), {"read": staticmethod(read_with_state),
+                                "preflight": staticmethod(preflight_with_state)})()
 
 
 def test_legacy_batch_url_is_retired_and_semantic_batch_route_is_registered():

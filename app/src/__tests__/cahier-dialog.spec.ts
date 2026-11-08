@@ -27,4 +27,19 @@ describe('CahierDialog scroll lock', () => {
     expect(document.body.style.overflow).toBe(previousBodyOverflow)
     expect(document.documentElement.style.overflow).toBe(previousRootOverflow)
   })
+
+  it('ferme en un seul événement sur Escape ou sur le fond modal', async () => {
+    const wrapper = mount(CahierDialog, {
+      props: { open: true, title: 'Détail', labelledBy: 'dialog-title' },
+    })
+    await nextTick()
+    await wrapper.get('dialog').trigger('cancel')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    await nextTick()
+    await wrapper.get('dialog').trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(2)
+    wrapper.unmount()
+  })
 })

@@ -29,7 +29,7 @@ function chipStyle(key: string): Record<string, string> | undefined {
 <template>
   <ul class="cahier-figure-legend" :aria-label="props.label">
     <li v-for="entry in props.entries" :key="entry.key" class="cahier-figure-legend-item" :aria-label="entry.ariaLabel">
-      <button v-if="props.toggleKeys?.includes(entry.key)" class="cahier-figure-legend-toggle" type="button" :aria-pressed="props.selectedKeys?.includes(entry.key) ?? false" @click="emit('toggle', entry.key)">
+      <button v-if="props.toggleKeys?.includes(entry.key) || entry.persistentToggle" class="cahier-figure-legend-toggle" type="button" :aria-label="entry.ariaLabel" :aria-pressed="props.selectedKeys?.includes(entry.key) ?? false" @click="emit('toggle', entry.key)">
       <CahierFigureLegendMark
         :entry="entry"
         :icons="props.icons"
@@ -38,7 +38,7 @@ function chipStyle(key: string): Record<string, string> | undefined {
       <span class="cahier-figure-legend-label">{{ entry.label }}</span>
       <strong v-if="props.counts && entry.key in props.counts" class="cahier-figure-legend-count">{{ props.counts[entry.key] }}</strong>
       </button>
-      <button v-else-if="props.actionKeys?.includes(entry.key)" class="cahier-figure-legend-action" :data-legend-key="entry.key" :class="{ 'cahier-figure-legend-action--chip': props.chipFills?.[entry.key] }" :style="chipStyle(entry.key)" type="button" @click="emit('activate', entry.key)">
+      <button v-else-if="props.actionKeys?.includes(entry.key)" class="cahier-figure-legend-action" :data-legend-key="entry.key" :aria-label="entry.ariaLabel" :class="{ 'cahier-figure-legend-action--chip': props.chipFills?.[entry.key] }" :style="chipStyle(entry.key)" type="button" @click="emit('activate', entry.key)">
         <CahierFigureLegendMark :entry="entry" :icons="props.icons" :mark-color="props.markColors?.[entry.key]" />
         <span class="cahier-figure-legend-label">{{ entry.label }}</span>
         <strong v-if="props.counts && entry.key in props.counts" class="cahier-figure-legend-count">{{ props.counts[entry.key] }}</strong>

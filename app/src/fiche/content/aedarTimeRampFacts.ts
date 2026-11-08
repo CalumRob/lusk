@@ -36,6 +36,14 @@ export const AEDAR_DEFAULT_VISIBLE_RAMP_MODES: readonly AedarRampMode[] = ['car'
 export const AEDAR_CORE_MEASURE_KEYS = [...new Set([5, 10, 15, 20].flatMap((horizon) =>
   ['car', 'bike_lts2', 'bike_lts4', 'transit', 'walk'].flatMap((mode) =>
     ['share', 'mean'].map((statistic) => `count_${horizon}_${mode}_${statistic}`))))]
+/** API-declared registry-wide comparison identities mapped to the existing ramp measure columns. */
+export const AEDAR_AGGREGATE_READING_MEASURES = Object.fromEntries(['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car']
+  .flatMap((mode) => [5, 10, 15, 20].flatMap((horizon) => ['diversity', 'volume'].map((kind) => {
+    const id = mode === 'car' && horizon === 15 ? (kind === 'diversity' ? 'meanDiversity' : 'meanVolume')
+      : `${mode}${horizon}${kind === 'diversity' ? 'Diversity' : 'Volume'}`
+    return [id, `count_${horizon}_${mode}_${kind === 'diversity' ? 'share' : 'mean'}`]
+  })))) as Readonly<Record<string, string>>
+export const AEDAR_AGGREGATE_READING_KEYS = Object.keys(AEDAR_AGGREGATE_READING_MEASURES)
 /** Quantile columns consumed by the selected TYPEQU sandbox's current figures. */
 export const AEDAR_EXPLORER_DETAIL_MEASURE_KEYS = [5, 10, 15, 20].flatMap((horizon) =>
   ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) =>

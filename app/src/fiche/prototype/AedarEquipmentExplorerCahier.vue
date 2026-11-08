@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 
 import type { AedarFact } from '@/fiche/content/aedarApiClient'
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
+import { aedarComparisonCell, aedarGroupValue, fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import type { AedarComparisonEvidence } from '@/fiche/content/aedarComparisonClient'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, AEDAR_RAMP_MODE_LABELS, AEDAR_RAMP_MODES, readAedarCountMeasure, toggleAedarRampModeSelection } from '@/fiche/content/aedarTimeRampFacts'
@@ -24,10 +26,12 @@ const props = defineProps<{
   evidence: AedarEquipmentExplorerEvidence
   selectedModes?: readonly AedarRampMode[]
   selectedHorizon?: AedarEquipmentHorizon | null
+  comparisonVisible?: boolean
 }>()
 const emit = defineEmits<{
   'update:selectedModes': [modes: readonly AedarRampMode[]]
   'update:selectedHorizon': [horizon: AedarEquipmentHorizon]
+  'update:comparisonVisible': [visible: boolean]
 }>()
 
 const HORIZONS = AEDAR_EQUIPMENT_BUCKET_HORIZONS
@@ -39,6 +43,59 @@ const detailRetry = ref(0)
 const retryDetail = () => { detailRetry.value += 1 }
 let detailRequest = 0
 const selectedBaseFact = computed(() => props.evidence.facts.find((fact) => fact.typequ === selectedTypequ.value) ?? null)
+const detailComparison = ref<AedarComparisonEvidence | null>(null)
+const referenceDetail = ref<AedarFact | null>(null)
+const comparisonStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const comparisonError = ref('')
+const comparisonIdentity = computed(() => JSON.stringify([selectedTypequ.value, props.evidence.contentVersion,
+  props.evidence.referenceContentVersion, props.evidence.comparisonRequest, props.evidence.reference?.territory]))
+watch([comparisonIdentity, detailRetry], async (_value, _old, cleanup) => {
+  detailComparison.value = null
+  referenceDetail.value = null
+  comparisonStatus.value = 'idle'
+  const request = props.evidence.comparisonRequest
+  const reference = props.evidence.reference
+  const fact = selectedBaseFact.value
+  if (!fact || (!request && !reference)) return
+  let cancelled = false
+  const abort = new AbortController()
+  cleanup(() => { cancelled = true; abort.abort() })
+  comparisonStatus.value = 'loading'
+  const measures = [...AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, ...HORIZONS.flatMap((horizon) =>
+    AEDAR_RAMP_MODES.map((mode) => `count_${horizon}_${mode}_mean`))]
+  if (request) {
+    const result = await fetchAedarComparison(fact.territory_type, fact.territory_id, { ...request,
+      typequ: [selectedTypequ.value], measures, expectedContentVersion: props.evidence.contentVersion,
+      expectedReferenceContentVersion: props.evidence.referenceContentVersion, signal: abort.signal })
+    if (cancelled) return
+    comparisonStatus.value = result.status === 'ready' ? 'ready' : 'error'
+    if (result.status === 'ready') detailComparison.value = result.evidence
+    else comparisonError.value = result.message
+  } else if (reference) {
+    const result = await fetchAedarAggregates(reference.territory.type as AedarFact['territory_type'], reference.territory.id, {
+      typequ: [selectedTypequ.value], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, expectedContentVersion: props.evidence.contentVersion,
+      expectedReferenceContentVersion: props.evidence.referenceContentVersion })
+    if (cancelled) return
+    comparisonStatus.value = result.status === 'ready' ? 'ready' : 'error'
+    if (result.status === 'ready') {
+      const detail = result.facts[0]
+      const core = reference.data.facts.find((candidate) => candidate.typequ === selectedTypequ.value)
+      referenceDetail.value = detail && core ? { ...detail, measures: { ...core.measures, ...detail.measures } } : null
+    }
+    else comparisonError.value = result.error.message
+  }
+}, { immediate: true })
+const activeComparison = computed(() => detailComparison.value ?? props.evidence.comparison ?? null)
+const comparisonLabel = computed(() => props.evidence.comparisonRequest?.label
+  ?? (props.evidence.reference ? `Moyenne de ${props.evidence.reference.label}` : null))
+function groupValue(horizon: AedarEquipmentHorizon, mode: AedarRampMode, statistic: string): number | null {
+  if (props.evidence.comparisonRequest) return aedarGroupValue(activeComparison.value, selectedBaseFact.value, `count_${horizon}_${mode}_${statistic}`)
+  const reference = referenceDetail.value
+  const focal = selectedBaseFact.value
+  return reference && focal && reference.coverage_status === 'covered'
+    && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const).every((key) => reference[key] === focal[key])
+    ? readAedarCountMeasure(reference, horizon, mode, statistic) : null
+}
 const detailIdentity = computed(() => {
   const fact = selectedBaseFact.value
   return JSON.stringify([fact?.territory_type, fact?.territory_id, selectedTypequ.value,
@@ -77,6 +134,8 @@ const localHorizonMinutes = ref<AedarEquipmentHorizon>(props.evidence.initialHor
 const horizonMinutes = computed(() => props.selectedHorizon ?? localHorizonMinutes.value)
 const localSelectedModes = ref<AedarRampMode[]>([...AEDAR_DEFAULT_VISIBLE_RAMP_MODES])
 const selectedModes = computed(() => props.selectedModes ?? localSelectedModes.value)
+const localComparisonVisible = ref(true)
+const comparisonVisible = computed(() => props.comparisonVisible ?? localComparisonVisible.value)
 const pickerOpen = ref(false)
 const search = ref('')
 
@@ -89,11 +148,12 @@ const selectedTypeLabel = computed(() => selectedFact.value
   ? `${selectedFact.value.typequ_label} (${selectedFact.value.typequ})`
   : 'Type d’équipement indisponible')
 const selectedTypeFigureLabel = computed(() => selectedFact.value?.typequ_label ?? 'Type indisponible')
-const modeEntries = computed<FigureLegendEntry[]>(() => AEDAR_RAMP_MODES.map((mode) => ({
+const modeEntries = computed<FigureLegendEntry[]>(() => [...AEDAR_RAMP_MODES.map((mode) => ({
   key: mode,
   label: AEDAR_RAMP_MODE_LABELS[mode],
   marker: 'line',
-})))
+} as const)), { key: 'comparison', label: 'Groupe comparé',
+  ariaLabel: `Groupe comparé : ${comparisonLabel.value ?? 'Indisponible'}`, marker: 'dash', tone: 'peer', persistentToggle: true } as const])
 const modeColors = Object.fromEntries(AEDAR_RAMP_MODES.map((mode) => [mode, AEDAR_TIME_MODE_COLORS[mode]]))
 
 const filteredFacts = computed(() => {
@@ -111,7 +171,14 @@ const volumeRamp = computed<TimeRampFigureData>(() => {
       xValue: horizon,
       xLabel: `${horizon} min`,
       value: readAedarCountMeasure(selectedFact.value, horizon, mode, 'mean'),
-      referenceValue: null,
+      referenceValue: groupValue(horizon, mode, 'mean'),
+      referenceNote: (() => {
+        const cell = aedarComparisonCell(activeComparison.value, selectedBaseFact.value?.typequ, `count_${horizon}_${mode}_mean`)
+        if (groupValue(horizon, mode, 'mean') === null || !cell?.rank || !cell.rank_size || cell.rank_size < 2) return null
+        const rank = `${cell.rank === 1 ? '1er' : `${cell.rank}e`}/${cell.rank_size}`
+        const direction = cell.direction === 'low' ? 'moins est mieux' : 'plus est mieux'
+        return `Rang du territoire : ${rank}, ${direction}${cell.rank_ties && cell.rank_ties > 1 ? ', ex æquo' : ''}`
+      })(),
     })),
   }))
   const values = series.flatMap((item) => item.points.map((point) => point.value))
@@ -124,11 +191,18 @@ const volumeRamp = computed<TimeRampFigureData>(() => {
     yAxis: { label: props.evidence.volumeYAxisTitle, unit: '' },
     series,
     provenance: null,
-    comparisonLabel: null,
+    comparisonLabel: comparisonLabel.value,
+    comparisonLayerSupported: true,
   }
 })
 
 function toggleMode(key: string): void {
+  if (key === 'comparison') {
+    const next = !comparisonVisible.value
+    if (props.comparisonVisible !== undefined) emit('update:comparisonVisible', next)
+    else localComparisonVisible.value = next
+    return
+  }
   const next = toggleAedarRampModeSelection(selectedModes.value, key as AedarRampMode)
   if (props.selectedModes !== undefined) emit('update:selectedModes', next)
   else localSelectedModes.value = next
@@ -172,6 +246,10 @@ function chooseType(fact: AedarFact): void {
     <p v-else-if="detailStatus === 'error'" class="aedar-equipment-explorer-load-state" role="alert">
       Valeurs indisponibles pour ce type d’équipement. <button type="button" @click="retryDetail">Réessayer</button>
     </p>
+    <p v-if="comparisonStatus === 'loading'" class="aedar-equipment-explorer-load-state" role="status">Chargement du groupe comparé…</p>
+    <p v-else-if="comparisonStatus === 'error'" class="aedar-equipment-explorer-load-state" role="alert">
+      Groupe comparé indisponible : {{ comparisonError }}. <button type="button" @click="retryDetail">Réessayer</button>
+    </p>
 
     <div class="aedar-equipment-explorer-figures">
       <figure class="aedar-equipment-explorer-figure">
@@ -184,8 +262,9 @@ function chooseType(fact: AedarFact): void {
           :territory-name="selectedTypeLabel"
           :selected-modes="selectedModes"
           :show-mode-legend="false"
+          :comparison-visible="comparisonVisible"
         />
-      </figure>
+        </figure>
 
       <figure class="aedar-equipment-explorer-figure">
         <figcaption class="cahier-figure-title cahier-baseline-anchor">
@@ -197,6 +276,11 @@ function chooseType(fact: AedarFact): void {
           :horizon-minutes="horizonMinutes"
           :selected-modes="selectedModes"
           :evidence="evidence"
+          :comparison="activeComparison"
+          :reference-fact="referenceDetail"
+          :comparison-label="comparisonLabel"
+          :comparison-visible="comparisonVisible"
+          :comparison-layer-supported="true"
         />
       </figure>
     </div>
@@ -205,9 +289,9 @@ function chooseType(fact: AedarFact): void {
       class="aedar-equipment-explorer-modes"
       :entries="modeEntries"
       :mark-colors="modeColors"
-      :selected-keys="selectedModes"
+      :selected-keys="[...selectedModes, ...(comparisonVisible ? ['comparison'] : [])]"
       :toggle-keys="AEDAR_RAMP_MODES"
-      label="Modes de déplacement pour les deux lectures"
+      label="Modes de déplacement et groupe comparé"
       @toggle="toggleMode"
     />
 

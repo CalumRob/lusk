@@ -273,11 +273,12 @@ describe('FigureOffreCyclable — sa présentation spécialisée reste testée h
 
     const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
     expect(figure.findAll('.puce-rang')).toHaveLength(2)
-    // offre_cyclable : plus = mieux → glyphe ▲ sur chaque détail (#371)
+    // offre_cyclable : les deux rangs et portées restent distincts, sans glyphe visible.
     expect(figure.findAll('.puce-rang').map((p) => p.text())).toEqual([
-      '▲ 20e/38 · communes de l’EPCI X',
-      '▲ 10e/38 · communes de l’EPCI X',
+      '20e/38 · communes de l’EPCI X',
+      '10e/38 · communes de l’EPCI X',
     ])
+    expect(figure.findAll('.puce-rang').every((p) => !/[▲▼↑↓]/.test(p.text()))).toBe(true)
   })
 
   it("reads the c network denominator from the SAME territory (la règle « dans l'EPCI : X % »)", async () => {

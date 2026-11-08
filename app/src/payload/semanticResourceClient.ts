@@ -22,6 +22,8 @@ export interface SemanticResourceDeclaration {
   map_eligible?: boolean | null
   /** Scalar-facet capability, not the presence of an observed count. */
   counts_available?: boolean
+  /** Producer-owned facets and rank direction for AEDAR aggregate measures. */
+  measure_facets?: Record<string, { facet: string; direction: 'high' | 'low'; ranked: boolean }>
 }
 
 export interface SemanticTerritoryTarget {
@@ -86,6 +88,10 @@ export async function chargerCatalogueRessources(): Promise<SemanticResourceDecl
         (candidate.target_ids !== undefined && !strings(candidate.target_ids)) ||
         (candidate.axes !== undefined && !strings(candidate.axes)) ||
         (candidate.dynamic_axes !== undefined && !strings(candidate.dynamic_axes)) ||
+        (candidate.measure_facets !== undefined && (!isRecord(candidate.measure_facets) ||
+          Object.values(candidate.measure_facets).some((facet) => !isRecord(facet) ||
+            typeof facet.facet !== 'string' || !facet.facet || (facet.direction !== 'high' && facet.direction !== 'low') ||
+            typeof facet.ranked !== 'boolean'))) ||
         (candidate.axis_values !== undefined && (!Array.isArray(candidate.axis_values) || candidate.axis_values.some((entry) =>
           !Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string' || !strings(entry[1])))) ||
         seen.has(candidate.resource_id)) {
@@ -97,6 +103,13 @@ export async function chargerCatalogueRessources(): Promise<SemanticResourceDecl
   return resources
 }
 
+/** Identité signalée par le producteur ; jamais son message technique en copy UI. */
+export class SemanticMemberError extends PayloadError {
+  constructor(path: string, status: number, readonly member: { type: string; id: string }) {
+    super('fetch', path, `Membre de comparaison indisponible : ${member.type}/${member.id}.`, status)
+  }
+}
+
 async function poster(path: string, body: RecordValue): Promise<unknown> {
   let response: Response
   try {
@@ -104,8 +117,22 @@ async function poster(path: string, body: RecordValue): Promise<unknown> {
   } catch (cause) {
     throw new PayloadError('fetch', path, `Lecture sémantique indisponible : ${cause instanceof Error ? cause.message : String(cause)}`)
   }
-  if (!response.ok) throw new PayloadError('fetch', path,
-    `Lecture sémantique indisponible (HTTP ${response.status}).`, response.status)
+  if (!response.ok) {
+    // Les erreurs membre 404/422 du contrat nomment une identité typée.
+    // Un corps illisible ou un autre échec reste l'erreur HTTP générique.
+    if (response.status === 404 || response.status === 422) {
+      const error: unknown = await response.json().catch(() => null)
+      // api/aedar_reads.py : identité immédiatement après « member », ou après
+      // « member type does not match ». Le reste (mesure/typequ/motif) n'est
+      // jamais du copy UI. resource_requests.py borne l'identifiant à 32
+      // caractères mais ne le restreint pas aux seuls chiffres/word chars.
+      const identity = isRecord(error) && typeof error.detail === 'string'
+        ? /\bselected comparison member(?: type does not match)? (commune|epci|departement|region)\/(\S{1,32})(?=\s|$)/i.exec(error.detail.replace(/\s+/gu, ' ')) : null
+      if (identity) throw new SemanticMemberError(path, response.status, { type: identity[1]!, id: identity[2]! })
+    }
+    throw new PayloadError('fetch', path,
+      `Lecture sémantique indisponible (HTTP ${response.status}).`, response.status)
+  }
   return readJson(response, path)
 }
 

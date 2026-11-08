@@ -1,4 +1,10 @@
 ﻿import { flushPromises, mount } from '@vue/test-utils'
+import { ref } from 'vue'
+import { CONTROLE_COMPARAISON_KEY } from '@/fiche/comparisonContext'
+import type { ControleComparaison } from '@/fiche/comparisonContext'
+import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import { AEDAR_AGGREGATE_READING_KEYS } from '@/fiche/content/aedarTimeRampFacts'
+import type { AedarComparisonResult } from '@/fiche/content/aedarComparisonClient'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,7 +16,7 @@ import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import type { AedarAccessSection, ContentSection, ThemeContent } from '@/fiche/content/themeContent'
-import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
+import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import {
   histoiresMobiliteFixture,
   indicateursMobiliteFixture,
@@ -21,6 +27,212 @@ import {
 import type { Payload } from '@/payload/types'
 import { routes } from '@/router'
 import { carInlineLegend } from './fixtures/aedar-car-inline-legend'
+import selectedComparisonCaptured from './fixtures/aedar-selected-comparison-captured.json'
+import { nativeCatalogueResponse } from './helpers/semanticApiFixtures'
+
+const comparisonClient = vi.hoisted(() => ({ realFetch: undefined as ((...args: any[]) => any) | undefined }))
+vi.mock('@/fiche/content/aedarComparisonClient', async (original) => ({
+  ...await original<typeof import('@/fiche/content/aedarComparisonClient')>(), fetchAedarComparison: vi.fn(),
+}))
+
+it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte une sélection tardive', async () => {
+  let complete!: (value: AedarComparisonResult) => void
+  vi.mocked(fetchAedarComparison).mockReturnValueOnce(new Promise((resolve) => { complete = resolve }))
+  const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === '22001')!, territoires: payload.territoires, selection: { etat: 'membres', membres: [
+    { territory_type: 'commune', territory_id: '22001' }, { territory_type: 'commune', territory_id: '22002' },
+  ] }, libelleActif: 'Sélection', presetDefaut: 'epci', presets: [], choisir: () => {} })
+  const content = baseContent()
+  const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
+    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+    aedarReferenceData: aedarReferenceReady, aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' } },
+  global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
+  await flushPromises()
+  expect(fetchAedarComparison).toHaveBeenCalledWith('commune', '22001', expect.objectContaining({
+    intent: { kind: 'selected_comparison', members: control.value.selection.etat === 'membres' ? control.value.selection.membres : [] },
+    rankMeasures: ['meanDiversity', 'meanVolume'],
+  }))
+  expect(wrapper.text()).toContain('Chargement du groupe comparé')
+  const before = wrapper.findComponent(VarianteCahierLibre).props('content')
+  const beforeOverview = before.units[0].sections[0].evidence
+  if (beforeOverview?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
+  expect(beforeOverview.meanDiversity).toBe(5)
+  expect(beforeOverview.scalars[0]!.reference).toBeNull()
+  expect(beforeOverview.scalars[0]!.comparisonUnavailableLabel).toBe('Groupe comparé : Indisponible')
+  expect(beforeOverview.scalars[0]!.comparisonAccessibleLabel).toBe('Moyenne de la sélection')
+  control.value = { ...control.value, selection: { etat: 'vide' }, libelleActif: null }
+  await flushPromises()
+  complete({ status: 'ready', evidence: { contentVersion: aedarReady.contentVersion,
+    referenceContentVersion: aedarReady.referenceContentVersion, label: 'Moyenne de la sélection', cells: [] } })
+  await flushPromises()
+  const after = wrapper.findComponent(VarianteCahierLibre).props('content')
+  const afterOverview = after.units[0].sections[0].evidence
+  if (afterOverview?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
+  expect(afterOverview.scalars[0]!.reference).toBeNull()
+  expect(afterOverview.meanDiversity).toBe(5)
+  expect(wrapper.text()).not.toContain('Chargement du groupe comparé')
+  vi.mocked(fetchAedarComparison).mockResolvedValueOnce({ status: 'error', message: 'commune/nope indisponible' })
+  control.value = { ...control.value, selection: { etat: 'membres', membres: [{ territory_type: 'commune', territory_id: 'nope' }] } }
+  await flushPromises()
+  expect(wrapper.text()).toContain('Groupe comparé indisponible : commune/nope')
+  const failed = wrapper.findComponent(VarianteCahierLibre).props('content')
+  const failedOverview = failed.units[0].sections[0].evidence
+  if (failedOverview?.kind !== 'aedar-car-overview') throw new Error('Overview expected after failed read')
+  expect(failedOverview.scalars[0]!.comparisonUnavailableLabel).toBe('Groupe comparé : Indisponible')
+  vi.mocked(fetchAedarComparison).mockResolvedValueOnce({ status: 'ready', evidence: { contentVersion: aedarReady.contentVersion,
+    referenceContentVersion: aedarReady.referenceContentVersion, label: 'Moyenne de la sélection', cells: [] } })
+  await wrapper.get('button').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).not.toContain('commune/nope indisponible')
+  wrapper.unmount()
+})
+
+it('adapte une réponse AEDAR capturée en lectures de production et pose ses valeurs de groupe dans les scalaires', async () => {
+  comparisonClient.realFetch ??= (await vi.importActual<typeof import('@/fiche/content/aedarComparisonClient')>(
+    '@/fiche/content/aedarComparisonClient')).fetchAedarComparison
+  vi.mocked(fetchAedarComparison).mockImplementation((...args) => comparisonClient.realFetch!(...args))
+  const members = [
+    { territory_type: 'commune' as const, territory_id: '22001' },
+    { territory_type: 'commune' as const, territory_id: '22002' },
+  ]
+  const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === '22001')!, territoires: payload.territoires, selection: { etat: 'membres', membres: members },
+    libelleActif: 'Sélection', presetDefaut: 'epci', presets: [], choisir: () => {} })
+  const originalFetch = globalThis.fetch
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === '/api/resources') {
+      const response = nativeCatalogueResponse()
+      const catalogue = await response.json() as { resources: Array<Record<string, unknown>> }
+      const aggregate = catalogue.resources.find((resource) => resource.resource_id === 'aedar_territorial_aggregate')
+      if (!aggregate) throw new Error('AEDAR aggregate declaration missing from fixture catalogue')
+      aggregate.measure_facets = Object.fromEntries(AEDAR_AGGREGATE_READING_KEYS.map((measure) => [measure,
+        { facet: measure.toLowerCase().includes('diversity') ? 'diversity' : 'volume', direction: 'high', ranked: true }]))
+      return new Response(JSON.stringify(catalogue), { status: response.status })
+    }
+    if (String(input) === '/api/resources/read-batch') {
+       const body = JSON.parse(String(init?.body)) as { items: Array<{ id: string; target: { type: string; id: string }; coordinates: { measure: string[] }; fields: string[] }> }
+      const results = body.items.map((item) => ({ id: item.id, data: {
+        resource: 'aedar_territorial_aggregate', target: { kind: 'territory', ...item.target },
+        territory: { territory_type: item.target.type, territory_id: item.target.id },
+        content_version: 'bridged-comparison-v1', aedar_content_version: aedarReady.contentVersion,
+        reference_content_version: aedarReady.referenceContentVersion,
+        selection: members,
+        scope: { kind: 'explicit_selection', member_count: members.length, territory_type: 'commune' },
+        comparisons: item.coordinates.measure.map((measure) => {
+          const fact = aedarReady.facts[0]!
+          const capturedCell = selectedComparisonCaptured.comparisons.find((candidate) => candidate.measure === 'count_5_walk_mean')!
+          return { ...capturedCell, ...fact, typequ: null, measure,
+            comparison_context: 'selected_comparison', statistic: 'pooled',
+            group_value: measure === 'meanDiversity' || measure.endsWith('Diversity') ? 7.4 : 1739,
+            group_n_addresses: 200, group_n_observed: 180, group_coverage_status: 'covered',
+             ...(item.fields.includes('rank') ? { rank: null, rank_size: null, rank_ties: null } : {}), direction: 'high' }
+        }),
+      } }))
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results }) } as Response
+    }
+    return originalFetch(input, init)
+  }))
+
+  const content = baseContent()
+  const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
+    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {} },
+  global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
+  await flushPromises()
+    const rendered = wrapper.findComponent(VarianteCahierLibre).props('content')
+    const overview = rendered.units[0].sections[0].evidence
+    if (overview?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
+    expect(overview.scalars[0]!.rankDirection).toBe('high')
+  expect(overview.scalars[0]!.reference?.value).toBeCloseTo(7.4)
+  expect(overview.scalars[1]!.reference?.value).toBeCloseTo(1739)
+  expect(overview.scalars[0]!.comparisonUnavailableLabel).toBeNull()
+  const requests = vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')
+  expect(requests).toHaveLength(1)
+  expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === '/api/resources')).toHaveLength(1)
+  const batch = JSON.parse(String(requests[0]![1]?.body))
+   expect(batch.items).toHaveLength(2)
+   expect(batch.items.reduce((sum: number, item: any) => sum + item.coordinates.measure.length, 0)).toBe(40)
+   expect(batch.items.every((item: any) => !('typequ' in item.coordinates))).toBe(true)
+   expect(batch.items.find((item: any) => item.fields.includes('rank')).coordinates.measure).toEqual(['meanDiversity', 'meanVolume'])
+   expect(batch.items.find((item: any) => !item.fields.includes('rank')).coordinates.measure).toHaveLength(38)
+   expect(batch.items[0]).toMatchObject({
+    resource: 'aedar_territorial_aggregate',
+    target: { kind: 'territory', type: 'commune', id: '22001' },
+    intent: { kind: 'selected_comparison', members: members.map(({ territory_type, territory_id }) => ({ type: territory_type, id: territory_id })) },
+  })
+  wrapper.unmount()
+})
+
+it('demande la classe de densité publiée pour le preset density-class', async () => {
+  vi.mocked(fetchAedarComparison).mockResolvedValue({ status: 'error', message: 'fixture unavailable' })
+  const content = baseContent()
+  const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === content.territory.code)!, territoires: payload.territoires, selection: { etat: 'preset', preset: 'densite' }, libelleActif: 'Communes peu denses',
+    presetDefaut: 'epci', presets: [], choisir: () => {} })
+  const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
+    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {} },
+  global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
+  await flushPromises()
+  expect(fetchAedarComparison).toHaveBeenCalledWith('commune', content.territory.code, expect.objectContaining({
+    intent: { kind: 'fixed_comparison', context: 'density_class' },
+  }))
+  wrapper.unmount()
+})
+
+it.each([
+  ['commune', 'epci', 'EPCI', '200000001'],
+  ['commune', 'bretagne', 'Région', '53'],
+  ['epci', 'bretagne', 'Région', '53'],
+  ['departement', 'bretagne', 'Région', '53'],
+] as const)('consomme la référence directe AEDAR (%s / %s)', async (territoryType, preset, referenceType, referenceId) => {
+  const content = { ...baseContent(), territory: { ...baseContent().territory, type: territoryType } } as ThemeContent
+  const data = { ...aedarReady, facts: aedarReady.facts.map((fact) => ({ ...fact,
+    territory_type: territoryType as AedarTerritoryType, territory_id: content.territory.code })) }
+  const referenceFacts = aedarFacts(10, { territoryId: referenceId, territoryType: referenceType === 'EPCI' ? 'epci' : 'commune', value: 0.25 })
+    .map((fact) => ({ ...fact, territory_type: (referenceType === 'EPCI' ? 'epci' : 'region') as AedarTerritoryType }))
+  const referenceData = { ...aedarReferenceReady, facts: referenceFacts }
+  const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === content.territory.code)!, territoires: payload.territoires, selection: { etat: 'preset', preset }, libelleActif: 'Portée résolue',
+    presetDefaut: 'bretagne', presets: [], choisir: () => {} })
+  const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
+    aedarData: data, aedarStatus: 'ready', retryAedar: () => {}, aedarReferenceTerritoire: {
+      type: referenceType === 'EPCI' ? 'epci' : 'region', id: referenceId, nom: referenceType === 'EPCI' ? 'EPCI X' : 'Bretagne',
+    }, aedarReferenceData: referenceData },
+  global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
+  await flushPromises()
+  const rendered = wrapper.findComponent(VarianteCahierLibre).props('content')
+  const overview = rendered.units[0].sections[0].evidence
+  if (overview?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
+  expect(overview.scalars[0]!.reference).toMatchObject({
+    kind: 'territory-mean', territory: { type: referenceType === 'EPCI' ? 'epci' : 'region', id: referenceId },
+  })
+  expect(fetchAedarComparison).toHaveBeenCalledWith(territoryType, content.territory.code, expect.objectContaining({
+    intent: { kind: 'fixed_comparison', context: preset === 'epci' ? 'epci' : 'bretagne' },
+  }))
+  expect(overview.meanDiversity).toBe(5)
+  wrapper.unmount()
+})
+
+it('garde un état sans groupe dans chaque scalaire pendant puis après l’échec de la référence directe', async () => {
+  const content = baseContent()
+  const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === '22001')!, territoires: payload.territoires, selection: { etat: 'preset', preset: 'epci' }, libelleActif: 'EPCI X',
+    presetDefaut: 'epci', presets: [], choisir: () => {} })
+  const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
+    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {}, aedarReferenceTerritoire: {
+      type: 'epci', id: '200000001', nom: 'EPCI X',
+    }, aedarReferenceStatus: 'loading' },
+  global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
+  await flushPromises()
+  const overviewFor = () => wrapper.findComponent(VarianteCahierLibre).props('content').units[0].sections[0].evidence
+  const pending = overviewFor()
+  if (pending?.kind !== 'aedar-car-overview') throw new Error('Overview expected while loading')
+  expect(pending.scalars.every((scalar) => scalar.reference === null
+    && scalar.comparisonUnavailableLabel === 'Groupe comparé : Indisponible'
+    && scalar.comparisonAccessibleLabel === 'Moyenne de EPCI X')).toBe(true)
+  await wrapper.setProps({ aedarReferenceStatus: 'error' })
+  await flushPromises()
+  const failed = overviewFor()
+  if (failed?.kind !== 'aedar-car-overview') throw new Error('Overview expected after failure')
+  expect(failed.scalars.map((scalar) => scalar.comparisonUnavailableLabel)).toEqual([
+    'Groupe comparé : Indisponible', 'Groupe comparé : Indisponible',
+  ])
+  wrapper.unmount()
+})
 
 const payload: Payload = {
   territoires: territoiresFixture,
@@ -144,6 +356,7 @@ const aedarReferenceReady: Extract<AedarFetchResult, { status: 'ready' }> = {
 
 const lossMapModes = ['walk', 'transit', 'bike_lts2', 'bike_lts4'] as const
 beforeEach(() => {
+  vi.mocked(fetchAedarComparison).mockReset()
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).endsWith('/22001-car-inline.json')) {
       return { ok: true, json: async () => carInlineLegend({ type: 'commune', code: '22001', name: 'Allineuc' }) } as Response
@@ -245,6 +458,7 @@ describe('VarianteCahierLibre — AEDAR access', () => {
       'Vélo (LTS4)',
       'Transports en commun',
       'À pied',
+      'Groupe comparé',
     ])
 
     // The tooltip reads one row per mode.
@@ -606,6 +820,47 @@ describe('ProductionMobiliteAedar', () => {
     expect(exploration.text()).toBe('En savoir plus')
     expect(exploration.attributes('disabled')).toBeDefined()
     expect(exploration.attributes('href')).toBeUndefined()
+  })
+
+  it.each([
+    ['fixed ambient', 2, 3, 'Classe de densité'],
+    ['selected', 1, 3, 'Moyenne de la sélection'],
+    ['singleton', 1, 1, 'Classe de densité'],
+    ['suppressed', null, null, 'Classe de densité'],
+  ])('renders served overview ranks in the real cahier DOM (%s)', async (label, position, size, comparisonLabel) => {
+    const content = baseContent()
+    const control = ref<ControleComparaison>({ selection: label === 'selected' ? { etat: 'membres', membres: [
+      { territory_type: 'commune', territory_id: content.territory.code }, { territory_type: 'commune', territory_id: '22002' },
+    ] } : { etat: 'preset', preset: 'densite' },
+      focal: territoiresFixture.find((territory) => territory.territoire === content.territory.code) ?? territoiresFixture[0]!, territoires: territoiresFixture,
+      libelleActif: label === 'selected' ? 'Sélection' : 'Classe de densité', presetDefaut: 'epci', presets: [], choisir: () => {} })
+    vi.mocked(fetchAedarComparison).mockResolvedValue({ status: 'ready', evidence: {
+      label: comparisonLabel, contentVersion: aedarReady.contentVersion,
+      referenceContentVersion: aedarReady.referenceContentVersion,
+      cells: ['meanDiversity', 'meanVolume'].map((measure) => ({
+        typequ: null, measure, source_id: 'aedar_bretagne', vintage_id: '2026-v1', reference_date: '2026-01-01', publication_date: '2026-09-30',
+        group_value: 2.5, group_coverage_status: 'covered', group_n_addresses: 100, group_n_observed: 90,
+        statistic: 'pooled', rank: position, rank_size: size, rank_ties: position === null ? null : 1, direction: 'high',
+      })),
+    } })
+    const wrapper = mount(ProductionMobiliteAedar, { props: {
+      content, pagination: cahierPaginationFor(payload, content), aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+    }, global: { plugins: [createRouter({ history: createMemoryHistory(), routes })], provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control },
+      stubs: { ConstructeurComparaison: true, MembresComparaison: true } } })
+    await flushPromises()
+    const scalars = wrapper.findAll('[data-section="aedar-car-overview"] .cahier-figure-scalar')
+    expect(scalars).toHaveLength(2)
+    expect(scalars[0]!.get('.cahier-comparison-value').text()).toContain('Groupe comparé : 2,5')
+    if (size !== null && size >= 2) {
+      expect(scalars[0]!.get('.cahier-rank').text()).toBe(`${position === 1 ? '1er' : '2e'}/${size}`)
+      expect(scalars[0]!.attributes('aria-label')).toContain(`Rang ${position} sur ${size}`)
+      expect(scalars[0]!.get('.cahier-rank').attributes('aria-hidden')).toBe('true')
+    } else {
+      expect(scalars[0]!.find('.cahier-rank').exists()).toBe(false)
+      expect(scalars[0]!.attributes('aria-label')).not.toContain('Rang')
+    }
+    expect(scalars[0]!.attributes('aria-label')).toContain(`${comparisonLabel} : 2,5`)
+    wrapper.unmount()
   })
 
   it('keeps the cahier stable without a loading banner while AEDAR data loads', async () => {
