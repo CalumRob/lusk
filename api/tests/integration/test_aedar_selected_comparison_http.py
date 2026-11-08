@@ -77,7 +77,7 @@ def _aggregate_row(territory_type, territory_id, typequ, n_addresses, n_observed
     }
 
 
-def _seed_aedar(publisher):
+def _seed_aedar(publisher, *, complete_rank_fixture=False):
     """Seed the reference, the published aggregates and the reference-only marker."""
     publisher.execute("""INSERT INTO territory_reference(
         territory_id,territory_type,name,department_id,epci_id,density_class_code,density_class_label)
@@ -92,9 +92,9 @@ def _seed_aedar(publisher):
                ('sel-e1','epci','EPCI 1','22',NULL,NULL,NULL),
                ('sel-e2','epci','EPCI 2','22',NULL,NULL,NULL),
                ('22','departement','Département 22',NULL,NULL,NULL,NULL),
-               ('53','region','Bretagne',NULL,NULL,NULL,NULL)""")
+                ('53','region','Bretagne',NULL,NULL,NULL,NULL)""")
     publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count)"
-                      " VALUES ('territory_reference','b' || repeat('0',63),12)")
+                       " VALUES ('territory_reference','b' || repeat('0',63),12)")
 
     rows = [
         # communes: n_addresses weights 10 / 30 / 10. The TYPEQU registry of the
@@ -183,6 +183,40 @@ def _seed_aedar(publisher):
                           {"count_15_car_mean": 6.0, "count_15_car_share": 0.25}),
          "coverage_status": "pending_review"},
     ]
+    if complete_rank_fixture:
+        publisher.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,
+            department_id,epci_id) VALUES ('rank-c1','commune','Rank Commune 1','22','rank-e'),
+            ('rank-c2','commune','Rank Commune 2','22','rank-e'),
+            ('rank-c3','commune','Rank Commune 3','22','rank-e'),
+            ('rank-c4','commune','Rank Commune 4','22','rank-e'),
+            ('rank-e','epci','Rank EPCI','22',NULL)""")
+        publisher.execute("UPDATE table_publication SET row_count=17 WHERE table_name='territory_reference'")
+        # Complete, deliberately distinguishable 40-measure rank fixture. The
+        # first three communes are fully comparable; rank-c4 violates the
+        # share law for measure index 6 and is excluded only from that rank.
+        from api.aedar_models import AEDAR_AGGREGATE_READINGS
+        for peer_index, peer_id in enumerate(("rank-c1", "rank-c2", "rank-c3", "rank-c4")):
+            for typequ in ("A104", "B207"):
+                measures = {}
+                for index, (_, underlying) in enumerate(AEDAR_AGGREGATE_READINGS.items()):
+                    if index == 0:
+                        value = (0.1, 0.1, 0.3, 0.4)[peer_index]
+                    elif index == 1:
+                        value = (0.4, 0.3, 0.2, 0.1)[peer_index]
+                    else:
+                        value = (0.1, 0.2, 0.3, 0.4)[peer_index] + index * 0.001
+                    if peer_id == "rank-c4" and index == 6 and typequ == "B207":
+                        value = 1.1
+                    measures[underlying] = value
+                row = _aggregate_row("commune", peer_id, typequ, 10, 8, measures)
+                row["measures"].update(measures)
+                rows.append(row)
+        for typequ in ("A104", "B207"):
+            group_measures = {underlying: 0.05 + index * 0.001
+                              for index, underlying in enumerate(AEDAR_AGGREGATE_READINGS.values())}
+            group_row = _aggregate_row("epci", "rank-e", typequ, 40, 34, group_measures)
+            group_row["measures"].update(group_measures)
+            rows.append(group_row)
     for row in rows:
         publisher.execute(
             """INSERT INTO aedar_territorial_aggregate(
@@ -231,6 +265,13 @@ def _seed_aedar(publisher):
         ("D2", "A104", "count_10_transit_mean", 2.0, 10, 9),
         ("D2", "B207", "count_10_transit_mean", 3.0, 10, 8),
     ]
+    present_group_measures = {(group_id, typequ, measure) for group_id, typequ, measure, *_ in group_rows}
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS
+    for measure, underlying in AEDAR_AGGREGATE_READINGS.items():
+        for typequ, value, observed in (("A104", 0.4 if underlying.endswith("_share") else 2.0, 34),
+                                        ("B207", 0.5 if underlying.endswith("_share") else 3.0, 33)):
+            if ("D1", typequ, underlying) not in present_group_measures:
+                group_rows.append(("D1", typequ, underlying, value, 40, observed))
     for group_id, typequ, measure, value, n_addresses, n_observed in group_rows:
         publisher.execute("""INSERT INTO aedar_comparison_group(comparison_context,group_id,territory_type,
             typequ,measure,statistic,value,n_addresses,n_observed,coverage_status)
@@ -245,8 +286,8 @@ def _seed_aedar(publisher):
         (len(group_rows),))
 
 
-@pytest.fixture
-def aedar_http(canonical_db_env):
+@contextmanager
+def _aedar_http_client(canonical_db_env, *, complete_rank_fixture=False):
     import psycopg
     from fastapi.testclient import TestClient
     from psycopg_pool import ConnectionPool
@@ -254,7 +295,7 @@ def aedar_http(canonical_db_env):
 
     with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
         with publisher.transaction():
-            _seed_aedar(publisher)
+            _seed_aedar(publisher, complete_rank_fixture=complete_rank_fixture)
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
                           open=True, kwargs={"autocommit": True})
@@ -271,11 +312,23 @@ def aedar_http(canonical_db_env):
         with TestClient(main.app) as client:
             yield client
     finally:
+        pool.close()
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)
         else:
             main.app.dependency_overrides[main.get_repository] = previous
-        pool.close()
+
+
+@pytest.fixture
+def aedar_http(canonical_db_env):
+    with _aedar_http_client(canonical_db_env) as client:
+        yield client
+
+
+@pytest.fixture
+def aedar_rank_http(canonical_db_env):
+    with _aedar_http_client(canonical_db_env, complete_rank_fixture=True) as client:
+        yield client
 
 
 def _selected_item(target_type="commune", target_id="sel-c1", members=None,
@@ -563,6 +616,145 @@ def test_fixed_aggregate_same_level_and_density_contexts(aedar_http):
     comparison = density_diversity.json()["comparison"]
     assert comparison["group_value"] == pytest.approx(0.95)  # 0.65 + 0.3 pooled shares
     assert comparison["value"] == pytest.approx(0.75)
+
+
+def test_fixed_aggregate_batch_shares_rank_scan_across_all_readings(aedar_http, monkeypatch):
+    from api import aedar_reads, snapshot_reads
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS
+
+    measures = list(AEDAR_AGGREGATE_READINGS)
+    items = [{"id": f"rank-item-{index}", **_aggregate_item(target_id="sel-c1", measures=(measure,),
+        fields=["group_value", "value", "rank", "rank_size", "rank_ties"], context="density_class")}
+        for index, measure in enumerate(measures)]
+    counts = {name: 0 for name in ("registry", "peer_ids", "territorial", "multi_territorial",
+                                   "pooled", "multi_pooled", "cohort")}
+    original_registry = aedar_reads._aedar_registry_size
+    original_peer_ids = aedar_reads._aedar_fixed_peer_ids
+    original_territorial = aedar_reads._aedar_aggregate_records
+    original_multi = aedar_reads._aedar_multi_aggregate_records
+    original_pooled = aedar_reads._aedar_pooled_group_aggregate
+    original_multi_pooled = aedar_reads._aedar_multi_pooled_group_aggregates
+    original_cohort = snapshot_reads._comparison_cohort
+
+    def counted(name, original):
+        def invoke(*args, **kwargs):
+            counts[name] += 1
+            return original(*args, **kwargs)
+        return invoke
+
+    monkeypatch.setattr(aedar_reads, "_aedar_registry_size", counted("registry", original_registry))
+    monkeypatch.setattr(aedar_reads, "_aedar_fixed_peer_ids", counted("peer_ids", original_peer_ids))
+    monkeypatch.setattr(aedar_reads, "_aedar_aggregate_records", counted("territorial", original_territorial))
+    monkeypatch.setattr(aedar_reads, "_aedar_multi_aggregate_records", counted("multi_territorial", original_multi))
+    monkeypatch.setattr(aedar_reads, "_aedar_pooled_group_aggregate", counted("pooled", original_pooled))
+    monkeypatch.setattr(aedar_reads, "_aedar_multi_pooled_group_aggregates", counted("multi_pooled", original_multi_pooled))
+    monkeypatch.setattr(snapshot_reads, "_comparison_cohort", counted("cohort", original_cohort))
+
+    singles = []
+    for item in items:
+        response = aedar_http.post("/api/resources/read", json={key: value for key, value in item.items() if key != "id"})
+        assert response.status_code == 200, response.text
+        singles.append(response.json()["comparison"])
+    baseline = dict(counts)
+    counts.update({name: 0 for name in counts})
+
+    batch = aedar_http.post("/api/resources/read-batch", json={"items": items})
+    assert batch.status_code == 200, batch.text
+    results = batch.json()["results"]
+    assert len(results) == len(measures) == 40
+    batch_comparisons = [result["data"]["comparison"] for result in results]
+    assert batch_comparisons == singles, next((f"{measures[index]}: batch={batch_value!r}, single={single_value!r}"
+        for index, (batch_value, single_value) in enumerate(zip(batch_comparisons, singles))
+        if batch_value != single_value), "length mismatch")
+    assert counts == {"registry": 1, "peer_ids": 1, "territorial": 0, "multi_territorial": 1,
+                      "pooled": 0, "multi_pooled": 1, "cohort": 1}
+    assert baseline["registry"] == 40
+    assert baseline["peer_ids"] == 80
+    assert baseline["territorial"] == 40
+    assert baseline["multi_territorial"] == 0
+    assert baseline["pooled"] == 40
+    assert baseline["multi_pooled"] == 0
+    assert baseline["cohort"] == 40
+
+    # Production projection: ranks on the two car-15 overview readings, while
+    # preserving group/focal readings for every other ramp facet.
+    ranked = {"meanDiversity", "meanVolume"}
+    partial_items = [{**item, "fields": (["group_value", "value", "rank", "rank_size", "rank_ties"]
+                      if measure in ranked else ["group_value", "value"])}
+                     for item, measure in zip(items, measures)]
+    counts.update({name: 0 for name in counts})
+    partial = aedar_http.post("/api/resources/read-batch", json={"items": partial_items})
+    assert partial.status_code == 200, partial.text
+    partial_results = [result["data"]["comparison"] for result in partial.json()["results"]]
+    assert len(partial_results) == 40
+    for measure, result, expected in zip(measures, partial_results, singles):
+        expected_fields = set(expected) if measure in ranked else set(expected) - {"rank", "rank_size", "rank_ties"}
+        assert {key: result[key] for key in expected_fields} == {key: expected[key] for key in expected_fields}
+        if measure not in ranked:
+            assert not ({"rank", "rank_size", "rank_ties"} & set(result))
+    assert counts == {"registry": 1, "peer_ids": 1, "territorial": 0, "multi_territorial": 2,
+                      "pooled": 0, "multi_pooled": 1, "cohort": 1}
+
+
+def test_fixed_aggregate_all_40_ranks_have_independent_fixture_expectations(aedar_rank_http):
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS
+    from api.resource_catalogue import default_resource_catalogue
+
+    measures = list(AEDAR_AGGREGATE_READINGS)
+    items = [{"id": f"complete-rank-{index}", **_aggregate_item(
+        target_id="rank-c1", measures=(measure,),
+        fields=["group_value", "value", "rank", "rank_size", "rank_ties"], context="epci")}
+        for index, measure in enumerate(measures)]
+    response = aedar_rank_http.post("/api/resources/read-batch", json={"items": items})
+    assert response.status_code == 200, response.text
+    comparisons = [result["data"]["comparison"] for result in response.json()["results"]]
+    assert len(comparisons) == 40
+
+    facets = default_resource_catalogue().resources_by_id["aedar_territorial_aggregate"].measure_facets
+    for index, (measure, comparison) in enumerate(zip(measures, comparisons)):
+        direction = facets[measure]["direction"]
+        # The two TYPEQU rows in the guarded fixture have equal values. These
+        # expected sums/ranks are calculated from the literal fixture patterns,
+        # not from an API reader or its aggregate helper.
+        if index == 0:
+            assert comparison["value"] == pytest.approx(0.2)
+            assert comparison["rank_ties"] == 2
+            assert comparison["rank"] == (3 if direction == "high" else 1)
+        elif index == 1:
+            assert comparison["value"] == pytest.approx(0.8)
+            assert comparison["rank_ties"] == 1
+            assert comparison["rank"] == (1 if direction == "high" else 4)
+        else:
+            assert comparison["value"] == pytest.approx(0.2 + 2 * index * 0.001), (index, measure, comparison)
+            assert comparison["rank_ties"] == 1
+            assert comparison["rank"] == ((3 if index == 6 else 4) if direction == "high" else 1)
+        assert comparison["rank_size"] == (3 if index == 6 else 4)
+        assert comparison["group_value"] == pytest.approx(0.1 + 2 * index * 0.001)
+
+
+def test_fixed_aggregate_batch_preparation_isolated_by_context_and_focal(aedar_rank_http):
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS
+
+    measures = list(AEDAR_AGGREGATE_READINGS)[:2]
+    items = []
+    for prefix, target_id, context in (("rank-e1", "rank-c1", "epci"),
+                                       ("rank-e2", "rank-c2", "epci"),
+                                       ("rank-bretagne", "rank-c1", "bretagne")):
+        items.extend({"id": f"{prefix}-{index}", **_aggregate_item(target_id=target_id,
+            measures=(measure,), fields=["group_value", "value", "rank", "rank_size"], context=context)}
+            for index, measure in enumerate(measures))
+    response = aedar_rank_http.post("/api/resources/read-batch", json={"items": items})
+    assert response.status_code == 200, response.text
+    results = {item["id"]: item["data"]["comparison"] for item in response.json()["results"]}
+    assert all(results[f"rank-e1-{index}"]["group_id"] == "rank-e" for index in range(2))
+    assert all(results[f"rank-e2-{index}"]["group_id"] == "rank-e" for index in range(2))
+    assert results["rank-e1-0"]["value"] == pytest.approx(0.2)
+    assert results["rank-e1-1"]["value"] == pytest.approx(0.8)
+    assert results["rank-e2-0"]["value"] == pytest.approx(0.2)
+    assert results["rank-e2-1"]["value"] == pytest.approx(0.6)
+    assert all(results[f"rank-bretagne-{index}"]["group_id"] == "53" for index in range(2))
+    assert all(results[f"rank-bretagne-{index}"]["group_value"] !=
+               results[f"rank-e1-{index}"]["group_value"] for index in range(2))
 
 
 def test_fixed_aggregate_density_pooled_null_observed_row_is_unavailable(aedar_http):

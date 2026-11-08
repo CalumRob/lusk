@@ -94,6 +94,78 @@ def test_aedar_semantic_coordinates_and_fixed_comparison_intent_are_closed_and_b
     assert set(resource.fields) == {"group_value", "value"}
 
 
+@pytest.mark.parametrize("fields,expected_rank_fields,focal_available", [
+    (["group_value", "value"], set(), True),
+    (["group_value", "value"], set(), False),
+    (["group_value", "value", "rank_size"], {"rank_size"}, True),
+    (None, {"rank", "rank_size", "rank_ties"}, True),
+])
+def test_fixed_aggregate_reads_peer_population_only_when_rank_is_requested(
+        monkeypatch, fields, expected_rank_fields, focal_available):
+    expected_rank = bool(expected_rank_fields)
+    calls = []
+
+    class Cursor:
+        def fetchone(self):
+            return ("epci-1", "region-1")
+
+    class Connection:
+        def execute(self, *_args):
+            return Cursor()
+
+    focal = {"value": 5.0, "available": True, "n_addresses": 100,
+             "n_observed": 4, "coverage_status": "covered"}
+    if not focal_available:
+        focal.update(value=None, available=False, n_observed=None, coverage_status=None)
+    peers = {
+        "22001": {"value": 7.0, "available": True, "n_addresses": 100,
+                   "n_observed": 4, "coverage_status": "covered"},
+        "35238": focal,
+        "35239": {"value": 5.0, "available": True, "n_addresses": 100,
+                   "n_observed": 4, "coverage_status": "covered"},
+    }
+    monkeypatch.setattr(aedar_reads, "_aedar_registry_size", lambda _conn: 3)
+    monkeypatch.setattr("api.snapshot_reads._comparison_cohort",
+                        lambda *_args: (None, None, {"kind": "density_class", "density_class_code": "D1"}))
+    monkeypatch.setattr(aedar_reads, "_aedar_pooled_group_aggregate",
+                        lambda *_args: {"value": 2.0, "n_addresses": 300,
+                                        "n_observed": 10, "coverage_status": "covered",
+                                        "statistic": "pooled"})
+    monkeypatch.setattr(aedar_reads, "_aedar_fixed_peer_ids",
+                        lambda *_args: calls.append("peer_ids") or list(peers))
+    monkeypatch.setattr(aedar_reads, "_aedar_aggregate_records",
+                        lambda _conn, _type, ids, _measure, _size:
+                        calls.append(("records", tuple(ids))) or {i: peers[i] for i in ids})
+    provenance = ("aedar", "2026-v1", "https://example.test", "ODbL", "AEDAR", None, "2026-09-30")
+    monkeypatch.setattr(aedar_reads, "_aedar_focal_provenance", lambda *_args: provenance)
+    marker = ("comparison-v1", "2026-v1", "aedar-v1", "reference-v1", "input-v1", {}, None, None, None)
+    facet = {"direction": "high"}
+
+    result = aedar_reads._aedar_fixed_aggregate_snapshot(
+        Connection(), "commune", "35238", "density_class", "meanDiversity",
+        facet, (set(aedar_reads._aedar_comparison_field_selection(fields, aggregate=True))
+                if fields is not None else set(aedar_reads._aedar_comparison_optional_fields(True))), marker)
+    comparison = result["comparison"]
+
+    assert comparison["group_value"] == 2.0
+    assert comparison["value"] == (5.0 if focal_available else None)
+    assert comparison["status"] == ("measured" if focal_available else "not_available")
+    assert comparison["coverage_status"] == ("covered" if focal_available else None)
+    assert ("peer_ids" in calls) is expected_rank
+    assert ("records", ("35238",)) in calls if not expected_rank else ("records", tuple(peers)) in calls
+    if expected_rank and focal_available:
+        assert comparison["rank_size"] == 3
+        if fields is None:
+            assert (comparison["rank"], comparison["rank_ties"]) == (2, 2)
+    elif not expected_rank:
+        assert not ({"rank", "rank_size", "rank_ties"} & set(comparison))
+    elif expected_rank:
+        assert comparison["rank_size"] is None
+        assert comparison["rank"] is None and comparison["rank_ties"] is None
+    if fields is not None:
+        assert (set(comparison) & {"rank", "rank_size", "rank_ties"}) == expected_rank_fields
+
+
 def test_aedar_source_measure_contract_has_312_fields_and_four_level_identity():
     from pathlib import Path
     root = Path(__file__).resolve().parents[2]

@@ -113,7 +113,7 @@ class SemanticResourceReader:
         return domains
 
     def preflight(self, conn, item, catalogue: ResourceCatalogue | None = None,
-                   *, work_budget: int = 200_000) -> int:
+                   *, work_budget: int = 200_000, snapshot_state=None) -> int:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
         if item.fields and "axis_comparisons" in item.fields:
@@ -153,6 +153,7 @@ class SemanticResourceReader:
             return estimate
         if resource.resource_kind == "aedar_source_grain":
             from api.aedar_reads import (_aedar_comparison_snapshot,
+                _aedar_comparison_field_selection,
                 _aedar_fixed_peer_ids,
                 _aedar_selected_comparison_snapshot,
                 _aedar_territorial_aggregate_snapshot)
@@ -193,6 +194,16 @@ class SemanticResourceReader:
                 _aedar_comparison_snapshot(conn, item.target.type, item.target.id,
                     item.intent.context, typequ[0] if typequ else None, measures[0], item.fields,
                     resource.measure_facets, preflight_only=True)
+                if aggregate and snapshot_state is not None:
+                    key = (item.target.type, item.target.id, item.intent.context)
+                    batch = snapshot_state.setdefault("aedar_fixed_aggregates", {}).setdefault(
+                        key, {"measures": [], "rank_measures": [], "peer_ids": None})
+                    if measures[0] not in batch["measures"]:
+                        batch["measures"].append(measures[0])
+                    fields = _aedar_comparison_field_selection(item.fields, aggregate=True)
+                    if fields is None or {"rank", "rank_size", "rank_ties"} & set(fields):
+                        if measures[0] not in batch["rank_measures"]:
+                            batch["rank_measures"].append(measures[0])
             elif item.intent.kind == "selected_comparison":
                 _aedar_selected_comparison_snapshot(conn, item.target.type, item.target.id,
                     [(member.type, member.id) for member in item.intent.members],
@@ -212,8 +223,15 @@ class SemanticResourceReader:
                 if aggregate:
                     # One set-wise SQL aggregate over the resolved fixed-context
                     # peer group (ADR-0021 scope), plus one comparison entry.
-                    return 1 + len(_aedar_fixed_peer_ids(conn, item.target.type,
-                                                         item.target.id, item.intent.context))
+                    key = (item.target.type, item.target.id, item.intent.context)
+                    batch = (snapshot_state or {}).get("aedar_fixed_aggregates", {}).get(key)
+                    peer_ids = batch.get("peer_ids") if batch else None
+                    if peer_ids is None:
+                        peer_ids = _aedar_fixed_peer_ids(conn, item.target.type,
+                                                         item.target.id, item.intent.context)
+                        if batch is not None:
+                            batch["peer_ids"] = peer_ids
+                    return 1 + len(peer_ids)
                 return 1
             if item.intent.kind == "selected_comparison":
                 if aggregate:
@@ -381,7 +399,7 @@ class SemanticResourceReader:
                 "detail", "label", "rider", "anchor_count", "availability"}] or ["availability"]
         return None
 
-    def read(self, conn, item, catalogue: ResourceCatalogue | None = None) -> dict:
+    def read(self, conn, item, catalogue: ResourceCatalogue | None = None, *, snapshot_state=None) -> dict:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
         if item.fields and "axis_comparisons" in item.fields:
@@ -392,7 +410,7 @@ class SemanticResourceReader:
             base_fields = [f for f in item.fields if f != "axis_comparisons"]
             base_item = item.model_copy(update={"fields": base_fields or ["status"],
                                                 "coordinates": None})
-            data = self.read(conn, base_item, catalogue)
+            data = self.read(conn, base_item, catalogue, snapshot_state=snapshot_state)
             data["result"]["axis_comparisons"] = read_axis_comparisons(conn, item)
             return data
         if item.target.kind == "territory_cohort":
@@ -417,7 +435,7 @@ class SemanticResourceReader:
                 typequ = coordinates.get("typequ")
                 data = _aedar_comparison_snapshot(conn, item.target.type, item.target.id,
                     item.intent.context, typequ[0] if typequ else None, coordinates["measure"][0],
-                    item.fields, resource.measure_facets)
+                    item.fields, resource.measure_facets, snapshot_state=snapshot_state)
             elif item.intent.kind == "selected_comparison":
                 data = _aedar_selected_comparison_snapshot(conn, item.target.type, item.target.id,
                     [(member.type, member.id) for member in item.intent.members],

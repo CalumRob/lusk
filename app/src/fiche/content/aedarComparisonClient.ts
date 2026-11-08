@@ -33,11 +33,14 @@ export interface AedarComparisonRequest {
 export type AedarComparisonResult = { status: 'ready'; evidence: AedarComparisonEvidence }
   | { status: 'error'; message: string }
 type ComparisonReadOptions = AedarComparisonRequest & { typequ: readonly string[]; measures: readonly string[];
-  expectedContentVersion: string; expectedReferenceContentVersion: string; signal?: AbortSignal }
+  expectedContentVersion: string; expectedReferenceContentVersion: string; signal?: AbortSignal;
+  /** Aggregate readings whose rank fields are consumed. Omitted means rank every requested measure. */
+  rankMeasures?: readonly string[] }
 const successfulReads = new WeakMap<typeof fetch, Map<string, Extract<AedarComparisonResult, { status: 'ready' }>>>()
 const record = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
 const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
 const nonempty = (x: unknown): x is string => typeof x === 'string' && x.length > 0
+const RANK_FIELDS = new Set(['rank', 'rank_size', 'rank_ties'])
 function invalid(): never { throw new Error('Comparaison AEDAR incompatible ou incomplète') }
 
 /** Read only comparison evidence. Focal observations remain owned by the facts read.
@@ -51,7 +54,7 @@ export async function fetchAedarComparison(type: AedarTerritoryType, id: string,
   let cache = successfulReads.get(fetcher)
   if (!cache) { cache = new Map(); successfulReads.set(fetcher, cache) }
   const key = JSON.stringify([type, id, options.intent, options.label, options.typequ, options.measures,
-    options.expectedContentVersion, options.expectedReferenceContentVersion])
+    options.expectedContentVersion, options.expectedReferenceContentVersion, options.rankMeasures])
   const cached = cache.get(key)
   if (cached) { cache.delete(key); cache.set(key, cached); return cached }
   const result = await readAedarComparison(fetcher, type, id, options)
@@ -82,11 +85,20 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
       Math.floor(20000 / Math.max(1, members!.length)))) : 1
     const items: Array<{ id: string; resource: string; target: { kind: string; type: AedarTerritoryType; id: string };
       coordinates: { typequ?: string[]; measure: string[] }; intent: typeof intent; fields: string[] }> = []
-    const measureGroups = selected ? [options.measures] : options.measures.map((measure) => [measure])
+    const rankMeasures = aggregate ? new Set(options.rankMeasures ?? options.measures) : undefined
+    if (rankMeasures && [...rankMeasures].some((measure) => !options.measures.includes(measure))) invalid()
+    const measureGroups = selected
+      ? aggregate
+        ? [options.measures.filter((measure) => rankMeasures!.has(measure)),
+          options.measures.filter((measure) => !rankMeasures!.has(measure))].filter((group) => group.length > 0)
+        : [options.measures]
+      : options.measures.map((measure) => [measure])
     for (const measures of measureGroups) for (let start = 0; start < (aggregate ? 1 : options.typequ.length); start += cellBudget) {
       items.push({ id: `aedar-comparison-${items.length}`, resource: 'aedar_territorial_aggregate',
         target: { kind: 'territory', type, id }, coordinates: { ...(aggregate ? {} : { typequ: options.typequ.slice(start, start + cellBudget) }), measure: [...measures] },
-        intent, fields: aggregate ? ['group_value', 'rank', 'rank_size', 'rank_ties'] : selected ? ['group_value', 'rank', 'rank_size', 'rank_ties'] : ['group_value'] })
+        intent, fields: aggregate
+          ? ['group_value', ...(measures.some((measure) => rankMeasures!.has(measure)) ? ['rank', 'rank_size', 'rank_ties'] : [])]
+          : selected ? ['group_value', 'rank', 'rank_size', 'rank_ties'] : ['group_value'] })
     }
     const cells: AedarComparisonCell[] = []
     let comparisonVersion: string | undefined
@@ -145,14 +157,16 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
             || !(row.publication_date === null || typeof row.publication_date === 'string')) invalid()
           let normalizedDirection: 'high' | 'low' | undefined
           if (selected || aggregate) {
-            const rank = [row.rank, row.rank_size, row.rank_ties]
-            const declaration = aggregateFacets?.[row.measure as string]
+             const rank = [row.rank, row.rank_size, row.rank_ties]
+             const declaration = aggregateFacets?.[row.measure as string]
+            const rankRequested = item.fields.some((field) => RANK_FIELDS.has(field))
             if (aggregate && (!declaration || (selected && row.direction !== declaration.direction))) invalid()
             if (selected && row.direction !== 'high' && row.direction !== 'low') invalid()
             normalizedDirection = aggregate ? declaration?.direction : row.direction as 'high' | 'low' | undefined
-            if (aggregate && declaration && !declaration.ranked && rank.some((value) => value !== null)) invalid()
-            if (aggregate && rank.some((x) => x !== null && !Number.isInteger(x))) invalid()
-            if (!rank.every((x) => x === null) && (!rank.every((x) => Number.isInteger(x) && (x as number) > 0)
+            if (rankRequested && aggregate && declaration && !declaration.ranked && rank.some((value) => value !== null)) invalid()
+            if (rankRequested && rank.some((value) => value === undefined)) invalid()
+            if (rankRequested && aggregate && rank.some((x) => x !== null && !Number.isInteger(x))) invalid()
+            if (rankRequested && !rank.every((x) => x === null) && (!rank.every((x) => Number.isInteger(x) && (x as number) > 0)
               || (row.rank as number) + (row.rank_ties as number) - 1 > (row.rank_size as number)
               || (selected && ((row.rank_size as number) > members!.length
               || !members!.some((m) => m.territory_type === type && m.territory_id === id))))) invalid()
