@@ -1840,7 +1840,11 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBe('epci')
     wrapper.unmount()
-  })
+  // Integration de fiche montée : trois changements de portée acquièrent
+  // successivement Bretagne, la sélection vide puis l'EPCI via l'API sémantique.
+  // Le travail est borné et les assertions couvrent aussi les requêtes; le budget
+  // explicite est cohérent avec les tests d'intégration voisins (20 s).
+  }, 20_000)
 
   it('une URL de membres tapés résout et acquiert la sélection telle quelle', async () => {
     const requests: Array<Array<Record<string, any>>> = []
