@@ -76,8 +76,12 @@ test_that("retained scalar snapshot is assembled without legacy service-share pr
   for (theme in c("economie", "demographie", "mobilite", "habitat")) {
     payload <- payload_producteur_fixture(theme, root)
     payload$territoires <- territories
-    metadata <- jsonlite::fromJSON(file.path(root, paste0("theme_", theme, ".json")),
-      simplifyVector=FALSE)
+    metadata <- lire_theme_metadata(theme)
+    # The committed Mobility facts carry the historical raccordement source;
+    # keep that bundle assertion in test-publish-scalar.R rather than pairing
+    # it with the current canonical owner declaration here.
+    if (identical(theme, "mobilite"))
+      metadata$scalar_contracts$raccordement_tc <- NULL
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme, artifacts)
   }
   reference <- project_territory_reference(territories)

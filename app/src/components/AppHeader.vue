@@ -28,13 +28,13 @@
  * "burger doesn't work" bug). Sibling keeps it viewport-sized.
  */
 import { ChevronDown, ExternalLink, Menu, Search, X } from 'lucide-vue-next'
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
 import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
 import LuskBrand from '@/components/LuskBrand.vue'
-import { entreesRechercheIndicateurs } from '@/indicateurs/catalogue'
+import { entreesRechercheIndicateurs, useEtatDecouverteIndicateurs } from '@/indicateurs/catalogue'
 import type { EntreeRechercheIndicateur } from '@/search/recherche'
 import { usePayload } from '@/payload/usePayload'
 import type { Territoire } from '@/payload/types'
@@ -47,10 +47,21 @@ const { payload, erreur, chargement } = usePayload({ attendre: ['territoires', '
 
 const territoires = computed<Territoire[]>(() => payload.value?.territoires ?? [])
 
-/** Le même contenu app-owned que le catalogue, disponible sans acquisition de faits. */
+/** Native discovery admits indicator routes and supplies fact-bearing labels. */
+const etatDecouverteIndicateurs = useEtatDecouverteIndicateurs()
+const ressourcesIndicateurs = computed(() => etatDecouverteIndicateurs.ressources.value ?? [])
+const etatIndicateurs = etatDecouverteIndicateurs.statut
+const chargementIndicateurs = etatDecouverteIndicateurs.chargement
 const entreesIndicateurs = computed<EntreeRechercheIndicateur[]>(() =>
-  entreesRechercheIndicateurs(),
+  entreesRechercheIndicateurs(ressourcesIndicateurs.value),
 )
+
+async function chargerIndicateursDecouverts(): Promise<void> {
+  try { await etatDecouverteIndicateurs.charger() }
+  catch { /* Keep territorial search available; never infer indicator routes or labels. */ }
+}
+
+onMounted(() => { void chargerIndicateursDecouverts() })
 
 const messageErreur = computed(() => (erreur.value ? 'Impossible de charger les territoires.' : null))
 
@@ -311,8 +322,11 @@ onUnmounted(() => {
         class="recherche-superposee-barre"
         :territoires="territoires"
         :indicateurs="entreesIndicateurs"
+        :etat-indicateurs="etatIndicateurs"
+        :reessai-indicateurs-en-cours="chargementIndicateurs"
         :chargement="chargement"
         :erreur="messageErreur"
+        @retry-indicateurs="chargerIndicateursDecouverts"
         @select="fermerRecherche(); fermer()"
         @select-indicateur="fermerRecherche(); fermer()"
       />
@@ -348,8 +362,11 @@ onUnmounted(() => {
       <GlobalSearchBar
         :territoires="territoires"
         :indicateurs="entreesIndicateurs"
+        :etat-indicateurs="etatIndicateurs"
+        :reessai-indicateurs-en-cours="chargementIndicateurs"
         :chargement="chargement"
         :erreur="messageErreur"
+        @retry-indicateurs="chargerIndicateursDecouverts"
         @select="fermer()"
         @select-indicateur="fermer()"
       />

@@ -21,6 +21,8 @@ type Resource = {
   fields: string[]
   shapes: string[]
   intents: string[]
+  map_eligible: boolean | null
+  counts_available: boolean
 }
 
 type Vintage = { id: string; source: string; version: string; date_reference: string | null; date_publication: string | null }

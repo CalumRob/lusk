@@ -419,10 +419,10 @@ function itemScalaire(indicator: string, level: TerritoireType,
     intent: { kind: 'facts' } }
 }
 
-function contractCountsAvailable(metadata: ThemeMetadata, indicator: string): boolean {
-  const declaration = isRecord(metadata.scalar_contracts) ? metadata.scalar_contracts[indicator] : undefined
-  if (!isRecord(declaration) || typeof declaration.counts_available !== 'boolean') {
-    throw new PayloadError('validation', 'theme metadata', `La disponibilité des comptes de « ${indicator} » est mal déclarée.`)
+function contractCountsAvailable(declaration: SemanticResourceDeclaration | undefined, indicator: string): boolean {
+  if (!declaration || declaration.resource_id !== indicator || declaration.indicator_id !== indicator ||
+      !declaration.shapes.includes('scalar') || typeof declaration.counts_available !== 'boolean') {
+    throw new PayloadError('validation', '/api/resources', `La disponibilité des comptes de « ${indicator} » est mal déclarée.`)
   }
   return declaration.counts_available
 }
@@ -444,7 +444,9 @@ function sameFilters(actual: unknown, expected: string | null): boolean {
 }
 
 function adapterCohorteScalaire(data: Row, declaration: SemanticResourceDeclaration | undefined,
-  indicator: string, theme: Theme, page: IndicatorPageMetadata, level: TerritoireType,
+  indicator: string, theme: Theme, page: (Pick<IndicatorPageMetadata, 'unit' | 'direction'> &
+    { comparison?: Pick<NonNullable<IndicatorPageMetadata['comparison']>, 'unit' | 'direction' | 'indicator'> }) | undefined,
+  level: TerritoireType,
   territories: Territoire[], scope: { department?: string; epci?: string }, identity?: ScalarIdentity,
   countsAvailable = true, nativePageDescriptor = false,
   onNativeContract?: (contract: NativeThemeFactContract) => void): Indicateur[] {
@@ -464,9 +466,9 @@ function adapterCohorteScalaire(data: Row, declaration: SemanticResourceDeclarat
       !isNonEmptyText(data.content_version) || !isNonEmptyText(data.reference_content_version) ||
        data.reference_content_version !== cohort.reference_content_version || !isRecord(descriptor) ||
        descriptor.indicator_id !== indicator || descriptor.theme_id !== theme || !isNonEmptyText(descriptor.label) ||
-        descriptor.unit !== (nativePageDescriptor ? resource.unit : page.unit) ||
-        descriptor.direction !== (nativePageDescriptor ? resource.direction : (page.comparison?.direction ?? page.direction)) ||
-        descriptor.comparison_facet !== (nativePageDescriptor ? indicator : (page.comparison?.indicator ?? indicator)) ||
+        descriptor.unit !== (nativePageDescriptor ? resource.unit : page?.unit) ||
+        descriptor.direction !== (nativePageDescriptor ? resource.direction : (page?.comparison?.direction ?? page?.direction)) ||
+        descriptor.comparison_facet !== (nativePageDescriptor ? indicator : (page?.comparison?.indicator ?? indicator)) ||
         (nativePageDescriptor && !['high', 'low'].includes(String(descriptor.direction))) ||
        !Array.isArray(descriptor.allowed_levels) || !descriptor.allowed_levels.includes(level) ||
        !['sparse', 'dense_complete'].includes(String(descriptor.completeness)) ||
@@ -581,7 +583,7 @@ export function adapterCohorteScalairePourCarte(input: {
   declaration: SemanticResourceDeclaration
   indicator: string
   theme: Theme
-  page: IndicatorPageMetadata
+  page?: IndicatorPageMetadata
   level: TerritoireType
   territories: Territoire[]
 }): { facts: Indicateur[]; identity: ScalarIdentity; nativeContract: NativeThemeFactContract } {
@@ -632,8 +634,8 @@ async function chargerCohortesEtComparaisonsScalaires(
       !declaration.intents.includes(comparisonRead.kind === 'fixed' ? 'fixed_comparison' : 'selected_comparison'))) {
     throw new PayloadError('validation', path, 'La ressource scalaire ne déclare pas cette comparaison territoriale.')
   }
-  const countsByIndicator = new Map(indicators.map((indicator) => [indicator,
-    projectProducerCounts ? contractCountsAvailable(metadata, indicator) : true] as const))
+  const countsByIndicator = new Map(indicators.map((indicator, index) => [indicator,
+    projectProducerCounts ? contractCountsAvailable(pages[index]?.declaration, indicator) : true] as const))
   const items = indicators.flatMap((indicator) => [itemScalaire(indicator, level, scope, countsByIndicator.get(indicator)),
     ...(comparisonRead ? [itemComparaisonScalaire(indicator, focal!, comparisonRead)] : [])])
   const data = await lireRessourcesBatch(items)
@@ -696,14 +698,43 @@ export async function chargerCohortePageScalaire(
   return { facts: result.facts, identity: result.identity, contract, declaration }
 }
 
+/** Indicator-page scalar acquisition is bound directly to API discovery and
+ * its native descriptor; it does not require the redundant theme page file. */
+export async function chargerCohortePageScalaireNative(
+  indicator: string, theme: Theme, level: TerritoireType, territories: Territoire[],
+  scope: { department?: string; epci?: string }, catalogueOverride?: SemanticResourceDeclaration[],
+): Promise<{ facts: Indicateur[]; identity: ScalarCohortsWithComparisons['identity'];
+  contract: NativeThemeFactContract; declaration: SemanticResourceDeclaration }> {
+  const path = '/api/resources/read-batch'
+  const catalogue = catalogueOverride ?? await chargerCatalogueRessources()
+  const declaration = catalogue.find((resource) => resource.resource_id === indicator)
+  const countsAvailable = contractCountsAvailable(declaration, indicator)
+  const fields = countsAvailable ? ['value', 'support_count', 'denominator_count'] : ['value']
+  const resource = requireScalarResource(declaration, indicator, theme, level, fields)
+  const [data] = await lireRessourcesBatch([itemScalaire(indicator, level, scope, countsAvailable)])
+  if (!isRecord(data)) throw new PayloadError('validation', path, 'La cohorte scalaire native est absente du lot.')
+  const identity: ScalarIdentity = {}
+  let contract: NativeThemeFactContract | undefined
+  const facts = adapterCohorteScalaire(data, resource, indicator, theme,
+    { unit: resource.unit, direction: resource.direction as 'high' | 'low' }, level, territories,
+    scope, identity, countsAvailable, true, (native) => { contract = native })
+  if (!contract || !identity.contentVersion || !identity.referenceContentVersion) {
+    throw new PayloadError('validation', path, 'Le descripteur scalaire natif ou son identité de publication sont absents.')
+  }
+  return { facts, identity: { contentVersion: identity.contentVersion,
+    referenceContentVersion: identity.referenceContentVersion,
+    ...(identity.descriptorVersion ? { descriptorVersion: identity.descriptorVersion } : {}),
+    ...(identity.comparisonFacet ? { comparisonFacet: identity.comparisonFacet } : {}) }, contract, declaration: resource }
+}
+
 /** Read the selected territory separately when it is outside the page's bounded cohort. */
 export async function chargerFaitFocalPageScalaire(
-  declaration: SemanticResourceDeclaration, indicator: string, theme: Theme, metadata: ThemeMetadata,
+  declaration: SemanticResourceDeclaration, indicator: string, theme: Theme,
   focal: Territoire, territories: Territoire[], identity: ScalarCohortsWithComparisons['identity'],
   contract: NativeThemeFactContract,
 ): Promise<Indicateur | null> {
   const path = '/api/resources/read-batch'
-  const countsAvailable = contractCountsAvailable(metadata, indicator)
+  const countsAvailable = contractCountsAvailable(declaration, indicator)
   const fields = countsAvailable ? ['value', 'support_count', 'denominator_count'] : ['value']
   if (declaration.resource_id !== indicator || declaration.indicator_id !== indicator || declaration.theme_id !== theme ||
       declaration.shapes.length !== 1 || declaration.shapes[0] !== 'scalar' ||

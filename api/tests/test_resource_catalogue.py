@@ -81,6 +81,8 @@ def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(
         "demographie_selected_reading", "economie_selected_reading",
         "habitat_selected_reading", "milieux_selected_reading")}
     assert all(resource.resource_kind == "typed_reading" for resource in typed.values())
+    assert all(resource.map_eligible is None and not resource.counts_available
+               for resource in typed.values())
     assert typed["economie_selected_reading"].side_relations[0]["storage_relation"] == "economy_activity_evidence"
     assert typed["milieux_selected_reading"].side_relations[0]["storage_relation"] == "milieux_reading_absence"
     public_contract = next(item for item in catalogue.discovery_payload()["resources"]
@@ -98,6 +100,12 @@ def test_discovery_preserves_multiple_producer_declared_shapes_and_axes():
     resources = {resource.resource_id: resource for resource in catalogue.resources}
 
     assert resources["prix_m2"].shapes == ("scalar", "ordered_series")
+    assert resources["prix_m2"].counts_available is True
+    assert resources["structure_age"].counts_available is False
+    assert resources["offre_tc"].map_eligible is True
+    assert resources["raccordement_tc"].map_eligible is True
+    assert resources["raccordement_courbe"].map_eligible is False
+    assert resources["raccordement_reference"].map_eligible is False
     age = resources["structure_age"]
     assert age.shapes == ("declared_profile",)
     assert age.axes == ("detail", "sex")
@@ -399,4 +407,79 @@ def test_public_discovery_is_producer_derived_and_database_free():
     passoires = next(resource for resource in payload["resources"]
                      if resource["resource_id"] == "part_passoires")
     assert set(passoires["sources"]) == {"dpe_22", "dpe_29", "dpe_35", "dpe_56"}
+    offers = {resource["resource_id"]: resource for resource in payload["resources"]}
+    assert offers["offre_tc"]["map_eligible"] is True
+    assert offers["raccordement_tc"]["map_eligible"] is True
+    assert offers["raccordement_courbe"]["map_eligible"] is False
+    assert offers["raccordement_reference"]["map_eligible"] is False
+    assert offers["prix_m2"]["counts_available"] is True
+    assert offers["structure_age"]["counts_available"] is False
     assert not any(resource.startswith("share_") for resource in ids)
+
+
+def _copy_theme_metadata(destination):
+    for metadata in METADATA.glob("theme_*.json"):
+        (destination / metadata.name).write_bytes(metadata.read_bytes())
+
+
+def test_discovery_capabilities_follow_mutated_producer_declarations(tmp_path):
+    _copy_theme_metadata(tmp_path)
+    mobility_path = tmp_path / "theme_mobilite.json"
+    mobility = json.loads(mobility_path.read_text(encoding="utf-8"))
+    mobility["map_layers"]["offre_tc"] = False
+    mobility["map_layers"]["raccordement_courbe"] = True
+    mobility["map_layers"]["raccordement_reference"] = True
+    mobility_path.write_text(json.dumps(mobility), encoding="utf-8")
+
+    habitat_path = tmp_path / "theme_habitat.json"
+    habitat = json.loads(habitat_path.read_text(encoding="utf-8"))
+    habitat["scalar_contracts"]["prix_m2"]["counts_available"] = False
+    habitat_path.write_text(json.dumps(habitat), encoding="utf-8")
+
+    demographic_path = tmp_path / "theme_demographie.json"
+    demographic = json.loads(demographic_path.read_text(encoding="utf-8"))
+    demographic["scalar_contracts"]["densite"]["counts_available"] = True
+    demographic["indicator_pages"]["structure_age"]["counts_available"] = True
+    demographic_path.write_text(json.dumps(demographic), encoding="utf-8")
+
+    catalogue = discover_indicator_resources(tmp_path)
+    resources = catalogue.resources_by_id
+
+    assert resources["offre_tc"].map_eligible is False
+    assert resources["raccordement_courbe"].map_eligible is True
+    assert resources["raccordement_courbe"].shapes == ("ordered_series",)
+    assert resources["raccordement_reference"].map_eligible is True
+    assert resources["raccordement_reference"].shapes == ("named_reference",)
+    assert resources["offre_cyclable"].map_eligible is True
+    assert resources["densite"].map_eligible is True
+    assert resources["prix_m2"].counts_available is False
+    assert resources["densite"].counts_available is True
+    assert resources["structure_age"].counts_available is False
+
+    public = {resource["resource_id"]: resource
+              for resource in catalogue.discovery_payload()["resources"]}
+    assert public["offre_tc"]["map_eligible"] is False
+    assert public["densite"]["counts_available"] is True
+    assert public["structure_age"]["counts_available"] is False
+
+
+@pytest.mark.parametrize(("theme", "capability", "invalid_value", "message"), [
+    ("mobilite", "unknown_map_layer", False, "Unknown producer map layer indicator"),
+    ("mobilite", "malformed_map_layer", "false", "Invalid producer map-layer capability"),
+    ("demographie", "malformed_counts", "false", "Invalid scalar counts capability"),
+])
+def test_discovery_rejects_unknown_or_malformed_capabilities(
+        tmp_path, theme, capability, invalid_value, message):
+    _copy_theme_metadata(tmp_path)
+    path = tmp_path / f"theme_{theme}.json"
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    if capability == "unknown_map_layer":
+        metadata["map_layers"]["unknown_indicator"] = invalid_value
+    elif capability == "malformed_map_layer":
+        metadata["map_layers"]["offre_tc"] = invalid_value
+    else:
+        metadata["scalar_contracts"]["densite"]["counts_available"] = invalid_value
+    path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        discover_indicator_resources(tmp_path)

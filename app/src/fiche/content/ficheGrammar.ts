@@ -29,7 +29,8 @@ export const CONTENU_SOUS_GROUPES_FICHE = {
  * App-owned editorial framing per subgroup, keyed by the producer subgroup
  * identity. Wording and organisation only: no unit, threshold, axis, status or
  * availability claim is derived from it. A subgroup whose wording carries
- * producer-owned facts (a distance, a duration, an eligibility scope) keeps a
+ * producer-owned facts (a measurement, observation boundary, category scope,
+ * distance, duration or eligibility scope) keeps a
  * `null` here and resolves its clause from the verified producer subgroup
  * declaration instead — see `cadrageSousGroupeFiche`.
  */
@@ -45,15 +46,19 @@ export const CADRAGES_SOUS_GROUPES_FICHE = {
   },
   demographie: {
     'etat-de-la-population': 'La population de la commune : sa taille, sa densité et la structure de ses ménages.',
-    'trajectoire-demographique': "L'évolution de la population depuis 1968 et les deux forces qui la portent : le solde naturel et le solde migratoire.",
+    // The observation start year is producer-owned; keep the mixed clause
+    // attached to the verified subgroup declaration rather than freezing it.
+    'trajectoire-demographique': null,
   },
   habitat: {
     'composition-du-parc': "La composition du parc de logements de la commune : le mix, le statut d'occupation et le type.",
     'etat-energetique-du-parc': 'L’état énergétique du parc : la distribution des étiquettes DPE, la part de passoires thermiques et l’âge du bâti.',
-    marche: 'Le marché immobilier de la commune : la médiane du prix au m² des ventes.',
+    // Factual: the statistic and its price-per-square-metre unit are producer-owned.
+    marche: null,
   },
   economie: {
-    'sante-et-taille': "La santé du tissu productif local : l'emploi salarié au lieu de travail et le chômage au sens du recensement.",
+    // Factual: workplace location and the census definition are producer-owned.
+    'sante-et-taille': null,
     'structure-verte': 'La place des établissements verts dans le tissu productif.',
   },
   milieux: {
@@ -70,6 +75,9 @@ export interface FicheReadingGrammar {
   /** Template text and its presentation order; the resolved row remains API-owned. */
   readonly template: readonly NoeudTexteRiche[]
   readonly params: readonly string[]
+  /** Field bindings chosen for map display, not a claim of available values.
+   * Textual reading parameters need not be offered as choropleth choices. */
+  readonly mapFields?: readonly string[]
   readonly figure?: { readonly family: FamilleFigure; readonly indicator: string }
 }
 
@@ -158,6 +166,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       figure: { family: 'scalar', indicator: 'evolution_1968' },
       reading: {
         params: ['periode', 'taux_solde_naturel', 'taux_solde_migratoire', 'classification'],
+        mapFields: ['taux_solde_naturel', 'taux_solde_migratoire'],
         template: [
           texte('Entre '), param('periode'), texte(', la population de '), territoire, texte(' '),
           strong('classification'), texte(' : '), param('taux_solde_naturel'), texte(' par an (naturel), '),
@@ -182,6 +191,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       figure: { family: 'composition', indicator: 'distribution_dpe' },
       reading: {
         params: ['classification', 'part_passoires', 'part_abc', 'n_dpe'],
+        mapFields: ['part_passoires', 'part_abc', 'n_dpe'],
         template: [
           texte('Le parc de '), territoire, texte(' est '), strong('classification'), texte(' : '),
           param('part_passoires'), texte(' de passoires thermiques. '), sources,
@@ -231,6 +241,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       figure: { family: 'comparison-bars', indicator: 'artif_par_habitant' },
       reading: {
         params: ['periode_pop', 'periode_artif', 'delta_population', 'trajectoire_artif_par_habitant', 'classification'],
+        mapFields: ['delta_population', 'trajectoire_artif_par_habitant'],
         template: [
           texte('Entre '), param('periode_pop'), texte(' et '), param('periode_artif'), texte(', '),
           territoire, texte(' '), strong('classification'), texte(' (trajectoire '),
@@ -266,11 +277,35 @@ export function sousGroupeFiche(theme: Theme, key: string): FicheSubgroupGrammar
 }
 
 /**
+ * Carte's presentation-only projection of the shared fiche grammar. The keys
+ * and order are candidates for layer display, not declarations of map
+ * eligibility or fact availability; consumers still intersect them with the
+ * verified producer/API resource and map contracts.
+ */
+export interface GroupeCouchesCarte {
+  readonly key: string
+  readonly label: string
+  /** Map-display field choices; intersected with the native reading declaration. */
+  readonly storyFields: readonly string[]
+  /** Resource identities in fiche presentation order. */
+  readonly resourceKeys: readonly string[]
+}
+
+export function groupesCouchesCarte(theme: Theme): readonly GroupeCouchesCarte[] {
+  return sousGroupesFiche(theme).map((subgroup) => ({
+    key: subgroup.key,
+    label: subgroup.label,
+    storyFields: [...(subgroup.reading?.mapFields ?? [])],
+    resourceKeys: [...subgroup.indicators],
+  }))
+}
+
+/**
  * Resolve a subgroup's framing. App-owned editorial framing is returned as is;
- * a `null` entry is a factual clause (producer threshold or eligibility scope)
- * and is read from the VERIFIED producer subgroup declaration only — pending,
- * unavailable or incompatible metadata withholds the explanation instead of
- * inventing or freezing a factual literal in app content.
+ * a `null` entry contains producer-owned measurement, observation, category or
+ * eligibility facts and is read from the VERIFIED producer subgroup declaration
+ * only — pending, unavailable or incompatible metadata withholds the explanation
+ * instead of inventing or freezing a factual literal in app content.
  */
 export function cadrageSousGroupeFiche(
   subgroup: FicheSubgroupGrammar,

@@ -15,7 +15,6 @@ const branchAtStart = execFileSync('git', ['branch', '--show-current'], { cwd: r
 const headAtStart = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
 const statusAtStart = execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' }).trim()
 assert.equal(statusAtStart, '', 'Browser acceptance requires a clean committed source tree')
-const themes = ['demographie', 'economie', 'habitat', 'mobilite']
 const expectedPages = [
   'demographie/densite', 'demographie/evolution_1968', 'demographie/taille_menages',
   'economie/chomage', 'economie/eco_activites', 'economie/effectifs_salaries',
@@ -128,17 +127,19 @@ try {
   const fixtures = await server.ssrLoadModule('/src/__tests__/helpers/semanticApiFixtures.ts')
   const territoiresFixture = JSON.parse(await readFile(resolve(repoRoot, 'public/data/territoires.json'), 'utf8'))
   const { formaterValeur, formaterRang } = await server.ssrLoadModule('/src/payload/selectors.ts')
+  const { CONTENU_CATALOGUE_INDICATEURS } = await server.ssrLoadModule('/src/indicateurs/catalogueContent.ts')
+  const { presentationPageIndicateur } = await server.ssrLoadModule('/src/indicateurs/pagePresentation.ts')
+  const pageBindings = new Map(CONTENU_CATALOGUE_INDICATEURS.flatMap((theme) =>
+    theme.sousGroupes.flatMap((group) => group.pages.map((page) =>
+      [`${theme.theme}/${page.resourceKey}`, page]))))
   const resources = fixtures.nativeResources().filter((resource) => resource.shapes.length === 1 && resource.shapes[0] === 'scalar' &&
     resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
-  const metadataByTheme = Object.fromEntries(await Promise.all(themes.map(async (theme) => {
-    const text = await readFile(resolve(repoRoot, 'public/data', `theme_${theme}.json`), 'utf8')
-    return [theme, JSON.parse(text)]
-  })))
   const census = resources.flatMap((resource) => {
-    const page = metadataByTheme[resource.theme_id]?.indicator_pages?.[resource.resource_id]
-    const registered = Object.hasOwn(metadataByTheme[resource.theme_id]?.scalar_contracts ?? {}, resource.resource_id)
-    if (!page || !registered || (page.family !== undefined && page.family !== 'scalar')) return []
-    return [{ theme: resource.theme_id, indicator: resource.resource_id, page, resource }]
+    const page = pageBindings.get(`${resource.theme_id}/${resource.resource_id}`)
+    if (!page || page.figureFamily !== 'scalar') return []
+    const presentation = presentationPageIndicateur(resource.theme_id, resource.resource_id, resource.label, 'scalar')
+    if (!presentation) return []
+    return [{ theme: resource.theme_id, indicator: resource.resource_id, title: presentation.title, resource }]
   }).sort((a, b) => `${a.theme}/${a.indicator}`.localeCompare(`${b.theme}/${b.indicator}`))
   assert.deepEqual(census.map(({ theme, indicator }) => `${theme}/${indicator}`), expectedPages,
     'The API/page-grammar intersection must stay complete for all 15 ordinary scalar pages')
@@ -153,6 +154,9 @@ try {
   staleMetadata.source_records.serie_historique.sha256 = 'editorial-stale-source-hash'
   staleMetadata.source_records.serie_historique.clocks = [{ name: 'Horloge éditoriale obsolète',
     reference: 'mercredi réel de période scolaire 1999-01-01', frequency: 'factice' }]
+  const staleMobilityMetadata = JSON.parse(await readFile(resolve(repoRoot,
+    'public/data/theme_mobilite.json'), 'utf8'))
+  staleMobilityMetadata.indicator_pages.raccordement_tc.label = 'Ancien libellé de raccordement obsolète'
   const harness = createHarness(resources, territoiresFixture, fixtures)
   browser = await chromium.launch({ headless: true,
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) })
@@ -170,11 +174,14 @@ try {
     body: JSON.stringify(territoiresFixture) }))
   await page.route('**/data/theme_demographie.json', (route) => route.fulfill({ status: 200, contentType: 'application/json',
     body: JSON.stringify(staleMetadata) }))
+  await page.route('**/data/theme_mobilite.json', (route) => route.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify(staleMobilityMetadata) }))
 
   const focal = territoiresFixture.find((territory) => territory.type === 'commune' && territory.territoire === '22001')
   assert(focal?.epci, 'Browser fixture must contain the selected commune and its EPCI identity')
   const focusFor = (spec) => {
-    const countsAvailable = Boolean(metadataByTheme[spec.theme].scalar_contracts[spec.indicator].counts_available)
+    assert.equal(typeof spec.resource.counts_available, 'boolean', 'Discovery must declare scalar count capability')
+    const countsAvailable = spec.resource.counts_available
     const probe = fixtures.nativeReadFixture({ resource: spec.indicator,
       target: { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: null },
       fields: countsAvailable ? ['value', 'support_count', 'denominator_count'] : ['value'],
@@ -245,17 +252,20 @@ try {
     const pageFocal = focusFor(spec)
     const factStart = harness.factReads.length
     const compareStart = harness.comparisonReads.length
-    const epciQuery = spec.page.levels.includes('commune') ? `&epci=${pageFocal.epci}` : ''
+    const epciQuery = spec.resource.allowed_levels.includes('commune') ? `&epci=${pageFocal.epci}` : ''
     await page.goto(`${baseUrl}indicateurs/${spec.theme}/${spec.indicator}?territoire=${pageFocal.territoire}&niveau=commune${epciQuery}&vue=reperes`,
       { waitUntil: 'domcontentloaded' })
-    await page.locator('h1').filter({ hasText: spec.page.label }).waitFor({ state: 'visible', timeout: 20000 })
+    await page.locator('h1').filter({ hasText: spec.title }).waitFor({ state: 'visible', timeout: 20000 })
+    if (spec.indicator === 'raccordement_tc') {
+      assert(!(await page.locator('h1').innerText()).includes(staleMobilityMetadata.indicator_pages.raccordement_tc.label),
+        'Native API labels must beat a stale browser catalogue label on an ordinary scalar page')
+    }
     await page.locator('[data-testid="scalar-comparison-summary"], [data-testid="scalar-comparison-unavailable"]').first()
       .waitFor({ state: 'visible', timeout: 20000 })
     const factItem = harness.factReads.slice(factStart).find((item) => item.resource === spec.indicator &&
       item.target.kind === 'territory_cohort')
     assert(factItem, `${spec.indicator} must acquire its selected native scalar cohort`)
-    assert.equal(factItem.fields.includes('support_count'), Boolean(spec.page.counts_available ??
-      metadataByTheme[spec.theme].scalar_contracts[spec.indicator].counts_available),
+    assert.equal(factItem.fields.includes('support_count'), spec.resource.counts_available,
     `${spec.indicator} must request only producer-supported support fields`)
     const comparisonItem = harness.comparisonReads.slice(compareStart).find((item) => item.resource === spec.indicator)
     assert(comparisonItem, `${spec.indicator} must acquire native comparison evidence`)
@@ -440,11 +450,11 @@ try {
     history.pushState({}, '', '/indicateurs/economie/chomage?territoire=22001&niveau=commune&vue=reperes')
     dispatchEvent(new PopStateEvent('popstate'))
   })
-  await page.locator('h1').filter({ hasText: census.find(({ indicator }) => indicator === 'chomage').page.label })
+  await page.locator('h1').filter({ hasText: census.find(({ indicator }) => indicator === 'chomage').title })
     .waitFor({ state: 'visible', timeout: 20000 })
   harness.releaseDelayed()
   await page.waitForTimeout(100)
-  assert((await page.locator('h1').innerText()).includes(census.find(({ indicator }) => indicator === 'chomage').page.label))
+  assert((await page.locator('h1').innerText()).includes(census.find(({ indicator }) => indicator === 'chomage').title))
 
   // Small-screen surface keeps the table in its own scroll box; the page itself does not overflow.
   await page.setViewportSize({ width: 360, height: 800 })

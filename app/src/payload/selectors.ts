@@ -28,6 +28,7 @@ import { SOURCES_METHODES, datasetDeSource } from '@/methodes/sources'
 import { THEMES_CONSTRUITS, THEMES_METHODES } from '@/methodes/indicateurs'
 import type { ThemeConstruit } from '@/methodes/indicateurs'
 import { CONTENU_CATALOGUE_INDICATEURS } from '@/indicateurs/catalogueContent'
+import { LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
 
 // #901 — le helper themesPresent (présence lue dans les lignes de faits) est
 // retiré avec son dernier consommateur (la barre d'onglets de la carte) :
@@ -900,7 +901,9 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
       const pageCourante = PAGES_INDICATEUR_COURANTES.has(`${consumer.theme}/${consumer.key}`)
       record.consumers.push({
         key: consumer.key,
-        label: metadata?.indicator_labels[consumer.key] ?? THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.label ?? consumer.key,
+        label: LIBELLES_INDICATEURS_APP[consumer.theme]?.[consumer.key] ??
+          metadata?.indicator_labels[consumer.key] ??
+          THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.label ?? consumer.key,
         theme: consumer.theme,
         caveat: page?.caveats ?? metadata?.indicator_caveats?.[consumer.key] ?? THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.caveat ?? null,
         kind: pageCourante ? 'indicator' : 'declaration',

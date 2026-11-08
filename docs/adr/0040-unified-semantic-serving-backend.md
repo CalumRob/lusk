@@ -43,6 +43,15 @@ retiennent une grammaire commune sans imposer un stockage universel.
   de pairs AEDAR ne sont pas servis. Les cinq opérations publiques actuelles
   restent inchangées et aucun endpoint GET AEDAR n'est réintroduit.
 
+## Metadata projection boundary — 2026-11-07 (#827)
+
+Semantic resource discovery continues to derive from canonical producer
+metadata under `pipeline/inst/extdata/theme-metadata/`, not the reduced
+`public/data/theme_*.json` browser projection. The browser projection omits
+`scalar_contracts`, `profile_contracts`, and `map_layers`; this does not remove
+those declarations from the API/publisher contract. Remaining browser metadata
+readers are listed in the [structured-consumer inventory](../structured-consumer-inventory.md).
+
 ## Conséquences
 
 `GET /api/resources` et `POST /api/resources/read` / `read-batch` forment le

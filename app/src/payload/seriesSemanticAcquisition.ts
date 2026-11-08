@@ -116,6 +116,7 @@ function assertDescriptor(value: unknown): Row {
   if (!record(value) || !text(value.dataset_id) || !text(value.theme_id) || !text(value.axis_kind) ||
       !Array.isArray(value.axis_values) || !value.axis_values.every((axis: unknown) => text(axis)) ||
       !(value.axis_numeric_values === null || (Array.isArray(value.axis_numeric_values) &&
+        value.axis_numeric_values.length === value.axis_values.length &&
         value.axis_numeric_values.every((axis: unknown) => finite(axis)))) ||
       !['may_be_missing', 'dense_complete'].includes(value.completeness) ||
       !text(value.absence_semantics) || !text(value.label) || !text(value.unit) ||
@@ -615,6 +616,7 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
     scope_series: groupSeries,
     native_descriptor: { label: descriptor.label, unit: descriptor.unit, direction: descriptor.direction,
       axis_kind: descriptor.axis_kind, axis_values: descriptor.axis_values,
+      axis_numeric_values: descriptor.axis_numeric_values,
       comparison_point: descriptor.comparison_point ?? null },
     ...(input.includeScalarFacet ? { scalar_facet: {
       cohort: cohort.scalar_facet as Row | undefined, focal: focal.scalar_facet as Row | undefined,

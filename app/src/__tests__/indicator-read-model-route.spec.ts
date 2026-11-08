@@ -46,7 +46,7 @@ describe("Page d'indicateur — coupure scalaires ordinaires du modèle de lectu
     try {
       expect(wrapper.get('h1').text()).toBe('Densité de population')
       expect(wrapper.find('[data-testid="scalar-comparison-summary"]').exists()).toBe(true)
-      expect(payloadCalls).toEqual(['territoires'])
+      expect(payloadCalls.filter((file) => file !== 'territoires')).toEqual(['theme_demographie'])
       const requests = vi.mocked(fetch).mock.calls.map(([url]) => String(url))
       expect(requests.some((url) => url.includes('/data/modeles-lecture/')), requests.join(', ')).toBe(false)
       expect(requests).toContain('/api/resources/read-batch')
@@ -57,7 +57,7 @@ describe("Page d'indicateur — coupure scalaires ordinaires du modèle de lectu
     const { wrapper, payloadCalls } = await mountDensity()
     try {
       expect(wrapper.get('h1').text()).toBe('Densité de population')
-      expect(payloadCalls).toEqual(['territoires'])
+      expect(payloadCalls.filter((file) => file !== 'territoires')).toEqual(['theme_demographie'])
       const requests = vi.mocked(fetch).mock.calls.map(([url]) => String(url))
       expect(requests.some((url) => url.includes('/data/modeles-lecture/')), requests.join(', ')).toBe(false)
       expect(requests.some((url) => url.startsWith('/data/indicateurs_'))).toBe(false)
@@ -89,13 +89,13 @@ describe("Page d'indicateur — coupure scalaires ordinaires du modèle de lectu
     try {
       await flushPromises()
       expect(wrapper.get('[role="alert"] button').text()).toContain('Réessayer')
-      expect(payloadCalls).toEqual(['territoires'])
+      expect(payloadCalls.filter((file) => file !== 'territoires')).toEqual([])
       const initialRequests = transport.mock.calls.map(([url]) => String(url))
       expect(initialRequests.some((url) => url.includes('/data/modeles-lecture/')), initialRequests.join(', ')).toBe(false)
       await wrapper.get('[role="alert"] button').trigger('click')
       await flushPromises()
       expect(wrapper.get('h1').text()).toBe('Densité de population')
-      expect(payloadCalls).toEqual(['territoires'])
+      expect(payloadCalls.filter((file) => file !== 'territoires')).toEqual(['theme_demographie'])
       expect(transport.mock.calls.map(([url]) => String(url)).filter((url) => url === '/api/resources')).toHaveLength(2)
       expect(transport.mock.calls.map(([url]) => String(url)).filter((url) => url === '/api/resources/read-batch')).toHaveLength(2)
       expect(transport.mock.calls.map(([url]) => String(url)).some((url) => url.includes('/data/modeles-lecture/'))).toBe(false)
@@ -284,19 +284,16 @@ describe("Routes inconnues ou retirées — plus aucune requête au manifeste de
     // grammaire de page refuse la classification scalaire, aucune valeur ne
     // fait émettre de lecture de cohorte ni de requête au manifeste.
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    const { transport, appels } = transportProduction({
-      ressourcesRegionSeulement: ['taille_menages'] })
+    const { transport, appels } = transportProduction()
     // D'abord la page scalaire ordinaire, qui charge et valide son lecteur natif.
     const { wrapper, router } = await monterSansInjection('/indicateurs/demographie/densite?territoire=22001&niveau=commune&epci=200067460', transport)
     try {
       expect(wrapper.get('h1').text()).toBe('Densité de population')
       expect(wrapper.find('[data-testid="scalar-comparison-summary"]').exists()).toBe(true)
-      // Puis une route enregistrée dont la publication producteur ne rejoint
-      // plus aucun niveau de la page : la grammaire de page refuse la page
-      // scalaire ordinaire, et aucun lecteur de cohorte ne peut se substituer
-      // à ce refus.
+      // Puis une URL inconnue : ni le drapeau retiré ni un vieux manifeste ne
+      // peuvent sélectionner un lecteur ou admettre une page.
       const appelsAvantNavigation = appels.length
-      await router.push('/indicateurs/demographie/taille_menages?territoire=22001&niveau=commune&epci=200067460')
+      await router.push('/indicateurs/demographie/inconnu_xyz?territoire=22001&niveau=commune&epci=200067460')
       await flushPromises()
       expect(wrapper.text()).toContain('Indicateur introuvable.')
       expect(wrapper.find('h1').exists()).toBe(false)

@@ -5,10 +5,12 @@ import { chargerComparaisonsScalaires, chargerCohortePageScalaire, chargerFaitFo
 import { validerCatalogueNavigateur } from '@/payload/validate'
 import type { ScalarComparisonRequest } from '@/payload/scalarCohort'
 import type { Territoire, TerritoireType } from '@/payload/types'
+import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
+import { nativeResources } from './helpers/semanticApiFixtures'
 
 type NativeCapture = {
   level: TerritoireType
-  catalogue: { resources: Array<Record<string, any>> }
+  catalogue: { resources: SemanticResourceDeclaration[] }
   territories?: Territoire[]
   cohort: { request: Record<string, any>; response_status?: number; response: Record<string, any> }
   focal: { request: Record<string, any>; response_status?: number; response: Record<string, any> }
@@ -29,6 +31,14 @@ const metadata = { ...validerCatalogueNavigateur(rawMetadata, 'theme_demographie
 afterEach(() => vi.unstubAllGlobals())
 
 async function adaptNativeCapture(wire: NativeCapture, corruption?: 'descriptor' | 'facet') {
+  // These wire captures predate the additive discovery capabilities. Keep the
+  // captured facts, clocks and requests unchanged; supply only those new flags
+  // from today's producer-derived, database-free catalogue.
+  const catalogue = wire.catalogue.resources.map((captured) => {
+    const current = nativeResources().find((candidate) => candidate.resource_id === captured.resource_id)
+    if (!current) throw new Error(`Captured scalar resource is no longer declared: ${captured.resource_id}`)
+    return { ...captured, map_eligible: current.map_eligible, counts_available: current.counts_available }
+  })
   const cohortData = wire.cohort.response.results[0].data
   const territories: Territoire[] = wire.territories ?? cohortData.cohort.members.map((row: { id: string; type: TerritoireType; name: string }) => ({
     territoire: row.id, type: row.type, nom: row.name,
@@ -54,7 +64,7 @@ async function adaptNativeCapture(wire: NativeCapture, corruption?: 'descriptor'
   vi.stubGlobal('fetch', fetcher)
 
   const acquired = await chargerCohortePageScalaire('densite', 'demographie', metadata, focal, wire.level,
-    territories, wire.level === 'commune' ? { department: cohortData.cohort.department_id } : {}, wire.catalogue.resources as any)
+    territories, wire.level === 'commune' ? { department: cohortData.cohort.department_id } : {}, catalogue)
   const direction = acquired.contract.direction as 'high' | 'low'
   const page = { ...metadata.indicator_pages!.densite!, unit: acquired.contract.unit!, direction,
     comparison: { ...metadata.indicator_pages!.densite!.comparison!, indicator: 'densite', unit: acquired.contract.unit!,
@@ -65,8 +75,8 @@ async function adaptNativeCapture(wire: NativeCapture, corruption?: 'descriptor'
       scope: { kind: 'explicit_selection', territoryType: wire.level, memberCount: cohortMembers.length, label: 'Selected communes' } }
     : { kind: 'fixed', scope: { kind: 'same_level', territoryType: wire.level, memberCount: territories.length, label: 'Same level' } }
   const comparisons = await chargerComparaisonsScalaires(['densite'], 'demographie', { densite: page }, focal,
-    territories, request, acquired.identity, true, wire.catalogue.resources as any)
-  const focalFact = await chargerFaitFocalPageScalaire(acquired.declaration, 'densite', 'demographie', metadata,
+    territories, request, acquired.identity, true, catalogue)
+  const focalFact = await chargerFaitFocalPageScalaire(acquired.declaration, 'densite', 'demographie',
     focal, territories, acquired.identity, acquired.contract)
   return { acquired, comparisons: comparisons.densite, focalFact, fetcher, expected: wire.comparison.response.results[0].data.result }
 }

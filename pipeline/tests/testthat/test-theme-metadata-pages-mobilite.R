@@ -153,12 +153,23 @@ test_that("publier_theme_metadata : les vingt pages passent le seam et survivent
     expect_identical(page$family, "scalar", info = cle)
     expect_true(page$direction %in% c("high", "low"), info = cle)
   }
-  for (id in names(meta$scalar_contracts)) {
-    expect_identical(relu$scalar_contracts[[id]], meta$scalar_contracts[[id]])
-  }
+  expect_length(meta$scalar_contracts, length(PAGES_SCALAIRES_MOBILITE))
+  expect_length(meta$profile_contracts, 4L)
+  expect_identical(meta$map_layers, list(
+    offre_tc = TRUE,
+    raccordement_tc = TRUE,
+    raccordement_courbe = FALSE,
+    raccordement_reference = FALSE
+  ))
+  expect_false(any(c("scalar_contracts", "profile_contracts", "map_layers") %in% names(relu)))
+  expect_identical(relu$indicator_pages, meta$indicator_pages)
   checked_in <- jsonlite::fromJSON(file.path(racine_public, "theme_mobilite.json"),
                                    simplifyVector = FALSE)
-  expect_identical(checked_in$scalar_contracts, relu$scalar_contracts)
+  expect_false(any(c("scalar_contracts", "profile_contracts", "map_layers") %in% names(checked_in)))
+  expect_true("raccordement_tc" %in% names(checked_in$indicator_pages))
+  expect_identical(unlist(checked_in$indicator_pages$raccordement_tc$levels,
+                          use.names = FALSE),
+                   c("commune", "epci", "departement", "region"))
 })
 
 test_that("parité pages scalaires ↔ Parquet Mobilité conservé : niveaux, unité et direction (#461)", {

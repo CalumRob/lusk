@@ -29,7 +29,7 @@
  * jamais sur un état encore en chargement.
  */
 import { AlertCircle, MapPinOff } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, inject, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
@@ -54,6 +54,7 @@ import {
 } from '@/carte/programmesCouches'
 import type { CoucheProgramme } from '@/carte/programmesCouches'
 import { echelleValeurs } from '@/carte/seuils'
+import { groupesCouchesCarte } from '@/fiche/content/ficheGrammar'
 import { idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
 import { NIVEAUX_MASQUE } from '@/geo/types'
@@ -66,33 +67,17 @@ import type { Fichier } from '@/payload/loader'
 import { chargerRangScalaire } from '@/payload/scalarCohort'
 import type { ScalarComparisonRank } from '@/payload/scalarCohort'
 import { acquireMapThemeFacts } from '@/payload/mapSemanticAcquisition'
+import type { MapReadingBinding } from '@/payload/mapSemanticAcquisition'
+import { chargerMetadonneesTheme, THEME_METADATA_CHARGER_KEY } from '@/payload/themeCatalogue'
 import type { Indicateur } from '@/payload/types'
 
 const route = useRoute()
 const router = useRouter()
 
-/**
- * #901 — le démarrage EXPLICITE de la carte, demand-driven comme la
- * production. Le wait-set reste la porte de rendu (['territoires',
- * 'run-report']). La barre d'onglets et la porte de présence `?theme=`
- * lisent le REGISTRE canonique THEMES_CANONIQUES — la même autorité que la
- * fiche, aucune seconde liste, aucun endpoint de présence (décision
- * propriétaire 2026-11-03, option 1 : les thèmes SUPPORTÉS rendent, pas
- * les thèmes qui ont des lignes de faits). Les 12 fichiers numériques
- * `indicateurs_*` / `histoires_*` ne sont PLUS jamais démarrés ici — et
- * aucune ligne statique (même chaude dans le magasin partagé) n'est un
- * repli : les valeurs du thème sélectionné viennent exclusivement de
- * l'acquisition sémantique API. Les `theme_<theme>` joignent le démarrage
- * comme détail d'implémentation des consommateurs existants de la carte
- * (les descripteurs de page des rangs `chargerRangCarte` et la fusion de
- * métadonnées programmes lisent le magasin, sans repli d'acquisition
- * propre) — jamais un défaut eager implicite du chargeur de test.
- */
-const FICHIERS_DEMARRAGE_CARTE = [
-  'territoires',
-  'run-report',
-  ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier),
-] as Fichier[]
+/** The standalone map waits only for shared territory/reference data. Native
+ * theme facts are acquired for the selected theme below; its catalogue is a
+ * separate, non-gating label enrichment and never decides layer availability. */
+const FICHIERS_DEMARRAGE_CARTE: Fichier[] = ['territoires', 'run-report']
 
 const {
   payload,
@@ -291,11 +276,19 @@ const mapIdentities = ref<Record<string, { contentVersion: string; referenceCont
  * admit zero observations while keeping its descriptor). */
 const mapNativeContracts = ref<Record<string, NativeThemeFactContract>>({})
 const mapStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
+const mapMetadataStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
+const mapMetadataRetryPending = ref(false)
+const mapMetadataRetrySucceeded = ref(false)
+const mapMetadataRetryButton = ref<HTMLButtonElement | null>(null)
+const mapMetadataRetrySuccessStatus = ref<HTMLElement | null>(null)
+const chargerCatalogueTheme = inject(THEME_METADATA_CHARGER_KEY, chargerMetadonneesTheme)
 const retryMapFacts = ref(0)
+const retryMapMetadata = ref(0)
 const territoryRankTarget = ref<Territoire | null>(null)
 const territoryRank = ref<{ territoryId: string; indicator: string; level: Territoire['type']; rank: ScalarComparisonRank } | null>(null)
 const territoryRankStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
 let mapSequence = 0
+let mapMetadataSequence = 0
 let territoryRankSequence = 0
 let territoryRankRequestKey: string | null = null
 // #901 — indicateurScalaireActif lit coucheActive : déclaré APRÈS payloadCarte
@@ -308,30 +301,36 @@ const niveauApi = computed(() => ({ communes: 'commune', epcis: 'epci', departem
  * seam as the fiche's native-contract page substitution), the editorial page
  * contributes presentation grammar only. The caller fails closed when the
  * retained descriptor is absent — never falls back to editorial facts. */
-function pageRankAvecContratNatif(page: IndicatorPageMetadata, native: NativeThemeFactContract): IndicatorPageMetadata {
-  const unit = native.unit ?? page.unit
-  const direction = native.direction === 'low' ? 'low' : native.direction === 'high' ? 'high' : page.direction
-  return { ...page, unit, direction,
-    ...(page.comparison ? { comparison: { ...page.comparison,
-      ...(native.comparisonFacet ? { indicator: native.comparisonFacet } : {}), unit, direction } } : {}) }
+function pageRankAvecContratNatif(indicator: string,
+  declaration: import('@/payload/semanticResourceClient').SemanticResourceDeclaration,
+  native: NativeThemeFactContract): IndicatorPageMetadata | null {
+  const unit = native.unit ?? declaration.unit
+  const direction = native.direction === 'low' || native.direction === 'high' ? native.direction : null
+  if (!unit || !direction) return null
+  return { indicator, family: 'scalar', label: native.label ?? declaration.label, definition: '', unit,
+    calculation: '', direction, caveats: '', levels: native.allowedLevels as IndicatorPageMetadata['levels'] ?? declaration.allowed_levels,
+    sources: declaration.sources,
+    comparison: { indicator: native.comparisonFacet ?? indicator, direction, unit },
+  } as IndicatorPageMetadata
 }
 
 async function chargerRangCarte(focal: Territoire, force = false): Promise<void> {
   const theme = selection.value
   const indicator = indicateurScalaireActif.value
   const level = niveauApi.value
-  const metadata = theme ? payload.value?.themeMetadata?.[theme] : undefined
-  const page = indicator ? metadata?.indicator_pages?.[indicator] : undefined
-  if (!theme || !indicator || !level || mapStatus.value !== 'ready' || !page || page.family !== 'scalar' || !payload.value) return
+  if (!theme || !indicator || !level || mapStatus.value !== 'ready' || !payload.value) return
   const identity = mapIdentities.value[indicator]
-  if (!identity) return
+  const declaration = mapDeclarations.value.find((resource) => resource.resource_id === indicator &&
+    resource.indicator_id === indicator && resource.shapes.includes('scalar'))
+  if (!identity || !declaration) return
   // Ranking binds to the retained native descriptor — never to a fact row (a
   // sparse cohort may project zero observations) and never to the editorial
   // page's factual unit/direction/facet: without the descriptor, ranking
   // fails closed here.
   const native = mapNativeContracts.value[indicator]
   if (!native) return
-  const rankPage = pageRankAvecContratNatif(page, native)
+  const rankPage = pageRankAvecContratNatif(indicator, declaration, native)
+  if (!rankPage) return
   const key = JSON.stringify([theme, indicator, level, focal.territoire,
     identity.contentVersion, identity.referenceContentVersion])
   if (!force && territoryRankRequestKey === key &&
@@ -377,7 +376,6 @@ watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, r
   mapMemberships.value = []
   mapGrantFacts.value = []
   mapAxes.value = {}
-  mapThemeMetadata.value = null
   mapDeclarations.value = []
   mapIdentities.value = {}
   mapNativeContracts.value = {}
@@ -389,18 +387,12 @@ watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, r
   if (!theme || !level || !currentPayload || loadingPayload || payloadFailed) return
   mapStatus.value = 'loading'
   try {
-    let metadata: ThemeMetadata | undefined = currentPayload.themeMetadata?.[theme]
-    if (!metadata) {
-      const response = await fetch(`/data/theme_${theme}.json`)
-      if (!response.ok) throw new Error('Métadonnées de présentation de la carte indisponibles')
-      metadata = await response.json() as ThemeMetadata
-      if (metadata.theme !== theme) throw new Error('Métadonnées de présentation incompatibles')
-    }
-    mapThemeMetadata.value = metadata
+    const grammar = groupesCouchesCarte(theme)
+    const readingBindings: MapReadingBinding[] = grammar.filter((group) => group.storyFields.length > 0)
+      .map((group) => ({ subgroup: group.key, fields: group.storyFields }))
     const acquired = await acquireMapThemeFacts(theme, level, currentPayload.territoires,
-      metadata.indicator_keys, metadata.subgroups.flatMap((subgroup) => subgroup.reading
-        ? [{ storyKey: subgroup.reading.story_key, params: subgroup.reading.params }] : []),
-      (declarations) => { if (sequence === mapSequence) mapDeclarations.value = declarations }, metadata.indicator_pages)
+      grammar.flatMap((group) => group.resourceKeys), readingBindings,
+      (declarations) => { if (sequence === mapSequence) mapDeclarations.value = declarations })
     if (sequence === mapSequence) {
       mapFacts.value = acquired.facts
       mapStories.value = acquired.stories
@@ -418,13 +410,61 @@ watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, r
   }
   }, { immediate: true })
 
+// The selected catalogue only fills factual field labels that the typed-reading
+// API does not yet expose. Its failure never gates map facts or native admission.
+watch([selection, retryMapMetadata], async ([theme], [previousTheme], onCleanup) => {
+  const request = ++mapMetadataSequence
+  let cancelled = false
+  onCleanup(() => { cancelled = true })
+  mapThemeMetadata.value = null
+  if (theme !== previousTheme) {
+    mapMetadataRetryPending.value = false
+    mapMetadataRetrySucceeded.value = false
+  }
+  if (!theme) {
+    mapMetadataStatus.value = 'idle'
+    return
+  }
+  mapMetadataStatus.value = 'loading'
+  try {
+    const metadata = await chargerCatalogueTheme(theme)
+    if (cancelled || request !== mapMetadataSequence || theme !== selection.value) return
+    if (metadata.theme !== theme) throw new Error(`Catalogue ${metadata.theme} inattendu pour ${theme}`)
+    const retryButtonHadFocus = mapMetadataRetryPending.value &&
+      document.activeElement === mapMetadataRetryButton.value
+    mapThemeMetadata.value = metadata
+    mapMetadataStatus.value = 'ready'
+    mapMetadataRetrySucceeded.value = mapMetadataRetryPending.value
+    mapMetadataRetryPending.value = false
+    if (retryButtonHadFocus) {
+      await nextTick()
+      if (document.activeElement === document.body || document.activeElement === document.documentElement) {
+        mapMetadataRetrySuccessStatus.value?.focus()
+      }
+    }
+  } catch {
+    // Native API labels/axes remain usable; only absent typed-field wording is withheld.
+    if (!cancelled && request === mapMetadataSequence && theme === selection.value) {
+      mapMetadataStatus.value = 'error'
+      mapMetadataRetryPending.value = false
+    }
+  }
+}, { immediate: true })
+
+function retrySelectedMapMetadata(): void {
+  if (mapMetadataStatus.value !== 'error' || mapMetadataRetryPending.value) return
+  // Keep the notice and its focused button mounted until the metadata-only
+  // attempt settles; the map's already admitted native facts are untouched.
+  mapMetadataRetrySucceeded.value = false
+  mapMetadataRetryPending.value = true
+  retryMapMetadata.value++
+}
+
 const payloadCarte = computed(() => {
   const current = payload.value
   if (!current) return current
   if (ongletProgrammes.value) {
-    return { ...current, themeMetadata: { ...current.themeMetadata,
-      programmes: mapThemeMetadata.value?.theme === 'programmes'
-        ? mapThemeMetadata.value : current.themeMetadata?.programmes },
+    return { ...current,
       // #893 — la section programmes ne porte QUE le cohort natif de l'API
       // (aucun repli sur l'ancien programmes.json) ; mapGrantFacts est vide
       // tant que l'acquisition native n'est pas prête (jamais de repli).
@@ -440,8 +480,7 @@ const payloadCarte = computed(() => {
       territoryRank.value.indicator === row.key && territoryRank.value.level === row.type
       ? { ...row, comparaisonApi: { rang: territoryRank.value.rank.rank,
           taille: territoryRank.value.rank.rankSize, portee: territoryRank.value.rank.scope } } : row) : []
-  return { ...current, themeMetadata: { ...current.themeMetadata, [theme]: mapThemeMetadata.value?.theme === theme
-    ? mapThemeMetadata.value : current.themeMetadata?.[theme] }, indicateurs: [...indicateurs, ...acquired],
+  return { ...current, indicateurs: [...indicateurs, ...acquired],
     histoires: [...histoires, ...mapStories.value] as typeof current.histoires }
 })
 
@@ -452,15 +491,10 @@ const payloadCarte = computed(() => {
 const couchesTheme = computed<CouchesTheme | null>(() =>
   selection.value && payloadCarte.value && mapDeclarations.value.length > 0
     ? couchesDuTheme(payloadCarte.value, selection.value, {
-        indicatorIds: new Set(mapDeclarations.value.filter((resource) => resource.shapes.some((shape) =>
-          ['scalar', 'declared_profile', 'period_detail', 'ordered_series'].includes(shape)))
-          .map((resource) => resource.indicator_id)),
-        scalarIds: new Set(mapDeclarations.value.filter((resource) => resource.shapes.includes('scalar') ||
-          (selection.value === 'programmes' && resource.shapes.includes('ordered_series')))
-          .map((resource) => resource.indicator_id)),
-        storyFields: new Set(mapStories.value.flatMap((row) => Object.entries(row)
-          .filter(([, value]) => typeof value === 'number').map(([key]) => key))),
+        declarations: mapDeclarations.value,
         axes: mapAxes.value,
+        nativeContracts: mapNativeContracts.value,
+        metadata: mapThemeMetadata.value ?? undefined,
       })
     : null,
 )
@@ -713,6 +747,24 @@ const classesFond = computed(() =>
             @couche-change="choisirCouche"
             @recherche-territoire="rechercherTerritoire"
           />
+          <div v-if="themeAcquisCarte && (mapMetadataStatus === 'error' || mapMetadataRetryPending || mapMetadataRetrySucceeded)"
+            class="carte-metadata-erreur" data-testid="map-metadata-notice"
+            :aria-busy="mapMetadataRetryPending ? 'true' : 'false'">
+            <p v-if="mapMetadataRetryPending" role="status" aria-live="polite" data-testid="map-metadata-pending">
+              Chargement des libellés complémentaires…
+            </p>
+            <p v-else-if="mapMetadataRetrySucceeded" ref="mapMetadataRetrySuccessStatus"
+              role="status" aria-live="polite" tabindex="-1" data-testid="map-metadata-success">
+              Les libellés complémentaires sont disponibles.
+            </p>
+            <p v-else role="alert" data-testid="map-metadata-error">
+              Les libellés complémentaires du thème ne sont pas disponibles. Les couches et leurs valeurs natives restent affichées.
+            </p>
+            <button v-if="!mapMetadataRetrySucceeded" ref="mapMetadataRetryButton"
+              type="button" class="carte-etat-bouton" data-testid="map-metadata-retry"
+              :aria-disabled="mapMetadataRetryPending ? 'true' : 'false'"
+              @click="retrySelectedMapMetadata">Réessayer les libellés</button>
+          </div>
         </template>
       </div>
     </template>
@@ -806,6 +858,35 @@ const classesFond = computed(() =>
 .carte-etat-bouton:hover {
   background: var(--surface-tertiary);
   border-color: var(--brand-500);
+}
+
+.carte-metadata-erreur {
+  position: absolute;
+  z-index: var(--z-sticky);
+  top: var(--space-3);
+  left: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: min(32rem, calc(100% - 2 * var(--space-3)));
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-primary);
+  box-shadow: var(--shadow-default);
+}
+
+.carte-metadata-erreur p {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--text-body-sm);
+}
+
+@media (max-width: 640px) {
+  .carte-metadata-erreur {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .carte-squelette--ligne {

@@ -28,6 +28,26 @@ vintage IDs when one editorial source record covers multiple territorial source
 snapshots; callers bind response provenance to these identities, not to a page's
 editorial source list.
 
+Each indicator resource also returns two additive producer capabilities:
+
+- `map_eligible` is the indicator's `map_layers` declaration. An explicit
+  producer `false` disables map eligibility; an omitted `map_layers` object or
+  indicator entry returns `true`, preserving the established default. The
+  capability is independent of resource shape, axes, allowed levels, geometry,
+  and current publication contents. It does not make an ordered series or a
+  named reference interchangeable with an ordinary scalar resource.
+- `counts_available` is true only when that indicator has a declared scalar
+  shape and its `scalar_contracts[resource_id].counts_available` is true. It
+  describes support/denominator facet capability, not whether rows or a current
+  publication exist. Non-scalar resources return false even if unrelated page
+  content contains a similarly named property. The general `fields` list is
+  not evidence that count facets are available.
+
+Non-indicator semantic resources return `map_eligible: null` (map-layer
+eligibility is not declared for them) and `counts_available: false`. Invalid
+capability types and declarations naming unknown indicators fail discovery;
+the API does not guess or repair producer declarations.
+
 `POST /api/resources/read` accepts the shared semantic item (`resource`, typed
 `target`, optional closed `coordinates`, `fields`, and typed `intent`). The
 single-read request and each batch item have the same fields; only a batch item

@@ -28,6 +28,7 @@ type RaccordementPageOptions = {
   territories?: Territoire[]
   transformRead?: (item: Record<string, any>, resource: any, data: Record<string, any>) => Record<string, any>
   readBatch?: (items: Array<Record<string, any>>, respond: () => Response) => Response | Promise<Response>
+  failThemeMetadata?: boolean
 }
 
 // #868 — la classe de densité se lit dans la référence compacte, plus dans le
@@ -47,7 +48,10 @@ async function mountRaccordementPage(options: RaccordementPageOptions) {
   const loader: ChargerFichier = async (file) => {
     if (file === 'territoires') return territories
     if (file === 'indicateurs_mobilite') return indicateursMobiliteFixture
-    if (file === 'theme_mobilite') return metadataMobilite
+    if (file === 'theme_mobilite') {
+      if (options.failThemeMetadata) throw new Error('optional theme explanation unavailable')
+      return metadataMobilite
+    }
     throw new Error(`unexpected static read: ${file}`)
   }
   const requests: Array<Array<Record<string, any>>> = []
@@ -125,6 +129,14 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(requests.flat().some((item) => item.resource === curve.resource_id && item.intent.kind === 'fixed_comparison')).toBe(true)
       expect(requests.flat().some((item) => item.resource === reference.resource_id &&
         item.target.kind === 'named_reference' && item.target.id === reference.target_ids[0])).toBe(true)
+      const staleMetadataPage = metadataMobilite.indicator_pages!.raccordement_courbe
+      if (staleMetadataPage.family !== 'trajectory') throw new Error('Expected trajectory metadata fixture')
+      const staleMetadataTicks = staleMetadataPage.trajectory.ticks!
+      expect(staleMetadataTicks).toHaveLength(11)
+      const axisOptions = wrapper.findAll('select[aria-label="Détail (actif)"] option')
+      expect(axisOptions).toHaveLength(73)
+      expect(axisOptions.map((option) => option.attributes('value')))
+        .toEqual((nativeRead.points as Array<{ axis: string }>).map((point) => point.axis))
       expect(wrapper.findAll('.trajectoire-territoire-point')).toHaveLength(73)
       const meanPoints = wrapper.findAll('.trajectoire-comparaison-point')
       expect(meanPoints).toHaveLength(73)
@@ -144,6 +156,17 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(wrapper.text()).not.toContain('Médiane')
       expect(namedReference.target.kind).toBe('named_reference')
     } finally { wrapper.unmount() }
+  })
+
+  it('keeps the native trajectory admitted and factual when optional theme metadata is unavailable', async () => {
+    const mounted = await mountRaccordementPage({ targetId: '22001', targetType: 'commune', failThemeMetadata: true })
+    try {
+      await flushPromises()
+      expect(mounted.wrapper.find('[role="alert"]').exists()).toBe(false)
+      expect(mounted.wrapper.findAll('.trajectoire-territoire-point')).toHaveLength(73)
+      expect(mounted.wrapper.find('[data-testid="raccordement-selected-mean"]').exists()).toBe(true)
+      expect(mounted.wrapper.find('header h1').text().trim()).not.toBe('')
+    } finally { mounted.wrapper.unmount() }
   })
   it.each([
     { targetId: '200000001', targetType: 'epci' as const, label: 'même niveau territorial (EPCI)', available: true },
@@ -934,7 +957,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(requests[1]?.[0]?.target).toMatchObject({ kind: 'territory', id: '22002' })
     } finally { wrapper.unmount() }
   })
-  it('waits for delayed metadata before choosing a series route when both API gates are enabled', async () => {
+  it('starts the native series route while optional theme metadata is still delayed', async () => {
     let publishMetadata!: (metadata: typeof metadataMilieux) => void
     const metadata = new Promise<typeof metadataMilieux>((resolve) => { publishMetadata = resolve })
     const loader: ChargerFichier = async (file) => {
@@ -959,11 +982,14 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     } } })
     try {
       await flushPromises()
-      expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/resources')
+      expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+        '/api/resources', '/api/resources/read-batch',
+      ])
+      expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)).items[0].resource).toBe('artif_par_habitant')
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
       publishMetadata(metadataMilieux)
       await flushPromises()
-      expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/resources/read-batch')
-      expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)).items[0].resource).toBe('artif_par_habitant')
+      expect(fetchMock).toHaveBeenCalledTimes(2)
       expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
   })

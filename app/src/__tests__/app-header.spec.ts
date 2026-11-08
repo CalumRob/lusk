@@ -2,7 +2,7 @@
 
 import { createMemoryHistory, createRouter } from 'vue-router'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import AppHeader from '../components/AppHeader.vue'
 import {
@@ -17,6 +17,7 @@ import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
 import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
+import { nativeResources } from './helpers/semanticApiFixtures'
 
 /**
  * AppHeader (#410 — la bascule atomique): sticky 60px chrome, Lusk wordmark
@@ -66,6 +67,7 @@ async function montage(chemin = '/', options: Record<string, unknown> = {}) {
 afterEach(() => {
   montee?.unmount()
   montee = null
+  vi.unstubAllGlobals()
   document.documentElement.classList.remove('tiroir-verrouille')
   document.body.classList.remove('tiroir-verrouille')
   document.body.innerHTML = ''
@@ -389,7 +391,7 @@ describe('AppHeader — la recherche globale (F3, #53 + #61)', () => {
 
     const input = panneau.find('input[role="combobox"]')
     expect(input.exists()).toBe(true)
-    expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom')
+    expect(input.attributes('aria-label')).toBe('Rechercher un territoire ou un indicateur')
     expect(panneau.element.contains(document.activeElement)).toBe(true)
   })
 
@@ -492,7 +494,14 @@ describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
     return new Promise<unknown>(() => {})
   }
 
-  it('cherche les pages app-owned et navigue sans attendre les métadonnées de thème', async () => {
+  it('cherche les pages découvertes nativement sans attendre les catalogues de thème', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe('/api/resources')
+      return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1',
+        resources: nativeResources(),
+      }))
+    }))
     const { router, wrapper } = await montage('/carte', {
       provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },
     })
@@ -517,6 +526,184 @@ describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
     expect(router.currentRoute.value.path).toBe('/indicateurs/demographie/densite')
   })
 
+  it('utilise pour la recherche le libellé factuel modifié dans la découverte native', async () => {
+    const resources = nativeResources().map((resource) => resource.resource_id === 'offre_tc'
+      ? { ...resource, label: 'Part des bâtiments à moins de 350 m d’un arrêt' }
+      : resource)
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe('/api/resources')
+      return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+    }))
+    const { wrapper } = await montage('/carte', {
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },
+    })
+    await flushPromises()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    const champ = wrapper.find('.recherche-superposee input[role="combobox"]')
+    await champ.trigger('focus')
+    await champ.setValue('350 m')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    const groupeIndicateurs = wrapper.find('[role="group"][aria-label="Indicateurs"]')
+    expect(groupeIndicateurs.text()).toContain('Part des bâtiments à moins de 350 m d’un arrêt')
+    expect(groupeIndicateurs.text()).not.toContain('500 m')
+  })
+
+  it('annonce la découverte indicateurs en attente sans masquer les territoires, puis distingue le résultat vide confirmé', async () => {
+    const resources = nativeResources().map((resource) => resource.resource_id === 'offre_tc'
+      ? { ...resource, label: 'Part des bâtiments à moins de 350 m d’un arrêt' }
+      : resource)
+    let terminerDecouverte!: (response: Response) => void
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      expect(String(input)).toBe('/api/resources')
+      return new Promise<Response>((resolve) => { terminerDecouverte = resolve })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const { wrapper } = await montage('/carte', {
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },
+    })
+    await flushPromises()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    const champ = wrapper.find('.recherche-superposee input[role="combobox"]')
+    expect(champ.attributes('aria-label')).toBe('Rechercher un territoire ou un indicateur')
+    await champ.trigger('focus')
+    await champ.setValue('epci')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    expect(wrapper.find('[role="group"][aria-label="Territoires"]').exists()).toBe(true)
+    expect(wrapper.findAll('[role="option"]').some((option) => option.text().includes('EPCI'))).toBe(true)
+    expect(wrapper.find('[data-testid="search-indicators-pending"]').text())
+      .toContain('Chargement des indicateurs')
+    expect(wrapper.text()).not.toContain('Aucun résultat trouvé.')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    terminerDecouverte(new Response(JSON.stringify({
+      contract: 'semantic-resource-catalogue-v1', resources,
+    })))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="search-indicators-status"]').exists()).toBe(false)
+
+    await champ.setValue('350 m')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(wrapper.find('[role="group"][aria-label="Indicateurs"]').text())
+      .toContain('Part des bâtiments à moins de 350 m d’un arrêt')
+    expect(wrapper.find('[role="group"][aria-label="Indicateurs"]').text()).not.toContain('500 m')
+
+    await champ.setValue('aucun-resultat-correspondant')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(wrapper.find('.global-search__etat').text()).toContain('Aucun résultat trouvé.')
+    expect(wrapper.find('[data-testid="search-indicators-error"]').exists()).toBe(false)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('annonce la récupération, garde la recherche et rend le focus au champ après un retry clavier', async () => {
+    const resources = nativeResources().map((resource) => resource.resource_id === 'offre_tc'
+      ? { ...resource, label: 'Raccordement des bâtiments à moins de 350 m d’un arrêt' }
+      : resource)
+    let terminerReessai!: (response: Response) => void
+    let attempts = 0
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      expect(String(input)).toBe('/api/resources')
+      attempts += 1
+      if (attempts === 1) return Promise.reject(new Error('discovery unavailable'))
+      return new Promise<Response>((resolve) => { terminerReessai = resolve })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const { wrapper } = await montage('/carte', {
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },
+    })
+    await flushPromises()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    const champ = wrapper.find('.recherche-superposee input[role="combobox"]')
+    await champ.trigger('focus')
+    await champ.setValue('r')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    expect(wrapper.find('[role="group"][aria-label="Territoires"]').exists()).toBe(true)
+    expect(wrapper.findAll('[role="group"][aria-label="Territoires"] [role="option"]').length).toBeGreaterThan(0)
+    expect(wrapper.find('[data-testid="search-indicators-error"]').text())
+      .toContain('La recherche d’indicateurs est indisponible.')
+    expect(wrapper.text()).not.toContain('Aucun résultat trouvé.')
+    expect(wrapper.find('[data-testid="search-indicators-retry"]').exists()).toBe(true)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    const retry = wrapper.find('[data-testid="search-indicators-retry"]')
+    const retryButton = retry.element as HTMLButtonElement
+    retryButton.focus()
+    await retry.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="search-indicators-retry"]').element).toBe(retryButton)
+    expect(retry.attributes('aria-disabled')).toBe('true')
+    expect(wrapper.find('[data-testid="search-indicators-pending"]').text())
+      .toContain('Chargement des indicateurs')
+    expect(wrapper.findAll('[role="group"][aria-label="Territoires"] [role="option"]').length).toBeGreaterThan(0)
+    expect(document.activeElement).toBe(retryButton)
+    await retry.trigger('click')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+
+    terminerReessai(new Response(JSON.stringify({
+      contract: 'semantic-resource-catalogue-v1', resources,
+    })))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="search-indicators-status"]').exists()).toBe(false)
+    const success = wrapper.find('[data-testid="search-indicators-success"]')
+    expect(success.attributes('role')).toBe('status')
+    expect(success.attributes('aria-live')).toBe('polite')
+    expect(document.activeElement).toBe(champ.element)
+    expect((champ.element as HTMLInputElement).value).toBe('r')
+    expect(wrapper.findAll('[role="group"][aria-label="Territoires"] [role="option"]').length).toBeGreaterThan(0)
+    expect(wrapper.find('[role="group"][aria-label="Indicateurs"]').text())
+      .toContain('Raccordement des bâtiments à moins de 350 m d’un arrêt')
+    expect(wrapper.find('[role="group"][aria-label="Indicateurs"]').text()).not.toContain('500 m')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not steal focus moved away from the indicator retry before completion', async () => {
+    const resources = nativeResources()
+    let terminerReessai!: (response: Response) => void
+    let attempts = 0
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      expect(String(input)).toBe('/api/resources')
+      attempts += 1
+      if (attempts === 1) return Promise.reject(new Error('discovery unavailable'))
+      return new Promise<Response>((resolve) => { terminerReessai = resolve })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const { wrapper } = await montage('/carte', {
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },
+    })
+    await flushPromises()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    const champ = wrapper.find('.recherche-superposee input[role="combobox"]')
+    await champ.trigger('focus')
+    await champ.setValue('r')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const retry = wrapper.find('[data-testid="search-indicators-retry"]')
+    const retryButton = retry.element as HTMLButtonElement
+    retryButton.focus()
+    await retry.trigger('click')
+    await flushPromises()
+
+    const autreCommande = document.createElement('button')
+    autreCommande.textContent = 'Autre commande'
+    document.body.append(autreCommande)
+    autreCommande.focus()
+    terminerReessai(new Response(JSON.stringify({
+      contract: 'semantic-resource-catalogue-v1', resources,
+    })))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="search-indicators-success"]').exists()).toBe(true)
+    expect(document.activeElement).toBe(autreCommande)
+    expect((champ.element as HTMLInputElement).value).toBe('r')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    autreCommande.remove()
+  })
+
   it('rend la recherche vivante quand seuls territoires + run-report ont atterri — le reste coule en arrière-plan', async () => {
     const { wrapper } = await montage('/carte', {
       provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },
@@ -534,9 +721,11 @@ describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
     const options = wrapper.findAll('[role="option"]')
     expect(options.length).toBeGreaterThan(0)
     expect(options[0].text()).toContain('EPCI')
-    // Le wait-set est réglé → ni spinner de chargement ni erreur, même si le reste pend.
+    // Le wait-set territorial est réglé : territorial results remain usable;
+    // failed producer discovery is reported only for the indicator slice.
     expect(wrapper.find('.recherche-superposee .global-search__spinner').exists()).toBe(false)
-    expect(wrapper.find('.recherche-superposee .global-search__etat--erreur').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="search-indicators-error"]').exists()).toBe(true)
+    expect(wrapper.find('.recherche-superposee').text()).not.toContain('Impossible de charger les territoires.')
   })
 
   it('un échec d’arrière-plan (indicateurs_habitat) ne fait jamais passer la recherche en erreur — seul le wait-set compte', async () => {
@@ -587,7 +776,7 @@ describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
     await input.trigger('focus')
     await wrapper.vm.$nextTick()
 
-    const erreur = wrapper.find('.recherche-superposee .global-search__etat--erreur')
+    const erreur = wrapper.find('.recherche-superposee .global-search__etat--erreur span')
     expect(erreur.exists()).toBe(true)
     expect(erreur.text()).toContain('Impossible de charger les territoires.')
     expect(wrapper.findAll('[role="option"]')).toHaveLength(0)

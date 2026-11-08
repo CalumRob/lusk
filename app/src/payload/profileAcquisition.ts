@@ -826,18 +826,20 @@ export async function chargerComparaisonProfilDeclare(input: {
   return adapterProfilComparaison({ ...input, comparison: data })
 }
 
-/** Bind API-owned profile facts and facets to the retained app presentation family. */
-export function adapterPageProfilDeclare(page: IndicatorPageMetadata,
+/** Bind API-owned profile facts and axes to the app-owned renderer family. */
+export function adapterPageProfilDeclare(pageOrFamily: IndicatorPageMetadata | IndicatorPageMetadata['family'],
   declaration: SemanticResourceDeclaration, descriptor: DeclaredProfileDescriptor,
   scalarDeclaration?: SemanticResourceDeclaration,
   selectedFacet: { detail?: string | null; sex?: string | null } = {}): ProfilePageBinding {
-  if (page.indicator !== descriptor.indicator || declaration.indicator_id !== page.indicator ||
-      !['composition', 'distribution', 'list', 'pyramid'].includes(page.family) ||
-      !descriptor.allowed_levels.length) {
+  const family = typeof pageOrFamily === 'string' ? pageOrFamily : pageOrFamily.family
+  if ((typeof pageOrFamily !== 'string' && pageOrFamily.indicator !== descriptor.indicator) ||
+      declaration.indicator_id !== descriptor.indicator ||
+      !['composition', 'distribution', 'list', 'pyramid'].includes(family) ||
+      !descriptor.allowed_levels.length || descriptor.allowed_levels.some((level) => !declaration.allowed_levels.includes(level))) {
     return fail('La page éditoriale n’est pas compatible avec le profil déclaré par l’API.')
   }
-  const levels = page.levels.filter((level) => descriptor.allowed_levels.includes(level))
-  if (!levels.length) return fail('La page ne partage aucun niveau publié avec le profil déclaré.')
+  const levels = descriptor.allowed_levels.filter((level) => declaration.allowed_levels.includes(level))
+  if (!levels.length) return fail('Le profil déclaré ne partage aucun niveau publié avec sa ressource API.')
   const details = descriptor.axes.filter((axis) => axis.name === 'detail')
   const sexes = descriptor.axes.filter((axis) => axis.name === 'sex')
   const detailLabels = Object.fromEntries(details.map((axis) => [axis.key, axis.label]))
@@ -872,6 +874,8 @@ export function adapterPageProfilDeclare(page: IndicatorPageMetadata,
     if (!selectedUnit) return fail('L’unité de la facette sélectionnée est absente du descripteur natif.')
     comparison = {
       indicator: declaration.indicator_id,
+      // The descriptor names the resource; comparison surfaces name the
+      // selected native detail through `labels` below.
       detail: selectedDetail,
       details: details.map((axis) => axis.key),
       sex: selectedSex as 'F' | 'M' | null,
@@ -882,32 +886,32 @@ export function adapterPageProfilDeclare(page: IndicatorPageMetadata,
     }
   }
 
-  let adaptedPage: IndicatorPageMetadata = {
-    ...page,
+  const adaptedPageBase = {
+    indicator: descriptor.indicator,
     label: descriptor.label,
+    definition: '',
     unit: point?.unit ?? scalarDeclaration?.unit ?? descriptor.unit,
     direction: point?.direction ?? (scalarDeclaration?.direction as 'high' | 'low'),
+    calculation: '',
+    caveats: '',
     levels,
     sources: [...declaration.sources],
     comparison,
   }
-  switch (page.family) {
+  let adaptedPage: IndicatorPageMetadata
+  switch (family) {
     case 'composition': {
-      const parts = page.composition.parts
-      if (parts.some((detail) => !details.some((axis) => axis.key === detail))) {
-        return fail('La présentation de composition référence une catégorie absente du profil natif.')
-      }
-      adaptedPage = { ...adaptedPage, family: 'composition', composition: { parts: [...parts] } }
+      adaptedPage = { ...adaptedPageBase, family: 'composition', composition: { parts: details.map((axis) => axis.key) } }
       break
     }
     case 'distribution':
-      adaptedPage = { ...adaptedPage, family: 'distribution', distribution: { signature: details.map((axis) => axis.key) } }
+      adaptedPage = { ...adaptedPageBase, family: 'distribution', distribution: { signature: details.map((axis) => axis.key) } }
       break
     case 'list':
-      adaptedPage = { ...adaptedPage, family: 'list', list: { categories: details.map((axis) => axis.key) } }
+      adaptedPage = { ...adaptedPageBase, family: 'list', list: { categories: details.map((axis) => axis.key) } }
       break
     case 'pyramid':
-      adaptedPage = { ...adaptedPage, family: 'pyramid', pyramid: { dimensions: descriptor.axes.map((axis) => axis.name) } }
+      adaptedPage = { ...adaptedPageBase, family: 'pyramid', pyramid: { dimensions: [...new Set(descriptor.axes.map((axis) => axis.name))] } }
       break
     default:
       return fail('Famille de présentation non prise en charge pour un profil déclaré.')

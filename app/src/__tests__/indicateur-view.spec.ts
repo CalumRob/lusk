@@ -186,6 +186,11 @@ describe('IndicateurView — routed URL seam', () => {
     const programmesMetadata = structuredClone(JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_programmes.json'), 'utf8')))
     programmesMetadata.indicator_pages.subventions_par_domaine.unit = 'STATIC_UNIT'
     const categories = programmesMetadata.indicator_pages.subventions_par_domaine.comparison.details as string[]
+    const staleCategory = 'legacy metadata category'
+    programmesMetadata.indicator_pages.subventions_par_domaine.comparison.details = [staleCategory]
+    programmesMetadata.indicator_pages.subventions_par_domaine.comparison.detail = staleCategory
+    programmesMetadata.indicator_pages.subventions_par_domaine.comparison.labels = { [staleCategory]: 'Legacy label' }
+    programmesMetadata.indicator_pages.subventions_par_domaine.list.categories = [staleCategory]
     const programmesFacts = indicateursProgrammesFixture.flatMap((fact) => {
       if (fact.key !== 'subventions_par_domaine') return [fact]
       const detail = fact.detail === 'Agriculture' ? categories.find((category) => category.startsWith('Agriculture'))!
@@ -195,29 +200,31 @@ describe('IndicateurView — routed URL seam', () => {
       // comparaison soit « available » (eligible >= 2, contrat producteur) :
       // médiane 1 234 € sur deux communes mesurées
       return fact.detail === 'Agriculture'
-        ? [mapped, { ...mapped, dimension: '2024', value: 1234 }]
+        ? [{ ...mapped, dimension: '2024', value: 1234 }, mapped]
         : [mapped, { ...mapped, dimension: '2024', value: 1234 },
            { ...mapped, territoire: '22002', dimension: '2024', value: 1234 }]
     })
     const category = categories.find((value) => value.startsWith('Agriculture'))!
-    collectionComparisonFailures = 3
     const { wrapper, router } = await monter(
       `/indicateurs/programmes/subventions_par_domaine?territoire=22001&niveau=commune&detail=${encodeURIComponent(category)}&dimension=2025`,
       [], programmesMetadata, programmesFacts, 'programmes')
     await flushPromises()
     const state = (wrapper.findComponent({ name: 'IndicateurPage' }).vm as any).$.setupState
     expect(wrapper.find('[data-testid="sparse-collection-state"]').exists(), `${wrapper.text()} ${networkRequests.join(',')} bootstrap=${state.profileBootstrapError?.message} active=${state.sparseCollectionPageActive} factsError=${state.sparseCollectionFactsError} discovered=${state.profileDiscoveryComplete}`).toBe(true)
-    expect(wrapper.find('[data-testid="sparse-collection-comparison-error"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="sparse-collection-comparison-retry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-unavailable"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="profil-liste"]').text()).toContain('0 CAD')
     expect(wrapper.find('[data-testid="sparse-collection-period-control"]').exists()).toBe(true)
+    expect(wrapper.findAll('select[aria-label="Catégorie comparée"] option').map((option) => option.attributes('value')))
+      .not.toContain(staleCategory)
     expect((wrapper.get('select[aria-label="Période comparée"]').element as HTMLSelectElement).value).toBe('2025')
     const nextCategory = categories.find((value) => value.startsWith('Développement des secteurs clés'))!
+    collectionComparisonFailures = 1
     await wrapper.get('select[aria-label="Catégorie comparée"]').setValue(nextCategory)
     await flushPromises()
     expect(router.currentRoute.value.query.detail).toBe(nextCategory)
     expect(wrapper.text()).toContain(nextCategory)
     expect(wrapper.find('[data-testid="sparse-collection-comparison-error"]').exists()).toBe(true)
+    collectionComparisonFailures = 1
     await wrapper.get('select[aria-label="Période comparée"]').setValue('2024')
     await flushPromises()
     expect(router.currentRoute.value.query.dimension).toBe('2024')
@@ -283,7 +290,7 @@ describe('IndicateurView — routed URL seam', () => {
     }
   })
 
-  it('distinguishes whole-territory no-record from a missing selected category-period', async () => {
+  it('distinguishes whole-territory no-record from a missing selected category-period using native categories', async () => {
     const programmesMetadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_programmes.json'), 'utf8'))
     const categories = programmesMetadata.indicator_pages.subventions_par_domaine.comparison.details as string[]
     const programmesFacts = indicateursProgrammesFixture.map((fact) => fact.key !== 'subventions_par_domaine' ? fact : {
@@ -291,6 +298,13 @@ describe('IndicateurView — routed URL seam', () => {
         : categories.find((category) => category.startsWith('Développement des secteurs clés'))!,
     })
     const tourism = categories.find((category) => category === 'Tourisme')!
+    const tourismTerritory = territoiresFixture.find((territory) => territory.type === 'commune' &&
+      territory.territoire !== '22001')!
+    const base = programmesFacts.find((fact) => fact.key === 'subventions_par_domaine')!
+    programmesFacts.push({ ...base, territoire: tourismTerritory.territoire,
+      detail: tourism, dimension: '2024', value: 9000 })
+    const noRecordTerritory = territoiresFixture.find((territory) => territory.type === 'commune' &&
+      !programmesFacts.some((fact) => fact.key === 'subventions_par_domaine' && fact.territoire === territory.territoire))!
     const { wrapper, router } = await monter(
       `/indicateurs/programmes/subventions_par_domaine?territoire=22001&niveau=commune&detail=${encodeURIComponent(tourism)}&dimension=2025`,
       [], programmesMetadata, programmesFacts, 'programmes')
@@ -304,7 +318,7 @@ describe('IndicateurView — routed URL seam', () => {
     const etatCollection = wrapper.find('[data-testid="sparse-collection-state"]')
     expect(etatCollection.text()).not.toContain('Rang API')
     expect(etatCollection.text()).not.toMatch(/\d+(er|e)\//)
-    await router.push({ query: { ...router.currentRoute.value.query, territoire: '22002' } })
+    await router.push({ query: { ...router.currentRoute.value.query, territoire: noRecordTerritory.territoire } })
     await flushPromises()
     expect(wrapper.find('[data-testid="sparse-collection-no-record"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="sparse-collection-facet-absent"]').exists()).toBe(false)
@@ -322,22 +336,25 @@ describe('IndicateurView — routed URL seam', () => {
     // re-scopée sur le 29 reste « available » (eligible = 2) avec médiane 15 000 €
     const baseAgri = programmesFacts.find((fact) => fact.key === 'subventions_par_domaine' && fact.detail === agriculture)!
     programmesFacts.push(
+      { ...baseAgri, territoire: '22002', dimension: '2025', value: 6000 },
       { ...baseAgri, territoire: '29001', dimension: '2025', value: 15000 },
       { ...baseAgri, territoire: '29002', dimension: '2025', value: 15000 },
     )
-    delayNextCollectionComparison = true
     const { wrapper, router } = await monter(
       `/indicateurs/programmes/subventions_par_domaine?territoire=22001&niveau=commune&detail=${encodeURIComponent(agriculture)}&dimension=2025`,
       [], programmesMetadata, programmesFacts, 'programmes')
-    expect(wrapper.find('[data-testid="sparse-collection-comparison-pending"]').exists()).toBe(true)
-    expect(pendingCollectionComparison).not.toBeNull()
-    const oldRequest = pendingCollectionComparisonItem!
+    await flushPromises()
+    delayNextCollectionComparison = true
     await router.push({ query: { ...router.currentRoute.value.query, departement: '29' } })
     await flushPromises()
-    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').text()).toContain('15 000')
+    expect(pendingCollectionComparison).not.toBeNull()
+    const oldRequest = pendingCollectionComparisonItem!
+    await router.push({ query: { ...router.currentRoute.value.query, departement: '22' } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').text()).toContain('10 500')
     const scopedRequest = semanticReadItems.filter((item) => item.target.kind === 'territory_cohort').at(-1)
-    expect(scopedRequest?.target.department_id).toBe('29')
-    expect(scopedRequest?.target.department_id).not.toBe(oldRequest.target.department_id)
+    expect(scopedRequest?.target.department_id).toBe('22')
+    expect(oldRequest.intent.members.map((member: Record<string, string>) => member.id)).toEqual(['29001', '29002'])
     const staleMembers = oldRequest.intent.members.map((member: Record<string, string>) => ({
       territory_type: member.type, territory_id: member.id,
     }))
@@ -349,7 +366,7 @@ describe('IndicateurView — routed URL seam', () => {
         rank: 1, rank_size: staleMembers.length,
       } }), { status: 200 }))
     await flushPromises()
-    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').text()).toContain('15 000')
+    expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').text()).toContain('10 500')
     expect(wrapper.find('[data-testid="sparse-collection-comparison-summary"]').text()).not.toContain('7 777')
   })
 
@@ -357,7 +374,7 @@ describe('IndicateurView — routed URL seam', () => {
   it('renders unknown indicator honestly', async () => { const { wrapper } = await monter('/indicateurs/demographie/not-published'); expect(wrapper.text()).toContain('Indicateur introuvable') })
   it('renders an unknown theme as a finite honest error state', async () => { const { wrapper } = await monter('/indicateurs/inconnu/densite'); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Chargement de l’indicateur') })
   it('reacts when the router reuses the view for a new indicator parameter', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite'); expect(wrapper.text()).toContain('Densité de population'); await router.push('/indicateurs/demographie/not-published'); await flushPromises(); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Densité de population') })
-  it('keeps ordinary scalar page facts API-only while changing the routed theme', async () => { const appels: string[] = []; const { wrapper, router } = await monter('/indicateurs/demographie/densite', appels); expect(appels).toEqual(['territoires']); await router.push('/indicateurs/habitat/not-published'); await flushPromises(); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Densité de population') })
+  it('keeps ordinary scalar facts API-only while optional theme explanations load and the route changes', async () => { const appels: string[] = []; const { wrapper, router } = await monter('/indicateurs/demographie/densite', appels); expect(appels).toEqual(['territoires', 'theme_demographie']); await router.push('/indicateurs/habitat/not-published'); await flushPromises(); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Densité de population') })
   it('renders a retired legacy accessibility slug as the unknown indicator without reading its static rows', async () => {
     // #627 — the served projection still declares the legacy accessibility
     // page, but the producer catalogue excludes it: no reader may resolve it.
@@ -469,10 +486,10 @@ describe('IndicateurView — trajectoires (#438)', () => {
     expect(wrapper.find('[data-renderer="trajectory"] .trajectoire-reference').exists()).toBe(true)
     expect(wrapper.find('[data-renderer="trajectory"] .trajectoire-mediane').exists()).toBe(false)
     const marqueur = wrapper.find('[data-renderer="trajectory"] .trajectoire-marqueur')
-    expect(marqueur.attributes('aria-label')).toBe('Seuil de 90 minutes')
-    expect(marqueur.find('title').text()).toBe('Seuil de 90 minutes')
+    expect(marqueur.exists()).toBe(false) // stale theme metadata cannot add a factual axis marker
+    expect(wrapper.findAll('[data-renderer="trajectory"] .trajectoire-territoire-point')).toHaveLength(73)
+    expect(wrapper.findAll('select[aria-label="Détail (actif)"] option')).toHaveLength(73)
     expect(wrapper.find('[data-renderer="trajectory"] svg').attributes('viewBox')).toBe('0 0 600 160')
-    expect(wrapper.findAll('[data-renderer="trajectory"] .trajectoire-tick').map((tick) => tick.classes('trajectoire-tick--wide'))).toEqual([false, true, true, false, true, false, true, false, true, true, false])
 
     await router.push({ query: { ...router.currentRoute.value.query, vue: 'indicateur' } })
     await flushPromises()

@@ -39,6 +39,10 @@ class IndicatorResource:
     dynamic_axes: tuple[str, ...]
     fields: tuple[str, ...]
     intents: tuple[str, ...]
+    # Indicator-only discovery capabilities. `None` means a non-indicator
+    # semantic resource has no declared map-layer eligibility.
+    map_eligible: bool | None = None
+    counts_available: bool = False
     resource_kind: str = "indicator"
     context_values: tuple[str, ...] = ()
     storage_relation: str | None = None
@@ -199,6 +203,48 @@ def _declared_source_identities(page, source_records, fallback):
     return tuple(dict.fromkeys(identities))
 
 
+def _producer_capabilities(metadata, theme_id, indicator_ids):
+    """Validate the narrow producer declarations used by runtime discovery.
+
+    Missing `map_layers` and missing per-indicator entries retain the browser's
+    established `!== false` default. Scalar count availability is meaningful
+    only in `scalar_contracts`; page/editorial metadata cannot grant it.
+    """
+    known_indicators = set(indicator_ids)
+    if "map_layers" not in metadata:
+        map_layers = {}
+    else:
+        map_layers = metadata["map_layers"]
+        if not isinstance(map_layers, dict):
+            raise ValueError(f"Invalid producer map-layer capabilities: {theme_id}")
+        for indicator_id, eligible in map_layers.items():
+            if not isinstance(indicator_id, str) or indicator_id not in known_indicators:
+                raise ValueError(
+                    f"Unknown producer map layer indicator: {theme_id}/{indicator_id}")
+            if type(eligible) is not bool:
+                raise ValueError(
+                    f"Invalid producer map-layer capability: {theme_id}/{indicator_id}")
+
+    if "scalar_contracts" not in metadata:
+        scalar_contracts = {}
+    else:
+        scalar_contracts = metadata["scalar_contracts"]
+        if not isinstance(scalar_contracts, dict):
+            raise ValueError(f"Invalid producer scalar contracts: {theme_id}")
+        for indicator_id, contract in scalar_contracts.items():
+            if not isinstance(indicator_id, str) or indicator_id not in known_indicators:
+                raise ValueError(
+                    f"Unknown producer scalar contract indicator: {theme_id}/{indicator_id}")
+            if not isinstance(contract, dict):
+                raise ValueError(
+                    f"Invalid producer scalar contract: {theme_id}/{indicator_id}")
+            if ("counts_available" in contract
+                    and type(contract["counts_available"]) is not bool):
+                raise ValueError(
+                    f"Invalid scalar counts capability: {theme_id}/{indicator_id}")
+    return map_layers, scalar_contracts
+
+
 def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResource:
     """Apply producer-declared resource, target, field, axis and intent rules."""
     resources = {resource.resource_id: resource for resource in catalogue.resources}
@@ -351,12 +397,15 @@ def discover_indicator_resources(metadata_directory: str | Path,
         source_records = metadata.get("source_records") or {}
         source_map = metadata.get("sources") or {}
         pages = metadata.get("indicator_pages") or {}
+        indicator_ids = metadata.get("indicator_keys", [])
+        map_layers, scalar_contracts = _producer_capabilities(
+            metadata, theme_id, indicator_ids)
         reference_aliases = {
             route.get("reference_indicator"): indicator_id
             for indicator_id, route in (metadata.get("owned_series_routes") or {}).items()
             if route.get("reference_read_route") and route.get("reference_indicator")
         }
-        for indicator_id in metadata.get("indicator_keys", []):
+        for indicator_id in indicator_ids:
             source_id = source_map.get(indicator_id)
             source = source_records.get(source_id) if source_id is not None else None
             disposition = (source or {}).get("serving_disposition", "retained")
@@ -439,6 +488,11 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 fields=tuple(dict.fromkeys(
                     field for shape in shapes for field in _FIELDS_BY_SHAPE.get(shape, ()))),
                 intents=intents,
+                map_eligible=map_layers.get(indicator_id, True),
+                counts_available=(
+                    "scalar" in shapes
+                    and scalar_contracts.get(indicator_id, {}).get("counts_available", False)
+                ),
             ))
 
     # A source-declared key cannot silently disappear because another map was

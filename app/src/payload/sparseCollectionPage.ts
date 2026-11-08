@@ -5,8 +5,10 @@ import type { SemanticReadItem, SemanticResourceDeclaration } from './semanticRe
 export interface SparseCollectionPageRead {
   facts: Indicateur[]
   periods: string[]
+  detailLabels: Record<string, string>
   availabilityByTerritory: Record<string, 'observed' | 'no_record'>
   identity: { contentVersion: string; referenceContentVersion: string; descriptorVersion: string }
+  scope: { departmentId: string | null; epciId: string | null }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -111,14 +113,35 @@ function identity(data: Record<string, unknown>, resource: SemanticResourceDecla
     descriptorVersion: requireText(descriptor.descriptor_version, 'descriptor_version') }
 }
 
+function labelsByDetail(data: unknown, resource: SemanticResourceDeclaration): Record<string, string> {
+  if (!isRecord(data) || data.resource !== resource.resource_id || data.shape !== 'period_detail' ||
+      !Array.isArray(data.territories)) throw new Error('Libellés natifs de collection invalides')
+  const labels: Record<string, string> = {}
+  for (const territory of data.territories) {
+    if (!isRecord(territory) || !Array.isArray(territory.entries)) throw new Error('Territoire de collection invalide')
+    for (const entry of territory.entries) {
+      if (!isRecord(entry)) throw new Error('Entrée de collection invalide')
+      const detail = requireText(entry.detail, 'entry.detail')
+      const label = requireText(entry.label, 'entry.label')
+      if (Object.hasOwn(labels, detail) && labels[detail] !== label) {
+        throw new Error('Libellé natif incohérent pour une catégorie de collection')
+      }
+      labels[detail] = label
+    }
+  }
+  return labels
+}
+
 export async function acquireSparseCollectionFacts(resource: SemanticResourceDeclaration,
   options: { departmentId?: string; epciId?: string }): Promise<SparseCollectionPageRead> {
   const factsRead = await lireRessource(cohortItem(resource.resource_id, options.departmentId, options.epciId))
   const factIdentity = identity(factsRead, resource)
   const facts = periodDetailCohortFacts(factsRead, resource)
   const availabilityByTerritory = periodDetailCohortAvailability(factsRead, resource)
-  const periods = [...new Set(facts.map(({ dimension }) => dimension).filter((value): value is string => Boolean(value)))].sort()
-  return { facts, periods, availabilityByTerritory, identity: factIdentity }
+  const periods = [...new Set(facts.map(({ dimension }) => dimension).filter((value): value is string => Boolean(value)))]
+  const detailLabels = labelsByDetail(factsRead, resource)
+  return { facts, periods, detailLabels, availabilityByTerritory, identity: factIdentity,
+    scope: { departmentId: options.departmentId ?? null, epciId: options.epciId ?? null } }
 }
 
 export async function reacquireSparseCollectionComparison(resource: SemanticResourceDeclaration,

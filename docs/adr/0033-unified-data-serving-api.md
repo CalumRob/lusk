@@ -146,3 +146,14 @@ clocks separately inventoried; pipeline-run time, source observation time, and
 database publication time are distinct. Producer declarations and artifacts
 required by R serving/publishing remain in place: retiring a browser reader is
 not authority to delete its producer input.
+
+## Current metadata consumer status — 2026-11-07 (#827)
+
+The served theme browser projection now omits `scalar_contracts`,
+`profile_contracts`, and `map_layers`. Their canonical producer declarations
+remain unchanged for R publishers and `/api/resources` discovery. Fiche/page/map
+consumers have moved stable presentation to app content and numerical/factual
+reads to native discovery/read contracts, but named factual labels, source
+records, framing and explanation enrichments still read the reduced theme
+catalogues. This is a partial field-level reconciliation, not retirement of
+theme JSON or completion of #827; see the [consumer ledger](../structured-consumer-inventory.md).

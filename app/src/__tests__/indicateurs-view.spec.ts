@@ -1,13 +1,21 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import IndicateursView from '../views/IndicateursView.vue'
 import { routes } from '../router'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { Fichier } from '../payload/loader'
+import { nativeResources } from './helpers/semanticApiFixtures'
 
 async function monter(url = '/indicateurs') {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    expect(String(input)).toBe('/api/resources')
+    return new Response(JSON.stringify({
+      contract: 'semantic-resource-catalogue-v1',
+      resources: nativeResources(),
+    }))
+  }))
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(url)
   await router.isReady()
@@ -21,6 +29,8 @@ async function monter(url = '/indicateurs') {
   await flushPromises()
   return { wrapper, router, charger }
 }
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('IndicateursView — le catalogue groupé', () => {
   it('rend immédiatement ses pages produit sans métadonnées ni faits chargés', async () => {

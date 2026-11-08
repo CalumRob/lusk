@@ -300,7 +300,9 @@ const MINUTE_DETAIL = /^t(\d+)$/
 export interface OptionsTrajectoire {
   /** The declared x-axis contract; numeric raccordement points are minutes. */
   axis?: TrajectoryMetadata['axis']
-  /** Canonical labels from theme metadata, outside the page descriptor. */
+  /** Numeric coordinates projected from the admitted native axis descriptor. */
+  numericAxisValues?: readonly { detail: string; value: number }[]
+  /** Optional public labels for native axis values. */
   labelsDetail?: Record<string, string>
   /** Native ordered-series data owns step comparisons; absent axes are unsupported, not recomputed. */
   nativeSeries?: boolean
@@ -339,6 +341,8 @@ export function modeleTrajectoire(
   // Les autres trajectoires gardent leur contrat années/états ci-dessous.
   const axeNumerique = options.axis === 'numeric' ||
     (options.axis === undefined && details.length > 0 && details.every((detail) => MINUTE_DETAIL.test(detail)))
+  const axesNumeriques = new Map((options.numericAxisValues ?? []).map(({ detail, value }) => [detail, value]))
+  const axesNumeriquesComplets = details.length > 0 && details.every((detail) => axesNumeriques.has(detail))
   const minutes = new Map(details.flatMap((detail) => {
     const match = detail.match(MINUTE_DETAIL)
     return match ? [[detail, Number(match[1])] as const] : []
@@ -346,7 +350,8 @@ export function modeleTrajectoire(
   const annees = axeNumerique ? [] : details.filter((detail) => ANNEE_DETAIL.test(detail)).map(Number)
   const coordonnees = new Map<string, number>()
   details.forEach((detail, index) => {
-    if (axeNumerique && minutes.has(detail)) coordonnees.set(detail, minutes.get(detail)!)
+    if (axeNumerique && axesNumeriquesComplets) coordonnees.set(detail, axesNumeriques.get(detail)!)
+    else if (axeNumerique && minutes.has(detail)) coordonnees.set(detail, minutes.get(detail)!)
     else if (!axeNumerique && ANNEE_DETAIL.test(detail)) coordonnees.set(detail, Number(detail))
     else if (annees.length && detail === endpoints[0]) coordonnees.set(detail, Math.min(...annees) - 1)
     else if (annees.length && detail === endpoints[endpoints.length - 1]) coordonnees.set(detail, Math.max(...annees) + 1)

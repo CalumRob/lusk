@@ -1,364 +1,293 @@
 import { describe, expect, it } from 'vitest'
 
 import { couchesDuTheme } from '../carte/coucheModel'
+import { valeurHistoireParTerritoire } from '../carte/fusion'
+import { groupesCouchesCarte } from '../fiche/content/ficheGrammar'
 import type { Couche, EntreeCouches } from '../carte/coucheModel'
-import {
-  histoiresDemographieFixture,
-  histoiresEconomieFixture,
-  histoiresHabitatFixture,
-  histoiresMilieuxFixture,
-  histoiresMobiliteFixture,
-  indicateursDemographieFixture,
-  indicateursEconomieFixture,
-  indicateursHabitatFixture,
-  indicateursMilieuxFixture,
-  indicateursMobiliteFixture,
-  indicateursRaccordementFixture,
-  metadonneesMobiliteRaccordementFixture,
-  metadonneesThemesFixtures,
-  territoiresFixture,
-  vintagesFixture,
-} from '../payload/fixtures'
-import type { Indicateur, Payload, Theme } from '../payload/types'
+import { histoiresDemographieFixture, histoiresEconomieFixture, histoiresHabitatFixture, histoiresMilieuxFixture,
+  histoiresMobiliteFixture, indicateursDemographieFixture, indicateursEconomieFixture, indicateursHabitatFixture,
+  indicateursMilieuxFixture, indicateursMobiliteFixture, metadonneesThemesFixtures,
+  territoiresFixture, vintagesFixture } from '../payload/fixtures'
+import type { Indicateur, Payload, Theme, ThemeMetadata } from '../payload/types'
+import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
+import { nativeResources } from './helpers/semanticApiFixtures'
 
-/**
- * The carte's layer model (ADR-0019 — « la Carte, miroir de la fiche », issue
- * #315, parent #308): given the payload, the complete grouped layer list per
- * theme — every number a fiche renders is a layer. The layer model reads the
- * SHARED CONTRACT (theme_<theme>.json + indicateurs_<theme>.json +
- * histoires_<theme>.json), never a carte-side spec:
- *
- * - the story scalars lead — the READING PARAMS the theme metadata declares
- *   (subgroups[].reading.params), filtered to the numeric scalar fields of the
- *   resolved histoires rows (one number per territory). The FIRST declared
- *   scalar is the theme's default layer (the α rule of ADR-0019, re-read from
- *   the metadata — « default layers match declared subgroup primaries »); the
- *   remaining scalars group under their subgroup's label (the fiche's subgroup
- *   heading, never a carte-side « La Story » label);
- * - the fiche's indicator figures follow in the metadata's indicator_keys
- *   order; a scalar key (detail === null) is one layer, a multi-detail key
- *   (structure_age, DPE, mix…) is ONE expandable entry with a layer per
- *   detail;
- * - series (conso_enaf, prix_m2) and distribution signatures (the dens_* /
- *   dec_* bins) are excluded — a choropleth needs one value per territory
- *   (ADR-0019).
- *
- * Labels are payload-owned (#318) — the theme's indicator_labels /
- * param_labels / detail_labels, never a carte-side list, never a raw key.
- * Every layer carries its metadata provenance (sousGroupe — the subgroup
- * that owns the scalar; storyKey for the story scalars). A payload assembled
- * WITHOUT the metadata seam (impossible under the loader contract) has NO
- * layers — the carte mirrors what the contract declares, nothing invented.
- */
-
-function payloadAvec(indicateurs: Indicateur[], histoires: Payload['histoires'], theme: Theme): Payload {
+function resource(id: string, shape: string, overrides: Partial<SemanticResourceDeclaration> = {}): SemanticResourceDeclaration {
   return {
-    territoires: territoiresFixture,
-    indicateurs,
-    histoires,
-    runReport: null,
-    vintages: vintagesFixture,
-    programmes: null,
-    themeMetadata: { [theme]: metadonneesThemesFixtures[theme] },
+    resource_id: id, indicator_id: id, theme_id: 'demographie', label: `API ${id}`, unit: 'API-unit',
+    direction: 'high', allowed_levels: ['commune'], sources: ['source-a'], shapes: [shape],
+    target_kinds: ['territory_cohort'], fields: ['value'], intents: ['facts'],
+    map_eligible: true, ...overrides,
   }
 }
 
-/** The distinct detail layers of a groupe entry (their clefs — the detail value on detail layers). */
-function detailsDu(groupe: unknown): string[] {
-  const g = groupe as { type: 'groupe'; groupe: { couches: { clef: string; detail: string | null }[] } }
-  return g.groupe.couches.map((c) => c.detail ?? c.clef)
+function payloadAvec(indicateurs: Indicateur[], histoires: Payload['histoires'], metadata?: ThemeMetadata,
+  theme: Theme = 'demographie'): Payload {
+  return { territoires: territoiresFixture, indicateurs, histoires, runReport: null, vintages: vintagesFixture,
+    programmes: null, themeMetadata: metadata ? { [theme]: metadata } : {} }
 }
 
-/** La clef d'une entrée « couche » — ces specs ne testent que le modèle de
- *  thème (couchesDuTheme), jamais les couches programmes (#282). */
-function clefDe(entree: EntreeCouches): string {
-  if (entree.type !== 'couche') throw new Error('entrée couche attendue')
-  const couche = entree.couche
-  if (couche.source === 'membre' || couche.source === 'subvention') {
-    throw new Error('couche programmes inattendue')
+function keyOf(entry: EntreeCouches): string[] {
+  if (entry.type === 'couche') {
+    if ('clef' in entry.couche) return [entry.couche.clef]
+    return [entry.couche.source === 'membre' ? entry.couche.sigle : entry.couche.libelle]
   }
-  return couche.clef
+  return entry.groupe.couches.map((layer) => layer.detail ?? layer.clef)
 }
 
-describe('couchesDuTheme — Démographie (fixture)', () => {
-  const payload = payloadAvec(indicateursDemographieFixture, histoiresDemographieFixture, 'demographie')
+describe('couchesDuTheme — ownership app grammar × native map contract (#827)', () => {
+  const stories = histoiresDemographieFixture.map((row) => ({ ...row, mapApiFact: true }))
 
-  it('leads with the declared story scalars — the default is the FIRST reading param (taux_solde_naturel)', () => {
-    const couches = couchesDuTheme(payload, 'demographie')
-
-    expect(couches.coucheParDefaut?.clef).toBe('taux_solde_naturel')
-    expect(couches.coucheParDefaut?.parDefaut).toBe(true)
-    expect(couches.coucheParDefaut?.source).toBe('histoire')
-    expect(couches.entrees[0]).toMatchObject({
-      type: 'couche',
-      couche: { clef: 'taux_solde_naturel', source: 'histoire', parDefaut: true },
+  it('keeps declared typed-reading layers and their default when the cohort has no observation rows', () => {
+    const payload = payloadAvec([], [])
+    const model = couchesDuTheme(payload, 'demographie', {
+      declarations: [resource('demographie_selected_reading', 'typed_reading', {
+        map_eligible: null,
+        fields: ['groupe', 'story_key', 'periode', 'classification', 'taux_solde_naturel', 'not_a_map_field'],
+        axis_values: [['groupe', ['trajectoire-demographique']]],
+      })],
     })
-    // the story siblings group under the SUBGROUP's label (the fiche's heading,
-    // never a carte-side « La Story »)
-    expect(couches.entrees[1]).toMatchObject({ type: 'groupe' })
-    expect(detailsDu(couches.entrees[1])).toEqual(['taux_solde_migratoire'])
-  })
 
-  it('then lists the fiche’s indicator figures in the metadata indicator_keys order, multi-detail keys grouped', () => {
-    const couches = couchesDuTheme(payload, 'demographie')
-
-    const apresStory = couches.entrees.slice(2)
-    expect(apresStory[0]).toMatchObject({
-      type: 'couche',
-      couche: { clef: 'densite', source: 'indicateur', parDefaut: false },
+    expect(model.entrees.flatMap(keyOf)).toEqual(['taux_solde_naturel'])
+    expect(model.coucheParDefaut).toMatchObject({
+      source: 'histoire', clef: 'taux_solde_naturel', sousGroupe: 'trajectoire-demographique', storyKey: null,
     })
-    // structure_age — the multi-detail key grouped under one expandable entry
-    expect(apresStory[1]).toMatchObject({ type: 'groupe' })
-    expect(detailsDu(apresStory[1])).toEqual([
-      '<15', '15-24', '25-39', '40-54', '55-64', '65-79', '80+',
-    ])
-    expect(apresStory[2]).toMatchObject({ type: 'couche', couche: { clef: 'evolution_1968' } })
-    expect(apresStory[3]).toMatchObject({ type: 'couche', couche: { clef: 'taille_menages' } })
+    expect(payload.histoires).toEqual([])
   })
 
-  it('labels come from the metadata\u2019s payload-owned maps — indicator_labels, param_labels, detail_labels (#318)', () => {
-    const couches = couchesDuTheme(payload, 'demographie')
+  it('keeps all-unavailable native reading layers, their producer story identity, and null values', () => {
+    const unavailable = {
+      territoire: '22001', type: 'commune', theme: 'demographie',
+      groupe: 'trajectoire-demographique', story_key: 'lecture-native-independante', status: 'unavailable',
+    } as unknown as Payload['histoires'][number]
+    const payload = payloadAvec([], [unavailable])
+    const model = couchesDuTheme(payload, 'demographie', {
+      declarations: [resource('demographie_selected_reading', 'typed_reading', {
+        map_eligible: null,
+        fields: ['groupe', 'story_key', 'periode', 'classification', 'taux_solde_naturel',
+          'taux_solde_migratoire', 'not_a_map_field'],
+        axis_values: [['groupe', ['trajectoire-demographique']]],
+      })],
+    })
 
-    expect(couches.entrees[2]).toMatchObject({ couche: { libelle: 'Densité de population' } })
-    // the default story scalar wears its param label — never the raw field name
-    expect(couches.entrees[0]).toMatchObject({ couche: { libelle: 'Solde naturel (‰/an)' } })
-    // the structure_age tranches wear the metadata's detail labels
-    const groupe = couches.entrees[3] as { type: 'groupe'; groupe: { couches: { libelle: string }[] } }
-    expect(groupe.groupe.couches[0].libelle).toBe('Moins de 15 ans')
-    expect(groupe.groupe.couches[6].libelle).toBe('80 ans et plus')
+    expect(model.entrees.flatMap(keyOf)).toEqual(['taux_solde_naturel', 'taux_solde_migratoire'])
+    expect(model.coucheParDefaut).toMatchObject({
+      clef: 'taux_solde_naturel', sousGroupe: 'trajectoire-demographique', storyKey: 'lecture-native-independante',
+    })
+    expect(valeurHistoireParTerritoire(payload, 'demographie', 'taux_solde_naturel').get('22001'))
+      .toEqual({ value: null, unit: '' })
+    expect(payload.histoires).toEqual([unavailable])
   })
 
-  it('carries the metadata provenance on every layer — sousGroupe + storyKey for the story scalars', () => {
-    const couches = couchesDuTheme(payload, 'demographie')
+  it('orders app candidates and reading fields, intersected with native identities and eligibility', () => {
+    const stale = structuredClone(metadonneesThemesFixtures.demographie)
+    stale.indicator_keys = ['taille_menages', 'densite']
+    stale.map_layers = { densite: false, evolution_1968: false }
+    stale.subgroups = []
+    const model = couchesDuTheme(payloadAvec(indicateursDemographieFixture, stories, stale), 'demographie', {
+      declarations: [
+        resource('demographie_selected_reading', 'typed_reading', {
+          map_eligible: null,
+          fields: ['groupe', 'story_key', 'taux_solde_naturel', 'taux_solde_migratoire'],
+          axes: ['groupe'], axis_values: [['groupe', ['trajectoire-demographique']]],
+        }),
+        resource('densite', 'scalar'),
+        resource('evolution_1968', 'scalar'),
+        resource('structure_age', 'declared_profile', { map_eligible: false,
+          axis_values: [['detail', ['<15', '15-24']]] }),
+        resource('taille_menages', 'scalar', { map_eligible: false }),
+      ],
+      axes: {},
+      nativeContracts: {},
+      metadata: stale,
+    })
 
-    expect(couches.coucheParDefaut).toMatchObject({
+    expect(model.coucheParDefaut).toMatchObject({
+      source: 'histoire', clef: 'taux_solde_naturel', libelle: 'Solde naturel (‰/an)',
       sousGroupe: 'trajectoire-demographique',
-      storyKey: 'trajectoire-demographique',
     })
-    const groupe = couches.entrees[1] as { type: 'groupe'; groupe: { couches: { sousGroupe: string | null; storyKey: string | null }[] } }
-    expect(groupe.groupe.couches[0]).toMatchObject({
-      sousGroupe: 'trajectoire-demographique',
-      storyKey: 'trajectoire-demographique',
-    })
-    // an indicator layer carries its owning subgroup, no story
-    expect(couches.entrees[2]).toMatchObject({
-      couche: { sousGroupe: 'trajectoire-demographique', storyKey: null },
-    })
-  })
-})
-
-describe('couchesDuTheme — Mobilité (fixture)', () => {
-  const payload = payloadAvec(indicateursMobiliteFixture, histoiresMobiliteFixture, 'mobilite')
-
-  it('default = div_loss_t (the first declared param); the declared sibling pct_iso_full_t grouped', () => {
-    const couches = couchesDuTheme(payload, 'mobilite')
-
-    expect(couches.coucheParDefaut?.clef).toBe('div_loss_t')
-    expect(couches.entrees[0]).toMatchObject({ type: 'couche', couche: { clef: 'div_loss_t' } })
-    expect(couches.entrees[1]).toMatchObject({ type: 'groupe' })
-    expect(detailsDu(couches.entrees[1])).toEqual(['pct_iso_full_t'])
-  })
-
-  it('the story group wears the metadata subgroup label — L’accès aux services, never « La Story »', () => {
-    const couches = couchesDuTheme(payload, 'mobilite')
-
-    const groupe = couches.entrees[1] as { type: 'groupe'; groupe: { libelle: string } }
-    expect(groupe.groupe.libelle).toBe('L’accès aux services')
-  })
-
-  it('excludes the distribution signatures (dens_*/dec_*) — never layers', () => {
-    const couches = couchesDuTheme(payload, 'mobilite')
-
-    const clefs = couches.entrees.flatMap((e) =>
-      e.type === 'couche' ? [clefDe(e)] : detailsDu(e),
-    )
-    expect(clefs).not.toContain('dens_1')
-    expect(clefs).not.toContain('dec_1')
-    expect(clefs).not.toContain('dens_min')
-  })
-
-  it('lists the fiche’s figures in the metadata indicator_keys order with the multi-detail keys grouped', () => {
-    const couches = couchesDuTheme(payload, 'mobilite')
-
-    const apresStory = couches.entrees.slice(2).map((e) =>
-      e.type === 'couche' ? clefDe(e) : `groupe:${detailsDu(e).join('|')}`,
-    )
-    expect(apresStory).toEqual([
-      'groupe:deux_plus|sans_voiture|une_voiture',
-      'groupe:b_longueur|c_longueur|t_longueur',
-      'groupe:t_km_1000|b_km_1000|c_km_1000',
-      'surface_reseaux_routiers',
-      'offre_tc',
-      'bornes_recharge',
-      'places_stationnement_velo_1000',
-      'groupe:protege_longueur|protege_km_1000|partage_longueur|partage_km_1000|total_longueur',
-      'iso_alimentation',
-      'iso_sante',
-      'iso_administration',
-      'iso_ecole',
-      'iso_banque',
-      'share_food_t',
-      'share_food_b',
-      'share_food_c',
-      'share_health_t',
-      'share_health_b',
-      'share_health_c',
-      'share_admin_t',
-      'share_admin_b',
-      'share_admin_c',
-      'share_school_t',
-      'share_school_b',
-      'share_school_c',
-      'share_bank_t',
-      'share_bank_b',
-      'share_bank_c',
+    expect(model.entrees.map(keyOf)).toEqual([
+      ['taux_solde_naturel'], ['taux_solde_migratoire'], ['densite'], ['evolution_1968'],
     ])
-  })
-
-  it('wears the fiche’s detail labels for the voitures_menage group', () => {
-    const couches = couchesDuTheme(payload, 'mobilite')
-    const voitures = couches.entrees[2] as { type: 'groupe'; groupe: { couches: { libelle: string }[] } }
-    expect(voitures.groupe.couches.map((c) => c.libelle)).toEqual([
-      'Ménages avec 2 voitures ou plus',
-      'Ménages sans voiture',
-      'Ménages avec 1 voiture',
-    ])
-  })
-})
-
-describe('couchesDuTheme — raccordement (fixture)', () => {
-  const payload = payloadAvec(
-    indicateursRaccordementFixture,
-    [],
-    'mobilite',
-  )
-  payload.themeMetadata = { mobilite: metadonneesMobiliteRaccordementFixture }
-
-  it('publie le scalaire à 90 minutes comme couche, mais garde courbe et référence dans la figure', () => {
-    const couches = couchesDuTheme(payload, 'mobilite')
-    const couchesIndicateurs: Couche[] = couches.entrees.flatMap((entree) => {
-      if (entree.type === 'groupe') return entree.groupe.couches
-      return entree.couche.source === 'indicateur' ? [entree.couche] : []
+    expect(model.entrees[1]).toMatchObject({
+      type: 'groupe', groupe: { libelle: 'Trajectoire démographique' },
     })
-
-    expect(couchesIndicateurs).toContainEqual(expect.objectContaining({
-      clef: 'raccordement_tc',
-      source: 'indicateur',
-      libelle: 'Population bretonne joignable en 90 minutes en TC',
-    }))
-    expect(couchesIndicateurs.map((couche) => couche.clef)).not.toContain('raccordement_courbe')
-    expect(couchesIndicateurs.map((couche) => couche.clef)).not.toContain('raccordement_reference')
-    expect(metadonneesMobiliteRaccordementFixture.map_layers).toMatchObject({ offre_tc: true, raccordement_tc: true, raccordement_courbe: false, raccordement_reference: false })
-  })
-})
-
-describe('couchesDuTheme — Milieux (fixture)', () => {
-  const payload = payloadAvec(indicateursMilieuxFixture, histoiresMilieuxFixture, 'milieux')
-
-  it('default = delta_population (the first declared numeric param); the trajectory grouped', () => {
-    const couches = couchesDuTheme(payload, 'milieux')
-
-    expect(couches.coucheParDefaut?.clef).toBe('delta_population')
-    expect(couches.entrees[0]).toMatchObject({
-      type: 'couche',
-      couche: { clef: 'delta_population', source: 'histoire', parDefaut: true },
-    })
-    expect(detailsDu(couches.entrees[1])).toEqual(['trajectoire_artif_par_habitant'])
+    expect(model.entrees.flatMap(keyOf)).not.toContain('taille_menages')
+    expect(model.entrees.flatMap(keyOf)).not.toContain('structure_age')
+    expect(model.entrees.flatMap(keyOf)).not.toContain('classification')
   })
 
-  it('excludes the conso_enaf series — a choropleth needs one value per territory', () => {
-    const couches = couchesDuTheme(payload, 'milieux')
-
-    const clefs = couches.entrees.flatMap((e) =>
-      e.type === 'couche' ? [clefDe(e)] : detailsDu(e),
-    )
-    expect(clefs).not.toContain('conso_enaf_annuel')
-    expect(clefs).not.toContain('2011')
-  })
-
-  it('the artif states that are NOT declared reading params are not layers (the metadata is the contract)', () => {
-    const couches = couchesDuTheme(payload, 'milieux')
-
-    const clefs = couches.entrees.flatMap((e) =>
-      e.type === 'couche' ? [clefDe(e)] : detailsDu(e),
-    )
-    expect(clefs).not.toContain('artif_m2_par_habitant')
-    expect(clefs).not.toContain('artif_m3_par_habitant')
-  })
-
-  it('groups the artif_par_habitant state (the multi-detail figure) under one entry', () => {
-    const couches = couchesDuTheme(payload, 'milieux')
-
-    const groupe = couches.entrees[2] as { type: 'groupe'; groupe: { libelle: string; couches: { clef: string; detail: string | null }[] } }
-    expect(groupe.groupe.libelle).toBe('Intensité état')
-    // les millésimes du jeu (22 : 2021/2025 · 29 : 2021/2024 · 35 : 2020/2023 ·
-    // 56 : 2022/2024) + les états M2/M3 — chaque détail déclaré est publié (#318)
-    expect(groupe.groupe.couches.map((c) => c.detail ?? c.clef)).toEqual([
-      '2021', '2025', '2020', '2022', '2023', '2024', 'M2', 'M3',
-    ])
-  })
-})
-
-describe('couchesDuTheme — Économie (fixture)', () => {
-  const payload = payloadAvec(indicateursEconomieFixture, histoiresEconomieFixture, 'economie')
-
-  it('has NO map default — the reading params are the folded top-5 template keys, never numeric row fields', () => {
-    const couches = couchesDuTheme(payload, 'economie')
-
-    expect(couches.coucheParDefaut).toBeNull()
-  })
-
-  it('lists the three block figures in the metadata indicator_keys order', () => {
-    const couches = couchesDuTheme(payload, 'economie')
-
-    expect(couches.entrees.map((e) => (e.type === 'couche' ? clefDe(e) : ''))).toEqual([
-      'effectifs_salaries',
-      'chomage',
-      'eco_activites',
-    ])
-    expect(couches.entrees[0]).toMatchObject({
-      couche: { libelle: 'Effectifs salariés (lieu de travail)' },
-    })
-  })
-})
-
-describe('couchesDuTheme — the default layer per theme (ADR-0019 α rule, re-read from the metadata)', () => {
-  it('is the FIRST declared numeric reading param for every theme with one', () => {
-    const cas: { theme: Theme; payload: Payload; defaut: string | null }[] = [
-      { theme: 'demographie', payload: payloadAvec(indicateursDemographieFixture, histoiresDemographieFixture, 'demographie'), defaut: 'taux_solde_naturel' },
-      { theme: 'mobilite', payload: payloadAvec(indicateursMobiliteFixture, histoiresMobiliteFixture, 'mobilite'), defaut: 'div_loss_t' },
-      { theme: 'habitat', payload: payloadAvec(indicateursHabitatFixture, histoiresHabitatFixture, 'habitat'), defaut: 'part_passoires' },
-      { theme: 'milieux', payload: payloadAvec(indicateursMilieuxFixture, histoiresMilieuxFixture, 'milieux'), defaut: 'delta_population' },
-      { theme: 'economie', payload: payloadAvec(indicateursEconomieFixture, histoiresEconomieFixture, 'economie'), defaut: null },
+  it('keeps native map candidates ordered by shared grammar across supported themes', () => {
+    const cases: { theme: Theme; indicators: Indicateur[]; histories: Payload['histoires']; defaultLayer: string | null }[] = [
+      { theme: 'demographie', indicators: indicateursDemographieFixture,
+        histories: histoiresDemographieFixture, defaultLayer: 'taux_solde_naturel' },
+      { theme: 'mobilite', indicators: indicateursMobiliteFixture,
+        histories: histoiresMobiliteFixture, defaultLayer: null },
+      { theme: 'habitat', indicators: indicateursHabitatFixture,
+        histories: histoiresHabitatFixture, defaultLayer: 'part_passoires' },
+      { theme: 'milieux', indicators: indicateursMilieuxFixture,
+        histories: histoiresMilieuxFixture, defaultLayer: 'delta_population' },
+      { theme: 'economie', indicators: indicateursEconomieFixture,
+        histories: histoiresEconomieFixture, defaultLayer: null },
     ]
-    for (const { theme, payload, defaut } of cas) {
-      expect(couchesDuTheme(payload, theme).coucheParDefaut?.clef ?? null, theme).toBe(defaut)
+
+    for (const { theme, indicators, histories, defaultLayer } of cases) {
+      const grammar = groupesCouchesCarte(theme)
+      const declarations = nativeResources(theme) as unknown as SemanticResourceDeclaration[]
+      const payload = payloadAvec(indicators, histories, undefined, theme)
+      const model = couchesDuTheme(payload, theme, { declarations, axes: {}, nativeContracts: {} })
+      const layers = model.entrees.flatMap((entry) => entry.type === 'couche' ? [entry.couche] : entry.groupe.couches)
+      const activeStoryFields = new Set(grammar.flatMap((group) => group.storyFields.filter((field) => {
+        const binding = declarations.some((declaration) => declaration.shapes.includes('typed_reading') &&
+          declaration.fields.includes(field) && declaration.axis_values?.some(([axis, values]) =>
+            axis === 'groupe' && values.includes(group.key)))
+        return binding && histories.some((row) => {
+          const story = row as unknown as Record<string, unknown>
+          return story.groupe === group.key && typeof story[field] === 'number'
+        })
+      })))
+      const eligibleResourceKeys = grammar.flatMap((group) => group.resourceKeys.filter((key) => {
+        const declaration = declarations.find((candidate) => candidate.resource_id === key && candidate.indicator_id === key)
+        const hasScalar = declaration?.shapes.includes('scalar')
+        const hasDetails = declaration?.axis_values?.some(([axis, values]) => axis === 'detail' && values.length > 0)
+        return declaration?.map_eligible === true && (hasScalar || hasDetails)
+      }))
+      const indicatorLayers = layers.filter((layer): layer is Couche => 'clef' in layer && layer.source === 'indicateur')
+      const actualResourceKeys = [...new Set(indicatorLayers
+        .map((layer) => layer.clef))]
+      const actualNonStoryKeys = actualResourceKeys.filter((key) => !activeStoryFields.has(key))
+      const expectedNonStoryKeys = eligibleResourceKeys.filter((key) => !activeStoryFields.has(key))
+
+      expect(model.coucheParDefaut?.clef ?? null, theme).toBe(defaultLayer)
+      expect(new Set(actualResourceKeys), theme).toEqual(new Set(eligibleResourceKeys))
+      expect(actualNonStoryKeys, theme).toEqual(expectedNonStoryKeys)
+      for (const entry of model.entrees.filter((candidate) => candidate.type === 'groupe' &&
+        candidate.groupe.couches.length > 0 && candidate.groupe.couches.every((layer) => layer.source === 'indicateur'))) {
+        if (entry.type !== 'groupe') continue
+        const key = entry.groupe.couches[0]!.clef
+        const nativeDetails = declarations.find((declaration) => declaration.resource_id === key)
+          ?.axis_values?.find(([axis]) => axis === 'detail')?.[1]
+        if (nativeDetails?.length) expect(entry.groupe.couches.map((layer) => layer.detail), `${theme}/${key}`).toEqual(nativeDetails)
+      }
     }
   })
 
-  it('a theme whose payload carries no histoire row has no story layers and no default', () => {
-    const sansHistoires = payloadAvec(indicateursDemographieFixture, [], 'demographie')
-    const couches = couchesDuTheme(sansHistoires, 'demographie')
+  it('keeps both app-declared Milieux reading fields for populated, empty, and unavailable native cohorts', () => {
+    const declarations = nativeResources('milieux') as unknown as SemanticResourceDeclaration[]
+    const populated = couchesDuTheme(payloadAvec(indicateursMilieuxFixture, histoiresMilieuxFixture, undefined, 'milieux'),
+      'milieux', { declarations })
+    const readingKeys = (model: ReturnType<typeof couchesDuTheme>) => model.entrees
+      .flatMap((entry) => entry.type === 'couche' ? [entry.couche] : entry.groupe.couches)
+      .filter((layer): layer is Couche => 'clef' in layer && layer.source === 'histoire')
+      .map((layer) => layer.clef)
 
-    expect(couches.coucheParDefaut).toBeNull()
-    expect(couches.entrees[0]).toMatchObject({ type: 'couche', couche: { clef: 'densite' } })
+    expect(readingKeys(populated)).toEqual(['delta_population', 'trajectoire_artif_par_habitant'])
+    expect(populated.coucheParDefaut).toMatchObject({
+      clef: 'delta_population', storyKey: 'se-densifier-setaler-ou-sen-aller',
+    })
+
+    const emptyPayload = payloadAvec([], [], undefined, 'milieux')
+    const empty = couchesDuTheme(emptyPayload, 'milieux', { declarations })
+    expect(readingKeys(empty)).toEqual(['delta_population', 'trajectoire_artif_par_habitant'])
+    expect(empty.coucheParDefaut).toMatchObject({ clef: 'delta_population', storyKey: null })
+    expect(emptyPayload.histoires).toEqual([])
+
+    const unavailable = {
+      territoire: '22001', type: 'commune', theme: 'milieux',
+      groupe: 'artificialisation', story_key: 'se-densifier-setaler-ou-sen-aller', status: 'unavailable',
+    } as unknown as Payload['histoires'][number]
+    const unavailablePayload = payloadAvec([], [unavailable], undefined, 'milieux')
+    const unavailableModel = couchesDuTheme(unavailablePayload, 'milieux', { declarations })
+    expect(readingKeys(unavailableModel)).toEqual(['delta_population', 'trajectoire_artif_par_habitant'])
+    expect(unavailableModel.coucheParDefaut).toMatchObject({
+      clef: 'delta_population', storyKey: 'se-densifier-setaler-ou-sen-aller',
+    })
+    expect(valeurHistoireParTerritoire(unavailablePayload, 'milieux', 'trajectoire_artif_par_habitant').get('22001'))
+      .toEqual({ value: null, unit: '' })
+    expect(unavailablePayload.histoires).toEqual([unavailable])
   })
-})
 
-describe('couchesDuTheme — sans le seam des métadonnées (impossible sous le contrat du loader, #313/#318)', () => {
-  const sansMetadonnees: Payload = {
-    territoires: territoiresFixture,
-    indicateurs: indicateursDemographieFixture,
-    histoires: histoiresDemographieFixture,
-    runReport: null,
-    vintages: vintagesFixture,
-    programmes: null,
-  }
+  it('keeps raccordement map admission on producer eligibility, not its native curve/reference axes', () => {
+    const declarations = nativeResources('mobilite') as unknown as SemanticResourceDeclaration[]
+    const model = couchesDuTheme(payloadAvec([], [], undefined, 'mobilite'), 'mobilite', {
+      declarations, axes: {}, nativeContracts: {},
+    })
+    const layers = model.entrees.flatMap((entry) => entry.type === 'couche' ? [entry.couche] : entry.groupe.couches)
+      .filter((layer): layer is Couche => 'clef' in layer && layer.source === 'indicateur')
+      .map((layer) => layer.clef)
 
-  it('renders NO layers — the metadata is the contract; never a key-only layer, never a label-less layer', () => {
-    const couches = couchesDuTheme(sansMetadonnees, 'demographie')
+    expect(layers).toContain('offre_tc')
+    expect(layers).toContain('raccordement_tc')
+    expect(layers).not.toContain('raccordement_courbe')
+    expect(layers).not.toContain('raccordement_reference')
+  })
 
-    expect(couches.coucheParDefaut).toBeNull()
-    expect(couches.entrees).toEqual([])
+  it('uses native resource labels and axes before stale producer presentation metadata', () => {
+    const facts = indicateursDemographieFixture.map((row) => row.key === 'structure_age'
+      ? { ...row, nativeContract: {
+        label: 'Structure par âge — contrat API', shapes: ['declared_profile'],
+        axisValues: ['15-24', '<15'],
+        axes: [
+          { name: 'detail', key: '15-24', label: '15 à 24 ans — API', order: 0 },
+          { name: 'detail', key: '<15', label: 'Moins de 15 ans — API', order: 1 },
+        ],
+      } }
+      : row)
+    const stale = structuredClone(metadonneesThemesFixtures.demographie)
+    stale.indicator_labels.structure_age = 'Ancien label'
+    stale.detail_labels.structure_age = { '15-24': 'Ancienne tranche', '<15': 'Ancienne tranche' }
+    const model = couchesDuTheme(payloadAvec(facts, [], stale), 'demographie', {
+      declarations: [resource('structure_age', 'declared_profile', {
+        label: 'Structure par âge — catalogue API',
+        axis_values: [['detail', ['15-24', '<15']]],
+      })],
+      axes: { structure_age: ['15-24', '<15'] },
+      nativeContracts: { structure_age: facts.find((row) => row.key === 'structure_age')!.nativeContract! },
+    })
+
+    expect(model.entrees).toHaveLength(1)
+    expect(model.entrees[0]).toMatchObject({ type: 'groupe', groupe: { libelle: 'Structure par âge — contrat API' } })
+    expect(keyOf(model.entrees[0]!)).toEqual(['15-24', '<15'])
+    if (model.entrees[0]?.type === 'groupe') {
+      expect(model.entrees[0].groupe.couches.map((layer) => layer.libelle))
+        .toEqual(['15 à 24 ans — API', 'Moins de 15 ans — API'])
+    }
+  })
+
+  it('keeps fact-free app wording first and prefers fresh native factual labels over stale browser labels', () => {
+    const stale = structuredClone(metadonneesThemesFixtures.demographie)
+    stale.indicator_labels.densite = 'Ancien libellé de densité'
+    stale.indicator_labels.evolution_1968 = 'Ancien libellé de trajectoire'
+    const model = couchesDuTheme(payloadAvec([], [], stale), 'demographie', {
+      declarations: [
+        resource('densite', 'scalar', { label: 'Libellé natif récent pour densite' }),
+        resource('evolution_1968', 'scalar', { label: 'Libellé de déclaration récent' }),
+      ],
+      nativeContracts: { evolution_1968: { label: 'Libellé factuel natif récent' } },
+    })
+
+    const layers = model.entrees.flatMap((entry) => entry.type === 'couche' ? [entry.couche] : entry.groupe.couches)
+      .filter((layer): layer is Couche => 'clef' in layer)
+    expect(layers.find((layer) => layer.clef === 'densite')?.libelle).toBe('Densité de population')
+    expect(layers.find((layer) => layer.clef === 'evolution_1968')?.libelle).toBe('Libellé factuel natif récent')
+    expect(layers.map((layer) => layer.libelle)).not.toContain('Ancien libellé de trajectoire')
+  })
+
+  it('keeps a sparse native scalar descriptor as a candidate without fabricating observations', () => {
+    const model = couchesDuTheme(payloadAvec([], [], undefined), 'demographie', {
+      declarations: [resource('densite', 'scalar')], axes: {}, nativeContracts: {},
+    })
+
+    expect(model.entrees).toEqual([{ type: 'couche', couche: expect.objectContaining({
+      source: 'indicateur', clef: 'densite', libelle: 'Densité de population',
+    }) }])
+    expect(model.coucheParDefaut).toBeNull()
+  })
+
+  it('does not let a producer-excluded layer become eligible through app grammar', () => {
+    const model = couchesDuTheme(payloadAvec([], [], undefined), 'demographie', {
+      declarations: [resource('densite', 'scalar', { map_eligible: false })], axes: {}, nativeContracts: {},
+    })
+    expect(model.entrees).toEqual([])
   })
 })

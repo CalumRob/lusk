@@ -9,6 +9,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import type { Indicateur, Payload } from '../payload/types'
+import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 
 /**
  * couchesDuTheme — Habitat, with a local fixture mirroring the real payload
@@ -27,6 +28,15 @@ function payloadAvec(indicateurs: Indicateur[], histoires: Payload['histoires'])
     vintages: vintagesFixture,
     programmes: null,
     themeMetadata: { habitat: metadonneesThemesFixtures.habitat },
+  }
+}
+
+function resource(id: string, shape: string, overrides: Partial<SemanticResourceDeclaration> = {}): SemanticResourceDeclaration {
+  return {
+    resource_id: id, indicator_id: id, theme_id: 'habitat', label: `API ${id}`, unit: '%',
+    direction: 'high', allowed_levels: ['commune'], sources: ['source-a'], shapes: [shape],
+    target_kinds: ['territory_cohort'], fields: ['value'], intents: ['facts'], map_eligible: true,
+    ...overrides,
   }
 }
 
@@ -69,9 +79,20 @@ const indicateursHabitat: Indicateur[] = [
 
 describe('couchesDuTheme — Habitat (the real payload shape)', () => {
   const payload = payloadAvec(indicateursHabitat, histoiresHabitatFixture)
+  const admission = {
+    declarations: [
+      resource('part_passoires', 'scalar', { label: 'Part de passoires thermiques' }),
+      resource('mix_logements', 'declared_profile', { axis_values: [['detail', ['principales', 'secondaires', 'vacants']]] }),
+      resource('distribution_dpe', 'declared_profile', { axis_values: [['detail', ['A', 'B', 'C', 'D', 'E', 'F', 'G']]] }),
+      resource('prix_m2', 'ordered_series', { map_eligible: false }),
+      resource('habitat_selected_reading', 'typed_reading', { map_eligible: null,
+        fields: ['classification', 'part_passoires', 'part_abc', 'n_dpe'], axes: ['groupe'],
+        axis_values: [['groupe', ['etat-energetique-du-parc']]] }),
+    ],
+  } as const
 
-  it('default = part_passoires (the declared param), deduplicated with the indicateur scalar — its popup keeps the ordinal rank', () => {
-    const couches = couchesDuTheme(payload, 'habitat')
+  it('default = part_passoires, deduplicated with its native scalar declaration', () => {
+    const couches = couchesDuTheme(payload, 'habitat', admission)
 
     expect(couches.coucheParDefaut?.clef).toBe('part_passoires')
     expect(couches.coucheParDefaut?.source).toBe('indicateur')
@@ -83,18 +104,18 @@ describe('couchesDuTheme — Habitat (the real payload shape)', () => {
     expect(clefs.filter((c) => c === 'part_passoires')).toHaveLength(1)
   })
 
-  it('the remaining declared params (part_abc, n_dpe) become story sidebar layers under the subgroup label', () => {
-    const couches = couchesDuTheme(payload, 'habitat')
+  it('the remaining native numeric params become story layers under the app subgroup label', () => {
+    const couches = couchesDuTheme(payload, 'habitat', admission)
 
     expect(couches.entrees[1]).toMatchObject({ type: 'groupe' })
     const groupe = couches.entrees[1] as { type: 'groupe'; groupe: { libelle: string; couches: { source: string; clef: string }[] } }
-    expect(groupe.groupe.libelle).toBe('L’état du parc')
+    expect(groupe.groupe.libelle).toBe('L’état énergétique du parc')
     expect(groupe.groupe.couches.map((c) => c.clef)).toEqual(['part_abc', 'n_dpe'])
     expect(groupe.groupe.couches.every((c) => c.source === 'histoire')).toBe(true)
   })
 
   it('excludes the prix_m2 series entirely — headline AND vintages', () => {
-    const couches = couchesDuTheme(payload, 'habitat')
+    const couches = couchesDuTheme(payload, 'habitat', admission)
 
     const clefs = couches.entrees.flatMap((e) =>
       e.type === 'couche' ? [clefDe(e)] : detailsDu(e),
@@ -104,7 +125,7 @@ describe('couchesDuTheme — Habitat (the real payload shape)', () => {
   })
 
   it('groups the mix_logements and distribution_dpe multi-detail keys', () => {
-    const couches = couchesDuTheme(payload, 'habitat')
+    const couches = couchesDuTheme(payload, 'habitat', admission)
 
     // les groupes d'indicateurs multi-détails suivent le groupe de la Story
     const groupes = couches.entrees.filter((e) => e.type === 'groupe').slice(1)
@@ -113,7 +134,7 @@ describe('couchesDuTheme — Habitat (the real payload shape)', () => {
   })
 
   it('labels the default from the metadata\u2019s indicator_labels — the #200 gap is closed, never a raw key', () => {
-    const couches = couchesDuTheme(payload, 'habitat')
+    const couches = couchesDuTheme(payload, 'habitat', admission)
 
     expect(couches.coucheParDefaut?.libelle).toBe('Part de passoires thermiques')
   })

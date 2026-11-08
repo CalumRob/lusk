@@ -10,6 +10,16 @@ retained serving artifacts remain. Metadata, territory identity, geometry and
 freshness assets are separate, deliberately retained contracts. This amendment
 does not authorize app-side cross-theme arithmetic or any live publication.
 
+**Metadata boundary update (#827, 2026-11-07):** the retained theme catalogue is
+not one of the retired numerical JSON pairs. The #827 browser-projection change
+removes the producer capability maps `scalar_contracts`, `profile_contracts`,
+and `map_layers`; other producer-only fields had already been excluded.
+Canonical declarations remain for R publishers and semantic API discovery.
+Named factual/source metadata readers remain separately inventoried
+in [the structured-consumer ledger](../structured-consumer-inventory.md). This
+does not claim that all theme metadata has left the browser or that its remaining
+readers are reconciled.
+
 ## Historical implementation and decision — JSON pair requirements superseded
 
 The fiche renders each theme block from exactly two files — `indicateurs_<theme>.json` + `histoires_<theme>.json` — and the « Chargement prioritaire » feature (#296) makes each route wait only on its own wait-set: for a theme, that is exactly its own pair. This architecture is only coherent if a theme's rendering never needs another theme's files at runtime. The first cross-theme fact surfaced in grilling #296: the Milieux story reads **Δpopulation** — a Démographie-series fact — yet the app never touches `indicateurs_demographie` to render Milieux. The pipeline precomputes `delta_population` into the Milieux `histoires` row (the population-sourcing rule of ADR-0014, schema in ADR-0017), so the Milieux block is self-contained in its own pair. The same shape holds everywhere: the Aperçu anchors come from the pipeline-published `apercu` table (never derived in the app); Économie's top-5 LQ ships precomputed (the full matrix never ships); the story clouds read peers *within the same theme's* `histoires` file; the carte layers read each theme's own scalars. The pattern was working implicitly; it is now named and prescriptive.

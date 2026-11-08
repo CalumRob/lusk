@@ -19,8 +19,6 @@ describe('libelles éditoriaux app-owned — périmètre', () => {
     expect(editorial.sort()).toEqual([
       'demographie:densite',
       'demographie:structure_age',
-      'demographie:taille_menages',
-      'economie:eco_activites',
       'habitat:age_du_bati',
       'habitat:mix_logements',
       'habitat:statut',
