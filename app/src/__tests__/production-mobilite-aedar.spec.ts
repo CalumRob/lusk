@@ -49,6 +49,7 @@ it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte
   await flushPromises()
   expect(fetchAedarComparison).toHaveBeenCalledWith('commune', '22001', expect.objectContaining({
     intent: { kind: 'selected_comparison', members: control.value.selection.etat === 'membres' ? control.value.selection.membres : [] },
+    rankMeasures: ['meanDiversity', 'meanVolume'],
   }))
   expect(wrapper.text()).toContain('Chargement du groupe comparé')
   const before = wrapper.findComponent(VarianteCahierLibre).props('content')
@@ -107,7 +108,7 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
       return new Response(JSON.stringify(catalogue), { status: response.status })
     }
     if (String(input) === '/api/resources/read-batch') {
-      const body = JSON.parse(String(init?.body)) as { items: Array<{ id: string; target: { type: string; id: string }; coordinates: { measure: string[] } }> }
+       const body = JSON.parse(String(init?.body)) as { items: Array<{ id: string; target: { type: string; id: string }; coordinates: { measure: string[] }; fields: string[] }> }
       const results = body.items.map((item) => ({ id: item.id, data: {
         resource: 'aedar_territorial_aggregate', target: { kind: 'territory', ...item.target },
         territory: { territory_type: item.target.type, territory_id: item.target.id },
@@ -122,7 +123,7 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
             comparison_context: 'selected_comparison', statistic: 'pooled',
             group_value: measure === 'meanDiversity' || measure.endsWith('Diversity') ? 7.4 : 1739,
             group_n_addresses: 200, group_n_observed: 180, group_coverage_status: 'covered',
-            rank: null, rank_size: null, rank_ties: null, direction: 'high' }
+             ...(item.fields.includes('rank') ? { rank: null, rank_size: null, rank_ties: null } : {}), direction: 'high' }
         }),
       } }))
       return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results }) } as Response
@@ -146,10 +147,12 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
   expect(requests).toHaveLength(1)
   expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === '/api/resources')).toHaveLength(1)
   const batch = JSON.parse(String(requests[0]![1]?.body))
-  expect(batch.items).toHaveLength(1)
-  expect(batch.items[0].coordinates.measure).toHaveLength(40)
-  expect(batch.items[0].coordinates).not.toHaveProperty('typequ')
-  expect(JSON.parse(String(requests[0]![1]?.body)).items[0]).toMatchObject({
+   expect(batch.items).toHaveLength(2)
+   expect(batch.items.reduce((sum: number, item: any) => sum + item.coordinates.measure.length, 0)).toBe(40)
+   expect(batch.items.every((item: any) => !('typequ' in item.coordinates))).toBe(true)
+   expect(batch.items.find((item: any) => item.fields.includes('rank')).coordinates.measure).toEqual(['meanDiversity', 'meanVolume'])
+   expect(batch.items.find((item: any) => !item.fields.includes('rank')).coordinates.measure).toHaveLength(38)
+   expect(batch.items[0]).toMatchObject({
     resource: 'aedar_territorial_aggregate',
     target: { kind: 'territory', type: 'commune', id: '22001' },
     intent: { kind: 'selected_comparison', members: members.map(({ territory_type, territory_id }) => ({ type: territory_type, id: territory_id })) },
