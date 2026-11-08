@@ -254,6 +254,41 @@ def _aedar_aggregate_records(conn, territory_type, territory_ids, underlying, re
     return records
 
 
+_AEDAR_MULTI_TERRITORIAL_AGGREGATES_SQL = f"""SELECT a.territory_id,m.measure,
+       count(*) AS n_rows,
+       count((a.measures->>m.measure)::double precision) AS n_measured,
+       sum((a.measures->>m.measure)::double precision) AS total,
+       min((a.measures->>m.measure)::double precision) AS v_min,
+       max((a.measures->>m.measure)::double precision) AS v_max,
+       min(a.n_addresses) AS na_min,max(a.n_addresses) AS na_max,
+       sum(a.n_observed)::bigint AS observed_sum,
+       count(DISTINCT (a.source_id,a.vintage_id,a.source_url,a.licence,a.attribution,
+                       a.reference_date,a.publication_date)) AS n_provenance,
+       count(*) FILTER (WHERE a.coverage_status IS DISTINCT FROM 'covered') AS n_uncovered,
+       count(*) FILTER (WHERE a.n_observed IS NULL OR a.n_observed < 0
+                           OR a.n_observed > a.n_addresses) AS n_bad_observed,
+       {_AEDAR_TERRITORIAL_DIRECT_STATISTIC_TIE} AS n_statistic,
+       '{_AEDAR_TERRITORIAL_DIRECT_STATISTIC}' AS statistic,
+       min(a.coverage_status) AS coverage,count(DISTINCT a.coverage_status) AS n_coverage
+ FROM aedar_territorial_aggregate a CROSS JOIN unnest(%s::text[]) AS m(measure)
+ WHERE a.territory_type=%s AND a.territory_id=ANY(%s::text[])
+ GROUP BY a.territory_id,m.measure"""
+
+
+def _aedar_multi_aggregate_records(conn, territory_type, territory_ids, measures, registry_size):
+    """Set-wise territorial adapter for compatible readings in one request snapshot."""
+    underlying_to_reading = {AEDAR_AGGREGATE_READINGS[measure]: measure for measure in measures}
+    cursor = conn.execute(_AEDAR_MULTI_TERRITORIAL_AGGREGATES_SQL,
+                          (sorted(underlying_to_reading), territory_type, sorted(set(territory_ids))))
+    result = {measure: {} for measure in measures}
+    for row in cursor.fetchall():
+        territory_id, underlying, *law_inputs = row
+        measure = underlying_to_reading[underlying]
+        result[measure][territory_id] = _aedar_aggregate_reading(
+            _AEDARAggregateLawInputs(*law_inputs), registry_size, underlying)
+    return result
+
+
 def _aedar_focal_provenance(conn, territory_type, territory_id):
     """Shared source provenance of one territory's published aggregate rows."""
     row = conn.execute("""SELECT source_id,vintage_id,source_url,licence,attribution,
@@ -292,7 +327,32 @@ _AEDAR_POOLED_GROUP_SQL = f"""SELECT count(*) AS n_rows, count(value) AS n_measu
        min(coverage_status) AS coverage,
        count(DISTINCT coverage_status) AS n_coverage
 FROM aedar_comparison_group
-WHERE comparison_context='density_class' AND group_id=%s AND territory_type='commune' AND measure=%s"""
+ WHERE comparison_context='density_class' AND group_id=%s AND territory_type='commune' AND measure=%s"""
+
+_AEDAR_MULTI_POOLED_GROUP_SQL = f"""SELECT measure,count(*) AS n_rows,count(value) AS n_measured,
+       sum(value) AS total,min(value) AS v_min,max(value) AS v_max,
+       min(n_addresses) AS na_min,max(n_addresses) AS na_max,
+       sum(n_observed)::bigint AS observed_sum,
+       {_AEDAR_POOLED_PUBLICATION_PROVENANCE_TIE} AS n_provenance,
+       count(*) FILTER (WHERE coverage_status IS DISTINCT FROM 'covered') AS n_uncovered,
+       count(*) FILTER (WHERE n_observed IS NULL OR n_observed < 0 OR n_observed > n_addresses) AS n_bad_observed,
+       {_AEDAR_POOLED_DENSITY_STATISTIC_TIE} AS n_statistic,
+       '{_AEDAR_POOLED_DENSITY_STATISTIC}' AS statistic,
+       min(coverage_status) AS coverage,count(DISTINCT coverage_status) AS n_coverage
+ FROM aedar_comparison_group
+ WHERE comparison_context='density_class' AND group_id=%s AND territory_type='commune' AND measure=ANY(%s::text[])
+ GROUP BY measure"""
+
+
+def _aedar_multi_pooled_group_aggregates(conn, group_id, measures, registry_size):
+    underlying_to_reading = {AEDAR_AGGREGATE_READINGS[measure]: measure for measure in measures}
+    cursor = conn.execute(_AEDAR_MULTI_POOLED_GROUP_SQL, (group_id, sorted(underlying_to_reading)))
+    result = {}
+    for row in cursor.fetchall():
+        underlying, *law_inputs = row
+        result[underlying_to_reading[underlying]] = _aedar_aggregate_reading(
+            _AEDARAggregateLawInputs(*law_inputs), registry_size, underlying)
+    return result
 
 
 def _aedar_pooled_group_aggregate(conn, group_id, underlying, registry_size):
@@ -358,9 +418,66 @@ def _aedar_fixed_peer_ids(conn, territory_type, territory_id, context):
     return ids
 
 
+def _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, context, batch):
+    """Prepare compatible aggregate readings once inside the owning RR snapshot."""
+    measures = list(dict.fromkeys(batch["measures"]))
+    registry_size = _aedar_registry_size(conn)
+    focal = conn.execute("""SELECT t.epci_id,r.territory_id
+        FROM territory_reference t CROSS JOIN territory_reference r
+        WHERE t.territory_type=%s AND t.territory_id=%s AND r.territory_type='region'""",
+        (territory_type,territory_id)).fetchone()
+    if not focal:
+        raise HTTPException(404, "Unknown territory type/id")
+    if context == "density_class":
+        from api.snapshot_reads import _comparison_cohort
+        _, _, scope = _comparison_cohort(conn, territory_type, territory_id, None)
+        if territory_type != "commune" or not scope or scope.get("kind") != "density_class":
+            raise HTTPException(422, "Density reference is available for commune scopes only")
+        group_type, group_id = "commune", scope["density_class_code"]
+        groups = _aedar_multi_pooled_group_aggregates(conn, group_id, measures, registry_size)
+    elif context == "same_level":
+        if territory_type not in ("epci", "departement"):
+            raise HTTPException(422, "Same-level reference is unavailable for this territory scope")
+        group_type, group_id = "region", focal[1]
+        groups = _aedar_multi_aggregate_records(conn, group_type, [group_id], measures, registry_size)
+        groups = {measure: records.get(group_id) for measure, records in groups.items()}
+    elif context in ("epci", "bretagne"):
+        if territory_type != "commune":
+            raise HTTPException(422, "Commune reference is unavailable for this territory scope")
+        group_type = "epci" if context == "epci" else "region"
+        group_id = focal[0] if context == "epci" else focal[1]
+        if not group_id:
+            raise HTTPException(503, "Published AEDAR reference identity is unavailable")
+        groups = _aedar_multi_aggregate_records(conn, group_type, [group_id], measures, registry_size)
+        groups = {measure: records.get(group_id) for measure, records in groups.items()}
+    else:
+        raise HTTPException(422, "AEDAR comparison context is not declared")
+
+    rank_measures = set(batch.get("rank_measures", ()))
+    peer_ids = (batch.get("peer_ids") or [territory_id]) if rank_measures else [territory_id]
+    if rank_measures and rank_measures == set(measures):
+        territorial = _aedar_multi_aggregate_records(conn, territory_type, peer_ids, measures, registry_size)
+    elif rank_measures:
+        # Rank only the requested aggregate facets across the peer population;
+        # all readings still receive their mandatory focal value/status.
+        territorial = _aedar_multi_aggregate_records(conn, territory_type, peer_ids, rank_measures, registry_size)
+        focal_records = _aedar_multi_aggregate_records(conn, territory_type, [territory_id], measures, registry_size)
+        for measure in measures:
+            records = territorial.setdefault(measure, {})
+            focal_record = focal_records.get(measure, {}).get(territory_id)
+            if focal_record is not None:
+                records[territory_id] = focal_record
+    else:
+        territorial = _aedar_multi_aggregate_records(conn, territory_type, [territory_id], measures, registry_size)
+    provenance = _aedar_focal_provenance(conn, territory_type, territory_id)
+    return {"registry_size": registry_size, "group_id": group_id, "group_type": group_type,
+            "groups": groups, "territorial": territorial, "provenance": provenance,
+            "rank_measures": rank_measures}
+
+
 def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
                                typequ, measure, fields=None, measure_facets=None, *,
-                               preflight_only=False):
+                               preflight_only=False, snapshot_state=None):
     """Build one fixed AEDAR result inside a caller-owned snapshot."""
     aggregate = measure in AEDAR_AGGREGATE_READINGS
     if not aggregate and measure not in AEDAR_MEASURE_KEYS:
@@ -386,7 +503,7 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
         return {"content_version": marker[0], "reference_content_version": marker[3]}
     if aggregate:
         return _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
-                                               measure, facet, selected, marker)
+                                               measure, facet, selected, marker, snapshot_state=snapshot_state)
     focal = conn.execute("""SELECT t.epci_id,r.territory_id
         FROM territory_reference t CROSS JOIN territory_reference r
         WHERE t.territory_type=%s AND t.territory_id=%s AND r.territory_type='region'""",
@@ -464,7 +581,7 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
 
 
 def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
-                                    measure, facet, selected, marker):
+                                    measure, facet, selected, marker, *, snapshot_state=None):
     """One fixed-context registry-wide aggregate reading with its request-time rank.
 
     The group statistic keeps the declared context semantics unchanged (the
@@ -482,46 +599,61 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
     the rank.
     """
     underlying = AEDAR_AGGREGATE_READINGS[measure]
-    registry_size = _aedar_registry_size(conn)
-    focal = conn.execute("""SELECT t.epci_id,r.territory_id
-        FROM territory_reference t CROSS JOIN territory_reference r
-        WHERE t.territory_type=%s AND t.territory_id=%s AND r.territory_type='region'""",
-        (territory_type,territory_id)).fetchone()
-    if not focal:
-        raise HTTPException(404, "Unknown territory type/id")
-    if context == "density_class":
-        from api.snapshot_reads import _comparison_cohort
-        _, _, scope = _comparison_cohort(conn, territory_type, territory_id, None)
-        if territory_type != "commune" or not scope or scope.get("kind") != "density_class":
-            raise HTTPException(422, "Density reference is available for commune scopes only")
-        group_id, reference_type = scope["density_class_code"], "commune"
-        group = _aedar_pooled_group_aggregate(conn, group_id, underlying, registry_size)
-    elif context == "same_level":
-        # Same-level keeps the Région's own direct published aggregate
-        # ("Moyenne de Bretagne"); the reference is the registry-wide sum of
-        # the Région's per-type rows.
-        if territory_type not in ("epci","departement"):
-            raise HTTPException(422, "Same-level reference is unavailable for this territory scope")
-        reference_type, group_id = "region", focal[1]
-        group = _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry_size)
-    elif context in ("epci", "bretagne"):
-        if territory_type != "commune":
-            raise HTTPException(422, "Commune reference is unavailable for this territory scope")
-        reference_type = "epci" if context == "epci" else "region"
-        group_id = focal[0] if context == "epci" else focal[1]
-        if not group_id:
-            raise HTTPException(503, "Published AEDAR reference identity is unavailable")
-        group = _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry_size)
-    else:
-        raise HTTPException(422, "AEDAR comparison context is not declared")
+    key = (territory_type, territory_id, context)
+    batch = (snapshot_state or {}).get("aedar_fixed_aggregates", {}).get(key)
+    prepared = None
+    if batch and len(batch["measures"]) > 1:
+        prepared = batch.get("prepared")
+        if prepared is None:
+            prepared = _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, context, batch)
+            batch["prepared"] = prepared
     wants_rank = bool(_AEDAR_AGGREGATE_RANK_FIELDS & selected)
-    peer_ids = (_aedar_fixed_peer_ids(conn, territory_type, territory_id, context)
-                if wants_rank else [territory_id])
-    peer_records = _aedar_aggregate_records(conn, territory_type, peer_ids, underlying, registry_size)
-    focal_record = peer_records.get(territory_id)
+    if prepared:
+        registry_size = prepared["registry_size"]
+        group_id, reference_type = prepared["group_id"], prepared["group_type"]
+        group = prepared["groups"].get(measure)
+        peer_records = prepared["territorial"].get(measure, {})
+        focal_record = peer_records.get(territory_id)
+        provenance = prepared["provenance"]
+        if group is None:
+            raise HTTPException(404, "No published result for this fixed context")
+    else:
+        registry_size = _aedar_registry_size(conn)
+        focal = conn.execute("""SELECT t.epci_id,r.territory_id
+            FROM territory_reference t CROSS JOIN territory_reference r
+            WHERE t.territory_type=%s AND t.territory_id=%s AND r.territory_type='region'""",
+            (territory_type,territory_id)).fetchone()
+        if not focal:
+            raise HTTPException(404, "Unknown territory type/id")
+        if context == "density_class":
+            from api.snapshot_reads import _comparison_cohort
+            _, _, scope = _comparison_cohort(conn, territory_type, territory_id, None)
+            if territory_type != "commune" or not scope or scope.get("kind") != "density_class":
+                raise HTTPException(422, "Density reference is available for commune scopes only")
+            group_id, reference_type = scope["density_class_code"], "commune"
+            group = _aedar_pooled_group_aggregate(conn, group_id, underlying, registry_size)
+        elif context == "same_level":
+            if territory_type not in ("epci","departement"):
+                raise HTTPException(422, "Same-level reference is unavailable for this territory scope")
+            reference_type, group_id = "region", focal[1]
+            group = _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry_size)
+        elif context in ("epci", "bretagne"):
+            if territory_type != "commune":
+                raise HTTPException(422, "Commune reference is unavailable for this territory scope")
+            reference_type = "epci" if context == "epci" else "region"
+            group_id = focal[0] if context == "epci" else focal[1]
+            if not group_id:
+                raise HTTPException(503, "Published AEDAR reference identity is unavailable")
+            group = _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry_size)
+        else:
+            raise HTTPException(422, "AEDAR comparison context is not declared")
+        peer_ids = (_aedar_fixed_peer_ids(conn, territory_type, territory_id, context)
+                    if wants_rank else [territory_id])
+        peer_records = _aedar_aggregate_records(conn, territory_type, peer_ids, underlying, registry_size)
+        focal_record = peer_records.get(territory_id)
+        provenance = _aedar_focal_provenance(conn, territory_type, territory_id)
     if focal_record is None:
         raise HTTPException(404, "No published focal AEDAR value")
-    provenance = _aedar_focal_provenance(conn, territory_type, territory_id)
     direction = facet["direction"]
     focal_value = focal_record["value"]
     rank = rank_size = rank_ties = None

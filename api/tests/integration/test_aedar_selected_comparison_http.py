@@ -231,6 +231,13 @@ def _seed_aedar(publisher):
         ("D2", "A104", "count_10_transit_mean", 2.0, 10, 9),
         ("D2", "B207", "count_10_transit_mean", 3.0, 10, 8),
     ]
+    present_group_measures = {(group_id, typequ, measure) for group_id, typequ, measure, *_ in group_rows}
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS
+    for measure, underlying in AEDAR_AGGREGATE_READINGS.items():
+        for typequ, value, observed in (("A104", 0.4 if underlying.endswith("_share") else 2.0, 34),
+                                        ("B207", 0.5 if underlying.endswith("_share") else 3.0, 33)):
+            if ("D1", typequ, underlying) not in present_group_measures:
+                group_rows.append(("D1", typequ, underlying, value, 40, observed))
     for group_id, typequ, measure, value, n_addresses, n_observed in group_rows:
         publisher.execute("""INSERT INTO aedar_comparison_group(comparison_context,group_id,territory_type,
             typequ,measure,statistic,value,n_addresses,n_observed,coverage_status)
@@ -563,6 +570,84 @@ def test_fixed_aggregate_same_level_and_density_contexts(aedar_http):
     comparison = density_diversity.json()["comparison"]
     assert comparison["group_value"] == pytest.approx(0.95)  # 0.65 + 0.3 pooled shares
     assert comparison["value"] == pytest.approx(0.75)
+
+
+def test_fixed_aggregate_batch_shares_rank_scan_across_all_readings(aedar_http, monkeypatch):
+    from api import aedar_reads, snapshot_reads
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS
+
+    measures = list(AEDAR_AGGREGATE_READINGS)
+    items = [{"id": f"rank-item-{index}", **_aggregate_item(target_id="sel-c1", measures=(measure,),
+        fields=["group_value", "value", "rank", "rank_size", "rank_ties"], context="density_class")}
+        for index, measure in enumerate(measures)]
+    counts = {name: 0 for name in ("registry", "peer_ids", "territorial", "multi_territorial",
+                                   "pooled", "multi_pooled", "cohort")}
+    original_registry = aedar_reads._aedar_registry_size
+    original_peer_ids = aedar_reads._aedar_fixed_peer_ids
+    original_territorial = aedar_reads._aedar_aggregate_records
+    original_multi = aedar_reads._aedar_multi_aggregate_records
+    original_pooled = aedar_reads._aedar_pooled_group_aggregate
+    original_multi_pooled = aedar_reads._aedar_multi_pooled_group_aggregates
+    original_cohort = snapshot_reads._comparison_cohort
+
+    def counted(name, original):
+        def invoke(*args, **kwargs):
+            counts[name] += 1
+            return original(*args, **kwargs)
+        return invoke
+
+    monkeypatch.setattr(aedar_reads, "_aedar_registry_size", counted("registry", original_registry))
+    monkeypatch.setattr(aedar_reads, "_aedar_fixed_peer_ids", counted("peer_ids", original_peer_ids))
+    monkeypatch.setattr(aedar_reads, "_aedar_aggregate_records", counted("territorial", original_territorial))
+    monkeypatch.setattr(aedar_reads, "_aedar_multi_aggregate_records", counted("multi_territorial", original_multi))
+    monkeypatch.setattr(aedar_reads, "_aedar_pooled_group_aggregate", counted("pooled", original_pooled))
+    monkeypatch.setattr(aedar_reads, "_aedar_multi_pooled_group_aggregates", counted("multi_pooled", original_multi_pooled))
+    monkeypatch.setattr(snapshot_reads, "_comparison_cohort", counted("cohort", original_cohort))
+
+    singles = []
+    for item in items:
+        response = aedar_http.post("/api/resources/read", json={key: value for key, value in item.items() if key != "id"})
+        assert response.status_code == 200, response.text
+        singles.append(response.json()["comparison"])
+    baseline = dict(counts)
+    counts.update({name: 0 for name in counts})
+
+    batch = aedar_http.post("/api/resources/read-batch", json={"items": items})
+    assert batch.status_code == 200, batch.text
+    results = batch.json()["results"]
+    assert len(results) == len(measures) == 40
+    batch_comparisons = [result["data"]["comparison"] for result in results]
+    assert batch_comparisons == singles, next((f"{measures[index]}: batch={batch_value!r}, single={single_value!r}"
+        for index, (batch_value, single_value) in enumerate(zip(batch_comparisons, singles))
+        if batch_value != single_value), "length mismatch")
+    assert counts == {"registry": 1, "peer_ids": 1, "territorial": 0, "multi_territorial": 1,
+                      "pooled": 0, "multi_pooled": 1, "cohort": 1}
+    assert baseline["registry"] == 40
+    assert baseline["peer_ids"] == 80
+    assert baseline["territorial"] == 40
+    assert baseline["multi_territorial"] == 0
+    assert baseline["pooled"] == 40
+    assert baseline["multi_pooled"] == 0
+    assert baseline["cohort"] == 40
+
+    # Production projection: ranks on the two car-15 overview readings, while
+    # preserving group/focal readings for every other ramp facet.
+    ranked = {"meanDiversity", "meanVolume"}
+    partial_items = [{**item, "fields": (["group_value", "value", "rank", "rank_size", "rank_ties"]
+                      if measure in ranked else ["group_value", "value"])}
+                     for item, measure in zip(items, measures)]
+    counts.update({name: 0 for name in counts})
+    partial = aedar_http.post("/api/resources/read-batch", json={"items": partial_items})
+    assert partial.status_code == 200, partial.text
+    partial_results = [result["data"]["comparison"] for result in partial.json()["results"]]
+    assert len(partial_results) == 40
+    for measure, result, expected in zip(measures, partial_results, singles):
+        expected_fields = set(expected) if measure in ranked else set(expected) - {"rank", "rank_size", "rank_ties"}
+        assert {key: result[key] for key in expected_fields} == {key: expected[key] for key in expected_fields}
+        if measure not in ranked:
+            assert not ({"rank", "rank_size", "rank_ties"} & set(result))
+    assert counts == {"registry": 1, "peer_ids": 1, "territorial": 0, "multi_territorial": 2,
+                      "pooled": 0, "multi_pooled": 1, "cohort": 1}
 
 
 def test_fixed_aggregate_density_pooled_null_observed_row_is_unavailable(aedar_http):
