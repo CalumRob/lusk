@@ -13,8 +13,8 @@ def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measu
     """Read published registry-wide readings from one caller-owned RR snapshot.
 
     The summary has its own content clock (its canonical hash differs from the
-    source-grain hash); compatibility is established by the shared reference
-    clock and a complete, internally consistent publication marker.
+    source-grain hash); compatibility is established by explicit source and
+    reference clocks plus a complete, internally consistent publication marker.
     """
     requested = tuple(dict.fromkeys(measures))
     if not requested or not set(requested) <= set(AEDAR_AGGREGATE_READINGS):
@@ -23,13 +23,13 @@ def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measu
     if not ids:
         return {"content_version": None, "reference_content_version": None, "readings": {}}
     marker = conn.execute("""SELECT s.content_version,s.row_count,s.reference_content_version,
-            a.content_version,a.reference_content_version,r.content_version
+            s.aedar_source_content_version,a.content_version,a.reference_content_version,r.content_version
         FROM table_publication s
         JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
         JOIN table_publication r ON r.table_name='territory_reference'
         WHERE s.table_name='aedar_territory_summary'""").fetchone()
-    if (not marker or not marker[0] or marker[1] < 1 or marker[2] != marker[5]
-            or marker[4] != marker[5] or not marker[3]):
+    if (not marker or not marker[0] or marker[1] < 1 or marker[2] != marker[6]
+            or marker[4] != marker[3] or marker[5] != marker[6] or not marker[3]):
         raise HTTPException(503, "AEDAR territory summary publication is unavailable or stale")
     cursor = conn.execute("""SELECT territory_id,measure,value,status,n_typequ,n_addresses,n_observed,
             coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date
@@ -46,10 +46,12 @@ def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measu
         (value,status,n_typequ,n_addresses,n_observed,coverage,source,vintage,url,licence,
          attribution,reference_date,publication_date) = row
         if status not in ("available", "unavailable") or (status == "available" and
-                (value is None or n_typequ != 235 or n_addresses is None or n_addresses <= 0
+                (value is None or not isfinite(value) or n_typequ != 235 or n_addresses is None or n_addresses <= 0
                  or n_observed is None or n_observed < 0 or n_observed > 235 * n_addresses
                  or coverage != "covered")) or (status == "unavailable" and
-                any(x is not None for x in (value,n_typequ,n_addresses,n_observed,coverage))):
+                 (value is not None or n_typequ is not None or
+                  (n_addresses is not None and n_addresses < 0) or
+                  (n_observed is not None and n_observed < 0))):
             raise HTTPException(503, "AEDAR territory summary contains an invalid reading")
         readings[(territory_id, measure)] = {"value": value, "available": status == "available",
             "n_typequ": n_typequ, "n_addresses": n_addresses, "n_observed": n_observed,
@@ -62,6 +64,19 @@ def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measu
     if len(provenance) != 1:
         raise HTTPException(503, "AEDAR territory summary provenance is inconsistent")
     return {"content_version": marker[0], "reference_content_version": marker[2], "readings": readings}
+
+
+def _aedar_summary_records(snapshot, measures, territory_ids):
+    """Adapt validated summary readings to the fixed-comparison record shape."""
+    return {measure: {territory_id: snapshot["readings"][(territory_id, measure)]
+                      for territory_id in territory_ids}
+            for measure in measures}
+
+
+def _aedar_summary_provenance(snapshot):
+    reading = next(iter(snapshot["readings"].values()))
+    return tuple(reading[key] for key in ("source_id", "vintage_id", "source_url", "licence",
+                                           "attribution", "reference_date", "publication_date"))
 
 _AEDAR_COMPARISON_OPTIONAL_FIELDS = {
     "group_value", "value",
@@ -476,7 +491,11 @@ def _aedar_fixed_peer_ids(conn, territory_type, territory_id, context):
 def _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, context, batch):
     """Prepare compatible aggregate readings once inside the owning RR snapshot."""
     measures = list(dict.fromkeys(batch["measures"]))
-    registry_size = _aedar_registry_size(conn)
+    # Only the retained density pooled artifact needs the source TYPEQU count
+    # for its established availability law. Direct summaries are producer-validated.
+    registry_size = _aedar_registry_size(conn) if context == "density_class" else None
+    group_type = None
+    group_id = None
     focal = conn.execute("""SELECT t.epci_id,r.territory_id
         FROM territory_reference t CROSS JOIN territory_reference r
         WHERE t.territory_type=%s AND t.territory_id=%s AND r.territory_type='region'""",
@@ -494,8 +513,6 @@ def _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, con
         if territory_type not in ("epci", "departement"):
             raise HTTPException(422, "Same-level reference is unavailable for this territory scope")
         group_type, group_id = "region", focal[1]
-        groups = _aedar_multi_aggregate_records(conn, group_type, [group_id], measures, registry_size)
-        groups = {measure: records.get(group_id) for measure, records in groups.items()}
     elif context in ("epci", "bretagne"):
         if territory_type != "commune":
             raise HTTPException(422, "Commune reference is unavailable for this territory scope")
@@ -503,28 +520,20 @@ def _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, con
         group_id = focal[0] if context == "epci" else focal[1]
         if not group_id:
             raise HTTPException(503, "Published AEDAR reference identity is unavailable")
-        groups = _aedar_multi_aggregate_records(conn, group_type, [group_id], measures, registry_size)
-        groups = {measure: records.get(group_id) for measure, records in groups.items()}
     else:
         raise HTTPException(422, "AEDAR comparison context is not declared")
 
     rank_measures = set(batch.get("rank_measures", ()))
     peer_ids = (batch.get("peer_ids") or [territory_id]) if rank_measures else [territory_id]
-    if rank_measures and rank_measures == set(measures):
-        territorial = _aedar_multi_aggregate_records(conn, territory_type, peer_ids, measures, registry_size)
-    elif rank_measures:
-        # Rank only the requested aggregate facets across the peer population;
-        # all readings still receive their mandatory focal value/status.
-        territorial = _aedar_multi_aggregate_records(conn, territory_type, peer_ids, rank_measures, registry_size)
-        focal_records = _aedar_multi_aggregate_records(conn, territory_type, [territory_id], measures, registry_size)
-        for measure in measures:
-            records = territorial.setdefault(measure, {})
-            focal_record = focal_records.get(measure, {}).get(territory_id)
-            if focal_record is not None:
-                records[territory_id] = focal_record
-    else:
-        territorial = _aedar_multi_aggregate_records(conn, territory_type, [territory_id], measures, registry_size)
-    provenance = _aedar_focal_provenance(conn, territory_type, territory_id)
+    territorial_ids = sorted(set(peer_ids) | {territory_id})
+    summary_measures = sorted(set(measures) | set(rank_measures))
+    summary = _aedar_territory_summary_snapshot(conn, territory_type, territorial_ids, summary_measures)
+    territorial = _aedar_summary_records(summary, summary_measures, territorial_ids)
+    if context != "density_class":
+        group_snapshot = _aedar_territory_summary_snapshot(conn, group_type, [group_id], measures)
+        group_records = _aedar_summary_records(group_snapshot, measures, [group_id])
+        groups = {measure: records.get(group_id) for measure, records in group_records.items()}
+    provenance = _aedar_summary_provenance(summary)
     return {"registry_size": registry_size, "group_id": group_id, "group_type": group_type,
             "groups": groups, "territorial": territorial, "provenance": provenance,
             "rank_measures": rank_measures}
@@ -646,12 +655,10 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
     group from published per-type rows in the same committed snapshot — no
     peer/rank rows are published (#810 stance intact; ADR-0039's 2026-11-04
     amendment, #914). Both the reference and the peer/focal readings flow
-    through the one aggregate mechanism (one normalized law-input record, one
-    law, one assembler — see above); a reading is available only under the
-    fiche's full compatibility law (complete registry, shared provenance, all
-    rows covered, agreeing positive address population, valid observed counts
-    and values); peers failing it are honestly unavailable and ineligible for
-    the rank.
+    through the producer-owned territory summary projection. Availability is
+    established once by the producer's shared fiche law; peers marked
+    unavailable remain ineligible for rank. Density references deliberately
+    retain the existing correctly pooled publication.
     """
     underlying = AEDAR_AGGREGATE_READINGS[measure]
     key = (territory_type, territory_id, context)
@@ -673,7 +680,7 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
         if group is None:
             raise HTTPException(404, "No published result for this fixed context")
     else:
-        registry_size = _aedar_registry_size(conn)
+        registry_size = _aedar_registry_size(conn) if context == "density_class" else None
         focal = conn.execute("""SELECT t.epci_id,r.territory_id
             FROM territory_reference t CROSS JOIN territory_reference r
             WHERE t.territory_type=%s AND t.territory_id=%s AND r.territory_type='region'""",
@@ -691,7 +698,8 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
             if territory_type not in ("epci","departement"):
                 raise HTTPException(422, "Same-level reference is unavailable for this territory scope")
             reference_type, group_id = "region", focal[1]
-            group = _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry_size)
+            group_snapshot = _aedar_territory_summary_snapshot(conn, reference_type, [group_id], [measure])
+            group = group_snapshot["readings"][(group_id, measure)]
         elif context in ("epci", "bretagne"):
             if territory_type != "commune":
                 raise HTTPException(422, "Commune reference is unavailable for this territory scope")
@@ -699,14 +707,17 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
             group_id = focal[0] if context == "epci" else focal[1]
             if not group_id:
                 raise HTTPException(503, "Published AEDAR reference identity is unavailable")
-            group = _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry_size)
+            group_snapshot = _aedar_territory_summary_snapshot(conn, reference_type, [group_id], [measure])
+            group = group_snapshot["readings"][(group_id, measure)]
         else:
             raise HTTPException(422, "AEDAR comparison context is not declared")
         peer_ids = (_aedar_fixed_peer_ids(conn, territory_type, territory_id, context)
                     if wants_rank else [territory_id])
-        peer_records = _aedar_aggregate_records(conn, territory_type, peer_ids, underlying, registry_size)
+        summary = _aedar_territory_summary_snapshot(conn, territory_type, peer_ids, [measure])
+        peer_records = {territory_id: summary["readings"][(territory_id, measure)]
+                        for territory_id in peer_ids}
         focal_record = peer_records.get(territory_id)
-        provenance = _aedar_focal_provenance(conn, territory_type, territory_id)
+        provenance = _aedar_summary_provenance(summary)
     if focal_record is None:
         raise HTTPException(404, "No published focal AEDAR value")
     direction = facet["direction"]

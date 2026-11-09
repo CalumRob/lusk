@@ -1,4 +1,8 @@
 BEGIN;
+ALTER TABLE table_publication ADD COLUMN aedar_source_content_version text;
+ALTER TABLE table_publication ADD CONSTRAINT aedar_summary_publication_requires_source CHECK (
+  (table_name='aedar_territory_summary' AND aedar_source_content_version IS NOT NULL AND length(aedar_source_content_version)>0)
+  OR (table_name<>'aedar_territory_summary' AND aedar_source_content_version IS NULL));
 ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check;
 ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check CHECK (table_name IN (
   'territory_reference','scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading',
@@ -21,7 +25,8 @@ CREATE TABLE aedar_territory_summary (
   -- per-TYPEQU facts this additive count can exceed the address denominator.
   CHECK((status='available' AND value IS NOT NULL AND n_typequ=235 AND n_addresses>0 AND n_observed>=0 AND
          n_observed::numeric<=n_typequ::numeric*n_addresses::numeric AND coverage_status='covered') OR
-        (status='unavailable' AND value IS NULL AND n_typequ IS NULL AND n_addresses IS NULL AND n_observed IS NULL AND coverage_status IS NULL))
+         (status='unavailable' AND value IS NULL AND n_typequ IS NULL AND
+          (n_addresses IS NULL OR n_addresses>=0) AND (n_observed IS NULL OR n_observed>=0)))
 );
 CREATE INDEX aedar_territory_summary_measure_idx ON aedar_territory_summary(territory_type,measure,territory_id) INCLUDE(value,status,n_addresses,n_observed,coverage_status);
 GRANT SELECT ON aedar_territory_summary,table_publication TO lusk_reader;

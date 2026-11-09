@@ -46,7 +46,7 @@ def test_aedar_summary_reader_uses_complete_published_snapshot():
         pub.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES('fixture','commune','Fixture')")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','ref-v1',1)")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('aedar_territorial_aggregate','source-v1',0,'ref-v1')")
-        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('aedar_territory_summary','summary-v1',40,'ref-v1')")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,aedar_source_content_version) VALUES('aedar_territory_summary','summary-v1',40,'ref-v1','source-v1')")
         measures = sorted(AEDAR_AGGREGATE_READINGS)
         assert len(measures) == 40
         insert = """INSERT INTO aedar_territory_summary(territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,licence,attribution)
@@ -63,8 +63,14 @@ def test_aedar_summary_reader_uses_complete_published_snapshot():
                 assert (reading["value"],reading["available"],reading["n_typequ"],reading["n_addresses"],reading["n_observed"]) == (float(i+1),True,235,2,470)
                 assert reading["statistic"] == "direct" and reading["source_id"] == "source"
         # A summary's own content hash is deliberately not the source-facts hash;
-        # its reference clock is the compatibility clock shared with the source.
-        # Stale reference clock and incomplete requested projection fail closed.
+        # its marker binds the exact source and reference clocks. Both stale
+        # dependencies and an incomplete requested projection fail closed.
+        pub.execute("UPDATE table_publication SET content_version='source-v2' WHERE table_name='aedar_territorial_aggregate'")
+        with psycopg.connect(scoped(read_dsn)) as conn, pytest.raises(Exception) as err:
+            conn.execute(f'SET search_path TO "{schema}"')
+            _aedar_territory_summary_snapshot(conn,"commune",["fixture"],measures)
+        assert getattr(err.value,"status_code",None) == 503
+        pub.execute("UPDATE table_publication SET content_version='source-v1' WHERE table_name='aedar_territorial_aggregate'")
         for sql,params in [
             ("UPDATE table_publication SET reference_content_version='old-ref' WHERE table_name='aedar_territory_summary'",()),
         ]:
@@ -74,6 +80,15 @@ def test_aedar_summary_reader_uses_complete_published_snapshot():
                 _aedar_territory_summary_snapshot(conn,"commune",["fixture"],measures)
             assert getattr(err.value,"status_code",None) == 503
             pub.execute("UPDATE table_publication SET reference_content_version='ref-v1' WHERE table_name='aedar_territory_summary'")
+        # Unavailable summaries retain support evidence that remains derivable;
+        # this is distinct from an unavailable value or invented zero.
+        pub.execute("UPDATE aedar_territory_summary SET value=NULL,status='unavailable',n_typequ=NULL,n_addresses=2,n_observed=470,coverage_status=NULL WHERE measure=%s",(measures[-1],))
+        with psycopg.connect(scoped(read_dsn)) as conn:
+            conn.execute(f'SET search_path TO "{schema}"')
+            result = _aedar_territory_summary_snapshot(conn,"commune",["fixture"],[measures[-1]])
+        unavailable = result["readings"][("fixture",measures[-1])]
+        assert (unavailable["value"],unavailable["available"],unavailable["n_addresses"],
+                unavailable["n_observed"],unavailable["coverage_status"]) == (None,False,2,470,None)
         pub.execute("DELETE FROM aedar_territory_summary WHERE measure=%s",(measures[-1],))
         with psycopg.connect(scoped(read_dsn)) as conn, pytest.raises(Exception) as err:
             conn.execute(f'SET search_path TO "{schema}"')

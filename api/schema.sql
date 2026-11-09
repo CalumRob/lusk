@@ -6,9 +6,13 @@ CREATE TABLE table_publication (
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
+    aedar_source_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT shared_fact_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','aedar_territorial_aggregate','aedar_territory_summary') OR reference_content_version IS NOT NULL)
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','aedar_territorial_aggregate','aedar_territory_summary') OR reference_content_version IS NOT NULL),
+    CONSTRAINT aedar_summary_publication_requires_source CHECK (
+      (table_name='aedar_territory_summary' AND aedar_source_content_version IS NOT NULL AND length(aedar_source_content_version)>0)
+      OR (table_name<>'aedar_territory_summary' AND aedar_source_content_version IS NULL))
 );
 
 -- Closed, dense declared-detail profiles (e.g. structure_age × sex). The
@@ -1162,7 +1166,8 @@ CREATE TABLE aedar_territory_summary (
   -- per-TYPEQU facts this additive count can exceed the address denominator.
   CHECK((status='available' AND value IS NOT NULL AND n_typequ=235 AND n_addresses>0 AND n_observed>=0 AND
          n_observed::numeric<=n_typequ::numeric*n_addresses::numeric AND coverage_status='covered') OR
-        (status='unavailable' AND value IS NULL AND n_typequ IS NULL AND n_addresses IS NULL AND n_observed IS NULL AND coverage_status IS NULL))
+         (status='unavailable' AND value IS NULL AND n_typequ IS NULL AND
+          (n_addresses IS NULL OR n_addresses>=0) AND (n_observed IS NULL OR n_observed>=0)))
 );
 CREATE INDEX aedar_territory_summary_measure_idx ON aedar_territory_summary(territory_type,measure,territory_id) INCLUDE(value,status,n_addresses,n_observed,coverage_status);
 GRANT SELECT ON aedar_territory_summary,table_publication TO lusk_reader;

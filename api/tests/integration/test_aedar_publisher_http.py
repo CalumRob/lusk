@@ -190,12 +190,13 @@ stage("end-aggregate-noop",changed=second$changed)
 summary_rows <- DBI::dbGetQuery(con,"SELECT count(*) n,count(*) FILTER (WHERE status='unavailable') unavailable,
   count(*) FILTER (WHERE status='available' AND value=0 AND n_typequ=235 AND n_addresses=2 AND n_observed=235 AND coverage_status='covered') valid_zero,
   count(DISTINCT (territory_type,territory_id)) territories FROM aedar_territory_summary")
-summary_marker <- DBI::dbGetQuery(con,"SELECT content_version,reference_content_version,row_count FROM table_publication WHERE table_name='aedar_territory_summary'")
+summary_marker <- DBI::dbGetQuery(con,"SELECT content_version,reference_content_version,row_count,aedar_source_content_version FROM table_publication WHERE table_name='aedar_territory_summary'")
 stopifnot(first$changed,!second$changed,first$row_count==5L * nrow(source_axis),
   first$summary_changed,!second$summary_changed,first$summary_row_count==200L,
   summary_rows$n==200L,summary_rows$unavailable==5L,summary_rows$valid_zero==195L,
   summary_rows$territories==5L,summary_marker$row_count==200L,
-  summary_marker$reference_content_version=='fixture-ref-v1')
+  summary_marker$reference_content_version=='fixture-ref-v1',
+  summary_marker$aedar_source_content_version==first$content_version)
 # Reconstruct the migration-031 shape over a real, already-published canonical
 # fixture. The stale fact marker makes the real publisher perform reconciliation.
 json_before_metadata_upgrade <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,typequ,

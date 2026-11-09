@@ -261,6 +261,14 @@ project_aedar_territory_summary <- function(facts,source,
     complete <- nrow(rows)==registry_size && !anyDuplicated(rows$TYPEQU)
     for(i in seq_len(nrow(bindings))) {
       underlying <- bindings$underlying[[i]]; values <- as.numeric(rows[[underlying]])
+      # Match the retained API record shape even when the reading is
+      # unavailable: preserve support that remains derivable without guessing
+      # across disagreeing denominators, observed counts, or coverage labels.
+      address_support <- if(nrow(rows) && !anyNA(rows$n_addresses) &&
+          length(unique(rows$n_addresses))==1L) rows$n_addresses[[1L]] else NA_real_
+      observed_support <- if(any(!is.na(rows$n_observed))) sum(rows$n_observed,na.rm=TRUE) else NA_real_
+      coverage_support <- if(nrow(rows) && !anyNA(rows$coverage_status) &&
+          length(unique(rows$coverage_status))==1L) rows$coverage_status[[1L]] else NA_character_
       supported <- complete && all(rows$coverage_status=="covered") &&
         length(unique(rows$n_addresses))==1L && rows$n_addresses[[1L]]>0 &&
         all(is.finite(rows$n_observed)) && all(rows$n_observed>=0 & rows$n_observed<=rows$n_addresses) &&
@@ -270,11 +278,11 @@ project_aedar_territory_summary <- function(facts,source,
       out[[n]] <- data.frame(territory_type=key$territory_type[[1L]],territory_id=key$territory_id[[1L]],
         measure=bindings$measure[[i]],value=if(supported) sum(values) else NA_real_,
         status=if(supported) "available" else "unavailable",n_typequ=if(supported) nrow(rows) else NA_integer_,
-        n_addresses=if(supported) rows$n_addresses[[1L]] else NA_real_,
+        n_addresses=address_support,
         # Preserve the established API support law: n_observed sums observed
         # territory × TYPEQU coordinates and can exceed the address denominator.
-        n_observed=if(supported) sum(rows$n_observed) else NA_real_,
-        coverage_status=if(supported) "covered" else NA_character_,
+        n_observed=observed_support,
+        coverage_status=coverage_support,
         source_id=source$source_id,vintage=source$vintage,source_url=source$url,
         licence=source$licence,attribution=source$attribution,
         reference_date=source$reference_date,publication_date=source$publication_date,
@@ -1670,10 +1678,12 @@ publish_aedar_aggregates <- function(projection, db) {
     } else {
       progress("unchanged-publication",rows=nrow(facts),content_version=version,reference=ref_version)
     }
-    summary_existing <- DBI::dbGetQuery(db,"SELECT content_version,reference_content_version FROM table_publication WHERE table_name='aedar_territory_summary'")
+    summary_existing <- DBI::dbGetQuery(db,"SELECT content_version,reference_content_version,aedar_source_content_version FROM table_publication WHERE table_name='aedar_territory_summary'")
     summary_unchanged <- nrow(summary_existing)==1L && nrow(existing)==1L &&
       identical(summary_existing$content_version[[1L]],summary_version) &&
-      identical(summary_existing$reference_content_version[[1L]],ref_version) && identical(existing$content_version[[1L]],version)
+      identical(summary_existing$reference_content_version[[1L]],ref_version) &&
+      identical(summary_existing$aedar_source_content_version[[1L]],version) &&
+      identical(existing$content_version[[1L]],version)
     if (!summary_unchanged) {
       payload <- summary_facts[c("territory_type","territory_id","measure","value","status","n_typequ","n_addresses","n_observed","coverage_status","source_id","vintage","source_url","licence","attribution","reference_date","publication_date")]
       # The producer projection calls this source-owned identity `vintage`; the
@@ -1682,7 +1692,7 @@ publish_aedar_aggregates <- function(projection, db) {
       json <- as.character(jsonlite::toJSON(payload,dataframe="rows",auto_unbox=TRUE,na="null",digits=17))
       DBI::dbExecute(db,"DELETE FROM aedar_territory_summary")
       DBI::dbExecute(db,"INSERT INTO aedar_territory_summary(territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date) SELECT territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date FROM jsonb_to_recordset($1::jsonb) AS x(territory_type text,territory_id text,measure text,value double precision,status text,n_typequ integer,n_addresses bigint,n_observed bigint,coverage_status text,source_id text,vintage_id text,source_url text,licence text,attribution text,reference_date date,publication_date date)",params=list(json))
-      DBI::dbExecute(db,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('aedar_territory_summary',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",params=list(summary_version,nrow(summary_facts),ref_version))
+      DBI::dbExecute(db,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,aedar_source_content_version,published_at) VALUES('aedar_territory_summary',$1,$2,$3,$4,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,aedar_source_content_version=EXCLUDED.aedar_source_content_version,published_at=EXCLUDED.published_at",params=list(summary_version,nrow(summary_facts),ref_version,version))
     }
     timing$commit_started <- proc.time()[[3L]]
     progress("before-transaction-commit")

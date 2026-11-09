@@ -77,6 +77,108 @@ def _aggregate_row(territory_type, territory_id, typequ, n_addresses, n_observed
     }
 
 
+def _seed_aedar_summaries(publisher, *, complete_rank_fixture=False):
+    """Seed independently expected published summary rows for fixed reads.
+
+    The base TYPEQU fixtures keep their two non-zero examples; each summary's
+    `n_typequ=235` represents the published 233 additional zero categories.
+    These rows are authored fixture outputs, not calculated by an API adapter.
+    """
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS
+
+    source_version = "a" + "0" * 63
+    reference_version = "b" + "0" * 63
+    provenance = ("aedar_bretagne", "2026-v1", "https://example.test/aedar",
+                  "ODbL", "AEDAR fixture", None, "2026-09-30")
+    rows = []
+    positions = {}
+
+    def add(level, code, measure, value, addresses, observed, *, available=True, coverage="covered"):
+        row = (level, code, measure, value if available else None,
+            "available" if available else "unavailable", 235 if available else None,
+            addresses, observed, coverage, *provenance)
+        key = (level, code, measure)
+        if key in positions:
+            rows[positions[key]] = row
+        else:
+            positions[key] = len(rows)
+            rows.append(row)
+
+    for code, level, volume, diversity, addresses, observed in (
+            ("sel-c1", "commune", 18.0, .75, 10, 18),
+            ("sel-c2", "commune", 30.0, 1.2, 30, 50),
+            ("sel-c3", "commune", 30.0, 1.2, 10, 16),
+            ("sel-e1", "epci", 23.0, .9, 40, 64),
+            ("sel-e2", "epci", 27.0, 1.05, 200, 290),
+            ("22", "departement", 33.0, 1.15, 100, 170),
+            ("53", "region", 45.0, 1.4, 1000, 1700)):
+        add(level, code, "meanVolume", volume, addresses, observed)
+        add(level, code, "meanDiversity", diversity, addresses, observed)
+
+    for code, value_share, value_mean, addresses, observed in (
+            ("sel-c1", .33, 3.3, 10, 18), ("sel-c2", .70, 7.7, 30, 50),
+            ("sel-c3", .50, 5.5, 10, 16)):
+        add("commune", code, "transit10Diversity", value_share, addresses, observed)
+        add("commune", code, "transit10Volume", value_mean, addresses, observed)
+
+    # Publish unavailable rows explicitly, including whatever denominator and
+    # observation support remains derivable under the source compatibility law.
+    for code, addresses, observed in (("sel-c4", 5, 4), ("sel-c5", 20, 35),
+                                      ("sel-c6", 20, 34), ("sel-c8", 20, 34)):
+        for measure in ("meanVolume", "meanDiversity"):
+            add("commune", code, measure, None, addresses, observed,
+                available=False, coverage=None if code in ("sel-c5", "sel-c8") else "covered")
+    add("commune", "sel-c7", "meanVolume", 30.0, 10, 16)
+    add("commune", "sel-c7", "meanDiversity", None, 10, 16, available=False)
+    for measure in ("transit10Diversity", "transit10Volume"):
+        add("commune", "sel-c8", measure, None, 20, 34, available=False, coverage=None)
+
+    # The 40-reading density batch traverses every D1 peer even when its
+    # projected rank set is smaller. These independent summary fixtures make
+    # that request complete without asking the reader to expand TYPEQU facts.
+    for index, measure in enumerate(AEDAR_AGGREGATE_READINGS):
+        for code, addresses, observed, base_value in (
+                ("sel-c1", 10, 18, .2), ("sel-c2", 30, 50, .4),
+                ("sel-c3", 10, 16, .6), ("sel-c4", 5, 4, .8),
+                ("sel-c5", 20, 35, 1.0), ("sel-c6", 20, 34, 1.2),
+                ("sel-c7", 10, 16, 1.4), ("sel-c8", 20, 34, 1.6)):
+            if ("commune", code, measure) not in positions:
+                unavailable = code in ("sel-c4", "sel-c5", "sel-c6", "sel-c8")
+                coverage = None if code in ("sel-c5", "sel-c8") else "covered"
+                add("commune", code, measure, base_value + index * .002,
+                    addresses, observed, available=not unavailable, coverage=coverage)
+        for code, level, addresses, observed, base_value in (
+                ("sel-e1", "epci", 40, 64, .9), ("sel-e2", "epci", 200, 290, 1.1),
+                ("22", "departement", 100, 170, 1.3), ("53", "region", 1000, 1700, 1.5)):
+            if (level, code, measure) not in positions:
+                add(level, code, measure, base_value + index * .002, addresses, observed)
+
+    if complete_rank_fixture:
+        for peer_index, peer_id in enumerate(("rank-c1", "rank-c2", "rank-c3", "rank-c4")):
+            for index, measure in enumerate(AEDAR_AGGREGATE_READINGS):
+                if index == 0:
+                    value = (0.2, 0.2, 0.6, 0.8)[peer_index]
+                elif index == 1:
+                    value = (0.8, 0.6, 0.4, 0.2)[peer_index]
+                else:
+                    value = 2 * (0.1, 0.2, 0.3, 0.4)[peer_index] + 2 * index * .001
+                add("commune", peer_id, measure, value, 10, 16,
+                    available=not (peer_id == "rank-c4" and index == 6))
+        for index, measure in enumerate(AEDAR_AGGREGATE_READINGS):
+            add("epci", "rank-e", measure, .1 + 2 * index * .001, 40, 68)
+
+    insert = """INSERT INTO aedar_territory_summary(
+        territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,
+        coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date)
+      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
+    with publisher.cursor() as cursor:
+        cursor.executemany(insert, rows)
+    publisher.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
+        reference_content_version,aedar_source_content_version)
+        VALUES ('aedar_territory_summary','summary-fixture-v1',%s,%s,%s)""",
+        (len(rows), reference_version, source_version))
+
+
 def _seed_aedar(publisher, *, complete_rank_fixture=False):
     """Seed the reference, the published aggregates and the reference-only marker."""
     publisher.execute("""INSERT INTO territory_reference(
@@ -237,6 +339,7 @@ def _seed_aedar(publisher, *, complete_rank_fixture=False):
         table_name,content_version,row_count,reference_content_version)
         VALUES ('aedar_territorial_aggregate','a' || repeat('0',63),%s,'b' || repeat('0',63))""",
         (len(rows),))
+    _seed_aedar_summaries(publisher, complete_rank_fixture=complete_rank_fixture)
     # Pooled density-class reference rows keep the reference-only marker valid
     # (group_row_count must match and stay >= 1); no peer/rank rows exist. The
     # count_15_car_* rows back the original registry-wide aggregate readings (#914):
@@ -618,7 +721,32 @@ def test_fixed_aggregate_same_level_and_density_contexts(aedar_http):
     assert comparison["value"] == pytest.approx(0.75)
 
 
-def test_fixed_aggregate_batch_shares_rank_scan_across_all_readings(aedar_http, monkeypatch):
+def test_fixed_summary_missing_or_stale_publication_fails_closed(aedar_http, canonical_db_env):
+    import psycopg
+
+    item = _aggregate_item(target_id="sel-c1", measures=("meanVolume",),
+        fields=["group_value", "value"], context="epci")
+    successful = aedar_http.post("/api/resources/read", json=item)
+    assert successful.status_code == 200, successful.text
+    assert successful.json()["comparison"]["value"] == pytest.approx(18.0)
+
+    with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
+        publisher.execute("UPDATE table_publication SET reference_content_version='stale-ref' WHERE table_name='aedar_territory_summary'")
+        stale_reference = aedar_http.post("/api/resources/read", json=item)
+        assert stale_reference.status_code == 503, stale_reference.text
+        publisher.execute("UPDATE table_publication SET reference_content_version='b' || repeat('0',63) WHERE table_name='aedar_territory_summary'")
+
+        publisher.execute("UPDATE table_publication SET aedar_source_content_version='stale-source' WHERE table_name='aedar_territory_summary'")
+        stale_source = aedar_http.post("/api/resources/read", json=item)
+        assert stale_source.status_code == 503, stale_source.text
+        publisher.execute("UPDATE table_publication SET aedar_source_content_version='a' || repeat('0',63) WHERE table_name='aedar_territory_summary'")
+
+        publisher.execute("DELETE FROM aedar_territory_summary WHERE territory_type='commune' AND territory_id='sel-c1' AND measure='meanVolume'")
+        missing = aedar_http.post("/api/resources/read", json=item)
+        assert missing.status_code == 503, missing.text
+
+
+def test_fixed_aggregate_batch_reads_summaries_without_typequ_expansion(aedar_http, monkeypatch):
     from api import aedar_reads, snapshot_reads
     from api.aedar_models import AEDAR_AGGREGATE_READINGS
 
@@ -627,13 +755,14 @@ def test_fixed_aggregate_batch_shares_rank_scan_across_all_readings(aedar_http, 
         fields=["group_value", "value", "rank", "rank_size", "rank_ties"], context="density_class")}
         for index, measure in enumerate(measures)]
     counts = {name: 0 for name in ("registry", "peer_ids", "territorial", "multi_territorial",
-                                   "pooled", "multi_pooled", "cohort")}
+                                   "summary", "pooled", "multi_pooled", "cohort")}
     original_registry = aedar_reads._aedar_registry_size
     original_peer_ids = aedar_reads._aedar_fixed_peer_ids
     original_territorial = aedar_reads._aedar_aggregate_records
     original_multi = aedar_reads._aedar_multi_aggregate_records
     original_pooled = aedar_reads._aedar_pooled_group_aggregate
     original_multi_pooled = aedar_reads._aedar_multi_pooled_group_aggregates
+    original_summary = aedar_reads._aedar_territory_summary_snapshot
     original_cohort = snapshot_reads._comparison_cohort
 
     def counted(name, original):
@@ -648,6 +777,7 @@ def test_fixed_aggregate_batch_shares_rank_scan_across_all_readings(aedar_http, 
     monkeypatch.setattr(aedar_reads, "_aedar_multi_aggregate_records", counted("multi_territorial", original_multi))
     monkeypatch.setattr(aedar_reads, "_aedar_pooled_group_aggregate", counted("pooled", original_pooled))
     monkeypatch.setattr(aedar_reads, "_aedar_multi_pooled_group_aggregates", counted("multi_pooled", original_multi_pooled))
+    monkeypatch.setattr(aedar_reads, "_aedar_territory_summary_snapshot", counted("summary", original_summary))
     monkeypatch.setattr(snapshot_reads, "_comparison_cohort", counted("cohort", original_cohort))
 
     singles = []
@@ -666,12 +796,17 @@ def test_fixed_aggregate_batch_shares_rank_scan_across_all_readings(aedar_http, 
     assert batch_comparisons == singles, next((f"{measures[index]}: batch={batch_value!r}, single={single_value!r}"
         for index, (batch_value, single_value) in enumerate(zip(batch_comparisons, singles))
         if batch_value != single_value), "length mismatch")
-    assert counts == {"registry": 1, "peer_ids": 1, "territorial": 0, "multi_territorial": 1,
+    # This is the density context: its established pooled reference still needs
+    # the registry count and pooled artifact adapter. Territorial values/ranks
+    # use one summary read; neither territorial adapter expands TYPEQU rows.
+    assert counts == {"registry": 1, "peer_ids": 1, "territorial": 0, "multi_territorial": 0,
+                      "summary": 1,
                       "pooled": 0, "multi_pooled": 1, "cohort": 1}
     assert baseline["registry"] == 40
     assert baseline["peer_ids"] == 80
-    assert baseline["territorial"] == 40
+    assert baseline["territorial"] == 0
     assert baseline["multi_territorial"] == 0
+    assert baseline["summary"] == 40
     assert baseline["pooled"] == 40
     assert baseline["multi_pooled"] == 0
     assert baseline["cohort"] == 40
@@ -692,7 +827,8 @@ def test_fixed_aggregate_batch_shares_rank_scan_across_all_readings(aedar_http, 
         assert {key: result[key] for key in expected_fields} == {key: expected[key] for key in expected_fields}
         if measure not in ranked:
             assert not ({"rank", "rank_size", "rank_ties"} & set(result))
-    assert counts == {"registry": 1, "peer_ids": 1, "territorial": 0, "multi_territorial": 2,
+    assert counts == {"registry": 1, "peer_ids": 1, "territorial": 0, "multi_territorial": 0,
+                      "summary": 1,
                       "pooled": 0, "multi_pooled": 1, "cohort": 1}
 
 
@@ -732,8 +868,19 @@ def test_fixed_aggregate_all_40_ranks_have_independent_fixture_expectations(aeda
         assert comparison["group_value"] == pytest.approx(0.1 + 2 * index * 0.001)
 
 
-def test_fixed_aggregate_batch_preparation_isolated_by_context_and_focal(aedar_rank_http):
+def test_fixed_aggregate_batch_preparation_isolated_by_context_and_focal(aedar_rank_http, monkeypatch):
     from api.aedar_models import AEDAR_AGGREGATE_READINGS
+    from api import aedar_reads
+
+    work = {name: 0 for name in ("registry", "territorial", "multi_territorial")}
+    for name, target in (("registry", "_aedar_registry_size"),
+                         ("territorial", "_aedar_aggregate_records"),
+                         ("multi_territorial", "_aedar_multi_aggregate_records")):
+        original = getattr(aedar_reads, target)
+        def counted(*args, _name=name, _original=original, **kwargs):
+            work[_name] += 1
+            return _original(*args, **kwargs)
+        monkeypatch.setattr(aedar_reads, target, counted)
 
     measures = list(AEDAR_AGGREGATE_READINGS)[:2]
     items = []
@@ -755,6 +902,9 @@ def test_fixed_aggregate_batch_preparation_isolated_by_context_and_focal(aedar_r
     assert all(results[f"rank-bretagne-{index}"]["group_id"] == "53" for index in range(2))
     assert all(results[f"rank-bretagne-{index}"]["group_value"] !=
                results[f"rank-e1-{index}"]["group_value"] for index in range(2))
+    # Direct EPCI/Bretagne summaries do not need even the registry-count read;
+    # only density's retained pooled artifact is allowed that source-grain tie.
+    assert work == {"registry": 0, "territorial": 0, "multi_territorial": 0}
 
 
 def test_fixed_aggregate_density_pooled_null_observed_row_is_unavailable(aedar_http):
