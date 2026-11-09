@@ -224,6 +224,64 @@ project_aedar_typequ_metadata <- function(hierarchy_path,gamme_path,registry=rea
 AEDAR_AGGREGATE_MEASURES <- as.vector(unlist(lapply(c(5,10,15,20), function(m)
   unlist(lapply(c("walk","transit","transit_gain","bike_lts2","bike_lts4","car"), function(mode)
     paste0("count_",m,"_",mode,"_",c("share","min","max",paste0("decile",1:9),"mean")))))))
+
+# Producer bindings for the registry-wide readings. This mirrors
+# api/aedar_models.py's AEDAR_AGGREGATE_READINGS identities directly from the
+# source coordinates; transit_gain is deliberately not an aggregate reading.
+aedar_aggregate_reading_bindings <- function() {
+  modes <- c("walk","transit","bike_lts2","bike_lts4","car")
+  coordinates <- expand.grid(mode=modes,horizon=c(5L,10L,15L,20L),
+    kind=c("diversity","volume"),stringsAsFactors=FALSE)
+  coordinates$measure <- ifelse(coordinates$mode=="car"&coordinates$horizon==15L,
+    ifelse(coordinates$kind=="diversity","meanDiversity","meanVolume"),
+    paste0(coordinates$mode,coordinates$horizon,ifelse(coordinates$kind=="diversity","Diversity","Volume")))
+  coordinates$underlying <- paste0("count_",coordinates$horizon,"_",coordinates$mode,"_",
+    ifelse(coordinates$kind=="diversity","share","mean"))
+  coordinates[c("measure","underlying")]
+}
+
+# Pure territory-grain projection over validated TYPEQU facts. It deliberately
+# returns no fabricated indicator/TYPEQU coordinate: measure is the producer's
+# existing registry-wide reading identity.
+project_aedar_territory_summary <- function(facts,source,
+    bindings=aedar_aggregate_reading_bindings(),registry_size=AEDAR_TYPEQU_REGISTRY_COUNT) {
+  required <- c("territory_type","territory_id","TYPEQU","n_addresses","n_observed",
+    "coverage_status",unique(bindings$underlying))
+  if(!is.data.frame(facts)||!all(required%in%names(facts))||
+     !is.data.frame(bindings)||!setequal(names(bindings),c("measure","underlying"))||
+     anyDuplicated(bindings$measure)||anyDuplicated(bindings$underlying)||nrow(bindings)!=40L||
+     !is.list(source)||!all(c("source_id","vintage","url","licence","attribution",
+       "reference_date","publication_date")%in%names(source)))
+    stop("AEDAR territory summary requires validated facts and the complete 40-reading binding",call.=FALSE)
+  out <- list(); n <- 0L
+  keys <- unique(facts[c("territory_type","territory_id")])
+  for(k in seq_len(nrow(keys))) {
+    key <- keys[k,,drop=FALSE]
+    rows <- facts[facts$territory_type==key$territory_type[[1L]] & facts$territory_id==key$territory_id[[1L]],,drop=FALSE]
+    complete <- nrow(rows)==registry_size && !anyDuplicated(rows$TYPEQU)
+    for(i in seq_len(nrow(bindings))) {
+      underlying <- bindings$underlying[[i]]; values <- as.numeric(rows[[underlying]])
+      supported <- complete && all(rows$coverage_status=="covered") &&
+        length(unique(rows$n_addresses))==1L && rows$n_addresses[[1L]]>0 &&
+        all(is.finite(rows$n_observed)) && all(rows$n_observed>=0 & rows$n_observed<=rows$n_addresses) &&
+        all(is.finite(values)) && all(values>=0) &&
+        (!endsWith(underlying,"_share") || all(values<=1))
+      n <- n+1L
+      out[[n]] <- data.frame(territory_type=key$territory_type[[1L]],territory_id=key$territory_id[[1L]],
+        measure=bindings$measure[[i]],value=if(supported) sum(values) else NA_real_,
+        status=if(supported) "available" else "unavailable",n_typequ=if(supported) nrow(rows) else NA_integer_,
+        n_addresses=if(supported) rows$n_addresses[[1L]] else NA_real_,
+        n_observed=if(supported) sum(rows$n_observed) else NA_real_,
+        coverage_status=if(supported) "covered" else NA_character_,
+        source_id=source$source_id,vintage=source$vintage,source_url=source$url,
+        licence=source$licence,attribution=source$attribution,
+        reference_date=source$reference_date,publication_date=source$publication_date,
+        stringsAsFactors=FALSE)
+    }
+  }
+  if(!length(out)) return(data.frame())
+  do.call(rbind,out)
+}
 AEDAR_SOURCE_RESOURCES <- data.frame(
   kind=c(rep("address",6),rep("aggregate",4),"documentation"),
   mode=c("walk","transit_gain","transit","car","bike_lts4","bike_lts2",rep(NA_character_,5)),

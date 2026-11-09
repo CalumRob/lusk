@@ -623,6 +623,41 @@ test_that("AEDAR canonical output and database publication require complete TYPE
   expect_error(publish_aedar_aggregates(projection,NULL),"requires canonical TYPEQU metadata")
 })
 
+test_that("AEDAR territory summary projects the bound 40 readings under complete support", {
+  projection <- project_aedar_aggregates(make_aedar_test_inputs(),make_aedar_test_typequ_metadata())
+  facts <- projection$facts
+  # Independently vary measure values by TYPEQU and territory; expectations
+  # below are sums over the fixture rows, not a call back into the projector.
+  facts$count_5_walk_share <- seq_len(nrow(facts)) / 1000
+  facts$count_5_walk_mean <- seq_len(nrow(facts)) / 10
+  result <- project_aedar_territory_summary(facts,projection$source)
+  expect_equal(nrow(result),4L*40L)
+  expect_equal(unique(result$territory_type),AEDAR_AGGREGATE_LEVELS)
+  commune <- subset(result,territory_type=="commune" & measure=="walk5Diversity")
+  expected <- sum(facts$count_5_walk_share[facts$territory_type=="commune"])
+  expect_equal(commune$value,expected)
+  expect_equal(commune$status,"available")
+  expect_equal(commune$n_typequ,AEDAR_TYPEQU_REGISTRY_COUNT)
+  expect_equal(commune$n_addresses,2)
+  expect_equal(commune$source_id,projection$source$source_id)
+  car <- subset(result,territory_type=="commune" & measure=="meanVolume")
+  expect_equal(car$value,sum(facts$count_15_car_mean[facts$territory_type=="commune"]))
+  zero_facts <- facts
+  zero_facts$count_5_walk_share[] <- 0
+  zero <- subset(project_aedar_territory_summary(zero_facts,projection$source),measure=="walk5Diversity")
+  expect_equal(zero$value,rep(0,4))
+  partial <- project_aedar_territory_summary(facts[facts$TYPEQU!=facts$TYPEQU[[1L]],],projection$source)
+  expect_true(all(is.na(subset(partial,measure=="walk5Diversity")$value)))
+  bad_support <- facts
+  bad_support$n_addresses[bad_support$territory_type=="commune"] <- c(2,3,rep(2,AEDAR_TYPEQU_REGISTRY_COUNT-2L))
+  unsupported <- subset(project_aedar_territory_summary(bad_support,projection$source),
+    territory_type=="commune" & measure=="walk5Diversity")
+  expect_true(is.na(unsupported$value))
+  bad_provenance <- projection$source
+  bad_provenance$source_id <- NULL
+  expect_error(project_aedar_territory_summary(facts,bad_provenance),"complete 40-reading binding")
+})
+
 test_that("AEDAR publication refuses an incomplete incoming TYPEQU snapshot before database access", {
   projection <- project_aedar_aggregates(make_aedar_test_inputs(),make_aedar_test_typequ_metadata())
   projection$facts <- projection$facts[-1L,,drop=FALSE]
