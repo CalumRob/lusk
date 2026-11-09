@@ -264,6 +264,9 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         if resource.resource_kind == "aedar_source_grain" and item.intent.kind == "facts":
             from api.aedar_models import AEDAR_MEASURE_KEYS
             supported = {"measures." + key for key in AEDAR_MEASURE_KEYS}
+        elif (resource.resource_kind == "aedar_territory_summary"
+              and item.intent.kind == "facts"):
+            supported = set(resource.fields)
         elif (resource.resource_kind == "aedar_source_grain"
                 and item.intent.kind == "selected_comparison"):
             supported = set(resource.fields) | set(_AEDAR_SELECTED_COMPARISON_FIELDS)
@@ -560,7 +563,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 axes=axes, axis_values=(("groupe", groups),) if kind == "typed_reading" else (),
                 target_kinds=("territory", "territory_cohort") if kind == "typed_reading" else ("territory",),
                 target_ids=(),
-                dynamic_axes=(), fields=tuple(dict.fromkeys([
+                dynamic_axes=tuple(declaration.get("dynamic_axes", ())), fields=tuple(dict.fromkeys([
                     *declaration["fields"],
                     *(side["field"] for side in declaration.get("side_relations", ())),
                 ])),

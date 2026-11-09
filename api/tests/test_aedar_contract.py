@@ -15,11 +15,14 @@ def test_aedar_semantic_dispatch_is_declared_typed_and_bounded():
     # semantic reader is the sole read path. Coordinate and intent grammar stay
     # exactly as declared, and the shared source-grain SQL reader is reused.
     resource = default_resource_catalogue.__wrapped__().resources_by_id["aedar_territorial_aggregate"]
+    summary = default_resource_catalogue.__wrapped__().resources_by_id["aedar_territory_summary"]
     assert resource.resource_kind == "aedar_source_grain"
     assert resource.axes == ("typequ", "measure", "context")
     assert resource.intents == ("facts", "fixed_comparison", "selected_comparison")
     assert resource.allowed_levels == ("commune", "epci", "departement", "region")
     assert resource.context_values == ("density_class", "epci", "bretagne", "same_level")
+    assert summary.resource_kind == "aedar_territory_summary"
+    assert summary.intents == ("facts",) and summary.dynamic_axes == ("measure",)
     dispatch_source = inspect.getsource(semantic_resource_reader.SemanticResourceReader)
     assert 'resource.resource_kind == "aedar_source_grain"' in dispatch_source
     assert dispatch_source.count("_aedar_territorial_aggregate_snapshot") >= 2
@@ -32,6 +35,26 @@ def test_aedar_semantic_dispatch_is_declared_typed_and_bounded():
     assert "LIMIT %s OFFSET %s" in sql
     assert "typequ=ANY(%s)" in sql
     assert "aedar_territorial_aggregate" in sql
+
+
+def test_aedar_summary_resource_has_an_independent_focal_contract_and_keeps_typed_facts():
+    catalogue = default_resource_catalogue.__wrapped__()
+    summary = ResourceReadItem.model_validate({
+        "resource": "aedar_territory_summary",
+        "target": {"kind": "territory", "type": "epci", "id": "E1"},
+        "coordinates": {"measure": ["meanVolume", "meanDiversity"]},
+        "fields": ["value", "status", "n_addresses", "n_observed", "source_id"],
+        "intent": {"kind": "facts"},
+    })
+    assert validate_resource_item(summary, catalogue).resource_kind == "aedar_territory_summary"
+    typed = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate",
+        "target": {"kind": "territory", "type": "epci", "id": "E1"},
+        "coordinates": {"typequ": ["A104"]},
+        "fields": ["measures.count_5_walk_mean"],
+        "intent": {"kind": "facts"},
+    })
+    assert validate_resource_item(typed, catalogue).resource_kind == "aedar_source_grain"
 
 
 def test_aedar_semantic_coordinates_and_fixed_comparison_intent_are_closed_and_bounded():
@@ -142,7 +165,7 @@ def test_fixed_aggregate_reads_peer_population_only_when_rank_is_requested(
             reading.update(dict(zip(("source_id", "vintage_id", "source_url", "licence",
                                      "attribution", "reference_date", "publication_date"), provenance)))
             readings[(territory_id, "meanDiversity")] = reading
-        return {"readings": readings}
+        return {"content_version": "summary-v1", "readings": readings}
     monkeypatch.setattr(aedar_reads, "_aedar_territory_summary_snapshot", summary_snapshot)
     marker = ("comparison-v1", "2026-v1", "aedar-v1", "reference-v1", "input-v1", {}, None, None, None)
     facet = {"direction": "high"}
@@ -154,6 +177,7 @@ def test_fixed_aggregate_reads_peer_population_only_when_rank_is_requested(
     comparison = result["comparison"]
 
     assert comparison["group_value"] == 2.0
+    assert result["summary_content_version"] == "summary-v1"
     assert comparison["value"] == (5.0 if focal_available else None)
     assert comparison["status"] == ("measured" if focal_available else "not_available")
     assert comparison["coverage_status"] == ("covered" if focal_available else None)
@@ -1089,6 +1113,11 @@ def _aedar_selected_state():
             "epci" if code in ("E1", "E2") else "departement" if code == "22" else "region")
         summaries[(kind, code, "meanVolume")] = summary(volume, addresses, observed)
         summaries[(kind, code, "meanDiversity")] = summary(diversity, addresses, observed)
+    for code, share, volume, addresses, observed in (
+            ("22001", .33, 3.3, 10, 18), ("22002", .70, 7.7, 30, 50),
+            ("22003", .50, 5.5, 10, 16)):
+        summaries[("commune", code, "transit10Diversity")] = summary(share, addresses, observed)
+        summaries[("commune", code, "transit10Volume")] = summary(volume, addresses, observed)
     return {
         "reference": {"22001": "commune", "22002": "commune", "22003": "commune",
                       "E1": "epci", "E2": "epci", "22": "departement", "53": "region"},
@@ -1496,12 +1525,11 @@ def test_aedar_selected_aggregate_skips_ineligible_members_instead_of_ranking_th
     from fastapi import HTTPException
     members = [("commune", "22001"), ("commune", "22002"), ("commune", "22003")]
     facets = _aedar_facets()
-    # A member whose registry is incomplete contributes no partial sum: it is
-    # honestly unavailable and ineligible — the pooled statistic and the rank
-    # read over the eligible members only (22001, 22002 -> weights 10, 30).
+    # The producer has independently marked an incomplete-registry summary
+    # unavailable; the reader excludes it from pooling and rank.
     state = _aedar_selected_state()
-    del state["aggregates"][("member", "22003")]["B207"]
-    del state["aggregates"][("focal", "22003")]["B207"]
+    state["summaries"][("commune", "22003", "meanVolume")].update(
+        value=None, status="unavailable", n_typequ=None)
     result = aedar_reads._aedar_selected_comparison_snapshot(
         _AedarSelectedConnection(state), "commune", "22001", members, None,
         ["meanVolume"], ["group_value", "value", "rank", "rank_size", "rank_ties"], facets)
@@ -1513,10 +1541,10 @@ def test_aedar_selected_aggregate_skips_ineligible_members_instead_of_ranking_th
     # rank_size reflects the eligible population: 22003 is not ranked.
     assert (entry["rank"], entry["rank_size"], entry["rank_ties"]) == (2, 2, 1)
     assert result["scope"]["member_count"] == 3  # requested membership stays truthful
-    # A member with an unmeasured (null) per-type value is equally ineligible.
+    # A second unavailable summary is equally ineligible.
     state = _aedar_selected_state()
-    state["aggregates"][("member", "22003")]["B207"]["measures"]["count_15_car_mean"] = None
-    state["aggregates"][("focal", "22003")]["B207"]["measures"]["count_15_car_mean"] = None
+    state["summaries"][("commune", "22003", "meanVolume")].update(
+        value=None, status="unavailable", n_typequ=None)
     result = aedar_reads._aedar_selected_comparison_snapshot(
         _AedarSelectedConnection(state), "commune", "22001", members, None,
         ["meanVolume"], ["group_value", "rank", "rank_size"], facets)
@@ -1536,17 +1564,8 @@ def test_aedar_selected_aggregate_skips_ineligible_members_instead_of_ranking_th
         assert err.value.status_code == 422
 
 
-def test_aedar_aggregate_availability_law_matches_the_fiche_conditions():
-    """The typed aggregate adapters enforce the fiche's full compatibility law.
-
-    Mirrors carAccessMeans (app/src/fiche/content/aedarAccessSection.ts) and
-    CONTEXT.md « Moyennes d'accès en voiture AEDAR »: complete registry, one
-    shared source vintage, every row covered, agreeing positive address
-    population, valid observed counts, finite non-negative values (<= 1 for
-    shares). Rows failing any condition make the adapter reading honestly
-    unavailable; selected members failing it are skipped by rank. Fixed reads
-    consume their independently published summary status.
-    """
+def test_aedar_aggregate_comparison_consumes_published_summary_availability():
+    """API pooling/ranking consumes the producer-owned compatibility result."""
     facets = _aedar_facets()
     members = [("commune", "22001"), ("commune", "22002"), ("commune", "22003")]
 
@@ -1556,39 +1575,23 @@ def test_aedar_aggregate_availability_law_matches_the_fiche_conditions():
             ["meanVolume"], ["group_value", "value", "rank", "rank_size", "rank_ties"], facets)
         return result["comparisons"][0]
 
-    def break_22003(state, key, value):
-        for scope in ("member", "focal"):
-            state["aggregates"][(scope, "22003")]["B207"][key] = value
+    def mark_22003_unavailable(state):
+        state["summaries"][("commune", "22003", "meanVolume")].update(
+            value=None, status="unavailable", n_typequ=None)
 
-    # Mixed coverage: one row not "covered" -> 22003 ineligible.
+    # An unavailable producer summary is ineligible.
     state = _aedar_selected_state()
-    break_22003(state, "coverage", "pending_review")
+    mark_22003_unavailable(state)
+    # Contradictory typed facts do not alter summary-driven pooling or ranks.
+    state["aggregates"][("member", "22003")]["A104"]["measures"]["count_15_car_mean"] = 999.0
     entry = selected_volume(state)
     assert (entry["rank"], entry["rank_size"], entry["rank_ties"]) == (2, 2, 1)
     assert entry["group_value"] == pytest.approx(27.0)
 
-    # Divergent provenance: one row on another vintage -> 22003 ineligible.
+    # Diversity and volume availability remain independent summary readings.
     state = _aedar_selected_state()
-    break_22003(state, "vintage_id", "2026-v2")
-    entry = selected_volume(state)
-    assert (entry["rank"], entry["rank_size"]) == (2, 2)
-
-    # Observed-count anomaly: n_observed beyond n_addresses -> ineligible.
-    state = _aedar_selected_state()
-    break_22003(state, "n_observed", 999)
-    entry = selected_volume(state)
-    assert (entry["rank"], entry["rank_size"]) == (2, 2)
-
-    # Divergent address population -> ineligible.
-    state = _aedar_selected_state()
-    break_22003(state, "n_addresses", 99)
-    entry = selected_volume(state)
-    assert (entry["rank"], entry["rank_size"]) == (2, 2)
-
-    # A share above 1 invalidates only the diversity reading, not the volume.
-    state = _aedar_selected_state()
-    for scope in ("member", "focal"):
-        state["aggregates"][(scope, "22002")]["A104"]["measures"]["count_15_car_share"] = 1.5
+    state["summaries"][("commune", "22002", "meanDiversity")].update(
+        value=None, status="unavailable", n_typequ=None)
     result = aedar_reads._aedar_selected_comparison_snapshot(
         _AedarSelectedConnection(state), "commune", "22001", members, None,
         ["meanDiversity", "meanVolume"], ["group_value", "rank", "rank_size"], facets)

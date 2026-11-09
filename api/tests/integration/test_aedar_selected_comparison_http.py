@@ -390,7 +390,7 @@ def _seed_aedar(publisher, *, complete_rank_fixture=False):
 
 
 @contextmanager
-def _aedar_http_client(canonical_db_env, *, complete_rank_fixture=False):
+def _aedar_http_client(canonical_db_env, *, complete_rank_fixture=False, query_spy=None):
     import psycopg
     from fastapi.testclient import TestClient
     from psycopg_pool import ConnectionPool
@@ -407,7 +407,18 @@ def _aedar_http_client(canonical_db_env, *, complete_rank_fixture=False):
         @contextmanager
         def connection(self):
             with pool.connection() as connection:
-                yield connection
+                if query_spy is None:
+                    yield connection
+                else:
+                    class QuerySpyConnection:
+                        def execute(self, query, params=None):
+                            query_spy.append(query)
+                            return connection.execute(query, params)
+
+                        def __getattr__(self, name):
+                            return getattr(connection, name)
+
+                    yield QuerySpyConnection()
 
     previous = main.app.dependency_overrides.get(main.get_repository)
     main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(Pool())
@@ -629,6 +640,164 @@ def _aggregate_item(target_type="commune", target_id="sel-c1", measures=("meanVo
     if fields is not None:
         item["fields"] = fields
     return item
+
+
+def _summary_item(target_type="commune", target_id="sel-c1", measures=None, fields=None):
+    item = {
+        "resource": "aedar_territory_summary",
+        "target": {"kind": "territory", "type": target_type, "id": target_id},
+        "intent": {"kind": "facts"},
+    }
+    if measures is not None:
+        item["coordinates"] = {"measure": list(measures)}
+    if fields is not None:
+        item["fields"] = fields
+    return item
+
+
+def test_focal_summary_resource_returns_all_40_readings_at_every_territory_level(aedar_http):
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS
+
+    measures = list(AEDAR_AGGREGATE_READINGS)
+    expected = {
+        ("commune", "sel-c1"): (0.2, {"meanVolume": 18.0, "meanDiversity": .75,
+                                       "transit10Diversity": .33, "transit10Volume": 3.3}),
+        ("epci", "sel-e1"): (.9, {"meanVolume": 23.0, "meanDiversity": .9}),
+        ("departement", "22"): (1.3, {"meanVolume": 33.0, "meanDiversity": 1.15}),
+        ("region", "53"): (1.5, {"meanVolume": 45.0, "meanDiversity": 1.4}),
+    }
+    items = [{"id": f"summary-{level}", **_summary_item(level, territory_id)}
+             for (level, territory_id) in expected]
+    response = aedar_http.post("/api/resources/read-batch", json={"items": items})
+    assert response.status_code == 200, response.text
+    results = {result["id"]: result["data"] for result in response.json()["results"]}
+
+    for (level, territory_id), (base, overrides) in expected.items():
+        body = results[f"summary-{level}"]
+        assert body["territory"] == {"territory_type": level, "territory_id": territory_id}
+        assert body["summary_content_version"] == "summary-fixture-v1"
+        assert body["aedar_content_version"] == "a" + "0" * 63
+        assert body["reference_content_version"] == "b" + "0" * 63
+        readings = {reading["measure"]: reading for reading in body["readings"]}
+        assert set(readings) == set(measures)
+        for index, measure in enumerate(measures):
+            reading = readings[measure]
+            assert reading["value"] == pytest.approx(overrides.get(measure, base + index * .002))
+            assert reading["status"] == "available" and reading["n_typequ"] == 235
+            assert reading["coverage_status"] == "covered" and reading["statistic"] == "direct"
+            assert reading["source_id"] == "aedar_bretagne"
+            assert reading["n_addresses"] == {"commune": 10, "epci": 40,
+                                               "departement": 100, "region": 1000}[level]
+            assert reading["n_observed"] == {"commune": 18, "epci": 64,
+                                             "departement": 170, "region": 1700}[level]
+
+
+def test_focal_summary_resource_fails_closed_atomically_with_typed_facts(
+        canonical_db_env):
+    import psycopg
+
+    summary = {"id": "summary", **_summary_item(measures=("meanVolume",))}
+    typed = {"id": "typed", "resource": "aedar_territorial_aggregate",
+             "target": {"kind": "territory", "type": "commune", "id": "sel-c1"},
+             "coordinates": {"typequ": ["A104"]},
+             "fields": ["measures.count_5_walk_mean"], "intent": {"kind": "facts"}}
+    with _aedar_http_client(canonical_db_env) as client:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
+            publisher.execute("UPDATE table_publication SET aedar_source_content_version='stale-source' "
+                              "WHERE table_name='aedar_territory_summary'")
+            stale_source = client.post("/api/resources/read-batch", json={"items": [typed, summary]})
+            assert stale_source.status_code == 503, stale_source.text
+            publisher.execute("UPDATE table_publication SET aedar_source_content_version=%s "
+                              "WHERE table_name='aedar_territory_summary'", ("a" + "0" * 63,))
+
+            publisher.execute("UPDATE table_publication SET reference_content_version='stale-reference' "
+                              "WHERE table_name='aedar_territory_summary'")
+            stale_reference = client.post("/api/resources/read-batch", json={"items": [typed, summary]})
+            assert stale_reference.status_code == 503, stale_reference.text
+
+
+def test_focal_summary_projection_is_partial_and_never_reads_typequ_facts(canonical_db_env):
+    queries = []
+    with _aedar_http_client(canonical_db_env, query_spy=queries) as client:
+        response = client.post("/api/resources/read", json=_summary_item(
+            measures=("meanVolume", "meanDiversity"), fields=["status", "n_addresses"]))
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["summary_content_version"] == "summary-fixture-v1"
+        assert body["aedar_content_version"] == "a" + "0" * 63
+        assert body["reference_content_version"] == "b" + "0" * 63
+        assert body["readings"] == [
+            {"measure": "meanVolume", "status": "available", "n_addresses": 10},
+            {"measure": "meanDiversity", "status": "available", "n_addresses": 10},
+        ]
+        unavailable = client.post("/api/resources/read", json=_summary_item(
+            target_id="sel-c4", measures=("meanVolume",)))
+        assert unavailable.status_code == 200, unavailable.text
+        reading = unavailable.json()["readings"][0]
+        assert reading["value"] is None and reading["status"] == "unavailable"
+        assert reading["n_typequ"] is None
+        assert reading["n_addresses"] == 5 and reading["n_observed"] == 4
+        unknown = client.post("/api/resources/read", json=_summary_item(measures=("not_a_measure",)))
+        assert unknown.status_code == 422
+        sql = " ".join(queries).lower()
+        assert "from aedar_territory_summary where" in sql
+        assert "from aedar_territorial_aggregate" not in sql
+        assert "jsonb_each" not in sql
+
+
+def test_selected_aggregate_batch_reads_one_summary_projection_without_typequ_sql(
+        canonical_db_env):
+    from api.aedar_models import AEDAR_AGGREGATE_READINGS
+
+    queries = []
+    with _aedar_http_client(canonical_db_env, query_spy=queries) as client:
+        measures = list(AEDAR_AGGREGATE_READINGS)
+        ranked = {"meanDiversity", "meanVolume"}
+        members = [{"type": "commune", "id": code}
+                   for code in ("sel-c1", "sel-c2", "sel-c3")]
+        items = [
+            {"id": "ranked", **_aggregate_item(measures=tuple(sorted(ranked)), members=members,
+                fields=["group_value", "value", "rank", "rank_size", "rank_ties"])},
+            {"id": "values", **_aggregate_item(
+                measures=tuple(measure for measure in measures if measure not in ranked),
+                members=members, fields=["group_value", "value"])},
+        ]
+        response = client.post("/api/resources/read-batch", json={"items": items})
+        assert response.status_code == 200, response.text
+        results = {result["id"]: result["data"]["comparisons"]
+                   for result in response.json()["results"]}
+        assert len(results["ranked"]) == 2 and len(results["values"]) == 38
+        by_measure = {entry["measure"]: entry for entry in results["ranked"]}
+        assert by_measure["meanVolume"]["group_value"] == pytest.approx(27.6)
+        assert (by_measure["meanVolume"]["rank"], by_measure["meanVolume"]["rank_size"],
+                by_measure["meanVolume"]["rank_ties"]) == (3, 3, 1)
+        assert by_measure["meanDiversity"]["group_value"] == pytest.approx(1.11)
+        assert (by_measure["meanDiversity"]["rank"], by_measure["meanDiversity"]["rank_size"],
+                by_measure["meanDiversity"]["rank_ties"]) == (3, 3, 1)
+        all_entries = {entry["measure"]: entry
+                       for entry in results["ranked"] + results["values"]}
+        group_overrides = {"meanVolume": 27.6, "meanDiversity": 1.11,
+                           "transit10Diversity": .586, "transit10Volume": 6.38}
+        focal_overrides = {"meanVolume": 18.0, "meanDiversity": .75,
+                           "transit10Diversity": .33, "transit10Volume": 3.3}
+        for index, measure in enumerate(measures):
+            entry = all_entries[measure]
+            assert entry["group_value"] == pytest.approx(
+                group_overrides.get(measure, .4 + index * .002))
+            assert entry["value"] == pytest.approx(
+                focal_overrides.get(measure, .2 + index * .002))
+            assert entry["group_n_addresses"] == 50 and entry["group_n_observed"] == 84
+            assert entry["group_coverage_status"] == "covered"
+            assert entry["n_addresses"] == 10 and entry["n_observed"] == 18
+        assert {measure for measure, entry in all_entries.items() if "rank" in entry} == ranked
+        assert all(not ({"rank", "rank_size", "rank_ties"} & set(entry))
+                   for entry in results["values"])
+        summary_reads = [sql for sql in queries
+                         if "from aedar_territory_summary where" in sql.lower()]
+        assert len(summary_reads) == 1, queries
+        assert "from aedar_territorial_aggregate" not in " ".join(queries).lower()
+        assert "jsonb_each" not in " ".join(queries).lower()
+        assert "count(distinct typequ)" not in " ".join(queries).lower()
 
 
 def test_fixed_aggregate_reading_returns_direct_reference_peer_rank_and_ties(aedar_http):
