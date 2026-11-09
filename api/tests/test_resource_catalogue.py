@@ -74,9 +74,16 @@ def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(
 
     from api.resource_catalogue import default_resource_catalogue
     catalogue = default_resource_catalogue.__wrapped__()
-    assert len(catalogue.resources) == 38
+    assert len(catalogue.resources) == 39
     assert len(catalogue.excluded) == 29
     assert "aedar_territorial_aggregate" in catalogue.resources_by_id
+    summary = catalogue.resources_by_id["aedar_territory_summary"]
+    assert summary.resource_kind == "aedar_territory_summary"
+    assert summary.allowed_levels == ("commune", "epci", "departement", "region")
+    assert summary.axes == ("measure",) and summary.dynamic_axes == ("measure",)
+    assert summary.intents == ("facts",)
+    assert {"value", "status", "n_typequ", "n_addresses", "n_observed",
+            "coverage_status", "source_id", "vintage_id"} <= set(summary.fields)
     typed = {resource_id: catalogue.resources_by_id[resource_id] for resource_id in (
         "demographie_selected_reading", "economie_selected_reading",
         "habitat_selected_reading", "milieux_selected_reading")}

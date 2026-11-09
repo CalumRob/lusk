@@ -224,6 +224,74 @@ project_aedar_typequ_metadata <- function(hierarchy_path,gamme_path,registry=rea
 AEDAR_AGGREGATE_MEASURES <- as.vector(unlist(lapply(c(5,10,15,20), function(m)
   unlist(lapply(c("walk","transit","transit_gain","bike_lts2","bike_lts4","car"), function(mode)
     paste0("count_",m,"_",mode,"_",c("share","min","max",paste0("decile",1:9),"mean")))))))
+
+# Producer bindings for the registry-wide readings. This mirrors
+# api/aedar_models.py's AEDAR_AGGREGATE_READINGS identities directly from the
+# source coordinates; transit_gain is deliberately not an aggregate reading.
+aedar_aggregate_reading_bindings <- function() {
+  modes <- c("walk","transit","bike_lts2","bike_lts4","car")
+  coordinates <- expand.grid(mode=modes,horizon=c(5L,10L,15L,20L),
+    kind=c("diversity","volume"),stringsAsFactors=FALSE)
+  coordinates$measure <- ifelse(coordinates$mode=="car"&coordinates$horizon==15L,
+    ifelse(coordinates$kind=="diversity","meanDiversity","meanVolume"),
+    paste0(coordinates$mode,coordinates$horizon,ifelse(coordinates$kind=="diversity","Diversity","Volume")))
+  coordinates$underlying <- paste0("count_",coordinates$horizon,"_",coordinates$mode,"_",
+    ifelse(coordinates$kind=="diversity","share","mean"))
+  coordinates[c("measure","underlying")]
+}
+
+# Pure territory-grain projection over validated TYPEQU facts. It deliberately
+# returns no fabricated indicator/TYPEQU coordinate: measure is the producer's
+# existing registry-wide reading identity.
+project_aedar_territory_summary <- function(facts,source,
+    bindings=aedar_aggregate_reading_bindings(),registry_size=AEDAR_TYPEQU_REGISTRY_COUNT) {
+  required <- c("territory_type","territory_id","TYPEQU","n_addresses","n_observed",
+    "coverage_status",unique(bindings$underlying))
+  if(!is.data.frame(facts)||!all(required%in%names(facts))||
+     !is.data.frame(bindings)||!setequal(names(bindings),c("measure","underlying"))||
+     anyDuplicated(bindings$measure)||anyDuplicated(bindings$underlying)||nrow(bindings)!=40L||
+     !is.list(source)||!all(c("source_id","vintage","url","licence","attribution",
+       "reference_date","publication_date")%in%names(source)))
+    stop("AEDAR territory summary requires validated facts and the complete 40-reading binding",call.=FALSE)
+  out <- list(); n <- 0L
+  keys <- unique(facts[c("territory_type","territory_id")])
+  for(k in seq_len(nrow(keys))) {
+    key <- keys[k,,drop=FALSE]
+    rows <- facts[facts$territory_type==key$territory_type[[1L]] & facts$territory_id==key$territory_id[[1L]],,drop=FALSE]
+    complete <- nrow(rows)==registry_size && !anyDuplicated(rows$TYPEQU)
+    for(i in seq_len(nrow(bindings))) {
+      underlying <- bindings$underlying[[i]]; values <- as.numeric(rows[[underlying]])
+      # Match the retained API record shape even when the reading is
+      # unavailable: preserve support that remains derivable without guessing
+      # across disagreeing denominators, observed counts, or coverage labels.
+      address_support <- if(nrow(rows) && !anyNA(rows$n_addresses) &&
+          length(unique(rows$n_addresses))==1L) rows$n_addresses[[1L]] else NA_real_
+      observed_support <- if(any(!is.na(rows$n_observed))) sum(rows$n_observed,na.rm=TRUE) else NA_real_
+      coverage_support <- if(nrow(rows) && !anyNA(rows$coverage_status) &&
+          length(unique(rows$coverage_status))==1L) rows$coverage_status[[1L]] else NA_character_
+      supported <- complete && all(rows$coverage_status=="covered") &&
+        length(unique(rows$n_addresses))==1L && rows$n_addresses[[1L]]>0 &&
+        all(is.finite(rows$n_observed)) && all(rows$n_observed>=0 & rows$n_observed<=rows$n_addresses) &&
+        all(is.finite(values)) && all(values>=0) &&
+        (!endsWith(underlying,"_share") || all(values<=1))
+      n <- n+1L
+      out[[n]] <- data.frame(territory_type=key$territory_type[[1L]],territory_id=key$territory_id[[1L]],
+        measure=bindings$measure[[i]],value=if(supported) sum(values) else NA_real_,
+        status=if(supported) "available" else "unavailable",n_typequ=if(supported) nrow(rows) else NA_integer_,
+        n_addresses=address_support,
+        # Preserve the established API support law: n_observed sums observed
+        # territory × TYPEQU coordinates and can exceed the address denominator.
+        n_observed=observed_support,
+        coverage_status=coverage_support,
+        source_id=source$source_id,vintage=source$vintage,source_url=source$url,
+        licence=source$licence,attribution=source$attribution,
+        reference_date=source$reference_date,publication_date=source$publication_date,
+        stringsAsFactors=FALSE)
+    }
+  }
+  if(!length(out)) return(data.frame())
+  do.call(rbind,out)
+}
 AEDAR_SOURCE_RESOURCES <- data.frame(
   kind=c(rep("address",6),rep("aggregate",4),"documentation"),
   mode=c("walk","transit_gain","transit","car","bike_lts4","bike_lts2",rep(NA_character_,5)),
@@ -740,7 +808,10 @@ read_aedar_canonical <- function(directory=file.path("data","processed","aedar")
     x[,c(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]],AEDAR_AGGREGATE_MEASURES),drop=FALSE]
   }); names(inputs)<-AEDAR_AGGREGATE_LEVELS
   projection <- project_aedar_aggregates(inputs,typequ_metadata)
-  projection$source <- as.list(src[1,,drop=FALSE])
+  # Extract scalar values from the one-row Parquet table. as.list(data.frame)
+  # retains each column as a vector; downstream provenance projection expects
+  # ordinary scalar source fields (not one-element/list columns).
+  projection$source <- lapply(src[1,,drop=FALSE],function(column) column[[1L]])
   projection
 }
 
@@ -1499,6 +1570,8 @@ publish_aedar_aggregates <- function(projection, db) {
       stop(paste("AEDAR territory × TYPEQU coverage is not dense at",level),call.=FALSE)
   }
   version <- aedar_aggregate_content_version(projection)
+  summary_facts <- project_aedar_territory_summary(facts,projection$source)
+  summary_version <- paste(as.character(openssl::sha256(serialize(summary_facts,NULL))),collapse="")
   published_columns <- c("territory_type","territory_id","typequ","typequ_label","typequ_hierarchy_label",
     "typequ_description","typequ_domain_code","typequ_domain_label","typequ_subdomain_code","typequ_subdomain_label",
     "typequ_gamme","typequ_gamme_status","typequ_source_order","identity","n_addresses","n_observed",
@@ -1605,9 +1678,25 @@ publish_aedar_aggregates <- function(projection, db) {
     } else {
       progress("unchanged-publication",rows=nrow(facts),content_version=version,reference=ref_version)
     }
+    summary_existing <- DBI::dbGetQuery(db,"SELECT content_version,reference_content_version,aedar_source_content_version FROM table_publication WHERE table_name='aedar_territory_summary'")
+    summary_unchanged <- nrow(summary_existing)==1L && nrow(existing)==1L &&
+      identical(summary_existing$content_version[[1L]],summary_version) &&
+      identical(summary_existing$reference_content_version[[1L]],ref_version) &&
+      identical(summary_existing$aedar_source_content_version[[1L]],version) &&
+      identical(existing$content_version[[1L]],version)
+    if (!summary_unchanged) {
+      payload <- summary_facts[c("territory_type","territory_id","measure","value","status","n_typequ","n_addresses","n_observed","coverage_status","source_id","vintage","source_url","licence","attribution","reference_date","publication_date")]
+      # The producer projection calls this source-owned identity `vintage`; the
+      # summary table follows the shared provenance schema's `vintage_id` name.
+      names(payload)[names(payload)=="vintage"] <- "vintage_id"
+      json <- as.character(jsonlite::toJSON(payload,dataframe="rows",auto_unbox=TRUE,na="null",digits=17))
+      DBI::dbExecute(db,"DELETE FROM aedar_territory_summary")
+      DBI::dbExecute(db,"INSERT INTO aedar_territory_summary(territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date) SELECT territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date FROM jsonb_to_recordset($1::jsonb) AS x(territory_type text,territory_id text,measure text,value double precision,status text,n_typequ integer,n_addresses bigint,n_observed bigint,coverage_status text,source_id text,vintage_id text,source_url text,licence text,attribution text,reference_date date,publication_date date)",params=list(json))
+      DBI::dbExecute(db,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,aedar_source_content_version,published_at) VALUES('aedar_territory_summary',$1,$2,$3,$4,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,aedar_source_content_version=EXCLUDED.aedar_source_content_version,published_at=EXCLUDED.published_at",params=list(summary_version,nrow(summary_facts),ref_version,version))
+    }
     timing$commit_started <- proc.time()[[3L]]
     progress("before-transaction-commit")
-    list(changed=!unchanged,content_version=version,row_count=nrow(facts))
+    list(changed=!unchanged,content_version=version,row_count=nrow(facts),summary_changed=!summary_unchanged,summary_content_version=summary_version,summary_row_count=nrow(summary_facts))
   })
   progress("transaction-committed",commit_elapsed=sprintf("%.3fs",proc.time()[[3L]]-timing$commit_started))
   result

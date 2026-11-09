@@ -73,14 +73,13 @@ watch([comparisonIdentity, detailRetry], async (_value, _old, cleanup) => {
     else comparisonError.value = result.message
   } else if (reference) {
     const result = await fetchAedarAggregates(reference.territory.type as AedarFact['territory_type'], reference.territory.id, {
-      typequ: [selectedTypequ.value], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, expectedContentVersion: props.evidence.contentVersion,
+      typequ: [selectedTypequ.value], measures: [...AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, ...HORIZONS.flatMap((horizon) =>
+        AEDAR_RAMP_MODES.map((mode) => `count_${horizon}_${mode}_mean`))], expectedContentVersion: props.evidence.contentVersion,
       expectedReferenceContentVersion: props.evidence.referenceContentVersion })
     if (cancelled) return
     comparisonStatus.value = result.status === 'ready' ? 'ready' : 'error'
     if (result.status === 'ready') {
-      const detail = result.facts[0]
-      const core = reference.data.facts.find((candidate) => candidate.typequ === selectedTypequ.value)
-      referenceDetail.value = detail && core ? { ...detail, measures: { ...core.measures, ...detail.measures } } : null
+      referenceDetail.value = result.facts.find((candidate) => candidate.typequ === selectedTypequ.value) ?? null
     }
     else comparisonError.value = result.error.message
   }

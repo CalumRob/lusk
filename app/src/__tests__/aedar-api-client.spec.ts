@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchAedarAggregates, validateAedarResponse } from '@/fiche/content/aedarApiClient'
+import { fetchAedarAggregates, fetchAedarTerritorySummary, invalidateAedarTerritorySummary, validateAedarResponse } from '@/fiche/content/aedarApiClient'
 import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
+import { nativeCatalogueResponse, nativeResources } from './helpers/semanticApiFixtures'
 
 const measureKeys = () => {
   const keys: string[] = []
@@ -27,6 +28,212 @@ const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringif
 afterEach(() => vi.unstubAllGlobals())
 
 describe('AEDAR API client', () => {
+  it('acquires all producer-declared territory summaries in one independent request with all publication clocks', async () => {
+    const summaryResource = nativeResources().find((resource) => resource.resource_id === 'aedar_territory_summary')!
+    const measures = Object.keys((summaryResource as any).measure_facets)
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return nativeCatalogueResponse()
+      const { items } = JSON.parse(String(init?.body))
+      const item = items[0]
+      const readings = measures.map((measure, index) => ({
+        measure, value: index + 0.25, status: 'available', n_typequ: 235, n_addresses: 10,
+        n_observed: 900, coverage_status: 'covered', statistic: 'direct',
+        source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
+        licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30',
+      }))
+      return jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
+        resource: item.resource, target: item.target,
+        territory: { territory_type: 'commune', territory_id: '22001' },
+        summary_content_version: 'summary-v1', aedar_content_version: 'aedar-v1',
+        reference_content_version: 'reference-v1', readings,
+      } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await fetchAedarTerritorySummary('commune', '22001')
+
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('Expected summary response')
+    expect(result.summary.readings.map(({ measure }) => measure).sort()).toEqual([...measures].sort())
+    expect(result.summary.readings.map(({ value }) => value)).toEqual(measures.map((_, index) => index + 0.25))
+    expect(result.summary).toMatchObject({ summaryContentVersion: 'summary-v1', aedarContentVersion: 'aedar-v1',
+      referenceContentVersion: 'reference-v1', territory: { territory_type: 'commune', territory_id: '22001' } })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const item = JSON.parse(String(fetchMock.mock.calls[1]![1]?.body)).items[0]
+    expect(item).toEqual({ id: 'aedar-summary', resource: 'aedar_territory_summary',
+      target: { kind: 'territory', type: 'commune', id: '22001' }, intent: { kind: 'facts' } })
+    expect(item).not.toHaveProperty('coordinates')
+  })
+
+  it.each(['summary_content_version', 'aedar_content_version', 'reference_content_version'] as const)(
+    'reacquires a territory summary at the next boundary when %s changes, without manual cache clearing', async (clock) => {
+      const measures = Object.keys((nativeResources().find((resource) => resource.resource_id === 'aedar_territory_summary') as any).measure_facets)
+      const versions = { summary_content_version: 'summary-v1', aedar_content_version: 'source-v1', reference_content_version: 'reference-v1' }
+      const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (String(url) === '/api/resources') return nativeCatalogueResponse()
+        const { items } = JSON.parse(String(init?.body))
+        const item = items[0]
+        return jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
+          resource: item.resource, target: item.target,
+          territory: { territory_type: 'commune', territory_id: 'clock-boundary' },
+          ...versions,
+          readings: measures.map((measure) => ({ measure, value: versions[clock] === `${clock}-v2` ? 2 : 1,
+            status: 'available', n_typequ: 235, n_addresses: 10, n_observed: 900, coverage_status: 'covered',
+            statistic: 'direct', source_id: 'aedar_bretagne', vintage_id: '2026-v1',
+            source_url: 'https://example.test/aedar', licence: 'ODbL', attribution: 'AEDAR',
+            reference_date: null, publication_date: '2026-09-30' })),
+        } }] })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      const first = await fetchAedarTerritorySummary('commune', 'clock-boundary')
+      versions[clock] = `${clock}-v2`
+      const second = await fetchAedarTerritorySummary('commune', 'clock-boundary')
+
+      expect(first.status).toBe('ready')
+      expect(second.status).toBe('ready')
+      if (first.status !== 'ready' || second.status !== 'ready') throw new Error('Expected ready summaries')
+      expect(second.summary).toMatchObject({
+        summaryContentVersion: versions.summary_content_version,
+        aedarContentVersion: versions.aedar_content_version,
+        referenceContentVersion: versions.reference_content_version,
+      })
+      expect(second.summary.readings[0]?.value).toBe(2)
+      expect(fetchMock.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')).toHaveLength(2)
+    },
+  )
+
+  it('does not let an invalidated late summary response become the next acquisition result', async () => {
+    const measures = Object.keys((nativeResources().find((resource) => resource.resource_id === 'aedar_territory_summary') as any).measure_facets)
+    const pendingReads: Array<(response: Response) => void> = []
+    let readCount = 0
+    const responseFor = (item: any, version: string, value: number) => jsonResponse({
+      contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
+        resource: item.resource, target: item.target,
+        territory: { territory_type: 'commune', territory_id: 'late-write' },
+        summary_content_version: version, aedar_content_version: version, reference_content_version: version,
+        readings: measures.map((measure) => ({ measure, value, status: 'available', n_typequ: 235,
+          n_addresses: 10, n_observed: 900, coverage_status: 'covered', statistic: 'direct',
+          source_id: 'aedar_bretagne', vintage_id: version, source_url: 'https://example.test/aedar',
+          licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30' })),
+      } }] })
+    const fetchMock = vi.fn((url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      if (String(url) === '/api/resources') return Promise.resolve(nativeCatalogueResponse())
+      const item = JSON.parse(String(init?.body)).items[0]
+      readCount++
+      if (readCount <= 2) return new Promise((resolve) => pendingReads.push(resolve))
+      return Promise.resolve(responseFor(item, 'summary-v3', 3))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const oldRequest = fetchAedarTerritorySummary('commune', 'late-write')
+    await vi.waitFor(() => expect(pendingReads).toHaveLength(1))
+    invalidateAedarTerritorySummary('commune', 'late-write')
+    const currentRequest = fetchAedarTerritorySummary('commune', 'late-write')
+    await vi.waitFor(() => expect(pendingReads).toHaveLength(2))
+
+    pendingReads[1]!(responseFor(JSON.parse(String(fetchMock.mock.calls[2]![1]?.body)).items[0], 'summary-v2', 2))
+    const current = await currentRequest
+    pendingReads[0]!(responseFor(JSON.parse(String(fetchMock.mock.calls[1]![1]?.body)).items[0], 'summary-v1', 1))
+    await oldRequest
+    const next = await fetchAedarTerritorySummary('commune', 'late-write')
+
+    expect(current).toMatchObject({ status: 'ready', summary: { summaryContentVersion: 'summary-v2' } })
+    expect(next).toMatchObject({ status: 'ready', summary: { summaryContentVersion: 'summary-v3' } })
+    expect(readCount).toBe(3)
+  })
+
+  it('rejects incomplete, stale-clock, and inconsistent-provenance summaries and retries independently', async () => {
+    const measures = Object.keys((nativeResources().find((resource) => resource.resource_id === 'aedar_territory_summary') as any).measure_facets)
+    let scenario: 'incomplete' | 'missing-source-clock' | 'inconsistent-provenance' | 'ok' = 'incomplete'
+    let retryNetworkFailure = true
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return nativeCatalogueResponse()
+      const { items } = JSON.parse(String(init?.body))
+      if (retryNetworkFailure) { retryNetworkFailure = false; return new Response('', { status: 503 }) }
+      const readings = measures.map((measure) => ({ measure, value: 1, status: 'available', n_typequ: 235,
+        n_addresses: 10, n_observed: 900, coverage_status: 'covered', statistic: 'direct',
+        source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
+        licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30' }))
+      if (scenario === 'incomplete') readings.pop()
+      if (scenario === 'inconsistent-provenance') readings[1]!.vintage_id = 'other'
+      return jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: items[0].id, data: {
+        resource: items[0].resource, target: items[0].target,
+        territory: { territory_type: 'commune', territory_id: '22001' },
+        summary_content_version: 'summary-v1', aedar_content_version: scenario === 'missing-source-clock' ? '' : 'aedar-v1',
+        reference_content_version: 'reference-v1', readings,
+      } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await fetchAedarTerritorySummary('commune', '22001')).toMatchObject({ status: 'error', error: { code: 'publication-unavailable' } })
+    expect(await fetchAedarTerritorySummary('commune', '22001')).toMatchObject({ status: 'error', error: { code: 'invalid-response' } })
+    scenario = 'missing-source-clock'
+    expect(await fetchAedarTerritorySummary('commune', '22001')).toMatchObject({ status: 'error' })
+    scenario = 'inconsistent-provenance'
+    expect(await fetchAedarTerritorySummary('commune', '22001')).toMatchObject({ status: 'error' })
+    scenario = 'ok'
+    expect((await fetchAedarTerritorySummary('commune', '22001')).status).toBe('ready')
+    const callsBeforeRetry = fetchMock.mock.calls.length
+    invalidateAedarTerritorySummary('commune', '22001')
+    expect((await fetchAedarTerritorySummary('commune', '22001')).status).toBe('ready')
+    expect(fetchMock.mock.calls.length).toBe(callsBeforeRetry + 1)
+  })
+
+  it('retains a valid covered zero and rejects impossible support', async () => {
+    const measures = Object.keys((nativeResources().find((resource) => resource.resource_id === 'aedar_territory_summary') as any).measure_facets)
+    let invalidSupport = false
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return nativeCatalogueResponse()
+      const { items } = JSON.parse(String(init?.body))
+      const readings = measures.map((measure) => ({ measure, value: 0, status: 'available', n_typequ: 235,
+        n_addresses: 10, n_observed: invalidSupport ? 2351 : 0, coverage_status: 'covered', statistic: 'direct',
+        source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
+        licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30' }))
+      return jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: items[0].id, data: {
+        resource: items[0].resource, target: items[0].target,
+        territory: { territory_type: 'commune', territory_id: '22001' }, summary_content_version: 'summary-v1',
+        aedar_content_version: 'aedar-v1', reference_content_version: 'reference-v1', readings,
+      } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const zero = await fetchAedarTerritorySummary('commune', '22001')
+    expect(zero.status === 'ready' && zero.summary.readings.every((reading) => reading.value === 0)).toBe(true)
+    invalidateAedarTerritorySummary('commune', '22001')
+    invalidSupport = true
+    expect(await fetchAedarTerritorySummary('commune', '22001')).toMatchObject({ status: 'error', error: { code: 'invalid-response' } })
+  })
+
+  it('accepts unavailable readings before available readings when their shared support is consistent', async () => {
+    const measures = Object.keys((nativeResources().find((resource) => resource.resource_id === 'aedar_territory_summary') as any).measure_facets)
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return nativeCatalogueResponse()
+      const { items } = JSON.parse(String(init?.body))
+      const readings = measures.map((measure, index) => ({ measure,
+        value: index === 0 ? null : 1,
+        status: index === 0 ? 'unavailable' : 'available',
+        n_typequ: index === 0 ? null : 235,
+        n_addresses: 2, n_observed: 235, coverage_status: 'covered', statistic: 'direct',
+        source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
+        licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30',
+      }))
+      return jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: items[0].id, data: {
+        resource: items[0].resource, target: items[0].target,
+        territory: { territory_type: 'commune', territory_id: '22001' },
+        summary_content_version: 'summary-v1', aedar_content_version: 'aedar-v1',
+        reference_content_version: 'reference-v1', readings,
+      } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await fetchAedarTerritorySummary('commune', '22001')
+
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('Expected a valid mixed-availability summary')
+    expect(result.summary.readings[0]).toMatchObject({ status: 'unavailable', n_typequ: null })
+    expect(result.summary.readings[1]).toMatchObject({ status: 'available', n_typequ: 235 })
+  })
+
   it('reads selected equipment through the semantic resource API, not the retired GET route', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       contract: 'semantic-read-batch-v1',

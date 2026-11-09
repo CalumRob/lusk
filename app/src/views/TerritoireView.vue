@@ -36,10 +36,10 @@ import FiligraneFiche from '@/components/fiche/FiligraneFiche.vue'
 import OngletTheme from '@/components/fiche/OngletTheme.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
 import ProductionMobilite from '@/fiche/mobilite/ProductionMobilite.vue'
-import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
+import { fetchAedarAggregates, fetchAedarTerritorySummary, invalidateAedarTerritorySummary } from '@/fiche/content/aedarApiClient'
 import { AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU } from '@/fiche/content/aedarAccessSection'
 import { AEDAR_CORE_MEASURE_KEYS, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS } from '@/fiche/content/aedarTimeRampFacts'
-import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
+import type { AedarFetchResult, AedarSummaryFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import {
   CONTROLE_COMPARAISON_KEY,
@@ -131,10 +131,22 @@ const payloadReference = computed<Payload | null>(() => {
 const productionMobilite = computed(() => selection.value === 'mobilite')
 const aedarData = ref<AedarFetchResult | null>(null)
 const aedarStatus = ref<'loading' | 'ready' | 'error'>('loading')
-const aedarReferenceData = ref<AedarFetchResult | null>(null)
+const aedarSummaryData = ref<AedarSummaryFetchResult | null>(null)
+const aedarSummaryStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const aedarReferenceData = ref<AedarSummaryFetchResult | null>(null)
 const aedarReferenceStatus = ref<'unavailable' | 'loading' | 'ready' | 'error'>('unavailable')
 const retryAedarCount = ref(0)
+const retryAedarSummaryCount = ref(0)
 function retryAedar(): void { retryAedarCount.value++ }
+watch([productionMobilite, typeRoute, idRoute, retryAedarSummaryCount], async ([active, type, id], _old, onCleanup) => {
+  if (!active || !['commune','epci','departement','region'].includes(type)) {
+    aedarSummaryData.value = null; aedarSummaryStatus.value = 'loading'; return
+  }
+  let cancelled = false; onCleanup(() => { cancelled = true })
+  aedarSummaryStatus.value = 'loading'; aedarSummaryData.value = null
+  const result = await fetchAedarTerritorySummary(type as AedarTerritoryType, id)
+  if (!cancelled) { aedarSummaryData.value = result; aedarSummaryStatus.value = result.status === 'ready' ? 'ready' : 'error' }
+}, { immediate: true })
 watch([productionMobilite, typeRoute, idRoute, retryAedarCount], async ([active, type, id], _old, onCleanup) => {
   if (!active || !['commune','epci','departement','region'].includes(type)) { aedarData.value = null; aedarStatus.value = 'loading'; return }
   let cancelled = false; onCleanup(() => { cancelled = true }); aedarStatus.value = 'loading'; aedarData.value = null
@@ -389,8 +401,8 @@ function choisirSelection(selectionChoisie: SelectionComparaison): void {
  * The AEDAR comparison lines read the same aggregates on a single
  * published reference territory (EPCI or région Bretagne) — never a cohort.
  * A density-class cohort or a typed member selection has no single-territory
- * reference and the comparison stays honestly unavailable (les lectures
- * selected_comparison AEDAR arrivent avec #859/#863).
+ * reference; its group values and ranks are acquired independently through the
+ * published aggregate-comparison path.
  */
 const aedarReferenceTerritoire = computed(() => territoireReferencePourComparaison({
   territoire: territoire.value,
@@ -401,12 +413,18 @@ const aedarReferenceKey = computed(() => {
   const reference = aedarReferenceTerritoire.value
   return reference ? `${reference.type}/${reference.id}` : ''
 })
-watch([productionMobilite, aedarReferenceKey, retryAedarCount], async ([active, key], _old, onCleanup) => {
+function retryAedarSummary(): void {
+  invalidateAedarTerritorySummary(typeRoute.value as AedarTerritoryType, idRoute.value)
+  const reference = aedarReferenceTerritoire.value
+  if (reference) invalidateAedarTerritorySummary(reference.type, reference.id)
+  retryAedarSummaryCount.value++
+}
+watch([productionMobilite, aedarReferenceKey, retryAedarSummaryCount], async ([active, key], _old, onCleanup) => {
   if (!active || !key) { aedarReferenceData.value = null; aedarReferenceStatus.value = 'unavailable'; return }
   let cancelled = false; onCleanup(() => { cancelled = true })
   aedarReferenceStatus.value = 'loading'; aedarReferenceData.value = null
   const [type, id] = key.split('/')
-  const result = await fetchAedarAggregates(type as AedarTerritoryType, id, { measures: AEDAR_CORE_MEASURE_KEYS })
+  const result = await fetchAedarTerritorySummary(type as AedarTerritoryType, id)
   if (!cancelled) { aedarReferenceData.value = result; aedarReferenceStatus.value = result.status === 'ready' ? 'ready' : 'error' }
 }, { immediate: true })
 
@@ -983,6 +1001,8 @@ watch(
             <ProductionMobilite v-if="productionMobilite && contenuMobilite && paginationCahier"
               :content="contenuMobilite" :pagination="paginationCahier"
               :aedar-data="aedarData" :aedar-status="aedarStatus" :retry-aedar="retryAedar"
+              :aedar-summary-data="aedarSummaryData" :aedar-summary-status="aedarSummaryStatus"
+              :retry-aedar-summary="retryAedarSummary"
               :aedar-reference-territoire="aedarReferenceTerritoire" :aedar-reference-data="aedarReferenceData"
               :aedar-reference-status="aedarReferenceStatus" />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —

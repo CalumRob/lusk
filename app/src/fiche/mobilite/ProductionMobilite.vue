@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ProductionMobiliteAedar from './ProductionMobiliteAedar.vue'
 import type { CahierPagination } from '@/fiche/prototype/cahierPagination'
-import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
+import type { AedarFetchResult, AedarSummaryFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 defineProps<{
   content: ThemeContent
@@ -9,8 +9,11 @@ defineProps<{
   aedarData: AedarFetchResult | null
   aedarStatus: 'loading' | 'ready' | 'error'
   retryAedar: () => void
+  aedarSummaryData: AedarSummaryFetchResult | null
+  aedarSummaryStatus: 'loading' | 'ready' | 'error'
+  retryAedarSummary: () => void
   aedarReferenceTerritoire?: { type: AedarTerritoryType; id: string; nom: string } | null
-  aedarReferenceData?: AedarFetchResult | null
+  aedarReferenceData?: AedarSummaryFetchResult | null
   aedarReferenceStatus?: 'unavailable' | 'loading' | 'ready' | 'error'
 }>()
 </script>
@@ -21,6 +24,9 @@ defineProps<{
     :aedar-data="aedarData"
     :aedar-status="aedarStatus"
     :retry-aedar="retryAedar"
+    :aedar-summary-data="aedarSummaryData"
+    :aedar-summary-status="aedarSummaryStatus"
+    :retry-aedar-summary="retryAedarSummary"
     :aedar-reference-territoire="aedarReferenceTerritoire"
     :aedar-reference-data="aedarReferenceData"
     :aedar-reference-status="aedarReferenceStatus"

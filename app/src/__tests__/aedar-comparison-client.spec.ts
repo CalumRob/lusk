@@ -24,7 +24,7 @@ const cell = { ...source, comparison_context: 'selected_comparison', group_id: n
   status: 'measured', n_addresses: 10, n_observed: 8, coverage_status: 'covered' }
 const envelope = { resource: 'aedar_territorial_aggregate', target: { kind: 'territory', type: 'commune', id: 'sel-c1' },
   territory: { territory_type: 'commune', territory_id: 'sel-c1' }, content_version: 'comparison-v1',
-  aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1', source_snapshot_id: '2026-v1',
+  summary_content_version: 'summary-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1', source_snapshot_id: '2026-v1',
   selection: members, scope: { kind: 'explicit_selection', member_count: 3, territory_type: 'commune' }, comparisons: [cell] }
 
 function mockResponse(data: unknown) {
@@ -38,7 +38,8 @@ function mockResponse(data: unknown) {
   return fetcher
 }
 const options = { intent: { kind: 'selected_comparison' as const, members }, label: 'Moyenne de la sélection',
-  typequ: ['A104'], measures: ['count_5_walk_mean'], expectedContentVersion: 'facts-v1', expectedReferenceContentVersion: 'reference-v1' }
+  typequ: ['A104'], measures: ['count_5_walk_mean'], expectedContentVersion: 'facts-v1',
+  expectedSummaryContentVersion: 'summary-v1', expectedReferenceContentVersion: 'reference-v1' }
 afterEach(() => vi.unstubAllGlobals())
 
 describe('lecture AEDAR de la Sélection', () => {
@@ -70,7 +71,7 @@ describe('lecture AEDAR de la Sélection', () => {
         const measure = item.coordinates.measure[0]
         const index = measures.indexOf(measure)
         return { id: item.id, data: { resource: item.resource, target: item.target,
-          content_version: 'comparison-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1',
+          content_version: 'comparison-v1', summary_content_version: 'summary-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1',
           comparison: { ...cell, typequ: null, measure, comparison_context: 'density_class',
             group_value: index + 0.25, group_n_addresses: 40, group_n_observed: 67,
             rank: 2, rank_size: 3, rank_ties: 1, direction: undefined } } }
@@ -106,7 +107,7 @@ describe('lecture AEDAR de la Sélection', () => {
         const measure = item.coordinates.measure[0]
         const index = aggregateMeasures.indexOf(measure)
         return { id: item.id, data: { resource: item.resource, target: item.target,
-          content_version: 'comparison-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1',
+          content_version: 'comparison-v1', summary_content_version: 'summary-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1',
           comparison: (() => {
             const row: any = { ...cell, typequ: null, measure, comparison_context: 'density_class',
             group_value: index + 0.25, group_n_addresses: 40, group_n_observed: 67,
@@ -148,7 +149,7 @@ describe('lecture AEDAR de la Sélection', () => {
           rank: unavailable ? null : 2, rank_size: unavailable ? null : 3, rank_ties: unavailable ? null : 1 }
       })
       return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
-        resource: item.resource, target: item.target, content_version: 'comparison-v1', aedar_content_version: 'facts-v1',
+        resource: item.resource, target: item.target, content_version: 'comparison-v1', summary_content_version: 'summary-v1', aedar_content_version: 'facts-v1',
         reference_content_version: 'reference-v1', selection: members,
         scope: { kind: 'explicit_selection', member_count: members.length }, comparisons,
       } }] }) } as Response
@@ -190,7 +191,7 @@ describe('lecture AEDAR de la Sélection', () => {
       const { items } = JSON.parse(String(init?.body))
       return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results: items.map((item: any) => ({
         id: item.id, data: { resource: item.resource, target: item.target, content_version: 'comparison-v1',
-          aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1', selection: members,
+          summary_content_version: 'summary-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1', selection: members,
           scope: { kind: 'explicit_selection', member_count: members.length },
           comparisons: item.coordinates.measure.map((measure: string) => {
             const row: any = { ...cell, typequ: null, measure,
@@ -282,6 +283,12 @@ describe('lecture AEDAR de la Sélection', () => {
   ])('échoue fermé devant une preuve incompatible ($aedar_content_version)', async (body) => {
     mockResponse(body)
     expect(await fetchAedarComparison('commune', 'sel-c1', options)).toMatchObject({ status: 'error' })
+  })
+  it('échoue fermé devant une comparaison agrégée liée à une autre horloge de synthèse', async () => {
+    mockResponse({ ...envelope, summary_content_version: 'stale-summary',
+      comparisons: [{ ...cell, typequ: null, measure: 'meanDiversity' }] })
+    expect(await fetchAedarComparison('commune', 'sel-c1', { ...options, typequ: [], measures: ['meanDiversity'] }))
+      .toMatchObject({ status: 'error' })
   })
   it('conserve le membre nommé par un échec API sans inventer de référence', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({ detail: 'Selected comparison member commune/nope has no published value' }) })))

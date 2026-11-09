@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import { aedarAccessSection, aedarPendingPrototypeSections, aedarPrototypeSections, AEDAR_CAR_OVERVIEW_SCALAR_READINGS, AEDAR_PROTOTYPE_HORIZON_MINUTES } from '@/fiche/content/aedarAccessSection'
 import { aedarDiversityLossSection } from '@/fiche/content/aedarDiversityLossMaps'
-import { AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
+import { AEDAR_AGGREGATE_READING_MEASURES, AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
-import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
+import type { AedarFetchResult, AedarTerritorySummary } from '@/fiche/content/aedarApiClient'
 import type { TerritoryIdentity } from '@/fiche/content/territoryFacts'
 
 const territory: TerritoryIdentity = {
@@ -63,10 +63,26 @@ function aedarReady(territoryId: string, territoryType: 'commune' | 'epci' = 'co
   }
 }
 
+/** Independent summary fixture: expected values are published readings, never TYPEQU-derived in the test. */
+function aedarSummary(territoryId: string, territoryType: 'commune' | 'epci' = 'commune', value = 5): AedarTerritorySummary {
+  const source = { source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.com',
+    licence: 'Licence Ouverte', attribution: 'AEDAR', reference_date: '2026-01-01', publication_date: '2026-09-30' }
+  return {
+    territory: { territory_type: territoryType, territory_id: territoryId },
+    summaryContentVersion: 'summary-v1', aedarContentVersion: 'test-version', referenceContentVersion: 'test-reference-version',
+    readings: Object.entries(AEDAR_AGGREGATE_READING_MEASURES).map(([measure, sourceMeasure]) => ({
+      measure, value: sourceMeasure.endsWith('_share') ? value : value,
+      status: 'available' as const, n_typequ: AEDAR_TYPEQU_REGISTRY.length, n_addresses: 100, n_observed: 100,
+      coverage_status: 'covered', statistic: 'direct' as const, ...source,
+    })),
+    provenance: { contentVersion: 'test-version', sources: [source] },
+  }
+}
+
 describe('aedarAccessSection', () => {
   it('builds the five-section prose from semantic evidence and the live TYPEQU registry', () => {
     const data = aedarReady('22001')
-    const sections = aedarPrototypeSections(data, territory)
+    const sections = aedarPrototypeSections(aedarSummary('22001'), data, territory)
     const overview = sections[0]!.evidence!
     const profile = sections[2]!
     const explorer = sections[3]!.evidence!
@@ -104,7 +120,7 @@ describe('aedarAccessSection', () => {
   })
 
   it('appends the per-type explorer after the unchanged waffle with B207 as its initial type', () => {
-    const sections = aedarPrototypeSections(aedarReady('22001'), territory)
+    const sections = aedarPrototypeSections(aedarSummary('22001'), aedarReady('22001'), territory)
 
     expect(sections.map((section) => section.key)).toEqual([
       'aedar-car-overview',
@@ -130,14 +146,14 @@ describe('aedarAccessSection', () => {
   })
 
   it('carries the section label without a Lecture block', () => {
-    const section = aedarAccessSection(aedarReady('22001'), territory)
+    const section = aedarAccessSection(aedarSummary('22001'), territory)
     expect(section.key).toBe('aedar-access')
     expect(section.label).toBe('La ville du 1/12, du 1/6, du 1/4 et du 1/3 d’heure')
     expect(section.lecture).toBeNull()
   })
 
   it('owns the blank-map title and keeps the provisional horizon', () => {
-    const section = aedarAccessSection(aedarReady('22001'), territory)
+    const section = aedarAccessSection(aedarSummary('22001'), territory)
     expect(section.evidence?.kind).toBe('aedar-access')
     if (section.evidence?.kind !== 'aedar-access') return
     expect(section.evidence.mapFigureTitle.map((segment) => segment.value).join('')).toBe('Quelle diversité de l’offre est accessible en 15 minutes depuis les adresses résidentielles ?')
@@ -146,7 +162,7 @@ describe('aedarAccessSection', () => {
   })
 
   it('derives both ramps for every mode with content-owned figure titles', () => {
-    const section = aedarAccessSection(aedarReady('22001'), territory)
+    const section = aedarAccessSection(aedarSummary('22001'), territory)
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     expect(section.evidence.ramps.map((ramp) => ramp.rampKey)).toEqual(['diversity', 'volume'])
     expect(section.evidence.ramps.map((ramp) => ramp.figureTitle)).toEqual([
@@ -175,8 +191,8 @@ describe('aedarAccessSection', () => {
   })
 
   it('merges per-mode reference-territory values and labels them explicitly', () => {
-    const section = aedarAccessSection(aedarReady('22001'), territory, {
-      reference: { data: aedarReady('200000001', 'epci', 0.25), territory: referenceTerritory, label: 'EPCI X' },
+    const section = aedarAccessSection(aedarSummary('22001'), territory, {
+      reference: { data: aedarSummary('200000001', 'epci', 2.5), territory: referenceTerritory, label: 'EPCI X' },
     })
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     for (const ramp of section.evidence.ramps) {
@@ -191,15 +207,20 @@ describe('aedarAccessSection', () => {
   })
 
   it.each(['publication', 'reference publication', 'source vintage', 'reference date', 'publication date'])('keeps the focal ramps without an incompatible reference: %s', (kind) => {
-    const reference = aedarReady('200000001', 'epci', 0.25)
-    if (kind === 'publication') reference.contentVersion = 'other-version'
+    const reference = aedarSummary('200000001', 'epci', 2.5)
+    if (kind === 'publication') reference.summaryContentVersion = 'other-summary-version'
     if (kind === 'reference publication') reference.referenceContentVersion = 'other-reference-version'
-    for (const fact of reference.facts) {
-      if (kind === 'source vintage') fact.vintage_id = 'other-vintage'
-      if (kind === 'reference date') fact.reference_date = '2025-01-01'
-      if (kind === 'publication date') fact.publication_date = '2025-09-30'
+    for (const reading of reference.readings) {
+      if (kind === 'source vintage') reading.vintage_id = 'other-vintage'
+      if (kind === 'reference date') reading.reference_date = '2025-01-01'
+      if (kind === 'publication date') reading.publication_date = '2025-09-30'
     }
-    const section = aedarAccessSection(aedarReady('22001'), territory, {
+    for (const source of reference.provenance.sources) {
+      if (kind === 'source vintage') source.vintage_id = 'other-vintage'
+      if (kind === 'reference date') source.reference_date = '2025-01-01'
+      if (kind === 'publication date') source.publication_date = '2025-09-30'
+    }
+    const section = aedarAccessSection(aedarSummary('22001'), territory, {
       reference: { data: reference, territory: referenceTerritory, label: 'EPCI X' },
     })
     const evidence = section.evidence!
@@ -208,20 +229,24 @@ describe('aedarAccessSection', () => {
     expect(evidence.comparisonLabel).toBeNull()
   })
 
-  it('keeps local ramps without calling a partial reference universe a territory mean', () => {
-    const reference = aedarReady('200000001', 'epci', 0.25)
-    reference.facts.pop()
-    const evidence = aedarAccessSection(aedarReady('22001'), territory, {
+  it('keeps a missing reference reading null instead of reconstructing it from typed detail', () => {
+    const reference = aedarSummary('200000001', 'epci', 2.5)
+    reference.readings = reference.readings.filter(({ measure }) => measure !== 'meanDiversity')
+    const evidence = aedarAccessSection(aedarSummary('22001'), territory, {
       reference: { data: reference, territory: referenceTerritory, label: 'EPCI X' },
     }).evidence!
     expect(evidence.ramps[1]?.territory.car[2]).toBe(5)
-    expect(evidence.ramps.every((ramp) => ramp.reference === null && ramp.referenceLabel === null)).toBe(true)
-    expect(evidence.comparisonLabel).toBeNull()
+    expect(evidence.ramps[0]?.reference?.car[2]).toBeNull()
+    expect(evidence.ramps[0]?.referenceLabel).toBe('Moyenne de EPCI X')
   })
 
   it('marks the section incomplete when a ramp cannot cover the whole universe', () => {
-    const data = aedarReady('22001')
-    data.facts[0]!.measures['count_5_car_share'] = null
+    const data = aedarSummary('22001')
+    const reading = data.readings.find(({ measure }) => measure === 'car5Diversity')!
+    reading.value = null
+    reading.status = 'unavailable'
+    reading.n_typequ = null
+    reading.coverage_status = null
     const section = aedarAccessSection(data, territory)
     expect(section.availability).toBe('incomplete')
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
@@ -231,11 +256,9 @@ describe('aedarAccessSection', () => {
   })
 
   it('derives the 15-minute car-minus-walk diversity gap from the territory values', () => {
-    const data = aedarReady('22001')
-    for (const fact of data.facts.slice(0, 10)) {
-      fact.measures['count_15_car_share'] = 0.6
-      fact.measures['count_15_walk_share'] = 0.2
-    }
+    const data = aedarSummary('22001')
+    data.readings.find(({ measure }) => measure === 'meanDiversity')!.value = 6
+    data.readings.find(({ measure }) => measure === 'walk15Diversity')!.value = 2
     const section = aedarAccessSection(data, territory)
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     expect(section.evidence.diversityGap.value).toBeCloseTo(4)
@@ -243,15 +266,19 @@ describe('aedarAccessSection', () => {
   })
 
   it('keeps the derived diversity gap unavailable if either 15-minute mode value is null', () => {
-    const data = aedarReady('22001')
-    data.facts[0]!.measures['count_15_walk_share'] = null
+    const data = aedarSummary('22001')
+    const reading = data.readings.find(({ measure }) => measure === 'walk15Diversity')!
+    reading.value = null
+    reading.status = 'unavailable'
+    reading.n_typequ = null
+    reading.coverage_status = null
     const section = aedarAccessSection(data, territory)
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     expect(section.evidence.diversityGap.value).toBeNull()
   })
 
   it('uses a generic source link label when attribution metadata is empty, never the internal key', () => {
-    const data = aedarReady('22001')
+    const data = aedarSummary('22001')
     data.provenance.sources[0]!.attribution = ''
     const section = aedarAccessSection(data, territory)
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
@@ -261,7 +288,7 @@ describe('aedarAccessSection', () => {
   })
 
   it('keeps source attribution compact and metadata-derived', () => {
-    const data = aedarReady('22001')
+    const data = aedarSummary('22001')
     data.provenance.sources[0]!.attribution = '© OpenStreetMap contributors; données AEDAR - licence ODbL'
     const section = aedarAccessSection(data, territory)
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
@@ -273,7 +300,7 @@ describe('aedarPendingPrototypeSections (#769 layout stability)', () => {
   const lossMapMetadata = { status: 'loading', legend: null } as const
 
   it('mirrors the hydrated order and labels exactly, with the loss map at its final position', () => {
-    const ready = aedarPrototypeSections(aedarReady('22001'), territory, { lossMapMetadata })
+    const ready = aedarPrototypeSections(aedarSummary('22001'), aedarReady('22001'), territory, { lossMapMetadata })
     const pending = aedarPendingPrototypeSections(territory, { lossMapMetadata })
     expect(pending.map((section) => section.key)).toEqual(ready.map((section) => section.key))
     expect(pending.map((section) => section.key)).toEqual([
@@ -305,7 +332,7 @@ describe('aedarPendingPrototypeSections (#769 layout stability)', () => {
     expect(introduction).toContain('(BDNB).')
     expect(introduction).not.toMatch(/\(BDNB, /u)
     // Static section prose is shared verbatim with the hydrated overview.
-    const readyOverview = aedarPrototypeSections(aedarReady('22001'), territory, { lossMapMetadata })[0]
+    const readyOverview = aedarPrototypeSections(aedarSummary('22001'), aedarReady('22001'), territory, { lossMapMetadata })[0]
     if (readyOverview.evidence?.kind === 'aedar-car-overview') {
       expect(overview.evidence.prose).toEqual(readyOverview.evidence.prose)
       expect(overview.evidence.mapFigureTitle).toEqual(readyOverview.evidence.mapFigureTitle)
@@ -332,7 +359,7 @@ describe('aedarPendingPrototypeSections (#769 layout stability)', () => {
       { key: 'meanDiversity', label: 'Types d’équipements', unit: 'types / adresse' },
       { key: 'meanVolume', label: 'Établissements', unit: 'établissements / adresse' },
     ])
-    const ready = aedarPrototypeSections(aedarReady('22001'), territory, { lossMapMetadata })[0]
+    const ready = aedarPrototypeSections(aedarSummary('22001'), aedarReady('22001'), territory, { lossMapMetadata })[0]
     const pending = aedarPendingPrototypeSections(territory, { lossMapMetadata })[0]
     if (ready.evidence?.kind !== 'aedar-car-overview' || pending.evidence?.kind !== 'aedar-car-overview') {
       throw new Error('aedar-car-overview evidence expected')

@@ -140,6 +140,14 @@ class SemanticResourceReader:
                 self._cohort_scopes[id(item)] = cohort
                 return estimate
             return self._typed_reading_preflight(conn, item, resource, work_budget=work_budget)
+        if resource.resource_kind == "aedar_territory_summary":
+            from api.aedar_reads import _aedar_territory_summary_resource_snapshot
+            from api.aedar_models import AEDAR_AGGREGATE_READINGS
+            measures = (item.coordinates or {}).get("measure")
+            _aedar_territory_summary_resource_snapshot(
+                conn, item.target.type, item.target.id, measures, item.fields,
+                resource.fields, preflight_only=True)
+            return len(AEDAR_AGGREGATE_READINGS if measures is None else measures)
         if item.target.kind == "territory_cohort":
             cohort = resolve_territory_cohort(conn, item.target, work_budget=work_budget)
             estimate = preflight_cohort(conn, item, resource, cohort,
@@ -207,7 +215,8 @@ class SemanticResourceReader:
             elif item.intent.kind == "selected_comparison":
                 _aedar_selected_comparison_snapshot(conn, item.target.type, item.target.id,
                     [(member.type, member.id) for member in item.intent.members],
-                    typequ, measures, item.fields, resource.measure_facets, preflight_only=True)
+                    typequ, measures, item.fields, resource.measure_facets,
+                    preflight_only=True, snapshot_state=snapshot_state)
             elif item.intent.kind == "facts":
                 _aedar_territorial_aggregate_snapshot(conn, item.target.type,
                     item.target.id, typequ, None, 100, 0, preflight_only=True)
@@ -235,9 +244,10 @@ class SemanticResourceReader:
                 return 1
             if item.intent.kind == "selected_comparison":
                 if aggregate:
-                    # One set-wise SQL aggregate per member, plus one projected
-                    # comparison entry per requested aggregate reading.
-                    return max(1, len(item.intent.members)) + max(1, len(measures)) + 1
+                    # One summary observation per selected/focal territory and
+                    # measure, plus one projected comparison entry per measure.
+                    territory_count = len({member.id for member in item.intent.members} | {item.target.id})
+                    return territory_count * len(measures) + len(measures)
                 # Bounded read work: one aggregate row per member and TYPEQU,
                 # plus one projected comparison entry per TYPEQU x measure.
                 return (max(1, len(item.intent.members)) * max(1, len(typequ))
@@ -426,6 +436,13 @@ class SemanticResourceReader:
             return data
         if resource.resource_kind == "typed_reading":
             return self._typed_reading_read(conn, item, resource)
+        if resource.resource_kind == "aedar_territory_summary":
+            from api.aedar_reads import _aedar_territory_summary_resource_snapshot
+            return {"resource": item.resource, "target": item.target.model_dump(),
+                    **_aedar_territory_summary_resource_snapshot(
+                        conn, item.target.type, item.target.id,
+                        (item.coordinates or {}).get("measure"), item.fields,
+                        resource.fields)}
         if resource.resource_kind == "aedar_source_grain":
             from api.aedar_reads import (_aedar_comparison_snapshot,
                 _aedar_selected_comparison_snapshot,
@@ -440,7 +457,7 @@ class SemanticResourceReader:
                 data = _aedar_selected_comparison_snapshot(conn, item.target.type, item.target.id,
                     [(member.type, member.id) for member in item.intent.members],
                     coordinates.get("typequ"), coordinates.get("measure"), item.fields,
-                    resource.measure_facets)
+                    resource.measure_facets, snapshot_state=snapshot_state)
             else:
                 data = _aedar_territorial_aggregate_snapshot(conn, item.target.type,
                     item.target.id, coordinates.get("typequ"), item.fields, 100, 0)

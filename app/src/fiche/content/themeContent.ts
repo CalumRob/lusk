@@ -180,7 +180,7 @@ export interface AedarEquipmentExplorerEvidence {
   kind: 'aedar-equipment-explorer'
   comparison?: import('./aedarComparisonClient').AedarComparisonEvidence | null
   comparisonRequest?: import('./aedarComparisonClient').AedarComparisonRequest | null
-  reference?: import('./aedarAccessSection').AedarReferenceEvidence | null
+  reference?: import('./aedarAccessSection').AedarEquipmentReferenceTarget | null
   contentVersion: string
   referenceContentVersion: string
   facts: readonly AedarFact[]

@@ -365,6 +365,18 @@
         "car20Volume": {"facet": "volume", "direction": "high", "ranked": true}
       },
       "intents": ["facts", "fixed_comparison", "selected_comparison"]
+    },
+    {
+      "resource_id": "aedar_territory_summary",
+      "producer": "pipeline/R/aedar_aggregates.R",
+      "kind": "aedar_territory_summary",
+      "label": "AEDAR territory summaries",
+      "source_id": "aedar_bretagne",
+      "allowed_levels": ["commune", "epci", "departement", "region"],
+      "axes": {"measure": "AEDAR_AGGREGATE_READINGS"},
+      "dynamic_axes": ["measure"],
+      "fields": ["value", "status", "n_typequ", "n_addresses", "n_observed", "coverage_status", "statistic", "source_id", "vintage_id", "source_url", "licence", "attribution", "reference_date", "publication_date"],
+      "intents": ["facts"]
     }
   ]
 }
