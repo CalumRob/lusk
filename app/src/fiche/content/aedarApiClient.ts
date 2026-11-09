@@ -83,23 +83,22 @@ const isText = (value: unknown): value is string => typeof value === 'string'
 const territoryTypes = new Set<AedarTerritoryType>(['commune', 'epci', 'departement', 'region'])
 
 type SummaryReadCache = {
-  successful: Map<string, Extract<AedarSummaryFetchResult, { status: 'ready' }>>
+  /** Only in-flight work is shared; every later acquisition observes API clocks again. */
   pending: Map<string, Promise<AedarSummaryFetchResult>>
 }
 const summaryCachesByFetch = new WeakMap<typeof fetch, SummaryReadCache>()
 
 function summaryCacheFor(fetcher: typeof fetch): SummaryReadCache {
   let cache = summaryCachesByFetch.get(fetcher)
-  if (!cache) { cache = { successful: new Map(), pending: new Map() }; summaryCachesByFetch.set(fetcher, cache) }
+  if (!cache) { cache = { pending: new Map() }; summaryCachesByFetch.set(fetcher, cache) }
   return cache
 }
 
-/** Drop only the summary cache for a territory; TYPEQU detail has its own independent cache. */
+/** Invalidate only an in-flight summary acquisition; shared fetches are not aborted. */
 export function invalidateAedarTerritorySummary(type: AedarTerritoryType, id: string): void {
   const cache = summaryCachesByFetch.get(globalThis.fetch)
   if (!cache) return
   const key = JSON.stringify([type, id])
-  cache.successful.delete(key)
   cache.pending.delete(key)
 }
 
@@ -118,19 +117,12 @@ export async function fetchAedarTerritorySummary(
   const fetcher = globalThis.fetch
   const cache = summaryCacheFor(fetcher)
   const key = JSON.stringify([territoryType, territoryId])
-  const cached = cache.successful.get(key)
-  if (cached) { cache.successful.delete(key); cache.successful.set(key, cached); return cached }
   const pending = cache.pending.get(key)
   if (pending) return pending
   const request = readAedarTerritorySummary(fetcher, territoryType, territoryId)
   cache.pending.set(key, request)
   try {
-    const result = await request
-    if (result.status === 'ready') {
-      cache.successful.set(key, result)
-      while (cache.successful.size > MAX_CACHED_READS) cache.successful.delete(cache.successful.keys().next().value!)
-    }
-    return result
+    return await request
   } finally {
     if (cache.pending.get(key) === request) cache.pending.delete(key)
   }
@@ -221,10 +213,11 @@ async function readAedarTerritorySummary(
     }
     const normalized = measures.map((measure) => returned.get(measure)!)
     const first = normalized[0]!
+    const firstAvailable = normalized.find((reading) => reading.status === 'available')
     const provenanceKeys = ['source_id', 'vintage_id', 'source_url', 'licence', 'attribution', 'reference_date', 'publication_date'] as const
     if (normalized.some((reading) => provenanceKeys.some((key) => reading[key] !== first[key]) ||
         reading.n_addresses !== first.n_addresses || reading.n_observed !== first.n_observed ||
-        (reading.status === 'available' && reading.n_typequ !== first.n_typequ))) {
+        (reading.status === 'available' && reading.n_typequ !== firstAvailable?.n_typequ))) {
       return summaryError('invalid-response', 'Provenance ou support incohérent dans la synthèse AEDAR')
     }
     const provenanceSource = Object.fromEntries(provenanceKeys.map((key) => [key, first[key]])) as AedarProvenance['sources'][number]
