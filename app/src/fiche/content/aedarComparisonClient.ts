@@ -24,6 +24,9 @@ export interface AedarComparisonEvidence {
   label: string
   contentVersion: string
   referenceContentVersion: string
+  /** Present only for aggregate comparisons served from the summary publication. */
+  summaryContentVersion?: string
+  aedarContentVersion?: string
   cells: readonly AedarComparisonCell[]
 }
 export interface AedarComparisonRequest {
@@ -34,6 +37,8 @@ export type AedarComparisonResult = { status: 'ready'; evidence: AedarComparison
   | { status: 'error'; message: string }
 type ComparisonReadOptions = AedarComparisonRequest & { typequ: readonly string[]; measures: readonly string[];
   expectedContentVersion: string; expectedReferenceContentVersion: string; signal?: AbortSignal;
+  /** Aggregate comparisons bind to all three summary/source/reference clocks. */
+  expectedSummaryContentVersion?: string;
   /** Aggregate readings whose rank fields are consumed. Omitted means rank every requested measure. */
   rankMeasures?: readonly string[] }
 const successfulReads = new WeakMap<typeof fetch, Map<string, Extract<AedarComparisonResult, { status: 'ready' }>>>()
@@ -54,7 +59,7 @@ export async function fetchAedarComparison(type: AedarTerritoryType, id: string,
   let cache = successfulReads.get(fetcher)
   if (!cache) { cache = new Map(); successfulReads.set(fetcher, cache) }
   const key = JSON.stringify([type, id, options.intent, options.label, options.typequ, options.measures,
-    options.expectedContentVersion, options.expectedReferenceContentVersion, options.rankMeasures])
+    options.expectedContentVersion, options.expectedReferenceContentVersion, options.expectedSummaryContentVersion, options.rankMeasures])
   const cached = cache.get(key)
   if (cached) { cache.delete(key); cache.set(key, cached); return cached }
   const result = await readAedarComparison(fetcher, type, id, options)
@@ -73,6 +78,7 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
     const members = options.intent.kind === 'selected_comparison' ? options.intent.members : null
     const aggregate = options.typequ.length === 0 && options.measures.every((measure) => AEDAR_AGGREGATE_READING_KEYS.includes(measure))
     if (!options.measures.length || (!aggregate && !options.typequ.length) || members?.length === 0) invalid()
+    if (aggregate && !options.expectedSummaryContentVersion) invalid()
     const aggregateFacets = aggregate
       ? (await producerCatalogue()).find((resource) => resource.resource_id === 'aedar_territorial_aggregate')?.measure_facets
       : undefined
@@ -130,6 +136,7 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
           || data.target.kind !== 'territory' || data.target.type !== type || data.target.id !== id
           || !nonempty(data.content_version) || data.aedar_content_version !== options.expectedContentVersion
           || data.reference_content_version !== options.expectedReferenceContentVersion
+          || (aggregate && data.summary_content_version !== options.expectedSummaryContentVersion)
           || (comparisonVersion !== undefined && data.content_version !== comparisonVersion)) invalid()
         comparisonVersion = data.content_version
         if (members && (!record(data.scope) || data.scope.kind !== 'explicit_selection' || data.scope.member_count !== members.length
@@ -177,7 +184,9 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
       }
     }
     return { status: 'ready', evidence: { label: options.label, contentVersion: options.expectedContentVersion,
-      referenceContentVersion: options.expectedReferenceContentVersion, cells } }
+      referenceContentVersion: options.expectedReferenceContentVersion,
+      ...(aggregate ? { summaryContentVersion: options.expectedSummaryContentVersion,
+        aedarContentVersion: options.expectedContentVersion } : {}), cells } }
   } catch (error) {
     return { status: 'error', message: error instanceof Error ? error.message : 'Comparaison AEDAR indisponible' }
   }

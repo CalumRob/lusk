@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from api import aedar_reads, semantic_resource_reader
+from api.aedar_models import AEDAR_AGGREGATE_READINGS
 from api.resource_catalogue import (default_resource_catalogue,
                                      discover_indicator_resources, validate_resource_item)
 from api.resource_requests import ResourceReadItem
@@ -23,6 +24,8 @@ def test_aedar_semantic_dispatch_is_declared_typed_and_bounded():
     assert resource.context_values == ("density_class", "epci", "bretagne", "same_level")
     assert summary.resource_kind == "aedar_territory_summary"
     assert summary.intents == ("facts",) and summary.dynamic_axes == ("measure",)
+    assert summary.measure_facets == {measure: resource.measure_facets[measure]
+                                      for measure in AEDAR_AGGREGATE_READINGS}
     dispatch_source = inspect.getsource(semantic_resource_reader.SemanticResourceReader)
     assert 'resource.resource_kind == "aedar_source_grain"' in dispatch_source
     assert dispatch_source.count("_aedar_territorial_aggregate_snapshot") >= 2

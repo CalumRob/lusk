@@ -554,6 +554,15 @@ def discover_indicator_resources(metadata_directory: str | Path,
             declared_sources.update(producer_sources.values())
             if any(source not in declared_sources for source in sources):
                 raise ValueError(f"Unknown producer source identity for semantic resource: {resource_id}")
+            measure_facets = _declared_measure_facets(declaration, resource_id)
+            if kind == "aedar_territory_summary":
+                from api.aedar_models import AEDAR_AGGREGATE_READINGS
+                aggregate = next((resource for resource in resources
+                                  if resource.resource_id == "aedar_territorial_aggregate"), None)
+                if (aggregate is None or set(AEDAR_AGGREGATE_READINGS) - set(aggregate.measure_facets)):
+                    raise ValueError("AEDAR summary facets must match producer-declared aggregate readings")
+                measure_facets = {measure: aggregate.measure_facets[measure]
+                                  for measure in AEDAR_AGGREGATE_READINGS}
             resources.append(IndicatorResource(
                 resource_id=resource_id, theme_id=theme_id, indicator_id=resource_id,
                 label=declaration.get("label", theme_metadata.get("label", resource_id)),
@@ -572,7 +581,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 storage_relation=declaration.get("storage_relation"),
                 publication_table=declaration.get("publication_table"),
                 side_relations=tuple(declaration.get("side_relations", ())),
-                measure_facets=_declared_measure_facets(declaration, resource_id)))
+                measure_facets=measure_facets))
     resources.sort(key=lambda item: (item.theme_id, item.indicator_id))
     excluded = tuple(item for item in declarations
                      if item.disposition == "excluded_legacy_accessibility")

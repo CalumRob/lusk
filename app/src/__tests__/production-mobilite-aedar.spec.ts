@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { CONTROLE_COMPARAISON_KEY } from '@/fiche/comparisonContext'
 import type { ControleComparaison } from '@/fiche/comparisonContext'
 import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
-import { AEDAR_AGGREGATE_READING_KEYS } from '@/fiche/content/aedarTimeRampFacts'
+import { AEDAR_AGGREGATE_READING_KEYS, AEDAR_AGGREGATE_READING_MEASURES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarComparisonResult } from '@/fiche/content/aedarComparisonClient'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,7 +16,7 @@ import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import type { AedarAccessSection, ContentSection, ThemeContent } from '@/fiche/content/themeContent'
-import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
+import type { AedarFetchResult, AedarSummaryFetchResult, AedarTerritorySummary, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import {
   histoiresMobiliteFixture,
   indicateursMobiliteFixture,
@@ -44,7 +44,8 @@ it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte
   const content = baseContent()
   const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
     aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
-    aedarReferenceData: aedarReferenceReady, aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' } },
+    aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
+    aedarReferenceData: aedarSummaryReferenceReady, aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' } },
   global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
   await flushPromises()
   expect(fetchAedarComparison).toHaveBeenCalledWith('commune', '22001', expect.objectContaining({
@@ -61,8 +62,10 @@ it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte
   expect(beforeOverview.scalars[0]!.comparisonAccessibleLabel).toBe('Moyenne de la sélection')
   control.value = { ...control.value, selection: { etat: 'vide' }, libelleActif: null }
   await flushPromises()
-  complete({ status: 'ready', evidence: { contentVersion: aedarReady.contentVersion,
-    referenceContentVersion: aedarReady.referenceContentVersion, label: 'Moyenne de la sélection', cells: [] } })
+  complete({ status: 'ready', evidence: { contentVersion: aedarSummaryReady.summary.aedarContentVersion,
+    summaryContentVersion: aedarSummaryReady.summary.summaryContentVersion,
+    aedarContentVersion: aedarSummaryReady.summary.aedarContentVersion,
+    referenceContentVersion: aedarSummaryReady.summary.referenceContentVersion, label: 'Moyenne de la sélection', cells: [] } })
   await flushPromises()
   const after = wrapper.findComponent(VarianteCahierLibre).props('content')
   const afterOverview = after.units[0].sections[0].evidence
@@ -79,6 +82,8 @@ it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte
   if (failedOverview?.kind !== 'aedar-car-overview') throw new Error('Overview expected after failed read')
   expect(failedOverview.scalars[0]!.comparisonUnavailableLabel).toBe('Groupe comparé : Indisponible')
   vi.mocked(fetchAedarComparison).mockResolvedValueOnce({ status: 'ready', evidence: { contentVersion: aedarReady.contentVersion,
+    summaryContentVersion: aedarSummaryReady.summary.summaryContentVersion,
+    aedarContentVersion: aedarSummaryReady.summary.aedarContentVersion,
     referenceContentVersion: aedarReady.referenceContentVersion, label: 'Moyenne de la sélection', cells: [] } })
   await wrapper.get('button').trigger('click')
   await flushPromises()
@@ -112,7 +117,8 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
       const results = body.items.map((item) => ({ id: item.id, data: {
         resource: 'aedar_territorial_aggregate', target: { kind: 'territory', ...item.target },
         territory: { territory_type: item.target.type, territory_id: item.target.id },
-        content_version: 'bridged-comparison-v1', aedar_content_version: aedarReady.contentVersion,
+         content_version: 'bridged-comparison-v1', summary_content_version: aedarSummaryReady.summary.summaryContentVersion,
+         aedar_content_version: aedarSummaryReady.summary.aedarContentVersion,
         reference_content_version: aedarReady.referenceContentVersion,
         selection: members,
         scope: { kind: 'explicit_selection', member_count: members.length, territory_type: 'commune' },
@@ -133,7 +139,8 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
 
   const content = baseContent()
   const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
-    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {} },
+    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+    aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {} },
   global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
   await flushPromises()
     const rendered = wrapper.findComponent(VarianteCahierLibre).props('content')
@@ -166,7 +173,8 @@ it('demande la classe de densité publiée pour le preset density-class', async 
   const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === content.territory.code)!, territoires: payload.territoires, selection: { etat: 'preset', preset: 'densite' }, libelleActif: 'Communes peu denses',
     presetDefaut: 'epci', presets: [], choisir: () => {} })
   const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
-    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {} },
+    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+    aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {} },
   global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
   await flushPromises()
   expect(fetchAedarComparison).toHaveBeenCalledWith('commune', content.territory.code, expect.objectContaining({
@@ -184,15 +192,14 @@ it.each([
   const content = { ...baseContent(), territory: { ...baseContent().territory, type: territoryType } } as ThemeContent
   const data = { ...aedarReady, facts: aedarReady.facts.map((fact) => ({ ...fact,
     territory_type: territoryType as AedarTerritoryType, territory_id: content.territory.code })) }
-  const referenceFacts = aedarFacts(10, { territoryId: referenceId, territoryType: referenceType === 'EPCI' ? 'epci' : 'commune', value: 0.25 })
-    .map((fact) => ({ ...fact, territory_type: (referenceType === 'EPCI' ? 'epci' : 'region') as AedarTerritoryType }))
-  const referenceData = { ...aedarReferenceReady, facts: referenceFacts }
+  const referenceData = aedarSummary(referenceId, referenceType === 'EPCI' ? 'epci' : 'region', 2.5)
   const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === content.territory.code)!, territoires: payload.territoires, selection: { etat: 'preset', preset }, libelleActif: 'Portée résolue',
     presetDefaut: 'bretagne', presets: [], choisir: () => {} })
   const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
-    aedarData: data, aedarStatus: 'ready', retryAedar: () => {}, aedarReferenceTerritoire: {
+     aedarData: data, aedarStatus: 'ready', retryAedar: () => {},
+     aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {}, aedarReferenceTerritoire: {
       type: referenceType === 'EPCI' ? 'epci' : 'region', id: referenceId, nom: referenceType === 'EPCI' ? 'EPCI X' : 'Bretagne',
-    }, aedarReferenceData: referenceData },
+     }, aedarReferenceData: { status: 'ready', summary: referenceData } },
   global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
   await flushPromises()
   const rendered = wrapper.findComponent(VarianteCahierLibre).props('content')
@@ -213,7 +220,8 @@ it('garde un état sans groupe dans chaque scalaire pendant puis après l’éch
   const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) => territoire.territoire === '22001')!, territoires: payload.territoires, selection: { etat: 'preset', preset: 'epci' }, libelleActif: 'EPCI X',
     presetDefaut: 'epci', presets: [], choisir: () => {} })
   const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
-    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {}, aedarReferenceTerritoire: {
+    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+    aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {}, aedarReferenceTerritoire: {
       type: 'epci', id: '200000001', nom: 'EPCI X',
     }, aedarReferenceStatus: 'loading' },
   global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
@@ -253,7 +261,7 @@ function baseContent(): ThemeContent {
 
 function contentWithAedarAccess(): ThemeContent {
   const content = baseContent()
-  const section = aedarAccessSection(aedarReady, content.territory)
+  const section = aedarAccessSection(aedarSummary(), content.territory)
   const first = content.units[0]
   return {
     ...content,
@@ -263,8 +271,8 @@ function contentWithAedarAccess(): ThemeContent {
 
 function contentWithAedarAccessReference(): ThemeContent {
   const content = baseContent()
-  const section = aedarAccessSection(aedarReady, content.territory, {
-    reference: { data: aedarReferenceReady, territory: { type: 'epci', id: '200000001' }, label: 'EPCI X' },
+  const section = aedarAccessSection(aedarSummary(), content.territory, {
+    reference: { data: aedarSummary('200000001', 'epci', 2.5), territory: { type: 'epci', id: '200000001' }, label: 'EPCI X' },
   })
   const first = content.units[0]
   return {
@@ -346,12 +354,25 @@ const aedarReady: Extract<AedarFetchResult, { status: 'ready' }> = {
   provenance: aedarProvenance('test-version'),
 }
 
-const aedarReferenceReady: Extract<AedarFetchResult, { status: 'ready' }> = {
-  status: 'ready',
-  facts: aedarFacts(10, { territoryId: '200000001', territoryType: 'epci', value: 0.25 }),
-  contentVersion: 'test-version',
-  referenceContentVersion: 'test-reference-version',
-  provenance: aedarProvenance('test-version'),
+function aedarSummary(territoryId = '22001', territoryType: 'commune' | 'epci' | 'region' = 'commune', value = 5): AedarTerritorySummary {
+  const source = aedarProvenance('test-version').sources[0]!
+  return {
+    territory: { territory_type: territoryType, territory_id: territoryId },
+    summaryContentVersion: 'test-summary-version', aedarContentVersion: 'test-version',
+    referenceContentVersion: 'test-reference-version',
+    readings: Object.keys(AEDAR_AGGREGATE_READING_MEASURES).map((measure) => ({
+      measure, value, status: 'available', n_typequ: AEDAR_TYPEQU_REGISTRY.length,
+      n_addresses: 100, n_observed: 100, coverage_status: 'covered', statistic: 'direct', ...source,
+    })),
+    provenance: aedarProvenance('test-version'),
+  }
+}
+
+const aedarSummaryReady: Extract<AedarSummaryFetchResult, { status: 'ready' }> = {
+  status: 'ready', summary: aedarSummary(),
+}
+const aedarSummaryReferenceReady: Extract<AedarSummaryFetchResult, { status: 'ready' }> = {
+  status: 'ready', summary: aedarSummary('200000001', 'epci', 2.5),
 }
 
 const lossMapModes = ['walk', 'transit', 'bike_lts2', 'bike_lts4'] as const
@@ -693,6 +714,7 @@ describe('ProductionMobiliteAedar', () => {
         pagination: cahierPaginationFor(payload, content),
         
         aedarData: { ...aedarReady, facts: aedarFacts(10, { canonicalUniverse: true }) },
+        aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
         aedarStatus: 'ready',
         retryAedar: () => {},
       },
@@ -785,9 +807,10 @@ describe('ProductionMobiliteAedar', () => {
       props: {
         content, pagination: cahierPaginationFor(payload, content), 
         aedarData: { ...aedarReady, facts: aedarFacts(10, { canonicalUniverse: true }) },
+        aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
         aedarStatus: 'ready', retryAedar: () => {},
         aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' },
-        aedarReferenceData: { ...aedarReferenceReady, facts: aedarFacts(10, { canonicalUniverse: true, territoryId: '200000001', territoryType: 'epci', value: 0.25 }) },
+        aedarReferenceData: aedarSummaryReferenceReady,
         aedarReferenceStatus: 'ready',
       },
       global: { plugins: [router] },
@@ -835,7 +858,9 @@ describe('ProductionMobiliteAedar', () => {
       focal: territoiresFixture.find((territory) => territory.territoire === content.territory.code) ?? territoiresFixture[0]!, territoires: territoiresFixture,
       libelleActif: label === 'selected' ? 'Sélection' : 'Classe de densité', presetDefaut: 'epci', presets: [], choisir: () => {} })
     vi.mocked(fetchAedarComparison).mockResolvedValue({ status: 'ready', evidence: {
-      label: comparisonLabel, contentVersion: aedarReady.contentVersion,
+      label: comparisonLabel, contentVersion: aedarSummaryReady.summary.aedarContentVersion,
+      summaryContentVersion: aedarSummaryReady.summary.summaryContentVersion,
+      aedarContentVersion: aedarSummaryReady.summary.aedarContentVersion,
       referenceContentVersion: aedarReady.referenceContentVersion,
       cells: ['meanDiversity', 'meanVolume'].map((measure) => ({
         typequ: null, measure, source_id: 'aedar_bretagne', vintage_id: '2026-v1', reference_date: '2026-01-01', publication_date: '2026-09-30',
@@ -845,6 +870,7 @@ describe('ProductionMobiliteAedar', () => {
     } })
     const wrapper = mount(ProductionMobiliteAedar, { props: {
       content, pagination: cahierPaginationFor(payload, content), aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+      aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
     }, global: { plugins: [createRouter({ history: createMemoryHistory(), routes })], provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control },
       stubs: { ConstructeurComparaison: true, MembresComparaison: true } } })
     await flushPromises()
@@ -904,7 +930,7 @@ describe('ProductionMobiliteAedar', () => {
     await flushPromises()
 
     expect(wrapper.find('.aedar-state').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Les données AEDAR ne sont pas disponibles')
+    expect(wrapper.text()).toContain('Les détails AEDAR ne sont pas disponibles')
     expect(wrapper.findComponent(VarianteCahierLibre).exists()).toBe(true)
 
     await wrapper.find('button').trigger('click')
@@ -920,6 +946,7 @@ describe('ProductionMobiliteAedar', () => {
         pagination: cahierPaginationFor(payload, content),
         
         aedarData: aedarReady,
+        aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
         aedarStatus: 'ready',
         retryAedar: () => {},
       },
@@ -1025,6 +1052,7 @@ describe('ProductionMobiliteAedar', () => {
         pagination: cahierPaginationFor(payload, content),
         
         aedarData: aedarExplorerReady(),
+        aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
         aedarStatus: 'ready',
         retryAedar: () => {},
       },
@@ -1111,10 +1139,11 @@ describe('ProductionMobiliteAedar', () => {
         pagination: cahierPaginationFor(payload, content),
         
         aedarData: aedarReady,
+        aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
         aedarStatus: 'ready',
         retryAedar: () => {},
         aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' },
-        aedarReferenceData: aedarReferenceReady,
+        aedarReferenceData: aedarSummaryReferenceReady,
         aedarReferenceStatus: 'ready',
       },
       global: { plugins: [router] },
@@ -1142,10 +1171,12 @@ describe('ProductionMobiliteAedar', () => {
         pagination: cahierPaginationFor(payload, content),
         
         aedarData: aedarReady,
+        aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
         aedarStatus: 'ready',
         retryAedar: () => {},
         aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' },
-        aedarReferenceData: { ...aedarReferenceReady, contentVersion: 'other-version', provenance: aedarProvenance('other-version') },
+        aedarReferenceData: { status: 'ready', summary: { ...aedarSummaryReferenceReady.summary,
+          summaryContentVersion: 'other-summary-version' } },
         aedarReferenceStatus: 'ready',
       },
       global: { plugins: [router] },

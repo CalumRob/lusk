@@ -21,6 +21,9 @@ import type { ChargerMetadonneesTheme } from '../payload/themeCatalogue'
 import { TERRITORY_REFERENCE_CHARGER_KEY } from '../payload/territoryReference'
 import type { ChargerReferenceTerritoires } from '../payload/territoryReference'
 import { acquireThemeFacts } from '../payload/themeAcquisition'
+import { AEDAR_AGGREGATE_READING_KEYS } from '../fiche/content/aedarTimeRampFacts'
+import { invalidateAedarTerritorySummary } from '../fiche/content/aedarApiClient'
+import { AEDAR_TYPEQU_REGISTRY } from '../fiche/content/aedarTypequRegistry'
 import {
   semanticComparisonForTheme,
   themeFactsRowsFromSemantic,
@@ -82,14 +85,94 @@ function nativeFicheReadFixture(item: Record<string, any>, resource: Parameters<
   return nativeReadFixture(item, resource, { syntheticProfileComparisons: true })
 }
 
-function nativeSemanticFetch(requests: Array<Array<Record<string, any>>> = []) {
+function aedarSummaryFixture(item: Record<string, any>, summaryContentVersion = 'aedar-summary-fixture-v1') {
+  const target = item.target
+  const diversity = target.id === '22001' ? 5 : target.type === 'epci' ? 2.5 : 3.5
+  const volume = target.id === '22001' ? 11 : target.type === 'epci' ? 7 : 9
+  return {
+    resource: item.resource, target,
+    territory: { territory_type: target.type, territory_id: target.id },
+    summary_content_version: summaryContentVersion,
+    aedar_content_version: 'aedar_territorial_aggregate-fixture-publication-v1',
+    reference_content_version: 'semantic-reference-fixture-v1',
+    readings: AEDAR_AGGREGATE_READING_KEYS.map((measure) => ({
+      measure, value: measure.toLowerCase().includes('diversity') ? diversity : volume,
+      status: 'available', n_typequ: AEDAR_TYPEQU_REGISTRY.length, n_addresses: 100,
+      n_observed: 90, coverage_status: 'covered', statistic: 'direct',
+      source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
+      licence: 'ODbL', attribution: 'AEDAR', reference_date: '2026-01-01', publication_date: '2026-09-30',
+    })),
+  }
+}
+
+function aedarComparisonFixture(item: Record<string, any>, summaryClock: string) {
+  const measures = item.coordinates.measure as string[]
+  const selected = item.intent.kind === 'selected_comparison'
+  const memberCount = selected ? item.intent.members.length : 0
+  const context = selected ? null : item.intent.context
+  const values = selected
+    ? memberCount === 1 ? { diversity: 5, volume: 11 } : { diversity: 23, volume: 41 }
+    : context === 'epci' ? { diversity: 13, volume: 29 }
+      : context === 'density_class' ? { diversity: 17, volume: 31 }
+        : context === 'bretagne' ? { diversity: 19, volume: 37 }
+          : { diversity: 21, volume: 39 }
+  const rows = measures.map((measure) => ({
+    typequ: null, measure,
+    comparison_context: selected ? 'selected_comparison' : item.intent.context,
+    statistic: selected ? 'pooled' : 'direct',
+    group_value: measure.toLowerCase().includes('diversity') ? values.diversity : values.volume,
+    group_n_addresses: 100, group_n_observed: 90, group_coverage_status: 'covered',
+    source_id: 'aedar_bretagne', vintage_id: '2026-v1', reference_date: '2026-01-01', publication_date: '2026-09-30',
+    direction: 'high',
+    rank: selected && memberCount > 1 ? 1 : null,
+    rank_size: selected && memberCount > 1 ? memberCount : null,
+    rank_ties: selected && memberCount > 1 ? 1 : null,
+  }))
+  return {
+    resource: item.resource, target: item.target, content_version: 'aedar-comparison-fixture-v1',
+    summary_content_version: summaryClock,
+    aedar_content_version: 'aedar_territorial_aggregate-fixture-publication-v1',
+    reference_content_version: 'semantic-reference-fixture-v1',
+    ...(selected ? {
+      selection: item.intent.members.map((member: any) => ({ territory_type: member.type, territory_id: member.id })),
+      scope: { kind: 'explicit_selection', member_count: memberCount }, comparisons: rows,
+    } : { comparison: rows[0] }),
+  }
+}
+
+function nativeSemanticFetch(requests: Array<Array<Record<string, any>>> = [], options: {
+  failSummary?: (items: Array<Record<string, any>>) => boolean
+  failTypedDetail?: (items: Array<Record<string, any>>) => boolean
+  summaryContentVersion?: () => string
+  comparisonSummaryClock?: () => string
+} = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url === '/api/resources') return nativeCatalogueResponse()
     if (url === '/api/resources/read-batch') {
       const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
       requests.push(items)
-      return nativeBatchResponse(items, nativeFicheReadFixture)
+      if (items.some((item) => item.resource === 'aedar_territory_summary') && options.failSummary?.(items)) {
+        return new Response('', { status: 503 })
+      }
+      if (items.some((item) => item.resource === 'aedar_territorial_aggregate' && item.intent?.kind === 'facts')
+        && options.failTypedDetail?.(items)) return new Response('', { status: 503 })
+      const comparisonClock = options.comparisonSummaryClock?.() ?? 'aedar-summary-fixture-v1'
+      if (items.every((item) => item.resource === 'aedar_territorial_aggregate' && item.intent?.kind !== 'facts'
+        && !(item.coordinates?.typequ?.length))) {
+        const results = items.map((item) => ({ id: item.id, resource: item.resource,
+          data: aedarComparisonFixture(item, comparisonClock) }))
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }), { status: 200 })
+      }
+      return nativeBatchResponse(items, (item, resource) => {
+        if (resource.resource_id === 'aedar_territory_summary') return aedarSummaryFixture(item,
+          options.summaryContentVersion?.() ?? 'aedar-summary-fixture-v1')
+        if (resource.resource_id === 'aedar_territorial_aggregate' && item.intent?.kind !== 'facts'
+          && !(item.coordinates?.typequ?.length)) {
+          return aedarComparisonFixture(item, comparisonClock)
+        }
+        return nativeFicheReadFixture(item, resource)
+      })
     }
     throw new Error(`Unexpected request: ${url}`)
   })
@@ -1530,9 +1613,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
             return new Response('', { status: 503 })
           }
           mobiliteFactsBatches.served += 1
-          return nativeBatchResponse(items, nativeFicheReadFixture)
+          return nativeBatchResponse(items, (item, resource) => resource.resource_id === 'aedar_territory_summary'
+            ? aedarSummaryFixture(item) : nativeFicheReadFixture(item, resource))
         }
-        return nativeBatchResponse(items, nativeFicheReadFixture)
+        return nativeBatchResponse(items, (item, resource) => resource.resource_id === 'aedar_territory_summary'
+          ? aedarSummaryFixture(item) : nativeFicheReadFixture(item, resource))
       }
       return { ok: false, status: 404, json: async () => ({}) } as Response
     })
@@ -1652,6 +1737,201 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(aedarReads()).toHaveLength(aedarReadsBeforeRetry)
     expect(wrapper.find('.aedar-state').exists()).toBe(false)
     expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    wrapper.unmount()
+  }, 20_000)
+
+  it('keeps summary and TYPEQU detail failures independent and retries only the failed stream on the mounted route', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    let failFocalSummary = true
+    const summaryFetch = nativeSemanticFetch(requests, {
+      failSummary: (items) => {
+        const focal = items.some((item) => item.resource === 'aedar_territory_summary' && item.target.id === '22001')
+        if (!focal || !failFocalSummary) return false
+        failFocalSummary = false
+        return true
+      },
+    })
+    vi.stubGlobal('fetch', summaryFetch)
+    const mounted = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
+    const summaryAlert = mounted.wrapper.findAll('.aedar-state')
+      .find((alert) => alert.text().includes('Les données AEDAR ne sont pas disponibles.'))
+    expect(summaryAlert).toBeDefined()
+    const unavailableOverview = mounted.wrapper.get('[data-section="aedar-car-overview"]')
+    expect(unavailableOverview.findAll('.cahier-figure-scalar-value').map((node) => node.text())).toEqual(['—', '—'])
+    expect(mounted.wrapper.find('[data-section="aedar-access"] .aedar-time-ramp').exists()).toBe(false)
+    expect(mounted.wrapper.find('[data-section="aedar-equipment-profile"] .aedar-waffle-grid').exists()).toBe(true)
+    const detailReadsBeforeSummaryRetry = requests.flat().filter((item) =>
+      item.resource === 'aedar_territorial_aggregate' && item.intent.kind === 'facts').length
+    const summaryReadsBeforeRetry = requests.flat().filter((item) => item.resource === 'aedar_territory_summary').length
+
+    await summaryAlert!.find('button').trigger('click')
+    await flushPromises()
+    expect(mounted.wrapper.text()).not.toContain('Les données AEDAR ne sont pas disponibles.')
+    const overviewAfterSummaryRetry = mounted.wrapper.get('[data-section="aedar-car-overview"]')
+    expect(overviewAfterSummaryRetry.findAll('.cahier-figure-scalar-value').map((node) => node.text())).toEqual(['5', '11'])
+    expect(requests.flat().filter((item) => item.resource === 'aedar_territorial_aggregate' && item.intent.kind === 'facts'))
+      .toHaveLength(detailReadsBeforeSummaryRetry)
+    expect(requests.flat().filter((item) => item.resource === 'aedar_territory_summary').length)
+      .toBeGreaterThan(summaryReadsBeforeRetry)
+    mounted.wrapper.unmount()
+
+    const detailRequests: Array<Array<Record<string, any>>> = []
+    let failFocalDetail = true
+    vi.stubGlobal('fetch', nativeSemanticFetch(detailRequests, {
+      failTypedDetail: (items) => {
+        const focal = items.some((item) => item.resource === 'aedar_territorial_aggregate'
+          && item.intent.kind === 'facts' && item.target.id === '22001')
+        if (!focal || !failFocalDetail) return false
+        failFocalDetail = false
+        return true
+      },
+    }))
+    const detailMounted = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
+    const detailAlert = detailMounted.wrapper.findAll('.aedar-state')
+      .find((alert) => alert.text().includes('Les détails AEDAR ne sont pas disponibles.'))
+    expect(detailAlert).toBeDefined()
+    expect(detailMounted.wrapper.get('[data-section="aedar-car-overview"] .cahier-figure-scalar-value').text()).toBe('5')
+    expect(detailMounted.wrapper.find('[data-section="aedar-equipment-profile"] .aedar-waffle-grid').exists()).toBe(false)
+    const summaryReadsBeforeDetailRetry = detailRequests.flat().filter((item) => item.resource === 'aedar_territory_summary').length
+    const detailReadsBeforeRetry = detailRequests.flat().filter((item) =>
+      item.resource === 'aedar_territorial_aggregate' && item.intent.kind === 'facts').length
+
+    await detailAlert!.find('button').trigger('click')
+    await flushPromises()
+    expect(detailMounted.wrapper.text()).not.toContain('Les détails AEDAR ne sont pas disponibles.')
+    expect(detailMounted.wrapper.find('[data-section="aedar-equipment-profile"] .aedar-waffle-grid').exists()).toBe(true)
+    expect(detailRequests.flat().filter((item) => item.resource === 'aedar_territory_summary'))
+      .toHaveLength(summaryReadsBeforeDetailRetry)
+    expect(detailRequests.flat().filter((item) => item.resource === 'aedar_territorial_aggregate' && item.intent.kind === 'facts').length)
+      .toBeGreaterThan(detailReadsBeforeRetry)
+    detailMounted.wrapper.unmount()
+  }, 20_000)
+
+  it('keeps summary clocks, singleton rank, focal reset, and the EPCI → density → EPCI → density → custom sequence coherent', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    let comparisonClock = 'stale-summary-clock'
+    let summaryContentVersion = 'aedar-summary-fixture-v1'
+    const fetchApi = nativeSemanticFetch(requests, {
+      summaryContentVersion: () => summaryContentVersion,
+      comparisonSummaryClock: () => comparisonClock,
+    })
+    vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci', chargerReferenceReelle)
+    await flushPromises()
+
+    const overview = () => wrapper.get('[data-section="aedar-car-overview"]')
+    expect(overview().findAll('.cahier-figure-scalar-value').map((node) => node.text())).toEqual(['5', '11'])
+    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(true)
+    // A stale comparison clock fails closed without dropping the independently valid EPCI summary line.
+    expect(overview().find('.cahier-comparison-value').text()).toContain('Groupe comparé : 2,5')
+    comparisonClock = 'aedar-summary-fixture-v1'
+    await wrapper.get('.aedar-comparison-state button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(false)
+    expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
+      'Groupe comparé : 13', 'Groupe comparé : 29',
+    ])
+
+    // The repeated EPCI and density transitions are intentional: they exercise watcher cleanup,
+    // comparison-cache identity, and direct-reference cache reuse on the real page.
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'densite' } })
+    await flushPromises()
+    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(false)
+    expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
+      'Groupe comparé : 17', 'Groupe comparé : 31',
+    ])
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } })
+    await flushPromises()
+    expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
+      'Groupe comparé : 13', 'Groupe comparé : 29',
+    ])
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'densite' } })
+    await flushPromises()
+    expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
+      'Groupe comparé : 17', 'Groupe comparé : 31',
+    ])
+
+    // A one-territory custom group keeps the served focal value but rank is honestly null.
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'commune:22001' } })
+    await flushPromises()
+    expect(overview().find('.cahier-figure-scalar-value').text()).toBe('5')
+    expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
+      'Groupe comparé : 5', 'Groupe comparé : 11',
+    ])
+    expect(overview().find('.cahier-rank').exists()).toBe(false)
+    expect(overview().find('.cahier-figure-scalar').attributes('aria-label')).not.toContain('Rang')
+
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'bretagne' } })
+    await flushPromises()
+    expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
+      'Groupe comparé : 19', 'Groupe comparé : 37',
+    ])
+    expect(requests.flat().some((item) => item.resource === 'aedar_territory_summary'
+      && item.target.type === 'region' && item.target.id === '53')).toBe(true)
+
+    const comparisonsBeforeReset = requests.flat().filter((item) =>
+      item.resource === 'aedar_territorial_aggregate' && item.intent.kind !== 'facts').length
+    await router.replace({ query: { theme: 'mobilite', comparaison: '' } })
+    await flushPromises()
+    expect(overview().findAll('.cahier-figure-scalar-value').map((node) => node.text())).toEqual(['5', '11'])
+    expect(overview().find('.cahier-comparison-value').exists()).toBe(false)
+    expect(requests.flat().filter((item) => item.resource === 'aedar_territorial_aggregate' && item.intent.kind !== 'facts'))
+      .toHaveLength(comparisonsBeforeReset)
+
+    // Moving the focal route invalidates the previous focal summary/comparison presentation.
+    await router.replace({ path: '/territoire/commune/22002', query: { theme: 'mobilite', comparaison: '' } })
+    await flushPromises()
+    expect(wrapper.get('[data-section="aedar-car-overview"] .cahier-figure-scalar-value').text()).toBe('3,5')
+    expect(wrapper.get('[data-section="aedar-car-overview"] .cahier-figure-scalar-value').text()).not.toBe('5')
+    expect(wrapper.find('.cahier-comparison-value').exists()).toBe(false)
+    expect(requests.flat().some((item) => item.resource === 'aedar_territory_summary'
+      && item.target.type === 'commune' && item.target.id === '22002')).toBe(true)
+
+    // Refreshing both summaries changes the summary clock. The mounted caller must
+    // abandon the prior comparison identity and reject its old-clock response.
+    const comparisonReadsBeforeClockRefresh = requests.flat().filter((item) =>
+      item.resource === 'aedar_territorial_aggregate' && item.intent.kind !== 'facts'
+      && !(item.coordinates?.typequ?.length)).length
+    summaryContentVersion = 'aedar-summary-fixture-v2'
+    const refreshedEpci = cibleReference('22002').epci
+    if (!refreshedEpci) throw new Error('Expected a reference EPCI for 22002')
+    invalidateAedarTerritorySummary('commune', '22002')
+    invalidateAedarTerritorySummary('epci', refreshedEpci)
+    await router.replace({ query: { theme: 'economie', comparaison: '' } })
+    await flushPromises()
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } })
+    await flushPromises()
+    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(true)
+    expect(requests.flat().filter((item) => item.resource === 'aedar_territorial_aggregate'
+      && item.intent.kind !== 'facts' && !(item.coordinates?.typequ?.length)).length)
+      .toBeGreaterThan(comparisonReadsBeforeClockRefresh)
+    comparisonClock = 'aedar-summary-fixture-v2'
+    await wrapper.get('.aedar-comparison-state button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(false)
+    expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
+      'Groupe comparé : 13', 'Groupe comparé : 29',
+    ])
+
+    const aedarItems = requests.flat().filter((item) =>
+      item.resource === 'aedar_territorial_aggregate' || item.resource === 'aedar_territory_summary')
+    const epciSummaryReads = aedarItems.filter((item) => item.resource === 'aedar_territory_summary'
+      && item.target.type === 'epci' && item.target.id === cibleReference('22001').epci)
+    expect(epciSummaryReads).toHaveLength(1)
+    expect(aedarItems.filter((item) => item.resource === 'aedar_territorial_aggregate'
+      && item.intent.kind === 'facts').every((item) => item.target.type === 'commune')).toBe(true)
+    const contexts = aedarItems.filter((item) => item.resource === 'aedar_territorial_aggregate'
+      && item.intent.kind !== 'facts' && !(item.coordinates?.typequ?.length)).map((item) => item.intent.kind === 'fixed_comparison'
+      ? item.intent.context : item.intent.kind)
+    const contextTransitions = contexts.filter((context, index) => context !== contexts[index - 1])
+    // Successful reads are memoized: the route is switched five times above,
+    // while acquisition needs only the two fixed contexts and singleton selection.
+    expect(contextTransitions).toEqual(['epci', 'density_class', 'selected_comparison', 'bretagne', 'epci'])
+    const singleton = aedarItems.find((item) => item.resource === 'aedar_territorial_aggregate'
+      && item.intent.kind === 'selected_comparison' && item.intent.members.length === 1
+      && !(item.coordinates?.typequ?.length))
+    expect(singleton?.intent.members).toEqual([{ type: 'commune', id: '22001' }])
+    expect(fetchBloque).not.toHaveBeenCalled()
     wrapper.unmount()
   }, 20_000)
 

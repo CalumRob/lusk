@@ -1,257 +1,135 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { aedarCarAccessOverviewSection, aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
 import type { AedarReferenceEvidence } from '@/fiche/content/aedarAccessSection'
 import { AEDAR_AGGREGATE_READING_MEASURES } from '@/fiche/content/aedarTimeRampFacts'
-import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
+import type { AedarComparisonEvidence } from '@/fiche/content/aedarComparisonClient'
+import type { AedarTerritorySummary } from '@/fiche/content/aedarApiClient'
 import type { TerritoryIdentity } from '@/fiche/content/territoryFacts'
 
 const territory: TerritoryIdentity = {
   type: 'commune', code: '22001', name: 'Test Commune', department: '22', epci: null,
 }
 
-function ready(): Extract<AedarFetchResult, { status: 'ready' }> {
-  const [, ...lines] = readFileSync(resolve(process.cwd(), '../pipeline/inst/extdata/aedar-typequ-2025.csv'), 'utf8')
-    .trim().split(/\r?\n/)
-  const measures = Object.fromEntries([5, 10, 15, 20].flatMap((horizon) =>
-    ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) =>
-      ['share', 'min', 'max', ...Array.from({ length: 9 }, (_, index) => `decile${index + 1}`), 'mean']
-        .map((statistic) => [`count_${horizon}_${mode}_${statistic}`, 0]),
-    ),
-  ))
-  const facts = lines.map((line) => {
-    const match = line.match(/^"([^"]+)","((?:[^"]|"")*)"$/)
-    if (!match) throw new Error(`Invalid canonical TYPEQU row: ${line}`)
-    return {
-      territory_id: territory.code, territory_type: territory.type,
-      typequ: match[1]!, typequ_label: match[2]!.replaceAll('""', '"'), identity: {},
-      n_addresses: 3, n_observed: 0, coverage_status: 'covered', measures: { ...measures },
-      source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
-      licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30',
-    }
-  })
-  // Three addresses: type 1 counts [0, 1, 3], type 2 counts [2, 0, 1].
-  // All other source types have zero access. Address totals are [2, 1, 4];
-  // address diversities are [1, 1, 2]. n_observed is not the denominator.
-  facts[0]!.n_observed = 2
-  facts[0]!.measures.count_15_car_share = 2 / 3
-  facts[0]!.measures.count_15_car_mean = 4 / 3
-  facts[1]!.n_observed = 2
-  facts[1]!.measures.count_15_car_share = 2 / 3
-  facts[1]!.measures.count_15_car_mean = 1
+const source = {
+  source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
+  licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30',
+}
+
+/** Deliberately independent of the TYPEQU fixture: values are producer-served summary observations. */
+function summary(overrides: Record<string, number | null> = {}, territoryId = '22001', territoryType: 'commune' | 'epci' = 'commune') {
+  const readings = Object.entries(AEDAR_AGGREGATE_READING_MEASURES).map(([measure, sourceMeasure]) => ({
+    measure,
+    value: Object.hasOwn(overrides, measure) ? overrides[measure]! : sourceMeasure.endsWith('_share') ? 0.5 : 1,
+    status: 'available' as const, n_typequ: 235, n_addresses: 3, n_observed: 2,
+    coverage_status: 'covered', statistic: 'direct' as const, ...source,
+  }))
+  const target: AedarTerritorySummary = {
+    territory: { territory_type: territoryType, territory_id: territoryId },
+    summaryContentVersion: 'summary-v1', aedarContentVersion: 'aedar-v1', referenceContentVersion: 'reference-v1',
+    readings, provenance: { contentVersion: 'aedar-v1', sources: [source] },
+  }
+  return target
+}
+
+function comparison(data: AedarTerritorySummary): AedarComparisonEvidence {
   return {
-    status: 'ready', contentVersion: 'worked-example', referenceContentVersion: 'reference-example', facts,
-    provenance: { contentVersion: 'worked-example', sources: [{
-      source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
-      licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30',
-    }] },
+    label: 'Moyenne de la sélection', contentVersion: data.aedarContentVersion,
+    summaryContentVersion: data.summaryContentVersion, aedarContentVersion: data.aedarContentVersion,
+    referenceContentVersion: data.referenceContentVersion,
+    cells: Object.keys(AEDAR_AGGREGATE_READING_MEASURES).map((measure) => ({
+      ...source, typequ: null, measure, group_coverage_status: 'covered', group_n_addresses: 50,
+      group_n_observed: 42, group_value: measure.endsWith('Diversity') ? 0.5 : 1,
+      statistic: 'pooled' as const, rank: measure === 'meanDiversity' ? 3 : null,
+      rank_size: measure === 'meanDiversity' ? 3 : null, rank_ties: measure === 'meanDiversity' ? 1 : null,
+      direction: 'high' as const,
+    })),
   }
 }
 
-function epciReference(): AedarReferenceEvidence {
-  const data = ready()
-  for (const fact of data.facts) {
-    fact.territory_type = 'epci'
-    fact.territory_id = '200000001'
-    fact.n_addresses = 6
-    fact.n_observed = 0
-    fact.measures.count_15_car_share = 0
-    fact.measures.count_15_car_mean = 0
-  }
-  // Six EPCI addresses: counts [0,0,0,1,0,0] and [0,0,0,0,2,3].
-  // Total diversity [0,0,0,1,1,1], total establishments [0,0,0,1,2,3].
-  data.facts[0]!.n_observed = 1
-  data.facts[0]!.measures.count_15_car_share = 1 / 6
-  data.facts[0]!.measures.count_15_car_mean = 1 / 6
-  data.facts[1]!.n_observed = 2
-  data.facts[1]!.measures.count_15_car_share = 2 / 6
-  data.facts[1]!.measures.count_15_car_mean = 5 / 6
+function epciReference(data = summary({ meanDiversity: 0.5, meanVolume: 1 }, '200000001', 'epci')): AedarReferenceEvidence {
   return { data, territory: { type: 'epci', id: '200000001' }, label: 'EPCI Test' }
 }
 
-describe('AEDAR car access overview', () => {
-  it('lit les agrégats servis pour les moyennes et les rampes sans sommer les cellules TYPEQU (#931)', () => {
-    const data = ready()
-    const comparison = { label: 'Moyenne de la sélection', contentVersion: data.contentVersion,
-      referenceContentVersion: data.referenceContentVersion,
-      cells: Object.entries(AEDAR_AGGREGATE_READING_MEASURES).map(([measure, source]) => ({
-        ...data.facts[0]!, typequ: null, measure, statistic: 'pooled' as const, group_coverage_status: 'covered',
-        group_n_addresses: 50, group_n_observed: 42,
-        group_value: source.endsWith('_share') ? 0.5 : 1,
-        rank: null, rank_size: null, rank_ties: null, direction: 'high' as const,
-      })) }
-    const sections = aedarPrototypeSections(data, territory, { comparison })
-    expect(sections[0].evidence!.scalars.map((s) => s.reference?.value)).toEqual([0.5, 1])
-    expect(sections[0].evidence!.scalars[0]!.reference).toMatchObject({ label: 'Moyenne de la sélection' })
-    expect(sections[0].evidence!.scalars[0]!.reference).not.toHaveProperty('rank')
-    expect(sections[0].evidence!.scalars[0]!.rank).toBeNull()
-    expect(sections[1].evidence!.ramps[0]!.reference!.car).toEqual([0.5, 0.5, 0.5, 0.5])
-    expect(sections[1].evidence!.ramps[1]!.reference!.car).toEqual([1, 1, 1, 1])
-    expect(sections[3].evidence!.comparison).toBe(comparison)
-    const stale = aedarPrototypeSections(data, territory, { comparison: { ...comparison, contentVersion: 'stale' } })
-    expect(stale[0].evidence!.scalars.map((s) => s.reference)).toEqual([null, null])
-    expect(stale[1].evidence!.ramps[0]!.reference).toBeNull()
-    const partial = aedarPrototypeSections(data, territory, { comparison: { ...comparison,
-      cells: comparison.cells.filter((cell) => cell.measure !== 'meanDiversity') } })
-    expect(partial[0].evidence!.scalars[0]!.reference).toBeNull()
-    expect(partial[1].evidence!.ramps[0]!.reference!.car).toEqual([0.5, 0.5, null, 0.5])
-    const unavailable = aedarPrototypeSections(data, territory, { comparison: { ...comparison,
-      cells: comparison.cells.map((cell) => ({ ...cell, group_value: null })) } })
-    expect(unavailable[0].evidence!.scalars.map((s) => s.reference)).toEqual([null, null])
-    const perTypeOnly = aedarPrototypeSections(data, territory, { comparison: { ...comparison,
-      cells: [{ ...comparison.cells[0]!, typequ: data.facts[0]!.typequ, measure: 'count_15_car_share',
-        group_value: 999, rank: 1, rank_size: 3, rank_ties: 1 }] } })
-    expect(perTypeOnly[0].evidence!.scalars.map((s) => s.reference)).toEqual([null, null])
-  })
-  it('keeps the 15-minute time-ramp readings on the overview address means, with independent EPCI denominators', () => {
-    const [overview, access] = aedarPrototypeSections(ready(), territory, { reference: epciReference() })
-    const [diversity, volume] = access.evidence!.ramps
-    expect(diversity!.territory.car[2]).toBeCloseTo(4 / 3)
-    expect(volume!.territory.car[2]).toBeCloseTo(7 / 3)
-    expect(diversity!.reference!.car[2]).toBeCloseTo(0.5)
-    expect(volume!.reference!.car[2]).toBeCloseTo(1)
-    expect(overview.evidence!.meanDiversity).toBeCloseTo(4 / 3)
-    expect(overview.evidence!.meanVolume).toBeCloseTo(7 / 3)
-  })
-  it('supplies scalar readings with the named EPCI address mean, not a median or a peer rank', () => {
-    const section = aedarCarAccessOverviewSection(ready(), territory, { reference: epciReference() })
-    const [diversity, volume] = section.evidence!.scalars
-    expect(diversity).toMatchObject({ key: 'meanDiversity', label: 'Types d’équipements' })
-    expect(volume).toMatchObject({ key: 'meanVolume', label: 'Établissements' })
-    expect(diversity!.value).toBeCloseTo(4 / 3)
-    expect(volume!.value).toBeCloseTo(7 / 3)
-    expect(diversity!.reference).toMatchObject({
-      kind: 'territory-mean', value: 0.5,
-      territory: { type: 'epci', id: '200000001', name: 'EPCI Test' },
-      label: 'Moyenne — EPCI Test',
-    })
-    expect(volume!.reference!.value).toBeCloseTo(1)
-    expect(diversity!.reference).not.toHaveProperty('rank')
-    expect(diversity!.reference).not.toHaveProperty('scope.kind', 'communes-epci')
-    expect(section.evidence!.comparisonLabel).toBe('Moyenne de EPCI Test')
+describe('AEDAR summary-driven car access overview', () => {
+  it('uses independent published readings for the focal overview and all ramp values', () => {
+    const focal = summary({ meanDiversity: 4 / 3, meanVolume: 7 / 3, car15Diversity: 4 / 3, car15Volume: 7 / 3 })
+    const [overview, access] = aedarPrototypeSections(focal, null, territory)
+    expect(overview.evidence).toMatchObject({ kind: 'aedar-car-overview', nAddresses: 3, meanDiversity: 4 / 3, meanVolume: 7 / 3 })
+    expect(overview.evidence?.kind === 'aedar-car-overview' && overview.evidence.scalars.map(({ value }) => value))
+      .toEqual([4 / 3, 7 / 3])
+    expect(access.evidence?.kind).toBe('aedar-access')
+    if (access.evidence?.kind !== 'aedar-access') throw new Error('Expected AEDAR ramp evidence')
+    expect(access.evidence.ramps[0]?.territory.car[2]).toBe(4 / 3)
+    expect(access.evidence.ramps[1]?.territory.car[2]).toBe(7 / 3)
+    expect(access.evidence.availability).toBe('complete')
+    // No typed detail was supplied: the waffle and sandbox remain honestly unavailable.
+    expect(aedarPrototypeSections(focal, null, territory)[2]?.evidence).toBeNull()
+    expect(aedarPrototypeSections(focal, null, territory)[3]?.evidence).toBeNull()
   })
 
-  it.each(['partial universe', 'uncovered', 'publication', 'source vintage', 'wrong territory'])('keeps local scalars without borrowing an incompatible EPCI: %s', (kind) => {
+  it('uses summary-clock-bound group values and ranks; rejects each stale summary/source/reference clock', () => {
+    const focal = summary({ meanDiversity: 4 / 3, meanVolume: 7 / 3 })
+    const current = comparison(focal)
+    const currentSections = aedarPrototypeSections(focal, null, territory, { comparison: current,
+      comparisonRequest: { intent: { kind: 'fixed_comparison', context: 'density_class' }, label: 'Classe de densité' } })
+    const overview = currentSections[0].evidence
+    if (overview?.kind !== 'aedar-car-overview') throw new Error('Expected overview evidence')
+    expect(overview.scalars.map(({ reference }) => reference?.value)).toEqual([0.5, 1])
+    expect(overview.scalars[0]).toMatchObject({ rank: 3, rankSize: 3, rankTies: 1, rankDirection: 'high' })
+    expect(currentSections[1].evidence?.kind === 'aedar-access' && currentSections[1].evidence.ramps[0]?.reference?.car)
+      .toEqual([0.5, 0.5, 0.5, 0.5])
+
+    for (const stale of [
+      { ...current, summaryContentVersion: 'old-summary' },
+      { ...current, aedarContentVersion: 'old-source' },
+      { ...current, referenceContentVersion: 'old-reference' },
+    ]) {
+      const sections = aedarPrototypeSections(focal, null, territory, { comparison: stale })
+      const staleOverview = sections[0].evidence
+      if (staleOverview?.kind !== 'aedar-car-overview') throw new Error('Expected overview evidence')
+      expect(staleOverview.scalars.map(({ reference }) => reference)).toEqual([null, null])
+      expect(sections[1].evidence?.kind === 'aedar-access' && sections[1].evidence.ramps[0]?.reference).toBeNull()
+    }
+  })
+
+  it('uses EPCI summary readings as direct references only under matching publication clocks', () => {
+    const focal = summary({ meanDiversity: 4 / 3, meanVolume: 7 / 3 })
     const reference = epciReference()
-    if (kind === 'partial universe') reference.data.facts.pop()
-    if (kind === 'uncovered') reference.data.facts[0]!.coverage_status = 'uncovered_no_bdnb_residential_origins'
-    if (kind === 'publication') {
-      reference.data.contentVersion = 'other-version'
-      reference.data.provenance.contentVersion = 'other-version'
-    }
-    if (kind === 'source vintage') {
-      reference.data.provenance.sources[0]!.vintage_id = 'other-vintage'
-      for (const fact of reference.data.facts) fact.vintage_id = 'other-vintage'
-    }
-    if (kind === 'wrong territory') reference.territory.id = '999999999'
-    const section = aedarCarAccessOverviewSection(ready(), territory, { reference })
-    expect(section.availability).toBe('complete')
-    expect(section.evidence!.scalars.map((scalar) => scalar.reference)).toEqual([null, null])
-    expect(section.evidence!.comparisonLabel).toBeNull()
-    expect(section.evidence!.meanVolume).toBeCloseTo(7 / 3)
-    if (kind === 'publication') {
-      expect(aedarPrototypeSections(ready(), territory, { reference })[3].evidence!.reference).toBeNull()
-    }
+    const section = aedarCarAccessOverviewSection(focal, territory, { reference })
+    expect(section.evidence?.kind === 'aedar-car-overview' && section.evidence.scalars.map(({ reference }) => reference?.value))
+      .toEqual([0.5, 1])
+    expect(section.evidence?.kind === 'aedar-car-overview' && section.evidence.scalars[0]?.reference)
+      .toMatchObject({ kind: 'territory-mean', value: 0.5, territory: { type: 'epci', id: '200000001', name: 'EPCI Test' } })
+    const stale = epciReference({ ...reference.data, summaryContentVersion: 'other-summary' })
+    const staleSection = aedarCarAccessOverviewSection(focal, territory, { reference: stale })
+    expect(staleSection.evidence?.kind === 'aedar-car-overview' && staleSection.evidence.scalars.map(({ reference }) => reference))
+      .toEqual([null, null])
   })
 
-  it('provides real address means for diversity and total volume at 15 minutes, not mean volume per type', () => {
-    const section = aedarCarAccessOverviewSection(ready(), territory)
-
-    expect(section.key).toBe('aedar-car-overview')
-    expect(section.evidence).toMatchObject({
-      kind: 'aedar-car-overview', horizonMinutes: 15, nAddresses: 3,
-      availability: 'complete', mapModes: ['car'],
-    })
-    expect(section.evidence!.meanDiversity).toBeCloseTo(4 / 3)
-    expect(section.evidence!.meanVolume).toBeCloseTo(7 / 3)
-    expect(section.evidence!.scalarFigureTitle).toContain('15 minutes (moyenne par adresse)')
-    expect(section.evidence!.scalars.map((scalar) => scalar.reference)).toEqual([null, null])
-    expect(section.evidence!.comparisonLabel).toBeNull()
+  it('keeps unavailable summary values null instead of rebuilding them from any typed facts', () => {
+    const focal = summary({ meanDiversity: null, meanVolume: 7 / 3, car5Diversity: null })
+    const missingDiversity = focal.readings.find(({ measure }) => measure === 'meanDiversity')!
+    missingDiversity.status = 'unavailable'; missingDiversity.n_typequ = null; missingDiversity.coverage_status = null
+    const missingRamp = focal.readings.find(({ measure }) => measure === 'car5Diversity')!
+    missingRamp.status = 'unavailable'; missingRamp.n_typequ = null; missingRamp.coverage_status = null
+    const [overview, access] = aedarPrototypeSections(focal, null, territory)
+    expect(overview.evidence?.kind === 'aedar-car-overview' && overview.evidence.scalars.map(({ value }) => value))
+      .toEqual([null, 7 / 3])
+    expect(access.evidence?.kind === 'aedar-access' && access.evidence.ramps[0]?.territory.car[0]).toBeNull()
+    expect(overview.availability).toBe('incomplete')
   })
 
-  it('does not present a partial TYPEQU universe as a territory mean', () => {
-    const data = ready()
-    data.facts.pop()
-    const section = aedarCarAccessOverviewSection(data, territory)
-    expect(section.availability).toBe('incomplete')
-    expect(section.evidence!.meanDiversity).toBeNull()
-    expect(section.evidence!.meanVolume).toBeNull()
-    expect(section.evidence!.prose.flat().map((segment) => segment.value).join('')).toContain('diversité médiane')
-  })
-
-  it.each(['pending', 'failed', 'missing-cell'] as const)(
-    'retains a scalar unavailable mark during a %s comparison read', (state) => {
-      const data = ready()
-      const section = aedarCarAccessOverviewSection(data, territory, {
-        comparisonRequest: { intent: { kind: 'fixed_comparison', context: 'density_class' }, label: 'Moyenne de la classe de densité' },
-        ...(state === 'missing-cell' ? { comparison: { label: 'Moyenne de la classe de densité',
-          contentVersion: data.contentVersion, referenceContentVersion: data.referenceContentVersion, cells: [] } } : {}),
-      })
-      expect(section.evidence!.scalars.map((scalar) => scalar.reference)).toEqual([null, null])
-      expect(section.evidence!.scalars.map((scalar) => scalar.comparisonUnavailableLabel)).toEqual([
-        'Groupe comparé : Indisponible', 'Groupe comparé : Indisponible',
-      ])
-      expect(section.evidence!.scalars.map((scalar) => scalar.comparisonAccessibleLabel)).toEqual([
-        'Moyenne de la classe de densité', 'Moyenne de la classe de densité',
-      ])
-    },
-  )
-
-  it.each(['addresses', 'territory', 'source', 'coverage', 'duplicate', 'unknown type'])('rejects incompatible %s without producing a fabricated mean', (kind) => {
-    const data = ready()
-    if (kind === 'addresses') data.facts[1]!.n_addresses = 4
-    if (kind === 'territory') data.facts[1]!.territory_id = '99999'
-    if (kind === 'source') data.facts[1]!.vintage_id = 'other'
-    if (kind === 'coverage') data.facts[1]!.coverage_status = 'uncovered_no_bdnb_residential_origins'
-    if (kind === 'duplicate') data.facts[1]!.typequ = data.facts[0]!.typequ
-    if (kind === 'unknown type') data.facts[1]!.typequ = 'UNKNOWN'
-    const section = aedarCarAccessOverviewSection(data, territory)
-    expect(section.availability).toBe('incomplete')
-    expect(section.evidence!.meanDiversity).toBeNull()
-    expect(section.evidence!.meanVolume).toBeNull()
-  })
-
-  it('preserves unknown measures rather than treating them as zero', () => {
-    const data = ready()
-    data.facts[0]!.measures.count_15_car_share = null
-    const section = aedarCarAccessOverviewSection(data, territory)
-    expect(section.availability).toBe('incomplete')
-    expect(section.evidence!.meanDiversity).toBeNull()
-    expect(section.evidence!.meanVolume).toBeCloseTo(7 / 3)
-  })
-
-  it('keeps a covered zero-access territory distinct from unavailable evidence', () => {
-    const data = ready()
-    for (const fact of data.facts) {
-      fact.n_observed = 0
-      fact.measures.count_15_car_share = 0
-      fact.measures.count_15_car_mean = 0
-    }
-    const section = aedarCarAccessOverviewSection(data, territory)
-    expect(section.availability).toBe('complete')
-    expect(section.evidence!.meanDiversity).toBe(0)
-    expect(section.evidence!.meanVolume).toBe(0)
-    expect(section.evidence!.scalars[1]?.value).toBe(0)
-  })
-
-  it('does not label means with provenance that differs from the contributing facts', () => {
-    const data = ready()
-    data.provenance.sources[0]!.vintage_id = 'another-vintage'
-    const section = aedarCarAccessOverviewSection(data, territory)
-    expect(section.availability).toBe('incomplete')
-    expect(section.evidence!.meanDiversity).toBeNull()
-    expect(section.evidence!.meanVolume).toBeNull()
-    expect(section.evidence!.source).toBeNull()
-  })
-
-  it('gives the prototype an address-based introduction using the same population and map horizon as its means', () => {
-    const section = aedarCarAccessOverviewSection(ready(), territory)
-    const introduction = section.evidence!.unitIntroduction.flat().map((segment) => segment.value).join('')
-    expect(introduction).toContain('5, 10, 15 ou 20 minutes')
-    expect(introduction).toContain('3 adresses résidentielles')
-    expect(introduction).toContain('Test Commune')
-    expect(introduction).toContain('Base de données nationale des bâtiments')
+  it('keeps typed rank-null values distinct from unavailable values', () => {
+    const focal = summary({ meanDiversity: 4 / 3, meanVolume: 7 / 3 })
+    const emptyRank = comparison(focal)
+    emptyRank.cells = emptyRank.cells.map((cell) => cell.measure === 'meanDiversity'
+      ? { ...cell, rank: null, rank_size: null, rank_ties: null } : cell)
+    const sections = aedarPrototypeSections(focal, null, territory, { comparison: emptyRank })
+    const overview = sections[0].evidence
+    if (overview?.kind !== 'aedar-car-overview') throw new Error('Expected overview evidence')
+    expect(overview.scalars[0]?.value).toBe(4 / 3)
+    expect(overview.scalars[0]?.rank).toBeNull()
+    expect(overview.scalars[0]?.reference?.value).toBe(0.5)
   })
 })

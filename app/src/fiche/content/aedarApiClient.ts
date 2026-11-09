@@ -1,4 +1,5 @@
 import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
+import { producerCatalogue } from '@/payload/themeAcquisition'
 
 export type AedarTerritoryType = 'commune' | 'epci' | 'departement' | 'region'
 
@@ -44,6 +45,30 @@ export type AedarFetchResult =
   | { status: 'ready'; facts: AedarFact[]; contentVersion: string; referenceContentVersion: string; provenance: AedarProvenance }
   | { status: 'error'; error: { code: 'unknown-territory' | 'publication-unavailable' | 'network' | 'invalid-response'; message: string } }
 
+export interface AedarTerritorySummaryReading extends Pick<AedarFact, 'source_id' | 'vintage_id' | 'source_url' | 'licence' | 'attribution' | 'reference_date' | 'publication_date'> {
+  measure: string
+  value: number | null
+  status: 'available' | 'unavailable'
+  n_typequ: number | null
+  n_addresses: number | null
+  n_observed: number | null
+  coverage_status: string | null
+  statistic: 'direct'
+}
+
+export interface AedarTerritorySummary {
+  territory: AedarTerritoryIdentity
+  summaryContentVersion: string
+  aedarContentVersion: string
+  referenceContentVersion: string
+  readings: readonly AedarTerritorySummaryReading[]
+  provenance: AedarProvenance
+}
+
+export type AedarSummaryFetchResult =
+  | { status: 'ready'; summary: AedarTerritorySummary }
+  | { status: 'error'; error: { code: 'unknown-territory' | 'publication-unavailable' | 'network' | 'invalid-response'; message: string } }
+
 export interface AedarFetchOptions {
   typequ?: string[]
   measures?: string[]
@@ -56,6 +81,165 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const isText = (value: unknown): value is string => typeof value === 'string'
 const territoryTypes = new Set<AedarTerritoryType>(['commune', 'epci', 'departement', 'region'])
+
+type SummaryReadCache = {
+  successful: Map<string, Extract<AedarSummaryFetchResult, { status: 'ready' }>>
+  pending: Map<string, Promise<AedarSummaryFetchResult>>
+}
+const summaryCachesByFetch = new WeakMap<typeof fetch, SummaryReadCache>()
+
+function summaryCacheFor(fetcher: typeof fetch): SummaryReadCache {
+  let cache = summaryCachesByFetch.get(fetcher)
+  if (!cache) { cache = { successful: new Map(), pending: new Map() }; summaryCachesByFetch.set(fetcher, cache) }
+  return cache
+}
+
+/** Drop only the summary cache for a territory; TYPEQU detail has its own independent cache. */
+export function invalidateAedarTerritorySummary(type: AedarTerritoryType, id: string): void {
+  const cache = summaryCachesByFetch.get(globalThis.fetch)
+  if (!cache) return
+  const key = JSON.stringify([type, id])
+  cache.successful.delete(key)
+  cache.pending.delete(key)
+}
+
+/**
+ * Acquire the registered producer summary as one independent read. The 40
+ * identities come from the producer's aggregate facets, not from a browser
+ * request list; omitting coordinates is the API's complete-summary contract.
+ */
+export async function fetchAedarTerritorySummary(
+  territoryType: AedarTerritoryType,
+  territoryId: string,
+): Promise<AedarSummaryFetchResult> {
+  if (!territoryTypes.has(territoryType) || !territoryId) {
+    return summaryError('invalid-response', 'Paramètres AEDAR invalides')
+  }
+  const fetcher = globalThis.fetch
+  const cache = summaryCacheFor(fetcher)
+  const key = JSON.stringify([territoryType, territoryId])
+  const cached = cache.successful.get(key)
+  if (cached) { cache.successful.delete(key); cache.successful.set(key, cached); return cached }
+  const pending = cache.pending.get(key)
+  if (pending) return pending
+  const request = readAedarTerritorySummary(fetcher, territoryType, territoryId)
+  cache.pending.set(key, request)
+  try {
+    const result = await request
+    if (result.status === 'ready') {
+      cache.successful.set(key, result)
+      while (cache.successful.size > MAX_CACHED_READS) cache.successful.delete(cache.successful.keys().next().value!)
+    }
+    return result
+  } finally {
+    if (cache.pending.get(key) === request) cache.pending.delete(key)
+  }
+}
+
+function summaryError(code: Extract<AedarSummaryFetchResult, { status: 'error' }>['error']['code'], message: string): AedarSummaryFetchResult {
+  return { status: 'error', error: { code, message } }
+}
+
+function validSummaryReading(value: unknown): value is AedarTerritorySummaryReading {
+  if (!isRecord(value) || !isText(value.measure) || !value.measure.trim() ||
+      (value.status !== 'available' && value.status !== 'unavailable') || value.statistic !== 'direct' ||
+      !(value.value === null || (typeof value.value === 'number' && Number.isFinite(value.value))) ||
+      !(value.n_typequ === null || (Number.isInteger(value.n_typequ) && (value.n_typequ as number) > 0)) ||
+      !(value.n_addresses === null || (Number.isInteger(value.n_addresses) && (value.n_addresses as number) >= 0)) ||
+      !(value.n_observed === null || (Number.isInteger(value.n_observed) && (value.n_observed as number) >= 0)) ||
+      !(value.coverage_status === null || isText(value.coverage_status)) ||
+      !isText(value.source_id) || !isText(value.vintage_id) || !isText(value.source_url) ||
+      !isText(value.licence) || !isText(value.attribution) ||
+      !(value.reference_date === null || isText(value.reference_date)) ||
+      !(value.publication_date === null || isText(value.publication_date))) return false
+  if (value.status === 'available') {
+    const numericValue = value.value
+    const nTypequ = value.n_typequ
+    const nAddresses = value.n_addresses
+    const nObserved = value.n_observed
+    return typeof numericValue === 'number' && numericValue >= 0 &&
+      typeof nTypequ === 'number' && typeof nAddresses === 'number' && nAddresses > 0 &&
+      typeof nObserved === 'number' && nObserved <= nTypequ * nAddresses && value.coverage_status === 'covered'
+  }
+  return value.value === null && value.n_typequ === null &&
+    (value.n_addresses === null || (typeof value.n_addresses === 'number' && value.n_addresses >= 0)) &&
+    (value.n_observed === null || (typeof value.n_observed === 'number' && value.n_observed >= 0))
+}
+
+async function readAedarTerritorySummary(
+  fetcher: typeof fetch,
+  territoryType: AedarTerritoryType,
+  territoryId: string,
+): Promise<AedarSummaryFetchResult> {
+  try {
+    const declarations = await producerCatalogue()
+    const summaryDeclaration = declarations.find((item) => item.resource_id === 'aedar_territory_summary')
+    const measures = Object.keys(summaryDeclaration?.measure_facets ?? {})
+    const measureSet = new Set(measures)
+    if (!summaryDeclaration || !summaryDeclaration.intents.includes('facts') ||
+        !summaryDeclaration.target_kinds.includes('territory') ||
+        !summaryDeclaration.allowed_levels.includes(territoryType) ||
+        !summaryDeclaration.measure_facets || !measures.length || measureSet.size !== measures.length ||
+        measures.some((measure) => !summaryDeclaration.measure_facets?.[measure])) {
+      return summaryError('invalid-response', 'Contrat de synthèse AEDAR indisponible')
+    }
+    const item = { id: 'aedar-summary', resource: summaryDeclaration.resource_id,
+      target: { kind: 'territory', type: territoryType, id: territoryId }, intent: { kind: 'facts' } }
+    let response: Response
+    try {
+      response = await fetcher('/api/resources/read-batch', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: [item] }) })
+    } catch { return summaryError('network', 'Impossible de joindre la synthèse AEDAR') }
+    if (response.status === 404) return summaryError('unknown-territory', 'Territoire inconnu pour la synthèse AEDAR')
+    if (response.status === 503) return summaryError('publication-unavailable', 'Synthèse AEDAR indisponible ou incompatible')
+    if (!response.ok) return summaryError('invalid-response', `Réponse AEDAR inattendue (${response.status})`)
+    const body: unknown = await response.json()
+    if (!isRecord(body) || body.contract !== 'semantic-read-batch-v1' || !Array.isArray(body.results) || body.results.length !== 1 ||
+        !isRecord(body.results[0]) || body.results[0].id !== item.id || !isRecord(body.results[0].data)) {
+      return summaryError('invalid-response', 'Réponse de synthèse AEDAR invalide')
+    }
+    const data = body.results[0].data
+    if (data.resource !== item.resource || !isRecord(data.target) || data.target.kind !== 'territory' ||
+        data.target.type !== territoryType || data.target.id !== territoryId || !isRecord(data.territory) ||
+        data.territory.territory_type !== territoryType || data.territory.territory_id !== territoryId ||
+        !isText(data.summary_content_version) || !data.summary_content_version.trim() ||
+        !isText(data.aedar_content_version) || !data.aedar_content_version.trim() ||
+        !isText(data.reference_content_version) || !data.reference_content_version.trim() ||
+        !Array.isArray(data.readings) || data.readings.length !== measures.length) {
+      return summaryError('invalid-response', 'Synthèse AEDAR incomplète ou liée à un autre territoire')
+    }
+    const readings = data.readings
+    const returned = new Map<string, AedarTerritorySummaryReading>()
+    for (const reading of readings) {
+      if (!validSummaryReading(reading) || !measureSet.has(reading.measure) || returned.has(reading.measure)) {
+        return summaryError('invalid-response', 'Lecture de synthèse AEDAR invalide')
+      }
+      returned.set(reading.measure, reading)
+    }
+    if (measures.some((measure) => !returned.has(measure))) {
+      return summaryError('invalid-response', 'Synthèse AEDAR incomplète')
+    }
+    const normalized = measures.map((measure) => returned.get(measure)!)
+    const first = normalized[0]!
+    const provenanceKeys = ['source_id', 'vintage_id', 'source_url', 'licence', 'attribution', 'reference_date', 'publication_date'] as const
+    if (normalized.some((reading) => provenanceKeys.some((key) => reading[key] !== first[key]) ||
+        reading.n_addresses !== first.n_addresses || reading.n_observed !== first.n_observed ||
+        (reading.status === 'available' && reading.n_typequ !== first.n_typequ))) {
+      return summaryError('invalid-response', 'Provenance ou support incohérent dans la synthèse AEDAR')
+    }
+    const provenanceSource = Object.fromEntries(provenanceKeys.map((key) => [key, first[key]])) as AedarProvenance['sources'][number]
+    return { status: 'ready', summary: {
+      territory: { territory_type: territoryType, territory_id: territoryId },
+      summaryContentVersion: data.summary_content_version,
+      aedarContentVersion: data.aedar_content_version,
+      referenceContentVersion: data.reference_content_version,
+      readings: normalized,
+      provenance: { contentVersion: data.aedar_content_version, sources: [provenanceSource] },
+    } }
+  } catch {
+    return summaryError('invalid-response', 'Réponse de synthèse AEDAR invalide')
+  }
+}
 
 function expectedMeasureKeys(): Set<string> {
   const result = new Set<string>()

@@ -2,10 +2,10 @@
  * Semantic assembly of AEDAR evidence for Mobilité. ThemeContent owns the
  * wording; the renderer lays sections out through the shared Cahier primitives.
  */
-import type { AedarFetchResult } from './aedarApiClient'
+import type { AedarFetchResult, AedarTerritorySummary } from './aedarApiClient'
 import { aedarAggregateComparisonCell } from './aedarComparisonClient'
 import type { AedarComparisonEvidence, AedarComparisonRequest } from './aedarComparisonClient'
-import { aedarTimeRampEvidence, AEDAR_AGGREGATE_READING_MEASURES, AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from './aedarTimeRampFacts'
+import { aedarTimeRampSummary, AEDAR_AGGREGATE_READING_MEASURES, AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from './aedarTimeRampFacts'
 import { AEDAR_EQUIPMENT_BUCKET_THRESHOLD, classifyAedarEquipmentTypes } from './aedarEquipmentBuckets'
 import { AEDAR_TYPEQU_BPE_YEAR, AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
 import { aedarDiversityLossSection } from './aedarDiversityLossMaps'
@@ -24,6 +24,8 @@ export const AEDAR_CAR_OVERVIEW_SECTION_LABEL = 'L’offre accessible en voiture
 export const AEDAR_ACCESS_SECTION_LABEL = 'La ville du 1/12, du 1/6, du 1/4 et du 1/3 d’heure'
 export const AEDAR_EQUIPMENT_PROFILE_SECTION_LABEL = 'Au moins un quart des adresses'
 export const AEDAR_EQUIPMENT_EXPLORER_SECTION_LABEL = 'Bac à sable'
+export const AEDAR_SUMMARY_UNAVAILABLE_MESSAGE = 'Les données AEDAR ne sont pas disponibles.'
+export const AEDAR_DETAIL_UNAVAILABLE_MESSAGE = 'Les détails AEDAR ne sont pas disponibles.'
 
 /**
  * App-owned presentation descriptors (key/label/unit) of the two car-overview
@@ -40,14 +42,20 @@ export const AEDAR_CAR_OVERVIEW_SCALAR_READINGS = [
 
 type AedarReady = Extract<AedarFetchResult, { status: 'ready' }>
 
-function sameAedarPublication(left: AedarReady, right: AedarReady): boolean {
-  return left.contentVersion === right.contentVersion
+function sameAedarPublication(left: AedarTerritorySummary, right: AedarTerritorySummary): boolean {
+  return left.summaryContentVersion === right.summaryContentVersion
+    && left.aedarContentVersion === right.aedarContentVersion
     && left.referenceContentVersion === right.referenceContentVersion
 }
 
 /** Explicit single-territory reference evidence behind the comparison lines. */
 export interface AedarReferenceEvidence {
-  data: AedarReady
+  data: AedarTerritorySummary
+  territory: { type: string; id: string }
+  label: string
+}
+
+export interface AedarEquipmentReferenceTarget {
   territory: { type: string; id: string }
   label: string
 }
@@ -62,28 +70,19 @@ export interface AedarAccessSectionOptions {
   lossMapMetadata?: AedarDiversityLossMapMetadata
 }
 
-function compatibleComparison(data: AedarReady, options: AedarAccessSectionOptions): AedarComparisonEvidence | null {
+function compatibleComparison(data: AedarTerritorySummary, options: AedarAccessSectionOptions): AedarComparisonEvidence | null {
   const comparison = options.comparison
-  return comparison?.contentVersion === data.contentVersion && comparison.referenceContentVersion === data.referenceContentVersion
+  return comparison?.summaryContentVersion === data.summaryContentVersion
+    && comparison.aedarContentVersion === data.aedarContentVersion
+    && comparison.referenceContentVersion === data.referenceContentVersion
     ? comparison : null
 }
 
 /** Group totals and ranks are producer-served registry-wide readings, never client sums. */
-function groupTotal(_data: AedarReady, comparison: AedarComparisonEvidence, measure: string): number | null {
+function groupTotal(comparison: AedarComparisonEvidence, measure: string): number | null {
   const reading = Object.entries(AEDAR_AGGREGATE_READING_MEASURES).find(([, sourceMeasure]) => sourceMeasure === measure)?.[0]
   const value = reading ? aedarAggregateComparisonCell(comparison, reading)?.group_value : null
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
-}
-
-function virtualResponse(data: AedarReady, territory: { type: string; id: string }) {
-  return {
-    territory: { territory_type: territory.type, territory_id: territory.id },
-    content_version: data.contentVersion,
-    reference_content_version: data.contentVersion,
-    limit: data.facts.length + 1,
-    offset: 0,
-    facts: data.facts,
-  }
 }
 
 function rampEvidence(
@@ -123,24 +122,20 @@ function rampEvidence(
  * production content and shows the honest unavailable state instead).
  */
 export function aedarAccessSection(
-  data: AedarReady,
+  data: AedarTerritorySummary,
   territory: TerritoryIdentity,
   options: AedarAccessSectionOptions = {},
 ): AedarAccessSection {
-  const values = aedarTimeRampEvidence(virtualResponse(data, { type: territory.type, id: territory.code }), {
-    territory: { type: territory.type, id: territory.code },
-  })
+  const values = aedarTimeRampSummary(data)
   const candidate = options.reference
-  const source = data.facts[0]
-  const referenceSource = candidate?.data.facts[0]
+  const source = data.provenance.sources[0]
+  const referenceSource = candidate?.data.provenance.sources[0]
   const reference = candidate && source && referenceSource && sameAedarPublication(candidate.data, data)
     && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const)
       .every((key) => source[key] === referenceSource[key])
     ? candidate : null
   const referenceValues = reference
-    ? aedarTimeRampEvidence(virtualResponse(reference.data, reference.territory), {
-        territory: reference.territory,
-      })
+    ? aedarTimeRampSummary(reference.data)
     : null
   const comparison = compatibleComparison(data, options)
   const referenceLabel = comparison?.label ?? (reference ? `Moyenne de ${reference.label}` : null)
@@ -148,7 +143,7 @@ export function aedarAccessSection(
     const evidence = rampEvidence(ramp, referenceValues, referenceLabel)
     if (!comparison) return evidence
     const reference = Object.fromEntries(Object.keys(ramp.territory).map((mode) => [mode,
-      ramp.xAxis.values.map((horizon) => groupTotal(data, comparison, `count_${horizon}_${mode}_${ramp.rampKey === 'diversity' ? 'share' : 'mean'}`)),
+      ramp.xAxis.values.map((horizon) => groupTotal(comparison, `count_${horizon}_${mode}_${ramp.rampKey === 'diversity' ? 'share' : 'mean'}`)),
     ])) as unknown as Record<AedarRampMode, readonly (number | null)[]>
     return { ...evidence, reference, referenceLabel }
   })
@@ -204,7 +199,7 @@ export function aedarAccessSection(
   }
 }
 
-function aedarEvidenceSource(data: AedarReady): AedarEvidenceSource | null {
+function aedarEvidenceSource(data: AedarReady | AedarTerritorySummary): AedarEvidenceSource | null {
   const source = data.provenance.sources[0]
   if (!source) return null
   return {
@@ -215,37 +210,27 @@ function aedarEvidenceSource(data: AedarReady): AedarEvidenceSource | null {
   }
 }
 
-/** The same address-mean contract applies independently to focal and reference territories. */
-function carAccessMeans(data: AedarReady, territory: { type: string; id: string }) {
-  const horizonMinutes = AEDAR_PROTOTYPE_HORIZON_MINUTES
-  const types = new Set(data.facts.map((fact) => fact.typequ))
-  const completeUniverse = data.facts.length === AEDAR_TYPEQU_REGISTRY.length
-    && types.size === AEDAR_TYPEQU_REGISTRY.length
-    && AEDAR_TYPEQU_REGISTRY.every(({ code }) => types.has(code))
-  const first = data.facts[0]
-  const source = data.provenance.sources[0]
-  const commonSource = first !== undefined && source !== undefined && data.provenance.sources.length === 1
-    && (['source_id', 'vintage_id', 'source_url', 'licence', 'attribution', 'reference_date', 'publication_date'] as const)
-      .every((key) => source[key] === first[key] && data.facts.every((fact) => fact[key] === first[key]))
-  const compatiblePopulation = completeUniverse && commonSource && first !== undefined
-    && Number.isInteger(first.n_addresses) && first.n_addresses > 0
-    && data.contentVersion === data.provenance.contentVersion
-    && data.facts.every((fact) => fact.territory_id === territory.id && fact.territory_type === territory.type
-      && fact.n_addresses === first.n_addresses && fact.coverage_status === 'covered'
-      && Number.isInteger(fact.n_observed) && fact.n_observed >= 0 && fact.n_observed <= fact.n_addresses)
-  const totalFor = (statistic: 'share' | 'mean'): number | null => {
-    if (!compatiblePopulation) return null
-    const values = data.facts.map((fact) => fact.measures[`count_${horizonMinutes}_car_${statistic}`])
-    if (values.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0
-      || (statistic === 'share' && value > 1))) return null
-    const sum = (values as number[]).reduce((total, value) => total + value, 0)
-    return Number.isFinite(sum) ? sum : null
+/** Read the producer-published 15-minute means; the app never rebuilds them from TYPEQU facts. */
+function carAccessMeans(data: AedarTerritorySummary) {
+  const readingByMeasure = new Map(data.readings.map((reading) => [reading.measure, reading]))
+  const keyBySourceMeasure = new Map(Object.entries(AEDAR_AGGREGATE_READING_MEASURES).map(([key, source]) => [source, key]))
+  const valueFor = (sourceMeasure: string): number | null => {
+    const reading = readingByMeasure.get(keyBySourceMeasure.get(sourceMeasure) ?? '')
+    return reading?.status === 'available' && typeof reading.value === 'number' && Number.isFinite(reading.value)
+      ? reading.value : null
   }
-  const meanDiversity = totalFor('share')
-  const meanVolume = totalFor('mean')
+  const first = data.readings[0]
+  const source = data.provenance.sources[0]
+  const commonSource = Boolean(first && source && data.provenance.sources.length === 1 &&
+    data.readings.every((reading) => reading.source_id === source.source_id && reading.vintage_id === source.vintage_id &&
+      reading.source_url === source.source_url && reading.licence === source.licence &&
+      reading.attribution === source.attribution && reading.reference_date === source.reference_date &&
+      reading.publication_date === source.publication_date))
   return {
-    meanDiversity, meanVolume,
-    nAddresses: compatiblePopulation ? first.n_addresses : null,
+    meanDiversity: valueFor('count_15_car_share'),
+    meanVolume: valueFor('count_15_car_mean'),
+    nAddresses: first?.n_addresses !== null && first?.n_addresses !== undefined && first.n_addresses > 0
+      ? first.n_addresses : null,
     source: commonSource ? aedarEvidenceSource(data) : null,
   }
 }
@@ -300,14 +285,14 @@ function carOverviewScalarFigureTitle(horizonMinutes: number): string {
   return `En voiture en ${horizonMinutes} minutes (moyenne par adresse)`
 }
 
-/** Address means are additive across TYPEQU; no address-file reread is needed. */
+/** Display producer-published address means; the app never rebuilds them from TYPEQU or address files. */
 export function aedarCarAccessOverviewSection(
-  data: AedarReady,
+  data: AedarTerritorySummary,
   territory: TerritoryIdentity,
   options: AedarAccessSectionOptions = {},
 ): AedarCarAccessOverviewSection {
   const horizonMinutes = AEDAR_PROTOTYPE_HORIZON_MINUTES
-  const means = carAccessMeans(data, { type: territory.type, id: territory.code })
+  const means = carAccessMeans(data)
   const { meanDiversity, meanVolume, nAddresses } = means
   const reference = options.reference
   const source = data.provenance.sources[0]
@@ -316,12 +301,12 @@ export function aedarCarAccessOverviewSection(
     && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const)
       .every((key) => source[key] === referenceSource[key])
   const referenceMeans = reference && sameSourceClock && sameAedarPublication(reference.data, data)
-    ? carAccessMeans(reference.data, reference.territory)
+    ? carAccessMeans(reference.data)
     : null
   const comparison = compatibleComparison(data, options)
   const scalars = AEDAR_CAR_OVERVIEW_SCALAR_READINGS.map((reading) => {
     const value = means[reading.key]
-    const referenceValue = comparison ? groupTotal(data, comparison, `count_${horizonMinutes}_car_${reading.key === 'meanDiversity' ? 'share' : 'mean'}`)
+    const referenceValue = comparison ? groupTotal(comparison, `count_${horizonMinutes}_car_${reading.key === 'meanDiversity' ? 'share' : 'mean'}`)
       : referenceMeans?.[reading.key] ?? null
     return {
       ...reading, value,
@@ -434,6 +419,13 @@ export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentPr
 }
 
 export function aedarEquipmentExplorerSection(data: AedarReady, options: AedarAccessSectionOptions = {}): AedarEquipmentExplorerSection {
+  const source = data.provenance.sources[0]
+  const summarySource = options.reference?.data.provenance.sources[0]
+  const reference = options.reference && data.contentVersion === options.reference.data.aedarContentVersion
+    && data.referenceContentVersion === options.reference.data.referenceContentVersion && source && summarySource
+    && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const)
+      .every((key) => source[key] === summarySource[key])
+    ? { territory: options.reference.territory, label: options.reference.label } : null
   return {
     key: 'aedar-equipment-explorer',
     label: AEDAR_EQUIPMENT_EXPLORER_SECTION_LABEL,
@@ -441,9 +433,11 @@ export function aedarEquipmentExplorerSection(data: AedarReady, options: AedarAc
     indicators: [],
     evidence: {
       kind: 'aedar-equipment-explorer',
-      comparison: compatibleComparison(data, options),
+      // The top-level comparison uses summary clocks; TYPEQU detail comparisons
+      // are acquired by the explorer against the typed facts clocks below.
+      comparison: null,
       comparisonRequest: options.comparisonRequest,
-      reference: options.reference && sameAedarPublication(data, options.reference.data) ? options.reference : null,
+      reference,
       contentVersion: data.contentVersion,
       referenceContentVersion: data.referenceContentVersion,
       facts: data.facts,
@@ -474,26 +468,41 @@ type AedarPrototypeSectionsWithoutLoss = [AedarCarAccessOverviewSection, AedarAc
 type AedarPrototypeSectionsWithLoss = [AedarCarAccessOverviewSection, AedarDiversityLossSection, AedarAccessSection, AedarEquipmentProfileSection, AedarEquipmentExplorerSection]
 
 export function aedarPrototypeSections(
-  data: AedarReady,
+  summary: AedarTerritorySummary | null,
+  detail: AedarReady | null,
   territory: TerritoryIdentity,
   options: AedarAccessSectionOptions & { lossMapMetadata: AedarDiversityLossMapMetadata },
 ): AedarPrototypeSectionsWithLoss
 export function aedarPrototypeSections(
-  data: AedarReady,
+  summary: AedarTerritorySummary | null,
+  detail: AedarReady | null,
   territory: TerritoryIdentity,
   options?: Omit<AedarAccessSectionOptions, 'lossMapMetadata'>,
 ): AedarPrototypeSectionsWithoutLoss
 export function aedarPrototypeSections(
-  data: AedarReady,
+  summary: AedarTerritorySummary | null,
+  detail: AedarReady | null,
   territory: TerritoryIdentity,
   options: AedarAccessSectionOptions = {},
 ): AedarPrototypeSectionsWithoutLoss | AedarPrototypeSectionsWithLoss {
-  const carOverview = aedarCarAccessOverviewSection(data, territory, options)
-  const access = aedarAccessSection(data, territory, options)
-  const equipmentProfile = aedarEquipmentProfileSection(data)
-  const equipmentExplorer = aedarEquipmentExplorerSection(data, options)
+  const carOverview = summary
+    ? aedarCarAccessOverviewSection(summary, territory, options)
+    : aedarPendingCarAccessOverviewSection(territory)
+  const access: AedarAccessSection = summary ? aedarAccessSection(summary, territory, options) : {
+    key: 'aedar-access', label: AEDAR_ACCESS_SECTION_LABEL, availability: 'incomplete' as const,
+    indicators: [], evidence: null, provenance: [], lecture: null, explorationTargets: [],
+  }
+  const equipmentProfile: AedarEquipmentProfileSection = detail ? aedarEquipmentProfileSection(detail) : {
+    key: 'aedar-equipment-profile', label: AEDAR_EQUIPMENT_PROFILE_SECTION_LABEL, availability: 'incomplete' as const,
+    indicators: [], evidence: null, provenance: [], lecture: null, explorationTargets: [],
+  }
+  const equipmentExplorer: AedarEquipmentExplorerSection = detail ? aedarEquipmentExplorerSection(detail, options) : {
+    key: 'aedar-equipment-explorer', label: AEDAR_EQUIPMENT_EXPLORER_SECTION_LABEL, availability: 'incomplete' as const,
+    indicators: [], evidence: null, provenance: [], lecture: null, explorationTargets: [],
+  }
   if (options.lossMapMetadata) {
-    return [carOverview, aedarDiversityLossSection(options.lossMapMetadata, territory, aedarEvidenceSource(data)), access, equipmentProfile, equipmentExplorer]
+    return [carOverview, aedarDiversityLossSection(options.lossMapMetadata, territory,
+      summary ? aedarEvidenceSource(summary) : detail ? aedarEvidenceSource(detail) : null), access, equipmentProfile, equipmentExplorer]
   }
   return [carOverview, access, equipmentProfile, equipmentExplorer]
 }
