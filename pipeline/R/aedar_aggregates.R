@@ -271,7 +271,10 @@ project_aedar_territory_summary <- function(facts,source,
         measure=bindings$measure[[i]],value=if(supported) sum(values) else NA_real_,
         status=if(supported) "available" else "unavailable",n_typequ=if(supported) nrow(rows) else NA_integer_,
         n_addresses=if(supported) rows$n_addresses[[1L]] else NA_real_,
-        n_observed=if(supported) sum(rows$n_observed) else NA_real_,
+        # This is a per-territory support count, not an additive TYPEQU
+        # quantity. Retain the conservative support across the registry so it
+        # remains bounded by the shared address denominator.
+        n_observed=if(supported) min(rows$n_observed) else NA_real_,
         coverage_status=if(supported) "covered" else NA_character_,
         source_id=source$source_id,vintage=source$vintage,source_url=source$url,
         licence=source$licence,attribution=source$attribution,
@@ -798,7 +801,10 @@ read_aedar_canonical <- function(directory=file.path("data","processed","aedar")
     x[,c(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]],AEDAR_AGGREGATE_MEASURES),drop=FALSE]
   }); names(inputs)<-AEDAR_AGGREGATE_LEVELS
   projection <- project_aedar_aggregates(inputs,typequ_metadata)
-  projection$source <- as.list(src[1,,drop=FALSE])
+  # Extract scalar values from the one-row Parquet table. as.list(data.frame)
+  # retains each column as a vector; downstream provenance projection expects
+  # ordinary scalar source fields (not one-element/list columns).
+  projection$source <- lapply(src[1,,drop=FALSE],function(column) column[[1L]])
   projection
 }
 
@@ -1671,6 +1677,9 @@ publish_aedar_aggregates <- function(projection, db) {
       identical(summary_existing$reference_content_version[[1L]],ref_version) && identical(existing$content_version[[1L]],version)
     if (!summary_unchanged) {
       payload <- summary_facts[c("territory_type","territory_id","measure","value","status","n_typequ","n_addresses","n_observed","coverage_status","source_id","vintage","source_url","licence","attribution","reference_date","publication_date")]
+      # The producer projection calls this source-owned identity `vintage`; the
+      # summary table follows the shared provenance schema's `vintage_id` name.
+      names(payload)[names(payload)=="vintage"] <- "vintage_id"
       json <- as.character(jsonlite::toJSON(payload,dataframe="rows",auto_unbox=TRUE,na="null",digits=17))
       DBI::dbExecute(db,"DELETE FROM aedar_territory_summary")
       DBI::dbExecute(db,"INSERT INTO aedar_territory_summary(territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date) SELECT territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date FROM jsonb_to_recordset($1::jsonb) AS x(territory_type text,territory_id text,measure text,value double precision,status text,n_typequ integer,n_addresses bigint,n_observed bigint,coverage_status text,source_id text,vintage_id text,source_url text,licence text,attribution text,reference_date date,publication_date date)",params=list(json))
