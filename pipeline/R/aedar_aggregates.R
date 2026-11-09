@@ -271,10 +271,9 @@ project_aedar_territory_summary <- function(facts,source,
         measure=bindings$measure[[i]],value=if(supported) sum(values) else NA_real_,
         status=if(supported) "available" else "unavailable",n_typequ=if(supported) nrow(rows) else NA_integer_,
         n_addresses=if(supported) rows$n_addresses[[1L]] else NA_real_,
-        # This is a per-territory support count, not an additive TYPEQU
-        # quantity. Retain the conservative support across the registry so it
-        # remains bounded by the shared address denominator.
-        n_observed=if(supported) min(rows$n_observed) else NA_real_,
+        # Preserve the established API support law: n_observed sums observed
+        # territory × TYPEQU coordinates and can exceed the address denominator.
+        n_observed=if(supported) sum(rows$n_observed) else NA_real_,
         coverage_status=if(supported) "covered" else NA_character_,
         source_id=source$source_id,vintage=source$vintage,source_url=source$url,
         licence=source$licence,attribution=source$attribution,

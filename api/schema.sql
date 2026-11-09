@@ -1158,7 +1158,10 @@ CREATE TABLE aedar_territory_summary (
   source_id text NOT NULL, vintage_id text NOT NULL, source_url text NOT NULL,
   licence text NOT NULL, attribution text NOT NULL, reference_date date, publication_date date,
   PRIMARY KEY(territory_type,territory_id,measure),
-  CHECK((status='available' AND value IS NOT NULL AND n_typequ=235 AND n_addresses>0 AND n_observed BETWEEN 0 AND n_addresses AND coverage_status='covered') OR
+  -- Summary support counts observed territory × TYPEQU coordinates; unlike
+  -- per-TYPEQU facts this additive count can exceed the address denominator.
+  CHECK((status='available' AND value IS NOT NULL AND n_typequ=235 AND n_addresses>0 AND n_observed>=0 AND
+         n_observed::numeric<=n_typequ::numeric*n_addresses::numeric AND coverage_status='covered') OR
         (status='unavailable' AND value IS NULL AND n_typequ IS NULL AND n_addresses IS NULL AND n_observed IS NULL AND coverage_status IS NULL))
 );
 CREATE INDEX aedar_territory_summary_measure_idx ON aedar_territory_summary(territory_type,measure,territory_id) INCLUDE(value,status,n_addresses,n_observed,coverage_status);

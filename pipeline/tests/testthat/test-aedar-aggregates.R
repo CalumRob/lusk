@@ -644,7 +644,7 @@ test_that("AEDAR territory summary projects the bound 40 readings under complete
   expect_equal(commune$status,"available")
   expect_equal(commune$n_typequ,AEDAR_TYPEQU_REGISTRY_COUNT)
   expect_equal(commune$n_addresses,2)
-  expect_equal(commune$n_observed,1)
+  expect_equal(commune$n_observed,235)
   expect_equal(commune$source_id,projection$source$source_id)
   car <- subset(result,territory_type=="commune" & measure=="meanVolume")
   expect_equal(car$value,sum(facts$count_15_car_mean[facts$territory_type=="commune"]))
@@ -659,6 +659,13 @@ test_that("AEDAR territory summary projects the bound 40 readings under complete
   unsupported <- subset(project_aedar_territory_summary(bad_support,projection$source),
     territory_type=="commune" & measure=="walk5Diversity")
   expect_true(is.na(unsupported$value))
+  varied_support <- facts
+  commune_rows <- which(varied_support$territory_type=="commune")
+  varied_support$n_observed[commune_rows] <- rep(c(1,2),length.out=length(commune_rows))
+  varied_summary <- subset(project_aedar_territory_summary(varied_support,projection$source),
+    territory_type=="commune" & measure=="walk5Diversity")
+  expect_gt(varied_summary$n_observed,varied_summary$n_addresses)
+  expect_equal(varied_summary$n_observed,sum(varied_support$n_observed[commune_rows]))
   bad_provenance <- projection$source
   bad_provenance$source_id <- NULL
   expect_error(project_aedar_territory_summary(facts,bad_provenance),"complete 40-reading binding")

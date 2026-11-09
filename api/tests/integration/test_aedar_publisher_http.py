@@ -188,7 +188,7 @@ stage("end-aggregate-publish",rows=first$row_count)
 second <- publish_aedar_aggregates(projection,con)
 stage("end-aggregate-noop",changed=second$changed)
 summary_rows <- DBI::dbGetQuery(con,"SELECT count(*) n,count(*) FILTER (WHERE status='unavailable') unavailable,
-  count(*) FILTER (WHERE status='available' AND value=0 AND n_typequ=235 AND n_addresses=2 AND n_observed=1 AND coverage_status='covered') valid_zero,
+  count(*) FILTER (WHERE status='available' AND value=0 AND n_typequ=235 AND n_addresses=2 AND n_observed=235 AND coverage_status='covered') valid_zero,
   count(DISTINCT (territory_type,territory_id)) territories FROM aedar_territory_summary")
 summary_marker <- DBI::dbGetQuery(con,"SELECT content_version,reference_content_version,row_count FROM table_publication WHERE table_name='aedar_territory_summary'")
 stopifnot(first$changed,!second$changed,first$row_count==5L * nrow(source_axis),
