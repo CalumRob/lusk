@@ -80,15 +80,51 @@ sizes.
 On this five-territory fixture, summary storage is 262,144 bytes total, or
 about 1,311 total relation bytes per summary row when the small-fixture table
 and index overhead is divided across 200 rows. A simple linear extrapolation
-to 1,268 territories × 40 readings (50,720 rows) is about **66.5 MB / 63.4
-MiB** of total relation size. This is explicitly an extrapolation from a tiny
-synthetic fixture, not a measured or accepted production footprint; no
-synthetic scale-up was run.
+to 1,268 territories × 40 readings (50,720 rows) was about **66.5 MB / 63.4
+MiB**. That tiny-fixture extrapolation is historical context only and is
+superseded by the separate measured scale-up below.
+
+### Fresh synthetic 50,720-row measurement
+
+A separate, explicitly opted-in write harness created and retained schema
+`it_aedar_size_9df5c6d8aee244df961fd86010229509` in guarded
+`lusk_it_contract`, using the verified publisher test role. It cloned the
+retained summary table with `LIKE ... INCLUDING ALL` (the primary-key and
+lookup indexes, and table constraints), then copied one complete fixture
+commune's 40 summary rows to 1,268 clearly synthetic IDs. All 40 rows per ID
+were verified. The probe did not create publication markers, publish data, call
+the API, or modify the retained source schema; its source row count and relation
+sizes were unchanged before/after.
+
+| Synthetic table | Rows / territories | Heap bytes | Table incl. TOAST bytes | Index bytes | Total bytes | TOAST total bytes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `aedar_territory_summary` | 50,720 / 1,268 | 17,317,888 | 17,350,656 | 13,803,520 | **31,154,176** | 8,192 |
+
+The measured total is **31.15 MB / 29.71 MiB** (about 614 total relation
+bytes per row), with no linear extrapolation. This is above the owner's initial
+10–25 MiB estimate; the evidence should inform a revised owner estimate rather
+than be presented as meeting that range. The old 63.4 MiB extrapolation is
+roughly twice this controlled result and is no longer the primary storage
+estimate.
+
+The physical result is for a synthetic table populated by repeating one
+fixture territory's values and provenance across synthetic IDs. It is not a
+production storage measurement or forecast: production payload distribution,
+database settings, and retained-table state may differ. The retained fixture's
+stale comparison clock described above is irrelevant to this physical-size
+probe; no comparison/API path was exercised. This result does not establish
+production acceptance or authorize publication.
+
+The external intent manifest and sanitized size receipt are in
+`E:\Temp\opencode\aedar-summary-storage\63eee0b88dfd4bc1824580a31040202b\`.
+Receipt SHA-256:
+`3A5B2AA0BF3349E4BF643E5688FC9F45D4AA4822C31DAEA4986EEBAE67F98FB6`.
 
 The read-only pre/post check found identical row counts, relation sizes and
-table-publication markers. No writes were made by this benchmark. The summary
-relation adds about 0.26 MB to this fixture beside about 25.17 MB of typed
-aggregate storage; the typed table is retained for per-TYPEQU detail reads.
+table-publication markers for the adapter benchmark. That read-only benchmark
+made no writes. The small-fixture summary relation adds about 0.26 MB beside
+about 25.17 MB of typed aggregate storage; the typed table is retained for
+per-TYPEQU detail reads.
 
 ### Separate producer-stage evidence
 
@@ -102,6 +138,8 @@ publisher-stage time. Its sanitized mounted-response artifact is
 SHA-256 `8FFAAF77EF246CC533A0FB23DF39BE252250B1E73F0C4FED97994E58B2E0183A`.
 
 ## Reproduction
+
+### Read-only adapter benchmark
 
 Run from the repository root on the guarded test workstation. The passfile and
 credentials stay local; do not save them in the repo or the receipt. The script
@@ -130,6 +168,36 @@ publisher. The command emits the sanitized JSON receipt to
 `E:\Temp\opencode\aedar-summary-benchmark.json`. It runs only two adapter calls
 per API version and at most four `EXPLAIN ANALYZE BUFFERS` SELECTs. It does not
 run R, a full integration suite, a migration, publication, or deployment.
+
+### Explicit synthetic storage probe
+
+This is a different, write-enabled harness; it does not change the read-only
+adapter benchmark. Each invocation records an external intent manifest before
+DDL, creates one fresh random schema, and retains it. Run only with explicit
+approval on the guarded test workstation. The harness requires both the CLI
+flag and confirmation token below, verifies the documented test host/database
+and publisher role, applies 5-second connection/lock and 45-second statement
+timeouts, and omits credentials from its receipt. Do not point it at another
+database or use production credentials.
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:LUSK_TEST_DATABASE_PREFIX = 'lusk_it_'
+$env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
+$env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
+$env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
+$env:AEDAR_STORAGE_PROBE_CONFIRM = 'CREATE_SYNTHETIC_SCHEMA_IN_LUSK_IT_CONTRACT'
+$env:PYTHONPATH = '.'
+Remove-Item Env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP -ErrorAction SilentlyContinue
+python api/tests/integration/benchmark_aedar_summary_storage.py --create-synthetic-schema
+```
+
+The command prints its pre-DDL intent path and, on success, writes
+`intent.json` and `receipt.json` beneath
+`E:\Temp\opencode\aedar-summary-storage\<run-id>\`. The retained schema name
+is also in the receipt. Each invocation creates a new schema; do not rerun to
+refresh an existing measurement or clean up the retained namespace as part of
+this benchmark.
 
 ## Producer-to-app inventory
 
