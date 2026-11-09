@@ -287,6 +287,16 @@ Rscript -e "testthat::test_local(filter='publish-series|publish-typed-reading-ar
 Rscript -e "testthat::test_local(stop_on_failure=TRUE)"
 ```
 
+The AEDAR semantic phase also writes sanitized public `read-batch` responses
+(focal/reference summaries, fixed comparison evidence including ranks, and one
+typed fact) under `E:\Temp\opencode`, then invokes the focused mounted Vue route
+test with that artifact. The route replays captured fixture responses through
+the real app clients while an independent typed-detail request returns 503;
+the test checks the summary remains visible and the typed consumer accepts its
+captured response when retried directly. This is synthetic guarded fixture
+replay, not a production-browser benchmark. The Vitest child receives only the
+artifact path, not PostgreSQL environment or credentials.
+
 The current retained publisher proofs are the Habitat, Economy, and Milieux
 scripts above, each using a private copied writable fixture and a guarded random schema.
 The ordinary suite and focused R test counts do not substitute for those

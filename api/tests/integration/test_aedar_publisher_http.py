@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -119,6 +120,7 @@ def test_aedar_r_publication_is_read_through_bounded_http():
 
         rscript = r'''started <- proc.time()[[3L]]
 stage <- function(name, ...) {cat(sprintf("AEDAR_STAGE elapsed=%.3fs name=%s %s\n",proc.time()[[3L]]-started,name,paste(...,collapse=" ")));flush.console()}
+options(encoding="UTF-8")
 stage("begin-package-load")
 pkgload::load_all('.',quiet=TRUE)
 stage("end-package-load")
@@ -146,6 +148,10 @@ inputs <- list(
   departement=make('departement','code_departement','22','nom_departement','Fixture département'),
   region=make('region','code_region','53','nom_region','Fixture région'))
 inputs$commune <- rbind(inputs$commune,make('commune','code_insee','22002','nom_commune','Fixture unchanged'))
+# One source-grain nonzero sentinel follows the app's 15-minute car volume
+# reading through both the focal and EPCI summary projections.
+inputs$commune$count_15_car_mean[inputs$commune$code_insee=='22001' & inputs$commune$TYPEQU=='A135'] <- 1.25
+inputs$epci$count_15_car_mean[inputs$epci$epci_code=='200000001' & inputs$epci$TYPEQU=='A135'] <- 2.5
 i <- seq_len(nrow(source_axis))
 hierarchy <- readr::read_csv(file.path("tests","testthat","fixtures","aedar-typequ-hierarchy-2025.csv"),
   col_types=readr::cols(.default=readr::col_character()),trim_ws=FALSE,show_col_types=FALSE)
@@ -189,11 +195,12 @@ second <- publish_aedar_aggregates(projection,con)
 stage("end-aggregate-noop",changed=second$changed)
 summary_rows <- DBI::dbGetQuery(con,"SELECT count(*) n,count(*) FILTER (WHERE status='unavailable') unavailable,
   count(*) FILTER (WHERE status='available' AND value=0 AND n_typequ=235 AND n_addresses=2 AND n_observed=235 AND coverage_status='covered') valid_zero,
+  count(*) FILTER (WHERE status='available' AND value<>0) bridge_nonzero,
   count(DISTINCT (territory_type,territory_id)) territories FROM aedar_territory_summary")
 summary_marker <- DBI::dbGetQuery(con,"SELECT content_version,reference_content_version,row_count,aedar_source_content_version FROM table_publication WHERE table_name='aedar_territory_summary'")
 stopifnot(first$changed,!second$changed,first$row_count==5L * nrow(source_axis),
   first$summary_changed,!second$summary_changed,first$summary_row_count==200L,
-  summary_rows$n==200L,summary_rows$unavailable==5L,summary_rows$valid_zero==195L,
+  summary_rows$n==200L,summary_rows$unavailable==5L,summary_rows$valid_zero==193L,summary_rows$bridge_nonzero==2L,
   summary_rows$territories==5L,summary_marker$row_count==200L,
   summary_marker$reference_content_version=='fixture-ref-v1',
   summary_marker$aedar_source_content_version==first$content_version)
@@ -644,6 +651,79 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                 assert semantic_batch.status_code == 200, semantic_batch.text
                 assert [row["id"] for row in semantic_batch.json()["results"]] == ["aggregate", "comparison"]
                 assert semantic_batch.json()["results"][1]["data"]["comparison"]["group_value"] == pytest.approx(expected_comparison["group"]["value"])
+
+                # Capture the actual public read-batch bodies after the R
+                # publisher has populated this guarded schema. These sanitized
+                # fixture responses are replayed through the mounted Vue route;
+                # no database identity or connection configuration enters the
+                # artifact.
+                from api.aedar_models import AEDAR_AGGREGATE_READINGS
+                bridge_summaries = {}
+                for level, territory_id in (("commune", "22001"), ("epci", "200000001")):
+                    item = {"id": "aedar-summary", "resource": "aedar_territory_summary",
+                        "target": {"kind": "territory", "type": level, "id": territory_id},
+                        "intent": {"kind": "facts"}}
+                    captured = client.post("/api/resources/read-batch", json={"items": [item]})
+                    assert captured.status_code == 200, captured.text
+                    bridge_summaries[f"{level}/{territory_id}"] = captured.json()
+
+                fixed_items = [{"id": f"aedar-comparison-{index}",
+                    "resource": "aedar_territorial_aggregate",
+                    "target": {"kind": "territory", "type": "commune", "id": "22001"},
+                    "coordinates": {"measure": [measure]},
+                    "fields": ["group_value", "rank", "rank_size", "rank_ties"],
+                    "intent": {"kind": "fixed_comparison", "context": "epci"}}
+                    for index, measure in enumerate(AEDAR_AGGREGATE_READINGS)]
+                fixed_response = client.post("/api/resources/read-batch", json={"items": fixed_items})
+                assert fixed_response.status_code == 200, fixed_response.text
+                fixed_body = fixed_response.json()
+                assert len(fixed_body["results"]) == len(AEDAR_AGGREGATE_READINGS)
+                mean_volume = next(row["data"]["comparison"] for row in fixed_body["results"]
+                    if row["data"]["comparison"]["measure"] == "meanVolume")
+                assert mean_volume["group_value"] == pytest.approx(2.5)
+                assert (mean_volume["rank"], mean_volume["rank_size"], mean_volume["rank_ties"]) == (1, 2, 1)
+
+                typed_item = {"id": "aedar-0", "resource": "aedar_territorial_aggregate",
+                    "target": {"kind": "territory", "type": "commune", "id": "22001"},
+                    "coordinates": {"typequ": ["A135"]}, "fields": ["measures.count_15_car_mean"],
+                    "intent": {"kind": "facts"}}
+                typed_response = client.post("/api/resources/read-batch", json={"items": [typed_item]})
+                assert typed_response.status_code == 200, typed_response.text
+                typed_fact = typed_response.json()["results"][0]["data"]["facts"][0]
+                assert typed_fact["typequ"] == "A135"
+                assert typed_fact["measures"] == {"count_15_car_mean": pytest.approx(1.25)}
+
+                bridge_artifact = {
+                    "contract": "lusk-aedar-mounted-api-replay-v1",
+                    "evidence": "synthetic R publisher -> guarded PostgreSQL -> public API; fixture replay, not production benchmarking",
+                    "summaryResponses": bridge_summaries,
+                    "fixedComparisonResponse": fixed_body,
+                    "typedFactResponse": typed_response.json(),
+                }
+                bridge_path = fixture_tmp / "mounted-app-api-responses.json"
+                bridge_path.write_text(json.dumps(bridge_artifact, ensure_ascii=False, separators=(",", ":")),
+                    encoding="utf-8")
+                bridge_text = bridge_path.read_text(encoding="utf-8")
+                assert "lusk_it_contract" not in bridge_text and "postgresql://" not in bridge_text
+                print(f"AEDAR_STAGE mounted-app-fixture-artifact path={bridge_path}", flush=True)
+
+                vitest_env = os.environ.copy()
+                vitest_env["LUSK_AEDAR_BRIDGE_ARTIFACT"] = str(bridge_path)
+                for name in ("PGPASSWORD", "PGPASSFILE", "PGHOST", "PGPORT", "PGDATABASE", "PGUSER",
+                             "PGREADUSER", "PGOPTIONS", "DATABASE_URL", "R_LIBS_USER"):
+                    vitest_env.pop(name, None)
+                for name in tuple(vitest_env):
+                    if name.startswith("LUSK_TEST_"):
+                        vitest_env.pop(name, None)
+                node = shutil.which("node")
+                vitest_cli = root / "app" / "node_modules" / "vitest" / "vitest.mjs"
+                assert node and vitest_cli.is_file(), "Node.js and the app's installed Vitest CLI are required for the bridge replay"
+                vitest = subprocess.run([node, str(vitest_cli), "run",
+                    "src/__tests__/territoire-view.spec.ts", "-t", "guarded R publisher API responses"],
+                    cwd=root / "app", env=vitest_env, capture_output=True, text=True, timeout=120)
+                print(vitest.stdout, end="", flush=True)
+                assert vitest.returncode == 0, vitest.stdout + vitest.stderr
+
                 assert client.post("/api/resources/read", json={
                     "resource": "aedar_territorial_aggregate",
                     "target": {"kind": "territory", "type": "commune", "id": "22001"},
