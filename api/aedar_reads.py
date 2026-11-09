@@ -8,6 +8,61 @@ from fastapi import HTTPException
 from api.aedar_models import AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS
 from api.field_selection import normalize_field_selection
 
+
+def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measures):
+    """Read published registry-wide readings from one caller-owned RR snapshot.
+
+    The summary has its own content clock (its canonical hash differs from the
+    source-grain hash); compatibility is established by the shared reference
+    clock and a complete, internally consistent publication marker.
+    """
+    requested = tuple(dict.fromkeys(measures))
+    if not requested or not set(requested) <= set(AEDAR_AGGREGATE_READINGS):
+        raise HTTPException(422, "Unknown AEDAR summary measure")
+    ids = tuple(sorted(set(territory_ids)))
+    if not ids:
+        return {"content_version": None, "reference_content_version": None, "readings": {}}
+    marker = conn.execute("""SELECT s.content_version,s.row_count,s.reference_content_version,
+            a.content_version,a.reference_content_version,r.content_version
+        FROM table_publication s
+        JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
+        JOIN table_publication r ON r.table_name='territory_reference'
+        WHERE s.table_name='aedar_territory_summary'""").fetchone()
+    if (not marker or not marker[0] or marker[1] < 1 or marker[2] != marker[5]
+            or marker[4] != marker[5] or not marker[3]):
+        raise HTTPException(503, "AEDAR territory summary publication is unavailable or stale")
+    cursor = conn.execute("""SELECT territory_id,measure,value,status,n_typequ,n_addresses,n_observed,
+            coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date
+        FROM aedar_territory_summary WHERE territory_type=%s AND territory_id=ANY(%s::text[])
+          AND measure=ANY(%s::text[]) ORDER BY territory_id,measure""",
+        (territory_type, list(ids), list(requested)))
+    rows = cursor.fetchall()
+    by_key = {(row[0], row[1]): row[2:] for row in rows}
+    expected = {(territory_id, measure) for territory_id in ids for measure in requested}
+    if len(by_key) != len(rows) or set(by_key) != expected:
+        raise HTTPException(503, "AEDAR territory summary is incomplete for the requested projection")
+    readings = {}
+    for (territory_id, measure), row in by_key.items():
+        (value,status,n_typequ,n_addresses,n_observed,coverage,source,vintage,url,licence,
+         attribution,reference_date,publication_date) = row
+        if status not in ("available", "unavailable") or (status == "available" and
+                (value is None or n_typequ != 235 or n_addresses is None or n_addresses <= 0
+                 or n_observed is None or n_observed < 0 or n_observed > 235 * n_addresses
+                 or coverage != "covered")) or (status == "unavailable" and
+                any(x is not None for x in (value,n_typequ,n_addresses,n_observed,coverage))):
+            raise HTTPException(503, "AEDAR territory summary contains an invalid reading")
+        readings[(territory_id, measure)] = {"value": value, "available": status == "available",
+            "n_typequ": n_typequ, "n_addresses": n_addresses, "n_observed": n_observed,
+            "coverage_status": coverage, "statistic": "direct", "source_id": source,
+            "vintage_id": vintage, "source_url": url, "licence": licence,
+            "attribution": attribution, "reference_date": reference_date,
+            "publication_date": publication_date}
+    provenance = {(v["source_id"],v["vintage_id"],v["source_url"],v["licence"],v["attribution"],
+                   v["reference_date"],v["publication_date"]) for v in readings.values()}
+    if len(provenance) != 1:
+        raise HTTPException(503, "AEDAR territory summary provenance is inconsistent")
+    return {"content_version": marker[0], "reference_content_version": marker[2], "readings": readings}
+
 _AEDAR_COMPARISON_OPTIONAL_FIELDS = {
     "group_value", "value",
 }
