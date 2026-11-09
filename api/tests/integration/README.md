@@ -303,3 +303,11 @@ The ordinary suite and focused R test counts do not substitute for those
 publisher-to-database-to-HTTP proofs. Do not run the full AEDAR proof while
 iterating on unrelated harnesses; cite its pinned run and duration when reporting
 acceptance.
+
+The separate AEDAR summary-storage/read-path benchmark is strictly read-only;
+it uses the retained schema and dedicated read role, does not run the publisher
+or time the whole integration proof as read latency, and records whether the API
+marker gate permits endpoint timing. See
+[`docs/aedar-territory-summary-benchmark.md`](../../../docs/aedar-territory-summary-benchmark.md)
+and `benchmark_aedar_summary_reads.py` for the bounded workload and external
+receipt format.
