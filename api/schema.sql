@@ -2,13 +2,13 @@
 -- explicit operator migration procedure in README-deploy.md instead.
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
-        'territory_reference', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','aedar_territorial_aggregate')),
+        'territory_reference', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','aedar_territorial_aggregate','aedar_territory_summary')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT shared_fact_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','aedar_territorial_aggregate') OR reference_content_version IS NOT NULL)
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','aedar_territorial_aggregate','aedar_territory_summary') OR reference_content_version IS NOT NULL)
 );
 
 -- Closed, dense declared-detail profiles (e.g. structure_age × sex). The
@@ -1142,6 +1142,28 @@ CREATE TABLE aedar_territorial_aggregate (
 CREATE INDEX aedar_territorial_aggregate_typequ_idx ON aedar_territorial_aggregate(territory_type,typequ);
 GRANT SELECT ON aedar_territorial_aggregate,table_publication TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON aedar_territorial_aggregate,table_publication TO lusk_publisher;
+
+-- Compact registry-wide territory readings. Source provenance remains shared
+-- by the AEDAR publication identity rather than repeating TYPEQU JSON payloads.
+CREATE TABLE aedar_territory_summary (
+  territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement','region')),
+  territory_id text NOT NULL,
+  measure text NOT NULL,
+  value double precision,
+  status text NOT NULL CHECK(status IN ('available','unavailable')),
+  n_typequ integer,
+  n_addresses bigint,
+  n_observed bigint,
+  coverage_status text,
+  source_id text NOT NULL, vintage_id text NOT NULL, source_url text NOT NULL,
+  licence text NOT NULL, attribution text NOT NULL, reference_date date, publication_date date,
+  PRIMARY KEY(territory_type,territory_id,measure),
+  CHECK((status='available' AND value IS NOT NULL AND n_typequ=235 AND n_addresses>0 AND n_observed BETWEEN 0 AND n_addresses AND coverage_status='covered') OR
+        (status='unavailable' AND value IS NULL AND n_typequ IS NULL AND n_addresses IS NULL AND n_observed IS NULL AND coverage_status IS NULL))
+);
+CREATE INDEX aedar_territory_summary_measure_idx ON aedar_territory_summary(territory_type,measure,territory_id) INCLUDE(value,status,n_addresses,n_observed,coverage_status);
+GRANT SELECT ON aedar_territory_summary,table_publication TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON aedar_territory_summary,table_publication TO lusk_publisher;
 
 -- AEDAR reference publication: pooled density/same-level medians only; no peers.
 CREATE TABLE aedar_comparison_publication (

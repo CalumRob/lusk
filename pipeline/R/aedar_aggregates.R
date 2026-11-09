@@ -1557,6 +1557,8 @@ publish_aedar_aggregates <- function(projection, db) {
       stop(paste("AEDAR territory × TYPEQU coverage is not dense at",level),call.=FALSE)
   }
   version <- aedar_aggregate_content_version(projection)
+  summary_facts <- project_aedar_territory_summary(facts,projection$source)
+  summary_version <- paste(as.character(openssl::sha256(serialize(summary_facts,NULL))),collapse="")
   published_columns <- c("territory_type","territory_id","typequ","typequ_label","typequ_hierarchy_label",
     "typequ_description","typequ_domain_code","typequ_domain_label","typequ_subdomain_code","typequ_subdomain_label",
     "typequ_gamme","typequ_gamme_status","typequ_source_order","identity","n_addresses","n_observed",
@@ -1663,9 +1665,20 @@ publish_aedar_aggregates <- function(projection, db) {
     } else {
       progress("unchanged-publication",rows=nrow(facts),content_version=version,reference=ref_version)
     }
+    summary_existing <- DBI::dbGetQuery(db,"SELECT content_version,reference_content_version FROM table_publication WHERE table_name='aedar_territory_summary'")
+    summary_unchanged <- nrow(summary_existing)==1L && nrow(existing)==1L &&
+      identical(summary_existing$content_version[[1L]],summary_version) &&
+      identical(summary_existing$reference_content_version[[1L]],ref_version) && identical(existing$content_version[[1L]],version)
+    if (!summary_unchanged) {
+      payload <- summary_facts[c("territory_type","territory_id","measure","value","status","n_typequ","n_addresses","n_observed","coverage_status","source_id","vintage","source_url","licence","attribution","reference_date","publication_date")]
+      json <- as.character(jsonlite::toJSON(payload,dataframe="rows",auto_unbox=TRUE,na="null",digits=17))
+      DBI::dbExecute(db,"DELETE FROM aedar_territory_summary")
+      DBI::dbExecute(db,"INSERT INTO aedar_territory_summary(territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date) SELECT territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date FROM jsonb_to_recordset($1::jsonb) AS x(territory_type text,territory_id text,measure text,value double precision,status text,n_typequ integer,n_addresses bigint,n_observed bigint,coverage_status text,source_id text,vintage_id text,source_url text,licence text,attribution text,reference_date date,publication_date date)",params=list(json))
+      DBI::dbExecute(db,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('aedar_territory_summary',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",params=list(summary_version,nrow(summary_facts),ref_version))
+    }
     timing$commit_started <- proc.time()[[3L]]
     progress("before-transaction-commit")
-    list(changed=!unchanged,content_version=version,row_count=nrow(facts))
+    list(changed=!unchanged,content_version=version,row_count=nrow(facts),summary_changed=!summary_unchanged,summary_content_version=summary_version,summary_row_count=nrow(summary_facts))
   })
   progress("transaction-committed",commit_elapsed=sprintf("%.3fs",proc.time()[[3L]]-timing$commit_started))
   result

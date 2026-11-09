@@ -92,6 +92,8 @@ def test_aedar_r_publication_is_read_through_bounded_http():
             VALUES(true,%s,'2026-v1',%s,'fixture-ref-v1',%s,'{}'::jsonb,1,0)""",
             ("b"*64,"a"*64,"c"*64))
         pub.execute((root / "api/migrations/040_aedar_reference_only_publication.sql").read_text(encoding="utf-8"))
+        pub.execute((root / "api/migrations/041_aedar_territory_summaries.sql").read_text(encoding="utf-8"))
+        pub.execute(f'GRANT SELECT ON aedar_territory_summary,table_publication TO "{read_role}"')
         legacy_marker = pub.execute("SELECT publication_mode,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton").fetchone()
         assert legacy_marker == ("legacy_rank",1,0)
         # The migrated reader must reject the retained old marker before the
@@ -185,7 +187,15 @@ first <- publish_aedar_aggregates(projection,con)
 stage("end-aggregate-publish",rows=first$row_count)
 second <- publish_aedar_aggregates(projection,con)
 stage("end-aggregate-noop",changed=second$changed)
-stopifnot(first$changed,!second$changed,first$row_count==5L * nrow(source_axis))
+summary_rows <- DBI::dbGetQuery(con,"SELECT count(*) n,count(*) FILTER (WHERE status='unavailable') unavailable,
+  count(*) FILTER (WHERE status='available' AND value=0 AND n_typequ=235 AND n_addresses=2 AND n_observed=235 AND coverage_status='covered') valid_zero,
+  count(DISTINCT (territory_type,territory_id)) territories FROM aedar_territory_summary")
+summary_marker <- DBI::dbGetQuery(con,"SELECT content_version,reference_content_version,row_count FROM table_publication WHERE table_name='aedar_territory_summary'")
+stopifnot(first$changed,!second$changed,first$row_count==5L * nrow(source_axis),
+  first$summary_changed,!second$summary_changed,first$summary_row_count==200L,
+  summary_rows$n==200L,summary_rows$unavailable==5L,summary_rows$valid_zero==195L,
+  summary_rows$territories==5L,summary_marker$row_count==200L,
+  summary_marker$reference_content_version=='fixture-ref-v1')
 # Reconstruct the migration-031 shape over a real, already-published canonical
 # fixture. The stale fact marker makes the real publisher perform reconciliation.
 json_before_metadata_upgrade <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,typequ,
@@ -266,6 +276,8 @@ DBI::dbExecute(con,"INSERT INTO territory_reference(territory_id,territory_type,
 DBI::dbExecute(con,"UPDATE table_publication SET content_version='fixture-ref-v2',row_count=5,published_at=now() WHERE table_name='territory_reference'")
 failure_facts_before <- DBI::dbGetQuery(con,"SELECT * FROM aedar_territorial_aggregate ORDER BY territory_type,territory_id,typequ")
 failure_marker_before <- DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='aedar_territorial_aggregate'")
+failure_summary_before <- DBI::dbGetQuery(con,"SELECT * FROM aedar_territory_summary ORDER BY territory_type,territory_id,measure")
+failure_summary_marker_before <- DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='aedar_territory_summary'")
 failure_dataset_before <- DBI::dbGetQuery(con,"SELECT * FROM source_dataset WHERE source_id='aedar_bretagne'")
 failure_vintage_before <- DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id='aedar_bretagne' AND vintage_id='2026-v1'")
 failure_reference_before <- DBI::dbGetQuery(con,"SELECT * FROM territory_reference ORDER BY territory_id")
@@ -282,8 +294,10 @@ END $$")
 DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_after_reconcile AFTER UPDATE ON source_dataset FOR EACH ROW EXECUTE FUNCTION reject_aedar_after_reconcile()")
 failure_error <- tryCatch({publish_aedar_aggregates(replacement_projection,con); NULL},error=function(e) e)
 stopifnot(inherits(failure_error,"error"),grepl("forced rollback after upserts, obsolete-key deletion and source metadata update",conditionMessage(failure_error)),
-  identical(failure_facts_before,DBI::dbGetQuery(con,"SELECT * FROM aedar_territorial_aggregate ORDER BY territory_type,territory_id,typequ")),
-  identical(failure_marker_before,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='aedar_territorial_aggregate'")),
+   identical(failure_facts_before,DBI::dbGetQuery(con,"SELECT * FROM aedar_territorial_aggregate ORDER BY territory_type,territory_id,typequ")),
+   identical(failure_marker_before,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='aedar_territorial_aggregate'")),
+   identical(failure_summary_before,DBI::dbGetQuery(con,"SELECT * FROM aedar_territory_summary ORDER BY territory_type,territory_id,measure")),
+   identical(failure_summary_marker_before,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='aedar_territory_summary'")),
   identical(failure_dataset_before,DBI::dbGetQuery(con,"SELECT * FROM source_dataset WHERE source_id='aedar_bretagne'")),
   identical(failure_vintage_before,DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id='aedar_bretagne' AND vintage_id='2026-v1'")),
   identical(failure_reference_before,DBI::dbGetQuery(con,"SELECT * FROM territory_reference ORDER BY territory_id")))
@@ -492,6 +506,11 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                 pytest.fail(f"AEDAR {phase} fixture exceeded its bounded child budget; incremental R stages:\n" + "".join(output))
             capture_thread.join(timeout=2)
             assert child.returncode == 0, "".join(output)
+            with psycopg.connect(scoped(read_dsn)) as read_connection:
+                summary_count = read_connection.execute("SELECT count(*) FROM aedar_territory_summary").fetchone()[0]
+                assert summary_count == 200
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    read_connection.execute("INSERT INTO aedar_territory_summary(territory_type,territory_id,measure,status,source_id,vintage_id,source_url,licence,attribution) VALUES('commune','denied','walk5Diversity','unavailable','s','v','u','l','a')")
             expected_comparison = (None if phase == "reconciliation" else
                 json.loads(expected_comparison_path.read_text(encoding="utf-8")))
         except Exception:

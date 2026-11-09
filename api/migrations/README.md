@@ -1,5 +1,15 @@
 # PostgreSQL migration history
 
+Migration 041 adds `aedar_territory_summary` and its independent publication
+marker. Apply it after 040 before running the producer's existing guarded
+AEDAR `--publish` operation. The producer atomically publishes source facts,
+all territory-grain summaries, and their reference-bound markers in one
+repeatable-read transaction; rollback is ordinary transaction rollback. The
+legacy API continues reading `aedar_territorial_aggregate` until a later reader
+cutover is explicitly deployed. Rollback of this producer slice means
+reverting to the previous publisher/API release; do not drop the new relation
+while its marker or later readers exist.
+
 > **Historical chronology, not a current runbook.** Sections for migrations
 > 001–035 describe their original change and verification context; many legacy
 > paths cited there have since been retired. The current retained schema is
