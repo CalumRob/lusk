@@ -12,7 +12,7 @@ import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeomet
 
 const props = defineProps<{ offer: ContentFact | null; trajectory: readonly ContentFact[];
   comparisonTrajectory?: ComparisonTrajectoryContent | null; metadata: TrajectoryMetadata | null;
-  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'; comparisonError?: string; retryComparison?: () => void }>()
+   comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'; comparisonError?: string; retryComparison?: () => void }>()
 const explanationOpen = ref(false)
 const explanationId = `transit-comparison-help-${useId()}`
 const plotElement = ref<HTMLElement | null>(null)
@@ -130,6 +130,7 @@ function yPosition(value: number): number {
           <span>Groupe comparé</span><span v-if="explanationOpen" :id="explanationId" class="transit-comparison-explanation" role="tooltip">Comparaison indisponible : {{ comparisonError || 'la lecture du groupe comparé a échoué.' }}</span>
         </span>
       </figcaption>
+      <p v-if="comparisonStatus === 'unavailable'" class="transit-comparison-unavailable" role="note">Comparaison non disponible : identité du groupe non résolue.</p>
       <div class="transit-comparison-retry-slot"><button v-if="!comparisonTrajectory && comparisonStatus === 'error'" class="transit-comparison-retry" type="button" @click="retryComparison?.()">Réessayer les comparaisons</button></div>
     </figure>
     <p v-else class="transit-unavailable">Trajectoire indisponible.</p>
@@ -168,6 +169,7 @@ function yPosition(value: number): number {
 .transit-comparison-warning:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .transit-comparison-explanation { position: absolute; z-index: 3; bottom: calc(100% + .25rem); right: 0; width: max-content; max-width: min(22rem, 80vw); padding: var(--space-2) var(--space-3); color: var(--text-primary); background: var(--surface-elevated); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-prominent); font: var(--text-body-sm); pointer-events: none; }
 .transit-comparison-retry-slot { min-height: 3.25rem; display: flex; justify-content: flex-end; align-items: center; }
+.transit-comparison-unavailable { min-height: 2.75rem; margin: 0; color: var(--text-secondary); font: var(--text-body-sm); }
 .transit-comparison-retry { min-height: 2.75rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
 .transit-comparison-retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
 .transit-comparison-retry:active { background: var(--border-subtle); }

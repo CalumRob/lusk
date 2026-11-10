@@ -32,6 +32,7 @@ const props = defineProps<{
   classification: string
   nom: string
   nuage: PointNuage[]
+  cloudComparisonStatus?: 'idle' | 'error'
 }>()
 
 const route = useRoute()
@@ -239,6 +240,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <p v-if="props.cloudComparisonStatus === 'error'" class="cloud-read-warning" role="note">Nuage du groupe comparé indisponible.</p>
   <div class="graphique-soldes">
     <div
       ref="conteneur"
@@ -250,6 +252,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.cloud-read-warning { color: var(--status-warning); font: var(--text-body-sm); }
 .graphique-soldes {
   display: flex;
   flex-direction: column;

@@ -5,6 +5,7 @@ import type { NumericFact } from '../fiche/content/territoryFacts'
 import { detailsRangEnContexte, rangEnContexte } from '../payload/selectors'
 import { indicateursHabitatFixture } from '../payload/fixtures'
 import IndicatorFigure from '../components/fiche/IndicatorFigure.vue'
+import ValeurComparaison from '../components/fiche/ValeurComparaison.vue'
 import { lignesAvecComparaisonApi } from '../payload/themeFactsAdapter'
 import CahierRoadSurfaceFigure from '../fiche/prototype/CahierRoadSurfaceFigure.vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -112,6 +113,15 @@ describe('Rang de la sélection — valeur du Groupe comparé', () => {
     expect(wrapper.get('[role="tooltip"]').text()).toContain('lecture refusée')
     await wrapper.setProps({ comparisonStatus: 'ready' })
     expect(wrapper.text()).toBe('')
+  })
+
+  it('renders an unavailable explanation in the comparison slot without a retry affordance', () => {
+    const wrapper = mount(ValeurComparaison, { props: {
+      ligne: { comparaisonApi: null, unit: '%' } as any,
+      status: 'unavailable',
+    } })
+    expect(wrapper.find('.comparison-unavailable').text()).toContain('identité du groupe non résolue')
+    expect(wrapper.find('button').exists()).toBe(false)
   })
 
   it.each([false, true])('donne un seul nom complet au repère Cahier (lien : %s)', async (linked) => {

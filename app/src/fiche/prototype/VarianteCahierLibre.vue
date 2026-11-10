@@ -75,7 +75,7 @@ const props = defineProps<{
   comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
   comparisonError?: string
   retryComparison?: () => void
-  nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   nativeComparisonError?: string
   retryNativeComparison?: () => void
 }>()

@@ -29,7 +29,7 @@ const accessibleName = computed(() => `Groupe comparé : ${referenceText.value}.
 </script>
 
 <template>
-  <span v-if="referenceText !== null || status === 'loading' || status === 'error'" class="figure-indicateur-comparaison">
+  <span v-if="referenceText !== null || status === 'loading' || status === 'error' || status === 'unavailable'" class="figure-indicateur-comparaison">
     <span v-if="referenceText !== null" role="img" :aria-label="accessibleName">Groupe comparé : <strong>{{ referenceText }}</strong><PuceRang v-if="chip" :puce="chip" decorative /></span>
     <PuceRang v-if="referenceText === null && chip" :puce="chip" decorative />
     <span v-if="referenceText === null && status === 'loading'" class="comparison-state" aria-hidden="true"><LoaderCircle class="comparison-spinner" /></span>

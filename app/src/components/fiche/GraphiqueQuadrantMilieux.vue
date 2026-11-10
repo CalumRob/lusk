@@ -41,6 +41,7 @@ const props = defineProps<{
   /** La fenêtre des états OCS-GE du territoire — le span multi-dépt porté tel quel. */
   periodeArtif: string
   nuage: PointNuageMilieux[]
+  cloudComparisonStatus?: 'idle' | 'error'
 }>()
 
 const route = useRoute()
@@ -278,6 +279,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <p v-if="props.cloudComparisonStatus === 'error'" class="cloud-read-warning" role="note">Nuage du groupe comparé indisponible.</p>
   <div class="graphique-quadrant-milieux">
     <div
       ref="conteneur"
@@ -289,6 +291,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.cloud-read-warning { color: var(--status-warning); font: var(--text-body-sm); }
 .graphique-quadrant-milieux {
   display: flex;
   flex-direction: column;

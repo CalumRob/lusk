@@ -2070,6 +2070,153 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     },
   )
 
+  it('déclare la comparaison Mobilité nommée non résoluble indisponible, sans requête ni réessai sans effet', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+    // L’identité nommée de la commune est absente du référentiel : la sélection
+    // est nommée mais non résoluble, ce n’est pas une panne d’acquisition.
+    const referenceSansEpci = referenceReelle.map((territory) =>
+      territory.type === 'commune' && territory.territoire === '22001'
+        ? { ...territory, epci: '999999' }
+        : territory)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci',
+      async () => referenceSansEpci)
+    await flushPromises()
+    await flushPromises()
+
+    expect(requests.flat().some((item) => item.intent.kind === 'selected_comparison')).toBe(false)
+    expect(wrapper.find('.transit-series--territory').exists()).toBe(true)
+    expect(wrapper.find('.transit-comparison-unavailable').text()).toContain('identité du groupe non résolue')
+    expect(wrapper.find('.transit-comparison-retry').exists()).toBe(false)
+    expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
+    expect(wrapper.find('.transit-comparison-spinner').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('réessaie une acquisition de comparaison Mobilité réellement échouée depuis la section et retrouve la courbe comparée', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    let selectedFailures = 1
+    const fixtureFetch = nativeSemanticFetch(requests)
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) !== '/api/resources/read-batch') return fixtureFetch(input, init)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.some((item) => item.intent.kind === 'selected_comparison') && selectedFailures > 0) {
+        selectedFailures--
+        requests.push(items)
+        return new Response('', { status: 503 })
+      }
+      return fixtureFetch(input, init)
+    })
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci',
+      chargerReferenceReelle)
+    await flushPromises()
+
+    const selectedReads = () => requests.filter((items) =>
+      items.some((item) => item.intent.kind === 'selected_comparison'))
+    expect(selectedReads()).toHaveLength(1)
+    expect(wrapper.find('.transit-series--comparison').exists()).toBe(false)
+    expect(wrapper.find('.transit-comparison-retry').exists()).toBe(true)
+    const selectedBeforeRetry = selectedReads().length
+    const requestsBeforeRetry = requests.length
+
+    await wrapper.get('.transit-comparison-retry').trigger('click')
+    await flushPromises()
+
+    const retried = selectedReads().slice(selectedBeforeRetry)
+    expect(retried.length).toBeLessThanOrEqual(2)
+    expect(retried.every((items) => items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
+    // Les 13 ressources de comparaison Mobilité repartent en lots bornés,
+    // jamais une requête par figure ni une relecture des faits focaux.
+    expect(retried.flat()).toHaveLength(13)
+    expect(requests.slice(requestsBeforeRetry).flat().some((item) =>
+      item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
+    expect(wrapper.find('.transit-comparison-retry').exists()).toBe(false)
+    expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
+    expect(wrapper.find('.transit-series--comparison').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('garde les comparaisons scalaires prêtes quand seul le nuage demandé manque, puis le rétablit depuis le réessai de la section', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    let comparisonSeen = false
+    let cloudBroken = false
+    const fixtureFetch = nativeSemanticFetch(requests)
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) !== '/api/resources/read-batch') return fixtureFetch(input, init)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.some((item) => item.intent.kind === 'selected_comparison')) comparisonSeen = true
+      const cloudItem = items.find((item) => item.resource === 'demographie_selected_reading' &&
+        item.target?.kind === 'territory_cohort')
+      // Seule la lecture auxiliaire de la comparaison sélectionnée est mutilée :
+      // le nuage par défaut des faits reste intact et indépendant.
+      if (!cloudItem || !comparisonSeen || cloudBroken) return fixtureFetch(input, init)
+      const response = await fixtureFetch(input, init)
+      cloudBroken = true
+      // La lecture de cohorte répond, mais sans le contrat de nuage demandé :
+      // les comparaisons scalaires restent servies et valides.
+      const body = await response.json() as { results: Array<Record<string, any>> }
+      for (const result of body.results) delete (result.data as Record<string, unknown>).cohort
+      return new Response(JSON.stringify(body), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie&comparaison=epci',
+      chargerReferenceReelle)
+    await flushPromises()
+
+    const selectedBatches = () => requests.filter((items) =>
+      items.some((item) => item.resource === 'densite' && item.intent.kind === 'selected_comparison'))
+    const densiteFacts = () => requests.flat().filter((item) =>
+      item.resource === 'densite' && item.intent.kind === 'facts' && item.target?.kind === 'territory')
+    const onglet = () => wrapper.findComponent(OngletTheme)
+    const cloudStories = () =>
+      ((onglet().props('payload') as Payload).histoires as Array<{ nuageDemographieApi?: boolean }>)
+        .filter((histoire) => histoire.nuageDemographieApi === true)
+
+    // Les valeurs et rangs comparés sont servis par leur propre lecture.
+    const densiteBatch = selectedBatches()[0]
+    expect(densiteBatch).toBeDefined()
+    const served = await nativeBatchResponse(densiteBatch!, nativeFicheReadFixture).json() as {
+      results: Array<{ resource: string; data: Record<string, any> }> }
+    const densiteResult = served.results.find((result) => result.resource === 'densite')!.data.result
+    const densiteComparison = wrapper.get('[data-clef="densite"] .figure-indicateur-comparaison')
+    expect(densiteComparison.text()).toContain(
+      `${formaterValeur({ value: densiteResult.median, unit: densiteResult.unit })} ${densiteResult.unit}`)
+    expect(densiteComparison.find('.puce-rang').exists()).toBe(true)
+    expect(wrapper.find('.comparison-unavailable-note').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(cloudStories()).toHaveLength(0)
+
+    // Le nuage demandé manque : avertissement local, un seul réessai de section.
+    expect(wrapper.find('.cloud-read-warning').text()).toContain('Nuage du groupe comparé indisponible')
+    expect(wrapper.find('.comparison-section-retry').exists()).toBe(true)
+    expect(selectedBatches()).toHaveLength(1)
+    const densiteFactsBefore = densiteFacts().length
+
+    const requestsBeforeRetry = requests.length
+    await wrapper.get('.comparison-section-retry').trigger('click')
+    await flushPromises()
+
+    // Le réessai ré-acquiert la SEULE comparaison propriétaire : un lot de
+    // comparaisons (pas un POST par figure) + sa lecture auxiliaire, sans focal.
+    const retryBatches = requests.slice(requestsBeforeRetry).filter((items) =>
+      items.some((item) => item.intent.kind === 'selected_comparison') ||
+      items.some((item) => item.resource === 'demographie_selected_reading' &&
+        item.target?.kind === 'territory_cohort'))
+    expect(retryBatches).toHaveLength(2)
+    expect(retryBatches[0]!.filter((item) => item.intent.kind === 'selected_comparison')).toHaveLength(4)
+    expect(retryBatches.flat().some((item) =>
+      item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
+
+    expect(densiteFacts()).toHaveLength(densiteFactsBefore)
+    expect(wrapper.find('.cloud-read-warning').exists()).toBe(false)
+    expect(wrapper.find('.comparison-section-retry').exists()).toBe(false)
+    expect(cloudStories().length).toBeGreaterThan(0)
+    expect(wrapper.get('[data-clef="densite"] .figure-indicateur-comparaison').text()).toBe(densiteComparison.text())
+    wrapper.unmount()
+  })
+
 })
 
 describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison » dans le page-heading collant du Cahier', () => {

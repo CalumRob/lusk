@@ -212,6 +212,7 @@ const histoiresNuageDemographie = ref<Histoire[]>([])
 const histoiresNuageMilieux = ref<Histoire[]>([])
 const statutAcquisition = ref<'loading' | 'ready' | 'error'>('loading')
 const statutComparaison = ref<'idle' | 'loading' | 'ready' | 'error' | 'unavailable'>('idle')
+const statutNuageComparaison = ref<'idle' | 'error'>('idle')
 const retryAcquisition = ref(0)
 const retryThemeComparaison = ref(0)
 let sequenceAcquisition = 0
@@ -465,6 +466,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
       histoiresNuageMilieux.value = []
       statutAcquisition.value = 'loading'
       statutComparaison.value = 'idle'
+      statutNuageComparaison.value = 'idle'
       cleFaitsPrets = null
       return
     }
@@ -496,6 +498,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
     histoiresNuageMilieux.value = []
     statutAcquisition.value = 'loading'
     statutComparaison.value = 'idle'
+    statutNuageComparaison.value = 'idle'
     try {
       const acquired = await cacheAcquisition.get(typeRoute.value, code, themeActif)
       if (cancelled || request !== sequenceAcquisition) return
@@ -521,8 +524,9 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
       preuvesThemeIndisponibles.value = Boolean(rows.unavailableReadings?.length || acquired.focal.named_reference_error)
        histoiresNuageDemographie.value = themeActif === 'demographie'
          ? histoiresDemographieNuage(comparison) : []
-       histoiresNuageMilieux.value = themeActif === 'milieux'
-         ? histoiresMilieuxDuNuage(comparison) : []
+        histoiresNuageMilieux.value = themeActif === 'milieux'
+          ? histoiresMilieuxDuNuage(comparison) : []
+        statutNuageComparaison.value = comparison?.reading_cloud_error === true ? 'error' : 'idle'
        statutAcquisition.value = 'ready'
         // Only this focal comparison-read failure owns the page's ordinary
         // comparison state. A cohort/cloud failure is independently owned by
@@ -563,6 +567,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
   async ([reference, theme, code, selectionMembres], _old, onCleanup) => {
     if (theme === 'mobilite' || statutAcquisition.value !== 'ready' || !reference || !typeValide.value || !theme) {
       statutComparaison.value = 'idle'
+      statutNuageComparaison.value = 'idle'
       return
     }
     const target = reference.find((item) => item.territoire === code)
@@ -579,6 +584,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
     // ne rend pas (le flux E Mobilité nettoie de même avant la requête).
     if (themeActif === 'milieux') histoiresNuageMilieux.value = []
     if (themeActif === 'demographie') histoiresNuageDemographie.value = []
+    statutNuageComparaison.value = 'idle'
     if (selectionMembres === null) {
       // Une sélection nommée sans identité résoluble est indisponible,
       // jamais une sélection vide ni le contexte fixe par défaut.
@@ -595,6 +601,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
         target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
         territories: [...reference],
       }, acquired.focal.resource_reads)
+      statutNuageComparaison.value = comparison?.reading_cloud_error === true ? 'error' : 'idle'
       if (themeActif === 'demographie') {
         histoiresNuageDemographie.value = histoiresDemographieNuage(comparison)
       }
@@ -602,7 +609,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
         const comparisonScopeLabel = libellePorteeSemantic(comparison, target)
         faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
           comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
-        statutComparaison.value = nativeComparison?.cohort_error ? 'error' : 'ready'
+        statutComparaison.value = nativeComparison?.comparison_error ? 'error' : 'ready'
     } catch (error) {
       if (!cancelled && request === sequenceComparaison) {
         nommerEchecMembre(error)
@@ -617,7 +624,17 @@ function retryAcquisitionTheme(): void {
   cleFaitsPrets = null
   retryAcquisition.value++
 }
-function retryThemeComparison(): void { retryThemeComparaison.value++ }
+function retryThemeComparison(): void {
+  const theme = selection.value
+  // Relance la SEULE acquisition de comparaison propriétaire : une réponse
+  // réussie peut avoir omis le nuage demandé, donc l'entrée en cache doit
+  // tomber sans invalider les faits focaux ni les sélections voisines.
+  if (theme !== null && membresAcquisition.value !== null) {
+    cacheAcquisition.invalidateComparison(typeRoute.value, idRoute.value, theme as Theme,
+      membresAcquisition.value ?? undefined)
+  }
+  retryThemeComparaison.value++
+}
 
 
 const echelons = computed(() =>
@@ -643,7 +660,7 @@ const mobiliteEditorialeActive = productionMobilite
 const mobilityFocal = ref<TerritoryFacts | null>(null)
 const mobilityComparisonFacts = ref<TerritoryFacts | null>(null)
 const mobilityCurveComparison = ref<SelectedTrajectoryComparison | null>(null)
-const mobilityComparisonStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const mobilityComparisonStatus = ref<'loading' | 'ready' | 'error' | 'unavailable'>('loading')
 /**
  * #627 correction — retained Mobilité semantic facts keep their own scoped
  * status/retry, independent of AEDAR (which has its own status/retry) and of
@@ -739,8 +756,16 @@ watch([productionMobilite, typeRoute, idRoute, () => membresAcquisition.value,
     const target = payloadPourRendu.value.territoires.find((territory) => territory.territoire === idRoute.value)
     const context = resolution?.contexte ?? undefined
     const cohort = reference ?? undefined
-    if (!target || membres === null || !cohort) {
+    if (!target || !cohort) {
       mobilityComparisonStatus.value = 'error'
+      mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
+      mobilityCurveComparison.value = null
+      lastComparisonKey = requestKey
+      lastComparisonModel = reference
+      return
+    }
+    if (membres === null) {
+      mobilityComparisonStatus.value = 'unavailable'
       mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
       mobilityCurveComparison.value = null
       lastComparisonKey = requestKey
@@ -1009,6 +1034,7 @@ watch(
               :metadata-status="statutMetadataPourAffichage"
               :retry-metadata="retryExplicationTheme"
               :comparison-status="statutComparaison"
+              :cloud-comparison-status="statutNuageComparaison"
               :retry-comparison="retryThemeComparison"
             />
             <OngletTheme
@@ -1019,6 +1045,7 @@ watch(
               :metadata-status="statutMetadataPourAffichage"
               :retry-metadata="retryExplicationTheme"
               :comparison-status="statutComparaison"
+              :cloud-comparison-status="statutNuageComparaison"
               :comparison-error="membreComparaisonIndisponible ? `Données indisponibles pour ${membreComparaisonIndisponible}` : 'La lecture de la comparaison a échoué.'"
               :retry-comparison="retryThemeComparison"
             />

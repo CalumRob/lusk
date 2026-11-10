@@ -46,6 +46,7 @@ const props = defineProps<{
   metadataStatus?: 'loading' | 'ready' | 'error'
   retryMetadata?: () => void
   comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  cloudComparisonStatus?: 'idle' | 'error'
   comparisonError?: string
   retryComparison?: () => void
 }>()
@@ -340,6 +341,7 @@ const lignesReseaux = computed(
                 :classification="groupe.figureLecture.classification"
                 :nom="groupe.figureLecture.nom"
                 :nuage="groupe.figureLecture.nuage"
+                :cloud-comparison-status="props.cloudComparisonStatus"
               />
               <GraphiqueDistributionMobilite
                 v-else-if="groupe.figureLecture?.genre === 'distribution'"
@@ -366,6 +368,7 @@ const lignesReseaux = computed(
                 :periode-pop="groupe.figureLecture.periodePop"
                 :periode-artif="groupe.figureLecture.periodeArtif"
                 :nuage="groupe.figureLecture.nuage"
+                :cloud-comparison-status="props.cloudComparisonStatus"
               />
             </div>
           </div>
@@ -468,7 +471,7 @@ const lignesReseaux = computed(
     </template>
     <p v-if="props.comparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons de cette section.</p>
     <p v-if="props.comparisonStatus === 'unavailable'" class="comparison-unavailable-note" role="note">Comparaison indisponible : identité du groupe non résolue.</p>
-    <div class="comparison-retry-slot"><button v-if="props.comparisonStatus === 'error'" class="comparison-section-retry" type="button" @click="props.retryComparison?.()">Réessayer les comparaisons</button></div>
+    <div class="comparison-retry-slot"><button v-if="props.comparisonStatus === 'error' || props.cloudComparisonStatus === 'error'" class="comparison-section-retry" type="button" @click="props.retryComparison?.()">Réessayer les comparaisons</button></div>
   </article>
 </template>
 
