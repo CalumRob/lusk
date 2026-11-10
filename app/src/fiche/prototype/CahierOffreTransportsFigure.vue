@@ -124,7 +124,7 @@ function yPosition(value: number): number {
       </div>
       <figcaption class="transit-legend">
         <span class="transit-legend-territory" role="img" aria-label="Série du territoire"><span aria-hidden="true" />Territoire</span>
-        <span v-if="comparisonTrajectory" class="transit-legend-comparison" role="img" :aria-label="`Groupe comparé : ${comparisonLabel}`"><span aria-hidden="true" />Groupe comparé</span>
+        <span v-if="comparisonTrajectory" class="transit-legend-comparison" role="img" :aria-label="`Groupe comparé : ${comparisonLabel}`"><span class="transit-legend-swatch" aria-hidden="true" />Groupe comparé</span>
         <span v-if="!comparisonTrajectory && comparisonStatus === 'loading'" class="transit-legend-comparison transit-legend-state" aria-hidden="true"><span class="transit-comparison-spinner" /> Groupe comparé</span>
         <span v-if="!comparisonTrajectory && comparisonStatus === 'error'" class="transit-legend-comparison transit-legend-state">
           <button class="transit-comparison-warning" type="button" aria-label="Groupe comparé indisponible. Afficher l’explication" :aria-expanded="explanationOpen" :aria-describedby="explanationOpen ? explanationId : undefined" @mouseenter="explanationOpen = true" @mouseleave="explanationOpen = false" @focus="explanationOpen = true" @blur="explanationOpen = false" @click="explanationOpen = true" @keydown.esc="explanationOpen = false"><AlertTriangle aria-hidden="true" /></button>
@@ -166,7 +166,7 @@ function yPosition(value: number): number {
 .transit-legend-territory { display: inline-flex; align-items: center; gap: var(--space-2); }
 .transit-legend-territory { border-top-style: solid; border-color: var(--cahier-theme); }
 .transit-legend-comparison { display: inline-flex; min-height: 2.75rem; align-items: center; gap: var(--space-2); }
-.transit-legend-comparison > span { width: 1.5rem; border-top: 2px dashed currentColor; }
+.transit-legend-swatch { width: 1.5rem; border-top: 2px dashed currentColor; }
 .transit-legend-state { position: relative; min-height: 2.75rem; }
 .transit-comparison-spinner { width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: comparison-spinner .8s linear infinite; }
 .transit-comparison-warning { width: 2.75rem; height: 2.75rem; display: grid; place-items: center; border: 0; border-radius: 50%; color: var(--status-warning); background: transparent; cursor: help; }
