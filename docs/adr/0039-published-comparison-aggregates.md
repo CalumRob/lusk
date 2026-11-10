@@ -28,13 +28,29 @@ are unchanged (median references, published aggregates).
 
 **AEDAR aggregate-reading ranks (owner-approved 2026-11-04, #768):** the AEDAR overview
 aggregate readings (the registry-wide diversity and volume sums the fiche displays) gain
-request-time comparison ranks in BOTH intents — fixed declared contexts (ambient) and
+request-time comparison ranks in BOTH intents - fixed declared contexts (ambient) and
 selected comparisons. The aggregates are computed per request from published per-type
 rows (sum over the registry per member; the group statistic keeps #859's address-weighted
 pooled semantics), and `rank`/`rank_size`/`rank_ties` become selectable for the AEDAR
 fixed intent on the aggregate facets only. Per-cell measures keep #904's boundary
-(selected ranks only). Publications remain reference-only — #810's publication stance is
-unchanged.
+(selected ranks only; superseded by the 2026-11-10 per-cell amendment below).
+Publications remain reference-only - #810's publication stance is unchanged.
+
+**AEDAR fixed per-cell ranks (owner-approved 2026-11-10, #951):** the fixed intent also
+serves request-time `rank`/`rank_size`/`rank_ties` for **per-cell** measures (a `typequ`
++ `measure` request), on every producer-declared facet that is ranked. #904's
+reference-only boundary for per-cell measures is superseded **for the fixed intent
+only**. The focal's published cell value is ranked within the context's resolved peer
+group (the same group the 2026-11-04 aggregate ranks use), read as one set-wise query
+over `aedar_territorial_aggregate` in the same committed snapshot; eligibility is the
+selected comparison's law - a published finite value - so a genuine zero stays rankable
+and a peer without a published value is excluded rather than ranked as zero. Unranked
+facets (curve/decile readings) and an unavailable focal serve null rank fields. The
+2026-11-04 aggregate-reading behaviour is unchanged (it still ranks the
+`aedar_territory_summary` projection at its own availability law), the selected intent
+is unchanged, and nothing new is stored or published: publications stay reference-only
+(#810 stance intact) and every rank remains a per-request computation on one committed
+snapshot.
 
 **AEDAR fixed-density summary amendment (owner-approved 2026-11-09, #940):** keep
 address pooling in the producer and retain the typed pooled density artifact for

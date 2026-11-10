@@ -275,11 +275,13 @@ Searches the retained published territory reference with bounded query inputs.
   reference-only boundary): the focal's published per-`typequ` value is ranked
   within the context's resolved peer group by one set-wise read of
   `aedar_territorial_aggregate` in the same snapshot, beside the unchanged
-  reference value. A peer is eligible when its row publishes a finite value and
-  is `covered`; unavailable peers are excluded, never zeroed, and `rank_size`
-  counts the eligible population (focal included). Ranks are `null` — with
-  `200` — for an unranked facet (curve/decile readings) or an unavailable
-  focal. Requesting no rank field keeps the previous per-cell response exactly.
+  reference value. Eligibility follows the selected comparison's law — a
+  published finite value for that cell (an uncovered row publishes none, while a
+  genuine zero stays rankable) — so peers without a published value are
+  excluded, never zeroed, and `rank_size` counts the eligible population (focal
+  included). Ranks are `null` — with `200` — for an unranked facet
+  (curve/decile readings) or an unavailable focal. Requesting no rank field
+  keeps the previous per-cell response exactly.
 
 ## Retired route families
 
