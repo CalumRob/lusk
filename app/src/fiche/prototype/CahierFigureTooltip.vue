@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-
 import type {
   CahierFigureTooltipAnchor,
+  CahierTooltipComparison,
   CahierTooltipRow,
 } from '../cahierFigureGrammaire'
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     title: string
     rows: readonly CahierTooltipRow[]
@@ -21,12 +20,14 @@ const props = withDefaults(
   },
 )
 
-const focalRows = computed(() => props.rows.filter((row) => !row.comparison))
-const comparisonRows = computed(() => props.rows.filter((row) => row.comparison))
+function comparisonAria(comparison: CahierTooltipComparison): string {
+  if (comparison.ariaLabel) return comparison.ariaLabel
+  return `Groupe comparé : ${comparison.value}${comparison.rank ? `, rang ${comparison.rank}` : ''}`
+}
 
 function rowAriaLabel(row: CahierTooltipRow): string {
-  if (row.ariaLabel) return row.ariaLabel
-  return `${row.label} : ${row.value}${row.rank ? `, rang ${row.rank}` : ''}`
+  const focal = row.ariaLabel ?? `${row.label} : ${row.value}`
+  return row.comparison ? `${focal}. ${comparisonAria(row.comparison)}` : focal
 }
 </script>
 
@@ -45,9 +46,9 @@ function rowAriaLabel(row: CahierTooltipRow): string {
   >
     <strong>{{ title }}</strong>
     <small v-if="unit" class="cahier-figure-tooltip-unit">{{ unit }}</small>
-    <dl v-if="focalRows.length">
+    <dl v-if="rows.length">
       <div
-        v-for="row in focalRows"
+        v-for="row in rows"
         :key="`${row.label}-${row.value}`"
         class="cahier-figure-tooltip-row"
         :class="`cahier-figure-tooltip-row--${row.tone ?? 'neutral'}`"
@@ -74,19 +75,11 @@ function rowAriaLabel(row: CahierTooltipRow): string {
           {{ row.label }}
         </dt>
         <dd>{{ row.value }}</dd>
-      </div>
-    </dl>
-    <dl v-if="comparisonRows.length" class="cahier-figure-tooltip-comparison">
-      <div
-        v-for="row in comparisonRows"
-        :key="`${row.label}-${row.value}-${row.rank ?? ''}`"
-        class="cahier-figure-tooltip-row cahier-figure-tooltip-row--comparison"
-        role="group"
-        :aria-label="rowAriaLabel(row)"
-      >
-        <dt>{{ row.label }}</dt>
-        <dd>{{ row.value }}</dd>
-        <small v-if="row.rank" class="cahier-figure-tooltip-rank">{{ row.rank }}</small>
+        <dd v-if="row.comparison" class="cahier-figure-tooltip-row-comparison">
+          <span class="cahier-figure-tooltip-comparison-label">Groupe comparé</span>
+          <span class="cahier-figure-tooltip-comparison-value">{{ row.comparison.value }}</span>
+          <small v-if="row.comparison.rank" class="cahier-figure-tooltip-comparison-rank">{{ row.comparison.rank }}</small>
+        </dd>
       </div>
     </dl>
     <div v-if="$slots.actions" class="cahier-figure-tooltip-actions">

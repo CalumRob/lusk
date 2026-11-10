@@ -320,9 +320,9 @@
   width: min(220px, calc(100% - 24px));
   margin: 0;
   padding: 10px 12px;
-  border: 1px solid var(--cahier-figure-surface-border);
-  background: var(--cahier-figure-surface);
-  box-shadow: var(--cahier-figure-surface-shadow);
+  border: 1px solid var(--cahier-figure-surface-border, color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 19%, transparent));
+  background: var(--cahier-figure-surface, var(--paper, var(--editorial-paper)));
+  box-shadow: var(--cahier-figure-surface-shadow, 0 12px 28px rgb(35 42 42 / 16%));
   color: var(--cahier-default, var(--editorial-muted));
   font: var(--text-caption);
 }
@@ -414,29 +414,30 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Comparison group: plain section, one type step smaller, neutral label,
- * brand-200 value and rank (DESIGN.md, rank chip; CahierComparisonValue). */
-.cahier-figure-tooltip-comparison {
+/* Compared reading attached to its focal row: plain section, one type step
+ * smaller, neutral label, brand-200 value and rank (DESIGN.md, rank chip;
+ * CahierComparisonValue). It carries no glyph of its own. */
+.cahier-figure-tooltip-row-comparison {
+  grid-column: 1 / -1;
   display: grid;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 8px;
+  margin-top: 3px;
   font: var(--type-figure-comparison);
   letter-spacing: normal;
 }
 
-.cahier-figure-tooltip-row--comparison {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.cahier-figure-tooltip-row--comparison dt {
+.cahier-figure-tooltip-comparison-label {
   color: var(--cahier-default, var(--editorial-muted));
 }
 
-.cahier-figure-tooltip-row--comparison dd {
+.cahier-figure-tooltip-comparison-value {
   color: var(--brand-200);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
-.cahier-figure-tooltip-rank {
+.cahier-figure-tooltip-comparison-rank {
   grid-column: 2;
   color: var(--brand-200);
   font: inherit;

@@ -113,15 +113,31 @@ function categoryLabel(index: number): string {
 }
 
 const tooltipRows = computed<readonly CahierTooltipRow[]>(() => {
-  if (selectedCategoryIndex.value === null) return []
-  return props.figure.series.map((series) => {
-    const value = series.values[selectedCategoryIndex.value!]
+  const categoryIndex = selectedCategoryIndex.value
+  if (categoryIndex === null) return []
+  const comparedSeries = new Map(
+    props.figure.series
+      .filter((series) => series.comparisonFor)
+      .map((series) => [series.comparisonFor!, series]),
+  )
+  return props.figure.series.filter((series) => !series.comparisonFor).map((series) => {
+    const value = series.values[categoryIndex]
+    const compared = comparedSeries.get(series.key)
+    const comparedValue = compared?.values[categoryIndex]
     return {
       label: series.label,
       value: value === null || value === undefined ? UNAVAILABLE_LABEL : formatValue(value),
+      icon: series.icon,
       markerColor: series.color,
-      ...(series.comparison
-        ? { comparison: true, rank: formatServedRank(series.ranks?.[selectedCategoryIndex.value!]) }
+      ...(compared
+        ? {
+            comparison: {
+              value: comparedValue === null || comparedValue === undefined
+                ? UNAVAILABLE_LABEL
+                : formatValue(comparedValue),
+              rank: formatServedRank(compared.ranks?.[categoryIndex]),
+            },
+          }
         : {}),
     }
   })

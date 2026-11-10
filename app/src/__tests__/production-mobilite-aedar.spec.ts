@@ -563,8 +563,8 @@ describe('VarianteCahierLibre — AEDAR access', () => {
     // The reference values land in one comparison row per visible mode.
     await wrapper.find('.aedar-ramp [aria-label="Temps d\'accès : 15 min"]').trigger('focus')
     const rampTooltip = wrapper.get('.aedar-ramp [role="tooltip"]')
-    expect(rampTooltip.findAll('.cahier-figure-tooltip-row--comparison').length).toBeGreaterThan(0)
-    expect(rampTooltip.text()).toContain('Groupe comparé :')
+    expect(rampTooltip.findAll('.cahier-figure-tooltip-row-comparison').length).toBeGreaterThan(0)
+    expect(rampTooltip.text()).toContain('Groupe comparé')
     expect(rampTooltip.text()).toContain('2,5')
     expect(rampTooltip.text()).not.toContain('EPCI X')
     expect(rampTooltip.html()).toContain('Moyenne de EPCI X')

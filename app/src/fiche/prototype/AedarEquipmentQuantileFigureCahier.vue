@@ -10,6 +10,7 @@ import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { AedarEquipmentExplorerEvidence } from '@/fiche/content/themeContent'
 import type { CahierGroupedVerticalBarFigureData, CahierServedRank } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { AEDAR_TIME_MODE_ICONS } from './aedarTimeModeIcons'
 import CahierGroupedVerticalBarChart from './CahierGroupedVerticalBarChart.vue'
 
 const props = defineProps<{
@@ -53,6 +54,7 @@ const figure = computed<CahierGroupedVerticalBarFigureData>(() => ({
     key: mode,
     label: AEDAR_RAMP_MODE_LABELS[mode],
     color: AEDAR_TIME_MODE_COLORS[mode] ?? 'var(--cahier-theme-strong)',
+    icon: AEDAR_TIME_MODE_ICONS[mode],
     values: props.evidence.distributionStatistics.map((statistic) =>
       readAedarCountMeasure(props.fact, props.horizonMinutes, mode, statistic.key)),
   }, ...(props.comparisonLayerSupported === true || Boolean(props.comparisonLabel) || Boolean(props.comparison) ? [{
@@ -65,7 +67,7 @@ const figure = computed<CahierGroupedVerticalBarFigureData>(() => ({
         && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const).every((key) => reference[key] === props.fact![key])
         ? readAedarCountMeasure(reference, props.horizonMinutes, mode, statistic.key) : null
     }),
-    comparison: true,
+    comparisonFor: mode,
     ranks: props.evidence.distributionStatistics.map((statistic) => servedRankFor(mode, statistic.key)),
   }] : [])]),
   xAxisTitle: props.evidence.distributionAxisTitle,

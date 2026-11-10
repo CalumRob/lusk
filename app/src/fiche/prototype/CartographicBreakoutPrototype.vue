@@ -9,9 +9,9 @@ import type { Component } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 import { mapAssetUrl } from '@/fiche/mapAssetUrl'
 
-import type { CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import type { CahierTooltipComparison, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_MAP_LAYOUT_STYLE, formatServedRank } from '@/fiche/cahierFigureGrammaire'
-import type { CyclingOfferEvidence, SharingNetworksEvidence } from '@/fiche/content/themeContent'
+import type { ContentFact, CyclingOfferEvidence, SharingNetworksEvidence } from '@/fiche/content/themeContent'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLecture from './CahierFigureLecture.vue'
@@ -110,6 +110,7 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
     value: network.length.fact.value === null ? '—' : formatNumber(network.length.fact.value, 2),
     tone: modeTone(mode),
     icon: modeIcon(mode),
+    comparison: comparisonForFact(network.length, props.evidence?.comparisonLabel ?? null),
   }]
   if (mode === 'bike' && props.cyclingEvidence) {
     rows.push(
@@ -119,7 +120,9 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
           ? '—'
           : formatNumber(props.cyclingEvidence.protectedDensity.fact.value, 2),
         tone: 'b',
-        ariaLabel: comparisonAriaFor(props.cyclingEvidence.protectedDensity),
+        marker: 'dot',
+        markerColor: 'var(--cahier-cycle-protected)',
+        comparison: comparisonForFact(props.cyclingEvidence.protectedDensity, props.cyclingEvidence.comparisonLabel),
       },
       {
         label: props.cyclingEvidence.sharedDensity.label.split(' — ')[0] ?? props.cyclingEvidence.sharedDensity.label,
@@ -127,48 +130,28 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
           ? '—'
           : formatNumber(props.cyclingEvidence.sharedDensity.fact.value, 2),
         tone: 'b',
-        ariaLabel: comparisonAriaFor(props.cyclingEvidence.sharedDensity),
+        marker: 'dot',
+        markerColor: 'var(--cahier-cycle-shared)',
+        comparison: comparisonForFact(props.cyclingEvidence.sharedDensity, props.cyclingEvidence.comparisonLabel),
       },
     )
-    rows.push(
-      ...(props.cyclingEvidence.protectedDensity.fact.comparison ? [comparisonRowFor(props.cyclingEvidence.protectedDensity)] : []),
-      ...(props.cyclingEvidence.sharedDensity.fact.comparison ? [comparisonRowFor(props.cyclingEvidence.sharedDensity)] : []),
-    )
-  }
-  const reference = network.length.fact.comparison?.reference
-  if (reference?.value !== null && reference?.value !== undefined) {
-    rows.push({
-      // #860 : nom bref en visible, portée uniquement en aria.
-      label: 'Groupe comparé',
-      ariaLabel: `Groupe comparé : ${props.evidence?.comparisonLabel ?? ''} : ${formatNumber(reference.value, 2)}${rankSuffix(network.length.fact)}`,
-      value: formatNumber(reference.value, 2),
-      comparison: true,
-      rank: formatServedRank(network.length.fact.comparison?.rank),
-    })
   }
   return rows
 }
 
-function rankSuffix(fact: { comparison: { rank: { position: number; size: number } | null } | null }): string {
-  const rank = formatServedRank(fact.comparison?.rank)
-  return rank ? `, rang ${rank}` : ''
-}
-
-function comparisonRowFor(fact: CyclingOfferEvidence['protectedDensity']): CahierTooltipRow {
-  const reference = fact.fact.comparison?.reference
+function comparisonForFact(fact: ContentFact, scope: string | null): CahierTooltipComparison | undefined {
+  const comparison = fact.fact.comparison
+  if (!comparison) return undefined
+  const reference = comparison.reference
+  const value = reference?.value === null || reference?.value === undefined
+    ? '—'
+    : formatNumber(reference.value, 2)
+  const rank = formatServedRank(comparison.rank)
   return {
-    label: `Groupe comparé : ${fact.label.split(' — ')[0] ?? fact.label}`,
-    value: reference?.value === null || reference?.value === undefined ? '—' : formatNumber(reference.value, 2),
-    comparison: true,
-    rank: formatServedRank(fact.fact.comparison?.rank),
-    ariaLabel: comparisonAriaFor(fact),
+    value,
+    rank,
+    ariaLabel: `Groupe comparé : ${scope ?? 'Indisponible'} : ${value}${rank ? `, rang ${rank}` : ''}`,
   }
-}
-
-function comparisonAriaFor(fact: CyclingOfferEvidence['protectedDensity']): string | undefined {
-  const reference = fact.fact.comparison?.reference
-  if (!reference) return undefined
-  return `${fact.label} : ${fact.fact.value === null ? 'Indisponible' : formatNumber(fact.fact.value, 2)}. Groupe comparé : ${props.cyclingEvidence?.comparisonLabel ?? ''} : ${formatNumber(reference.value, 2)}${rankSuffix(fact.fact)}`
 }
 
 const networkBarUnit = computed(() => networkFor('bike')?.length.fact.unit ?? networkFor('car')?.length.fact.unit ?? '')

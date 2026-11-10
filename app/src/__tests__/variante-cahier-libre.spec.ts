@@ -629,13 +629,22 @@ describe('Variante E — partage de l’espace public', () => {
     expect(networkTooltip.text()).toContain('Groupe comparé')
     expect(networkTooltip.text()).not.toContain('Médiane des communes de EPCI X')
     expect(networkTooltip.html()).toContain('Médiane des communes de EPCI X')
-    const comparisonRows = networkTooltip.findAll('.cahier-figure-tooltip-row--comparison')
-    expect(comparisonRows.map((row) => row.get('dt').text())).toEqual([
-      'Groupe comparé : Protégé',
-      'Groupe comparé : Partagé',
-      'Groupe comparé',
-    ])
-    expect(networkTooltip.findAll('.cahier-figure-tooltip-rank').map((rank) => rank.text())).toEqual(['1er/4', '2e/3'])
+    const focalRows = networkTooltip.findAll('.cahier-figure-tooltip-row')
+    const comparisons = networkTooltip.findAll('.cahier-figure-tooltip-row-comparison')
+    expect(focalRows).toHaveLength(3)
+    expect(comparisons).toHaveLength(3)
+    expect(comparisons.map((row) => row.get('.cahier-figure-tooltip-comparison-label').text()))
+      .toEqual(['Groupe comparé', 'Groupe comparé', 'Groupe comparé'])
+    expect(networkTooltip.text()).not.toContain('Groupe comparé : Protégé')
+    expect(networkTooltip.text()).not.toContain('Groupe comparé : Partagé')
+    expect(networkTooltip.findAll('.cahier-figure-tooltip-comparison-rank').map((rank) => rank.text()))
+      .toEqual(['2e/3', '1er/4'])
+    // Mode icons on the network and plain colour dots on colour-only series; no glyph on a comparison.
+    expect(focalRows[0]!.find('svg.cahier-figure-tooltip-icon').exists()).toBe(true)
+    expect(focalRows[1]!.find('.cahier-figure-tooltip-marker').exists()).toBe(true)
+    expect(focalRows[2]!.find('.cahier-figure-tooltip-marker').exists()).toBe(true)
+    expect(networkTooltip.findAll('.cahier-figure-tooltip-row-comparison svg')).toHaveLength(0)
+    expect(networkTooltip.findAll('.cahier-figure-tooltip-row-comparison .cahier-figure-tooltip-marker')).toHaveLength(0)
     expect(networkTooltip.text()).not.toMatch(/plus est mieux|moins est mieux/u)
     expect(wrapper.find('.cahier-network-bar-row--car').classes()).toContain('cahier-network-bar-row--dimmed')
     await wrapper.find('.map-panel--bike').trigger('mouseenter')

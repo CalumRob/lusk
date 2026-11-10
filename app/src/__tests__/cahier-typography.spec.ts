@@ -161,13 +161,20 @@ describe('Cahier typography roles', () => {
     expect(comparisonSource).toContain('Groupe comparé :')
   })
 
-  it('keeps the tooltip comparison block one type step smaller with a brand-200 value and rank', () => {
-    expect(cssRule(figureCss, '.cahier-figure-tooltip-comparison'))
+  it('keeps the tooltip comparison one type step smaller with a brand-200 value and rank', () => {
+    expect(cssRule(figureCss, '.cahier-figure-tooltip-row-comparison'))
       .toContain('font: var(--type-figure-comparison)')
-    expect(cssRule(figureCss, '.cahier-figure-tooltip-row--comparison dd'))
+    expect(cssRule(figureCss, '.cahier-figure-tooltip-comparison-value'))
       .toContain('color: var(--brand-200)')
-    expect(cssRule(figureCss, '.cahier-figure-tooltip-rank'))
+    expect(cssRule(figureCss, '.cahier-figure-tooltip-comparison-rank'))
       .toContain('color: var(--brand-200)')
+  })
+
+  it('keeps a tooltip self-sufficient outside a figure frame', () => {
+    const tooltipRule = cssRule(figureCss, '.cahier-figure-tooltip')
+    expect(tooltipRule).toContain('background: var(--cahier-figure-surface, var(--paper, var(--editorial-paper)))')
+    expect(tooltipRule).toContain('border: 1px solid var(--cahier-figure-surface-border,')
+    expect(tooltipRule).toContain('box-shadow: var(--cahier-figure-surface-shadow,')
   })
 
   it('leaves no native title on a shared-tooltip figure mark', () => {

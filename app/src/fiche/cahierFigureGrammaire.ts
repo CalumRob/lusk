@@ -163,8 +163,10 @@ export interface CahierGroupedVerticalBarSeries {
   color: string
   /** One value per category, in the same order; null means unavailable. */
   values: readonly (number | null)[]
-  /** The series is the comparison group: its tooltip row uses the plain comparison block. */
-  comparison?: boolean
+  /** A mode/category glyph the product already owns; otherwise the chart falls back to a colour dot. */
+  icon?: Component
+  /** This series is a compared layer drawn for a focal series key and attached under its tooltip row. */
+  comparisonFor?: string
   /** Producer-served ordinal per category, in the same order; null means not ranked. */
   ranks?: readonly (CahierServedRank | null)[]
 }
@@ -337,6 +339,15 @@ export interface FigureLegendEntry {
 /** Les tons des lignes de détail partagées par tous les tooltips du Cahier. */
 export type CahierTooltipTone = 't' | 'b' | 'c' | 'neutral'
 
+/** The compared reading rendered directly beneath its focal row. */
+export interface CahierTooltipComparison {
+  value: string
+  /** Producer-served ordinal, already formatted (`1er/3`); never derived from local facts. */
+  rank?: string | null
+  /** Complete accessible reading, including the resolved scope; the visible label stays « Groupe comparé ». */
+  ariaLabel?: string
+}
+
 export interface CahierTooltipRow {
   label: string
   ariaLabel?: string
@@ -345,10 +356,8 @@ export interface CahierTooltipRow {
   icon?: Component
   markerColor?: string
   marker?: 'dot' | 'slash'
-  /** The row belongs to the plain comparison block, one type step smaller. */
-  comparison?: boolean
-  /** Producer-served ordinal, already formatted (`1er/3`); never derived from local facts. */
-  rank?: string | null
+  /** Attached below this focal row, one type step smaller, with no glyph of its own. */
+  comparison?: CahierTooltipComparison | null
 }
 
 /** A producer-served ordinal for a compared reading. */

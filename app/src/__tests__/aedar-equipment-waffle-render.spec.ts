@@ -230,6 +230,10 @@ describe('AedarEquipmentWaffleCahier', () => {
     await tile.trigger('mouseenter')
     const tooltip = wrapper.get('.aedar-waffle .cahier-figure-tooltip')
     expect(tooltip.attributes('role')).toBe('tooltip')
+    // Same shared class path as every framed figure: the primitive itself supplies surface and border.
+    expect(tooltip.classes()).toContain('cahier-figure-tooltip')
+    expect(tooltip.attributes('style')).not.toContain('background')
+    expect(tooltip.attributes('style')).not.toContain('border')
     expect(tooltip.text()).toContain('MAIRIE')
     expect(tooltip.text()).toContain('A129')
     expect(tooltip.text()).toContain('Voiture')
