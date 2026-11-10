@@ -49,7 +49,7 @@ function instanceRendue() {
   return initMock.mock.results[0]?.value
 }
 
-function monter(nuage: typeof pointA1[] = []) {
+function monter(nuage: typeof pointA1[] = [], cloudComparisonStatus: 'idle' | 'error' = 'idle') {
   return mount(GraphiqueSoldes, {
     props: {
       tauxNaturel: 5.982906,
@@ -57,6 +57,7 @@ function monter(nuage: typeof pointA1[] = []) {
       classification: 'attire-renouvelle',
       nom: 'Commune A1',
       nuage,
+      cloudComparisonStatus,
     },
     global: { plugins: [router] },
   })
@@ -211,6 +212,31 @@ describe('GraphiqueSoldes — the rate-quadrant story chart', () => {
     expect(initMock).not.toHaveBeenCalled()
 
     await vi.waitFor(() => expect(initMock).toHaveBeenCalled())
+    wrapper.unmount()
+  })
+
+  it('signale le nuage demandé manquant par un repère local compact, sans réessai ni bloc au-dessus du graphe', async () => {
+    const wrapper = monter([pointA1, pointD], 'error')
+
+    // Un seul repère, dans la zone de données du graphique : aucun paragraphe
+    // frère ne pousse le canvas ni le contenu suivant.
+    expect(wrapper.findAll('.cloud-read-warning')).toHaveLength(1)
+    expect(wrapper.element.className).toContain('graphique-soldes')
+    expect(wrapper.get('.graphique-soldes').find('.graphique-soldes-canvas').exists()).toBe(true)
+    expect(wrapper.find('.comparison-section-retry').exists()).toBe(false)
+    const cue = wrapper.get('.cloud-read-warning .comparison-unavailable-cue__trigger')
+    expect(cue.attributes('aria-label')).toContain('Nuage du groupe comparé indisponible')
+    expect(cue.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
+
+    await cue.trigger('focus')
+    expect(cue.attributes('aria-expanded')).toBe('true')
+    const tooltip = wrapper.get('[role="tooltip"]')
+    expect(tooltip.text()).toContain('Nuage du groupe comparé indisponible')
+    expect(tooltip.text()).toContain('nuage')
+    await cue.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
+
     wrapper.unmount()
   })
 })

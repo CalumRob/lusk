@@ -30,6 +30,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import { handoffExploration } from '@/fiche/explorationHandoff'
 import { cadrageSousGroupeFiche, sousGroupeFiche } from '@/fiche/content/ficheGrammar'
+import { COMPARAISON_INDISPONIBLE_RAISON, COMPARAISON_INDISPONIBLE_TITRE } from '@/fiche/content/comparisonWording'
 import { NOMS_THEMES } from '@/fiche/onglets'
 import {
   LIEN_SUBVENTIONS,
@@ -48,6 +49,8 @@ const props = defineProps<{
   territoire: string
   metadataStatus?: 'loading' | 'ready' | 'error'
   retryMetadata?: () => void
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  retryComparison?: () => void
 }>()
 
 // The theme label and remaining factual/page contracts still use metadata;
@@ -239,6 +242,11 @@ const lienProvenance = computed(() => {
         </template>
       </section>
     </template>
+    <p v-if="props.comparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons de cette section.</p>
+    <div class="comparison-retry-slot">
+      <p v-if="props.comparisonStatus === 'unavailable'" class="comparison-unavailable-note" role="note">{{ COMPARAISON_INDISPONIBLE_TITRE }} : {{ COMPARAISON_INDISPONIBLE_RAISON }}</p>
+      <button v-if="props.comparisonStatus === 'error'" class="programmes-comparison-retry" type="button" @click="props.retryComparison?.()">Réessayer les comparaisons</button>
+    </div>
   </article>
 </template>
 
@@ -251,6 +259,13 @@ const lienProvenance = computed(() => {
   flex-direction: column;
   gap: var(--space-8);
 }
+.comparison-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.comparison-unavailable-note { margin: 0 auto 0 0; color: var(--text-primary); font: var(--text-body-sm); }
+.comparison-retry-slot { min-height: 3.25rem; display: flex; justify-content: flex-end; align-items: center; gap: var(--space-3); }
+.programmes-comparison-retry { min-height: 2.75rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
+.programmes-comparison-retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
+.programmes-comparison-retry:active { background: var(--border-subtle); }
+.programmes-comparison-retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
 
 .sous-groupe {
   display: flex;

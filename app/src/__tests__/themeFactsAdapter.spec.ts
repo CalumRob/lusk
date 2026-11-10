@@ -358,6 +358,40 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(unexplained?.reading_cloud_error).toBe(true)
   })
 
+  it('distingue un nuage éligible vide d’un contrat de nuage demandé manquant', () => {
+    const members = [{ id: '1', type: 'commune', name: 'Focal' }, { id: '2', type: 'commune', name: 'Peer' }]
+    const declaration = nativeResources('milieux').find((resource) => resource.resource_id === 'artif_par_habitant')!
+    const baseFact = { groupe: 'artificialisation', source_id: 'population', vintage_id: '2023', status: 'measured',
+      periode_pop: '2020', periode_artif: '2021', taux_variation_population: 0.02,
+      artif_m2_par_habitant: 10, artif_m3_par_habitant: 12 }
+    const response = { theme_id: 'milieux', comparison_reads: [{ resource: 'artif_par_habitant',
+      declaration, shapes: declaration.shapes, data: {
+        contract: 'indicator-comparison-v1', indicator_id: 'artif_par_habitant', shape: 'series',
+        content_version: 'milieux-series-v1', reference_content_version: 'reference-v1',
+        target: { kind: 'territory', type: 'commune', id: '1' }, selection: members.map(({ id, type }) =>
+          ({ territory_id: id, territory_type: type })),
+        result: { indicator_id: 'artif_par_habitant', source_facet: null, status: 'unavailable',
+          reason: 'fewer_than_two_comparable_values', direction: declaration.direction,
+          selected_member_count: 2, eligible_count: 0, missing_count: 2, rank: null, rank_size: null },
+        scope: { kind: 'explicit_selection', member_count: 2 },
+      } }], cohort_reads: [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
+        content_version: 'reading-v1', reference_content_version: 'reference-v1',
+        cohort: { territory_type: 'commune', member_count: 2, reference_content_version: 'reference-v1', members },
+        // Le contrat du nuage est présent ; aucune coordonnée n’est plottable.
+        territories: [
+          { territory: members[0], facts: [{ ...baseFact, taux_variation_population: null }] },
+          { territory: members[1], facts: [{ ...baseFact, artif_m3_par_habitant: null }] },
+        ],
+      } }] }
+    const focalReads = [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
+      content_version: 'reading-v1', reference_content_version: 'reference-v1', facts: [baseFact],
+    } }]
+    const comparison = semanticComparisonForTheme(response, { target: { territoire: '1', type: 'commune' } }, focalReads)
+    expect(comparison?.reading_cloud).toMatchObject({ status: 'unavailable', points: [] })
+    expect(comparison?.reading_cloud_error).toBe(false)
+    expect(histoiresMilieuxDuNuage(comparison)).toEqual([])
+  })
+
   it('builds a typed cloud from bounded producer facts only inside the API-resolved density scope', () => {
     const focalReads = [
       { resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {

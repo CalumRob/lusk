@@ -4,6 +4,16 @@ export const COMPARISON_MODE_DESCRIPTIONS: Readonly<Partial<Record<TerritoryComp
   densite: 'Classe définie par l’Insee selon le nombre d’habitants et leur concentration sur le territoire communal.',
 }
 
+/**
+ * App-owned, stable wording for comparison states. The producer owns the
+ * facts and scope identities; these sentences only present an unresolved
+ * identity or a missing reading cloud in the interface.
+ */
+export const COMPARAISON_INDISPONIBLE_TITRE = 'Comparaison non disponible'
+export const COMPARAISON_INDISPONIBLE_RAISON = 'l’identité du groupe comparé n’a pas pu être résolue.'
+export const NUAGE_COMPARAISON_INDISPONIBLE_TITRE = 'Nuage du groupe comparé indisponible'
+export const NUAGE_COMPARAISON_INDISPONIBLE_RAISON = 'la lecture du groupe comparé n’a pas fourni son nuage.'
+
 const BUILDING_SCOPE_PREFIX = 'bâtiments des '
 
 export function buildingScopeLabel(label: string): string {

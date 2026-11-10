@@ -184,6 +184,56 @@ describe('figures des unités Mobilité ajoutées', () => {
     expect(riderFigure.text()).toContain('Courbe non calculable')
   })
 
+  it('associe la légende d’erreur de comparaison à son infobulle accessible', async () => {
+    const published = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
+    const metadata = published.indicator_pages.raccordement_courbe
+    const wrapper = mount(CahierOffreTransportsFigure, { props: {
+      offer: null, trajectory: [
+        contentFact('raccordement_courbe', 't0000', .1, '0'),
+        contentFact('raccordement_courbe', 't0090', .7, '1 h 30'),
+      ], metadata: metadata.trajectory,
+      comparisonStatus: 'error', comparisonError: 'lecture refusée',
+    } })
+    const trigger = wrapper.get('.transit-comparison-warning')
+    await trigger.trigger('focus')
+    const tooltip = wrapper.get('[role="tooltip"]')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    expect(trigger.attributes('aria-describedby')).toBe(tooltip.attributes('id'))
+    expect(tooltip.text()).toContain('lecture refusée')
+    wrapper.unmount()
+  })
+
+  it('ne réserve le trait pointillé qu’à la pastille de comparaison, jamais à la racine du repère indisponible', () => {
+    const published = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
+    const metadata = published.indicator_pages.raccordement_courbe
+    const trajectory = [
+      contentFact('raccordement_courbe', 't0000', .1, '0'),
+      contentFact('raccordement_courbe', 't0090', .7, '1 h 30'),
+    ]
+    const unavailable = mount(CahierOffreTransportsFigure, { props: {
+      offer: null, trajectory, metadata: metadata.trajectory, comparisonStatus: 'unavailable',
+    } })
+    const legend = unavailable.get('.transit-legend-comparison')
+    expect(legend.find('.comparison-unavailable-cue').exists()).toBe(true)
+    expect(legend.find('.transit-legend-swatch').exists()).toBe(false)
+    expect(legend.get('.comparison-unavailable-cue').classes()).not.toContain('transit-legend-swatch')
+    unavailable.unmount()
+
+    const comparisonTrajectory = {
+      statistic: 'mean', scope: { label: 'EPCI de test' }, selectedMemberCount: 2,
+      eligibleCount: 2, modelZeroReasonCounts: {},
+      points: trajectory.map((item) => ({ ...item,
+        fact: { ...item.fact, value: Math.max(0, (item.fact.value ?? 0) * .8) } })),
+    } as any
+    const ready = mount(CahierOffreTransportsFigure, { props: {
+      offer: null, trajectory, metadata: metadata.trajectory,
+      comparisonStatus: 'ready', comparisonTrajectory,
+    } })
+    expect(ready.findAll('.transit-legend-comparison > .transit-legend-swatch')).toHaveLength(1)
+    expect(ready.get('.transit-legend-swatch').attributes('aria-hidden')).toBe('true')
+    ready.unmount()
+  })
+
   it('plots the payload-labeled household composition as separate bars with exact share values', () => {
     const composition = [
       contentFact('voitures_menage', 'sans_voiture', 0.25, 'Ménages sans voiture'),

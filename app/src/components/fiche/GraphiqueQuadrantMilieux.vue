@@ -26,8 +26,10 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { queryTerritoireAvecComparaison } from '@/fiche/comparisonContext'
+import { NUAGE_COMPARAISON_INDISPONIBLE_RAISON, NUAGE_COMPARAISON_INDISPONIBLE_TITRE } from '@/fiche/content/comparisonWording'
 import { formaterNombreFR, formaterTaux } from '@/payload/selectors'
 import type { PointNuageMilieux } from '@/payload/selectors'
+import ComparisonUnavailableCue from './ComparisonUnavailableCue.vue'
 
 const props = defineProps<{
   /** x — le taux annuel de variation de la population (‰/an, #306), la première force de la lecture. */
@@ -41,6 +43,7 @@ const props = defineProps<{
   /** La fenêtre des états OCS-GE du territoire — le span multi-dépt porté tel quel. */
   periodeArtif: string
   nuage: PointNuageMilieux[]
+  cloudComparisonStatus?: 'idle' | 'error'
 }>()
 
 const route = useRoute()
@@ -279,6 +282,14 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="graphique-quadrant-milieux">
+    <span v-if="props.cloudComparisonStatus === 'error'" class="cloud-read-warning">
+      <ComparisonUnavailableCue
+        :titre="NUAGE_COMPARAISON_INDISPONIBLE_TITRE"
+        :raison="NUAGE_COMPARAISON_INDISPONIBLE_RAISON"
+        align="end"
+        placement="below"
+      />
+    </span>
     <div
       ref="conteneur"
       class="graphique-quadrant-milieux-canvas"
@@ -290,9 +301,18 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .graphique-quadrant-milieux {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.cloud-read-warning {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  display: inline-grid;
 }
 
 .graphique-quadrant-milieux-canvas {

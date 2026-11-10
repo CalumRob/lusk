@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue'
 import { CONTROLE_COMPARAISON_KEY } from '../comparisonContext'
-import { fetchAedarComparison } from '../content/aedarComparisonClient'
+import { aedarComparisonIntent, fetchAedarComparison } from '../content/aedarComparisonClient'
 import type { AedarComparisonEvidence, AedarComparisonRequest } from '../content/aedarComparisonClient'
 import { AEDAR_AGGREGATE_READING_KEYS } from '../content/aedarTimeRampFacts'
 import VarianteCahierLibre from '../prototype/VarianteCahierLibre.vue'
@@ -26,26 +26,38 @@ const props = defineProps<{
   aedarReferenceTerritoire?: { type: AedarTerritoryType; id: string; nom: string } | null
   aedarReferenceData?: AedarSummaryFetchResult | null
   aedarReferenceStatus?: 'unavailable' | 'loading' | 'ready' | 'error'
+  nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  nativeComparisonError?: string
+  retryNativeComparison?: () => void
 }>()
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
-  const selection = control.value?.selection
-  if (selection?.etat === 'membres') return selection.membres.length ? {
-    intent: { kind: 'selected_comparison', members: selection.membres }, label: 'Moyenne de la sélection',
-  } : null
-  if (selection?.etat === 'vide') return null
-  const preset = selection?.etat === 'preset' ? selection.preset : control.value?.presetDefaut
-  if (!control.value?.libelleActif || props.content.territory.type === 'region') return null
-  const context = preset === 'densite' ? 'density_class'
-    : preset === 'epci' ? 'epci' : preset === 'bretagne' ? 'bretagne' : null
-  if (!context) return null
-  return { intent: { kind: 'fixed_comparison', context }, label: `Moyenne — ${control.value.libelleActif}` }
+  if (!control.value) return null
+  const intent = aedarComparisonIntent({ territoryType: props.content.territory.type as AedarTerritoryType,
+    selection: control.value.selection, presetDefaut: control.value.presetDefaut })
+  if (!intent) return null
+  if (intent.kind === 'fixed_comparison' && !control.value.libelleActif) return null
+  const label = intent.kind === 'selected_comparison'
+    ? 'Moyenne de la sélection' : `Moyenne — ${control.value.libelleActif}`
+  return { intent, label }
 })
 const comparison = ref<AedarComparisonEvidence | null>(null)
 const comparisonState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const comparisonError = ref('')
 const comparisonRetry = ref(0)
+const displayedComparisonStatus = computed<'idle' | 'loading' | 'ready' | 'error'>(() => {
+  // The visible overview values/ranks consume the aggregate comparison read.
+  // A separately loaded territory summary is not that figure's source.
+  if (comparisonState.value === 'error') return 'error'
+  if (comparisonState.value === 'loading') return 'loading'
+  return comparisonState.value
+})
+const displayedComparisonError = computed(() => comparisonState.value === 'error'
+  ? comparisonError.value : 'La référence territoriale du groupe comparé est indisponible.')
+function retryFailedComparisons(): void {
+  if (comparisonState.value === 'error') comparisonRetry.value++
+}
 const comparisonFocalIdentity = computed(() => props.aedarSummaryData?.status === 'ready'
   ? JSON.stringify([props.content.territory.type, props.content.territory.code,
     props.aedarSummaryData.summary.summaryContentVersion, props.aedarSummaryData.summary.aedarContentVersion,
@@ -162,10 +174,6 @@ const transformed = computed(() => {
 </script>
 
 <template>
-  <p v-if="comparisonState === 'loading'" class="aedar-comparison-state" role="status">Chargement du groupe comparé…</p>
-  <p v-else-if="comparisonState === 'error'" class="aedar-comparison-state" role="alert">
-    Groupe comparé indisponible : {{ comparisonError }}. <button type="button" @click="comparisonRetry++">Réessayer</button>
-  </p>
   <div v-if="props.aedarSummaryStatus === 'error'" class="aedar-state" role="alert">
     <p>{{ AEDAR_SUMMARY_UNAVAILABLE_MESSAGE }}</p>
     <button type="button" @click="props.retryAedarSummary?.()">Réessayer</button>
@@ -179,6 +187,12 @@ const transformed = computed(() => {
     :content="transformed"
     :pagination="props.pagination"
     :aedar-status="props.aedarStatus"
+    :comparison-status="displayedComparisonStatus"
+    :comparison-error="displayedComparisonError"
+    :retry-comparison="retryFailedComparisons"
+    :native-comparison-status="props.nativeComparisonStatus"
+    :native-comparison-error="props.nativeComparisonError"
+    :retry-native-comparison="props.retryNativeComparison"
     show-all-units
     presentation="plain"
     layout-variant="indexed-sections"

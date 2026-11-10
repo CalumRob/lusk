@@ -5,6 +5,7 @@ import type { NumericFact } from '../fiche/content/territoryFacts'
 import { detailsRangEnContexte, rangEnContexte } from '../payload/selectors'
 import { indicateursHabitatFixture } from '../payload/fixtures'
 import IndicatorFigure from '../components/fiche/IndicatorFigure.vue'
+import ValeurComparaison from '../components/fiche/ValeurComparaison.vue'
 import { lignesAvecComparaisonApi } from '../payload/themeFactsAdapter'
 import CahierRoadSurfaceFigure from '../fiche/prototype/CahierRoadSurfaceFigure.vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -40,8 +41,8 @@ describe('Rang de la sélection — valeur du Groupe comparé', () => {
     const mark = wrapper.get('.figure-indicateur-comparaison')
     expect(mark.text()).toContain('Groupe comparé : 30 %')
     expect(mark.text()).toContain('2e/4')
-    expect(mark.attributes('aria-label')).toContain('Médiane des communes de la sélection')
-    expect(mark.findAll('[aria-label]')).toHaveLength(0)
+    expect(mark.get('[role="img"]').attributes('aria-label')).toContain('Médiane des communes de la sélection')
+    expect(mark.findAll('[aria-label]')).toHaveLength(1)
     expect(mark.get('.puce-rang').attributes('aria-hidden')).toBe('true')
     expect(wrapper.text()).not.toContain('communes de la sélection')
   })
@@ -91,6 +92,41 @@ describe('Rang de la sélection — valeur du Groupe comparé', () => {
     expect(getComputedStyle(chip.element).color).toBe(getComputedStyle(document.documentElement).getPropertyValue('--brand-200').trim())
     expect(chip.attributes('aria-label')).toBeUndefined()
     expect(chip.attributes('aria-hidden')).toBe('true')
+  })
+
+  it('garde la case comparaison stable pendant le chargement et expose une explication hover/focus/tap distincte du retry', async () => {
+    const wrapper = mount(CahierComparisonValue, { props: { comparisonStatus: 'loading' } })
+    const pendingBox = wrapper.get('.cahier-comparison-value__state').element.getBoundingClientRect()
+    expect(wrapper.get('.cahier-comparison-value__spinner').element.closest('[aria-hidden="true"]')).not.toBeNull()
+    await wrapper.setProps({ comparisonStatus: 'error', comparisonError: 'lecture refusée' })
+    const failedBox = wrapper.get('.cahier-comparison-value__state').element.getBoundingClientRect()
+    expect(failedBox.width).toBe(pendingBox.width)
+    expect(failedBox.height).toBe(pendingBox.height)
+    const warning = wrapper.get('.cahier-comparison-value__warning')
+    expect(warning.attributes('aria-label')).toContain('Afficher l’explication')
+    await warning.trigger('focus')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('lecture refusée')
+    expect(warning.attributes('aria-describedby')).toBe(wrapper.get('[role="tooltip"]').attributes('id'))
+    await warning.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
+    await warning.trigger('click')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('lecture refusée')
+    await wrapper.setProps({ comparisonStatus: 'ready' })
+    expect(wrapper.text()).toBe('')
+  })
+
+  it('renders a compact unavailable explanation in the comparison slot without a retry affordance', async () => {
+    const wrapper = mount(ValeurComparaison, { props: {
+      ligne: { comparaisonApi: null, unit: '%' } as any,
+      status: 'unavailable',
+    } })
+    const cue = wrapper.get('.comparison-unavailable-cue__trigger')
+    expect(wrapper.find('.comparison-unavailable').exists()).toBe(false)
+    expect(wrapper.find('.comparison-section-retry').exists()).toBe(false)
+    expect(wrapper.find('.comparison-warning').exists()).toBe(false)
+    await cue.trigger('focus')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('identité du groupe comparé')
+    expect(cue.attributes('aria-expanded')).toBe('true')
   })
 
   it.each([false, true])('donne un seul nom complet au repère Cahier (lien : %s)', async (linked) => {

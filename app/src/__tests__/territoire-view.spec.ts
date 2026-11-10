@@ -534,7 +534,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     expect(focalReads[0]).not.toHaveProperty('dataset_id')
     expect(focalReads[0]).not.toHaveProperty('reference_content_version')
-    expect(wrapper.get('[role="alert"]').text()).toContain('Les comparaisons de ce thème ne sont pas disponibles.')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.programmes-comparison-retry').exists()).toBe(true)
     expect(wrapper.find('.subvention-total').text()).toContain('230 €')
     expect(wrapper.find('.subvention-total').text()).toContain('en 2024')
     expect(wrapper.find('.subvention-total').text()).not.toMatch(/(^|\s)0\s*€/)
@@ -560,7 +561,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     ])
     expect(requests[2]![0]!.intent.members).toEqual(membresDefaut.map((m) => ({ type: m.territory_type, id: m.territory_id })))
 
-    await wrapper.get('[role="alert"] button').trigger('click')
+    await wrapper.get('.programmes-comparison-retry').trigger('click')
     await flushPromises()
 
     expect(requests).toHaveLength(4)
@@ -760,7 +761,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(requests.length).toBeGreaterThan(requestCountBeforeMissingParent)
     expect(requests.slice(requestCountBeforeMissingParent).flat()
       .some((item) => item.intent.kind === 'selected_comparison')).toBe(false)
-    expect(manquant.wrapper.find('[role="alert"]').text()).toContain('Réessayer')
+    expect(manquant.wrapper.find('.programmes-comparison-retry').exists()).toBe(false)
+    expect(manquant.wrapper.find('.comparison-unavailable-note').text()).toContain('identité du groupe comparé')
+    expect(manquant.wrapper.find('[role="alert"]').exists()).toBe(false)
     manquant.wrapper.unmount()
   })
 
@@ -870,9 +873,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       } else if (theme === 'economie') {
         expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
       } else if (theme === 'mobilite') {
-        // AEDAR fixed aggregate comparisons are a separate, comparison-only read;
-        // this generic native fixture does not publish that response contract.
-        expect(wrapper.find('[role="alert"]').text()).toContain('Groupe comparé indisponible')
+        // A separate AEDAR comparison request may fail without making the
+        // independently valid native trajectory look unavailable.
+        expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
+        expect(wrapper.findAll('[role="alert"]').some((node) => node.text().includes('Groupe comparé indisponible'))).toBe(false)
       } else {
         expect(wrapper.find('[role="alert"]').exists()).toBe(false)
       }
@@ -1070,9 +1074,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       chargerReferenceReelle)
     await flushPromises()
 
-    expect(wrapper.get('[role="alert"]').text()).toContain('comparaisons de ce thème')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.comparison-section-retry').exists()).toBe(true)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
-    await wrapper.get('[role="alert"] button').trigger('click')
+    await wrapper.get('.comparison-section-retry').trigger('click')
     await flushPromises()
 
     const selectedReads = requests.filter((items) => items.some((item) => item.intent.kind === 'selected_comparison'))
@@ -1841,13 +1846,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     const overview = () => wrapper.get('[data-section="aedar-car-overview"]')
     expect(overview().findAll('.cahier-figure-scalar-value').map((node) => node.text())).toEqual(['5', '11'])
-    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(true)
+    expect(overview().find('.cahier-comparison-value__warning').exists()).toBe(true)
     // A stale comparison clock fails closed without dropping the independently valid EPCI summary line.
     expect(overview().find('.cahier-comparison-value').text()).toContain('Groupe comparé : 2,5')
     comparisonClock = 'aedar-summary-fixture-v1'
-    await wrapper.get('.aedar-comparison-state button').trigger('click')
+    await overview().get('.aedar-comparison-retry').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(false)
+    expect(overview().find('.cahier-comparison-value__warning').exists()).toBe(false)
     expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
       'Groupe comparé : 13', 'Groupe comparé : 29',
     ])
@@ -1856,7 +1861,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // comparison-cache identity, and direct-reference cache reuse on the real page.
     await router.replace({ query: { theme: 'mobilite', comparaison: 'densite' } })
     await flushPromises()
-    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(false)
+    expect(overview().find('.cahier-comparison-value__warning').exists()).toBe(false)
     expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
       'Groupe comparé : 17', 'Groupe comparé : 31',
     ])
@@ -1930,16 +1935,16 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       && item.target.type === 'commune' && item.target.id === '22002').length).toBeGreaterThan(focalSummariesBeforeRefresh)
     expect(requests.flat().filter((item) => item.resource === 'aedar_territory_summary'
       && item.target.type === 'epci' && item.target.id === refreshedEpci).length).toBeGreaterThan(referenceSummariesBeforeRefresh)
-    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(true)
+    expect(overview().find('.cahier-comparison-value__warning').exists()).toBe(true)
     expect(requests.flat().filter((item) => item.resource === 'aedar_territorial_aggregate'
       && item.intent.kind !== 'facts' && !(item.coordinates?.typequ?.length)).length)
       .toBeGreaterThan(comparisonReadsBeforeClockRefresh)
     comparisonClock = 'aedar-summary-fixture-v2'
     comparisonAedarClock = aedarContentVersion
     comparisonReferenceClock = referenceContentVersion
-    await wrapper.get('.aedar-comparison-state button').trigger('click')
+    await overview().get('.aedar-comparison-retry').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(false)
+    expect(overview().find('.cahier-comparison-value__warning').exists()).toBe(false)
     expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
       'Groupe comparé : 13', 'Groupe comparé : 29',
     ])
@@ -2065,6 +2070,160 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     },
   )
 
+  it('déclare la comparaison Mobilité nommée non résoluble indisponible, sans requête ni réessai sans effet', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+    // L’identité nommée de la commune est absente du référentiel : la sélection
+    // est nommée mais non résoluble, ce n’est pas une panne d’acquisition.
+    const referenceSansEpci = referenceReelle.map((territory) =>
+      territory.type === 'commune' && territory.territoire === '22001'
+        ? { ...territory, epci: '999999' }
+        : territory)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci',
+      async () => referenceSansEpci)
+    await flushPromises()
+    await flushPromises()
+
+    expect(requests.flat().some((item) => item.intent.kind === 'selected_comparison')).toBe(false)
+    expect(wrapper.find('.transit-series--territory').exists()).toBe(true)
+    const cue = wrapper.get('.transit-legend-comparison .comparison-unavailable-cue__trigger')
+    expect(cue.attributes('aria-label')).toContain('Comparaison non disponible')
+    await cue.trigger('focus')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('identité du groupe comparé')
+    expect(wrapper.find('.transit-comparison-unavailable').exists()).toBe(false)
+    expect(wrapper.find('.transit-comparison-retry').exists()).toBe(false)
+    expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
+    expect(wrapper.find('.transit-comparison-spinner').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('réessaie une acquisition de comparaison Mobilité réellement échouée depuis la section et retrouve la courbe comparée', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    let selectedFailures = 1
+    const fixtureFetch = nativeSemanticFetch(requests)
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) !== '/api/resources/read-batch') return fixtureFetch(input, init)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.some((item) => item.intent.kind === 'selected_comparison') && selectedFailures > 0) {
+        selectedFailures--
+        requests.push(items)
+        return new Response('', { status: 503 })
+      }
+      return fixtureFetch(input, init)
+    })
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci',
+      chargerReferenceReelle)
+    await flushPromises()
+
+    const selectedReads = () => requests.filter((items) =>
+      items.some((item) => item.intent.kind === 'selected_comparison'))
+    expect(selectedReads()).toHaveLength(1)
+    expect(wrapper.find('.transit-series--comparison').exists()).toBe(false)
+    expect(wrapper.find('.transit-comparison-retry').exists()).toBe(true)
+    const selectedBeforeRetry = selectedReads().length
+    const requestsBeforeRetry = requests.length
+
+    await wrapper.get('.transit-comparison-retry').trigger('click')
+    await flushPromises()
+
+    const retried = selectedReads().slice(selectedBeforeRetry)
+    expect(retried.length).toBeLessThanOrEqual(2)
+    expect(retried.every((items) => items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
+    // Les 13 ressources de comparaison Mobilité repartent en lots bornés,
+    // jamais une requête par figure ni une relecture des faits focaux.
+    expect(retried.flat()).toHaveLength(13)
+    expect(requests.slice(requestsBeforeRetry).flat().some((item) =>
+      item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
+    expect(wrapper.find('.transit-comparison-retry').exists()).toBe(false)
+    expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
+    expect(wrapper.find('.transit-series--comparison').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('garde les comparaisons scalaires prêtes quand seul le nuage demandé manque, puis le rétablit depuis le réessai de la section', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    let comparisonSeen = false
+    let cloudBroken = false
+    const fixtureFetch = nativeSemanticFetch(requests)
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) !== '/api/resources/read-batch') return fixtureFetch(input, init)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.some((item) => item.intent.kind === 'selected_comparison')) comparisonSeen = true
+      const cloudItem = items.find((item) => item.resource === 'demographie_selected_reading' &&
+        item.target?.kind === 'territory_cohort')
+      // Seule la lecture auxiliaire de la comparaison sélectionnée est mutilée :
+      // le nuage par défaut des faits reste intact et indépendant.
+      if (!cloudItem || !comparisonSeen || cloudBroken) return fixtureFetch(input, init)
+      const response = await fixtureFetch(input, init)
+      cloudBroken = true
+      // La lecture de cohorte répond, mais sans le contrat de nuage demandé :
+      // les comparaisons scalaires restent servies et valides.
+      const body = await response.json() as { results: Array<Record<string, any>> }
+      for (const result of body.results) delete (result.data as Record<string, unknown>).cohort
+      return new Response(JSON.stringify(body), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie&comparaison=epci',
+      chargerReferenceReelle)
+    await flushPromises()
+
+    const selectedBatches = () => requests.filter((items) =>
+      items.some((item) => item.resource === 'densite' && item.intent.kind === 'selected_comparison'))
+    const densiteFacts = () => requests.flat().filter((item) =>
+      item.resource === 'densite' && item.intent.kind === 'facts' && item.target?.kind === 'territory')
+    const onglet = () => wrapper.findComponent(OngletTheme)
+    const cloudStories = () =>
+      ((onglet().props('payload') as Payload).histoires as Array<{ nuageDemographieApi?: boolean }>)
+        .filter((histoire) => histoire.nuageDemographieApi === true)
+
+    // Les valeurs et rangs comparés sont servis par leur propre lecture.
+    const densiteBatch = selectedBatches()[0]
+    expect(densiteBatch).toBeDefined()
+    const served = await nativeBatchResponse(densiteBatch!, nativeFicheReadFixture).json() as {
+      results: Array<{ resource: string; data: Record<string, any> }> }
+    const densiteResult = served.results.find((result) => result.resource === 'densite')!.data.result
+    const densiteComparison = wrapper.get('[data-clef="densite"] .figure-indicateur-comparaison')
+    expect(densiteComparison.text()).toContain(
+      `${formaterValeur({ value: densiteResult.median, unit: densiteResult.unit })} ${densiteResult.unit}`)
+    expect(densiteComparison.find('.puce-rang').exists()).toBe(true)
+    expect(wrapper.find('.comparison-unavailable-note').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(cloudStories()).toHaveLength(0)
+
+    // Le nuage demandé manque : avertissement local, un seul réessai de section.
+    const cloudCue = wrapper.get('.cloud-read-warning .comparison-unavailable-cue__trigger')
+    expect(cloudCue.attributes('aria-label')).toContain('Nuage du groupe comparé indisponible')
+    await cloudCue.trigger('focus')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('Nuage du groupe comparé indisponible')
+    expect(wrapper.find('.comparison-section-retry').exists()).toBe(true)
+    expect(selectedBatches()).toHaveLength(1)
+    const densiteFactsBefore = densiteFacts().length
+
+    const requestsBeforeRetry = requests.length
+    await wrapper.get('.comparison-section-retry').trigger('click')
+    await flushPromises()
+
+    // Le réessai ré-acquiert la SEULE comparaison propriétaire : un lot de
+    // comparaisons (pas un POST par figure) + sa lecture auxiliaire, sans focal.
+    const retryBatches = requests.slice(requestsBeforeRetry).filter((items) =>
+      items.some((item) => item.intent.kind === 'selected_comparison') ||
+      items.some((item) => item.resource === 'demographie_selected_reading' &&
+        item.target?.kind === 'territory_cohort'))
+    expect(retryBatches).toHaveLength(2)
+    expect(retryBatches[0]!.filter((item) => item.intent.kind === 'selected_comparison')).toHaveLength(4)
+    expect(retryBatches.flat().some((item) =>
+      item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
+
+    expect(densiteFacts()).toHaveLength(densiteFactsBefore)
+    expect(wrapper.find('.cloud-read-warning').exists()).toBe(false)
+    expect(wrapper.find('.comparison-section-retry').exists()).toBe(false)
+    expect(cloudStories().length).toBeGreaterThan(0)
+    expect(wrapper.get('[data-clef="densite"] .figure-indicateur-comparaison').text()).toBe(densiteComparison.text())
+    wrapper.unmount()
+  })
+
 })
 
 describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison » dans le page-heading collant du Cahier', () => {
@@ -2086,13 +2245,15 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     refuser = true
     await router.push('/territoire/commune/22001?theme=mobilite&comparaison=commune:22001,commune:22002')
     await flushPromises()
-    expect(wrapper.get('.etat-erreur[role="alert"]').text()).toContain(cibleReference('22002').nom)
+    const comparisonWarning = wrapper.get('.transit-comparison-warning')
+    await comparisonWarning.trigger('focus')
+    expect(wrapper.find('[role="tooltip"]').text()).toContain(cibleReference('22002').nom)
     expect(wrapper.find('.transit-point--territory').exists()).toBe(true)
     expect(wrapper.find('.transit-point--comparison').exists()).toBe(false)
     refuser = false
-    await wrapper.get('.etat-erreur[role="alert"] button').trigger('click')
+    await wrapper.get('.transit-comparison-retry').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.etat-erreur[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
     expect(wrapper.find('.transit-point--comparison').exists()).toBe(true)
     wrapper.unmount()
   }, 20_000)

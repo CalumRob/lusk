@@ -23,6 +23,7 @@ import FigureLectureRenderer from '@/components/fiche/FigureLecture.vue'
 import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
+import { COMPARAISON_INDISPONIBLE_RAISON, COMPARAISON_INDISPONIBLE_TITRE } from '@/fiche/content/comparisonWording'
 import { libelleIndicateur } from '@/fiche/libelles'
 import { LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
 import {
@@ -45,6 +46,10 @@ const props = defineProps<{
   territoire: string
   metadataStatus?: 'loading' | 'ready' | 'error'
   retryMetadata?: () => void
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  cloudComparisonStatus?: 'idle' | 'error'
+  comparisonError?: string
+  retryComparison?: () => void
 }>()
 
 /** One subgroup plus its reading's figure and source — precomputed for the template. */
@@ -337,6 +342,7 @@ const lignesReseaux = computed(
                 :classification="groupe.figureLecture.classification"
                 :nom="groupe.figureLecture.nom"
                 :nuage="groupe.figureLecture.nuage"
+                :cloud-comparison-status="props.cloudComparisonStatus"
               />
               <GraphiqueDistributionMobilite
                 v-else-if="groupe.figureLecture?.genre === 'distribution'"
@@ -363,6 +369,7 @@ const lignesReseaux = computed(
                 :periode-pop="groupe.figureLecture.periodePop"
                 :periode-artif="groupe.figureLecture.periodeArtif"
                 :nuage="groupe.figureLecture.nuage"
+                :cloud-comparison-status="props.cloudComparisonStatus"
               />
             </div>
           </div>
@@ -426,6 +433,8 @@ const lignesReseaux = computed(
               :signe="figureSigne(groupe.figureCompacte.clef)"
               :theme="theme"
               :direction="directionPour(groupe.figureCompacte.clef)"
+              :comparison-status="props.comparisonStatus"
+              :comparison-error="props.comparisonError"
             />
             <!-- #409/#468 : la passarelle compacte partagée vers la Page
                  d'indicateur publiée — nouvelle fenêtre, vraie ancre. -->
@@ -453,12 +462,19 @@ const lignesReseaux = computed(
               :signe="figureSigne(figure.key)"
               :theme="theme"
               :direction="directionPour(figure.key)"
+              :comparison-status="props.comparisonStatus"
+              :comparison-error="props.comparisonError"
             />
             <PassarelleExploration v-if="passarelle(figure.key)" :to="passarelle(figure.key)!" />
           </div>
         </div>
       </section>
     </template>
+    <p v-if="props.comparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons de cette section.</p>
+    <div class="comparison-retry-slot">
+      <p v-if="props.comparisonStatus === 'unavailable'" class="comparison-unavailable-note" role="note">{{ COMPARAISON_INDISPONIBLE_TITRE }} : {{ COMPARAISON_INDISPONIBLE_RAISON }}</p>
+      <button v-if="props.comparisonStatus === 'error' || props.cloudComparisonStatus === 'error'" class="comparison-section-retry" type="button" @click="props.retryComparison?.()">Réessayer les comparaisons</button>
+    </div>
   </article>
 </template>
 
@@ -469,6 +485,13 @@ const lignesReseaux = computed(
   gap: var(--space-8);
   animation: entree-bloc 450ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+.comparison-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.comparison-unavailable-note { margin: 0 auto 0 0; color: var(--text-primary); font: var(--text-body-sm); }
+.comparison-retry-slot { min-height: 3.25rem; display: flex; justify-content: flex-end; align-items: center; gap: var(--space-3); }
+.comparison-section-retry { min-height: 2.75rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
+.comparison-section-retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
+.comparison-section-retry:active { background: var(--border-subtle); }
+.comparison-section-retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
 
 @keyframes entree-bloc {
   from {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, useId } from 'vue'
+import { AlertTriangle } from 'lucide-vue-next'
 import { cahierFigureStyle, CAHIER_FIGURE_GEOMETRY } from '@/fiche/cahierFigureGrammaire'
 import type { CahierFigureAxisTick } from '@/fiche/cahierFigureGrammaire'
 import type { ComparisonTrajectoryContent, ContentFact } from '@/fiche/content/themeContent'
@@ -7,10 +8,14 @@ import type { TrajectoryMetadata } from '@/payload/types'
 import CahierFigureAxes from './CahierFigureAxes.vue'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
+import ComparisonUnavailableCue from '@/components/fiche/ComparisonUnavailableCue.vue'
 import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
 
 const props = defineProps<{ offer: ContentFact | null; trajectory: readonly ContentFact[];
-  comparisonTrajectory?: ComparisonTrajectoryContent | null; metadata: TrajectoryMetadata | null }>()
+  comparisonTrajectory?: ComparisonTrajectoryContent | null; metadata: TrajectoryMetadata | null;
+   comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'; comparisonError?: string; retryComparison?: () => void }>()
+const explanationOpen = ref(false)
+const explanationId = `transit-comparison-help-${useId()}`
 const plotElement = ref<HTMLElement | null>(null)
 const yTickValues = [0, .25, .5, .75, 1] as const
 const yTickLabels = computed(() => yTickValues.map((value) => `${value * 100}%`))
@@ -119,8 +124,18 @@ function yPosition(value: number): number {
       </div>
       <figcaption class="transit-legend">
         <span class="transit-legend-territory" role="img" aria-label="Série du territoire"><span aria-hidden="true" />Territoire</span>
-        <span v-if="comparisonTrajectory" class="transit-legend-comparison" role="img" :aria-label="`Groupe comparé : ${comparisonLabel}`"><span aria-hidden="true" />Groupe comparé</span>
+        <span v-if="comparisonTrajectory" class="transit-legend-comparison" role="img" :aria-label="`Groupe comparé : ${comparisonLabel}`"><span class="transit-legend-swatch" aria-hidden="true" />Groupe comparé</span>
+        <span v-if="!comparisonTrajectory && comparisonStatus === 'loading'" class="transit-legend-comparison transit-legend-state" aria-hidden="true"><span class="transit-comparison-spinner" /> Groupe comparé</span>
+        <span v-if="!comparisonTrajectory && comparisonStatus === 'error'" class="transit-legend-comparison transit-legend-state">
+          <button class="transit-comparison-warning" type="button" aria-label="Groupe comparé indisponible. Afficher l’explication" :aria-expanded="explanationOpen" :aria-describedby="explanationOpen ? explanationId : undefined" @mouseenter="explanationOpen = true" @mouseleave="explanationOpen = false" @focus="explanationOpen = true" @blur="explanationOpen = false" @click="explanationOpen = true" @keydown.esc="explanationOpen = false"><AlertTriangle aria-hidden="true" /></button>
+          <span>Groupe comparé</span><span v-if="explanationOpen" :id="explanationId" class="transit-comparison-explanation" role="tooltip">Comparaison indisponible : {{ comparisonError || 'la lecture du groupe comparé a échoué.' }}</span>
+        </span>
+        <span v-if="!comparisonTrajectory && comparisonStatus === 'unavailable'" class="transit-legend-comparison transit-legend-state">
+          <ComparisonUnavailableCue />
+          <span>Groupe comparé</span>
+        </span>
       </figcaption>
+      <div class="transit-comparison-retry-slot"><button v-if="!comparisonTrajectory && comparisonStatus === 'error'" class="transit-comparison-retry" type="button" @click="retryComparison?.()">Réessayer les comparaisons</button></div>
     </figure>
     <p v-else class="transit-unavailable">Trajectoire indisponible.</p>
     <ul v-if="factsWithRiders.length" class="transit-riders">
@@ -147,10 +162,22 @@ function yPosition(value: number): number {
 .transit-point--comparison { fill: var(--cahier-paper); stroke: currentColor; stroke-width: 1.5; }
 .transit-marker-ring { fill: var(--cahier-paper); stroke: var(--cahier-theme); stroke-width: 3; }
 .transit-marker-label { fill: currentColor; font: var(--type-figure-mode); font-weight: 700; }
-.transit-legend { display: flex; gap: var(--space-2); align-items: center; }
+.transit-legend { display: flex; min-height: 2.75rem; gap: var(--space-2); align-items: center; }
 .transit-legend-territory { display: inline-flex; align-items: center; gap: var(--space-2); }
 .transit-legend-territory { border-top-style: solid; border-color: var(--cahier-theme); }
-.transit-legend-comparison { display: inline-flex; align-items: center; gap: var(--space-2); }
-.transit-legend-comparison > span { width: 1.5rem; border-top: 2px dashed currentColor; }
+.transit-legend-comparison { display: inline-flex; min-height: 2.75rem; align-items: center; gap: var(--space-2); }
+.transit-legend-swatch { width: 1.5rem; border-top: 2px dashed currentColor; }
+.transit-legend-state { position: relative; min-height: 2.75rem; }
+.transit-comparison-spinner { width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: comparison-spinner .8s linear infinite; }
+.transit-comparison-warning { width: 2.75rem; height: 2.75rem; display: grid; place-items: center; border: 0; border-radius: 50%; color: var(--status-warning); background: transparent; cursor: help; }
+.transit-comparison-warning:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.transit-comparison-explanation { position: absolute; z-index: 3; bottom: calc(100% + .25rem); right: 0; width: max-content; max-width: min(22rem, 80vw); padding: var(--space-2) var(--space-3); color: var(--text-primary); background: var(--surface-elevated); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-prominent); font: var(--text-body-sm); pointer-events: none; }
+.transit-comparison-retry-slot { min-height: 3.25rem; display: flex; justify-content: flex-end; align-items: center; }
+.transit-comparison-retry { min-height: 2.75rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
+.transit-comparison-retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
+.transit-comparison-retry:active { background: var(--border-subtle); }
+.transit-comparison-retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+@keyframes comparison-spinner { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .transit-comparison-spinner { animation: none; } }
 .transit-unavailable { margin: 0; }
 </style>

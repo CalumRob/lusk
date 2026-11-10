@@ -23,8 +23,10 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { queryTerritoireAvecComparaison } from '@/fiche/comparisonContext'
+import { NUAGE_COMPARAISON_INDISPONIBLE_RAISON, NUAGE_COMPARAISON_INDISPONIBLE_TITRE } from '@/fiche/content/comparisonWording'
 import { formaterTaux } from '@/payload/selectors'
 import type { PointNuage } from '@/payload/selectors'
+import ComparisonUnavailableCue from './ComparisonUnavailableCue.vue'
 
 const props = defineProps<{
   tauxNaturel: number
@@ -32,6 +34,7 @@ const props = defineProps<{
   classification: string
   nom: string
   nuage: PointNuage[]
+  cloudComparisonStatus?: 'idle' | 'error'
 }>()
 
 const route = useRoute()
@@ -240,6 +243,14 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="graphique-soldes">
+    <span v-if="props.cloudComparisonStatus === 'error'" class="cloud-read-warning">
+      <ComparisonUnavailableCue
+        :titre="NUAGE_COMPARAISON_INDISPONIBLE_TITRE"
+        :raison="NUAGE_COMPARAISON_INDISPONIBLE_RAISON"
+        align="end"
+        placement="below"
+      />
+    </span>
     <div
       ref="conteneur"
       class="graphique-soldes-canvas"
@@ -251,9 +262,18 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .graphique-soldes {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.cloud-read-warning {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  display: inline-grid;
 }
 
 .graphique-soldes-canvas {

@@ -15,6 +15,9 @@ defineProps<{
   aedarReferenceTerritoire?: { type: AedarTerritoryType; id: string; nom: string } | null
   aedarReferenceData?: AedarSummaryFetchResult | null
   aedarReferenceStatus?: 'unavailable' | 'loading' | 'ready' | 'error'
+  nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  nativeComparisonError?: string
+  retryNativeComparison?: () => void
 }>()
 </script>
 <template>
@@ -30,5 +33,8 @@ defineProps<{
     :aedar-reference-territoire="aedarReferenceTerritoire"
     :aedar-reference-data="aedarReferenceData"
     :aedar-reference-status="aedarReferenceStatus"
+    :native-comparison-status="nativeComparisonStatus"
+    :native-comparison-error="nativeComparisonError"
+    :retry-native-comparison="retryNativeComparison"
   />
 </template>

@@ -72,6 +72,12 @@ const props = defineProps<{
   showMapPrototype?: boolean
   aedarAccessEnabled?: boolean
   aedarStatus?: 'loading' | 'ready' | 'error'
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  comparisonError?: string
+  retryComparison?: () => void
+  nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  nativeComparisonError?: string
+  retryNativeComparison?: () => void
 }>()
 const route = useRoute()
 
@@ -493,13 +499,17 @@ onBeforeUnmount(() => {
                           <CahierComparisonValue
                             v-if="scalar.reference"
                             :named-reference="scalar.reference"
-                        :served-rank="scalar.rank && scalar.rankSize && scalar.rankSize >= 2 && scalar.rankDirection ? { position: scalar.rank, size: scalar.rankSize, direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' : 'moins-est-mieux', key: scalar.key } : null"
+                            :served-rank="scalar.rank && scalar.rankSize && scalar.rankSize >= 2 && scalar.rankDirection ? { position: scalar.rank, size: scalar.rankSize, direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' : 'moins-est-mieux', key: scalar.key } : null"
+                            :comparison-status="comparisonStatus"
+                            :comparison-error="comparisonError"
                           />
+                          <CahierComparisonValue v-else-if="comparisonStatus === 'loading' || comparisonStatus === 'error'" :comparison-status="comparisonStatus" :comparison-error="comparisonError" />
                           <span v-else class="cahier-figure-comparison">{{ scalar.comparisonUnavailableLabel }}</span>
                           <span v-if="scalar.rankUnavailableLabel" class="cahier-figure-comparison">{{ scalar.rankUnavailableLabel }}</span>
                         </template>
                       </CahierFigureScalar>
                     </div>
+                    <div class="aedar-comparison-retry-slot"><button v-if="props.comparisonStatus === 'error'" class="aedar-comparison-retry" type="button" @click="props.retryComparison?.()">Réessayer les comparaisons</button></div>
                   </figure>
                 </aside>
               </section>
@@ -716,7 +726,7 @@ onBeforeUnmount(() => {
                    </figure>
                    <figure v-else-if="section.evidence?.kind === 'public-transport'" class="evidence-side evidence-figure">
                      <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
-                     <CahierOffreTransportsFigure :offer="section.evidence.offer" :trajectory="section.evidence.trajectory" :comparison-trajectory="section.evidence.comparisonTrajectory" :metadata="section.evidence.trajectoryMetadata" />
+                     <CahierOffreTransportsFigure :offer="section.evidence.offer" :trajectory="section.evidence.trajectory" :comparison-trajectory="section.evidence.comparisonTrajectory" :metadata="section.evidence.trajectoryMetadata" :comparison-status="props.nativeComparisonStatus" :comparison-error="props.nativeComparisonError" :retry-comparison="props.retryNativeComparison" />
                    </figure>
 
 
@@ -794,6 +804,8 @@ onBeforeUnmount(() => {
         @choisir="controleComparaison.choisir"
       />
     </div>
+    <p v-if="props.comparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons AEDAR.</p>
+    <p v-if="props.nativeComparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons de mobilité.</p>
   </article>
 </template>
 
@@ -960,6 +972,12 @@ onBeforeUnmount(() => {
 .aedar-car-overview-copy { display: grid; gap: var(--space-3); }
 .aedar-car-overview-copy .argument-copy { margin: 0; }
 .aedar-car-overview-scalars { --cahier-figure-title-gap: var(--space-6); width: 100%; margin: 0; }
+.comparison-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.aedar-comparison-retry-slot { min-height: 3.25rem; display: flex; justify-content: flex-end; align-items: center; }
+.aedar-comparison-retry { min-height: 2.75rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
+.aedar-comparison-retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
+.aedar-comparison-retry:active { background: var(--border-subtle); }
+.aedar-comparison-retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
 @media (max-width: 760px) { .aedar-analysis { grid-template-columns: minmax(0, 1fr); } }
 .concept-group {
   container: subgroup / inline-size;

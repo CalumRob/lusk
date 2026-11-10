@@ -258,17 +258,30 @@ function selectedTrajectoryComparison(
   const expectedKeys = (expectedSelection ?? []).map((item) => `${item.territory_type}/${item.territory_id}`).sort()
   const actualSelection = Array.isArray(sourceSelection) ? sourceSelection.filter(isRecord)
     .map((item) => `${String(item.territory_type)}/${String(item.territory_id)}`).sort() : []
-  const modeMatches = context?.mode === 'densite'
-    ? envelopeScope?.kind === 'density_class' && sourceScope?.kind === 'density_class' &&
-      sourceScope.territory_type === facts.territory.type &&
-      text(sourceScope.density_class_code) && sourceScope.density_class_code === facts.territory.densityClassCode &&
-      envelopeScope.density_class_code === sourceScope.density_class_code
-    : (context?.mode === 'epci' || context?.mode === 'bretagne' || (!context && expectedSelection !== undefined))
-      ? envelopeScope?.kind === 'explicit_selection' && sourceScope?.kind === 'explicit_selection' &&
-        expectedKeys.length >= 2 && actualSelection.length === expectedKeys.length &&
-        actualSelection.every((key, index) => key === expectedKeys[index]) &&
-        finite(envelopeScope.member_count) && envelopeScope.member_count === result.selected_member_count
-      : false
+  const explicitSelectionMatches = envelopeScope?.kind === 'explicit_selection' &&
+    sourceScope?.kind === 'explicit_selection' && expectedKeys.length >= 2 &&
+    actualSelection.length === expectedKeys.length &&
+    actualSelection.every((key, index) => key === expectedKeys[index]) &&
+    finite(envelopeScope.member_count) && envelopeScope.member_count === result.selected_member_count
+  // A fixed comparison requested without typed members is served either as the
+  // focal commune's published density class or, for an EPCI/département, as
+  // the existing same-level Bretagne universe. The producer declares the scope;
+  // the adapter only binds it to the focal identity it was asked about.
+  const sameLevelMatches = (facts.territory.type === 'epci' || facts.territory.type === 'departement') &&
+    envelopeScope?.kind === 'same_level' && sourceScope?.kind === 'same_level' &&
+    envelopeScope.territory_type === facts.territory.type && sourceScope.territory_type === facts.territory.type
+  const densityClassMatches = context?.mode === 'densite' &&
+    envelopeScope?.kind === 'density_class' && sourceScope?.kind === 'density_class' &&
+    sourceScope.territory_type === facts.territory.type &&
+    text(sourceScope.density_class_code) && sourceScope.density_class_code === facts.territory.densityClassCode &&
+    envelopeScope.density_class_code === sourceScope.density_class_code
+  const modeMatches = expectedSelection !== undefined
+    // A preset expanded to typed members (including the density preset) is a
+    // selected_comparison: only its explicit membership may be accepted.
+    ? explicitSelectionMatches
+    : densityClassMatches ||
+      ((context?.mode === 'epci' || context?.mode === 'bretagne') &&
+        (explicitSelectionMatches || sameLevelMatches))
   if (!sourceScope || !envelopeScope || !modeMatches ||
       envelopeScope.member_count !== result.selected_member_count ||
       (expectedSelection === undefined && sourceSelection != null) ||
@@ -300,8 +313,12 @@ function selectedTrajectoryComparison(
     source_id: source.source_id, name: source.source_name, version: source.version,
     reference_date: source.reference_date, publication_date: source.publication_date,
   })))
-  return { statistic: 'mean', scope: context?.scope ?? { kind: 'selection',
-    territoryIds: expectedSelection?.map((member) => member.territory_id), label: 'Groupe comparé' },
+  return { statistic: 'mean', scope: expectedSelection !== undefined
+    // The API answered the typed selection it was sent: name that explicit
+    // peer set, never the producer-pooled density-class artifact.
+    ? { kind: 'selection', territoryIds: expectedSelection.map((member) => member.territory_id),
+        ...(context?.scope.label ? { label: context.scope.label } : {}) }
+    : context?.scope ?? { kind: 'selection', label: 'Groupe comparé' },
     selectedMemberCount: result.selected_member_count, eligibleCount: result.eligible_count,
     modelZeroReasonCounts: reasons as Record<string, number>, sourceLineage: lineage,
     points: points.map((point) => ({ key: 'raccordement_courbe', detail: point.axis as string,

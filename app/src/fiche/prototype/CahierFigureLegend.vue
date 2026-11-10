@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { FigureLegendEntry } from '../cahierFigureGrammaire'
 import CahierFigureLegendMark from './CahierFigureLegendMark.vue'
+import { AlertTriangle, LoaderCircle } from 'lucide-vue-next'
+import { ref, useId } from 'vue'
 
 const props = defineProps<{
   entries: readonly FigureLegendEntry[]
@@ -13,8 +15,13 @@ const props = defineProps<{
   counts?: Readonly<Record<string, number>>
   chipFills?: Readonly<Record<string, string>>
   chipInks?: Readonly<Record<string, string>>
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'unavailable' | 'error'
+  comparisonError?: string
 }>()
 const emit = defineEmits<{ toggle: [key: string]; activate: [key: string] }>()
+const explanationOpen = ref(false)
+const explanationId = `legend-comparison-help-${useId()}`
+function closeExplanation(event: KeyboardEvent): void { if (event.key === 'Escape') explanationOpen.value = false }
 
 function chipStyle(key: string): Record<string, string> | undefined {
   const fill = props.chipFills?.[key]
@@ -29,7 +36,14 @@ function chipStyle(key: string): Record<string, string> | undefined {
 <template>
   <ul class="cahier-figure-legend" :aria-label="props.label">
     <li v-for="entry in props.entries" :key="entry.key" class="cahier-figure-legend-item" :aria-label="entry.ariaLabel">
-      <button v-if="props.toggleKeys?.includes(entry.key) || entry.persistentToggle" class="cahier-figure-legend-toggle" type="button" :aria-label="entry.ariaLabel" :aria-pressed="props.selectedKeys?.includes(entry.key) ?? false" @click="emit('toggle', entry.key)">
+      <button v-if="['reference', 'comparison'].includes(entry.key) && props.comparisonStatus === 'error'" class="cahier-figure-legend-toggle cahier-figure-legend-comparison-error" type="button" :aria-label="entry.ariaLabel" :aria-expanded="explanationOpen" :aria-describedby="explanationOpen ? explanationId : undefined" @mouseenter="explanationOpen = true" @mouseleave="explanationOpen = false" @focus="explanationOpen = true" @blur="explanationOpen = false" @click="explanationOpen = true" @keydown="closeExplanation">
+        <AlertTriangle aria-hidden="true" /><span class="cahier-figure-legend-label">{{ entry.label }}</span>
+        <span v-if="explanationOpen" :id="explanationId" class="cahier-figure-legend-explanation" role="tooltip">Comparaison indisponible : {{ props.comparisonError || 'la lecture du groupe comparé a échoué.' }}</span>
+      </button>
+      <button v-else-if="['reference', 'comparison'].includes(entry.key) && props.comparisonStatus === 'loading'" class="cahier-figure-legend-toggle" type="button" aria-hidden="true" tabindex="-1" disabled>
+        <LoaderCircle class="cahier-figure-legend-spinner" aria-hidden="true" /><span class="cahier-figure-legend-label">{{ entry.label }}</span>
+      </button>
+      <button v-else-if="props.toggleKeys?.includes(entry.key) || entry.persistentToggle" class="cahier-figure-legend-toggle" type="button" :aria-label="entry.ariaLabel" :aria-pressed="props.selectedKeys?.includes(entry.key) ?? false" @click="emit('toggle', entry.key)">
       <CahierFigureLegendMark
         :entry="entry"
         :icons="props.icons"
@@ -51,6 +65,7 @@ function chipStyle(key: string): Record<string, string> | undefined {
 <style scoped>
 .cahier-figure-legend-toggle {
   display: inline-flex;
+  min-height: 2.75rem;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-2);
@@ -92,6 +107,11 @@ function chipStyle(key: string): Record<string, string> | undefined {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
 }
+.cahier-figure-legend-comparison-error { position: relative; color: var(--status-warning); }
+.cahier-figure-legend-explanation { position: absolute; z-index: 3; bottom: calc(100% + .25rem); left: 0; width: max-content; max-width: min(22rem, 80vw); padding: var(--space-2) var(--space-3); color: var(--text-primary); background: var(--surface-elevated); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-prominent); font: var(--text-body-sm); text-align: left; pointer-events: none; }
+.cahier-figure-legend-spinner { width: 1rem; height: 1rem; animation: legend-comparison-spin .8s linear infinite; }
+@keyframes legend-comparison-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cahier-figure-legend-spinner { animation: none; } }
 
 .cahier-figure-legend-action:hover { background: var(--surface-tertiary); }
 .cahier-figure-legend-action:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
