@@ -134,9 +134,15 @@ _AEDAR_COMPARISON_MANDATORY_FIELDS = {
 def _aedar_comparison_optional_fields(aggregate):
     return _AEDAR_COMPARISON_OPTIONAL_FIELDS | (_AEDAR_AGGREGATE_RANK_FIELDS if aggregate else set())
 
-def _aedar_comparison_field_selection(fields, aggregate=False):
+def _aedar_comparison_field_selection(fields):
+    """Validate one comparison projection; rank fields are selectable in both shapes.
+
+    The aggregate readings keep the rank fields in their default projection
+    (#914), while a fixed per-cell default stays reference-only; that difference
+    lives in `_aedar_comparison_optional_fields`, never in what is selectable.
+    """
     return normalize_field_selection(
-        fields, _aedar_comparison_optional_fields(aggregate) | _AEDAR_AGGREGATE_RANK_FIELDS
+        fields, _AEDAR_COMPARISON_OPTIONAL_FIELDS | _AEDAR_AGGREGATE_RANK_FIELDS
         | _AEDAR_COMPARISON_MANDATORY_FIELDS)
 
 def _aedar_requested_rank_fields(fields, aggregate):
@@ -147,7 +153,7 @@ def _aedar_requested_rank_fields(fields, aggregate):
     the shape #914 established. Per-cell ranks are strictly opt-in, which keeps
     every unranked request byte-equivalent to its pre-#951 response.
     """
-    selected = _aedar_comparison_field_selection(fields, aggregate)
+    selected = _aedar_comparison_field_selection(fields)
     if selected is None:
         return set(_AEDAR_AGGREGATE_RANK_FIELDS) if aggregate else set()
     return set(selected) & _AEDAR_AGGREGATE_RANK_FIELDS
@@ -168,22 +174,25 @@ def _aedar_peer_rank(values, focal_id, direction):
     return (better + 1, len(values),
             sum(1 for value in values.values() if value == focal_value))
 
-def _aedar_per_cell_comparable(value, coverage_status):
-    """The producer's per-cell eligibility law: a finite value on a covered row."""
-    return value is not None and isfinite(value) and coverage_status == "covered"
+def _aedar_cell_value_published(value):
+    """Whether the producer published a comparable value for one per-cell cell.
+
+    This is the selected comparison's law: a finite published value. An
+    uncovered territory row publishes no value (the producer writes NULL when it
+    has no address origin for the cell), while a genuine zero is a real value
+    and stays rankable.
+    """
+    return value is not None and isfinite(value)
 
 def _aedar_fixed_peer_ids_cached(conn, territory_type, territory_id, context, snapshot_state):
     """Resolve the fixed context's peer group once per snapshot state."""
     key = (territory_type, territory_id, context)
-    batch = None
-    if snapshot_state is not None:
-        batch = snapshot_state.setdefault("aedar_fixed_aggregates", {}).setdefault(
-            key, {"measures": [], "rank_measures": [], "peer_ids": None})
-    peer_ids = batch.get("peer_ids") if batch is not None else None
+    cache = snapshot_state.setdefault("aedar_fixed_peer_ids", {}) if snapshot_state is not None else None
+    peer_ids = cache.get(key) if cache is not None else None
     if peer_ids is None:
         peer_ids = _aedar_fixed_peer_ids(conn, territory_type, territory_id, context)
-        if batch is not None:
-            batch["peer_ids"] = peer_ids
+        if cache is not None:
+            cache[key] = peer_ids
     return peer_ids
 
 def _aedar_fixed_cell_rank(conn, territory_type, territory_id, typequ, measure, context,
@@ -194,18 +203,15 @@ def _aedar_fixed_cell_rank(conn, territory_type, territory_id, typequ, measure, 
     per-peer round trips); the peer values come from the same published
     `aedar_territorial_aggregate` snapshot the reference and focal were read in.
     """
-    if facet is None:
-        raise HTTPException(503, "AEDAR comparison facet declaration is incomplete for the requested measures")
     if not facet.get("ranked"):
         return None, None, None
     peer_ids = _aedar_fixed_peer_ids_cached(conn, territory_type, territory_id, context,
                                             snapshot_state)
-    rows = conn.execute("""SELECT territory_id,(measures->>%s)::double precision AS value,
-              coverage_status FROM aedar_territorial_aggregate
+    rows = conn.execute("""SELECT territory_id,(measures->>%s)::double precision AS value
+              FROM aedar_territorial_aggregate
               WHERE territory_type=%s AND territory_id=ANY(%s::text[]) AND typequ=%s""",
         (measure, territory_type, peer_ids, typequ)).fetchall()
-    comparable = {row[0]: row[1] for row in rows
-                  if _aedar_per_cell_comparable(row[1], row[2])}
+    comparable = {row[0]: row[1] for row in rows if _aedar_cell_value_published(row[1])}
     return _aedar_peer_rank(comparable, territory_id, facet["direction"])
 
 
@@ -607,15 +613,19 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
         raise HTTPException(422, "Aggregate readings are registry-wide and take no typequ coordinate")
     if not aggregate and not typequ:
         raise HTTPException(422, "AEDAR per-cell comparison requires one TYPEQU coordinate")
-    facet = None
-    if aggregate:
-        facet = (measure_facets or {}).get(measure)
-        if not facet or not facet.get("ranked"):
-            raise HTTPException(503, "AEDAR comparison facet declaration is incomplete for the requested measures")
-    selected_fields = _aedar_comparison_field_selection(fields, aggregate)
+    selected_fields = _aedar_comparison_field_selection(fields)
     optional_fields = _aedar_comparison_optional_fields(aggregate)
     selected = set(optional_fields) if selected_fields is None else set(selected_fields)
-    wants_rank = bool(_aedar_requested_rank_fields(fields, aggregate))
+    # The rank fields are opt-in per shape: the aggregate default projection
+    # carries them (#914), the per-cell one never does.
+    wants_rank = bool(_AEDAR_AGGREGATE_RANK_FIELDS & selected)
+    facet = (measure_facets or {}).get(measure)
+    # The facet declaration is mandatory whenever this request consults it:
+    # every aggregate reading (which also requires a ranked facet), and a
+    # per-cell reading only when it asks for a rank. An unranked per-cell facet
+    # is not an error - it serves null ranks.
+    if (aggregate or wants_rank) and (facet is None or (aggregate and not facet.get("ranked"))):
+        raise HTTPException(503, "AEDAR comparison facet declaration is incomplete for the requested measures")
     marker = _aedar_comparison_marker(conn)
     territory = conn.execute("SELECT 1 FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
                              (territory_type, territory_id)).fetchone()
@@ -695,9 +705,8 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
         "coverage_status": focal_row[11],
     }
     if wants_rank:
-        declaration = (measure_facets or {}).get(measure)
         rank, rank_size, rank_ties = _aedar_fixed_cell_rank(
-            conn, territory_type, territory_id, typequ, measure, context, declaration,
+            conn, territory_type, territory_id, typequ, measure, context, facet,
             snapshot_state=snapshot_state)
         result.update({"rank": rank, "rank_size": rank_size, "rank_ties": rank_ties})
         for key in _AEDAR_AGGREGATE_RANK_FIELDS - selected:

@@ -227,20 +227,19 @@ class SemanticResourceReader:
                 if known != set(typequ):
                     raise HTTPException(422, "Coordinate value is not present in the published AEDAR descriptor")
             if item.intent.kind == "fixed_comparison":
-                if aggregate:
-                    # One set-wise SQL aggregate over the resolved fixed-context
-                    # peer group (ADR-0021 scope), plus one comparison entry.
+                if aggregate or _aedar_requested_rank_fields(item.fields, aggregate=False):
+                    # One set-wise read over the resolved fixed-context peer
+                    # group (ADR-0021 scope; per-cell ranks #951), plus the
+                    # comparison entry itself. The aggregate batch keeps the
+                    # resolved ids for its multi-measure preparation.
                     peer_ids = _aedar_fixed_peer_ids_cached(
                         conn, item.target.type, item.target.id, item.intent.context,
                         snapshot_state)
-                    return 1 + len(peer_ids)
-                if _aedar_requested_rank_fields(item.fields, aggregate=False):
-                    # Per-cell request-time ranks (#951): one set-wise peer read
-                    # over the resolved fixed-context peer group, never a
-                    # per-peer round trip, plus the comparison entry itself.
-                    peer_ids = _aedar_fixed_peer_ids_cached(
-                        conn, item.target.type, item.target.id, item.intent.context,
-                        snapshot_state)
+                    if aggregate and snapshot_state is not None:
+                        batch = snapshot_state.get("aedar_fixed_aggregates", {}).get(
+                            (item.target.type, item.target.id, item.intent.context))
+                        if batch is not None:
+                            batch["peer_ids"] = peer_ids
                     return 1 + len(peer_ids)
                 return 1
             if item.intent.kind == "selected_comparison":

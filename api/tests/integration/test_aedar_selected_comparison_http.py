@@ -670,10 +670,13 @@ def test_fixed_per_cell_ranks_use_the_declared_context_peer_sets(aedar_http):
     # for A104, so they are ineligible and never zeroed.
     epci = fixed("commune", "sel-c1", "epci")
     assert (epci["rank"], epci["rank_size"], epci["rank_ties"]) == (2, 2, 1)
-    # Bretagne: every Breton commune. sel-c4 is not covered, so it is excluded;
-    # sel-c2 and sel-c3 both read 8.0 behind the focal's 5.0.
+    # Bretagne: every Breton commune. Eligibility is the published finite value
+    # (the selected comparison's law), so sel-c4's published 2.0 is ranked even
+    # though its coverage label is not "covered" - the producer publishes no
+    # value at all for an uncovered row. sel-c5..sel-c8 publish no value here.
+    # sel-c2 and sel-c3 (8.0) are above the focal's 5.0, sel-c4 (2.0) below it.
     bretagne = fixed("commune", "sel-c1", "bretagne")
-    assert (bretagne["rank"], bretagne["rank_size"], bretagne["rank_ties"]) == (3, 3, 1)
+    assert (bretagne["rank"], bretagne["rank_size"], bretagne["rank_ties"]) == (3, 4, 1)
     # Density class: the producer-published D1 reference plus D1's communes.
     density = fixed("commune", "sel-c1", "density_class")
     assert density["statistic"] == "pooled" and density["group_value"] == 7.4

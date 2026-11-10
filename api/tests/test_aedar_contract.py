@@ -175,7 +175,7 @@ def test_fixed_aggregate_reads_peer_population_only_when_rank_is_requested(
 
     result = aedar_reads._aedar_fixed_aggregate_snapshot(
         Connection(), "commune", "35238", "density_class", "meanDiversity",
-        facet, (set(aedar_reads._aedar_comparison_field_selection(fields, aggregate=True))
+        facet, (set(aedar_reads._aedar_comparison_field_selection(fields))
                 if fields is not None else set(aedar_reads._aedar_comparison_optional_fields(True))), marker)
     comparison = result["comparison"]
 
@@ -1104,8 +1104,8 @@ class _AedarSelectedConnection:
                     if record is not None:
                         break
                 if record is not None:
-                    rows.append((code, record["measures"].get(measure), record["coverage"]))
-            return _AedarSelectedRows(["territory_id", "value", "coverage_status"], rows)
+                    rows.append((code, record["measures"].get(measure)))
+            return _AedarSelectedRows(["territory_id", "value"], rows)
         if "territory_id=ANY(%s::text[]) AND typequ=ANY" in s:
             # Member aggregate rows projected over the requested measures.
             measures, _ttype, ids, typequs = params
@@ -1644,13 +1644,14 @@ def test_aedar_fixed_per_cell_rank_ties_and_eligibility():
     state["aggregates"][("focal", "22002")]["A104"]["measures"]["count_5_walk_mean"] = 5.0
     tied = _aedar_fixed_cell(_AedarSelectedConnection(state), fields=rank_fields)
     assert (tied["rank"], tied["rank_size"], tied["rank_ties"]) == (1, 2, 2)
-    # A peer whose row is not covered is unavailable: excluded from the rank
-    # population, never converted to zero and never ranked.
+    # A genuine zero is a published value and stays rankable: it is the worst
+    # reading on a high-is-better facet, never mistaken for unavailable.
     state = _aedar_fixed_cell_state()
-    state["aggregates"][("focal", "22002")]["A104"]["coverage"] = "uncovered_no_address_origins"
-    uncovered = _aedar_fixed_cell(_AedarSelectedConnection(state), fields=rank_fields)
-    assert (uncovered["rank"], uncovered["rank_size"], uncovered["rank_ties"]) == (1, 1, 1)
-    # A peer with no published value for the measure is equally ineligible.
+    state["aggregates"][("focal", "22002")]["A104"]["measures"]["count_5_walk_mean"] = 0.0
+    zero = _aedar_fixed_cell(_AedarSelectedConnection(state), fields=rank_fields)
+    assert (zero["rank"], zero["rank_size"], zero["rank_ties"]) == (1, 2, 1)
+    # A peer with no published value for the cell is ineligible: excluded from
+    # the rank population, never zeroed (an uncovered row publishes no value).
     state = _aedar_fixed_cell_state()
     state["aggregates"][("focal", "22002")]["A104"]["measures"].pop("count_5_walk_mean")
     missing = _aedar_fixed_cell(_AedarSelectedConnection(state), fields=rank_fields)
