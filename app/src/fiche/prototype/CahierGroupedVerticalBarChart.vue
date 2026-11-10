@@ -253,5 +253,5 @@ function categoryHitboxStyle(index: number): Record<string, string> {
 .cahier-grouped-vertical-bar-chart__hitboxes { position: absolute; inset: 0; }
 .cahier-grouped-vertical-bar-chart__category-hitbox { position: absolute; display: block; margin: 0; padding: 0; border: 0; background: transparent; cursor: help; }
 .cahier-grouped-vertical-bar-chart__category-hitbox:hover, .cahier-grouped-vertical-bar-chart__category-hitbox:focus-visible { outline: 1px solid color-mix(in srgb, var(--cahier-theme-strong) 34%, transparent); outline-offset: -1px; }
-.cahier-grouped-vertical-bar-chart__tooltip { width: min(290px, calc(100% - 24px)); pointer-events: none; }
+.cahier-grouped-vertical-bar-chart__tooltip { width: min(300px, calc(100vw - 32px)); pointer-events: none; }
 </style>

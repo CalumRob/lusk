@@ -72,7 +72,7 @@ function rowAriaLabel(row: CahierTooltipRow): string {
             :style="row.markerColor ? { background: row.markerColor } : undefined"
             aria-hidden="true"
           />
-          {{ row.label }}
+          <span class="cahier-figure-tooltip-label">{{ row.label }}</span>
         </dt>
         <dd>{{ row.value }}</dd>
         <dd v-if="row.comparison" class="cahier-figure-tooltip-row-comparison">
