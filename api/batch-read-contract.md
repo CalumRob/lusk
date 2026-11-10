@@ -126,8 +126,9 @@ The focal receives
 `rank`, `rank_size` and `rank_ties` (opt-in via `fields`) only when it is itself
 a member and the measure's producer-declared facet is ranked: a direction-aware
 flat ordinal within the selection, ties sharing the rank, using the declared
-per-measure facets/directions (`measure_facets` in the catalogue). Curve
-readings (min/max/deciles) return their group mean with null rank fields. One
+per-measure facets/directions (`measure_facets` in the catalogue). Unranked
+curve readings (min/max) return their group mean with null rank fields; decile
+curve readings are ranked since the 2026-11-10 owner decision (#948). One
 request reads one committed repeatable-read snapshot; no peer/rank rows are
 published (#810 stance intact).
 

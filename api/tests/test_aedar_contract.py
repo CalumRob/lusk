@@ -673,8 +673,9 @@ def test_aedar_measure_facets_cover_every_registered_measure_with_declared_direc
         assert facet["direction"] in ("high", "low")
         assert isinstance(facet["ranked"], bool)
         # ADR-0015 conventions: diversity and volume readings are
-        # higher-is-better and carry selection rank chips; per-cell curve
-        # readings show their group mean and are never ranked.
+        # higher-is-better and carry selection rank chips; decile curve
+        # readings are ranked since the 2026-11-10 owner decision (#948),
+        # while min/max curve readings show their group mean unranked.
         if measure in AEDAR_AGGREGATE_READINGS:
             # Registry-wide overview aggregate readings (#914): the diversity
             # and volume sums over the complete TYPEQU registry are ranked
@@ -687,8 +688,14 @@ def test_aedar_measure_facets_cover_every_registered_measure_with_declared_direc
             assert facet == {"facet": "diversity", "direction": "high", "ranked": True}
         elif statistic == "mean":
             assert facet == {"facet": "volume", "direction": "high", "ranked": True}
+        elif statistic.startswith("decile"):
+            assert facet == {"facet": "distribution", "direction": "high", "ranked": True}
         else:
             assert facet == {"facet": "distribution", "direction": "high", "ranked": False}
+    # Positive pin for the ranked decile contract (#948): a distribution-curve
+    # decile measure carries a selection rank while its min/max siblings do not.
+    assert resource.measure_facets["count_5_walk_decile1"]["ranked"] is True
+    assert resource.measure_facets["count_5_walk_min"]["ranked"] is False
     public = next(item for item in catalogue.discovery_payload()["resources"]
                   if item["resource_id"] == "aedar_territorial_aggregate")
     assert set(public["measure_facets"]) == expected
@@ -1261,8 +1268,9 @@ def _aedar_selected_state():
 
 def _aedar_facets():
     # Mirror the declared producer taxonomy exactly: share -> diversity,
-    # mean -> volume (both ranked, higher-is-better); min/max/deciles ->
-    # distribution curve readings, never ranked; the registry-wide aggregate
+    # mean -> volume (both ranked, higher-is-better); deciles -> ranked
+    # distribution facets (owner decision 2026-11-10, #948); min/max ->
+    # unranked distribution curve readings; the registry-wide aggregate
     # readings (#914) are ranked high-is-better diversity/volume facets.
     from api.aedar_models import AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS
     facets = {}
@@ -1272,6 +1280,8 @@ def _aedar_facets():
             facets[measure] = {"facet": "diversity", "direction": "high", "ranked": True}
         elif statistic == "mean":
             facets[measure] = {"facet": "volume", "direction": "high", "ranked": True}
+        elif statistic.startswith("decile"):
+            facets[measure] = {"facet": "distribution", "direction": "high", "ranked": True}
         else:
             facets[measure] = {"facet": "distribution", "direction": "high", "ranked": False}
     for reading in AEDAR_AGGREGATE_READINGS:
@@ -1308,11 +1318,12 @@ def test_aedar_selected_comparison_returns_weighted_mean_ranks_and_curve_cells()
     assert scalar["value"] == 5.0 and scalar["status"] == "measured"
     # Direction-aware focal rank, ties share the rank: values 5, 8, 8 -> 3e/3.
     assert (scalar["rank"], scalar["rank_size"], scalar["rank_ties"]) == (3, 3, 1)
-    # Per-cell curve readings get the same weighted mean but no rank chips.
+    # Per-cell decile curve readings get the same weighted mean and, since
+    # deciles are ranked (#948), a direction-aware focal rank: 1.0, 2.0, 4.0.
     curve = by_cell[("A104", "count_5_walk_decile1")]
     assert curve["group_value"] == pytest.approx(2.2)
     assert curve["comparison_facet"] == "distribution"
-    assert curve["rank"] is None and curve["rank_size"] is None and curve["rank_ties"] is None
+    assert (curve["rank"], curve["rank_size"], curve["rank_ties"]) == (3, 3, 1)
     assert by_cell[("B207", "count_5_walk_mean")]["group_value"] == pytest.approx(
         (2*10 + 4*30 + 4*10) / 50)
     # Field projection drops the unselected optional fields.
