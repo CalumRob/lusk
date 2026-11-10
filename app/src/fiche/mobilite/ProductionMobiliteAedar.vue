@@ -26,7 +26,6 @@ const props = defineProps<{
   aedarReferenceTerritoire?: { type: AedarTerritoryType; id: string; nom: string } | null
   aedarReferenceData?: AedarSummaryFetchResult | null
   aedarReferenceStatus?: 'unavailable' | 'loading' | 'ready' | 'error'
-  retryAedarReference?: () => void
   nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
   nativeComparisonError?: string
   retryNativeComparison?: () => void
@@ -47,19 +46,17 @@ const comparison = ref<AedarComparisonEvidence | null>(null)
 const comparisonState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const comparisonError = ref('')
 const comparisonRetry = ref(0)
-const directReferenceExpected = computed(() => Boolean(props.aedarReferenceTerritoire &&
-  control.value?.selection.etat !== 'vide' && control.value?.selection.etat !== 'membres' &&
-  (comparisonRequest.value?.intent.kind !== 'fixed_comparison' || comparisonRequest.value.intent.context !== 'density_class')))
 const displayedComparisonStatus = computed<'idle' | 'loading' | 'ready' | 'error'>(() => {
-  if (comparisonState.value === 'error' || (directReferenceExpected.value && props.aedarReferenceStatus === 'error')) return 'error'
-  if (comparisonState.value === 'loading' || (directReferenceExpected.value && props.aedarReferenceStatus === 'loading')) return 'loading'
+  // The visible overview values/ranks consume the aggregate comparison read.
+  // A separately loaded territory summary is not that figure's source.
+  if (comparisonState.value === 'error') return 'error'
+  if (comparisonState.value === 'loading') return 'loading'
   return comparisonState.value
 })
 const displayedComparisonError = computed(() => comparisonState.value === 'error'
   ? comparisonError.value : 'La référence territoriale du groupe comparé est indisponible.')
 function retryFailedComparisons(): void {
   if (comparisonState.value === 'error') comparisonRetry.value++
-  if (directReferenceExpected.value && props.aedarReferenceStatus === 'error') props.retryAedarReference?.()
 }
 const comparisonFocalIdentity = computed(() => props.aedarSummaryData?.status === 'ready'
   ? JSON.stringify([props.content.territory.type, props.content.territory.code,

@@ -48,7 +48,7 @@ const props = defineProps<{
   territoire: string
   metadataStatus?: 'loading' | 'ready' | 'error'
   retryMetadata?: () => void
-  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   retryComparison?: () => void
 }>()
 
@@ -241,7 +241,9 @@ const lienProvenance = computed(() => {
         </template>
       </section>
     </template>
-    <button v-if="props.comparisonStatus === 'error'" class="programmes-comparison-retry" type="button" @click="props.retryComparison?.()">Réessayer les comparaisons</button>
+    <p v-if="props.comparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons de cette section.</p>
+    <p v-if="props.comparisonStatus === 'unavailable'" class="comparison-unavailable-note" role="note">Comparaison indisponible : identité du groupe non résolue.</p>
+    <div class="comparison-retry-slot"><button v-if="props.comparisonStatus === 'error'" class="programmes-comparison-retry" type="button" @click="props.retryComparison?.()">Réessayer les comparaisons</button></div>
   </article>
 </template>
 
@@ -254,7 +256,13 @@ const lienProvenance = computed(() => {
   flex-direction: column;
   gap: var(--space-8);
 }
-.programmes-comparison-retry { align-self: flex-end; min-height: 2.75rem; padding: 0 var(--space-3); border: 0; background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
+.comparison-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.comparison-unavailable-note { color: var(--text-secondary); font: var(--text-body-sm); }
+.comparison-retry-slot { min-height: 3.25rem; display: flex; justify-content: flex-end; align-items: center; }
+.programmes-comparison-retry { min-height: 2.75rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
+.programmes-comparison-retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
+.programmes-comparison-retry:active { background: var(--border-subtle); }
+.programmes-comparison-retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
 
 .sous-groupe {
   display: flex;

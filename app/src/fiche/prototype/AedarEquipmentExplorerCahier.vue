@@ -345,7 +345,10 @@ function chooseType(fact: AedarFact): void {
 .aedar-equipment-explorer :deep(button:focus-visible), .aedar-equipment-explorer :deep(input:focus-visible) { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 .aedar-equipment-explorer :deep(.aedar-equipment-explorer-modes) { justify-content: center; margin: 0; }
 .aedar-equipment-explorer :deep(.cahier-figure-legend-toggle) { min-height: 36px; }
-.aedar-equipment-explorer-retry { justify-self: end; min-height: 2.75rem; padding: 0 var(--space-3); border: 0; background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
+.aedar-equipment-explorer-retry { justify-self: end; min-height: 2.75rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
+.aedar-equipment-explorer-retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
+.aedar-equipment-explorer-retry:active { background: var(--border-subtle); }
+.aedar-equipment-explorer-retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
 .aedar-equipment-explorer-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--space-8); }
 /* Match the shared Cahier mobile boundary rather than the generic 768px breakpoint. */
 @media (max-width: 760px) {

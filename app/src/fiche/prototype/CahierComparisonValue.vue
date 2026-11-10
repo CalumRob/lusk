@@ -64,7 +64,7 @@ function comparisonAccessibleName(): string {
       <strong class="region-emphasis">{{ comparisonText() }}</strong>
       <CahierRank v-if="(namedReference && servedRank) || (!namedReference && fact)" :fact="fact" :served-rank="servedRank" placement="comparison" decorative />
     </component>
-    <span v-if="comparisonStatus === 'loading'" class="cahier-comparison-value__state" role="status" aria-label="Chargement du groupe comparé"><LoaderCircle class="cahier-comparison-value__spinner" aria-hidden="true" /></span>
+    <span v-if="comparisonStatus === 'loading'" class="cahier-comparison-value__state" aria-hidden="true"><LoaderCircle class="cahier-comparison-value__spinner" /></span>
     <span v-if="comparisonStatus === 'error'" class="cahier-comparison-value__state">
       <button class="cahier-comparison-value__warning" type="button" aria-label="Groupe comparé indisponible. Afficher l’explication" :aria-expanded="explanationOpen" :aria-describedby="explanationOpen ? explanationId : undefined" @mouseenter="explanationOpen = true" @mouseleave="explanationOpen = false" @focus="explanationOpen = true" @blur="explanationOpen = false" @click="explanationOpen = true" @keydown="closeExplanation"><AlertTriangle aria-hidden="true" /></button>
       <span v-if="explanationOpen" :id="explanationId" class="cahier-comparison-value__explanation" role="tooltip">Comparaison indisponible : {{ comparisonError || 'la lecture du groupe comparé a échoué.' }}</span>

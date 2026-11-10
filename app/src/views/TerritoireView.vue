@@ -137,7 +137,6 @@ const aedarReferenceData = ref<AedarSummaryFetchResult | null>(null)
 const aedarReferenceStatus = ref<'unavailable' | 'loading' | 'ready' | 'error'>('unavailable')
 const retryAedarCount = ref(0)
 const retryAedarSummaryCount = ref(0)
-const retryAedarReferenceCount = ref(0)
 function retryAedar(): void { retryAedarCount.value++ }
 watch([productionMobilite, typeRoute, idRoute, retryAedarSummaryCount], async ([active, type, id], _old, onCleanup) => {
   if (!active || !['commune','epci','departement','region'].includes(type)) {
@@ -212,7 +211,7 @@ const preuvesThemeIndisponibles = ref(false)
 const histoiresNuageDemographie = ref<Histoire[]>([])
 const histoiresNuageMilieux = ref<Histoire[]>([])
 const statutAcquisition = ref<'loading' | 'ready' | 'error'>('loading')
-const statutComparaison = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const statutComparaison = ref<'idle' | 'loading' | 'ready' | 'error' | 'unavailable'>('idle')
 const retryAcquisition = ref(0)
 const retryThemeComparaison = ref(0)
 let sequenceAcquisition = 0
@@ -416,17 +415,9 @@ const aedarReferenceKey = computed(() => {
 })
 function retryAedarSummary(): void {
   invalidateAedarTerritorySummary(typeRoute.value as AedarTerritoryType, idRoute.value)
-  const reference = aedarReferenceTerritoire.value
-  if (reference) invalidateAedarTerritorySummary(reference.type, reference.id)
   retryAedarSummaryCount.value++
 }
-function retryAedarReference(): void {
-  const reference = aedarReferenceTerritoire.value
-  if (!reference) return
-  invalidateAedarTerritorySummary(reference.type, reference.id)
-  retryAedarReferenceCount.value++
-}
-watch([productionMobilite, aedarReferenceKey, retryAedarReferenceCount], async ([active, key], _old, onCleanup) => {
+watch([productionMobilite, aedarReferenceKey], async ([active, key], _old, onCleanup) => {
   if (!active || !key) { aedarReferenceData.value = null; aedarReferenceStatus.value = 'unavailable'; return }
   let cancelled = false; onCleanup(() => { cancelled = true })
   aedarReferenceStatus.value = 'loading'; aedarReferenceData.value = null
@@ -575,7 +566,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
       return
     }
     const target = reference.find((item) => item.territoire === code)
-    if (!target || target.type !== typeRoute.value) { statutComparaison.value = 'idle'; return }
+    if (!target || target.type !== typeRoute.value) { statutComparaison.value = 'unavailable'; return }
     const themeActif = theme as Theme
     const request = ++sequenceComparaison
     let cancelled = false
@@ -591,7 +582,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
     if (selectionMembres === null) {
       // Une sélection nommée sans identité résoluble est indisponible,
       // jamais une sélection vide ni le contexte fixe par défaut.
-      statutComparaison.value = 'error'
+      statutComparaison.value = 'unavailable'
       return
     }
     try {
@@ -1002,7 +993,6 @@ watch(
               :aedar-data="aedarData" :aedar-status="aedarStatus" :retry-aedar="retryAedar"
               :aedar-summary-data="aedarSummaryData" :aedar-summary-status="aedarSummaryStatus"
               :retry-aedar-summary="retryAedarSummary"
-              :retry-aedar-reference="retryAedarReference"
               :aedar-reference-territoire="aedarReferenceTerritoire" :aedar-reference-data="aedarReferenceData"
               :aedar-reference-status="aedarReferenceStatus"
               :native-comparison-status="mobilityComparisonStatus"

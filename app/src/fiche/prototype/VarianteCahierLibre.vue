@@ -509,7 +509,7 @@ onBeforeUnmount(() => {
                         </template>
                       </CahierFigureScalar>
                     </div>
-                    <button v-if="props.comparisonStatus === 'error'" class="aedar-comparison-retry" type="button" @click="props.retryComparison?.()">Réessayer</button>
+                    <div class="aedar-comparison-retry-slot"><button v-if="props.comparisonStatus === 'error'" class="aedar-comparison-retry" type="button" @click="props.retryComparison?.()">Réessayer les comparaisons</button></div>
                   </figure>
                 </aside>
               </section>
@@ -804,6 +804,8 @@ onBeforeUnmount(() => {
         @choisir="controleComparaison.choisir"
       />
     </div>
+    <p v-if="props.comparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons AEDAR.</p>
+    <p v-if="props.nativeComparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons de mobilité.</p>
   </article>
 </template>
 
@@ -970,7 +972,12 @@ onBeforeUnmount(() => {
 .aedar-car-overview-copy { display: grid; gap: var(--space-3); }
 .aedar-car-overview-copy .argument-copy { margin: 0; }
 .aedar-car-overview-scalars { --cahier-figure-title-gap: var(--space-6); width: 100%; margin: 0; }
-.aedar-comparison-retry { display: block; margin: var(--space-2) 0 0 auto; min-height: 2.75rem; padding: 0 var(--space-3); border: 0; background: transparent; color: var(--text-secondary); text-decoration: underline; cursor: pointer; }
+.comparison-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.aedar-comparison-retry-slot { min-height: 3.25rem; display: flex; justify-content: flex-end; align-items: center; }
+.aedar-comparison-retry { min-height: 2.75rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
+.aedar-comparison-retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
+.aedar-comparison-retry:active { background: var(--border-subtle); }
+.aedar-comparison-retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
 @media (max-width: 760px) { .aedar-analysis { grid-template-columns: minmax(0, 1fr); } }
 .concept-group {
   container: subgroup / inline-size;

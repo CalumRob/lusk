@@ -40,7 +40,7 @@ function chipStyle(key: string): Record<string, string> | undefined {
         <AlertTriangle aria-hidden="true" /><span class="cahier-figure-legend-label">{{ entry.label }}</span>
         <span v-if="explanationOpen" :id="explanationId" class="cahier-figure-legend-explanation" role="tooltip">Comparaison indisponible : {{ props.comparisonError || 'la lecture du groupe comparé a échoué.' }}</span>
       </button>
-      <button v-else-if="['reference', 'comparison'].includes(entry.key) && props.comparisonStatus === 'loading'" class="cahier-figure-legend-toggle" type="button" :aria-label="'Chargement du groupe comparé'" disabled>
+      <button v-else-if="['reference', 'comparison'].includes(entry.key) && props.comparisonStatus === 'loading'" class="cahier-figure-legend-toggle" type="button" aria-hidden="true" tabindex="-1" disabled>
         <LoaderCircle class="cahier-figure-legend-spinner" aria-hidden="true" /><span class="cahier-figure-legend-label">{{ entry.label }}</span>
       </button>
       <button v-else-if="props.toggleKeys?.includes(entry.key) || entry.persistentToggle" class="cahier-figure-legend-toggle" type="button" :aria-label="entry.ariaLabel" :aria-pressed="props.selectedKeys?.includes(entry.key) ?? false" @click="emit('toggle', entry.key)">

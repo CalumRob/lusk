@@ -96,7 +96,7 @@ describe('Rang de la sélection — valeur du Groupe comparé', () => {
   it('garde la case comparaison stable pendant le chargement et expose une explication hover/focus/tap distincte du retry', async () => {
     const wrapper = mount(CahierComparisonValue, { props: { comparisonStatus: 'loading' } })
     const pendingBox = wrapper.get('.cahier-comparison-value__state').element.getBoundingClientRect()
-    expect(wrapper.get('[role="status"]').attributes('aria-label')).toBe('Chargement du groupe comparé')
+    expect(wrapper.get('.cahier-comparison-value__spinner').element.closest('[aria-hidden="true"]')).not.toBeNull()
     await wrapper.setProps({ comparisonStatus: 'error', comparisonError: 'lecture refusée' })
     const failedBox = wrapper.get('.cahier-comparison-value__state').element.getBoundingClientRect()
     expect(failedBox.width).toBe(pendingBox.width)

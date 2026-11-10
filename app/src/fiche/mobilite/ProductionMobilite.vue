@@ -12,7 +12,6 @@ defineProps<{
   aedarSummaryData: AedarSummaryFetchResult | null
   aedarSummaryStatus: 'loading' | 'ready' | 'error'
   retryAedarSummary: () => void
-  retryAedarReference?: () => void
   aedarReferenceTerritoire?: { type: AedarTerritoryType; id: string; nom: string } | null
   aedarReferenceData?: AedarSummaryFetchResult | null
   aedarReferenceStatus?: 'unavailable' | 'loading' | 'ready' | 'error'
@@ -31,7 +30,6 @@ defineProps<{
     :aedar-summary-data="aedarSummaryData"
     :aedar-summary-status="aedarSummaryStatus"
     :retry-aedar-summary="retryAedarSummary"
-    :retry-aedar-reference="retryAedarReference"
     :aedar-reference-territoire="aedarReferenceTerritoire"
     :aedar-reference-data="aedarReferenceData"
     :aedar-reference-status="aedarReferenceStatus"

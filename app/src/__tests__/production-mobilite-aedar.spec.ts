@@ -903,6 +903,76 @@ describe('ProductionMobiliteAedar', () => {
     wrapper.unmount()
   })
 
+  it.each(['loading', 'error'] as const)('does not let an independent reference-summary %s mask successful aggregate values and ranks', async (referenceStatus) => {
+    const content = baseContent()
+    const control = ref<ControleComparaison>({ selection: { etat: 'preset', preset: 'epci' },
+      focal: territoiresFixture.find((territory) => territory.territoire === content.territory.code) ?? territoiresFixture[0]!,
+      territoires: territoiresFixture, libelleActif: 'EPCI X', presetDefaut: 'epci', presets: [], choisir: () => {} })
+    vi.mocked(fetchAedarComparison).mockResolvedValueOnce({ status: 'ready', evidence: {
+      label: 'Moyenne — EPCI X', contentVersion: aedarSummaryReady.summary.aedarContentVersion,
+      summaryContentVersion: aedarSummaryReady.summary.summaryContentVersion,
+      aedarContentVersion: aedarSummaryReady.summary.aedarContentVersion,
+      referenceContentVersion: aedarReady.referenceContentVersion,
+      cells: ['meanDiversity', 'meanVolume'].map((measure) => ({ typequ: null, measure,
+        source_id: 'aedar_bretagne', vintage_id: '2026-v1', reference_date: '2026-01-01', publication_date: '2026-09-30',
+        group_value: 2.5, group_coverage_status: 'covered', group_n_addresses: 100, group_n_observed: 90,
+        statistic: 'pooled', rank: 2, rank_size: 41, rank_ties: 1, direction: 'high' as const })),
+    } })
+    const wrapper = mount(ProductionMobiliteAedar, { props: {
+      content, pagination: cahierPaginationFor(payload, content), aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+      aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
+      aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' }, aedarReferenceData: null,
+      aedarReferenceStatus: referenceStatus,
+    }, global: { plugins: [createRouter({ history: createMemoryHistory(), routes })],
+      provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { ConstructeurComparaison: true, MembresComparaison: true } } })
+    await flushPromises()
+    const overview = wrapper.get('[data-section="aedar-car-overview"]')
+    expect(wrapper.findComponent(VarianteCahierLibre).props('comparisonStatus')).toBe('ready')
+    expect(overview.findAll('.cahier-comparison-value__warning')).toHaveLength(0)
+    expect(overview.findAll('.cahier-comparison-value__spinner')).toHaveLength(0)
+    expect(overview.text()).toContain('Groupe comparé : 2,5')
+    expect(overview.findAll('.cahier-rank')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('keeps a valid direct reference visible but reports a failed aggregate rank read until the aggregate retry succeeds', async () => {
+    const content = baseContent()
+    const control = ref<ControleComparaison>({ selection: { etat: 'preset', preset: 'epci' },
+      focal: territoiresFixture.find((territory) => territory.territoire === content.territory.code) ?? territoiresFixture[0]!,
+      territoires: territoiresFixture, libelleActif: 'EPCI X', presetDefaut: 'epci', presets: [], choisir: () => {} })
+    vi.mocked(fetchAedarComparison).mockResolvedValueOnce({ status: 'error', message: 'aggregate rank read failed' })
+    const wrapper = mount(ProductionMobiliteAedar, { props: {
+      content, pagination: cahierPaginationFor(payload, content), aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+      aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
+      aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' },
+      aedarReferenceData: aedarSummaryReferenceReady, aedarReferenceStatus: 'ready',
+    }, global: { plugins: [createRouter({ history: createMemoryHistory(), routes })],
+      provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { ConstructeurComparaison: true, MembresComparaison: true } } })
+    await flushPromises()
+    const overview = wrapper.get('[data-section="aedar-car-overview"]')
+    expect(wrapper.findComponent(VarianteCahierLibre).props('comparisonStatus')).toBe('error')
+    expect(overview.text()).toContain('Groupe comparé')
+    expect(overview.findAll('.cahier-comparison-value__warning').length).toBeGreaterThan(0)
+    expect(overview.findAll('.cahier-rank')).toHaveLength(0)
+    vi.mocked(fetchAedarComparison).mockResolvedValueOnce({ status: 'ready', evidence: {
+      label: 'Moyenne — EPCI X', contentVersion: aedarSummaryReady.summary.aedarContentVersion,
+      summaryContentVersion: aedarSummaryReady.summary.summaryContentVersion,
+      aedarContentVersion: aedarSummaryReady.summary.aedarContentVersion,
+      referenceContentVersion: aedarSummaryReady.summary.referenceContentVersion,
+      cells: ['meanDiversity', 'meanVolume'].map((measure) => ({ typequ: null, measure,
+        source_id: 'aedar_bretagne', vintage_id: '2026-v1', reference_date: '2026-01-01', publication_date: '2026-09-30',
+        group_value: 2.5, group_coverage_status: 'covered', group_n_addresses: 100, group_n_observed: 90,
+        statistic: 'pooled', rank: 2, rank_size: 41, rank_ties: 1, direction: 'high' as const })),
+    } })
+    wrapper.findComponent(VarianteCahierLibre).props('retryComparison')!()
+    await flushPromises()
+    const recovered = wrapper.get('[data-section="aedar-car-overview"]')
+    expect(wrapper.findComponent(VarianteCahierLibre).props('comparisonStatus')).toBe('ready')
+    expect(recovered.findAll('.cahier-comparison-value__warning')).toHaveLength(0)
+    expect(recovered.findAll('.cahier-rank')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
   it('keeps the cahier stable without a loading banner while AEDAR data loads', async () => {
     const content = baseContent()
     const router = createRouter({ history: createMemoryHistory(), routes })

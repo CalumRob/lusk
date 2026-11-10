@@ -184,6 +184,25 @@ describe('figures des unités Mobilité ajoutées', () => {
     expect(riderFigure.text()).toContain('Courbe non calculable')
   })
 
+  it('associe la légende d’erreur de comparaison à son infobulle accessible', async () => {
+    const published = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
+    const metadata = published.indicator_pages.raccordement_courbe
+    const wrapper = mount(CahierOffreTransportsFigure, { props: {
+      offer: null, trajectory: [
+        contentFact('raccordement_courbe', 't0000', .1, '0'),
+        contentFact('raccordement_courbe', 't0090', .7, '1 h 30'),
+      ], metadata: metadata.trajectory,
+      comparisonStatus: 'error', comparisonError: 'lecture refusée',
+    } })
+    const trigger = wrapper.get('.transit-comparison-warning')
+    await trigger.trigger('focus')
+    const tooltip = wrapper.get('[role="tooltip"]')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    expect(trigger.attributes('aria-describedby')).toBe(tooltip.attributes('id'))
+    expect(tooltip.text()).toContain('lecture refusée')
+    wrapper.unmount()
+  })
+
   it('plots the payload-labeled household composition as separate bars with exact share values', () => {
     const composition = [
       contentFact('voitures_menage', 'sans_voiture', 0.25, 'Ménages sans voiture'),

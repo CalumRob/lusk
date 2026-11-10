@@ -26,7 +26,7 @@ const props = defineProps<{
   reference?: Indicateur[]
   referenceLabel?: string
   nom?: string
-  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   comparisonError?: string
 }>()
 
@@ -305,7 +305,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
         <span class="trajectoire-legende-trait trajectoire-legende-trait--reference" aria-hidden="true" />
         Trait tireté : {{ referenceText }}
       </span>
-      <span v-else-if="(comparisonStatus === 'loading' || comparisonStatus === 'error') && premiere" class="trajectoire-legende-item">
+      <span v-else-if="(comparisonStatus === 'loading' || comparisonStatus === 'error' || comparisonStatus === 'unavailable') && premiere" class="trajectoire-legende-item">
         <ValeurComparaison :ligne="premiere" :status="comparisonStatus" :error="comparisonError" />
       </span>
     </div>

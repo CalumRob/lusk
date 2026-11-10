@@ -47,7 +47,7 @@ const props = defineProps<{
   nom?: string
   large?: boolean
   signe?: boolean
-  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   comparisonError?: string
 }>()
 

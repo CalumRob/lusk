@@ -42,7 +42,7 @@ const props = defineProps<{
   direction?: DirectionRang | null
   /** The territory name used by the approved raccordement sentence (#487). */
   nomTerritoire?: string
-  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   comparisonError?: string
 }>()
 
@@ -164,7 +164,7 @@ const segments = computed<Segment[]>(() => {
           <span class="tranche-libelle">{{ labelsDetail?.[ligne.detail ?? ''] }}</span>
           <span class="tranche-valeur">{{ formaterValeur(ligne) ?? '—' }}</span>
           <span v-if="ligne.unit" class="tranche-unite">{{ ligne.unit }}</span>
-          <ValeurComparaison v-if="ligne.comparaisonApi?.reference || comparisonStatus === 'loading' || comparisonStatus === 'error'" :ligne="ligne" :status="comparisonStatus" :error="comparisonError" />
+          <ValeurComparaison v-if="ligne.comparaisonApi?.reference || comparisonStatus === 'loading' || comparisonStatus === 'error' || comparisonStatus === 'unavailable'" :ligne="ligne" :status="comparisonStatus" :error="comparisonError" />
         </li>
       </ul>
     </div>
@@ -177,7 +177,7 @@ const segments = computed<Segment[]>(() => {
     <p v-if="phrase" class="figure-indicateur-prose">{{ phrase }}</p>
     <figcaption class="figure-indicateur-libelle">{{ libelle }}</figcaption>
     <p v-if="premiere?.rider" class="figure-indicateur-rider">{{ premiere.rider }}</p>
-    <ValeurComparaison v-if="!multi && (premiere?.comparaisonApi?.reference || comparisonStatus === 'loading' || comparisonStatus === 'error')" :ligne="premiere!" :status="comparisonStatus" :error="comparisonError" />
+    <ValeurComparaison v-if="!multi && (premiere?.comparaisonApi?.reference || comparisonStatus === 'loading' || comparisonStatus === 'error' || comparisonStatus === 'unavailable')" :ligne="premiere!" :status="comparisonStatus" :error="comparisonError" />
     <PuceRang v-else-if="puce && !multi" :puce="puce" />
     <p v-if="vintage" class="estampille-vintage">{{ vintage }}</p>
   </figure>
