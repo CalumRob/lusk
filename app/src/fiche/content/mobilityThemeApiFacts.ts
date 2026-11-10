@@ -318,8 +318,7 @@ function selectedTrajectoryComparison(
     // peer set, never the producer-pooled density-class artifact.
     ? { kind: 'selection', territoryIds: expectedSelection.map((member) => member.territory_id),
         ...(context?.scope.label ? { label: context.scope.label } : {}) }
-    : context?.scope ?? { kind: 'selection',
-      territoryIds: expectedSelection?.map((member) => member.territory_id), label: 'Groupe comparé' },
+    : context?.scope ?? { kind: 'selection', label: 'Groupe comparé' },
     selectedMemberCount: result.selected_member_count, eligibleCount: result.eligible_count,
     modelZeroReasonCounts: reasons as Record<string, number>, sourceLineage: lineage,
     points: points.map((point) => ({ key: 'raccordement_courbe', detail: point.axis as string,

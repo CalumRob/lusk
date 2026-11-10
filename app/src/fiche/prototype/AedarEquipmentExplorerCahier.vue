@@ -41,6 +41,8 @@ const selectedDetail = ref<AedarFact | null>(null)
 const detailStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const detailRetry = ref(0)
 const retryDetail = () => { detailRetry.value += 1 }
+const comparisonRetry = ref(0)
+const retryComparison = () => { comparisonRetry.value += 1 }
 let detailRequest = 0
 const selectedBaseFact = computed(() => props.evidence.facts.find((fact) => fact.typequ === selectedTypequ.value) ?? null)
 const detailComparison = ref<AedarComparisonEvidence | null>(null)
@@ -49,7 +51,7 @@ const comparisonStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const comparisonError = ref('')
 const comparisonIdentity = computed(() => JSON.stringify([selectedTypequ.value, props.evidence.contentVersion,
   props.evidence.referenceContentVersion, props.evidence.comparisonRequest, props.evidence.reference?.territory]))
-watch([comparisonIdentity, detailRetry], async (_value, _old, cleanup) => {
+watch([comparisonIdentity, comparisonRetry], async (_value, _old, cleanup) => {
   detailComparison.value = null
   referenceDetail.value = null
   comparisonStatus.value = 'idle'
@@ -246,8 +248,8 @@ function chooseType(fact: AedarFact): void {
       Valeurs indisponibles pour ce type d’équipement. <button type="button" @click="retryDetail">Réessayer</button>
     </p>
     <p v-if="comparisonStatus === 'loading'" class="aedar-equipment-explorer-load-state" role="status">Chargement du groupe comparé…</p>
-    <p v-else-if="comparisonStatus === 'error'" class="aedar-equipment-explorer-load-state" role="alert">
-      Groupe comparé indisponible : {{ comparisonError }}. <button type="button" @click="retryDetail">Réessayer</button>
+      <p v-else-if="comparisonStatus === 'error'" class="aedar-equipment-explorer-load-state" role="alert">
+        Groupe comparé indisponible : {{ comparisonError }}. <button type="button" @click="retryComparison">Réessayer</button>
     </p>
 
     <div class="aedar-equipment-explorer-figures">

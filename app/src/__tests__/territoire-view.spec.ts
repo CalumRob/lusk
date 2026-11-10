@@ -1841,13 +1841,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     const overview = () => wrapper.get('[data-section="aedar-car-overview"]')
     expect(overview().findAll('.cahier-figure-scalar-value').map((node) => node.text())).toEqual(['5', '11'])
-    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(true)
+    expect(overview().find('.aedar-comparison-warning').exists()).toBe(true)
     // A stale comparison clock fails closed without dropping the independently valid EPCI summary line.
     expect(overview().find('.cahier-comparison-value').text()).toContain('Groupe comparé : 2,5')
     comparisonClock = 'aedar-summary-fixture-v1'
-    await wrapper.get('.aedar-comparison-state button').trigger('click')
+    await overview().get('.aedar-comparison-retry').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(false)
+    expect(overview().find('.aedar-comparison-warning').exists()).toBe(false)
     expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
       'Groupe comparé : 13', 'Groupe comparé : 29',
     ])
@@ -1856,7 +1856,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // comparison-cache identity, and direct-reference cache reuse on the real page.
     await router.replace({ query: { theme: 'mobilite', comparaison: 'densite' } })
     await flushPromises()
-    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(false)
+    expect(overview().find('.aedar-comparison-warning').exists()).toBe(false)
     expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
       'Groupe comparé : 17', 'Groupe comparé : 31',
     ])
@@ -1930,16 +1930,16 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       && item.target.type === 'commune' && item.target.id === '22002').length).toBeGreaterThan(focalSummariesBeforeRefresh)
     expect(requests.flat().filter((item) => item.resource === 'aedar_territory_summary'
       && item.target.type === 'epci' && item.target.id === refreshedEpci).length).toBeGreaterThan(referenceSummariesBeforeRefresh)
-    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(true)
+    expect(overview().find('.aedar-comparison-warning').exists()).toBe(true)
     expect(requests.flat().filter((item) => item.resource === 'aedar_territorial_aggregate'
       && item.intent.kind !== 'facts' && !(item.coordinates?.typequ?.length)).length)
       .toBeGreaterThan(comparisonReadsBeforeClockRefresh)
     comparisonClock = 'aedar-summary-fixture-v2'
     comparisonAedarClock = aedarContentVersion
     comparisonReferenceClock = referenceContentVersion
-    await wrapper.get('.aedar-comparison-state button').trigger('click')
+    await overview().get('.aedar-comparison-retry').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.aedar-comparison-state[role="alert"]').exists()).toBe(false)
+    expect(overview().find('.aedar-comparison-warning').exists()).toBe(false)
     expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
       'Groupe comparé : 13', 'Groupe comparé : 29',
     ])

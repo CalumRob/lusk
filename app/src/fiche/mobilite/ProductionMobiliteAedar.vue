@@ -159,10 +159,6 @@ const transformed = computed(() => {
 </script>
 
 <template>
-  <p v-if="comparisonState === 'loading'" class="aedar-comparison-state" role="status">Chargement du groupe comparé…</p>
-  <p v-else-if="comparisonState === 'error'" class="aedar-comparison-state" role="alert">
-    Groupe comparé indisponible : {{ comparisonError }}. <button type="button" @click="comparisonRetry++">Réessayer</button>
-  </p>
   <div v-if="props.aedarSummaryStatus === 'error'" class="aedar-state" role="alert">
     <p>{{ AEDAR_SUMMARY_UNAVAILABLE_MESSAGE }}</p>
     <button type="button" @click="props.retryAedarSummary?.()">Réessayer</button>
@@ -176,6 +172,9 @@ const transformed = computed(() => {
     :content="transformed"
     :pagination="props.pagination"
     :aedar-status="props.aedarStatus"
+    :comparison-status="comparisonState"
+    :comparison-error="comparisonError"
+    :retry-comparison="() => comparisonRetry++"
     show-all-units
     presentation="plain"
     layout-variant="indexed-sections"

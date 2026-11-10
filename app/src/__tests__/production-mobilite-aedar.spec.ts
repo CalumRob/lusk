@@ -52,7 +52,7 @@ it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte
     intent: { kind: 'selected_comparison', members: control.value.selection.etat === 'membres' ? control.value.selection.membres : [] },
     rankMeasures: ['meanDiversity', 'meanVolume'],
   }))
-  expect(wrapper.text()).toContain('Chargement du groupe comparé')
+  expect(wrapper.findComponent(VarianteCahierLibre).props('comparisonStatus')).toBe('loading')
   const before = wrapper.findComponent(VarianteCahierLibre).props('content')
   const beforeOverview = before.units[0].sections[0].evidence
   if (beforeOverview?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
@@ -72,11 +72,12 @@ it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte
   if (afterOverview?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
   expect(afterOverview.scalars[0]!.reference).toBeNull()
   expect(afterOverview.meanDiversity).toBe(5)
-  expect(wrapper.text()).not.toContain('Chargement du groupe comparé')
+  expect(wrapper.findComponent(VarianteCahierLibre).props('comparisonStatus')).toBe('idle')
   vi.mocked(fetchAedarComparison).mockResolvedValueOnce({ status: 'error', message: 'commune/nope indisponible' })
   control.value = { ...control.value, selection: { etat: 'membres', membres: [{ territory_type: 'commune', territory_id: 'nope' }] } }
   await flushPromises()
-  expect(wrapper.text()).toContain('Groupe comparé indisponible : commune/nope')
+  expect(wrapper.findComponent(VarianteCahierLibre).props('comparisonStatus')).toBe('error')
+  expect(wrapper.findComponent(VarianteCahierLibre).props('comparisonError')).toContain('commune/nope')
   const failed = wrapper.findComponent(VarianteCahierLibre).props('content')
   const failedOverview = failed.units[0].sections[0].evidence
   if (failedOverview?.kind !== 'aedar-car-overview') throw new Error('Overview expected after failed read')
@@ -85,7 +86,8 @@ it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte
     summaryContentVersion: aedarSummaryReady.summary.summaryContentVersion,
     aedarContentVersion: aedarSummaryReady.summary.aedarContentVersion,
     referenceContentVersion: aedarReady.referenceContentVersion, label: 'Moyenne de la sélection', cells: [] } })
-  await wrapper.get('button').trigger('click')
+  wrapper.findComponent(VarianteCahierLibre).props('retryComparison')!()
+  await flushPromises()
   await flushPromises()
   expect(wrapper.text()).not.toContain('commune/nope indisponible')
   wrapper.unmount()
