@@ -61,6 +61,7 @@ function rowAriaLabel(row: CahierTooltipRow): string {
             v-if="row.icon"
             class="cahier-figure-tooltip-icon"
             :class="`cahier-figure-tooltip-icon--${row.tone ?? 'neutral'}`"
+            :style="row.markerColor ? { color: row.markerColor } : undefined"
             :size="16"
             :stroke-width="1.8"
             aria-hidden="true"
