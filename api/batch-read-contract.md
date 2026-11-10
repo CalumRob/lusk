@@ -141,9 +141,11 @@ inventory. Names are `<mode><horizon>Diversity` or `<mode><horizon>Volume`,
 except the existing car/15-minute names `meanDiversity` and `meanVolume`,
 which remain compatible. The producer contract declares all 40 as ranked
 high-is-better facets alongside the 312 per-cell measures. They use the
-existing `measure` coordinate without `typequ` and are computed per request
-from published per-type rows in `aedar_territorial_aggregate` — never
-published as new rows (#810 stance intact):
+existing `measure` coordinate without `typequ`. Direct territorial readings
+and peer ranks use `aedar_territorial_aggregate`; fixed density-class reference
+readings are projected from the already-pooled density artifact and published
+with the comparison generation. Fixed density requests do not aggregate
+TYPEQU rows (#940; the no-peer/rank-row stance in #810 remains intact):
 
 An aggregate reading is available only when the territory's published rows
 satisfy the same compatibility law as the fiche's displayed sums (CONTEXT.md
@@ -157,19 +159,16 @@ readings). Incomplete, uncovered or unknown evidence never becomes a partial
 sum or a fabricated zero: the reading is honestly unavailable (null value,
 `status: "not_available"`).
 
-Both aggregate shapes implement this law through one mechanism — per-territory
-rows of `aedar_territorial_aggregate` and the pooled density rows of
-`aedar_comparison_group` emit the same normalized law inputs to one law
-(#914 amendment, 2026-11-05). On the pooled artifact, provenance uniformity
-is a publication-level tie (the artifact publishes atomically against one
-committed AEDAR content version, enforced by its publication trigger) and the
-statistic is schema-CHECKed to `pooled`; a pooled row with NULL `n_observed`
-passes the table CHECK but counts as invalid here, exactly as on the
-territorial path, so such a pooled reading is honestly unavailable.
+The same availability law is applied by the producer to territorial rows and
+to the already-pooled density facts before publication. Density summaries bind
+to the comparison, AEDAR source, territory-reference, and density-input
+identities; missing or stale rows fail closed. `n_observed` is summed over
+TYPEQU coordinates and may therefore exceed `n_addresses`; each contributing
+TYPEQU observation still has to satisfy `0 ≤ n_observed ≤ n_addresses`.
 
 - `fixed_comparison` keeps each declared context's reference semantics (the
-  direct EPCI/Bretagne/Région aggregate, or the pooled density artifact summed
-  over the registry) and adds the opt-in `rank`/`rank_size`/`rank_ties`: a
+  direct EPCI/Bretagne/Région aggregate, or the published pooled density-class
+  summary) and adds the opt-in `rank`/`rank_size`/`rank_ties`: a
   direction-aware flat ordinal of the focal's registry-wide reading within the
   context's resolved peer group (the EPCI's communes, all Breton communes, the
   density class, or the same-level territories), ties sharing the rank. Peers

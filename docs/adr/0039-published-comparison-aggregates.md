@@ -36,6 +36,31 @@ fixed intent on the aggregate facets only. Per-cell measures keep #904's boundar
 (selected ranks only). Publications remain reference-only — #810's publication stance is
 unchanged.
 
+**AEDAR fixed-density summary amendment (owner-approved 2026-11-09, #940):** keep
+address pooling in the producer and retain the typed pooled density artifact for
+per-TYPEQU detail. Project the final 40 registry-wide readings per published density
+class from that already-pooled artifact using the shared AEDAR availability/support
+law; never average commune summaries or repeat TYPEQU aggregation in fixed density
+requests. Publish those rows atomically with the existing reference-only comparison,
+bound to its comparison, AEDAR source, territory-reference and density-input identities.
+Single and batch fixed-density reads use this compact publication; territorial peer
+ranks remain request-time from the existing territory summaries. Existing API routes
+and response contracts are unchanged.
+
+**Rollout gate for migration 042 (not applied by #940 implementation):**
+1. Run `Rscript scripts/publish-aedar-aggregates.R --check` from `pipeline/` to validate
+   and materialize the canonical AEDAR facts, pooled density artifact and comparison
+   manifest with density-summary sidecar in the standard canonical directory.
+2. With separate operator approval, apply `api/migrations/042_aedar_density_class_summaries.sql`
+   to the serving database. The old comparison remains intentionally incompatible.
+3. Run the standard explicit `LUSK_PUBLISH_AEDAR=1 Rscript scripts/publish-aedar-aggregates.R --publish`
+   flow to atomically publish facts and the complete comparison generation.
+4. Rebuild/redeploy the API service so it reads the new relation and fail-closed marker.
+
+Do not publish or rebuild against a partially completed sequence. This rollout is
+operator-controlled and is not authorization to apply serving DDL or deploy as part
+of this implementation.
+
 ## Decision
 
 For every currently offered comparison context, compute its peer-derived numeric results from canonical pipeline data and publish them as a comparison projection. The API serves those published results for current contexts instead of loading all peer facts and recomputing their aggregates per request. This applies across current comparison families, including scalar/profile, ordered-series, numeric period/detail collections, and AEDAR fixed-context comparisons. The inventory is contract-tested so an in-scope family cannot silently be omitted.

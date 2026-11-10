@@ -259,9 +259,10 @@ def _worker() -> None:
             with conn.transaction():
                 conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 started = time.perf_counter()
+                marker = aedar_reads._aedar_comparison_marker(ObservedConnection(conn))
                 prepared = aedar_reads._aedar_prepare_fixed_aggregate_batch(
                     ObservedConnection(conn), fixture["territory_type"], fixture["territory_id"],
-                    fixture["context"], batch)
+                    fixture["context"], batch, marker)
                 elapsed_ms = (time.perf_counter() - started) * 1000
             active["label"] = None
 

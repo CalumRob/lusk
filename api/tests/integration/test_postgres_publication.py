@@ -484,7 +484,7 @@ def test_fresh_schema_contains_retained_model_and_excludes_legacy_access_objects
         "territory_reference", "source_dataset", "source_vintage", "scalar_descriptor",
         "scalar_observation", "profile_descriptor", "ordered_series",
         "observed_collection_descriptor", "period_detail_observation", "anchored_membership",
-        "aedar_territorial_aggregate", "aedar_comparison_publication",
+        "aedar_territorial_aggregate", "aedar_comparison_publication", "aedar_density_class_summary",
     }
     with psycopg.connect(canonical_db_env["read_dsn"]) as connection:
         tables = {row[0] for row in connection.execute("""SELECT table_name
