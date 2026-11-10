@@ -75,14 +75,17 @@ $env:PYTHONPATH = '.'
 $env:TESTTHAT_PARALLEL = 'FALSE'
 $env:PGCONNECT_TIMEOUT = '5'
 $env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000'
+$env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
 python -m pytest api/tests/integration/test_postgres_publication.py -k shared_scalar -q
 ```
 
 Before running, verify both connections report `current_database() =
 lusk_it_contract` and the expected test roles. Afterward, unset the
-`LUSK_TEST_*` variables; do not export them globally. The Python harness
-leaves its schemas for inspection by default; use its cleanup flag only when
-you have reviewed its cleanup behavior and the test-only target.
+`LUSK_TEST_*` variables; do not export them globally. Without the opt-in, most
+Python fixtures retain their schemas for inspection. With
+`LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`, supported fixtures drop only schemas created
+by that invocation; proofs explicitly designated retained refuse the flag.
+Review the selected test and exact cleanup path before enabling it.
 
 The R publisher-to-PostgreSQL smokes are a separate opt-in path. The operator
 must provision a permanent **test-only database on the Pi server** whose name
@@ -117,6 +120,29 @@ $env:LUSK_SCALAR_TEST_USER = "lusk_it_contract_pub"
 $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
 $env:LUSK_SCALAR_TEST_CLEANUP = "1"
 Rscript scripts/smoke-scalar-postgres.R
+```
+
+The AEDAR producer-to-public-HTTP proof is a single-schema run and requires the
+cleanup opt-in. It records a sanitized run receipt under its own
+`E:\Temp\opencode\aedar-it-*` directory, then drops only its generated
+`it_aedar_<uuid>` schema in `finally` (including after assertion failures). A
+failed drop is recorded in the receipt; do not use a broad schema janitor.
+Set `R_LIBS_USER` to the populated project library reported by `.libPaths()[1]`
+when running `Rscript` from `pipeline/`, then run only this focused command:
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:LUSK_TEST_DATABASE_PREFIX = 'lusk_it_'
+$env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
+$env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
+$env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
+$env:LUSK_TEST_READ_USER = 'lusk_it_contract_read'
+$env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
+$env:PYTHONPATH = '.'
+$env:TESTTHAT_PARALLEL = 'FALSE'
+$env:PGCONNECT_TIMEOUT = '5'
+$env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000'
+python -m pytest api/tests/integration/test_aedar_publisher_http.py -q -s
 ```
 
 For the retained Habitat, Economy, and Milieux publisher-to-HTTP proofs, set
@@ -305,9 +331,11 @@ iterating on unrelated harnesses; cite its pinned run and duration when reportin
 acceptance.
 
 The separate AEDAR summary-storage/read-path benchmark is strictly read-only;
-it uses the retained schema and dedicated read role, does not run the publisher
-or time the whole integration proof as read latency, and records whether the API
-marker gate permits endpoint timing. See
+it requires an explicitly selected current-compatible retained schema and the
+current API marker gate (including migration-042 metadata) to pass before adapter
+timing. It uses the dedicated read role, does not run the publisher, and measures
+adapter preparation rather than HTTP endpoint latency. It has no default schema;
+the historical fixture referenced by its old receipt was deleted. See
 [`docs/aedar-territory-summary-benchmark.md`](../../../docs/aedar-territory-summary-benchmark.md)
 and `benchmark_aedar_summary_reads.py` for the bounded workload and external
 receipt format.

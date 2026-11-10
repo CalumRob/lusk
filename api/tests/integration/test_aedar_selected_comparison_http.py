@@ -340,10 +340,9 @@ def _seed_aedar(publisher, *, complete_rank_fixture=False):
         VALUES ('aedar_territorial_aggregate','a' || repeat('0',63),%s,'b' || repeat('0',63))""",
         (len(rows),))
     _seed_aedar_summaries(publisher, complete_rank_fixture=complete_rank_fixture)
-    # Pooled density-class reference rows keep the reference-only marker valid
-    # (group_row_count must match and stay >= 1); no peer/rank rows exist. The
-    # count_15_car_* rows back the original registry-wide aggregate readings (#914):
-    # pooled meanDiversity = 0.65 + 0.3 = 0.95, pooled meanVolume = 16 + 8 = 24.
+    # Retain typed pooled density-class rows for per-TYPEQU detail reads. Fixed
+    # 40-reading density summaries are seeded independently below and are not
+    # recomputed from these rows at request time.
     group_rows = [
         ("D1", "A104", "count_5_walk_mean", 7.4, 50, 42),
         ("D1", "A104", "count_15_car_mean", 16.0, 40, 34),
@@ -354,17 +353,15 @@ def _seed_aedar(publisher, *, complete_rank_fixture=False):
         ("D1", "B207", "count_10_transit_share", 0.35, 40, 33),
         ("D1", "A104", "count_10_transit_mean", 2.0, 40, 34),
         ("D1", "B207", "count_10_transit_mean", 3.0, 40, 33),
-        # D3 (the density class of sel-c8) carries a pooled row with NULL
-        # n_observed on B207: the schema CHECK admits it, but the unified
-        # aggregate law counts it as bad, so D3's pooled registry-wide reading
-        # is honestly unavailable (#914 amendment, 2026-11-05).
+        # Keep the typed-detail edge case: D3's B207 support is NULL. Its
+        # separately published fixed summary below is explicitly unavailable.
         ("D3", "A104", "count_15_car_mean", 16.0, 15, 14),
         ("D3", "B207", "count_15_car_mean", 8.0, 15, None),
         ("D3", "A104", "count_10_transit_share", 0.2, 15, 14),
         ("D3", "B207", "count_10_transit_share", 0.3, 15, None),
-        # Only one TYPEQU row: incomplete registry must not yield a partial sum.
+        # Keep an incomplete typed-detail axis for the D3 measure.
         ("D3", "A104", "count_10_transit_mean", 2.0, 15, 14),
-        # Full registry but uncovered evidence must also fail closed.
+        # Keep uncovered typed-detail evidence for D2.
         ("D2", "A104", "count_10_transit_mean", 2.0, 10, 9),
         ("D2", "B207", "count_10_transit_mean", 3.0, 10, 8),
     ]
@@ -381,12 +378,33 @@ def _seed_aedar(publisher, *, complete_rank_fixture=False):
             VALUES ('density_class',%s,'commune',%s,%s,'pooled',%s,%s,%s,%s)""",
             (group_id, typequ, measure, value, n_addresses, n_observed,
              "pending_review" if group_id == "D2" else "covered"))
+    density_summary_rows = []
+    for measure, underlying in AEDAR_AGGREGATE_READINGS.items():
+        value = (24.0 if measure == "meanVolume" else 0.95 if measure == "meanDiversity" else
+                 0.6 if measure == "transit10Diversity" else 5.0 if measure == "transit10Volume" else
+                 0.9 if underlying.endswith("_share") else 5.0)
+        density_summary_rows.append(("D1", measure, value, "available", 235, 40, 67, "covered"))
+        for group_id, n_addresses, n_observed, coverage in (
+                ("D2", 10, 8, "pending_review"), ("D3", 15, 14, "covered")):
+            density_summary_rows.append((group_id, measure, None, "unavailable", None,
+                                         n_addresses, n_observed, coverage))
+    comparison_version = "c" + "0" * 63
+    for group_id, measure, value, status, n_typequ, n_addresses, n_observed, coverage in density_summary_rows:
+        publisher.execute("""INSERT INTO aedar_density_class_summary(comparison_content_version,
+            aedar_content_version,reference_content_version,input_content_version,group_id,measure,
+            value,status,n_typequ,n_addresses,n_observed,coverage_status)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (comparison_version, "a" + "0" * 63, "b" + "0" * 63, "d" + "0" * 63,
+             group_id, measure, value, status, n_typequ, n_addresses, n_observed, coverage))
+    density_typequ_count = next(row[4] for row in density_summary_rows if row[4] is not None)
     publisher.execute("""INSERT INTO aedar_comparison_publication(singleton,content_version,
         source_snapshot_id,aedar_content_version,reference_content_version,input_content_version,
-        input_identity,group_row_count,territory_row_count,publication_mode)
-        VALUES (true,'c' || repeat('0',63),'2026-v1','a' || repeat('0',63),'b' || repeat('0',63),
-        'd' || repeat('0',63),'{"address_origins":"sha256"}'::jsonb,%s,0,'reference_only')""",
-        (len(group_rows),))
+        input_identity,group_row_count,territory_row_count,publication_mode,density_summary_class_count,
+        density_summary_measure_count,density_summary_typequ_count,density_summary_row_count)
+        VALUES (true,%s,'2026-v1','a' || repeat('0',63),'b' || repeat('0',63),
+        'd' || repeat('0',63),'{"address_origins":"sha256"}'::jsonb,%s,0,'reference_only',3,%s,%s,%s)""",
+        (comparison_version, len(group_rows), len(AEDAR_AGGREGATE_READINGS), density_typequ_count,
+         len(density_summary_rows)))
 
 
 @contextmanager
@@ -923,16 +941,15 @@ def test_fixed_aggregate_batch_reads_summaries_without_typequ_expansion(aedar_ht
     items = [{"id": f"rank-item-{index}", **_aggregate_item(target_id="sel-c1", measures=(measure,),
         fields=["group_value", "value", "rank", "rank_size", "rank_ties"], context="density_class")}
         for index, measure in enumerate(measures)]
-    counts = {name: 0 for name in ("registry", "peer_ids", "territorial", "multi_territorial",
-                                   "summary", "pooled", "multi_pooled", "cohort")}
-    original_registry = aedar_reads._aedar_registry_size
+    counts = {name: 0 for name in ("peer_ids", "territorial", "multi_territorial",
+                                   "summary", "density_summary", "cohort")}
     original_peer_ids = aedar_reads._aedar_fixed_peer_ids
     original_territorial = aedar_reads._aedar_aggregate_records
     original_multi = aedar_reads._aedar_multi_aggregate_records
-    original_pooled = aedar_reads._aedar_pooled_group_aggregate
-    original_multi_pooled = aedar_reads._aedar_multi_pooled_group_aggregates
+    original_density_summary = aedar_reads._aedar_density_class_summary_records
     original_summary = aedar_reads._aedar_territory_summary_snapshot
     original_cohort = snapshot_reads._comparison_cohort
+    density_sql = []
 
     def counted(name, original):
         def invoke(*args, **kwargs):
@@ -940,12 +957,21 @@ def test_fixed_aggregate_batch_reads_summaries_without_typequ_expansion(aedar_ht
             return original(*args, **kwargs)
         return invoke
 
-    monkeypatch.setattr(aedar_reads, "_aedar_registry_size", counted("registry", original_registry))
     monkeypatch.setattr(aedar_reads, "_aedar_fixed_peer_ids", counted("peer_ids", original_peer_ids))
     monkeypatch.setattr(aedar_reads, "_aedar_aggregate_records", counted("territorial", original_territorial))
     monkeypatch.setattr(aedar_reads, "_aedar_multi_aggregate_records", counted("multi_territorial", original_multi))
-    monkeypatch.setattr(aedar_reads, "_aedar_pooled_group_aggregate", counted("pooled", original_pooled))
-    monkeypatch.setattr(aedar_reads, "_aedar_multi_pooled_group_aggregates", counted("multi_pooled", original_multi_pooled))
+
+    class QueryProbe:
+        def __init__(self, connection): self.connection = connection
+        def execute(self, query, params=None):
+            density_sql.append(query)
+            return self.connection.execute(query, params)
+
+    def counted_density_summary(conn, *args):
+        counts["density_summary"] += 1
+        return original_density_summary(QueryProbe(conn), *args)
+
+    monkeypatch.setattr(aedar_reads, "_aedar_density_class_summary_records", counted_density_summary)
     monkeypatch.setattr(aedar_reads, "_aedar_territory_summary_snapshot", counted("summary", original_summary))
     monkeypatch.setattr(snapshot_reads, "_comparison_cohort", counted("cohort", original_cohort))
 
@@ -956,6 +982,7 @@ def test_fixed_aggregate_batch_reads_summaries_without_typequ_expansion(aedar_ht
         singles.append(response.json()["comparison"])
     baseline = dict(counts)
     counts.update({name: 0 for name in counts})
+    density_sql.clear()
 
     batch = aedar_http.post("/api/resources/read-batch", json={"items": items})
     assert batch.status_code == 200, batch.text
@@ -965,19 +992,20 @@ def test_fixed_aggregate_batch_reads_summaries_without_typequ_expansion(aedar_ht
     assert batch_comparisons == singles, next((f"{measures[index]}: batch={batch_value!r}, single={single_value!r}"
         for index, (batch_value, single_value) in enumerate(zip(batch_comparisons, singles))
         if batch_value != single_value), "length mismatch")
-    # This is the density context: its established pooled reference still needs
-    # the registry count and pooled artifact adapter. Territorial values/ranks
-    # use one summary read; neither territorial adapter expands TYPEQU rows.
-    assert counts == {"registry": 1, "peer_ids": 1, "territorial": 0, "multi_territorial": 0,
-                      "summary": 1,
-                      "pooled": 0, "multi_pooled": 1, "cohort": 1}
-    assert baseline["registry"] == 40
+    # One group-summary query serves all requested readings; rank peers remain
+    # one territorial summary snapshot. The SQL is point-read work, not a
+    # TYPEQU SUM/GROUP BY over the retained typed comparison artifact.
+    assert counts == {"peer_ids": 1, "territorial": 0, "multi_territorial": 0,
+                      "summary": 1, "density_summary": 1, "cohort": 1}
+    assert len(density_sql) == 1
+    assert "FROM aedar_density_class_summary" in density_sql[0]
+    assert "aedar_comparison_group" not in density_sql[0]
+    assert "sum(" not in density_sql[0].lower() and "group by" not in density_sql[0].lower()
+    assert baseline["density_summary"] == 40
     assert baseline["peer_ids"] == 80
     assert baseline["territorial"] == 0
     assert baseline["multi_territorial"] == 0
     assert baseline["summary"] == 40
-    assert baseline["pooled"] == 40
-    assert baseline["multi_pooled"] == 0
     assert baseline["cohort"] == 40
 
     # Production projection: ranks on the two car-15 overview readings, while
@@ -996,9 +1024,8 @@ def test_fixed_aggregate_batch_reads_summaries_without_typequ_expansion(aedar_ht
         assert {key: result[key] for key in expected_fields} == {key: expected[key] for key in expected_fields}
         if measure not in ranked:
             assert not ({"rank", "rank_size", "rank_ties"} & set(result))
-    assert counts == {"registry": 1, "peer_ids": 1, "territorial": 0, "multi_territorial": 0,
-                      "summary": 1,
-                      "pooled": 0, "multi_pooled": 1, "cohort": 1}
+    assert counts == {"peer_ids": 1, "territorial": 0, "multi_territorial": 0,
+                      "summary": 1, "density_summary": 1, "cohort": 1}
 
 
 def test_fixed_aggregate_all_40_ranks_have_independent_fixture_expectations(aedar_rank_http):
@@ -1041,9 +1068,8 @@ def test_fixed_aggregate_batch_preparation_isolated_by_context_and_focal(aedar_r
     from api.aedar_models import AEDAR_AGGREGATE_READINGS
     from api import aedar_reads
 
-    work = {name: 0 for name in ("registry", "territorial", "multi_territorial")}
-    for name, target in (("registry", "_aedar_registry_size"),
-                         ("territorial", "_aedar_aggregate_records"),
+    work = {name: 0 for name in ("territorial", "multi_territorial")}
+    for name, target in (("territorial", "_aedar_aggregate_records"),
                          ("multi_territorial", "_aedar_multi_aggregate_records")):
         original = getattr(aedar_reads, target)
         def counted(*args, _name=name, _original=original, **kwargs):
@@ -1071,19 +1097,13 @@ def test_fixed_aggregate_batch_preparation_isolated_by_context_and_focal(aedar_r
     assert all(results[f"rank-bretagne-{index}"]["group_id"] == "53" for index in range(2))
     assert all(results[f"rank-bretagne-{index}"]["group_value"] !=
                results[f"rank-e1-{index}"]["group_value"] for index in range(2))
-    # Direct EPCI/Bretagne summaries do not need even the registry-count read;
-    # only density's retained pooled artifact is allowed that source-grain tie.
-    assert work == {"registry": 0, "territorial": 0, "multi_territorial": 0}
+    # Fixed comparisons consume the producer-owned territorial summary for
+    # direct references; no legacy aggregate adapter is used.
+    assert work == {"territorial": 0, "multi_territorial": 0}
 
 
-def test_fixed_aggregate_density_pooled_null_observed_row_is_unavailable(aedar_http):
-    """A pooled density row with NULL n_observed is honestly bad (#914 amendment).
-
-    The schema CHECK on `aedar_comparison_group` admits a NULL n_observed, but
-    the unified aggregate mechanism computes n_bad_observed in SQL exactly
-    like the territorial path, so the pooled registry-wide reading of D3 is
-    honestly unavailable (group_value null) — never silently served as a sum.
-    """
+def test_fixed_aggregate_density_unavailable_publication_is_honestly_served(aedar_http):
+    """Unavailable pooled producer summaries remain null, never become partial sums."""
     response = aedar_http.post("/api/resources/read", json=_aggregate_item(
         target_id="sel-c8", measures=("meanVolume",),
         fields=["group_value", "value", "rank", "rank_size", "rank_ties"],
@@ -1092,8 +1112,8 @@ def test_fixed_aggregate_density_pooled_null_observed_row_is_unavailable(aedar_h
     comparison = response.json()["comparison"]
     assert comparison["comparison_context"] == "density_class"
     assert comparison["group_id"] == "D3" and comparison["statistic"] == "pooled"
-    # The D3 pooled artifact's B207 row has NULL n_observed -> n_bad_observed=1
-    # -> the pooled reading fails the law: honestly unavailable, not 24.0.
+    # D3's canonical density-class summary is unavailable; fixed reads consume
+    # this final state rather than recomputing a partial typed sum.
     assert comparison["group_value"] is None
     assert comparison["group_n_addresses"] == 15 and comparison["group_n_observed"] == 14
     # The focal's own territorial rows also fail the law (mixed coverage).

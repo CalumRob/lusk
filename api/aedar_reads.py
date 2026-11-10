@@ -193,11 +193,21 @@ def _aedar_comparison_marker(conn):
               p.reference_content_version,p.input_content_version,p.input_identity,p.group_row_count,p.territory_row_count,
               p.publication_mode,
               a.content_version,r.content_version
+              ,p.density_summary_class_count,p.density_summary_measure_count,p.density_summary_row_count,
+              (SELECT count(*) FROM aedar_density_class_summary s
+                 WHERE s.comparison_content_version=p.content_version),
+              (SELECT count(DISTINCT group_id) FROM aedar_density_class_summary s
+                  WHERE s.comparison_content_version=p.content_version),
+              p.density_summary_typequ_count
               FROM aedar_comparison_publication p
               JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
               JOIN table_publication r ON r.table_name='territory_reference'
               WHERE p.singleton""").fetchone()
-    if not marker or marker[2] != marker[9] or marker[3] != marker[10] or marker[6] < 1 or marker[7] != 0 or marker[8] != "reference_only" or marker[1] != "2026-v1":
+    if (not marker or marker[2] != marker[9] or marker[3] != marker[10] or marker[6] < 1 or
+             marker[7] != 0 or marker[8] != "reference_only" or marker[1] != "2026-v1" or
+             marker[11] < 1 or marker[12] != len(AEDAR_AGGREGATE_READINGS) or
+             marker[13] != marker[11] * marker[12] or marker[14] != marker[13] or
+             marker[15] != marker[11] or marker[16] < 1):
         raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
     return marker
 
@@ -210,46 +220,8 @@ def _aedar_direct_reference(conn, measure, reference_type, group_id, typequ):
     return (*row, "direct") if row else None
 
 
-def _aedar_registry_size(conn):
-    """Size of the published TYPEQU registry; fail closed when it is absent."""
-    row = conn.execute("SELECT count(DISTINCT typequ) FROM aedar_territorial_aggregate").fetchone()
-    size = int(row[0]) if row and row[0] is not None else 0
-    if size < 1:
-        raise HTTPException(503, "AEDAR TYPEQU registry publication is unavailable")
-    return size
-
-
-# --- One aggregate mechanism, two thin SQL adapters (#914 owner amendment,
-# 2026-11-05) ---------------------------------------------------------------
-#
-# Both registry-wide aggregate readings flow through ONE normalized law-input
-# record, ONE availability law and ONE assembler. The territorial adapter
-# reads `aedar_territorial_aggregate` (per-territory per-typequ rows with full
-# provenance columns); the pooled adapter reads the density_class pooled
-# artifact `aedar_comparison_group` (single-value rows without provenance
-# columns). Both SQL bodies emit the same law-input tuple, in this order:
-# n_rows, n_measured, total, v_min, v_max, na_min, na_max, observed_sum,
-# n_provenance, n_uncovered, n_bad_observed, n_statistic, statistic, coverage,
-# n_coverage.
-
-# Structural guarantee of the pooled density artifact: the table carries no
-# provenance columns at all (api/schema.sql), and the artifact publishes
-# atomically against one committed `aedar_content_version` (enforced by the
-# `check_aedar_comparison_publication` trigger). Provenance is therefore
-# uniform BY PUBLICATION — the same precedent as the merged #904 per-cell
-# path, which serves density group values with the focal territorial row's
-# provenance. The law input is this named constant, never a per-row count.
-_AEDAR_POOLED_PUBLICATION_PROVENANCE_TIE = 1
-
-# Structural guarantee of the pooled density artifact: `statistic` is
-# schema-CHECKed to 'pooled' for the density_class scope
-# (aedar_reference_scope_check), so statistic uniformity is structural, not
-# per-row checkable.
-_AEDAR_POOLED_DENSITY_STATISTIC = "pooled"
-_AEDAR_POOLED_DENSITY_STATISTIC_TIE = 1
-
 # Structural guarantee of the territorial adapter: it reads one territory's own
-# published rows, so the reading's statistic is the direct one by construction.
+# published rows, so the reading's statistic is direct by construction.
 _AEDAR_TERRITORIAL_DIRECT_STATISTIC = "direct"
 _AEDAR_TERRITORIAL_DIRECT_STATISTIC_TIE = 1
 
@@ -327,9 +299,9 @@ def _aedar_aggregate_available(inputs, registry_size, underlying):
 def _aedar_aggregate_reading(inputs, registry_size, underlying):
     """Assemble one registry-wide aggregate reading's response fields.
 
-    The single assembler behind every call site: the direct reference
-    aggregate, the pooled density reference, the peer-rank population and the
-    selected members/focal.
+    The territorial assembler used by direct reference aggregates, peer-rank
+    populations and selected members/focals. Fixed density references consume
+    the producer-published summary instead.
     """
     available = _aedar_aggregate_available(inputs, registry_size, underlying)
     return {
@@ -421,66 +393,42 @@ def _aedar_direct_aggregate(conn, underlying, reference_type, group_id, registry
     return record
 
 
-_AEDAR_POOLED_GROUP_SQL = f"""SELECT count(*) AS n_rows, count(value) AS n_measured,
-       sum(value) AS total,
-       min(value) AS v_min, max(value) AS v_max,
-       min(n_addresses) AS na_min, max(n_addresses) AS na_max,
-       sum(n_observed)::bigint AS observed_sum,
-       {_AEDAR_POOLED_PUBLICATION_PROVENANCE_TIE} AS n_provenance,
-       count(*) FILTER (WHERE coverage_status IS DISTINCT FROM 'covered') AS n_uncovered,
-       count(*) FILTER (WHERE n_observed IS NULL OR n_observed < 0
-                          OR n_observed > n_addresses) AS n_bad_observed,
-       {_AEDAR_POOLED_DENSITY_STATISTIC_TIE} AS n_statistic,
-       '{_AEDAR_POOLED_DENSITY_STATISTIC}' AS statistic,
-       min(coverage_status) AS coverage,
-       count(DISTINCT coverage_status) AS n_coverage
-FROM aedar_comparison_group
- WHERE comparison_context='density_class' AND group_id=%s AND territory_type='commune' AND measure=%s"""
-
-_AEDAR_MULTI_POOLED_GROUP_SQL = f"""SELECT measure,count(*) AS n_rows,count(value) AS n_measured,
-       sum(value) AS total,min(value) AS v_min,max(value) AS v_max,
-       min(n_addresses) AS na_min,max(n_addresses) AS na_max,
-       sum(n_observed)::bigint AS observed_sum,
-       {_AEDAR_POOLED_PUBLICATION_PROVENANCE_TIE} AS n_provenance,
-       count(*) FILTER (WHERE coverage_status IS DISTINCT FROM 'covered') AS n_uncovered,
-       count(*) FILTER (WHERE n_observed IS NULL OR n_observed < 0 OR n_observed > n_addresses) AS n_bad_observed,
-       {_AEDAR_POOLED_DENSITY_STATISTIC_TIE} AS n_statistic,
-       '{_AEDAR_POOLED_DENSITY_STATISTIC}' AS statistic,
-       min(coverage_status) AS coverage,count(DISTINCT coverage_status) AS n_coverage
- FROM aedar_comparison_group
- WHERE comparison_context='density_class' AND group_id=%s AND territory_type='commune' AND measure=ANY(%s::text[])
- GROUP BY measure"""
-
-
-def _aedar_multi_pooled_group_aggregates(conn, group_id, measures, registry_size):
-    underlying_to_reading = {AEDAR_AGGREGATE_READINGS[measure]: measure for measure in measures}
-    cursor = conn.execute(_AEDAR_MULTI_POOLED_GROUP_SQL, (group_id, sorted(underlying_to_reading)))
+def _aedar_density_class_summary_records(conn, group_id, measures, marker):
+    """Read producer-published pooled class summaries from this RR snapshot."""
+    requested = tuple(dict.fromkeys(measures))
+    if not requested or not set(requested) <= set(AEDAR_AGGREGATE_READINGS):
+        raise HTTPException(422, "Unknown AEDAR density summary measure")
+    rows = conn.execute("""SELECT measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,
+            aedar_content_version,reference_content_version,input_content_version
+        FROM aedar_density_class_summary
+        WHERE comparison_content_version=%s AND group_id=%s AND measure=ANY(%s::text[])""",
+        (marker[0], group_id, sorted(requested))).fetchall()
+    if len(rows) != len(requested) or len({row[0] for row in rows}) != len(requested):
+        raise HTTPException(503, "AEDAR density-class summary is missing or incomplete")
     result = {}
-    for row in cursor.fetchall():
-        underlying, *law_inputs = row
-        result[underlying_to_reading[underlying]] = _aedar_aggregate_reading(
-            _AEDARAggregateLawInputs(*law_inputs), registry_size, underlying)
+    for (measure, value, status, n_typequ, n_addresses, n_observed, coverage_status,
+         aedar_version, reference_version, input_version) in rows:
+        if (measure not in requested or status not in ("available", "unavailable") or
+                aedar_version != marker[2] or reference_version != marker[3] or input_version != marker[4]):
+            raise HTTPException(503, "AEDAR density-class summary is malformed")
+        available = status == "available"
+        if (available and (value is None or not isfinite(value) or value < 0 or n_typequ != marker[16] or
+                n_addresses is None or n_addresses <= 0 or n_observed is None or n_observed < 0 or
+                n_observed > marker[16] * n_addresses or coverage_status != "covered")) or (
+                not available and (value is not None or n_typequ is not None or
+                    (n_addresses is not None and n_addresses < 0) or
+                    (n_observed is not None and n_observed < 0))):
+            raise HTTPException(503, "AEDAR density-class summary contains an invalid reading")
+        result[measure] = {
+            "value": value,
+            "available": available,
+            "n_typequ": n_typequ,
+            "n_addresses": n_addresses,
+            "n_observed": n_observed,
+            "coverage_status": coverage_status,
+            "statistic": "pooled",
+        }
     return result
-
-
-def _aedar_pooled_group_aggregate(conn, group_id, underlying, registry_size):
-    """Pooled adapter: one density group's law inputs as one normalized record.
-
-    Same availability law as the per-territory sums, applied once over the
-    same record: the artifact must cover the complete registry, stay covered,
-    keep an agreeing positive address population and valid finite non-negative
-    per-type values (<= 1 for share readings); otherwise the pooled reading is
-    honestly unavailable, never a partial sum. n_bad_observed is computed
-    honestly in SQL — a NULL n_observed row passes the schema CHECK but counts
-    as bad here, exactly matching territorial semantics (#914 amendment: such a
-    pooled reading is honestly unavailable, never silently served).
-    Provenance and statistic uniformity are structural publication/schema
-    guarantees (the named constants above), not per-row counts.
-    """
-    row = conn.execute(_AEDAR_POOLED_GROUP_SQL, (group_id, underlying)).fetchone()
-    if not row or not row[0]:
-        raise HTTPException(404, "No published result for this fixed context")
-    return _aedar_aggregate_reading(_AEDARAggregateLawInputs(*row), registry_size, underlying)
 
 
 def _aedar_fixed_peer_ids(conn, territory_type, territory_id, context):
@@ -526,12 +474,9 @@ def _aedar_fixed_peer_ids(conn, territory_type, territory_id, context):
     return ids
 
 
-def _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, context, batch):
+def _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, context, batch, marker):
     """Prepare compatible aggregate readings once inside the owning RR snapshot."""
     measures = list(dict.fromkeys(batch["measures"]))
-    # Only the retained density pooled artifact needs the source TYPEQU count
-    # for its established availability law. Direct summaries are producer-validated.
-    registry_size = _aedar_registry_size(conn) if context == "density_class" else None
     group_type = None
     group_id = None
     focal = conn.execute("""SELECT t.epci_id,r.territory_id
@@ -546,7 +491,7 @@ def _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, con
         if territory_type != "commune" or not scope or scope.get("kind") != "density_class":
             raise HTTPException(422, "Density reference is available for commune scopes only")
         group_type, group_id = "commune", scope["density_class_code"]
-        groups = _aedar_multi_pooled_group_aggregates(conn, group_id, measures, registry_size)
+        groups = _aedar_density_class_summary_records(conn, group_id, measures, marker)
     elif context == "same_level":
         if territory_type not in ("epci", "departement"):
             raise HTTPException(422, "Same-level reference is unavailable for this territory scope")
@@ -574,7 +519,7 @@ def _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, con
         group_records = _aedar_summary_records(group_snapshot, measures, [group_id])
         groups = {measure: records.get(group_id) for measure, records in group_records.items()}
     provenance = _aedar_summary_provenance(summary)
-    return {"registry_size": registry_size, "group_id": group_id, "group_type": group_type,
+    return {"group_id": group_id, "group_type": group_type,
             "groups": groups, "territorial": territorial, "provenance": provenance,
             "rank_measures": rank_measures,
             "summary_content_version": summary["content_version"]}
@@ -690,16 +635,15 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
     """One fixed-context registry-wide aggregate reading with its request-time rank.
 
     The group statistic keeps the declared context semantics unchanged (the
-    direct EPCI/Bretagne/Région aggregate, or the pooled density artifact summed
-    over the complete registry); the focal's direction-aware rank, group size
+    direct EPCI/Bretagne/Région aggregate, or the producer-published pooled
+    density summary); the focal's direction-aware rank, group size
     and tie count are computed per request over the context's resolved peer
     group from the published territory summaries in the same committed snapshot — no
     peer/rank rows are published (#810 stance intact; ADR-0039's 2026-11-04
     amendment, #914). Both the reference and the peer/focal readings flow
-    through the producer-owned territory summary projection. Availability is
-    established once by the producer's shared fiche law; peers marked
-    unavailable remain ineligible for rank. Density references deliberately
-    retain the existing correctly pooled publication.
+    through producer-owned summary projections. Density references read final
+    pooled summaries from the atomic comparison publication; requests never
+    aggregate the typed density artifact.
     """
     underlying = AEDAR_AGGREGATE_READINGS[measure]
     key = (territory_type, territory_id, context)
@@ -708,11 +652,10 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
     if batch and len(batch["measures"]) > 1:
         prepared = batch.get("prepared")
         if prepared is None:
-            prepared = _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, context, batch)
+            prepared = _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, context, batch, marker)
             batch["prepared"] = prepared
     wants_rank = bool(_AEDAR_AGGREGATE_RANK_FIELDS & selected)
     if prepared:
-        registry_size = prepared["registry_size"]
         group_id, reference_type = prepared["group_id"], prepared["group_type"]
         group = prepared["groups"].get(measure)
         peer_records = prepared["territorial"].get(measure, {})
@@ -722,7 +665,6 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
         if group is None:
             raise HTTPException(404, "No published result for this fixed context")
     else:
-        registry_size = _aedar_registry_size(conn) if context == "density_class" else None
         summary_content_version = None
         focal = conn.execute("""SELECT t.epci_id,r.territory_id
             FROM territory_reference t CROSS JOIN territory_reference r
@@ -736,7 +678,7 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
             if territory_type != "commune" or not scope or scope.get("kind") != "density_class":
                 raise HTTPException(422, "Density reference is available for commune scopes only")
             group_id, reference_type = scope["density_class_code"], "commune"
-            group = _aedar_pooled_group_aggregate(conn, group_id, underlying, registry_size)
+            group = _aedar_density_class_summary_records(conn, group_id, [measure], marker).get(measure)
         elif context == "same_level":
             if territory_type not in ("epci","departement"):
                 raise HTTPException(422, "Same-level reference is unavailable for this territory scope")

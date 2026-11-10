@@ -29,6 +29,67 @@ make_aedar_test_inputs <- function() {
   }), AEDAR_AGGREGATE_LEVELS)
 }
 
+test_that("density-class summary projection preserves the complete pooled reading law", {
+  bindings <- aedar_aggregate_reading_bindings()
+  source <- list(source_id="aedar_bretagne",vintage="2026-v1",url="https://example.test/aedar",
+    licence="ODbL",attribution="AEDAR fixture",reference_date=NA_character_,publication_date="2026-09-30")
+  facts <- expand.grid(territory_id=c("1","2"),TYPEQU=c("A","B"),stringsAsFactors=FALSE)
+  facts$territory_type <- "density_class"
+  facts$density_class_code <- facts$territory_id
+  facts$n_addresses <- ifelse(facts$territory_id=="1",2L,0L)
+  facts$n_observed <- ifelse(facts$territory_id=="1",2L,0L)
+  facts$coverage_status <- ifelse(facts$territory_id=="1","covered","uncovered_no_address_origins")
+  for (i in seq_len(nrow(bindings))) {
+    base <- if(endsWith(bindings$underlying[[i]],"_share")) 0.75 else i/1000
+    values <- ifelse(facts$territory_id=="1",base,NA_real_)
+    facts[[bindings$underlying[[i]]]] <- values
+  }
+
+  projected <- project_aedar_density_class_summary(facts,source,registry_size=2L)
+  expect_equal(nrow(projected),2L*nrow(bindings))
+  expect_equal(projected$group_id[projected$measure==bindings$measure[[1L]]],c("1","2"))
+  available <- projected[projected$group_id=="1",]
+  unavailable <- projected[projected$group_id=="2",]
+  expected <- vapply(seq_len(nrow(bindings)),function(i)
+    sum(facts[facts$territory_id=="1",bindings$underlying[[i]]]),numeric(1))
+  expect_equal(available$value,expected)
+  expect_true(all(available$status=="available" & available$n_typequ==2L))
+  expect_true(all(available$n_addresses==2L & available$n_observed==4L))
+  expect_true(all(available$n_observed>available$n_addresses))
+  expect_true(any(available$value>1 & endsWith(bindings$underlying[match(available$measure,
+    bindings$measure)],"_share")))
+  expect_true(all(available$coverage_status=="covered"))
+  expect_true(all(unavailable$status=="unavailable" & is.na(unavailable$value) &
+    is.na(unavailable$n_typequ) & unavailable$n_addresses==0L & unavailable$n_observed==0L &
+    unavailable$coverage_status=="uncovered_no_address_origins"))
+  expect_true(all(available$source_id==source$source_id & available$vintage==source$vintage))
+
+  partial <- facts[facts$territory_id=="1" & facts$TYPEQU=="A",]
+  partial_projection <- project_aedar_density_class_summary(partial,source,registry_size=2L)
+  expect_true(all(partial_projection$status=="unavailable" & is.na(partial_projection$value) &
+    is.na(partial_projection$n_typequ)))
+
+  inconsistent <- facts[facts$territory_id=="1",]
+  inconsistent$n_addresses[[2L]] <- 3L
+  inconsistent_projection <- project_aedar_density_class_summary(inconsistent,source,registry_size=2L)
+  expect_true(all(inconsistent_projection$status=="unavailable" & is.na(inconsistent_projection$value) &
+    is.na(inconsistent_projection$n_addresses) & inconsistent_projection$n_observed==4L))
+
+  missing_observation <- facts[facts$territory_id=="1",]
+  missing_observation$n_observed[[2L]] <- NA_integer_
+  missing_projection <- project_aedar_density_class_summary(missing_observation,source,registry_size=2L)
+  expect_true(all(missing_projection$status=="unavailable" & is.na(missing_projection$value) &
+    missing_projection$n_addresses==2L & missing_projection$n_observed==2L))
+
+  invalid_share <- facts[facts$territory_id=="1",]
+  share_underlying <- bindings$underlying[endsWith(bindings$underlying,"_share")][[1L]]
+  invalid_share[[share_underlying]][[1L]] <- 1.01
+  invalid_projection <- project_aedar_density_class_summary(invalid_share,source,registry_size=2L)
+  invalid_measure <- bindings$measure[match(share_underlying,bindings$underlying)]
+  expect_true(all(invalid_projection$status[invalid_projection$measure==invalid_measure]=="unavailable"))
+  expect_true(all(is.na(invalid_projection$value[invalid_projection$measure==invalid_measure])))
+})
+
 set_aedar_density_fixture_content_version <- function(facts) {
   columns<-c("territory_type","territory_id","density_class_code","density_class_label",
     "TYPEQU","LIB_TYPEQU","n_addresses","n_observed","coverage_status",AEDAR_AGGREGATE_MEASURES,
@@ -225,6 +286,24 @@ test_that("comparison publication consumes materialized density facts without re
     nrow(axis) * length(AEDAR_AGGREGATE_MEASURES)
   expect_equal(result$group_row_count,expected_reference_rows)
   expect_equal(result$territory_row_count,0)
+  density_summaries <- as.data.frame(nanoparquet::read_parquet(file.path(dir,
+    result$density_class_summaries$path)),stringsAsFactors=FALSE)
+  expect_equal(result$density_class_summaries$row_count,
+    length(unique(refs$density_class_code[!is.na(refs$density_class_code)]))*
+      nrow(aedar_aggregate_reading_bindings()))
+  expect_equal(result$density_class_summaries$typequ_count,nrow(axis))
+  expect_equal(nrow(density_summaries),result$density_class_summaries$row_count)
+  stale_typequ_count <- result
+  stale_typequ_count$density_class_summaries$typequ_count <- nrow(axis)-1L
+  stale_typequ_count$content_version <- aedar_comparison_manifest_version(stale_typequ_count)
+  expect_error(validate_aedar_comparison_manifest(stale_typequ_count,dir,verify_parts=FALSE),
+    "density summary descriptor is malformed")
+  pooled <- density_summaries[density_summaries$group_id==codes[[1L]],]
+  expect_equal(nrow(pooled),nrow(aedar_aggregate_reading_bindings()))
+  expect_true(all(pooled$status=="available" & pooled$value==AEDAR_TYPEQU_REGISTRY_COUNT))
+  expect_true(all(pooled$n_addresses==1L & pooled$n_observed==AEDAR_TYPEQU_REGISTRY_COUNT))
+  expect_true(all(pooled$n_observed>pooled$n_addresses))
+  expect_true(all(pooled$source_id==projection$source$source_id & pooled$vintage==projection$source$vintage))
   a104 <- result$parts[[match("A104",vapply(result$parts,`[[`,character(1),"TYPEQU"))]]
   groups <- nanoparquet::read_parquet(file.path(dir,a104$groups))
   expect_equal(unique(groups$statistic[groups$comparison_context=="density_class"]),"pooled")
@@ -246,6 +325,7 @@ test_that("comparison publication consumes materialized density facts without re
   writeBin(prior_manifest,manifest_path)
   failing_metadata <- repeated[c("source_snapshot_id","aedar_content_version","reference_content_version",
     "input_content_version","input_identity","membership","typequ_axis","typequ_axis_sha256")]
+  failing_metadata$density_class_summaries <- density_summaries
   expect_error(write_aedar_comparison_canonical(function(code) stop("forced partition failure"),dir,
     failing_metadata),"forced partition failure")
   expect_identical(readBin(manifest_path,"raw",n=file.info(manifest_path)$size),prior_manifest)

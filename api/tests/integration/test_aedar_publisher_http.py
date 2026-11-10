@@ -18,6 +18,33 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
+def _cleanup_aedar_test_schema(connection, schema, *, created, cleanup_enabled):
+    """Drop only this test's UUID-owned namespace after explicit opt-in."""
+    if not created or not cleanup_enabled:
+        return False
+    if not re.fullmatch(r"it_aedar_[0-9a-f]{16}", schema):
+        raise ValueError("Refusing cleanup outside this run's generated AEDAR schema")
+    connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+    return True
+
+
+def test_aedar_cleanup_is_opt_in_and_limited_to_the_current_run():
+    class Connection:
+        def __init__(self): self.statements = []
+        def execute(self, statement): self.statements.append(statement)
+
+    schema = "it_aedar_" + "0123456789abcdef"
+    connection = Connection()
+    assert not _cleanup_aedar_test_schema(connection, schema, created=True, cleanup_enabled=False)
+    assert not connection.statements
+    assert not _cleanup_aedar_test_schema(connection, schema, created=False, cleanup_enabled=True)
+    assert _cleanup_aedar_test_schema(connection, schema, created=True, cleanup_enabled=True)
+    assert connection.statements == [f'DROP SCHEMA "{schema}" CASCADE']
+    with pytest.raises(ValueError, match="Refusing cleanup"):
+        _cleanup_aedar_test_schema(connection, "public", created=True, cleanup_enabled=True)
+    assert len(connection.statements) == 1
+
+
 def test_aedar_r_publication_is_read_through_bounded_http():
     phase = os.getenv("AEDAR_IT_PHASE", "semantic")
     if phase not in {"semantic", "full-audit", "reconciliation"}:
@@ -33,6 +60,9 @@ def test_aedar_r_publication_is_read_through_bounded_http():
     from api.tests.integration.test_postgres_publication import (
         _aedar_guarded_configuration, _assert_aedar_server_identity)
     publish_dsn, read_dsn = _aedar_guarded_configuration()
+    cleanup_enabled = os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1"
+    if not cleanup_enabled:
+        pytest.fail("AEDAR publisher HTTP proof requires LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1")
     psycopg = pytest.importorskip("psycopg")
     from fastapi.testclient import TestClient
     from api.main import app, pool
@@ -56,15 +86,22 @@ def test_aedar_r_publication_is_read_through_bounded_http():
     pub = psycopg.connect(publish_dsn, autocommit=True)
     fixture_tmp = Path(tempfile.mkdtemp(prefix="aedar-it-",dir="E:/Temp/opencode"))
     evidence_manifest = fixture_tmp / "schema-intent.json"
-    evidence_manifest.write_text(json.dumps({"schema":schema,"database":database_name,
+    run_receipt = {"schema":schema,"database":database_name,
         "publisher_role":publisher.username,"reader_role":read_role,
-        "purpose":"issue-820 AEDAR JSON reconciliation guarded proof"},indent=2),encoding="utf-8")
+        "purpose":"issue-940 AEDAR density-summary guarded proof",
+        "status":"preflight","schema_created":False,"cleanup_requested":cleanup_enabled}
+    evidence_manifest.write_text(json.dumps(run_receipt,indent=2),encoding="utf-8")
     print(f"AEDAR guarded namespace recorded before DDL: {schema} ({evidence_manifest})",flush=True)
+    schema_created = False
+    run_error = None
     try:
         _assert_aedar_server_identity(pub, publisher.username)
         with psycopg.connect(read_dsn) as identity:
             _assert_aedar_server_identity(identity, read_role)
         pub.execute(f'CREATE SCHEMA "{schema}"')
+        schema_created = True
+        run_receipt.update(status="running",schema_created=True)
+        evidence_manifest.write_text(json.dumps(run_receipt,indent=2),encoding="utf-8")
         pub.execute(f'SET search_path TO "{schema}"')
         baseline = subprocess.check_output(
             ["git", "show", "75b6ad661d8ab677c33c73152598d097590c7886:api/schema.sql"],
@@ -94,7 +131,8 @@ def test_aedar_r_publication_is_read_through_bounded_http():
             ("b"*64,"a"*64,"c"*64))
         pub.execute((root / "api/migrations/040_aedar_reference_only_publication.sql").read_text(encoding="utf-8"))
         pub.execute((root / "api/migrations/041_aedar_territory_summaries.sql").read_text(encoding="utf-8"))
-        pub.execute(f'GRANT SELECT ON aedar_territory_summary,table_publication TO "{read_role}"')
+        pub.execute((root / "api/migrations/042_aedar_density_class_summaries.sql").read_text(encoding="utf-8"))
+        pub.execute(f'GRANT SELECT ON aedar_territory_summary,aedar_density_class_summary,table_publication TO "{read_role}"')
         legacy_marker = pub.execute("SELECT publication_mode,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton").fetchone()
         assert legacy_marker == ("legacy_rank",1,0)
         # The migrated reader must reject the retained old marker before the
@@ -464,6 +502,7 @@ if (identical(Sys.getenv('AEDAR_IT_PHASE'),'semantic')) {
   quit(save="no",status=0L)
 }
         comparison_before <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
+        density_summaries_before <- DBI::dbGetQuery(con,"SELECT count(*) n FROM aedar_density_class_summary")$n[[1L]]
 DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_comparison_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced comparison rollback'; END $$")
 DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_comparison_insert BEFORE INSERT ON aedar_comparison_group FOR EACH ROW EXECUTE FUNCTION reject_aedar_comparison_insert()")
 replacement_source <- make_density_source(2)
@@ -471,7 +510,9 @@ replacement <- project_aedar_comparison_publication(projection,replacement_sourc
   aedar_content_version=aedar_aggregate_content_version(projection),reference_content_version='fixture-ref-v2',directory=canonical_comparison)
 comparison_failed <- tryCatch({publish_aedar_comparisons(replacement,con); FALSE},error=function(e) TRUE)
 comparison_after <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
-stopifnot(comparison_failed,identical(comparison_before,comparison_after))
+comparison_summaries_after <- DBI::dbGetQuery(con,"SELECT count(*) n FROM aedar_density_class_summary")$n[[1L]]
+stopifnot(comparison_failed,identical(comparison_before,comparison_after),
+  density_summaries_before==comparison_summaries_after)
 compare_db_projection('groups','aedar_comparison_group',group_columns,group_order)
 '''
         try:
@@ -553,6 +594,7 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                 pool.cache_clear()
                 if original_database_url is None: os.environ.pop("DATABASE_URL",None)
                 else: os.environ["DATABASE_URL"]=original_database_url
+            run_receipt["status"] = "passed"
             return
 
         dbread = psycopg.connect(scoped(read_dsn))
@@ -652,12 +694,67 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                 assert [row["id"] for row in semantic_batch.json()["results"]] == ["aggregate", "comparison"]
                 assert semantic_batch.json()["results"][1]["data"]["comparison"]["group_value"] == pytest.approx(expected_comparison["group"]["value"])
 
+                from api.aedar_models import AEDAR_AGGREGATE_READINGS
+                def fixed_density_item(item_id, measure):
+                    return {"id": item_id, "resource": "aedar_territorial_aggregate",
+                        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+                        "coordinates": {"measure": [measure]},
+                        "fields": ["group_value", "value", "rank", "rank_size", "rank_ties"],
+                        "intent": {"kind": "fixed_comparison", "context": "density_class"}}
+
+                direct_density = client.post("/api/resources/read",json={key:value for key,value in
+                    fixed_density_item("density-single","walk5Volume").items() if key!="id"})
+                assert direct_density.status_code==200,direct_density.text
+                direct_comparison=direct_density.json()["comparison"]
+                assert direct_comparison["group_value"]==pytest.approx(235.0)
+                assert direct_comparison["group_n_addresses"]==2
+                assert direct_comparison["group_n_observed"]==235
+                assert direct_comparison["group_n_observed"]>direct_comparison["group_n_addresses"]
+                assert direct_comparison["statistic"]=="pooled"
+
+                density_two_rank=client.post("/api/resources/read-batch",json={"items":[
+                    fixed_density_item("density-diversity","meanDiversity"),
+                    fixed_density_item("density-volume","meanVolume")]})
+                assert density_two_rank.status_code==200,density_two_rank.text
+                assert len(density_two_rank.json()["results"])==2
+                assert all((row["data"]["comparison"]["rank"],row["data"]["comparison"]["rank_size"])==(1,1)
+                    for row in density_two_rank.json()["results"])
+                density_all_rank=client.post("/api/resources/read-batch",json={"items":[
+                    fixed_density_item(f"density-{index}",measure)
+                    for index,measure in enumerate(AEDAR_AGGREGATE_READINGS)]})
+                assert density_all_rank.status_code==200,density_all_rank.text
+                density_all={row["data"]["comparison"]["measure"]:row["data"]["comparison"]
+                    for row in density_all_rank.json()["results"]}
+                assert len(density_all)==len(AEDAR_AGGREGATE_READINGS)==40
+                expected_density_values={measure:0.0 for measure in AEDAR_AGGREGATE_READINGS}
+                expected_density_values["walk5Volume"]=235.0
+                for measure,row in density_all.items():
+                    assert row["group_value"]==pytest.approx(expected_density_values[measure])
+                    assert row["statistic"]=="pooled"
+                    assert (row["group_n_addresses"],row["group_n_observed"],
+                        row["group_coverage_status"])==(2,235,"covered")
+                    assert row["group_n_observed"]>row["group_n_addresses"]
+                    assert (row["n_addresses"],row["n_observed"],row["coverage_status"])==(
+                        2,235,"covered")
+                    assert (row["source_id"],row["vintage_id"],row["source_url"],row["licence"],
+                        row["attribution"],row["reference_date"],row["publication_date"])==(
+                            "aedar_bretagne","2026-v1",
+                            "https://www.data.gouv.fr/datasets/acces-aux-equipements-depuis-les-adresses-residentielles-bretagne",
+                            "ODbL","© OpenStreetMap contributors; données AEDAR — licence ODbL",
+                            None,"2026-09-30")
+                    if row["value"] is None:
+                        assert measure=="walk5Diversity"
+                        assert row["status"]=="not_available"
+                        assert (row["rank"],row["rank_size"],row["rank_ties"])==(None,None,None)
+                    else:
+                        assert row["status"]=="measured"
+                        assert (row["rank"],row["rank_size"],row["rank_ties"])==(1,1,1)
+
                 # Capture the actual public read-batch bodies after the R
                 # publisher has populated this guarded schema. These sanitized
                 # fixture responses are replayed through the mounted Vue route;
                 # no database identity or connection configuration enters the
                 # artifact.
-                from api.aedar_models import AEDAR_AGGREGATE_READINGS
                 bridge_summaries = {}
                 for level, territory_id in (("commune", "22001"), ("epci", "200000001")):
                     item = {"id": "aedar-summary", "resource": "aedar_territory_summary",
@@ -757,6 +854,7 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                 assert stale.status_code==503
                 pub.execute("UPDATE table_publication SET content_version='fixture-ref-v2' WHERE table_name='territory_reference'")
                 last_complete = pub.execute("SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton").fetchone()
+                last_density_summary_count = pub.execute("SELECT count(*) FROM aedar_density_class_summary").fetchone()[0]
                 last_group_rows = pub.execute("SELECT count(*) FROM aedar_comparison_group").fetchone()[0]
                 last_territory_rows = pub.execute("SELECT count(*) FROM aedar_comparison_territory").fetchone()[0]
                 # Publish another complete source snapshot through the real owner
@@ -780,6 +878,7 @@ stopifnot(result$changed,identical(result$content_version,aedar_aggregate_conten
                 print(source_refresh_run.stdout,end="",flush=True)
                 assert source_refresh_run.returncode==0,source_refresh_run.stdout+source_refresh_run.stderr
                 assert pub.execute("SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton").fetchone() == last_complete
+                assert pub.execute("SELECT count(*) FROM aedar_density_class_summary").fetchone()[0] == last_density_summary_count
                 assert pub.execute("SELECT count(*) FROM aedar_comparison_group").fetchone()[0] == last_group_rows
                 assert pub.execute("SELECT count(*) FROM aedar_comparison_territory").fetchone()[0] == last_territory_rows
                 stale_after_source_refresh=semantic_read("commune", "22001",
@@ -835,5 +934,25 @@ stopifnot(failed,identical(before,after))
             dbread.close(); pool.cache_clear()
             if original_database_url is None: os.environ.pop("DATABASE_URL",None)
             else: os.environ["DATABASE_URL"]=original_database_url
+        run_receipt["status"] = "passed"
+    except BaseException as error:
+        run_error = error
+        run_receipt.update(status="failed",schema_created=schema_created,
+            error_type=type(error).__name__,error_message=re.sub(
+                r"(?i)(postgres(?:ql)?://)[^@\s/]+@",r"\1[redacted]@",str(error))[:2000])
+        evidence_manifest.write_text(json.dumps(run_receipt,indent=2),encoding="utf-8")
+        raise
     finally:
-        pub.close()
+        try:
+            dropped = _cleanup_aedar_test_schema(pub,schema,created=schema_created,
+                cleanup_enabled=cleanup_enabled)
+            run_receipt["cleanup"] = "dropped" if dropped else "not_created"
+        except BaseException as cleanup_error:
+            run_receipt.update(cleanup="failed",cleanup_error_type=type(cleanup_error).__name__,
+                cleanup_error_message=re.sub(r"(?i)(postgres(?:ql)?://)[^@\s/]+@",
+                    r"\1[redacted]@",str(cleanup_error))[:2000])
+            if run_error is None:
+                raise
+        finally:
+            pub.close()
+            evidence_manifest.write_text(json.dumps(run_receipt,indent=2),encoding="utf-8")

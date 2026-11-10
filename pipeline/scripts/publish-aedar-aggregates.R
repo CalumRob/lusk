@@ -56,6 +56,7 @@ if (args[[1]]=="--publish") {
     list(facts=facts_result,comparisons=comparison_result)
   },finally=DBI::dbDisconnect(con))
   cat("Published AEDAR facts",result$facts$row_count,"rows and comparisons",
-    result$comparisons$group_row_count,"groups /",result$comparisons$territory_row_count,
+    result$comparisons$group_row_count,"typed groups /",result$comparisons$density_summary_row_count,
+    "density-class summaries /",result$comparisons$territory_row_count,
     "territory results; comparison version",result$comparisons$content_version,"\n")
 }

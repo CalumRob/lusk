@@ -292,6 +292,28 @@ project_aedar_territory_summary <- function(facts,source,
   if(!length(out)) return(data.frame())
   do.call(rbind,out)
 }
+
+AEDAR_DENSITY_CLASS_SUMMARY_COLUMNS <- c("group_id","measure","value","status","n_typequ",
+  "n_addresses","n_observed","coverage_status","source_id","vintage","source_url","licence",
+  "attribution","reference_date","publication_date")
+
+# Apply the shared 40-reading availability/support law to the already-pooled
+# density artifact. This is a projection only: address pooling remains upstream
+# and no commune-level summaries are averaged here.
+project_aedar_density_class_summary <- function(facts,source,
+    bindings=aedar_aggregate_reading_bindings(),registry_size=AEDAR_TYPEQU_REGISTRY_COUNT) {
+  required <- c("territory_type","territory_id","density_class_code","TYPEQU","n_addresses",
+    "n_observed","coverage_status",unique(bindings$underlying))
+  if(!is.data.frame(facts)||!all(required%in%names(facts))||
+     any(facts$territory_type!="density_class")||
+     any(as.character(facts$territory_id)!=as.character(facts$density_class_code)))
+    stop("AEDAR density summary requires already-pooled density-class facts",call.=FALSE)
+  out <- project_aedar_territory_summary(facts,source,bindings,registry_size)
+  names(out)[names(out)=="territory_id"] <- "group_id"
+  out <- out[AEDAR_DENSITY_CLASS_SUMMARY_COLUMNS]
+  rownames(out) <- NULL
+  out
+}
 AEDAR_SOURCE_RESOURCES <- data.frame(
   kind=c(rep("address",6),rep("aggregate",4),"documentation"),
   mode=c("walk","transit_gain","transit","car","bike_lts4","bike_lts2",rep(NA_character_,5)),
@@ -1134,6 +1156,11 @@ project_aedar_comparison_publication <- function(aggregate_projection,density_so
   input_identity<-as.character(jsonlite::toJSON(as.list(input_hashes),auto_unbox=TRUE))
   input_content_version<-paste(as.character(openssl::sha256(charToRaw(input_identity))),collapse="")
   membership<-aedar_comparison_membership_rows(territory_reference)
+  comparison_classes<-unique(membership$group_id[membership$comparison_context=="density_class"])
+  comparison_density_facts<-density_source$facts[
+    density_source$facts$density_class_code%in%comparison_classes,,drop=FALSE]
+  density_class_summaries<-project_aedar_density_class_summary(comparison_density_facts,
+    aggregate_projection$source)
   axis<-read_aedar_typequ_registry()
   writer<-function(typequ) {
     facts<-aggregate_projection$facts[aggregate_projection$facts$TYPEQU==typequ,,drop=FALSE]
@@ -1147,7 +1174,8 @@ project_aedar_comparison_publication <- function(aggregate_projection,density_so
     source_snapshot_id=AEDAR_AGGREGATE_VINTAGE,aedar_content_version=aedar_content_version,
     reference_content_version=reference_content_version,input_content_version=input_content_version,
     input_identity=input_identity,membership=membership,typequ_axis=axis$TYPEQU,
-    typequ_axis_sha256=AEDAR_TYPEQU_REGISTRY_SHA256))
+    typequ_axis_sha256=AEDAR_TYPEQU_REGISTRY_SHA256,
+    density_class_summaries=density_class_summaries))
 }
 
 validate_aedar_comparison_projection <- function(x) {
@@ -1235,6 +1263,44 @@ aedar_comparison_part_content_hash <- function(groups,territories) {
   aedar_comparison_content_version(groups,territories)
 }
 
+aedar_density_class_summary_content_hash <- function(summaries) {
+  aedar_comparison_content_version(summaries,data.frame())
+}
+
+validate_aedar_density_class_summary <- function(summaries,membership,
+    measure_count=nrow(aedar_aggregate_reading_bindings())) {
+  if(!is.data.frame(summaries)||!identical(names(summaries),AEDAR_DENSITY_CLASS_SUMMARY_COLUMNS)||
+     !is.data.frame(membership)||!all(c("comparison_context","group_id","territory_type")%in%names(membership))||
+     anyNA(summaries[c("group_id","measure","status","coverage_status","source_id","vintage","source_url","licence","attribution")])||
+     anyDuplicated(summaries[c("group_id","measure")]))
+    stop("AEDAR density-class summary has an invalid schema or duplicate key",call.=FALSE)
+  classes<-sort(unique(as.character(membership$group_id[membership$comparison_context=="density_class"&
+    membership$territory_type=="commune"])))
+  measures<-aedar_aggregate_reading_bindings()$measure
+  if(!length(classes)||measure_count!=length(measures)||nrow(summaries)!=length(classes)*measure_count||
+     !setequal(unique(as.character(summaries$group_id)),classes)||!setequal(summaries$measure,measures))
+    stop("AEDAR density-class summary omits a published class or registry-wide reading",call.=FALSE)
+  for(group_id in classes) {
+    group<-summaries[summaries$group_id==group_id,,drop=FALSE]
+    if(nrow(group)!=measure_count||!setequal(group$measure,measures))
+      stop("AEDAR density-class summary has incomplete class × reading coverage",call.=FALSE)
+  }
+  available<-summaries$status=="available"
+  unavailable<-summaries$status=="unavailable"
+  if(any(!available&!unavailable)||any(available&(!is.finite(summaries$value)|summaries$value<0|is.na(summaries$n_typequ)|
+       summaries$n_typequ!=AEDAR_TYPEQU_REGISTRY_COUNT|is.na(summaries$n_addresses)|summaries$n_addresses<=0|
+       is.na(summaries$n_observed)|summaries$n_observed<0|
+       summaries$n_observed>summaries$n_typequ*summaries$n_addresses|summaries$coverage_status!="covered"))||
+     any(unavailable&(!is.na(summaries$value)|!is.na(summaries$n_typequ)|
+       (!is.na(summaries$n_addresses)&summaries$n_addresses<0)|
+       (!is.na(summaries$n_observed)&summaries$n_observed<0))))
+    stop("AEDAR density-class summary violates the pooled availability/support law",call.=FALSE)
+  source_columns<-c("source_id","vintage","source_url","licence","attribution","reference_date","publication_date")
+  if(any(vapply(summaries[source_columns],function(column) length(unique(column))!=1L,logical(1))))
+    stop("AEDAR density-class summary mixes source provenance",call.=FALSE)
+  invisible(summaries)
+}
+
 validate_aedar_comparison_part <- function(groups,territories,typequ,membership) {
   if(!identical(names(groups),AEDAR_COMPARISON_GROUP_COLUMNS)||
      !identical(names(territories),character())||nrow(territories)!=0L||!nrow(groups)||any(groups$TYPEQU!=typequ)||
@@ -1260,9 +1326,11 @@ aedar_comparison_manifest_version <- function(manifest) {
   persisted_fields<-c("schema_version","publication_mode","source_snapshot_id","aedar_content_version",
     "reference_content_version","input_content_version","input_identity","typequ_axis",
     "typequ_axis_sha256","group_columns","territory_columns","membership",
-    "group_row_count","territory_row_count","parts")
+    "group_row_count","territory_row_count","density_class_summaries","parts")
   payload<-manifest[persisted_fields]
   payload$parts<-lapply(payload$parts,function(p) p[c("TYPEQU","group_rows","territory_rows","content_sha256")])
+  payload$density_class_summaries<-payload$density_class_summaries[
+    c("row_count","class_count","measure_count","content_sha256")]
   paste(as.character(openssl::sha256(charToRaw(as.character(jsonlite::toJSON(payload,auto_unbox=TRUE,
     dataframe="rows",null="null",digits=NA,pretty=FALSE))))),collapse="")
 }
@@ -1290,19 +1358,29 @@ validate_aedar_comparison_input_identity <- function(identity,input_content_vers
 
 write_aedar_comparison_canonical <- function(part_builder,directory=file.path("data","processed","aedar"),metadata) {
   if(!is.function(part_builder)||!is.list(metadata)||!all(c("source_snapshot_id","aedar_content_version",
-      "reference_content_version","input_content_version","input_identity","membership","typequ_axis","typequ_axis_sha256")%in%names(metadata)))
+      "reference_content_version","input_content_version","input_identity","membership","typequ_axis","typequ_axis_sha256",
+      "density_class_summaries")%in%names(metadata)))
     stop("AEDAR comparison canonical writer requires a bounded part builder and complete manifest metadata",call.=FALSE)
   if(!identical(paste(as.character(openssl::sha256(charToRaw(metadata$input_identity))),collapse=""),metadata$input_content_version)||
      !identical(metadata$source_snapshot_id,AEDAR_AGGREGATE_VINTAGE)||
      !identical(metadata$typequ_axis_sha256,AEDAR_TYPEQU_REGISTRY_SHA256)||
      !identical(metadata$typequ_axis,read_aedar_typequ_registry()$TYPEQU))
     stop("AEDAR comparison manifest provenance or TYPEQU pin is invalid",call.=FALSE)
+  density_summaries<-as.data.frame(metadata$density_class_summaries[,AEDAR_DENSITY_CLASS_SUMMARY_COLUMNS,drop=FALSE],
+    stringsAsFactors=FALSE)
+  validate_aedar_density_class_summary(density_summaries,metadata$membership)
   dir.create(directory,recursive=TRUE,showWarnings=FALSE)
   generations<-file.path(directory,"generations"); dir.create(generations,recursive=TRUE,showWarnings=FALSE)
   generation<-tempfile("generation-",tmpdir=generations)
   if(!dir.create(generation)) stop("Could not create private AEDAR comparison generation",call.=FALSE)
   installed<-FALSE
   on.exit(if(!installed&&dir.exists(generation)) unlink(generation,recursive=TRUE,force=TRUE),add=TRUE)
+  density_summary_path<-file.path(generation,"density-class-summaries.parquet")
+  nanoparquet::write_parquet(density_summaries,density_summary_path)
+  checked_density_summaries<-as.data.frame(nanoparquet::read_parquet(density_summary_path),stringsAsFactors=FALSE)
+  rownames(checked_density_summaries)<-NULL
+  validate_aedar_density_class_summary(checked_density_summaries,metadata$membership)
+  density_summary_hash<-aedar_density_class_summary_content_hash(checked_density_summaries)
   parts<-vector("list",length(metadata$typequ_axis)); total_groups<-total_territories<-0
   for(i in seq_along(metadata$typequ_axis)) {
     code<-metadata$typequ_axis[[i]]
@@ -1326,12 +1404,16 @@ write_aedar_comparison_canonical <- function(part_builder,directory=file.path("d
       group_rows=nrow(groups),territory_rows=nrow(territories),content_sha256=part_hash)
     total_groups<-total_groups+nrow(groups); total_territories<-total_territories+nrow(territories)
   }
-  manifest<-list(schema_version=2L,publication_mode="reference_only",source_snapshot_id=metadata$source_snapshot_id,
+  manifest<-list(schema_version=3L,publication_mode="reference_only",source_snapshot_id=metadata$source_snapshot_id,
     aedar_content_version=metadata$aedar_content_version,reference_content_version=metadata$reference_content_version,
     input_content_version=metadata$input_content_version,input_identity=metadata$input_identity,
     typequ_axis=metadata$typequ_axis,typequ_axis_sha256=metadata$typequ_axis_sha256,
     group_columns=AEDAR_COMPARISON_GROUP_COLUMNS,territory_columns=AEDAR_COMPARISON_TERRITORY_COLUMNS,
-    membership=metadata$membership,group_row_count=total_groups,territory_row_count=total_territories,parts=parts)
+    membership=metadata$membership,group_row_count=total_groups,territory_row_count=total_territories,
+    density_class_summaries=list(path=paste0("generations/",basename(generation),"/",basename(density_summary_path)),
+       row_count=nrow(checked_density_summaries),class_count=length(unique(checked_density_summaries$group_id)),
+       measure_count=nrow(aedar_aggregate_reading_bindings()),typequ_count=length(metadata$typequ_axis),
+       content_sha256=density_summary_hash),parts=parts)
   manifest$content_version<-aedar_comparison_manifest_version(manifest)
   validate_aedar_comparison_manifest(manifest,directory,verify_parts=FALSE)
   target<-file.path(directory,"aedar_comparison_manifest.json")
@@ -1347,12 +1429,12 @@ write_aedar_comparison_canonical <- function(part_builder,directory=file.path("d
 }
 
 validate_aedar_comparison_manifest <- function(manifest,directory,verify_parts=TRUE) {
-  if(!is.list(manifest)||is.null(manifest$schema_version)||as.integer(manifest$schema_version)!=2L||
+  if(!is.list(manifest)||is.null(manifest$schema_version)||as.integer(manifest$schema_version)!=3L||
      !identical(manifest$publication_mode,"reference_only"))
     stop("Legacy AEDAR peer/rank artifact is incompatible; regenerate the reference-only manifest with scripts/publish-aedar-aggregates.R --check",call.=FALSE)
   required<-c("schema_version","publication_mode","source_snapshot_id","aedar_content_version","reference_content_version",
-    "input_content_version","input_identity","typequ_axis","typequ_axis_sha256","group_columns",
-    "territory_columns","membership","group_row_count","territory_row_count","parts","content_version")
+     "input_content_version","input_identity","typequ_axis","typequ_axis_sha256","group_columns",
+     "territory_columns","membership","group_row_count","territory_row_count","density_class_summaries","parts","content_version")
   if(!is.list(manifest)||!all(required%in%names(manifest))||
      manifest$source_snapshot_id!=AEDAR_AGGREGATE_VINTAGE||
      !identical(manifest$typequ_axis,read_aedar_typequ_registry()$TYPEQU)||
@@ -1370,7 +1452,29 @@ validate_aedar_comparison_manifest <- function(manifest,directory,verify_parts=T
   membership<-as.data.frame(manifest$membership,stringsAsFactors=FALSE)
   if(!all(c("comparison_context","group_id","territory_type")%in%names(membership))||anyDuplicated(membership))
     stop("AEDAR comparison manifest membership is malformed",call.=FALSE)
+  density_descriptor<-manifest$density_class_summaries
+   if(!is.list(density_descriptor)||!all(c("path","row_count","class_count","measure_count","typequ_count","content_sha256")%in%names(density_descriptor))||
+      !is.character(density_descriptor$path)||length(density_descriptor$path)!=1L||
+      !is.numeric(density_descriptor$typequ_count)||length(density_descriptor$typequ_count)!=1L||
+      is.na(density_descriptor$typequ_count)||density_descriptor$typequ_count<1L||
+      density_descriptor$typequ_count!=length(manifest$typequ_axis)||
+      !identical(basename(density_descriptor$path),"density-class-summaries.parquet")||
+     grepl("(^|[/\\\\])[.][.]([/\\\\]|$)|^[A-Za-z]:",density_descriptor$path)||
+     !grepl("^[0-9a-fA-F]{64}$",density_descriptor$content_sha256))
+    stop("AEDAR comparison density summary descriptor is malformed",call.=FALSE)
   root<-normalizePath(directory,winslash="/",mustWork=TRUE)
+  density_path<-normalizePath(file.path(directory,density_descriptor$path),winslash="/",mustWork=FALSE)
+  if(!startsWith(density_path,paste0(root,"/generations/"))||!file.exists(density_path))
+    stop("AEDAR comparison manifest references a missing/out-of-root density summary",call.=FALSE)
+  if(verify_parts) {
+    summaries<-as.data.frame(nanoparquet::read_parquet(density_path),stringsAsFactors=FALSE)
+    rownames(summaries)<-NULL
+    validate_aedar_density_class_summary(summaries,membership,density_descriptor$measure_count)
+    if(nrow(summaries)!=density_descriptor$row_count||
+       length(unique(summaries$group_id))!=density_descriptor$class_count||
+       !identical(aedar_density_class_summary_content_hash(summaries),density_descriptor$content_sha256))
+      stop("AEDAR density-class summary partition is missing, tampered, or incomplete",call.=FALSE)
+  }
   count_groups<-count_territories<-0
   for(i in seq_along(manifest$parts)) {
     p<-manifest$parts[[i]]; code<-manifest$typequ_axis[[i]]
@@ -1457,6 +1561,18 @@ publish_aedar_comparisons <- function(x,con) {
   if(!is.list(x)||is.null(x$parts)||is.null(x$manifest_path))
     stop("AEDAR comparison publication requires the bounded canonical manifest",call.=FALSE)
   validate_aedar_comparison_manifest(x,x$directory,verify_parts=FALSE)
+  read_density_summaries<-function() {
+    path<-file.path(x$directory,x$density_class_summaries$path)
+    summaries<-as.data.frame(nanoparquet::read_parquet(path),stringsAsFactors=FALSE)
+    rownames(summaries)<-NULL
+    validate_aedar_density_class_summary(summaries,x$membership,x$density_class_summaries$measure_count)
+    if(nrow(summaries)!=x$density_class_summaries$row_count||
+       length(unique(summaries$group_id))!=x$density_class_summaries$class_count||
+       !identical(aedar_density_class_summary_content_hash(summaries),x$density_class_summaries$content_sha256))
+      stop("AEDAR density-class summary changed before database publication",call.=FALSE)
+    summaries
+  }
+  density_summaries<-read_density_summaries()
   progress("begin-transaction")
   result <- DBI::dbWithTransaction(con, {
     DBI::dbExecute(con,"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
@@ -1467,17 +1583,24 @@ publish_aedar_comparisons <- function(x,con) {
     reference<-DBI::dbGetQuery(con,"SELECT territory_type,territory_id,epci_id,density_class_code FROM territory_reference")
     validate_aedar_comparison_manifest_membership(x,reference)
     validate_aedar_comparison_manifest(x,x$directory,verify_parts=FALSE)
-    current<-DBI::dbGetQuery(con,"SELECT content_version,input_content_version,group_row_count,territory_row_count,publication_mode FROM aedar_comparison_publication WHERE singleton")
-    unchanged<-nrow(current)==1L&&identical(as.character(current$content_version[[1L]]),x$content_version)&&
-        identical(as.character(current$input_content_version[[1L]]),x$input_content_version)&&
-        current$group_row_count[[1L]]==x$group_row_count&&current$territory_row_count[[1L]]==0L&&current$publication_mode[[1L]]=="reference_only"
+      current<-DBI::dbGetQuery(con,"SELECT content_version,input_content_version,group_row_count,territory_row_count,publication_mode,density_summary_class_count,density_summary_measure_count,density_summary_typequ_count,density_summary_row_count FROM aedar_comparison_publication WHERE singleton")
+     unchanged<-nrow(current)==1L&&identical(as.character(current$content_version[[1L]]),x$content_version)&&
+         identical(as.character(current$input_content_version[[1L]]),x$input_content_version)&&
+          current$group_row_count[[1L]]==x$group_row_count&&current$territory_row_count[[1L]]==0L&&current$publication_mode[[1L]]=="reference_only"&&
+          current$density_summary_class_count[[1L]]==x$density_class_summaries$class_count&&
+          current$density_summary_measure_count[[1L]]==x$density_class_summaries$measure_count&&
+          current$density_summary_typequ_count[[1L]]==x$density_class_summaries$typequ_count&&
+          current$density_summary_row_count[[1L]]==x$density_class_summaries$row_count
     if(unchanged) {
       validate_aedar_comparison_manifest(x,x$directory,verify_parts=TRUE)
-      transaction_result <- list(changed=FALSE,content_version=x$content_version,group_row_count=x$group_row_count,territory_row_count=x$territory_row_count)
-    } else {
-      progress("begin-replacement",groups=x$group_row_count,territories=x$territory_row_count)
-      DBI::dbExecute(con,"DELETE FROM aedar_comparison_territory")
-      DBI::dbExecute(con,"DELETE FROM aedar_comparison_group")
+       transaction_result <- list(changed=FALSE,content_version=x$content_version,group_row_count=x$group_row_count,
+         territory_row_count=x$territory_row_count,density_summary_row_count=x$density_class_summaries$row_count)
+     } else {
+       progress("begin-replacement",groups=x$group_row_count,territories=x$territory_row_count,
+         density_summaries=x$density_class_summaries$row_count)
+       DBI::dbExecute(con,"DELETE FROM aedar_comparison_territory")
+       DBI::dbExecute(con,"DELETE FROM aedar_density_class_summary")
+       DBI::dbExecute(con,"DELETE FROM aedar_comparison_group")
       chunk_size<-20000L
       group_buffer<-list(); group_buffer_rows<-0L
       flush_groups<-function() {
@@ -1501,13 +1624,24 @@ publish_aedar_comparisons <- function(x,con) {
         group_buffer_rows<-group_buffer_rows+nrow(groups)
         if(group_buffer_rows>=chunk_size) flush_groups()
         if(part_index %% 25L == 0L) progress("replacement-partitions",done=part_index,total=length(x$parts))
-      }
-      flush_groups()
-      progress("before-publication-marker")
-      DBI::dbExecute(con,"INSERT INTO aedar_comparison_publication(singleton,content_version,publication_mode,source_snapshot_id,aedar_content_version,reference_content_version,input_content_version,input_identity,group_row_count,territory_row_count,published_at) VALUES(true,$1,'reference_only','2026-v1',$2,$3,$4,$5::jsonb,$6,0,now()) ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,publication_mode=EXCLUDED.publication_mode,source_snapshot_id=EXCLUDED.source_snapshot_id,aedar_content_version=EXCLUDED.aedar_content_version,reference_content_version=EXCLUDED.reference_content_version,input_content_version=EXCLUDED.input_content_version,input_identity=EXCLUDED.input_identity,group_row_count=EXCLUDED.group_row_count,territory_row_count=0,published_at=EXCLUDED.published_at",
-        params=list(x$content_version,x$aedar_content_version,x$reference_content_version,x$input_content_version,
-          x$input_identity,x$group_row_count))
-      transaction_result <- list(changed=TRUE,content_version=x$content_version,group_row_count=x$group_row_count,territory_row_count=x$territory_row_count)
+       }
+       flush_groups()
+       density_summaries<-read_density_summaries()
+       density_payload<-density_summaries[c("group_id","measure","value","status","n_typequ",
+         "n_addresses","n_observed","coverage_status")]
+       density_payload$comparison_content_version<-x$content_version
+       density_payload$aedar_content_version<-x$aedar_content_version
+       density_payload$reference_content_version<-x$reference_content_version
+       density_payload$input_content_version<-x$input_content_version
+       DBI::dbWriteTable(con,"aedar_density_class_summary",density_payload,append=TRUE,row.names=FALSE)
+       progress("before-publication-marker")
+        DBI::dbExecute(con,"INSERT INTO aedar_comparison_publication(singleton,content_version,publication_mode,source_snapshot_id,aedar_content_version,reference_content_version,input_content_version,input_identity,group_row_count,territory_row_count,density_summary_class_count,density_summary_measure_count,density_summary_typequ_count,density_summary_row_count,published_at) VALUES(true,$1,'reference_only','2026-v1',$2,$3,$4,$5::jsonb,$6,0,$7,$8,$9,$10,now()) ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,publication_mode=EXCLUDED.publication_mode,source_snapshot_id=EXCLUDED.source_snapshot_id,aedar_content_version=EXCLUDED.aedar_content_version,reference_content_version=EXCLUDED.reference_content_version,input_content_version=EXCLUDED.input_content_version,input_identity=EXCLUDED.input_identity,group_row_count=EXCLUDED.group_row_count,territory_row_count=0,density_summary_class_count=EXCLUDED.density_summary_class_count,density_summary_measure_count=EXCLUDED.density_summary_measure_count,density_summary_typequ_count=EXCLUDED.density_summary_typequ_count,density_summary_row_count=EXCLUDED.density_summary_row_count,published_at=EXCLUDED.published_at",
+          params=list(x$content_version,x$aedar_content_version,x$reference_content_version,x$input_content_version,
+            x$input_identity,x$group_row_count,x$density_class_summaries$class_count,
+            x$density_class_summaries$measure_count,x$density_class_summaries$typequ_count,
+            x$density_class_summaries$row_count))
+       transaction_result <- list(changed=TRUE,content_version=x$content_version,group_row_count=x$group_row_count,
+         territory_row_count=x$territory_row_count,density_summary_row_count=x$density_class_summaries$row_count)
     }
      progress("before-transaction-commit")
      transaction_result

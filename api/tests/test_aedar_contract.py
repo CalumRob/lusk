@@ -150,13 +150,13 @@ def test_fixed_aggregate_reads_peer_population_only_when_rank_is_requested(
         "35239": {"value": 5.0, "available": True, "n_addresses": 100,
                    "n_observed": 4, "coverage_status": "covered", "statistic": "direct"},
     }
-    monkeypatch.setattr(aedar_reads, "_aedar_registry_size", lambda _conn: 3)
     monkeypatch.setattr("api.snapshot_reads._comparison_cohort",
                         lambda *_args: (None, None, {"kind": "density_class", "density_class_code": "D1"}))
-    monkeypatch.setattr(aedar_reads, "_aedar_pooled_group_aggregate",
-                        lambda *_args: {"value": 2.0, "n_addresses": 300,
-                                        "n_observed": 10, "coverage_status": "covered",
-                                        "statistic": "pooled"})
+    monkeypatch.setattr(aedar_reads, "_aedar_density_class_summary_records",
+                        lambda _conn, _group, measures, _marker: calls.append("density_summary") or
+                        {measure: {"value": 2.0, "n_addresses": 300, "n_observed": 10,
+                                   "coverage_status": "covered", "statistic": "pooled"}
+                         for measure in measures})
     monkeypatch.setattr(aedar_reads, "_aedar_fixed_peer_ids",
                         lambda *_args: calls.append("peer_ids") or list(peers))
     provenance = ("aedar", "2026-v1", "https://example.test", "ODbL", "AEDAR", None, "2026-09-30")
@@ -200,6 +200,57 @@ def test_fixed_aggregate_reads_peer_population_only_when_rank_is_requested(
         assert (set(comparison) & {"rank", "rank_size", "rank_ties"}) == expected_rank_fields
 
 
+def test_aedar_benchmark_rejects_stale_current_marker_before_timing(monkeypatch):
+    from fastapi import HTTPException
+    from api.tests.integration import benchmark_aedar_summary_reads as benchmark
+
+    marker_calls = []
+    def stale_marker(_connection):
+        marker_calls.append(True)
+        raise HTTPException(503, "stale comparison publication")
+
+    monkeypatch.setattr(aedar_reads, "_aedar_comparison_marker", stale_marker)
+    monkeypatch.setattr(benchmark.time, "perf_counter",
+                        lambda: pytest.fail("stale fixture reached the timed section"))
+    active = {"label": "previous"}
+
+    with pytest.raises(RuntimeError, match="current API comparison-marker preflight failed"):
+        benchmark._timed_adapter_preparation(
+            object(), {"territory_type": "commune", "territory_id": "22001",
+                       "context": "epci"}, {"measures": []}, "test", active)
+
+    assert marker_calls == [True]
+    assert active["label"] is None
+
+
+def test_aedar_benchmark_forwards_fixture_context_after_marker_gate(monkeypatch):
+    from api.tests.integration import benchmark_aedar_summary_reads as benchmark
+
+    marker = object()
+    calls = []
+    monkeypatch.setattr(aedar_reads, "_aedar_comparison_marker", lambda _connection: marker)
+
+    def prepare(connection, territory_type, territory_id, context, batch, marker):
+        calls.append((connection, territory_type, territory_id, context, batch, marker))
+        return {"prepared": True}
+
+    monkeypatch.setattr(aedar_reads, "_aedar_prepare_fixed_aggregate_batch", prepare)
+    ticks = iter((1.0, 1.025))
+    monkeypatch.setattr(benchmark.time, "perf_counter", lambda: next(ticks))
+    connection = object()
+    batch = {"measures": ["meanDiversity"]}
+    fixture = {"territory_type": "commune", "territory_id": "22001", "context": "epci"}
+    active = {"label": None}
+
+    result, elapsed_ms = benchmark._timed_adapter_preparation(
+        connection, fixture, batch, "test", active)
+
+    assert result == {"prepared": True}
+    assert elapsed_ms == pytest.approx(25.0)
+    assert calls == [(connection, "commune", "22001", "epci", batch, marker)]
+    assert active["label"] is None
+
+
 def test_aedar_source_measure_contract_has_312_fields_and_four_level_identity():
     from pathlib import Path
     root = Path(__file__).resolve().parents[2]
@@ -241,6 +292,32 @@ def test_aedar_summary_publication_is_bound_to_source_and_reference_clocks():
     assert "summary_existing$aedar_source_content_version" in publisher
     assert "marker[4] != marker[3]" in reader
     assert "marker[5] != marker[6]" in reader
+
+
+def test_aedar_density_class_summaries_are_comparison_input_and_source_bound():
+    root = Path(__file__).resolve().parents[2]
+    schema = (root / "api/schema.sql").read_text(encoding="utf-8")
+    migration = (root / "api/migrations/042_aedar_density_class_summaries.sql").read_text(encoding="utf-8")
+    producer = (root / "pipeline/R/aedar_aggregates.R").read_text(encoding="utf-8")
+    reader = inspect.getsource(aedar_reads._aedar_density_class_summary_records)
+    for source in (schema, migration):
+        assert "aedar_density_class_summary" in source
+        for identity in ("comparison_content_version", "aedar_content_version",
+                         "reference_content_version", "input_content_version"):
+            assert identity in source
+        assert "density_summary_row_count" in source
+        assert "density_summary_typequ_count" in source
+    assert "density_class_summaries" in producer
+    assert "project_aedar_density_class_summary" in producer
+    assert "aedar_density_class_summary" in producer
+    assert "comparison_content_version=%s" in reader
+    assert "aedar_version != marker[2]" in reader
+    assert "reference_version != marker[3]" in reader
+    assert "input_version != marker[4]" in reader
+    assert "n_typequ != marker[16]" in reader
+    assert "235" not in reader
+    assert "typequ_count=length(metadata$typequ_axis)" in producer
+    assert "sum(" not in reader.lower() and "group by" not in reader.lower()
 
 
 def test_aedar_metadata_complete_check_fails_closed_for_partial_gamme_states():
@@ -485,7 +562,7 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
             if "SELECT DISTINCT typequ" in sql:
                 return Rows([("A104",)])
             if "aedar_comparison_publication" in sql:
-                return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,0,state["mode"],"old-aedar" if state["stale"] else "aed-v1","ref-v1")})()
+                return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,0,state["mode"],"old-aedar" if state["stale"] else "aed-v1","ref-v1",1,40,40,40,1,235)})()
             if "SELECT territory_id,territory_type,density_class_code FROM territory_reference" in sql:
                 return type("Territory",(),{"fetchone":lambda self:("22001","commune",state["density"])})()
             if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
@@ -836,7 +913,17 @@ class _AedarSelectedConnection:
             return _AedarSelectedRows(["marker"], [(
 
                 "cmp-v1", "2026-v1", "aed-v1", "ref-v1", "inputs-v1", {"address_origins": "sha"},
-                1, 0, "reference_only", "aed-v1", "ref-v1")])
+                1, 0, "reference_only", "aed-v1", "ref-v1", 2, 40, 80, 80, 2, 235)])
+        if "FROM aedar_density_class_summary" in s:
+            _, group_id, measures = params
+            rows = []
+            for measure in measures:
+                summary = self.state.get("density_summaries", {}).get((group_id, measure))
+                if summary is not None:
+                    rows.append((measure, summary["value"], summary["status"], summary["n_typequ"],
+                        summary["n_addresses"], summary["n_observed"], summary["coverage_status"],
+                        "aed-v1", "ref-v1", "inputs-v1"))
+            return _AedarSelectedRows([], rows)
         if "count(DISTINCT typequ)" in s:
             return _AedarSelectedRows(["n"], [(self._registry_size(),)])
         if "GROUP BY territory_id" in s and "aedar_territorial_aggregate" in s:
@@ -1121,6 +1208,12 @@ def _aedar_selected_state():
             ("22003", .50, 5.5, 10, 16)):
         summaries[("commune", code, "transit10Diversity")] = summary(share, addresses, observed)
         summaries[("commune", code, "transit10Volume")] = summary(volume, addresses, observed)
+    density_summaries = {
+        ("D1", "meanVolume"): summary(24.0, 40, 67),
+        ("D1", "meanDiversity"): summary(0.95, 40, 67),
+        ("D2", "meanVolume"): summary(None, 40, 34, status="unavailable"),
+        ("D2", "meanDiversity"): summary(None, 40, 34, status="unavailable"),
+    }
     return {
         "reference": {"22001": "commune", "22002": "commune", "22003": "commune",
                       "E1": "epci", "E2": "epci", "22": "departement", "53": "region"},
@@ -1137,6 +1230,7 @@ def _aedar_selected_state():
         ],
         "aggregates": aggregates,
         "summaries": summaries,
+        "density_summaries": density_summaries,
         # Pooled density-class artifact rows for the registry-wide sums.
         "group_rows": [
             {"group_id": "D1", "typequ": "A104", "measure": "count_15_car_mean",
@@ -1425,8 +1519,8 @@ def test_aedar_fixed_aggregate_same_level_and_density_contexts():
     assert same_level["group_value"] == pytest.approx(45.0)
     assert same_level["value"] == pytest.approx(23.0)
     assert (same_level["rank"], same_level["rank_size"], same_level["rank_ties"]) == (2, 2, 1)
-    # Density class: the reference is the pooled address artifact summed over
-    # the registry (16 + 8 = 24.0); peers are the density class communes.
+    # Density class: the reference is the producer-published pooled summary
+    # (16 + 8 = 24.0); peers are the density class communes.
     density = aedar_reads._aedar_comparison_snapshot(
         _AedarSelectedConnection(_aedar_selected_state()), "commune", "22001", "density_class",
         None, "meanVolume", None, facets)["comparison"]
@@ -1665,22 +1759,16 @@ def test_aedar_aggregate_law_reads_one_normalized_record_for_both_shapes():
     assert law(law_inputs(**{**base, "v_max": 1.5}), 2, "count_15_car_mean") is True
 
 
-def test_aedar_pooled_group_null_observed_row_is_honestly_unavailable():
-    """A pooled density row with NULL n_observed is honestly bad (#914 amendment).
-
-    The schema CHECK admits a NULL n_observed on `aedar_comparison_group`, but
-    the unified aggregate mechanism computes n_bad_observed in SQL exactly
-    like the territorial path, so the pooled registry-wide reading is honestly
-    unavailable (value null) — never silently served as a sum.
-    """
-    state = _aedar_selected_state()  # D2 carries a NULL n_observed pooled row
+def test_aedar_fixed_density_reads_unavailable_published_summary_without_reaggregation():
+    """A producer-marked unavailable density reading is served without TYPEQU aggregation."""
+    state = _aedar_selected_state()
     conn = _AedarSelectedConnection(state)
-    record = aedar_reads._aedar_pooled_group_aggregate(conn, "D2", "count_15_car_mean", 2)
+    record = aedar_reads._aedar_density_class_summary_records(
+        conn, "D2", ["meanVolume"], ("cmp-v1", "2026-v1", "aed-v1", "ref-v1", "inputs-v1"))["meanVolume"]
     assert record["value"] is None and record["available"] is False
     assert record["statistic"] == "pooled"
-    # End to end: the fixed density_class reference reads honestly unavailable
-    # (group_value null) while the territorial focal (22003, in D2) still
-    # reads its own registry-wide sum and ranks within its peer group.
+    # End to end: the fixed density_class reference reads the stored unavailable
+    # result while the focal commune still ranks from territorial summaries.
     result = aedar_reads._aedar_comparison_snapshot(
         conn, "commune", "22003", "density_class", None, "meanVolume",
         ["group_value", "value", "status", "rank", "rank_size", "rank_ties"],
@@ -1692,4 +1780,44 @@ def test_aedar_pooled_group_null_observed_row_is_honestly_unavailable():
     assert comparison["value"] == pytest.approx(30.0)
     assert comparison["status"] == "measured"
     assert (comparison["rank"], comparison["rank_size"], comparison["rank_ties"]) == (1, 1, 1)
+    assert any("FROM aedar_density_class_summary" in query for query in conn.queries)
+    assert not any("FROM aedar_comparison_group" in query for query in conn.queries)
+
+
+def test_aedar_density_summary_read_fails_closed_for_missing_or_mismatched_identity():
+    from fastapi import HTTPException
+
+    marker = ("cmp-v1", "2026-v1", "aed-v1", "ref-v1", "input-v1", {},
+              1, 0, "reference_only", "aed-v1", "ref-v1", 1, 40, 40, 40, 1, 4)
+
+    class Connection:
+        def __init__(self, rows): self.rows = rows
+        def execute(self, query, params):
+            assert "FROM aedar_density_class_summary" in query
+            assert params == ("cmp-v1", "D1", ["meanVolume"])
+            return _AedarSelectedRows([], self.rows)
+
+    valid = [("meanVolume", 24.0, "available", 4, 40, 67, "covered",
+              "aed-v1", "ref-v1", "input-v1")]
+    record = aedar_reads._aedar_density_class_summary_records(
+        Connection(valid), "D1", ["meanVolume"], marker)["meanVolume"]
+    assert record["value"] == 24.0 and record["n_observed"] == 67
+    assert record["n_observed"] > record["n_addresses"]
+    malformed = [
+        ("meanVolume", 24.0, "available", 3, 40, 67, "covered",
+         "aed-v1", "ref-v1", "input-v1"),
+        ("meanVolume", -1.0, "available", 235, 40, 67, "covered",
+         "aed-v1", "ref-v1", "input-v1"),
+        ("meanVolume", 24.0, "available", 4, 40, 161, "covered",
+         "aed-v1", "ref-v1", "input-v1"),
+        ("meanVolume", 24.0, "available", 235, 40, 67, "pending_review",
+         "aed-v1", "ref-v1", "input-v1"),
+        ("meanVolume", 24.0, "available", 235, 40, 67, "covered",
+         "aed-v1", "ref-v1", "stale-input"),
+    ]
+    for rows in ([], *[(row,) for row in malformed]):
+        with pytest.raises(HTTPException) as err:
+            aedar_reads._aedar_density_class_summary_records(
+                Connection(rows), "D1", ["meanVolume"], marker)
+        assert err.value.status_code == 503
 
