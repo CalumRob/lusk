@@ -279,7 +279,9 @@ function indicateurDeSql(
       !descriptor.axis_values.includes(dimensions.axis)) {
     throw new Error('Axe SQL du thème non déclaré')
   }
-  const provenance = fact.status === 'unavailable' && Array.isArray(fact.sources) && fact.sources.length === 0
+  // Une absence d'observation n'a pas de source à attribuer : un fait non mesuré
+  // peut porter une provenance vide. Un fait mesuré, lui, doit rester sourcé.
+  const provenance = fact.status !== 'measured' && Array.isArray(fact.sources) && fact.sources.length === 0
     ? [] : apiSources(fact.sources, String(fact.indicator_id))
   for (const field of ['support_count', 'denominator_count']) {
     if (field in fact && !(fact[field] === null || finite(fact[field]))) {
