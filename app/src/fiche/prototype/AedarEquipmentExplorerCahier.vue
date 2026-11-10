@@ -179,12 +179,12 @@ const volumeRamp = computed<TimeRampFigureData>(() => {
       xLabel: `${horizon} min`,
       value: readAedarCountMeasure(selectedFact.value, horizon, mode, 'mean'),
       referenceValue: groupValue(horizon, mode, 'mean'),
-      referenceNote: (() => {
+      referenceRank: (() => {
+        if (groupValue(horizon, mode, 'mean') === null) return null
         const cell = aedarComparisonCell(activeComparison.value, selectedBaseFact.value?.typequ, `count_${horizon}_${mode}_mean`)
-        if (groupValue(horizon, mode, 'mean') === null || !cell?.rank || !cell.rank_size || cell.rank_size < 2) return null
-        const rank = `${cell.rank === 1 ? '1er' : `${cell.rank}e`}/${cell.rank_size}`
-        const direction = cell.direction === 'low' ? 'moins est mieux' : 'plus est mieux'
-        return `Rang du territoire : ${rank}, ${direction}${cell.rank_ties && cell.rank_ties > 1 ? ', ex æquo' : ''}`
+        return cell?.rank && cell.rank_size && cell.rank_size >= 2
+          ? { position: cell.rank, size: cell.rank_size }
+          : null
       })(),
     })),
   }))

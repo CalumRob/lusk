@@ -7,7 +7,7 @@ import type {
   CahierGroupedVerticalBarFigureData,
   CahierTooltipRow,
 } from '@/fiche/cahierFigureGrammaire'
-import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
+import { cahierIntegerYAxisScale, formatServedRank } from '@/fiche/cahierFigureGrammaire'
 import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -120,6 +120,9 @@ const tooltipRows = computed<readonly CahierTooltipRow[]>(() => {
       label: series.label,
       value: value === null || value === undefined ? UNAVAILABLE_LABEL : formatValue(value),
       markerColor: series.color,
+      ...(series.comparison
+        ? { comparison: true, rank: formatServedRank(series.ranks?.[selectedCategoryIndex.value!]) }
+        : {}),
     }
   })
 })

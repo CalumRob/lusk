@@ -572,6 +572,12 @@ describe('Variante E — partage de l’espace public', () => {
     if (!cycling?.evidence || cycling.evidence.kind !== 'cycling-offer') {
       throw new Error('Expected complete cycling-offer evidence')
     }
+    // Served ranks come from the comparison evidence, never from the local values.
+    const bikeNetwork = sharing.evidence.networks.find((network) => network.mode === 'bike')
+    if (!bikeNetwork?.length.fact.comparison) throw new Error('Expected a served network comparison')
+    bikeNetwork.length.fact.comparison.rank = { position: 2, size: 3 }
+    if (!cycling.evidence.protectedDensity.fact.comparison) throw new Error('Expected a served protected-density comparison')
+    cycling.evidence.protectedDensity.fact.comparison.rank = { position: 1, size: 4 }
 
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push({ path: '/' })
@@ -619,10 +625,18 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.findAll('.cahier-network-bar-chart__reference-key')).toHaveLength(1)
     expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(0)
     await wrapper.find('.cahier-network-bar-row--bike').trigger('mouseenter')
-    expect(wrapper.find('.plate-network-tooltip').exists()).toBe(true)
-    expect(wrapper.find('.plate-network-tooltip').text()).toContain('Groupe comparé')
-    expect(wrapper.find('.plate-network-tooltip').text()).not.toContain('Médiane des communes de EPCI X')
-    expect(wrapper.find('.plate-network-tooltip').html()).toContain('Médiane des communes de EPCI X')
+    const networkTooltip = wrapper.get('.plate-network-tooltip')
+    expect(networkTooltip.text()).toContain('Groupe comparé')
+    expect(networkTooltip.text()).not.toContain('Médiane des communes de EPCI X')
+    expect(networkTooltip.html()).toContain('Médiane des communes de EPCI X')
+    const comparisonRows = networkTooltip.findAll('.cahier-figure-tooltip-row--comparison')
+    expect(comparisonRows.map((row) => row.get('dt').text())).toEqual([
+      'Groupe comparé : Protégé',
+      'Groupe comparé : Partagé',
+      'Groupe comparé',
+    ])
+    expect(networkTooltip.findAll('.cahier-figure-tooltip-rank').map((rank) => rank.text())).toEqual(['1er/4', '2e/3'])
+    expect(networkTooltip.text()).not.toMatch(/plus est mieux|moins est mieux/u)
     expect(wrapper.find('.cahier-network-bar-row--car').classes()).toContain('cahier-network-bar-row--dimmed')
     await wrapper.find('.map-panel--bike').trigger('mouseenter')
     expect(wrapper.find('.map-panel--car').classes()).toContain('map-panel--dimmed')

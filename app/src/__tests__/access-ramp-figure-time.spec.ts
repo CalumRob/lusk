@@ -109,11 +109,36 @@ describe('AccessRampFigureCahier time ramp', () => {
     expect(wrapper.find('[role="tooltip"]').text()).toContain('15 min')
     expect(wrapper.find('[role="tooltip"]').findAll('dt').map((row) => row.text())).toContain('Voiture')
     expect(wrapper.find('[role="tooltip"]').text()).toContain('4 types')
-    expect(wrapper.find('[role="tooltip"]').text()).toContain('Groupe comparé : Indisponible')
+    expect(wrapper.find('[role="tooltip"]').findAll('.cahier-figure-tooltip-row--comparison')).toHaveLength(2)
+    const comparisons = wrapper.find('[role="tooltip"]').findAll('.cahier-figure-tooltip-row--comparison')
+    expect(comparisons[0]!.text()).toContain('Indisponible')
     expect(wrapper.find('[role="tooltip"]').findAll('dt').map((row) => row.text())).toContain('À pied')
-    expect(wrapper.find('[role="tooltip"]').text()).toContain('Groupe comparé : 1')
+    expect(comparisons[1]!.text()).toContain('1')
     expect(wrapper.find('[role="tooltip"]').text()).not.toContain('Territoires comparables')
     expect(wrapper.find('[role="tooltip"]').findAll('[aria-label]').some((row) => row.attributes('aria-label')?.includes('Territoires comparables'))).toBe(true)
+  })
+
+  it('renders a served comparison rank on its own line and never a direction phrase', async () => {
+    const ranked = timeRamp({
+      series: [timeRamp().series[0]!].map((series) => ({
+        ...series,
+        points: series.points.map((point) => ({
+          ...point,
+          referenceRank: point.xValue === 15 ? { position: 2, size: 3 } : null,
+        })),
+      })),
+    })
+    const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: ranked, territoryName: 'Territoire test' } })
+    await wrapper.find('[aria-label="Temps d\'accès : 15 min"]').trigger('focus')
+
+    const comparison = wrapper.get('.cahier-figure-tooltip-row--comparison')
+    expect(comparison.attributes('class')).toContain('cahier-figure-tooltip-row--comparison')
+    expect(comparison.get('.cahier-figure-tooltip-rank').text()).toBe('2e/3')
+    expect(comparison.attributes('aria-label')).toContain('rang 2e/3')
+    expect(wrapper.get('[role="tooltip"]').text()).not.toMatch(/plus est mieux|moins est mieux/u)
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('rang 2e/3')
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).not.toMatch(/plus est mieux|moins est mieux/u)
+    wrapper.unmount()
   })
 
   it.each([
@@ -127,7 +152,9 @@ describe('AccessRampFigureCahier time ramp', () => {
     })
     await wrapper.find('[aria-label="Temps d\'accès : 15 min"]').trigger('focus')
     const tooltip = wrapper.get('[role="tooltip"]')
-    expect(tooltip.findAll('dt').map((row) => row.text())).toEqual(['Voiture'])
+    expect(tooltip.findAll('dt').map((row) => row.text())).toEqual(
+      comparisonLabel ? ['Voiture', 'Groupe comparé : Voiture'] : ['Voiture'],
+    )
     expect(tooltip.text()).not.toContain(context)
     expect(tooltip.text()).not.toContain('·')
     expect(tooltip.get('.cahier-figure-tooltip-row').attributes('aria-label')).toContain(`${context} : Voiture`)
@@ -220,7 +247,7 @@ describe('AccessRampFigureCahier time ramp', () => {
     expect(wrapper.findAll('.access-ramp-line--comparison')).toHaveLength(0)
     expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Référence Indisponible')
     await wrapper.find('[aria-label="Temps d\'accès : 15 min"]').trigger('click')
-    expect(wrapper.find('[role="tooltip"]').text()).toContain('Groupe comparé : Indisponible')
+    expect(wrapper.get('.cahier-figure-tooltip-row--comparison').text()).toContain('Indisponible')
     wrapper.unmount()
   })
 

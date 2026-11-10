@@ -38,6 +38,40 @@ describe('CahierGroupedVerticalBarChart', () => {
     expect(tooltip.text()).toContain('4')
   })
 
+  it('renders a compared series as a plain comparison block with its served rank only', async () => {
+    const comparedFigure: CahierGroupedVerticalBarFigureData = {
+      ...figure,
+      series: [
+        figure.series[0]!,
+        {
+          key: 'north-reference',
+          label: 'Groupe comparé : North group',
+          color: '#8aa6b5',
+          values: [3, 6],
+          comparison: true,
+          ranks: [{ position: 2, size: 3 }, null],
+        },
+      ],
+    }
+    const wrapper = mount(CahierGroupedVerticalBarChart, { props: { figure: comparedFigure } })
+
+    await wrapper.get('button[aria-label^="Early period"]').trigger('focus')
+    const tooltip = wrapper.get('.cahier-grouped-vertical-bar-chart__tooltip')
+    const comparisonRows = tooltip.findAll('.cahier-figure-tooltip-row--comparison')
+
+    expect(tooltip.findAll('.cahier-figure-tooltip-row:not(.cahier-figure-tooltip-row--comparison)')).toHaveLength(1)
+    expect(comparisonRows).toHaveLength(1)
+    expect(comparisonRows[0]!.get('dt').text()).toBe('Groupe comparé : North group')
+    expect(comparisonRows[0]!.text()).toContain('3')
+    expect(comparisonRows[0]!.get('.cahier-figure-tooltip-rank').text()).toBe('2e/3')
+    expect(comparisonRows[0]!.attributes('aria-label')).toContain('rang 2e/3')
+    expect(tooltip.text()).not.toMatch(/plus est mieux|moins est mieux/u)
+
+    // The late category serves no rank, so the comparison row shows only its value.
+    await wrapper.get('button[aria-label^="Late period"]').trigger('focus')
+    expect(wrapper.find('.cahier-figure-tooltip-rank').exists()).toBe(false)
+  })
+
   it('omits unavailable values while keeping them explicit in the category description', () => {
     const incompleteFigure: CahierGroupedVerticalBarFigureData = {
       ...figure,

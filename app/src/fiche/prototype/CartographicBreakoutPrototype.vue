@@ -10,7 +10,7 @@ import type { RouteLocationRaw } from 'vue-router'
 import { mapAssetUrl } from '@/fiche/mapAssetUrl'
 
 import type { CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
-import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
+import { CAHIER_MAP_LAYOUT_STYLE, formatServedRank } from '@/fiche/cahierFigureGrammaire'
 import type { CyclingOfferEvidence, SharingNetworksEvidence } from '@/fiche/content/themeContent'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -119,7 +119,6 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
           ? '—'
           : formatNumber(props.cyclingEvidence.protectedDensity.fact.value, 2),
         tone: 'b',
-        note: comparisonNoteFor(props.cyclingEvidence.protectedDensity),
         ariaLabel: comparisonAriaFor(props.cyclingEvidence.protectedDensity),
       },
       {
@@ -128,36 +127,48 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
           ? '—'
           : formatNumber(props.cyclingEvidence.sharedDensity.fact.value, 2),
         tone: 'b',
-        note: comparisonNoteFor(props.cyclingEvidence.sharedDensity),
         ariaLabel: comparisonAriaFor(props.cyclingEvidence.sharedDensity),
       },
+    )
+    rows.push(
+      ...(props.cyclingEvidence.protectedDensity.fact.comparison ? [comparisonRowFor(props.cyclingEvidence.protectedDensity)] : []),
+      ...(props.cyclingEvidence.sharedDensity.fact.comparison ? [comparisonRowFor(props.cyclingEvidence.sharedDensity)] : []),
     )
   }
   const reference = network.length.fact.comparison?.reference
   if (reference?.value !== null && reference?.value !== undefined) {
     rows.push({
-      // #860, troisième passe : nom bref en visible, portée uniquement en aria.
+      // #860 : nom bref en visible, portée uniquement en aria.
       label: 'Groupe comparé',
-      ariaLabel: `Groupe comparé : ${props.evidence?.comparisonLabel ?? ''} : ${formatNumber(reference.value, 2)}`,
+      ariaLabel: `Groupe comparé : ${props.evidence?.comparisonLabel ?? ''} : ${formatNumber(reference.value, 2)}${rankSuffix(network.length.fact)}`,
       value: formatNumber(reference.value, 2),
-      marker: 'dot',
-      markerColor: 'var(--cahier-region-emphasis)',
+      comparison: true,
+      rank: formatServedRank(network.length.fact.comparison?.rank),
     })
   }
   return rows
 }
 
-function comparisonNoteFor(fact: CyclingOfferEvidence['protectedDensity']): string | undefined {
+function rankSuffix(fact: { comparison: { rank: { position: number; size: number } | null } | null }): string {
+  const rank = formatServedRank(fact.comparison?.rank)
+  return rank ? `, rang ${rank}` : ''
+}
+
+function comparisonRowFor(fact: CyclingOfferEvidence['protectedDensity']): CahierTooltipRow {
   const reference = fact.fact.comparison?.reference
-  return reference?.value === null || reference?.value === undefined
-    ? undefined
-    : `Groupe comparé : ${formatNumber(reference.value, 2)}`
+  return {
+    label: `Groupe comparé : ${fact.label.split(' — ')[0] ?? fact.label}`,
+    value: reference?.value === null || reference?.value === undefined ? '—' : formatNumber(reference.value, 2),
+    comparison: true,
+    rank: formatServedRank(fact.fact.comparison?.rank),
+    ariaLabel: comparisonAriaFor(fact),
+  }
 }
 
 function comparisonAriaFor(fact: CyclingOfferEvidence['protectedDensity']): string | undefined {
   const reference = fact.fact.comparison?.reference
   if (!reference) return undefined
-  return `${fact.label} : ${fact.fact.value === null ? 'Indisponible' : formatNumber(fact.fact.value, 2)}. Groupe comparé : ${props.cyclingEvidence?.comparisonLabel ?? ''} : ${formatNumber(reference.value, 2)}`
+  return `${fact.label} : ${fact.fact.value === null ? 'Indisponible' : formatNumber(fact.fact.value, 2)}. Groupe comparé : ${props.cyclingEvidence?.comparisonLabel ?? ''} : ${formatNumber(reference.value, 2)}${rankSuffix(fact.fact)}`
 }
 
 const networkBarUnit = computed(() => networkFor('bike')?.length.fact.unit ?? networkFor('car')?.length.fact.unit ?? '')

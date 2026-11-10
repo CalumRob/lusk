@@ -149,8 +149,8 @@ export interface TimeRampPoint {
   xLabel: string
   value: number | null
   referenceValue: number | null
-  /** Optional reading detail for the active point (kept in its tooltip, never as a curve chip). */
-  referenceNote?: string | null
+  /** Producer-served ordinal for the compared reading; never derived from the focal value. */
+  referenceRank?: ComparisonRank | null
 }
 
 export interface TimeRampSeries {

@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import type {
   CahierFigureTooltipAnchor,
   CahierTooltipRow,
 } from '../cahierFigureGrammaire'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     title: string
     rows: readonly CahierTooltipRow[]
@@ -18,6 +20,14 @@ withDefaults(
     compact: false,
   },
 )
+
+const focalRows = computed(() => props.rows.filter((row) => !row.comparison))
+const comparisonRows = computed(() => props.rows.filter((row) => row.comparison))
+
+function rowAriaLabel(row: CahierTooltipRow): string {
+  if (row.ariaLabel) return row.ariaLabel
+  return `${row.label} : ${row.value}${row.rank ? `, rang ${row.rank}` : ''}`
+}
 </script>
 
 <template>
@@ -35,14 +45,14 @@ withDefaults(
   >
     <strong>{{ title }}</strong>
     <small v-if="unit" class="cahier-figure-tooltip-unit">{{ unit }}</small>
-    <dl>
+    <dl v-if="focalRows.length">
       <div
-        v-for="row in rows"
-        :key="`${row.label}-${row.value}-${row.note ?? ''}`"
+        v-for="row in focalRows"
+        :key="`${row.label}-${row.value}`"
         class="cahier-figure-tooltip-row"
-        :role="row.ariaLabel ? 'group' : undefined"
-        :aria-label="row.ariaLabel"
         :class="`cahier-figure-tooltip-row--${row.tone ?? 'neutral'}`"
+        role="group"
+        :aria-label="rowAriaLabel(row)"
       >
         <dt>
           <component
@@ -64,7 +74,19 @@ withDefaults(
           {{ row.label }}
         </dt>
         <dd>{{ row.value }}</dd>
-        <small v-if="row.note">{{ row.note }}</small>
+      </div>
+    </dl>
+    <dl v-if="comparisonRows.length" class="cahier-figure-tooltip-comparison">
+      <div
+        v-for="row in comparisonRows"
+        :key="`${row.label}-${row.value}-${row.rank ?? ''}`"
+        class="cahier-figure-tooltip-row cahier-figure-tooltip-row--comparison"
+        role="group"
+        :aria-label="rowAriaLabel(row)"
+      >
+        <dt>{{ row.label }}</dt>
+        <dd>{{ row.value }}</dd>
+        <small v-if="row.rank" class="cahier-figure-tooltip-rank">{{ row.rank }}</small>
       </div>
     </dl>
     <div v-if="$slots.actions" class="cahier-figure-tooltip-actions">

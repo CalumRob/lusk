@@ -46,6 +46,16 @@ const sharedMapPanelLabelSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'cahierMapPanelLabel.css'),
   'utf8',
 )
+const tooltipFigureSources = [
+  'AccessRampFigureCahier.vue',
+  'CartographicBreakoutPrototype.vue',
+  'CahierSummaryPlot.vue',
+  'CahierGroupedVerticalBarChart.vue',
+  'AedarEquipmentWaffleCahier.vue',
+].map((name) => ({
+  name,
+  source: readFileSync(join(process.cwd(), 'src', 'fiche', 'prototype', name), 'utf8'),
+}))
 const tokensSource = readFileSync(
   join(process.cwd(), 'src', 'styles', 'tokens.css'),
   'utf8',
@@ -149,6 +159,22 @@ describe('Cahier typography roles', () => {
     expect(cssRule(comparisonSource, '.cahier-comparison-value'))
       .toContain('color: var(--cahier-default)')
     expect(comparisonSource).toContain('Groupe comparé :')
+  })
+
+  it('keeps the tooltip comparison block one type step smaller with a brand-200 value and rank', () => {
+    expect(cssRule(figureCss, '.cahier-figure-tooltip-comparison'))
+      .toContain('font: var(--type-figure-comparison)')
+    expect(cssRule(figureCss, '.cahier-figure-tooltip-row--comparison dd'))
+      .toContain('color: var(--brand-200)')
+    expect(cssRule(figureCss, '.cahier-figure-tooltip-rank'))
+      .toContain('color: var(--brand-200)')
+  })
+
+  it('leaves no native title on a shared-tooltip figure mark', () => {
+    for (const { name, source } of tooltipFigureSources) {
+      expect(source, `${name} must route data tooltips through CahierFigureTooltip`)
+        .not.toMatch(/<(?:rect|circle|path|g|button|svg)\b[^>]*\s:?title=/u)
+    }
   })
 
   it('keeps Cahier text at or above 11px except for deliberate desktop editorial source stamps', () => {

@@ -163,6 +163,10 @@ export interface CahierGroupedVerticalBarSeries {
   color: string
   /** One value per category, in the same order; null means unavailable. */
   values: readonly (number | null)[]
+  /** The series is the comparison group: its tooltip row uses the plain comparison block. */
+  comparison?: boolean
+  /** Producer-served ordinal per category, in the same order; null means not ranked. */
+  ranks?: readonly (CahierServedRank | null)[]
 }
 
 /** Data contract for the reusable vertical grouped-bar figure. */
@@ -341,7 +345,25 @@ export interface CahierTooltipRow {
   icon?: Component
   markerColor?: string
   marker?: 'dot' | 'slash'
-  note?: string
+  /** The row belongs to the plain comparison block, one type step smaller. */
+  comparison?: boolean
+  /** Producer-served ordinal, already formatted (`1er/3`); never derived from local facts. */
+  rank?: string | null
+}
+
+/** A producer-served ordinal for a compared reading. */
+export interface CahierServedRank {
+  position: number
+  size: number
+}
+
+/** Format a served ordinal like the rest of the app (`1er/3`, `2e/3`); null when not rankable. */
+export function formatServedRank(rank: CahierServedRank | null | undefined): string | null {
+  if (!rank) return null
+  const { position, size } = rank
+  if (!Number.isInteger(position) || !Number.isInteger(size)) return null
+  if (position < 1 || size < 2 || position > size) return null
+  return `${position === 1 ? '1er' : `${position}e`}/${size}`
 }
 
 /** A shared HTML tooltip anchor, expressed in its containing figure's space. */

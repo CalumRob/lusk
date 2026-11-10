@@ -220,6 +220,33 @@ describe('AedarEquipmentWaffleCahier', () => {
     expect(wrapper.find('.aedar-waffle-horizon button[aria-pressed="true"]').attributes('value')).toBe('10')
   })
 
+  it('replaces the native tile title with the shared tooltip on hover and focus', async () => {
+    const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
+    const tile = wrapper.get('.aedar-waffle-tile[data-typequ="A129"]')
+
+    expect(tile.attributes('title')).toBeUndefined()
+    expect(tile.attributes('aria-label')).toContain('Afficher le détail')
+
+    await tile.trigger('mouseenter')
+    const tooltip = wrapper.get('.aedar-waffle .cahier-figure-tooltip')
+    expect(tooltip.attributes('role')).toBe('tooltip')
+    expect(tooltip.text()).toContain('MAIRIE')
+    expect(tooltip.text()).toContain('A129')
+    expect(tooltip.text()).toContain('Voiture')
+
+    await tile.trigger('mouseleave')
+    expect(wrapper.find('.aedar-waffle .cahier-figure-tooltip').exists()).toBe(false)
+
+    await tile.trigger('focus')
+    expect(wrapper.find('.aedar-waffle .cahier-figure-tooltip').exists()).toBe(true)
+    await tile.trigger('blur')
+    expect(wrapper.find('.aedar-waffle .cahier-figure-tooltip').exists()).toBe(false)
+
+    // A click keeps opening the equipment dialog, which remains the touch path.
+    await tile.trigger('click')
+    expect(wrapper.get('dialog[open]').text()).toContain('MAIRIE')
+  })
+
   it('opens the same modal focused on the equipment type represented by a clicked waffle tile', async () => {
     const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
     const tile = wrapper.get('.aedar-waffle-tile[data-typequ="A129"]')

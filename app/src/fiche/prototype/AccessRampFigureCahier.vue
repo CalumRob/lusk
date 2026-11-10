@@ -13,7 +13,7 @@ import type { TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territor
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, CahierTooltipTone, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
-import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
+import { cahierIntegerYAxisScale, formatServedRank } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -151,22 +151,29 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
   const timeRamp = props.timeRamp
   if (!cut || !timeRamp) return []
   const unit = timeRamp.yAxis.unit
+  const suffix = unit ? ` ${unit}` : ''
   return visibleTimeSeries.value.flatMap((series) => {
     const point = series.points.find((candidate) => candidate.xValue === cut.xValue)
     if (!point) return []
-    return [{
+    const value = point.value === null ? 'Indisponible' : `${formatNumber(point.value)}${suffix}`
+    const rows: CahierTooltipRow[] = [{
       label: series.label,
-      value: point.value === null ? 'Indisponible' : `${formatNumber(point.value)}${unit ? ` ${unit}` : ''}`,
+      value,
       tone: TIME_MODE_TONES[series.key] ?? 'neutral',
       icon: TIME_MODE_ICONS[series.key],
-      note: comparisonLayerSupported.value
-        ? [`Groupe comparé : ${point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${unit ? ` ${unit}` : ''}`}`,
-          point.referenceNote].filter(Boolean).join('. ')
-        : undefined,
-      ariaLabel: comparisonLayerSupported.value
-        ? `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}. Groupe comparé : ${timeRamp.comparisonLabel ?? 'Indisponible'} : ${point.referenceValue === null ? 'Indisponible' : formatNumber(point.referenceValue)} ${unit}${point.referenceNote ? `. ${point.referenceNote}` : ''}`
-        : `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)} ${unit}`,
+      ariaLabel: `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}${suffix}`,
     }]
+    if (!comparisonLayerSupported.value) return rows
+    const rank = formatServedRank(point.referenceRank)
+    const referenceValue = point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${suffix}`
+    rows.push({
+      label: `Groupe comparé : ${series.label}`,
+      value: referenceValue,
+      comparison: true,
+      rank,
+      ariaLabel: `${props.territoryName} : ${series.label}. Groupe comparé : ${timeRamp.comparisonLabel ?? 'Indisponible'} : ${referenceValue}${rank ? `, rang ${rank}` : ''}`,
+    })
+    return rows
   })
 })
 const timeAccessibleLabel = computed(() => {
@@ -176,7 +183,10 @@ const timeAccessibleLabel = computed(() => {
     .map((series) => `${series.label} : ${series.points.map((point) => `${point.xLabel} ${point.value === null ? 'indisponible' : formatNumber(point.value)}`).join(', ')}`)
     .join(' ; ')
   const referenceText = comparisonLayerSupported.value
-    ? ` Référence ${props.timeRamp.comparisonLabel ?? 'Indisponible'} : ${visibleTimeSeries.value.map((series) => `${series.label} ${series.points.map((point) => `${point.xLabel} ${point.referenceValue === null ? 'indisponible' : formatNumber(point.referenceValue)}${point.referenceNote ? `, ${point.referenceNote}` : ''}`).join(', ')}`).join(' ; ')}`
+    ? ` Référence ${props.timeRamp.comparisonLabel ?? 'Indisponible'} : ${visibleTimeSeries.value.map((series) => `${series.label} ${series.points.map((point) => {
+      const rank = formatServedRank(point.referenceRank)
+      return `${point.xLabel} ${point.referenceValue === null ? 'indisponible' : formatNumber(point.referenceValue)}${rank ? `, rang ${rank}` : ''}`
+    }).join(', ')}`).join(' ; ')}`
     : ''
   return `${props.territoryName}. ${props.timeRamp.yAxis.label ?? ''}${unit ? ` (${unit})` : ''} selon ${props.timeRamp.xAxis.label ?? ''}, par mode de déplacement. ${seriesText}.${referenceText}`
 })

@@ -414,10 +414,35 @@
   font-variant-numeric: tabular-nums;
 }
 
-.cahier-figure-tooltip-row small {
-  grid-column: 1 / -1;
-  color: var(--color-figure-reference);
-  font: var(--text-caption);
+/* Comparison group: plain section, one type step smaller, neutral label,
+ * brand-200 value and rank (DESIGN.md, rank chip; CahierComparisonValue). */
+.cahier-figure-tooltip-comparison {
+  display: grid;
+  gap: 6px;
+  font: var(--type-figure-comparison);
+  letter-spacing: normal;
+}
+
+.cahier-figure-tooltip-row--comparison {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.cahier-figure-tooltip-row--comparison dt {
+  color: var(--cahier-default, var(--editorial-muted));
+}
+
+.cahier-figure-tooltip-row--comparison dd {
+  color: var(--brand-200);
+  font-weight: 700;
+}
+
+.cahier-figure-tooltip-rank {
+  grid-column: 2;
+  color: var(--brand-200);
+  font: inherit;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
 }
 
 .cahier-figure-tooltip-marker {
