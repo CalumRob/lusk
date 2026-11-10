@@ -169,12 +169,12 @@ _COMPARABLE_SHAPES = frozenset({
 _COHORT_FACT_SHAPES = frozenset({
     "scalar", "declared_profile", "ordered_series", "period_detail", "anchored_membership",
 })
-# Request-time AEDAR comparison ranks (ADR-0039 amendments, #768/#859 and the
-# 2026-11-04 aggregate-ranks amendment, #914): the focal rank, group size and
-# tie count are computed per request from published aggregates. The selected
-# intent grants them for every declared facet; the fixed intent grants them on
-# the registry-wide aggregate readings only — per-cell measures keep #904's
-# reference-only boundary.
+# Request-time AEDAR comparison ranks (ADR-0039 amendments, #768/#859, the
+# 2026-11-04 aggregate-ranks amendment #914 and the 2026-11-10 per-cell
+# amendment #951): the focal rank, group size and tie count are computed per
+# request from published aggregates. Both comparison intents grant them on
+# every declared facet — per-cell measures and registry-wide aggregate readings
+# alike — which supersedes #904's reference-only boundary for the fixed intent.
 _AEDAR_COMPARISON_RANK_FIELDS = frozenset({"rank", "rank_size", "rank_ties"})
 _AEDAR_SELECTED_COMPARISON_FIELDS = _AEDAR_COMPARISON_RANK_FIELDS
 
@@ -272,14 +272,10 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
             supported = set(resource.fields) | set(_AEDAR_SELECTED_COMPARISON_FIELDS)
         elif (resource.resource_kind == "aedar_source_grain"
                 and item.intent.kind == "fixed_comparison"):
-            from api.aedar_models import AEDAR_AGGREGATE_READINGS
-            supported = set(resource.fields)
-            measures = (item.coordinates or {}).get("measure") or []
-            if measures and set(measures) <= set(AEDAR_AGGREGATE_READINGS):
-                # ADR-0039's 2026-11-04 amendment (#914): the fixed intent
-                # grants request-time rank fields on the registry-wide
-                # aggregate readings only; per-cell measures stay rejected.
-                supported |= set(_AEDAR_COMPARISON_RANK_FIELDS)
+            # ADR-0039's 2026-11-10 amendment (#951): the fixed intent serves
+            # the request-time rank fields on every declared facet, per-cell
+            # measures included, over the context's own resolved peer group.
+            supported = set(resource.fields) | set(_AEDAR_COMPARISON_RANK_FIELDS)
         else:
             supported = (set(resource.fields) if resource.resource_kind != "indicator" else {
             "focal_value", "median", "rank", "rank_size", "rank_ties",

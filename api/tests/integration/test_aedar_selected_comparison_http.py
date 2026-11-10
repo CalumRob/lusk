@@ -591,17 +591,23 @@ def test_selected_comparison_fails_closed_naming_the_failed_member(aedar_http):
     assert unknown_typequ.status_code == 422
 
 
-def test_rank_fields_follow_the_aggregate_fixed_boundary(aedar_http):
-    # Per-cell measures keep #904's exact boundary: the fixed intent rejects
-    # rank fields for non-aggregate facets, and facts rejects them outright.
-    fixed_rank = aedar_http.post("/api/resources/read", json={
+def test_rank_fields_follow_the_fixed_comparison_contract(aedar_http):
+    # ADR-0039's 2026-11-10 amendment (#951) supersedes #904's reference-only
+    # boundary: the fixed intent serves request-time ranks on per-cell measures
+    # too, over the fixed context's resolved peer group.
+    fixed_cell_rank = aedar_http.post("/api/resources/read", json={
         "resource": "aedar_territorial_aggregate",
-        "target": {"kind": "territory", "type": "epci", "id": "sel-e1"},
+        "target": {"kind": "territory", "type": "commune", "id": "sel-c1"},
         "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
-        "fields": ["rank"],
-        "intent": {"kind": "fixed_comparison", "context": "same_level"},
+        "fields": ["group_value", "value", "rank", "rank_size", "rank_ties"],
+        "intent": {"kind": "fixed_comparison", "context": "epci"},
     })
-    assert fixed_rank.status_code == 422
+    assert fixed_cell_rank.status_code == 200, fixed_cell_rank.text
+    comparison = fixed_cell_rank.json()["comparison"]
+    # The reference keeps its declared direct-EPCI semantics (sel-e1 A104 7.0).
+    assert comparison["group_value"] == 7.0 and comparison["statistic"] == "direct"
+    assert comparison["value"] == 5.0
+    assert (comparison["rank"], comparison["rank_size"], comparison["rank_ties"]) == (2, 2, 1)
     facts_rank = aedar_http.post("/api/resources/read", json={
         "resource": "aedar_territorial_aggregate",
         "target": {"kind": "territory", "type": "commune", "id": "sel-c1"},
@@ -612,8 +618,8 @@ def test_rank_fields_follow_the_aggregate_fixed_boundary(aedar_http):
     assert facts_rank.status_code == 422
     member_ranks = aedar_http.post("/api/resources/read", json=_selected_item(fields=["member_ranks"]))
     assert member_ranks.status_code == 422
-    # ADR-0039's 2026-11-04 amendment (#914): the fixed intent grants the rank
-    # fields on the aggregate facets ONLY, so this request is served.
+    # ADR-0039's 2026-11-04 amendment (#914): the aggregate readings keep their
+    # request-time rank on the same fixed intent.
     fixed_aggregate_rank = aedar_http.post("/api/resources/read", json={
         "resource": "aedar_territorial_aggregate",
         "target": {"kind": "territory", "type": "commune", "id": "sel-c1"},
@@ -642,6 +648,53 @@ def test_rank_fields_follow_the_aggregate_fixed_boundary(aedar_http):
     mixed = aedar_http.post("/api/resources/read", json=_selected_item(
         measures=("meanVolume", "count_5_walk_mean")))
     assert mixed.status_code == 422
+
+
+def test_fixed_per_cell_ranks_use_the_declared_context_peer_sets(aedar_http):
+    # One request-time peer read per fixel per-cell comparison, over exactly
+    # the peer set the fixed aggregate ranks already use (#951).
+    rank_fields = ["group_value", "value", "rank", "rank_size", "rank_ties"]
+
+    def fixed(target_type, target_id, context, measure="count_5_walk_mean", fields=rank_fields):
+        response = aedar_http.post("/api/resources/read", json={
+            "resource": "aedar_territorial_aggregate",
+            "target": {"kind": "territory", "type": target_type, "id": target_id},
+            "coordinates": {"typequ": ["A104"], "measure": [measure]},
+            "fields": fields,
+            "intent": {"kind": "fixed_comparison", "context": context},
+        })
+        assert response.status_code == 200, response.text
+        return response.json()["comparison"]
+
+    # EPCI: the focal EPCI's communes. sel-c5/sel-c6 publish no count_5_walk_mean
+    # for A104, so they are ineligible and never zeroed.
+    epci = fixed("commune", "sel-c1", "epci")
+    assert (epci["rank"], epci["rank_size"], epci["rank_ties"]) == (2, 2, 1)
+    # Bretagne: every Breton commune. sel-c4 is not covered, so it is excluded;
+    # sel-c2 and sel-c3 both read 8.0 behind the focal's 5.0.
+    bretagne = fixed("commune", "sel-c1", "bretagne")
+    assert (bretagne["rank"], bretagne["rank_size"], bretagne["rank_ties"]) == (3, 3, 1)
+    # Density class: the producer-published D1 reference plus D1's communes.
+    density = fixed("commune", "sel-c1", "density_class")
+    assert density["statistic"] == "pooled" and density["group_value"] == 7.4
+    assert (density["rank"], density["rank_size"], density["rank_ties"]) == (2, 2, 1)
+    # Same level: all Breton EPCIs; only sel-e1 publishes this per-cell reading.
+    same_level = fixed("epci", "sel-e1", "same_level")
+    assert same_level["group_id"] == "53" and same_level["statistic"] == "direct"
+    assert (same_level["rank"], same_level["rank_size"], same_level["rank_ties"]) == (1, 1, 1)
+    # An unranked curve reading is served with null ranks, never an error.
+    curve = fixed("commune", "sel-c1", "epci", measure="count_5_walk_decile1")
+    assert curve["value"] == 1.0
+    assert (curve["rank"], curve["rank_size"], curve["rank_ties"]) == (None, None, None)
+    # An unavailable focal keeps its honest status and null ranks (200).
+    unavailable = fixed("commune", "sel-c5", "epci")
+    assert unavailable["value"] is None and unavailable["status"] == "not_available"
+    assert (unavailable["rank"], unavailable["rank_size"], unavailable["rank_ties"]) == (
+        None, None, None)
+    # Back-compat: without the rank fields the served shape is unchanged.
+    plain = fixed("commune", "sel-c1", "epci", fields=None)
+    assert "rank" not in plain and "rank_size" not in plain and "rank_ties" not in plain
+    assert plain["group_value"] == 7.0 and plain["value"] == 5.0
 
 
 def _aggregate_item(target_type="commune", target_id="sel-c1", measures=("meanVolume",),

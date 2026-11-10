@@ -161,8 +161,7 @@ class SemanticResourceReader:
             return estimate
         if resource.resource_kind == "aedar_source_grain":
             from api.aedar_reads import (_aedar_comparison_snapshot,
-                _aedar_comparison_field_selection,
-                _aedar_fixed_peer_ids,
+                _aedar_fixed_peer_ids_cached, _aedar_requested_rank_fields,
                 _aedar_selected_comparison_snapshot,
                 _aedar_territorial_aggregate_snapshot)
             coordinates = item.coordinates or {}
@@ -208,8 +207,7 @@ class SemanticResourceReader:
                         key, {"measures": [], "rank_measures": [], "peer_ids": None})
                     if measures[0] not in batch["measures"]:
                         batch["measures"].append(measures[0])
-                    fields = _aedar_comparison_field_selection(item.fields, aggregate=True)
-                    if fields is None or {"rank", "rank_size", "rank_ties"} & set(fields):
+                    if _aedar_requested_rank_fields(item.fields, aggregate=True):
                         if measures[0] not in batch["rank_measures"]:
                             batch["rank_measures"].append(measures[0])
             elif item.intent.kind == "selected_comparison":
@@ -232,14 +230,17 @@ class SemanticResourceReader:
                 if aggregate:
                     # One set-wise SQL aggregate over the resolved fixed-context
                     # peer group (ADR-0021 scope), plus one comparison entry.
-                    key = (item.target.type, item.target.id, item.intent.context)
-                    batch = (snapshot_state or {}).get("aedar_fixed_aggregates", {}).get(key)
-                    peer_ids = batch.get("peer_ids") if batch else None
-                    if peer_ids is None:
-                        peer_ids = _aedar_fixed_peer_ids(conn, item.target.type,
-                                                         item.target.id, item.intent.context)
-                        if batch is not None:
-                            batch["peer_ids"] = peer_ids
+                    peer_ids = _aedar_fixed_peer_ids_cached(
+                        conn, item.target.type, item.target.id, item.intent.context,
+                        snapshot_state)
+                    return 1 + len(peer_ids)
+                if _aedar_requested_rank_fields(item.fields, aggregate=False):
+                    # Per-cell request-time ranks (#951): one set-wise peer read
+                    # over the resolved fixed-context peer group, never a
+                    # per-peer round trip, plus the comparison entry itself.
+                    peer_ids = _aedar_fixed_peer_ids_cached(
+                        conn, item.target.type, item.target.id, item.intent.context,
+                        snapshot_state)
                     return 1 + len(peer_ids)
                 return 1
             if item.intent.kind == "selected_comparison":
