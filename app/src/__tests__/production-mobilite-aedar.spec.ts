@@ -208,9 +208,21 @@ it.each([
   expect(overview.scalars[0]!.reference).toMatchObject({
     kind: 'territory-mean', territory: { type: referenceType === 'EPCI' ? 'epci' : 'region', id: referenceId },
   })
+  // The API declares epci/bretagne for communes only: the EPCI/département
+  // direct Bretagne universe is the existing `same_level` context, whose
+  // published group is the Région aggregate and whose peers are the focal level.
+  const expectedContext = territoryType === 'commune'
+    ? (preset === 'epci' ? 'epci' : 'bretagne') : 'same_level'
   expect(fetchAedarComparison).toHaveBeenCalledWith(territoryType, content.territory.code, expect.objectContaining({
-    intent: { kind: 'fixed_comparison', context: preset === 'epci' ? 'epci' : 'bretagne' },
+    intent: { kind: 'fixed_comparison', context: expectedContext },
   }))
+  // Overview ranks and the sandbox/detail curves share this one request intent.
+  const explorer = rendered.units[0].sections.find((section: ContentSection) =>
+    section.evidence?.kind === 'aedar-equipment-explorer')
+  if (explorer?.evidence?.kind === 'aedar-equipment-explorer') {
+    expect(explorer.evidence.comparisonRequest?.intent)
+      .toEqual({ kind: 'fixed_comparison', context: expectedContext })
+  }
   expect(overview.meanDiversity).toBe(5)
   wrapper.unmount()
 })

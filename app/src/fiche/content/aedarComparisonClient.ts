@@ -1,11 +1,40 @@
 import type { AedarFact, AedarTerritoryType } from './aedarApiClient'
-import type { MembreSelection } from '../comparisonContext'
+import type { MembreSelection, PresetComparaison, SelectionComparaison } from '../comparisonContext'
 import { producerCatalogue } from '@/payload/themeAcquisition'
 import { AEDAR_AGGREGATE_READING_KEYS } from './aedarTimeRampFacts'
 
 export type AedarComparisonIntent =
   | { kind: 'selected_comparison'; members: readonly MembreSelection[] }
   | { kind: 'fixed_comparison'; context: 'density_class' | 'epci' | 'bretagne' | 'same_level' }
+
+/**
+ * Resolve one typed AEDAR comparison intent from the resolved Sélection. The
+ * API declares `epci` and `bretagne` for communes only; for an EPCI or a
+ * département the direct Bretagne universe is the existing `same_level`
+ * context (the published Région aggregate over peer populations of the focal
+ * level). The Région has no comparison, and explicit typed members are always
+ * preserved verbatim. No default group or new policy is invented here.
+ */
+export function aedarComparisonIntent(options: {
+  territoryType: AedarTerritoryType
+  selection: SelectionComparaison | null | undefined
+  presetDefaut: PresetComparaison | null | undefined
+}): AedarComparisonIntent | null {
+  const { territoryType, selection, presetDefaut } = options
+  if (!selection || selection.etat === 'vide') return null
+  if (selection.etat === 'membres') {
+    return selection.membres.length
+      ? { kind: 'selected_comparison', members: selection.membres } : null
+  }
+  const preset = selection.etat === 'preset' ? selection.preset : presetDefaut
+  if (!preset || territoryType === 'region') return null
+  if (territoryType === 'commune') {
+    const context = preset === 'densite' ? 'density_class'
+      : preset === 'epci' ? 'epci' : 'bretagne'
+    return { kind: 'fixed_comparison', context }
+  }
+  return preset === 'bretagne' ? { kind: 'fixed_comparison', context: 'same_level' } : null
+}
 
 export interface AedarComparisonCell extends Omit<Pick<AedarFact, 'typequ' | 'source_id' | 'vintage_id' | 'reference_date' | 'publication_date'>, 'typequ'> {
   typequ: string | null

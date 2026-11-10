@@ -371,6 +371,80 @@ describe('SQL Mobilité response to Variant E facts', () => {
         .toThrow('Portée réelle de la courbe moyenne Mobilité invalide')
     }
   })
+  it('accepts a density preset expanded to explicit commune members as an explicit selection, never a published density-class cohort', () => {
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '22001' },
+      { territory_type: 'commune' as const, territory_id: '22106' },
+      { territory_type: 'commune' as const, territory_id: '22215' },
+    ]
+    const synthetic = nativeRaccordementReads('22001', 'commune', payload,
+      { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) =>
+        ({ type: territory_type, id: territory_id })) })
+    // The density preset resolves to these typed communes; the producer answers
+    // the selected_comparison it received, not a producer-pooled density class.
+    expect(synthetic.comparisonData.scope).toMatchObject({ kind: 'explicit_selection', member_count: 3 })
+    const compared = applyThemeComparisonApiFacts(synthetic.facts, synthetic.comparison, context, selection)
+    expect(compared.mobility.selectedTrajectoryComparison).toMatchObject({
+      statistic: 'mean', selectedMemberCount: 3, eligibleCount: 3,
+      scope: { kind: 'selection', territoryIds: ['22001', '22106', '22215'], label: context.scope.label },
+      points: synthetic.comparisonData.result.mean_curve.points.map((point: any) =>
+        expect.objectContaining({ detail: point.axis, value: point.value })),
+    })
+    expect(compared.mobility.selectedTrajectoryComparison?.scope.kind).not.toBe('density_class')
+  })
+  it('rejects an explicit density selection whose echoed membership or published scope contradicts the request', () => {
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '22001' },
+      { territory_type: 'commune' as const, territory_id: '22106' },
+      { territory_type: 'commune' as const, territory_id: '22215' },
+    ]
+    const synthetic = nativeRaccordementReads('22001', 'commune', payload,
+      { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) =>
+        ({ type: territory_type, id: territory_id })) })
+    const wrongMember = structuredClone(synthetic.comparison)
+    wrongMember.selection[1]!.territory_id = '99999'
+    expect(() => applyThemeComparisonApiFacts(synthetic.facts, wrongMember, context, selection))
+      .toThrow('Portée réelle de la courbe moyenne Mobilité invalide')
+    const densityClaim = structuredClone(synthetic.comparison)
+    densityClaim.comparison_reads[0]!.data.result.mean_curve.scope =
+      { kind: 'density_class', density_class_code: '4', territory_type: 'commune' }
+    expect(() => applyThemeComparisonApiFacts(synthetic.facts, densityClaim, context, selection))
+      .toThrow('Portée réelle de la courbe moyenne Mobilité invalide')
+    const wrongCount = structuredClone(synthetic.comparison)
+    wrongCount.comparison_reads[0]!.data.result.selected_member_count = 4
+    wrongCount.comparison_reads[0]!.data.result.mean_curve.selected_member_count = 4
+    expect(() => applyThemeComparisonApiFacts(synthetic.facts, wrongCount, context, selection))
+      .toThrow()
+  })
+  it('accepts the declared same-level Bretagne scope for an EPCI fixed theme comparison', () => {
+    const epciPayload: Payload = { ...payload, territoires: [
+      { territoire: 'E1', type: 'epci', nom: 'EPCI', departement: '22', epci: null },
+    ] }
+    const synthetic = nativeRaccordementReads('E1', 'epci', epciPayload)
+    expect(synthetic.comparisonData.scope).toMatchObject({ kind: 'same_level', territory_type: 'epci' })
+    const epciContext: TerritoryComparisonContext = { mode: 'bretagne', scope: {
+      kind: 'epcis-bretagne', label: 'EPCI du périmètre de comparaison' }, facts: [],
+    buildingDistribution: null, accessRamp: null }
+    const compared = applyThemeComparisonApiFacts(synthetic.facts, synthetic.comparison, epciContext)
+    expect(compared.mobility.selectedTrajectoryComparison).toMatchObject({
+      statistic: 'mean', selectedMemberCount: synthetic.comparisonData.result.selected_member_count,
+      eligibleCount: synthetic.comparisonData.result.eligible_count,
+      scope: { kind: 'epcis-bretagne', label: 'EPCI du périmètre de comparaison' },
+    })
+  })
+  it('rejects a same-level scope declared for another focal level', () => {
+    const epciPayload: Payload = { ...payload, territoires: [
+      { territoire: 'E1', type: 'epci', nom: 'EPCI', departement: '22', epci: null },
+    ] }
+    const synthetic = nativeRaccordementReads('E1', 'epci', epciPayload)
+    const wrongLevel = structuredClone(synthetic.comparison)
+    wrongLevel.comparison_reads[0]!.data.result.mean_curve.scope.territory_type = 'departement'
+    const epciContext: TerritoryComparisonContext = { mode: 'bretagne', scope: {
+      kind: 'epcis-bretagne', label: 'EPCI du périmètre de comparaison' }, facts: [],
+    buildingDistribution: null, accessRamp: null }
+    expect(() => applyThemeComparisonApiFacts(synthetic.facts, wrongLevel, epciContext))
+      .toThrow()
+  })
   it('projects a synthetic selected scope, mean statistic, membership and complete comparison curve', () => {
     const selection = [
       { territory_type: 'commune', territory_id: '22001' },

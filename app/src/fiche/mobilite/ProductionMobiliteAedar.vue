@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue'
 import { CONTROLE_COMPARAISON_KEY } from '../comparisonContext'
-import { fetchAedarComparison } from '../content/aedarComparisonClient'
+import { aedarComparisonIntent, fetchAedarComparison } from '../content/aedarComparisonClient'
 import type { AedarComparisonEvidence, AedarComparisonRequest } from '../content/aedarComparisonClient'
 import { AEDAR_AGGREGATE_READING_KEYS } from '../content/aedarTimeRampFacts'
 import VarianteCahierLibre from '../prototype/VarianteCahierLibre.vue'
@@ -30,17 +30,14 @@ const props = defineProps<{
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
-  const selection = control.value?.selection
-  if (selection?.etat === 'membres') return selection.membres.length ? {
-    intent: { kind: 'selected_comparison', members: selection.membres }, label: 'Moyenne de la sélection',
-  } : null
-  if (selection?.etat === 'vide') return null
-  const preset = selection?.etat === 'preset' ? selection.preset : control.value?.presetDefaut
-  if (!control.value?.libelleActif || props.content.territory.type === 'region') return null
-  const context = preset === 'densite' ? 'density_class'
-    : preset === 'epci' ? 'epci' : preset === 'bretagne' ? 'bretagne' : null
-  if (!context) return null
-  return { intent: { kind: 'fixed_comparison', context }, label: `Moyenne — ${control.value.libelleActif}` }
+  if (!control.value) return null
+  const intent = aedarComparisonIntent({ territoryType: props.content.territory.type as AedarTerritoryType,
+    selection: control.value.selection, presetDefaut: control.value.presetDefaut })
+  if (!intent) return null
+  if (intent.kind === 'fixed_comparison' && !control.value.libelleActif) return null
+  const label = intent.kind === 'selected_comparison'
+    ? 'Moyenne de la sélection' : `Moyenne — ${control.value.libelleActif}`
+  return { intent, label }
 })
 const comparison = ref<AedarComparisonEvidence | null>(null)
 const comparisonState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
