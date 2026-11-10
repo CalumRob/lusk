@@ -793,6 +793,36 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       .toThrow(/Provenance SQL du thème invalide/)
   })
 
+  it('projects an owned ordered series whose unobserved point carries no provenance', () => {
+    const source = [{ source_id: 'ocs_ge', source_name: 'OCS-GE', vintage_id: 'ocs-ge-2023',
+      version: '2023', reference_date: '2023-01-01', publication_date: '2026-03-01' }]
+    const adapted = themeFactsRowsFromSemantic('milieux', { resource_reads: [{
+      resource: 'artif_par_habitant', shapes: ['ordered_series'], data: {
+        resource: 'artif_par_habitant',
+        target: { kind: 'territory', type: 'commune', id: cible.territoire },
+        dataset_id: 'artif_par_habitant', theme_id: 'milieux',
+        publication_id: 'milieux-series-v1', reference_content_version: 'territories-v1',
+        indicator_id: 'artif_par_habitant', axis_kind: 'state_role', axis_values: ['M2', 'M3'],
+        axis_numeric_values: [null, null], unit: '%', completeness: 'observed_sparse',
+        // The producer leaves an uncovered axis with no observation to
+        // attribute: no source is invented for the absence.
+        points: [
+          { axis: 'M2', observation_period: '2023', value: null, status: 'missing', provenance: [] },
+          { axis: 'M3', observation_period: '2023', value: 12.5, status: 'measured', provenance: source },
+        ],
+      },
+    }] }, cible)
+
+    expect(adapted.indicateurs.map((row) => [row.key, row.detail, row.value, row.observation_status, row.rider]))
+      .toEqual([
+        ['artif_par_habitant', 'M2', null, 'missing', 'missing'],
+        ['artif_par_habitant', 'M3', 12.5, 'measured', null],
+      ])
+    expect(adapted.indicateurs[0]!.fact_sources).toEqual([])
+    expect(adapted.indicateurs[1]!.fact_sources)
+      .toEqual([expect.objectContaining({ source: 'OCS-GE', version: '2023' })])
+  })
+
   it('retains the named-reference target and joins its publication to the matching owner series', () => {
     const source = [{ source_id: 'gtfs', vintage_id: '2026', source_name: 'GTFS source', version: '2026',
       reference_date: null, publication_date: null }]
