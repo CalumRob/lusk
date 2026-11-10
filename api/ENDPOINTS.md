@@ -270,9 +270,16 @@ Searches the retained published territory reference with bounded query inputs.
   statistic is schema-CHECKed to `pooled`, while observed-count validity
   (`0 ≤ n_observed ≤ n_addresses`, NULL counts as bad) is computed honestly
   for both shapes — a pooled row with NULL `n_observed` makes the reading
-  honestly unavailable, never silently served. Per-cell measures keep the
-  selected-only rank boundary (#904): the fixed intent grants
-  `rank`/`rank_size`/`rank_ties` on the aggregate facets only.
+  honestly unavailable, never silently served. Fixed per-cell comparisons serve
+  the same opt-in `rank`/`rank_size`/`rank_ties` (#951, superseding #904's
+  reference-only boundary): the focal's published per-`typequ` value is ranked
+  within the context's resolved peer group by one set-wise read of
+  `aedar_territorial_aggregate` in the same snapshot, beside the unchanged
+  reference value. A peer is eligible when its row publishes a finite value and
+  is `covered`; unavailable peers are excluded, never zeroed, and `rank_size`
+  counts the eligible population (focal included). Ranks are `null` — with
+  `200` — for an unranked facet (curve/decile readings) or an unavailable
+  focal. Requesting no rank field keeps the previous per-cell response exactly.
 
 ## Retired route families
 

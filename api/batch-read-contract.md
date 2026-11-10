@@ -182,10 +182,37 @@ TYPEQU observation still has to satisfy `0 ≤ n_observed ≤ n_addresses`.
   (`rank_size` counts the eligible members) while the requested membership
   stays truthful in `scope.member_count`.
 
-Per-cell measures are unchanged: fixed contexts stay reference-only for them
-(#904) and only `selected_comparison` serves their ranks. Mixing aggregate
-readings with per-cell measures in one request, or adding a `typequ` coordinate
-to an aggregate reading, is rejected with `422`.
+### Fixed per-cell comparison ranks (#951)
+
+The same fixed intent serves the three rank fields for **per-cell** measures
+(a `typequ` + `measure` request). Owner decision 2026-11-10 supersedes #904's
+reference-only boundary for this intent; the aggregate-reading boundary is
+unchanged and the selected intent keeps its existing grant. For each requested
+`(typequ, measure)`:
+
+- the focal's published value for that cell is read from
+  `aedar_territorial_aggregate` in the same snapshot, alongside the declared
+  reference (unchanged `group_value`, statistic and versions);
+- the peer group is resolved exactly as the aggregate ranks resolve it
+  (`_aedar_fixed_peer_ids`: the focal EPCI's communes, all Breton communes, the
+  density class, or the same-level territories), so `epci`, `density_class`,
+  `same_level` and `bretagne` rank over the same population in both shapes;
+- one set-wise read of the peer population per comparison item supplies every
+  peer's published value for that `(typequ, measure)` — never a per-peer round
+  trip, and the preflight work estimate is `1 + |peers|` like the aggregate
+  reading;
+- a peer is eligible when its row publishes a finite value and is `covered`.
+  Unavailable peers are excluded from the rank population — never zeroed,
+  never ranked — and `rank_size` counts the eligible peers including the focal;
+  ties share the focal's rank (competition ranking);
+- an unranked facet (curve/decile readings) or an unavailable focal returns
+  `200` with `null` rank fields. The focal's existing `value`/`status`
+  semantics are untouched.
+
+Requesting no rank field returns the previous per-cell response exactly: no new
+fields are injected into the default projection. Mixing aggregate readings with
+per-cell measures in one request, or adding a `typequ` coordinate to an
+aggregate reading, is still rejected with `422`.
 
 ## Declared-profile comparisons
 
