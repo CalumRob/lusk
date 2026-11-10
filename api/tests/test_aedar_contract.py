@@ -200,6 +200,57 @@ def test_fixed_aggregate_reads_peer_population_only_when_rank_is_requested(
         assert (set(comparison) & {"rank", "rank_size", "rank_ties"}) == expected_rank_fields
 
 
+def test_aedar_benchmark_rejects_stale_current_marker_before_timing(monkeypatch):
+    from fastapi import HTTPException
+    from api.tests.integration import benchmark_aedar_summary_reads as benchmark
+
+    marker_calls = []
+    def stale_marker(_connection):
+        marker_calls.append(True)
+        raise HTTPException(503, "stale comparison publication")
+
+    monkeypatch.setattr(aedar_reads, "_aedar_comparison_marker", stale_marker)
+    monkeypatch.setattr(benchmark.time, "perf_counter",
+                        lambda: pytest.fail("stale fixture reached the timed section"))
+    active = {"label": "previous"}
+
+    with pytest.raises(RuntimeError, match="current API comparison-marker preflight failed"):
+        benchmark._timed_adapter_preparation(
+            object(), {"territory_type": "commune", "territory_id": "22001",
+                       "context": "epci"}, {"measures": []}, "test", active)
+
+    assert marker_calls == [True]
+    assert active["label"] is None
+
+
+def test_aedar_benchmark_forwards_fixture_context_after_marker_gate(monkeypatch):
+    from api.tests.integration import benchmark_aedar_summary_reads as benchmark
+
+    marker = object()
+    calls = []
+    monkeypatch.setattr(aedar_reads, "_aedar_comparison_marker", lambda _connection: marker)
+
+    def prepare(connection, territory_type, territory_id, context, batch, marker):
+        calls.append((connection, territory_type, territory_id, context, batch, marker))
+        return {"prepared": True}
+
+    monkeypatch.setattr(aedar_reads, "_aedar_prepare_fixed_aggregate_batch", prepare)
+    ticks = iter((1.0, 1.025))
+    monkeypatch.setattr(benchmark.time, "perf_counter", lambda: next(ticks))
+    connection = object()
+    batch = {"measures": ["meanDiversity"]}
+    fixture = {"territory_type": "commune", "territory_id": "22001", "context": "epci"}
+    active = {"label": None}
+
+    result, elapsed_ms = benchmark._timed_adapter_preparation(
+        connection, fixture, batch, "test", active)
+
+    assert result == {"prepared": True}
+    assert elapsed_ms == pytest.approx(25.0)
+    assert calls == [(connection, "commune", "22001", "epci", batch, marker)]
+    assert active["label"] is None
+
+
 def test_aedar_source_measure_contract_has_312_fields_and_four_level_identity():
     from pathlib import Path
     root = Path(__file__).resolve().parents[2]

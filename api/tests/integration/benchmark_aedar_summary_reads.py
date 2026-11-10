@@ -1,15 +1,17 @@
-"""Bounded, read-only AEDAR old/new read-path benchmark for the retained fixture.
+"""Bounded, read-only AEDAR old/new read-path benchmark for an explicit fixture.
 
 Run from the repository root with the explicit guarded test-only settings in
-api/tests/integration/README.md. The script uses the current checkout and the
-pinned pre-summary API commit, both against the same retained schema and
-producer metadata. It never connects with the publisher role or writes rows.
+api/tests/integration/README.md and a fixture accepted by the current API marker
+gate. The script uses the current checkout and the pinned pre-summary API commit
+against the same schema and producer metadata. It never connects with the
+publisher role or writes rows.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import io
+import inspect
 import json
 import os
 from pathlib import Path
@@ -23,7 +25,6 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit, urlunsplit
 
 
 OLD_API_COMMIT = "ebb737885548ce4c002bc04fadf178c8d7b0743b"
-DEFAULT_SCHEMA = "it_aedar_1bed7545b6524889"
 EXTRAPOLATION_TERRITORIES = 1268
 SCHEMA_RE = re.compile(r"it_aedar_[0-9a-f]{16}\Z")
 WORKLOAD_LABELS = ("40-values-2-ranks", "40-values-40-ranks")
@@ -45,6 +46,56 @@ def _scoped_read_dsn(read_dsn: str, schema: str) -> str:
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
+
+
+def _require_current_api_comparison_marker(connection):
+    """Require the current API's full comparison gate before adapter timing."""
+    from fastapi import HTTPException
+    import psycopg
+    from api import aedar_reads
+
+    try:
+        return aedar_reads._aedar_comparison_marker(connection)
+    except HTTPException as error:
+        raise RuntimeError(
+            "current API comparison-marker preflight failed; use a fixture with aligned "
+            "source/reference clocks and a complete migration-042 comparison publication"
+        ) from error
+    except (psycopg.errors.UndefinedColumn, psycopg.errors.UndefinedTable) as error:
+        raise RuntimeError(
+            "benchmark fixture lacks the current AEDAR comparison schema (including migration 042); "
+            "do not patch its publication marker"
+        ) from error
+
+
+def _timed_adapter_preparation(connection, fixture, batch, label, active):
+    """Validate the API marker outside timing, then measure only preparation."""
+    from api import aedar_reads
+
+    active["label"] = None
+    prepare = aedar_reads._aedar_prepare_fixed_aggregate_batch
+    if "marker" in inspect.signature(prepare).parameters:
+        # The current implementation takes the marker as an explicit input.
+        marker = _require_current_api_comparison_marker(connection)
+        prepare_call = lambda: prepare(
+            connection, fixture["territory_type"], fixture["territory_id"],
+            fixture["context"], batch, marker)
+    else:
+        # The pinned old implementation owns its older marker shape. Validate it
+        # outside timing too; the full current API gate was already checked by
+        # the parent process before either version's worker was launched.
+        aedar_reads._aedar_comparison_marker(connection)
+        prepare_call = lambda: prepare(
+            connection, fixture["territory_type"], fixture["territory_id"],
+            fixture["context"], batch)
+    active["label"] = label
+    started = time.perf_counter()
+    try:
+        prepared = prepare_call()
+    finally:
+        active["label"] = None
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    return prepared, elapsed_ms
 
 
 def _guarded_fixture(schema: str) -> tuple[dict, dict]:
@@ -99,6 +150,7 @@ def _guarded_fixture(schema: str) -> tuple[dict, dict]:
             WHERE p.singleton""").fetchone()
         if not comparison_gate:
             raise RuntimeError("retained fixture is missing its comparison publication marker")
+        _require_current_api_comparison_marker(conn)
 
         measures = [row[0] for row in conn.execute(
             "SELECT DISTINCT measure FROM aedar_territory_summary ORDER BY measure").fetchall()]
@@ -174,6 +226,7 @@ def _guarded_fixture(schema: str) -> tuple[dict, dict]:
     }
     snapshot = {"markers": {name: list(values) for name, values in marker_map.items()},
                 "comparison_endpoint_gate": (list(comparison_gate) if comparison_gate else None),
+                "current_api_marker_preflight_passed": True,
                 "counts": counts, "relations": relations}
     return {"scoped_dsn": scoped_dsn, "fixture": fixture}, snapshot
 
@@ -221,7 +274,6 @@ def _run_worker(root: Path, current_root: Path, scoped_dsn: str,
 def _worker() -> None:
     fixture = json.loads(os.environ["LUSK_BENCH_FIXTURE"])
     import psycopg
-    from api import aedar_reads
     from api.resource_catalogue import default_resource_catalogue
 
     catalogue = default_resource_catalogue()
@@ -255,16 +307,10 @@ def _worker() -> None:
             batch = {"measures": fixture["measures"],
                      "rank_measures": ranked,
                      "peer_ids": fixture["peer_ids"]}
-            active["label"] = label
             with conn.transaction():
                 conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-                started = time.perf_counter()
-                marker = aedar_reads._aedar_comparison_marker(ObservedConnection(conn))
-                prepared = aedar_reads._aedar_prepare_fixed_aggregate_batch(
-                    ObservedConnection(conn), fixture["territory_type"], fixture["territory_id"],
-                    fixture["context"], batch, marker)
-                elapsed_ms = (time.perf_counter() - started) * 1000
-            active["label"] = None
+                prepared, elapsed_ms = _timed_adapter_preparation(
+                    ObservedConnection(conn), fixture, batch, label, active)
 
             comparisons = []
             for measure in fixture["measures"]:
@@ -423,8 +469,9 @@ def _postcheck_snapshot(scoped_dsn: str, schema: str) -> dict:
 
 def _main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--schema", default=os.environ.get("AEDAR_BENCH_SCHEMA", DEFAULT_SCHEMA))
-    parser.add_argument("--output", default=r"E:\Temp\opencode\aedar-summary-benchmark.json")
+    parser.add_argument("--schema", default=os.environ.get("AEDAR_BENCH_SCHEMA"),
+                        help="explicit current compatible it_aedar_<16 hex> test schema")
+    parser.add_argument("--output", default=r"E:\Temp\opencode\aedar-summary-benchmark-current.json")
     parser.add_argument("--publisher-aggregate-summary-seconds", type=float, default=None)
     parser.add_argument("--publisher-comparison-seconds", type=float, default=None)
     parser.add_argument("--whole-integration-proof-seconds", type=float, default=None)
@@ -433,6 +480,8 @@ def _main() -> None:
     if args.worker:
         _worker()
         return
+    if not args.schema:
+        parser.error("provide an explicit current compatible schema with --schema or AEDAR_BENCH_SCHEMA")
 
     root = _repo_root()
     prepared, before = _guarded_fixture(args.schema)
@@ -472,10 +521,6 @@ def _main() -> None:
     if normalized_after != expected_after:
         raise RuntimeError("read-only benchmark changed fixture rows, publication clocks, or relation sizes")
 
-    comparison_gate = before["comparison_endpoint_gate"]
-    endpoint_gate_passes = bool(comparison_gate and comparison_gate[0] and comparison_gate[1]
-                                and comparison_gate[2] >= 1 and comparison_gate[3] == 0
-                                and comparison_gate[4] == "reference_only")
     summary_rows = before["counts"]["summary_rows"]
     extrapolation_rows = EXTRAPOLATION_TERRITORIES * len(prepared["fixture"]["measures"])
     extrapolated_total_bytes = round(
@@ -491,11 +536,9 @@ def _main() -> None:
             "current_commit": current_commit,
             "endpoint": "POST /api/resources/read-batch",
             "endpoint_latency_reported": False,
-            "endpoint_not_run_reason": (
-                "the retained comparison publication marker fails the API gate; only the adapters "
-                "are timed" if not endpoint_gate_passes else
-                "this harness is deliberately query-level; it does not time HTTP endpoints"),
-            "comparison_gate_passes": endpoint_gate_passes,
+            "endpoint_not_run_reason": "this harness is deliberately query-level; it does not time HTTP endpoints",
+            "comparison_gate_passes": before["current_api_marker_preflight_passed"],
+            "current_api_marker_preflight_passed": before["current_api_marker_preflight_passed"],
             "comparison_marker_gate": {
                 "source_clock_matches": before["comparison_endpoint_gate"][0],
                 "reference_clock_matches": before["comparison_endpoint_gate"][1],

@@ -6,22 +6,33 @@ PR #939 remains draft. The owner-approved product and publication contract is
 in [ADR-0039](adr/0039-published-comparison-aggregates.md); this note records
 the measured fixture evidence and the operator gates, not a new domain decision.
 
-## Measured fixture
+## Historical measured fixture
 
-The reproducible receipt is external to the repository at
+The receipt below is historical adapter-only evidence from API source
+`28f198570a040ebd0ebd33f9530580de733b6a5c`, not a result reproduced against
+the #940 API at `d6b0b1c9` or later. Its owner-deleted fixture
+`it_aedar_1bed7545b6524889` is not available and must not be recreated or reused
+as a current benchmark fixture. The current benchmark requires an explicit,
+current-compatible schema and fails before timing unless the current API's full
+comparison marker gate passes, including the migration-042 density-summary
+metadata and aligned source/reference clocks. Do not patch marker data to make a
+historical fixture pass.
+
+The historical receipt is external to the repository at
 `E:\Temp\opencode\aedar-summary-benchmark.json`. It uses only
 `lusk_it_contract`, schema `it_aedar_1bed7545b6524889`, and the dedicated
-read-only role. The script pins the old API reader to `ebb737885548ce4c002bc04fadf178c8d7b0743b`
-and compares it with current API source `28f198570a040ebd0ebd33f9530580de733b6a5c`.
-The old source is archived into a temporary directory; neither the main checkout
-nor the retained schema is modified.
+read-only role. That run pinned the old API reader to
+`ebb737885548ce4c002bc04fadf178c8d7b0743b` and compared it with API source
+`28f198570a040ebd0ebd33f9530580de733b6a5c`. The old source was archived into a
+temporary directory; neither the main checkout nor the retained schema was
+modified.
 
 Receipt SHA-256: `838c9d7b5f06c17c2d53c2469b074dfd96b0fdfa7a8f0551e5ea1fa7affac913`.
 
-The script gets its 40 measure identities from the published summary rows and
-its focal commune, EPCI and peer communes from `territory_reference`. It calls
-each version's fixed-batch preparation adapter once for each workload, in a
-read-only repeatable-read transaction:
+The historical run got its 40 measure identities from the published summary
+rows and its focal commune, EPCI and peer communes from `territory_reference`.
+It called each version's fixed-batch preparation adapter once for each workload,
+in a read-only repeatable-read transaction:
 
 | Query-level workload | Old adapter elapsed | Current adapter elapsed | Old/current peer readings loaded | Adapter projection bytes* |
 | --- | ---: | ---: | ---: | ---: |
@@ -37,18 +48,17 @@ but excludes API validation/preflight, final response construction, HTTP
 serialization and transport. `adapter projection bytes` is the canonical JSON
 size of that normalized projection, **not** an HTTP response size.
 
-At this benchmark snapshot, the fixture's fixed-comparison publication marker is stale for the
-typed-source clock: the comparison marker says `aedar_content_version` does not
-match the current `aedar_territorial_aggregate` table marker (reference clock
-matches; publication mode is `reference_only`). The API's old fixed-comparison
-probe correctly returned 503. Therefore this receipt reports **no API endpoint
-latency or HTTP response size**. The API failure is not counted as a benchmark
-result, and no source-clock marker was edited to bypass fail-closed behavior.
-The summary/source/reference clocks themselves align, so the internal query
-adapters could be measured without invoking the comparison endpoint gate.
+At this historical snapshot, the fixed-comparison publication marker was stale
+for the typed-source clock: `aedar_content_version` did not match the current
+`aedar_territorial_aggregate` marker (the reference clock matched and publication
+mode was `reference_only`). The API probe correctly returned 503; no marker was
+edited. The then-current harness measured its adapters without the comparison
+gate. That historical method is not the current reproduction procedure: the
+updated harness requires the current API marker to pass before either adapter is
+timed. This receipt reports **no API endpoint latency or HTTP response size**.
 
 Four read-only `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` plans were captured
-from the exact peer-population SELECTs used by those adapters:
+from the exact peer-population SELECTs used by those historical adapters:
 
 | Peer SELECT | Planning | Execution | Shared hit blocks | Rows |
 | --- | ---: | ---: | ---: | ---: |
@@ -57,7 +67,7 @@ from the exact peer-population SELECTs used by those adapters:
 | Summary projection, 40 measures (2-rank case) | 1.087 ms | 0.646 ms | 8 | 80 |
 | Summary projection, 40 measures (40-rank case) | 0.340 ms | 0.592 ms | 8 | 80 |
 
-The two current plans use the same summary SELECT and parameters because
+The two summary-path plans use the same summary SELECT and parameters because
 request-time rank calculation changes in Python, not in the summary projection
 query. This is one observation per path and variant, with no endpoint warm-up
 and no repeated sample. Run order, cache state, fixture scale, lack of API
@@ -141,12 +151,16 @@ SHA-256 `8FFAAF77EF246CC533A0FB23DF39BE252250B1E73F0C4FED97994E58B2E0183A`.
 
 ### Read-only adapter benchmark
 
-Run from the repository root on the guarded test workstation. The passfile and
-credentials stay local; do not save them in the repo or the receipt. The script
-refuses a different database host/database/role combination, enables
-`default_transaction_read_only`, sets a transaction timeout and the explicit
-schema search path, and verifies fixture clocks and relations before and after.
-It does not connect with the publisher DSN.
+Run only when an independently retained current-compatible fixture is available
+on the guarded test workstation; the benchmark does not create one. The deleted
+historical schema above is not a valid choice. The current API marker gate,
+including the migration-042 density-summary metadata, must pass before adapter
+timing begins. On a stale or pre-042 fixture the command aborts without timing.
+The passfile and credentials stay local; do not save them in the repo or the
+receipt. The script refuses a different database host/database/role combination,
+enables `default_transaction_read_only`, sets a transaction timeout and the
+explicit schema search path, and verifies fixture clocks and relations before
+and after. It does not connect with the publisher DSN.
 
 ```powershell
 $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
@@ -155,19 +169,20 @@ $env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
 $env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
 $env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
 $env:LUSK_TEST_READ_USER = 'lusk_it_contract_read'
+$env:AEDAR_BENCH_SCHEMA = '<explicit current-compatible it_aedar_<16 hex> schema>'
 Remove-Item Env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP -ErrorAction SilentlyContinue
 python api/tests/integration/benchmark_aedar_summary_reads.py `
-  --schema it_aedar_1bed7545b6524889 `
-  --publisher-aggregate-summary-seconds 5.36 `
-  --publisher-comparison-seconds 28.40 `
-  --whole-integration-proof-seconds 129.72
+  --schema $env:AEDAR_BENCH_SCHEMA
 ```
 
-The publisher timing arguments preserve prior stage receipts; they do not run a
-publisher. The command emits the sanitized JSON receipt to
-`E:\Temp\opencode\aedar-summary-benchmark.json`. It runs only two adapter calls
-per API version and at most four `EXPLAIN ANALYZE BUFFERS` SELECTs. It does not
-run R, a full integration suite, a migration, publication, or deployment.
+Replace the schema placeholder only with a separately provisioned, retained
+fixture whose current API marker gate has been verified; do not use the deleted
+historical schema. The command emits a sanitized JSON receipt by default to
+`E:\Temp\opencode\aedar-summary-benchmark-current.json`. It runs only two adapter
+calls per API version and at most four `EXPLAIN ANALYZE BUFFERS` SELECTs. Marker
+validation is outside the timed interval; only adapter preparation is timed. It
+does not run R, create or retain a schema, run a full integration suite, apply a
+migration, publish data, or deploy.
 
 ### Explicit synthetic storage probe
 

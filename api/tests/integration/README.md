@@ -331,9 +331,11 @@ iterating on unrelated harnesses; cite its pinned run and duration when reportin
 acceptance.
 
 The separate AEDAR summary-storage/read-path benchmark is strictly read-only;
-it uses the retained schema and dedicated read role, does not run the publisher
-or time the whole integration proof as read latency, and records whether the API
-marker gate permits endpoint timing. See
+it requires an explicitly selected current-compatible retained schema and the
+current API marker gate (including migration-042 metadata) to pass before adapter
+timing. It uses the dedicated read role, does not run the publisher, and measures
+adapter preparation rather than HTTP endpoint latency. It has no default schema;
+the historical fixture referenced by its old receipt was deleted. See
 [`docs/aedar-territory-summary-benchmark.md`](../../../docs/aedar-territory-summary-benchmark.md)
 and `benchmark_aedar_summary_reads.py` for the bounded workload and external
 receipt format.
