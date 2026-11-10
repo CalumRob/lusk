@@ -137,6 +137,7 @@ const aedarReferenceData = ref<AedarSummaryFetchResult | null>(null)
 const aedarReferenceStatus = ref<'unavailable' | 'loading' | 'ready' | 'error'>('unavailable')
 const retryAedarCount = ref(0)
 const retryAedarSummaryCount = ref(0)
+const retryAedarReferenceCount = ref(0)
 function retryAedar(): void { retryAedarCount.value++ }
 watch([productionMobilite, typeRoute, idRoute, retryAedarSummaryCount], async ([active, type, id], _old, onCleanup) => {
   if (!active || !['commune','epci','departement','region'].includes(type)) {
@@ -419,7 +420,13 @@ function retryAedarSummary(): void {
   if (reference) invalidateAedarTerritorySummary(reference.type, reference.id)
   retryAedarSummaryCount.value++
 }
-watch([productionMobilite, aedarReferenceKey, retryAedarSummaryCount], async ([active, key], _old, onCleanup) => {
+function retryAedarReference(): void {
+  const reference = aedarReferenceTerritoire.value
+  if (!reference) return
+  invalidateAedarTerritorySummary(reference.type, reference.id)
+  retryAedarReferenceCount.value++
+}
+watch([productionMobilite, aedarReferenceKey, retryAedarReferenceCount], async ([active, key], _old, onCleanup) => {
   if (!active || !key) { aedarReferenceData.value = null; aedarReferenceStatus.value = 'unavailable'; return }
   let cancelled = false; onCleanup(() => { cancelled = true })
   aedarReferenceStatus.value = 'loading'; aedarReferenceData.value = null
@@ -526,8 +533,10 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
        histoiresNuageMilieux.value = themeActif === 'milieux'
          ? histoiresMilieuxDuNuage(comparison) : []
        statutAcquisition.value = 'ready'
-       statutComparaison.value = acquired.focal.comparison_error || acquired.focal.cohort_error || comparison?.reading_cloud_error
-         ? 'error' : 'ready'
+        // Only this focal comparison-read failure owns the page's ordinary
+        // comparison state. A cohort/cloud failure is independently owned by
+        // its reader and must not invalidate successful rank/value cells.
+        statutComparaison.value = acquired.focal.comparison_error ? 'error' : 'ready'
       cleFaitsPrets = `${typeRoute.value}/${code}/${themeActif}`
     } catch {
       if (!cancelled && request === sequenceAcquisition) {
@@ -602,7 +611,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
         const comparisonScopeLabel = libellePorteeSemantic(comparison, target)
         faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
           comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
-       statutComparaison.value = nativeComparison?.cohort_error || comparison?.reading_cloud_error ? 'error' : 'ready'
+        statutComparaison.value = nativeComparison?.cohort_error ? 'error' : 'ready'
     } catch (error) {
       if (!cancelled && request === sequenceComparaison) {
         nommerEchecMembre(error)
@@ -955,16 +964,6 @@ watch(
         <p>Les indicateurs de ce thème ne sont pas disponibles.</p>
         <button type="button" @click="rechargerFaitsMobilite">Réessayer</button>
       </div>
-      <div
-        v-else-if="statutComparaison === 'error' ||
-          (productionMobilite && mobilityFocal && mobilityComparisonStatus === 'error')"
-        class="etat-erreur"
-        role="alert"
-      >
-        <p>Les comparaisons de ce thème ne sont pas disponibles.</p>
-        <p v-if="membreComparaisonIndisponible">Données indisponibles pour {{ membreComparaisonIndisponible }}. Le résumé du groupe n’est pas affiché ; les données du territoire restent visibles.</p>
-        <button type="button" @click="retryThemeComparison">Réessayer</button>
-      </div>
       <div v-if="selection !== 'mobilite' && statutAcquisition === 'ready' && preuvesThemeIndisponibles"
         class="etat-erreur" role="alert">
         <p>Les lectures de ce thème ne sont pas disponibles.</p>
@@ -1003,8 +1002,12 @@ watch(
               :aedar-data="aedarData" :aedar-status="aedarStatus" :retry-aedar="retryAedar"
               :aedar-summary-data="aedarSummaryData" :aedar-summary-status="aedarSummaryStatus"
               :retry-aedar-summary="retryAedarSummary"
+              :retry-aedar-reference="retryAedarReference"
               :aedar-reference-territoire="aedarReferenceTerritoire" :aedar-reference-data="aedarReferenceData"
-              :aedar-reference-status="aedarReferenceStatus" />
+              :aedar-reference-status="aedarReferenceStatus"
+              :native-comparison-status="mobilityComparisonStatus"
+              :native-comparison-error="membreComparaisonIndisponible ? `Données indisponibles pour ${membreComparaisonIndisponible}` : 'La lecture de la comparaison a échoué.'"
+              :retry-native-comparison="retryThemeComparison" />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation
                  pliée) lit SA paire hermétique ; les autres thèmes passent
@@ -1015,6 +1018,8 @@ watch(
               :territoire="idRoute"
               :metadata-status="statutMetadataPourAffichage"
               :retry-metadata="retryExplicationTheme"
+              :comparison-status="statutComparaison"
+              :retry-comparison="retryThemeComparison"
             />
             <OngletTheme
               v-else-if="ongletTheme"
@@ -1023,6 +1028,9 @@ watch(
               :territoire="idRoute"
               :metadata-status="statutMetadataPourAffichage"
               :retry-metadata="retryExplicationTheme"
+              :comparison-status="statutComparaison"
+              :comparison-error="membreComparaisonIndisponible ? `Données indisponibles pour ${membreComparaisonIndisponible}` : 'La lecture de la comparaison a échoué.'"
+              :retry-comparison="retryThemeComparison"
             />
           </div>
         </template>

@@ -63,16 +63,22 @@ watch([comparisonIdentity, comparisonRetry], async (_value, _old, cleanup) => {
   const abort = new AbortController()
   cleanup(() => { cancelled = true; abort.abort() })
   comparisonStatus.value = 'loading'
-  const measures = [...AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, ...HORIZONS.flatMap((horizon) =>
-    AEDAR_RAMP_MODES.map((mode) => `count_${horizon}_${mode}_mean`))]
-  if (request) {
-    const result = await fetchAedarComparison(fact.territory_type, fact.territory_id, { ...request,
-      typequ: [selectedTypequ.value], measures, expectedContentVersion: props.evidence.contentVersion,
-      expectedReferenceContentVersion: props.evidence.referenceContentVersion, signal: abort.signal })
-    if (cancelled) return
-    comparisonStatus.value = result.status === 'ready' ? 'ready' : 'error'
-    if (result.status === 'ready') detailComparison.value = result.evidence
-    else comparisonError.value = result.message
+    const measures = [...AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, ...HORIZONS.flatMap((horizon) =>
+      AEDAR_RAMP_MODES.map((mode) => `count_${horizon}_${mode}_mean`))]
+    if (request) {
+      try {
+        const result = await fetchAedarComparison(fact.territory_type, fact.territory_id, { ...request,
+          typequ: [selectedTypequ.value], measures, expectedContentVersion: props.evidence.contentVersion,
+          expectedReferenceContentVersion: props.evidence.referenceContentVersion, signal: abort.signal })
+        if (cancelled) return
+        comparisonStatus.value = result.status === 'ready' ? 'ready' : 'error'
+        if (result.status === 'ready') detailComparison.value = result.evidence
+        else comparisonError.value = result.message
+      } catch (error) {
+        if (cancelled) return
+        comparisonStatus.value = 'error'
+        comparisonError.value = error instanceof Error ? error.message : 'Lecture du groupe comparé impossible'
+      }
   } else if (reference) {
     const result = await fetchAedarAggregates(reference.territory.type as AedarFact['territory_type'], reference.territory.id, {
       typequ: [selectedTypequ.value], measures: [...AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, ...HORIZONS.flatMap((horizon) =>
@@ -247,11 +253,6 @@ function chooseType(fact: AedarFact): void {
     <p v-else-if="detailStatus === 'error'" class="aedar-equipment-explorer-load-state" role="alert">
       Valeurs indisponibles pour ce type d’équipement. <button type="button" @click="retryDetail">Réessayer</button>
     </p>
-    <p v-if="comparisonStatus === 'loading'" class="aedar-equipment-explorer-load-state" role="status">Chargement du groupe comparé…</p>
-      <p v-else-if="comparisonStatus === 'error'" class="aedar-equipment-explorer-load-state" role="alert">
-        Groupe comparé indisponible : {{ comparisonError }}. <button type="button" @click="retryComparison">Réessayer</button>
-    </p>
-
     <div class="aedar-equipment-explorer-figures">
       <figure class="aedar-equipment-explorer-figure">
         <figcaption class="cahier-figure-title cahier-baseline-anchor">
@@ -264,6 +265,8 @@ function chooseType(fact: AedarFact): void {
           :selected-modes="selectedModes"
           :show-mode-legend="false"
           :comparison-visible="comparisonVisible"
+          :comparison-status="comparisonStatus"
+          :comparison-error="comparisonError"
         />
         </figure>
 
@@ -292,9 +295,12 @@ function chooseType(fact: AedarFact): void {
       :mark-colors="modeColors"
       :selected-keys="[...selectedModes, ...(comparisonVisible ? ['comparison'] : [])]"
       :toggle-keys="AEDAR_RAMP_MODES"
+      :comparison-status="comparisonStatus"
+      :comparison-error="comparisonError"
       label="Modes de déplacement et groupe comparé"
       @toggle="toggleMode"
     />
+    <button v-if="comparisonStatus === 'error'" class="aedar-equipment-explorer-retry" type="button" @click="retryComparison">Réessayer les comparaisons</button>
 
     <CahierDialog
       :open="pickerOpen"
@@ -339,6 +345,7 @@ function chooseType(fact: AedarFact): void {
 .aedar-equipment-explorer :deep(button:focus-visible), .aedar-equipment-explorer :deep(input:focus-visible) { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 .aedar-equipment-explorer :deep(.aedar-equipment-explorer-modes) { justify-content: center; margin: 0; }
 .aedar-equipment-explorer :deep(.cahier-figure-legend-toggle) { min-height: 36px; }
+.aedar-equipment-explorer-retry { justify-self: end; min-height: 2.75rem; padding: 0 var(--space-3); border: 0; background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
 .aedar-equipment-explorer-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--space-8); }
 /* Match the shared Cahier mobile boundary rather than the generic 768px breakpoint. */
 @media (max-width: 760px) {

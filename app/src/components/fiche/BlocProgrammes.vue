@@ -48,6 +48,8 @@ const props = defineProps<{
   territoire: string
   metadataStatus?: 'loading' | 'ready' | 'error'
   retryMetadata?: () => void
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  retryComparison?: () => void
 }>()
 
 // The theme label and remaining factual/page contracts still use metadata;
@@ -239,6 +241,7 @@ const lienProvenance = computed(() => {
         </template>
       </section>
     </template>
+    <button v-if="props.comparisonStatus === 'error'" class="programmes-comparison-retry" type="button" @click="props.retryComparison?.()">Réessayer les comparaisons</button>
   </article>
 </template>
 
@@ -251,6 +254,7 @@ const lienProvenance = computed(() => {
   flex-direction: column;
   gap: var(--space-8);
 }
+.programmes-comparison-retry { align-self: flex-end; min-height: 2.75rem; padding: 0 var(--space-3); border: 0; background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
 
 .sous-groupe {
   display: flex;

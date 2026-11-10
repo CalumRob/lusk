@@ -534,7 +534,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     expect(focalReads[0]).not.toHaveProperty('dataset_id')
     expect(focalReads[0]).not.toHaveProperty('reference_content_version')
-    expect(wrapper.get('[role="alert"]').text()).toContain('Les comparaisons de ce thème ne sont pas disponibles.')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.programmes-comparison-retry').exists()).toBe(true)
     expect(wrapper.find('.subvention-total').text()).toContain('230 €')
     expect(wrapper.find('.subvention-total').text()).toContain('en 2024')
     expect(wrapper.find('.subvention-total').text()).not.toMatch(/(^|\s)0\s*€/)
@@ -560,7 +561,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     ])
     expect(requests[2]![0]!.intent.members).toEqual(membresDefaut.map((m) => ({ type: m.territory_type, id: m.territory_id })))
 
-    await wrapper.get('[role="alert"] button').trigger('click')
+    await wrapper.get('.programmes-comparison-retry').trigger('click')
     await flushPromises()
 
     expect(requests).toHaveLength(4)
@@ -760,7 +761,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(requests.length).toBeGreaterThan(requestCountBeforeMissingParent)
     expect(requests.slice(requestCountBeforeMissingParent).flat()
       .some((item) => item.intent.kind === 'selected_comparison')).toBe(false)
-    expect(manquant.wrapper.find('[role="alert"]').text()).toContain('Réessayer')
+    expect(manquant.wrapper.find('.programmes-comparison-retry').exists()).toBe(true)
+    expect(manquant.wrapper.find('[role="alert"]').exists()).toBe(false)
     manquant.wrapper.unmount()
   })
 
@@ -870,9 +872,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       } else if (theme === 'economie') {
         expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
       } else if (theme === 'mobilite') {
-        // AEDAR fixed aggregate comparisons are a separate, comparison-only read;
-        // this generic native fixture does not publish that response contract.
-        expect(wrapper.find('[role="alert"]').text()).toContain('Groupe comparé indisponible')
+        // A separate AEDAR comparison request may fail without making the
+        // independently valid native trajectory look unavailable.
+        expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
+        expect(wrapper.findAll('[role="alert"]').some((node) => node.text().includes('Groupe comparé indisponible'))).toBe(false)
       } else {
         expect(wrapper.find('[role="alert"]').exists()).toBe(false)
       }
@@ -1070,9 +1073,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       chargerReferenceReelle)
     await flushPromises()
 
-    expect(wrapper.get('[role="alert"]').text()).toContain('comparaisons de ce thème')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.comparison-section-retry').exists()).toBe(true)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
-    await wrapper.get('[role="alert"] button').trigger('click')
+    await wrapper.get('.comparison-section-retry').trigger('click')
     await flushPromises()
 
     const selectedReads = requests.filter((items) => items.some((item) => item.intent.kind === 'selected_comparison'))
@@ -1841,13 +1845,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     const overview = () => wrapper.get('[data-section="aedar-car-overview"]')
     expect(overview().findAll('.cahier-figure-scalar-value').map((node) => node.text())).toEqual(['5', '11'])
-    expect(overview().find('.aedar-comparison-warning').exists()).toBe(true)
+    expect(overview().find('.cahier-comparison-value__warning').exists()).toBe(true)
     // A stale comparison clock fails closed without dropping the independently valid EPCI summary line.
     expect(overview().find('.cahier-comparison-value').text()).toContain('Groupe comparé : 2,5')
     comparisonClock = 'aedar-summary-fixture-v1'
     await overview().get('.aedar-comparison-retry').trigger('click')
     await flushPromises()
-    expect(overview().find('.aedar-comparison-warning').exists()).toBe(false)
+    expect(overview().find('.cahier-comparison-value__warning').exists()).toBe(false)
     expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
       'Groupe comparé : 13', 'Groupe comparé : 29',
     ])
@@ -1856,7 +1860,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // comparison-cache identity, and direct-reference cache reuse on the real page.
     await router.replace({ query: { theme: 'mobilite', comparaison: 'densite' } })
     await flushPromises()
-    expect(overview().find('.aedar-comparison-warning').exists()).toBe(false)
+    expect(overview().find('.cahier-comparison-value__warning').exists()).toBe(false)
     expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
       'Groupe comparé : 17', 'Groupe comparé : 31',
     ])
@@ -1930,7 +1934,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       && item.target.type === 'commune' && item.target.id === '22002').length).toBeGreaterThan(focalSummariesBeforeRefresh)
     expect(requests.flat().filter((item) => item.resource === 'aedar_territory_summary'
       && item.target.type === 'epci' && item.target.id === refreshedEpci).length).toBeGreaterThan(referenceSummariesBeforeRefresh)
-    expect(overview().find('.aedar-comparison-warning').exists()).toBe(true)
+    expect(overview().find('.cahier-comparison-value__warning').exists()).toBe(true)
     expect(requests.flat().filter((item) => item.resource === 'aedar_territorial_aggregate'
       && item.intent.kind !== 'facts' && !(item.coordinates?.typequ?.length)).length)
       .toBeGreaterThan(comparisonReadsBeforeClockRefresh)
@@ -1939,7 +1943,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     comparisonReferenceClock = referenceContentVersion
     await overview().get('.aedar-comparison-retry').trigger('click')
     await flushPromises()
-    expect(overview().find('.aedar-comparison-warning').exists()).toBe(false)
+    expect(overview().find('.cahier-comparison-value__warning').exists()).toBe(false)
     expect(overview().findAll('.cahier-comparison-value').map((node) => node.text())).toEqual([
       'Groupe comparé : 13', 'Groupe comparé : 29',
     ])
@@ -2086,13 +2090,15 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     refuser = true
     await router.push('/territoire/commune/22001?theme=mobilite&comparaison=commune:22001,commune:22002')
     await flushPromises()
-    expect(wrapper.get('.etat-erreur[role="alert"]').text()).toContain(cibleReference('22002').nom)
+    const comparisonWarning = wrapper.get('.transit-comparison-warning')
+    await comparisonWarning.trigger('focus')
+    expect(wrapper.find('[role="tooltip"]').text()).toContain(cibleReference('22002').nom)
     expect(wrapper.find('.transit-point--territory').exists()).toBe(true)
     expect(wrapper.find('.transit-point--comparison').exists()).toBe(false)
     refuser = false
-    await wrapper.get('.etat-erreur[role="alert"] button').trigger('click')
+    await wrapper.get('.transit-comparison-retry').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.etat-erreur[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
     expect(wrapper.find('.transit-point--comparison').exists()).toBe(true)
     wrapper.unmount()
   }, 20_000)

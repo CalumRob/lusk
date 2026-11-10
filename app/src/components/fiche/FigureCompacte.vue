@@ -47,6 +47,8 @@ const props = defineProps<{
   nom?: string
   large?: boolean
   signe?: boolean
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  comparisonError?: string
 }>()
 
 type Corps =
@@ -112,6 +114,8 @@ const corps = computed<Corps>(() => {
     :reference="reference"
     :reference-label="referenceLabel"
     :nom="nom"
+    :comparison-status="comparisonStatus"
+    :comparison-error="comparisonError"
   />
   <IndicatorFigure
     v-else
@@ -124,5 +128,7 @@ const corps = computed<Corps>(() => {
     :nom-territoire="nom"
     :theme="theme"
     :direction="direction"
+    :comparison-status="comparisonStatus"
+    :comparison-error="comparisonError"
   />
 </template>

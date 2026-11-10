@@ -26,6 +26,10 @@ const props = defineProps<{
   aedarReferenceTerritoire?: { type: AedarTerritoryType; id: string; nom: string } | null
   aedarReferenceData?: AedarSummaryFetchResult | null
   aedarReferenceStatus?: 'unavailable' | 'loading' | 'ready' | 'error'
+  retryAedarReference?: () => void
+  nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  nativeComparisonError?: string
+  retryNativeComparison?: () => void
 }>()
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
@@ -43,6 +47,20 @@ const comparison = ref<AedarComparisonEvidence | null>(null)
 const comparisonState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const comparisonError = ref('')
 const comparisonRetry = ref(0)
+const directReferenceExpected = computed(() => Boolean(props.aedarReferenceTerritoire &&
+  control.value?.selection.etat !== 'vide' && control.value?.selection.etat !== 'membres' &&
+  (comparisonRequest.value?.intent.kind !== 'fixed_comparison' || comparisonRequest.value.intent.context !== 'density_class')))
+const displayedComparisonStatus = computed<'idle' | 'loading' | 'ready' | 'error'>(() => {
+  if (comparisonState.value === 'error' || (directReferenceExpected.value && props.aedarReferenceStatus === 'error')) return 'error'
+  if (comparisonState.value === 'loading' || (directReferenceExpected.value && props.aedarReferenceStatus === 'loading')) return 'loading'
+  return comparisonState.value
+})
+const displayedComparisonError = computed(() => comparisonState.value === 'error'
+  ? comparisonError.value : 'La référence territoriale du groupe comparé est indisponible.')
+function retryFailedComparisons(): void {
+  if (comparisonState.value === 'error') comparisonRetry.value++
+  if (directReferenceExpected.value && props.aedarReferenceStatus === 'error') props.retryAedarReference?.()
+}
 const comparisonFocalIdentity = computed(() => props.aedarSummaryData?.status === 'ready'
   ? JSON.stringify([props.content.territory.type, props.content.territory.code,
     props.aedarSummaryData.summary.summaryContentVersion, props.aedarSummaryData.summary.aedarContentVersion,
@@ -172,9 +190,12 @@ const transformed = computed(() => {
     :content="transformed"
     :pagination="props.pagination"
     :aedar-status="props.aedarStatus"
-    :comparison-status="comparisonState"
-    :comparison-error="comparisonError"
-    :retry-comparison="() => comparisonRetry++"
+    :comparison-status="displayedComparisonStatus"
+    :comparison-error="displayedComparisonError"
+    :retry-comparison="retryFailedComparisons"
+    :native-comparison-status="props.nativeComparisonStatus"
+    :native-comparison-error="props.nativeComparisonError"
+    :retry-native-comparison="props.retryNativeComparison"
     show-all-units
     presentation="plain"
     layout-variant="indexed-sections"

@@ -12,9 +12,13 @@ defineProps<{
   aedarSummaryData: AedarSummaryFetchResult | null
   aedarSummaryStatus: 'loading' | 'ready' | 'error'
   retryAedarSummary: () => void
+  retryAedarReference?: () => void
   aedarReferenceTerritoire?: { type: AedarTerritoryType; id: string; nom: string } | null
   aedarReferenceData?: AedarSummaryFetchResult | null
   aedarReferenceStatus?: 'unavailable' | 'loading' | 'ready' | 'error'
+  nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  nativeComparisonError?: string
+  retryNativeComparison?: () => void
 }>()
 </script>
 <template>
@@ -27,8 +31,12 @@ defineProps<{
     :aedar-summary-data="aedarSummaryData"
     :aedar-summary-status="aedarSummaryStatus"
     :retry-aedar-summary="retryAedarSummary"
+    :retry-aedar-reference="retryAedarReference"
     :aedar-reference-territoire="aedarReferenceTerritoire"
     :aedar-reference-data="aedarReferenceData"
     :aedar-reference-status="aedarReferenceStatus"
+    :native-comparison-status="nativeComparisonStatus"
+    :native-comparison-error="nativeComparisonError"
+    :retry-native-comparison="retryNativeComparison"
   />
 </template>

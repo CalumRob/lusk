@@ -45,6 +45,9 @@ const props = defineProps<{
   territoire: string
   metadataStatus?: 'loading' | 'ready' | 'error'
   retryMetadata?: () => void
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  comparisonError?: string
+  retryComparison?: () => void
 }>()
 
 /** One subgroup plus its reading's figure and source — precomputed for the template. */
@@ -426,6 +429,8 @@ const lignesReseaux = computed(
               :signe="figureSigne(groupe.figureCompacte.clef)"
               :theme="theme"
               :direction="directionPour(groupe.figureCompacte.clef)"
+              :comparison-status="props.comparisonStatus"
+              :comparison-error="props.comparisonError"
             />
             <!-- #409/#468 : la passarelle compacte partagée vers la Page
                  d'indicateur publiée — nouvelle fenêtre, vraie ancre. -->
@@ -453,12 +458,15 @@ const lignesReseaux = computed(
               :signe="figureSigne(figure.key)"
               :theme="theme"
               :direction="directionPour(figure.key)"
+              :comparison-status="props.comparisonStatus"
+              :comparison-error="props.comparisonError"
             />
             <PassarelleExploration v-if="passarelle(figure.key)" :to="passarelle(figure.key)!" />
           </div>
         </div>
       </section>
     </template>
+    <button v-if="props.comparisonStatus === 'error'" class="comparison-section-retry" type="button" @click="props.retryComparison?.()">Réessayer les comparaisons</button>
   </article>
 </template>
 
@@ -469,6 +477,7 @@ const lignesReseaux = computed(
   gap: var(--space-8);
   animation: entree-bloc 450ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+.comparison-section-retry { align-self: flex-end; min-height: 2.75rem; padding: 0 var(--space-3); border: 0; background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
 
 @keyframes entree-bloc {
   from {

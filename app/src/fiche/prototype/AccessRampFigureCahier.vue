@@ -27,6 +27,8 @@ const props = withDefaults(defineProps<{
   selectedModes?: readonly AedarRampMode[]
   showModeLegend?: boolean
   comparisonVisible?: boolean | null
+  comparisonStatus?: 'idle' | 'loading' | 'ready' | 'unavailable' | 'error'
+  comparisonError?: string
 }>(), { showModeLegend: true, comparisonVisible: null })
 const emit = defineEmits<{ 'update:selectedModes': [modes: readonly AedarRampMode[]] }>()
 
@@ -220,7 +222,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
         <CahierFigureTooltip v-if="selectedTimeCut" class="access-ramp-tooltip cahier-figure-tooltip--chart" :title="selectedTimeCut.xLabel" :rows="timeTooltipRows" :anchor="timeTooltipAnchor" aria-live="polite" />
       </div>
     </template>
-    <CahierFigureLegend v-if="props.showModeLegend" :entries="timeLegend" :mark-colors="timeLegendMarkColors" :selected-keys="[...visibleTimeModes, ...(comparisonVisible && comparisonLayerSupported ? ['reference'] : [])]" :toggle-keys="timeRamp.series.map((series) => series.key)" label="Modes de déplacement et référence" @toggle="toggleTimeMode" />
+    <CahierFigureLegend v-if="props.showModeLegend" :entries="timeLegend" :mark-colors="timeLegendMarkColors" :selected-keys="[...visibleTimeModes, ...(comparisonVisible && comparisonLayerSupported ? ['reference'] : [])]" :toggle-keys="timeRamp.series.map((series) => series.key)" :comparison-status="props.comparisonStatus" :comparison-error="props.comparisonError" label="Modes de déplacement et référence" @toggle="toggleTimeMode" />
   </CahierFigureFrame>
 </template>
 
