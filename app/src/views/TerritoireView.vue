@@ -609,7 +609,11 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
         const comparisonScopeLabel = libellePorteeSemantic(comparison, target)
         faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
           comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
-        statutComparaison.value = nativeComparison?.comparison_error ? 'error' : 'ready'
+        // Un select() abouti ne renvoie que la réponse de comparaison : les
+        // échecs d'acquisition/publication lèvent vers le catch ci-dessous.
+        // Un nuage manquant reste la propriété indépendante de
+        // statutNuageComparaison et n'invalide pas les scalaires réussis.
+        statutComparaison.value = 'ready'
     } catch (error) {
       if (!cancelled && request === sequenceComparaison) {
         nommerEchecMembre(error)
@@ -1034,7 +1038,6 @@ watch(
               :metadata-status="statutMetadataPourAffichage"
               :retry-metadata="retryExplicationTheme"
               :comparison-status="statutComparaison"
-              :cloud-comparison-status="statutNuageComparaison"
               :retry-comparison="retryThemeComparison"
             />
             <OngletTheme

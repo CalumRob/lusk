@@ -71,7 +71,8 @@ function instanceRendue() {
   return initMock.mock.results[0]?.value
 }
 
-function monter(nuage: PointNuageMilieux[] = [], periodeArtif = '2021-2025') {
+function monter(nuage: PointNuageMilieux[] = [], periodeArtif = '2021-2025',
+  cloudComparisonStatus: 'idle' | 'error' = 'idle') {
   return mount(GraphiqueQuadrantMilieux, {
     props: {
       tauxVariationPopulation: 14.4927536231884,
@@ -81,6 +82,7 @@ function monter(nuage: PointNuageMilieux[] = [], periodeArtif = '2021-2025') {
       periodePop: '2017-2023',
       periodeArtif,
       nuage,
+      cloudComparisonStatus,
     },
     global: { plugins: [router] },
   })
@@ -307,6 +309,28 @@ describe('GraphiqueQuadrantMilieux — the Milieux quadrant story chart', () => 
     expect(initMock).not.toHaveBeenCalled()
 
     await vi.waitFor(() => expect(initMock).toHaveBeenCalled())
+    wrapper.unmount()
+  })
+
+  it('signale le nuage demandé manquant par un repère local compact, sans réessai ni bloc au-dessus du graphe', async () => {
+    const wrapper = monter([pointA1, pointD], '2021-2025', 'error')
+
+    expect(wrapper.findAll('.cloud-read-warning')).toHaveLength(1)
+    expect(wrapper.element.className).toContain('graphique-quadrant-milieux')
+    expect(wrapper.get('.graphique-quadrant-milieux').find('.graphique-quadrant-milieux-canvas').exists()).toBe(true)
+    expect(wrapper.find('.comparison-section-retry').exists()).toBe(false)
+    const cue = wrapper.get('.cloud-read-warning .comparison-unavailable-cue__trigger')
+    expect(cue.attributes('aria-label')).toContain('Nuage du groupe comparé indisponible')
+    expect(cue.attributes('aria-expanded')).toBe('false')
+
+    await cue.trigger('focus')
+    expect(cue.attributes('aria-expanded')).toBe('true')
+    const tooltip = wrapper.get('[role="tooltip"]')
+    expect(tooltip.text()).toContain('Nuage du groupe comparé indisponible')
+    expect(tooltip.text()).toContain('nuage')
+    await cue.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
+
     wrapper.unmount()
   })
 })

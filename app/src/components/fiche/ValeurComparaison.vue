@@ -5,6 +5,7 @@ import type { Indicateur } from '@/payload/types'
 import { detailsRangEnContexte, formaterValeur } from '@/payload/selectors'
 import { puceRangDirection } from '@/fiche/figureGrammaire'
 import PuceRang from './PuceRang.vue'
+import ComparisonUnavailableCue from './ComparisonUnavailableCue.vue'
 
 const props = withDefaults(defineProps<{ ligne: Pick<Indicateur, 'comparaisonApi' | 'unit'>;
   status?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'; error?: string }>(), { status: 'idle' })
@@ -37,7 +38,7 @@ const accessibleName = computed(() => `Groupe comparé : ${referenceText.value}.
       <button type="button" class="comparison-warning" aria-label="Groupe comparé indisponible. Afficher l’explication" :aria-expanded="explanationOpen" :aria-describedby="explanationOpen ? explanationId : undefined" @mouseenter="explanationOpen = true" @mouseleave="explanationOpen = false" @focus="explanationOpen = true" @blur="explanationOpen = false" @click="explanationOpen = true" @keydown.esc="explanationOpen = false"><AlertTriangle aria-hidden="true" /></button>
       <span v-if="explanationOpen" :id="explanationId" class="comparison-explanation" role="tooltip">Comparaison indisponible : {{ error || 'la lecture du groupe comparé a échoué.' }}</span>
     </span>
-    <span v-if="referenceText === null && status === 'unavailable'" class="comparison-unavailable">Comparaison non disponible : identité du groupe non résolue.</span>
+    <span v-if="referenceText === null && status === 'unavailable'"><ComparisonUnavailableCue /></span>
   </span>
 </template>
 
@@ -52,7 +53,6 @@ const accessibleName = computed(() => `Groupe comparé : ${referenceText.value}.
   color: var(--color-figure-reference);
 }
 .comparison-state { position: relative; width: 2.75rem; height: 2.75rem; display: inline-grid; flex: 0 0 2.75rem; place-items: center; }
-.comparison-unavailable { max-width: 15rem; color: var(--text-secondary); font: var(--text-body-sm); }
 .comparison-spinner { width: 1rem; height: 1rem; animation: comparison-spin .8s linear infinite; }
 .comparison-warning { width: 2.75rem; height: 2.75rem; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--status-warning); background: transparent; cursor: help; }
 .comparison-warning:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

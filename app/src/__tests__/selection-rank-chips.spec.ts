@@ -115,13 +115,18 @@ describe('Rang de la sélection — valeur du Groupe comparé', () => {
     expect(wrapper.text()).toBe('')
   })
 
-  it('renders an unavailable explanation in the comparison slot without a retry affordance', () => {
+  it('renders a compact unavailable explanation in the comparison slot without a retry affordance', async () => {
     const wrapper = mount(ValeurComparaison, { props: {
       ligne: { comparaisonApi: null, unit: '%' } as any,
       status: 'unavailable',
     } })
-    expect(wrapper.find('.comparison-unavailable').text()).toContain('identité du groupe non résolue')
-    expect(wrapper.find('button').exists()).toBe(false)
+    const cue = wrapper.get('.comparison-unavailable-cue__trigger')
+    expect(wrapper.find('.comparison-unavailable').exists()).toBe(false)
+    expect(wrapper.find('.comparison-section-retry').exists()).toBe(false)
+    expect(wrapper.find('.comparison-warning').exists()).toBe(false)
+    await cue.trigger('focus')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('identité du groupe comparé')
+    expect(cue.attributes('aria-expanded')).toBe('true')
   })
 
   it.each([false, true])('donne un seul nom complet au repère Cahier (lien : %s)', async (linked) => {

@@ -762,7 +762,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(requests.slice(requestCountBeforeMissingParent).flat()
       .some((item) => item.intent.kind === 'selected_comparison')).toBe(false)
     expect(manquant.wrapper.find('.programmes-comparison-retry').exists()).toBe(false)
-    expect(manquant.wrapper.find('.comparison-unavailable-note').text()).toContain('identité du groupe non résolue')
+    expect(manquant.wrapper.find('.comparison-unavailable-note').text()).toContain('identité du groupe comparé')
     expect(manquant.wrapper.find('[role="alert"]').exists()).toBe(false)
     manquant.wrapper.unmount()
   })
@@ -2086,7 +2086,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     expect(requests.flat().some((item) => item.intent.kind === 'selected_comparison')).toBe(false)
     expect(wrapper.find('.transit-series--territory').exists()).toBe(true)
-    expect(wrapper.find('.transit-comparison-unavailable').text()).toContain('identité du groupe non résolue')
+    const cue = wrapper.get('.transit-legend-comparison .comparison-unavailable-cue__trigger')
+    expect(cue.attributes('aria-label')).toContain('Comparaison non disponible')
+    await cue.trigger('focus')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('identité du groupe comparé')
+    expect(wrapper.find('.transit-comparison-unavailable').exists()).toBe(false)
     expect(wrapper.find('.transit-comparison-retry').exists()).toBe(false)
     expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
     expect(wrapper.find('.transit-comparison-spinner').exists()).toBe(false)
@@ -2189,7 +2193,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(cloudStories()).toHaveLength(0)
 
     // Le nuage demandé manque : avertissement local, un seul réessai de section.
-    expect(wrapper.find('.cloud-read-warning').text()).toContain('Nuage du groupe comparé indisponible')
+    const cloudCue = wrapper.get('.cloud-read-warning .comparison-unavailable-cue__trigger')
+    expect(cloudCue.attributes('aria-label')).toContain('Nuage du groupe comparé indisponible')
+    await cloudCue.trigger('focus')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('Nuage du groupe comparé indisponible')
     expect(wrapper.find('.comparison-section-retry').exists()).toBe(true)
     expect(selectedBatches()).toHaveLength(1)
     const densiteFactsBefore = densiteFacts().length
