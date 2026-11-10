@@ -3,15 +3,20 @@
  * owns only the shared frame grammar, type treatment, surfaces, and tooltip
  * interaction so a visual correction has one seam.
  */
+/* Surface tokens are shared by the frame and by a self-sufficient tooltip
+ * (the Waffle lives outside a framed figure). */
+.cahier-figure-frame, .cahier-figure-tooltip {
+  --cahier-figure-surface: var(--paper, var(--editorial-paper));
+  --cahier-figure-surface-border: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 19%, transparent);
+  --cahier-figure-surface-shadow: 0 12px 28px rgb(35 42 42 / 16%);
+}
+
 .cahier-figure-frame {
   --cahier-figure-width-compact: 560px;
   --cahier-figure-width-standard: 760px;
   --cahier-figure-width-wide: 100%;
   --cahier-figure-max-width: var(--cahier-figure-width-standard);
   --cahier-figure-tick-label-size: var(--type-figure-tick-size);
-  --cahier-figure-surface: var(--paper, var(--editorial-paper));
-  --cahier-figure-surface-border: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 19%, transparent);
-  --cahier-figure-surface-shadow: 0 12px 28px rgb(35 42 42 / 16%);
   width: min(100%, var(--cahier-figure-max-width));
   margin-inline: auto;
   min-width: 0;
@@ -320,9 +325,9 @@
   width: min(220px, calc(100% - 24px));
   margin: 0;
   padding: 10px 12px;
-  border: 1px solid var(--cahier-figure-surface-border, color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 19%, transparent));
-  background: var(--cahier-figure-surface, var(--paper, var(--editorial-paper)));
-  box-shadow: var(--cahier-figure-surface-shadow, 0 12px 28px rgb(35 42 42 / 16%));
+  border: 1px solid var(--cahier-figure-surface-border);
+  background: var(--cahier-figure-surface);
+  box-shadow: var(--cahier-figure-surface-shadow);
   color: var(--cahier-default, var(--editorial-muted));
   font: var(--text-caption);
   /* The tooltip lives in narrow plot columns: never inherit the figure's wide

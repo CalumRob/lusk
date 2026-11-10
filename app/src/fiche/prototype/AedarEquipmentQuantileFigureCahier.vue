@@ -2,13 +2,14 @@
 import { computed } from 'vue'
 
 import type { AedarFact } from '@/fiche/content/aedarApiClient'
-import { aedarComparisonCell, aedarGroupValue } from '@/fiche/content/aedarComparisonClient'
+import { aedarComparisonCell, aedarComparisonRank, aedarGroupValue } from '@/fiche/content/aedarComparisonClient'
 import type { AedarComparisonEvidence } from '@/fiche/content/aedarComparisonClient'
+import type { ComparisonRank } from '@/fiche/content/territoryFacts'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import { AEDAR_RAMP_MODE_LABELS, readAedarCountMeasure } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { AedarEquipmentExplorerEvidence } from '@/fiche/content/themeContent'
-import type { CahierGroupedVerticalBarFigureData, CahierServedRank } from '@/fiche/cahierFigureGrammaire'
+import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import { AEDAR_TIME_MODE_ICONS } from './aedarTimeModeIcons'
 import CahierGroupedVerticalBarChart from './CahierGroupedVerticalBarChart.vue'
@@ -36,12 +37,9 @@ function formatEstablishmentCount(value: number): string {
 const measurementKey = (mode: AedarRampMode, statisticKey: string): string =>
   `count_${props.horizonMinutes}_${mode}_${statisticKey}`
 
-function servedRankFor(mode: AedarRampMode, statisticKey: string): CahierServedRank | null {
+function servedRankFor(mode: AedarRampMode, statisticKey: string): ComparisonRank | null {
   if (!props.comparison) return null
-  const cell = aedarComparisonCell(props.comparison, props.fact?.typequ, measurementKey(mode, statisticKey))
-  return cell?.rank && cell.rank_size && cell.rank_size >= 2
-    ? { position: cell.rank, size: cell.rank_size }
-    : null
+  return aedarComparisonRank(aedarComparisonCell(props.comparison, props.fact?.typequ, measurementKey(mode, statisticKey)))
 }
 
 const figure = computed<CahierGroupedVerticalBarFigureData>(() => ({

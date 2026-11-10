@@ -10,7 +10,9 @@ import type { RouteLocationRaw } from 'vue-router'
 import { mapAssetUrl } from '@/fiche/mapAssetUrl'
 
 import type { CahierTooltipComparison, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
-import { CAHIER_MAP_LAYOUT_STYLE, formatServedRank } from '@/fiche/cahierFigureGrammaire'
+import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
+import { groupeCompareAria } from '@/fiche/content/comparisonWording'
+import { formatServedRank } from '@/fiche/figureGrammaire'
 import type { ContentFact, CyclingOfferEvidence, SharingNetworksEvidence } from '@/fiche/content/themeContent'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -110,6 +112,7 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
     value: network.length.fact.value === null ? '—' : formatNumber(network.length.fact.value, 2),
     tone: modeTone(mode),
     icon: modeIcon(mode),
+    markerColor: modeColor(mode),
     comparison: comparisonForFact(network.length, props.evidence?.comparisonLabel ?? null),
   }]
   if (mode === 'bike' && props.cyclingEvidence) {
@@ -141,16 +144,14 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
 
 function comparisonForFact(fact: ContentFact, scope: string | null): CahierTooltipComparison | undefined {
   const comparison = fact.fact.comparison
-  if (!comparison) return undefined
-  const reference = comparison.reference
-  const value = reference?.value === null || reference?.value === undefined
-    ? '—'
-    : formatNumber(reference.value, 2)
+  const reference = comparison?.reference
+  if (!reference || reference.value === null || reference.value === undefined) return undefined
+  const value = formatNumber(reference.value, 2)
   const rank = formatServedRank(comparison.rank)
   return {
     value,
     rank,
-    ariaLabel: `Groupe comparé : ${scope ?? 'Indisponible'} : ${value}${rank ? `, rang ${rank}` : ''}`,
+    ariaLabel: groupeCompareAria(value, rank, scope ?? 'Indisponible'),
   }
 }
 

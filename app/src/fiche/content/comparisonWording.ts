@@ -14,6 +14,15 @@ export const COMPARAISON_INDISPONIBLE_RAISON = 'l’identité du groupe comparé
 export const NUAGE_COMPARAISON_INDISPONIBLE_TITRE = 'Nuage du groupe comparé indisponible'
 export const NUAGE_COMPARAISON_INDISPONIBLE_RAISON = 'la lecture du groupe comparé n’a pas fourni son nuage.'
 
+/** Owner wording for a compared figure reading: bare, no colon and no repeated scope. */
+export const GROUPE_COMPARE_LABEL = 'Groupe comparé'
+
+/** Complete accessible phrase for a compared reading; the resolved scope stays in the accessible name only. */
+export function groupeCompareAria(value: string, rank?: string | null, scope?: string | null): string {
+  const reading = scope ? `${GROUPE_COMPARE_LABEL} : ${scope} : ${value}` : `${GROUPE_COMPARE_LABEL} : ${value}`
+  return `${reading}${rank ? `, rang ${rank}` : ''}`
+}
+
 const BUILDING_SCOPE_PREFIX = 'bâtiments des '
 
 export function buildingScopeLabel(label: string): string {

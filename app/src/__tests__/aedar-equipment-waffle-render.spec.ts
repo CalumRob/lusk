@@ -251,6 +251,21 @@ describe('AedarEquipmentWaffleCahier', () => {
     expect(wrapper.get('dialog[open]').text()).toContain('MAIRIE')
   })
 
+  it('keeps the tile tooltip open while focus remains after the pointer leaves', async () => {
+    const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
+    const tile = wrapper.get('.aedar-waffle-tile[data-typequ="A129"]')
+
+    await tile.trigger('focus')
+    expect(wrapper.find('.aedar-waffle .cahier-figure-tooltip').exists()).toBe(true)
+
+    await tile.trigger('mouseenter')
+    await tile.trigger('mouseleave')
+    expect(wrapper.find('.aedar-waffle .cahier-figure-tooltip').exists()).toBe(true)
+
+    await tile.trigger('blur')
+    expect(wrapper.find('.aedar-waffle .cahier-figure-tooltip').exists()).toBe(false)
+  })
+
   it('opens the same modal focused on the equipment type represented by a clicked waffle tile', async () => {
     const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
     const tile = wrapper.get('.aedar-waffle-tile[data-typequ="A129"]')

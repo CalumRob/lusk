@@ -578,6 +578,9 @@ describe('Variante E — partage de l’espace public', () => {
     bikeNetwork.length.fact.comparison.rank = { position: 2, size: 3 }
     if (!cycling.evidence.protectedDensity.fact.comparison) throw new Error('Expected a served protected-density comparison')
     cycling.evidence.protectedDensity.fact.comparison.rank = { position: 1, size: 4 }
+    cycling.evidence.protectedDensity.fact.comparison.reference = { kind: 'median', value: 1.2 }
+    if (!cycling.evidence.sharedDensity.fact.comparison) throw new Error('Expected a served shared-density comparison')
+    cycling.evidence.sharedDensity.fact.comparison.reference = { kind: 'median', value: 0.8 }
 
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push({ path: '/' })
@@ -645,6 +648,25 @@ describe('Variante E — partage de l’espace public', () => {
     expect(focalRows[2]!.find('.cahier-figure-tooltip-marker').exists()).toBe(true)
     expect(networkTooltip.findAll('.cahier-figure-tooltip-row-comparison svg')).toHaveLength(0)
     expect(networkTooltip.findAll('.cahier-figure-tooltip-row-comparison .cahier-figure-tooltip-marker')).toHaveLength(0)
+    // A comparison without a served reference value is omitted, never drawn as a stray dash.
+    const sharedComparison = cycling.evidence.sharedDensity.fact.comparison
+    if (!sharedComparison) throw new Error('Expected a served shared-density comparison')
+    await wrapper.setProps({
+      cyclingEvidence: {
+        ...cycling.evidence,
+        sharedDensity: {
+          ...cycling.evidence.sharedDensity,
+          fact: {
+            ...cycling.evidence.sharedDensity.fact,
+            comparison: { ...sharedComparison, reference: null },
+          },
+        },
+      },
+    })
+    const withoutReference = wrapper.get('.plate-network-tooltip')
+    expect(withoutReference.findAll('.cahier-figure-tooltip-row')).toHaveLength(3)
+    expect(withoutReference.findAll('.cahier-figure-tooltip-row-comparison')).toHaveLength(2)
+    expect(withoutReference.findAll('.cahier-figure-tooltip-row')[2]!.find('.cahier-figure-tooltip-row-comparison').exists()).toBe(false)
     expect(networkTooltip.text()).not.toMatch(/plus est mieux|moins est mieux/u)
     expect(wrapper.find('.cahier-network-bar-row--car').classes()).toContain('cahier-network-bar-row--dimmed')
     await wrapper.find('.map-panel--bike').trigger('mouseenter')

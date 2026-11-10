@@ -4,6 +4,8 @@
  * au lieu de recopier dimensions, marges, types et tooltips.
  */
 
+import type { ComparisonRank } from '@/fiche/content/territoryFacts'
+
 export type CahierFigureGeometry = {
   readonly width: number
   readonly height: number
@@ -168,7 +170,7 @@ export interface CahierGroupedVerticalBarSeries {
   /** This series is a compared layer drawn for a focal series key and attached under its tooltip row. */
   comparisonFor?: string
   /** Producer-served ordinal per category, in the same order; null means not ranked. */
-  ranks?: readonly (CahierServedRank | null)[]
+  ranks?: readonly (ComparisonRank | null)[]
 }
 
 /** Data contract for the reusable vertical grouped-bar figure. */
@@ -358,21 +360,6 @@ export interface CahierTooltipRow {
   marker?: 'dot' | 'slash'
   /** Attached below this focal row, one type step smaller, with no glyph of its own. */
   comparison?: CahierTooltipComparison | null
-}
-
-/** A producer-served ordinal for a compared reading. */
-export interface CahierServedRank {
-  position: number
-  size: number
-}
-
-/** Format a served ordinal like the rest of the app (`1er/3`, `2e/3`); null when not rankable. */
-export function formatServedRank(rank: CahierServedRank | null | undefined): string | null {
-  if (!rank) return null
-  const { position, size } = rank
-  if (!Number.isInteger(position) || !Number.isInteger(size)) return null
-  if (position < 1 || size < 2 || position > size) return null
-  return `${position === 1 ? '1er' : `${position}e`}/${size}`
 }
 
 /** A shared HTML tooltip anchor, expressed in its containing figure's space. */

@@ -36,8 +36,12 @@ const followFocusedMode = ref(false)
 const dialogOpen = ref(false)
 const search = ref('')
 const gridElement = ref<HTMLElement | null>(null)
-const hoveredType = ref<{ label: string; typequ: string; bucketLabel: string } | null>(null)
-const tileTooltipAnchor = ref<CahierFigureTooltipAnchor | undefined>(undefined)
+const hoveredType = ref<TileTooltip | null>(null)
+const focusedType = ref<TileTooltip | null>(null)
+const hoveredAnchor = ref<CahierFigureTooltipAnchor | undefined>(undefined)
+const focusedAnchor = ref<CahierFigureTooltipAnchor | undefined>(undefined)
+const tooltipType = computed(() => hoveredType.value ?? focusedType.value)
+const tooltipAnchor = computed(() => hoveredType.value ? hoveredAnchor.value : focusedAnchor.value)
 const tableScroll = ref<HTMLElement | null>(null)
 const canScrollTable = ref(false)
 let tableResizeObserver: ResizeObserver | null = null
@@ -140,31 +144,41 @@ function openEquipment(typequ: string, key: AedarEquipmentBucketKey) {
   dialogOpen.value = true
 }
 
-function showTileTooltip(
-  type: { label: string; typequ: string; bucketLabel: string },
-  event: Event,
-): void {
+type TileTooltip = { label: string; typequ: string; bucketLabel: string }
+
+function tileAnchor(event: Event): CahierFigureTooltipAnchor | undefined {
   const target = event.currentTarget
   const grid = gridElement.value
-  if (!(target instanceof HTMLElement) || !grid) return
+  if (!(target instanceof HTMLElement) || !grid) return undefined
   const tile = target.getBoundingClientRect()
   const bounds = grid.getBoundingClientRect()
-  hoveredType.value = { label: type.label, typequ: type.typequ, bucketLabel: type.bucketLabel }
-  if (!bounds.width || !bounds.height) {
-    tileTooltipAnchor.value = { x: '50%', y: '2%' }
-    return
-  }
+  if (!bounds.width || !bounds.height) return { x: '50%', y: '2%' }
   const x = ((tile.left + tile.width / 2 - bounds.left) / bounds.width) * 100
   const y = ((tile.top - bounds.top) / bounds.height) * 100
-  tileTooltipAnchor.value = {
+  return {
     x: `${Math.min(88, Math.max(12, x))}%`,
     y: `${Math.min(92, Math.max(2, y))}%`,
   }
 }
 
-function hideTileTooltip(): void {
+function showHoveredTileTooltip(type: TileTooltip, event: Event): void {
+  hoveredType.value = { label: type.label, typequ: type.typequ, bucketLabel: type.bucketLabel }
+  hoveredAnchor.value = tileAnchor(event)
+}
+
+function hideHoveredTileTooltip(): void {
   hoveredType.value = null
-  tileTooltipAnchor.value = undefined
+  hoveredAnchor.value = undefined
+}
+
+function showFocusedTileTooltip(type: TileTooltip, event: Event): void {
+  focusedType.value = { label: type.label, typequ: type.typequ, bucketLabel: type.bucketLabel }
+  focusedAnchor.value = tileAnchor(event)
+}
+
+function hideFocusedTileTooltip(): void {
+  focusedType.value = null
+  focusedAnchor.value = undefined
 }
 
 function openExplorer() {
@@ -217,19 +231,19 @@ watch(horizonMinutes, (horizon) => {
           :style="{ order: index, '--aedar-bucket-color': bucketColors[type.bucket] }"
           :aria-label="`${type.label}, ${type.typequ}, ${type.bucketLabel}. Afficher le détail.`"
           type="button"
-          @mouseenter="showTileTooltip(type, $event)"
-          @mouseleave="hideTileTooltip"
-          @focus="showTileTooltip(type, $event)"
-          @blur="hideTileTooltip"
+          @mouseenter="showHoveredTileTooltip(type, $event)"
+          @mouseleave="hideHoveredTileTooltip"
+          @focus="showFocusedTileTooltip(type, $event)"
+          @blur="hideFocusedTileTooltip"
           @click="openEquipment(type.typequ, type.bucket)"
         />
         <CahierFigureTooltip
-          v-if="hoveredType"
+          v-if="tooltipType"
           class="aedar-waffle-tile-tooltip cahier-figure-tooltip--chart"
-          :title="`${hoveredType.label} (${hoveredType.typequ})`"
-          :unit="hoveredType.bucketLabel"
+          :title="`${tooltipType.label} (${tooltipType.typequ})`"
+          :unit="tooltipType.bucketLabel"
           :rows="[]"
-          :anchor="tileTooltipAnchor"
+          :anchor="tooltipAnchor"
         />
       </div>
       <CahierFigureLegend

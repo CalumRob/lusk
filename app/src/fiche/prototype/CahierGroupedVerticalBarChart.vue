@@ -7,7 +7,8 @@ import type {
   CahierGroupedVerticalBarFigureData,
   CahierTooltipRow,
 } from '@/fiche/cahierFigureGrammaire'
-import { cahierIntegerYAxisScale, formatServedRank } from '@/fiche/cahierFigureGrammaire'
+import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
+import { formatServedRank } from '@/fiche/figureGrammaire'
 import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'

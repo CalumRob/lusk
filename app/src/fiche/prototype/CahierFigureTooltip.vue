@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { GROUPE_COMPARE_LABEL, groupeCompareAria } from '@/fiche/content/comparisonWording'
 import type {
   CahierFigureTooltipAnchor,
   CahierTooltipComparison,
@@ -21,8 +22,7 @@ withDefaults(
 )
 
 function comparisonAria(comparison: CahierTooltipComparison): string {
-  if (comparison.ariaLabel) return comparison.ariaLabel
-  return `Groupe comparé : ${comparison.value}${comparison.rank ? `, rang ${comparison.rank}` : ''}`
+  return comparison.ariaLabel ?? groupeCompareAria(comparison.value, comparison.rank)
 }
 
 function rowAriaLabel(row: CahierTooltipRow): string {
@@ -73,11 +73,11 @@ function rowAriaLabel(row: CahierTooltipRow): string {
             :style="row.markerColor ? { background: row.markerColor } : undefined"
             aria-hidden="true"
           />
-          <span class="cahier-figure-tooltip-label">{{ row.label }}</span>
+          {{ row.label }}
         </dt>
         <dd>{{ row.value }}</dd>
         <dd v-if="row.comparison" class="cahier-figure-tooltip-row-comparison">
-          <span class="cahier-figure-tooltip-comparison-label">Groupe comparé</span>
+          <span class="cahier-figure-tooltip-comparison-label">{{ GROUPE_COMPARE_LABEL }}</span>
           <span class="cahier-figure-tooltip-comparison-value">{{ row.comparison.value }}</span>
           <small v-if="row.comparison.rank" class="cahier-figure-tooltip-comparison-rank">{{ row.comparison.rank }}</small>
         </dd>

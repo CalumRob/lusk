@@ -115,6 +115,8 @@ describe('AccessRampFigureCahier time ramp', () => {
     expect(wrapper.find('[role="tooltip"]').findAll('dt').map((row) => row.text())).toContain('À pied')
     expect(comparisons[1]!.text()).toContain('1')
     expect(wrapper.find('[role="tooltip"]').findAll('svg.cahier-figure-tooltip-icon')).toHaveLength(2)
+    const modeIcons = wrapper.findAll('svg.cahier-figure-tooltip-icon')
+    expect(modeIcons[0]!.attributes('style')).toContain('color: var(--cahier-mode-car)')
     expect(wrapper.find('[role="tooltip"]').findAll('.cahier-figure-tooltip-marker')).toHaveLength(0)
     expect(wrapper.find('[role="tooltip"]').findAll('.cahier-figure-tooltip-row-comparison svg')).toHaveLength(0)
     expect(wrapper.find('[role="tooltip"]').text()).not.toContain('Territoires comparables')

@@ -11,7 +11,9 @@ import type { TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territor
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, CahierTooltipTone, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
-import { cahierIntegerYAxisScale, formatServedRank } from '@/fiche/cahierFigureGrammaire'
+import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
+import { groupeCompareAria } from '@/fiche/content/comparisonWording'
+import { formatServedRank } from '@/fiche/figureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import { AEDAR_TIME_MODE_ICONS } from './aedarTimeModeIcons'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
@@ -154,6 +156,7 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
       value,
       tone: TIME_MODE_TONES[series.key] ?? 'neutral',
       icon: TIME_MODE_ICONS[series.key],
+      markerColor: timeSeriesColor(series.key),
       ariaLabel: `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}${suffix}`,
     }
     if (comparisonLayerSupported.value) {
@@ -162,7 +165,7 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
       row.comparison = {
         value: referenceValue,
         rank,
-        ariaLabel: `Groupe comparé : ${timeRamp.comparisonLabel ?? 'Indisponible'} : ${referenceValue}${rank ? `, rang ${rank}` : ''}`,
+        ariaLabel: groupeCompareAria(referenceValue, rank, timeRamp.comparisonLabel ?? 'Indisponible'),
       }
     }
     return [row]

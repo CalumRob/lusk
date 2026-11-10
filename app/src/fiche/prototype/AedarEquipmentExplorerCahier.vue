@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import type { AedarFact } from '@/fiche/content/aedarApiClient'
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
-import { aedarComparisonCell, aedarGroupValue, fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import { aedarComparisonCell, aedarComparisonRank, aedarGroupValue, fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
 import type { AedarComparisonEvidence } from '@/fiche/content/aedarComparisonClient'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
@@ -179,13 +179,9 @@ const volumeRamp = computed<TimeRampFigureData>(() => {
       xLabel: `${horizon} min`,
       value: readAedarCountMeasure(selectedFact.value, horizon, mode, 'mean'),
       referenceValue: groupValue(horizon, mode, 'mean'),
-      referenceRank: (() => {
-        if (groupValue(horizon, mode, 'mean') === null) return null
-        const cell = aedarComparisonCell(activeComparison.value, selectedBaseFact.value?.typequ, `count_${horizon}_${mode}_mean`)
-        return cell?.rank && cell.rank_size && cell.rank_size >= 2
-          ? { position: cell.rank, size: cell.rank_size }
-          : null
-      })(),
+      referenceRank: groupValue(horizon, mode, 'mean') === null
+        ? null
+        : aedarComparisonRank(aedarComparisonCell(activeComparison.value, selectedBaseFact.value?.typequ, `count_${horizon}_${mode}_mean`)),
     })),
   }))
   const values = series.flatMap((item) => item.points.map((point) => point.value))

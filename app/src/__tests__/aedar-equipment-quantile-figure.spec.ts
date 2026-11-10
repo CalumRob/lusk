@@ -109,6 +109,7 @@ describe('AEDAR equipment decile distribution figure', () => {
     const tooltip = wrapper.get('.cahier-grouped-vertical-bar-chart__tooltip')
     expect(tooltip.text()).toContain('1 établissement')
     expect(tooltip.findAll('svg.cahier-figure-tooltip-icon')).toHaveLength(1)
+    expect(tooltip.get('svg.cahier-figure-tooltip-icon').attributes('style')).toContain('color: var(--cahier-mode-car)')
     expect(tooltip.find('.cahier-figure-tooltip-marker').exists()).toBe(false)
   })
 

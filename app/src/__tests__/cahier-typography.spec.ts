@@ -46,16 +46,22 @@ const sharedMapPanelLabelSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'cahierMapPanelLabel.css'),
   'utf8',
 )
-const tooltipFigureSources = [
-  'AccessRampFigureCahier.vue',
-  'CartographicBreakoutPrototype.vue',
-  'CahierSummaryPlot.vue',
-  'CahierGroupedVerticalBarChart.vue',
-  'AedarEquipmentWaffleCahier.vue',
-].map((name) => ({
-  name,
-  source: readFileSync(join(process.cwd(), 'src', 'fiche', 'prototype', name), 'utf8'),
-}))
+const prototypeDirectory = join(process.cwd(), 'src', 'fiche', 'prototype')
+const prototypeVueSources = readdirSync(prototypeDirectory)
+  .filter((name) => name.endsWith('.vue'))
+  .map((name) => ({ name, source: readFileSync(join(prototypeDirectory, name), 'utf8') }))
+
+/**
+ * Non-figure native titles tolerated in the prototype: rank chips and page
+ * chrome. Any other native title on a figure mark is a defect.
+ */
+const NATIVE_TITLE_ALLOWLIST = new Map<string, RegExp>([
+  ['CahierRank.vue', /class="cahier-rank/u],
+  ['VarianteCahier.vue', /class="tuile-classement"/u],
+  ['VarianteFil.vue', /class="bandeau-rang"/u],
+  ['VarianteCahierLibre.vue', /class="page-heading-territory"/u],
+])
+const NATIVE_TAG_WITH_TITLE = /<([a-z][\w-]*)\b[^>]*?\s:?title=/gu
 const tokensSource = readFileSync(
   join(process.cwd(), 'src', 'styles', 'tokens.css'),
   'utf8',
@@ -171,16 +177,22 @@ describe('Cahier typography roles', () => {
   })
 
   it('keeps a tooltip self-sufficient outside a figure frame', () => {
+    const sharedTokens = figureCss.match(/\.cahier-figure-frame,\s*\.cahier-figure-tooltip\s*\{([^}]*)\}/u)?.[1] ?? ''
+    expect(sharedTokens).toContain('--cahier-figure-surface: var(--paper, var(--editorial-paper))')
+    expect(sharedTokens).toContain('--cahier-figure-surface-border:')
+    expect(sharedTokens).toContain('--cahier-figure-surface-shadow:')
     const tooltipRule = cssRule(figureCss, '.cahier-figure-tooltip')
-    expect(tooltipRule).toContain('background: var(--cahier-figure-surface, var(--paper, var(--editorial-paper)))')
-    expect(tooltipRule).toContain('border: 1px solid var(--cahier-figure-surface-border,')
-    expect(tooltipRule).toContain('box-shadow: var(--cahier-figure-surface-shadow,')
+    expect(tooltipRule).toContain('background: var(--cahier-figure-surface)')
+    expect(tooltipRule).toContain('border: 1px solid var(--cahier-figure-surface-border)')
+    expect(tooltipRule).toContain('box-shadow: var(--cahier-figure-surface-shadow)')
   })
 
-  it('leaves no native title on a shared-tooltip figure mark', () => {
-    for (const { name, source } of tooltipFigureSources) {
-      expect(source, `${name} must route data tooltips through CahierFigureTooltip`)
-        .not.toMatch(/<(?:rect|circle|path|g|button|svg)\b[^>]*\s:?title=/u)
+  it('leaves no native title on a figure mark across the prototype figures', () => {
+    for (const { name, source } of prototypeVueSources) {
+      for (const match of source.matchAll(NATIVE_TAG_WITH_TITLE)) {
+        const allowed = NATIVE_TITLE_ALLOWLIST.get(name)?.test(match[0]) ?? false
+        expect(allowed, `${name}: native title on <${match[1]}> — route figure tooltips through CahierFigureTooltip`).toBe(true)
+      }
     }
   })
 
