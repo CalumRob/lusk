@@ -150,22 +150,25 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
   return visibleTimeSeries.value.flatMap((series) => {
     const point = series.points.find((candidate) => candidate.xValue === cut.xValue)
     if (!point) return []
-    const value = point.value === null ? 'Indisponible' : `${formatNumber(point.value)}${suffix}`
+    const value = point.value === null ? 'Indisponible' : formatNumber(point.value)
+    const ariaValue = point.value === null ? 'Indisponible' : `${formatNumber(point.value)}${suffix}`
     const row: CahierTooltipRow = {
       label: series.label,
       value,
       tone: TIME_MODE_TONES[series.key] ?? 'neutral',
       icon: TIME_MODE_ICONS[series.key],
       markerColor: timeSeriesColor(series.key),
-      ariaLabel: `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}${suffix}`,
+      ariaLabel: `${props.territoryName} : ${series.label} : ${ariaValue}`,
     }
     if (comparisonLayerSupported.value) {
       const rank = formatServedRank(point.referenceRank)
-      const referenceValue = point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${suffix}`
+      const referenceValue = point.referenceValue === null ? 'Indisponible' : formatNumber(point.referenceValue)
+      const ariaReferenceValue = point.referenceValue === null
+        ? 'Indisponible' : `${formatNumber(point.referenceValue)}${suffix}`
       row.comparison = {
         value: referenceValue,
         rank,
-        ariaLabel: groupeCompareAria(referenceValue, formatServedRankAria(point.referenceRank), timeRamp.comparisonLabel ?? 'Indisponible'),
+        ariaLabel: groupeCompareAria(ariaReferenceValue, formatServedRankAria(point.referenceRank), timeRamp.comparisonLabel ?? 'Indisponible'),
       }
     }
     return [row]
