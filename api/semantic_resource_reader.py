@@ -297,7 +297,8 @@ class SemanticResourceReader:
                 include_scalar_facet=dual_scalar_series,
                 scalar_facet_theme_id=resource.theme_id if dual_scalar_series else None,
                 scalar_facet_projection=bool(item.fields and "scalar_facet" in item.fields),
-                profile_coordinates=profile_coordinates)
+                profile_coordinates=profile_coordinates,
+                intent_kind=item.intent.kind)
             resource = catalogue.resources_by_id[item.resource]
             members = ([member_id for _, member_id in selection] if selection else
                        list(estimate.get("members", ())) if isinstance(estimate, dict) else [])
@@ -492,7 +493,8 @@ class SemanticResourceReader:
                 scalar_facet_theme_id=(resource.theme_id if self._has_dual_scalar_series(resource)
                                        and item.target.kind == "territory" else None),
                 profile_coordinates=self._profile_comparison_coordinates(conn, item, resource),
-                collection_coordinates=item.coordinates if "period_detail" in resource.shapes else None)
+                collection_coordinates=item.coordinates if "period_detail" in resource.shapes else None,
+                intent_kind=item.intent.kind)
             if item.coordinates:
                 data = self._filter_coordinates(data, item.coordinates, resource)
             return {"resource": item.resource, "target": item.target.model_dump(), **data}

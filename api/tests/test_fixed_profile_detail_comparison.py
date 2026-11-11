@@ -168,3 +168,40 @@ def test_fixed_profile_preflight_rejects_an_undeclared_detail_before_reading():
         reader(comparison_preflight).preflight(
             Connection(), fixed_item({"detail": ["not_declared"]}), catalogue())
     assert error.value.status_code == 422
+
+
+def test_fixed_profile_snapshot_refuses_peer_rank_projection_before_reading():
+    from api import snapshot_reads
+
+    class NoRead:
+        def execute(self, *_args, **_kwargs):
+            pytest.fail("The fixed-profile peer-rank guard must precede publication reads")
+
+    with pytest.raises(HTTPException) as error:
+        snapshot_reads._theme_comparison_snapshot(
+            NoRead(), "commune", "c1", "mobilite", None,
+            result_fields=("median", "member_ranks"), profile_member_ranks_allowed=False)
+    assert error.value.status_code == 422
+
+
+def test_fixed_profile_indicator_preflight_keeps_peer_ranks_out_of_the_fixed_surface():
+    from api import snapshot_reads
+
+    class ShapeConnection:
+        def execute(self, sql, params=None):
+            if "SELECT territory_type FROM territory_reference" in sql:
+                return Cursor([("commune",)])
+            if "to_regclass" in sql:
+                table = params[0] if params else None
+                return Cursor([("profile_descriptor",)] if table == "profile_descriptor" else [(None,)])
+            if "SELECT 1 FROM profile_descriptor WHERE indicator_id=%s" in sql:
+                return Cursor([(1,)])
+            if "SELECT theme_id,allowed_levels FROM profile_descriptor" in sql:
+                return Cursor([("mobilite", ["commune"])])
+            raise AssertionError(sql)
+
+    with pytest.raises(HTTPException) as error:
+        snapshot_reads._indicator_comparison_preflight(
+            ShapeConnection(), "commune", "c1", "reseaux_par_habitant", None,
+            ("median", "member_ranks"), intent_kind="fixed_comparison")
+    assert error.value.status_code == 422
