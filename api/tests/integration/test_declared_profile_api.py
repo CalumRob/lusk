@@ -436,10 +436,10 @@ def test_declared_profile_postgres_api_contract(installation):
                 original_preflight = reader.preflight
 
                 def concurrent_update_preflight(connection, item, catalogue=None, *,
-                                                work_budget=200_000, **kwargs):
+                                                work_budget=200_000, snapshot_state=None):
                     nonlocal changed_during_preflight
                     estimate = original_preflight(connection, item, catalogue,
-                        work_budget=work_budget, **kwargs)
+                        work_budget=work_budget, snapshot_state=snapshot_state)
                     if item.resource == "structure_age" and not changed_during_preflight:
                         with psycopg.connect(publisher_dsn) as writer:
                             writer.execute(f'SET search_path TO "{schema}"')
