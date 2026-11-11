@@ -501,20 +501,23 @@ test_that("raccordement scalar projection binds its producer metadata, source vi
   canonical_dir <- file.path(pkgload::pkg_path(), "..", "public", "data")
   canonical <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_mobilite.parquet"))
   vintages <- nanoparquet::read_parquet(file.path(canonical_dir, "vintages.parquet"))
-  historical <- jsonlite::fromJSON(file.path(canonical_dir, "theme_mobilite.json"), simplifyVector=FALSE)
   current <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_mobilite.json"), simplifyVector=FALSE)
-  expect_silent(validate_raccordement_scalar_bundle(canonical, historical, vintages))
+  # Le Parquet conservé est le snapshot de la publication PRÉCÉDENTE : il ne
+  # se lie pas au canon courant (la fraîcheur du raccordement a changé). La
+  # métadonnée servie est désormais exactement la projection du canon (#953),
+  # il n'existe plus de copie « historique » à opposer — la vérité producteur
+  # reste la liaison NÉGATIVE ci-dessous.
   expect_error(validate_raccordement_scalar_bundle(canonical, current, vintages),
     "Raccordement scalar source vintage is unavailable in its metadata bundle")
-  mutated <- canonical
-  index <- which(mutated$key == "raccordement_tc")[[1L]]
-  mutated$value[[index]] <- mutated$value[[index]] + 0.01
-  expect_error(validate_raccordement_scalar_bundle(mutated, historical, vintages),
-    "Raccordement scalar does not match its t0090 trajectory fact")
 
   artifact <- lire_artefact_raccordement_national()
   candidate_vintages <- vintages_mobilite()
   owned_rows <- lignes_indicateurs_raccordement_national(artifact$calculation, candidate_vintages)
+  mutated <- owned_rows
+  index <- which(mutated$key == "raccordement_tc")[[1L]]
+  mutated$value[[index]] <- mutated$value[[index]] + 0.01
+  expect_error(validate_raccordement_scalar_bundle(mutated, current, candidate_vintages),
+    "Raccordement scalar does not match its t0090 trajectory fact")
   expect_equal(sum(owned_rows$key == "raccordement_tc"), 1268L)
   expect_silent(validate_raccordement_scalar_bundle(owned_rows, current, candidate_vintages))
 })

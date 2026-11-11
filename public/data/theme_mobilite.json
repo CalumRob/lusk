@@ -1,9 +1,5 @@
 {
   "theme": "mobilite",
-
-
-
-
   "label": "Mobilité",
   "subgroups": [
     {
@@ -32,28 +28,55 @@
         "share_school_c",
         "share_bank_t",
         "share_bank_b",
-         "share_bank_c",
-         "avg_tot_car",
-         "avg_tot_b",
-         "avg_tot_t",
-      "avg_div_car",
-      "avg_div_b",
-      "avg_div_t",
-      "nb_buildings"
+        "share_bank_c",
+        "avg_tot_car",
+        "avg_tot_b",
+        "avg_tot_t",
+        "avg_div_car",
+        "avg_div_b",
+        "avg_div_t",
+        "nb_buildings"
       ],
-
       "reading": {
         "story_key": "vingt-minutes-sans-voiture",
-        "params": ["div_loss_t", "div_loss_b", "tot_loss_t", "tot_loss_b", "pct_iso_full_t", "classification_saillance"],
+        "params": [
+          "div_loss_t",
+          "div_loss_b",
+          "tot_loss_t",
+          "tot_loss_b",
+          "pct_iso_full_t",
+          "classification_saillance"
+        ],
         "template": [
-          { "type": "text", "content": "Sans voiture, " },
-          { "type": "param", "key": "div_loss_t" },
-          { "type": "text", "content": " types de services disparaissent de l’accès quotidien de " },
-          { "type": "territoire" },
-          { "type": "text", "content": ". " },
-          { "type": "link", "href": "/sources", "children": [
-            { "type": "text", "content": "Sources" }
-          ] }
+          {
+            "type": "text",
+            "content": "Sans voiture, "
+          },
+          {
+            "type": "param",
+            "key": "div_loss_t"
+          },
+          {
+            "type": "text",
+            "content": " types de services disparaissent de l’accès quotidien de "
+          },
+          {
+            "type": "territoire"
+          },
+          {
+            "type": "text",
+            "content": ". "
+          },
+          {
+            "type": "link",
+            "href": "/sources",
+            "children": [
+              {
+                "type": "text",
+                "content": "Sources"
+              }
+            ]
+          }
         ]
       }
     },
@@ -61,17 +84,40 @@
       "key": "partage-de-lespace-public",
       "label": "Le partage de l’espace public",
       "framing": "La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.",
-      "indicators": ["reseaux", "reseaux_par_habitant", "surface_reseaux_routiers", "places_stationnement_velo_1000", "places_stationnement_voiture_1000", "stationnement_velo_par_voiture", "offre_cyclable"]},
+      "indicators": [
+        "reseaux",
+        "reseaux_par_habitant",
+        "surface_reseaux_routiers",
+        "places_stationnement_velo_1000",
+        "places_stationnement_voiture_1000",
+        "stationnement_velo_par_voiture",
+        "offre_cyclable"
+      ]
+    },
     {
       "key": "motorisation",
       "label": "La motorisation",
       "framing": "L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.",
-      "indicators": ["voitures_menage", "bornes_recharge", "bornes_ev_par_station_service", "stations_service", "stations_service_1000", "bornes_recharge_1000"]},
+      "indicators": [
+        "voitures_menage",
+        "bornes_recharge",
+        "bornes_ev_par_station_service",
+        "stations_service",
+        "stations_service_1000",
+        "bornes_recharge_1000"
+      ]
+    },
     {
       "key": "offre-transports-commun",
       "label": "L’offre de transports en commun",
       "framing": "La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.",
-      "indicators": ["offre_tc", "raccordement_tc", "raccordement_courbe", "raccordement_reference"]}
+      "indicators": [
+        "offre_tc",
+        "raccordement_tc",
+        "raccordement_courbe",
+        "raccordement_reference"
+      ]
+    }
   ],
   "indicator_keys": [
     "voitures_menage",
@@ -109,24 +155,22 @@
     "share_school_c",
     "share_bank_t",
     "share_bank_b",
-     "share_bank_c",
-     "avg_tot_car",
-     "avg_tot_b",
-     "avg_tot_t",
-     "avg_div_car",
-     "avg_div_b",
-     "avg_div_t",
-     "nb_buildings",
-     "raccordement_tc",
+    "share_bank_c",
+    "avg_tot_car",
+    "avg_tot_b",
+    "avg_tot_t",
+    "avg_div_car",
+    "avg_div_b",
+    "avg_div_t",
+    "nb_buildings",
+    "raccordement_tc",
     "raccordement_courbe",
     "raccordement_reference"
   ],
-
-
   "sources": {
     "voitures_menage": "rp_logement_princ",
-     "reseaux": "amenagements_cyclables",
-     "reseaux_par_habitant": "osm_reseaux",
+    "reseaux": "amenagements_cyclables",
+    "reseaux_par_habitant": "osm_reseaux",
     "surface_reseaux_routiers": "ocsge_reseaux_routiers",
     "offre_tc": "korrigo",
     "bornes_recharge": "bornes-recharges",
@@ -159,17 +203,17 @@
     "share_school_c": "mobilite_snapshot",
     "share_bank_t": "mobilite_snapshot",
     "share_bank_b": "mobilite_snapshot",
-     "share_bank_c": "mobilite_snapshot",
-     "avg_tot_car": "mobilite_snapshot",
-     "avg_tot_b": "mobilite_snapshot",
-     "avg_tot_t": "mobilite_snapshot",
-     "avg_div_car": "mobilite_snapshot",
-     "avg_div_b": "mobilite_snapshot",
-     "avg_div_t": "mobilite_snapshot",
-     "nb_buildings": "mobilite_snapshot",
-     "raccordement_tc": "matrice_temps_mairies",
-    "raccordement_courbe": "matrice_temps_mairies",
-    "raccordement_reference": "matrice_temps_mairies"
+    "share_bank_c": "mobilite_snapshot",
+    "avg_tot_car": "mobilite_snapshot",
+    "avg_tot_b": "mobilite_snapshot",
+    "avg_tot_t": "mobilite_snapshot",
+    "avg_div_car": "mobilite_snapshot",
+    "avg_div_b": "mobilite_snapshot",
+    "avg_div_t": "mobilite_snapshot",
+    "nb_buildings": "mobilite_snapshot",
+    "raccordement_tc": "raccordement_gtfs_national",
+    "raccordement_courbe": "raccordement_gtfs_national",
+    "raccordement_reference": "raccordement_gtfs_national"
   },
   "indicator_labels": {
     "iso_alimentation": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
@@ -191,17 +235,17 @@
     "share_school_c": "Part des bâtiments avec accès à l’école — en voiture",
     "share_bank_t": "Part des bâtiments avec accès à la banque — à pied ou en transports en commun",
     "share_bank_b": "Part des bâtiments avec accès à la banque — à vélo",
-     "share_bank_c": "Part des bâtiments avec accès à la banque — en voiture",
-     "avg_tot_car": "Nombre moyen d’équipements accessibles — en voiture",
-     "avg_tot_b": "Nombre moyen d’équipements accessibles — à vélo",
-     "avg_tot_t": "Nombre moyen d’équipements accessibles — à pied ou en transports en commun",
-     "avg_div_car": "Nombre moyen de types d’équipements accessibles — en voiture",
-     "avg_div_b": "Nombre moyen de types d’équipements accessibles — à vélo",
-      "avg_div_t": "Nombre moyen de types d’équipements accessibles — à pied ou en transports en commun",
-      "nb_buildings": "Bâtiments résidentiels analysés",
-     "voitures_menage": "Voitures par ménage",
-     "reseaux": "Réseaux à pied / vélo / voiture",
-     "reseaux_par_habitant": "Longueur du réseau par habitant",
+    "share_bank_c": "Part des bâtiments avec accès à la banque — en voiture",
+    "avg_tot_car": "Nombre moyen d’équipements accessibles — en voiture",
+    "avg_tot_b": "Nombre moyen d’équipements accessibles — à vélo",
+    "avg_tot_t": "Nombre moyen d’équipements accessibles — à pied ou en transports en commun",
+    "avg_div_car": "Nombre moyen de types d’équipements accessibles — en voiture",
+    "avg_div_b": "Nombre moyen de types d’équipements accessibles — à vélo",
+    "avg_div_t": "Nombre moyen de types d’équipements accessibles — à pied ou en transports en commun",
+    "nb_buildings": "Bâtiments résidentiels analysés",
+    "voitures_menage": "Voitures par ménage",
+    "reseaux": "Réseaux à pied / vélo / voiture",
+    "reseaux_par_habitant": "Longueur du réseau par habitant",
     "surface_reseaux_routiers": "Part du territoire consacré aux réseaux routiers",
     "offre_tc": "Part des bâtiments près d’un arrêt (à 500 m)",
     "bornes_recharge": "Bornes de recharge pour véhicules électriques",
@@ -215,9 +259,9 @@
     "tot_loss_t": "Perte totale d’accès — à pied ou en transports en commun",
     "tot_loss_b": "Perte totale d’accès — à vélo",
     "offre_cyclable": "L’offre cyclable",
-    "raccordement_tc": "Population bretonne joignable en 90 minutes en TC",
-    "raccordement_courbe": "Courbe cumulative — population bretonne joignable en TC",
-    "raccordement_reference": "Référence médiane — commune bretonne"
+    "raccordement_tc": "Population bretonne jointe en 90 minutes en transports en commun",
+    "raccordement_courbe": "Courbe de population bretonne jointe selon le temps de trajet",
+    "raccordement_reference": "Moyenne de Bretagne — communes évaluées"
   },
   "detail_labels": {
     "reseaux": {
@@ -253,7 +297,69 @@
       "t0180": "3 h",
       "t0240": "4 h",
       "t0300": "5 h",
-      "t0360": "6 h"
+      "t0360": "6 h",
+      "t0005": "5",
+      "t0010": "10",
+      "t0020": "20",
+      "t0025": "25",
+      "t0035": "35",
+      "t0040": "40",
+      "t0050": "50",
+      "t0055": "55",
+      "t0065": "65",
+      "t0070": "70",
+      "t0075": "75",
+      "t0080": "80",
+      "t0085": "85",
+      "t0095": "95",
+      "t0100": "100",
+      "t0105": "105",
+      "t0110": "110",
+      "t0115": "115",
+      "t0125": "125",
+      "t0130": "130",
+      "t0135": "135",
+      "t0140": "140",
+      "t0145": "145",
+      "t0150": "150",
+      "t0155": "155",
+      "t0160": "160",
+      "t0165": "165",
+      "t0170": "170",
+      "t0175": "175",
+      "t0185": "185",
+      "t0190": "190",
+      "t0195": "195",
+      "t0200": "200",
+      "t0205": "205",
+      "t0210": "210",
+      "t0215": "215",
+      "t0220": "220",
+      "t0225": "225",
+      "t0230": "230",
+      "t0235": "235",
+      "t0245": "245",
+      "t0250": "250",
+      "t0255": "255",
+      "t0260": "260",
+      "t0265": "265",
+      "t0270": "270",
+      "t0275": "275",
+      "t0280": "280",
+      "t0285": "285",
+      "t0290": "290",
+      "t0295": "295",
+      "t0305": "305",
+      "t0310": "310",
+      "t0315": "315",
+      "t0320": "320",
+      "t0325": "325",
+      "t0330": "330",
+      "t0335": "335",
+      "t0340": "340",
+      "t0345": "345",
+      "t0350": "350",
+      "t0355": "355"
     },
     "raccordement_reference": {
       "t0000": "0",
@@ -266,7 +372,69 @@
       "t0180": "3 h",
       "t0240": "4 h",
       "t0300": "5 h",
-      "t0360": "6 h"
+      "t0360": "6 h",
+      "t0005": "5",
+      "t0010": "10",
+      "t0020": "20",
+      "t0025": "25",
+      "t0035": "35",
+      "t0040": "40",
+      "t0050": "50",
+      "t0055": "55",
+      "t0065": "65",
+      "t0070": "70",
+      "t0075": "75",
+      "t0080": "80",
+      "t0085": "85",
+      "t0095": "95",
+      "t0100": "100",
+      "t0105": "105",
+      "t0110": "110",
+      "t0115": "115",
+      "t0125": "125",
+      "t0130": "130",
+      "t0135": "135",
+      "t0140": "140",
+      "t0145": "145",
+      "t0150": "150",
+      "t0155": "155",
+      "t0160": "160",
+      "t0165": "165",
+      "t0170": "170",
+      "t0175": "175",
+      "t0185": "185",
+      "t0190": "190",
+      "t0195": "195",
+      "t0200": "200",
+      "t0205": "205",
+      "t0210": "210",
+      "t0215": "215",
+      "t0220": "220",
+      "t0225": "225",
+      "t0230": "230",
+      "t0235": "235",
+      "t0245": "245",
+      "t0250": "250",
+      "t0255": "255",
+      "t0260": "260",
+      "t0265": "265",
+      "t0270": "270",
+      "t0275": "275",
+      "t0280": "280",
+      "t0285": "285",
+      "t0290": "290",
+      "t0295": "295",
+      "t0305": "305",
+      "t0310": "310",
+      "t0315": "315",
+      "t0320": "320",
+      "t0325": "325",
+      "t0330": "330",
+      "t0335": "335",
+      "t0340": "340",
+      "t0345": "345",
+      "t0350": "350",
+      "t0355": "355"
     }
   },
   "param_labels": {
@@ -278,55 +446,1258 @@
     "classification_saillance": "Classification de saillance"
   },
   "indicator_caveats": {
-    "raccordement_tc": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.",
-    "raccordement_courbe": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.",
-    "raccordement_reference": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées."
+    "raccordement_tc": "Trajets GTFS planifiés entre arrêts, mesurés le 21 octobre 2026. Les agrégats sont des moyennes égales incluant les zéros du modéle ; ces zéros ne disent pas qu’il n’existe aucun transport réel.",
+    "raccordement_courbe": "Trajets GTFS planifiés entre arrêts, mesurés le 21 octobre 2026. Les agrégats sont des moyennes égales incluant les zéros du modéle ; ces zéros ne disent pas qu’il n’existe aucun transport réel.",
+    "raccordement_reference": "Trajets GTFS planifiés entre arrêts, mesurés le 21 octobre 2026. Les agrégats sont des moyennes égales incluant les zéros du modéle ; ces zéros ne disent pas qu’il n’existe aucun transport réel."
   },
-
   "indicator_pages": {
-    "nb_buildings": { "indicator": "nb_buildings", "label": "Bâtiments résidentiels analysés", "definition": "Nombre de bâtiments résidentiels analysés dans le snapshot Mobilité pour le territoire.", "unit": "bâtiments", "calculation": "Dénombrement publié par le pipeline à partir du snapshot Mobilité.", "direction": "high", "caveats": "Ce total appartient au snapshot Mobilité et peut différer des dénominateurs propres aux rampes et grilles bâtimentières.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-    "voitures_menage": { "indicator": "voitures_menage", "label": "Voitures par ménage", "definition": "Répartition des ménages selon le nombre de voitures possédées.", "unit": "%", "calculation": "Parts publiées par le pipeline.", "direction": "high", "caveats": "Les catégories décrivent les ménages recensés.", "levels": ["commune", "epci", "departement", "region"], "sources": ["rp_logement_princ"], "family": "composition", "composition": { "parts": ["sans_voiture", "une_voiture", "deux_plus"] }, "comparison": { "details": ["sans_voiture", "une_voiture", "deux_plus"], "detail": "sans_voiture", "unit": "%", "labels": { "sans_voiture": "Ménages sans voiture", "une_voiture": "Ménages avec 1 voiture", "deux_plus": "Ménages avec 2 voitures ou plus" } } },
-    "offre_cyclable": { "indicator": "offre_cyclable", "label": "L’offre cyclable", "definition": "Répartition de l’offre cyclable entre aménagements protégés et partagés.", "unit": "km", "calculation": "Longueurs publiées par le pipeline.", "direction": "high", "caveats": "La longueur dépend de la couverture du réseau publié.", "levels": ["commune", "epci", "departement", "region"], "sources": ["osm_reseaux"], "family": "composition", "composition": { "parts": ["protege_longueur", "partage_longueur"] }, "comparison": { "details": ["protege_longueur", "protege_km_1000", "partage_longueur", "partage_km_1000", "total_longueur"], "detail": "total_longueur", "unit": "km", "labels": { "protege_longueur": "Longueur protégée", "protege_km_1000": "Protégé par habitant", "partage_longueur": "Longueur partagée", "partage_km_1000": "Partagé par habitant", "total_longueur": "Longueur totale" } } },
-      "reseaux": { "indicator": "reseaux", "label": "Réseaux à pied / vélo / voiture", "definition": "Le profil complet du réseau de la commune : la longueur du réseau pour chacun des trois modes — à pied ou en transports en commun, à vélo, en voiture.", "unit": "km", "calculation": "Longueurs publiées par le pipeline.", "direction": "high", "caveats": "Les catégories portent la même unité (km) et ne se somment pas ; la comparaison entre territoires porte sur la catégorie choisie.", "levels": ["commune", "epci", "departement", "region"], "sources": ["amenagements_cyclables"], "family": "list", "list": { "categories": ["t_longueur", "b_longueur", "c_longueur"] }, "comparison": { "details": ["t_longueur", "b_longueur", "c_longueur"], "detail": "b_longueur", "unit": "km", "labels": { "t_longueur": "Longueur — à pied ou en transports en commun", "b_longueur": "Longueur — à vélo", "c_longueur": "Longueur — en voiture" } } },
-      "reseaux_par_habitant": { "indicator": "reseaux_par_habitant", "label": "Longueur du réseau par habitant", "definition": "La longueur des réseaux à pied, à vélo et en voiture rapportée à 1 000 habitants.", "unit": "km / 1 000 hab.", "calculation": "Somme des longueurs de réseau par mode divisée par la population du territoire, pour 1 000 habitants.", "direction": "high", "caveats": "La mesure décrit une longueur cartographiée rapportée à la population ; elle ne mesure ni l’accessibilité ni l’usage.", "levels": ["commune", "epci", "departement", "region"], "sources": ["osm_reseaux", "stationnement-velo"], "family": "list", "list": { "categories": ["t_km_1000", "b_km_1000", "c_km_1000"] }, "comparison": { "details": ["t_km_1000", "b_km_1000", "c_km_1000"], "detail": "b_km_1000", "unit": "km / 1 000 hab", "labels": { "t_km_1000": "Longueur — à pied", "b_km_1000": "Longueur — à vélo", "c_km_1000": "Longueur — en voiture" } } },
-     "surface_reseaux_routiers": { "indicator": "surface_reseaux_routiers", "label": "Part du territoire consacré aux réseaux routiers", "definition": "Part de la surface communale couverte par les polygones OCS-GE classés US4.1.1, quelle que soit leur valeur d’artificialisation.", "unit": "%", "calculation": "Somme des aires OCS-GE US4.1.1 intersectées avec le territoire, divisée par sa surface totale ; les agrégats sont recalculés à partir des surfaces, jamais moyennés.", "direction": "low", "caveats": "US4.1.1 décrit un usage routier mais ne distingue pas les modes. L’attribut artificialisé/non artificialisé ne filtre pas cet indicateur et les surfaces non cartographiées restent invisibles.", "levels": ["commune", "epci", "departement"], "sources": ["ocsge_reseaux_routiers"], "family": "scalar" },
-    "offre_tc": { "indicator": "offre_tc", "label": "Part des bâtiments près d’un arrêt (à 500 m)", "definition": "Part des bâtiments du territoire situés à moins de 500 mètres d’un arrêt de transports en commun.", "unit": "%", "calculation": "Part des bâtiments à moins de 500 mètres d’un arrêt référencé dans les réseaux de transports publics bretons, publiée par le pipeline.", "direction": "high", "caveats": "Seuls comptent les arrêts référencés par la base Korrigo : un réseau absent de la base reste invisible.", "levels": ["commune", "epci", "departement"], "sources": ["korrigo"], "family": "scalar" },
-    "bornes_recharge": { "indicator": "bornes_recharge", "label": "Bornes de recharge pour véhicules électriques", "definition": "Nombre de bornes de recharge pour véhicules électriques recensées sur le territoire.", "unit": "bornes", "calculation": "Dénombrement des bornes du fichier national consolidé IRVE rattachées au territoire, publié par le pipeline.", "direction": "high", "caveats": "Un dénombrement brut avantage les territoires peuplés : la mise en perspective avec les stations-service se lit sur sa page propre. Une borne non déclarée au fichier reste invisible.", "levels": ["commune", "epci", "departement"], "sources": ["bornes-recharges"], "family": "scalar" },
-    "places_stationnement_velo_1000": { "indicator": "places_stationnement_velo_1000", "label": "Places de stationnement vélo pour 1 000 hab.", "definition": "Places de stationnement vélo du territoire rapportées à sa population, pour 1 000 habitants.", "unit": "places / 1 000 hab", "calculation": "L’indicateur du hub Ecolab est repris tel quel : places de stationnement vélo divisées par la population, pour 1 000 habitants.", "direction": "high", "caveats": "Le décompte repose sur le balisage des places dans OpenStreetMap (Base nationale du stationnement cyclable) : une place non cartographiée reste invisible.", "levels": ["commune", "epci", "departement"], "sources": ["stationnement-velo"], "family": "scalar" },
-    "places_stationnement_voiture_1000": { "indicator": "places_stationnement_voiture_1000", "label": "Places de stationnement voiture pour 1 000 hab.", "definition": "Estimation des places de stationnement voiture du territoire rapportée à sa population, pour 1 000 habitants.", "unit": "places / 1 000 hab", "calculation": "Surface des parkings cartographiés dans OpenStreetMap divisée par des facteurs documentés (25 m² par place en parc de surface, 11,5 m² en voirie), rapportée à la population.", "direction": "low", "caveats": "Une estimation, jamais un comptage : ne compte que la place cartographiée, et le champ de capacité y est trop rare pour faire foi. La direction de classement lit la place donnée à la voiture : moins de places voiture, c’est moins d’espace public occupé par elle.", "levels": ["commune", "epci", "departement"], "sources": ["osm_reseaux"], "family": "scalar" },
-     "bornes_ev_par_station_service": { "indicator": "bornes_ev_par_station_service", "label": "Bornes de recharge par station-service", "definition": "Nombre de bornes de recharge électriques rapporté au nombre de stations-service du territoire.", "unit": "bornes / station", "calculation": "Bornes de recharge IRVE du territoire divisées par ses stations-service recensées par l’INSEE (équipement B316).", "direction": "high", "caveats": "Le ratio n’est publié qu’où le territoire compte au moins une station-service : sans station-service, la valeur reste absente plutôt que faussée. Une borne manquante au fichier IRVE abaisse le rapport.", "levels": ["commune", "epci", "departement"], "sources": ["bpe_b316", "bornes-recharges"], "family": "scalar" },
-    "stationnement_velo_par_voiture": { "indicator": "stationnement_velo_par_voiture", "label": "Places de stationnement vélo pour 1 place voiture", "definition": "Rapport des places de stationnement vélo du territoire à ses places de stationnement voiture estimées.", "unit": "places vélo / place voiture", "calculation": "Places de stationnement vélo (hub Ecolab) divisées par les places de stationnement voiture estimées depuis les parkings OpenStreetMap.", "direction": "high", "caveats": "Le ratio exige les deux mesures : un territoire sans l’une des deux reste sans valeur plutôt que mal classé. Les limites propres de chaque stationnement se lisent sur leurs pages.", "levels": ["commune", "epci", "departement", "region"], "sources": ["osm_reseaux", "stationnement-velo"], "family": "scalar" },
-    "stations_service": { "indicator": "stations_service", "label": "Stations-service", "definition": "Nombre de stations-service recensées sur le territoire.", "unit": "stations", "calculation": "Somme des stations-service B316 des communes du territoire, publiée par le pipeline ; les agrégats somment les parties, jamais une moyenne.", "direction": "high", "caveats": "La BPE ne recense que les stations ayant vendu au moins 500 000 litres l’année précédente ; les petites stations n’y figurent que sur volontariat. Une commune absente du fichier reste sans valeur plutôt que zéro.", "levels": ["commune", "epci", "departement"], "sources": ["bpe_b316"], "family": "scalar", "comparison": { "details": ["stations_service"], "detail": "stations_service", "unit": "stations", "labels": { "stations_service": "Stations-service" } } },
-    "stations_service_1000": { "indicator": "stations_service_1000", "label": "Stations-service pour 1 000 hab.", "definition": "Stations-service du territoire rapportées à sa population, pour 1 000 habitants.", "unit": "stations / 1 000 hab", "calculation": "Somme des stations-service B316 des communes divisée par la population du territoire (hub stationnement vélo), pour 1 000 habitants ; les agrégats sont recalculés depuis les comptes, jamais une moyenne de taux.", "direction": "high", "caveats": "Un dénombrement rapporté à la population reste un dénombrement : la BPE ne recense que les stations ayant vendu au moins 500 000 litres l’année précédente, les petites stations seulement sur volontariat.", "levels": ["commune", "epci", "departement"], "sources": ["bpe_b316"], "family": "scalar", "comparison": { "details": ["stations_service_1000"], "detail": "stations_service_1000", "unit": "stations / 1 000 hab", "labels": { "stations_service_1000": "Stations-service pour 1 000 hab." } } },
-    "bornes_recharge_1000": { "indicator": "bornes_recharge_1000", "label": "Bornes de recharge pour 1 000 hab.", "definition": "Bornes de recharge du territoire rapportées à sa population, pour 1 000 habitants.", "unit": "bornes / 1 000 hab", "calculation": "Bornes de recharge IRVE du territoire divisées par la population du territoire (hub stationnement vélo), pour 1 000 habitants ; les agrégats sont recalculés depuis les comptes, jamais une moyenne de taux.", "direction": "high", "caveats": "Un dénombrement rapporté à la population reste un dénombrement : une borne non déclarée au fichier IRVE reste invisible.", "levels": ["commune", "epci", "departement"], "sources": ["bornes-recharges"], "family": "scalar", "comparison": { "details": ["bornes_recharge_1000"], "detail": "bornes_recharge_1000", "unit": "bornes / 1 000 hab", "labels": { "bornes_recharge_1000": "Bornes de recharge pour 1 000 hab." } } },
-    "tot_loss_t": { "indicator": "tot_loss_t", "label": "Perte totale d’accès — à pied ou en transports en commun", "definition": "Volume d’accès aux services que le territoire perd sans voiture : les services atteignables en voiture depuis ses bâtiments qui ne le sont plus à pied ou en transports en commun en vingt minutes.", "unit": "accès perdus", "calculation": "Médiane pondérée sur les bâtiments du territoire du nombre d’accès perdus par bâtiment — la différence entre l’accès en voiture et l’accès qui reste sans voiture ; agrégée du niveau communal vers les niveaux supérieurs.", "direction": "low", "caveats": "La valeur se lit comme une différence d’accès, en accès perdus — jamais un taux ni un ratio : les écarts entre territoires se comparent en accès, pas en pourcentage. L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-      "tot_loss_b": { "indicator": "tot_loss_b", "label": "Perte totale d’accès — à vélo", "definition": "Volume d’accès aux services que le territoire perd sans voiture : les services atteignables en voiture depuis ses bâtiments qui ne le sont plus à vélo en vingt minutes.", "unit": "accès perdus", "calculation": "Médiane pondérée sur les bâtiments du territoire du nombre d’accès perdus par bâtiment — la différence entre l’accès en voiture et l’accès qui reste à vélo ; agrégée du niveau communal vers les niveaux supérieurs.", "direction": "low", "caveats": "La valeur se lit comme une différence d’accès, en accès perdus — jamais un taux ni un ratio : les écarts entre territoires se comparent en accès, pas en pourcentage. La lecture à vélo est ramenée pour ne jamais être plus défavorable que la lecture à pied ou en transports en commun. L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-      "avg_tot_car": { "indicator": "avg_tot_car", "label": "Nombre moyen d’équipements accessibles — en voiture", "definition": "Nombre moyen d’équipements accessibles par bâtiment résidentiel en voiture en vingt minutes.", "unit": "équipements / bâtiment", "calculation": "Moyenne publiée par le snapshot d’accessibilité.", "direction": "high", "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-     "avg_tot_b": { "indicator": "avg_tot_b", "label": "Nombre moyen d’équipements accessibles — à vélo", "definition": "Nombre moyen d’équipements accessibles par bâtiment résidentiel à vélo en vingt minutes.", "unit": "équipements / bâtiment", "calculation": "Moyenne publiée par le snapshot d’accessibilité.", "direction": "high", "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-     "avg_tot_t": { "indicator": "avg_tot_t", "label": "Nombre moyen d’équipements accessibles — à pied ou en transports en commun", "definition": "Nombre moyen d’équipements accessibles par bâtiment résidentiel à pied ou en transports en commun en vingt minutes.", "unit": "équipements / bâtiment", "calculation": "Moyenne publiée par le snapshot d’accessibilité.", "direction": "high", "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-     "avg_div_car": { "indicator": "avg_div_car", "label": "Nombre moyen de types d’équipements accessibles — en voiture", "definition": "Nombre moyen de types d’équipements accessibles par bâtiment résidentiel en voiture en vingt minutes.", "unit": "types d’équipement / bâtiment", "calculation": "Moyenne publiée par le snapshot d’accessibilité.", "direction": "high", "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-     "avg_div_b": { "indicator": "avg_div_b", "label": "Nombre moyen de types d’équipements accessibles — à vélo", "definition": "Nombre moyen de types d’équipements accessibles par bâtiment résidentiel à vélo en vingt minutes.", "unit": "types d’équipement / bâtiment", "calculation": "Moyenne publiée par le snapshot d’accessibilité.", "direction": "high", "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-     "avg_div_t": { "indicator": "avg_div_t", "label": "Nombre moyen de types d’équipements accessibles — à pied ou en transports en commun", "definition": "Nombre moyen de types d’équipements accessibles par bâtiment résidentiel à pied ou en transports en commun en vingt minutes.", "unit": "types d’équipement / bâtiment", "calculation": "Moyenne publiée par le snapshot d’accessibilité.", "direction": "high", "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-    "iso_alimentation": { "indicator": "iso_alimentation", "label": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)", "definition": "Part des bâtiments du territoire sans aucun accès à l’alimentation à pied ou en transports en commun en vingt minutes.", "unit": "%", "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.", "direction": "low", "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-    "iso_sante": { "indicator": "iso_sante", "label": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)", "definition": "Part des bâtiments du territoire sans aucun accès à la santé à pied ou en transports en commun en vingt minutes.", "unit": "%", "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.", "direction": "low", "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-    "iso_administration": { "indicator": "iso_administration", "label": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)", "definition": "Part des bâtiments du territoire sans aucun accès aux services administratifs à pied ou en transports en commun en vingt minutes.", "unit": "%", "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.", "direction": "low", "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-    "iso_ecole": { "indicator": "iso_ecole", "label": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)", "definition": "Part des bâtiments du territoire sans aucun accès à l’école à pied ou en transports en commun en vingt minutes.", "unit": "%", "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.", "direction": "low", "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-     "iso_banque": { "indicator": "iso_banque", "label": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)", "definition": "Part des bâtiments du territoire sans aucun accès à la banque à pied ou en transports en commun en vingt minutes.", "unit": "%", "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.", "direction": "low", "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-     "raccordement_tc": { "indicator": "raccordement_tc", "label": "Population bretonne joignable en 90 minutes en TC", "definition": "Part de la population bretonne pouvant rejoindre le territoire en transports en commun en moins de 90 minutes, de mairie à mairie.", "unit": "%", "calculation": "Meilleur départ d’un mercredi réel de période scolaire, avec marche plafonnée à 40 minutes et sans trajet en voiture.", "direction": "high", "caveats": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.", "levels": ["commune", "epci", "departement", "region"], "sources": ["matrice_temps_mairies"], "family": "scalar" },
-      "raccordement_courbe": { "indicator": "raccordement_courbe", "label": "Courbe cumulative — population bretonne joignable en TC", "definition": "Part de la population bretonne pouvant rejoindre le territoire selon le temps de trajet en transports en commun.", "unit": "%", "calculation": "Courbe cumulative de la matrice de temps mairie à mairie publiée par le pipeline.", "direction": "high", "caveats": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.", "levels": ["commune", "epci", "departement", "region"], "sources": ["matrice_temps_mairies"], "family": "trajectory", "trajectory": { "endpoints": ["t0000", "t0360"], "axis": "numeric", "axisLabels": { "x": "Temps de trajet (minutes)", "y": "Population joignable (%)" }, "ticks": [{ "detail": "t0000", "label": "0", "mobile": true }, { "detail": "t0015", "label": "15", "mobile": false }, { "detail": "t0030", "label": "30", "mobile": false }, { "detail": "t0045", "label": "45", "mobile": true }, { "detail": "t0060", "label": "1 h", "mobile": false }, { "detail": "t0090", "label": "1 h 30", "mobile": true }, { "detail": "t0120", "label": "2 h", "mobile": false }, { "detail": "t0180", "label": "3 h", "mobile": true }, { "detail": "t0240", "label": "4 h", "mobile": false }, { "detail": "t0300", "label": "5 h", "mobile": false }, { "detail": "t0360", "label": "6 h", "mobile": true }],   "reference": {"indicator": "raccordement_reference", "territoire": "53", "label": "Commune bretonne médiane"}, "marker": { "detail": "t0090", "label": "1 h 30 (90 min)" } }, "comparison": { "details": ["t0000", "t0015", "t0030", "t0045", "t0060", "t0090", "t0120", "t0180", "t0240", "t0300", "t0360"], "detail": "t0090", "unit": "%" } }
+    "nb_buildings": {
+      "indicator": "nb_buildings",
+      "label": "Bâtiments résidentiels analysés",
+      "definition": "Nombre de bâtiments résidentiels analysés dans le snapshot Mobilité pour le territoire.",
+      "unit": "bâtiments",
+      "calculation": "Dénombrement publié par le pipeline à partir du snapshot Mobilité.",
+      "direction": "high",
+      "caveats": "Ce total appartient au snapshot Mobilité et peut différer des dénominateurs propres aux rampes et grilles bâtimentières.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "voitures_menage": {
+      "indicator": "voitures_menage",
+      "label": "Voitures par ménage",
+      "definition": "Répartition des ménages selon le nombre de voitures possédées.",
+      "unit": "%",
+      "calculation": "Parts publiées par le pipeline.",
+      "direction": "high",
+      "caveats": "Les catégories décrivent les ménages recensés.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "sources": [
+        "rp_logement_princ"
+      ],
+      "family": "composition",
+      "composition": {
+        "parts": [
+          "sans_voiture",
+          "une_voiture",
+          "deux_plus"
+        ]
+      },
+      "comparison": {
+        "details": [
+          "sans_voiture",
+          "une_voiture",
+          "deux_plus"
+        ],
+        "detail": "sans_voiture",
+        "unit": "%",
+        "labels": {
+          "sans_voiture": "Ménages sans voiture",
+          "une_voiture": "Ménages avec 1 voiture",
+          "deux_plus": "Ménages avec 2 voitures ou plus"
+        }
+      }
+    },
+    "offre_cyclable": {
+      "indicator": "offre_cyclable",
+      "label": "L’offre cyclable",
+      "definition": "Répartition de l’offre cyclable entre aménagements protégés et partagés.",
+      "unit": "km",
+      "calculation": "Longueurs publiées par le pipeline.",
+      "direction": "high",
+      "caveats": "La longueur dépend de la couverture du réseau publié.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "sources": [
+        "osm_reseaux"
+      ],
+      "family": "composition",
+      "composition": {
+        "parts": [
+          "protege_longueur",
+          "partage_longueur"
+        ]
+      },
+      "comparison": {
+        "details": [
+          "protege_longueur",
+          "protege_km_1000",
+          "partage_longueur",
+          "partage_km_1000",
+          "total_longueur"
+        ],
+        "detail": "total_longueur",
+        "unit": "km",
+        "labels": {
+          "protege_longueur": "Longueur protégée",
+          "protege_km_1000": "Protégé par habitant",
+          "partage_longueur": "Longueur partagée",
+          "partage_km_1000": "Partagé par habitant",
+          "total_longueur": "Longueur totale"
+        }
+      }
+    },
+    "reseaux": {
+      "indicator": "reseaux",
+      "label": "Réseaux à pied / vélo / voiture",
+      "definition": "Le profil complet du réseau de la commune : la longueur du réseau pour chacun des trois modes — à pied ou en transports en commun, à vélo, en voiture.",
+      "unit": "km",
+      "calculation": "Longueurs publiées par le pipeline.",
+      "direction": "high",
+      "caveats": "Les catégories portent la même unité (km) et ne se somment pas ; la comparaison entre territoires porte sur la catégorie choisie.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "sources": [
+        "amenagements_cyclables"
+      ],
+      "family": "list",
+      "list": {
+        "categories": [
+          "t_longueur",
+          "b_longueur",
+          "c_longueur"
+        ]
+      },
+      "comparison": {
+        "details": [
+          "t_longueur",
+          "b_longueur",
+          "c_longueur"
+        ],
+        "detail": "b_longueur",
+        "unit": "km",
+        "labels": {
+          "t_longueur": "Longueur — à pied ou en transports en commun",
+          "b_longueur": "Longueur — à vélo",
+          "c_longueur": "Longueur — en voiture"
+        }
+      }
+    },
+    "reseaux_par_habitant": {
+      "indicator": "reseaux_par_habitant",
+      "label": "Longueur du réseau par habitant",
+      "definition": "La longueur des réseaux à pied, à vélo et en voiture rapportée à 1 000 habitants.",
+      "unit": "km / 1 000 hab.",
+      "calculation": "Somme des longueurs de réseau par mode divisée par la population du territoire, pour 1 000 habitants.",
+      "direction": "high",
+      "caveats": "La mesure décrit une longueur cartographiée rapportée à la population ; elle ne mesure ni l’accessibilité ni l’usage.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "sources": [
+        "osm_reseaux",
+        "stationnement-velo"
+      ],
+      "family": "list",
+      "list": {
+        "categories": [
+          "t_km_1000",
+          "b_km_1000",
+          "c_km_1000"
+        ]
+      },
+      "comparison": {
+        "details": [
+          "t_km_1000",
+          "b_km_1000",
+          "c_km_1000"
+        ],
+        "detail": "b_km_1000",
+        "unit": "km / 1 000 hab",
+        "labels": {
+          "t_km_1000": "Longueur — à pied",
+          "b_km_1000": "Longueur — à vélo",
+          "c_km_1000": "Longueur — en voiture"
+        }
+      }
+    },
+    "surface_reseaux_routiers": {
+      "indicator": "surface_reseaux_routiers",
+      "label": "Part du territoire consacré aux réseaux routiers",
+      "definition": "Part de la surface communale couverte par les polygones OCS-GE classés US4.1.1, quelle que soit leur valeur d’artificialisation.",
+      "unit": "%",
+      "calculation": "Somme des aires OCS-GE US4.1.1 intersectées avec le territoire, divisée par sa surface totale ; les agrégats sont recalculés à partir des surfaces, jamais moyennés.",
+      "direction": "low",
+      "caveats": "US4.1.1 décrit un usage routier mais ne distingue pas les modes. L’attribut artificialisé/non artificialisé ne filtre pas cet indicateur et les surfaces non cartographiées restent invisibles.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "ocsge_reseaux_routiers"
+      ],
+      "family": "scalar"
+    },
+    "offre_tc": {
+      "indicator": "offre_tc",
+      "label": "Part des bâtiments près d’un arrêt (à 500 m)",
+      "definition": "Part des bâtiments du territoire situés à moins de 500 mètres d’un arrêt de transports en commun.",
+      "unit": "%",
+      "calculation": "Part des bâtiments à moins de 500 mètres d’un arrêt référencé dans les réseaux de transports publics bretons, publiée par le pipeline.",
+      "direction": "high",
+      "caveats": "Seuls comptent les arrêts référencés par la base Korrigo : un réseau absent de la base reste invisible.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "korrigo"
+      ],
+      "family": "scalar"
+    },
+    "bornes_recharge": {
+      "indicator": "bornes_recharge",
+      "label": "Bornes de recharge pour véhicules électriques",
+      "definition": "Nombre de bornes de recharge pour véhicules électriques recensées sur le territoire.",
+      "unit": "bornes",
+      "calculation": "Dénombrement des bornes du fichier national consolidé IRVE rattachées au territoire, publié par le pipeline.",
+      "direction": "high",
+      "caveats": "Un dénombrement brut avantage les territoires peuplés : la mise en perspective avec les stations-service se lit sur sa page propre. Une borne non déclarée au fichier reste invisible.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "bornes-recharges"
+      ],
+      "family": "scalar"
+    },
+    "places_stationnement_velo_1000": {
+      "indicator": "places_stationnement_velo_1000",
+      "label": "Places de stationnement vélo pour 1 000 hab.",
+      "definition": "Places de stationnement vélo du territoire rapportées à sa population, pour 1 000 habitants.",
+      "unit": "places / 1 000 hab",
+      "calculation": "L’indicateur du hub Ecolab est repris tel quel : places de stationnement vélo divisées par la population, pour 1 000 habitants.",
+      "direction": "high",
+      "caveats": "Le décompte repose sur le balisage des places dans OpenStreetMap (Base nationale du stationnement cyclable) : une place non cartographiée reste invisible.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "stationnement-velo"
+      ],
+      "family": "scalar"
+    },
+    "places_stationnement_voiture_1000": {
+      "indicator": "places_stationnement_voiture_1000",
+      "label": "Places de stationnement voiture pour 1 000 hab.",
+      "definition": "Estimation des places de stationnement voiture du territoire rapportée à sa population, pour 1 000 habitants.",
+      "unit": "places / 1 000 hab",
+      "calculation": "Surface des parkings cartographiés dans OpenStreetMap divisée par des facteurs documentés (25 m² par place en parc de surface, 11,5 m² en voirie), rapportée à la population.",
+      "direction": "low",
+      "caveats": "Une estimation, jamais un comptage : ne compte que la place cartographiée, et le champ de capacité y est trop rare pour faire foi. La direction de classement lit la place donnée à la voiture : moins de places voiture, c’est moins d’espace public occupé par elle.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "osm_reseaux"
+      ],
+      "family": "scalar"
+    },
+    "bornes_ev_par_station_service": {
+      "indicator": "bornes_ev_par_station_service",
+      "label": "Bornes de recharge par station-service",
+      "definition": "Nombre de bornes de recharge électriques rapporté au nombre de stations-service du territoire.",
+      "unit": "bornes / station",
+      "calculation": "Bornes de recharge IRVE du territoire divisées par ses stations-service recensées par l’INSEE (équipement B316).",
+      "direction": "high",
+      "caveats": "Le ratio n’est publié qu’où le territoire compte au moins une station-service : sans station-service, la valeur reste absente plutôt que faussée. Une borne manquante au fichier IRVE abaisse le rapport.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "bpe_b316",
+        "bornes-recharges"
+      ],
+      "family": "scalar"
+    },
+    "stationnement_velo_par_voiture": {
+      "indicator": "stationnement_velo_par_voiture",
+      "label": "Places de stationnement vélo pour 1 place voiture",
+      "definition": "Rapport des places de stationnement vélo du territoire à ses places de stationnement voiture estimées.",
+      "unit": "places vélo / place voiture",
+      "calculation": "Places de stationnement vélo (hub Ecolab) divisées par les places de stationnement voiture estimées depuis les parkings OpenStreetMap.",
+      "direction": "high",
+      "caveats": "Le ratio exige les deux mesures : un territoire sans l’une des deux reste sans valeur plutôt que mal classé. Les limites propres de chaque stationnement se lisent sur leurs pages.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "sources": [
+        "osm_reseaux",
+        "stationnement-velo"
+      ],
+      "family": "scalar"
+    },
+    "stations_service": {
+      "indicator": "stations_service",
+      "label": "Stations-service",
+      "definition": "Nombre de stations-service recensées sur le territoire.",
+      "unit": "stations",
+      "calculation": "Somme des stations-service B316 des communes du territoire, publiée par le pipeline ; les agrégats somment les parties, jamais une moyenne.",
+      "direction": "high",
+      "caveats": "La BPE ne recense que les stations ayant vendu au moins 500 000 litres l’année précédente ; les petites stations n’y figurent que sur volontariat. Une commune absente du fichier reste sans valeur plutôt que zéro.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "bpe_b316"
+      ],
+      "family": "scalar"
+    },
+    "stations_service_1000": {
+      "indicator": "stations_service_1000",
+      "label": "Stations-service pour 1 000 hab.",
+      "definition": "Stations-service du territoire rapportées à sa population, pour 1 000 habitants.",
+      "unit": "stations / 1 000 hab",
+      "calculation": "Somme des stations-service B316 des communes divisée par la population du territoire (hub stationnement vélo), pour 1 000 habitants ; les agrégats sont recalculés depuis les comptes, jamais une moyenne de taux.",
+      "direction": "high",
+      "caveats": "Un dénombrement rapporté à la population reste un dénombrement : la BPE ne recense que les stations ayant vendu au moins 500 000 litres l’année précédente, les petites stations seulement sur volontariat.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "bpe_b316"
+      ],
+      "family": "scalar"
+    },
+    "bornes_recharge_1000": {
+      "indicator": "bornes_recharge_1000",
+      "label": "Bornes de recharge pour 1 000 hab.",
+      "definition": "Bornes de recharge du territoire rapportées à sa population, pour 1 000 habitants.",
+      "unit": "bornes / 1 000 hab",
+      "calculation": "Bornes de recharge IRVE du territoire divisées par la population du territoire (hub stationnement vélo), pour 1 000 habitants ; les agrégats sont recalculés depuis les comptes, jamais une moyenne de taux.",
+      "direction": "high",
+      "caveats": "Un dénombrement rapporté à la population reste un dénombrement : une borne non déclarée au fichier IRVE reste invisible.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "bornes-recharges"
+      ],
+      "family": "scalar"
+    },
+    "tot_loss_t": {
+      "indicator": "tot_loss_t",
+      "label": "Perte totale d’accès — à pied ou en transports en commun",
+      "definition": "Volume d’accès aux services que le territoire perd sans voiture : les services atteignables en voiture depuis ses bâtiments qui ne le sont plus à pied ou en transports en commun en vingt minutes.",
+      "unit": "accès perdus",
+      "calculation": "Médiane pondérée sur les bâtiments du territoire du nombre d’accès perdus par bâtiment — la différence entre l’accès en voiture et l’accès qui reste sans voiture ; agrégée du niveau communal vers les niveaux supérieurs.",
+      "direction": "low",
+      "caveats": "La valeur se lit comme une différence d’accès, en accès perdus — jamais un taux ni un ratio : les écarts entre territoires se comparent en accès, pas en pourcentage. L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "tot_loss_b": {
+      "indicator": "tot_loss_b",
+      "label": "Perte totale d’accès — à vélo",
+      "definition": "Volume d’accès aux services que le territoire perd sans voiture : les services atteignables en voiture depuis ses bâtiments qui ne le sont plus à vélo en vingt minutes.",
+      "unit": "accès perdus",
+      "calculation": "Médiane pondérée sur les bâtiments du territoire du nombre d’accès perdus par bâtiment — la différence entre l’accès en voiture et l’accès qui reste à vélo ; agrégée du niveau communal vers les niveaux supérieurs.",
+      "direction": "low",
+      "caveats": "La valeur se lit comme une différence d’accès, en accès perdus — jamais un taux ni un ratio : les écarts entre territoires se comparent en accès, pas en pourcentage. La lecture à vélo est ramenée pour ne jamais être plus défavorable que la lecture à pied ou en transports en commun. L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "avg_tot_car": {
+      "indicator": "avg_tot_car",
+      "label": "Nombre moyen d’équipements accessibles — en voiture",
+      "definition": "Nombre moyen d’équipements accessibles par bâtiment résidentiel en voiture en vingt minutes.",
+      "unit": "équipements / bâtiment",
+      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
+      "direction": "high",
+      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "avg_tot_b": {
+      "indicator": "avg_tot_b",
+      "label": "Nombre moyen d’équipements accessibles — à vélo",
+      "definition": "Nombre moyen d’équipements accessibles par bâtiment résidentiel à vélo en vingt minutes.",
+      "unit": "équipements / bâtiment",
+      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
+      "direction": "high",
+      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "avg_tot_t": {
+      "indicator": "avg_tot_t",
+      "label": "Nombre moyen d’équipements accessibles — à pied ou en transports en commun",
+      "definition": "Nombre moyen d’équipements accessibles par bâtiment résidentiel à pied ou en transports en commun en vingt minutes.",
+      "unit": "équipements / bâtiment",
+      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
+      "direction": "high",
+      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "avg_div_car": {
+      "indicator": "avg_div_car",
+      "label": "Nombre moyen de types d’équipements accessibles — en voiture",
+      "definition": "Nombre moyen de types d’équipements accessibles par bâtiment résidentiel en voiture en vingt minutes.",
+      "unit": "types d’équipement / bâtiment",
+      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
+      "direction": "high",
+      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "avg_div_b": {
+      "indicator": "avg_div_b",
+      "label": "Nombre moyen de types d’équipements accessibles — à vélo",
+      "definition": "Nombre moyen de types d’équipements accessibles par bâtiment résidentiel à vélo en vingt minutes.",
+      "unit": "types d’équipement / bâtiment",
+      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
+      "direction": "high",
+      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "avg_div_t": {
+      "indicator": "avg_div_t",
+      "label": "Nombre moyen de types d’équipements accessibles — à pied ou en transports en commun",
+      "definition": "Nombre moyen de types d’équipements accessibles par bâtiment résidentiel à pied ou en transports en commun en vingt minutes.",
+      "unit": "types d’équipement / bâtiment",
+      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
+      "direction": "high",
+      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "iso_alimentation": {
+      "indicator": "iso_alimentation",
+      "label": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+      "definition": "Part des bâtiments du territoire sans aucun accès à l’alimentation à pied ou en transports en commun en vingt minutes.",
+      "unit": "%",
+      "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.",
+      "direction": "low",
+      "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "iso_sante": {
+      "indicator": "iso_sante",
+      "label": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+      "definition": "Part des bâtiments du territoire sans aucun accès à la santé à pied ou en transports en commun en vingt minutes.",
+      "unit": "%",
+      "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.",
+      "direction": "low",
+      "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "iso_administration": {
+      "indicator": "iso_administration",
+      "label": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+      "definition": "Part des bâtiments du territoire sans aucun accès aux services administratifs à pied ou en transports en commun en vingt minutes.",
+      "unit": "%",
+      "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.",
+      "direction": "low",
+      "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "iso_ecole": {
+      "indicator": "iso_ecole",
+      "label": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+      "definition": "Part des bâtiments du territoire sans aucun accès à l’école à pied ou en transports en commun en vingt minutes.",
+      "unit": "%",
+      "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.",
+      "direction": "low",
+      "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "iso_banque": {
+      "indicator": "iso_banque",
+      "label": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+      "definition": "Part des bâtiments du territoire sans aucun accès à la banque à pied ou en transports en commun en vingt minutes.",
+      "unit": "%",
+      "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.",
+      "direction": "low",
+      "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
+    "raccordement_tc": {
+      "indicator": "raccordement_tc",
+      "label": "Population bretonne jointe en 90 minutes en transports en commun",
+      "definition": "Part de la population bretonne vivant dans les communes atteintes depuis les arrêts de transports en commun de ce territoire en 90 minutes.",
+      "unit": "%",
+      "calculation": "Somme des populations RP 2023 des communes de destination atteintes en trajet planifié aller simple, divisée par la population RP 2023 de toute la Bretagne. Les agrégats sont les moyennes égales des courbes communales de leurs membres.",
+      "direction": "high",
+      "caveats": "Trajets GTFS planifiés entre arrêts, mesurés le mercredi 21 octobre 2026 ; aucune durée de retour garantie ni liaison bàtiment-arrêt n’est modélisée. Un zéro de modéle n’affirme pas l’absence de transport réel.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "sources": [
+        "raccordement_gtfs_national"
+      ],
+      "family": "scalar"
+    },
+    "raccordement_courbe": {
+      "indicator": "raccordement_courbe",
+      "label": "Courbe de population bretonne jointe selon le temps de trajet",
+      "definition": "Part de la population bretonne vivant dans les communes atteintes depuis les arrêts de transports en commun de ce territoire, selon la durée du trajet planifié aller simple.",
+      "unit": "%",
+      "calculation": "Somme des populations RP 2023 des communes de destination atteintes depuis les arrêts du territoire, divisée par la population RP 2023 de toute la Bretagne. Les courbes de comparaison sont les moyennes arithmétiques des courbes communales de tous les membres du groupe sélectionné, zéros du modéle inclus.",
+      "direction": "high",
+      "caveats": "Trajets GTFS planifiés entre arrêts, mesurés le mercredi 21 octobre 2026 ; aucune durée de retour garantie ni liaison bàtiment-arrêt n’est modélisée. Un zéro de modéle n’affirme pas l’absence de transport réel.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "sources": [
+        "raccordement_gtfs_national"
+      ],
+      "family": "trajectory",
+      "trajectory": {
+        "endpoints": [
+          "t0000",
+          "t0360"
+        ],
+        "axis": "numeric",
+        "axisLabels": {
+          "x": "Temps de trajet (minutes)",
+          "y": "Population joignable (%)"
+        },
+        "ticks": [
+          {
+            "detail": "t0000",
+            "label": "0",
+            "mobile": true
+          },
+          {
+            "detail": "t0015",
+            "label": "15",
+            "mobile": false
+          },
+          {
+            "detail": "t0030",
+            "label": "30",
+            "mobile": false
+          },
+          {
+            "detail": "t0045",
+            "label": "45",
+            "mobile": true
+          },
+          {
+            "detail": "t0060",
+            "label": "1 h",
+            "mobile": false
+          },
+          {
+            "detail": "t0090",
+            "label": "1 h 30",
+            "mobile": true
+          },
+          {
+            "detail": "t0120",
+            "label": "2 h",
+            "mobile": false
+          },
+          {
+            "detail": "t0180",
+            "label": "3 h",
+            "mobile": true
+          },
+          {
+            "detail": "t0240",
+            "label": "4 h",
+            "mobile": false
+          },
+          {
+            "detail": "t0300",
+            "label": "5 h",
+            "mobile": false
+          },
+          {
+            "detail": "t0360",
+            "label": "6 h",
+            "mobile": true
+          }
+        ],
+        "reference": {
+          "indicator": "raccordement_reference",
+          "territoire": "53",
+          "label": "Bretagne — moyenne des 1 202 courbes communales évaluées"
+        },
+        "marker": {
+          "detail": "t0090",
+          "label": "1 h 30 (90 min)"
+        }
+      },
+      "comparison": {
+        "details": [
+          "t0000",
+          "t0005",
+          "t0010",
+          "t0015",
+          "t0020",
+          "t0025",
+          "t0030",
+          "t0035",
+          "t0040",
+          "t0045",
+          "t0050",
+          "t0055",
+          "t0060",
+          "t0065",
+          "t0070",
+          "t0075",
+          "t0080",
+          "t0085",
+          "t0090",
+          "t0095",
+          "t0100",
+          "t0105",
+          "t0110",
+          "t0115",
+          "t0120",
+          "t0125",
+          "t0130",
+          "t0135",
+          "t0140",
+          "t0145",
+          "t0150",
+          "t0155",
+          "t0160",
+          "t0165",
+          "t0170",
+          "t0175",
+          "t0180",
+          "t0185",
+          "t0190",
+          "t0195",
+          "t0200",
+          "t0205",
+          "t0210",
+          "t0215",
+          "t0220",
+          "t0225",
+          "t0230",
+          "t0235",
+          "t0240",
+          "t0245",
+          "t0250",
+          "t0255",
+          "t0260",
+          "t0265",
+          "t0270",
+          "t0275",
+          "t0280",
+          "t0285",
+          "t0290",
+          "t0295",
+          "t0300",
+          "t0305",
+          "t0310",
+          "t0315",
+          "t0320",
+          "t0325",
+          "t0330",
+          "t0335",
+          "t0340",
+          "t0345",
+          "t0350",
+          "t0355",
+          "t0360"
+        ],
+        "detail": "t0090",
+        "unit": "%"
+      }
+    }
   },
-
   "source_records": {
-    "rp_logement_princ": { "dataset": "INSEE — Recensement de la population, logements (LOG T12)", "publisher": "INSEE", "url": "https://api.insee.fr/melodi/file/DS_RP_LOGEMENT_PRINC/DS_RP_LOGEMENT_PRINC_2023_CSV_FR", "licence": "Licence Ouverte 2.0", "vintage": "2023", "freshness": "30 juin 2026", "vintages": [{ "id": "rp_logement_princ", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }] },
-    "amenagements_cyclables": { "dataset": "Geovelo — Aménagements cyclables France Métropolitaine", "publisher": "Geovelo", "url": "https://www.data.gouv.fr/datasets/amenagements-cyclables-france-metropolitaine/", "licence": "ODbL — © OpenStreetMap contributors", "vintage": "2026-08", "freshness": "7 août 2026", "vintages": [{ "id": "amenagements_cyclables", "label": "Snapshot 2026-08", "version": "2026-08", "licence": "ODbL — © OpenStreetMap contributors", "dateReference": "2026-08-07", "datePublication": "2026-08-07" }], "clocks": [{ "name": "Offre vélo", "frequency": "mensuelle — un snapshot du jeu publié chaque mois", "reference": "snapshot 2026-08 (la date du fichier épinglé par le pipeline)", "trigger": "La figure se recalcule quand l’une des deux horloges bouge." }] },
-    "korrigo": { "dataset": "Bretagne Mobilité — Korrigo", "publisher": "Bretagne Mobilité", "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/korrigo/alternative_exports/korrigo", "licence": "ODbL — © OpenStreetMap contributors", "vintage": "2026-02", "freshness": "28 février 2026", "vintages": [{ "id": "korrigo", "label": "Snapshot 2026-02", "version": "2026-02", "licence": "ODbL — © OpenStreetMap contributors", "dateReference": "2026-02-28", "datePublication": "2026-08-06" }] },
-    "bornes-recharges": { "dataset": "Etalab — Bornes de recharge pour véhicules électriques", "publisher": "Etalab", "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/bornes-recharges/exports/csv", "licence": "Licence Ouverte 2.0", "vintage": "2026-07", "freshness": "juillet 2026", "vintages": [{ "id": "bornes-recharges", "label": "Snapshot 2026-07", "version": "2026-07", "licence": "Licence Ouverte 2.0", "dateReference": "2026-07-01", "datePublication": "2026-07-01" }] },
-    "stationnement-velo": { "dataset": "Ecolab — Stationnement vélo", "publisher": "Ecolab", "url": "https://static.data.gouv.fr/resources/nombre-de-places-de-stationnement-velo-pour-1000-hab/20260203-170506/nombre-de-places-de-stationnement-velo-pour-1000-hab-commune.csv", "licence": "ODbL — © OpenStreetMap contributors", "vintage": "2022-2025", "freshness": "3 février 2026", "vintages": [{ "id": "stationnement-velo", "label": "Snapshot 2022-2025", "version": "2022-2025", "licence": "ODbL — © OpenStreetMap contributors", "dateReference": "2025-01-01", "datePublication": "2026-02-03" }] },
-    "osm_reseaux": { "dataset": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne)", "publisher": "OpenStreetMap", "url": "https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf", "licence": "ODbL — © OpenStreetMap contributors", "vintage": "2026-08", "freshness": "5 août 2026", "vintages": [{ "id": "osm_reseaux", "label": "Extrait 2026-08", "version": "2026-08", "licence": "ODbL — © OpenStreetMap contributors", "dateReference": "2026-08-05", "datePublication": "2026-08-06" }], "clocks": [{ "name": "Réseau routier", "frequency": "extrait reconstruit chaque jour, figé sur un rythme lent", "reference": "extrait du 5 août 2026", "trigger": "La figure se recalcule quand l’une des deux horloges bouge." }], "methodology": { "title": "Estimation des places de stationnement voiture", "summary": "Les places sont estimées à partir des surfaces de stationnement cartographiées dans OpenStreetMap et de leurs facteurs d’espace par place.", "factors": [{ "key": "surface", "label": "Parking de surface", "value": 26.70208, "unit": "m²/place" }, { "key": "street_side", "label": "Parking en bordure de chaussée (aire)", "value": 15.42749, "unit": "m²/place" }, { "key": "lane", "label": "Parking sur la chaussée (aire)", "value": 17.44217, "unit": "m²/place" }, { "key": "multi-storey", "label": "Parking en ouvrage", "value": 11.27528, "unit": "m²/place" }, { "key": "underground", "label": "Parking souterrain", "value": 16.2375, "unit": "m²/place" }, { "key": "linear", "label": "Stationnement linéaire par côté", "value": 11.5, "unit": "m²/place" }], "fallbackFactors": [{ "key": "surface", "label": "Parking de surface", "value": 25, "unit": "m²/place" }, { "key": "street_side", "label": "Parking en bordure de chaussée (aire)", "value": 11.5, "unit": "m²/place" }, { "key": "lane", "label": "Parking sur la chaussée (aire)", "value": 25, "unit": "m²/place" }, { "key": "linear", "label": "Stationnement linéaire par côté", "value": 11.5, "unit": "m²/place" }], "notes": ["Les facteurs principaux sont calibrés séparément par type à partir des capacités positives et plausibles déclarées dans OSM : au moins cinq observations et un ratio compris entre 8 et 60 m²/place.", "Quand un type n’atteint pas ce seuil, le calcul utilise les valeurs de repli explicites ; un type inconnu retombe sur le facteur de surface.", "Le stationnement linéaire utilise 2,3 m par place et par côté ; seule la longueur hors de l’union des parkings parents est ajoutée.", "Les parkings parents amenity=parking sont dédupliqués ; les amenity=parking_space enfants et les capacités déclarées ne sont pas ajoutés comme des places observées."] } },
-     "ocsge_reseaux_routiers": { "dataset": "ocsge_reseaux_routiers", "publisher": "IGN", "url": "https://data.geopf.fr/telechargement/resource/OCSGE-ARTIFICIALISATION", "licence": "Licence Ouverte 2.0", "vintage": "2023–2025", "freshness": "3 juillet 2026", "vintages": [{ "id": "ocsge_reseaux_routiers", "label": "Millésimes 2023–2025 · Bretagne", "version": "2023–2025", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-07-03" }], "caveat": "Les quatre archives départementales les plus récentes disponibles alimentent une clé unique. Les polygones US4.1.1 sont comptés quelle que soit leur valeur artificialisé/non artificialisé ; l’OCS-GE ne distingue pas les modes de déplacement." },
-     "mobilite_snapshot": { "dataset": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture »", "publisher": "Lusk", "url": "https://github.com/CalumRob/lusk", "licence": "ODbL — © OpenStreetMap contributors", "vintage": "Snapshot 2026-02", "freshness": "6 août 2026", "vintages": [{ "id": "mobilite_snapshot", "label": "Snapshot 2026-02", "version": "2026-02", "licence": "ODbL — © OpenStreetMap contributors", "dateReference": "2026-02-28", "datePublication": "2026-08-06" }], "clocks": [{ "name": "Équipements de proximité", "frequency": "annuelle — un nouveau millésime publié chaque année", "reference": "BPE 2024", "trigger": "Recalcul manuel sur décision après un nouveau millésime significatif." }, { "name": "Bâtiments résidentiels", "frequency": "par campagnes espacées", "reference": "BDNB juillet 2025", "trigger": "Recalcul manuel sur décision après une actualisation majeure." }] },
-    "bpe_b316": { "dataset": "INSEE — Base permanente des équipements (B316)", "publisher": "INSEE", "url": "https://www.insee.fr/fr/metadonnees/source/serie/s1168", "licence": "Licence Ouverte 2.0", "vintage": "2024", "freshness": "30 juin 2026", "vintages": [{ "id": "bpe_b316", "label": "Millésime 2024", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-01-01", "datePublication": "2026-06-30" }] },
-    "matrice_temps_mairies": { "dataset": "Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)", "publisher": "Lusk", "url": "https://github.com/CalumRob/lusk", "licence": "ODbL — © OpenStreetMap contributors (SNCF, Korrigo) et Licence Ouverte 2.0 (DILA)", "vintage": "2026-08", "freshness": "26 août 2026", "vintages": [{ "id": "matrice_temps_mairies", "label": "Matrice figée du mercredi 16 septembre 2026", "version": "2026-09-16", "licence": "ODbL + Licence Ouverte 2.0", "dateReference": "2026-08-25", "datePublication": "2026-08-26" }], "clocks": [{ "name": "Le meilleur départ de la journée", "frequency": "figé — un nouveau millésime est un nouvel artefact versionné, acquis à la main (mode manuel)", "reference": "mercredi réel de période scolaire 2026-09-16, fenêtre 07:00–20:00, p01", "trigger": "Recalcul manuel sur décision après une nouvelle acquisition des feeds." }] },
-    "population_raccordement": { "dataset": "INSEE — Recensement de la population 2023 (population totale des communes bretonnes)", "publisher": "INSEE", "url": "https://www.insee.fr/fr/metadonnees/source/serie/s099", "licence": "Licence Ouverte 2.0", "vintage": "2023", "freshness": "26 août 2026", "vintages": [{ "id": "population_raccordement", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-08-26" }] }
+    "rp_logement_princ": {
+      "dataset": "INSEE — Recensement de la population, logements (LOG T12)",
+      "publisher": "INSEE",
+      "url": "https://api.insee.fr/melodi/file/DS_RP_LOGEMENT_PRINC/DS_RP_LOGEMENT_PRINC_2023_CSV_FR",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2023",
+      "freshness": "30 juin 2026",
+      "vintages": [
+        {
+          "id": "rp_logement_princ",
+          "label": "Millésime 2023",
+          "version": "2023",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2023-01-01",
+          "datePublication": "2026-06-30"
+        }
+      ]
+    },
+    "amenagements_cyclables": {
+      "dataset": "Geovelo — Aménagements cyclables France Métropolitaine",
+      "publisher": "Geovelo",
+      "url": "https://www.data.gouv.fr/datasets/amenagements-cyclables-france-metropolitaine/",
+      "licence": "ODbL — © OpenStreetMap contributors",
+      "vintage": "2026-08",
+      "freshness": "7 août 2026",
+      "vintages": [
+        {
+          "id": "amenagements_cyclables",
+          "label": "Snapshot 2026-08",
+          "version": "2026-08",
+          "licence": "ODbL — © OpenStreetMap contributors",
+          "dateReference": "2026-08-07",
+          "datePublication": "2026-08-07"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Offre vélo",
+          "frequency": "mensuelle — un snapshot du jeu publié chaque mois",
+          "reference": "snapshot 2026-08 (la date du fichier épinglé par le pipeline)",
+          "trigger": "La figure se recalcule quand l’une des deux horloges bouge."
+        }
+      ]
+    },
+    "korrigo": {
+      "dataset": "Bretagne Mobilité — Korrigo",
+      "publisher": "Bretagne Mobilité",
+      "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/korrigo/alternative_exports/korrigo",
+      "licence": "ODbL — © OpenStreetMap contributors",
+      "vintage": "2026-02",
+      "freshness": "28 février 2026",
+      "vintages": [
+        {
+          "id": "korrigo",
+          "label": "Snapshot 2026-02",
+          "version": "2026-02",
+          "licence": "ODbL — © OpenStreetMap contributors",
+          "dateReference": "2026-02-28",
+          "datePublication": "2026-08-06"
+        }
+      ]
+    },
+    "bornes-recharges": {
+      "dataset": "Etalab — Bornes de recharge pour véhicules électriques",
+      "publisher": "Etalab",
+      "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/bornes-recharges/exports/csv",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2026-07",
+      "freshness": "28 juillet 2026",
+      "vintages": [
+        {
+          "id": "bornes-recharges",
+          "label": "Snapshot 2026-07",
+          "version": "2026-07",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2026-07-28",
+          "datePublication": "2026-08-04"
+        }
+      ]
+    },
+    "stationnement-velo": {
+      "dataset": "Ecolab — Stationnement vélo",
+      "publisher": "Ecolab",
+      "url": "https://static.data.gouv.fr/resources/nombre-de-places-de-stationnement-velo-pour-1000-hab/20260203-170506/nombre-de-places-de-stationnement-velo-pour-1000-hab-commune.csv",
+      "licence": "ODbL — © OpenStreetMap contributors",
+      "vintage": "2022-2025",
+      "freshness": "3 février 2026",
+      "vintages": [
+        {
+          "id": "stationnement-velo",
+          "label": "Snapshot 2022-2025",
+          "version": "2022-2025",
+          "licence": "ODbL — © OpenStreetMap contributors",
+          "dateReference": "2025-01-01",
+          "datePublication": "2026-02-03"
+        }
+      ]
+    },
+    "osm_reseaux": {
+      "dataset": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne)",
+      "publisher": "OpenStreetMap",
+      "url": "https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf",
+      "licence": "ODbL — © OpenStreetMap contributors",
+      "vintage": "2026-08",
+      "freshness": "5 août 2026",
+      "vintages": [
+        {
+          "id": "osm_reseaux",
+          "label": "Extrait 2026-08",
+          "version": "2026-08",
+          "licence": "ODbL — © OpenStreetMap contributors",
+          "dateReference": "2026-08-05",
+          "datePublication": "2026-08-06"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Réseau routier",
+          "frequency": "extrait reconstruit chaque jour, figé sur un rythme lent",
+          "reference": "extrait du 5 août 2026",
+          "trigger": "La figure se recalcule quand l’une des deux horloges bouge."
+        }
+      ],
+      "methodology": {
+        "title": "Estimation des places de stationnement voiture",
+        "summary": "Les places sont estimées à partir des surfaces de stationnement cartographiées dans OpenStreetMap et de leurs facteurs d’espace par place.",
+        "factors": [
+          {
+            "key": "surface",
+            "label": "Parking de surface",
+            "value": 26.702079999999999,
+            "unit": "m²/place"
+          },
+          {
+            "key": "street_side",
+            "label": "Parking en bordure de chaussée (aire)",
+            "value": 15.427490000000001,
+            "unit": "m²/place"
+          },
+          {
+            "key": "lane",
+            "label": "Parking sur la chaussée (aire)",
+            "value": 17.442170000000001,
+            "unit": "m²/place"
+          },
+          {
+            "key": "multi-storey",
+            "label": "Parking en ouvrage",
+            "value": 11.27528,
+            "unit": "m²/place"
+          },
+          {
+            "key": "underground",
+            "label": "Parking souterrain",
+            "value": 16.237500000000001,
+            "unit": "m²/place"
+          },
+          {
+            "key": "linear",
+            "label": "Stationnement linéaire par côté",
+            "value": 11.5,
+            "unit": "m²/place"
+          }
+        ],
+        "fallbackFactors": [
+          {
+            "key": "surface",
+            "label": "Parking de surface",
+            "value": 25,
+            "unit": "m²/place"
+          },
+          {
+            "key": "street_side",
+            "label": "Parking en bordure de chaussée (aire)",
+            "value": 11.5,
+            "unit": "m²/place"
+          },
+          {
+            "key": "lane",
+            "label": "Parking sur la chaussée (aire)",
+            "value": 25,
+            "unit": "m²/place"
+          },
+          {
+            "key": "linear",
+            "label": "Stationnement linéaire par côté",
+            "value": 11.5,
+            "unit": "m²/place"
+          }
+        ],
+        "notes": [
+          "Les facteurs principaux sont calibrés séparément par type à partir des capacités positives et plausibles déclarées dans OSM : au moins cinq observations et un ratio compris entre 8 et 60 m²/place.",
+          "Quand un type n’atteint pas ce seuil, le calcul utilise les valeurs de repli explicites ; un type inconnu retombe sur le facteur de surface.",
+          "Le stationnement linéaire utilise 2,3 m par place et par côté ; seule la longueur hors de l’union des parkings parents est ajoutée.",
+          "Les parkings parents amenity=parking sont dédupliqués ; les amenity=parking_space enfants et les capacités déclarées ne sont pas ajoutés comme des places observées."
+        ]
+      }
+    },
+    "ocsge_reseaux_routiers": {
+      "dataset": "ocsge_reseaux_routiers",
+      "publisher": "IGN",
+      "url": "https://data.geopf.fr/telechargement/resource/OCSGE-ARTIFICIALISATION",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2023–2025",
+      "freshness": "3 juillet 2026",
+      "vintages": [
+        {
+          "id": "ocsge_reseaux_routiers",
+          "label": "Millésimes 2023–2025 · Bretagne",
+          "version": "2023–2025",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2023-01-01",
+          "datePublication": "2026-07-03"
+        }
+      ],
+      "caveat": "Les quatre archives départementales les plus récentes disponibles alimentent une clé unique. Les polygones US4.1.1 sont comptés quelle que soit leur valeur artificialisé/non artificialisé ; l’OCS-GE ne distingue pas les modes de déplacement."
+    },
+    "mobilite_snapshot": {
+      "dataset": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture »",
+      "publisher": "Lusk",
+      "url": "https://github.com/CalumRob/lusk",
+      "licence": "ODbL — © OpenStreetMap contributors",
+      "vintage": "Snapshot 2026-02",
+      "freshness": "6 août 2026",
+      "serving_disposition": "excluded_legacy_accessibility",
+      "vintages": [
+        {
+          "id": "mobilite_snapshot",
+          "label": "Snapshot 2026-02",
+          "version": "2026-02",
+          "licence": "ODbL — © OpenStreetMap contributors",
+          "dateReference": "2026-02-28",
+          "datePublication": "2026-08-06"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Équipements de proximité",
+          "frequency": "annuelle — un nouveau millésime publié chaque année",
+          "reference": "BPE 2024",
+          "trigger": "Recalcul manuel sur décision après un nouveau millésime significatif."
+        },
+        {
+          "name": "Bâtiments résidentiels",
+          "frequency": "par campagnes espacées",
+          "reference": "BDNB juillet 2025",
+          "trigger": "Recalcul manuel sur décision après une actualisation majeure."
+        }
+      ]
+    },
+    "bpe_b316": {
+      "dataset": "INSEE — Base permanente des équipements (B316)",
+      "publisher": "INSEE",
+      "url": "https://www.insee.fr/fr/metadonnees/source/serie/s1168",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2025",
+      "freshness": "4 août 2026",
+      "vintages": [
+        {
+          "id": "bpe_b316",
+          "label": "Millésime 2025",
+          "version": "2025",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2025-01-01",
+          "datePublication": "2026-08-04"
+        }
+      ]
+    },
+    "matrice_temps_mairies": {
+      "dataset": "Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)",
+      "publisher": "Lusk",
+      "url": "https://github.com/CalumRob/lusk",
+      "licence": "ODbL — © OpenStreetMap contributors (SNCF, Korrigo) et Licence Ouverte 2.0 (DILA)",
+      "vintage": "2026-08",
+      "freshness": "26 août 2026",
+      "vintages": [
+        {
+          "id": "matrice_temps_mairies",
+          "label": "Matrice figée du mercredi 16 septembre 2026",
+          "version": "2026-09-16",
+          "licence": "ODbL + Licence Ouverte 2.0",
+          "dateReference": "2026-08-25",
+          "datePublication": "2026-08-26"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Le meilleur départ de la journée",
+          "frequency": "figé — un nouveau millésime est un nouvel artefact versionné, acquis à la main (mode manuel)",
+          "reference": "mercredi réel de période scolaire 2026-09-16, fenêtre 07:00–20:00, p01",
+          "trigger": "Recalcul manuel sur décision après une nouvelle acquisition des feeds."
+        }
+      ]
+    },
+    "population_raccordement": {
+      "dataset": "INSEE — Recensement de la population 2023 (population totale des communes bretonnes)",
+      "publisher": "INSEE",
+      "url": "https://www.insee.fr/fr/metadonnees/source/serie/s099",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2023",
+      "freshness": "26 août 2026",
+      "vintages": [
+        {
+          "id": "population_raccordement",
+          "label": "Millésime 2023",
+          "version": "2023",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2023-01-01",
+          "datePublication": "2026-08-26"
+        }
+      ]
+    },
+    "raccordement_gtfs_national": {
+      "dataset": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+      "publisher": "Lusk",
+      "url": "https://github.com/CalumRob/lusk",
+      "licence": "ODbL – © OpenStreetMap contributors (GTFS SNCF/Korrigo) et licences des sources ouvertes",
+      "vintage": "Mesure du 2026-10-21 ; flux acquis le 2026-10-10",
+      "freshness": "10 octobre 2026",
+      "vintages": [
+        {
+          "id": "raccordement_gtfs_national",
+          "label": "Routage national GTFS – mercredi 21 octobre 2026",
+          "version": "national-gtfs-outbound-v1",
+          "licence": "ODbL et licences des flux sources",
+          "dateReference": "2026-10-10",
+          "datePublication": "2026-10-10"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Horaires GTFS du raccordement",
+          "frequency": "instantané versionné ; tout nouveau millésime exige une nouvelle matrice et un nouveau pin",
+          "reference": "trajets planifiés le mercredi 21 octobre 2026, départs 07:00–20:00 ; Korrigo v80630 et SNCF national acquis le 10 octobre 2026",
+          "trigger": "Recalcul contrôlé aprés acquisition validée de nouveaux flux GTFS."
+        }
+      ],
+      "methodology": {
+        "endpoint": "arrêts GTFS par commune ; trajet planifié stop-to-stop, aller simple",
+        "objective": "durée écoulée minimale ; correspondances incluses ; 1 km / 3 km/h de transfert approximatif",
+        "population": "population totale RP 2023 des communes de destination / population RP 2023 de toute la Bretagne",
+        "publication_grid_minutes": [
+          0,
+          5,
+          10,
+          15,
+          20,
+          25,
+          30,
+          35,
+          40,
+          45,
+          50,
+          55,
+          60,
+          65,
+          70,
+          75,
+          80,
+          85,
+          90,
+          95,
+          100,
+          105,
+          110,
+          115,
+          120,
+          125,
+          130,
+          135,
+          140,
+          145,
+          150,
+          155,
+          160,
+          165,
+          170,
+          175,
+          180,
+          185,
+          190,
+          195,
+          200,
+          205,
+          210,
+          215,
+          220,
+          225,
+          230,
+          235,
+          240,
+          245,
+          250,
+          255,
+          260,
+          265,
+          270,
+          275,
+          280,
+          285,
+          290,
+          295,
+          300,
+          305,
+          310,
+          315,
+          320,
+          325,
+          330,
+          335,
+          340,
+          345,
+          350,
+          355,
+          360
+        ],
+        "scalar_minute": 90,
+        "structural_zeros": "423 communes sans arrêt modélisé ; 115 sans premiére montée autorisée dans la fenétre ; zéros du modéle, pas absence réelle de transport.",
+        "raw_matrix_sha256": "ae3c7e37bc788010968855d949e875f45481c7e05f80a98718f980a8841a4df5",
+        "raw_csv_sha256": "2a658bfd47cfb22545829b90d391ecb69c1bfed86db030a51b837b73268176d1",
+        "korrigo_feed_sha256": "4d9ac5a1a7c3f662b6b684c7838f76eae2aa32a2272dd69438e1c2cb4a6aa669",
+        "sncf_feed_sha256": "d3dd8e5d0f39306e589119e95cf3f0d8615aa2cbda826d6de7f2a881db6aecb0",
+        "artifact_sha256": "260d7e096c5fcad534edc863fe7d3ec9cb6b2b51d868f4363aed1e98981079b6",
+        "population_sha256": "8262a61c02af9b7def1564e0eb8c85c2f631f616c6ecaefa4d6144d1fe6a7cea",
+        "title": "Calcul du raccordement national en transports collectifs",
+        "summary": "Parts cumulées de population RP 2023 des communes atteintes par des trajets planifiés GTFS aller simples depuis les arrêts des communes évaluées. Les groupes sont des moyennes égales de toutes les courbes membres ; les zéros structurels du modèle sont inclus.",
+        "factors": [
+          {
+            "key": "transfer_walk_km",
+            "label": "Distance approximative de marche lors d’une correspondance",
+            "value": 1,
+            "unit": "km"
+          },
+          {
+            "key": "transfer_walk_speed_kmh",
+            "label": "Vitesse de marche lors d’une correspondance",
+            "value": 3,
+            "unit": "km/h"
+          },
+          {
+            "key": "scalar_minute",
+            "label": "Seuil de lecture du scalaire",
+            "value": 90,
+            "unit": "minutes"
+          }
+        ],
+        "notes": [
+          "Trajets calculés pour un mercredi férié, le 21 octobre 2026, avec des départs entre 07:00 inclus et 20:00 exclus.",
+          "La matrice OD sauvegardée n’est ni reconstruite ni reroutée lors de la publication ; les durées atteignant 693 minutes sont conservées.",
+          "Un zéro structurel signifie qu’aucun départ modélisable n’a été établi avec les arrêts, permissions et horaires retenus ; il ne signifie pas qu’il n’existe aucun transport réel."
+        ]
+      }
+    }
   }
 }

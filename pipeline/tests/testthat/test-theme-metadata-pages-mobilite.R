@@ -125,13 +125,13 @@ test_that("les densités de ravitaillement déclarent leur page, source et contr
                      info = cle)
     expect_identical(meta$sources[[cle]], spec$source, info = cle)
     expect_identical(meta$indicator_labels[[cle]], spec$label, info = cle)
-    # la facette de comparaison déclare son axe fermé et son détail par défaut
-    # — sur la paire de ravitaillement, la barre des bornes est le défaut de la
-    # clé / 1 000 hab. qui porte la lecture
-    expect_identical(unlist(page$comparison$details, use.names = FALSE), cle,
-                     info = cle)
-    expect_identical(page$comparison$detail, cle, info = cle)
-    expect_identical(page$comparison$unit, spec$unit, info = cle)
+    # Un scalaire ne porte AUCUNE coordonnée de profil : la facette de
+    # comparaison vit dans scalar_contracts (comparison_facet = la clé), jamais
+    # dans indicator_pages.comparison. Un comparison.detail inventé ferait
+    # filtrer les faits scalaires (detail = NULL) par l'app et rendrait la page
+    # indisponible (#953, familySeam/correspondFait).
+    expect_null(page$comparison, info = cle)
+    expect_null(page$detail, info = cle)
     expect_true(nzchar(page$definition), info = cle)
     contract <- meta$scalar_contracts[[cle]]
     expect_identical(unlist(contract$allowed_levels, use.names = FALSE),
@@ -139,8 +139,28 @@ test_that("les densités de ravitaillement déclarent leur page, source et contr
     expect_identical(contract$comparison_facet, cle, info = cle)
     expect_identical(contract$missing_status, "not_available", info = cle)
   }
-  expect_no_error(valider_theme_metadata(meta,
+  # la preuve de contrat : la page producteur RÉELLE valide, sources croisées
+  # contre les vintages du thème et directions contre le registre des rangs
+  expect_no_error(valider_theme_metadata(meta, vintages = vintages_mobilite(),
                                         directions_module = DIRECTIONS_MOBILITE))
+})
+
+test_that("aucune page scalaire Mobilité ne porte de coordonnée de profil (#953)", {
+  meta <- lire_theme_metadata("mobilite")
+  scalaires <- names(meta$indicator_pages)[vapply(
+    meta$indicator_pages,
+    function(page) identical(page$family %||% "scalar", "scalar"),
+    logical(1L))]
+  expect_true(all(c("stations_service", "stations_service_1000",
+                    "bornes_recharge_1000") %in% scalaires))
+  for (cle in scalaires) {
+    page <- meta$indicator_pages[[cle]]
+    expect_null(page$comparison,
+                info = paste(cle, ": comparison est une coordonnée de profil"))
+    expect_true(is.null(page$list) && is.null(page$composition) &&
+                  is.null(page$trajectory) && is.null(page$distribution),
+                info = paste(cle, ": extension de profil sur un scalaire"))
+  }
 })
 
 test_that("les deux copies de métadonnées portent les mêmes entrées de ravitaillement (#953)", {
@@ -158,6 +178,54 @@ test_that("les deux copies de métadonnées portent les mêmes entrées de ravit
   expect_true(all(cles %in% unlist(groupe$indicators)))
   # la projection navigateur garde son contrat : aucun champ producteur servi
   expect_false("scalar_contracts" %in% names(public))
+})
+
+test_that("public/data/theme_mobilite.json est EXACTEMENT la projection navigateur du canon épinglé (#953)", {
+  skip_if_not(dir.exists(racine_public), "public/data absent — la racine du dépôt est introuvable")
+  canon <- lire_theme_metadata("mobilite")
+  sortie <- tempfile("mobilite-projection-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+  # le seam RÉEL de publication, avec les vintages et le registre des
+  # directions du thème — jamais une copie éditée à la main
+  expect_no_error(publier_theme_metadata(
+    canon, sortie = sortie, vintages = vintages_mobilite(),
+    theme_attendu = "mobilite", directions_module = DIRECTIONS_MOBILITE
+  ))
+  republie <- file.path(sortie, "theme_mobilite.json")
+  commis <- file.path(racine_public, "theme_mobilite.json")
+  octets <- function(chemin) {
+    taille <- file.info(chemin)$size
+    brut <- readBin(chemin, "raw", n = taille)
+    brut[brut != as.raw(0x0d)]
+  }
+  expect_identical(
+    octets(republie), octets(commis),
+    info = paste0("public/data/theme_mobilite.json n'est pas la projection ",
+                  "du canon épinglé : régénérer par publier_theme_metadata")
+  )
+  # la parité STRUCTURELLE complète, pas seulement les trois nouvelles clés :
+  # le fichier commis est le list() que projette le seam, champ pour champ
+  expect_identical(
+    projection_navigateur(canon),
+    jsonlite::fromJSON(commis, simplifyVector = FALSE)
+  )
+  publie <- jsonlite::fromJSON(commis, simplifyVector = FALSE)
+  producteur_seulement <- c(
+    "semantic_resources", "story_keys", "observed_collection_contracts",
+    "indicator_directions", "selected_reading_contract", "comparison_scopes",
+    "building_comparison", "service_share_scalar", "distribution_contracts",
+    "scalar_contracts", "profile_contracts", "map_layers", "owned_series_routes"
+  )
+  expect_false(any(producteur_seulement %in% names(publie)))
+  # les enregistrements de source et les libellés de trajectoire suivent le
+  # canon COURANT (la dérive BPE 2024 / matrice_temps_mairies est morte)
+  expect_identical(publie$source_records, projection_navigateur(canon)$source_records)
+  expect_identical(publie$indicator_labels$raccordement_tc,
+                   "Population bretonne jointe en 90 minutes en transports en commun")
+  expect_identical(publie$sources$raccordement_tc,
+                   "raccordement_gtfs_national")
+  expect_length(publie$detail_labels$raccordement_courbe, 73L)
 })
 
 test_that("la trajectoire raccordement déclare exactement la grille publiée et ses repères humains", {
