@@ -262,15 +262,30 @@ function comparisonTooltip(
   }
 }
 
+function totalRowLabel(category: MobiliteBarCategoryEvidence): string {
+  return category.key === 'bike' ? 'Total vélo' : category.label
+}
+
 function tooltipRows(category: MobiliteBarCategoryEvidence): readonly CahierTooltipRow[] {
   const value = finiteValue(category.value.fact.value)
   const rows: CahierTooltipRow[] = [{
-    label: category.label,
+    label: totalRowLabel(category),
     value: value === null ? UNAVAILABLE_LABEL : formatValue(value),
     markerColor: toneColor(category.tone),
-    ariaLabel: `${category.label} : ${value === null ? UNAVAILABLE_LABEL : `${formatValue(value)} ${props.figure.unit}`}`,
-    comparison: showComparison.value ? comparisonTooltip(category.value, props.figure.unit) : undefined,
+    ariaLabel: `${totalRowLabel(category)} : ${value === null ? UNAVAILABLE_LABEL : `${formatValue(value)} ${props.figure.unit}`}`,
+    comparison: showComparison.value
+      ? comparisonTooltip(category.value, props.figure.unit, category.segments.length > 0)
+      : undefined,
   }]
+  if (category.splitNote) {
+    rows.push({
+      label: 'Répartition Protégé/Partagé',
+      value: UNAVAILABLE_LABEL,
+      tone: 'neutral',
+      marker: 'slash',
+      ariaLabel: category.splitNote,
+    })
+  }
   for (const segment of category.segments) {
     const segmentValue = finiteValue(segment.value.fact.value)
     rows.push({
@@ -311,7 +326,8 @@ function tooltipRows(category: MobiliteBarCategoryEvidence): readonly CahierTool
 function categoryAriaLabel(index: number): string {
   const category = props.figure.categories[index]!
   const value = finiteValue(category.value.fact.value)
-  const parts = [`${category.label} : ${value === null ? UNAVAILABLE_LABEL : `${formatValue(value)} ${props.figure.unit}`}`]
+  const parts = [`${totalRowLabel(category)} : ${value === null ? UNAVAILABLE_LABEL : `${formatValue(value)} ${props.figure.unit}`}`]
+  if (category.splitNote) parts.push(category.splitNote)
   for (const segment of category.segments) {
     const segmentValue = finiteValue(segment.value.fact.value)
     parts.push(`${segment.label} : ${segmentValue === null ? UNAVAILABLE_LABEL : `${formatValue(segmentValue)} ${props.figure.unit}`}`)
@@ -368,6 +384,11 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
     label: category.label,
     marker: 'square',
     ariaLabel: `${category.label} : série du territoire`,
+    ...(category.key === 'bike'
+      ? {
+        markBackground: 'linear-gradient(135deg, var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike))), var(--cahier-cycle-shared, #8c4c9e))',
+      }
+      : {}),
   }))
   const segments = props.figure.categories.flatMap((category) => category.segments)
   if (segments.some((segment) => segment.key === 'protege_km_1000')) {
@@ -445,7 +466,12 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
               <line v-for="tick in yAxisTicks" :key="`y-${tick.key}`" :x1="figureGeometry.margin.left" :x2="figureGeometry.width - figureGeometry.margin.right" :y1="tick.position" :y2="tick.position" />
               <line class="mobilite-comparison-bars__axis" :x1="figureGeometry.margin.left" :x2="figureGeometry.width - figureGeometry.margin.right" :y1="plotBottom" :y2="plotBottom" />
             </g>
-            <g v-for="(category, categoryIndex) in figure.categories" :key="category.key">
+            <g
+              v-for="(category, categoryIndex) in figure.categories"
+              :key="category.key"
+              :data-category="category.key"
+              :data-total-height="finiteValue(category.value.fact.value) === null ? null : barHeight(category.value.fact.value!)"
+            >
               <template v-if="finiteValue(category.value.fact.value) !== null">
                 <template v-if="stackedSegments(category, categoryIndex).length">
                   <rect
@@ -526,6 +552,13 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
       label="Séries, Protégé, Partagé et groupe comparé"
       @toggle="toggleLegend"
     />
+
+    <p
+      v-for="category in figure.categories.filter((candidate) => candidate.splitNote)"
+      :key="`split-${category.key}`"
+      class="mobilite-comparison-state"
+      role="note"
+    >{{ category.splitNote }}</p>
 
     <p v-if="comparison.status === 'loading'" class="mobilite-comparison-state" role="status">Chargement du groupe comparé…</p>
     <div v-else-if="comparison.status === 'error'" class="mobilite-comparison-error" role="status">

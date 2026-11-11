@@ -254,6 +254,8 @@ export interface MobiliteBarCategoryEvidence {
   rawValue: ContentFact | null
   /** Optional partition of the category bar; absent means an unsegmented bar. */
   segments: readonly MobiliteBarSegmentEvidence[]
+  /** Honest note when a declared split cannot be drawn as a partition. */
+  splitNote: string | null
 }
 
 export interface MobiliteBarsFigureEvidence {

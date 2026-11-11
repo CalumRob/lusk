@@ -89,6 +89,25 @@ function factsForTarget(): TerritoryFacts {
   return facts
 }
 
+/** Coherent bike partition for the map-tooltip rendering test. */
+function factsWithCoherentBike(): TerritoryFacts {
+  const facts = factsForTarget()
+  const set = (key: string, detail: string, value: number) => {
+    const fact = facts.mobility.indicators.find((candidate) => candidate.key === key && candidate.detail === detail)
+    if (fact) {
+      fact.value = value
+      fact.availability = 'complete'
+    }
+  }
+  set('reseaux_par_habitant', 'b_km_1000', 8)
+  set('offre_cyclable', 'protege_km_1000', 5)
+  set('offre_cyclable', 'partage_km_1000', 3)
+  set('reseaux', 'b_longueur', 6)
+  set('offre_cyclable', 'protege_longueur', 4)
+  set('offre_cyclable', 'partage_longueur', 2)
+  return facts
+}
+
 function paginationFor(content: ThemeContent) {
   return cahierPaginationFor(payload, content)
 }
@@ -492,7 +511,7 @@ describe('Variante E — partage de l’espace public', () => {
   })
 
   it('renders the cleaned map plate: maps and tooltips only, no helpers or bars', async () => {
-    const content = resolveMobiliteThemeContent(factsForTarget())
+    const content = resolveMobiliteThemeContent(factsWithCoherentBike())
     const sharing = content.units
       .find((unit) => unit.key === 'partage-de-lespace-public')
       ?.sections.find((section) => section.key === 'reseaux')
@@ -552,7 +571,7 @@ describe('Variante E — partage de l’espace public', () => {
     expect(tooltip.text()).not.toContain('Médiane des communes de EPCI X')
     const rows = tooltip.findAll('.cahier-figure-tooltip-row')
     expect(rows.map((row) => row.get('.cahier-figure-tooltip-label').text())).toEqual([
-      'Réseau cyclable',
+      'Total vélo',
       'Protégé',
       'Longueur protégée',
       'Partagé',

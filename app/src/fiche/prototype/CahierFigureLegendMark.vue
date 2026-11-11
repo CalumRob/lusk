@@ -15,7 +15,11 @@ function iconFor(): Component | null {
 }
 
 function markStyle(): Record<string, string> | undefined {
-  return props.markColor ? { color: props.markColor } : undefined
+  if (!props.markColor && !props.entry.markBackground) return undefined
+  return {
+    ...(props.markColor ? { color: props.markColor } : {}),
+    ...(props.entry.markBackground ? { backgroundImage: props.entry.markBackground } : {}),
+  }
 }
 </script>
 
@@ -44,6 +48,7 @@ function markStyle(): Record<string, string> | undefined {
     :class="[
       `cahier-figure-legend-mark--${entry.marker}`,
       `cahier-figure-legend-mark--${entry.tone ?? 'neutral'}`,
+      { 'cahier-figure-legend-mark--composite': Boolean(entry.markBackground) },
     ]"
     :style="markStyle()"
     aria-hidden="true"

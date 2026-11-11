@@ -334,6 +334,8 @@ export interface FigureLegendEntry {
   marker: FigureLegendMarker
   iconKey?: string
   tone?: string
+  /** Optional composite mark fill (e.g. the bike protected+shared gradient). */
+  markBackground?: string
   /** A supported layer keeps its toggle even when its observations are unavailable. */
   persistentToggle?: boolean
 }

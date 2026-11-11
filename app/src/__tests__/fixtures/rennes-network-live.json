@@ -1,0 +1,52 @@
+{
+  "capturedFrom": "http://localhost:5198/api/resources/read-batch",
+  "capturedAt": "2026-11-11",
+  "territory": { "type": "commune", "id": "35238", "name": "Rennes" },
+  "contentVersion": "d97f324f17dcabd9a728ea3cc2df071f",
+  "referenceContentVersion": "6fd9f1f94a1014e5fc81baf2ac44c7f8",
+  "reseauxParHabitant": {
+    "unit": "km / 1 000 hab.",
+    "t_km_1000": 4.698053366287877,
+    "b_km_1000": 1.154843969151172,
+    "c_km_1000": 2.8402744752607707
+  },
+  "reseaux": {
+    "unit": "km",
+    "t_longueur": 1070.3574984413672,
+    "b_longueur": 263.1081014917115,
+    "c_longueur": 647.0997336986613
+  },
+  "offreCyclable": {
+    "protege_km_1000": 0.4608905341495569,
+    "partage_km_1000": 0.6939534350016151,
+    "protege_longueur": 105.00469039529354,
+    "partage_longueur": 158.10341109641797,
+    "total_longueur": 263.1081014917115
+  },
+  "comparisons": {
+    "fixed": {
+      "reseaux_par_habitant:t_km_1000": { "median": 8.359205303209128, "rank": 14, "rankSize": 14, "rankTies": 1 },
+      "reseaux_par_habitant:b_km_1000": { "median": 1.7298401796988059, "rank": 13, "rankSize": 14, "rankTies": 1 },
+      "reseaux_par_habitant:c_km_1000": { "median": 7.8427061799499995, "rank": 14, "rankSize": 14, "rankTies": 1 },
+      "reseaux:t_longueur": { "median": 208.4762681157414, "rank": 1, "rankSize": 14, "rankTies": 1 },
+      "reseaux:b_longueur": { "median": 52.056808809646625, "rank": 1, "rankSize": 14, "rankTies": 1 },
+      "reseaux:c_longueur": { "median": 205.45923944497986, "rank": 1, "rankSize": 14, "rankTies": 1 },
+      "offre_cyclable:protege_longueur": { "median": 30.056166002307606, "rank": 1, "rankSize": 14, "rankTies": 1 },
+      "offre_cyclable:partage_longueur": { "median": 18.926269973844725, "rank": 1, "rankSize": 14, "rankTies": 1 },
+      "offre_cyclable:protege_km_1000": { "median": 1.0379959959593115, "rank": 12, "rankSize": 14, "rankTies": 1 },
+      "offre_cyclable:partage_km_1000": { "median": 0.6842943677922821, "rank": 6, "rankSize": 14, "rankTies": 1 }
+    },
+    "selected": {
+      "reseaux_par_habitant:t_km_1000": { "median": 11.273681020037086, "rank": 43, "rankSize": 43, "rankTies": 1 },
+      "reseaux_par_habitant:b_km_1000": { "median": 1.154843969151172, "rank": 22, "rankSize": 43, "rankTies": 1 },
+      "reseaux_par_habitant:c_km_1000": { "median": 13.860284370447946, "rank": 43, "rankSize": 43, "rankTies": 1 },
+      "reseaux:t_longueur": { "median": 56.66990895533717, "rank": 1, "rankSize": 43, "rankTies": 1 },
+      "reseaux:b_longueur": { "median": 5.08191453050875, "rank": 1, "rankSize": 43, "rankTies": 1 },
+      "reseaux:c_longueur": { "median": 69.07266979177342, "rank": 1, "rankSize": 43, "rankTies": 1 },
+      "offre_cyclable:protege_longueur": { "median": 4.013385486484291, "rank": 1, "rankSize": 43, "rankTies": 1 },
+      "offre_cyclable:partage_longueur": { "median": 1.3553908996982902, "rank": 1, "rankSize": 43, "rankTies": 1 },
+      "offre_cyclable:protege_km_1000": { "median": 0.8660719654168894, "rank": 29, "rankSize": 43, "rankTies": 1 },
+      "offre_cyclable:partage_km_1000": { "median": 0.22589894180239242, "rank": 3, "rankSize": 43, "rankTies": 1 }
+    }
+  }
+}

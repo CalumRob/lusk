@@ -327,6 +327,21 @@ function commonUnit(values: readonly ContentFact[], fallback: string): string {
   return units.length === 1 ? units[0]! : fallback
 }
 
+/** Machine-float partition check: no policy threshold, only round-off slack. */
+function isPartition(
+  parts: readonly (number | null)[],
+  total: number | null,
+): boolean {
+  if (total === null || parts.some((part) => part === null || !Number.isFinite(part))) return false
+  const sum = (parts as number[]).reduce((value, part) => value + part, 0)
+  const scale = Math.max(1, Math.abs(total), ...parts.map((part) => Math.abs(part as number)))
+  return Math.abs(sum - total) <= Number.EPSILON * scale * 64
+}
+
+function partitionValues(values: readonly ContentFact[]): (number | null)[] {
+  return values.map((value) => value.fact.value)
+}
+
 export function buildMobiliteNetworksSection(
   facts: TerritoryFacts,
   metadata?: ThemeMetadata,
@@ -357,14 +372,22 @@ export function buildMobiliteNetworksSection(
       metadata,
     )
     const rawValue = contentDetailFact(facts, 'reseaux', definition.raw, 'km', metadata)
-    const segments = definition.mode === 'bike' && bikeSegments.some((segment) => hasValue(segment.value.fact))
+    const normalizedSplit = isPartition(partitionValues(bikeSegments.map((segment) => segment.value)), value.fact.value)
+    const rawSplit = isPartition(
+      partitionValues(bikeSegments.map((segment) => segment.rawValue)),
+      rawValue.fact.value,
+    )
+    const segments = definition.mode === 'bike' && normalizedSplit
       ? bikeSegments.map((segment) => ({
         key: segment.key,
         label: segment.value.label,
         value: segment.value,
-        rawValue: segment.rawValue,
+        rawValue: rawSplit ? segment.rawValue : null,
       }))
       : []
+    const splitNote = definition.mode === 'bike' && !normalizedSplit
+      ? 'Répartition Protégé/Partagé indisponible : les deux parties publiées ne recomposent pas le total.'
+      : null
     return {
       key: definition.mode,
       label: MOBILITE_RESEAU_MODE_LABELS[definition.mode],
@@ -373,6 +396,7 @@ export function buildMobiliteNetworksSection(
       value,
       rawValue,
       segments,
+      splitNote,
     }
   })
   const allFacts = [
@@ -461,6 +485,7 @@ function stationnementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): M
           value: bikeSpaces,
           rawValue: null,
           segments: [],
+          splitNote: null,
         },
         {
           key: 'car-parking',
@@ -470,6 +495,7 @@ function stationnementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): M
           value: carSpaces,
           rawValue: null,
           segments: [],
+          splitNote: null,
         },
       ],
       comparisonLabel: comparisonLabelFor(allFacts, facts.territory),
@@ -540,6 +566,7 @@ function ravitaillementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): 
           value: bornes,
           rawValue: bornesRaw,
           segments: [],
+          splitNote: null,
         },
         {
           key: 'fuel-stations',
@@ -549,6 +576,7 @@ function ravitaillementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): 
           value: stations,
           rawValue: stationsRaw,
           segments: [],
+          splitNote: null,
         },
       ],
       comparisonLabel: comparisonLabelFor(allFacts, facts.territory),

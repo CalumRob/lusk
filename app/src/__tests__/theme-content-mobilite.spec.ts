@@ -10,6 +10,7 @@ import type {
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { buildPartageSubtitle } from '@/fiche/content/mobiliteSections'
 import type { ThemeMetadata } from '@/payload/types'
+import liveNetworks from './fixtures/rennes-network-live.json'
 
 const provenance = (sourceId: string): FactProvenance => ({
   sourceId,
@@ -113,7 +114,7 @@ const sharingFacts = (): NumericFact[] => [
   fact('reseaux_par_habitant', 8, 'km / 1 000 hab.', 'b_km_1000'),
   fact('reseaux_par_habitant', 80, 'km / 1 000 hab.', 'c_km_1000'),
   fact('reseaux', 10, 'km', 't_longueur'),
-  fact('reseaux', 20, 'km', 'b_longueur'),
+  fact('reseaux', 6, 'km', 'b_longueur'),
   fact('reseaux', 30, 'km', 'c_longueur'),
   fact('offre_cyclable', 5, 'km / 1 000 hab.', 'protege_km_1000', 'amenagements_cyclables'),
   fact('offre_cyclable', 3, 'km / 1 000 hab.', 'partage_km_1000', 'amenagements_cyclables'),
@@ -217,7 +218,7 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
     expect(car!.segments).toEqual([])
 
     expect(walk!.rawValue?.fact).toMatchObject({ key: 'reseaux', detail: 't_longueur', value: 10, unit: 'km' })
-    expect(bike!.rawValue?.fact).toMatchObject({ key: 'reseaux', detail: 'b_longueur', value: 20, unit: 'km' })
+    expect(bike!.rawValue?.fact).toMatchObject({ key: 'reseaux', detail: 'b_longueur', value: 6, unit: 'km' })
     expect(car!.rawValue?.fact).toMatchObject({ key: 'reseaux', detail: 'c_longueur', value: 30, unit: 'km' })
 
     expect(evidence.sources.map((source) => [source.id, source.source, source.url, source.licence])).toEqual([
@@ -279,6 +280,50 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
     const [parking, refuelling] = section.evidence.columns
     expect(parking!.ratio.note).toContain('aucune place de stationnement voiture')
     expect(refuelling!.ratio.note).toContain('aucune station-service')
+  })
+
+  it('keeps the captured live Rennes bike partition coherent', () => {
+    const indicators = sharingFacts().map((candidate) => {
+      const capture = candidate.key === 'reseaux_par_habitant'
+        ? liveNetworks.reseauxParHabitant
+        : candidate.key === 'reseaux'
+          ? liveNetworks.reseaux
+          : candidate.key === 'offre_cyclable'
+            ? liveNetworks.offreCyclable
+            : null
+      const value = capture && candidate.detail ? capture[candidate.detail as keyof typeof capture] : null
+      return typeof value === 'number' ? { ...candidate, value, availability: 'complete' as const } : candidate
+    })
+    const content = resolveMobiliteThemeContent(factsWith(indicators), metadata)
+    const section = content.units[1].sections[0]
+    if (section.evidence?.kind !== 'mobilite-networks') throw new Error('Réseaux evidence expected')
+    const bike = section.evidence.figure.categories.find((category) => category.key === 'bike')!
+    expect(bike.splitNote).toBeNull()
+    expect(bike.value.fact.value).toBeCloseTo(liveNetworks.reseauxParHabitant.b_km_1000, 12)
+    expect(bike.segments.reduce((sum, segment) => sum + (segment.value.fact.value ?? 0), 0))
+      .toBeCloseTo(liveNetworks.reseauxParHabitant.b_km_1000, 12)
+    expect(bike.rawValue?.fact.value).toBeCloseTo(liveNetworks.reseaux.b_longueur, 9)
+    expect(bike.segments.reduce((sum, segment) => sum + (segment.rawValue?.fact.value ?? 0), 0))
+      .toBeCloseTo(liveNetworks.reseaux.b_longueur, 9)
+  })
+
+  it('drops an inconsistent bike split rather than drawing a tiny fake partition', () => {
+    const indicators = sharingFacts().map((candidate) => {
+      if (candidate.key === 'reseaux_par_habitant' && candidate.detail === 'b_km_1000') return { ...candidate, value: 39 }
+      if (candidate.key === 'reseaux' && candidate.detail === 'b_longueur') return { ...candidate, value: 39 }
+      if (candidate.key === 'offre_cyclable' && candidate.detail === 'protege_km_1000') return { ...candidate, value: 0.01 }
+      if (candidate.key === 'offre_cyclable' && candidate.detail === 'partage_km_1000') return { ...candidate, value: 0.03 }
+      if (candidate.key === 'offre_cyclable' && candidate.detail === 'protege_longueur') return { ...candidate, value: 0.01 }
+      if (candidate.key === 'offre_cyclable' && candidate.detail === 'partage_longueur') return { ...candidate, value: 0.03 }
+      return candidate
+    })
+    const content = resolveMobiliteThemeContent(factsWith(indicators), metadata)
+    const section = content.units[1].sections[0]
+    if (section.evidence?.kind !== 'mobilite-networks') throw new Error('Réseaux evidence expected')
+    const bike = section.evidence.figure.categories.find((category) => category.key === 'bike')!
+    expect(bike.value.fact.value).toBe(39)
+    expect(bike.segments).toEqual([])
+    expect(bike.splitNote).toContain('ne recomposent pas le total')
   })
 
   it('keeps the sections honest when their facts are absent', () => {

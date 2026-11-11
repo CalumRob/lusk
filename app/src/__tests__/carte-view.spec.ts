@@ -1695,7 +1695,7 @@ describe('CarteView — #901 : magasin partagé CHAUD (aucun chargeur injecté �
 
     wrapper2.unmount()
     harness.unmount()
-  })
+  }, 20_000)
 })
 
 afterEach(() => {

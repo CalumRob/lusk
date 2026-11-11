@@ -25,13 +25,16 @@ import {
   nativeReadFixture,
   nativeResources,
 } from './helpers/semanticApiFixtures'
+import liveNetworks from './fixtures/rennes-network-live.json'
 
 const publicMetadata = JSON.parse(readFileSync(
   join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8',
 )) as ThemeMetadata
 
 const payload: Payload = {
-  territoires: territoiresFixture,
+  territoires: territoiresFixture.some((territory) => territory.territoire === '35238')
+    ? territoiresFixture
+    : [...territoiresFixture, { territoire: '35238', type: 'commune', nom: 'Rennes', departement: '35', epci: null }],
   indicateurs: [],
   histoires: histoiresMobiliteFixture,
   runReport: null,
@@ -41,6 +44,22 @@ const payload: Payload = {
 }
 
 const catalogue = nativeResources('mobilite')
+
+const NETWORK_CAPTURE: Readonly<Record<string, Readonly<Record<string, number | string>>>> = {
+  reseaux_par_habitant: liveNetworks.reseauxParHabitant,
+  reseaux: liveNetworks.reseaux,
+  offre_cyclable: liveNetworks.offreCyclable,
+}
+
+function applyCoherentNetworkCapture(item: Record<string, any>, data: Record<string, any>) {
+  const values = NETWORK_CAPTURE[item.resource]
+  if (!values || !Array.isArray(data.observations)) return data
+  for (const observation of data.observations) {
+    const value = values[observation.detail]
+    if (typeof value === 'number') observation.value = value
+  }
+  return data
+}
 
 function semanticFetch(requestLog: Array<Record<string, any>> = []) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -59,7 +78,7 @@ function semanticFetch(requestLog: Array<Record<string, any>> = []) {
       return {
         id: item.id,
         resource: item.resource,
-        data: nativeReadFixture(item, resource),
+        data: applyCoherentNetworkCapture(item, nativeReadFixture(item, resource)),
       }
     })
     return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }), { status: 200 })
@@ -81,14 +100,14 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     const requestLog: Array<Record<string, any>> = []
     vi.stubGlobal('fetch', semanticFetch(requestLog))
 
-    const acquired = await acquireThemeFacts('commune', '22001', 'mobilite')
+    const acquired = await acquireThemeFacts('commune', '35238', 'mobilite')
     const selection = [
-      { territory_type: 'commune' as const, territory_id: '22001' },
-      { territory_type: 'commune' as const, territory_id: '22002' },
+      { territory_type: 'commune' as const, territory_id: '35238' },
+      { territory_type: 'commune' as const, territory_id: '35240' },
     ]
-    const comparisonData = await acquireThemeComparison('commune', '22001', 'mobilite', selection)
+    const comparisonData = await acquireThemeComparison('commune', '35238', 'mobilite', selection)
 
-    const focal = mobilityFactsFromThemeApi(payload, '22001', acquired)
+    const focal = mobilityFactsFromThemeApi(payload, '35238', acquired)
     const facts = applyThemeComparisonApiFacts(focal, comparisonData, comparisonContext, selection)
     const content: ThemeContent = resolveMobiliteThemeContent(facts, publicMetadata)
     const sharing = content.units.find((unit) => unit.key === 'partage-de-lespace-public')!
@@ -121,6 +140,15 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     ]))
 
     const bike = categories.find((category) => category.key === 'bike')!
+    expect(bike.value.fact.value).toBeCloseTo(liveNetworks.reseauxParHabitant.b_km_1000, 12)
+    expect(bike.segments.map((segment) => segment.value.fact.value ?? 0)
+      .reduce((sum, value) => sum + value, 0))
+      .toBeCloseTo(liveNetworks.reseauxParHabitant.b_km_1000, 12)
+    expect(bike.rawValue?.fact.value).toBeCloseTo(liveNetworks.reseaux.b_longueur, 9)
+    expect(bike.segments.map((segment) => segment.rawValue?.fact.value ?? 0)
+      .reduce((sum, value) => sum + value, 0))
+      .toBeCloseTo(liveNetworks.reseaux.b_longueur, 9)
+    expect(bike.splitNote).toBeNull()
     expect(bike.rawValue?.fact.comparison?.reference?.value).not.toBeNull()
     for (const segment of bike.segments) {
       expect(segment.value.fact.comparison?.reference?.value).not.toBeNull()
@@ -164,9 +192,15 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     const comparisonBars = figure.findAll('.mobilite-comparison-bars__comparison')
     expect(comparisonBars).toHaveLength(3)
     expect(figure.findAll('.mobilite-comparison-bars__segment')).toHaveLength(2)
+    const bikeGroup = figure.get('g[data-category="bike"]')
+    const totalHeight = Number(bikeGroup.attributes('data-total-height'))
+    const segmentHeights = bikeGroup.findAll('rect[data-segment]')
+      .map((rect) => Number(rect.attributes('height')))
+    expect(segmentHeights.every((height) => height > 0.5)).toBe(true)
+    expect(segmentHeights.reduce((sum, height) => sum + height, 0)).toBeCloseTo(totalHeight, 5)
 
     const bikeHitbox = figure.findAll('.mobilite-comparison-bars__hitbox')
-      .find((hitbox) => (hitbox.attributes('aria-label') ?? '').startsWith('Réseau cyclable'))!
+      .find((hitbox) => (hitbox.attributes('aria-label') ?? '').startsWith('Total vélo'))!
     await bikeHitbox.trigger('focus')
     const tooltip = figure.get('.mobilite-comparison-bars__tooltip')
     const comparisonRows = tooltip.findAll('.cahier-figure-tooltip-row-comparison')
@@ -191,14 +225,14 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
   it('renders the paired parking and refuelling figures with their ratio references and ranks', async () => {
     vi.stubGlobal('fetch', semanticFetch())
 
-    const acquired = await acquireThemeFacts('commune', '22001', 'mobilite')
+    const acquired = await acquireThemeFacts('commune', '35238', 'mobilite')
     const selection = [
-      { territory_type: 'commune' as const, territory_id: '22001' },
-      { territory_type: 'commune' as const, territory_id: '22002' },
+      { territory_type: 'commune' as const, territory_id: '35238' },
+      { territory_type: 'commune' as const, territory_id: '35240' },
     ]
-    const comparisonData = await acquireThemeComparison('commune', '22001', 'mobilite', selection)
+    const comparisonData = await acquireThemeComparison('commune', '35238', 'mobilite', selection)
     const facts = applyThemeComparisonApiFacts(
-      mobilityFactsFromThemeApi(payload, '22001', acquired),
+      mobilityFactsFromThemeApi(payload, '35238', acquired),
       comparisonData,
       comparisonContext,
       selection,

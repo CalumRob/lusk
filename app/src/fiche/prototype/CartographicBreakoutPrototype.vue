@@ -109,14 +109,24 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
   const category = categoryFor(mode)
   if (!category) return []
   const unit = props.evidence?.figure.unit ?? ''
+  const totalLabel = category.key === 'bike' ? 'Total vélo' : category.label
   const rows: CahierTooltipRow[] = [{
-    label: category.label,
+    label: totalLabel,
     value: category.value.fact.value === null ? '—' : formatNumber(category.value.fact.value, 2),
     tone: modeTone(mode),
     icon: modeIcon(mode),
     markerColor: modeColor(mode),
     comparison: comparisonForFact(category.value, props.evidence?.figure.comparisonLabel ?? null, unit, category.segments.length > 0),
   }]
+  if (category.splitNote) {
+    rows.push({
+      label: 'Répartition Protégé/Partagé',
+      value: 'Indisponible',
+      tone: 'neutral',
+      marker: 'slash',
+      ariaLabel: category.splitNote,
+    })
+  }
   for (const segment of category.segments) {
     rows.push({
       label: segment.label,

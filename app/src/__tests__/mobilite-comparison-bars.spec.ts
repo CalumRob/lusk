@@ -58,6 +58,7 @@ const figure: MobiliteBarsFigureEvidence = {
       value: fact('reseaux_par_habitant', 't_km_1000', 12, 'km / 1 000 hab.', 9, { position: 2, size: 3 }),
       rawValue: fact('reseaux', 't_longueur', 10, 'km'),
       segments: [],
+      splitNote: null,
     },
     {
       key: 'bike',
@@ -80,6 +81,7 @@ const figure: MobiliteBarsFigureEvidence = {
           rawValue: fact('offre_cyclable', 'partage_longueur', 2, 'km'),
         },
       ],
+      splitNote: null,
     },
     {
       key: 'car',
@@ -89,6 +91,7 @@ const figure: MobiliteBarsFigureEvidence = {
       value: fact('reseaux_par_habitant', 'c_km_1000', 80, 'km / 1 000 hab.', 70, { position: 3, size: 3 }),
       rawValue: fact('reseaux', 'c_longueur', 30, 'km'),
       segments: [],
+      splitNote: null,
     },
   ],
 }
@@ -137,6 +140,12 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
       .find((item) => item.text().includes('Groupe comparé'))!
     expect(comparisonLegend.find('.cahier-figure-legend-mark--square').exists()).toBe(true)
     expect(comparisonLegend.find('.cahier-figure-legend-mark--dash').exists()).toBe(false)
+    const bikeLegend = legend.findAll('.cahier-figure-legend-item')
+      .find((item) => item.text().includes('Réseau cyclable'))!
+    expect(bikeLegend.get('.cahier-figure-legend-mark').classes()).toContain('cahier-figure-legend-mark--composite')
+    const protectedLegend = legend.findAll('.cahier-figure-legend-item')
+      .find((item) => item.text().includes('Protégé'))!
+    expect(protectedLegend.get('.cahier-figure-legend-mark').classes()).not.toContain('cahier-figure-legend-mark--composite')
     expect(wrapper.get('.cahier-comparison-value__reference').attributes('aria-label')).toContain('Médiane des communes de EPCI X')
     expect(wrapper.get('.cahier-comparison-value__reference').attributes('aria-label')).toContain('2e/3')
   })
@@ -148,6 +157,9 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
     expect(wrapper.text()).not.toContain('20 km')
     await wrapper.findAll('.mobilite-comparison-bars__hitbox')[1]!.trigger('focus')
     const tooltip = wrapper.get('.mobilite-comparison-bars__tooltip')
+    const totalRow = tooltip.findAll('.cahier-figure-tooltip-row')[0]!
+    expect(totalRow.get('.cahier-figure-tooltip-label').text()).toBe('Total vélo')
+    expect(totalRow.attributes('aria-label')).toContain('médiane du total non segmenté')
     expect(tooltip.text()).toContain('Protégé')
     expect(tooltip.text()).toContain('Partagé')
     expect(tooltip.text()).toContain('20')
@@ -177,6 +189,22 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
     })
     expect(wrapper.findAll('.mobilite-comparison-bars__comparison')).toHaveLength(0)
     expect(wrapper.text()).toContain(copy)
+  })
+
+  it('draws the known bike total as an unsegmented bar when the split is unavailable', async () => {
+    const unsafe = structuredClone(figure)
+    const bike = unsafe.categories.find((category) => category.key === 'bike')!
+    bike.value.fact.value = 39
+    bike.segments = []
+    bike.splitNote = 'Répartition Protégé/Partagé indisponible : les deux parties publiées ne recomposent pas le total.'
+    const wrapper = mount(CahierMobiliteComparisonBars, {
+      props: { figure: unsafe, comparison: { status: 'ready' } },
+    })
+    expect(wrapper.find('.mobilite-comparison-bars__bar[data-category="bike"]').exists()).toBe(true)
+    expect(wrapper.findAll('.mobilite-comparison-bars__segment')).toHaveLength(0)
+    expect(wrapper.text()).toContain('Répartition Protégé/Partagé indisponible')
+    await wrapper.findAll('.mobilite-comparison-bars__hitbox')[1]!.trigger('focus')
+    expect(wrapper.get('.mobilite-comparison-bars__tooltip').text()).toContain('Répartition Protégé/Partagé')
   })
 
   it('names the served comparison statistic dynamically (mean vs median)', () => {    const meanFigure = structuredClone(figure)
@@ -211,6 +239,7 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
         value: fact('places_stationnement_voiture_1000', null, 25, 'places / 1 000 hab', 30, { position: 2, size: 3 }, 'moins-est-mieux'),
         rawValue: null,
         segments: [],
+        splitNote: null,
       }],
     }
     const wrapper = mount(CahierMobiliteComparisonBars, {
