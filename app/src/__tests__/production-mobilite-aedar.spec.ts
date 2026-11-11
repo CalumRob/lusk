@@ -51,8 +51,8 @@ it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte
   expect(fetchAedarComparison).toHaveBeenCalledWith('commune', '22001', expect.objectContaining({
     intent: { kind: 'selected_comparison', members: control.value.selection.etat === 'membres' ? control.value.selection.membres : [] },
   }))
-  // Ranks are tooltip-wide: the ramps consume every displayed aggregate measure,
-  // so no narrow `rankMeasures` allow-list narrows the request any more.
+  // Every shape ranks every displayed measure, so no `rankMeasures` allow-list
+  // narrows the request any more.
   expect(vi.mocked(fetchAedarComparison).mock.calls[0]![2]).not.toHaveProperty('rankMeasures')
   expect(wrapper.findComponent(VarianteCahierLibre).props('comparisonStatus')).toBe('loading')
   const before = wrapper.findComponent(VarianteCahierLibre).props('content')

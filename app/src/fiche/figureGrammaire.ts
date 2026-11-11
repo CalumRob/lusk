@@ -54,22 +54,33 @@ export function puceRangDirection(rang: string, direction: DirectionRang): PuceR
  *  le tiers inférieur reste muet. Encre neutre, aucune couleur de statut. */
 export type AccentPositionRang = 'fort' | 'faible' | null
 
+/** A rank is only displayable against a comparison population of at least
+ *  two: a served `1/1` is real evidence but has no position to show, so every
+ *  display surface folds it to nothing (owner decision 2026-11-11, #958). The
+ *  transport validation accepts `rank_size >= 1` independently. */
+export const RANK_DISPLAY_MIN_SIZE = 2
+
 /**
  * Formate un rang servi par le producteur (« 1er/3 », « 2e/3 », « =1er/3 » quand
  * le rang est partagé) — jamais dérivé des faits locaux. Le type reste
- * structurel : `ComparisonRank` le satisfait.
+ * structurel : `ComparisonRank` le satisfait. `size === null` couvre un rang
+ * publié sans population connue (l'ordinal reste honnête, jamais de « /Y »).
  */
-export function formatServedRank(rank: { position: number; size: number; ties?: number | null } | null | undefined): string | null {
+export function formatServedRank(
+  rank: { position: number; size: number | null; ties?: number | null } | null | undefined,
+): string | null {
   if (!rank) return null
   const { position, size, ties } = rank
-  if (!Number.isInteger(position) || !Number.isInteger(size)) return null
-  if (position < 1 || size < 2 || position > size) return null
+  if (!Number.isInteger(position) || position < 1) return null
+  if (size !== null && (!Number.isInteger(size) || size < RANK_DISPLAY_MIN_SIZE || position > size)) return null
   const shared = typeof ties === 'number' && Number.isInteger(ties) && ties > 1
-  return `${shared ? '=' : ''}${position === 1 ? '1er' : `${position}e`}/${size}`
+  return `${shared ? '=' : ''}${position === 1 ? '1er' : `${position}e`}${size === null ? '' : `/${size}`}`
 }
 
 /** Le même rang pour les technologies d'assistance : le « = » visible devient « ex æquo ». */
-export function formatServedRankAria(rank: { position: number; size: number; ties?: number | null } | null | undefined): string | null {
+export function formatServedRankAria(
+  rank: { position: number; size: number | null; ties?: number | null } | null | undefined,
+): string | null {
   const text = formatServedRank(rank)
   if (!text) return null
   return text.startsWith('=') ? `${text.slice(1)} (ex æquo)` : text

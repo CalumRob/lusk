@@ -1,11 +1,11 @@
 import type { NumericFact } from './territoryFacts'
-import { formatServedRank, formatServedRankAria, puceRangDirection } from '../figureGrammaire'
+import { RANK_DISPLAY_MIN_SIZE, formatServedRank, formatServedRankAria, puceRangDirection } from '../figureGrammaire'
 
 /** Presentation only: positions, sizes and ties come from the active comparison read. */
 export function comparisonRank(fact: NumericFact) {
   const comparison = fact.comparison
   const rank = comparison?.rank
-  if (!comparison || !rank || rank.size < 2) return null
+  if (!comparison || !rank || rank.size < RANK_DISPLAY_MIN_SIZE) return null
   const text = formatServedRank(rank)
   const accessible = formatServedRankAria(rank)
   if (!text || !accessible) return null

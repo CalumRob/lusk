@@ -29,6 +29,7 @@ import { THEMES_CONSTRUITS, THEMES_METHODES } from '@/methodes/indicateurs'
 import type { ThemeConstruit } from '@/methodes/indicateurs'
 import { CONTENU_CATALOGUE_INDICATEURS } from '@/indicateurs/catalogueContent'
 import { LIBELLES_INDICATEURS_APP } from '@/fiche/content/libellesAffichage'
+import { RANK_DISPLAY_MIN_SIZE, formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 
 // #901 — le helper themesPresent (présence lue dans les lignes de faits) est
 // retiré avec son dernier consommateur (la barre d'onglets de la carte) :
@@ -497,29 +498,27 @@ export function rangEnContexte(indicateur: Indicateur): string | null {
 export interface DetailsRang {
   /** The ordinal position (1 = best, ADR-0015). */
   rang: number
-  /** The group size of the comparison (« / Y »), or null when absent. */
+  /** The group size of the comparison (« / Y »), or null when the producer omits it. */
   taille: number | null
-  /** The producer-served tie count, present only when the position is shared. */
-  ties?: number
-  /** The formatted chip, e.g. « 3e/41 · communes de l’EPCI » or « =1er/41 ». */
+  /** The formatted chip, e.g. « 3e/41 · communes de l’EPCI » or « =1er/41 · … ». */
   libelle: string
   /** Scope-silent page chip; the scope remains in its accessible name. */
   libelleCourt: string
+  /** The same ordinal for assistive technology, where a shared position spells out « ex æquo ». */
+  rangAria: string
 }
 
 export function detailsRangEnContexte(indicateur: Pick<Indicateur, 'comparaisonApi'>): DetailsRang | null {
   if (!indicateur.comparaisonApi) return null
   const { rang, taille, portee, ties } = indicateur.comparaisonApi
   if (rang === null) return null
-  if (taille !== null && taille < 2) return null
-  const partage = typeof ties === 'number' && Number.isInteger(ties) && ties > 1
-  return { rang, taille, ...(partage ? { ties } : {}),
-    libelle: formaterRangApi(rang, taille, portee, ties), libelleCourt: formaterRangApi(rang, taille, null, ties) }
-}
-
-function formaterRangApi(rang: number, taille: number | null, portee: string | null, ties?: number | null): string {
-  const partage = typeof ties === 'number' && Number.isInteger(ties) && ties > 1 ? '=' : ''
-  return `${partage}${ordinalFrancais(rang)}${taille === null ? '' : `/${taille}`}${portee === null ? '' : ` · ${portee}`}`
+  if (taille !== null && taille < RANK_DISPLAY_MIN_SIZE) return null
+  // The shared grammar owns the ordinal, the « /Y » and the « = » tie marker;
+  // only the declared scope is appended here.
+  const libelleCourt = formatServedRank({ position: rang, size: taille, ties })
+  const rangAria = formatServedRankAria({ position: rang, size: taille, ties })
+  if (libelleCourt === null || rangAria === null) return null
+  return { rang, taille, libelle: `${libelleCourt}${portee === null ? '' : ` · ${portee}`}`, libelleCourt, rangAria }
 }
 
 /** French number: comma decimal separator, thin-space thousands, zeros trimmed. */

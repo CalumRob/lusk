@@ -280,6 +280,8 @@ Every grid figure shares the same card shell — the app never invents its parts
 
 - **Payload-owned label** — the label comes from the theme metadata, never hardcoded in the app (ADR-0020). No raw key ever renders.
 - **Rank chip « Xᵉ / Y »** — the producer-computed direction-aware ordinal (ADR-0015/0021), group size always shown, with no visible direction arrow. For comparisons, rank appears on a new line after the reference value; the value and rank use existing `--brand-200`, while « Groupe comparé » remains neutral. Owner decision 2026-11-06 supersedes the visible-glyph presentation rule, not ranking semantics. Accessible names remain complete and may retain direction text.
+  - **Tie marker (owner decision 2026-11-11, #958):** a producer-served shared position renders as `=1er/41`, `=2e/41` — the `=` prefix appears only when the served tie count is greater than one; an untied rank stays `1er/41`. The visible text is always the `=` form; accessible names spell it out (« 1er/41 (ex æquo) »). One app formatter produces both (text and aria), so the tooltip, the page rank chips and the AEDAR scalar ranks cannot drift.
+  - **Singleton suppression:** a rank needs a comparison population of at least two. A served `1/1` (only the focal publishes the measure) is valid evidence but renders no chip at all — never « 1er/1 ». The read itself still succeeds; the threshold is display-only.
 - **Vintage stamp** — source identity + version + date (§3 caption style): the freshness promise on every card (ADR-0005).
 
 ### The scalar accent

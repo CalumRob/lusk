@@ -171,7 +171,8 @@ describe('Rang de la sélection — valeur du Groupe comparé', () => {
     const wrapper = mount(IndicatorFigure, { props: { lignes, clef: row.key, theme: 'habitat', libelle: 'Passoires' } })
     const mark = wrapper.get('.figure-indicateur-comparaison')
     expect(mark.text()).toContain('=1er/41')
-    expect(mark.get('[role="img"]').attributes('aria-label')).toContain('=1er/41')
+    expect(mark.get('[role="img"]').attributes('aria-label')).toContain('1er/41 (ex æquo)')
+    expect(mark.get('[role="img"]').attributes('aria-label')).not.toContain('=1er')
   })
 
   it('actualise le rang et sa portée sans conserver la sélection précédente, puis masque le rang du singleton', async () => {

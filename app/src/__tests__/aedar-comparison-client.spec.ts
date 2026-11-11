@@ -105,10 +105,9 @@ describe('lecture AEDAR de la Sélection', () => {
     await fetchAedarComparison('commune', 'sel-c1', request)
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
-  it('projette les rangs de deux lectures fixes et conserve les 40 valeurs de groupe', async () => {
-    const ranked = ['meanDiversity', 'meanVolume']
+  it('projette les rangs servis de chaque lecture fixe et conserve les 40 valeurs de groupe', async () => {
     const request = { ...options, intent: { kind: 'fixed_comparison' as const, context: 'density_class' as const },
-      label: 'Classe', typequ: [], measures: aggregateMeasures, rankMeasures: ranked }
+      label: 'Classe', typequ: [], measures: aggregateMeasures }
     let sent: any[] = []
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
@@ -119,13 +118,9 @@ describe('lecture AEDAR de la Sélection', () => {
         const index = aggregateMeasures.indexOf(measure)
         return { id: item.id, data: { resource: item.resource, target: item.target,
           content_version: 'comparison-v1', summary_content_version: 'summary-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1',
-          comparison: (() => {
-            const row: any = { ...cell, typequ: null, measure, comparison_context: 'density_class',
+          comparison: { ...cell, typequ: null, measure, comparison_context: 'density_class',
             group_value: index + 0.25, group_n_addresses: 40, group_n_observed: 67,
-              ...(ranked.includes(measure) ? { rank: 2, rank_size: 3, rank_ties: 1 } : {}), direction: undefined }
-            if (!ranked.includes(measure)) { delete row.rank; delete row.rank_size; delete row.rank_ties }
-            return row
-          })() } }
+            rank: 2, rank_size: 3, rank_ties: 1, direction: undefined } } }
       }) }) } as Response
     })
     vi.stubGlobal('fetch', fetcher)
@@ -134,13 +129,12 @@ describe('lecture AEDAR de la Sélection', () => {
     if (result.status !== 'ready') throw new Error('Expected ready grouped aggregate response')
     expect(fetcher.mock.calls.filter(([url]) => !isCatalogue(url))).toHaveLength(1)
     expect(sent).toHaveLength(40)
-    expect(sent.filter((item) => item.fields.includes('rank'))).toHaveLength(2)
-    expect(sent.filter((item) => !item.fields.includes('rank'))).toHaveLength(38)
+    expect(sent.every((item) => item.fields.includes('rank'))).toBe(true)
     expect(result.evidence.cells).toHaveLength(40)
     for (const [index, measure] of aggregateMeasures.entries()) {
       const cellResult = result.evidence.cells.find((candidate) => candidate.measure === measure)!
       expect(cellResult.group_value).toBe(index + 0.25)
-      expect(Object.hasOwn(cellResult, 'rank')).toBe(ranked.includes(measure))
+      expect(cellResult).toMatchObject({ rank: 2, rank_size: 3, rank_ties: 1 })
     }
   })
   it('valide un lot agrégé selected de 40 mesures, direction high et indisponibilité par mesure', async () => {
@@ -193,10 +187,9 @@ describe('lecture AEDAR de la Sélection', () => {
     expect(await fetchAedarComparison('commune', 'sel-c1', { ...request, label: 'Direction mismatched' }))
       .toMatchObject({ status: 'error' })
   })
-  it('partitionne les rangs selected en deux items dans un seul POST et valide l’omission des rangs non demandés', async () => {
-    const ranked = ['meanDiversity', 'meanVolume']
+  it('envoie la matrice selected des 40 rangs en un seul item et projette chaque rang servi', async () => {
     const measures = aggregateMeasures
-    const request = { ...options, typequ: [], measures, rankMeasures: ranked }
+    const request = { ...options, typequ: [], measures }
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
       const { items } = JSON.parse(String(init?.body))
@@ -204,13 +197,9 @@ describe('lecture AEDAR de la Sélection', () => {
         id: item.id, data: { resource: item.resource, target: item.target, content_version: 'comparison-v1',
           summary_content_version: 'summary-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1', selection: members,
           scope: { kind: 'explicit_selection', member_count: members.length },
-          comparisons: item.coordinates.measure.map((measure: string) => {
-            const row: any = { ...cell, typequ: null, measure,
-              group_value: measures.indexOf(measure) + 1, group_n_addresses: 50, group_n_observed: 42,
-              direction: 'high', ...(ranked.includes(measure) ? { rank: 3, rank_size: 3, rank_ties: 1 } : {}) }
-            if (!ranked.includes(measure)) { delete row.rank; delete row.rank_size; delete row.rank_ties }
-            return row
-          }) },
+          comparisons: item.coordinates.measure.map((measure: string) => ({ ...cell, typequ: null, measure,
+            group_value: measures.indexOf(measure) + 1, group_n_addresses: 50, group_n_observed: 42,
+            direction: 'high', rank: 3, rank_size: 3, rank_ties: 1 })) },
       })) }) } as Response
     })
     vi.stubGlobal('fetch', fetcher)
@@ -219,14 +208,14 @@ describe('lecture AEDAR de la Sélection', () => {
     if (result.status !== 'ready') throw new Error('Expected ready selected aggregate response')
     expect(fetcher.mock.calls.filter(([url]) => !isCatalogue(url))).toHaveLength(1)
     const posted = JSON.parse(String(fetcher.mock.calls.find(([url]) => !isCatalogue(url))![1]?.body)).items
-    expect(posted).toHaveLength(2)
-    expect(posted.find((item: any) => item.fields.includes('rank')).coordinates.measure).toEqual(ranked)
-    expect(posted.find((item: any) => !item.fields.includes('rank')).coordinates.measure).toHaveLength(38)
+    expect(posted).toHaveLength(1)
+    expect(posted[0].coordinates.measure).toEqual(measures)
+    expect(posted[0].fields).toEqual(['group_value', 'rank', 'rank_size', 'rank_ties'])
     expect(result.evidence.cells).toHaveLength(40)
     for (const [index, measure] of measures.entries()) {
       const cellResult = result.evidence.cells.find((candidate) => candidate.measure === measure)!
       expect(cellResult.group_value).toBe(index + 1)
-      expect(Object.hasOwn(cellResult, 'rank')).toBe(ranked.includes(measure))
+      expect(cellResult).toMatchObject({ rank: 3, rank_size: 3, rank_ties: 1 })
     }
   })
   it('accepte un agrégat fixe indisponible aux adresses incompatibles mais refuse le dépassement per-TYPEQU', async () => {

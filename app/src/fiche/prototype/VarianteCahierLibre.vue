@@ -40,6 +40,7 @@ import {
 } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode, AedarTimeRampEvidence } from '@/fiche/content/themeContent'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import { RANK_DISPLAY_MIN_SIZE } from '@/fiche/figureGrammaire'
 import type { CahierPagination } from './cahierPagination'
 import CahierProse from './CahierProse.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
@@ -494,13 +495,13 @@ onBeforeUnmount(() => {
                         :icon="CarFront"
                         tone="c"
                         color-value
-                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : scalar.comparisonUnavailableLabel ? ` ${scalar.comparisonAccessibleLabel ?? 'Moyenne du groupe comparé'} indisponible.` : ''}${scalar.rank && scalar.rankSize && scalar.rankSize >= 2 ? ` Rang ${scalar.rank}${scalar.rankTies && scalar.rankTies > 1 ? `, ex æquo avec ${scalar.rankTies} territoires` : ''} sur ${scalar.rankSize}.` : ''}`"
+                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : scalar.comparisonUnavailableLabel ? ` ${scalar.comparisonAccessibleLabel ?? 'Moyenne du groupe comparé'} indisponible.` : ''}${scalar.rank && scalar.rankSize && scalar.rankSize >= RANK_DISPLAY_MIN_SIZE ? ` Rang ${scalar.rank}${scalar.rankTies && scalar.rankTies > 1 ? `, ex æquo avec ${scalar.rankTies} territoires` : ''} sur ${scalar.rankSize}.` : ''}`"
                       >
                         <template v-if="scalar.reference || scalar.comparisonUnavailableLabel" #reference>
                           <CahierComparisonValue
                             v-if="scalar.reference"
                             :named-reference="scalar.reference"
-                            :served-rank="scalar.rank && scalar.rankSize && scalar.rankSize >= 2 && scalar.rankDirection ? { position: scalar.rank, size: scalar.rankSize, ties: scalar.rankTies ?? null, direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' : 'moins-est-mieux', key: scalar.key } : null"
+                            :served-rank="scalar.rank && scalar.rankSize && scalar.rankSize >= RANK_DISPLAY_MIN_SIZE && scalar.rankDirection ? { position: scalar.rank, size: scalar.rankSize, ties: scalar.rankTies ?? null, direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' : 'moins-est-mieux', key: scalar.key } : null"
                             :comparison-status="comparisonStatus"
                             :comparison-error="comparisonError"
                           />

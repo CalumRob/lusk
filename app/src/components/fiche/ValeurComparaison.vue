@@ -23,8 +23,11 @@ const chip = computed(() => {
   const details = detailsRangEnContexte(props.ligne)
   const direction = comparison.value?.direction
   if (!details || (direction !== 'high' && direction !== 'low')) return null
-  const puce = puceRangDirection(details.libelleCourt, direction === 'high' ? 'plus-est-mieux' : 'moins-est-mieux')
-  return { ...puce, phrase: `${puce.phrase}. ${description.value}.` }
+  const sens = direction === 'high' ? 'plus-est-mieux' : 'moins-est-mieux'
+  // The visible chip keeps the served « = » tie marker; the accessible phrase
+  // spells the shared position out (« ex æquo ») instead of reading a symbol.
+  const puce = puceRangDirection(details.libelleCourt, sens)
+  return { ...puce, phrase: `${puceRangDirection(details.rangAria, sens).phrase}. ${description.value}.` }
 })
 const accessibleName = computed(() => `Groupe comparé : ${referenceText.value}. ${chip.value ? `Rang ${chip.value.phrase}` : description.value}`)
 </script>
