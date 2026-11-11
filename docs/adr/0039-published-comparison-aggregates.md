@@ -78,6 +78,14 @@ Do not publish or rebuild against a partially completed sequence. This rollout i
 operator-controlled and is not authorization to apply serving DDL or deploy as part
 of this implementation.
 
+**Declared-profile fixed detail amendment (owner-approved 2026-11-11, #960):**
+for detail-backed declared profiles, this ADR's published aggregate still owns
+the descriptor's default detail/sex point. An explicitly requested non-default
+declared point resolves the same fixed cohort and is computed per request from
+its committed published cells, with no additional publication rows or content
+versions. This is a narrow exception ([ADR-0041](0041-declared-profile-fixed-detail-comparisons.md)),
+not a retirement of the published-fixed policy.
+
 **AEDAR all distribution cutpoints ranked (owner-approved 2026-11-11, #963):**
 every cutpoint of the per-cell AEDAR distribution curve - `min`, the nine deciles
 and `max` - is a ranked producer facet, so no distribution facet remains

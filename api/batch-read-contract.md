@@ -232,18 +232,32 @@ aggregate reading, is still rejected with `422`.
 
 Indicator comparisons use the existing `fixed_comparison` or
 `selected_comparison` intent on a declared profile's territory target.
-`fixed_comparison` accepts only the closed `default` context and reads the
-profile descriptor's published default comparison facet. Coordinates may be
+`fixed_comparison` accepts only the closed `default` context. Coordinates may be
 omitted; when explicitly supplied for a detail-backed profile, they must name
-every declared axis exactly once and match that same default detail/sex point.
-They are a consistency filter, not an override. An alternate profile facet is
-requested with `selected_comparison`; omit `coordinates` to use the declared
-default, or provide exactly one catalogue-owned value for every declared profile
-axis (for example, both `detail` and `sex` for an age pyramid). Unknown
-axes/values, partial axes, and multi-value profile comparison coordinates are
-rejected with `422`. A scalar-backed profile such as the DPE distribution keeps
-its linked scalar comparison facet: DPE bins remain profile facts and are never
-reinterpreted as the linked scalar.
+every declared axis exactly once (for example, both `detail` and `sex` for an age
+pyramid). Omitted coordinates, and coordinates naming the descriptor's published
+default detail/sex point, read that published comparison facet unchanged.
+Another declared point resolves the same fixed context's canonical cohort and is
+computed on request from that cohort's committed published profile cells, with
+the same median, direction-aware rank/ties, missingness, per-detail unit,
+denominator semantics and source lineage as an identical explicit selection; it
+never reinterprets the published default point and creates no publication rows.
+The published default keeps its published-comparison version checks; a declared
+non-default point keeps the `declared_profile` and `territory_reference` checks
+and fails closed on missing or stale profile cells (no zero-filled or fabricated
+value). It deliberately does not depend on the default
+`profile_comparison_publication` generation: a missing or stale default
+comparison marker fails the default read closed while the alternate point still
+serves from the same committed cells. An explicitly empty `coordinates` object means no coordinate selection,
+just like omission. Unknown axes/values, partial axes and multi-value profile
+comparison coordinates are rejected with `422`. A scalar-backed profile such as
+the DPE distribution keeps its linked scalar comparison facet: `fixed_comparison`
+rejects profile coordinates with `422` because that facet is the linked scalar,
+while `selected_comparison` retains its existing coordinate semantics — the
+declared profile coordinates are accepted but never reinterpret the DPE bins as
+the linked scalar. The fixed-profile result stays compact: `member_ranks` remains
+a selected-comparison projection and is rejected with `422` for fixed profile
+comparisons, the published default and alternate declared points alike.
 
 `selected_comparison.intent.members` is an ordered, unique list of up to 1,500 typed
 `{type,id}` territory identities. The response `selection` echoes those requested
@@ -254,7 +268,10 @@ bounded set of unique communes. Overlapping parent and commune selections are
 deduplicated for calculation; result counts and optional peer rows describe that
 resolved population, while the typed selection echo remains the caller's original
 selection. The focal `target` remains its own typed identity and may be outside
-that population; it is not silently replaced by a selected peer.
+that population; it is not silently replaced by a selected peer. An explicit
+selection may also name exactly one catalogue-owned value for every declared
+profile axis (for example, both `detail` and `sex` for an age pyramid) to compare
+that declared point over the selected population.
 
 For a selected declared-profile comparison, callers may request
 `fields: ["member_ranks"]`. This potentially cohort-sized projection is absent
