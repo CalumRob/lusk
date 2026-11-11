@@ -435,9 +435,11 @@ def test_declared_profile_postgres_api_contract(installation):
                 reader = reader_provider()
                 original_preflight = reader.preflight
 
-                def concurrent_update_preflight(connection, item, catalogue=None, *, work_budget=200_000):
+                def concurrent_update_preflight(connection, item, catalogue=None, *,
+                                                work_budget=200_000, **kwargs):
                     nonlocal changed_during_preflight
-                    estimate = original_preflight(connection, item, catalogue, work_budget=work_budget)
+                    estimate = original_preflight(connection, item, catalogue,
+                        work_budget=work_budget, **kwargs)
                     if item.resource == "structure_age" and not changed_during_preflight:
                         with psycopg.connect(publisher_dsn) as writer:
                             writer.execute(f'SET search_path TO "{schema}"')
@@ -500,8 +502,19 @@ def test_declared_profile_postgres_api_contract(installation):
             assert matching_fixed_coordinates.json()["result"]["median"] == pytest.approx(.4)
             incompatible_fixed_coordinates = client.post("/api/resources/read", json={
                 **semantic_comparison_item, "coordinates": {"detail": ["15-24"], "sex": ["M"]},
+                "fields": ["median", "rank", "rank_size", "rank_ties",
+                           "selected_member_count", "eligible_count", "missing_count"],
             })
-            assert incompatible_fixed_coordinates.status_code == 422, incompatible_fixed_coordinates.text
+            # #960: a non-default declared point is a real request-scoped
+            # comparison over the same fixed cohort, not the default facet.
+            assert incompatible_fixed_coordinates.status_code == 200, incompatible_fixed_coordinates.text
+            alternate_fixed = incompatible_fixed_coordinates.json()["result"]
+            assert alternate_fixed["source_facet"] == {"detail": "15-24", "sex": "M"}
+            assert alternate_fixed["median"] == pytest.approx(.7)
+            assert (alternate_fixed["rank"], alternate_fixed["rank_size"],
+                    alternate_fixed["rank_ties"]) == (2, 2, 1)
+            assert (alternate_fixed["selected_member_count"], alternate_fixed["eligible_count"],
+                    alternate_fixed["missing_count"]) == (2, 2, 0)
             selected_comparison_item = {
                 "resource": "structure_age",
                 "target": {"kind": "territory", "type": "commune", "id": territory},
