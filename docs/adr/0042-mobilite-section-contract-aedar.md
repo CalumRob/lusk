@@ -1,0 +1,103 @@
+# ADR-0042: The Mobilité fiche adopts the AEDAR section contract
+
+- **Status:** accepted — product owner through PRD #952, 2026-11-11; implemented by #954.
+- **Supersedes:** ADR-0026 for the Mobilité theme only, and the
+  « Figure « Réseaux » de la Variante E » CONTEXT entry (2026-11-10).
+- **Related:** ADR-0039 / ADR-0041 (published and request-scoped comparison
+  aggregates), ADR-0032 (unique cycling geometry).
+
+## Context
+
+The Mobilité tab (`/territoire/:type/:id?theme=mobilite`) mounts
+`ProductionMobiliteAedar` → `VarianteCahierLibre` from
+`resolveMobiliteThemeContent()`. Page 1 is the accepted AEDAR surface. Pages 2
+to 4 previously carried a *Marelle* (tension title) plus page-level prose
+repeating numbers already shown by the figures. « La motorisation » was a
+separate unit, « Une piste ne suffit pas » duplicated the cycling distinction,
+and the Réseaux plate carried a border legend, north arrow, shared scale, road
+footprint sub-figure, internal exploration link and its own bar chart.
+
+PRD #952 aligns pages 2 and 3 with the AEDAR section anatomy, merges then
+retires the motorisation unit, removes the redundant cycling-offer section, and
+gives every figure a served comparison. Section 13 adds the API prerequisite
+(#960): a fixed declared profile now serves one comparison per declared detail,
+so the three network categories can each read their own reference without a
+browser-side peer computation. #953 publishes the refuelling densities.
+
+## Decision
+
+1. **Section anatomy (C1).** A Mobilité section carries a label and an
+   availability, a prose column, one or more source stamps rendered by
+   `CahierEvidenceSource`, figures with a caption and complete accessible names,
+   and the existing section-footer exploration target. It carries **no
+   `lecture`** and therefore no Marelle. `VarianteCahierLibre` keeps its honest
+   `absent` / `incomplete` states.
+2. **Narrow delegate (C8).** New sections render through
+   `CahierMobiliteSection` with exactly `{ section, unit, comparison }`. No AEDAR
+   prop, mode/horizon state or pagination is forwarded. The delegate may read
+   the shared comparison control only through the already-injected
+   `CONTROLE_COMPARAISON_KEY` (it currently does not need to).
+3. **Page 2 subtitle (C2).** One paragraph replaces both the old introduction
+   and the rundown. It composes the car-owner share from the published parts
+   (`une_voiture + deux_plus`), the two-or-more share, and the road footprint in
+   context. Each clause stays silent when its published parts are missing.
+4. **Réseaux (C3).** The three map panels, their mode ring, the inspection
+   gallery and the network/bike tooltips remain. The plate helpers, road
+   footprint sub-figure, internal exploration link, internal heading/tagline and
+   decorative rules are removed. Below the maps: prose + source stamps on the
+   left, a vertical grouped-bar figure on the right. Categories are the three
+   networks; values are the published `reseaux_par_habitant` densities. The
+   territory bike bar is segmented Protégé/Partagé; its comparison bar is the
+   **total median, unsegmented** — segment medians are never summed. Raw
+   kilometres appear in tooltips only.
+5. **Se garer et se ravitiller (C4).** Two paired columns, each with its own
+   prose, source stamps, compared bars and ratio line. The bars carry no rank
+   chip; the ratio line owns its reference and rank. The parking ratio keeps its
+   honest unavailable note. The refuelling ratio is published only where the
+   territory has at least one station-service.
+6. **Sources (C8/§6).** The sources are built from the producer's
+   `source_records` (publisher name, URL, licence, millésime). `ContentSource`
+   gains additive `url` and `licence` fields. No producer name, URL or licence
+   is hardcoded in the renderer.
+7. **Motorisation merge and retirement.** The `motorisation` unit, its section,
+   its evidence kind and `CahierMotorisationFigure` are removed. Its indicator
+   keys join `partage-de-lespace-public`. The `offre-cyclable` section and the
+   `CahierSharingFigure` / `CahierNetworkFigure` / `CahierRoadSurfaceFigure` /
+   `CahierNetworkBarChart` family are removed; the protected/shared distinction
+   survives in prose and in the segmented bike bar. Page numbering becomes 13.
+8. **Comparison states.** Every new figure names « Groupe comparé » and handles
+   loading, error (with retry), unavailable and empty selection without a
+   fallback reference. The theme comparison status is the
+   `nativeComparisonStatus` already owned by `TerritoireView`.
+
+## AEDAR preservation rule (C7)
+
+`aedarAccessSection.ts`, every `Aedar*` component, the `aedar-*` branches of
+`VarianteCahierLibre`, `AccessRampFigureCahier.vue` and
+`CahierGroupedVerticalBarChart.vue` are unchanged by this ADR's implementation.
+`production-mobilite-aedar.spec.ts` must not be modified and must stay green.
+The AEDAR unit's DOM, CSS and 29 regression assertions are the contract;
+`mobilite-aedar-contract-guard.spec.ts` additionally pins its section order,
+labels, source stamps, two ramps, profile, sandbox and loss maps, and the
+absence of any Marelle inside the unit.
+
+## Consequences
+
+- ADR-0026 remains the policy for the other themes until their own migration.
+- The `/indicateurs` catalogue keeps its existing editorial membership,
+  including its « La motorisation » subgroup; only the fiche grammar merges the
+  motorisation rows into the public-space subgroup.
+- The app consumes the #960 declared-profile detail references through the
+  existing theme comparison acquisition; it never computes peer statistics in
+  the browser.
+- The new Cahier figure family (`CahierMobiliteComparisonBars`) is reusable by
+  page 3 (#955), which is intentionally out of scope here.
+- `DESIGN.md` is not rewritten; this ADR stands in until the human-owned
+  DESIGN.md v2 campaign (#511).
+
+## Not decided here
+
+- No renderer registry: the extraction of AEDAR sections is a separate
+  follow-up (#956).
+- No change to `/indicateurs` page membership, no new catalogue grouping.
+- No new aesthetic direction and no edit to the protected AEDAR components.
