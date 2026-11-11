@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import { aedarComparisonRank, fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
 import captured from './fixtures/aedar-selected-comparison-captured.json'
 const aggregateMeasures = ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) => [5, 10, 15, 20]
   .flatMap((horizon) => ['Diversity', 'Volume'].map((kind) => mode === 'car' && horizon === 15
@@ -40,6 +40,14 @@ function mockResponse(data: unknown) {
 const options = { intent: { kind: 'selected_comparison' as const, members }, label: 'Moyenne de la sélection',
   typequ: ['A104'], measures: ['count_5_walk_mean'], expectedContentVersion: 'facts-v1',
   expectedSummaryContentVersion: 'summary-v1', expectedReferenceContentVersion: 'reference-v1' }
+// Fixed per-cell reads (#951/PR #957): one typequ+measure cell per item, no selection scope.
+const fixedCellRow = (overrides: Record<string, unknown> = {}) => ({ ...cell,
+  comparison_context: 'density_class', ...overrides })
+const fixedCellResponse = (comparison: Record<string, unknown>) => ({ ...envelope,
+  target: { kind: 'territory', type: 'commune', id: '22001' },
+  selection: undefined, scope: undefined, comparisons: undefined, comparison })
+const fixedCellRequest = { ...options, intent: { kind: 'fixed_comparison' as const, context: 'density_class' as const },
+  label: 'Classe de densité' }
 afterEach(() => vi.unstubAllGlobals())
 
 describe('lecture AEDAR de la Sélection', () => {
@@ -295,14 +303,73 @@ describe('lecture AEDAR de la Sélection', () => {
     expect(await fetchAedarComparison('commune', 'sel-c1', options)).toEqual({ status: 'error',
       message: 'Selected comparison member commune/nope has no published value' })
   })
-  it('lit le preset same_level comme agrégat direct de la Région sans demander de rang interdit', async () => {
+  it('lit le preset same_level comme agrégat direct de la Région en demandant ses rangs fixes', async () => {
     const fetcher = mockResponse({ ...envelope, target: { kind: 'territory', type: 'epci', id: 'sel-e1' },
       comparisons: undefined, selection: undefined, comparison: { ...cell, comparison_context: 'same_level',
         territory_type: 'region', group_id: '53', statistic: 'direct', group_value: 13 } })
     const result = await fetchAedarComparison('epci', 'sel-e1', { ...options,
       intent: { kind: 'fixed_comparison', context: 'same_level' }, label: 'Moyenne de Bretagne' })
-    expect(result).toMatchObject({ status: 'ready', evidence: { cells: [expect.objectContaining({ group_value: 13, statistic: 'direct' })] } })
-    expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string).items[0].fields).toEqual(['group_value'])
+    expect(result).toMatchObject({ status: 'ready', evidence: { cells: [expect.objectContaining({
+      group_value: 13, statistic: 'direct', rank: 3, rank_size: 3, rank_ties: 1 })] } })
+    expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string).items[0].fields)
+      .toEqual(['group_value', 'rank', 'rank_size', 'rank_ties'])
+  })
+  it('demande et projette les rangs servis d’une comparaison fixe par cellule', async () => {
+    // 2e sur 41 pairs : aucun rang n’est calculable depuis group_value, la
+    // cellule ne peut donc porter que l’ordinal renvoyé par le producteur.
+    const fetcher = mockResponse(fixedCellResponse(fixedCellRow({ rank: 2, rank_size: 41, rank_ties: 1 })))
+    const result = await fetchAedarComparison('commune', '22001', fixedCellRequest)
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('Expected a ready fixed per-cell response')
+    const item = JSON.parse(fetcher.mock.calls[0]![1]!.body as string).items[0]
+    expect(item.fields).toEqual(['group_value', 'rank', 'rank_size', 'rank_ties'])
+    expect(item.coordinates).toEqual({ typequ: ['A104'], measure: ['count_5_walk_mean'] })
+    expect(item.intent).toEqual({ kind: 'fixed_comparison', context: 'density_class' })
+    expect(result.evidence.cells).toHaveLength(1)
+    expect(result.evidence.cells[0]).toMatchObject({ typequ: 'A104', measure: 'count_5_walk_mean',
+      group_value: 7.4, rank: 2, rank_size: 41, rank_ties: 1 })
+    expect(aedarComparisonRank(result.evidence.cells[0])).toEqual({ position: 2, size: 41 })
+  })
+  it('admet une comparaison fixe par cellule sans rang servi et laisse la ligne valeur-seule', async () => {
+    mockResponse(fixedCellResponse(fixedCellRow({ rank: null, rank_size: null, rank_ties: null })))
+    const result = await fetchAedarComparison('commune', '22001', fixedCellRequest)
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('Expected an unranked fixed per-cell response')
+    expect(result.evidence.cells[0]).toMatchObject({ group_value: 7.4,
+      rank: null, rank_size: null, rank_ties: null })
+    expect(aedarComparisonRank(result.evidence.cells[0])).toBeNull()
+  })
+  it.each([
+    ['rang unique', { rank: 2, rank_size: 41, rank_ties: 1 }],
+    ['égalités comprises dans la population', { rank: 2, rank_size: 41, rank_ties: 2 }],
+    ['dernier rang de la population', { rank: 41, rank_size: 41, rank_ties: 1 }],
+  ])('admet un rang fixe servi dans sa population (%s)', async (_label, overrides) => {
+    mockResponse(fixedCellResponse(fixedCellRow(overrides)))
+    const result = await fetchAedarComparison('commune', '22001', fixedCellRequest)
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('Expected a ranked fixed per-cell response')
+    expect(result.evidence.cells[0]).toMatchObject({ group_value: 7.4, ...overrides })
+  })
+  it.each([
+    ['rang sans taille ni égalités', { rank: 2, rank_size: null, rank_ties: null }],
+    ['taille sans rang', { rank: null, rank_size: 3, rank_ties: 1 }],
+    ['rangs explicitement indéfinis', { rank: undefined, rank_size: undefined, rank_ties: undefined }],
+    ['rangs absents de la réponse', (() => { const row = fixedCellRow()
+      delete (row as Record<string, unknown>).rank; delete (row as Record<string, unknown>).rank_size
+      delete (row as Record<string, unknown>).rank_ties; return row })()],
+  ])('refuse un rang fixe partiel (%s)', async (_label, row) => {
+    mockResponse(fixedCellResponse(row as Record<string, unknown>))
+    expect(await fetchAedarComparison('commune', '22001', fixedCellRequest)).toMatchObject({ status: 'error' })
+  })
+  it.each([
+    ['rang nul', { rank: 0, rank_size: 3, rank_ties: 1 }],
+    ['rang hors population', { rank: 4, rank_size: 3, rank_ties: 1 }],
+    ['égalités débordant la population', { rank: 3, rank_size: 3, rank_ties: 2 }],
+    ['population d’un seul territoire', { rank: 1, rank_size: 1, rank_ties: 1 }],
+    ['rang non entier', { rank: 1.5, rank_size: 3, rank_ties: 1 }],
+  ])('refuse un rang fixe hors bornes (%s)', async (_label, overrides) => {
+    mockResponse(fixedCellResponse(fixedCellRow(overrides)))
+    expect(await fetchAedarComparison('commune', '22001', fixedCellRequest)).toMatchObject({ status: 'error' })
   })
   it('lance les lots fixed_comparison en parallèle et conserve le nombre minimal de lots de 12 cellules', async () => {
     const typequ = Array.from({ length: 25 }, (_, index) => `T${index}`)
