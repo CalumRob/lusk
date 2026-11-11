@@ -125,7 +125,6 @@ describe('catalogue des Pages d’indicateur app-owned', () => {
         sousGroupe.pages.map(({ resourceKey }) => `${groupe.theme}/${resourceKey}`),
       ),
     )
-
     // Recomputed from canonical declarations via sources -> source_records;
     // editorial labels are deliberately not compared to producer metadata.
     // #962 added the three Mobility supply pages (stations_service,

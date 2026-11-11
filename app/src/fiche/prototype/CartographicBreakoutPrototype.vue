@@ -1,41 +1,40 @@
 <script setup lang="ts">
 /**
- * [PROTOTYPE JETABLE] Two ways a cartographic breakout could interrupt the
- * Production Atlas circulaire plate for the Mobilité cahier.
+ * Maps of the three Mobilité networks (#954).
+ *
+ * The plate keeps only the three map panels, their mode ring, the inspection
+ * gallery and the network/bike tooltips. Prose, source stamps and the compared
+ * bars live in the section delegate below the maps.
  */
 import { Bike, CarFront, Footprints } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import type { Component } from 'vue'
-import type { RouteLocationRaw } from 'vue-router'
 import { mapAssetUrl } from '@/fiche/mapAssetUrl'
 
-import type { CahierTooltipComparison, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import type { CahierTooltipComparison, CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
-import { groupeCompareAria } from '@/fiche/content/comparisonWording'
-import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
-import type { ContentFact, CyclingOfferEvidence, SharingNetworksEvidence } from '@/fiche/content/themeContent'
-import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
+import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
+import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
+import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
+import type { ContentFact, MobiliteNetworksEvidence } from '@/fiche/content/themeContent'
 import CahierFigureFrame from './CahierFigureFrame.vue'
-import CahierFigureLecture from './CahierFigureLecture.vue'
-import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
-import CahierProse from './CahierProse.vue'
-
-import type { CahierNetworkBarRow } from './CahierNetworkBarChart.vue'
-import CahierNetworkBarChart from './CahierNetworkBarChart.vue'
 import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
 
 type ModeKey = 'walk' | 'bike' | 'car'
 
-const props = defineProps<{ territory: { code: string; name: string }; evidence?: SharingNetworksEvidence | null; cyclingEvidence?: CyclingOfferEvidence | null; sectionNumber?: string; sources?: readonly string[]; tagline?: string | null; explorationTo?: RouteLocationRaw | null }>()
+const props = defineProps<{
+  territory: { code: string; name: string }
+  evidence: MobiliteNetworksEvidence | null
+}>()
 
 const modes: readonly { key: ModeKey; label: string; icon: Component }[] = [
   { key: 'car', label: 'Réseau automobile', icon: CarFront },
   { key: 'walk', label: 'Réseau piéton', icon: Footprints },
   { key: 'bike', label: 'Réseau cyclable', icon: Bike },
 ]
-const modeToEvidence: Readonly<Record<ModeKey, SharingNetworksEvidence['networks'][number]['mode']>> = {
+const modeToCategory: Readonly<Record<ModeKey, string>> = {
   walk: 'walkTransit',
   bike: 'bike',
   car: 'car',
@@ -44,49 +43,25 @@ const activeMode = ref<ModeKey | null>(null)
 const tooltipTop = ref<string | null>(null)
 const mapGallery = ref<InstanceType<typeof CahierMapGallery> | null>(null)
 
-const territoryLabel = computed(() => props.territory.name)
-const borderLegendEntries = computed<readonly FigureLegendEntry[]>(() => [{ key: 'territory-boundary', label: territoryLabel.value, marker: 'line' }])
-const borderLegendColors: Readonly<Record<string, string>> = {
-  'territory-boundary': 'var(--cahier-default)',
-  'regional-frontier': 'var(--cahier-default)',
+function categoryFor(mode: ModeKey) {
+  return props.evidence?.figure.categories.find((category) => category.key === modeToCategory[mode]) ?? null
 }
 
-function modeLabel(mode: ModeKey): string {
-  return props.evidence?.networks.find((network) => network.mode === modeToEvidence[mode])?.label
+function categoryLabel(mode: ModeKey): string {
+  return categoryFor(mode)?.label
     ?? modes.find((candidate) => candidate.key === mode)?.label
     ?? 'Réseau'
-}
-
-function networkFor(mode: ModeKey) {
-  return props.evidence?.networks.find((network) => network.mode === modeToEvidence[mode]) ?? null
 }
 
 function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
 }
 
-const cyclingBreakdownAvailable = computed(() => [
-  numericContentFact(props.cyclingEvidence?.protectedDensity ?? null),
-  numericContentFact(props.cyclingEvidence?.sharedDensity ?? null),
-].some((value) => value !== null && value > 0))
-
 function numericContentFact(fact: { fact: { value: number | null } } | null): number | null {
   return fact?.fact.value !== null && fact?.fact.value !== undefined && Number.isFinite(fact.fact.value)
     ? Math.max(0, fact.fact.value)
     : null
 }
-
-const networkScale = computed(() => Math.max(
-  1,
-  ...(props.evidence?.networks.flatMap((network) => [
-    numericContentFact(network.length) ?? 0,
-    network.length.fact.comparison?.reference?.value ?? 0,
-  ]) ?? [0]),
-  ...(props.cyclingEvidence ? [
-    numericContentFact(props.cyclingEvidence.protectedDensity) ?? 0,
-    numericContentFact(props.cyclingEvidence.sharedDensity) ?? 0,
-  ] : []),
-))
 
 function modeTone(mode: ModeKey): 't' | 'b' | 'c' {
   return mode === 'car' ? 'c' : mode === 'bike' ? 'b' : 't'
@@ -104,126 +79,113 @@ function modeIcon(mode: ModeKey): Component {
   return modes.find((candidate) => candidate.key === mode)?.icon ?? CarFront
 }
 
+function comparisonForFact(
+  fact: ContentFact,
+  scope: string | null,
+  unit = '',
+  unsplitTotal = false,
+): CahierTooltipComparison | undefined {
+  const comparison = fact.fact.comparison
+  const reference = comparison?.reference
+  if (!reference || reference.value === null || reference.value === undefined) return undefined
+  const visibleValue = formatNumber(reference.value, 2)
+  const ariaValue = `${visibleValue}${unit ? ` ${unit}` : ''}`
+  const rank = formatServedRank(comparison.rank)
+  const statistic = comparison.reference?.kind === 'mean' ? 'moyenne' : 'médiane'
+  const scopeOnly = scope?.replace(/^(?:Médiane|Moyenne) des /u, '') ?? null
+  const description = unsplitTotal
+    ? `${statistic} du total non segmenté${scopeOnly ? ` — ${scopeOnly}` : ''}`
+    : scope ?? statistic
+  const direction = comparison.direction ? LIBELLES_DIRECTION[comparison.direction] : null
+  const rankAria = puceRangDirection(comparison.rank, comparison.direction)?.phraseAria
+    ?? formatServedRankAria(comparison.rank)
+  return {
+    // Visible values are bare; ARIA keeps the full unit, resolved scope and rank.
+    value: visibleValue,
+    rank,
+    ariaLabel: `${GROUPE_COMPARE_LABEL} : ${ariaValue} (${description})${rankAria ? `. Rang ${rankAria}` : direction ? `. ${direction}` : ''}`,
+  }
+}
+
 function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
-  const network = networkFor(mode)
-  if (!network) return []
+  const category = categoryFor(mode)
+  if (!category) return []
+  const unit = props.evidence?.figure.unit ?? ''
+  const totalLabel = category.key === 'bike' ? 'Total vélo' : category.label
   const rows: CahierTooltipRow[] = [{
-    label: network.label,
-    value: network.length.fact.value === null ? '—' : formatNumber(network.length.fact.value, 2),
+    label: totalLabel,
+    value: category.value.fact.value === null ? '—' : formatNumber(category.value.fact.value, 2),
+    ariaLabel: `${totalLabel} : ${category.value.fact.value === null ? 'Indisponible' : `${formatNumber(category.value.fact.value, 2)} ${unit}`}`,
     tone: modeTone(mode),
     icon: modeIcon(mode),
     markerColor: modeColor(mode),
-    comparison: comparisonForFact(network.length, props.evidence?.comparisonLabel ?? null),
+    comparison: comparisonForFact(category.value, props.evidence?.figure.comparisonLabel ?? null, unit, category.segments.length > 0),
   }]
-  if (mode === 'bike' && props.cyclingEvidence) {
-    rows.push(
-      {
-        label: props.cyclingEvidence.protectedDensity.label.split(' — ')[0] ?? props.cyclingEvidence.protectedDensity.label,
-        value: props.cyclingEvidence.protectedDensity.fact.value === null
+  if (category.splitNote) {
+    rows.push({
+      label: 'Répartition Protégé/Partagé',
+      value: 'Indisponible',
+      tone: 'neutral',
+      marker: 'slash',
+      ariaLabel: category.splitNote,
+    })
+  }
+  for (const segment of category.segments) {
+    rows.push({
+      label: segment.label,
+      value: segment.value.fact.value === null ? '—' : formatNumber(segment.value.fact.value, 2),
+      ariaLabel: `${segment.label} : ${segment.value.fact.value === null ? 'Indisponible' : `${formatNumber(segment.value.fact.value, 2)} ${unit}`}`,
+      tone: 'b',
+      marker: 'dot',
+      markerColor: segment.key === 'protege_km_1000'
+        ? 'var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike)))'
+        : 'var(--cahier-cycle-shared, #8c4c9e)',
+      comparison: comparisonForFact(segment.value, props.evidence?.figure.comparisonLabel ?? null, unit),
+    })
+    if (segment.rawValue) {
+      rows.push({
+        label: segment.rawValue.label,
+        value: segment.rawValue.fact.value === null
           ? '—'
-          : formatNumber(props.cyclingEvidence.protectedDensity.fact.value, 2),
-        tone: 'b',
-        marker: 'dot',
-        markerColor: 'var(--cahier-cycle-protected)',
-        comparison: comparisonForFact(props.cyclingEvidence.protectedDensity, props.cyclingEvidence.comparisonLabel),
-      },
-      {
-        label: props.cyclingEvidence.sharedDensity.label.split(' — ')[0] ?? props.cyclingEvidence.sharedDensity.label,
-        value: props.cyclingEvidence.sharedDensity.fact.value === null
-          ? '—'
-          : formatNumber(props.cyclingEvidence.sharedDensity.fact.value, 2),
-        tone: 'b',
-        marker: 'dot',
-        markerColor: 'var(--cahier-cycle-shared)',
-        comparison: comparisonForFact(props.cyclingEvidence.sharedDensity, props.cyclingEvidence.comparisonLabel),
-      },
-    )
+          : formatNumber(segment.rawValue.fact.value, 2),
+        tone: 'neutral',
+        marker: 'slash',
+        ariaLabel: `${segment.rawValue.label} : ${segment.rawValue.fact.value === null ? 'indisponible' : `${formatNumber(segment.rawValue.fact.value, 2)} ${segment.rawValue.fact.unit}`} (valeur brute)`,
+        comparison: comparisonForFact(
+          segment.rawValue,
+          props.evidence?.figure.comparisonLabel ?? null,
+          segment.rawValue.fact.unit,
+        ),
+      })
+    }
+  }
+  if (category.rawValue) {
+    rows.push({
+      label: category.rawValue.label,
+      value: category.rawValue.fact.value === null
+        ? '—'
+        : formatNumber(category.rawValue.fact.value, 2),
+      tone: 'neutral',
+      marker: 'slash',
+      ariaLabel: `${category.rawValue.label} : ${category.rawValue.fact.value === null ? 'indisponible' : `${formatNumber(category.rawValue.fact.value, 2)} ${category.rawValue.fact.unit}`} (valeur brute)`,
+      comparison: comparisonForFact(
+        category.rawValue,
+        props.evidence?.figure.comparisonLabel ?? null,
+        category.rawValue.fact.unit,
+      ),
+    })
   }
   return rows
 }
 
-function comparisonForFact(fact: ContentFact, scope: string | null): CahierTooltipComparison | undefined {
-  const comparison = fact.fact.comparison
-  const reference = comparison?.reference
-  if (!reference || reference.value === null || reference.value === undefined) return undefined
-  const value = formatNumber(reference.value, 2)
-  const rank = formatServedRank(comparison.rank)
-  return {
-    value,
-    rank,
-    ariaLabel: groupeCompareAria(value, formatServedRankAria(comparison.rank), scope ?? 'Indisponible'),
-  }
-}
-
-const networkBarUnit = computed(() => networkFor('bike')?.length.fact.unit ?? networkFor('car')?.length.fact.unit ?? '')
-const roadSurfaceRows = computed<readonly CahierNetworkBarRow[]>(() => {
-  const roadSurface = props.evidence?.roadSurface
-  const value = numericContentFact(roadSurface ?? null)
-  const referenceValue = roadSurface?.fact.comparison?.reference?.value ?? null
-  return roadSurface
-    ? [{
-      key: 'road-surface',
-      label: roadSurface.label,
-      value: value === null ? '—' : formatNumber(value * 100, 1),
-      numericValue: value,
-      color: 'var(--cahier-theme-strong)',
-      tone: 'neutral',
-      colorValue: false,
-      markerValue: referenceValue,
-      ariaLabel: `${roadSurface.label} : ${value === null ? '—' : formatNumber(value * 100, 1)} %`,
-    }]
-    : []
-})
-const networkBarRows = computed<readonly CahierNetworkBarRow[]>(() => modes.map((modeDefinition) => {
-  const mode = modeDefinition.key
-  const network = networkFor(mode)
-  const value = numericContentFact(network?.length ?? null)
-  const markerValue = network?.length.fact.comparison?.reference?.value ?? null
-  const segments = mode === 'bike' && props.cyclingEvidence
-    ? [
-      {
-        key: 'protected',
-        label: 'Protégé',
-        value: numericContentFact(props.cyclingEvidence.protectedDensity),
-        color: 'var(--cahier-cycle-protected)',
-      },
-      {
-        key: 'shared',
-        label: 'Partagé',
-        value: numericContentFact(props.cyclingEvidence.sharedDensity),
-        color: 'var(--cahier-cycle-shared)',
-      },
-    ] as const
-    : undefined
-  return {
-    key: mode,
-    label: modeLabel(mode),
-    value: value === null ? '—' : formatNumber(value, 2),
-    numericValue: value,
-    color: modeColor(mode),
-    tone: modeTone(mode)!,
-    icon: modeIcon(mode),
-    segments,
-    useSegments: mode === 'bike' && cyclingBreakdownAvailable.value,
-    colorValue: true,
-    markerValue,
-    ariaLabel: `${modeLabel(mode)} : ${value === null ? '—' : formatNumber(value, 2)} ${networkBarUnit.value}`,
-  }
-}))
-const figureLectureBlocks = computed(() => [
-  ...(props.evidence?.roadSurfaceLecture ?? []),
-  ...(props.evidence?.figureLecture ?? []),
-])
-const hasFigureLecture = computed(() => figureLectureBlocks.value.length > 0 || Boolean(props.sources?.length))
-
 const inspectionModes = computed(() => modes.filter((mode) => {
-  const network = networkFor(mode.key)
-  return network !== null && network.length.fact.value !== 0 && !unavailableInspectionModes.value.has(mode.key)
+  const category = categoryFor(mode.key)
+  return category !== null && category.value.fact.value !== 0 && !unavailableInspectionModes.value.has(mode.key)
 }))
 const inspectionImages = computed(() => inspectionModes.value.map((mode) => ({
   key: mode.key,
   src: inspectionUrl(mode.key),
-  alt: `${modeLabel(mode.key)} — ${props.territory.name}`,
+  alt: `${categoryLabel(mode.key)} — ${props.territory.name}`,
 })))
 
 function isModeKey(value: string): value is ModeKey {
@@ -234,11 +196,11 @@ function setActiveMode(mode: string, event?: Event): void {
   if (!isModeKey(mode)) return
   activeMode.value = mode
   const target = event?.currentTarget
-  const apparatus = target instanceof HTMLElement ? target.closest('.plate-apparatus') : null
-  if (target instanceof HTMLElement && apparatus instanceof HTMLElement) {
+  const plate = target instanceof HTMLElement ? target.closest('.plate') : null
+  if (target instanceof HTMLElement && plate instanceof HTMLElement) {
     const targetRect = target.getBoundingClientRect()
-    const apparatusRect = apparatus.getBoundingClientRect()
-    tooltipTop.value = `${Math.max(0, Math.round(targetRect.top - apparatusRect.top))}px`
+    const plateRect = plate.getBoundingClientRect()
+    tooltipTop.value = `${Math.max(0, Math.round(targetRect.top - plateRect.top))}px`
   }
 }
 
@@ -267,7 +229,7 @@ function inspectionFailed(key: string): void {
 }
 
 async function inspect(mode: ModeKey): Promise<void> {
-  const length = numericContentFact(networkFor(mode)?.length ?? null)
+  const length = numericContentFact(categoryFor(mode)?.value ?? null)
   if (length === null || length === 0) {
     failedInspectionMode.value = mode
     return
@@ -282,18 +244,8 @@ async function inspect(mode: ModeKey): Promise<void> {
   <figure class="map-breakout map-breakout--c">
     <CahierFigureFrame size="wide">
       <div class="plate cahier-map-grid" :style="CAHIER_MAP_LAYOUT_STYLE" :aria-label="`Atlas circulaire — trois réseaux à ${props.territory.name}`">
-        <div class="plate-header">
-          <div class="plate-apparatus-heading">
-            <span v-if="props.sectionNumber" class="map-section-number">{{ props.sectionNumber }}</span>
-            <div>
-              <h3>{{ props.evidence?.frameTitle ?? 'Réseaux' }}</h3>
-              <p class="map-breakout-tagline">{{ props.tagline ?? 'Trois réseaux, trois empreintes' }}</p>
-            </div>
-          </div>
-        </div>
-
         <div class="cahier-figure-title cahier-baseline-anchor" role="heading" aria-level="3">
-          {{ props.evidence?.figureTitle ?? 'Cartes des réseaux de mobilité, par mode' }}
+          {{ props.evidence?.mapFigureTitle ?? 'Cartes des réseaux de mobilité, par mode' }}
         </div>
 
         <section
@@ -309,12 +261,12 @@ async function inspect(mode: ModeKey): Promise<void> {
         >
           <div class="map-panel-label" aria-hidden="true">
             <component :is="mode.icon" :size="16" :stroke-width="1.8" />
-            <span>{{ modeLabel(mode.key) }}</span>
+            <span>{{ categoryLabel(mode.key) }}</span>
           </div>
           <CahierMapPanel
             :image-url="mapUrl(mode.key)"
-            :image-alt="`${modeLabel(mode.key)} — ${props.territory.name}`"
-            :accessible-name="`Agrandir : ${modeLabel(mode.key)} à ${props.territory.name}`"
+            :image-alt="`${categoryLabel(mode.key)} — ${props.territory.name}`"
+            :accessible-name="`Agrandir : ${categoryLabel(mode.key)} à ${props.territory.name}`"
             :number="String(index + 1).padStart(2, '0')"
             :loaded="loadedInlineModes.has(mode.key)"
             :unavailable="unavailableInlineModes.has(mode.key)"
@@ -327,73 +279,22 @@ async function inspect(mode: ModeKey): Promise<void> {
           />
         </section>
 
-        <div class="plate-keys">
-          <CahierFigureLegend
-            class="border-legend"
-            :entries="borderLegendEntries"
-            :mark-colors="borderLegendColors"
-            label="Limites cartographiées"
-          />
-          <div class="plate-orientation">
-            <span class="north-symbol" aria-label="Nord">
-              <strong>N</strong>
-              <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 11V2M3 5l3-3 3 3" /></svg>
-            </span>
-            <div class="shared-scale" aria-label="Échelle identique sur les trois cartes">
-              <span aria-hidden="true" />
-            </div>
-          </div>
-        </div>
-
-        <aside class="plate-apparatus">
-          <div v-if="props.evidence?.roadSurface" class="plate-subfigure plate-subfigure--road">
-            <CahierNetworkBarChart
-              :rows="roadSurfaceRows"
-              :maximum="1"
-              unit="%"
-              :reference-label="props.evidence?.comparisonLabel ?? null"
-              aria-label="Emprise routière"
-            />
-          </div>
-          <div class="plate-subfigure plate-subfigure--networks">
-            <CahierNetworkBarChart
-              :rows="networkBarRows"
-              :maximum="networkScale"
-              :unit="networkBarUnit"
-              :aria-label="props.evidence?.networkReadingsLabel ?? 'Longueur du réseau par habitant'"
-              :active-key="activeMode"
-              @activate="setActiveMode"
-              @deactivate="clearActiveMode"
-            />
-          </div>
-          <CahierFigureTooltip
-            v-if="activeMode && networkFor(activeMode)"
-            id="map-network-tooltip"
-            class="plate-network-tooltip"
-            :class="[`plate-network-tooltip--${activeMode}`]"
-            :style="tooltipTop ? { '--plate-network-tooltip-top': tooltipTop } : undefined"
-            :title="modeLabel(activeMode ?? 'car')"
-            :rows="networkTooltipRows(activeMode ?? 'car')"
-          />
-           <CahierFigureLecture v-if="hasFigureLecture">
-             <CahierProse v-if="figureLectureBlocks.length > 0" :blocks="figureLectureBlocks" />
-             <p v-if="props.sources?.length" class="plate-sources">Sources : {{ props.sources.join(' · ') }}</p>
-           </CahierFigureLecture>
-           <PassarelleExploration
-            v-if="props.explorationTo"
-            class="plate-exploration"
-            :to="props.explorationTo"
-            libelle="En savoir plus"
-          />
-        </aside>
+        <CahierFigureTooltip
+          v-if="activeMode && categoryFor(activeMode)"
+          id="map-network-tooltip"
+          class="plate-network-tooltip"
+          :class="[`plate-network-tooltip--${activeMode}`]"
+          :style="tooltipTop ? { '--plate-network-tooltip-top': tooltipTop } : undefined"
+          :title="categoryLabel(activeMode ?? 'car')"
+          :rows="networkTooltipRows(activeMode ?? 'car')"
+        />
       </div>
     </CahierFigureFrame>
   </figure>
 
   <CahierMapGallery ref="mapGallery" :images="inspectionImages" @unavailable="inspectionFailed" />
-  <p v-if="failedInspectionMode && numericContentFact(networkFor(failedInspectionMode)?.length ?? null) === 0" role="status" class="inspection-unavailable">Aucune carte détaillée : {{ modeLabel(failedInspectionMode) }} sans réseau recensé.</p>
-  <p v-else-if="failedInspectionMode" role="status" class="inspection-unavailable">Carte détaillée indisponible pour {{ modeLabel(failedInspectionMode) }}.</p>
-
+  <p v-if="failedInspectionMode && numericContentFact(categoryFor(failedInspectionMode)?.value ?? null) === 0" role="status" class="inspection-unavailable">Aucune carte détaillée : {{ categoryLabel(failedInspectionMode) }} sans réseau recensé.</p>
+  <p v-else-if="failedInspectionMode" role="status" class="inspection-unavailable">Carte détaillée indisponible pour {{ categoryLabel(failedInspectionMode) }}.</p>
 </template>
 
 <style src="./cahierMapPanelLabel.css"></style>
@@ -406,35 +307,19 @@ async function inspect(mode: ModeKey): Promise<void> {
   padding: 0 0 var(--space-3);
 }
 
-.map-section-number {
-  display: inline-block;
-  margin-right: 10px;
-  color: var(--red);
-  font: var(--text-caption);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: var(--text-caption-tracking);
-  vertical-align: .2em;
-}
-
-.map-breakout-tagline {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-family: var(--font-serif);
-  font-size: clamp(1.05rem, 1.8vw, 1.45rem);
-  font-style: italic;
-  line-height: 1.35;
-}
-
-.plate-switcher button:focus-visible {
-  outline: 2px solid var(--cahier-theme-strong);
-  outline-offset: 2px;
-}
-
 .plate {
+  position: relative;
   display: grid;
-  gap: var(--space-3);
   min-width: 0;
+  grid-template-columns: var(--cahier-map-columns);
+  grid-template-areas:
+    'title title title'
+    'car walk bike';
+  gap: clamp(var(--space-4), 3vw, var(--space-8));
+  align-items: center;
 }
+
+.plate > .cahier-figure-title { grid-area: title; }
 
 .map-panel {
   min-width: 0;
@@ -442,140 +327,25 @@ async function inspect(mode: ModeKey): Promise<void> {
   transition: opacity 150ms ease-out;
 }
 
+.map-panel--walk { grid-area: walk; }
+.map-panel--bike { grid-area: bike; }
+.map-panel--car { grid-area: car; }
+
 .map-panel--dimmed { opacity: .46; }
 .map-panel--active { opacity: 1; }
 
 .map-panel-label {
   margin-bottom: 6px;
+  justify-content: center;
 }
 
-.map-breakout--c .map-panel-label { justify-content: center; }
-
-.map-breakout--a .plate {
-  grid-template-columns: var(--cahier-map-columns);
-  align-items: start;
-}
-
-.map-breakout--a .plate > .cahier-figure-title { grid-column: 1 / -1; }
-
-.map-breakout--c .plate {
-  grid-template-columns: var(--cahier-map-columns);
-  grid-template-areas:
-    'header header header'
-    'title title title'
-    'car walk bike'
-    'keys keys keys'
-    'apparatus apparatus apparatus';
-  gap: clamp(var(--space-4), 3vw, var(--space-8));
-  align-items: center;
-}
-
-.map-breakout--c .map-panel--walk { grid-area: walk; }
-.map-breakout--c .map-panel--bike { grid-area: bike; }
-.map-breakout--c .map-panel--car { grid-area: car; }
-.map-breakout--c .plate-header { grid-area: header; }
-.map-breakout--c .plate > .cahier-figure-title { grid-area: title; }
-.map-breakout--c .plate-apparatus { grid-area: apparatus; }
-.map-breakout--c .plate-keys { grid-area: keys; }
-
-.map-breakout--c .map-panel {
+.plate .map-panel {
   width: min(100%, 360px);
   justify-self: center;
 }
 
-.plate-apparatus {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: start;
-  padding: var(--space-3) clamp(var(--space-2), 3vw, var(--space-8));
-}
-
-.plate-header {
-  display: grid;
-  gap: var(--space-3);
-  align-items: end;
-  padding: var(--space-2) clamp(var(--space-2), 3vw, var(--space-8)) 0;
-}
-
-.plate-apparatus-heading {
-  display: flex;
-  gap: 14px;
-  align-items: baseline;
-  justify-content: center;
-  text-align: center;
-}
-
-.plate-apparatus-heading > .map-section-number {
-  margin-right: 0;
-  color: var(--red);
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-  vertical-align: baseline;
-}
-
-.plate-apparatus-heading > div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.plate-apparatus-heading h3 {
-  margin: 0;
-  color: var(--cahier-theme-strong);
-  font: var(--text-overline);
-  letter-spacing: var(--text-overline-tracking);
-  text-transform: uppercase;
-}
-
-.plate-apparatus-heading .map-breakout-tagline {
-  margin: 0;
-  color: var(--ink);
-  font-family: var(--font-serif);
-  font-size: clamp(1.05rem, 1.4vw, 1.35rem);
-  font-style: italic;
-  line-height: 1.15;
-  text-wrap: balance;
-}
-
-.plate-subfigure,
-.plate-exploration,
-.cahier-figure-lecture {
-  grid-column: 1 / -1;
-}
-
-.plate-subfigure {
-  min-width: 0;
-}
-
-.plate-subfigure--road {
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid color-mix(in srgb, var(--cahier-theme) 22%, var(--paper));
-}
-
-.plate-subfigure--networks {
-  padding-top: var(--space-1);
-}
-
-.border-legend {
-  gap: 6px 12px;
-  margin: 0;
-  font: var(--text-caption);
-}
-
-.border-legend--a { margin-top: var(--space-3); }
-
-.plate-keys {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-6);
-  align-items: center;
-  padding-top: var(--space-2);
-  border-top: 1px solid color-mix(in srgb, var(--cahier-theme) 22%, var(--paper));
-}
-
 .plate-network-tooltip {
+  position: absolute;
   top: var(--plate-network-tooltip-top, 0px);
   right: 0;
   width: min(300px, calc(100vw - 40px));
@@ -590,102 +360,13 @@ async function inspect(mode: ModeKey): Promise<void> {
   width: min(340px, calc(100vw - 40px));
 }
 
-.plate-exploration {
-  --passarelle-couleur: var(--red);
-  --passarelle-survol: var(--red-dark, var(--red));
-}
-
-.plate-orientation {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 14px;
-  align-items: center;
-  color: var(--cahier-theme-strong);
-  font: var(--text-overline);
-  letter-spacing: var(--text-overline-tracking);
-  text-transform: uppercase;
-}
-
-.plate-keys .plate-orientation { margin: 0; }
-
-.north-symbol {
-  display: grid;
-  justify-items: center;
-  gap: 1px;
-  width: 16px;
-  color: var(--muted);
-  font-size: var(--type-figure-tick-size);
-  line-height: 1;
-}
-
-.north-symbol strong { font-weight: 700; }
-.north-symbol svg {
-  width: 11px;
-  height: 11px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.3;
-}
-
-.shared-scale {
-  display: grid;
-  gap: 3px;
-  justify-items: end;
-}
-
-.shared-scale > span {
-  width: 92px;
-  height: 7px;
-  border-right: 1px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  border-left: 1px solid currentColor;
-}
-
-.shared-scale small { font: var(--text-caption); font-weight: 600; letter-spacing: normal; }
-
-.plate-switcher {
-  position: fixed;
-  right: var(--space-5);
-  bottom: 76px;
-  z-index: 1399;
-  display: grid;
-  grid-template-columns: 34px auto 34px;
-  align-items: center;
-  overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 18%);
-  border-radius: 999px;
-  color: #fff;
-  background: #232a2a;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
-  font: 600 12px/1 var(--font-sans);
-}
-
-.plate-switcher button {
-  min-height: 34px;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-
-.plate-switcher button:hover { background: rgb(255 255 255 / 10%); }
-.plate-switcher span { padding: 0 4px; }
-.plate-switcher strong { color: #cce3de; }
-
 @media (max-width: 760px) {
   .map-breakout { padding-inline: 0; }
-  .map-breakout--a .plate,
-  .map-breakout--c .plate { grid-template-columns: 1fr; }
-  .map-breakout--c .plate { grid-template-areas: 'header' 'title' 'car' 'walk' 'bike' 'keys' 'apparatus'; }
-  .plate-apparatus { padding-inline: 0; }
-  .map-breakout--c .map-panel { max-width: 520px; margin-inline: auto; }
+  .plate { grid-template-columns: 1fr; grid-template-areas: 'title' 'car' 'walk' 'bike'; }
+  .plate .map-panel { max-width: 520px; margin-inline: auto; }
   .map-breakout .map-panel-label { justify-content: center; margin-inline: auto; text-align: center; }
   .map-breakout .map-panel--dimmed { opacity: 1; }
   .map-breakout .map-panel :deep(.map-viewport) { transition: opacity 150ms ease-out; }
   .map-breakout .map-panel--dimmed :deep(.map-viewport) { opacity: .46; }
-  .map-breakout--c .plate-keys { grid-template-columns: 1fr; }
-  .plate-switcher { right: 50%; transform: translateX(50%); }
 }
 </style>

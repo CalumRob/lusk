@@ -176,7 +176,7 @@ function createApiHarness(specs, territories) {
       ? item.intent.members
       : membersFor(item.target.type, item.target.department_id ?? null, item.target.epci_id ?? null)
         .map(({ id, type }) => ({ id, type }))
-    const coordinates = item.intent.kind === 'selected_comparison' ? item.coordinates : undefined
+    const coordinates = item.coordinates
     const detail = coordinates?.detail?.[0] ?? spec.page.comparison?.detail ?? spec.details[0]
     const sex = coordinates?.sex?.[0] ?? spec.page.comparison?.sex ?? null
     const usesScalar = linkedScalar || Boolean(spec.scalar)
@@ -703,8 +703,11 @@ try {
 
   const numericStatic = requests.filter((path) => /^\/data\/indicateurs_/u.test(path))
   const retired = requests.filter((path) => path.includes('/profiles/') || path.startsWith('/api/territories/'))
-  assert(harness.fixedComparisons.every((item) => item.coordinates === undefined),
-    'Fixed profile comparisons must stay on their published default facet')
+  assert(harness.fixedComparisons.every((item) => item.coordinates === undefined ||
+    Object.values(item.coordinates).every((values) => Array.isArray(values) && values.length === 1)),
+    'Fixed profile comparisons may name one declared profile coordinate per axis (published default or alternate)')
+  assert(harness.fixedComparisons.every((item) => !item.fields?.includes('member_ranks')),
+    'Fixed profile comparisons must not request member_ranks')
   assert.deepEqual(numericStatic, [], 'No static indicator numeric payload may be requested')
   assert.deepEqual(retired, [], 'No retired profile route may be called')
   assert.deepEqual(harness.unexpectedApi, [], 'Every API request must be intercepted by this fixture')

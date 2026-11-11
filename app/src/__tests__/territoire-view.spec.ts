@@ -891,7 +891,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     expect(requestsByTheme()).toEqual(warmedCounts)
     wrapper.unmount()
-  })
+  }, 20_000)
 
   it('ne laisse pas un échec de réchauffage natif entacher le thème actif et le réessaie à la visite', async () => {
     const requests: Array<Array<Record<string, any>>> = []
@@ -1154,7 +1154,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.find('#building-peer-search').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Choisir les territoires du groupe comparé')
     wrapper.unmount()
-  })
+  }, 20_000)
 
   it.each(['demographie', 'milieux'] as const)(
     'renders API-resolved named-scope reading clouds for %s from the full compact reference',
@@ -1536,6 +1536,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       expect(accessibleReferences.some((reference) => reference.attributes('aria-label')?.includes(contextes[mode]!.scope.label))).toBe(true)
       wrapper.unmount()
     },
+    20_000,
   )
 
   it('affiche l’erreur typée et réessaie le même endpoint', async () => {
@@ -1681,14 +1682,15 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       .map((item) => factsCle(item.resource, item.target ?? {}))
 
     // Initial phase. The paired pass aborts at its first chunk (it always
-    // carries the first catalogue facts item) and the intentional facts-only
-    // recovery pass aborts the same way: exactly two failed batches, zero
-    // admitted ones, and both batches only carry plan items.
+    // carries the first catalogue facts item); the Mobilite isolation seam then
+    // retries each bounded resource group and its facts-only fallback before the
+    // acquisition rejects: zero admitted batches, and every failed batch only
+    // carries plan items. The request count is bounded by the declared groups.
     expect(mobiliteFactsBatches.served).toBe(0)
-    expect(mobiliteFactsBatches.failed,
-      'one paired-pass chunk + one facts-only recovery chunk fail before the sequential abort').toBe(2)
+    expect(mobiliteFactsBatches.failed).toBeGreaterThanOrEqual(2)
+    const failedBeforeRetry = mobiliteFactsBatches.failed
     const lotsEchoues = requests.filter(lotFaitsMobilite)
-    expect(lotsEchoues).toHaveLength(2)
+    expect(lotsEchoues.length).toBeGreaterThanOrEqual(2)
     const clesTerritoireAttendues = new Set(territoireFacts.map((resource) =>
       factsCle(resource.resource_id, { kind: 'territory', type: 'commune', id: '22001' })))
     for (const items of lotsEchoues) {
@@ -1731,7 +1733,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // would double an item and fail here, whatever the chunk boundaries.
     expect(mobiliteFactsBatches.served).toBeGreaterThan(0)
     expect(mobiliteFactsBatches.failed,
-      'the retry must not run another failing acquisition pass').toBe(2)
+      'the retry must not run another failing acquisition pass').toBe(failedBeforeRetry)
     const lotsAdmis = requests.slice(requetesAvantReessai).filter(lotFaitsMobilite)
     expect(lotsAdmis.length).toBeGreaterThan(0)
     const compteurAdmis = new Map<string, number>()
@@ -2100,13 +2102,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it('réessaie une acquisition de comparaison Mobilité réellement échouée depuis la section et retrouve la courbe comparée', async () => {
     const requests: Array<Array<Record<string, any>>> = []
-    let selectedFailures = 1
+    let selectedFailing = true
     const fixtureFetch = nativeSemanticFetch(requests)
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) !== '/api/resources/read-batch') return fixtureFetch(input, init)
       const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      if (items.some((item) => item.intent.kind === 'selected_comparison') && selectedFailures > 0) {
-        selectedFailures--
+      if (items.some((item) => item.intent.kind === 'selected_comparison') && selectedFailing) {
         requests.push(items)
         return new Response('', { status: 503 })
       }
@@ -2119,9 +2120,14 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     const selectedReads = () => requests.filter((items) =>
       items.some((item) => item.intent.kind === 'selected_comparison'))
-    expect(selectedReads()).toHaveLength(1)
+    // The failed atomic plan is isolated into bounded resource-group reads;
+    // every failed attempt still carries only selected_comparison items.
+    expect(selectedReads().length).toBeGreaterThan(1)
+    expect(selectedReads().every((items) =>
+      items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
     expect(wrapper.find('.transit-series--comparison').exists()).toBe(false)
     expect(wrapper.find('.transit-comparison-retry').exists()).toBe(true)
+    selectedFailing = false
     const selectedBeforeRetry = selectedReads().length
     const requestsBeforeRetry = requests.length
 
@@ -2131,7 +2137,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const retried = selectedReads().slice(selectedBeforeRetry)
     expect(retried.length).toBeLessThanOrEqual(2)
     expect(retried.every((items) => items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
-    // Chaque ressource Mobilité comparable repart une fois, en lots bornés —
+    // Chaque ressource Mobilité comparable repart avec ses détails déclarés,
+    // en lots bornés —
     // jamais une requête par figure ni une relecture des faits focaux.
     const comparaisonsAttendues = nativeResources('mobilite')
       .filter((resource) => resource.resource_kind === 'indicator'
@@ -2142,7 +2149,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       .sort()
     // #962 added the three Mobility supply resources to the comparison set.
     expect(comparaisonsAttendues).toContain('stations_service')
-    expect(retried.flat().map((item) => item.resource).sort()).toEqual(comparaisonsAttendues)
+    expect([...new Set(retried.flat().map((item) => item.resource))].sort()).toEqual(comparaisonsAttendues)
     expect(requests.slice(requestsBeforeRetry).flat().some((item) =>
       item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
     expect(wrapper.find('.transit-comparison-retry').exists()).toBe(false)

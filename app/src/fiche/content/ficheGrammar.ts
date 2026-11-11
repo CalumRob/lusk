@@ -20,7 +20,6 @@ export const CONTENU_SOUS_GROUPES_FICHE = {
   mobilite: {
     'acces-aux-services': 'L’accès aux services',
     'partage-de-lespace-public': 'Le partage de l’espace public',
-    motorisation: 'La motorisation',
     'offre-transports-commun': 'L’offre de transports en commun',
   },
 } as const
@@ -40,7 +39,6 @@ export const CADRAGES_SOUS_GROUPES_FICHE = {
     // share snapshot; the production AEDAR evidence owns the unit's copy.
     'acces-aux-services': null,
     'partage-de-lespace-public': 'La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.',
-    motorisation: 'L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.',
     // Factual: the 500 m catchment and the 90-minute transit reach are producer thresholds.
     'offre-transports-commun': null,
   },
@@ -132,15 +130,10 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       indicators: [
         'reseaux', 'reseaux_par_habitant', 'surface_reseaux_routiers', 'places_stationnement_velo_1000',
         'places_stationnement_voiture_1000', 'stationnement_velo_par_voiture', 'offre_cyclable',
+        // #954 — the retired motorisation unit's rows join this subgroup.
+        'voitures_menage', 'bornes_recharge', 'bornes_ev_par_station_service',
       ],
       figure: { family: 'composition', indicator: 'offre_cyclable' },
-    },
-    {
-      key: 'motorisation',
-      label: CONTENU_SOUS_GROUPES_FICHE.mobilite.motorisation,
-      framing: CADRAGES_SOUS_GROUPES_FICHE.mobilite['motorisation'],
-      indicators: ['voitures_menage', 'bornes_recharge', 'bornes_ev_par_station_service'],
-      figure: { family: 'composition', indicator: 'voitures_menage' },
     },
     {
       key: 'offre-transports-commun',

@@ -16,11 +16,8 @@ describe('groupement éditorial des couches carte', () => {
         resourceKeys: [
           'reseaux', 'reseaux_par_habitant', 'surface_reseaux_routiers', 'places_stationnement_velo_1000',
           'places_stationnement_voiture_1000', 'stationnement_velo_par_voiture', 'offre_cyclable',
+          'voitures_menage', 'bornes_recharge', 'bornes_ev_par_station_service',
         ],
-      },
-      {
-        key: 'motorisation', label: 'La motorisation', storyFields: [],
-        resourceKeys: ['voitures_menage', 'bornes_recharge', 'bornes_ev_par_station_service'],
       },
       {
         key: 'offre-transports-commun', label: 'L’offre de transports en commun', storyFields: [],

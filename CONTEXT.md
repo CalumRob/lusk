@@ -317,18 +317,46 @@ _Avoid_: réseau desservant la commune (an authority is not a service), couvertu
 The share of a territory's area covered by OCS-GE polygons classified **US4.1.1**, the road-use class. It is a separate Mobilité indicator from the OSM-derived `reseaux` lengths: it measures polygonal land occupation, not network length, and OCS-GE does not assign a transport mode. The `artif` status is deliberately ignored — it answers the separate regulatory artificialisation question — so `artif` and `non artif` US4.1.1 polygons both count. Commune values use area-weighted intersections with current Admin Express boundaries; EPCI and department values recompute `Σ surface_routiere_m2 / Σ aire_m2`, never averages of commune shares.
 _Avoid_: surface artificialisée (this indicator is not the Milieux stock), longueur du réseau (OSM `reseaux`), mode routier (US4.1.1 does not distinguish car, bicycle, or pedestrian use)
 
-**Figure « Réseaux » de la Variante E**:
-The OCS-GE road footprint is its own scalar figure, labelled « Emprise
-routière », with a Lecture that names the polygonal road-use observation. The
-three OSM/Geovelo network lengths sit in a separate figure as parallel route
-traces. The two figures do not share a scale: polygonal land occupation and
-network length are different observations. Peer references use the canonical
-visible label « Groupe comparé »; the note beneath each figure names the actual
-reference statistic and selected peer scope.
-_Avoid_: a single combined bar or scale for the footprint and the three
-network lengths, a visual claim that OCS-GE assigns the footprint to a mode, or
-an unnamed or generic comparison note that hides either the metric or the
-selected scope.
+**Figure « Réseaux » de la fiche Mobilité**:
+Depuis #954, la section « Réseaux » de la fiche Mobilité suit le contrat de
+section AEDAR : les trois cartes OSM/Geovelo (automobile, piéton, cyclable)
+restent la carte de la section, sans légende de limites, flèche nord, échelle
+partagée, sous-figure d’emprise routière ni Marelle interne. Sous les cartes,
+une colonne de prose et ses cachets de source font face à une figure de barres
+verticales groupées dont les catégories sont les trois réseaux. Chaque réseau
+porte sa référence de groupe comparé servie par l’API ; la barre vélo du
+territoire reste segmentée Protégé/Partagé, tandis que sa barre de comparaison
+est la médiane du total, **non segmentée** — les médianes de segments ne
+s’additionnent jamais. Les kilomètres bruts vivent uniquement dans les
+infobulles. L’emprise routière n’est plus une sous-figure : elle est lue dans le
+sous-titre de page, sans comparaison.
+_Avoid_: une échelle ou une barre commune entre l’emprise routière et les trois
+longueurs de réseau, une barre vélo de comparaison reconstituée à partir des
+médianes Protégé/Partagé, une Marelle ou un cachet de source générique.
+
+**Contrat de section Mobilité (AEDAR)**:
+La fiche Mobilité rend ses pages 2 et 3 comme des sections du contrat AEDAR :
+un libellé et une disponibilité, une colonne de prose, des cachets de source par
+producteur et par figure, des figures avec titre et noms accessibles complets,
+et le pied « En savoir plus » de section. Aucune section ne porte de Marelle.
+Le rendu passe par le delegate étroit `CahierMobiliteSection` (section, unité,
+état de comparaison), jamais par les props ou l’état AEDAR. La page 1 AEDAR et
+ses composants restent inchangés (ADR-0042).
+_Avoid_: réintroduire une Marelle ou une prose de page qui répète les nombres
+des figures, ajouter un état AEDAR au delegate Mobilité.
+
+**Se garer et se ravitiller**:
+La section Mobilité qui remplace les figures « Stationnement » et
+« Motorisation » séparées : deux colonnes appariées, « Stationnement vélo et
+voiture » et « Bornes de recharge et station-services ». Chaque colonne porte
+sa prose, ses cachets, ses barres comparées et sa ligne de rapport avec
+référence et rang. Les barres elles-mêmes ne portent ni accent ni puce de rang ;
+le rang vit sur la ligne de rapport. Le rapport bornes/station-service reste
+absent là où le territoire ne compte aucune station. « La motorisation » n’est
+plus une unité de la fiche : ses clés d’indicateurs rejoignent le sous-groupe
+« Le partage de l’espace public ».
+_Avoid_: moyennes de taux pour les densités agrégées, rapport stationnement ou
+ravitaillement fabriqué sur un dénominateur nul.
 
 **Longueur du réseau par habitant**:
 The OSM/Geovelo network length for each mobility mode, reported as kilometres
@@ -338,8 +366,10 @@ is a supply-side territorial ratio, not a measure of accessibility, use, or
 travel distance. In « Partage de l’espace public », every mapped physical
 geometry contributes its length once regardless of travel direction; for vélo,
 protected plus shared length equals the displayed total and the geometry shown
-on the map (ADR-0032). The figure's public title is « Longueur du réseau par
-habitant » and its values use the unit « km / 1 000 hab. ».
+on the map (ADR-0032). Each of the three network categories carries its own
+API-served comparison reference; the vélo reference is the total median and is
+never split into segment medians. The figure's public title is « Longueur du
+réseau par habitant » and its values use the unit « km / 1 000 hab. ».
 _Avoid_: kilomètres-direction (a distinct service-capacity measure), distance
 parcourue, longueur d’itinéraire
 

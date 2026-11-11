@@ -183,9 +183,21 @@ export interface TerritoryIdentity {
   densityClassCode?: string | null
 }
 
+export type MobilityResourceFailureStage = 'facts' | 'comparison'
+
+/** Explicit per-resource publication failure carried through the fact model. */
+export interface MobilityResourceFailure {
+  key: string
+  label: string | null
+  stage: MobilityResourceFailureStage
+  message: string
+}
+
 export interface MobilityFacts {
   indicators: readonly NumericFact[]
   namedTrajectoryReferences: readonly NamedTrajectoryReference[]
+  /** Isolated producer publications that failed while the rest of the theme stayed usable. */
+  resourceFailures?: readonly MobilityResourceFailure[]
   selectedTrajectoryComparison?: SelectedTrajectoryComparison | null
   trajectoryContract?: MobilityTrajectoryContract | null
 }

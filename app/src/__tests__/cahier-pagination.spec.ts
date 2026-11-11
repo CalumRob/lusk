@@ -27,20 +27,20 @@ const payloadPresentationAmontPerimee = {
 
 describe('cahierPaginationFor — le fil global de présentation du Cahier', () => {
   it.each([
-    ['mobilite', 1, 4],
-    ['demographie', 5, 2],
-    ['habitat', 7, 3],
-    ['economie', 10, 2],
-    ['milieux', 12, 1],
-    ['programmes', 13, 2],
+    ['mobilite', 1, 3],
+    ['demographie', 4, 2],
+    ['habitat', 6, 3],
+    ['economie', 9, 2],
+    ['milieux', 11, 1],
+    ['programmes', 12, 2],
   ] as const)('keeps %s at its global position in isolated and all-unit modes', (theme, firstPage, count) => {
     const content = contenuPour(theme)
     const isolated = cahierPaginationFor(payloadCanonique, content)
     const allUnits = cahierPaginationFor(payloadCanonique, content, true)
 
-    expect(isolated).toMatchObject({ currentPage: firstPage, totalPages: 14 })
+    expect(isolated).toMatchObject({ currentPage: firstPage, totalPages: 13 })
     expect(isolated.entries.map(({ page }) => page)).toEqual([firstPage, null])
-    expect(allUnits).toMatchObject({ currentPage: firstPage, totalPages: 14 })
+    expect(allUnits).toMatchObject({ currentPage: firstPage, totalPages: 13 })
     expect(allUnits.entries.map(({ page }) => page)).toEqual([
       ...Array.from({ length: count }, (_, index) => firstPage + index), null,
     ])
@@ -50,9 +50,9 @@ describe('cahierPaginationFor — le fil global de présentation du Cahier', () 
     const isolated = cahierPaginationFor(payloadPresentationAmontPerimee, contenuPour('habitat'))
     const allUnits = cahierPaginationFor(payloadPresentationAmontPerimee, contenuPour('habitat'), true)
 
-    expect(isolated).toMatchObject({ currentPage: 7, totalPages: 14 })
-    expect(isolated.entries.map(({ page }) => page)).toEqual([7, null])
-    expect(allUnits).toMatchObject({ currentPage: 7, totalPages: 14 })
-    expect(allUnits.entries.map(({ page }) => page)).toEqual([7, 8, 9, null])
+    expect(isolated).toMatchObject({ currentPage: 6, totalPages: 13 })
+    expect(isolated.entries.map(({ page }) => page)).toEqual([6, null])
+    expect(allUnits).toMatchObject({ currentPage: 6, totalPages: 13 })
+    expect(allUnits.entries.map(({ page }) => page)).toEqual([6, 7, 8, null])
   })
 })

@@ -387,6 +387,254 @@ describe('theme acquisition cache', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
+  it('rejects a malformed atomic Mobilite batch instead of salvaging its prefix or retrying groups', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const { PayloadError } = await import('../payload/validate')
+    const resources = ['isolation_a', 'isolation_b'].map((resource_id) => ({
+      resource_id, theme_id: 'mobilite', indicator_id: resource_id, label: resource_id, unit: '',
+      direction: 'none', allowed_levels: ['commune'], sources: [], shapes: ['scalar'],
+      target_kinds: ['territory'], fields: ['value', 'status'], intents: ['facts'],
+    }))
+    let atomicRequests = 0
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources,
+      }))
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.length > 1) {
+        atomicRequests += 1
+        const results = items.map((item, index) => ({
+          id: item.id,
+          resource: item.resource,
+          // The successful prefix is deliberately wrong and must never be used.
+          data: index === 0
+            ? { resource: item.resource, target: item.target, content_version: 'bad-prefix',
+              reference_content_version: 'bad-prefix', value: 999, status: 'measured' }
+            : { resource: 'wrong-resource', target: item.target },
+        }))
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }))
+      }
+      const item = items[0]!
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [{
+        id: item.id, resource: item.resource,
+        data: { resource: item.resource, target: item.target, content_version: 'fresh-v2',
+          reference_content_version: 'fresh-ref-v2',
+          value: item.resource === 'isolation_a' ? 1 : 2, status: 'measured' },
+      }] }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      let failure: unknown
+      try {
+        await acquireThemeFacts('commune', '22001', 'mobilite')
+      } catch (error) { failure = error }
+      expect(atomicRequests).toBe(1)
+      expect(failure).toBeInstanceOf(PayloadError)
+      expect((failure as InstanceType<typeof PayloadError>).kind).toBe('validation')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('isolates a comparison-only failure per Mobilité resource and keeps fresh focal facts', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) =>
+      resource.theme_id === 'mobilite')
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(url) === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        if (items.some((item) => item.resource === 'reseaux' && item.intent.kind === 'fixed_comparison')) {
+          return new Response('comparison unavailable', { status: 503 })
+        }
+        return nativeBatchResponse(items, (item, resource) => {
+          const data = nativeReadFixture(item, resource)
+          if (item.resource === 'reseaux' && item.intent.kind === 'facts') {
+            data.content_version = 'reseaux-facts-fresh'
+          }
+          return data
+        })
+      }
+      throw new Error(`Unexpected request: ${String(url)}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const acquired = await acquireThemeFacts('commune', '35238', 'mobilite')
+      const reseaux = acquired.resource_reads?.find((read) => read.resource === 'reseaux')
+      expect(reseaux?.data.content_version).toBe('reseaux-facts-fresh')
+      expect(acquired.default_comparison?.comparison_reads.some((read) => read.resource === 'reseaux')).toBe(false)
+      expect(acquired.resource_failures).toContainEqual(expect.objectContaining({
+        resource: 'reseaux', stage: 'comparison',
+      }))
+      expect(acquired.comparison_error).not.toBe(true)
+      expect(acquired.default_comparison?.comparison_reads.length).toBeGreaterThan(0)
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('isolates a failed selected comparison per Mobilité resource without losing the others', async () => {
+    vi.resetModules()
+    const { acquireThemeComparison } = await import('../payload/themeAcquisition')
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) =>
+      resource.theme_id === 'mobilite')
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(url) === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        if (items.some((item) => item.resource === 'stations_service' &&
+            item.intent.kind === 'selected_comparison')) {
+          return new Response('comparison unavailable', { status: 503 })
+        }
+        return nativeBatchResponse(items, (item, resource) => nativeReadFixture(item, resource))
+      }
+      throw new Error(`Unexpected request: ${String(url)}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '35238' },
+      { territory_type: 'commune' as const, territory_id: '35240' },
+    ]
+    try {
+      const acquired = await acquireThemeComparison('commune', '35238', 'mobilite', selection)
+      expect(acquired.comparison_error).not.toBe(true)
+      expect(acquired.resource_failures).toContainEqual(expect.objectContaining({
+        resource: 'stations_service', stage: 'comparison',
+      }))
+      expect(acquired.comparison_reads?.some((read) => read.resource === 'stations_service')).toBe(false)
+      expect(acquired.comparison_reads?.length).toBeGreaterThan(1)
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('propagates a named member error from a fresh isolated comparison group after an initial 503', async () => {
+    vi.resetModules()
+    const { acquireThemeComparison } = await import('../payload/themeAcquisition')
+    const { SemanticMemberError } = await import('../payload/semanticResourceClient')
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) =>
+      resource.theme_id === 'mobilite')
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.length > 1) return new Response('atomic batch unavailable', { status: 503 })
+      if (items.some((item) => item.resource === 'stations_service')) {
+        return new Response(JSON.stringify({
+          detail: 'selected comparison member commune/35240',
+        }), { status: 422 })
+      }
+      return nativeBatchResponse(items, (item, resource) => nativeReadFixture(item, resource))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '35238' },
+      { territory_type: 'commune' as const, territory_id: '35240' },
+    ]
+    try {
+      let failure: unknown
+      try {
+        await acquireThemeComparison('commune', '35238', 'mobilite', selection)
+      } catch (error) { failure = error }
+      expect(failure).toBeInstanceOf(SemanticMemberError)
+      expect((failure as InstanceType<typeof SemanticMemberError>).member).toEqual({ type: 'commune', id: '35240' })
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('propagates a validation payload error from a fresh isolated group after an initial 503', async () => {
+    vi.resetModules()
+    const { acquireThemeComparison } = await import('../payload/themeAcquisition')
+    const { PayloadError } = await import('../payload/validate')
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) =>
+      resource.theme_id === 'mobilite')
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.length > 1) return new Response('atomic batch unavailable', { status: 503 })
+      if (items.some((item) => item.resource === 'stations_service')) {
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => ({
+          id: item.id, resource: item.resource, data: { resource: 'wrong-resource', target: item.target },
+        })) }), { status: 200 })
+      }
+      return nativeBatchResponse(items, (item, resource) => nativeReadFixture(item, resource))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '35238' },
+      { territory_type: 'commune' as const, territory_id: '35240' },
+    ]
+    try {
+      let failure: unknown
+      try {
+        await acquireThemeComparison('commune', '35238', 'mobilite', selection)
+      } catch (error) { failure = error }
+      expect(failure).toBeInstanceOf(PayloadError)
+      expect((failure as InstanceType<typeof PayloadError>).kind).toBe('validation')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('propagates a facts-only validation error after a paired 503 instead of reporting unavailable data', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const { PayloadError } = await import('../payload/validate')
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) =>
+      resource.theme_id === 'mobilite')
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.length > 1) return new Response('atomic batch unavailable', { status: 503 })
+      if (items[0]!.resource === 'reseaux' && items[0]!.intent.kind === 'facts') {
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [{
+          id: items[0]!.id, resource: items[0]!.resource, data: { resource: 'wrong-resource', target: items[0]!.target },
+        }] }), { status: 200 })
+      }
+      return nativeBatchResponse(items, (item, resource) => nativeReadFixture(item, resource))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      let failure: unknown
+      try {
+        await acquireThemeFacts('commune', '35238', 'mobilite')
+      } catch (error) { failure = error }
+      expect(failure).toBeInstanceOf(PayloadError)
+      expect((failure as InstanceType<typeof PayloadError>).kind).toBe('validation')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('propagates a facts-only member error after a paired 503 instead of reporting unavailable data', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const { SemanticMemberError } = await import('../payload/semanticResourceClient')
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) =>
+      resource.theme_id === 'mobilite')
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.length > 1) return new Response('atomic batch unavailable', { status: 503 })
+      if (items[0]!.resource === 'reseaux' && items[0]!.intent.kind === 'facts') {
+        return new Response(JSON.stringify({
+          detail: 'selected comparison member commune/35240',
+        }), { status: 422 })
+      }
+      return nativeBatchResponse(items, (item, resource) => nativeReadFixture(item, resource))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      let failure: unknown
+      try {
+        await acquireThemeFacts('commune', '35238', 'mobilite')
+      } catch (error) { failure = error }
+      expect(failure).toBeInstanceOf(SemanticMemberError)
+      expect((failure as InstanceType<typeof SemanticMemberError>).member).toEqual({ type: 'commune', id: '35240' })
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('keeps a legacy focal series and its default comparison in one API snapshot when chunking', async () => {
     const legacy = nativeResources('programmes').find((resource) =>
       resource.resource_id === 'subventions_annuelles')!

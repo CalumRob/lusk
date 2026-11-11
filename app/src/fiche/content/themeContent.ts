@@ -1,12 +1,7 @@
-import {
-  MOBILITE_RESEAU_MODE_LABELS,
-} from './territoryFacts'
-import { comparisonScopeLabel as resolveComparisonScopeLabel } from './comparisonScopeLabel'
 import type { ThemeMetadata, TrajectoryMetadata } from '@/payload/types'
 import type { AedarFact } from './aedarApiClient'
 import type {
   ComparisonRank,
-  ComparisonScope,
   FactAvailability,
   FactProvenance,
   NumericFact,
@@ -15,6 +10,11 @@ import type {
   TerritoryIdentity,
 } from './territoryFacts'
 import { CONTENU_SOUS_GROUPES_FICHE } from './ficheGrammar'
+import {
+  buildMobiliteNetworksSection,
+  buildMobiliteStationnementRavitaillementSection,
+  buildPartageSubtitle,
+} from './mobiliteSections'
 
 export interface ContentSource {
   id: string
@@ -22,6 +22,10 @@ export interface ContentSource {
   version: string
   referenceDate: string | null
   publicationDate: string | null
+  /** Producer-owned public URL of the source record, when published. */
+  url?: string | null
+  /** Producer-owned licence wording of the source record, when published. */
+  licence?: string | null
 }
 
 export interface ExplorationTarget {
@@ -229,50 +233,75 @@ export interface AedarTimeRampEvidence {
   provenance: FactProvenance | null
   sourceCoverage: string
 }
-export interface NetworkModeEvidence {
-  mode: 'walkTransit' | 'bike' | 'car'
+export type MobiliteBarTone = 't' | 'b' | 'c' | 'neutral'
+
+export interface MobiliteBarSegmentEvidence {
+  key: string
   label: string
-  length: ContentFact
+  /** Per-segment density; its sum is the category total by producer contract. */
+  value: ContentFact
+  /** Published raw segment length carried in the tooltip only, when declared. */
+  rawValue: ContentFact | null
 }
 
-export interface CyclingOfferEvidence {
-  kind: 'cycling-offer'
-  figureTitle: string
-  cyclingReadingsLabel: string
+export interface MobiliteBarCategoryEvidence {
+  key: string
   label: string
-  protectedLength: ContentFact
-  protectedDensity: ContentFact
-  sharedLength: ContentFact
-  sharedDensity: ContentFact
-  totalLength: ContentFact
+  /** Short producer-derived axis label (for example « à pied »). */
+  axisLabel: string
+  tone: MobiliteBarTone
+  /** The plotted /1 000 hab (or per-unit) value. */
+  value: ContentFact
+  /** Published raw value carried in the tooltip only, never in the plotted axis. */
+  rawValue: ContentFact | null
+  /** Optional partition of the category bar; absent means an unsegmented bar. */
+  segments: readonly MobiliteBarSegmentEvidence[]
+  /** Honest note when a declared split cannot be drawn as a partition. */
+  splitNote: string | null
+}
+
+export interface MobiliteBarsFigureEvidence {
+  figureTitle: string
+  unit: string
+  xAxisTitle: string
+  yAxisTitle: string
+  categories: readonly MobiliteBarCategoryEvidence[]
+  /** Resolved statistic + scope label of the compared group, never a generic peer. */
   comparisonLabel: string | null
-  figureLecture: readonly TextBlock[]
+  /** Declared publications whose focal value could not be read for this figure. */
+  unavailableResources?: readonly string[]
+  /** Declared comparisons whose bounded read failed or could not be bound. */
+  unavailableComparisons?: readonly string[]
 }
 
-export interface SharingNetworksEvidence {
-  kind: 'sharing-networks'
-  figureTitle: string
-  frameTitle: string
-  networkReadingsLabel: string
+export interface MobiliteRatioEvidence {
+  label: string
+  value: ContentFact
+  /** Honest unavailable explanation when the ratio cannot be computed. */
+  note: string | null
+}
+
+export interface MobiliteNetworksEvidence {
+  kind: 'mobilite-networks'
+  territory: { code: string; name: string }
   territoryName: string
-  roadSurface: ContentFact
-  roadSurfaceLecture: readonly TextBlock[]
-  networks: readonly NetworkModeEvidence[]
-  absoluteNetworks: readonly ContentFact[]
-  comparisonLabel: string | null
-  figureLecture: readonly TextBlock[]
+  mapFigureTitle: string
+  figure: MobiliteBarsFigureEvidence
+  prose: readonly TextBlock[]
+  sources: readonly ContentSource[]
 }
 
-export interface SharingParkingEvidence {
-  kind: 'sharing-parking'
-  figureTitle: string
-  parkingReadingsLabel: string
-  bikeSpaces: ContentFact
-  carSpaces: ContentFact
-  bikePerCar: ContentFact
-  comparisonLabel: string | null
-  ratioNote: string | null
-  figureLecture: readonly TextBlock[]
+export interface MobilitePairedColumnEvidence {
+  key: 'stationnement' | 'ravitaillement'
+  prose: readonly TextBlock[]
+  sources: readonly ContentSource[]
+  bars: MobiliteBarsFigureEvidence
+  ratio: MobiliteRatioEvidence
+}
+
+export interface MobiliteStationnementRavitaillementEvidence {
+  kind: 'mobilite-stationnement-ravitaillement'
+  columns: readonly [MobilitePairedColumnEvidence, MobilitePairedColumnEvidence]
 }
 
 export type ContentEvidence =
@@ -281,10 +310,8 @@ export type ContentEvidence =
   | AedarAccessEvidence
   | AedarEquipmentProfileEvidence
   | AedarEquipmentExplorerEvidence
-  | SharingNetworksEvidence
-  | CyclingOfferEvidence
-  | SharingParkingEvidence
-  | { kind: 'motorisation'; composition: readonly ContentFact[]; charging: readonly ContentFact[] }
+  | MobiliteNetworksEvidence
+  | MobiliteStationnementRavitaillementEvidence
   | { kind: 'public-transport'; offer: ContentFact | null; trajectory: readonly ContentFact[];
       comparisonTrajectory: ComparisonTrajectoryContent | null; trajectoryMetadata: TrajectoryMetadata | null }
 
@@ -304,22 +331,16 @@ export interface AedarCarAccessOverviewSection extends ContentSectionBase<'aedar
 export interface AedarDiversityLossSection extends ContentSectionBase<'aedar-diversity-loss', AedarDiversityLossEvidence> { label: string }
 export interface AedarEquipmentProfileSection extends ContentSectionBase<'aedar-equipment-profile', AedarEquipmentProfileEvidence> { label: string }
 export interface AedarEquipmentExplorerSection extends ContentSectionBase<'aedar-equipment-explorer', AedarEquipmentExplorerEvidence> { label: string }
-export interface ReseauxSection
-  extends ContentSectionBase<'reseaux', SharingNetworksEvidence> {
+export interface MobiliteNetworksSection
+  extends ContentSectionBase<'reseaux', MobiliteNetworksEvidence> {
   label: 'Réseaux'
 }
 
-export interface OffreCyclableSection
-  extends ContentSectionBase<'offre-cyclable', CyclingOfferEvidence> {
-  label: 'Offre cyclable'
+export interface MobiliteStationnementRavitaillementSection
+  extends ContentSectionBase<'stationnement-ravitaillement', MobiliteStationnementRavitaillementEvidence> {
+  label: 'Se garer et se ravitiller'
 }
 
-export interface StationnementSection
-  extends ContentSectionBase<'stationnement', SharingParkingEvidence> {
-  label: 'Stationnement'
-}
-
-export interface MotorisationSection extends ContentSectionBase<'motorisation', Extract<ContentEvidence, {kind:'motorisation'}>> { label: string }
 export interface OffreTransportsSection extends ContentSectionBase<'offre-transports-commun', Extract<ContentEvidence, {kind:'public-transport'}>> { label: string }
 
 export type MobiliteContentSection =
@@ -328,10 +349,8 @@ export type MobiliteContentSection =
   | AedarAccessSection
   | AedarEquipmentProfileSection
   | AedarEquipmentExplorerSection
-  | ReseauxSection
-  | OffreCyclableSection
-  | StationnementSection
-  | MotorisationSection
+  | MobiliteNetworksSection
+  | MobiliteStationnementRavitaillementSection
   | OffreTransportsSection
 
 export type ContentSection = MobiliteContentSection
@@ -349,14 +368,15 @@ export interface PartageEspacePublicContentUnit {
   key: 'partage-de-lespace-public'
   label: string
   introduction: readonly TextBlock[]
-  rundown: readonly TextBlock[]
-  sections: readonly [ReseauxSection, OffreCyclableSection, StationnementSection]
+  /** Page 1 keeps its historical (empty) rundown block; the migrated page 2
+   * deliberately omits the property so no empty block shifts the AEDAR flow. */
+  rundown?: readonly TextBlock[]
+  sections: readonly [MobiliteNetworksSection, MobiliteStationnementRavitaillementSection]
 }
 
-export interface MotorisationContentUnit { key: 'motorisation'; label: string; introduction: readonly TextBlock[]; rundown: readonly TextBlock[]; sections: readonly [MotorisationSection] }
 export interface OffreTransportsContentUnit { key: 'offre-transports-commun'; label: string; introduction: readonly TextBlock[]; rundown: readonly TextBlock[]; sections: readonly [OffreTransportsSection] }
 
-export type MobiliteContentUnit = AccesAuxServicesContentUnit | PartageEspacePublicContentUnit | MotorisationContentUnit | OffreTransportsContentUnit
+export type MobiliteContentUnit = AccesAuxServicesContentUnit | PartageEspacePublicContentUnit | OffreTransportsContentUnit
 export type ContentUnit = MobiliteContentUnit
 
 export interface ThemeContent {
@@ -364,7 +384,7 @@ export interface ThemeContent {
   label: 'Mobilité'
   territory: TerritoryIdentity
   introduction: readonly TextBlock[]
-  units: readonly [AccesAuxServicesContentUnit, PartageEspacePublicContentUnit, MotorisationContentUnit, OffreTransportsContentUnit]
+  units: readonly [AccesAuxServicesContentUnit, PartageEspacePublicContentUnit, OffreTransportsContentUnit]
   sourceRegister: readonly ContentSource[]
 }
 
@@ -381,34 +401,13 @@ const CONTENT_LABELS: Readonly<Record<string, string>> = {
   places_stationnement_voiture_1000: 'Places de stationnement voiture pour 1 000 hab.',
   stationnement_velo_par_voiture: 'Places de stationnement vélo pour 1 place voiture',
   surface_reseaux_routiers: 'Emprise routière',
+  bornes_recharge: 'Bornes de recharge pour véhicules électriques',
+  bornes_recharge_1000: 'Bornes de recharge pour 1 000 hab.',
+  stations_service: 'Stations-service',
+  stations_service_1000: 'Stations-service pour 1 000 hab.',
+  bornes_ev_par_station_service: 'Bornes de recharge par station-service',
 }
 
-const CONTENT_DETAIL_LABELS: Readonly<Record<string, string>> = {
-  'voitures_menage:sans_voiture': 'Ménages sans voiture',
-  'voitures_menage:une_voiture': 'Ménages avec 1 voiture',
-  'voitures_menage:deux_plus': 'Ménages avec 2 voitures ou plus',
-  'reseaux_par_habitant:t_km_1000': `Longueur — ${MOBILITE_RESEAU_MODE_LABELS.walkTransit}`,
-  'reseaux_par_habitant:b_km_1000': `Longueur — ${MOBILITE_RESEAU_MODE_LABELS.bike}`,
-  'reseaux_par_habitant:c_km_1000': `Longueur — ${MOBILITE_RESEAU_MODE_LABELS.car}`,
-  'offre_cyclable:protege_longueur': 'Longueur protégée',
-  'offre_cyclable:protege_km_1000': 'Protégé — km / 1 000 hab.',
-  'offre_cyclable:partage_longueur': 'Longueur partagée',
-  'offre_cyclable:partage_km_1000': 'Partagé — km / 1 000 hab.',
-  'offre_cyclable:total_longueur': 'Longueur totale',
-}
-const SHARING_NETWORK_INDICATOR_KEYS = ['reseaux_par_habitant'] as const
-const SHARING_CYCLING_OFFER_INDICATOR_KEYS = ['offre_cyclable'] as const
-const SHARING_PARKING_INDICATOR_KEYS = [
-  'places_stationnement_velo_1000',
-  'places_stationnement_voiture_1000',
-  'stationnement_velo_par_voiture',
-] as const
-
-const NETWORK_MODES = [
-  { mode: 'walkTransit' as const, label: MOBILITE_RESEAU_MODE_LABELS.walkTransit, length: 't_km_1000' },
-  { mode: 'bike' as const, label: MOBILITE_RESEAU_MODE_LABELS.bike, length: 'b_km_1000' },
-  { mode: 'car' as const, label: MOBILITE_RESEAU_MODE_LABELS.car, length: 'c_km_1000' },
-] as const
 function complete(fact: NumericFact): fact is NumericFact & { value: number } {
   return fact.availability === 'complete' && fact.value !== null
 }
@@ -419,20 +418,6 @@ function hasValue(fact: NumericFact): boolean {
 
 function contentFact(fact: NumericFact, label: string): ContentFact {
   return { fact, label }
-}
-function absentFact(key: string, unit: string, detail: string | null = null): NumericFact {
-  return {
-    key,
-    detail,
-    label: null,
-    value: null,
-    unit,
-    availability: 'absent',
-    provenance: null,
-    comparison: null,
-    comparisonBasis: 'territory-median',
-    reason: null,
-  }
 }
 
 function labelFor(key: string): string | null {
@@ -446,30 +431,6 @@ function contentIndicator(fact: NumericFact): ContentIndicator | null {
 
 function indicatorFor(facts: TerritoryFacts, key: string): NumericFact | null {
   return facts.mobility.indicators.find((fact) => fact.key === key) ?? null
-}
-
-function detailFactFor(
-  facts: TerritoryFacts,
-  key: string,
-  detail: string,
-  unit: string,
-): NumericFact {
-  return facts.mobility.indicators.find(
-    (fact) => fact.key === key && fact.detail === detail,
-  ) ?? absentFact(key, unit, detail)
-}
-
-function detailLabelFor(key: string, detail: string): string {
-  return CONTENT_DETAIL_LABELS[`${key}:${detail}`] ?? detail
-}
-
-function contentDetailFact(
-  facts: TerritoryFacts,
-  key: string,
-  detail: string,
-  unit: string,
-): ContentFact {
-  return contentFact(detailFactFor(facts, key, detail, unit), detailLabelFor(key, detail))
 }
 
 function indicatorsFor(facts: TerritoryFacts, keys: readonly string[]): ContentIndicator[] {
@@ -490,50 +451,55 @@ function sourceIdsFor(values: readonly ContentFact[]): string[] {
   ]
 }
 
-function sourceFrom(provenance: FactProvenance | null): ContentSource | null {
+function sourceFrom(provenance: FactProvenance | null, metadata?: ThemeMetadata): ContentSource | null {
   if (!provenance?.sourceId) return null
+  const record = metadata?.source_records?.[provenance.sourceId]
   return {
     id: provenance.sourceId,
-    source: provenance.source,
+    // The producer record owns the public producer name, URL and licence; the
+    // fact provenance owns the millésime when no record is published.
+    source: record?.publisher ?? provenance.source,
     version: provenance.version,
     referenceDate: provenance.referenceDate,
     publicationDate: provenance.publicationDate,
+    ...(record ? { url: record.url, licence: record.licence } : {}),
   }
 }
 
-function registerFor(sections: readonly MobiliteContentSection[]): ContentSource[] {
+function registerFor(sections: readonly MobiliteContentSection[], metadata?: ThemeMetadata): ContentSource[] {
   const sources = new Map<string, ContentSource>()
   const sourceKey = (source: ContentSource): string =>
     [source.id, source.version, source.referenceDate, source.publicationDate].join('\u0000')
   const add = (value: ContentFact | null | undefined): void => {
     if (!value?.fact) return
-    const source = sourceFrom(value.fact.provenance)
+    const source = sourceFrom(value.fact.provenance, metadata)
     if (source && !sources.has(sourceKey(source))) sources.set(sourceKey(source), source)
   }
 
   for (const section of sections) {
     for (const indicator of section.indicators) add(indicator)
-    if (section.evidence?.kind === 'sharing-networks') {
-      for (const fact of section.evidence.absoluteNetworks) add(fact)
-      for (const network of section.evidence.networks) {
-        add(network.length)
+    if (section.evidence?.kind === 'mobilite-networks') {
+      for (const category of section.evidence.figure.categories) {
+        add(category.value)
+        if (category.rawValue) add(category.rawValue)
+        for (const segment of category.segments) {
+          add(segment.value)
+          if (segment.rawValue) add(segment.rawValue)
+        }
       }
-      add(section.evidence.roadSurface)
     }
-    if (section.evidence?.kind === 'cycling-offer') {
-      add(section.evidence.protectedLength)
-      add(section.evidence.protectedDensity)
-      add(section.evidence.sharedLength)
-      add(section.evidence.sharedDensity)
-      add(section.evidence.totalLength)
-    }
-    if (section.evidence?.kind === 'sharing-parking') {
-      add(section.evidence.bikeSpaces)
-      add(section.evidence.carSpaces)
-      add(section.evidence.bikePerCar)
-    }
-    if (section.evidence?.kind === 'motorisation') {
-      for (const fact of [...section.evidence.composition, ...section.evidence.charging]) add(fact)
+    if (section.evidence?.kind === 'mobilite-stationnement-ravitaillement') {
+      for (const column of section.evidence.columns) {
+        for (const category of column.bars.categories) {
+          add(category.value)
+          if (category.rawValue) add(category.rawValue)
+          for (const segment of category.segments) {
+          add(segment.value)
+          if (segment.rawValue) add(segment.rawValue)
+        }
+        }
+        add(column.ratio.value)
+      }
     }
     if (section.evidence?.kind === 'public-transport') {
       add(section.evidence.offer)
@@ -569,10 +535,6 @@ function targetsFor(
     .filter((target): target is ExplorationTarget => target !== null)
 }
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
-}
-
 export function text(value: string): TextSegment {
   return { kind: 'text', value }
 }
@@ -588,37 +550,6 @@ export function modeEmphasis(value: string, mode: AedarRampMode): TextSegment {
 export function link(value: string, href: string): TextSegment {
   return { kind: 'link', href, value }
 }
-type ComparisonContext = {
-  scope: ComparisonScope
-  reference: { kind: 'mean' | 'median'; value: number } | null
-}
-
-function comparisonScopeLabel(
-  comparison: ComparisonContext | null,
-  territory: TerritoryIdentity,
-): string | null {
-  if (!comparison) return null
-  return resolveComparisonScopeLabel(comparison.scope.kind, comparison.scope.label, territory.epciName)
-}
-
-function comparisonLabel(
-  comparison: ComparisonContext | null,
-  territory: TerritoryIdentity,
-): string | null {
-  const scopeLabel = comparisonScopeLabel(comparison, territory)
-  if (!scopeLabel) return null
-  // Le kind est adapté du statistic servi, pas inféré de la famille visuelle.
-  const statistic = comparison?.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane'
-  const label = `${statistic} des ${scopeLabel}`
-  return comparison?.reference ? label : `Comparaison indisponible — ${label}`
-}
-
-function sharingIntroduction(): readonly TextBlock[] {
-  return [[
-    text('Cette page met en regard les réseaux qui organisent les déplacements et les places qui leur sont réservées dans l’espace public. Elle distingue les aménagements cyclables, les réseaux par mode et les estimations de stationnement.'),
-  ]]
-}
-
 interface TerritoryLeadParts {
   lead: string
   name: string
@@ -672,255 +603,15 @@ export function territoryTypeLabel(territory: TerritoryIdentity): string {
   const connector = /^[aeiouyàâäéèêëîïôöùûü]/iu.test(name) ? 'd’' : 'de '
   return `${designation} ${connector}${name}`
 }
-function comparisonLabelForFacts(
-  values: readonly ContentFact[],
-  territory: TerritoryIdentity,
-): string | null {
-  const comparedFact = values.find((value) => value.fact.comparison)?.fact ?? null
-  return comparisonLabel(
-    comparedFact?.comparison ?? null,
-    territory,
-  )
-}
-
-function sharingNetworksSection(facts: TerritoryFacts): ReseauxSection {
-  const absoluteNetworks = ['t_longueur', 'b_longueur', 'c_longueur'].map((detail) => {
-    const fact = facts.mobility.indicators.find((candidate) => candidate.key === 'reseaux' && candidate.detail === detail) ?? absentFact('reseaux', 'km', detail)
-    return contentFact(fact, fact.label ?? detail)
-  })
-  const networks = NETWORK_MODES.map(({ mode, label, length }) => ({
-    mode,
-    label,
-    length: contentDetailFact(facts, 'reseaux_par_habitant', length, 'km / 1 000 hab.'),
-  }))
-  const roadSurface = contentFact(
-    indicatorFor(facts, 'surface_reseaux_routiers') ?? absentFact('surface_reseaux_routiers', '%'),
-    CONTENT_LABELS.surface_reseaux_routiers,
-  )
-  const networkFacts = networks.map((network) => network.length)
-  const allFacts = [...networkFacts, roadSurface, ...absoluteNetworks]
-  const indicators = [
-    ...indicatorsFor(facts, SHARING_NETWORK_INDICATOR_KEYS),
-    ...indicatorsFor(facts, ['surface_reseaux_routiers', 'reseaux']),
-  ]
-  const hasAny = allFacts.some((value) => hasValue(value.fact))
-  const availability: FactAvailability = !hasAny
-    ? 'absent'
-    : allFacts.every((value) => complete(value.fact)) && indicators.length === SHARING_NETWORK_INDICATOR_KEYS.length + 1
-      ? 'complete'
-      : 'incomplete'
-  const evidence: SharingNetworksEvidence | null = hasAny
-      ? {
-        kind: 'sharing-networks',
-        territoryName: facts.territory.name,
-        networks,
-        absoluteNetworks,
-        roadSurface,
-        roadSurfaceLecture: [[
-          text("L'emprise routière décrit la part de la surface totale du territoire qui est dédiée aux Réseaux routiers (code d'usage 4.1.1)."),
-        ]],
-        figureTitle: 'Cartes des réseaux de mobilité, par mode',
-        frameTitle: 'Réseaux',
-        networkReadingsLabel: 'Longueur du réseau par habitant',
-        comparisonLabel: comparisonLabelForFacts(allFacts, facts.territory),
-        figureLecture: [[
-          text('Chaque repère indique la longueur du réseau rapportée à 1 000 habitants, séparément pour les trois modes.'),
-        ]],
-      }
-    : null
-  return {
-    key: 'reseaux',
-    label: 'Réseaux',
-    availability,
-    indicators,
-    evidence,
-    provenance: sourceIdsFor(allFacts),
-    lecture: availability === 'complete' ? { marelle: 'Trois réseaux, trois empreintes', prose: [] } : null,
-    explorationTargets: targetsFor(allFacts.map((value) => value.fact), facts.territory),
-  }
-}
-
-function sharingCyclingOfferSection(facts: TerritoryFacts): OffreCyclableSection {
-  const cyclingOffer: CyclingOfferEvidence = {
-    kind: 'cycling-offer',
-    figureTitle: 'Offre cyclable',
-    cyclingReadingsLabel: 'Répartition de l’offre cyclable',
-    label: 'Offre cyclable',
-    protectedLength: contentDetailFact(facts, 'offre_cyclable', 'protege_longueur', 'km'),
-    protectedDensity: contentDetailFact(facts, 'offre_cyclable', 'protege_km_1000', 'km / 1 000 hab'),
-    sharedLength: contentDetailFact(facts, 'offre_cyclable', 'partage_longueur', 'km'),
-    sharedDensity: contentDetailFact(facts, 'offre_cyclable', 'partage_km_1000', 'km / 1 000 hab'),
-    totalLength: contentDetailFact(facts, 'offre_cyclable', 'total_longueur', 'km'),
-    comparisonLabel: null,
-    figureLecture: [[
-      text('La barre montre comment la longueur cyclable se répartit entre aménagements protégés et partagés. Les valeurs en kilomètres par 1 000 habitants donnent une seconde lecture, rapportée à la population.'),
-    ]],
-  }
-  const allFacts = [
-    cyclingOffer.protectedLength,
-    cyclingOffer.protectedDensity,
-    cyclingOffer.sharedLength,
-    cyclingOffer.sharedDensity,
-    cyclingOffer.totalLength,
-  ]
-  cyclingOffer.comparisonLabel = comparisonLabelForFacts(allFacts, facts.territory)
-  const indicators = indicatorsFor(facts, SHARING_CYCLING_OFFER_INDICATOR_KEYS)
-  const hasAny = allFacts.some((value) => hasValue(value.fact))
-  const availability: FactAvailability = !hasAny
-    ? 'absent'
-    : allFacts.every((value) => complete(value.fact)) && indicators.length === 1
-      ? 'complete'
-      : 'incomplete'
-  return {
-    key: 'offre-cyclable',
-    label: 'Offre cyclable',
-    availability,
-    indicators,
-    evidence: hasAny ? cyclingOffer : null,
-    provenance: sourceIdsFor(allFacts),
-    lecture: availability === 'complete' ? { marelle: 'Une piste ne suffit pas', prose: [] } : null,
-    explorationTargets: targetsFor(allFacts.map((value) => value.fact), facts.territory),
-  }
-}
-
-function sharingParkingSection(facts: TerritoryFacts): StationnementSection {
-  const bikeSpaces = contentFact(
-    indicatorFor(facts, 'places_stationnement_velo_1000') ?? absentFact('places_stationnement_velo_1000', 'places / 1 000 hab'),
-    'Places vélo / 1 000 hab.',
-  )
-  const carSpaces = contentFact(
-    indicatorFor(facts, 'places_stationnement_voiture_1000') ?? absentFact('places_stationnement_voiture_1000', 'places / 1 000 hab'),
-    'Places voiture / 1 000 hab.',
-  )
-  const bikePerCar = contentFact(
-    indicatorFor(facts, 'stationnement_velo_par_voiture') ?? absentFact('stationnement_velo_par_voiture', 'places vélo / place voiture'),
-    'Places vélo / places voiture',
-  )
-  const allFacts = [bikeSpaces, carSpaces, bikePerCar]
-  const indicators = indicatorsFor(facts, SHARING_PARKING_INDICATOR_KEYS)
-  const hasAny = allFacts.some((value) => hasValue(value.fact))
-  const availability: FactAvailability = !hasAny
-    ? 'absent'
-    : allFacts.every((value) => complete(value.fact)) && indicators.length === SHARING_PARKING_INDICATOR_KEYS.length
-      ? 'complete'
-      : 'incomplete'
-  const evidence: SharingParkingEvidence | null = hasAny
-    ? {
-        kind: 'sharing-parking',
-        figureTitle: 'Stationnement vélo et voiture',
-        parkingReadingsLabel: 'Stationnement par mode',
-        bikeSpaces,
-        carSpaces,
-         bikePerCar,
-         comparisonLabel: comparisonLabelForFacts(allFacts, facts.territory),
-         ratioNote: parkingRatioNote(bikeSpaces, carSpaces, bikePerCar),
-         figureLecture: parkingFigureLecture(bikeSpaces, carSpaces, bikePerCar),
-      }
-    : null
-  return {
-    key: 'stationnement',
-    label: 'Stationnement',
-    availability,
-    indicators,
-    evidence,
-    provenance: sourceIdsFor(allFacts),
-    lecture: availability === 'complete' ? { marelle: 'Quelle place pour chaque mode ?', prose: [] } : null,
-    explorationTargets: targetsFor(allFacts.map((value) => value.fact), facts.territory),
-  }
-}
-
-function parkingRatioNote(
-  bikeSpaces: ContentFact,
-  carSpaces: ContentFact,
-  bikePerCar: ContentFact,
-): string | null {
-  if (bikePerCar.fact.value !== null) return null
-  if (carSpaces.fact.value === 0) {
-    return 'Rapport non calculé : aucune place de stationnement voiture estimée ne fournit un dénominateur positif.'
-  }
-  if (bikeSpaces.fact.value !== null || carSpaces.fact.value !== null) {
-    return 'Rapport indisponible : les deux mesures de stationnement sont nécessaires pour le calculer.'
-  }
-  return null
-}
-
-function parkingFigureLecture(
-  bikeSpaces: ContentFact,
-  carSpaces: ContentFact,
-  bikePerCar: ContentFact,
-): readonly TextBlock[] {
-  const blocks: TextBlock[] = [[
-    text('Les deux barres se lisent dans la même unité : des places pour 1 000 habitants. Le rapport « places vélo / places voiture » est une lecture séparée, calculée seulement quand le dénominateur voiture est positif.'),
-  ]]
-  const ratioNote = parkingRatioNote(bikeSpaces, carSpaces, bikePerCar)
-  if (ratioNote) {
-    blocks.push([text(ratioNote)])
-  }
-  return blocks
-}
-
-function sideOfReference(fact: NumericFact): -1 | 0 | 1 | null {
-  const reference = fact.comparison?.reference?.value
-  const value = narrativeValue(fact)
-  if (reference === undefined || value === null) return null
-  return value === reference ? 0 : value > reference ? 1 : -1
-}
-
-function sharingRundown(facts: TerritoryFacts): readonly TextBlock[] {
-  const network = sharingNetworksSection(facts)
-  const cyclingOffer = sharingCyclingOfferSection(facts)
-  const parking = sharingParkingSection(facts)
-  if (!network.evidence || !cyclingOffer.evidence || !parking.evidence) {
-    return [[text('Les données disponibles ne permettent pas encore de dégager une lecture commune des réseaux et du stationnement.')]]
-  }
-
-  const offer = cyclingOffer.evidence
-  const bikeNetwork = network.evidence.networks.find((mode) => mode.mode === 'bike')
-  const total = narrativeValue(offer.totalLength.fact)
-  const protectedLength = narrativeValue(offer.protectedLength.fact)
-  const sharedLength = narrativeValue(offer.sharedLength.fact)
-  const bikeSpaces = narrativeValue(parking.evidence.bikeSpaces.fact)
-  const carSpaces = narrativeValue(parking.evidence.carSpaces.fact)
-  const bikePerCar = narrativeValue(parking.evidence.bikePerCar.fact)
-  const parts: TextSegment[] = [text(`${territoryLead(facts.territory)}, `)]
-  if (total !== null && protectedLength !== null && sharedLength !== null) {
-     parts.push(
-       text(`le réseau cyclable totalise ${formatNumber(total)} km, dont ${formatNumber(protectedLength)} km protégés et ${formatNumber(sharedLength)} km partagés. `),
-     )
-  } else {
-    parts.push(text('le réseau cyclable et son offre d’aménagement restent partiellement documentés. '))
-  }
-  if (bikeSpaces !== null && carSpaces !== null && bikePerCar !== null) {
-    parts.push(text(`Le stationnement compte ${formatNumber(bikeSpaces)} places vélo pour 1 000 habitants contre ${formatNumber(carSpaces)} places voiture, soit ${formatNumber(bikePerCar)} place vélo pour une place voiture. `))
-  } else {
-    parts.push(text('Le stationnement ne dispose pas encore de ses trois mesures comparables. '))
-  }
-
-  const networkSide = sideOfReference(bikeNetwork?.length.fact ?? absentFact('b_km_1000', 'km / 1 000 hab.'))
-  const parkingSide = sideOfReference(parking.evidence.bikeSpaces.fact)
-  if (networkSide !== null && parkingSide !== null && networkSide !== 0 && networkSide === parkingSide) {
-    parts.push(text('Le réseau cyclable et le stationnement vélo se situent du même côté de leur groupe comparé.'))
-  } else if (networkSide !== null && parkingSide !== null && networkSide !== 0 && parkingSide !== 0) {
-    parts.push(text('Le réseau cyclable et le stationnement vélo ne se situent pas du même côté de leur groupe comparé : c’est le point de tension de la lecture.'))
-  }
-  return [parts]
-}
-/** Only complete, finite facts can support a narrative claim. */
-function narrativeValue(fact: NumericFact): number | null {
-  return fact.availability === 'complete' && fact.value !== null && Number.isFinite(fact.value) ? fact.value : null
-}
 export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: ThemeMetadata): ThemeContent {
   // #627 legacy accessibility retirement: the acces-aux-services unit keeps
-  // only its structural identity (the pagination/AEDAR binding). The retired
-  // snapshot sections, their introduction and their rundown no longer render
-  // as « Contenu indisponible » placeholders while AEDAR loads or fails — the
-  // production AEDAR sections own the surface and replace this unit's content
-  // as soon as their evidence is ready.
+  // only its structural identity (the pagination/AEDAR binding). The production
+  // AEDAR evidence owns the surface and replaces this unit's content as soon as
+  // its evidence is ready.
   const accessSections: readonly MobiliteContentSection[] = []
   const sharingSections = [
-    sharingNetworksSection(facts),
-    sharingCyclingOfferSection(facts),
-    sharingParkingSection(facts),
+    buildMobiliteNetworksSection(facts, metadata),
+    buildMobiliteStationnementRavitaillementSection(facts, metadata),
   ] as const
   const factFor = (key: string): ContentFact | null => {
     const fact = indicatorFor(facts, key)
@@ -928,24 +619,6 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
   }
   const subgroupLabel = (key: keyof typeof CONTENU_SOUS_GROUPES_FICHE.mobilite, fallback: string): string =>
     CONTENU_SOUS_GROUPES_FICHE.mobilite[key] ?? fallback
-  const composition = facts.mobility.indicators.filter((fact) => fact.key === 'voitures_menage')
-    .map((fact) => contentFact(fact, fact.detailLabel ??
-      metadata?.detail_labels.voitures_menage?.[fact.detail ?? ''] ??
-      (fact.detail ? detailLabelFor('voitures_menage', fact.detail) : fact.label ?? 'Fait disponible')))
-  const charging = ['bornes_recharge', 'bornes_ev_par_station_service'].flatMap((key) => {
-    const fact = factFor(key)
-    return fact ? [fact] : []
-  })
-  const motorFacts = [...composition, ...charging]
-  const motorEvidence = motorFacts.length ? {
-    kind: 'motorisation' as const, composition, charging,
-  } : null
-  const motorSection: MotorisationSection = {
-    key: 'motorisation', label: subgroupLabel('motorisation', 'Motorisation'), indicators: indicatorsFor(facts, ['voitures_menage', 'bornes_recharge', 'bornes_ev_par_station_service']),
-    availability: !motorEvidence ? 'absent' : motorFacts.every(({fact}) => complete(fact)) ? 'complete' : 'incomplete',
-    evidence: motorEvidence, provenance: sourceIdsFor(motorFacts), lecture: null,
-    explorationTargets: targetsFor(motorFacts.map(({fact}) => fact), facts.territory),
-  }
   const curve = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe').map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
   const selectedComparison = facts.mobility.selectedTrajectoryComparison
   const comparisonTrajectory: ComparisonTrajectoryContent | null = selectedComparison ? {
@@ -962,8 +635,9 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
     trajectoryMetadata: metadata?.indicator_pages?.raccordement_courbe?.family === 'trajectory'
       ? metadata.indicator_pages.raccordement_courbe.trajectory : null,
   } : null
+  const transitLabel = subgroupLabel('offre-transports-commun', 'Offre de transports en commun')
   const transitSection: OffreTransportsSection = {
-    key: 'offre-transports-commun', label: subgroupLabel('offre-transports-commun', 'Offre de transports en commun'), indicators: indicatorsFor(facts, ['offre_tc', 'raccordement_courbe']),
+    key: 'offre-transports-commun', label: transitLabel, indicators: indicatorsFor(facts, ['offre_tc', 'raccordement_courbe']),
     availability: !transitEvidence ? 'absent' : transitFacts.every(({fact}) => complete(fact)) ? 'complete' : 'incomplete',
     evidence: transitEvidence, provenance: sourceIdsFor(transitFacts), lecture: null,
     explorationTargets: targetsFor(transitFacts.map(({fact}) => fact), facts.territory),
@@ -978,15 +652,10 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
   const sharingUnit: PartageEspacePublicContentUnit = {
     key: 'partage-de-lespace-public',
     label: subgroupLabel('partage-de-lespace-public', 'Partage de l’espace public'),
-    introduction: sharingIntroduction(),
-    rundown: sharingRundown(facts),
+    // C2 — one grammatical paragraph replaces the retired introduction and rundown.
+    introduction: buildPartageSubtitle(facts),
     sections: sharingSections,
   }
-  const motorLabel = subgroupLabel('motorisation', 'Motorisation')
-  const transitLabel = subgroupLabel('offre-transports-commun', 'Offre de transports en commun')
-  motorSection.label = motorLabel
-  transitSection.label = transitLabel
-  const motorUnit: MotorisationContentUnit = { key: 'motorisation', label: motorLabel, introduction: [], rundown: [], sections: [motorSection] }
   const transitUnit: OffreTransportsContentUnit = { key: 'offre-transports-commun', label: transitLabel, introduction: [], rundown: [], sections: [transitSection] }
 
   return {
@@ -994,7 +663,7 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
     label: 'Mobilité',
     territory: facts.territory,
     introduction: accessUnit.introduction,
-    units: [accessUnit, sharingUnit, motorUnit, transitUnit],
-    sourceRegister: registerFor([...accessSections, ...sharingSections, motorSection, transitSection]),
+    units: [accessUnit, sharingUnit, transitUnit],
+    sourceRegister: registerFor([...accessSections, ...sharingSections, transitSection], metadata),
   }
 }

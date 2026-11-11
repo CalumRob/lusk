@@ -10,6 +10,9 @@ defineProps<{
   retryAccess?: () => void
   buildingStatus?: 'loading' | 'ready' | 'error'
   retryBuilding?: () => void
+  nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  nativeComparisonError?: string
+  retryNativeComparison?: () => void
 }>()
 </script>
 
@@ -21,6 +24,9 @@ defineProps<{
     :retry-access="retryAccess"
     :building-status="buildingStatus"
     :retry-building="retryBuilding"
+    :native-comparison-status="nativeComparisonStatus"
+    :native-comparison-error="nativeComparisonError"
+    :retry-native-comparison="retryNativeComparison"
     show-all-units
     show-map-prototype
     presentation="plain"

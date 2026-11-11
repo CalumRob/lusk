@@ -793,7 +793,7 @@ watch([productionMobilite, typeRoute, idRoute, () => membresAcquisition.value,
       const updated = applyThemeComparisonApiFacts(mobilityFocal.value, data, context, explicitSelection)
        mobilityComparisonFacts.value = updated
        mobilityCurveComparison.value = updated.mobility.selectedTrajectoryComparison ?? null
-      mobilityComparisonStatus.value = 'ready'
+      mobilityComparisonStatus.value = isRecord(data) && data.comparison_error === true ? 'error' : 'ready'
       settled = true
     }).catch((error: unknown) => {
       settled = true
