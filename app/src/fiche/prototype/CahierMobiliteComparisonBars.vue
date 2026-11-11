@@ -384,9 +384,21 @@ function categoryAriaLabel(index: number): string {
   return parts.join(' ; ')
 }
 
+const resourceNotes = computed(() => {
+  const notes: string[] = []
+  if (props.figure.unavailableResources?.length) {
+    notes.push(`Publication indisponible : ${props.figure.unavailableResources.join(', ')}`)
+  }
+  if (props.figure.unavailableComparisons?.length) {
+    notes.push(`Comparaison indisponible : ${props.figure.unavailableComparisons.join(', ')}`)
+  }
+  return notes
+})
+
 const accessibleLabel = computed(() => {
   const readings = props.figure.categories.map((_category, index) => categoryAriaLabel(index)).join(' ; ')
-  return `${props.figure.figureTitle}. Barres verticales groupées par ${props.figure.xAxisTitle.toLocaleLowerCase('fr-FR')}, en ${props.figure.unit}. ${readings}. Axe horizontal : ${props.figure.xAxisTitle}. Axe vertical : ${props.figure.yAxisTitle}.`
+  const notes = resourceNotes.value.length ? ` ${resourceNotes.value.join(' ')}` : ''
+  return `${props.figure.figureTitle}. Barres verticales groupées par ${props.figure.xAxisTitle.toLocaleLowerCase('fr-FR')}, en ${props.figure.unit}. ${readings}. Axe horizontal : ${props.figure.xAxisTitle}. Axe vertical : ${props.figure.yAxisTitle}.${notes}`
 })
 
 const selectedCategoryTitle = computed(() => selectedCategoryIndex.value === null
@@ -586,6 +598,13 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
       class="mobilite-comparison-state"
       role="note"
     >{{ category.splitNote }}</p>
+
+    <p
+      v-for="note in resourceNotes"
+      :key="note"
+      class="mobilite-comparison-state"
+      role="note"
+    >{{ note }}</p>
 
     <p v-if="comparison.status === 'loading'" class="mobilite-comparison-state" role="status">Chargement du groupe comparé…</p>
     <div v-else-if="comparison.status === 'error'" class="mobilite-comparison-error" role="status">

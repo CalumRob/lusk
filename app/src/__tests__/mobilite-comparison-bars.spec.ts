@@ -249,6 +249,24 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
     expect(wrapper.get('.mobilite-comparison-bars__tooltip').text()).toContain('Répartition Protégé/Partagé')
   })
 
+  it('lists isolated publication failures visibly and in the accessible name', () => {
+    const unavailableFigure: MobiliteBarsFigureEvidence = {
+      ...figure,
+      unavailableResources: ['Bornes de recharge pour 1 000 hab.', 'Stations-service'],
+      unavailableComparisons: ['Réseau cyclable'],
+    }
+    const wrapper = mount(CahierMobiliteComparisonBars, {
+      props: { figure: unavailableFigure, comparison: { status: 'ready' } },
+    })
+    expect(wrapper.text()).toContain('Publication indisponible : Bornes de recharge pour 1 000 hab., Stations-service')
+    expect(wrapper.text()).toContain('Comparaison indisponible : Réseau cyclable')
+    const notes = wrapper.findAll('.mobilite-comparison-state[role="note"]')
+    expect(notes).toHaveLength(2)
+    const label = wrapper.get('svg[role="img"]').attributes('aria-label')!
+    expect(label).toContain('Publication indisponible : Bornes de recharge pour 1 000 hab., Stations-service')
+    expect(label).toContain('Comparaison indisponible : Réseau cyclable')
+  })
+
   it('names the served comparison statistic dynamically (mean vs median)', () => {    const meanFigure = structuredClone(figure)
     const bike = meanFigure.categories.find((category) => category.key === 'bike')!
     bike.value.fact.comparison = {

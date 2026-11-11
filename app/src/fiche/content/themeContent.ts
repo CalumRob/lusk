@@ -266,6 +266,10 @@ export interface MobiliteBarsFigureEvidence {
   categories: readonly MobiliteBarCategoryEvidence[]
   /** Resolved statistic + scope label of the compared group, never a generic peer. */
   comparisonLabel: string | null
+  /** Declared publications whose focal value could not be read for this figure. */
+  unavailableResources?: readonly string[]
+  /** Declared comparisons whose bounded read failed or could not be bound. */
+  unavailableComparisons?: readonly string[]
 }
 
 export interface MobiliteRatioEvidence {

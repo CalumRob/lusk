@@ -1,7 +1,7 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
 import type { TerritoireType, Theme } from './types'
 import { validerReponseComparaisonTheme } from './themeFactsAdapter'
-import { chargerCatalogueRessources, lireRessourcesBatch } from './semanticResourceClient'
+import { chargerCatalogueRessources, lireRessourcesBatch, SemanticMemberError } from './semanticResourceClient'
 import type { SemanticReadItem, SemanticResourceDeclaration, SemanticTerritoryTarget } from './semanticResourceClient'
 /** Every canonical theme is acquired (active priority, then background warm-up) unless an owner-owned flow handles it. */
 export const THEMES_ACQUISITION_API: readonly Theme[] = ['programmes', 'demographie', 'habitat', 'economie', 'milieux', 'mobilite']
@@ -21,6 +21,14 @@ export interface PublicationTokens {
   building_publication_id?: unknown
 }
 
+/** Explicit per-resource failure so one unpublished resource never blanks a whole theme page. */
+export interface ThemeResourceFailure {
+  resource: string
+  label: string | null
+  stage: 'facts' | 'comparison'
+  message: string
+}
+
 export interface ThemeResponse {
   tokens?: Record<string, unknown>
   resource_reads?: SemanticThemeRead[]
@@ -28,6 +36,8 @@ export interface ThemeResponse {
   comparison_reads?: SemanticThemeRead[]
   cohort_reads?: SemanticThemeRead[]
   named_reference_reads?: SemanticThemeRead[]
+  /** Resources whose declared publication failed while their bounded group stayed isolated. */
+  resource_failures?: ThemeResourceFailure[]
   comparison_error?: boolean
   cohort_error?: boolean
   named_reference_error?: boolean
@@ -358,11 +368,13 @@ function retainedThemeResources(catalogue: SemanticResourceDeclaration[], theme:
   return catalogue.filter((resource) => resource.theme_id === theme && resource.allowed_levels.includes(type as SemanticTerritoryTarget['type']))
 }
 
-async function readAll(items: SemanticReadItem[]): Promise<Array<{ resource: string; data: Record<string, unknown> }>> {
+type AlignedRead = { resource: string; data: Record<string, unknown> }
+
+async function readAll(items: SemanticReadItem[]): Promise<AlignedRead[]> {
   // Grouping keeps every resource+target read in one batch, so batch order no
   // longer follows request order; results are placed back by original index.
   const originalIndex = new Map(items.map((item, index) => [item, index]))
-  const output: Array<{ resource: string; data: Record<string, unknown> }> = new Array(items.length)
+  const output: AlignedRead[] = new Array(items.length)
   for (const batch of chunkedGroups(items, 12, readGroupKey)) {
     const data = await lireRessourcesBatch(batch)
     batch.forEach((item, index) => {
@@ -370,6 +382,179 @@ async function readAll(items: SemanticReadItem[]): Promise<Array<{ resource: str
     })
   }
   return output
+}
+
+function resourceFailure(
+  resources: SemanticResourceDeclaration[],
+  resource: string,
+  stage: ThemeResourceFailure['stage'],
+  error: unknown,
+): ThemeResourceFailure {
+  return {
+    resource,
+    label: resources.find((declaration) => declaration.resource_id === resource)?.label ?? null,
+    stage,
+    message: error instanceof Error ? error.message : String(error),
+  }
+}
+
+function uniqueFailures(failures: readonly ThemeResourceFailure[]): ThemeResourceFailure[] {
+  const seen = new Set<string>()
+  return failures.filter((failure) => {
+    const key = `${failure.resource}\u0000${failure.stage}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function groupReadItems(items: SemanticReadItem[]): SemanticReadItem[][] {
+  const groups = new Map<string, SemanticReadItem[]>()
+  for (const item of items) {
+    const key = readGroupKey(item)
+    const group = groups.get(key)
+    if (group) group.push(item)
+    else groups.set(key, [item])
+  }
+  return [...groups.values()]
+}
+
+/**
+ * Read a single bounded resource group in a fresh snapshot. A paired read keeps
+ * facts and their default comparison together; if only the comparison is
+ * rejected, a fresh facts-only read preserves the focal value without ever
+ * combining two generations.
+ */
+async function readIsolatedGroup(
+  group: SemanticReadItem[],
+  resources: SemanticResourceDeclaration[],
+): Promise<{ data: Array<Record<string, unknown> | null>; failures: ThemeResourceFailure[] }> {
+  const facts = group.filter((item) => item.intent.kind === 'facts')
+  try {
+    return { data: await lireRessourcesBatch(group), failures: [] }
+  } catch (error) {
+    if (!facts.length) {
+      return {
+        data: group.map(() => null),
+        failures: group.map((item) => resourceFailure(resources, item.resource, 'comparison', error)),
+      }
+    }
+    try {
+      const data = await lireRessourcesBatch(facts)
+      return {
+        data: group.map((item) => {
+          const index = facts.indexOf(item)
+          return index >= 0 ? data[index]! : null
+        }),
+        failures: group.filter((item) => item.intent.kind !== 'facts')
+          .map((item) => resourceFailure(resources, item.resource, 'comparison', error)),
+      }
+    } catch (factsError) {
+      return {
+        data: group.map(() => null),
+        failures: [resourceFailure(resources, group[0]!.resource, 'facts', factsError)],
+      }
+    }
+  }
+}
+
+/**
+ * Mobilite-only isolation seam: a failed atomic batch is never partially
+ * salvaged. Every resource group in it is re-read in its own bounded snapshot,
+ * with an explicit failure entry for the resources the publication cannot serve.
+ */
+async function readAllWithIsolation(
+  items: SemanticReadItem[],
+  resources: SemanticResourceDeclaration[],
+): Promise<{ reads: Array<AlignedRead | null>; failures: ThemeResourceFailure[] }> {
+  const originalIndex = new Map(items.map((item, index) => [item, index]))
+  const reads: Array<AlignedRead | null> = new Array(items.length).fill(null)
+  const failures: ThemeResourceFailure[] = []
+  const assign = (group: SemanticReadItem[], data: Array<Record<string, unknown> | null>) => {
+    group.forEach((item, index) => {
+      const value = data[index]
+      if (value) reads[originalIndex.get(item)!] = { resource: item.resource, data: value }
+    })
+  }
+  for (const batch of chunkedGroups(items, 12, readGroupKey)) {
+    try {
+      assign(batch, await lireRessourcesBatch(batch))
+    } catch (batchError) {
+      // A named selection member is a user-facing identity error, not an
+      // unpublished resource: isolate it per resource would hide the name.
+      if (batchError instanceof SemanticMemberError) throw batchError
+      // Never reuse a successful prefix from the rejected atomic batch.
+      const groups = groupReadItems(batch)
+      const outcomes = await Promise.all(groups.map((group) => readIsolatedGroup(group, resources)))
+      groups.forEach((group, index) => {
+        assign(group, outcomes[index]!.data)
+        failures.push(...outcomes[index]!.failures)
+      })
+    }
+  }
+  return { reads, failures: uniqueFailures(failures) }
+}
+
+/**
+ * Preserve every publication/descriptor/reference check per resource. A group
+ * whose comparison cannot be bound to its focal facts is dropped and reported;
+ * it is never rendered as a ready comparison.
+ */
+function filterCompatibleComparisons(
+  items: SemanticReadItem[],
+  reads: Array<AlignedRead | null>,
+  resources: SemanticResourceDeclaration[],
+  type: string,
+  id: string,
+): ThemeResourceFailure[] {
+  const byResource = new Map<string, { factIndex: number | null; comparisonIndices: number[] }>()
+  items.forEach((item, index) => {
+    if (!reads[index]) return
+    const entry = byResource.get(item.resource) ?? { factIndex: null, comparisonIndices: [] }
+    if (item.intent.kind === 'facts') entry.factIndex = index
+    else entry.comparisonIndices.push(index)
+    byResource.set(item.resource, entry)
+  })
+  const failures: ThemeResourceFailure[] = []
+  for (const [resource, entry] of byResource) {
+    if (!entry.comparisonIndices.length) continue
+    const factRead = entry.factIndex === null ? null : reads[entry.factIndex]
+    const comparisonReads = entry.comparisonIndices.map((index) => reads[index]!)
+    if (!factRead || comparisonReads.some((read) => !read)) {
+      for (const index of entry.comparisonIndices) reads[index] = null
+      failures.push(resourceFailure(resources, resource, 'comparison',
+        new Error('Comparaison sémantique incomplète')))
+      continue
+    }
+    const shapes = resources.find((resourceDeclaration) =>
+      resourceDeclaration.resource_id === resource)?.shapes
+    const subset: ThemeResponse = {
+      resource_reads: [{ resource, shapes, data: factRead.data }],
+      default_comparison: {
+        comparison_reads: comparisonReads.map((read) => ({ resource, shapes, data: read!.data })),
+      },
+    }
+    let compatible = false
+    try {
+      compatible = semanticPublicationsCompatible(subset, subset.default_comparison!, { type, id })
+    } catch {
+      compatible = false
+    }
+    if (!compatible) {
+      for (const index of entry.comparisonIndices) reads[index] = null
+      failures.push(resourceFailure(resources, resource, 'comparison',
+        new Error('Publications sémantiques focales et comparées incompatibles')))
+    }
+  }
+  return failures
+}
+
+function decorateRead(
+  read: AlignedRead,
+  resources: SemanticResourceDeclaration[],
+): SemanticThemeRead {
+  const declaration = resources.find((resource) => resource.resource_id === read.resource)
+  return { ...read, shapes: declaration?.shapes, declaration }
 }
 
 /**
@@ -674,6 +859,59 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
   return true
 }
 
+async function acquireMobiliteFacts(
+  themeResources: SemanticResourceDeclaration[],
+  resources: SemanticResourceDeclaration[],
+  items: SemanticReadItem[],
+  theme: ThemeKey,
+  type: string,
+  id: string,
+): Promise<ThemeResponse> {
+  const { reads, failures } = await readAllWithIsolation(items, resources)
+  const hasFact = items.some((item, index) => item.intent.kind === 'facts' && reads[index] !== null)
+  if (!hasFact && failures.length) {
+    const factsFailure = uniqueFailures(failures).find((failure) => failure.stage === 'facts') ?? failures[0]
+    throw new Error(factsFailure!.message)
+  }
+  const compatibilityFailures = filterCompatibleComparisons(items, reads, resources, type, id)
+  const allFailures = uniqueFailures([...failures, ...compatibilityFailures]).slice()
+  const resourceReads = items
+    .map((item, index) => item.intent.kind === 'facts' ? reads[index] : null)
+    .filter((read): read is AlignedRead => read !== null)
+    .map((read) => decorateRead(read, resources))
+  const comparisonReads = items
+    .map((item, index) => item.intent.kind !== 'facts' ? reads[index] : null)
+    .filter((read): read is AlignedRead => read !== null)
+    .map((read) => decorateRead(read, resources))
+  const defaultComparison = { theme_id: theme, comparison_reads: comparisonReads }
+  const result: ThemeResponse = { theme_id: theme, resource_reads: resourceReads,
+    default_comparison: defaultComparison }
+  if (comparisonReads.length && !semanticPublicationsCompatible(result, defaultComparison, { type, id })) {
+    // The per-resource checks passed; this is a cross-resource incompatibility.
+    // Drop every comparison rather than surfacing a ready but mismatched value.
+    for (const read of comparisonReads) {
+      allFailures.push(resourceFailure(resources, read.resource, 'comparison',
+        new Error('Publications sémantiques focales et comparées incompatibles')))
+    }
+    comparisonReads.length = 0
+  }
+  const unique = uniqueFailures(allFailures)
+  const declaredComparisonResources = resources.filter((resource) =>
+    resource.target_kinds.includes('territory') && resource.intents.includes('fixed_comparison'))
+  const successfulComparisonResources = new Set(comparisonReads.map((read) => read.resource))
+  const comparison_error = declaredComparisonResources.length > 0 &&
+    declaredComparisonResources.every((resource) => !successfulComparisonResources.has(resource.resource_id))
+  return {
+    ...result,
+    ...(unique.length ? { resource_failures: unique } : {}),
+    ...(comparison_error ? {
+      comparison_error: true,
+      comparison_failure: unique.find((failure) => failure.stage === 'comparison')?.message,
+    } : {}),
+    ...(await readAuxiliary(themeResources, type)),
+  }
+}
+
 export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
   _selection?: readonly ThemeSelectionMember[]): Promise<ThemeResponse> {
   return (async () => {
@@ -683,6 +921,9 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
     if (!items.length) return { theme_id: theme, resource_reads: [],
       default_comparison: { theme_id: theme, comparison_reads: [] },
       ...(await readAuxiliary(themeResources, type)) }
+    if (theme === 'mobilite') {
+      return acquireMobiliteFacts(themeResources, resources, items, theme, type, id)
+    }
     try {
       const paired = await readAll(items)
       const resourceReads = paired.filter((_, index) => items[index]!.intent.kind === 'facts')
@@ -725,16 +966,24 @@ export function acquireThemeComparison(type: string, id: string, theme: ThemeKey
         ? detailItems
         : [territoryItem(resource.resource_id, type, id, intent)]
     })
-    const comparisons = await readAll(items)
+    const isolated = theme === 'mobilite' ? await readAllWithIsolation(items, resources) : null
+    const comparisons = isolated
+      ? items.map((_item, index) => isolated.reads[index])
+        .filter((read): read is AlignedRead => read !== null)
+      : await readAll(items)
     const auxiliary = await readAuxiliary(themeResources, type, false, selection)
     const echoedSelection = comparisons.length ? comparisons[0]!.data.selection : undefined
     if (comparisons.some(({ data }) => JSON.stringify(data.selection ?? null) !== JSON.stringify(echoedSelection ?? null))) {
       throw new Error('Les comparaisons sémantiques ne reflètent pas la même sélection')
     }
+    const failures = isolated?.failures ?? []
+    const comparison_error = theme === 'mobilite' && items.length > 0 && comparisons.length === 0
     return { theme_id: theme, ...(selection === undefined ? {} : { selection }),
       comparison_reads: comparisons.map((read) => ({ ...read,
         shapes: resources.find((resource) => resource.resource_id === read.resource)?.shapes,
         declaration: resources.find((resource) => resource.resource_id === read.resource) })), ...auxiliary,
+      ...(failures.length ? { resource_failures: failures } : {}),
+      ...(comparison_error ? { comparison_error: true } : {}),
       ...(Array.isArray(echoedSelection) ? { selection: echoedSelection } : {}) }
   })()
 }

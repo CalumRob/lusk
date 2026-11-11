@@ -70,6 +70,16 @@ browser-side peer computation. #953 publishes the refuelling densities.
    loading, error (with retry), unavailable and empty selection without a
    fallback reference. The theme comparison status is the
    `nativeComparisonStatus` already owned by `TerritoireView`.
+9. **Partial per-resource publication (release state).** A declared resource
+   whose publication is still absent must not blank the rest of the Mobilité
+   page. The theme acquisition isolates each resource+target group in a fresh
+   bounded snapshot (≤12 reads), keeps its focal/default and expanded declared
+   comparisons together, and records an explicit `resource_failures` entry.
+   A failed atomic batch is never partially salvaged; a comparison-only failure
+   keeps fresh focal facts while that comparison stays explicitly unavailable.
+   Affected figures list the unavailable publication visibly and accessibly; no
+   zero, rank or reference is fabricated. Other themes keep their existing
+   atomic default contract.
 
 ## AEDAR preservation rule (C7)
 
@@ -91,6 +101,10 @@ absence of any Marelle inside the unit.
 - The app consumes the #960 declared-profile detail references through the
   existing theme comparison acquisition; it never computes peer statistics in
   the browser.
+- An unpublishing producer resource is a scoped data failure on the affected
+  figure, not a page error: the page keeps its published maps, bars, parking
+  column, ratio and prose while the missing publication remains visibly
+  unavailable until a fresh read after publication.
 - The new Cahier figure family (`CahierMobiliteComparisonBars`) is reusable by
   page 3 (#955), which is intentionally out of scope here.
 - `DESIGN.md` is not rewritten; this ADR stands in until the human-owned

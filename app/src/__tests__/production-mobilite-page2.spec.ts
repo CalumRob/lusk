@@ -271,8 +271,12 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     vi.stubGlobal('fetch', stale)
     const acquired = await acquireThemeFacts('commune', '35238', 'mobilite')
     expect(mutated).toBe(true)
-    expect(acquired.comparison_error).toBe(true)
+    expect(acquired.comparison_error).not.toBe(true)
+    expect(acquired.resource_failures).toContainEqual(expect.objectContaining({
+      resource: 'reseaux', stage: 'comparison',
+    }))
     expect(acquired.resource_reads?.length).toBeGreaterThan(0)
+    expect(acquired.default_comparison?.comparison_reads.some((read) => read.resource === 'reseaux')).toBe(false)
   })
 
   it('renders the paired parking and refuelling figures with their ratio references and ranks', async () => {

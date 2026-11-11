@@ -3,8 +3,8 @@ import type { TerritoryComparisonContext } from '@/fiche/comparisonContext'
 import type { ThemeResponse } from '@/payload/themeAcquisition'
 import { nativeFactContractFromEnvelope, semanticComparisonForTheme, themeFactsEnvelopeFromSemantic } from '@/payload/themeFactsAdapter'
 import { territoryFactsFor } from './territoryFacts'
-import type { FactProvenance, MobilityTrajectoryContract, NamedTrajectoryReference, NumericFact,
-  SelectedTrajectoryComparison, TerritoryFacts } from './territoryFacts'
+import type { FactProvenance, MobilityResourceFailure, MobilityTrajectoryContract, NamedTrajectoryReference,
+  NumericFact, SelectedTrajectoryComparison, TerritoryFacts } from './territoryFacts'
 
 type Row = Record<string, unknown>
 
@@ -18,6 +18,34 @@ const rows = (value: unknown, field: string): Row[] => {
 }
 const text = (value: unknown): value is string => typeof value === 'string'
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+
+/** Failure metadata is presentation-neutral: malformed entries never become numeric reads. */
+function resourceFailuresFrom(response: unknown): MobilityResourceFailure[] {
+  if (!isRecord(response) || !Array.isArray(response.resource_failures)) return []
+  return response.resource_failures.flatMap((entry) => {
+    if (!isRecord(entry) || !text(entry.resource) ||
+        (entry.stage !== 'facts' && entry.stage !== 'comparison')) return []
+    return [{
+      key: entry.resource,
+      label: text(entry.label) ? entry.label : null,
+      stage: entry.stage,
+      message: text(entry.message) ? entry.message : '',
+    }]
+  })
+}
+
+function mergeResourceFailures(
+  current: readonly MobilityResourceFailure[] | undefined,
+  incoming: readonly MobilityResourceFailure[],
+): MobilityResourceFailure[] {
+  const seen = new Set<string>()
+  return [...(current ?? []), ...incoming].filter((failure) => {
+    const key = `${failure.key}\u0000${failure.stage}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
 
 function apiSources(value: unknown): FactProvenance[] {
   if (!Array.isArray(value) || !value.length) throw new Error('Sources SQL Mobilité invalides')
@@ -231,7 +259,9 @@ export function mobilityFactsFromThemeApi(
   // #627 - Mobilité has no selected-reading resource in the native catalogue:
   // the retired div_loss_t/b reading adapter and its legacy metadata lookup
   // are gone; no reading is fabricated from the retired subgroup declaration.
-  return { ...facts, mobility: { ...facts.mobility, namedTrajectoryReferences, trajectoryContract } }
+  const resourceFailures = resourceFailuresFrom(response)
+  return { ...facts, mobility: { ...facts.mobility, namedTrajectoryReferences, trajectoryContract,
+    ...(resourceFailures.length ? { resourceFailures } : {}) } }
 }
 
 function selectedTrajectoryComparison(
@@ -335,6 +365,8 @@ export function applyThemeComparisonApiFacts(
   context?: TerritoryComparisonContext,
   expectedSelection?: readonly { territory_type: string; territory_id: string }[],
 ): TerritoryFacts {
+  const comparisonFailures = resourceFailuresFrom(response)
+    .filter((failure) => failure.stage === 'comparison')
   if (isRecord(response) && Array.isArray(response.comparison_reads)) {
     response = semanticComparisonForTheme(response, undefined, undefined,
       { type: facts.territory.type, id: facts.territory.code })
@@ -372,14 +404,20 @@ export function applyThemeComparisonApiFacts(
       scope: { mode, kind, label: context.scope.label }, rank, reference } }
   }
   const indicators = facts.mobility.indicators.map((fact) => comparisonFor(fact, fact.detail, fact.sex ?? null))
+  const resourceFailures = mergeResourceFailures(facts.mobility.resourceFailures, comparisonFailures)
   return { ...facts, mobility: { ...facts.mobility, indicators,
+    ...(resourceFailures.length ? { resourceFailures } : {}),
     selectedTrajectoryComparison: selectedTrajectoryComparison(facts, resultRows, context, response, expectedSelection) } }
 }
 
 export function clearThemeComparisonApiFacts(facts: TerritoryFacts): TerritoryFacts {
   const clear = (fact: NumericFact): NumericFact => ({ ...fact, comparison: null })
-  return { ...facts, mobility: { ...facts.mobility,
+  const resourceFailures = (facts.mobility.resourceFailures ?? [])
+    .filter((failure) => failure.stage === 'facts')
+  const { resourceFailures: _discarded, ...mobility } = facts.mobility
+  return { ...facts, mobility: { ...mobility,
     indicators: facts.mobility.indicators.map(clear),
+    ...(resourceFailures.length ? { resourceFailures } : {}),
     selectedTrajectoryComparison: null,
   } }
 }

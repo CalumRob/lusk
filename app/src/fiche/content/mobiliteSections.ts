@@ -14,6 +14,7 @@ import type {
   ContentSource,
   ExplorationTarget,
   MobiliteBarCategoryEvidence,
+  MobiliteBarsFigureEvidence,
   MobiliteNetworksSection,
   MobilitePairedColumnEvidence,
   MobiliteRatioEvidence,
@@ -336,6 +337,27 @@ function partitionValues(values: readonly ContentFact[]): (number | null)[] {
   return values.map((value) => value.fact.value)
 }
 
+/** Narrow data-failure state: only resources actually used by this figure. */
+function figureResourceNotes(
+  facts: TerritoryFacts,
+  keys: readonly string[],
+): Pick<MobiliteBarsFigureEvidence, 'unavailableResources' | 'unavailableComparisons'> {
+  const relevant = (facts.mobility.resourceFailures ?? []).filter((failure) => keys.includes(failure.key))
+  const factsFailures = relevant.filter((failure) => failure.stage === 'facts')
+  const factsFailedKeys = new Set(factsFailures.map((failure) => failure.key))
+  const labels = (failures: typeof relevant) => [...new Set(failures
+    .map((failure) => failure.label ?? failure.key))]
+  const unavailable = labels(factsFailures)
+  // A missing focal publication already explains its comparison: never repeat
+  // the same resource as a second unavailable-comparison sentence.
+  const comparisons = labels(relevant.filter((failure) =>
+    failure.stage === 'comparison' && !factsFailedKeys.has(failure.key)))
+  return {
+    ...(unavailable.length ? { unavailableResources: unavailable } : {}),
+    ...(comparisons.length ? { unavailableComparisons: comparisons } : {}),
+  }
+}
+
 export function buildMobiliteNetworksSection(
   facts: TerritoryFacts,
   metadata?: ThemeMetadata,
@@ -418,6 +440,7 @@ export function buildMobiliteNetworksSection(
         yAxisTitle: figureUnit,
         categories,
         comparisonLabel: comparisonLabelFor(densityFacts, facts.territory),
+        ...figureResourceNotes(facts, allFacts.map((value) => value.fact.key)),
       },
       prose: networkProse(),
       sources: sourcesFor(allFacts, metadata),
@@ -496,6 +519,7 @@ function stationnementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): M
         },
       ],
       comparisonLabel: comparisonLabelFor(allFacts, facts.territory),
+      ...figureResourceNotes(facts, allFacts.map((value) => value.fact.key)),
     },
     ratio,
   }
@@ -577,6 +601,7 @@ function ravitaillementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): 
         },
       ],
       comparisonLabel: comparisonLabelFor(allFacts, facts.territory),
+      ...figureResourceNotes(facts, allFacts.map((value) => value.fact.key)),
     },
     ratio,
   }
