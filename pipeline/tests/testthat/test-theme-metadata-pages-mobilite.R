@@ -16,10 +16,19 @@ PAGES_SCALAIRES_MOBILITE <- c(
   "nb_buildings", "surface_reseaux_routiers", "offre_tc", "bornes_recharge",
   "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
   "bornes_ev_par_station_service", "stationnement_velo_par_voiture",
+  "stations_service", "stations_service_1000", "bornes_recharge_1000",
   "tot_loss_t", "tot_loss_b",
   "iso_alimentation", "iso_sante", "iso_administration", "iso_ecole", "iso_banque",
   "avg_tot_car", "avg_tot_b", "avg_tot_t", "avg_div_car", "avg_div_b", "avg_div_t",
   "raccordement_tc"
+)
+
+# Les clés déclarées que le Parquet Mobilité COMMIS ne porte pas encore : la
+# publication réelle des faits appartient au prochain run (l'artefact conservé
+# est le snapshot précédent). La parité des FAITS les exclut explicitement —
+# jamais un test qui prétend les avoir publiées.
+PAGES_SCALAIRES_MOBILITE_EN_ATTENTE_DE_PUBLICATION <- c(
+  "stations_service", "stations_service_1000", "bornes_recharge_1000"
 )
 
 racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
@@ -79,6 +88,144 @@ test_that("le ratio bornes par station-service déclare ses deux sources (#900 :
     unlist(page$sources, use.names = FALSE),
     c("bpe_b316", "bornes-recharges")
   )
+})
+
+test_that("les densités de ravitaillement déclarent leur page, source et contrat scalaire (#953)", {
+  meta <- lire_theme_metadata("mobilite")
+  attendu <- list(
+    stations_service = list(
+      label = "Stations-service", unit = "stations", source = "bpe_b316"),
+    stations_service_1000 = list(
+      label = "Stations-service pour 1 000 hab.",
+      unit = "stations / 1 000 hab", source = "bpe_b316"),
+    bornes_recharge_1000 = list(
+      label = "Bornes de recharge pour 1 000 hab.",
+      unit = "bornes / 1 000 hab", source = "bornes-recharges")
+  )
+  groupes <- stats::setNames(
+    lapply(meta$subgroups, `[[`, "indicators"),
+    vapply(meta$subgroups, `[[`, character(1L), "key")
+  )
+  # le regroupement de fiche documenté : les trois densités vivent avec le
+  # couple motorisation / ravitaillement (CONTEXT.md « L'offre de mobilité
+  # alternative »), jamais dans l'accès aux services
+  expect_true(all(names(attendu) %in% groupes[["motorisation"]]))
+  expect_false(any(names(attendu) %in% groupes[["acces-aux-services"]]))
+
+  for (cle in names(attendu)) {
+    spec <- attendu[[cle]]
+    page <- meta$indicator_pages[[cle]]
+    expect_identical(page$family, "scalar", info = cle)
+    expect_identical(page$label, spec$label, info = cle)
+    expect_identical(page$unit, spec$unit, info = cle)
+    expect_identical(page$direction, "high", info = cle)
+    expect_identical(unlist(page$levels, use.names = FALSE),
+                     c("commune", "epci", "departement"), info = cle)
+    expect_identical(unlist(page$sources, use.names = FALSE), spec$source,
+                     info = cle)
+    expect_identical(meta$sources[[cle]], spec$source, info = cle)
+    expect_identical(meta$indicator_labels[[cle]], spec$label, info = cle)
+    # Un scalaire ne porte AUCUNE coordonnée de profil : la facette de
+    # comparaison vit dans scalar_contracts (comparison_facet = la clé), jamais
+    # dans indicator_pages.comparison. Un comparison.detail inventé ferait
+    # filtrer les faits scalaires (detail = NULL) par l'app et rendrait la page
+    # indisponible (#953, familySeam/correspondFait).
+    expect_null(page$comparison, info = cle)
+    expect_null(page$detail, info = cle)
+    expect_true(nzchar(page$definition), info = cle)
+    contract <- meta$scalar_contracts[[cle]]
+    expect_identical(unlist(contract$allowed_levels, use.names = FALSE),
+                     c("commune", "epci", "departement"), info = cle)
+    expect_identical(contract$comparison_facet, cle, info = cle)
+    expect_identical(contract$missing_status, "not_available", info = cle)
+  }
+  # la preuve de contrat : la page producteur RÉELLE valide, sources croisées
+  # contre les vintages du thème et directions contre le registre des rangs
+  expect_no_error(valider_theme_metadata(meta, vintages = vintages_mobilite(),
+                                        directions_module = DIRECTIONS_MOBILITE))
+})
+
+test_that("aucune page scalaire Mobilité ne porte de coordonnée de profil (#953)", {
+  meta <- lire_theme_metadata("mobilite")
+  scalaires <- names(meta$indicator_pages)[vapply(
+    meta$indicator_pages,
+    function(page) identical(page$family %||% "scalar", "scalar"),
+    logical(1L))]
+  expect_true(all(c("stations_service", "stations_service_1000",
+                    "bornes_recharge_1000") %in% scalaires))
+  for (cle in scalaires) {
+    page <- meta$indicator_pages[[cle]]
+    expect_null(page$comparison,
+                info = paste(cle, ": comparison est une coordonnée de profil"))
+    expect_true(is.null(page$list) && is.null(page$composition) &&
+                  is.null(page$trajectory) && is.null(page$distribution),
+                info = paste(cle, ": extension de profil sur un scalaire"))
+  }
+})
+
+test_that("les deux copies de métadonnées portent les mêmes entrées de ravitaillement (#953)", {
+  skip_if_not(dir.exists(racine_public), "public/data absent — la racine du dépôt est introuvable")
+  canon <- lire_theme_metadata("mobilite")
+  public <- jsonlite::fromJSON(file.path(racine_public, "theme_mobilite.json"),
+                               simplifyVector = FALSE)
+  cles <- c("stations_service", "stations_service_1000", "bornes_recharge_1000")
+  expect_identical(canon$indicator_labels[cles], public$indicator_labels[cles])
+  expect_identical(canon$sources[cles], public$sources[cles])
+  expect_identical(canon$indicator_pages[cles], public$indicator_pages[cles])
+  expect_true(all(cles %in% unlist(public$indicator_keys)))
+  groupe <- Filter(function(g) identical(g$key, "motorisation"),
+                   public$subgroups)[[1L]]
+  expect_true(all(cles %in% unlist(groupe$indicators)))
+  # la projection navigateur garde son contrat : aucun champ producteur servi
+  expect_false("scalar_contracts" %in% names(public))
+})
+
+test_that("public/data/theme_mobilite.json est EXACTEMENT la projection navigateur du canon épinglé (#953)", {
+  skip_if_not(dir.exists(racine_public), "public/data absent — la racine du dépôt est introuvable")
+  canon <- lire_theme_metadata("mobilite")
+  sortie <- tempfile("mobilite-projection-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+  # le seam RÉEL de publication, avec les vintages et le registre des
+  # directions du thème — jamais une copie éditée à la main
+  expect_no_error(publier_theme_metadata(
+    canon, sortie = sortie, vintages = vintages_mobilite(),
+    theme_attendu = "mobilite", directions_module = DIRECTIONS_MOBILITE
+  ))
+  republie <- file.path(sortie, "theme_mobilite.json")
+  commis <- file.path(racine_public, "theme_mobilite.json")
+  octets <- function(chemin) {
+    taille <- file.info(chemin)$size
+    brut <- readBin(chemin, "raw", n = taille)
+    brut[brut != as.raw(0x0d)]
+  }
+  expect_identical(
+    octets(republie), octets(commis),
+    info = paste0("public/data/theme_mobilite.json n'est pas la projection ",
+                  "du canon épinglé : régénérer par publier_theme_metadata")
+  )
+  # la parité STRUCTURELLE complète, pas seulement les trois nouvelles clés :
+  # le fichier commis est le list() que projette le seam, champ pour champ
+  expect_identical(
+    projection_navigateur(canon),
+    jsonlite::fromJSON(commis, simplifyVector = FALSE)
+  )
+  publie <- jsonlite::fromJSON(commis, simplifyVector = FALSE)
+  producteur_seulement <- c(
+    "semantic_resources", "story_keys", "observed_collection_contracts",
+    "indicator_directions", "selected_reading_contract", "comparison_scopes",
+    "building_comparison", "service_share_scalar", "distribution_contracts",
+    "scalar_contracts", "profile_contracts", "map_layers", "owned_series_routes"
+  )
+  expect_false(any(producteur_seulement %in% names(publie)))
+  # les enregistrements de source et les libellés de trajectoire suivent le
+  # canon COURANT (la dérive BPE 2024 / matrice_temps_mairies est morte)
+  expect_identical(publie$source_records, projection_navigateur(canon)$source_records)
+  expect_identical(publie$indicator_labels$raccordement_tc,
+                   "Population bretonne jointe en 90 minutes en transports en commun")
+  expect_identical(publie$sources$raccordement_tc,
+                   "raccordement_gtfs_national")
+  expect_length(publie$detail_labels$raccordement_courbe, 73L)
 })
 
 test_that("la trajectoire raccordement déclare exactement la grille publiée et ses repères humains", {
@@ -176,7 +323,16 @@ test_that("parité pages scalaires ↔ Parquet Mobilité conservé : niveaux, un
   skip_if_not(dir.exists(racine_public), "public/data absent — la racine du dépôt est introuvable")
   meta <- lire_theme_metadata("mobilite")
   faits <- nanoparquet::read_parquet(file.path(racine_public, "indicateurs_mobilite.parquet"))
-  for (cle in PAGES_SCALAIRES_MOBILITE) {
+  # L'artefact COMMIS est le snapshot de la publication précédente : il ne
+  # porte pas encore les trois densités de ravitaillement (#953), dont les
+  # faits naîtront au prochain run. La parité couvre les clés publiées, et le
+  # diff est explicitement nommé — jamais une clé oubliée derrière un filtre.
+  cles_publiees <- intersect(PAGES_SCALAIRES_MOBILITE, unique(faits$key))
+  expect_setequal(
+    setdiff(PAGES_SCALAIRES_MOBILITE, cles_publiees),
+    PAGES_SCALAIRES_MOBILITE_EN_ATTENTE_DE_PUBLICATION
+  )
+  for (cle in cles_publiees) {
     page <- meta$indicator_pages[[cle]]
     lignes <- faits[faits$key == cle, ]
     expect_true(nrow(lignes) > 0L, info = cle)

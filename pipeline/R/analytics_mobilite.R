@@ -1015,6 +1015,10 @@ calculer_stationnement_velo_communes <- function(velo) {
 #     sans borne a 0 borne — un fait, jamais un NA) ;
 #   - places_stationnement_velo_1000 (un taux) : Σ places ÷ Σ population
 #     × 1 000 — recomposé depuis les parties, jamais la moyenne des taux ;
+#   - les densités de ravitaillement (#953) : stations_service (un compte)
+#     SOMMÉ, stations_service_1000 et bornes_recharge_1000 (des taux)
+#     RECOMPOSÉS depuis les comptes et la population du hub — le zéro observé
+#     reste un fait, une observation BPE absente propage NA ;
 #   - offre_cyclable (issue #231, la figure « L'offre cyclable ») : une clé
 #     MULTI-MESURE (5 détails) — les longueurs protégé/partagé/total SOMMÉES,
 #     les km/1 000 hab RECOMPOSÉS depuis les parties (Σ km ÷ Σ population
@@ -1069,7 +1073,11 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
       by = "commune"
     ) %>%
     dplyr::rename(value = nb_bornes) %>%
-    dplyr::left_join(ref, by = c("commune" = "CODGEO"))
+    dplyr::left_join(ref, by = c("commune" = "CODGEO")) %>%
+    # la population du dénominateur des taux / 1 000 hab est celle du hub
+    # stationnement vélo — le même dénominateur que les densités de parking
+    dplyr::left_join(velo_communes[c("commune", "population")],
+                     by = "commune")
   bornes <- dplyr::bind_rows(
     ctx_b %>% dplyr::transmute(code = commune, value),
     ctx_b %>% dplyr::filter(!is.na(EPCI)) %>%
@@ -1081,6 +1089,25 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
                                .groups = "drop")
   ) %>%
     dplyr::mutate(key = "bornes_recharge", detail = NA_character_)
+  # le taux de bornes (issue #953) : Σ bornes ÷ Σ population × 1 000, recalculé
+  # depuis les parties à chaque niveau — jamais la moyenne des taux communaux.
+  # Le zéro porté par une commune sans borne reste un fait (jamais un NA).
+  bornes_1000 <- dplyr::bind_rows(
+    ctx_b %>% dplyr::transmute(code = commune,
+                               value = value / population * 1000),
+    ctx_b %>% dplyr::filter(!is.na(EPCI)) %>%
+      dplyr::group_by(code = EPCI) %>%
+      dplyr::summarise(value = sum(value) / sum(population) * 1000,
+                       .groups = "drop"),
+    ctx_b %>% dplyr::group_by(code = DEP) %>%
+      dplyr::summarise(value = sum(value) / sum(population) * 1000,
+                       .groups = "drop"),
+    ctx_b %>% dplyr::summarise(
+      code = "53",
+      value = sum(value) / sum(population) * 1000,
+      .groups = "drop")
+  ) %>%
+    dplyr::mutate(key = "bornes_recharge_1000", detail = NA_character_)
 
   # velo : Σ places ÷ Σ population × 1 000 — recomposé depuis les parties
   # (jamais la moyenne des taux) ; les communes sans EPCI n'agrègent à aucun
@@ -1180,15 +1207,18 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
       dplyr::left_join(bornes_communes %>% dplyr::rename(bornes = nb_bornes), by = "commune") %>%
       dplyr::mutate(bornes = dplyr::coalesce(bornes, 0)) %>%
       dplyr::left_join(fuel_communes %>% dplyr::rename(fuel_value = fuel), by = c("commune" = "code")) %>%
+      dplyr::left_join(velo_communes[c("commune", "population")], by = "commune") %>%
       dplyr::left_join(ref, by = c("commune" = "CODGEO"))
     agg <- function(g) ctx_r %>% dplyr::filter(!is.na(.data[[g]])) %>%
       dplyr::group_by(code = .data[[g]]) %>% dplyr::summarise(
         bornes = sum(bornes),
+        population = sum(population),
         # A missing BPE observation means unavailable, not zero.  A group is
         # unavailable when any of its members is unavailable.
         fuel = if (anyNA(fuel_value)) NA_real_ else sum(fuel_value), .groups = "drop")
     rr <- dplyr::bind_rows(ctx_r %>% dplyr::transmute(code = commune, bornes, fuel = fuel_value),
-                           agg("EPCI"), agg("DEP"),
+                           agg("EPCI") %>% dplyr::select(code, bornes, fuel),
+                           agg("DEP") %>% dplyr::select(code, bornes, fuel),
                             ctx_r %>% dplyr::summarise(code = "53", bornes = sum(bornes), fuel = if (anyNA(fuel_value)) NA_real_ else sum(fuel_value)))
      ratios <- calculer_ratios_mobilite(rr %>% dplyr::select(code, bornes),
        rr %>% dplyr::select(code, fuel),
@@ -1196,8 +1226,35 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
       tibble::tibble(code = rr$code, places_voiture = NA_real_)) %>%
        dplyr::transmute(code, key = "bornes_ev_par_station_service", detail = NA_character_,
                         value = bornes_ev_par_station_service, rider)
+    # Le compte de stations-service B316 et son taux / 1 000 hab (issue #953) :
+    # les parties sont SOMMÉES à chaque niveau, le taux est recalculé avec la
+    # population du territoire (jamais une moyenne de taux). Une observation
+    # BPE absente se propage en NA — jamais un zéro inventé ; le zéro OBSERVÉ
+    # d'une commune sans station reste un fait.
+    stations_ctx <- dplyr::bind_rows(
+      ctx_r %>% dplyr::transmute(code = commune, stations = fuel_value,
+                                 population = population),
+      agg("EPCI") %>% dplyr::transmute(code, stations = fuel,
+                                       population = population),
+      agg("DEP") %>% dplyr::transmute(code, stations = fuel,
+                                      population = population),
+      ctx_r %>% dplyr::summarise(
+        code = "53",
+        stations = if (anyNA(fuel_value)) NA_real_ else sum(fuel_value),
+        population = sum(population))
+    )
+    stations <- dplyr::bind_rows(
+      stations_ctx %>%
+        dplyr::transmute(code, key = "stations_service",
+                         detail = NA_character_, value = stations),
+      stations_ctx %>%
+        dplyr::transmute(code, key = "stations_service_1000",
+                         detail = NA_character_,
+                         value = stations / population * 1000)
+    )
+    ratios <- dplyr::bind_rows(ratios, stations)
   }
-  dplyr::bind_rows(offre_tc, bornes, velo, cyclable, voiture, ratios) %>%
+  dplyr::bind_rows(offre_tc, bornes, bornes_1000, velo, cyclable, voiture, ratios) %>%
     dplyr::select(code, key, detail, value, dplyr::any_of("rider")) %>%
     dplyr::arrange(code, key, detail)
 }
