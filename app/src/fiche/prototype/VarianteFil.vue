@@ -56,7 +56,7 @@ interface ItemBandeau {
   texte: string
   unite: string
   libelle: string
-  rang: { glyphe: string; rang: string; phrase: string } | null
+  rang: { glyphe: string; rang: string; rangAria: string; phrase: string; phraseAria: string } | null
 }
 
 /** Le héros du moment : le 1er nombre-clé de la lecture, sinon la figure
@@ -115,7 +115,8 @@ function itemsBandeau(groupe: SousGroupeMatiere): ItemBandeau[] {
         unite: valeur.unite,
         libelle: valeur.libelle,
         rang: valeur.rang
-          ? { glyphe: valeur.rang.glyphe, rang: valeur.rang.rang, phrase: valeur.rang.phrase }
+          ? { glyphe: valeur.rang.glyphe, rang: valeur.rang.rang, rangAria: valeur.rang.rangAria,
+            phrase: valeur.rang.phrase, phraseAria: valeur.rang.phraseAria }
           : null,
       })
       continue
@@ -128,7 +129,8 @@ function itemsBandeau(groupe: SousGroupeMatiere): ItemBandeau[] {
         unite: tranche.unite,
         libelle: tranche.libelle || valeur.libelle,
         rang: tranche.rang
-          ? { glyphe: tranche.rang.glyphe, rang: tranche.rang.rang, phrase: tranche.rang.phrase }
+          ? { glyphe: tranche.rang.glyphe, rang: tranche.rang.rang, rangAria: tranche.rang.rangAria,
+            phrase: tranche.rang.phrase, phraseAria: tranche.rang.phraseAria }
           : null,
       })
     })
@@ -250,7 +252,7 @@ function defilerVers(key: string): void {
             v-if="item.rang"
             class="bandeau-rang"
             role="img"
-            :aria-label="item.rang.phrase"
+            :aria-label="item.rang.phraseAria"
             :title="item.rang.phrase"
           >
             <span aria-hidden="true">{{ item.rang.glyphe }}</span> {{ item.rang.rang }}

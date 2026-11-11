@@ -196,6 +196,7 @@ export function orderedSeriesFacts(
           ...(scalar.comparison?.result?.status === 'available' && rank?.rank !== null && rank?.rank !== undefined
             ? { comparaisonApi: { rang: rank.rank, taille: rank.rank_size ?? null,
               portee: scalar.comparison.scope?.label ?? null,
+              ...(Number.isSafeInteger(rank.rank_ties) ? { ties: rank.rank_ties as number } : {}),
               direction: scalar.comparison.result.direction === 'high' || scalar.comparison.result.direction === 'low'
                 ? scalar.comparison.result.direction : undefined } } : {}),
           native_scalar_comparison: scalar.comparison?.result ? {

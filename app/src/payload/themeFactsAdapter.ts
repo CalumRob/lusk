@@ -1168,7 +1168,9 @@ export function lignesAvecComparaisonApi(lignes: Indicateur[], comparison: unkno
       : finite(match.median) ? { kind: 'median' as const, value: match.median } : undefined
     if (match.rank == null && !reference) return row
     return { ...row, comparaisonApi: { rang: (match.rank as number | null) ?? null, taille: (match.rank_size as number | null) ?? null,
-      portee, direction: match.direction as 'high' | 'low', ...(reference ? { reference } : {}) } }
+      portee, direction: match.direction as 'high' | 'low',
+      ...(Number.isSafeInteger(match.rank_ties) ? { ties: match.rank_ties as number } : {}),
+      ...(reference ? { reference } : {}) } }
   })
 }
 

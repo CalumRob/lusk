@@ -14,7 +14,7 @@ import { mapAssetUrl } from '@/fiche/mapAssetUrl'
 import type { CahierTooltipComparison, CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
 import { groupeCompareAria } from '@/fiche/content/comparisonWording'
-import { formatServedRank } from '@/fiche/figureGrammaire'
+import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 import type { ContentFact, MobiliteNetworksEvidence } from '@/fiche/content/themeContent'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
@@ -87,7 +87,7 @@ function comparisonForFact(fact: ContentFact, scope: string | null): CahierToolt
   return {
     value,
     rank,
-    ariaLabel: groupeCompareAria(value, rank, scope ?? 'Indisponible'),
+    ariaLabel: groupeCompareAria(value, formatServedRankAria(comparison.rank), scope ?? 'Indisponible'),
   }
 }
 

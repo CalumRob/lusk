@@ -460,9 +460,9 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(rowTerritoire(focal)).toBe('22002')
       // Valeurs mesurées : 3000, 1000, 2000 ; le tableau garde les rangs publiés,
       // non un reclassement local (qui mettrait 22002 dernier, pas premier).
-      expect(rankCell(focal)).toBe('1er / 3')
+      expect(rankCell(focal)).toBe('1er/3')
       const parRang = Object.fromEntries(rows.map((row) => [rowTerritoire(row), rankCell(row)]))
-      expect(parRang).toEqual({ '22002': '1er / 3', '29001': '2e / 3', '29002': '3e / 3' })
+      expect(parRang).toEqual({ '22002': '1er/3', '29001': '2e/3', '29002': '3e/3' })
 
       // --- tri par rang : suit l évidence API (1, 2, 3), pas un autre ordre
       const boutonRang = wrapper.findAll('.comparison-table-scroll thead button')
@@ -525,7 +525,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       const cells = wrapper.findAll('.comparison-table-scroll tbody tr')
         .map((row) => row.findAll('td')[2]!.text().trim())
       expect(cells.length).toBe(4)
-      expect(cells.every((cell) => /^\d+(er|e) \/ 4$/.test(cell))).toBe(true)
+      expect(cells.every((cell) => /^\d+(er|e)\/4$/.test(cell))).toBe(true)
       // la note nomme la portée DÉCLARÉE du rang (classe de densité du focal acquis)
       // et la COHORTE (member_count = 4) — sans confondre avec les 3 classés (/3)
       const note = wrapper.get('[data-testid="rang-scope-note"]')
@@ -541,7 +541,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       await flushPromises()
       const cells2022 = wrapper.findAll('.comparison-table-scroll tbody tr')
         .map((row) => row.findAll('td')[2]!.text().trim())
-      expect(cells2022.every((cell) => /^\d+(er|e) \/ 4$/.test(cell))).toBe(true)
+      expect(cells2022.every((cell) => /^\d+(er|e)\/4$/.test(cell))).toBe(true)
       expect(wrapper.get('[data-testid="rang-scope-note"]').text()).toContain('cohorte de comparaison : 4 territoires')
     } finally { wrapper.unmount() }
 
@@ -555,7 +555,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       const cells = wrapperFiltre.findAll('.comparison-table-scroll tbody tr')
         .map((row) => row.findAll('td')[2]!.text().trim())
       expect(cells.length).toBe(2)
-      expect(cells.every((cell) => /^\d+(er|e) \/ \d+$/.test(cell))).toBe(true)
+      expect(cells.every((cell) => /^\d+(er|e)\/\d+$/.test(cell))).toBe(true)
       expect(wrapperFiltre.find('[data-testid="rang-scope-note"]').exists()).toBe(false)
     } finally { wrapperFiltre.unmount() }
 
@@ -631,8 +631,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       expect(rows.length).toBe(4) // le tableau LISTE les 4 communes de l'URL
       const rangs = Object.fromEntries(rows.map((row) => [territoireDe(row), celluleRang(row)]))
       // dans la cohorte (classe 5 = 22001+22002) : rangs API publiés ; hors cohorte : aucun
-      expect(rangs['22001']).toMatch(/^\d+(er|e) \/ 2$/)
-      expect(rangs['22002']).toMatch(/^\d+(er|e) \/ 2$/)
+      expect(rangs['22001']).toMatch(/^\d+(er|e)\/2$/)
+      expect(rangs['22002']).toMatch(/^\d+(er|e)\/2$/)
       expect(rangs['29001']).toBe('')
       expect(rangs['29002']).toBe('')
       const note = wrapper.get('[data-testid="rang-scope-note"]')

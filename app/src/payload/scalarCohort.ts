@@ -24,6 +24,8 @@ function explicationStatutScalaire(status: string): string | null {
 export interface ScalarComparisonRank {
   rank: number
   rankSize: number
+  /** Producer-served tie count at this rank, itself included; null when the response omits it. */
+  rankTies: number | null
   scope: string
   direction: 'high' | 'low'
 }
@@ -362,6 +364,7 @@ function adapterComparaisonScalaire(data: Row, indicator: string, page: Indicato
       scope: request.scope.label ?? '', direction }
   }
   return rank === null ? null : { rank: rank as number, rankSize: rankSize as number,
+    rankTies: typeof rankTies === 'number' && Number.isSafeInteger(rankTies) ? rankTies : null,
     scope: request.scope.label!, direction }
 }
 

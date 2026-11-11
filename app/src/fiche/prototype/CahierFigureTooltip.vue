@@ -22,7 +22,7 @@ withDefaults(
 )
 
 function comparisonAria(comparison: CahierTooltipComparison): string {
-  return comparison.ariaLabel ?? groupeCompareAria(comparison.value, comparison.rank)
+  return comparison.ariaLabel ?? groupeCompareAria(comparison.value, comparison.rankAria ?? comparison.rank)
 }
 
 function rowAriaLabel(row: CahierTooltipRow): string {

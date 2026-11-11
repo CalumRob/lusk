@@ -45,8 +45,9 @@ group (the same group the 2026-11-04 aggregate ranks use), read as one set-wise 
 over `aedar_territorial_aggregate` in the same committed snapshot; eligibility is the
 selected comparison's law - a published finite value - so a genuine zero stays rankable
 and a peer without a published value is excluded rather than ranked as zero. Unranked
-facets (curve/decile readings) and an unavailable focal serve null rank fields. The
-2026-11-04 aggregate-reading behaviour is unchanged (it still ranks the
+facets (curve/decile readings; superseded by the 2026-11-11 all-cutpoints amendment
+below, after #948 ranked the deciles) and an unavailable focal serve null rank fields.
+The 2026-11-04 aggregate-reading behaviour is unchanged (it still ranks the
 `aedar_territory_summary` projection at its own availability law), the selected intent
 is unchanged, and nothing new is stored or published: publications stay reference-only
 (#810 stance intact) and every rank remains a per-request computation on one committed
@@ -84,6 +85,20 @@ declared point resolves the same fixed cohort and is computed per request from
 its committed published cells, with no additional publication rows or content
 versions. This is a narrow exception ([ADR-0041](0041-declared-profile-fixed-detail-comparisons.md)),
 not a retirement of the published-fixed policy.
+
+**AEDAR all distribution cutpoints ranked (owner-approved 2026-11-11, #963):**
+every cutpoint of the per-cell AEDAR distribution curve - `min`, the nine deciles
+and `max` - is a ranked producer facet, so no distribution facet remains
+unranked. #948 had already ranked the deciles; #963 flips the 48 `min`/`max`
+facets of `aedar_territorial_aggregate` (`count_<5|10|15|20>_<family>_<min|max>`:
+the five source modes plus `transit_gain`) and leaves every other facet untouched.
+The reader path is unchanged - the fixed per-cell and selected comparisons rank
+any facet whose declaration carries `ranked` - so the cutpoints gain the same
+request-time, direction-aware ordinal over the same resolved peer group and
+availability law, and an unavailable focal still serves null ranks. Nothing new is
+stored or published (#810 stance intact). The contract is baked into the API
+image, so the live ranks appear only after an image rebuild and container
+recreate; no app change is required.
 
 ## Decision
 

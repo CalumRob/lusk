@@ -227,15 +227,16 @@ function rangMatiere(theme: Theme, ligne: Indicateur): RangMatiere | null {
   const details = detailsRangEnContexte(ligne)
   const direction = directionIndicateur(theme, ligne.key)
   if (!details || !direction) return null
-  const puce = puceRangDirection(details.libelle, direction)
-  return { ...puce, accent: accentPositionRang(details.rang, details.taille) }
+  const puce = puceRangDirection({ position: details.rang, size: details.taille, ties: details.ties }, direction, details.portee)
+  return puce ? { ...puce, accent: accentPositionRang(details.rang, details.taille) } : null
 }
 
 function rangTranche(theme: Theme, ligne: Indicateur): RangMatiere | null {
   const details = detailsRangEnContexte(ligne)
   const direction = directionIndicateur(theme, ligne.key)
   if (!details || !direction) return null
-  return { ...puceRangDirection(details.libelle, direction), accent: accentPositionRang(details.rang, details.taille) }
+  const puce = puceRangDirection({ position: details.rang, size: details.taille, ties: details.ties }, direction, details.portee)
+  return puce ? { ...puce, accent: accentPositionRang(details.rang, details.taille) } : null
 }
 
 /** Un indicateur du groupe résolu (valeur, tranches, rang, preuves, Explorer). */

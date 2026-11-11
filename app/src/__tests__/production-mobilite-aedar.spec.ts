@@ -50,8 +50,10 @@ it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte
   await flushPromises()
   expect(fetchAedarComparison).toHaveBeenCalledWith('commune', '22001', expect.objectContaining({
     intent: { kind: 'selected_comparison', members: control.value.selection.etat === 'membres' ? control.value.selection.membres : [] },
-    rankMeasures: ['meanDiversity', 'meanVolume'],
   }))
+  // Every shape ranks every displayed measure, so no `rankMeasures` allow-list
+  // narrows the request any more.
+  expect(vi.mocked(fetchAedarComparison).mock.calls[0]![2]).not.toHaveProperty('rankMeasures')
   expect(wrapper.findComponent(VarianteCahierLibre).props('comparisonStatus')).toBe('loading')
   const before = wrapper.findComponent(VarianteCahierLibre).props('content')
   const beforeOverview = before.units[0].sections[0].evidence
@@ -156,11 +158,11 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
   expect(requests).toHaveLength(1)
   expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url) === '/api/resources')).toHaveLength(1)
   const batch = JSON.parse(String(requests[0]![1]?.body))
-   expect(batch.items).toHaveLength(2)
-   expect(batch.items.reduce((sum: number, item: any) => sum + item.coordinates.measure.length, 0)).toBe(40)
+   // Every displayed aggregate measure is ranked now, so the request is one item.
+   expect(batch.items).toHaveLength(1)
+   expect(batch.items[0].coordinates.measure).toHaveLength(40)
    expect(batch.items.every((item: any) => !('typequ' in item.coordinates))).toBe(true)
-   expect(batch.items.find((item: any) => item.fields.includes('rank')).coordinates.measure).toEqual(['meanDiversity', 'meanVolume'])
-   expect(batch.items.find((item: any) => !item.fields.includes('rank')).coordinates.measure).toHaveLength(38)
+   expect(batch.items.every((item: any) => item.fields.includes('rank'))).toBe(true)
    expect(batch.items[0]).toMatchObject({
     resource: 'aedar_territorial_aggregate',
     target: { kind: 'territory', type: 'commune', id: '22001' },
@@ -865,6 +867,7 @@ describe('ProductionMobiliteAedar', () => {
   it.each([
     ['fixed ambient', 2, 3, 'Classe de densité'],
     ['selected', 1, 3, 'Moyenne de la sélection'],
+    ['tied', 1, 3, 'Classe de densité'],
     ['singleton', 1, 1, 'Classe de densité'],
     ['suppressed', null, null, 'Classe de densité'],
   ])('renders served overview ranks in the real cahier DOM (%s)', async (label, position, size, comparisonLabel) => {
@@ -882,7 +885,8 @@ describe('ProductionMobiliteAedar', () => {
       cells: ['meanDiversity', 'meanVolume'].map((measure) => ({
         typequ: null, measure, source_id: 'aedar_bretagne', vintage_id: '2026-v1', reference_date: '2026-01-01', publication_date: '2026-09-30',
         group_value: 2.5, group_coverage_status: 'covered', group_n_addresses: 100, group_n_observed: 90,
-        statistic: 'pooled', rank: position, rank_size: size, rank_ties: position === null ? null : 1, direction: 'high',
+        statistic: 'pooled', rank: position, rank_size: size,
+        rank_ties: position === null ? null : label === 'tied' ? 2 : 1, direction: 'high',
       })),
     } })
     const wrapper = mount(ProductionMobiliteAedar, { props: {
@@ -895,8 +899,10 @@ describe('ProductionMobiliteAedar', () => {
     expect(scalars).toHaveLength(2)
     expect(scalars[0]!.get('.cahier-comparison-value').text()).toContain('Groupe comparé : 2,5')
     if (size !== null && size >= 2) {
-      expect(scalars[0]!.get('.cahier-rank').text()).toBe(`${position === 1 ? '1er' : '2e'}/${size}`)
-      expect(scalars[0]!.attributes('aria-label')).toContain(`Rang ${position} sur ${size}`)
+      const ordinal = `${position === 1 ? '1er' : '2e'}/${size}`
+      const tied = label === 'tied'
+      expect(scalars[0]!.get('.cahier-rank').text()).toBe(`${tied ? '=' : ''}${ordinal}`)
+      expect(scalars[0]!.attributes('aria-label')).toContain(`Rang ${ordinal}${tied ? ' (ex æquo)' : ''}`)
       expect(scalars[0]!.get('.cahier-rank').attributes('aria-hidden')).toBe('true')
     } else {
       expect(scalars[0]!.find('.cahier-rank').exists()).toBe(false)

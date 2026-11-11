@@ -86,7 +86,7 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
     const ramp = wrapper.findComponent(AccessRampFigureCahier).props('timeRamp')
     expect(ramp!.comparisonLabel).toBe('Moyenne de la sélection')
     expect(ramp!.series[0]!.points[2]!.referenceValue).toBe(7.4)
-    expect(ramp!.series[0]!.points[2]!.referenceRank).toEqual({ position: 2, size: 3 })
+    expect(ramp!.series[0]!.points[2]!.referenceRank).toEqual({ position: 2, size: 3, ties: 1 })
     expect('referenceNote' in ramp!.series[0]!.points[2]!).toBe(false)
     expect(wrapper.find('.aedar-equipment-comparison').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Groupe comparé : 7,4')
