@@ -279,9 +279,11 @@ Searches the retained published territory reference with bounded query inputs.
   published finite value for that cell (an uncovered row publishes none, while a
   genuine zero stays rankable) — so peers without a published value are
   excluded, never zeroed, and `rank_size` counts the eligible population (focal
-  included). Ranks are `null` — with `200` — for an unranked facet
-  (curve/decile readings) or an unavailable focal. Requesting no rank field
-  keeps the previous per-cell response exactly.
+  included). Every declared AEDAR distribution facet is ranked: the deciles
+  since #948 and the min/max cutpoints since #963. Ranks are therefore `null` —
+  with `200` — only for a facet the producer does not declare ranked, or an
+  unavailable focal. Requesting no rank field keeps the previous per-cell
+  response exactly.
 
 ## Retired route families
 

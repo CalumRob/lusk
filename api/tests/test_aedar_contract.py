@@ -660,7 +660,8 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
 
 
 def test_aedar_measure_facets_cover_every_registered_measure_with_declared_directions():
-    from api.aedar_models import AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS
+    from api.aedar_models import (AEDAR_AGGREGATE_HORIZONS, AEDAR_AGGREGATE_READINGS,
+                                  AEDAR_MEASURE_KEYS)
     catalogue = default_resource_catalogue.__wrapped__()
     resource = catalogue.resources_by_id["aedar_territorial_aggregate"]
     # The producer declaration is exact per measure AND per aggregate reading:
@@ -705,10 +706,12 @@ def test_aedar_measure_facets_cover_every_registered_measure_with_declared_direc
     assert resource.measure_facets["count_10_transit_gain_min"]["ranked"] is True
     assert resource.measure_facets["count_10_transit_gain_max"]["ranked"] is True
     # Every cutpoint of every declared horizon/mode is ranked, so a future
-    # family cannot ship an unranked min/max by omission:
+    # family cannot ship an unranked min/max by omission. The horizons come from
+    # the API-owned inventory (itself pinned to the R source), never re-typed:
     # 4 horizons x (5 source modes + transit_gain) x 2 cutpoints = 48.
-    cutpoints = [measure for measure in resource.measure_facets
-                 if re.fullmatch(r"count_(5|10|15|20)_.+_(min|max)", measure)]
+    horizons = "|".join(str(value) for value in AEDAR_AGGREGATE_HORIZONS)
+    cutpoint = re.compile(rf"count_(?:{horizons})_.+_(?:min|max)")
+    cutpoints = [measure for measure in resource.measure_facets if cutpoint.fullmatch(measure)]
     assert len(cutpoints) == 48
     assert all(resource.measure_facets[measure]["ranked"] is True for measure in cutpoints)
     public = next(item for item in catalogue.discovery_payload()["resources"]
