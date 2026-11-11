@@ -136,28 +136,45 @@ def test_declared_unpublished_scalar_comparisons_fail_closed_http(canonical_db_e
                 assert response.status_code == 503, f"{label}: {response.status_code} {response.text}"
                 assert response.json()["detail"] == PUBLICATION_UNAVAILABLE, label
 
+            def assert_no_partial(response, label):
+                assert_publication_unavailable(response, label)
+                assert "results" not in response.json(), label
+
             # (1) A producer-declared scalar with no publication fails closed for
             # facts, fixed and selected comparison — single and batch alike.
             for resource in UNPUBLISHED_RESOURCES:
                 assert_publication_unavailable(read(_facts(resource)), f"{resource} facts")
                 assert_publication_unavailable(read(_fixed(resource)), f"{resource} fixed")
                 assert_publication_unavailable(read(_selected(resource)), f"{resource} selected")
-                batch = read_batch([
-                    {"id": "facts", **_facts(resource)},
+
+                # Comparison-only batches prove the new declared-resource admission
+                # on the batch route itself: no facts item can short-circuit on the
+                # older facts guard before the comparison intent is preflighted.
+                assert_no_partial(read_batch([{"id": "fixed", **_fixed(resource)}]),
+                                  f"{resource} fixed-only batch")
+                assert_no_partial(read_batch([{"id": "selected", **_selected(resource)}]),
+                                  f"{resource} selected-only batch")
+                assert_no_partial(read_batch([
                     {"id": "fixed", **_fixed(resource)},
                     {"id": "selected", **_selected(resource)},
-                ])
-                assert_publication_unavailable(batch, f"{resource} batch")
-                assert "results" not in batch.json()
+                ]), f"{resource} comparison-only batch")
 
-            # (2) A mixed batch is rejected atomically: the published member is not
-            # salvaged as a successful prefix.
+                # Beside a genuinely published item read in the same request, the
+                # whole batch still fails atomically: no successful prefix.
+                for intent, item in (("fixed", _fixed(resource)),
+                                     ("selected", _selected(resource))):
+                    assert_no_partial(read_batch([
+                        {"id": "published", **_facts(PUBLISHED_RESOURCE)},
+                        {"id": "unpublished", **item},
+                    ]), f"{resource} published+{intent} batch")
+
+            # (2) The older facts guard keeps its own atomicity proof, which the
+            # comparison-only batches above deliberately do not rely on.
             mixed = read_batch([
                 {"id": "published", **_facts(PUBLISHED_RESOURCE)},
                 {"id": "unpublished", **_facts(UNPUBLISHED_RESOURCES[0])},
             ])
-            assert_publication_unavailable(mixed, "mixed batch")
-            assert "results" not in mixed.json()
+            assert_no_partial(mixed, "mixed facts batch")
 
             # (3) The published declared scalar is unchanged: exact facts,
             # descriptor, sources and versions, computed independently of the
@@ -264,15 +281,17 @@ def test_declared_unpublished_scalar_comparisons_fail_closed_http(canonical_db_e
             assert member_type_mismatch.status_code == 422, member_type_mismatch.text
 
             # Single reads are the same payloads as the independently read parts
-            # of a successful batch.
+            # of a successful batch, including a comparison-only item.
             published_batch = read_batch([
                 {"id": "facts", **_facts(PUBLISHED_RESOURCE)},
                 {"id": "fixed", **_fixed(PUBLISHED_RESOURCE)},
+                {"id": "selected", **_selected(PUBLISHED_RESOURCE, members=(FOCAL,))},
             ])
             assert published_batch.status_code == 200, published_batch.text
             by_id = {row["id"]: row["data"] for row in published_batch.json()["results"]}
             assert by_id["facts"] == published_facts
             assert by_id["fixed"] == fixed_body
+            assert by_id["selected"] == selected_body
 
             # (5) Dropping or staling the published scalar's own dependencies
             # still fails closed. Comparison provenance is part of the read, not
