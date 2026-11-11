@@ -89,8 +89,45 @@ def _seed(conn):
                     detail_key,sex_key,source_id,vintage_id)
                     VALUES (%s,%s,%s,'','stationnement-velo','2022-2025')""",
                     (RESOURCE, territory, detail))
+
+    # A second real declared profile crosses units per detail: its descriptor
+    # unit is km while its per-capita details are km / 1 000 hab.
+    conn.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,
+        completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction,
+        denominator_semantics,detail_units_required) VALUES ('offre_cyclable','mobilite',
+        'L''offre cyclable','km',ARRAY['commune','epci','departement','region'],
+        'dense_complete','offre-v1','total_longueur',NULL,'high','length',true)""")
+    conn.execute("INSERT INTO profile_descriptor_source VALUES ('offre_cyclable','osm_reseaux')")
+    offre_units = {"protege_longueur": "km", "protege_km_1000": UNITS,
+                   "partage_longueur": "km", "partage_km_1000": UNITS,
+                   "total_longueur": "km"}
+    for ordinal, (detail, unit) in enumerate(offre_units.items()):
+        conn.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal,unit)
+            VALUES ('offre_cyclable','detail',%s,%s,%s,%s)""", (detail, detail, ordinal, unit))
+    offre_values = {
+        focal: {"protege_longueur": 1.0, "protege_km_1000": 1.0, "partage_longueur": 2.0,
+                "partage_km_1000": 2.0, "total_longueur": 3.0},
+        peers[0]: {"protege_longueur": 2.0, "protege_km_1000": 3.0, "partage_longueur": 2.0,
+                   "partage_km_1000": 2.0, "total_longueur": 4.0},
+        peers[1]: {"protege_longueur": 3.0, "protege_km_1000": 5.0, "partage_longueur": 2.0,
+                   "partage_km_1000": 2.0, "total_longueur": 5.0},
+        peers[2]: {"protege_longueur": 4.0, "protege_km_1000": 7.0, "partage_longueur": 2.0,
+                   "partage_km_1000": 2.0, "total_longueur": 6.0},
+        peers[3]: {},
+    }
+    for territory, values in offre_values.items():
+        for detail in offre_units:
+            value = values.get(detail)
+            conn.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,
+                detail_key,sex_key,sex_axis_name,value,status)
+                VALUES ('offre_cyclable',%s,'commune',%s,'',NULL,%s,%s)""",
+                (territory, detail, value, "measured" if value is not None else "not_available"))
+            conn.execute("""INSERT INTO profile_observation_source(indicator_id,territory_id,
+                detail_key,sex_key,source_id,vintage_id)
+                VALUES ('offre_cyclable',%s,%s,'','osm_reseaux','2026-08')""",
+                (territory, detail))
     conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
-        reference_content_version) VALUES ('declared_profile','profiles-v1',24,'ref-v1')""")
+        reference_content_version) VALUES ('declared_profile','profiles-v1',49,'ref-v1')""")
 
     # Published fixed comparison for the descriptor's default bike detail only.
     density_members = [focal, *peers]
@@ -139,6 +176,8 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
 
     with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as conn:
         seed = _seed(conn)
+        versions = dict(conn.execute("""SELECT table_name,content_version FROM table_publication
+            WHERE table_name IN ('declared_profile','territory_reference')""").fetchall())
     focal = seed["focal"]
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
@@ -159,7 +198,8 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
 
             default = read(fixed())
             assert default.status_code == 200, default.text
-            default_result = default.json()["result"]
+            default_body = default.json()
+            default_result = default_body["result"]
             # The descriptor's published default bike facet is still served from
             # the published comparison publication.
             assert default_result["source_facet"] == {"detail": "b_km_1000", "sex": None}
@@ -174,6 +214,14 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
             assert {source["source_id"] for source in default_result["comparison_sources"]} == {
                 "osm_reseaux", "stationnement-velo"}
             assert "focal_value" not in default_result
+            assert "member_ranks" not in default_result
+            assert default_body["scope"] == {"kind": "density_class",
+                                             "density_class_code": "D960",
+                                             "territory_type": "commune",
+                                             "member_count": 5}
+            assert default_body["selection"] is None
+            assert default_body["profile_content_version"] == versions["declared_profile"]
+            assert default_body["reference_content_version"] == versions["territory_reference"]
 
             matching_default = read(fixed("b_km_1000"))
             assert matching_default.status_code == 200, matching_default.text
@@ -185,8 +233,13 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
                     ("c_km_1000", 3.0, 3, 2, {"osm_reseaux"})):
                 response = read(fixed(detail))
                 assert response.status_code == 200, response.text
-                result = response.json()["result"]
+                body = response.json()
+                result = body["result"]
                 results[detail] = result
+                assert body["scope"] == default_body["scope"]
+                assert body["selection"] is None
+                assert body["profile_content_version"] == versions["declared_profile"]
+                assert body["reference_content_version"] == versions["territory_reference"]
                 assert result["source_facet"] == {"detail": detail, "sex": None}
                 assert result["median"] == pytest.approx(median)
                 assert result["median"] != pytest.approx(default_result["median"])
@@ -212,6 +265,13 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
                 })
                 assert selected.status_code == 200, selected.text
                 assert selected.json()["result"] == results[detail]
+                assert selected.json()["selection"] == [
+                    {"territory_type": member["type"], "territory_id": member["id"]}
+                    for member in density_members]
+                assert selected.json()["scope"] == {"kind": "explicit_selection",
+                                                    "member_count": 5}
+                assert selected.json()["profile_content_version"] == versions["declared_profile"]
+                assert selected.json()["reference_content_version"] == versions["territory_reference"]
             selected_default = read({
                 "resource": RESOURCE,
                 "target": {"kind": "territory", "type": "commune", "id": focal},
@@ -219,6 +279,71 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
             })
             assert selected_default.status_code == 200, selected_default.text
             assert selected_default.json()["result"] == default_result
+            assert selected_default.json()["scope"] == {"kind": "explicit_selection",
+                                                         "member_count": 5}
+
+            # The compact fixed-profile result never carries the cohort-sized
+            # peer projection. Only a selected comparison may request it.
+            for request in (fixed(), fixed("t_km_1000")):
+                rejected = read({**request, "fields": ["median", "member_ranks"]})
+                assert rejected.status_code == 422, rejected.text
+            assert all("member_ranks" not in results[detail] for detail in DETAILS)
+            selected_ranks = read({
+                "resource": RESOURCE,
+                "target": {"kind": "territory", "type": "commune", "id": focal},
+                "coordinates": {"detail": ["t_km_1000"]},
+                "fields": ["median", "member_ranks"],
+                "intent": {"kind": "selected_comparison", "members": density_members},
+            })
+            assert selected_ranks.status_code == 200, selected_ranks.text
+            assert {row["territory_id"]: (row["rank"], row["rank_size"], row["rank_ties"])
+                    for row in selected_ranks.json()["result"]["member_ranks"]} == {
+                focal: (3, 4, 1),
+                seed["peers"][0]: (4, 4, 1),
+                seed["peers"][1]: (2, 4, 1),
+                seed["peers"][2]: (1, 4, 1),
+                seed["peers"][3]: (None, None, None),
+            }
+            published_ranks = read({
+                "resource": RESOURCE,
+                "target": {"kind": "territory", "type": "commune", "id": focal},
+                "fields": ["median", "member_ranks"],
+                "intent": {"kind": "selected_comparison", "members": density_members},
+            })
+            assert published_ranks.status_code == 200, published_ranks.text
+            assert {row["territory_id"]: (row["rank"], row["rank_size"], row["rank_ties"])
+                    for row in published_ranks.json()["result"]["member_ranks"]} == {
+                focal: (2, 4, 3),
+                seed["peers"][0]: (2, 4, 3),
+                seed["peers"][1]: (2, 4, 3),
+                seed["peers"][2]: (1, 4, 1),
+                seed["peers"][3]: (None, None, None),
+            }
+
+            # The result unit follows the declared detail axis, not the
+            # descriptor unit: offre_cyclable publishes km and km / 1 000 hab.
+            offre = read({
+                "resource": "offre_cyclable",
+                "target": {"kind": "territory", "type": "commune", "id": focal},
+                "coordinates": {"detail": ["protege_km_1000"]},
+                "fields": ["median", "eligible_count", "missing_count"],
+                "intent": {"kind": "fixed_comparison", "context": "default"},
+            })
+            assert offre.status_code == 200, offre.text
+            offre_result = offre.json()["result"]
+            assert offre_result["unit"] == UNITS
+            assert offre_result["median"] == pytest.approx(4.0)
+            assert (offre_result["eligible_count"], offre_result["missing_count"]) == (4, 1)
+            offre_length = read({
+                "resource": "offre_cyclable",
+                "target": {"kind": "territory", "type": "commune", "id": focal},
+                "coordinates": {"detail": ["protege_longueur"]},
+                "fields": ["median", "eligible_count"],
+                "intent": {"kind": "fixed_comparison", "context": "default"},
+            })
+            assert offre_length.status_code == 200, offre_length.text
+            assert offre_length.json()["result"]["unit"] == "km"
+            assert offre_length.json()["result"]["median"] == pytest.approx(2.5)
 
             # A focal outside the requested population receives no rank.
             outside = read({

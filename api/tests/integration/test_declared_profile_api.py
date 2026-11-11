@@ -829,6 +829,23 @@ def test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, 
             assert projected.json()["result"]["median"] == pytest.approx(.2)
             assert "member_ranks" not in projected.json()["result"]
 
+            # A scalar-backed profile retains its existing coordinate semantics
+            # under selected comparisons: the linked scalar facet is never
+            # reinterpreted as a DPE bin. The fixed intent rejects the same
+            # coordinate because its facet is that linked scalar.
+            scalar_coordinate = client.post('/api/resources/read', json={
+                **selected, "coordinates": {"detail": ["A"]}})
+            assert scalar_coordinate.status_code == 200, scalar_coordinate.text
+            assert scalar_coordinate.json()["result"]["source_facet"] == "part_passoires"
+            assert scalar_coordinate.json()["result"]["median"] == pytest.approx(.2)
+            fixed_coordinate = client.post('/api/resources/read', json={
+                "resource": "distribution_dpe",
+                "target": {"kind": "territory", "type": "commune", "id": "29001"},
+                "coordinates": {"detail": ["A"]},
+                "intent": {"kind": "fixed_comparison", "context": "default"},
+            })
+            assert fixed_coordinate.status_code == 422, fixed_coordinate.text
+
             custom = client.post('/api/resources/read', json={**selected, "intent": {
                 "kind": "selected_comparison", "members": [
                     {"type": "commune", "id": "29001"}, {"type": "commune", "id": "29003"}]}})
