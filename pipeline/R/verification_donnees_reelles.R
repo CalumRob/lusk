@@ -1112,8 +1112,11 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   verifier_egale(nrow(analytiques$offre_cyclable_communes), 1202L,
                  "Mobilité e2e — l'offre cyclable par commune")
   # 10 142 lignes avant #369 + trois familles complètes ajoutées par #369
-  # (1 268 territoires chacune) = 13 946 lignes.
-  verifier_egale(nrow(analytiques$offre_territoires), 13946L,
+  # (1 268 territoires chacune) = 13 946 lignes, + les trois densités de
+  # ravitaillement de #953 (une ligne par territoire et par clé).
+  n_territoires_offre <- length(unique(analytiques$offre_territoires$code))
+  verifier_egale(nrow(analytiques$offre_territoires),
+                 13946L + 3L * n_territoires_offre,
                  "Mobilité e2e — l'offre par territoire")
 
   offre <- analytiques$offre_territoires
@@ -1148,6 +1151,61 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
                  "Mobilité e2e — les bornes de la région")
   verifier_egale(lire_offre("35", "bornes_recharge"), 623L,
                  "Mobilité e2e — les bornes de l'Ille-et-Vilaine")
+  # les densités de ravitaillement (issue #953) : le compte B316 est la somme
+  # des parties communales du référentiel, et les deux taux sont RECALCULÉS
+  # depuis les comptes et la population du hub — jamais une moyenne de taux.
+  # Une observation BPE absente rend le compte indisponible (jamais un zéro
+  # inventé, la même règle que le ratio EV/fuel) ; aucun chiffre d'époque n'est
+  # recopié : les verrous portent la RÈGLE sur les faits réels.
+  ref_communes <- sort(unique(as.character(base$CODGEO)))
+  bpe_ref <- donnees$stations_service[
+    as.character(donnees$stations_service$commune) %in% ref_communes, ]
+  obs <- tibble::tibble(commune = ref_communes) %>%
+    dplyr::left_join(bpe_ref, by = "commune")
+  population_ref <- analytiques$stationnement_velo_communes$population
+  if (!anyNA(obs$fuel)) {
+    verifier_egale(lire_offre("53", "stations_service"), sum(obs$fuel),
+                   "Mobilité e2e — les stations-service de la région")
+    verifier_egale(
+      round(lire_offre("53", "stations_service_1000"), 6),
+      round(sum(obs$fuel) / sum(population_ref) * 1000, 6),
+      "Mobilité e2e — les stations-service / 1 000 hab. de la région")
+  } else {
+    # la commune sans observation BPE propage l'indisponibilité — jamais un
+    # compte régional amputé en silence
+    verifier_vrai(is.na(lire_offre("53", "stations_service")),
+                  "Mobilité e2e",
+                  "un compte régional de stations-service malgré une BPE incomplète")
+    verifier_vrai(is.na(lire_offre("53", "stations_service_1000")),
+                  "Mobilité e2e",
+                  "un taux régional de stations-service malgré une BPE incomplète")
+  }
+  verifier_egale(round(lire_offre("53", "bornes_recharge_1000"), 6),
+                 round(lire_offre("53", "bornes_recharge") /
+                         sum(population_ref) * 1000, 6),
+                 "Mobilité e2e — les bornes / 1 000 hab. de la région")
+  verifier_vrai(is.na(lire_offre("29083", "stations_service")),
+                "Mobilité e2e", "une commune BPE indisponible devenue zéro station")
+  sans_station <- as.character(bpe_ref$commune[bpe_ref$fuel == 0])
+  if (length(sans_station) > 0L) {
+    verifier_egale(lire_offre(sans_station[[1L]], "stations_service"), 0,
+                   "Mobilité e2e — une commune sans station garde son zéro observé")
+  }
+  # la paire de ravitaillement reste cohérente : ratio × stations = bornes là
+  # où le ratio est défini (la division d'agrégats, jamais une moyenne)
+  avec_ratio <- offre$code[offre$key == "bornes_ev_par_station_service" &
+                             !is.na(offre$value)]
+  if (length(avec_ratio) > 0L) {
+    bornes_ratio <- lire_offre(avec_ratio, "bornes_recharge")
+    stations_ratio <- lire_offre(avec_ratio, "stations_service")
+    ratio <- lire_offre(avec_ratio, "bornes_ev_par_station_service")
+    verifier_vrai(all(abs(bornes_ratio - ratio * stations_ratio) < 1e-8),
+                  "Mobilité e2e",
+                  "le ratio EV/fuel ne recompose pas ses deux comptes")
+    verifier_vrai(all(stations_ratio > 0),
+                  "Mobilité e2e",
+                  "un ratio EV/fuel publié sans station-service")
+  }
   verifier_egale(round(lire_offre("53", "places_stationnement_velo_1000"), 4),
                  18.4989, "Mobilité e2e — le stationnement vélo de la région")
   verifier_egale(round(lire_offre("35238", "places_stationnement_velo_1000"), 4),
