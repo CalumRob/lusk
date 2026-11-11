@@ -524,10 +524,11 @@ def test_selected_comparison_projects_per_cell_weighted_means_for_curve_readings
     assert response.status_code == 200, response.text
     entries = {(e["typequ"], e["measure"]): e for e in response.json()["comparisons"]}
     assert len(entries) == 4
-    # Per-cell curve reading: weighted mean over the same address weights, no rank.
+    # Per-cell curve reading: weighted mean over the same address weights, and the
+    # decile is ranked (#948) - values 1, 2, 4 -> the focal's 1.0 is 3e/3.
     curve = entries[("A104", "count_5_walk_decile1")]
     assert curve["group_value"] == pytest.approx((1.0 * 10 + 2.0 * 30 + 4.0 * 10) / 50)
-    assert curve["rank"] is None and curve["rank_size"] is None and curve["rank_ties"] is None
+    assert (curve["rank"], curve["rank_size"], curve["rank_ties"]) == (3, 3, 1)
     assert curve["comparison_facet"] == "distribution"
     assert entries[("B207", "count_5_walk_mean")]["group_value"] == pytest.approx(
         (2.0 * 10 + 4.0 * 30 + 4.0 * 10) / 50)
@@ -685,10 +686,14 @@ def test_fixed_per_cell_ranks_use_the_declared_context_peer_sets(aedar_http):
     same_level = fixed("epci", "sel-e1", "same_level")
     assert same_level["group_id"] == "53" and same_level["statistic"] == "direct"
     assert (same_level["rank"], same_level["rank_size"], same_level["rank_ties"]) == (1, 1, 1)
-    # An unranked curve reading is served with null ranks, never an error.
-    curve = fixed("commune", "sel-c1", "epci", measure="count_5_walk_decile1")
+    # The whole distribution curve is ranked - the deciles since #948 and the
+    # min/max cutpoints since #963 - so no AEDAR curve reading is unranked today.
+    # Bretagne peers publishing this decile: 0.5 (sel-c4, whose pending_review
+    # row still publishes its value), 1.0 (focal), 2.0 and 4.0. High-is-better,
+    # so the focal's 1.0 is 3e/4 - a different triple from its mean rank above.
+    curve = fixed("commune", "sel-c1", "bretagne", measure="count_5_walk_decile1")
     assert curve["value"] == 1.0
-    assert (curve["rank"], curve["rank_size"], curve["rank_ties"]) == (None, None, None)
+    assert (curve["rank"], curve["rank_size"], curve["rank_ties"]) == (3, 4, 1)
     # An unavailable focal keeps its honest status and null ranks (200).
     unavailable = fixed("commune", "sel-c5", "epci")
     assert unavailable["value"] is None and unavailable["status"] == "not_available"

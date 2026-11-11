@@ -126,11 +126,13 @@ The focal receives
 `rank`, `rank_size` and `rank_ties` (opt-in via `fields`) only when it is itself
 a member and the measure's producer-declared facet is ranked: a direction-aware
 flat ordinal within the selection, ties sharing the rank, using the declared
-per-measure facets/directions (`measure_facets` in the catalogue). Unranked
-curve readings (min/max) return their group mean with null rank fields; decile
-curve readings are ranked since the 2026-11-10 owner decision (#948). One
-request reads one committed repeatable-read snapshot; no peer/rank rows are
-published (#810 stance intact).
+per-measure facets/directions (`measure_facets` in the catalogue). The whole
+AEDAR distribution curve is ranked: the decile readings since the 2026-11-10
+owner decision (#948) and the min/max cutpoints since 2026-11-11 (#963), so no
+declared distribution facet remains unranked. A facet the producer does not
+declare ranked, or an unavailable focal, returns the group value with null rank
+fields. One request reads one committed repeatable-read snapshot; no peer/rank
+rows are published (#810 stance intact).
 
 ## AEDAR aggregate-reading comparisons (#914)
 
@@ -215,7 +217,9 @@ unchanged and the selected intent keeps its existing grant. For each requested
   value are excluded from the rank population — never zeroed, never ranked — and
   `rank_size` counts the eligible peers including the focal; ties share the
   focal's rank (competition ranking);
-- an unranked facet (e.g. min/max curve readings; decile curve readings are ranked since #948) or an unavailable focal returns
+- every declared AEDAR distribution facet is ranked — the deciles since #948 and
+  the min/max cutpoints since #963 — so no curve reading is unranked today; a
+  facet the producer does not declare ranked, or an unavailable focal, returns
   `200` with `null` rank fields. The focal's existing `value`/`status`
   semantics are untouched.
 
