@@ -1,4 +1,5 @@
 import inspect
+import re
 from math import fsum
 from pathlib import Path
 
@@ -659,7 +660,8 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
 
 
 def test_aedar_measure_facets_cover_every_registered_measure_with_declared_directions():
-    from api.aedar_models import AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS
+    from api.aedar_models import (AEDAR_AGGREGATE_HORIZONS, AEDAR_AGGREGATE_READINGS,
+                                  AEDAR_MEASURE_KEYS)
     catalogue = default_resource_catalogue.__wrapped__()
     resource = catalogue.resources_by_id["aedar_territorial_aggregate"]
     # The producer declaration is exact per measure AND per aggregate reading:
@@ -673,9 +675,9 @@ def test_aedar_measure_facets_cover_every_registered_measure_with_declared_direc
         assert facet["direction"] in ("high", "low")
         assert isinstance(facet["ranked"], bool)
         # ADR-0015 conventions: diversity and volume readings are
-        # higher-is-better and carry selection rank chips; decile curve
-        # readings are ranked since the 2026-11-10 owner decision (#948),
-        # while min/max curve readings show their group mean unranked.
+        # higher-is-better and carry selection rank chips; every distribution
+        # curve reading is ranked - deciles since the 2026-11-10 owner decision
+        # (#948), min/max cutpoints since 2026-11-11 (#963).
         if measure in AEDAR_AGGREGATE_READINGS:
             # Registry-wide overview aggregate readings (#914): the diversity
             # and volume sums over the complete TYPEQU registry are ranked
@@ -691,11 +693,27 @@ def test_aedar_measure_facets_cover_every_registered_measure_with_declared_direc
         elif statistic.startswith("decile"):
             assert facet == {"facet": "distribution", "direction": "high", "ranked": True}
         else:
-            assert facet == {"facet": "distribution", "direction": "high", "ranked": False}
-    # Positive pin for the ranked decile contract (#948): a distribution-curve
-    # decile measure carries a selection rank while its min/max siblings do not.
+            # The distribution curve's min/max cutpoints (#963).
+            assert statistic in ("min", "max")
+            assert facet == {"facet": "distribution", "direction": "high", "ranked": True}
+    # Positive pins for the whole ranked distribution curve: a decile (#948)
+    # and both min/max cutpoints (#963) carry a selection rank.
     assert resource.measure_facets["count_5_walk_decile1"]["ranked"] is True
-    assert resource.measure_facets["count_5_walk_min"]["ranked"] is False
+    assert resource.measure_facets["count_5_walk_min"]["ranked"] is True
+    assert resource.measure_facets["count_20_car_max"]["ranked"] is True
+    # The net transit-gain curve follows the same declaration; it is a producer
+    # distribution family even though the app renders no ramp for it.
+    assert resource.measure_facets["count_10_transit_gain_min"]["ranked"] is True
+    assert resource.measure_facets["count_10_transit_gain_max"]["ranked"] is True
+    # Every cutpoint of every declared horizon/mode is ranked, so a future
+    # family cannot ship an unranked min/max by omission. The horizons come from
+    # the API-owned inventory (itself pinned to the R source), never re-typed:
+    # 4 horizons x (5 source modes + transit_gain) x 2 cutpoints = 48.
+    horizons = "|".join(str(value) for value in AEDAR_AGGREGATE_HORIZONS)
+    cutpoint = re.compile(rf"count_(?:{horizons})_.+_(?:min|max)")
+    cutpoints = [measure for measure in resource.measure_facets if cutpoint.fullmatch(measure)]
+    assert len(cutpoints) == 48
+    assert all(resource.measure_facets[measure]["ranked"] is True for measure in cutpoints)
     public = next(item for item in catalogue.discovery_payload()["resources"]
                   if item["resource_id"] == "aedar_territorial_aggregate")
     assert set(public["measure_facets"]) == expected
@@ -703,6 +721,11 @@ def test_aedar_measure_facets_cover_every_registered_measure_with_declared_direc
         "facet": "diversity", "direction": "high", "ranked": True}
     assert public["measure_facets"]["meanVolume"] == {
         "facet": "volume", "direction": "high", "ranked": True}
+    # The public discovery payload carries the ranked min/max cutpoints too.
+    assert public["measure_facets"]["count_5_walk_min"] == {
+        "facet": "distribution", "direction": "high", "ranked": True}
+    assert public["measure_facets"]["count_5_walk_max"] == {
+        "facet": "distribution", "direction": "high", "ranked": True}
     assert "selected_comparison" in public["intents"]
 
 
@@ -1295,10 +1318,10 @@ def _aedar_selected_state():
 
 def _aedar_facets():
     # Mirror the declared producer taxonomy exactly: share -> diversity,
-    # mean -> volume (both ranked, higher-is-better); deciles -> ranked
-    # distribution facets (owner decision 2026-11-10, #948); min/max ->
-    # unranked distribution curve readings; the registry-wide aggregate
-    # readings (#914) are ranked high-is-better diversity/volume facets.
+    # mean -> volume (both ranked, higher-is-better); the whole distribution
+    # curve - deciles since #948, min/max cutpoints since #963 - maps to
+    # ranked distribution facets; the registry-wide aggregate readings (#914)
+    # are ranked high-is-better diversity/volume facets.
     from api.aedar_models import AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS
     facets = {}
     for measure in AEDAR_MEASURE_KEYS:
@@ -1307,10 +1330,8 @@ def _aedar_facets():
             facets[measure] = {"facet": "diversity", "direction": "high", "ranked": True}
         elif statistic == "mean":
             facets[measure] = {"facet": "volume", "direction": "high", "ranked": True}
-        elif statistic.startswith("decile"):
-            facets[measure] = {"facet": "distribution", "direction": "high", "ranked": True}
         else:
-            facets[measure] = {"facet": "distribution", "direction": "high", "ranked": False}
+            facets[measure] = {"facet": "distribution", "direction": "high", "ranked": True}
     for reading in AEDAR_AGGREGATE_READINGS:
         facets[reading] = {
             "facet": "diversity" if AEDAR_AGGREGATE_READINGS[reading].endswith("_share") else "volume",
