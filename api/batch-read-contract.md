@@ -239,9 +239,12 @@ the same median, direction-aware rank/ties, missingness, per-detail unit,
 denominator semantics and source lineage as an identical explicit selection; it
 never reinterprets the published default point and creates no publication rows.
 The published default keeps its published-comparison version checks; a declared
-non-default point keeps the declared-profile and territory-reference checks and
-fails closed on missing or stale profile cells (no zero-filled or fabricated
-value). An explicitly empty `coordinates` object means no coordinate selection,
+non-default point keeps the `declared_profile` and `territory_reference` checks
+and fails closed on missing or stale profile cells (no zero-filled or fabricated
+value). It deliberately does not depend on the default
+`profile_comparison_publication` generation: a missing or stale default
+comparison marker fails the default read closed while the alternate point still
+serves from the same committed cells. An explicitly empty `coordinates` object means no coordinate selection,
 just like omission. Unknown axes/values, partial axes and multi-value profile
 comparison coordinates are rejected with `422`. A scalar-backed profile such as
 the DPE distribution keeps its linked scalar comparison facet: `fixed_comparison`

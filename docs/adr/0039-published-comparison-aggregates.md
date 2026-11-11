@@ -77,6 +77,14 @@ Do not publish or rebuild against a partially completed sequence. This rollout i
 operator-controlled and is not authorization to apply serving DDL or deploy as part
 of this implementation.
 
+**Declared-profile fixed detail amendment (owner-approved 2026-11-11, #960):**
+for detail-backed declared profiles, this ADR's published aggregate still owns
+the descriptor's default detail/sex point. An explicitly requested non-default
+declared point resolves the same fixed cohort and is computed per request from
+its committed published cells, with no additional publication rows or content
+versions. This is a narrow exception ([ADR-0041](0041-declared-profile-fixed-detail-comparisons.md)),
+not a retirement of the published-fixed policy.
+
 ## Decision
 
 For every currently offered comparison context, compute its peer-derived numeric results from canonical pipeline data and publish them as a comparison projection. The API serves those published results for current contexts instead of loading all peer facts and recomputing their aggregates per request. This applies across current comparison families, including scalar/profile, ordered-series, numeric period/detail collections, and AEDAR fixed-context comparisons. The inventory is contract-tested so an in-scope family cannot silently be omitted.

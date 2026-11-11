@@ -69,8 +69,12 @@ comparison, while any other declared point (for example `t_km_1000` or
 `c_km_1000` of `reseaux_par_habitant`) is computed over the same resolved cohort
 from its committed published cells, with the same median, direction-aware
 rank/ties, missingness, unit and lineage as an identical explicit selection.
-That request-scoped point creates no publication row and fails closed when its
-cells or generations are missing or stale. A scalar-backed profile keeps its
+That request-scoped point creates no publication row. Its fail-closed authority
+is the `declared_profile` and `territory_reference` generations plus the
+cohort's per-cell provenance — not the default comparison publication
+generation: a missing/stale `profile_comparison_publication` fails the published
+default read closed while the alternate point still serves from the same
+committed cells, which is intentional. A scalar-backed profile keeps its
 linked scalar facet: `fixed_comparison` rejects its profile coordinates with
 `422`, while `selected_comparison` keeps its existing coordinate semantics.
 Fixed profile comparisons (published default or alternate declared point) also
