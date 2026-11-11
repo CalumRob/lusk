@@ -22,8 +22,7 @@ def test_mobility_producer_pages_declare_retained_levels_and_canonical_curve():
     assert published["indicator_pages"] == pages
     details = pages["raccordement_courbe"]["comparison"]["details"]
     # The canonical curve is the full five-minute grid from 0 to 360 minutes.
-    assert len(details) == 73
-    assert details[0] == "t0000" and details[-1] == "t0360"
+    assert details == [f"t{minute:04d}" for minute in range(0, 365, 5)]
     assert pages["raccordement_courbe"]["comparison"]["detail"] in details
 
 

@@ -40,9 +40,15 @@ def test_discovery_accounts_for_every_theme_indicator_and_excludes_legacy_source
     catalogue = discover_indicator_resources(METADATA)
     resources = {resource.resource_id: resource for resource in catalogue.resources}
 
-    declared_keys = [key for path in sorted(METADATA.glob("theme_*.json"))
-                     for key in json.loads(path.read_text(encoding="utf-8"))["indicator_keys"]]
-    assert len(catalogue.declarations) == len(declared_keys)
+    declared_pairs = {(metadata["theme"], key)
+                      for metadata in (json.loads(path.read_text(encoding="utf-8"))
+                                       for path in sorted(METADATA.glob("theme_*.json")))
+                      for key in metadata["indicator_keys"]}
+    declared_identities = {(declaration.theme_id, declaration.indicator_id)
+                           for declaration in catalogue.declarations}
+    # Sets reject swapped identities; the count guard rejects duplicate pairs.
+    assert declared_identities == declared_pairs
+    assert len(catalogue.declarations) == len(declared_pairs)
     assert len(catalogue.excluded) == 29
     # #962 added three Mobility supply scalar pages: stations_service,
     # stations_service_1000 and bornes_recharge_1000 (33 -> 36 retained).
@@ -83,13 +89,24 @@ def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(
     # the two AEDAR semantic contracts, and the four declared typed readings.
     indicator_catalogue = discover_indicator_resources(image_payload / "theme-metadata")
     contracts = json.loads((image_payload / "semantic-resource-contracts.json").read_text(encoding="utf-8"))
-    typed_readings = [resource["resource_id"]
-                      for path in sorted((image_payload / "theme-metadata").glob("theme_*.json"))
-                      for resource in json.loads(path.read_text(encoding="utf-8")).get("semantic_resources") or []]
+    theme_metadata = [json.loads(path.read_text(encoding="utf-8"))
+                      for path in sorted((image_payload / "theme-metadata").glob("theme_*.json"))]
+    declared_keys = [key for metadata in theme_metadata for key in metadata["indicator_keys"]]
+    typed_readings = [resource["resource_id"] for metadata in theme_metadata
+                      for resource in metadata.get("semantic_resources") or []]
+    # Independent of discover_indicator_resources: the raw producer roster
+    # carries the #962 supply pages, and the composed payload is 36 indicators
+    # + 2 AEDAR contracts + 4 typed readings.
+    assert len(declared_keys) == 65
+    assert {"stations_service", "stations_service_1000", "bornes_recharge_1000"} <= set(declared_keys)
     expected_ids = ({resource.resource_id for resource in indicator_catalogue.resources}
                     | {resource["resource_id"] for resource in contracts["resources"]}
                     | set(typed_readings))
-    assert {resource.resource_id for resource in catalogue.resources} == expected_ids
+    assert len(expected_ids) == 42
+    catalogue_ids = [resource.resource_id for resource in catalogue.resources]
+    # Set equality alone would accept duplicate ids; the count guard rejects them.
+    assert len(catalogue_ids) == len(set(catalogue_ids))
+    assert set(catalogue_ids) == expected_ids
     assert len(catalogue.excluded) == 29
     assert "aedar_territorial_aggregate" in catalogue.resources_by_id
     summary = catalogue.resources_by_id["aedar_territory_summary"]
