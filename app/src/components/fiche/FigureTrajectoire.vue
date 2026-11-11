@@ -115,9 +115,11 @@ const directionRepereScalaire = computed(() => {
     : null
 })
 const puceRepereScalaire = computed(() => {
+  const details = rangRepereScalaire.value
   const direction = directionRepereScalaire.value
-  return rangRepereScalaire.value && direction
-    ? puceRangDirection(rangRepereScalaire.value.libelle, direction) : null
+  return details && direction
+    ? puceRangDirection({ position: details.rang, size: details.taille, ties: details.ties }, direction, details.portee)
+    : null
 })
 const numerique = computed(() => {
   const contract = props.lignes.find((ligne) => ligne.nativeContract?.axisValues?.length)?.nativeContract

@@ -8,7 +8,7 @@ import type {
   CahierTooltipRow,
 } from '@/fiche/cahierFigureGrammaire'
 import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
-import { formatServedRank } from '@/fiche/figureGrammaire'
+import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -137,6 +137,7 @@ const tooltipRows = computed<readonly CahierTooltipRow[]>(() => {
                 ? UNAVAILABLE_LABEL
                 : formatValue(comparedValue),
               rank: formatServedRank(compared.ranks?.[categoryIndex]),
+              rankAria: formatServedRankAria(compared.ranks?.[categoryIndex]),
             },
           }
         : {}),

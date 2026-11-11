@@ -13,7 +13,7 @@ import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, CahierTooltipTone, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
 import { groupeCompareAria } from '@/fiche/content/comparisonWording'
-import { formatServedRank } from '@/fiche/figureGrammaire'
+import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import { AEDAR_TIME_MODE_ICONS } from './aedarTimeModeIcons'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
@@ -165,7 +165,7 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
       row.comparison = {
         value: referenceValue,
         rank,
-        ariaLabel: groupeCompareAria(referenceValue, rank, timeRamp.comparisonLabel ?? 'Indisponible'),
+        ariaLabel: groupeCompareAria(referenceValue, formatServedRankAria(point.referenceRank), timeRamp.comparisonLabel ?? 'Indisponible'),
       }
     }
     return [row]
@@ -179,7 +179,7 @@ const timeAccessibleLabel = computed(() => {
     .join(' ; ')
   const referenceText = comparisonLayerSupported.value
     ? ` Référence ${props.timeRamp.comparisonLabel ?? 'Indisponible'} : ${visibleTimeSeries.value.map((series) => `${series.label} ${series.points.map((point) => {
-      const rank = formatServedRank(point.referenceRank)
+      const rank = formatServedRankAria(point.referenceRank)
       return `${point.xLabel} ${point.referenceValue === null ? 'indisponible' : formatNumber(point.referenceValue)}${rank ? `, rang ${rank}` : ''}`
     }).join(', ')}`).join(' ; ')}`
     : ''

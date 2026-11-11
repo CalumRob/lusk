@@ -2,6 +2,7 @@ import type { AedarFact, AedarTerritoryType } from './aedarApiClient'
 import type { MembreSelection, PresetComparaison, SelectionComparaison } from '../comparisonContext'
 import type { ComparisonRank } from './territoryFacts'
 import { producerCatalogue } from '@/payload/themeAcquisition'
+import { RANK_DISPLAY_MIN_SIZE } from '../figureGrammaire'
 import { AEDAR_AGGREGATE_READING_KEYS } from './aedarTimeRampFacts'
 
 export type AedarComparisonIntent =
@@ -68,15 +69,30 @@ export type AedarComparisonResult = { status: 'ready'; evidence: AedarComparison
 type ComparisonReadOptions = AedarComparisonRequest & { typequ: readonly string[]; measures: readonly string[];
   expectedContentVersion: string; expectedReferenceContentVersion: string; signal?: AbortSignal;
   /** Aggregate comparisons bind to all three summary/source/reference clocks. */
-  expectedSummaryContentVersion?: string;
-  /** Aggregate readings whose rank fields are consumed. Omitted means rank every requested measure. */
-  rankMeasures?: readonly string[] }
+  expectedSummaryContentVersion?: string }
 const successfulReads = new WeakMap<typeof fetch, Map<string, Extract<AedarComparisonResult, { status: 'ready' }>>>()
 const record = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
 const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
 const nonempty = (x: unknown): x is string => typeof x === 'string' && x.length > 0
-const RANK_FIELDS = new Set(['rank', 'rank_size', 'rank_ties'])
+const RANK_FIELD_NAMES = ['rank', 'rank_size', 'rank_ties'] as const
 function invalid(): never { throw new Error('Comparaison AEDAR incompatible ou incomplète') }
+/** Producer-served ranks are all-or-nothing: three integers, or three nulls for
+ * an unranked facet or an unavailable focal. Nothing is derived from the value.
+ *
+ * A singleton eligible population is valid evidence: when only the focal
+ * publishes a cell the producer serves 1/1, so `rank_size` is bounded below by
+ * 1 here. Hiding a rank that has nothing to position against is the display
+ * helper's job, not a reason to fail the whole read.
+ */
+function servedRank(row: Record<string, unknown>): readonly [number, number, number] | null {
+  const values = RANK_FIELD_NAMES.map((field) => row[field])
+  if (values.some((value) => value === undefined)) invalid()
+  if (values.every((value) => value === null)) return null
+  if (!values.every((value) => Number.isInteger(value))) invalid()
+  const [position, size, ties] = values as [number, number, number]
+  if (position < 1 || size < 1 || ties < 1 || position + ties - 1 > size) invalid()
+  return [position, size, ties]
+}
 
 /** Read only comparison evidence. Focal observations remain owned by the facts read.
  * Small cell partitions bound both selected-member work and serialized output;
@@ -89,7 +105,7 @@ export async function fetchAedarComparison(type: AedarTerritoryType, id: string,
   let cache = successfulReads.get(fetcher)
   if (!cache) { cache = new Map(); successfulReads.set(fetcher, cache) }
   const key = JSON.stringify([type, id, options.intent, options.label, options.typequ, options.measures,
-    options.expectedContentVersion, options.expectedReferenceContentVersion, options.expectedSummaryContentVersion, options.rankMeasures])
+    options.expectedContentVersion, options.expectedReferenceContentVersion, options.expectedSummaryContentVersion])
   const cached = cache.get(key)
   if (cached) { cache.delete(key); cache.set(key, cached); return cached }
   const result = await readAedarComparison(fetcher, type, id, options)
@@ -121,20 +137,16 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
       Math.floor(20000 / Math.max(1, members!.length)))) : 1
     const items: Array<{ id: string; resource: string; target: { kind: string; type: AedarTerritoryType; id: string };
       coordinates: { typequ?: string[]; measure: string[] }; intent: typeof intent; fields: string[] }> = []
-    const rankMeasures = aggregate ? new Set(options.rankMeasures ?? options.measures) : undefined
-    if (rankMeasures && [...rankMeasures].some((measure) => !options.measures.includes(measure))) invalid()
-    const measureGroups = selected
-      ? aggregate
-        ? [options.measures.filter((measure) => rankMeasures!.has(measure)),
-          options.measures.filter((measure) => !rankMeasures!.has(measure))].filter((group) => group.length > 0)
-        : [options.measures]
-      : options.measures.map((measure) => [measure])
+    // A selection reads its measures as one matrix; every other shape declares
+    // one cell per item.
+    const measureGroups = selected ? [options.measures] : options.measures.map((measure) => [measure])
     for (const measures of measureGroups) for (let start = 0; start < (aggregate ? 1 : options.typequ.length); start += cellBudget) {
+      // Every shape asks for the same projection: the cahier tooltip renders
+      // whatever ordinal the producer serves, and the API answers a cell it
+      // cannot rank with a null triple rather than an omission.
       items.push({ id: `aedar-comparison-${items.length}`, resource: 'aedar_territorial_aggregate',
         target: { kind: 'territory', type, id }, coordinates: { ...(aggregate ? {} : { typequ: options.typequ.slice(start, start + cellBudget) }), measure: [...measures] },
-        intent, fields: aggregate
-          ? ['group_value', ...(measures.some((measure) => rankMeasures!.has(measure)) ? ['rank', 'rank_size', 'rank_ties'] : [])]
-          : selected ? ['group_value', 'rank', 'rank_size', 'rank_ties'] : ['group_value'] })
+        intent, fields: ['group_value', ...RANK_FIELD_NAMES] })
     }
     const cells: AedarComparisonCell[] = []
     let comparisonVersion: string | undefined
@@ -193,21 +205,22 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
             || !(row.reference_date === null || typeof row.reference_date === 'string')
             || !(row.publication_date === null || typeof row.publication_date === 'string')) invalid()
           let normalizedDirection: 'high' | 'low' | undefined
+          // Facet declarations exist for the aggregate readings only; a fixed
+          // per-cell row has no declaration map to consult.
+          const declaration = aggregate ? aggregateFacets?.[row.measure as string] : undefined
           if (selected || aggregate) {
-             const rank = [row.rank, row.rank_size, row.rank_ties]
-             const declaration = aggregateFacets?.[row.measure as string]
-            const rankRequested = item.fields.some((field) => RANK_FIELDS.has(field))
             if (aggregate && (!declaration || (selected && row.direction !== declaration.direction))) invalid()
             if (selected && row.direction !== 'high' && row.direction !== 'low') invalid()
             normalizedDirection = aggregate ? declaration?.direction : row.direction as 'high' | 'low' | undefined
-            if (rankRequested && aggregate && declaration && !declaration.ranked && rank.some((value) => value !== null)) invalid()
-            if (rankRequested && rank.some((value) => value === undefined)) invalid()
-            if (rankRequested && aggregate && rank.some((x) => x !== null && !Number.isInteger(x))) invalid()
-            if (rankRequested && !rank.every((x) => x === null) && (!rank.every((x) => Number.isInteger(x) && (x as number) > 0)
-              || (row.rank as number) + (row.rank_ties as number) - 1 > (row.rank_size as number)
-              || (selected && ((row.rank_size as number) > members!.length
-              || !members!.some((m) => m.territory_type === type && m.territory_id === id))))) invalid()
           }
+          // Every item asks for the rank fields, so every row must satisfy one
+          // shared law: an aggregate facet declared unranked never serves a
+          // rank, a requested rank carries all three fields, and a selection
+          // bounds its own population.
+          const rank = servedRank(row)
+          if (aggregate && !declaration?.ranked && rank) invalid()
+          if (rank && selected && (rank[1] > members!.length
+            || !members!.some((m) => m.territory_type === type && m.territory_id === id))) invalid()
           returned.add(`${row.typequ ?? ''}/${row.measure}`)
           cells.push({ ...row, ...(normalizedDirection ? { direction: normalizedDirection } : {}) } as unknown as AedarComparisonCell)
         }
@@ -248,9 +261,11 @@ export function aedarAggregateComparisonCell(evidence: AedarComparisonEvidence |
   return aedarComparisonCell(evidence, undefined, measure)
 }
 
-/** The producer-served ordinal of a comparison cell, or null when it is not rankable. */
+/** The producer-served ordinal of a comparison cell, or null when it is not
+ *  renderable — a served 1/1 is valid evidence but has no peer to position
+ *  against, so only `RANK_DISPLAY_MIN_SIZE` decides whether a chip renders. */
 export function aedarComparisonRank(cell: AedarComparisonCell | null | undefined): ComparisonRank | null {
-  return cell?.rank && cell.rank_size && cell.rank_size >= 2
-    ? { position: cell.rank, size: cell.rank_size }
+  return cell?.rank && cell.rank_size && cell.rank_size >= RANK_DISPLAY_MIN_SIZE
+    ? { position: cell.rank, size: cell.rank_size, ties: cell.rank_ties ?? null }
     : null
 }

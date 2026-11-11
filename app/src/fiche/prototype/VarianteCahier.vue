@@ -171,7 +171,7 @@ function preuvesDuGroupe(groupe: SousGroupeMatiere): string[] {
             v-if="valeur.rang && !valeur.multi"
             class="tuile-classement"
             role="img"
-            :aria-label="valeur.rang.phrase"
+            :aria-label="valeur.rang.phraseAria"
             :title="valeur.rang.phrase"
           >
             <span class="classement-glyphe" aria-hidden="true">{{ valeur.rang.glyphe }}</span>

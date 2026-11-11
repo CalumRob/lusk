@@ -41,6 +41,8 @@ export interface ComparisonScope {
 export interface ComparisonRank {
   position: number
   size: number
+  /** Producer-served tie count at this position, itself included; absent when unknown. */
+  ties?: number | null
 }
 
 export interface ComparisonReference {

@@ -118,7 +118,7 @@ function routeFor(fact: ContentFact): RouteLocationRaw | null {
 
 function ariaForFact(fact: ContentFact): string {
   const rank = comparisonRank(fact.fact)
-  return `${fact.label} : ${formatFact(fact)}${rank ? `. Rang ${rank.phrase}` : ''}`
+  return `${fact.label} : ${formatFact(fact)}${rank ? `. Rang ${rank.phraseAria}` : ''}`
 }
 
 function ariaValue(reading: Reading): string {

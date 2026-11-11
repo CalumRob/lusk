@@ -61,8 +61,16 @@ describe('formaterRang — the rank-in-context chip (ADR-0015)', () => {
   })
 
   it('formats a page-table rank without adding a comparison-group suffix', () => {
-    expect(formaterRang(1, 41)).toBe('1er / 41')
-    expect(formaterRang(41, 41)).toBe('41e / 41')
+    expect(formaterRang(1, 41)).toBe('1er/41')
+    expect(formaterRang(41, 41)).toBe('41e/41')
+  })
+
+  it('shares the served tie marker and refuses a rank without a shown group size', () => {
+    expect(formaterRang(1, 41, undefined, 3)).toBe('=1er/41')
+    expect(formaterRang(1, 2, undefined, 1)).toBe('1er/2')
+    // The group size is always shown, and a singleton population is not displayable.
+    expect(formaterRang(1, null)).toBeNull()
+    expect(formaterRang(1, 1)).toBeNull()
   })
 })
 

@@ -29,18 +29,27 @@ describe('figureGrammaire — le glyphe et la phrase de direction', () => {
     expect(glypheDirection('moins-est-mieux')).toBe('▼')
   })
 
-  it('construit la puce avec le glyphe visible et la phrase accessible complète', () => {
-    const puce = puceRangDirection('3e/41 de l’EPCI', 'plus-est-mieux')
+  it('construit la puce avec le glyphe visible et les deux formes du rang', () => {
+    const puce = puceRangDirection({ position: 3, size: 41, ties: 2 }, 'plus-est-mieux', 'communes de l’EPCI')!
     expect(puce.glyphe).toBe('▲')
-    expect(puce.rang).toBe('3e/41 de l’EPCI')
-    // la phrase complète porte dans title + aria-label — jamais le glyphe seul
-    expect(puce.phrase).toBe('3e/41 de l’EPCI — plus = mieux')
+    // Le texte visible porte le marqueur « = » du rang partagé.
+    expect(puce.rang).toBe('=3e/41 · communes de l’EPCI')
+    // Le nom accessible dit « ex æquo », jamais le symbole.
+    expect(puce.rangAria).toBe('3e/41 (ex æquo) · communes de l’EPCI')
+    expect(puce.phrase).toBe('=3e/41 · communes de l’EPCI — plus = mieux')
+    expect(puce.phraseAria).toBe('3e/41 (ex æquo) · communes de l’EPCI — plus = mieux')
   })
 
   it('donne la phrase « moins = mieux » pour un indicateur inversé', () => {
-    const puce = puceRangDirection('27e/38 de l’EPCI', 'moins-est-mieux')
+    const puce = puceRangDirection({ position: 27, size: 38 }, 'moins-est-mieux')!
     expect(puce.glyphe).toBe('▼')
-    expect(puce.phrase).toBe('27e/38 de l’EPCI — moins = mieux')
+    expect(puce.rang).toBe('27e/38')
+    expect(puce.phrase).toBe('27e/38 — moins = mieux')
+    expect(puce.phraseAria).toBe('27e/38 — moins = mieux')
+  })
+
+  it('ne rend aucune puce pour une population d’un seul territoire', () => {
+    expect(puceRangDirection({ position: 1, size: 1 }, 'plus-est-mieux')).toBeNull()
   })
 })
 

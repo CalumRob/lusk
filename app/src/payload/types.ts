@@ -189,6 +189,8 @@ export interface Indicateur extends Omit<VintageStamp, 'vintage_version'> {
   rang_reg_n: number | null
   /** Rank returned by the acquired comparison API with its declared exact scope. The ONLY rank the UI renders a chip from (#892). */
   comparaisonApi?: { rang: number | null; taille: number | null; portee: string | null; direction?: 'high' | 'low';
+    /** Producer-served tie count at this rank, itself included; > 1 renders the « = » marker. */
+    ties?: number | null
     reference?: { kind: 'median' | 'mean'; value: number } }
 }
 

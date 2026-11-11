@@ -363,7 +363,8 @@ export function applyThemeComparisonApiFacts(
     const reference = meanValue !== null ? { kind: 'mean' as const, value: meanValue }
       : medianValue !== null ? { kind: 'median' as const, value: medianValue } : null
     const rank = finite(result.rank) && finite(result.rank_size)
-      ? { position: result.rank, size: result.rank_size } : null
+      ? { position: result.rank, size: result.rank_size,
+        ...(finite(result.rank_ties) ? { ties: result.rank_ties } : {}) } : null
     const mode = context?.mode
     const kind = context?.scope.kind
     if (!mode || !kind || !text(context?.scope.label)) return { ...fact, comparison: null }

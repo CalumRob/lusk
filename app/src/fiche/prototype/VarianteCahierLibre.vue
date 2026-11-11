@@ -19,6 +19,7 @@ import {
 } from '@/fiche/comparisonContext'
 import type {
   AedarAccessEvidence,
+  AedarCarAccessOverviewScalar,
   AedarEquipmentExplorerEvidence,
   ContentSection,
   CyclingOfferEvidence,
@@ -40,6 +41,7 @@ import {
 } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode, AedarTimeRampEvidence } from '@/fiche/content/themeContent'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 import type { CahierPagination } from './cahierPagination'
 import CahierProse from './CahierProse.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
@@ -273,6 +275,27 @@ function aedarCarAccessOverviewEvidenceFor(section: ContentSection) {
   return section.evidence
 }
 
+/** The overview scalar's served rank, only when the shared grammar renders it. */
+function scalarRank(scalar: AedarCarAccessOverviewScalar) {
+  if (typeof scalar.rank !== 'number' || typeof scalar.rankSize !== 'number') return null
+  const rank = { position: scalar.rank, size: scalar.rankSize, ties: scalar.rankTies ?? null }
+  return formatServedRank(rank) ? rank : null
+}
+
+/** The same rank for the scalar's accessible name: a shared position says « ex æquo ». */
+function scalarRankAria(scalar: AedarCarAccessOverviewScalar): string | null {
+  const rank = scalarRank(scalar)
+  return rank ? formatServedRankAria(rank) : null
+}
+
+function scalarServedRank(scalar: AedarCarAccessOverviewScalar) {
+  const rank = scalarRank(scalar)
+  if (!rank || !scalar.rankDirection) return null
+  return { ...rank,
+    direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' as const : 'moins-est-mieux' as const,
+    key: scalar.key }
+}
+
 function aedarDiversityLossEvidenceFor(section: ContentSection): AedarDiversityLossEvidence | null {
   if (!props.aedarAccessEnabled || section.evidence?.kind !== 'aedar-diversity-loss') return null
   return section.evidence
@@ -292,6 +315,7 @@ function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureDa
       xLabel: ramp.xAxis.labels[index] ?? `${xValue}`,
       value: ramp.territory[mode][index] ?? null,
       referenceValue: ramp.reference?.[mode][index] ?? null,
+      referenceRank: ramp.referenceRanks?.[mode][index] ?? null,
     })),
   }))
   return {
@@ -493,13 +517,13 @@ onBeforeUnmount(() => {
                         :icon="CarFront"
                         tone="c"
                         color-value
-                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : scalar.comparisonUnavailableLabel ? ` ${scalar.comparisonAccessibleLabel ?? 'Moyenne du groupe comparé'} indisponible.` : ''}${scalar.rank && scalar.rankSize && scalar.rankSize >= 2 ? ` Rang ${scalar.rank}${scalar.rankTies && scalar.rankTies > 1 ? `, ex æquo avec ${scalar.rankTies} territoires` : ''} sur ${scalar.rankSize}.` : ''}`"
+                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : scalar.comparisonUnavailableLabel ? ` ${scalar.comparisonAccessibleLabel ?? 'Moyenne du groupe comparé'} indisponible.` : ''}${scalarRankAria(scalar) ? ` Rang ${scalarRankAria(scalar)}.` : ''}`"
                       >
                         <template v-if="scalar.reference || scalar.comparisonUnavailableLabel" #reference>
                           <CahierComparisonValue
                             v-if="scalar.reference"
                             :named-reference="scalar.reference"
-                            :served-rank="scalar.rank && scalar.rankSize && scalar.rankSize >= 2 && scalar.rankDirection ? { position: scalar.rank, size: scalar.rankSize, direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' : 'moins-est-mieux', key: scalar.key } : null"
+                            :served-rank="scalarServedRank(scalar)"
                             :comparison-status="comparisonStatus"
                             :comparison-error="comparisonError"
                           />

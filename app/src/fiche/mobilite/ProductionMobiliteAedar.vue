@@ -73,7 +73,6 @@ watch([comparisonRequest, comparisonFocalIdentity, comparisonRetry], async ([req
   comparisonState.value = 'loading'
   const result = await fetchAedarComparison(props.content.territory.type as AedarTerritoryType, props.content.territory.code, {
       ...request, typequ: [], measures: AEDAR_AGGREGATE_READING_KEYS,
-      rankMeasures: ['meanDiversity', 'meanVolume'],
       expectedContentVersion: focal.aedarContentVersion,
       expectedSummaryContentVersion: focal.summaryContentVersion,
       expectedReferenceContentVersion: focal.referenceContentVersion, signal: abort.signal,

@@ -146,6 +146,27 @@ describe('AccessRampFigureCahier time ramp', () => {
     wrapper.unmount()
   })
 
+  it('préfixe un rang partagé servi par « = » dans le tooltip et dit « ex æquo » en aria', async () => {
+    const tied = timeRamp({
+      series: [timeRamp().series[0]!].map((series) => ({
+        ...series,
+        points: series.points.map((point) => ({
+          ...point,
+          referenceRank: point.xValue === 15 ? { position: 1, size: 41, ties: 3 } : null,
+        })),
+      })),
+    })
+    const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: tied, territoryName: 'Territoire test' } })
+    await wrapper.find('[aria-label="Temps d\'accès : 15 min"]').trigger('focus')
+
+    const comparison = wrapper.get('.cahier-figure-tooltip-row-comparison')
+    expect(comparison.get('.cahier-figure-tooltip-comparison-rank').text()).toBe('=1er/41')
+    expect(wrapper.get('.cahier-figure-tooltip-row').attributes('aria-label')).toContain('rang 1er/41 (ex æquo)')
+    expect(wrapper.get('[role="tooltip"]').text()).not.toContain('ex æquo')
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('rang 1er/41 (ex æquo)')
+    wrapper.unmount()
+  })
+
   it.each([
     ['Allineuc', null],
     ['Allineuc', 'Territoires comparables'],

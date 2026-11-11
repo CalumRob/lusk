@@ -3,7 +3,7 @@
  * wording; the renderer lays sections out through the shared Cahier primitives.
  */
 import type { AedarFetchResult, AedarTerritorySummary } from './aedarApiClient'
-import { aedarAggregateComparisonCell } from './aedarComparisonClient'
+import { aedarAggregateComparisonCell, aedarComparisonRank } from './aedarComparisonClient'
 import type { AedarComparisonEvidence, AedarComparisonRequest } from './aedarComparisonClient'
 import { aedarTimeRampSummary, AEDAR_AGGREGATE_READING_MEASURES, AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from './aedarTimeRampFacts'
 import { AEDAR_EQUIPMENT_BUCKET_THRESHOLD, classifyAedarEquipmentTypes } from './aedarEquipmentBuckets'
@@ -11,7 +11,7 @@ import { AEDAR_TYPEQU_BPE_YEAR, AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegis
 import { aedarDiversityLossSection } from './aedarDiversityLossMaps'
 import type { AedarDiversityLossMapMetadata } from './aedarDiversityLossMaps'
 import type { AedarTimeRampValues } from './aedarTimeRampFacts'
-import type { TerritoryIdentity } from './territoryFacts'
+import type { ComparisonRank, TerritoryIdentity } from './territoryFacts'
 import { emphasis, link, modeEmphasis, text, territoryLead, territoryTypeLabel } from './themeContent'
 import type { AedarAccessSection, AedarCarAccessOverviewSection, AedarDiversityLossSection, AedarEquipmentExplorerSection, AedarEquipmentProfileSection, AedarEvidenceSource, AedarRampMode, AedarTimeRampEvidence, TextBlock } from './themeContent'
 
@@ -85,6 +85,12 @@ function groupTotal(comparison: AedarComparisonEvidence, measure: string): numbe
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
 }
 
+/** The same registry-wide reading's served ordinal; null when the cell is not ranked. */
+function groupRank(comparison: AedarComparisonEvidence, measure: string): ComparisonRank | null {
+  const reading = Object.entries(AEDAR_AGGREGATE_READING_MEASURES).find(([, sourceMeasure]) => sourceMeasure === measure)?.[0]
+  return reading ? aedarComparisonRank(aedarAggregateComparisonCell(comparison, reading)) : null
+}
+
 function rampEvidence(
   values: AedarTimeRampValues,
   referenceValues: readonly AedarTimeRampValues[] | null,
@@ -109,6 +115,7 @@ function rampEvidence(
     yAxis: values.yAxis,
     territory: values.territory,
     reference,
+    referenceRanks: null,
     referenceLabel: reference ? referenceLabel : null,
     availability: values.availability,
     provenance: values.provenance,
@@ -142,10 +149,14 @@ export function aedarAccessSection(
   const ramps = values.map((ramp) => {
     const evidence = rampEvidence(ramp, referenceValues, referenceLabel)
     if (!comparison) return evidence
+    const statistic = ramp.rampKey === 'diversity' ? 'share' : 'mean'
     const reference = Object.fromEntries(Object.keys(ramp.territory).map((mode) => [mode,
-      ramp.xAxis.values.map((horizon) => groupTotal(comparison, `count_${horizon}_${mode}_${ramp.rampKey === 'diversity' ? 'share' : 'mean'}`)),
+      ramp.xAxis.values.map((horizon) => groupTotal(comparison, `count_${horizon}_${mode}_${statistic}`)),
     ])) as unknown as Record<AedarRampMode, readonly (number | null)[]>
-    return { ...evidence, reference, referenceLabel }
+    const referenceRanks = Object.fromEntries(Object.keys(ramp.territory).map((mode) => [mode,
+      ramp.xAxis.values.map((horizon) => groupRank(comparison, `count_${horizon}_${mode}_${statistic}`)),
+    ])) as unknown as Record<AedarRampMode, readonly (ComparisonRank | null)[]>
+    return { ...evidence, reference, referenceRanks, referenceLabel }
   })
   const diversity = ramps.find((ramp) => ramp.rampKey === 'diversity')
   const horizonIndex = diversity?.xAxis.values.indexOf(AEDAR_PROTOTYPE_HORIZON_MINUTES) ?? -1
