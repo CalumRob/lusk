@@ -143,7 +143,8 @@ except the existing car/15-minute names `meanDiversity` and `meanVolume`,
 which remain compatible. The producer contract declares all 40 as ranked
 high-is-better facets alongside the 312 per-cell measures. They use the
 existing `measure` coordinate without `typequ`. Direct territorial readings
-and peer ranks use `aedar_territorial_aggregate`; fixed density-class reference
+come from `aedar_territorial_aggregate`, while aggregate peer ranks read the
+`aedar_territory_summary` projection (#938); fixed density-class reference
 readings are projected from the already-pooled density artifact and published
 with the comparison generation. Fixed density requests do not aggregate
 TYPEQU rows (#940; the no-peer/rank-row stance in #810 remains intact):
@@ -183,10 +184,45 @@ TYPEQU observation still has to satisfy `0 ≤ n_observed ≤ n_addresses`.
   (`rank_size` counts the eligible members) while the requested membership
   stays truthful in `scope.member_count`.
 
-Per-cell measures are unchanged: fixed contexts stay reference-only for them
-(#904) and only `selected_comparison` serves their ranks. Mixing aggregate
-readings with per-cell measures in one request, or adding a `typequ` coordinate
-to an aggregate reading, is rejected with `422`.
+### Fixed per-cell comparison ranks (#951)
+
+The same fixed intent serves the three rank fields for **per-cell** measures
+(a `typequ` + `measure` request). Owner decision 2026-11-10 supersedes #904's
+reference-only boundary for this intent; the aggregate-reading boundary is
+unchanged and the selected intent keeps its existing grant. For each requested
+`(typequ, measure)`:
+
+- the focal's published value for that cell is read from
+  `aedar_territorial_aggregate` in the same snapshot, alongside the declared
+  reference (unchanged `group_value`, statistic and versions);
+- the peer group is resolved by `_aedar_fixed_peer_ids_cached`, exactly as the
+  aggregate ranks resolve it — the focal EPCI's communes, all Breton communes,
+  the density class, or the same-level territories — so `epci`,
+  `density_class`, `same_level` and `bretagne` share one peer **group** across
+  both shapes. The eligible population is not shared, because the two readings
+  have different availability laws: a peer's per-cell reading is eligible when
+  the producer publishes a finite value for that cell (below), whereas a peer's
+  aggregate reading is eligible only when its `aedar_territory_summary` row is
+  `available` (complete TYPEQU registry, one provenance, agreeing positive
+  address population, valid observed counts — #914/#938);
+- one set-wise read of the peer group per comparison item supplies every peer's
+  published value for that `(typequ, measure)` — never a per-peer round trip,
+  and the preflight work estimate is `1 + |peers|` like the aggregate reading;
+- a peer is eligible when the producer publishes a finite value for that cell.
+  This is the selected comparison's law: the producer publishes no value for an
+  uncovered row (`uncovered_no_address_origins` with no address origin), while a
+  genuine `0` is a real reading and stays rankable. Peers without a published
+  value are excluded from the rank population — never zeroed, never ranked — and
+  `rank_size` counts the eligible peers including the focal; ties share the
+  focal's rank (competition ranking);
+- an unranked facet (e.g. min/max curve readings; decile curve readings are ranked since #948) or an unavailable focal returns
+  `200` with `null` rank fields. The focal's existing `value`/`status`
+  semantics are untouched.
+
+Requesting no rank field returns the previous per-cell response exactly: no new
+fields are injected into the default projection. Mixing aggregate readings with
+per-cell measures in one request, or adding a `typequ` coordinate to an
+aggregate reading, is still rejected with `422`.
 
 ## Declared-profile comparisons
 

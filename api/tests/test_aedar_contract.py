@@ -92,10 +92,10 @@ def test_aedar_semantic_coordinates_and_fixed_comparison_intent_are_closed_and_b
     assert "aedar_content_version" in source
     assert "reference_content_version" in source
     assert "aedar_comparison_territory" not in source
-    # #904's boundary for per-cell measures stays exact: the fixed intent's
-    # base optional fields remain rank-free; request-time rank fields enter
-    # only through the aggregate-reading branch (ADR-0039's 2026-11-04
-    # amendment, #914).
+    # Per-cell request-time ranks are opt-in (#951): the fixed intent's base
+    # optional fields stay rank-free, so an unranked per-cell request keeps its
+    # pre-#951 response exactly; rank fields enter the projection only when
+    # explicitly selected (ADR-0039 amendments #914 and #951).
     assert aedar_reads._AEDAR_COMPARISON_OPTIONAL_FIELDS == {"group_value", "value"}
     schema = (Path(__file__).resolve().parents[1] / "schema.sql").read_text(encoding="utf-8")
     migration = (Path(__file__).resolve().parents[1] / "migrations" / "032_aedar_fixed_comparisons.sql").read_text(encoding="utf-8")
@@ -175,7 +175,7 @@ def test_fixed_aggregate_reads_peer_population_only_when_rank_is_requested(
 
     result = aedar_reads._aedar_fixed_aggregate_snapshot(
         Connection(), "commune", "35238", "density_class", "meanDiversity",
-        facet, (set(aedar_reads._aedar_comparison_field_selection(fields, aggregate=True))
+        facet, (set(aedar_reads._aedar_comparison_field_selection(fields))
                 if fields is not None else set(aedar_reads._aedar_comparison_optional_fields(True))), marker)
     comparison = result["comparison"]
 
@@ -750,48 +750,50 @@ def test_aedar_aggregate_reading_inventory_covers_displayed_modes_and_horizons()
         for kind in ("diversity" if source.endswith("_share") else "volume",))
 
 
-def test_aedar_comparison_grants_rank_fields_per_intent_and_aggregate_boundary():
+def test_aedar_comparison_grants_rank_fields_per_intent():
     catalogue = default_resource_catalogue.__wrapped__()
     target = {"kind": "territory", "type": "commune", "id": "22001"}
     members = [{"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"}]
     per_cell = {"typequ": ["A104"], "measure": ["count_5_walk_mean"]}
     aggregate = {"measure": ["meanDiversity", "meanVolume"]}
+    rank_fields = ["group_value", "value", "rank", "rank_size", "rank_ties"]
     # The selected intent keeps #904's grant: rank fields for per-cell
     # measures and for the aggregate readings alike.
     for coordinates in (per_cell, aggregate):
         selected = ResourceReadItem.model_validate({
             "resource": "aedar_territorial_aggregate", "target": target,
-            "coordinates": coordinates,
-            "fields": ["group_value", "value", "rank", "rank_size", "rank_ties"],
+            "coordinates": coordinates, "fields": rank_fields,
             "intent": {"kind": "selected_comparison", "members": members},
         })
         assert validate_resource_item(selected, catalogue).resource_id == "aedar_territorial_aggregate"
-    # ADR-0039's 2026-11-04 amendment (#914): the fixed intent grants the rank
-    # fields on the aggregate facets ONLY.
-    fixed_aggregate = ResourceReadItem.model_validate({
+    # ADR-0039's 2026-11-10 amendment (#951) supersedes #904's reference-only
+    # boundary for the fixed intent: request-time ranks are granted on every
+    # declared facet, per-cell measures and registry-wide aggregate readings
+    # alike.
+    for context in ("epci", "density_class", "same_level", "bretagne"):
+        for coordinates in (per_cell, aggregate):
+            fixed = ResourceReadItem.model_validate({
+                "resource": "aedar_territorial_aggregate", "target": target,
+                "coordinates": coordinates, "fields": rank_fields,
+                "intent": {"kind": "fixed_comparison", "context": context},
+            })
+            assert validate_resource_item(fixed, catalogue).resource_id == "aedar_territorial_aggregate"
+    # Facts stay reference-only: ranks are comparison evidence, not facts.
+    facts = ResourceReadItem.model_validate({
         "resource": "aedar_territorial_aggregate", "target": target,
-        "coordinates": aggregate, "fields": ["rank", "rank_size", "rank_ties"],
-        "intent": {"kind": "fixed_comparison", "context": "epci"},
-    })
-    assert validate_resource_item(fixed_aggregate, catalogue).resource_id == "aedar_territorial_aggregate"
-    # Per-cell measures keep #904's exact boundary: fixed and facts intents
-    # reject rank fields for non-aggregate facets.
-    for intent in ({"kind": "fixed_comparison", "context": "same_level"},
-                   {"kind": "facts"}):
-        item = ResourceReadItem.model_validate({
-            "resource": "aedar_territorial_aggregate", "target": target,
-            "coordinates": per_cell, "fields": ["rank"], "intent": intent,
-        })
-        with pytest.raises(ValueError, match="field is not declared"):
-            validate_resource_item(item, catalogue)
-    # member_ranks is not an AEDAR projection; peers/rank rows stay unpublished.
-    not_granted = ResourceReadItem.model_validate({
-        "resource": "aedar_territorial_aggregate", "target": target,
-        "coordinates": coordinates, "fields": ["member_ranks"],
-        "intent": {"kind": "selected_comparison", "members": members},
+        "coordinates": per_cell, "fields": ["rank"], "intent": {"kind": "facts"},
     })
     with pytest.raises(ValueError, match="field is not declared"):
-        validate_resource_item(not_granted, catalogue)
+        validate_resource_item(facts, catalogue)
+    # member_ranks is not an AEDAR projection; peers/rank rows stay unpublished.
+    for intent in ({"kind": "selected_comparison", "members": members},
+                   {"kind": "fixed_comparison", "context": "epci"}):
+        not_granted = ResourceReadItem.model_validate({
+            "resource": "aedar_territorial_aggregate", "target": target,
+            "coordinates": per_cell, "fields": ["member_ranks"], "intent": intent,
+        })
+        with pytest.raises(ValueError, match="field is not declared"):
+            validate_resource_item(not_granted, catalogue)
 
 
 def test_aedar_measure_facet_declaration_fails_closed_when_incomplete(tmp_path):
@@ -868,6 +870,10 @@ class _AedarSelectedConnection:
         self.state = state
         self.queries = []
 
+    def transaction(self):
+        from contextlib import nullcontext
+        return nullcontext(self)
+
     def _territory_records(self, territory_type, territory_id):
         """All published aggregate records of one territory in the fixture."""
         out = {}
@@ -898,6 +904,13 @@ class _AedarSelectedConnection:
     def execute(self, sql, params=None):
         self.queries.append(sql)
         s = sql
+        if s.startswith("SET TRANSACTION"):
+            return None
+        if "SELECT DISTINCT typequ FROM aedar_territorial_aggregate" in s:
+            requested = set(params[0])
+            typequs = sorted({typequ for records in self.state["aggregates"].values()
+                              for typequ in records if typequ in requested})
+            return _AedarSelectedRows(["typequ"], [(typequ,) for typequ in typequs])
         if "s.table_name='aedar_territory_summary'" in s:
             return _AedarSelectedRows(["marker"], [("summary-v1", 40, "ref-v1", "aed-v1",
                 "aed-v1", "ref-v1", "ref-v1")])
@@ -1086,6 +1099,20 @@ class _AedarSelectedConnection:
             return _AedarSelectedRows(["typequ", "typequ_label", "source_id", "vintage_id", "source_url",
                 "licence", "attribution", "reference_date", "publication_date", "n_addresses",
                 "n_observed", "coverage_status", "measures"], rows)
+        if "territory_id=ANY(%s::text[]) AND typequ=%s" in s:
+            # Request-time peer population of a fixed per-cell comparison:
+            # one set-wise read over the resolved peer group (#951).
+            measure, ttype, ids, typequ = params
+            rows = []
+            for code in ids:
+                record = None
+                for key in (("focal", code), ("member", code), ("direct", ttype, code)):
+                    record = self.state["aggregates"].get(key, {}).get(typequ)
+                    if record is not None:
+                        break
+                if record is not None:
+                    rows.append((code, record["measures"].get(measure)))
+            return _AedarSelectedRows(["territory_id", "value"], rows)
         if "territory_id=ANY(%s::text[]) AND typequ=ANY" in s:
             # Member aggregate rows projected over the requested measures.
             measures, _ttype, ids, typequs = params
@@ -1113,9 +1140,9 @@ class _AedarSelectedConnection:
             return _AedarSelectedRows(["typequ_label", "source_id", "vintage_id", "source_url", "licence",
                 "attribution", "reference_date", "publication_date", "value", "n_addresses",
                 "n_observed", "coverage_status"],
-                (record["label"], "aedar_bretagne", "2026-v1", "https://example.test", "ODbL", "AEDAR",
-                 None, "2026-09-30", record["measures"].get(measure), record["n_addresses"],
-                 record["n_observed"], record["coverage"]))
+                [(record["label"], "aedar_bretagne", "2026-v1", "https://example.test", "ODbL", "AEDAR",
+                  None, "2026-09-30", record["measures"].get(measure), record["n_addresses"],
+                  record["n_observed"], record["coverage"])])
         if "FROM aedar_comparison_group" in s:
             return _AedarSelectedRows(["value", "n_addresses", "n_observed", "coverage_status", "statistic"],
                 [(4.0, None, None, None, "pooled")])
@@ -1570,11 +1597,201 @@ def test_aedar_fixed_aggregate_rejects_malformed_coordinate_shapes():
         aedar_reads._aedar_comparison_snapshot(
             conn, "commune", "22001", "epci", None, "meanVolume", None, {})
     assert err.value.status_code == 503
-    # Per-cell measures keep #904's boundary: rank fields are not selectable.
+    # A per-cell rank request needs its declared facet: an incomplete facet
+    # declaration fails closed instead of inventing a direction (#951).
     with pytest.raises(HTTPException) as err:
         aedar_reads._aedar_comparison_snapshot(
-            conn, "commune", "22001", "epci", "A104", "count_5_walk_mean", ["rank"], facets)
-    assert err.value.status_code == 422
+            _AedarSelectedConnection(_aedar_fixed_cell_state()), "commune", "22001", "epci",
+            "A104", "count_5_walk_mean", ["rank"], {})
+    assert err.value.status_code == 503
+
+
+def _aedar_fixed_cell_state():
+    """Fixed per-cell fixture: E1's own direct A104 reading plus its communes."""
+    state = _aedar_selected_state()
+    state["aggregates"][("direct", "epci", "E1")] = {
+        "A104": {"label": "Alimentation", "n_addresses": 500, "n_observed": 400,
+                 "coverage": "covered",
+                 "measures": {"count_5_walk_mean": 11.0}},
+    }
+    return state
+
+
+def _aedar_fixed_cell(conn, measure="count_5_walk_mean", typequ="A104",
+                      context="epci", fields=None, facets=None):
+    return aedar_reads._aedar_comparison_snapshot(
+        conn, "commune", "22001", context, typequ, measure, fields,
+        _aedar_facets() if facets is None else facets)["comparison"]
+
+
+def test_aedar_fixed_per_cell_comparison_serves_peer_ranks():
+    rank_fields = ["group_value", "value", "rank", "rank_size", "rank_ties"]
+    # EPCI context: the peers are E1's communes (22001 5.0, 22002 8.0), the
+    # reference keeps its declared direct-EPCI semantics (11.0).
+    epci = _aedar_fixed_cell(_AedarSelectedConnection(_aedar_fixed_cell_state()),
+                             fields=rank_fields)
+    assert epci["comparison_context"] == "epci" and epci["typequ"] == "A104"
+    assert epci["group_value"] == 11.0 and epci["statistic"] == "direct"
+    assert epci["value"] == 5.0 and epci["status"] == "measured"
+    # High-is-better: one peer is above the focal -> 2e/2, one tie at the focal.
+    assert (epci["rank"], epci["rank_size"], epci["rank_ties"]) == (2, 2, 1)
+    # Bretagne context: all Breton communes are the peer group (5, 8, 8) and
+    # the reference is the Région's own direct reading (13.0).
+    bretagne = _aedar_fixed_cell(_AedarSelectedConnection(_aedar_fixed_cell_state()),
+                                 context="bretagne", fields=rank_fields)
+    assert bretagne["group_value"] == 13.0 and bretagne["group_id"] == "53"
+    assert (bretagne["rank"], bretagne["rank_size"], bretagne["rank_ties"]) == (3, 3, 1)
+    # One peer query per comparison item, over the resolved peer group.
+    conn = _AedarSelectedConnection(_aedar_fixed_cell_state())
+    _aedar_fixed_cell(conn, fields=rank_fields)
+    peer_queries = [q for q in conn.queries if "territory_id=ANY(%s::text[]) AND typequ=%s" in q]
+    assert len(peer_queries) == 1
+
+
+def test_aedar_fixed_per_cell_rank_ties_and_eligibility():
+    rank_fields = ["group_value", "value", "rank", "rank_size", "rank_ties"]
+    # Ties share the focal's rank (rendering is 1er/2, not 1er/2e ex aequo split).
+    state = _aedar_fixed_cell_state()
+    state["aggregates"][("focal", "22002")]["A104"]["measures"]["count_5_walk_mean"] = 5.0
+    tied = _aedar_fixed_cell(_AedarSelectedConnection(state), fields=rank_fields)
+    assert (tied["rank"], tied["rank_size"], tied["rank_ties"]) == (1, 2, 2)
+    # A genuine zero is a published value and stays rankable: it is the worst
+    # reading on a high-is-better facet, never mistaken for unavailable.
+    state = _aedar_fixed_cell_state()
+    state["aggregates"][("focal", "22002")]["A104"]["measures"]["count_5_walk_mean"] = 0.0
+    zero = _aedar_fixed_cell(_AedarSelectedConnection(state), fields=rank_fields)
+    assert (zero["rank"], zero["rank_size"], zero["rank_ties"]) == (1, 2, 1)
+    # A peer with no published value for the cell is ineligible: excluded from
+    # the rank population, never zeroed (an uncovered row publishes no value).
+    state = _aedar_fixed_cell_state()
+    state["aggregates"][("focal", "22002")]["A104"]["measures"].pop("count_5_walk_mean")
+    missing = _aedar_fixed_cell(_AedarSelectedConnection(state), fields=rank_fields)
+    assert (missing["rank"], missing["rank_size"], missing["rank_ties"]) == (1, 1, 1)
+    # Direction-aware: a low-is-better facet ranks the lowest reading first.
+    facets = _aedar_facets()
+    facets["count_5_walk_mean"] = {**facets["count_5_walk_mean"], "direction": "low"}
+    low = _aedar_fixed_cell(_AedarSelectedConnection(_aedar_fixed_cell_state()),
+                            fields=rank_fields, facets=facets)
+    assert (low["rank"], low["rank_size"], low["rank_ties"]) == (1, 2, 1)
+
+
+def test_aedar_fixed_per_cell_rank_is_null_for_unranked_facets_and_unavailable_focals():
+    rank_fields = ["group_value", "value", "rank", "rank_size", "rank_ties"]
+    # A synthetic unranked facet (as a curve reading before #948) returns 200
+    # with the existing values and null rank fields.
+    facets = _aedar_facets()
+    facets["count_5_walk_decile1"] = {**facets["count_5_walk_decile1"], "ranked": False}
+    conn = _AedarSelectedConnection(_aedar_fixed_cell_state())
+    decile = _aedar_fixed_cell(conn, measure="count_5_walk_decile1", fields=rank_fields,
+                               facets=facets)
+    assert decile["value"] == 1.0
+    assert (decile["rank"], decile["rank_size"], decile["rank_ties"]) == (None, None, None)
+    # An unranked facet never pays for the peer population.
+    assert not any("territory_id=ANY(%s::text[]) AND typequ=%s" in q for q in conn.queries)
+    # An unavailable focal keeps its honest status and serves null ranks.
+    state = _aedar_fixed_cell_state()
+    state["aggregates"][("focal", "22001")]["A104"]["measures"]["count_5_walk_mean"] = None
+    unavailable = _aedar_fixed_cell(_AedarSelectedConnection(state), fields=rank_fields)
+    assert unavailable["value"] is None and unavailable["status"] == "not_available"
+    assert (unavailable["rank"], unavailable["rank_size"], unavailable["rank_ties"]) == (None, None, None)
+
+
+def test_aedar_fixed_per_cell_without_rank_fields_keeps_the_reference_shape():
+    conn = _AedarSelectedConnection(_aedar_fixed_cell_state())
+    baseline = _aedar_fixed_cell(conn)
+    # Back-compat: the default per-cell projection never gains rank fields.
+    assert set(baseline) == {
+        "comparison_context", "group_id", "territory_type", "typequ", "typequ_label",
+        "source_id", "vintage_id", "source_url", "licence", "attribution", "reference_date",
+        "publication_date", "measure", "statistic", "group_value", "group_n_addresses",
+        "group_n_observed", "group_coverage_status", "value", "status", "n_addresses",
+        "n_observed", "coverage_status",
+    }
+    assert baseline["group_value"] == 11.0 and baseline["value"] == 5.0
+    # The peer population is read only when a rank field is actually requested.
+    assert not any("territory_id=ANY(%s::text[]) AND typequ=%s" in q for q in conn.queries)
+    projected = _aedar_fixed_cell(_AedarSelectedConnection(_aedar_fixed_cell_state()),
+                                 fields=["group_value", "value"])
+    assert "rank" not in projected and projected["group_value"] == 11.0
+    # An explicit rank-only projection keeps rank and drops the value fields;
+    # the mandatory identity/status fields always stay.
+    rank_only = _aedar_fixed_cell(_AedarSelectedConnection(_aedar_fixed_cell_state()),
+                                 fields=["rank"])
+    assert rank_only["rank"] == 2
+    assert "group_value" not in rank_only and "value" not in rank_only
+    assert rank_only["typequ"] == "A104"
+
+
+def test_aedar_peer_rank_is_direction_aware_with_shared_ties():
+    values = {"a": 5.0, "b": 8.0, "c": 8.0, "d": 1.0}
+    assert aedar_reads._aedar_peer_rank(values, "a", "high") == (3, 4, 1)
+    assert aedar_reads._aedar_peer_rank(values, "a", "low") == (2, 4, 1)
+    assert aedar_reads._aedar_peer_rank(values, "b", "high") == (1, 4, 2)
+    # An ineligible focal is never ranked, and the helper never invents a zero.
+    assert aedar_reads._aedar_peer_rank({"a": 5.0}, "b", "high") == (None, None, None)
+    assert aedar_reads._aedar_peer_rank({"a": 5.0, "b": 5.0}, "a", "high") == (1, 2, 2)
+
+
+def test_aedar_fixed_per_cell_rank_fields_are_admitted_and_served_over_http(monkeypatch):
+    from contextlib import contextmanager
+    from fastapi.testclient import TestClient
+    import api.main as main
+
+    connection = _AedarSelectedConnection(_aedar_fixed_cell_state())
+
+    class FakePool:
+        @contextmanager
+        def connection(self):
+            yield connection
+
+    monkeypatch.setattr(main, "pool", lambda: FakePool())
+    response = TestClient(main.app).post("/api/resources/read-batch", json={"items": [{
+        "id": "cell-rank",
+        "resource": "aedar_territorial_aggregate",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+        "fields": ["group_value", "value", "rank", "rank_size", "rank_ties"],
+        "intent": {"kind": "fixed_comparison", "context": "epci"},
+    }]})
+    assert response.status_code == 200, response.text
+    comparison = response.json()["results"][0]["data"]["comparison"]
+    assert comparison["group_value"] == 11.0 and comparison["value"] == 5.0
+    assert (comparison["rank"], comparison["rank_size"], comparison["rank_ties"]) == (2, 2, 1)
+
+
+def test_aedar_fixed_per_cell_rank_preflight_bounds_one_peer_read_per_item():
+    from api.main import get_semantic_resource_reader
+    catalogue = default_resource_catalogue.__wrapped__()
+    reader = get_semantic_resource_reader()
+
+    def item(fields):
+        return ResourceReadItem.model_validate({
+            "resource": "aedar_territorial_aggregate",
+            "target": {"kind": "territory", "type": "commune", "id": "22001"},
+            "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+            "fields": fields,
+            "intent": {"kind": "fixed_comparison", "context": "epci"},
+        })
+
+    def peer_resolutions(conn):
+        return sum(1 for query in conn.queries
+                   if "SELECT epci_id,density_class_code FROM territory_reference" in query)
+
+    state = {}
+    conn = _AedarSelectedConnection(_aedar_fixed_cell_state())
+    # Bounded work: the comparison entry plus one row per resolved peer (#951),
+    # never a per-peer round trip.
+    assert reader.preflight(conn, item(["group_value", "value", "rank"]), catalogue,
+                            snapshot_state=state) == 3
+    assert peer_resolutions(conn) == 1
+    # A second item of the same fixed context reuses the resolved peer group.
+    assert reader.preflight(conn, item(["rank_size"]), catalogue, snapshot_state=state) == 3
+    assert peer_resolutions(conn) == 1
+    # Without a rank field the per-cell comparison stays a fixed-cost read and
+    # never resolves the peer population.
+    unranked = _AedarSelectedConnection(_aedar_fixed_cell_state())
+    assert reader.preflight(unranked, item(["group_value", "value"]), catalogue) == 1
+    assert peer_resolutions(unranked) == 0
 
 
 def test_aedar_selected_aggregate_returns_pooled_weighted_readings_and_ranks():
