@@ -63,6 +63,23 @@ Comparison fields use the closed comparison-result vocabulary. For declared-prof
 and numeric period/detail collection comparisons, `median` is served when exactly one
 member is comparable (the singleton median, #917); `rank`/`rank_size`/`rank_ties` and
 peer `member_ranks` remain null until at least two members are comparable.
+A declared-profile `fixed_comparison` also accepts one declared value per profile
+axis: the descriptor's published default detail/sex point keeps the published
+comparison, while any other declared point (for example `t_km_1000` or
+`c_km_1000` of `reseaux_par_habitant`) is computed over the same resolved cohort
+from its committed published cells, with the same median, direction-aware
+rank/ties, missingness, unit and lineage as an identical explicit selection.
+That request-scoped point creates no publication row. Its fail-closed authority
+is the `declared_profile` and `territory_reference` generations plus the
+cohort's per-cell provenance — not the default comparison publication
+generation: a missing/stale `profile_comparison_publication` fails the published
+default read closed while the alternate point still serves from the same
+committed cells, which is intentional. A scalar-backed profile keeps its
+linked scalar facet: `fixed_comparison` rejects its profile coordinates with
+`422`, while `selected_comparison` keeps its existing coordinate semantics.
+Fixed profile comparisons (published default or alternate declared point) also
+reject `member_ranks` with `422`; that cohort-sized projection stays a
+selected-comparison field.
 Owned ordered-series comparisons additionally accept the requested-only
 `axis_comparisons` projection: it returns API-owned comparison values, eligibility,
 missing counts, ranks/ties, and lineage for the axes already present in the comparison

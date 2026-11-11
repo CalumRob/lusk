@@ -936,8 +936,15 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                                *, indicator_id=None, profiles=None, profile_version=None, has_readings=False,
                                result_fields=None, preflight_only=False, snapshot_state=None,
                                include_owned_series=True, include_fixed_context=False,
-                               profile_coordinates=None):
+                               profile_coordinates=None, profile_member_ranks_allowed=True):
     """Read scalar and profile comparisons from the caller's MVCC snapshot."""
+    if (not profile_member_ranks_allowed and result_fields is not None
+            and "member_ranks" in result_fields):
+        # Fixed declared-profile comparisons keep the compact public result; the
+        # cohort-sized peer projection belongs to selected comparisons only
+        # (field-selection contract). #960 keeps that boundary for alternate
+        # declared points too, before any publication read.
+        raise HTTPException(422, "Fixed profile comparisons do not accept member_ranks")
     scalar_descriptors = conn.execute(
         """SELECT indicator_id,label,unit,direction,comparison_facet,allowed_levels,descriptor_version
            FROM scalar_descriptor WHERE theme_id=%s AND (%s::text IS NULL OR indicator_id=%s)
@@ -2336,7 +2343,7 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
                                     include_scalar_facet=False,
                                     scalar_facet_projection=False,
                                     scalar_facet_theme_id=None,
-                                    profile_coordinates=None):
+                                    profile_coordinates=None, intent_kind=None):
     _validate_comparison_fields(selected_fields,
         _COMPARISON_RESULT_FIELDS - {"mean", "mean_curve", "focal_value"})
     focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
@@ -2422,7 +2429,9 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
                                    selection, indicator_id=indicator_id,
                                    result_fields=selected_fields, preflight_only=True,
                                    snapshot_state=snapshot_state,
-                                   profile_coordinates=profile_coordinates)
+                                   profile_coordinates=profile_coordinates,
+                                   profile_member_ranks_allowed=(
+                                       shape != "profile" or intent_kind != "fixed_comparison"))
         return {**estimate, "theme_id": descriptor[0], "shape": shape}
     elif shapes[0][1] == "series":
         result = _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id,
@@ -2441,7 +2450,8 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
                                    include_scalar_facet=False,
                                    scalar_facet_projection=False,
                                    scalar_facet_theme_id=None,
-                                   profile_coordinates=None, collection_coordinates=None):
+                                   profile_coordinates=None, collection_coordinates=None,
+                                   intent_kind=None):
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
                 if snapshot_state is not None else None)
     active_owned = resource.owned_route if resource else _owned_series_route(conn,indicator_id)
@@ -2542,7 +2552,9 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
         raise HTTPException(503, "Indicator theme metadata is unavailable")
     comparison = _theme_comparison_snapshot(conn, territory_type, territory_id,
         descriptor[0], selection, indicator_id=indicator_id,result_fields=selected_fields,
-        snapshot_state=snapshot_state, profile_coordinates=profile_coordinates)
+        snapshot_state=snapshot_state, profile_coordinates=profile_coordinates,
+        profile_member_ranks_allowed=(
+            shape != "profile" or intent_kind != "fixed_comparison"))
     result_rows = comparison["results"] if shape == "scalar" else comparison["profile_comparisons"]
     if len(result_rows) != 1:
         raise HTTPException(503, "Indicator comparison facet is unavailable or ambiguous")
