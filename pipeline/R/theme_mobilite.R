@@ -574,6 +574,13 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #   - « bornes_recharge » (le sous-bloc, #140) : les stations IRVE distinctes
 #     par commune, la multiplicité 1. Source de référence : bornes-recharges
 #     (le fichier consolidé IRVE, Licence Ouverte).
+#   - « stations_service » / « stations_service_1000 » (#953) : le compte B316
+#     de stations-service et sa densité pour 1 000 hab., une ligne par
+#     territoire. Source de référence : bpe_b316 (le dénombrement INSEE ; les
+#     agrégats somment les parties puis recalculent le taux).
+#   - « bornes_recharge_1000 » (#953) : les stations IRVE pour 1 000 hab.,
+#     recalculées depuis les comptes à chaque niveau. Source de référence :
+#     bornes-recharges (la population du dénominateur est celle du hub).
 #   - « places_stationnement_velo_1000 » (le sous-bloc, #140) : le hub Ecolab
 #     pris tel quel — les places / 1 000 hab, la multiplicité 1. Source de
 #     référence : stationnement-velo (ODbL, producteur OSM).
@@ -610,7 +617,9 @@ INDICATEURS_MOBILITE <- tibble::tibble(
   key = c("voitures_menage", "reseaux", "reseaux_par_habitant", "surface_reseaux_routiers",
           "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
            "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
-           "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
+           "stationnement_velo_par_voiture",
+           "stations_service", "stations_service_1000", "bornes_recharge_1000",
+           "tot_loss_t", "tot_loss_b",
             "offre_cyclable",
             CLES_MOYENNES_ACCES_MOBILITE,
             names(CLES_ISOLATION_MOBILITE),
@@ -628,6 +637,9 @@ INDICATEURS_MOBILITE <- tibble::tibble(
      "Places de stationnement voiture pour 1 000 hab.",
      "Bornes de recharge par station-service",
      "Places de stationnement vélo pour 1 place voiture",
+     "Stations-service",
+     "Stations-service pour 1 000 hab.",
+     "Bornes de recharge pour 1 000 hab.",
      "Perte totale d’accès — à pied ou en transports en commun",
      "Perte totale d’accès — à vélo",
      "L’offre cyclable",
@@ -671,7 +683,9 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     "bornes-recharges",
     "stationnement-velo",
      "osm_reseaux", c("bornes-recharges", "bpe_b316"),
-       c("stationnement-velo", "osm_reseaux"), "mobilite_snapshot", "mobilite_snapshot",
+       c("stationnement-velo", "osm_reseaux"),
+       "bpe_b316", "bpe_b316", "bornes-recharges",
+       "mobilite_snapshot", "mobilite_snapshot",
        c("amenagements_cyclables", "osm_reseaux", "stationnement-velo"),
        "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
        "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
@@ -690,13 +704,14 @@ INDICATEURS_MOBILITE <- tibble::tibble(
                           "ocsge_reseaux_routiers",
                         "korrigo", "bornes-recharges", "stationnement-velo",
                         "osm_reseaux", "bpe_b316", "osm_reseaux",
+                        "bpe_b316", "bpe_b316", "bornes-recharges",
                           "mobilite_snapshot", "mobilite_snapshot", "osm_reseaux",
                           rep("mobilite_snapshot", 6),
                           rep("mobilite_snapshot", 5),
                          rep("mobilite_snapshot", 15),
                           "raccordement_gtfs_national", "raccordement_gtfs_national",
                           "raccordement_gtfs_national", "mobilite_snapshot"),
-  multiplicite = c(3L, 3L, 3L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L,
+  multiplicite = c(3L, 3L, 3L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L,
                    rep(1L, 6), rep(1L, 5),
                      rep(1L, 15),
                     1L,
@@ -837,6 +852,14 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
        analytiques$offre_territoires %>% dplyr::filter(key == "bornes_ev_par_station_service") %>%
          dplyr::select(dplyr::any_of(c("code", "value", "rider"))),
        "bornes_ev_par_station_service", "bornes / station")
+    ,stations_service = aligner(
+      sous_bloc("stations_service"), "stations_service", "stations")
+    ,stations_service_1000 = aligner(
+      sous_bloc("stations_service_1000"), "stations_service_1000",
+      "stations / 1 000 hab")
+    ,bornes_recharge_1000 = aligner(
+      sous_bloc("bornes_recharge_1000"), "bornes_recharge_1000",
+      "bornes / 1 000 hab")
     ,stationnement_velo_par_voiture = aligner(
         sous_bloc("stationnement_velo_par_voiture"),
         "stationnement_velo_par_voiture", "places vélo / place voiture")
@@ -1023,6 +1046,9 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     tables$bornes_ev_par_station_service,
      tables$stationnement_velo_par_voiture,
      tables$surface_reseaux_routiers,
+      tables$stations_service,
+      tables$stations_service_1000,
+      tables$bornes_recharge_1000,
       dplyr::bind_rows(moyennes),
      tot_loss,
     dplyr::bind_rows(acces),
@@ -1294,6 +1320,16 @@ validations_mobilite <- list(
       stop("Payload invalide : stationnement voiture ou ratio EV/fuel négatif.", call. = FALSE)
     invisible(payload)
   },
+  # les densités de ravitaillement (issue #953) : des dénombrements et des taux
+  # non négatifs — une valeur négative est une corruption, jamais une offre
+  function(payload) {
+    keys <- payload$indicateurs$key
+    v <- payload$indicateurs$value[keys %in% c(
+      "stations_service", "stations_service_1000", "bornes_recharge_1000")]
+    if (any(!is.na(v) & v < 0))
+      stop("Payload invalide : une densité de ravitaillement négative.", call. = FALSE)
+    invisible(payload)
+  },
   # les six moyennes du résumé sont des comptes par bâtiment (équipements ou
   # types d'équipements) : une valeur négative est une corruption du snapshot,
   # jamais une mesure à afficher.
@@ -1504,6 +1540,12 @@ DIRECTIONS_MOBILITE <- list(
   places_stationnement_voiture_1000 = "low",
   bornes_ev_par_station_service = "high",
   stationnement_velo_par_voiture = "high",
+  # les densités de ravitaillement (issue #953) : des dénombrements d'offre —
+  # plus il y a de stations-service ou de bornes, mieux c'est. La lecture de
+  # transition (EV contre fuel) reste portée par le ratio, inchangé.
+  stations_service = "high",
+  stations_service_1000 = "high",
+  bornes_recharge_1000 = "high",
   avg_tot_car = "high", avg_tot_b = "high", avg_tot_t = "high",
   avg_div_car = "high", avg_div_b = "high", avg_div_t = "high",
   tot_loss_t = "low",

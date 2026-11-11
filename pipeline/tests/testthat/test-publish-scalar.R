@@ -15,8 +15,15 @@ seed_scalar_artifact_fixture_from_producer_outputs <- function(themes) {
     # The committed Mobility numeric fixture is an older source/vintage bundle;
     # its raccordement contract is exercised separately below with that historic
     # metadata. Do not combine those rows with the current canonical declaration.
-    if (identical(theme, "mobilite"))
+    if (identical(theme, "mobilite")) {
       metadata$scalar_contracts$raccordement_tc <- NULL
+      # #953 : les trois densités de ravitaillement sont déclarées au canon mais
+      # leurs faits naissent au prochain run — l'artefact conservé ne les porte
+      # pas encore, le fixture ne peut donc pas les projeter.
+      metadata$scalar_contracts$stations_service <- NULL
+      metadata$scalar_contracts$stations_service_1000 <- NULL
+      metadata$scalar_contracts$bornes_recharge_1000 <- NULL
+    }
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme, destination)
   }
   destination
@@ -140,6 +147,9 @@ test_that("retained scalar snapshot combines exact producer-declared owners dete
   # The checked-in Mobility facts are an older raccordement vintage and are not
   # a valid fixture for the canonical scalar owner declared by current extdata.
   expected <- setdiff(expected, "raccordement_tc")
+  # #953 : déclarées, pas encore matérialisées dans l'artefact conservé
+  expected <- setdiff(expected, c("stations_service", "stations_service_1000",
+                                  "bornes_recharge_1000"))
   expect_setequal(snapshot$scalar$descriptors$indicator_id, expected)
   expect_identical(snapshot$scalar, assemble_scalar_snapshot(snapshot$scalar))
   expect_gt(nrow(snapshot$comparison$groups), 0L)
@@ -352,6 +362,14 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
   # The static fixture has only the retired raccordement vintage; canonical
   # scalar serving is covered with its owner-produced rows in the bundle test.
   ids <- setdiff(ids, "raccordement_tc")
+  # The retained Mobility Parquet predates the three refuelling densities
+  # (#953): their pages and producer contracts are declared now and their facts
+  # publish on the next run. The cohort parity then covers the published keys;
+  # a separate assertion keeps the declaration honest.
+  pending <- c("stations_service", "stations_service_1000",
+               "bornes_recharge_1000")
+  expect_true(all(pending %in% names(metadata$scalar_contracts)))
+  ids <- setdiff(ids, pending)
   territory_fixture <- territoires_producteur_fixture(themes, root)
   eligible <- unique(data.frame(territory_id=as.character(territory_fixture$territoire),
     territory_type=as.character(territory_fixture$type)))
@@ -469,6 +487,11 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     }, logical(1))]
   }), use.names=FALSE)
   expected_ids <- setdiff(expected_ids, "raccordement_tc")
+  # les densités de ravitaillement (#953) naissent au prochain run : le
+  # snapshot conservé ne les porte pas encore
+  expected_ids <- setdiff(expected_ids,
+                          c("stations_service", "stations_service_1000",
+                            "bornes_recharge_1000"))
   expect_setequal(snapshot$descriptors$indicator_id, expected_ids)
   expect_gt(length(retained_scalar_artifact_owners()), 0L)
   expect_equal(sum(snapshot$facts$indicator_id %in% ids), nrow(projection$facts))
@@ -478,20 +501,23 @@ test_that("raccordement scalar projection binds its producer metadata, source vi
   canonical_dir <- file.path(pkgload::pkg_path(), "..", "public", "data")
   canonical <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_mobilite.parquet"))
   vintages <- nanoparquet::read_parquet(file.path(canonical_dir, "vintages.parquet"))
-  historical <- jsonlite::fromJSON(file.path(canonical_dir, "theme_mobilite.json"), simplifyVector=FALSE)
   current <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_mobilite.json"), simplifyVector=FALSE)
-  expect_silent(validate_raccordement_scalar_bundle(canonical, historical, vintages))
+  # Le Parquet conservé est le snapshot de la publication PRÉCÉDENTE : il ne
+  # se lie pas au canon courant (la fraîcheur du raccordement a changé). La
+  # métadonnée servie est désormais exactement la projection du canon (#953),
+  # il n'existe plus de copie « historique » à opposer — la vérité producteur
+  # reste la liaison NÉGATIVE ci-dessous.
   expect_error(validate_raccordement_scalar_bundle(canonical, current, vintages),
     "Raccordement scalar source vintage is unavailable in its metadata bundle")
-  mutated <- canonical
-  index <- which(mutated$key == "raccordement_tc")[[1L]]
-  mutated$value[[index]] <- mutated$value[[index]] + 0.01
-  expect_error(validate_raccordement_scalar_bundle(mutated, historical, vintages),
-    "Raccordement scalar does not match its t0090 trajectory fact")
 
   artifact <- lire_artefact_raccordement_national()
   candidate_vintages <- vintages_mobilite()
   owned_rows <- lignes_indicateurs_raccordement_national(artifact$calculation, candidate_vintages)
+  mutated <- owned_rows
+  index <- which(mutated$key == "raccordement_tc")[[1L]]
+  mutated$value[[index]] <- mutated$value[[index]] + 0.01
+  expect_error(validate_raccordement_scalar_bundle(mutated, current, candidate_vintages),
+    "Raccordement scalar does not match its t0090 trajectory fact")
   expect_equal(sum(owned_rows$key == "raccordement_tc"), 1268L)
   expect_silent(validate_raccordement_scalar_bundle(owned_rows, current, candidate_vintages))
 })
