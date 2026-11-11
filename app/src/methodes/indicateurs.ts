@@ -206,6 +206,13 @@ export function indicateursParDataset(): ReadonlyMap<string, readonly Indicateur
   return parDataset
 }
 /**
+ * Le seuil BPE B316 des stations-service — la définition officielle partagée
+ * par le compte, sa densité et le ratio bornes ÷ stations-service (#962).
+ * Les trois pages citent le même fait, jamais trois variantes.
+ */
+const SEUIL_BPE_B316 = 'stations ayant vendu 500 000 litres ou plus l’année précédente'
+
+/**
  * Le registre complet — une entrée par thème construit. Ordre du registre =
  * ordre d'affichage de la page (démographie, habitat, économie). La forme
  * thème → documentation est le contrat que le futur test de parité assertera
@@ -537,7 +544,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       raccordement_courbe: {
         label: 'Courbe cumulative — population bretonne joignable en TC',
         definition:
-          'La courbe cumulative de la part de population bretonne joignable selon le temps de trajet en transports en commun, de mairie à mairie, jusqu’à 6 heures, publiée sur onze seuils.',
+          'La courbe cumulative de la part de population bretonne joignable selon le temps de trajet en transports en commun, de mairie à mairie, jusqu’à 6 heures, publiée sur la grille complète des temps de trajet de 0 à 360 minutes par pas de 5 minutes.',
         unite: '%',
         source:
           'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',
@@ -567,10 +574,40 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       bornes_ev_par_station_service: {
         label: 'Bornes de recharge pour 1 station-service',
         definition:
-          'Le rapport entre l’offre de recharge électrique et l’offre de carburant du territoire : le nombre de bornes IRVE pour une station-service (la source officielle BPE B316 — les stations ayant vendu 500 000 litres ou plus l’année précédente). Le classement lit le rapport : plus il y a de bornes par station-service, mieux le territoire prépare la bascule vers l’électrique. Le rapport n’est publié que là où le territoire compte au moins une station-service.',
+          `Le rapport entre l’offre de recharge électrique et l’offre de carburant du territoire : le nombre de bornes IRVE pour une station-service (la source officielle BPE B316 — les ${SEUIL_BPE_B316}). Le classement lit le rapport : plus il y a de bornes par station-service, mieux le territoire prépare la bascule vers l’électrique. Le rapport n’est publié que là où le territoire compte au moins une station-service.`,
         unite: 'bornes / station',
         source: 'INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service',
         sourceId: 'bpe_b316',
+        direction: 'plus-est-mieux',
+      },
+      stations_service: {
+        label: 'Stations-service',
+        definition:
+          'Le nombre de stations-service recensées sur le territoire par la base permanente des équipements (BPE), filtre B316. Le compte somme les stations des communes du territoire : il porte l’offre de carburant, jamais une moyenne d’offres communales. Une commune absente du fichier reste sans valeur plutôt que zéro.',
+        unite: 'stations',
+        source: 'INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service',
+        sourceId: 'bpe_b316',
+        direction: 'plus-est-mieux',
+        caveat:
+          `La BPE ne recense que les ${SEUIL_BPE_B316} ; les petites stations n’y figurent que sur volontariat.`,
+      },
+      stations_service_1000: {
+        label: 'Stations-service pour 1 000 habitants',
+        definition:
+          `Le nombre de stations-service du territoire rapporté à sa population, pour 1 000 habitants. Les agrégats sont recalculés depuis les comptes et la population du territoire, jamais une moyenne des taux communaux. Un dénombrement rapporté à la population reste un dénombrement : la BPE ne recense que les ${SEUIL_BPE_B316}.`,
+        unite: 'stations / 1 000 hab',
+        source: 'INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service',
+        sourceId: 'bpe_b316',
+        direction: 'plus-est-mieux',
+      },
+      bornes_recharge_1000: {
+        label: 'Bornes de recharge pour 1 000 habitants',
+        definition:
+          'Le nombre de bornes de recharge pour véhicules électriques (IRVE) du territoire rapporté à sa population, pour 1 000 habitants. Comme le compte de bornes, l’indicateur porte les stations IRVE et jamais les prises ; les agrégats sont recalculés depuis les comptes, jamais une moyenne de taux. Une borne non déclarée au fichier IRVE reste invisible — une limite signalée par la source elle-même.',
+        unite: 'bornes / 1 000 hab',
+        source:
+          'Etalab / data.bretagne.bzh \u2014 Fichier consolid\u00e9 des Bornes de Recharge pour V\u00e9hicules \u00c9lectriques (IRVE), sch\u00e9ma 2.2.0',
+        sourceId: 'bornes-recharges',
         direction: 'plus-est-mieux',
       },
       places_stationnement_velo_1000: {
