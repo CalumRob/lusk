@@ -38,6 +38,7 @@ AedarEquipmentExplorerEvidence {
     volumeFigureTitle: 'Volume', volumeYAxisTitle: 'Établissements',
     distributionFigureTitle: 'Distribution', distributionStatistics: AEDAR_EQUIPMENT_QUANTILE_STATISTICS,
     distributionAxisTitle: 'Décile', distributionYAxisTitle: 'Établissements',
+    distributionValueUnit: 'établissement',
     distributionDescription: 'Distribution', distributionUnavailableDescription: 'Indisponible', source: null,
   }
 }

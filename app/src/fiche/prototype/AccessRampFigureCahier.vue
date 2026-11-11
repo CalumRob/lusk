@@ -141,34 +141,35 @@ const timeLegendMarkColors = computed<Readonly<Record<string, string>>>(() => Ob
 ))
 const selectedTimeCut = ref<{ xValue: number; xLabel: string } | null>(null)
 const timeTooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => selectedTimeCut.value ? { x: `${Math.max(0.18, Math.min(0.82, timeX(selectedTimeCut.value.xValue) / figureGeometry.value.width)) * 100}%`, y: '12%' } : undefined)
+/** Visible tooltip values are bare; the accessible reading keeps the unit. */
+function tooltipValue(value: number | null, unit: string): { visible: string; aria: string } {
+  if (value === null) return { visible: 'Indisponible', aria: 'Indisponible' }
+  const number = formatNumber(value)
+  return { visible: number, aria: unit ? `${number} ${unit}` : number }
+}
 const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
   const cut = selectedTimeCut.value
   const timeRamp = props.timeRamp
   if (!cut || !timeRamp) return []
   const unit = timeRamp.yAxis.unit
-  const suffix = unit ? ` ${unit}` : ''
   return visibleTimeSeries.value.flatMap((series) => {
     const point = series.points.find((candidate) => candidate.xValue === cut.xValue)
     if (!point) return []
-    const value = point.value === null ? 'Indisponible' : formatNumber(point.value)
-    const ariaValue = point.value === null ? 'Indisponible' : `${formatNumber(point.value)}${suffix}`
+    const value = tooltipValue(point.value, unit)
     const row: CahierTooltipRow = {
       label: series.label,
-      value,
+      value: value.visible,
       tone: TIME_MODE_TONES[series.key] ?? 'neutral',
       icon: TIME_MODE_ICONS[series.key],
       markerColor: timeSeriesColor(series.key),
-      ariaLabel: `${props.territoryName} : ${series.label} : ${ariaValue}`,
+      ariaLabel: `${props.territoryName} : ${series.label} : ${value.aria}`,
     }
     if (comparisonLayerSupported.value) {
-      const rank = formatServedRank(point.referenceRank)
-      const referenceValue = point.referenceValue === null ? 'Indisponible' : formatNumber(point.referenceValue)
-      const ariaReferenceValue = point.referenceValue === null
-        ? 'Indisponible' : `${formatNumber(point.referenceValue)}${suffix}`
+      const compared = tooltipValue(point.referenceValue, unit)
       row.comparison = {
-        value: referenceValue,
-        rank,
-        ariaLabel: groupeCompareAria(ariaReferenceValue, formatServedRankAria(point.referenceRank), timeRamp.comparisonLabel ?? 'Indisponible'),
+        value: compared.visible,
+        rank: formatServedRank(point.referenceRank),
+        ariaLabel: groupeCompareAria(compared.aria, formatServedRankAria(point.referenceRank), timeRamp.comparisonLabel ?? 'Indisponible'),
       }
     }
     return [row]

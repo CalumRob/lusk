@@ -49,6 +49,7 @@ function explorerEvidence(overrides: Partial<AedarEquipmentExplorerEvidence> = {
     distributionStatistics: AEDAR_EQUIPMENT_QUANTILE_STATISTICS,
     distributionAxisTitle: 'Décile',
     distributionYAxisTitle: 'Nombre d’établissements',
+    distributionValueUnit: 'établissement',
     distributionDescription: 'Les barres montrent les valeurs des seuils publiés.',
     distributionUnavailableDescription: 'Distribution indisponible.',
     source: null,
@@ -101,10 +102,12 @@ describe('AEDAR equipment decile distribution figure', () => {
 
     const categories = plot.findAll('button.cahier-grouped-vertical-bar-chart__category-hitbox')
     expect(categories).toHaveLength(11)
-    expect(categories[0]?.attributes('aria-label')).toContain('Minimum : Voiture : 0')
-    expect(categories[1]?.attributes('aria-label')).toContain('Décile 1 : Voiture : 1')
-    expect(categories[9]?.attributes('aria-label')).toContain('Décile 9 : Voiture : 9')
-    expect(categories[10]?.attributes('aria-label')).toContain('Maximum : Voiture : 10')
+    // Visible values are bare; accessible names keep the unit.
+    expect(categories[0]?.attributes('aria-label')).toContain('Minimum : Voiture : 0 établissement')
+    expect(categories[1]?.attributes('aria-label')).toContain('Décile 1 : Voiture : 1 établissement')
+    expect(categories[9]?.attributes('aria-label')).toContain('Décile 9 : Voiture : 9 établissements')
+    expect(categories[10]?.attributes('aria-label')).toContain('Maximum : Voiture : 10 établissements')
+    expect(plot.get('svg[role="img"]').attributes('aria-label')).toContain('Voiture : 0 établissement')
 
     await categories[1]!.trigger('focus')
     const tooltip = wrapper.get('.cahier-grouped-vertical-bar-chart__tooltip')
@@ -179,8 +182,8 @@ describe('AEDAR equipment decile distribution figure', () => {
 
     expect(wrapper.findAll('rect.cahier-grouped-vertical-bar-chart__bar')).toHaveLength(22)
     const firstDecile = wrapper.get('button[aria-label^="Décile 1"]')
-    expect(firstDecile.attributes('aria-label')).toContain('Voiture : 0')
-    expect(firstDecile.attributes('aria-label')).toContain('Transports en commun : 1')
-    expect(wrapper.get('button[aria-label^="Décile 2"]').attributes('aria-label')).toContain('Voiture : 0')
+    expect(firstDecile.attributes('aria-label')).toContain('Voiture : 0 établissement')
+    expect(firstDecile.attributes('aria-label')).toContain('Transports en commun : 1 établissement')
+    expect(wrapper.get('button[aria-label^="Décile 2"]').attributes('aria-label')).toContain('Voiture : 0 établissement')
   })
 })

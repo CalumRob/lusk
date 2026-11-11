@@ -180,8 +180,10 @@ export interface CahierGroupedVerticalBarFigureData {
   xAxisTitle: string
   yAxisTitle: string
   description: string
-  /** Optional localized value formatting for accessible labels and tooltips. */
+  /** Optional localized value formatting for the visible tooltip rows. */
   formatValue?: (value: number) => string
+  /** Optional accessible reading of a value (units, spoken form); visible rows stay bare. */
+  formatAriaValue?: (value: number) => string
   /** Optional shorter format for numeric y-axis ticks. */
   formatAxisTick?: (value: number) => string
 }
