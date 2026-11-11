@@ -19,8 +19,11 @@ import type {
   FigureLegendEntry,
 } from '@/fiche/cahierFigureGrammaire'
 import { valeursGraduationPourDomaine } from '@/fiche/cahierFigureGrammaire'
-import { GROUPE_COMPARE_LABEL, groupeCompareAria } from '@/fiche/content/comparisonWording'
+import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
+import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
+import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import type {
+  ContentFact,
   MobiliteBarCategoryEvidence,
   MobiliteBarsFigureEvidence,
   MobiliteRatioEvidence,
@@ -91,16 +94,68 @@ const showComparison = computed(() =>
   props.comparison.status === 'ready' && comparisonVisible.value,
 )
 
-const comparisonAligned = computed(() => showComparison.value &&
-  props.figure.categories.some((category) => referenceValue(category) !== null))
+const hasComparisonReference = computed(() =>
+  props.figure.categories.some((category) => referenceValue(category) !== null),
+)
+
+const comparisonAligned = computed(() => showComparison.value && hasComparisonReference.value)
 
 const segmentColors: Readonly<Record<string, string>> = {
-  protege_km_1000: 'var(--cahier-cycle-protected)',
-  partage_km_1000: 'var(--cahier-cycle-shared)',
+  protege_km_1000: 'var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike)))',
+  partage_km_1000: 'var(--cahier-cycle-shared, #8c4c9e)',
 }
 
 function segmentColor(segment: { key: string }): string {
-  return segmentColors[segment.key] ?? 'var(--cahier-cycle-shared)'
+  return segmentColors[segment.key] ?? segmentColors.partage_km_1000
+}
+
+function comparisonStatistic(comparison: NonNullable<ContentFact['fact']['comparison']> | null | undefined): string {
+  return comparison?.reference?.kind === 'mean' ? 'moyenne' : 'médiane'
+}
+
+function comparisonDirection(comparison: NonNullable<ContentFact['fact']['comparison']> | null | undefined): string | null {
+  return comparison?.direction ? LIBELLES_DIRECTION[comparison.direction] : null
+}
+
+function comparisonScopeOnly(label: string | null): string | null {
+  return label?.replace(/^(?:Médiane|Moyenne) des /u, '') ?? null
+}
+
+function comparisonDescription(
+  comparison: NonNullable<ContentFact['fact']['comparison']> | null | undefined,
+  scope: string | null,
+  unsplitTotal = false,
+): string {
+  const statistic = comparisonStatistic(comparison)
+  if (unsplitTotal) {
+    const scopeOnly = comparisonScopeOnly(scope)
+    return `${statistic} du total non segmenté${scopeOnly ? ` — ${scopeOnly}` : ''}`
+  }
+  return scope ?? statistic
+}
+
+function rankPhrase(
+  comparison: NonNullable<ContentFact['fact']['comparison']> | null | undefined,
+): string | null {
+  if (!comparison) return null
+  return puceRangDirection(comparison.rank, comparison.direction)?.phraseAria
+    ?? formatServedRankAria(comparison.rank)
+}
+
+function comparisonAria(
+  fact: ContentFact,
+  scope: string | null,
+  unit: string,
+  unsplitTotal = false,
+): string {
+  const comparison = fact.fact.comparison
+  const reference = comparison?.reference
+  if (!reference) return `${GROUPE_COMPARE_LABEL} : Indisponible`
+  const value = `${formatValue(reference.value)} ${unit}`
+  const description = comparisonDescription(comparison, scope, unsplitTotal)
+  const direction = comparisonDirection(comparison)
+  const rank = rankPhrase(comparison)
+  return `${GROUPE_COMPARE_LABEL} : ${value} (${description})${rank ? `. Rang ${rank}` : direction ? `. ${direction}` : ''}`
 }
 
 const categoryCount = computed(() => props.figure.categories.length)
@@ -191,13 +246,19 @@ function stackedSegments(category: MobiliteBarCategoryEvidence, categoryIndex: n
   })
 }
 
-function comparisonTooltip(category: MobiliteBarCategoryEvidence): CahierTooltipComparison | undefined {
-  const reference = referenceValue(category)
-  if (reference === null) return undefined
-  const value = formatValue(reference)
+function comparisonTooltip(
+  fact: ContentFact,
+  unit: string,
+  unsplitTotal = false,
+): CahierTooltipComparison | undefined {
+  const comparison = fact.fact.comparison
+  const reference = comparison?.reference
+  if (!reference) return undefined
+  const value = `${formatValue(reference.value)}${unit ? ` ${unit}` : ''}`
   return {
     value,
-    ariaLabel: groupeCompareAria(value, null, props.figure.comparisonLabel ?? 'Indisponible'),
+    rank: formatServedRank(comparison.rank),
+    ariaLabel: comparisonAria(fact, props.figure.comparisonLabel, unit, unsplitTotal),
   }
 }
 
@@ -208,7 +269,7 @@ function tooltipRows(category: MobiliteBarCategoryEvidence): readonly CahierTool
     value: value === null ? UNAVAILABLE_LABEL : formatValue(value),
     markerColor: toneColor(category.tone),
     ariaLabel: `${category.label} : ${value === null ? UNAVAILABLE_LABEL : `${formatValue(value)} ${props.figure.unit}`}`,
-    comparison: showComparison.value ? comparisonTooltip(category) : undefined,
+    comparison: showComparison.value ? comparisonTooltip(category.value, props.figure.unit) : undefined,
   }]
   for (const segment of category.segments) {
     const segmentValue = finiteValue(segment.value.fact.value)
@@ -219,7 +280,19 @@ function tooltipRows(category: MobiliteBarCategoryEvidence): readonly CahierTool
       marker: 'dot',
       markerColor: segmentColor(segment),
       ariaLabel: `${segment.label} : ${segmentValue === null ? UNAVAILABLE_LABEL : `${formatValue(segmentValue)} ${props.figure.unit}`}`,
+      comparison: showComparison.value ? comparisonTooltip(segment.value, props.figure.unit) : undefined,
     })
+    if (segment.rawValue) {
+      const raw = finiteValue(segment.rawValue.fact.value)
+      rows.push({
+        label: segment.rawValue.label,
+        value: raw === null ? UNAVAILABLE_LABEL : `${formatValue(raw)} ${segment.rawValue.fact.unit}`,
+        tone: 'neutral',
+        marker: 'slash',
+        ariaLabel: `${segment.rawValue.label} : ${raw === null ? UNAVAILABLE_LABEL : `${formatValue(raw)} ${segment.rawValue.fact.unit}`} (valeur brute)`,
+        comparison: showComparison.value ? comparisonTooltip(segment.rawValue, segment.rawValue.fact.unit) : undefined,
+      })
+    }
   }
   if (category.rawValue) {
     const raw = finiteValue(category.rawValue.fact.value)
@@ -229,6 +302,7 @@ function tooltipRows(category: MobiliteBarCategoryEvidence): readonly CahierTool
       tone: 'neutral',
       marker: 'slash',
       ariaLabel: `${category.rawValue.label} : ${raw === null ? UNAVAILABLE_LABEL : `${formatValue(raw)} ${category.rawValue.fact.unit}`} (valeur brute)`,
+      comparison: showComparison.value ? comparisonTooltip(category.rawValue, category.rawValue.fact.unit) : undefined,
     })
   }
   return rows
@@ -241,12 +315,27 @@ function categoryAriaLabel(index: number): string {
   for (const segment of category.segments) {
     const segmentValue = finiteValue(segment.value.fact.value)
     parts.push(`${segment.label} : ${segmentValue === null ? UNAVAILABLE_LABEL : `${formatValue(segmentValue)} ${props.figure.unit}`}`)
+    if (showComparison.value) {
+      const comparison = segment.value.fact.comparison
+      const reference = comparison?.reference
+      if (reference) {
+        const rank = rankPhrase(comparison)
+        const direction = comparisonDirection(comparison)
+        parts.push(`${GROUPE_COMPARE_LABEL} ${segment.label} : ${formatValue(reference.value)} ${props.figure.unit}${rank ? ` — rang ${rank}` : direction ? ` — ${direction}` : ''}`)
+      }
+    }
   }
   if (showComparison.value) {
     const reference = referenceValue(category)
     if (reference !== null) {
-      const unsplit = category.segments.length ? ', médiane du total non segmenté' : ''
-      parts.push(`${GROUPE_COMPARE_LABEL} : ${formatValue(reference)} ${props.figure.unit}${unsplit} (${props.figure.comparisonLabel ?? UNAVAILABLE_LABEL})`)
+      const comparison = category.value.fact.comparison!
+      const unsplit = category.segments.length > 0
+      const description = comparisonDescription(comparison, props.figure.comparisonLabel, unsplit)
+      const rank = rankPhrase(comparison)
+      const direction = comparisonDirection(comparison)
+      parts.push(`${GROUPE_COMPARE_LABEL} : ${formatValue(reference)} ${props.figure.unit} (${description})${rank ? ` — rang ${rank}` : direction ? ` — ${direction}` : ''}`)
+    } else {
+      parts.push(`${GROUPE_COMPARE_LABEL} : Indisponible`)
     }
   }
   return parts.join(' ; ')
@@ -274,7 +363,12 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
 })
 
 const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
-  const entries: FigureLegendEntry[] = []
+  const entries: FigureLegendEntry[] = props.figure.categories.map((category) => ({
+    key: category.key,
+    label: category.label,
+    marker: 'square',
+    ariaLabel: `${category.label} : série du territoire`,
+  }))
   const segments = props.figure.categories.flatMap((category) => category.segments)
   if (segments.some((segment) => segment.key === 'protege_km_1000')) {
     entries.push({ key: 'protege_km_1000', label: 'Protégé', marker: 'square' })
@@ -282,21 +376,30 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
   if (segments.some((segment) => segment.key === 'partage_km_1000')) {
     entries.push({ key: 'partage_km_1000', label: 'Partagé', marker: 'square' })
   }
+  const comparisonCanToggle = props.comparison.status === 'loading' ||
+    props.comparison.status === 'error' ||
+    (props.comparison.status === 'ready' && hasComparisonReference.value)
   entries.push({
     key: 'comparison',
     label: GROUPE_COMPARE_LABEL,
-    marker: 'dash',
+    // A compared BAR, never a line/dash: the square carries the 45 % mix fill.
+    marker: 'square',
     tone: 'peer',
-    persistentToggle: true,
+    persistentToggle: comparisonCanToggle,
     ariaLabel: `${GROUPE_COMPARE_LABEL} : ${props.figure.comparisonLabel ?? UNAVAILABLE_LABEL}`,
   })
   return entries
 })
 
-const legendColors = computed<Readonly<Record<string, string>>>(() => ({
-  protege_km_1000: 'var(--cahier-cycle-protected)',
-  partage_km_1000: 'var(--cahier-cycle-shared)',
-}))
+const legendColors = computed<Readonly<Record<string, string>>>(() => {
+  const colors: Record<string, string> = Object.fromEntries(
+    props.figure.categories.map((category) => [category.key, toneColor(category.tone)]),
+  )
+  colors.protege_km_1000 = segmentColors.protege_km_1000
+  colors.partage_km_1000 = segmentColors.partage_km_1000
+  colors.comparison = 'color-mix(in srgb, var(--cahier-theme-strong, var(--brand-500)) 45%, var(--paper))'
+  return colors
+})
 
 const legendSelected = computed(() => showComparison.value ? ['comparison'] : [])
 
@@ -396,12 +499,13 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
               @mouseleave="selectedCategoryIndex = null"
               @focus="selectedCategoryIndex = index"
               @blur="selectedCategoryIndex = null"
-              @click="selectedCategoryIndex = index"
+              @click="selectedCategoryIndex = selectedCategoryIndex === index ? null : index"
+              @keydown.esc="selectedCategoryIndex = null"
             />
           </div>
           <CahierFigureTooltip
             v-if="selectedCategoryIndex !== null"
-            class="mobilite-comparison-bars__tooltip"
+            class="mobilite-comparison-bars__tooltip cahier-figure-tooltip--chart"
             :title="selectedCategoryTitle"
             :unit="figure.unit"
             :rows="tooltipRows(figure.categories[selectedCategoryIndex]!)"
@@ -419,7 +523,7 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
       :selected-keys="legendSelected"
       :comparison-status="comparison.status"
       :comparison-error="comparison.error"
-      label="Protégé, Partagé et groupe comparé"
+      label="Séries, Protégé, Partagé et groupe comparé"
       @toggle="toggleLegend"
     />
 
@@ -455,8 +559,8 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
 .mobilite-comparison-bars__comparison { fill-opacity: .62; shape-rendering: crispEdges; }
 .mobilite-comparison-bars__hitboxes { position: absolute; inset: 0; }
 .mobilite-comparison-bars__hitbox { position: absolute; display: block; margin: 0; padding: 0; border: 0; background: transparent; cursor: help; }
-.mobilite-comparison-bars__hitbox:hover, .mobilite-comparison-bars__hitbox:focus-visible { outline: 1px solid color-mix(in srgb, var(--cahier-theme-strong) 34%, transparent); outline-offset: -1px; }
-.mobilite-comparison-bars__tooltip { width: min(320px, calc(100vw - 32px)); pointer-events: none; }
+.mobilite-comparison-bars__hitbox:hover, .mobilite-comparison-bars__hitbox:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.mobilite-comparison-bars__tooltip { width: min(320px, calc(100vw - 32px)); max-width: calc(100% - 16px); pointer-events: none; }
 .mobilite-comparison-bars__legend { flex-wrap: wrap; }
 .mobilite-comparison-state { margin: 0; color: var(--cahier-default); font: var(--text-body-sm); }
 .mobilite-comparison-error { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; color: var(--cahier-default); font: var(--text-body-sm); }

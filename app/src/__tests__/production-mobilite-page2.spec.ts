@@ -42,7 +42,7 @@ const payload: Payload = {
 
 const catalogue = nativeResources('mobilite')
 
-function semanticFetch() {
+function semanticFetch(requestLog: Array<Record<string, any>> = []) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url === '/api/resources') return nativeCatalogueResponse()
@@ -52,6 +52,7 @@ function semanticFetch() {
     const { items } = JSON.parse(String(init?.body)) as {
       items: Array<Record<string, any>>
     }
+    requestLog.push(...items)
     const results = items.map((item) => {
       const resource = catalogue.find((candidate) => candidate.resource_id === item.resource)
       if (!resource) throw new Error(`Unknown fixture resource ${item.resource}`)
@@ -77,7 +78,8 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('Mobilité page 2 — production values and per-network comparisons', () => {
   it('flows the published per-capita facts and all three network references into the delegate figure', async () => {
-    vi.stubGlobal('fetch', semanticFetch())
+    const requestLog: Array<Record<string, any>> = []
+    vi.stubGlobal('fetch', semanticFetch(requestLog))
 
     const acquired = await acquireThemeFacts('commune', '22001', 'mobilite')
     const selection = [
@@ -103,6 +105,26 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
       expect(category.value.fact.value).not.toBeNull()
       expect(category.value.fact.comparison?.reference?.value).not.toBeNull()
       expect(category.value.fact.comparison?.scope.label).toBe(comparisonContext.scope.label)
+    }
+    const networkReferences = categories.map((category) => category.value.fact.comparison!.reference!.value)
+    expect(new Set(networkReferences).size).toBe(3)
+    expect(categories.every((category) => category.value.fact.comparison!.rank?.position)).toBe(true)
+
+    // The requested declared points are exactly the ones the page consumes.
+    const requestedDetails = (resource: string) => new Set(requestLog
+      .filter((item) => item.resource === resource && Array.isArray(item.coordinates?.detail))
+      .map((item) => item.coordinates.detail[0] as string))
+    expect(requestedDetails('reseaux_par_habitant')).toEqual(new Set(['t_km_1000', 'b_km_1000', 'c_km_1000']))
+    expect(requestedDetails('reseaux')).toEqual(new Set(['t_longueur', 'b_longueur', 'c_longueur']))
+    expect(requestedDetails('offre_cyclable')).toEqual(new Set([
+      'protege_longueur', 'partage_longueur', 'protege_km_1000', 'partage_km_1000',
+    ]))
+
+    const bike = categories.find((category) => category.key === 'bike')!
+    expect(bike.rawValue?.fact.comparison?.reference?.value).not.toBeNull()
+    for (const segment of bike.segments) {
+      expect(segment.value.fact.comparison?.reference?.value).not.toBeNull()
+      expect(segment.rawValue?.fact.comparison?.reference?.value).not.toBeNull()
     }
 
     const router = createRouter({ history: createMemoryHistory(), routes })
@@ -142,6 +164,16 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     const comparisonBars = figure.findAll('.mobilite-comparison-bars__comparison')
     expect(comparisonBars).toHaveLength(3)
     expect(figure.findAll('.mobilite-comparison-bars__segment')).toHaveLength(2)
+
+    const bikeHitbox = figure.findAll('.mobilite-comparison-bars__hitbox')
+      .find((hitbox) => (hitbox.attributes('aria-label') ?? '').startsWith('Réseau cyclable'))!
+    await bikeHitbox.trigger('focus')
+    const tooltip = figure.get('.mobilite-comparison-bars__tooltip')
+    const comparisonRows = tooltip.findAll('.cahier-figure-tooltip-row-comparison')
+    expect(comparisonRows.length).toBeGreaterThanOrEqual(6)
+    expect(comparisonRows.every((row) => row.find('.cahier-figure-tooltip-comparison-rank').exists())).toBe(true)
+    expect(tooltip.text()).toContain('Longueur protégée')
+    expect(tooltip.text()).toContain('Longueur partagée')
 
     // Producer stamps name the actual producers and carry their published URL/licence.
     const stamps = networks.findAll('.cahier-evidence-source a')
@@ -189,7 +221,8 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
 
     const paired = wrapper.get('.mobilite-section--stationnement-ravitaillement')
     expect(paired.findAll('.mobilite-paired-column')).toHaveLength(2)
-    expect(paired.findAll('.mobilite-ratio')).toHaveLength(2)
+    expect(paired.findAll('.mobilite-ratio-scalar')).toHaveLength(2)
+    expect(paired.findAll('.cahier-figure-scalar')).toHaveLength(2)
     expect(paired.findAll('.cahier-comparison-value__reference')).toHaveLength(2)
     expect(paired.text()).toContain('Stationnement vélo et voiture')
     expect(paired.text()).toContain('Bornes de recharge et station-services')

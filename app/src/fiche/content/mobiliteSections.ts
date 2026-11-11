@@ -279,17 +279,17 @@ export function buildPartageSubtitle(facts: TerritoryFacts): readonly TextBlock[
 
 function networkProse(): readonly TextBlock[] {
   return [
-    [text('Trois réseaux se superposent dans le même espace : les voies vraisemblablement praticables à pied, le réseau cyclable, et la voirie vraisemblablement praticable en voiture. Chaque longueur est rapportée à 1 000 habitants pour que des territoires de tailles différentes se comparent ; les kilomètres bruts figurent dans les infobulles.')],
-    [text('Le réseau cyclable se partage en deux familles. Les aménagements protégés séparent le vélo du trafic motorisé — pistes, voies vertes. Les aménagements partagés le font cohabiter avec lui — bandes cyclables, doubles sens non matérialisés, vélo-rues, accotements revêtus. La classification est celle de Geovelo, reprise telle quelle ; les deux familles forment une partition : leur somme est la longueur cyclable totale, celle des cartes comme de la figure.')],
+    [text('Trois réseaux sont rapportés à 1 000 habitants : voies vraisemblablement praticables à pied, aménagements cyclables et voirie vraisemblablement accessible en voiture. Les longueurs brutes sont disponibles dans les infobulles.')],
+    [text('Le vélo distingue les aménagements protégés du trafic motorisé et les aménagements partagés avec lui, selon la classification Geovelo. Leurs longueurs forment le total cyclable.')],
   ]
 }
 
 function stationnementProse(): readonly TextBlock[] {
-  return [[text('Deux barres, une même unité : des places pour 1 000 habitants. Les places vélo sont reprises du hub d’indicateurs d’Ecolab, à partir de la Base nationale du stationnement cyclable dérivée d’OpenStreetMap. Les places voiture sont une estimation calculée depuis les surfaces de parkings et le stationnement linéaire balisé dans OpenStreetMap, jamais un comptage ; la méthode et ses facteurs sont documentés avec la source. Le rapport sous les barres compare les deux modes : il rapporte les places vélo aux places voiture, et c’est lui qui porte la lecture.')]]
+  return [[text('Les places vélo proviennent du hub Ecolab, à partir d’OpenStreetMap. Les places voiture sont estimées depuis les surfaces de parkings et le stationnement linéaire cartographié ; ce ne sont pas des places comptées. Les barres rapportent les deux offres à 1 000 habitants.')]]
 }
 
 function ravitaillementProse(): readonly TextBlock[] {
-  return [[text('Bornes de recharge et stations-service, dans la même unité : un équipement pour 1 000 habitants. Les bornes sont celles du fichier national IRVE, les stations-service celles de la Base permanente des équipements de l’INSEE. Le rapport sous les barres dit combien de bornes existent pour une station-service ; il n’est calculé que là où le territoire compte au moins une station, et reste absent ailleurs plutôt que d’être faussé.')]]
+  return [[text('Les bornes de recharge (IRVE) et les stations-service (BPE, INSEE) sont rapportées à 1 000 habitants. Le rapport indique le nombre de bornes par station-service ; il reste indisponible là où aucune station n’est recensée.')]]
 }
 
 function parkingRatioNote(
@@ -322,6 +322,11 @@ function ravitaillementRatioNote(
   return null
 }
 
+function commonUnit(values: readonly ContentFact[], fallback: string): string {
+  const units = [...new Set(values.map((value) => value.fact.unit).filter((unit) => unit.trim().length > 0))]
+  return units.length === 1 ? units[0]! : fallback
+}
+
 export function buildMobiliteNetworksSection(
   facts: TerritoryFacts,
   metadata?: ThemeMetadata,
@@ -332,8 +337,16 @@ export function buildMobiliteNetworksSection(
     { mode: 'car' as const, tone: 'c' as const, density: 'c_km_1000', raw: 'c_longueur' },
   ]
   const bikeSegments = [
-    contentDetailFact(facts, 'offre_cyclable', 'protege_km_1000', 'km / 1 000 hab.', metadata),
-    contentDetailFact(facts, 'offre_cyclable', 'partage_km_1000', 'km / 1 000 hab.', metadata),
+    {
+      key: 'protege_km_1000',
+      value: contentDetailFact(facts, 'offre_cyclable', 'protege_km_1000', 'km / 1 000 hab.', metadata),
+      rawValue: contentDetailFact(facts, 'offre_cyclable', 'protege_longueur', 'km', metadata),
+    },
+    {
+      key: 'partage_km_1000',
+      value: contentDetailFact(facts, 'offre_cyclable', 'partage_km_1000', 'km / 1 000 hab.', metadata),
+      rawValue: contentDetailFact(facts, 'offre_cyclable', 'partage_longueur', 'km', metadata),
+    },
   ] as const
   const categories: MobiliteBarCategoryEvidence[] = networkModes.map((definition) => {
     const value = contentDetailFact(
@@ -344,11 +357,12 @@ export function buildMobiliteNetworksSection(
       metadata,
     )
     const rawValue = contentDetailFact(facts, 'reseaux', definition.raw, 'km', metadata)
-    const segments = definition.mode === 'bike' && bikeSegments.some((segment) => hasValue(segment.fact))
+    const segments = definition.mode === 'bike' && bikeSegments.some((segment) => hasValue(segment.value.fact))
       ? bikeSegments.map((segment) => ({
-        key: segment.fact.detail ?? segment.label,
-        label: segment.label,
-        value: segment,
+        key: segment.key,
+        label: segment.value.label,
+        value: segment.value,
+        rawValue: segment.rawValue,
       }))
       : []
     return {
@@ -363,11 +377,13 @@ export function buildMobiliteNetworksSection(
   })
   const allFacts = [
     ...categories.map((category) => category.value),
-    ...categories.flatMap((category) => category.segments.map((segment) => segment.value)),
+    ...categories.flatMap((category) => category.segments.flatMap((segment) =>
+      segment.rawValue ? [segment.value, segment.rawValue] : [segment.value])),
     ...categories.flatMap((category) => category.rawValue ? [category.rawValue] : []),
   ]
   const hasAny = allFacts.some((value) => hasValue(value.fact))
   const densityFacts = categories.map((category) => category.value)
+  const figureUnit = commonUnit(densityFacts, 'km / 1 000 hab.')
   const evidence = hasAny
     ? {
       kind: 'mobilite-networks' as const,
@@ -376,9 +392,9 @@ export function buildMobiliteNetworksSection(
       mapFigureTitle: 'Cartes des réseaux de mobilité, par mode',
       figure: {
         figureTitle: 'Longueur du réseau par habitant',
-        unit: 'km / 1 000 hab.',
+        unit: figureUnit,
         xAxisTitle: 'Réseau',
-        yAxisTitle: 'km / 1 000 hab.',
+        yAxisTitle: figureUnit,
         categories,
         comparisonLabel: comparisonLabelFor(densityFacts, facts.territory),
       },
@@ -433,9 +449,9 @@ function stationnementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): M
     sources: sourcesFor(allFacts, metadata),
     bars: {
       figureTitle: 'Stationnement vélo et voiture',
-      unit: 'places / 1 000 hab.',
+      unit: commonUnit([bikeSpaces, carSpaces], 'places / 1 000 hab.'),
       xAxisTitle: 'Mode',
-      yAxisTitle: 'places / 1 000 hab.',
+      yAxisTitle: commonUnit([bikeSpaces, carSpaces], 'places / 1 000 hab.'),
       categories: [
         {
           key: 'bike-parking',
@@ -510,9 +526,11 @@ function ravitaillementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): 
     sources: sourcesFor(allFacts, metadata),
     bars: {
       figureTitle: 'Bornes de recharge et station-services',
-      unit: 'équipements / 1 000 hab.',
+      // The two facts keep their native numerators (bornes / stations); the
+      // shared axis is the approved common denominator with a neutral noun.
+      unit: commonUnit([bornes, stations], 'équipements / 1 000 hab.'),
       xAxisTitle: 'Équipement',
-      yAxisTitle: 'équipements / 1 000 hab.',
+      yAxisTitle: commonUnit([bornes, stations], 'équipements / 1 000 hab.'),
       categories: [
         {
           key: 'charging',

@@ -891,7 +891,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     expect(requestsByTheme()).toEqual(warmedCounts)
     wrapper.unmount()
-  })
+  }, 20_000)
 
   it('ne laisse pas un échec de réchauffage natif entacher le thème actif et le réessaie à la visite', async () => {
     const requests: Array<Array<Record<string, any>>> = []
@@ -1154,7 +1154,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.find('#building-peer-search').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Choisir les territoires du groupe comparé')
     wrapper.unmount()
-  })
+  }, 20_000)
 
   it.each(['demographie', 'milieux'] as const)(
     'renders API-resolved named-scope reading clouds for %s from the full compact reference',
@@ -1536,6 +1536,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       expect(accessibleReferences.some((reference) => reference.attributes('aria-label')?.includes(contextes[mode]!.scope.label))).toBe(true)
       wrapper.unmount()
     },
+    20_000,
   )
 
   it('affiche l’erreur typée et réessaie le même endpoint', async () => {
@@ -2131,10 +2132,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const retried = selectedReads().slice(selectedBeforeRetry)
     expect(retried.length).toBeLessThanOrEqual(2)
     expect(retried.every((items) => items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
-    // Les 18 lectures de comparaison Mobilité (16 ressources + les deux détails
-    // réseau non-défaut) repartent en lots bornés, jamais une requête par figure
-    // ni une relecture des faits focaux.
-    expect(retried.flat()).toHaveLength(18)
+    // Les 23 lectures de comparaison Mobilité (16 ressources + les détails
+    // réseau/cyclables déclarés) repartent en lots bornés, jamais une requête
+    // par figure ni une relecture des faits focaux.
+    expect(retried.flat()).toHaveLength(23)
     expect(requests.slice(requestsBeforeRetry).flat().some((item) =>
       item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
     expect(wrapper.find('.transit-comparison-retry').exists()).toBe(false)

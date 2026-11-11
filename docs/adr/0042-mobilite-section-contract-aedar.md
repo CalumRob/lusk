@@ -47,9 +47,10 @@ browser-side peer computation. #953 publishes the refuelling densities.
    decorative rules are removed. Below the maps: prose + source stamps on the
    left, a vertical grouped-bar figure on the right. Categories are the three
    networks; values are the published `reseaux_par_habitant` densities. The
-   territory bike bar is segmented Protégé/Partagé; its comparison bar is the
-   **total median, unsegmented** — segment medians are never summed. Raw
-   kilometres appear in tooltips only.
+   territory bike bar is segmented Protégé/Partagé; its comparison bar uses the
+   served total statistic (median today), unsegmented — segment statistics are
+   never summed. Raw kilometres and each declared segment/raw comparison (with
+   its served rank) appear in tooltips only.
 5. **Se garer et se ravitiller (C4).** Two paired columns, each with its own
    prose, source stamps, compared bars and ratio line. The bars carry no rank
    chip; the ratio line owns its reference and rank. The parking ratio keeps its

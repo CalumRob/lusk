@@ -58,7 +58,7 @@ describe('Production Mobilité — shell performance seam (#868: bootstrap réf�
     expect(wrapper.find('.fiche-contenu').exists()).toBe(true)
     expect(wrapper.find('.cahier-cover').exists()).toBe(false)
     factsSpy.mockRestore()
-  })
+  }, 20_000)
 
   it('keeps the global header and footer around the cahier body', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes })

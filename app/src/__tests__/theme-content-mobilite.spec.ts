@@ -117,6 +117,8 @@ const sharingFacts = (): NumericFact[] => [
   fact('reseaux', 30, 'km', 'c_longueur'),
   fact('offre_cyclable', 5, 'km / 1 000 hab.', 'protege_km_1000', 'amenagements_cyclables'),
   fact('offre_cyclable', 3, 'km / 1 000 hab.', 'partage_km_1000', 'amenagements_cyclables'),
+  fact('offre_cyclable', 4, 'km', 'protege_longueur', 'amenagements_cyclables'),
+  fact('offre_cyclable', 2, 'km', 'partage_longueur', 'amenagements_cyclables'),
   fact('places_stationnement_velo_1000', 5, 'places / 1 000 hab', null, 'stationnement-velo'),
   fact('places_stationnement_voiture_1000', 25, 'places / 1 000 hab'),
   fact('stationnement_velo_par_voiture', 0.2, 'places vélo / place voiture'),
@@ -146,7 +148,8 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
     )
     const unit = resolveMobiliteThemeContent(factsWith(sharingFacts()), metadata).units[1]
     expect(unit.introduction.flat().map((segment) => segment.value).join('')).toBe(subtitle)
-    expect(unit.rundown).toEqual([])
+    expect(unit.rundown).toBeUndefined()
+    expect(unit).not.toHaveProperty('rundown')
   })
 
   it('proves the published car-owner share equals both 1 − sans_voiture and une_voiture + deux_plus', () => {
@@ -205,6 +208,10 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
       ['Protégé', 5],
       ['Partagé', 3],
     ])
+    expect(bike!.segments.map((segment) => segment.rawValue?.fact)).toEqual([
+      expect.objectContaining({ key: 'offre_cyclable', detail: 'protege_longueur', value: 4, unit: 'km' }),
+      expect.objectContaining({ key: 'offre_cyclable', detail: 'partage_longueur', value: 2, unit: 'km' }),
+    ])
     expect(bike!.segments.reduce((sum, segment) => sum + (segment.value.fact.value ?? 0), 0)).toBe(bike!.value.fact.value)
     expect(walk!.segments).toEqual([])
     expect(car!.segments).toEqual([])
@@ -236,7 +243,7 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
     const [parking, refuelling] = section.evidence.columns
     expect(parking!.key).toBe('stationnement')
     expect(parking!.bars.figureTitle).toBe('Stationnement vélo et voiture')
-    expect(parking!.bars.unit).toBe('places / 1 000 hab.')
+    expect(parking!.bars.unit).toBe('places / 1 000 hab')
     expect(parking!.bars.categories.map((category) => [category.label, category.value.fact.value, category.rawValue])).toEqual([
       ['Vélo', 5, null],
       ['Voiture', 25, null],
@@ -254,7 +261,7 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
     ])
     expect(refuelling!.ratio.value.fact).toMatchObject({ key: 'bornes_ev_par_station_service', value: 3.5 })
     expect(refuelling!.sources.map((source) => source.source)).toEqual(['Etalab', 'INSEE'])
-    expect(refuelling!.prose.flat().map((segment) => segment.value).join(' ')).toContain('au moins une station')
+    expect(refuelling!.prose.flat().map((segment) => segment.value).join(' ')).toContain('aucune station n’est recensée')
   })
 
   it('keeps ratios honest: zero car denominator and zero stations never fabricate a ratio', () => {

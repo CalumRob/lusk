@@ -342,6 +342,8 @@ onBeforeUnmount(() => {
       '--cahier-mode-foot': 'var(--mode-transit)',
       '--cahier-mode-bike': 'var(--mode-bike)',
       '--cahier-mode-car': 'var(--mode-car)',
+      '--cahier-cycle-protected': 'var(--cahier-mode-bike)',
+      '--cahier-cycle-shared': '#8c4c9e',
     }"
   >
       <div class="cahier-reader">
@@ -429,7 +431,7 @@ onBeforeUnmount(() => {
 
               <div class="page-copy">
                 <CahierProse class="page-subtitle" :blocks="currentUnit.introduction" />
-                <CahierProse v-if="currentUnit.rundown?.length" class="page-subtitle page-rundown" :blocks="currentUnit.rundown" />
+                <CahierProse v-if="currentUnit.rundown" class="page-subtitle page-rundown" :blocks="currentUnit.rundown" />
               </div>
 
               <div class="figure-stack">

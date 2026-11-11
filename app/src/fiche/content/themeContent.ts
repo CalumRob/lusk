@@ -238,6 +238,8 @@ export interface MobiliteBarSegmentEvidence {
   label: string
   /** Per-segment density; its sum is the category total by producer contract. */
   value: ContentFact
+  /** Published raw segment length carried in the tooltip only, when declared. */
+  rawValue: ContentFact | null
 }
 
 export interface MobiliteBarCategoryEvidence {
@@ -358,7 +360,9 @@ export interface PartageEspacePublicContentUnit {
   key: 'partage-de-lespace-public'
   label: string
   introduction: readonly TextBlock[]
-  rundown: readonly TextBlock[]
+  /** Page 1 keeps its historical (empty) rundown block; the migrated page 2
+   * deliberately omits the property so no empty block shifts the AEDAR flow. */
+  rundown?: readonly TextBlock[]
   sections: readonly [MobiliteNetworksSection, MobiliteStationnementRavitaillementSection]
 }
 
@@ -470,7 +474,10 @@ function registerFor(sections: readonly MobiliteContentSection[], metadata?: The
       for (const category of section.evidence.figure.categories) {
         add(category.value)
         if (category.rawValue) add(category.rawValue)
-        for (const segment of category.segments) add(segment.value)
+        for (const segment of category.segments) {
+          add(segment.value)
+          if (segment.rawValue) add(segment.rawValue)
+        }
       }
     }
     if (section.evidence?.kind === 'mobilite-stationnement-ravitaillement') {
@@ -478,7 +485,10 @@ function registerFor(sections: readonly MobiliteContentSection[], metadata?: The
         for (const category of column.bars.categories) {
           add(category.value)
           if (category.rawValue) add(category.rawValue)
-          for (const segment of category.segments) add(segment.value)
+          for (const segment of category.segments) {
+          add(segment.value)
+          if (segment.rawValue) add(segment.rawValue)
+        }
         }
         add(column.ratio.value)
       }
@@ -636,7 +646,6 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
     label: subgroupLabel('partage-de-lespace-public', 'Partage de l’espace public'),
     // C2 — one grammatical paragraph replaces the retired introduction and rundown.
     introduction: buildPartageSubtitle(facts),
-    rundown: [],
     sections: sharingSections,
   }
   const transitUnit: OffreTransportsContentUnit = { key: 'offre-transports-commun', label: transitLabel, introduction: [], rundown: [], sections: [transitSection] }

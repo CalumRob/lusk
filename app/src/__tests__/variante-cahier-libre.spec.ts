@@ -468,14 +468,18 @@ describe('Variante E — partage de l’espace public', () => {
       expect(groups.every((group) => !group.attributes('style'))).toBe(true)
     }
     // C2 — one subtitle paragraph replaces the retired introduction and rundown.
-    expect(wrapper.findAll('.page-rundown')).toHaveLength(0)
+    expect(wrapper.findAll('.page-rundown')).toHaveLength(2)
+    // Page 1 keeps its historical empty rundown block (document-flow guard);
+    // only the migrated page 2 omits the property.
+    expect(wrapper.findAll('.cahier-page')[0]!.find('.page-rundown').exists()).toBe(true)
+    expect(wrapper.findAll('.cahier-page')[1]!.find('.page-rundown').exists()).toBe(false)
     // C1 — the new Mobilité sections carry no Marelle.
     expect(wrapper.findAll('.concept-group-narrative')).toHaveLength(0)
     expect(wrapper.find('.map-breakout').exists()).toBe(true)
     expect(wrapper.find('.mobilite-section--reseaux').exists()).toBe(true)
     expect(wrapper.find('.mobilite-section--stationnement-ravitaillement').exists()).toBe(true)
     expect(wrapper.findAll('.mobilite-comparison-bars')).toHaveLength(3)
-    expect(wrapper.findAll('.mobilite-ratio')).toHaveLength(2)
+    expect(wrapper.findAll('.mobilite-ratio-scalar')).toHaveLength(2)
     expect(wrapper.find('.sharing-networks-evidence').exists()).toBe(false)
     expect(wrapper.find('.sharing-cycling-offer-evidence').exists()).toBe(false)
     expect(wrapper.find('.sharing-parking-evidence').exists()).toBe(false)
@@ -550,12 +554,14 @@ describe('Variante E — partage de l’espace public', () => {
     expect(rows.map((row) => row.get('.cahier-figure-tooltip-label').text())).toEqual([
       'Réseau cyclable',
       'Protégé',
+      'Longueur protégée',
       'Partagé',
+      'Longueur partagée',
       'Longueur — à vélo',
     ])
     expect(tooltip.findAll('.cahier-figure-tooltip-row-comparison')).toHaveLength(1)
-    expect(rows[3]!.text()).toContain('km')
-    expect(rows[3]!.attributes('aria-label')).toContain('valeur brute')
+    expect(rows[5]!.text()).toContain('km')
+    expect(rows[5]!.attributes('aria-label')).toContain('valeur brute')
     await wrapper.find('.map-panel img').trigger('error')
     await flushPromises()
     expect(wrapper.find('.map-panel--car img').exists()).toBe(false)

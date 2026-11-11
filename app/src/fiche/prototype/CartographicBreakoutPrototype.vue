@@ -13,8 +13,9 @@ import { mapAssetUrl } from '@/fiche/mapAssetUrl'
 
 import type { CahierTooltipComparison, CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
-import { groupeCompareAria } from '@/fiche/content/comparisonWording'
-import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
+import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
+import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
+import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import type { ContentFact, MobiliteNetworksEvidence } from '@/fiche/content/themeContent'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
@@ -78,29 +79,43 @@ function modeIcon(mode: ModeKey): Component {
   return modes.find((candidate) => candidate.key === mode)?.icon ?? CarFront
 }
 
-function comparisonForFact(fact: ContentFact, scope: string | null): CahierTooltipComparison | undefined {
+function comparisonForFact(
+  fact: ContentFact,
+  scope: string | null,
+  unit = '',
+  unsplitTotal = false,
+): CahierTooltipComparison | undefined {
   const comparison = fact.fact.comparison
   const reference = comparison?.reference
   if (!reference || reference.value === null || reference.value === undefined) return undefined
-  const value = formatNumber(reference.value, 2)
+  const value = `${formatNumber(reference.value, 2)}${unit ? ` ${unit}` : ''}`
   const rank = formatServedRank(comparison.rank)
+  const statistic = comparison.reference?.kind === 'mean' ? 'moyenne' : 'médiane'
+  const scopeOnly = scope?.replace(/^(?:Médiane|Moyenne) des /u, '') ?? null
+  const description = unsplitTotal
+    ? `${statistic} du total non segmenté${scopeOnly ? ` — ${scopeOnly}` : ''}`
+    : scope ?? statistic
+  const direction = comparison.direction ? LIBELLES_DIRECTION[comparison.direction] : null
+  const rankAria = puceRangDirection(comparison.rank, comparison.direction)?.phraseAria
+    ?? formatServedRankAria(comparison.rank)
   return {
     value,
     rank,
-    ariaLabel: groupeCompareAria(value, formatServedRankAria(comparison.rank), scope ?? 'Indisponible'),
+    ariaLabel: `${GROUPE_COMPARE_LABEL} : ${value} (${description})${rankAria ? `. Rang ${rankAria}` : direction ? `. ${direction}` : ''}`,
   }
 }
 
 function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
   const category = categoryFor(mode)
   if (!category) return []
+  const unit = props.evidence?.figure.unit ?? ''
   const rows: CahierTooltipRow[] = [{
     label: category.label,
     value: category.value.fact.value === null ? '—' : formatNumber(category.value.fact.value, 2),
     tone: modeTone(mode),
     icon: modeIcon(mode),
     markerColor: modeColor(mode),
-    comparison: comparisonForFact(category.value, props.evidence?.figure.comparisonLabel ?? null),
+    comparison: comparisonForFact(category.value, props.evidence?.figure.comparisonLabel ?? null, unit, category.segments.length > 0),
   }]
   for (const segment of category.segments) {
     rows.push({
@@ -109,9 +124,26 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
       tone: 'b',
       marker: 'dot',
       markerColor: segment.key === 'protege_km_1000'
-        ? 'var(--cahier-cycle-protected)'
-        : 'var(--cahier-cycle-shared)',
+        ? 'var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike)))'
+        : 'var(--cahier-cycle-shared, #8c4c9e)',
+      comparison: comparisonForFact(segment.value, props.evidence?.figure.comparisonLabel ?? null, unit),
     })
+    if (segment.rawValue) {
+      rows.push({
+        label: segment.rawValue.label,
+        value: segment.rawValue.fact.value === null
+          ? '—'
+          : `${formatNumber(segment.rawValue.fact.value, 2)} ${segment.rawValue.fact.unit}`,
+        tone: 'neutral',
+        marker: 'slash',
+        ariaLabel: `${segment.rawValue.label} : ${segment.rawValue.fact.value === null ? 'indisponible' : `${formatNumber(segment.rawValue.fact.value, 2)} ${segment.rawValue.fact.unit}`} (valeur brute)`,
+        comparison: comparisonForFact(
+          segment.rawValue,
+          props.evidence?.figure.comparisonLabel ?? null,
+          segment.rawValue.fact.unit,
+        ),
+      })
+    }
   }
   if (category.rawValue) {
     rows.push({
@@ -122,6 +154,11 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
       tone: 'neutral',
       marker: 'slash',
       ariaLabel: `${category.rawValue.label} : ${category.rawValue.fact.value === null ? 'indisponible' : `${formatNumber(category.rawValue.fact.value, 2)} ${category.rawValue.fact.unit}`} (valeur brute)`,
+      comparison: comparisonForFact(
+        category.rawValue,
+        props.evidence?.figure.comparisonLabel ?? null,
+        category.rawValue.fact.unit,
+      ),
     })
   }
   return rows

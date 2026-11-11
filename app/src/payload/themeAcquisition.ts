@@ -348,13 +348,17 @@ async function readAll(items: SemanticReadItem[]): Promise<Array<{ resource: str
 }
 
 /**
- * #954/#960 — the Mobilité « Réseaux » figure compares each declared network
- * detail (walking, bike, car), not only the descriptor's published default
- * point. The expansion is deliberately narrow: the producer catalogue owns the
- * declared detail values, and only this resource is read per detail.
+ * #954/#960 — the Mobilité page-2 tooltips need one served comparison per
+ * declared point, not only the descriptor's published default. The expansion is
+ * deliberately narrow: only these producer resources, and only the declared
+ * points the figures actually display.
  */
-const DECLARED_DETAIL_COMPARISON_RESOURCES: Readonly<Record<string, readonly string[]>> = {
-  mobilite: ['reseaux_par_habitant'],
+const DECLARED_DETAIL_COMPARISON_RESOURCES: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
+  mobilite: {
+    reseaux_par_habitant: ['t_km_1000', 'b_km_1000', 'c_km_1000'],
+    reseaux: ['t_longueur', 'b_longueur', 'c_longueur'],
+    offre_cyclable: ['protege_longueur', 'partage_longueur', 'protege_km_1000', 'partage_km_1000'],
+  },
 }
 
 function declaredDetailComparisonItems(
@@ -363,8 +367,10 @@ function declaredDetailComparisonItems(
   id: string,
   intent: SemanticReadItem['intent'],
 ): SemanticReadItem[] {
-  if (!(DECLARED_DETAIL_COMPARISON_RESOURCES[resource.theme_id] ?? []).includes(resource.resource_id)) return []
-  const details = resource.axis_values?.find(([axis]) => axis === 'detail')?.[1] ?? []
+  const requested = DECLARED_DETAIL_COMPARISON_RESOURCES[resource.theme_id]?.[resource.resource_id]
+  if (!requested?.length) return []
+  const declared = resource.axis_values?.find(([axis]) => axis === 'detail')?.[1] ?? []
+  const details = requested.filter((detail) => declared.includes(detail))
   if (details.length < 2) return []
   return details.map((detail) => ({
     ...territoryItem(resource.resource_id, type, id, intent),
