@@ -888,6 +888,107 @@ verifier_economie_e2e_reel <- function(donnees, base_epci) {
   invisible(TRUE)
 }
 
+# verifier_ravitaillement_mobilite ----------------------------------------------
+# Le verrou des densités de ravitaillement (issue #953), isolé pour être testé
+# sur son SEAM DE VÉRIFICATION avec des entrées synthétiques mélangées : les
+# comptes et les ratios sont ALIGNÉS PAR CLÉ DE TERRITOIRE (jamais par
+# recyclage positionnel d'un vecteur de codes) et la preuve comptable manquante
+# est une erreur nommée, jamais un NA silencieux.
+#   - le compte régional B316 est la somme des parties communales du
+#     référentiel ; une observation BPE absente propage l'indisponibilité ;
+#   - une commune couverte dont la BPE observe zéro station publie un zéro
+#     (compte ET taux), jamais un NA ;
+#   - un ratio EV/fuel publié exige ses deux comptes et un dénominateur > 0,
+#     et recompose exactement le compte de bornes du territoire.
+verifier_ravitaillement_mobilite <- function(offre, donnees, base, analytiques) {
+  valeurs_scalaires <- function(code, key) {
+    lignes <- offre[offre$key == key & is.na(offre$detail),
+                    c("code", "value"), drop = FALSE]
+    lignes$value[match(as.character(code), as.character(lignes$code))]
+  }
+
+  ref_communes <- sort(unique(as.character(base$CODGEO)))
+  bpe <- donnees$stations_service
+  if (!all(c("commune", "fuel") %in% names(bpe))) {
+    stop("Verrou à données réelles cassé - Mobilité e2e : la table BPE ",
+         "normalisée doit porter commune et fuel.", call. = FALSE)
+  }
+  bpe <- bpe[as.character(bpe$commune) %in% ref_communes,
+             c("commune", "fuel"), drop = FALSE]
+  obs <- tibble::tibble(commune = ref_communes) %>%
+    dplyr::left_join(bpe, by = "commune")
+  population <- analytiques$stationnement_velo_communes$population
+
+  if (!anyNA(obs$fuel)) {
+    verifier_egale(valeurs_scalaires("53", "stations_service"),
+                   sum(obs$fuel),
+                   "Mobilité e2e — les stations-service de la région")
+    verifier_egale(
+      round(valeurs_scalaires("53", "stations_service_1000"), 6),
+      round(sum(obs$fuel) / sum(population) * 1000, 6),
+      "Mobilité e2e — les stations-service / 1 000 hab. de la région")
+  } else {
+    # une observation absente propage l'indisponibilité — jamais un compte
+    # régional amputé en silence, jamais un zéro inventé
+    verifier_vrai(is.na(valeurs_scalaires("53", "stations_service")),
+                  "Mobilité e2e",
+                  "un compte régional de stations-service malgré une BPE incomplète")
+    verifier_vrai(is.na(valeurs_scalaires("53", "stations_service_1000")),
+                  "Mobilité e2e",
+                  "un taux régional de stations-service malgré une BPE incomplète")
+  }
+  verifier_egale(
+    round(valeurs_scalaires("53", "bornes_recharge_1000"), 6),
+    round(valeurs_scalaires("53", "bornes_recharge") /
+            sum(population) * 1000, 6),
+    "Mobilité e2e — les bornes / 1 000 hab. de la région")
+
+  # une observation BPE à zéro est un FAIT : le compte et son taux sont publiés
+  # à zéro, jamais convertis en indisponibilité
+  zeros <- as.character(obs$commune[!is.na(obs$fuel) & obs$fuel == 0])
+  if (length(zeros) > 0L) {
+    comptes <- valeurs_scalaires(zeros, "stations_service")
+    taux <- valeurs_scalaires(zeros, "stations_service_1000")
+    verifier_vrai(length(comptes) == length(zeros) &&
+                    all(!is.na(comptes) & comptes == 0),
+                  "Mobilité e2e",
+                  "une commune couverte avec zéro station n'a pas son compte zéro")
+    verifier_vrai(length(taux) == length(zeros) &&
+                    all(!is.na(taux) & taux == 0),
+                  "Mobilité e2e",
+                  "une commune couverte avec zéro station n'a pas son taux zéro")
+  }
+
+  # la paire de ravitaillement : jointure PAR CODE (jamais une égalité
+  # vectorielle recyclée), la preuve comptable manquante est explicite
+  cles <- c("bornes_recharge", "stations_service",
+            "bornes_ev_par_station_service")
+  preuves <- offre[offre$key %in% cles & is.na(offre$detail) &
+                     !is.na(offre$code), c("code", "key", "value"), drop = FALSE]
+  preuves <- preuves[!duplicated(preuves[c("code", "key")]), , drop = FALSE]
+  large <- tidyr::pivot_wider(preuves, names_from = "key", values_from = "value")
+  for (colonne in cles) {
+    if (!colonne %in% names(large)) large[[colonne]] <- NA_real_
+  }
+  avec_ratio <- large[!is.na(large$bornes_ev_par_station_service), , drop = FALSE]
+  if (nrow(avec_ratio) > 0L) {
+    verifier_vrai(all(!is.na(avec_ratio$bornes_recharge) &
+                        !is.na(avec_ratio$stations_service)),
+                  "Mobilité e2e",
+                  "une preuve comptable manque pour un ratio EV/fuel publié")
+    verifier_vrai(all(avec_ratio$stations_service > 0),
+                  "Mobilité e2e",
+                  "un ratio EV/fuel publié sans station-service")
+    verifier_vrai(
+      all(abs(avec_ratio$bornes_recharge -
+                avec_ratio$bornes_ev_par_station_service *
+                  avec_ratio$stations_service) < 1e-8),
+      "Mobilité e2e",
+      "le ratio EV/fuel ne recompose pas ses deux comptes")
+  }
+  invisible(TRUE)
+}
+
 # verifier_mobilite_e2e_reel ----------------------------------------------------
 # Verrou des blocs convertis de test-analytics-mobilite-e2e.R (+ le bloc
 # résolu de test-resoudre-histoires.R) : le chaînon analytique FLAGSHIP sur
@@ -1112,15 +1213,23 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   verifier_egale(nrow(analytiques$offre_cyclable_communes), 1202L,
                  "Mobilité e2e — l'offre cyclable par commune")
   # 10 142 lignes avant #369 + trois familles complètes ajoutées par #369
-  # (1 268 territoires chacune) = 13 946 lignes.
-  verifier_egale(nrow(analytiques$offre_territoires), 13946L,
+  # (1 268 territoires chacune) = 13 946 lignes, + les trois densités de
+  # ravitaillement de #953 (une ligne par territoire et par clé).
+  n_territoires_offre <- length(unique(analytiques$offre_territoires$code))
+  verifier_egale(nrow(analytiques$offre_territoires),
+                 13946L + 3L * n_territoires_offre,
                  "Mobilité e2e — l'offre par territoire")
 
   offre <- analytiques$offre_territoires
+  # Alignement PAR CLÉ : un vecteur de codes ne se compare jamais positionnellement
+  # à offre$code (le recyclage produirait des sous-ensembles faux et de
+  # longueurs décalées). `match` lit le fait du code demandé.
   lire_offre <- function(code, key, detail = NA) {
-    ok <- offre$code == code & offre$key == key &
-      (if (is.na(detail)) is.na(offre$detail) else offre$detail %in% detail)
-    offre$value[ok]
+    lignes <- offre[offre$key == key &
+                      (if (is.na(detail)) is.na(offre$detail)
+                       else offre$detail %in% detail),
+                    c("code", "value"), drop = FALSE]
+    lignes$value[match(as.character(code), as.character(lignes$code))]
   }
   ratio <- offre[offre$key == "bornes_ev_par_station_service", ]
   n_epci <- length(unique(base$EPCI[!is.na(base$EPCI)]))
@@ -1130,7 +1239,8 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   verifier_vrai(all(c("35238", "242900314", "35", "53") %in% ratio$code),
                 "Mobilité e2e", "le ratio B316 n'atteint pas tous les niveaux")
   verifier_vrai(is.na(lire_offre("29083", "bornes_ev_par_station_service")),
-                "Mobilité e2e", "une commune BPE indisponible devenue zéro")
+                "Mobilité e2e",
+                "un ratio EV/fuel publié sans station-service (dénominateur nul)")
   verifier_egale(round(lire_offre("35238", "offre_tc"), 4), 0.9957,
                  "Mobilité e2e — l'offre TC de Rennes (la vraie part des bâtiments)")
   # Korrigo (GTFS) est une source VIVANTE re-téléchargée par la restauration
@@ -1148,6 +1258,20 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
                  "Mobilité e2e — les bornes de la région")
   verifier_egale(lire_offre("35", "bornes_recharge"), 623L,
                  "Mobilité e2e — les bornes de l'Ille-et-Vilaine")
+  # les densités de ravitaillement (issue #953) : la règle est portée par son
+  # seam de vérification (testé sur des entrées synthétiques mélangées) — le
+  # compte B316 somme les parties, les taux se recalculent, une observation
+  # absente propage l'indisponibilité, un zéro observé reste un fait. Aucun
+  # chiffre d'époque n'est recopié : le verrou porte la RÈGLE.
+  verifier_ravitaillement_mobilite(offre, donnees, base, analytiques)
+  # l'île de Sein est COUVERTE par la BPE avec un zéro OBSERVÉ : son compte de
+  # stations reste 0 ; seul le ratio EV/fuel, au dénominateur nul, est
+  # indisponible.
+  verifier_egale(lire_offre("29083", "stations_service"), 0,
+                 "Mobilité e2e — l'île de Sein couverte avec zéro station")
+  verifier_vrai(is.na(lire_offre("29083", "bornes_ev_par_station_service")),
+                "Mobilité e2e",
+                "un ratio EV/fuel publié sans station-service")
   verifier_egale(round(lire_offre("53", "places_stationnement_velo_1000"), 4),
                  18.4989, "Mobilité e2e — le stationnement vélo de la région")
   verifier_egale(round(lire_offre("35238", "places_stationnement_velo_1000"), 4),
