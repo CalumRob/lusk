@@ -373,7 +373,6 @@ async function inspect(mode: ModeKey): Promise<void> {
             :class="[`plate-network-tooltip--${activeMode}`]"
             :style="tooltipTop ? { '--plate-network-tooltip-top': tooltipTop } : undefined"
             :title="modeLabel(activeMode ?? 'car')"
-            :unit="networkBarUnit"
             :rows="networkTooltipRows(activeMode ?? 'car')"
           />
            <CahierFigureLecture v-if="hasFigureLecture">

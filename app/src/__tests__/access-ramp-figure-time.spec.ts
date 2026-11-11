@@ -107,8 +107,13 @@ describe('AccessRampFigureCahier time ramp', () => {
     expect(lines.filter((line) => line.classes().includes('access-ramp-line--comparison'))).toHaveLength(3)
     await wrapper.find('[aria-label="Temps d\'accès : 15 min"]').trigger('focus')
     expect(wrapper.find('[role="tooltip"]').text()).toContain('15 min')
+    const tooltipRows = wrapper.find('[role="tooltip"]').findAll('.cahier-figure-tooltip-row')
+    const carRow = tooltipRows.find((row) => row.text().includes('Voiture'))!
+    // The visible row is bare; the unit lives only in its accessible name.
+    expect(carRow.find('dd').text()).toBe('4')
+    expect(carRow.attributes('aria-label')).toContain('4 types')
+    expect(wrapper.find('[role="tooltip"]').text()).not.toContain('4 types')
     expect(wrapper.find('[role="tooltip"]').findAll('dt').map((row) => row.text())).toContain('Voiture')
-    expect(wrapper.find('[role="tooltip"]').text()).toContain('4 types')
     expect(wrapper.find('[role="tooltip"]').findAll('.cahier-figure-tooltip-row-comparison')).toHaveLength(2)
     const comparisons = wrapper.find('[role="tooltip"]').findAll('.cahier-figure-tooltip-row-comparison')
     expect(comparisons[0]!.text()).toContain('Indisponible')

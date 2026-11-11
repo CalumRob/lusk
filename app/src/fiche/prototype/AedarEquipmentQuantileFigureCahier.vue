@@ -30,8 +30,10 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
 }
 
+/** Accessible reading: the content-declared count noun, spelled out (visible rows stay bare). */
 function formatEstablishmentCount(value: number): string {
-  return `${formatNumber(value)} établissement${value > 1 ? 's' : ''}`
+  const unit = props.evidence.distributionValueUnit
+  return `${formatNumber(value)} ${unit}${value > 1 ? 's' : ''}`
 }
 
 const measurementKey = (mode: AedarRampMode, statisticKey: string): string =>
@@ -73,7 +75,8 @@ const figure = computed<CahierGroupedVerticalBarFigureData>(() => ({
   description: props.fact
     ? `${props.fact.typequ_label} (${props.fact.typequ}). ${props.evidence.distributionFigureTitle} à ${props.horizonMinutes} minutes. ${props.evidence.distributionDescription}${props.comparisonLayerSupported === true || Boolean(props.comparisonLabel) || Boolean(props.comparison) ? ` Groupe comparé : ${props.comparisonLabel ?? 'Indisponible'}.` : ''}`
     : props.evidence.distributionUnavailableDescription,
-  formatValue: formatEstablishmentCount,
+  formatValue: formatNumber,
+  formatAriaValue: formatEstablishmentCount,
   formatAxisTick: formatNumber,
 }))
 </script>

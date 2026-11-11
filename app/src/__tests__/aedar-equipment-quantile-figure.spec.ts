@@ -49,6 +49,7 @@ function explorerEvidence(overrides: Partial<AedarEquipmentExplorerEvidence> = {
     distributionStatistics: AEDAR_EQUIPMENT_QUANTILE_STATISTICS,
     distributionAxisTitle: 'Décile',
     distributionYAxisTitle: 'Nombre d’établissements',
+    distributionValueUnit: 'établissement',
     distributionDescription: 'Les barres montrent les valeurs des seuils publiés.',
     distributionUnavailableDescription: 'Distribution indisponible.',
     source: null,
@@ -101,14 +102,17 @@ describe('AEDAR equipment decile distribution figure', () => {
 
     const categories = plot.findAll('button.cahier-grouped-vertical-bar-chart__category-hitbox')
     expect(categories).toHaveLength(11)
+    // Visible values are bare; accessible names keep the unit.
     expect(categories[0]?.attributes('aria-label')).toContain('Minimum : Voiture : 0 établissement')
     expect(categories[1]?.attributes('aria-label')).toContain('Décile 1 : Voiture : 1 établissement')
     expect(categories[9]?.attributes('aria-label')).toContain('Décile 9 : Voiture : 9 établissements')
     expect(categories[10]?.attributes('aria-label')).toContain('Maximum : Voiture : 10 établissements')
+    expect(plot.get('svg[role="img"]').attributes('aria-label')).toContain('Voiture : 0 établissement')
 
     await categories[1]!.trigger('focus')
     const tooltip = wrapper.get('.cahier-grouped-vertical-bar-chart__tooltip')
-    expect(tooltip.text()).toContain('1 établissement')
+    expect(tooltip.text()).toContain('1')
+    expect(tooltip.text()).not.toContain('établissement')
     expect(tooltip.findAll('svg.cahier-figure-tooltip-icon')).toHaveLength(1)
     expect(tooltip.get('svg.cahier-figure-tooltip-icon').attributes('style')).toContain('color: var(--cahier-mode-car)')
     expect(tooltip.find('.cahier-figure-tooltip-marker').exists()).toBe(false)

@@ -142,6 +142,7 @@ describe('aedarAccessSection', () => {
       initialTypequ: 'B207',
       volumeYAxisTitle: 'Volume de l’offre',
       distributionYAxisTitle: 'Nombre d’établissements',
+      distributionValueUnit: 'établissement',
     })
   })
 
