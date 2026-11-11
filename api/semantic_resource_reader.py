@@ -46,7 +46,13 @@ class SemanticResourceReader:
 
     @staticmethod
     def _profile_comparison_coordinates(conn, item, resource):
-        """Resolve selected cells without allowing coordinates to redefine a fixed published default."""
+        """Resolve a declared profile comparison point against its fixed cohort.
+
+        The published default point keeps the published fast path. Any other
+        declared point resolves the same fixed context and is computed from that
+        cohort's committed published cells in the caller's snapshot, exactly as
+        an explicit selection would be; it never reinterprets the default facet.
+        """
         if ("declared_profile" not in resource.shapes or not item.coordinates
                 or item.intent.kind not in {"fixed_comparison", "selected_comparison"}):
             return None
@@ -60,12 +66,17 @@ class SemanticResourceReader:
         if item.intent.kind == "fixed_comparison":
             default = conn.execute("""SELECT comparison_detail,comparison_sex,comparison_scalar
                 FROM profile_descriptor WHERE indicator_id=%s""", (item.resource,)).fetchone()
-            if (not default or default[2] is not None or coordinates.get("detail") != default[0] or
-                    coordinates.get("sex") != default[1]):
-                raise HTTPException(422, "Fixed profile comparisons use only their published default facet")
-            # Matching explicit coordinates are harmless filters, not a request
-            # to reinterpret the fixed publication as a selected comparison.
-            return None
+            default_detail, default_sex, comparison_scalar = default or (None, None, None)
+            if comparison_scalar is not None or not default_detail:
+                # A scalar-backed profile compares through its linked scalar
+                # facet; its declared bins remain profile facts.
+                raise HTTPException(422, "Fixed profile comparisons require a declared detail facet")
+            if (coordinates.get("detail") == default_detail
+                    and coordinates.get("sex") == default_sex):
+                # Matching explicit coordinates are harmless filters, not a
+                # request to reinterpret the fixed publication as a selection.
+                return None
+            return coordinates
         return coordinates
 
     def _coordinate_values(self, conn, item, resource):
@@ -296,9 +307,12 @@ class SemanticResourceReader:
                 for axis in resource.axes:
                     output_axes *= max(1, len(domains.get(axis, ())))
             fixed_context = (estimate.get("fixed_context") if isinstance(estimate, dict) else None)
-            # Published fixed rows are keyed lookups; otherwise a fixed intent
-            # falls back to the resolved selected cohort and its actual facts.
-            fixed_lookup = item.intent.kind == "fixed_comparison" and fixed_context is not None
+            # Published fixed rows are keyed lookups. A declared non-default
+            # profile coordinate is a set-wise read over the same resolved
+            # cohort's cells, so it is charged like an explicit selection.
+            fixed_lookup = (item.intent.kind == "fixed_comparison"
+                            and fixed_context is not None
+                            and profile_coordinates is None)
             if fixed_lookup:
                 members = [item.target.id]
             work = max(1, len(members)) * output_axes
