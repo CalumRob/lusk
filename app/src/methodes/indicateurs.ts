@@ -564,6 +564,36 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         sourceId: 'bornes-recharges',
         direction: 'plus-est-mieux',
       },
+      stations_service: {
+        label: 'Stations-service',
+        definition:
+          'Le nombre de stations-service du territoire, comptées dans la Base permanente des équipements de l’INSEE (filtre B316). Le dénombrement porte les stations qui satisfont le seuil de vente de carburant déclaré par la source ; il reste absent quand l’observation manque, jamais ramené à zéro.',
+        unite: 'stations',
+        source:
+          'INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service',
+        sourceId: 'bpe_b316',
+        direction: 'plus-est-mieux',
+      },
+      stations_service_1000: {
+        label: 'Stations-service pour 1 000 hab.',
+        definition:
+          'Le nombre de stations-service du territoire rapporté à 1 000 habitants. Aux niveaux agrégés, le dénombrement additionne les parties puis recalcule le taux avec la population du territoire — jamais une moyenne de taux communaux.',
+        unite: 'stations / 1 000 hab',
+        source:
+          'INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service',
+        sourceId: 'bpe_b316',
+        direction: 'plus-est-mieux',
+      },
+      bornes_recharge_1000: {
+        label: 'Bornes de recharge pour 1 000 hab.',
+        definition:
+          'Le nombre de stations de recharge pour véhicules électriques (IRVE) rapporté à 1 000 habitants. Aux niveaux agrégés, le dénombrement additionne les parties puis recalcule le taux avec la population du territoire — jamais une moyenne de taux communaux.',
+        unite: 'bornes / 1 000 hab',
+        source:
+          'Etalab / data.bretagne.bzh \u2014 Fichier consolid\u00e9 des Bornes de Recharge pour V\u00e9hicules \u00c9lectriques (IRVE), sch\u00e9ma 2.2.0',
+        sourceId: 'bornes-recharges',
+        direction: 'plus-est-mieux',
+      },
       bornes_ev_par_station_service: {
         label: 'Bornes de recharge pour 1 station-service',
         definition:

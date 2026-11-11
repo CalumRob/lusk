@@ -347,12 +347,41 @@ async function readAll(items: SemanticReadItem[]): Promise<Array<{ resource: str
   return output
 }
 
+/**
+ * #954/#960 — the Mobilité « Réseaux » figure compares each declared network
+ * detail (walking, bike, car), not only the descriptor's published default
+ * point. The expansion is deliberately narrow: the producer catalogue owns the
+ * declared detail values, and only this resource is read per detail.
+ */
+const DECLARED_DETAIL_COMPARISON_RESOURCES: Readonly<Record<string, readonly string[]>> = {
+  mobilite: ['reseaux_par_habitant'],
+}
+
+function declaredDetailComparisonItems(
+  resource: SemanticResourceDeclaration,
+  type: string,
+  id: string,
+  intent: SemanticReadItem['intent'],
+): SemanticReadItem[] {
+  if (!(DECLARED_DETAIL_COMPARISON_RESOURCES[resource.theme_id] ?? []).includes(resource.resource_id)) return []
+  const details = resource.axis_values?.find(([axis]) => axis === 'detail')?.[1] ?? []
+  if (details.length < 2) return []
+  return details.map((detail) => ({
+    ...territoryItem(resource.resource_id, type, id, intent),
+    coordinates: { detail: [detail] },
+  }))
+}
+
 function factAndDefaultComparisonItems(resources: SemanticResourceDeclaration[], type: string, id: string): SemanticReadItem[] {
   return resources.flatMap((resource) => {
     if (!resource.target_kinds.includes('territory') || !resource.intents.includes('facts')) return []
     const items = [territoryItem(resource.resource_id, type, id, { kind: 'facts' })]
     if (resource.intents.includes('fixed_comparison')) {
-      items.push(territoryItem(resource.resource_id, type, id, { kind: 'fixed_comparison', context: 'default' }))
+      const detailItems = declaredDetailComparisonItems(resource, type, id,
+        { kind: 'fixed_comparison', context: 'default' })
+      items.push(...(detailItems.length
+        ? detailItems
+        : [territoryItem(resource.resource_id, type, id, { kind: 'fixed_comparison', context: 'default' })]))
     }
     return items
   })
@@ -659,7 +688,12 @@ export function acquireThemeComparison(type: string, id: string, theme: ThemeKey
     const intent: SemanticReadItem['intent'] = selection === undefined
       ? { kind: 'fixed_comparison', context: 'default' }
       : { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) => ({ type: territory_type, id: territory_id })) }
-    const items = resources.map((resource) => territoryItem(resource.resource_id, type, id, intent))
+    const items = resources.flatMap((resource) => {
+      const detailItems = declaredDetailComparisonItems(resource, type, id, intent)
+      return detailItems.length
+        ? detailItems
+        : [territoryItem(resource.resource_id, type, id, intent)]
+    })
     const comparisons = await readAll(items)
     const auxiliary = await readAuxiliary(themeResources, type, false, selection)
     const echoedSelection = comparisons.length ? comparisons[0]!.data.selection : undefined

@@ -21,10 +21,9 @@ import type {
   AedarAccessEvidence,
   AedarEquipmentExplorerEvidence,
   ContentSection,
-  CyclingOfferEvidence,
   ExplorationTarget,
+  MobiliteContentSection,
   SingleUnitThemeContent,
-  SharingNetworksEvidence,
   ThemeContent,
 } from '@/fiche/content/themeContent'
 import {
@@ -43,15 +42,11 @@ import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type { CahierPagination } from './cahierPagination'
 import CahierProse from './CahierProse.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
-import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
-import CahierRoadSurfaceFigure from './CahierRoadSurfaceFigure.vue'
-import CahierSharingFigure from './CahierSharingFigure.vue'
-import CahierMotorisationFigure from './CahierMotorisationFigure.vue'
 import CahierOffreTransportsFigure from './CahierOffreTransportsFigure.vue'
-import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
+import CahierMobiliteSection from './CahierMobiliteSection.vue'
 import CahierBlankMapSlots from './CahierBlankMapSlots.vue'
 import AedarEquipmentWaffleCahier from './AedarEquipmentWaffleCahier.vue'
 import AedarEquipmentExplorerCahier from './AedarEquipmentExplorerCahier.vue'
@@ -119,41 +114,11 @@ const aedarAccessModeColors = Object.fromEntries(
   AEDAR_RAMP_MODES.map((mode) => [mode, AEDAR_TIME_MODE_COLORS[mode]]),
 )
 
-function isMapPrototypeSection(unitKey: string, sectionKey: string): boolean {
-  return unitKey === 'partage-de-lespace-public'
-    && sectionKey === 'reseaux'
-}
-
-function mapEvidenceFor(currentUnit: (typeof units.value)[number]): SharingNetworksEvidence | null {
-  const section = currentUnit.sections.find((candidate) => candidate.key === 'reseaux')
-  return section?.evidence?.kind === 'sharing-networks' ? section.evidence : null
-}
-
-function mapExplorationFor(currentUnit: (typeof units.value)[number]) {
-  const section = currentUnit.sections.find((candidate) => candidate.key === 'reseaux')
-  return section ? sectionExploration(section) : null
-}
-
-function mapCyclingEvidenceFor(currentUnit: (typeof units.value)[number]): CyclingOfferEvidence | null {
-  const section = currentUnit.sections.find((candidate) => candidate.key === 'offre-cyclable')
-  return section?.evidence?.kind === 'cycling-offer' ? section.evidence : null
-}
-
-function mapSourcesFor(currentUnit: (typeof units.value)[number]): readonly string[] {
-  const sectionKeys = new Set(['reseaux', 'offre-cyclable'])
-  const sourceIds = new Set(
-    currentUnit.sections
-      .filter((section) => sectionKeys.has(section.key))
-      .flatMap((section) => section.provenance),
-  )
-  return props.content.sourceRegister
-    .filter((source) => sourceIds.has(source.id))
-    .map(sourceLabel)
-}
-
-function mapTaglineFor(currentUnit: (typeof units.value)[number]): string | null {
-  const section = currentUnit.sections.find((candidate) => candidate.key === 'reseaux')
-  return section?.lecture?.marelle ?? null
+function isMobiliteSection(section: ContentSection): section is MobiliteContentSection & {
+  evidence: NonNullable<MobiliteContentSection['evidence']>
+} {
+  return section.evidence?.kind === 'mobilite-networks' ||
+    section.evidence?.kind === 'mobilite-stationnement-ravitaillement'
 }
 
 const pageEntry = computed(
@@ -440,7 +405,7 @@ onBeforeUnmount(() => {
 
               <div class="page-copy">
                 <CahierProse class="page-subtitle" :blocks="currentUnit.introduction" />
-                <CahierProse v-if="currentUnit.rundown" class="page-subtitle page-rundown" :blocks="currentUnit.rundown" />
+                <CahierProse v-if="currentUnit.rundown?.length" class="page-subtitle page-rundown" :blocks="currentUnit.rundown" />
               </div>
 
               <div class="figure-stack">
@@ -451,7 +416,7 @@ onBeforeUnmount(() => {
               :data-section="section.key"
               :class="`cahier-section--${section.availability}`"
             >
-              <div v-if="!isMapPrototypeSection(currentUnit.key, section.key)" class="concept-group-heading cahier-baseline-group">
+              <div class="concept-group-heading cahier-baseline-group">
                 <span v-if="props.layoutVariant !== 'indexed-sections'">{{ String(sectionIndex + 1).padStart(2, '0') }}</span>
                 <div
                   v-if="props.presentation === 'plain' && section.lecture"
@@ -525,22 +490,22 @@ onBeforeUnmount(() => {
                 />
               </section>
 
-              <div
-                v-else-if="isMapPrototypeSection(currentUnit.key, section.key)"
-                class="map-figure-spread"
+              <section
+                v-else-if="isMobiliteSection(section)"
+                class="mobilite-delegate"
                 :id="`section-${section.key}`"
                 :data-figure="`section-${section.key}`"
               >
-                <CartographicBreakoutPrototype
-                  :evidence="mapEvidenceFor(currentUnit)"
-                  :cycling-evidence="mapCyclingEvidenceFor(currentUnit)"
-                  :section-number="props.layoutVariant === 'indexed-sections' ? undefined : String(sectionIndex + 1).padStart(2, '0')"
-                  :sources="mapSourcesFor(currentUnit)"
-                  :tagline="mapTaglineFor(currentUnit)"
-                  :exploration-to="mapExplorationFor(currentUnit)"
-                  :territory="props.content.territory"
+                <CahierMobiliteSection
+                  :section="section"
+                  :unit="{ key: currentUnit.key, label: currentUnit.label }"
+                  :comparison="{
+                    status: props.nativeComparisonStatus ?? 'idle',
+                    error: props.nativeComparisonError,
+                    retry: props.retryNativeComparison,
+                  }"
                 />
-              </div>
+              </section>
 
                 <section
                   v-else
@@ -651,80 +616,7 @@ onBeforeUnmount(() => {
                   </div>
 
 
-                  <template v-if="section.evidence?.kind === 'sharing-networks' && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public')">
-                    <div
-                      v-if="props.networkFigureVariant === 'traces'"
-                      class="evidence-side sharing-networks-evidence"
-                    >
-                      <CahierRoadSurfaceFigure
-                        :evidence="section.evidence"
-                        :targets="section.explorationTargets"
-                      />
-                      <figure class="sharing-network-figure evidence-figure">
-                        <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.networkReadingsLabel }}</figcaption>
-                        <CahierSharingFigure
-                          :evidence="section.evidence"
-                          :targets="section.explorationTargets"
-                         :network-figure-variant="props.networkFigureVariant"
-                         :comparison-label="section.evidence.comparisonLabel"
-                         />
-                        <CahierFigureLecture>
-                          <CahierProse :blocks="section.evidence.figureLecture" />
-                        </CahierFigureLecture>
-                      </figure>
-                    </div>
-                    <figure
-                      v-else
-                      class="evidence-side evidence-figure sharing-networks-evidence"
-                    >
-                      <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.figureTitle }}</figcaption>
-                      <CahierSharingFigure
-                        :evidence="section.evidence"
-                        :targets="section.explorationTargets"
-                        :network-figure-variant="props.networkFigureVariant"
-                        :comparison-label="section.evidence.comparisonLabel"
-                      />
-                      <CahierFigureLecture>
-                        <CahierProse :blocks="section.evidence.figureLecture" />
-                      </CahierFigureLecture>
-                    </figure>
-                  </template>
-
-                   <figure
-                     v-else-if="section.evidence?.kind === 'cycling-offer'"
-                     class="evidence-side evidence-figure sharing-cycling-offer-evidence"
-                   >
-                     <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.figureTitle }}</figcaption>
-                     <CahierSharingFigure
-                       :evidence="section.evidence"
-                       :targets="section.explorationTargets"
-                       :comparison-label="section.evidence.comparisonLabel"
-                     />
-                     <CahierFigureLecture>
-                       <CahierProse :blocks="section.evidence.figureLecture" />
-                     </CahierFigureLecture>
-                   </figure>
-
-                    <figure
-                      v-else-if="section.evidence?.kind === 'sharing-parking'"
-                    class="evidence-side evidence-figure sharing-parking-evidence"
-                  >
-                    <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.figureTitle }}</figcaption>
-                    <CahierSharingFigure
-                      :evidence="section.evidence"
-                      :targets="section.explorationTargets"
-                      :comparison-label="section.evidence.comparisonLabel"
-                    />
-                    <CahierFigureLecture>
-                      <CahierProse :blocks="section.evidence.figureLecture" />
-                    </CahierFigureLecture>
-                   </figure>
-
-                   <figure v-else-if="section.evidence?.kind === 'motorisation'" class="evidence-side evidence-figure">
-                     <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
-                     <CahierMotorisationFigure :composition="section.evidence.composition" :charging="section.evidence.charging" />
-                   </figure>
-                   <figure v-else-if="section.evidence?.kind === 'public-transport'" class="evidence-side evidence-figure">
+                  <figure v-else-if="section.evidence?.kind === 'public-transport'" class="evidence-side evidence-figure">
                      <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
                      <CahierOffreTransportsFigure :offer="section.evidence.offer" :trajectory="section.evidence.trajectory" :comparison-trajectory="section.evidence.comparisonTrajectory" :metadata="section.evidence.trajectoryMetadata" :comparison-status="props.nativeComparisonStatus" :comparison-error="props.nativeComparisonError" :retry-comparison="props.retryNativeComparison" />
                    </figure>
@@ -735,11 +627,11 @@ onBeforeUnmount(() => {
                 </div>
               </section>
               <div
-                v-if="props.presentation === 'plain' && (sectionExploration(section) || aedarCarAccessOverviewEvidenceFor(section) || aedarAccessEvidenceFor(section)) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
+                v-if="props.presentation === 'plain' && (sectionExploration(section) || aedarCarAccessOverviewEvidenceFor(section) || aedarAccessEvidenceFor(section))"
                 class="cahier-section-footer"
               >
                 <div
-                  v-if="props.presentation === 'plain' && (sectionExploration(section) || aedarCarAccessOverviewEvidenceFor(section) || aedarAccessEvidenceFor(section)) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
+                  v-if="props.presentation === 'plain' && (sectionExploration(section) || aedarCarAccessOverviewEvidenceFor(section) || aedarAccessEvidenceFor(section))"
                   class="cahier-section-exploration cahier-section-exploration--unit-footer"
                   :aria-label="aedarEquipmentProfileEvidenceFor(section) ? 'Consulter les sources de cette section' : 'Explorer les indicateurs de cette section'"
                 >
@@ -989,11 +881,7 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 .concept-group { width: 100%; }
-.map-figure-spread {
-  width: 100%;
-  min-width: 0;
-}
-.map-figure-spread .map-breakout { margin-top: 0; }
+.mobilite-delegate { width: 100%; min-width: 0; }
 .concept-group-heading { display: flex; align-items: baseline; justify-content: center; gap: 14px; padding: var(--cahier-unit-heading-padding, 8px 0 14px); }
 .cahier--sans-grille .concept-group-heading { --cahier-unit-heading-padding: 0 0 var(--space-4); }
 .concept-group-heading-copy { display: grid; gap: 4px; min-width: 0; text-align: center; }
@@ -1015,8 +903,6 @@ onBeforeUnmount(() => {
 .figure-spread--flip .evidence-side { order: 1; }
 .argument-side, .evidence-side { min-width: 0; }
 .argument-side { --mode-scalar-width: 160px; }
-.sharing-networks-evidence { display: grid; gap: var(--space-6); }
-.sharing-network-figure { margin: 0; }
 .argument-side h4 { margin: 0; color: var(--cahier-theme-emphasis); font-family: 'Marelle', var(--font-section-title); font-size: clamp(calc(1rem + 2px), calc(1.35vw + 2px), calc(1.25rem + 2px)); font-weight: 500; line-height: var(--cahier-grid-jump); }
 .cahier-section-state, .evidence-placeholder { color: var(--cahier-default); font-size: 14px; line-height: 1.5; }
 .cahier-section-state { margin: 0; padding: 20px 0; }
