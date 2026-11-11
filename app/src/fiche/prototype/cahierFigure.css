@@ -3,15 +3,20 @@
  * owns only the shared frame grammar, type treatment, surfaces, and tooltip
  * interaction so a visual correction has one seam.
  */
+/* Surface tokens are shared by the frame and by a self-sufficient tooltip
+ * (the Waffle lives outside a framed figure). */
+.cahier-figure-frame, .cahier-figure-tooltip {
+  --cahier-figure-surface: var(--paper, var(--editorial-paper));
+  --cahier-figure-surface-border: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 19%, transparent);
+  --cahier-figure-surface-shadow: 0 12px 28px rgb(35 42 42 / 16%);
+}
+
 .cahier-figure-frame {
   --cahier-figure-width-compact: 560px;
   --cahier-figure-width-standard: 760px;
   --cahier-figure-width-wide: 100%;
   --cahier-figure-max-width: var(--cahier-figure-width-standard);
   --cahier-figure-tick-label-size: var(--type-figure-tick-size);
-  --cahier-figure-surface: var(--paper, var(--editorial-paper));
-  --cahier-figure-surface-border: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 19%, transparent);
-  --cahier-figure-surface-shadow: 0 12px 28px rgb(35 42 42 / 16%);
   width: min(100%, var(--cahier-figure-max-width));
   margin-inline: auto;
   min-width: 0;
@@ -325,6 +330,9 @@
   box-shadow: var(--cahier-figure-surface-shadow);
   color: var(--cahier-default, var(--editorial-muted));
   font: var(--text-caption);
+  /* The tooltip lives in narrow plot columns: never inherit the figure's wide
+   * letter-spacing, and let a long label wrap instead of running into the value. */
+  letter-spacing: normal;
 }
 
 .cahier-figure-tooltip--popover {
@@ -398,6 +406,12 @@
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+}
+
+.cahier-figure-tooltip-label {
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .cahier-figure-tooltip-icon {
@@ -412,12 +426,39 @@
 .cahier-figure-tooltip-row dd {
   color: var(--ink, var(--editorial-ink));
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.cahier-figure-tooltip-row small {
+/* Compared reading attached to its focal row: plain section, one type step
+ * smaller, neutral label, brand-200 value and rank (DESIGN.md, rank chip;
+ * CahierComparisonValue). It carries no glyph of its own. */
+.cahier-figure-tooltip-row-comparison {
   grid-column: 1 / -1;
-  color: var(--color-figure-reference);
-  font: var(--text-caption);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 8px;
+  margin-top: 3px;
+  font: var(--type-figure-comparison);
+  letter-spacing: normal;
+}
+
+.cahier-figure-tooltip-comparison-label {
+  color: var(--cahier-default, var(--editorial-muted));
+}
+
+.cahier-figure-tooltip-comparison-value {
+  color: var(--brand-200);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cahier-figure-tooltip-comparison-rank {
+  grid-column: 2;
+  color: var(--brand-200);
+  font: inherit;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
 }
 
 .cahier-figure-tooltip-marker {

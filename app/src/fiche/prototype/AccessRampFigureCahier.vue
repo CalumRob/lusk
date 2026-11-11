@@ -6,15 +6,16 @@
  * renders here.
  */
 import { computed, ref } from 'vue'
-import type { Component } from 'vue'
-import { Bike, BusFront, CarFront, Footprints } from 'lucide-vue-next'
 
 import type { TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territoryFacts'
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, CahierTooltipTone, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
+import { groupeCompareAria } from '@/fiche/content/comparisonWording'
+import { formatServedRank } from '@/fiche/figureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { AEDAR_TIME_MODE_ICONS } from './aedarTimeModeIcons'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
@@ -45,13 +46,7 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
 }
 /** AEDAR ramp modes: icon, tooltip tone and line color per mode (narrower modes take a lightened family tone). */
-const TIME_MODE_ICONS: Readonly<Record<string, Component>> = {
-  car: CarFront,
-  bike_lts4: Bike,
-  bike_lts2: Bike,
-  transit: BusFront,
-  walk: Footprints,
-}
+const TIME_MODE_ICONS = AEDAR_TIME_MODE_ICONS
 const TIME_MODE_TONES: Readonly<Record<string, CahierTooltipTone>> = {
   car: 'c',
   bike_lts4: 'b',
@@ -151,22 +146,29 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
   const timeRamp = props.timeRamp
   if (!cut || !timeRamp) return []
   const unit = timeRamp.yAxis.unit
+  const suffix = unit ? ` ${unit}` : ''
   return visibleTimeSeries.value.flatMap((series) => {
     const point = series.points.find((candidate) => candidate.xValue === cut.xValue)
     if (!point) return []
-    return [{
+    const value = point.value === null ? 'Indisponible' : `${formatNumber(point.value)}${suffix}`
+    const row: CahierTooltipRow = {
       label: series.label,
-      value: point.value === null ? 'Indisponible' : `${formatNumber(point.value)}${unit ? ` ${unit}` : ''}`,
+      value,
       tone: TIME_MODE_TONES[series.key] ?? 'neutral',
       icon: TIME_MODE_ICONS[series.key],
-      note: comparisonLayerSupported.value
-        ? [`Groupe comparé : ${point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${unit ? ` ${unit}` : ''}`}`,
-          point.referenceNote].filter(Boolean).join('. ')
-        : undefined,
-      ariaLabel: comparisonLayerSupported.value
-        ? `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}. Groupe comparé : ${timeRamp.comparisonLabel ?? 'Indisponible'} : ${point.referenceValue === null ? 'Indisponible' : formatNumber(point.referenceValue)} ${unit}${point.referenceNote ? `. ${point.referenceNote}` : ''}`
-        : `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)} ${unit}`,
-    }]
+      markerColor: timeSeriesColor(series.key),
+      ariaLabel: `${props.territoryName} : ${series.label} : ${point.value === null ? 'Indisponible' : formatNumber(point.value)}${suffix}`,
+    }
+    if (comparisonLayerSupported.value) {
+      const rank = formatServedRank(point.referenceRank)
+      const referenceValue = point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${suffix}`
+      row.comparison = {
+        value: referenceValue,
+        rank,
+        ariaLabel: groupeCompareAria(referenceValue, rank, timeRamp.comparisonLabel ?? 'Indisponible'),
+      }
+    }
+    return [row]
   })
 })
 const timeAccessibleLabel = computed(() => {
@@ -176,7 +178,10 @@ const timeAccessibleLabel = computed(() => {
     .map((series) => `${series.label} : ${series.points.map((point) => `${point.xLabel} ${point.value === null ? 'indisponible' : formatNumber(point.value)}`).join(', ')}`)
     .join(' ; ')
   const referenceText = comparisonLayerSupported.value
-    ? ` Référence ${props.timeRamp.comparisonLabel ?? 'Indisponible'} : ${visibleTimeSeries.value.map((series) => `${series.label} ${series.points.map((point) => `${point.xLabel} ${point.referenceValue === null ? 'indisponible' : formatNumber(point.referenceValue)}${point.referenceNote ? `, ${point.referenceNote}` : ''}`).join(', ')}`).join(' ; ')}`
+    ? ` Référence ${props.timeRamp.comparisonLabel ?? 'Indisponible'} : ${visibleTimeSeries.value.map((series) => `${series.label} ${series.points.map((point) => {
+      const rank = formatServedRank(point.referenceRank)
+      return `${point.xLabel} ${point.referenceValue === null ? 'indisponible' : formatNumber(point.referenceValue)}${rank ? `, rang ${rank}` : ''}`
+    }).join(', ')}`).join(' ; ')}`
     : ''
   return `${props.territoryName}. ${props.timeRamp.yAxis.label ?? ''}${unit ? ` (${unit})` : ''} selon ${props.timeRamp.xAxis.label ?? ''}, par mode de déplacement. ${seriesText}.${referenceText}`
 })

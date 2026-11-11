@@ -2,14 +2,16 @@
 import { computed } from 'vue'
 
 import type { AedarFact } from '@/fiche/content/aedarApiClient'
-import { aedarGroupValue } from '@/fiche/content/aedarComparisonClient'
+import { aedarComparisonCell, aedarComparisonRank, aedarGroupValue } from '@/fiche/content/aedarComparisonClient'
 import type { AedarComparisonEvidence } from '@/fiche/content/aedarComparisonClient'
+import type { ComparisonRank } from '@/fiche/content/territoryFacts'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import { AEDAR_RAMP_MODE_LABELS, readAedarCountMeasure } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { AedarEquipmentExplorerEvidence } from '@/fiche/content/themeContent'
 import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { AEDAR_TIME_MODE_ICONS } from './aedarTimeModeIcons'
 import CahierGroupedVerticalBarChart from './CahierGroupedVerticalBarChart.vue'
 
 const props = defineProps<{
@@ -32,6 +34,14 @@ function formatEstablishmentCount(value: number): string {
   return `${formatNumber(value)} établissement${value > 1 ? 's' : ''}`
 }
 
+const measurementKey = (mode: AedarRampMode, statisticKey: string): string =>
+  `count_${props.horizonMinutes}_${mode}_${statisticKey}`
+
+function servedRankFor(mode: AedarRampMode, statisticKey: string): ComparisonRank | null {
+  if (!props.comparison) return null
+  return aedarComparisonRank(aedarComparisonCell(props.comparison, props.fact?.typequ, measurementKey(mode, statisticKey)))
+}
+
 const figure = computed<CahierGroupedVerticalBarFigureData>(() => ({
   categories: props.evidence.distributionStatistics.map((statistic) => ({
     key: statistic.key,
@@ -42,18 +52,21 @@ const figure = computed<CahierGroupedVerticalBarFigureData>(() => ({
     key: mode,
     label: AEDAR_RAMP_MODE_LABELS[mode],
     color: AEDAR_TIME_MODE_COLORS[mode] ?? 'var(--cahier-theme-strong)',
+    icon: AEDAR_TIME_MODE_ICONS[mode],
     values: props.evidence.distributionStatistics.map((statistic) =>
       readAedarCountMeasure(props.fact, props.horizonMinutes, mode, statistic.key)),
   }, ...(props.comparisonLayerSupported === true || Boolean(props.comparisonLabel) || Boolean(props.comparison) ? [{
     key: `${mode}-reference`, label: `Groupe comparé : ${AEDAR_RAMP_MODE_LABELS[mode]}`,
     color: `color-mix(in srgb, ${AEDAR_TIME_MODE_COLORS[mode]} 45%, transparent)`,
     values: props.evidence.distributionStatistics.map((statistic) => {
-      if (props.comparison) return aedarGroupValue(props.comparison, props.fact, `count_${props.horizonMinutes}_${mode}_${statistic.key}`)
+      if (props.comparison) return aedarGroupValue(props.comparison, props.fact, measurementKey(mode, statistic.key))
       const reference = props.referenceFact
       return reference && props.fact && reference.coverage_status === 'covered'
         && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const).every((key) => reference[key] === props.fact![key])
         ? readAedarCountMeasure(reference, props.horizonMinutes, mode, statistic.key) : null
     }),
+    comparisonFor: mode,
+    ranks: props.evidence.distributionStatistics.map((statistic) => servedRankFor(mode, statistic.key)),
   }] : [])]),
   xAxisTitle: props.evidence.distributionAxisTitle,
   yAxisTitle: props.evidence.distributionYAxisTitle,

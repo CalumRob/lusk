@@ -6,9 +6,10 @@ import type { AedarEquipmentProfileEvidence } from '@/fiche/content/themeContent
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS, AEDAR_EQUIPMENT_MODES, aedarEquipmentShareMeasureKey, classifyAedarEquipmentTypes } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentBucketKey, AedarEquipmentModeKey } from '@/fiche/content/aedarEquipmentBuckets'
-import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import type { FigureLegendEntry, CahierFigureTooltipAnchor } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS, AEDAR_TIME_MODE_LABEL_INKS } from './aedarTimeModeColors'
 import CahierFigureLegend from './CahierFigureLegend.vue'
+import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierDialog from './CahierDialog.vue'
 import AedarTravelTimeSelector from './AedarTravelTimeSelector.vue'
 import CahierActionButton from './CahierActionButton.vue'
@@ -34,6 +35,13 @@ const focusedTypequ = ref<string | null>(null)
 const followFocusedMode = ref(false)
 const dialogOpen = ref(false)
 const search = ref('')
+const gridElement = ref<HTMLElement | null>(null)
+const hoveredType = ref<TileTooltip | null>(null)
+const focusedType = ref<TileTooltip | null>(null)
+const hoveredAnchor = ref<CahierFigureTooltipAnchor | undefined>(undefined)
+const focusedAnchor = ref<CahierFigureTooltipAnchor | undefined>(undefined)
+const tooltipType = computed(() => hoveredType.value ?? focusedType.value)
+const tooltipAnchor = computed(() => hoveredType.value ? hoveredAnchor.value : focusedAnchor.value)
 const tableScroll = ref<HTMLElement | null>(null)
 const canScrollTable = ref(false)
 let tableResizeObserver: ResizeObserver | null = null
@@ -136,6 +144,43 @@ function openEquipment(typequ: string, key: AedarEquipmentBucketKey) {
   dialogOpen.value = true
 }
 
+type TileTooltip = { label: string; typequ: string; bucketLabel: string }
+
+function tileAnchor(event: Event): CahierFigureTooltipAnchor | undefined {
+  const target = event.currentTarget
+  const grid = gridElement.value
+  if (!(target instanceof HTMLElement) || !grid) return undefined
+  const tile = target.getBoundingClientRect()
+  const bounds = grid.getBoundingClientRect()
+  if (!bounds.width || !bounds.height) return { x: '50%', y: '2%' }
+  const x = ((tile.left + tile.width / 2 - bounds.left) / bounds.width) * 100
+  const y = ((tile.top - bounds.top) / bounds.height) * 100
+  return {
+    x: `${Math.min(88, Math.max(12, x))}%`,
+    y: `${Math.min(92, Math.max(2, y))}%`,
+  }
+}
+
+function showHoveredTileTooltip(type: TileTooltip, event: Event): void {
+  hoveredType.value = { label: type.label, typequ: type.typequ, bucketLabel: type.bucketLabel }
+  hoveredAnchor.value = tileAnchor(event)
+}
+
+function hideHoveredTileTooltip(): void {
+  hoveredType.value = null
+  hoveredAnchor.value = undefined
+}
+
+function showFocusedTileTooltip(type: TileTooltip, event: Event): void {
+  focusedType.value = { label: type.label, typequ: type.typequ, bucketLabel: type.bucketLabel }
+  focusedAnchor.value = tileAnchor(event)
+}
+
+function hideFocusedTileTooltip(): void {
+  focusedType.value = null
+  focusedAnchor.value = undefined
+}
+
 function openExplorer() {
   selectedMode.value = 'all'
   focusedTypequ.value = null
@@ -176,7 +221,7 @@ watch(horizonMinutes, (horizon) => {
 
     <p v-if="profile?.status !== 'complete'" class="aedar-waffle-state" role="status">{{ summary }}</p>
     <template v-else>
-      <div class="aedar-waffle-grid aedar-waffle-grid--five-rows" role="group" :aria-label="summary">
+      <div ref="gridElement" class="aedar-waffle-grid aedar-waffle-grid--five-rows" role="group" :aria-label="summary">
         <button
           v-for="(type, index) in profile.buckets.flatMap((item) => item.types.map((entry) => ({ ...entry, bucket: item.key, bucketLabel: item.label })))"
           :key="type.typequ"
@@ -185,9 +230,20 @@ watch(horizonMinutes, (horizon) => {
           :data-typequ="type.typequ"
           :style="{ order: index, '--aedar-bucket-color': bucketColors[type.bucket] }"
           :aria-label="`${type.label}, ${type.typequ}, ${type.bucketLabel}. Afficher le détail.`"
-          :title="`${type.label} (${type.typequ}) — ${type.bucketLabel}`"
           type="button"
+          @mouseenter="showHoveredTileTooltip(type, $event)"
+          @mouseleave="hideHoveredTileTooltip"
+          @focus="showFocusedTileTooltip(type, $event)"
+          @blur="hideFocusedTileTooltip"
           @click="openEquipment(type.typequ, type.bucket)"
+        />
+        <CahierFigureTooltip
+          v-if="tooltipType"
+          class="aedar-waffle-tile-tooltip cahier-figure-tooltip--chart"
+          :title="`${tooltipType.label} (${tooltipType.typequ})`"
+          :unit="tooltipType.bucketLabel"
+          :rows="[]"
+          :anchor="tooltipAnchor"
         />
       </div>
       <CahierFigureLegend
@@ -285,10 +341,11 @@ watch(horizonMinutes, (horizon) => {
 .aedar-waffle > .cahier-figure-title { width: 100%; margin: 0; text-align: center; }
 .aedar-waffle-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3) var(--space-5); width: 100%; }
 .aedar-waffle-dialog button:focus-visible, .aedar-waffle-dialog input:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
-.aedar-waffle-grid { display: grid; grid-template-rows: repeat(5, minmax(0, 1fr)); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; width: min(100%, 1000px); margin-inline: auto; }
+.aedar-waffle-grid { position: relative; display: grid; grid-template-rows: repeat(5, minmax(0, 1fr)); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; width: min(100%, 1000px); margin-inline: auto; }
 .aedar-waffle-tile { display: block; aspect-ratio: 1; min-width: 0; padding: 0; border: 0; border-radius: 2px; background: var(--aedar-bucket-color); cursor: pointer; }
 .aedar-waffle-tile:hover { filter: brightness(0.88); }
 .aedar-waffle-tile:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--text-primary); outline-offset: 1px; }
+.aedar-waffle-tile-tooltip { width: min(220px, calc(100% - 24px)); pointer-events: none; text-align: left; }
 .aedar-waffle :deep(.aedar-waffle-legend--centered) { justify-content: center; width: 100%; margin: 0; }
 .aedar-waffle :deep(.cahier-figure-legend-action) { min-height: 36px; }
 .aedar-waffle-state { max-width: 72ch; margin: 0; color: var(--text-secondary); font: var(--type-figure-label); line-height: 1.5; }

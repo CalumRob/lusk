@@ -1,5 +1,6 @@
 import type { AedarFact, AedarTerritoryType } from './aedarApiClient'
 import type { MembreSelection, PresetComparaison, SelectionComparaison } from '../comparisonContext'
+import type { ComparisonRank } from './territoryFacts'
 import { producerCatalogue } from '@/payload/themeAcquisition'
 import { AEDAR_AGGREGATE_READING_KEYS } from './aedarTimeRampFacts'
 
@@ -245,4 +246,11 @@ export function aedarGroupValue(evidence: AedarComparisonEvidence | null | undef
 export function aedarAggregateComparisonCell(evidence: AedarComparisonEvidence | null | undefined,
   measure: string): AedarComparisonCell | undefined {
   return aedarComparisonCell(evidence, undefined, measure)
+}
+
+/** The producer-served ordinal of a comparison cell, or null when it is not rankable. */
+export function aedarComparisonRank(cell: AedarComparisonCell | null | undefined): ComparisonRank | null {
+  return cell?.rank && cell.rank_size && cell.rank_size >= 2
+    ? { position: cell.rank, size: cell.rank_size }
+    : null
 }

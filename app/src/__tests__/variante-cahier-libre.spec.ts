@@ -572,6 +572,15 @@ describe('Variante E — partage de l’espace public', () => {
     if (!cycling?.evidence || cycling.evidence.kind !== 'cycling-offer') {
       throw new Error('Expected complete cycling-offer evidence')
     }
+    // Served ranks come from the comparison evidence, never from the local values.
+    const bikeNetwork = sharing.evidence.networks.find((network) => network.mode === 'bike')
+    if (!bikeNetwork?.length.fact.comparison) throw new Error('Expected a served network comparison')
+    bikeNetwork.length.fact.comparison.rank = { position: 2, size: 3 }
+    if (!cycling.evidence.protectedDensity.fact.comparison) throw new Error('Expected a served protected-density comparison')
+    cycling.evidence.protectedDensity.fact.comparison.rank = { position: 1, size: 4 }
+    cycling.evidence.protectedDensity.fact.comparison.reference = { kind: 'median', value: 1.2 }
+    if (!cycling.evidence.sharedDensity.fact.comparison) throw new Error('Expected a served shared-density comparison')
+    cycling.evidence.sharedDensity.fact.comparison.reference = { kind: 'median', value: 0.8 }
 
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push({ path: '/' })
@@ -619,10 +628,46 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.findAll('.cahier-network-bar-chart__reference-key')).toHaveLength(1)
     expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(0)
     await wrapper.find('.cahier-network-bar-row--bike').trigger('mouseenter')
-    expect(wrapper.find('.plate-network-tooltip').exists()).toBe(true)
-    expect(wrapper.find('.plate-network-tooltip').text()).toContain('Groupe comparé')
-    expect(wrapper.find('.plate-network-tooltip').text()).not.toContain('Médiane des communes de EPCI X')
-    expect(wrapper.find('.plate-network-tooltip').html()).toContain('Médiane des communes de EPCI X')
+    const networkTooltip = wrapper.get('.plate-network-tooltip')
+    expect(networkTooltip.text()).toContain('Groupe comparé')
+    expect(networkTooltip.text()).not.toContain('Médiane des communes de EPCI X')
+    expect(networkTooltip.html()).toContain('Médiane des communes de EPCI X')
+    const focalRows = networkTooltip.findAll('.cahier-figure-tooltip-row')
+    const comparisons = networkTooltip.findAll('.cahier-figure-tooltip-row-comparison')
+    expect(focalRows).toHaveLength(3)
+    expect(comparisons).toHaveLength(3)
+    expect(comparisons.map((row) => row.get('.cahier-figure-tooltip-comparison-label').text()))
+      .toEqual(['Groupe comparé', 'Groupe comparé', 'Groupe comparé'])
+    expect(networkTooltip.text()).not.toContain('Groupe comparé : Protégé')
+    expect(networkTooltip.text()).not.toContain('Groupe comparé : Partagé')
+    expect(networkTooltip.findAll('.cahier-figure-tooltip-comparison-rank').map((rank) => rank.text()))
+      .toEqual(['2e/3', '1er/4'])
+    // Mode icons on the network and plain colour dots on colour-only series; no glyph on a comparison.
+    expect(focalRows[0]!.find('svg.cahier-figure-tooltip-icon').exists()).toBe(true)
+    expect(focalRows[1]!.find('.cahier-figure-tooltip-marker').exists()).toBe(true)
+    expect(focalRows[2]!.find('.cahier-figure-tooltip-marker').exists()).toBe(true)
+    expect(networkTooltip.findAll('.cahier-figure-tooltip-row-comparison svg')).toHaveLength(0)
+    expect(networkTooltip.findAll('.cahier-figure-tooltip-row-comparison .cahier-figure-tooltip-marker')).toHaveLength(0)
+    // A comparison without a served reference value is omitted, never drawn as a stray dash.
+    const sharedComparison = cycling.evidence.sharedDensity.fact.comparison
+    if (!sharedComparison) throw new Error('Expected a served shared-density comparison')
+    await wrapper.setProps({
+      cyclingEvidence: {
+        ...cycling.evidence,
+        sharedDensity: {
+          ...cycling.evidence.sharedDensity,
+          fact: {
+            ...cycling.evidence.sharedDensity.fact,
+            comparison: { ...sharedComparison, reference: null },
+          },
+        },
+      },
+    })
+    const withoutReference = wrapper.get('.plate-network-tooltip')
+    expect(withoutReference.findAll('.cahier-figure-tooltip-row')).toHaveLength(3)
+    expect(withoutReference.findAll('.cahier-figure-tooltip-row-comparison')).toHaveLength(2)
+    expect(withoutReference.findAll('.cahier-figure-tooltip-row')[2]!.find('.cahier-figure-tooltip-row-comparison').exists()).toBe(false)
+    expect(networkTooltip.text()).not.toMatch(/plus est mieux|moins est mieux/u)
     expect(wrapper.find('.cahier-network-bar-row--car').classes()).toContain('cahier-network-bar-row--dimmed')
     await wrapper.find('.map-panel--bike').trigger('mouseenter')
     expect(wrapper.find('.map-panel--car').classes()).toContain('map-panel--dimmed')
