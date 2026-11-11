@@ -242,11 +242,15 @@ The published default keeps its published-comparison version checks; a declared
 non-default point keeps the declared-profile and territory-reference checks and
 fails closed on missing or stale profile cells (no zero-filled or fabricated
 value). An explicitly empty `coordinates` object means no coordinate selection,
-just like omission. Unknown axes/values, partial axes, multi-value profile
-comparison coordinates, and any coordinate on a scalar-backed profile are
-rejected with `422`. A scalar-backed profile such as the DPE distribution keeps
-its linked scalar comparison facet: DPE bins remain profile facts and are never
-reinterpreted as the linked scalar.
+just like omission. Unknown axes/values, partial axes and multi-value profile
+comparison coordinates are rejected with `422`. A scalar-backed profile such as
+the DPE distribution keeps its linked scalar comparison facet: `fixed_comparison`
+rejects profile coordinates with `422` because that facet is the linked scalar,
+while `selected_comparison` retains its existing coordinate semantics — the
+declared profile coordinates are accepted but never reinterpret the DPE bins as
+the linked scalar. The fixed-profile result stays compact: `member_ranks` remains
+a selected-comparison projection and is rejected with `422` for fixed profile
+comparisons, the published default and alternate declared points alike.
 
 `selected_comparison.intent.members` is an ordered, unique list of up to 1,500 typed
 `{type,id}` territory identities. The response `selection` echoes those requested
