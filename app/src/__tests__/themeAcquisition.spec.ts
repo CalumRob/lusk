@@ -387,9 +387,10 @@ describe('theme acquisition cache', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
-  it('never salvages a successful prefix from a malformed atomic Mobilite batch', async () => {
+  it('rejects a malformed atomic Mobilite batch instead of salvaging its prefix or retrying groups', async () => {
     vi.resetModules()
     const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const { PayloadError } = await import('../payload/validate')
     const resources = ['isolation_a', 'isolation_b'].map((resource_id) => ({
       resource_id, theme_id: 'mobilite', indicator_id: resource_id, label: resource_id, unit: '',
       direction: 'none', allowed_levels: ['commune'], sources: [], shapes: ['scalar'],
@@ -425,12 +426,13 @@ describe('theme acquisition cache', () => {
     })
     vi.stubGlobal('fetch', fetcher)
     try {
-      const acquired = await acquireThemeFacts('commune', '22001', 'mobilite')
+      let failure: unknown
+      try {
+        await acquireThemeFacts('commune', '22001', 'mobilite')
+      } catch (error) { failure = error }
       expect(atomicRequests).toBe(1)
-      expect(acquired.resource_failures ?? []).toEqual([])
-      expect(acquired.resource_reads?.map((read) => [read.resource, read.data.value]))
-        .toEqual([['isolation_a', 1], ['isolation_b', 2]])
-      expect(acquired.resource_reads?.every((read) => read.data.content_version === 'fresh-v2')).toBe(true)
+      expect(failure).toBeInstanceOf(PayloadError)
+      expect((failure as InstanceType<typeof PayloadError>).kind).toBe('validation')
     } finally { vi.unstubAllGlobals() }
   })
 
@@ -502,6 +504,134 @@ describe('theme acquisition cache', () => {
       }))
       expect(acquired.comparison_reads?.some((read) => read.resource === 'stations_service')).toBe(false)
       expect(acquired.comparison_reads?.length).toBeGreaterThan(1)
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('propagates a named member error from a fresh isolated comparison group after an initial 503', async () => {
+    vi.resetModules()
+    const { acquireThemeComparison } = await import('../payload/themeAcquisition')
+    const { SemanticMemberError } = await import('../payload/semanticResourceClient')
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) =>
+      resource.theme_id === 'mobilite')
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.length > 1) return new Response('atomic batch unavailable', { status: 503 })
+      if (items.some((item) => item.resource === 'stations_service')) {
+        return new Response(JSON.stringify({
+          detail: 'selected comparison member commune/35240',
+        }), { status: 422 })
+      }
+      return nativeBatchResponse(items, (item, resource) => nativeReadFixture(item, resource))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '35238' },
+      { territory_type: 'commune' as const, territory_id: '35240' },
+    ]
+    try {
+      let failure: unknown
+      try {
+        await acquireThemeComparison('commune', '35238', 'mobilite', selection)
+      } catch (error) { failure = error }
+      expect(failure).toBeInstanceOf(SemanticMemberError)
+      expect((failure as InstanceType<typeof SemanticMemberError>).member).toEqual({ type: 'commune', id: '35240' })
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('propagates a validation payload error from a fresh isolated group after an initial 503', async () => {
+    vi.resetModules()
+    const { acquireThemeComparison } = await import('../payload/themeAcquisition')
+    const { PayloadError } = await import('../payload/validate')
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) =>
+      resource.theme_id === 'mobilite')
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.length > 1) return new Response('atomic batch unavailable', { status: 503 })
+      if (items.some((item) => item.resource === 'stations_service')) {
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => ({
+          id: item.id, resource: item.resource, data: { resource: 'wrong-resource', target: item.target },
+        })) }), { status: 200 })
+      }
+      return nativeBatchResponse(items, (item, resource) => nativeReadFixture(item, resource))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '35238' },
+      { territory_type: 'commune' as const, territory_id: '35240' },
+    ]
+    try {
+      let failure: unknown
+      try {
+        await acquireThemeComparison('commune', '35238', 'mobilite', selection)
+      } catch (error) { failure = error }
+      expect(failure).toBeInstanceOf(PayloadError)
+      expect((failure as InstanceType<typeof PayloadError>).kind).toBe('validation')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('propagates a facts-only validation error after a paired 503 instead of reporting unavailable data', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const { PayloadError } = await import('../payload/validate')
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) =>
+      resource.theme_id === 'mobilite')
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.length > 1) return new Response('atomic batch unavailable', { status: 503 })
+      if (items[0]!.resource === 'reseaux' && items[0]!.intent.kind === 'facts') {
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [{
+          id: items[0]!.id, resource: items[0]!.resource, data: { resource: 'wrong-resource', target: items[0]!.target },
+        }] }), { status: 200 })
+      }
+      return nativeBatchResponse(items, (item, resource) => nativeReadFixture(item, resource))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      let failure: unknown
+      try {
+        await acquireThemeFacts('commune', '35238', 'mobilite')
+      } catch (error) { failure = error }
+      expect(failure).toBeInstanceOf(PayloadError)
+      expect((failure as InstanceType<typeof PayloadError>).kind).toBe('validation')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('propagates a facts-only member error after a paired 503 instead of reporting unavailable data', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const { SemanticMemberError } = await import('../payload/semanticResourceClient')
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { theme_id: string }) =>
+      resource.theme_id === 'mobilite')
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      if (items.length > 1) return new Response('atomic batch unavailable', { status: 503 })
+      if (items[0]!.resource === 'reseaux' && items[0]!.intent.kind === 'facts') {
+        return new Response(JSON.stringify({
+          detail: 'selected comparison member commune/35240',
+        }), { status: 422 })
+      }
+      return nativeBatchResponse(items, (item, resource) => nativeReadFixture(item, resource))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      let failure: unknown
+      try {
+        await acquireThemeFacts('commune', '35238', 'mobilite')
+      } catch (error) { failure = error }
+      expect(failure).toBeInstanceOf(SemanticMemberError)
+      expect((failure as InstanceType<typeof SemanticMemberError>).member).toEqual({ type: 'commune', id: '35240' })
     } finally { vi.unstubAllGlobals() }
   })
 

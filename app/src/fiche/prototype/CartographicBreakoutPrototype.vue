@@ -88,7 +88,8 @@ function comparisonForFact(
   const comparison = fact.fact.comparison
   const reference = comparison?.reference
   if (!reference || reference.value === null || reference.value === undefined) return undefined
-  const value = `${formatNumber(reference.value, 2)}${unit ? ` ${unit}` : ''}`
+  const visibleValue = formatNumber(reference.value, 2)
+  const ariaValue = `${visibleValue}${unit ? ` ${unit}` : ''}`
   const rank = formatServedRank(comparison.rank)
   const statistic = comparison.reference?.kind === 'mean' ? 'moyenne' : 'médiane'
   const scopeOnly = scope?.replace(/^(?:Médiane|Moyenne) des /u, '') ?? null
@@ -99,9 +100,10 @@ function comparisonForFact(
   const rankAria = puceRangDirection(comparison.rank, comparison.direction)?.phraseAria
     ?? formatServedRankAria(comparison.rank)
   return {
-    value,
+    // Visible values are bare; ARIA keeps the full unit, resolved scope and rank.
+    value: visibleValue,
     rank,
-    ariaLabel: `${GROUPE_COMPARE_LABEL} : ${value} (${description})${rankAria ? `. Rang ${rankAria}` : direction ? `. ${direction}` : ''}`,
+    ariaLabel: `${GROUPE_COMPARE_LABEL} : ${ariaValue} (${description})${rankAria ? `. Rang ${rankAria}` : direction ? `. ${direction}` : ''}`,
   }
 }
 
@@ -113,6 +115,7 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
   const rows: CahierTooltipRow[] = [{
     label: totalLabel,
     value: category.value.fact.value === null ? '—' : formatNumber(category.value.fact.value, 2),
+    ariaLabel: `${totalLabel} : ${category.value.fact.value === null ? 'Indisponible' : `${formatNumber(category.value.fact.value, 2)} ${unit}`}`,
     tone: modeTone(mode),
     icon: modeIcon(mode),
     markerColor: modeColor(mode),
@@ -131,6 +134,7 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
     rows.push({
       label: segment.label,
       value: segment.value.fact.value === null ? '—' : formatNumber(segment.value.fact.value, 2),
+      ariaLabel: `${segment.label} : ${segment.value.fact.value === null ? 'Indisponible' : `${formatNumber(segment.value.fact.value, 2)} ${unit}`}`,
       tone: 'b',
       marker: 'dot',
       markerColor: segment.key === 'protege_km_1000'
@@ -143,7 +147,7 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
         label: segment.rawValue.label,
         value: segment.rawValue.fact.value === null
           ? '—'
-          : `${formatNumber(segment.rawValue.fact.value, 2)} ${segment.rawValue.fact.unit}`,
+          : formatNumber(segment.rawValue.fact.value, 2),
         tone: 'neutral',
         marker: 'slash',
         ariaLabel: `${segment.rawValue.label} : ${segment.rawValue.fact.value === null ? 'indisponible' : `${formatNumber(segment.rawValue.fact.value, 2)} ${segment.rawValue.fact.unit}`} (valeur brute)`,
@@ -160,7 +164,7 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
       label: category.rawValue.label,
       value: category.rawValue.fact.value === null
         ? '—'
-        : `${formatNumber(category.rawValue.fact.value, 2)} ${category.rawValue.fact.unit}`,
+        : formatNumber(category.rawValue.fact.value, 2),
       tone: 'neutral',
       marker: 'slash',
       ariaLabel: `${category.rawValue.label} : ${category.rawValue.fact.value === null ? 'indisponible' : `${formatNumber(category.rawValue.fact.value, 2)} ${category.rawValue.fact.unit}`} (valeur brute)`,

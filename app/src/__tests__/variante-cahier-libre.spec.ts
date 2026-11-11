@@ -579,8 +579,15 @@ describe('Variante E — partage de l’espace public', () => {
       'Longueur brute — à vélo',
     ])
     expect(tooltip.findAll('.cahier-figure-tooltip-row-comparison')).toHaveLength(1)
-    expect(rows[5]!.text()).toContain('km')
+    expect(rows[0]!.attributes('aria-label')).toContain('km / 1 000 hab.')
+    expect(rows[0]!.findAll('dd')[0]!.text()).not.toContain('km')
+    expect(rows[5]!.text()).not.toContain('km')
+    expect(rows[5]!.attributes('aria-label')).toContain('km')
     expect(rows[5]!.attributes('aria-label')).toContain('valeur brute')
+    const comparisonRow = rows.find((row) => row.find('.cahier-figure-tooltip-row-comparison').exists())!
+    expect(comparisonRow.get('.cahier-figure-tooltip-comparison-value').text()).not.toContain('km')
+    expect(comparisonRow.attributes('aria-label')).toContain('km / 1 000 hab.')
+    expect(comparisonRow.attributes('aria-label')).toMatch(/Rang \d/)
     await wrapper.find('.map-panel img').trigger('error')
     await flushPromises()
     expect(wrapper.find('.map-panel--car img').exists()).toBe(false)

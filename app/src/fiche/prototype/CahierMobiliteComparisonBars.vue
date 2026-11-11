@@ -281,9 +281,9 @@ function comparisonTooltip(
   const comparison = fact.fact.comparison
   const reference = comparison?.reference
   if (!reference) return undefined
-  const value = `${formatValue(reference.value)}${unit ? ` ${unit}` : ''}`
   return {
-    value,
+    // Tooltip values are bare; the accessible label keeps the full unit, scope and rank.
+    value: formatValue(reference.value),
     rank: formatServedRank(comparison.rank),
     ariaLabel: comparisonAria(fact, props.figure.comparisonLabel, unit, unsplitTotal),
   }
@@ -328,7 +328,7 @@ function tooltipRows(category: MobiliteBarCategoryEvidence): readonly CahierTool
       const raw = finiteValue(segment.rawValue.fact.value)
       rows.push({
         label: segment.rawValue.label,
-        value: raw === null ? UNAVAILABLE_LABEL : `${formatValue(raw)} ${segment.rawValue.fact.unit}`,
+        value: raw === null ? UNAVAILABLE_LABEL : formatValue(raw),
         tone: 'neutral',
         marker: 'slash',
         ariaLabel: `${segment.rawValue.label} : ${raw === null ? UNAVAILABLE_LABEL : `${formatValue(raw)} ${segment.rawValue.fact.unit}`} (valeur brute)`,
@@ -340,7 +340,7 @@ function tooltipRows(category: MobiliteBarCategoryEvidence): readonly CahierTool
     const raw = finiteValue(category.rawValue.fact.value)
     rows.push({
       label: category.rawValue.label,
-      value: raw === null ? UNAVAILABLE_LABEL : `${formatValue(raw)} ${category.rawValue.fact.unit}`,
+      value: raw === null ? UNAVAILABLE_LABEL : formatValue(raw),
       tone: 'neutral',
       marker: 'slash',
       ariaLabel: `${category.rawValue.label} : ${raw === null ? UNAVAILABLE_LABEL : `${formatValue(raw)} ${category.rawValue.fact.unit}`} (valeur brute)`,
@@ -572,7 +572,6 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
             v-if="selectedCategoryIndex !== null"
             class="mobilite-comparison-bars__tooltip cahier-figure-tooltip--chart"
             :title="selectedCategoryTitle"
-            :unit="figure.unit"
             :rows="tooltipRows(figure.categories[selectedCategoryIndex]!)"
             :anchor="tooltipAnchor"
             aria-live="polite"

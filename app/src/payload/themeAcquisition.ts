@@ -1,8 +1,9 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
 import type { TerritoireType, Theme } from './types'
 import { validerReponseComparaisonTheme } from './themeFactsAdapter'
-import { chargerCatalogueRessources, lireRessourcesBatch, SemanticMemberError } from './semanticResourceClient'
+import { chargerCatalogueRessources, lireRessourcesBatch } from './semanticResourceClient'
 import type { SemanticReadItem, SemanticResourceDeclaration, SemanticTerritoryTarget } from './semanticResourceClient'
+import { PayloadError } from './validate'
 /** Every canonical theme is acquired (active priority, then background warm-up) unless an owner-owned flow handles it. */
 export const THEMES_ACQUISITION_API: readonly Theme[] = ['programmes', 'demographie', 'habitat', 'economie', 'milieux', 'mobilite']
 export type ThemeSelectionMember = { territory_type: 'commune' | 'epci' | 'departement' | 'region'; territory_id: string }
@@ -384,6 +385,16 @@ async function readAll(items: SemanticReadItem[]): Promise<AlignedRead[]> {
   return output
 }
 
+/**
+ * Availability isolation is deliberately narrower than "any failed read": only
+ * a real HTTP 503 service/publication gap may be downgraded to a per-resource
+ * failure. Member identity, validation/shape/target and transport errors keep
+ * propagating to their existing retry/error surfaces.
+ */
+function isPublicationUnavailable(error: unknown): boolean {
+  return error instanceof PayloadError && error.kind === 'fetch' && error.status === 503
+}
+
 function resourceFailure(
   resources: SemanticResourceDeclaration[],
   resource: string,
@@ -433,6 +444,7 @@ async function readIsolatedGroup(
   try {
     return { data: await lireRessourcesBatch(group), failures: [] }
   } catch (error) {
+    if (!isPublicationUnavailable(error)) throw error
     if (!facts.length) {
       return {
         data: group.map(() => null),
@@ -450,6 +462,9 @@ async function readIsolatedGroup(
           .map((item) => resourceFailure(resources, item.resource, 'comparison', error)),
       }
     } catch (factsError) {
+      // The paired read said "publication unavailable", but the fresh
+      // facts-only read must still be a real 503 to become a data failure.
+      if (!isPublicationUnavailable(factsError)) throw factsError
       return {
         data: group.map(() => null),
         failures: [resourceFailure(resources, group[0]!.resource, 'facts', factsError)],
@@ -480,9 +495,10 @@ async function readAllWithIsolation(
     try {
       assign(batch, await lireRessourcesBatch(batch))
     } catch (batchError) {
-      // A named selection member is a user-facing identity error, not an
-      // unpublished resource: isolate it per resource would hide the name.
-      if (batchError instanceof SemanticMemberError) throw batchError
+      // Only a real HTTP 503 publication/service gap is isolated. Member
+      // identity, validation/shape/target and transport errors keep their
+      // typed propagation instead of being misreported as "unpublished".
+      if (!isPublicationUnavailable(batchError)) throw batchError
       // Never reuse a successful prefix from the rejected atomic batch.
       const groups = groupReadItems(batch)
       const outcomes = await Promise.all(groups.map((group) => readIsolatedGroup(group, resources)))

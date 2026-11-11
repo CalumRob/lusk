@@ -150,20 +150,27 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
     expect(wrapper.get('.cahier-comparison-value__reference').attributes('aria-label')).toContain('2e/3')
   })
 
-  it('keeps raw values in the tooltip and out of the plotted axis labels', async () => {
+  it('keeps tooltip values bare while the accessible reading keeps units, scope and rank', async () => {
     const wrapper = mount(CahierMobiliteComparisonBars, {
       props: { figure, comparison: { status: 'ready' } },
     })
     expect(wrapper.text()).not.toContain('20 km')
     await wrapper.findAll('.mobilite-comparison-bars__hitbox')[1]!.trigger('focus')
     const tooltip = wrapper.get('.mobilite-comparison-bars__tooltip')
-    const totalRow = tooltip.findAll('.cahier-figure-tooltip-row')[0]!
+    const rows = tooltip.findAll('.cahier-figure-tooltip-row')
+    const totalRow = rows[0]!
     expect(totalRow.get('.cahier-figure-tooltip-label').text()).toBe('Total vélo')
+    expect(totalRow.findAll('dd')[0]!.text()).toBe('8')
+    expect(totalRow.get('.cahier-figure-tooltip-comparison-value').text()).toBe('6')
+    expect(totalRow.attributes('aria-label')).toContain('8 km / 1 000 hab.')
     expect(totalRow.attributes('aria-label')).toContain('médiane du total non segmenté')
+    expect(totalRow.attributes('aria-label')).toContain('1er/3')
+    const rawRow = rows.find((row) => row.get('.cahier-figure-tooltip-label').text() === 'b_longueur')!
+    expect(rawRow.findAll('dd')[0]!.text()).toBe('20')
+    expect(rawRow.attributes('aria-label')).toContain('20 km (valeur brute)')
+    expect(tooltip.text()).not.toContain('km')
     expect(tooltip.text()).toContain('Protégé')
     expect(tooltip.text()).toContain('Partagé')
-    expect(tooltip.text()).toContain('20')
-    expect(tooltip.text()).toContain('km')
   })
 
   it('shows the tooltip on the first real press and dismisses on blur, Escape or a tap away', async () => {
