@@ -947,11 +947,14 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
         median: enough ? median : null, rank: enough && focalInSelection ? rankFor(focalValue) : null,
         rank_size: enough && focalInSelection && rankFor(focalValue) !== null ? eligible.length : null,
         rank_ties: enough && focalInSelection ? tiesFor(focalValue) : null,
-        member_ranks: observed.map(({ member, value }) => {
+        // #960 — a fixed declared-profile comparison stays compact: member_ranks
+        // is a selected-comparison projection and the API rejects it for fixed.
+        ...(item.intent.kind === 'fixed_comparison' ? {} : { member_ranks: observed.map(({ member, value }) => {
           const rank = enough ? rankFor(value) : null
           return { territory_id: member.territoire, rank,
             rank_size: rank === null ? null : eligible.length, rank_ties: rank === null ? null : tiesFor(value) }
-        }), comparison_sources: comparisonSources,
+        }) }),
+        comparison_sources: comparisonSources,
         ...(profile.scalar ? { source_facet: profile.scalarId,
           source_facet_indicator_id: profile.scalarId,
           source_facet_label: profile.comparison.label ?? profile.scalar.label,

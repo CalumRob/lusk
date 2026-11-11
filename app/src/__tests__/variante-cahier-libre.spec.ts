@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest'
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import VarianteCahierLibreE from '@/fiche/prototype/VarianteCahierLibreE.vue'
 import CartographicBreakoutPrototype from '@/fiche/prototype/CartographicBreakoutPrototype.vue'
-import CahierMotorisationFigure from '@/fiche/prototype/CahierMotorisationFigure.vue'
 import CahierOffreTransportsFigure from '@/fiche/prototype/CahierOffreTransportsFigure.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
@@ -21,7 +20,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '@/payload/fixtures'
-import type { Payload, ThemeMetadata } from '@/payload/types'
+import type { Payload } from '@/payload/types'
 import { routes } from '@/router'
 
 const varianteCahierLibreStyles = readFileSync(
@@ -33,10 +32,6 @@ const cahierEvidenceSourceStyles = readFileSync(
   'utf-8',
 )
 const tokensStyles = readFileSync(join(process.cwd(), 'src', 'styles', 'tokens.css'), 'utf-8')
-const cartographicBreakoutStyles = readFileSync(
-  join(process.cwd(), 'src', 'fiche', 'prototype', 'CartographicBreakoutPrototype.vue'),
-  'utf-8',
-).match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? ''
 
 function regleCss(css: string, selector: string): string {
   const match = css.match(new RegExp(`${selector}\\s*\\{([\\s\\S]*?)\\}`))
@@ -122,12 +117,13 @@ describe('figures des unités Mobilité ajoutées', () => {
       const content = resolveMobiliteThemeContent(facts)
       const router = createRouter({ history: createMemoryHistory(), routes })
       const wrapper = mount(VarianteCahierLibreE, {
-        props: { content, pagination: paginationFor(content) },
+        props: { content, pagination: paginationFor(content), nativeComparisonStatus: 'ready' },
         global: { plugins: [router] },
       })
       await router.isReady()
       await flushPromises()
-      const names = wrapper.findAll('.cahier-network-bar-chart__reference-key')
+      const names = wrapper.findAll('.mobilite-comparison-bars__legend .cahier-figure-legend-toggle')
+        .filter((button) => button.text().includes('Groupe comparé'))
       expect(names.length).toBeGreaterThan(0)
       for (const name of names) {
         expect(name.text()).toBe('Groupe comparé')
@@ -234,54 +230,6 @@ describe('figures des unités Mobilité ajoutées', () => {
     ready.unmount()
   })
 
-  it('plots the payload-labeled household composition as separate bars with exact share values', () => {
-    const composition = [
-      contentFact('voitures_menage', 'sans_voiture', 0.25, 'Ménages sans voiture'),
-      contentFact('voitures_menage', 'une_voiture', 0.5, 'Ménages avec 1 voiture'),
-      contentFact('voitures_menage', 'deux_plus', 0.25, 'Ménages avec 2 voitures ou plus'),
-    ]
-    const wrapper = mount(CahierMotorisationFigure, { props: { composition, charging: [] } })
-    const bars = wrapper.findAll('.motorisation-bar')
-    expect(bars).toHaveLength(3)
-    expect(wrapper.findAll('.motorisation-part').map(row => row.attributes('data-value'))).toEqual(['0.25', '0.5', '0.25'])
-    expect(wrapper.text()).toContain('Ménages avec 2 voitures ou plus')
-    expect(bars.map(bar => bar.attributes('style'))).toEqual(expect.arrayContaining([expect.stringContaining('25%'), expect.stringContaining('50%')]))
-  })
-
-  it('keeps only payload-present motorisation facts and carries a null fact rider into the figure', () => {
-    const metadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8')) as ThemeMetadata
-    const original = factsForTarget()
-    const sansVoiture = original.mobility.indicators.find(fact => fact.key === 'voitures_menage' && fact.detail === 'sans_voiture')
-    expect(sansVoiture).toBeDefined()
-    const withoutPart = {
-      ...original,
-      mobility: { ...original.mobility, indicators: original.mobility.indicators.filter(fact => fact !== sansVoiture && fact.key !== 'bornes_recharge' && fact.key !== 'bornes_ev_par_station_service') },
-    }
-    const absentContent = resolveMobiliteThemeContent(withoutPart, metadata)
-    const absentEvidence = absentContent.units[2]!.sections[0]!.evidence
-    expect(absentEvidence?.kind).toBe('motorisation')
-    if (absentEvidence?.kind !== 'motorisation') throw new Error('Motorisation evidence should include remaining published facts')
-    expect(absentEvidence.composition.some(part => part.fact.detail === 'sans_voiture')).toBe(false)
-    expect(absentEvidence.charging).toHaveLength(0)
-    expect(absentContent.units.map(unit => unit.label)).toEqual([
-      'L’accès aux services', 'Le partage de l’espace public', 'La motorisation', 'L’offre de transports en commun',
-    ])
-    expect(absentContent.units[2]!.label).toBe('La motorisation')
-    expect(absentContent.units[3]!.label).toBe('L’offre de transports en commun')
-
-    const baseFact = original.mobility.indicators.find(fact => fact.key === 'bornes_recharge')!
-    const rider = { ...baseFact, key: 'bornes_ev_par_station_service', value: null, reason: 'Aucune station-service sur le territoire' }
-    const withRider = {
-      ...withoutPart,
-      mobility: { ...withoutPart.mobility, indicators: [...withoutPart.mobility.indicators, rider] },
-    }
-    const riderEvidence = resolveMobiliteThemeContent(withRider, metadata).units[2]!.sections[0]!.evidence
-    if (riderEvidence?.kind !== 'motorisation') throw new Error('Motorisation evidence should keep its declared null fact')
-    const wrapper = mount(CahierMotorisationFigure, { props: riderEvidence })
-    expect(wrapper.text()).toContain('Indisponible')
-    expect(wrapper.text()).toContain('Aucune station-service sur le territoire')
-    expect(wrapper.findAll('.motorisation-part')).toHaveLength(metadata.detail_labels.voitures_menage ? Object.keys(metadata.detail_labels.voitures_menage).length - 1 : 2)
-  })
 })
 
 describe('Variante D — le seam ThemeContent → Cahier', () => {
@@ -315,7 +263,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('.bpe-evidence').exists()).toBe(false)
     expect(wrapper.find('.access-figure-collection').exists()).toBe(false)
     expect(wrapper.find('.sources-page').text()).toContain(content.sourceRegister[0]?.source)
-    expect(wrapper.find('.page-number').text()).toBe('page 01/14')
+    expect(wrapper.find('.page-number').text()).toBe('page 01/13')
   })
   it('renders Variant E subgroups vertically at full width and in content order', async () => {
     const content = resolveMobiliteThemeContent(factsForTarget())
@@ -340,13 +288,6 @@ describe('Variante E — partage de l’espace public', () => {
     expect(mobileStyles).toContain('--page-left-inset: var(--space-4);')
     expect(mobileStyles).toContain('--page-right-inset: var(--space-4);')
     expect(mobileStyles).toContain('padding-inline: var(--space-4);')
-  })
-
-  it('uses the shared overline tracking for the cartographic plate orientation', () => {
-    const orientation = regleCss(cartographicBreakoutStyles, '\\.plate-orientation')
-
-    expect(orientation).toContain('letter-spacing: var(--text-overline-tracking);')
-    expect(orientation).not.toContain('letter-spacing: .06em;')
   })
 
   it('flows plain Cahier marginalia below the page content through the mobile breakpoint', () => {
@@ -515,79 +456,59 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.findAll('.cahier-page h2').map((heading) => heading.text())).toEqual([
       'L’accès aux services',
       'Le partage de l’espace public',
-      'La motorisation',
       'L’offre de transports en commun',
     ])
     expect(wrapper.findAll('.cahier-page .page-number').map((number) => number.text())).toEqual([
-      'page 01/14',
-      'page 02/14',
-      'page 03/14',
-      'page 04/14',
+      'page 01/13',
+      'page 02/13',
+      'page 03/13',
     ])
     for (const page of wrapper.findAll('.cahier-page')) {
       const groups = page.findAll('.concept-group')
       expect(groups.every((group) => !group.attributes('style'))).toBe(true)
     }
-    expect(wrapper.findAll('.page-rundown').map((rundown) => rundown.text())).toHaveLength(4)
-    expect(wrapper.findAll('.page-rundown')[1]!.text()).toContain('réseau cyclable')
-    // #627 - the retired legacy access sections no longer carry their
-    // Marelles; only the retained public-space figures' narratives render.
-    expect(wrapper.findAll('.concept-group-narrative').map((heading) => heading.text())).toEqual([
-      'Une piste ne suffit pas',
-      'Quelle place pour chaque mode ?',
-    ])
+    // C2 — one subtitle paragraph replaces the retired introduction and rundown.
+    expect(wrapper.findAll('.page-rundown')).toHaveLength(0)
+    // C1 — the new Mobilité sections carry no Marelle.
+    expect(wrapper.findAll('.concept-group-narrative')).toHaveLength(0)
     expect(wrapper.find('.map-breakout').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-section--reseaux').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-section--stationnement-ravitaillement').exists()).toBe(true)
+    expect(wrapper.findAll('.mobilite-comparison-bars')).toHaveLength(3)
+    expect(wrapper.findAll('.mobilite-ratio')).toHaveLength(2)
     expect(wrapper.find('.sharing-networks-evidence').exists()).toBe(false)
-    expect(wrapper.find('.sharing-cycling-offer-evidence').exists()).toBe(true)
-    expect(wrapper.find('.sharing-parking-evidence').exists()).toBe(true)
+    expect(wrapper.find('.sharing-cycling-offer-evidence').exists()).toBe(false)
+    expect(wrapper.find('.sharing-parking-evidence').exists()).toBe(false)
     expect(wrapper.find('.road-surface-figure').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('Part du territoire couverte par des polygones d’usage routier de tout type.')
-    expect(wrapper.text()).not.toContain('Médiane des')
-    expect(wrapper.find('.sharing-network-figure').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Une piste ne suffit pas')
     expect(wrapper.text()).not.toContain('Trois longueurs, un horizon')
-    expect(wrapper.text()).not.toContain('Le point d’arrivée varie avec la longueur du réseau.')
-    expect(wrapper.findAll('.sharing-cycling-reading')).toHaveLength(5)
-    expect(wrapper.findAll('.sharing-parking-reading')).toHaveLength(3)
-    // #627 - the retired legacy figure lectures no longer render; the three
-    // retained public-space/parking readings own the figure-lecture slots.
-    expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(3)
-    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(4)
-    // #860 (ruling) — une seule légende par figure : la note « Groupe comparé »
-    // séparée est retirée ; la loi de nommage vit dans la légende de la figure.
+    expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(0)
+    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(3)
     expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(0)
-    expect(wrapper.text()).not.toContain('Médiane des communes de EPCI X')
   })
 
-  it('renders the settled circular map plate contract', async () => {
+  it('renders the cleaned map plate: maps and tooltips only, no helpers or bars', async () => {
     const content = resolveMobiliteThemeContent(factsForTarget())
     const sharing = content.units
       .find((unit) => unit.key === 'partage-de-lespace-public')
       ?.sections.find((section) => section.key === 'reseaux')
-    const cycling = content.units
-      .find((unit) => unit.key === 'partage-de-lespace-public')
-      ?.sections.find((section) => section.key === 'offre-cyclable')
-    if (!sharing?.evidence || sharing.evidence.kind !== 'sharing-networks') {
-      throw new Error('Expected complete sharing-network evidence')
+    if (!sharing?.evidence || sharing.evidence.kind !== 'mobilite-networks') {
+      throw new Error('Expected mobilite-network evidence')
     }
-    if (!cycling?.evidence || cycling.evidence.kind !== 'cycling-offer') {
-      throw new Error('Expected complete cycling-offer evidence')
+    const evidence = structuredClone(sharing.evidence)
+    const bike = evidence.figure.categories.find((category) => category.key === 'bike')!
+    bike.value.fact.comparison = {
+      direction: 'plus-est-mieux',
+      scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+      rank: { position: 2, size: 3 },
+      reference: { kind: 'median', value: 1.2 },
     }
-    // Served ranks come from the comparison evidence, never from the local values.
-    const bikeNetwork = sharing.evidence.networks.find((network) => network.mode === 'bike')
-    if (!bikeNetwork?.length.fact.comparison) throw new Error('Expected a served network comparison')
-    bikeNetwork.length.fact.comparison.rank = { position: 2, size: 3 }
-    if (!cycling.evidence.protectedDensity.fact.comparison) throw new Error('Expected a served protected-density comparison')
-    cycling.evidence.protectedDensity.fact.comparison.rank = { position: 1, size: 4 }
-    cycling.evidence.protectedDensity.fact.comparison.reference = { kind: 'median', value: 1.2 }
-    if (!cycling.evidence.sharedDensity.fact.comparison) throw new Error('Expected a served shared-density comparison')
-    cycling.evidence.sharedDensity.fact.comparison.reference = { kind: 'median', value: 0.8 }
-
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push({ path: '/' })
     await router.isReady()
     document.querySelectorAll('.lusk-map-gallery').forEach((element) => element.remove())
     const wrapper = mount(CartographicBreakoutPrototype, {
-      props: { evidence: sharing.evidence, cyclingEvidence: cycling.evidence, territory: content.territory },
+      props: { evidence, territory: { code: content.territory.code, name: content.territory.name } },
       global: { plugins: [router] },
     })
     await flushPromises()
@@ -595,8 +516,6 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.find('.map-breakout--c').exists()).toBe(true)
     expect(wrapper.find('.plate').attributes('aria-label')).toContain(content.territory.name)
     expect(wrapper.find('.map-breakout .plate > .cahier-figure-title').text()).toBe('Cartes des réseaux de mobilité, par mode')
-    expect(wrapper.find('.plate-apparatus-heading h3').text()).toBe('Réseaux')
-    expect(wrapper.find('.map-breakout-tagline').text()).toBe('Trois réseaux, trois empreintes')
     expect(wrapper.findAll('.map-panel').map((panel) => panel.classes()[1])).toEqual([
       'map-panel--car',
       'map-panel--walk',
@@ -607,72 +526,36 @@ describe('Variante E — partage de l’espace public', () => {
       'Réseau piéton',
       'Réseau cyclable',
     ])
-    expect(wrapper.findAll('.cahier-network-bar-row')).toHaveLength(4)
-    expect(wrapper.findAll('.cycling-evidence-segment')).toHaveLength(0)
-    expect(wrapper.find('.cahier-network-bar-row--bike .cahier-network-bar-row__fill').exists()).toBe(true)
-    expect(wrapper.find('.cahier-network-bar-row--bike .cahier-network-bar-row__segments').text()).toContain('Protégé')
-    expect(wrapper.find('.cahier-network-bar-row--bike .cahier-network-bar-row__segments').text()).toContain('Partagé')
-    expect(wrapper.find('.border-legend').exists()).toBe(true)
-    expect(wrapper.find('.border-legend').text()).toContain(content.territory.name)
-    expect(wrapper.findAll('.map-panel img').map((image) => image.attributes('src'))).toEqual(['car', 'walk', 'bike'].map((mode) => `https://images.calumrobertson.fr/maps/v1/${content.territory.code}-${mode}-inline.webp`))
-    expect(wrapper.find('.plate-subfigure--road').exists()).toBe(true)
-    expect(wrapper.find('.plate-subfigure--road .cahier-network-bar-row').exists()).toBe(true)
-    expect(wrapper.find('.plate-subfigure--road .cahier-network-bar-chart__unit').text()).toBe('%')
-    expect(wrapper.findAll('.map-panel h4')).toHaveLength(0)
-    expect(wrapper.find('.cahier-figure-lecture').exists()).toBe(true)
-    // #860 (ruling) — la clé de référence de la figure porte la loi de nommage
-    // (statistique + portée résolue), pas un « Groupe comparé » générique.
-    expect(wrapper.find('.cahier-network-bar-chart__reference-key').text()).toBe('Groupe comparé')
-    expect(wrapper.find('.cahier-network-bar-chart__reference-key').attributes('aria-label')).toContain('Médiane des communes de EPCI X')
-    expect(wrapper.find('.cahier-network-bar-chart__reference-key').element.closest('[aria-hidden="true"]')).toBeNull()
-    expect(wrapper.findAll('.cahier-network-bar-chart__reference-key')).toHaveLength(1)
-    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(0)
-    await wrapper.find('.cahier-network-bar-row--bike').trigger('mouseenter')
-    const networkTooltip = wrapper.get('.plate-network-tooltip')
-    expect(networkTooltip.text()).toContain('Groupe comparé')
-    expect(networkTooltip.text()).not.toContain('Médiane des communes de EPCI X')
-    expect(networkTooltip.html()).toContain('Médiane des communes de EPCI X')
-    const focalRows = networkTooltip.findAll('.cahier-figure-tooltip-row')
-    const comparisons = networkTooltip.findAll('.cahier-figure-tooltip-row-comparison')
-    expect(focalRows).toHaveLength(3)
-    expect(comparisons).toHaveLength(3)
-    expect(comparisons.map((row) => row.get('.cahier-figure-tooltip-comparison-label').text()))
-      .toEqual(['Groupe comparé', 'Groupe comparé', 'Groupe comparé'])
-    expect(networkTooltip.text()).not.toContain('Groupe comparé : Protégé')
-    expect(networkTooltip.text()).not.toContain('Groupe comparé : Partagé')
-    expect(networkTooltip.findAll('.cahier-figure-tooltip-comparison-rank').map((rank) => rank.text()))
-      .toEqual(['2e/3', '1er/4'])
-    // Mode icons on the network and plain colour dots on colour-only series; no glyph on a comparison.
-    expect(focalRows[0]!.find('svg.cahier-figure-tooltip-icon').exists()).toBe(true)
-    expect(focalRows[1]!.find('.cahier-figure-tooltip-marker').exists()).toBe(true)
-    expect(focalRows[2]!.find('.cahier-figure-tooltip-marker').exists()).toBe(true)
-    expect(networkTooltip.findAll('.cahier-figure-tooltip-row-comparison svg')).toHaveLength(0)
-    expect(networkTooltip.findAll('.cahier-figure-tooltip-row-comparison .cahier-figure-tooltip-marker')).toHaveLength(0)
-    // A comparison without a served reference value is omitted, never drawn as a stray dash.
-    const sharedComparison = cycling.evidence.sharedDensity.fact.comparison
-    if (!sharedComparison) throw new Error('Expected a served shared-density comparison')
-    await wrapper.setProps({
-      cyclingEvidence: {
-        ...cycling.evidence,
-        sharedDensity: {
-          ...cycling.evidence.sharedDensity,
-          fact: {
-            ...cycling.evidence.sharedDensity.fact,
-            comparison: { ...sharedComparison, reference: null },
-          },
-        },
-      },
-    })
-    const withoutReference = wrapper.get('.plate-network-tooltip')
-    expect(withoutReference.findAll('.cahier-figure-tooltip-row')).toHaveLength(3)
-    expect(withoutReference.findAll('.cahier-figure-tooltip-row-comparison')).toHaveLength(2)
-    expect(withoutReference.findAll('.cahier-figure-tooltip-row')[2]!.find('.cahier-figure-tooltip-row-comparison').exists()).toBe(false)
-    expect(networkTooltip.text()).not.toMatch(/plus est mieux|moins est mieux/u)
-    expect(wrapper.find('.cahier-network-bar-row--car').classes()).toContain('cahier-network-bar-row--dimmed')
+    expect(wrapper.findAll('.map-panel img').map((image) => image.attributes('src'))).toEqual(
+      ['car', 'walk', 'bike'].map((mode) => `https://images.calumrobertson.fr/maps/v1/${content.territory.code}-${mode}-inline.webp`),
+    )
+
+    // The retired plate helpers are gone.
+    expect(wrapper.find('.plate-keys').exists()).toBe(false)
+    expect(wrapper.find('.border-legend').exists()).toBe(false)
+    expect(wrapper.find('.plate-orientation').exists()).toBe(false)
+    expect(wrapper.find('.plate-subfigure').exists()).toBe(false)
+    expect(wrapper.find('.plate-exploration').exists()).toBe(false)
+    expect(wrapper.find('.plate-apparatus-heading').exists()).toBe(false)
+    expect(wrapper.find('.map-breakout-tagline').exists()).toBe(false)
+    expect(wrapper.find('.cahier-figure-lecture').exists()).toBe(false)
+    expect(wrapper.find('.plate-sources').exists()).toBe(false)
+    expect(wrapper.findAll('.cahier-network-bar-row')).toHaveLength(0)
+
     await wrapper.find('.map-panel--bike').trigger('mouseenter')
-    expect(wrapper.find('.map-panel--car').classes()).toContain('map-panel--dimmed')
-    expect(wrapper.findAll('.map-gallery-source img')).toHaveLength(3)
-    expect(wrapper.findAll('.map-gallery-source img').map((image) => image.attributes('src'))).toEqual([undefined, undefined, undefined])
+    const tooltip = wrapper.get('.plate-network-tooltip')
+    expect(tooltip.text()).toContain('Groupe comparé')
+    expect(tooltip.text()).not.toContain('Médiane des communes de EPCI X')
+    const rows = tooltip.findAll('.cahier-figure-tooltip-row')
+    expect(rows.map((row) => row.get('.cahier-figure-tooltip-label').text())).toEqual([
+      'Réseau cyclable',
+      'Protégé',
+      'Partagé',
+      'Longueur — à vélo',
+    ])
+    expect(tooltip.findAll('.cahier-figure-tooltip-row-comparison')).toHaveLength(1)
+    expect(rows[3]!.text()).toContain('km')
+    expect(rows[3]!.attributes('aria-label')).toContain('valeur brute')
     await wrapper.find('.map-panel img').trigger('error')
     await flushPromises()
     expect(wrapper.find('.map-panel--car img').exists()).toBe(false)
@@ -680,28 +563,30 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.find('.map-panel--bike img').exists()).toBe(true)
     await wrapper.find('.map-panel--car .map-viewport').trigger('click')
     await flushPromises()
-    expect(wrapper.findAll('.map-gallery-source img').map((image) => image.attributes('src'))).toEqual(['car', 'walk', 'bike'].map((mode) => `https://images.calumrobertson.fr/maps/v1/${content.territory.code}-${mode}-inspection.webp`))
+    expect(wrapper.findAll('.map-gallery-source img').map((image) => image.attributes('src'))).toEqual(
+      ['car', 'walk', 'bike'].map((mode) => `https://images.calumrobertson.fr/maps/v1/${content.territory.code}-${mode}-inspection.webp`),
+    )
     const viewer = document.querySelector('.lusk-map-gallery')
     expect(viewer).not.toBeNull()
     expect(viewer?.querySelector('.viewer-navbar')).not.toBeNull()
-    expect(viewer?.querySelector('.viewer-list')).not.toBeNull()
-    expect(viewer?.querySelector('.viewer-navigation')).not.toBeNull()
-    expect(viewer?.querySelector('.viewer-button')).not.toBeNull()
   })
 
   it('keeps Andel’s inline bike map and omits zero-coverage inspection while opening car and walk', async () => {
     const content = resolveMobiliteThemeContent(factsForTarget())
     const sharing = content.units.find((unit) => unit.key === 'partage-de-lespace-public')?.sections.find((section) => section.key === 'reseaux')
-    if (!sharing?.evidence || sharing.evidence.kind !== 'sharing-networks') throw new Error('Expected sharing-network evidence')
+    if (!sharing?.evidence || sharing.evidence.kind !== 'mobilite-networks') throw new Error('Expected mobilite-network evidence')
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/')
     await router.isReady()
     document.querySelectorAll('.lusk-map-gallery').forEach((element) => element.remove())
     const andelEvidence = {
       ...sharing.evidence,
-      networks: sharing.evidence.networks.map((network) => network.mode === 'bike'
-        ? { ...network, length: { ...network.length, fact: { ...network.length.fact, value: 0 } } }
-        : network),
+      figure: {
+        ...sharing.evidence.figure,
+        categories: sharing.evidence.figure.categories.map((category) => category.key === 'bike'
+          ? { ...category, value: { ...category.value, fact: { ...category.value.fact, value: 0 } } }
+          : category),
+      },
     }
     const wrapper = mount(CartographicBreakoutPrototype, {
       props: { evidence: andelEvidence, territory: { code: '22002', name: 'Andel' } },
@@ -728,7 +613,7 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.find('.map-panel--bike [role="status"]').exists()).toBe(false)
   })
 
-  it('uses the cartographic plate in place of the old Réseaux subgroup', async () => {
+  it('delegates the Réseaux section to the mobilite renderer below the maps', async () => {
     const content = resolveMobiliteThemeContent(factsForTarget())
     const router = createRouter({ history: createMemoryHistory(), routes })
     const wrapper = mount(VarianteCahierLibre, {
@@ -747,15 +632,14 @@ describe('Variante E — partage de l’espace public', () => {
     const mapGroup = wrapper.find('.concept-group[data-section="reseaux"]')
     expect(mapGroup.exists()).toBe(true)
     expect(mapGroup.attributes('style')).toBeUndefined()
-    expect(mapGroup.find('.map-figure-spread').exists()).toBe(true)
+    expect(mapGroup.find('.mobilite-delegate').exists()).toBe(true)
     expect(mapGroup.find('.map-breakout').exists()).toBe(true)
-    expect(mapGroup.find('.map-breakout .map-section-number').text()).toBe('01')
     expect(mapGroup.find('.map-breakout .plate > .cahier-figure-title').text()).toBe('Cartes des réseaux de mobilité, par mode')
-    expect(mapGroup.find('.plate-apparatus-heading h3').text()).toBe('Réseaux')
-    expect(mapGroup.find('.plate-exploration').exists()).toBe(true)
-    expect(mapGroup.find('.cahier-figure-lecture .plate-sources').exists()).toBe(true)
-    expect(mapGroup.find('.cahier-figure-lecture .plate-sources').element.closest('details')).not.toBeNull()
+    expect(mapGroup.find('.plate-apparatus-heading').exists()).toBe(false)
+    expect(mapGroup.find('.plate-exploration').exists()).toBe(false)
+    expect(mapGroup.find('.mobilite-comparison-bars').exists()).toBe(true)
+    expect(mapGroup.find('.mobilite-ratio').exists()).toBe(false)
     expect(wrapper.find('.sharing-networks-evidence').exists()).toBe(false)
-    expect(wrapper.find('.sharing-cycling-offer-evidence').exists()).toBe(true)
+    expect(wrapper.find('.sharing-cycling-offer-evidence').exists()).toBe(false)
   })
 })

@@ -8,30 +8,29 @@ import type {
   TerritoryFacts,
 } from '@/fiche/content/territoryFacts'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
+import { buildPartageSubtitle } from '@/fiche/content/mobiliteSections'
+import type { ThemeMetadata } from '@/payload/types'
 
-const provenance: FactProvenance = {
-  sourceId: 'mobilite_snapshot',
-  source: 'Lusk — analyse d\'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
-  version: '2026-02',
-  referenceDate: '2026-02-28',
-  publicationDate: '2026-08-06',
-}
+const provenance = (sourceId: string): FactProvenance => ({
+  sourceId,
+  source: `Source ${sourceId}`,
+  version: '2026-08',
+  referenceDate: '2026-08-01',
+  publicationDate: '2026-08-02',
+})
 
 const scope: ComparisonScope = {
   kind: 'communes-epci',
+  label: 'communes de EPCI X',
   territoryIds: ['22001', '22002'],
 }
 
-function comparison(
-  value: number,
-  direction: FactComparison['direction'] = 'moins-est-mieux',
-  kind: 'mean' | 'median' = 'median',
-): FactComparison {
+function comparison(value: number, direction: FactComparison['direction'] = 'plus-est-mieux'): FactComparison {
   return {
     direction,
     scope,
-    rank: { position: 1, size: 2 },
-    reference: { kind, value },
+    rank: { position: 2, size: 3 },
+    reference: { kind: 'median', value },
   }
 }
 
@@ -39,190 +38,249 @@ function fact(
   key: string,
   value: number | null,
   unit = '%',
-  factComparison: FactComparison | null = comparison(0.5),
+  detail: string | null = null,
+  sourceId = 'osm_reseaux',
 ): NumericFact {
   return {
     key,
-    detail: null,
+    detail,
     value,
     unit,
     availability: value === null ? 'incomplete' : 'complete',
-    provenance,
-    comparison: factComparison,
-    comparisonBasis: factComparison?.reference?.kind === 'mean'
-      ? 'building-weighted-mean' : 'territory-median',
+    provenance: provenance(sourceId),
+    comparison: comparison(value === null ? 1 : value + 0.5),
+    comparisonBasis: 'territory-median',
     reason: null,
   }
 }
-// #627 - the « Mobilité page rundown » describe retired with the legacy
-// snapshot surface: the acces-aux-services unit keeps only its structural
-// identity (see the #627 regression below) and the production AEDAR
-// evidence owns the accessibility copy (production-mobilite-aedar.spec.ts).
 
-const completeFacts: TerritoryFacts = {
-  territory: {
-    code: '22001',
-    type: 'commune',
-    name: 'Commune A',
-    department: '22',
-    epci: '200000001',
-    epciName: 'EPCI X',
-  },
+const metadata = {
   theme: 'mobilite',
-  mobility: {
-    namedTrajectoryReferences: [],
-    indicators: [],
+  label: 'Mobilité',
+  subgroups: [],
+  indicator_keys: [],
+  sources: {},
+  indicator_labels: {},
+  detail_labels: {
+    reseaux_par_habitant: {
+      t_km_1000: 'Longueur — à pied',
+      b_km_1000: 'Longueur — à vélo',
+      c_km_1000: 'Longueur — en voiture',
+    },
+    reseaux: {
+      t_longueur: 'Longueur — à pied ou en transports en commun',
+      b_longueur: 'Longueur — à vélo',
+      c_longueur: 'Longueur — en voiture',
+    },
+    offre_cyclable: {
+      protege_km_1000: 'Protégé',
+      partage_km_1000: 'Partagé',
+    },
   },
+  param_labels: {},
+  source_records: {
+    osm_reseaux: { dataset: 'Réseaux OSM', publisher: 'OpenStreetMap', url: 'https://osm.example/reseaux', licence: 'ODbL', vintage: '2026-08', freshness: '' },
+    amenagements_cyclables: { dataset: 'Aménagements cyclables', publisher: 'Geovelo', url: 'https://geovelo.example', licence: 'ODbL', vintage: '2026-08', freshness: '' },
+    'stationnement-velo': { dataset: 'Stationnement vélo', publisher: 'Ecolab', url: 'https://ecolab.example', licence: 'ODbL', vintage: '2022-2025', freshness: '' },
+    'bornes-recharges': { dataset: 'IRVE', publisher: 'Etalab', url: 'https://etalab.example', licence: 'Licence Ouverte 2.0', vintage: '2026-07', freshness: '' },
+    bpe_b316: { dataset: 'BPE B316', publisher: 'INSEE', url: 'https://insee.example', licence: 'Licence Ouverte 2.0', vintage: '2025', freshness: '' },
+  },
+} as unknown as ThemeMetadata
+
+const territory = {
+  code: '22001',
+  type: 'commune' as const,
+  name: 'Commune A',
+  department: '22',
+  epci: '200000001',
+  epciName: 'EPCI X',
 }
 
-function sharingIndicator(
-  key: string,
-  detail: string | null,
-  value: number | null,
-  unit: string,
-): NumericFact {
-  return { ...fact(key, value, unit, comparison(0.5, 'plus-est-mieux')), detail }
+function factsWith(indicators: NumericFact[]): TerritoryFacts {
+  return {
+    territory,
+    theme: 'mobilite',
+    mobility: { namedTrajectoryReferences: [], indicators },
+  }
 }
 
-describe('resolveMobiliteThemeContent', () => {
-  it('#627 retirement: renders the acces-aux-services unit without the legacy placeholder body', () => {
-    // The production AEDAR evidence owns the accessibility surface; while it
-    // loads (or fails) the unit keeps only its structural identity — the four
-    // legacy snapshot sections, their introduction and their rundown no
-    // longer render as « Contenu indisponible » placeholders.
-    const content = resolveMobiliteThemeContent(completeFacts)
-    const unit = content.units[0]
-    expect(unit.key).toBe('acces-aux-services')
-    expect(unit.label).toBe('L’accès aux services')
-    expect(unit.sections).toEqual([])
-    expect(unit.introduction).toEqual([])
+const sharingFacts = (): NumericFact[] => [
+  fact('voitures_menage', 0.05, '%', 'sans_voiture', 'rp_logement_princ'),
+  fact('voitures_menage', 0.45, '%', 'une_voiture', 'rp_logement_princ'),
+  fact('voitures_menage', 0.5, '%', 'deux_plus', 'rp_logement_princ'),
+  fact('surface_reseaux_routiers', 0.12, '%', null, 'ocsge_reseaux_routiers'),
+  fact('reseaux_par_habitant', 12, 'km / 1 000 hab.', 't_km_1000'),
+  fact('reseaux_par_habitant', 8, 'km / 1 000 hab.', 'b_km_1000'),
+  fact('reseaux_par_habitant', 80, 'km / 1 000 hab.', 'c_km_1000'),
+  fact('reseaux', 10, 'km', 't_longueur'),
+  fact('reseaux', 20, 'km', 'b_longueur'),
+  fact('reseaux', 30, 'km', 'c_longueur'),
+  fact('offre_cyclable', 5, 'km / 1 000 hab.', 'protege_km_1000', 'amenagements_cyclables'),
+  fact('offre_cyclable', 3, 'km / 1 000 hab.', 'partage_km_1000', 'amenagements_cyclables'),
+  fact('places_stationnement_velo_1000', 5, 'places / 1 000 hab', null, 'stationnement-velo'),
+  fact('places_stationnement_voiture_1000', 25, 'places / 1 000 hab'),
+  fact('stationnement_velo_par_voiture', 0.2, 'places vélo / place voiture'),
+  fact('bornes_recharge', 7, 'bornes', null, 'bornes-recharges'),
+  fact('bornes_recharge_1000', 0.4, 'bornes / 1 000 hab', null, 'bornes-recharges'),
+  fact('stations_service', 2, 'stations', null, 'bpe_b316'),
+  fact('stations_service_1000', 0.1, 'stations / 1 000 hab', null, 'bpe_b316'),
+  fact('bornes_ev_par_station_service', 3.5, 'bornes / station', null, 'bpe_b316'),
+]
+
+describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
+  it('publishes three units in order and removes the motorisation unit', () => {
+    const content = resolveMobiliteThemeContent(factsWith(sharingFacts()), metadata)
+    expect(content.units.map((unit) => [unit.key, unit.label])).toEqual([
+      ['acces-aux-services', 'L’accès aux services'],
+      ['partage-de-lespace-public', 'Le partage de l’espace public'],
+      ['offre-transports-commun', 'L’offre de transports en commun'],
+    ])
+    expect(JSON.stringify(content)).not.toContain('motorisation')
+    expect(JSON.stringify(content)).not.toContain('offre-cyclable')
+  })
+
+  it('builds the single grammatical subtitle from published parts', () => {
+    const subtitle = buildPartageSubtitle(factsWith(sharingFacts())).flat().map((segment) => segment.value).join('')
+    expect(subtitle).toBe(
+      '95 % des ménages ont au moins une voiture. 50 % en ont deux ou plus. L’emprise routière couvre 12 % de la surface du territoire.',
+    )
+    const unit = resolveMobiliteThemeContent(factsWith(sharingFacts()), metadata).units[1]
+    expect(unit.introduction.flat().map((segment) => segment.value).join('')).toBe(subtitle)
     expect(unit.rundown).toEqual([])
   })
-  it('orders all four published Mobilité subgroup units and carries their published facts', () => {
-    const facts = structuredClone(completeFacts)
-    facts.mobility.indicators = [
-      ...facts.mobility.indicators,
-      sharingIndicator('reseaux', 't_longueur', 10, 'km'),
-      sharingIndicator('reseaux', 'b_longueur', 20, 'km'),
-      sharingIndicator('reseaux', 'c_longueur', 30, 'km'),
-      sharingIndicator('bornes_recharge', null, 7, 'bornes'),
-    ]
-    const content = resolveMobiliteThemeContent(facts)
-    expect(content.units.map((unit) => unit.key)).toEqual([
-      'acces-aux-services', 'partage-de-lespace-public', 'motorisation', 'offre-transports-commun',
-    ])
-    const networks = content.units[1].sections[0].evidence
-    expect(networks?.kind).toBe('sharing-networks')
-    if (networks?.kind === 'sharing-networks') {
-      expect(networks.absoluteNetworks.map((fact) => fact.fact.value)).toEqual([10, 20, 30])
-    }
-    expect(content.units[2].sections[0].availability).toBe('complete')
-    expect(content.units[2].sections[0].evidence?.kind).toBe('motorisation')
-    if (content.units[2].sections[0].evidence?.kind === 'motorisation') {
-      expect(content.units[2].sections[0].evidence.charging).toHaveLength(1)
-    }
-    expect(content.units[3].sections[0].availability).toBe('absent')
+
+  it('proves the published car-owner share equals both 1 − sans_voiture and une_voiture + deux_plus', () => {
+    const indicators = sharingFacts()
+    const valueOf = (detail: string) => indicators.find((candidate) => candidate.key === 'voitures_menage' && candidate.detail === detail)!.value
+    const sans = valueOf('sans_voiture')!
+    const une = valueOf('une_voiture')!
+    const deux = valueOf('deux_plus')!
+    expect(une + deux).toBeCloseTo(1 - sans, 10)
+    expect(une + deux).toBeCloseTo(0.95, 10)
   })
 
-  it('resolves the public-space sharing unit into ordered network, cycling-offer, and parking sections', () => {
-    const facts = structuredClone(completeFacts)
-    facts.mobility.indicators = [
-      ...facts.mobility.indicators,
-      sharingIndicator('reseaux_par_habitant', 't_km_1000', 12, 'km / 1 000 hab.'),
-      sharingIndicator('reseaux_par_habitant', 'b_km_1000', 8, 'km / 1 000 hab.'),
-      sharingIndicator('reseaux_par_habitant', 'c_km_1000', 80, 'km / 1 000 hab.'),
-      sharingIndicator('surface_reseaux_routiers', null, 0.12, '%'),
-      sharingIndicator('offre_cyclable', 'protege_longueur', 5, 'km'),
-      sharingIndicator('offre_cyclable', 'protege_km_1000', 0.4, 'km / 1 000 hab'),
-      sharingIndicator('offre_cyclable', 'partage_longueur', 7, 'km'),
-      sharingIndicator('offre_cyclable', 'partage_km_1000', 0.6, 'km / 1 000 hab'),
-      sharingIndicator('offre_cyclable', 'total_longueur', 12, 'km'),
-      sharingIndicator('places_stationnement_velo_1000', null, 5, 'places / 1 000 hab'),
-      sharingIndicator('places_stationnement_voiture_1000', null, 25, 'places / 1 000 hab'),
-      sharingIndicator('stationnement_velo_par_voiture', null, 0.2, 'places vélo / place voiture'),
-    ]
-
-    const content = resolveMobiliteThemeContent(facts)
-    const sharing = content.units.find((unit) => unit.key === 'partage-de-lespace-public')
-
-    expect(content.units.map((unit) => unit.key)).toEqual([
-      'acces-aux-services',
-      'partage-de-lespace-public',
-      'motorisation',
-      'offre-transports-commun',
-    ])
-    expect(sharing).toBeDefined()
-    expect(sharing?.label).toBe('Le partage de l’espace public')
-    expect(sharing?.sections.map((section) => [section.key, section.label])).toEqual([
-      ['reseaux', 'Réseaux'],
-      ['offre-cyclable', 'Offre cyclable'],
-      ['stationnement', 'Stationnement'],
-    ])
-    expect(sharing?.sections[0]?.indicators.map((indicator) => indicator.fact.key)).toEqual([
-      'reseaux_par_habitant',
-      'surface_reseaux_routiers',
-    ])
-    expect(sharing?.sections[0]?.evidence).toMatchObject({
-      territoryName: 'Commune A',
-      roadSurface: { label: 'Emprise routière' },
-      roadSurfaceLecture: [[
-        { kind: 'text', value: "L'emprise routière décrit la part de la surface totale du territoire qui est dédiée aux Réseaux routiers (code d'usage 4.1.1)." },
-      ]],
-      networks: [
-        { label: 'Réseau piéton' },
-        { label: 'Réseau cyclable' },
-        { label: 'Réseau automobile' },
-      ],
-    })
-    expect(sharing?.sections[1]?.indicators.map((indicator) => indicator.fact.key)).toEqual([
-      'offre_cyclable',
-    ])
-    expect(sharing?.sections[2]?.indicators.map((indicator) => indicator.fact.key)).toEqual([
-      'places_stationnement_velo_1000',
-      'places_stationnement_voiture_1000',
-      'stationnement_velo_par_voiture',
-    ])
-    expect(JSON.stringify(sharing)).not.toContain('TC')
-  })
-
-  it('keeps the parking section incomplete when only the published bike parking fact exists', () => {
-    const facts = structuredClone(completeFacts)
-    facts.mobility.indicators = [
-      ...facts.mobility.indicators,
-      sharingIndicator('places_stationnement_velo_1000', null, 0, 'places / 1 000 hab'),
-    ]
-    const content = resolveMobiliteThemeContent(facts)
-    const parking = content.units[1]!.sections[2]!
-
-    expect(parking.availability).toBe('incomplete')
-    expect(parking.evidence).toMatchObject({
-      kind: 'sharing-parking',
-      bikeSpaces: { fact: { key: 'places_stationnement_velo_1000', value: 0 } },
-      carSpaces: { fact: { key: 'places_stationnement_voiture_1000', availability: 'absent' } },
-      bikePerCar: { fact: { key: 'stationnement_velo_par_voiture', availability: 'absent' } },
-    })
-    expect(parking.lecture).toBeNull()
-  })
-
-  it('explains an unavailable parking ratio when the car denominator is zero', () => {
-    const facts = structuredClone(completeFacts)
-    facts.mobility.indicators = [
-      ...facts.mobility.indicators,
-      sharingIndicator('places_stationnement_velo_1000', null, 5, 'places / 1 000 hab'),
-      sharingIndicator('places_stationnement_voiture_1000', null, 0, 'places / 1 000 hab'),
-      sharingIndicator('stationnement_velo_par_voiture', null, null, 'places vélo / place voiture'),
-    ]
-
-    const parking = resolveMobiliteThemeContent(facts).units[1]!.sections[2]!
-
-    expect(parking.evidence?.figureLecture.flat().flat()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'text',
-          value: expect.stringContaining('aucune place de stationnement voiture'),
-        }),
-      ]),
+  it('keeps each subtitle clause grammatical and silent in the incomplete states', () => {
+    const base = sharingFacts()
+    const without = (detail: string) => base.filter((candidate) =>
+      !(candidate.key === 'voitures_menage' && candidate.detail === detail),
     )
+
+    expect(buildPartageSubtitle(factsWith(without('sans_voiture'))).flat().map((s) => s.value).join(''))
+      .toBe('95 % des ménages ont au moins une voiture. 50 % en ont deux ou plus. L’emprise routière couvre 12 % de la surface du territoire.')
+
+    const noUne = buildPartageSubtitle(factsWith(without('une_voiture'))).flat().map((s) => s.value).join('')
+    expect(noUne).toBe('50 % des ménages ont deux voitures ou plus. L’emprise routière couvre 12 % de la surface du territoire.')
+
+    const noDeux = buildPartageSubtitle(factsWith(without('deux_plus'))).flat().map((s) => s.value).join('')
+    expect(noDeux).toBe('L’emprise routière couvre 12 % de la surface du territoire.')
+
+    const noSurface = buildPartageSubtitle(factsWith(base.filter((candidate) => candidate.key !== 'surface_reseaux_routiers')))
+      .flat().map((s) => s.value).join('')
+    expect(noSurface).toBe('95 % des ménages ont au moins une voiture. 50 % en ont deux ou plus.')
   })
 
+  it('resolves the Réseaux section with published densities, bike segments and raw tooltip facts', () => {
+    const content = resolveMobiliteThemeContent(factsWith(sharingFacts()), metadata)
+    const section = content.units[1].sections[0]
+
+    expect([section.key, section.label]).toEqual(['reseaux', 'Réseaux'])
+    expect(section.lecture).toBeNull()
+    expect(section.evidence?.kind).toBe('mobilite-networks')
+    if (section.evidence?.kind !== 'mobilite-networks') throw new Error('Réseaux evidence expected')
+    const evidence = section.evidence
+
+    expect(evidence.mapFigureTitle).toBe('Cartes des réseaux de mobilité, par mode')
+    expect(evidence.figure.figureTitle).toBe('Longueur du réseau par habitant')
+    expect(evidence.figure.unit).toBe('km / 1 000 hab.')
+    expect(evidence.figure.xAxisTitle).toBe('Réseau')
+    expect(evidence.figure.yAxisTitle).toBe('km / 1 000 hab.')
+    expect(evidence.figure.comparisonLabel).toBe('Médiane des communes de EPCI X')
+
+    const [walk, bike, car] = evidence.figure.categories
+    expect([walk!.key, walk!.axisLabel, walk!.value.fact.value]).toEqual(['walkTransit', 'à pied', 12])
+    expect([bike!.key, bike!.axisLabel, bike!.value.fact.value]).toEqual(['bike', 'à vélo', 8])
+    expect([car!.key, car!.axisLabel, car!.value.fact.value]).toEqual(['car', 'en voiture', 80])
+
+    expect(bike!.segments.map((segment) => [segment.label, segment.value.fact.value])).toEqual([
+      ['Protégé', 5],
+      ['Partagé', 3],
+    ])
+    expect(bike!.segments.reduce((sum, segment) => sum + (segment.value.fact.value ?? 0), 0)).toBe(bike!.value.fact.value)
+    expect(walk!.segments).toEqual([])
+    expect(car!.segments).toEqual([])
+
+    expect(walk!.rawValue?.fact).toMatchObject({ key: 'reseaux', detail: 't_longueur', value: 10, unit: 'km' })
+    expect(bike!.rawValue?.fact).toMatchObject({ key: 'reseaux', detail: 'b_longueur', value: 20, unit: 'km' })
+    expect(car!.rawValue?.fact).toMatchObject({ key: 'reseaux', detail: 'c_longueur', value: 30, unit: 'km' })
+
+    expect(evidence.sources.map((source) => [source.id, source.source, source.url, source.licence])).toEqual([
+      ['osm_reseaux', 'OpenStreetMap', 'https://osm.example/reseaux', 'ODbL'],
+      ['amenagements_cyclables', 'Geovelo', 'https://geovelo.example', 'ODbL'],
+    ])
+    expect(evidence.prose.flat().map((segment) => segment.value).join(' '))
+      .toContain('vraisemblablement praticables à pied')
+    expect(evidence.prose.flat().map((segment) => segment.value).join(' '))
+      .not.toContain('transports en commun')
+    expect(section.explorationTargets.some((target) => target.key === 'reseaux_par_habitant')).toBe(true)
+  })
+
+  it('resolves the paired parking/refuelling section with its two ratio lines', () => {
+    const content = resolveMobiliteThemeContent(factsWith(sharingFacts()), metadata)
+    const section = content.units[1].sections[1]
+
+    expect([section.key, section.label]).toEqual(['stationnement-ravitaillement', 'Se garer et se ravitiller'])
+    expect(section.lecture).toBeNull()
+    expect(section.evidence?.kind).toBe('mobilite-stationnement-ravitaillement')
+    if (section.evidence?.kind !== 'mobilite-stationnement-ravitaillement') throw new Error('Paired evidence expected')
+
+    const [parking, refuelling] = section.evidence.columns
+    expect(parking!.key).toBe('stationnement')
+    expect(parking!.bars.figureTitle).toBe('Stationnement vélo et voiture')
+    expect(parking!.bars.unit).toBe('places / 1 000 hab.')
+    expect(parking!.bars.categories.map((category) => [category.label, category.value.fact.value, category.rawValue])).toEqual([
+      ['Vélo', 5, null],
+      ['Voiture', 25, null],
+    ])
+    expect(parking!.ratio.value.fact).toMatchObject({ key: 'stationnement_velo_par_voiture', value: 0.2 })
+    expect(parking!.ratio.note).toBeNull()
+    expect(parking!.sources.map((source) => source.source)).toEqual(['Ecolab', 'OpenStreetMap'])
+
+    expect(refuelling!.key).toBe('ravitaillement')
+    expect(refuelling!.bars.figureTitle).toBe('Bornes de recharge et station-services')
+    expect(refuelling!.bars.unit).toBe('équipements / 1 000 hab.')
+    expect(refuelling!.bars.categories.map((category) => [category.label, category.value.fact.value, category.rawValue?.fact.value])).toEqual([
+      ['Bornes de recharge', 0.4, 7],
+      ['Stations-service', 0.1, 2],
+    ])
+    expect(refuelling!.ratio.value.fact).toMatchObject({ key: 'bornes_ev_par_station_service', value: 3.5 })
+    expect(refuelling!.sources.map((source) => source.source)).toEqual(['Etalab', 'INSEE'])
+    expect(refuelling!.prose.flat().map((segment) => segment.value).join(' ')).toContain('au moins une station')
+  })
+
+  it('keeps ratios honest: zero car denominator and zero stations never fabricate a ratio', () => {
+    const indicators = sharingFacts().map((candidate) => {
+      if (candidate.key === 'places_stationnement_voiture_1000') return { ...candidate, value: 0 }
+      if (candidate.key === 'stationnement_velo_par_voiture') return { ...candidate, value: null, availability: 'incomplete' as const }
+      if (candidate.key === 'stations_service') return { ...candidate, value: 0 }
+      if (candidate.key === 'stations_service_1000') return { ...candidate, value: 0 }
+      if (candidate.key === 'bornes_ev_par_station_service') return { ...candidate, value: null, availability: 'incomplete' as const }
+      return candidate
+    })
+    const content = resolveMobiliteThemeContent(factsWith(indicators), metadata)
+    const section = content.units[1].sections[1]
+    if (section.evidence?.kind !== 'mobilite-stationnement-ravitaillement') throw new Error('Paired evidence expected')
+    const [parking, refuelling] = section.evidence.columns
+    expect(parking!.ratio.note).toContain('aucune place de stationnement voiture')
+    expect(refuelling!.ratio.note).toContain('aucune station-service')
+  })
+
+  it('keeps the sections honest when their facts are absent', () => {
+    const content = resolveMobiliteThemeContent(factsWith([]), metadata)
+    const unit = content.units[1]
+    expect(unit.sections.map((section) => [section.key, section.availability, section.evidence]))
+      .toEqual([
+        ['reseaux', 'absent', null],
+        ['stationnement-ravitaillement', 'absent', null],
+      ])
+  })
 })

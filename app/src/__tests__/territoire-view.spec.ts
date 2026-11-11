@@ -2131,9 +2131,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const retried = selectedReads().slice(selectedBeforeRetry)
     expect(retried.length).toBeLessThanOrEqual(2)
     expect(retried.every((items) => items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
-    // Les 13 ressources de comparaison Mobilité repartent en lots bornés,
-    // jamais une requête par figure ni une relecture des faits focaux.
-    expect(retried.flat()).toHaveLength(13)
+    // Les 18 lectures de comparaison Mobilité (16 ressources + les deux détails
+    // réseau non-défaut) repartent en lots bornés, jamais une requête par figure
+    // ni une relecture des faits focaux.
+    expect(retried.flat()).toHaveLength(18)
     expect(requests.slice(requestsBeforeRetry).flat().some((item) =>
       item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
     expect(wrapper.find('.transit-comparison-retry').exists()).toBe(false)

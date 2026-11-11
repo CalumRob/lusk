@@ -81,15 +81,17 @@ describe('IndicateursView — le catalogue groupé', () => {
     expect(wrapper.find('[data-clef-sous-groupe="couverture"]').exists()).toBe(false)
   })
 
-  it('lie les 31 entrées retenues aux URL publiques et conserve leurs vrais libellés', async () => {
+  it('lie les 34 entrées retenues aux URL publiques et conserve leurs vrais libellés', async () => {
     const { wrapper } = await monter('/indicateurs/demographie/densite')
     const liens = wrapper.findAll('a[href^="/indicateurs/"]')
     const hrefs = liens.map((lien) => lien.attributes('href'))
     const textes = liens.map((lien) => lien.text())
 
-    expect(liens).toHaveLength(31)
-    expect(new Set(hrefs).size).toBe(31)
+    expect(liens).toHaveLength(34)
+    expect(new Set(hrefs).size).toBe(34)
     expect(hrefs).toContain('/indicateurs/mobilite/bornes_ev_par_station_service')
+    expect(hrefs).toContain('/indicateurs/mobilite/stations_service_1000')
+    expect(hrefs).toContain('/indicateurs/mobilite/bornes_recharge_1000')
     expect(hrefs).toContain('/indicateurs/mobilite/raccordement_courbe')
     expect(hrefs).toContain('/indicateurs/programmes/subventions_par_domaine')
     expect(textes).toContain('Distribution des étiquettes DPE (A à G)')

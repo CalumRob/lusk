@@ -194,15 +194,16 @@ describe('SQL Mobilité response to Variant E facts', () => {
     const content = resolveMobiliteThemeContent(facts)
     const sharing = content.units.find((unit) => unit.key === 'partage-de-lespace-public')!
     const networks = sharing.sections.find((section) => section.key === 'reseaux')!
-    expect(networks.evidence?.kind).toBe('sharing-networks')
-    if (networks.evidence?.kind !== 'sharing-networks') throw new Error('Regional per-capita network facts missing')
-    expect(networks.evidence.networks.map(({ length }) => length.fact.value)).toEqual([7.5, 2.25, 7.5])
-    const parking = sharing.sections.find((section) => section.key === 'stationnement')!
-    expect(parking.evidence?.kind).toBe('sharing-parking')
-    if (parking.evidence?.kind !== 'sharing-parking') throw new Error('Regional parking facts missing')
-    expect(parking.evidence.bikeSpaces.fact.value).toBe(12)
-    expect(parking.evidence.carSpaces.fact.value).toBe(400)
-    expect(parking.evidence.bikePerCar.fact.value).toBe(0.91)
+    expect(networks.evidence?.kind).toBe('mobilite-networks')
+    if (networks.evidence?.kind !== 'mobilite-networks') throw new Error('Regional per-capita network facts missing')
+    expect(networks.evidence.figure.categories.map(({ value }) => value.fact.value)).toEqual([7.5, 2.25, 7.5])
+    const parking = sharing.sections.find((section) => section.key === 'stationnement-ravitaillement')!
+    expect(parking.evidence?.kind).toBe('mobilite-stationnement-ravitaillement')
+    if (parking.evidence?.kind !== 'mobilite-stationnement-ravitaillement') throw new Error('Regional parking facts missing')
+    const parkingColumn = parking.evidence.columns[0]
+    expect(parkingColumn.bars.categories[0]!.value.fact.value).toBe(12)
+    expect(parkingColumn.bars.categories[1]!.value.fact.value).toBe(400)
+    expect(parkingColumn.ratio.value.fact.value).toBe(0.91)
 
     // Invalid/missing canonical bike counts cannot leave a measured ratio in
     // the API payload; the page surfaces that ratio as unavailable.
@@ -215,11 +216,12 @@ describe('SQL Mobilité response to Variant E facts', () => {
     const incompleteFacts = mobilityFacts(incomplete, '53', regionPayload)
     const incompleteContent = resolveMobiliteThemeContent(incompleteFacts)
     const incompleteSharing = incompleteContent.units.find((unit) => unit.key === 'partage-de-lespace-public')!
-    const unavailableParking = incompleteSharing.sections.find((section) => section.key === 'stationnement')!
-    if (unavailableParking.evidence?.kind !== 'sharing-parking') throw new Error('Regional parking section missing')
-    expect(unavailableParking.evidence.bikePerCar.fact.value).toBeNull()
-    expect(unavailableParking.evidence.bikePerCar.fact.availability).toBe('absent')
-    expect(unavailableParking.evidence.ratioNote).toContain('deux mesures de stationnement')
+    const unavailableParking = incompleteSharing.sections.find((section) => section.key === 'stationnement-ravitaillement')!
+    if (unavailableParking.evidence?.kind !== 'mobilite-stationnement-ravitaillement') throw new Error('Regional parking section missing')
+    const unavailableColumn = unavailableParking.evidence.columns[0]
+    expect(unavailableColumn.ratio.value.fact.value).toBeNull()
+    expect(unavailableColumn.ratio.value.fact.availability).toBe('absent')
+    expect(unavailableColumn.ratio.note).toContain('deux mesures de stationnement')
   })
 
   it('consumes retained scalar and profile reads with SQL provenance without reviving legacy story values', () => {
@@ -293,13 +295,12 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(namedReference).not.toHaveProperty('territory')
     expect(curve.some((fact)=>fact.key==='raccordement_reference')).toBe(false)
     const content = resolveMobiliteThemeContent(facts)
-    const motorisation = content.units.find((unit)=>unit.key==='motorisation')?.sections[0]
-    expect(motorisation?.evidence?.kind).toBe('motorisation')
-    if (motorisation?.evidence?.kind === 'motorisation') {
-      expect(motorisation.evidence.composition.map((item)=>item.fact.detail))
-        .toEqual(['sans_voiture','une_voiture','deux_plus'])
-      expect(motorisation.evidence.composition.map((item)=>item.fact.value)).toEqual(parts)
-    }
+    const sharing = content.units.find((unit)=>unit.key==='partage-de-lespace-public')
+    expect(sharing?.sections.map((section)=>section.key)).toEqual(['reseaux', 'stationnement-ravitaillement'])
+    expect(JSON.stringify(content)).not.toContain('motorisation')
+    expect(content.units.map((unit)=>unit.key)).toEqual([
+      'acces-aux-services', 'partage-de-lespace-public', 'offre-transports-commun',
+    ])
     const section = content.units.find((unit)=>unit.key==='offre-transports-commun')?.sections[0]
     expect(section?.evidence?.kind).toBe('public-transport')
     if (section?.evidence?.kind !== 'public-transport') throw new Error('Regional transport content missing')

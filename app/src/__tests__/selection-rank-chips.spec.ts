@@ -7,7 +7,6 @@ import { indicateursHabitatFixture } from '../payload/fixtures'
 import IndicatorFigure from '../components/fiche/IndicatorFigure.vue'
 import ValeurComparaison from '../components/fiche/ValeurComparaison.vue'
 import { lignesAvecComparaisonApi } from '../payload/themeFactsAdapter'
-import CahierRoadSurfaceFigure from '../fiche/prototype/CahierRoadSurfaceFigure.vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 function fact(): NumericFact {
@@ -20,15 +19,6 @@ function fact(): NumericFact {
 }
 
 describe('Rang de la sélection — valeur du Groupe comparé', () => {
-  it('porte aussi le rang dans le nom du scalaire qui englobe la référence', () => {
-    const wrapper = mount(CahierRoadSurfaceFigure, { props: { targets: [], evidence: {
-      kind: 'sharing-networks', figureTitle: 'Réseaux', frameTitle: 'Réseaux', networkReadingsLabel: 'Longueurs',
-      territoryName: 'Commune', roadSurface: { fact: fact(), label: 'Emprise' }, roadSurfaceLecture: [],
-      networks: [], absoluteNetworks: [], comparisonLabel: 'communes de Rennes Métropole', figureLecture: [],
-    } } })
-    expect(wrapper.get('.road-surface-scalar').attributes('aria-label')).toContain('2e/41')
-    expect(wrapper.get('.road-surface-scalar').attributes('aria-label')).toContain('moins = mieux')
-  })
   it.each(['scalar', 'profile'] as const)('rend la référence et le rang API de la famille %s sans répéter la portée', (family) => {
     const row = { ...indicateursHabitatFixture[0]!, key: 'part_passoires', detail: family === 'profile' ? 'A' : null }
     const result = { indicator_id: row.key, indicator: row.key, status: 'available', direction: 'low',

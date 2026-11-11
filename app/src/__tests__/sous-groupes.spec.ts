@@ -113,6 +113,8 @@ describe('sousGroupesPourTerritoire — l’ordre, les labels et les clés vienn
       'surface_reseaux_routiers',
       'places_stationnement_velo_1000',
       'offre_cyclable',
+      'voitures_menage',
+      'bornes_recharge',
     ])
   })
 
@@ -184,7 +186,6 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
           // legacy framing is withheld (the AEDAR evidence owns the copy).
           ['acces-aux-services', 'L’accès aux services', null],
           ['partage-de-lespace-public', 'Le partage de l’espace public', 'La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.'],
-          ['motorisation', 'La motorisation', 'L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.'],
           ['offre-transports-commun', 'L’offre de transports en commun', null],
         ],
       },
@@ -256,8 +257,7 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
           // #627 - no rows, no compact figure and no reading bind to the
           // structural acces-aux-services identity any more.
           { key: 'acces-aux-services', rows: [] as string[], figure: null, story: null },
-          { key: 'partage-de-lespace-public', rows: ['reseaux', 'reseaux_par_habitant', 'surface_reseaux_routiers', 'places_stationnement_velo_1000', 'offre_cyclable'], figure: ['composition', 'offre_cyclable'], story: null },
-          { key: 'motorisation', rows: ['voitures_menage', 'bornes_recharge'], figure: ['composition', 'voitures_menage'], story: null },
+          { key: 'partage-de-lespace-public', rows: ['reseaux', 'reseaux_par_habitant', 'surface_reseaux_routiers', 'places_stationnement_velo_1000', 'offre_cyclable', 'voitures_menage', 'bornes_recharge'], figure: ['composition', 'offre_cyclable'], story: null },
           { key: 'offre-transports-commun', rows: ['offre_tc'], figure: ['scalar', 'offre_tc'], story: null },
         ],
       },
