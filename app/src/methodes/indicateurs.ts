@@ -573,6 +573,36 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         sourceId: 'bpe_b316',
         direction: 'plus-est-mieux',
       },
+      stations_service: {
+        label: 'Stations-service',
+        definition:
+          'Le nombre de stations-service recensées sur le territoire par la base permanente des équipements (BPE), filtre B316. Le compte somme les stations des communes du territoire : il porte l’offre de carburant, jamais une moyenne d’offres communales. Une commune absente du fichier reste sans valeur plutôt que zéro.',
+        unite: 'stations',
+        source: 'INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service',
+        sourceId: 'bpe_b316',
+        direction: 'plus-est-mieux',
+        caveat:
+          'La BPE ne recense que les stations ayant vendu au moins 500 000 litres l’année précédente ; les petites stations n’y figurent que sur volontariat.',
+      },
+      stations_service_1000: {
+        label: 'Stations-service pour 1 000 habitants',
+        definition:
+          'Le nombre de stations-service du territoire rapporté à sa population, pour 1 000 habitants. Les agrégats sont recalculés depuis les comptes et la population du territoire, jamais une moyenne des taux communaux. Un dénombrement rapporté à la population reste un dénombrement : la BPE ne recense que les stations ayant vendu au moins 500 000 litres l’année précédente.',
+        unite: 'stations / 1 000 hab',
+        source: 'INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service',
+        sourceId: 'bpe_b316',
+        direction: 'plus-est-mieux',
+      },
+      bornes_recharge_1000: {
+        label: 'Bornes de recharge pour 1 000 habitants',
+        definition:
+          'Le nombre de bornes de recharge pour véhicules électriques (IRVE) du territoire rapporté à sa population, pour 1 000 habitants. Comme le compte de bornes, l’indicateur porte les stations IRVE et jamais les prises ; les agrégats sont recalculés depuis les comptes, jamais une moyenne de taux. Une borne non déclarée au fichier IRVE reste invisible — une limite signalée par la source elle-même.',
+        unite: 'bornes / 1 000 hab',
+        source:
+          'Etalab / data.bretagne.bzh \u2014 Fichier consolid\u00e9 des Bornes de Recharge pour V\u00e9hicules \u00c9lectriques (IRVE), sch\u00e9ma 2.2.0',
+        sourceId: 'bornes-recharges',
+        direction: 'plus-est-mieux',
+      },
       places_stationnement_velo_1000: {
         label: 'Places de stationnement vélo pour 1 000 habitants',
         definition:

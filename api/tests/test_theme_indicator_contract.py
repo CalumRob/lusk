@@ -16,13 +16,15 @@ def test_mobility_producer_pages_declare_retained_levels_and_canonical_curve():
     assert "region" in pages["raccordement_courbe"]["levels"]
     assert pages["voitures_menage"]["composition"]["parts"] == [
         "sans_voiture", "une_voiture", "deux_plus"]
-    assert "region" in published["indicator_pages"]["voitures_menage"]["levels"]
-    assert published["indicator_pages"]["voitures_menage"] == pages["voitures_menage"]
-    # The checked-in static payload is an incumbent snapshot; the producer's
-    # retained owned-series declaration is authoritative for semantic discovery.
-    assert len(published["indicator_pages"]["raccordement_courbe"]["comparison"]["details"]) == 11
-    assert len(pages["raccordement_courbe"]["comparison"]["details"]) == 73
-    assert pages["raccordement_courbe"]["comparison"]["detail"] == "t0090"
+    # Since #962 the checked-in payload is the byte-for-byte browser projection
+    # of the producer canon, so every published page equals its declaration
+    # (the old hand-patched copy stopped the curve at 11 details).
+    assert published["indicator_pages"] == pages
+    details = pages["raccordement_courbe"]["comparison"]["details"]
+    # The canonical curve is the full five-minute grid from 0 to 360 minutes.
+    assert len(details) == 73
+    assert details[0] == "t0000" and details[-1] == "t0360"
+    assert pages["raccordement_courbe"]["comparison"]["detail"] in details
 
 
 def test_owned_series_and_named_reference_are_producer_derived_resources():

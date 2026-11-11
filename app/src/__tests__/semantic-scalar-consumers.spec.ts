@@ -28,6 +28,8 @@ const expectedOrdinaryScalarPages = [
   'mobilite/places_stationnement_velo_1000', 'mobilite/places_stationnement_voiture_1000',
   'mobilite/bornes_ev_par_station_service', 'mobilite/stationnement_velo_par_voiture',
   'mobilite/raccordement_tc',
+  // #962 added the three Mobility supply scalar pages.
+  'mobilite/stations_service', 'mobilite/stations_service_1000', 'mobilite/bornes_recharge_1000',
 ]
 
 function ordinaryScalarPageCensus() {
@@ -181,7 +183,7 @@ afterEach(() => {
 })
 
 describe('ordinary scalar consumers on semantic resources', () => {
-  it('covers the app-catalogue/API/page-grammar intersection for all 15 ordinary scalar pages', async () => {
+  it('covers the app-catalogue/API/page-grammar intersection for all 18 ordinary scalar pages', async () => {
     const census = ordinaryScalarPageCensus()
     expect(census.map(({ theme, indicator }) => `${theme}/${indicator}`)).toEqual([...expectedOrdinaryScalarPages].sort())
     expect(census.map(({ theme, indicator }) => `${theme}/${indicator}`)).not.toContain('habitat/prix_m2')
