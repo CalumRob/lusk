@@ -16,10 +16,19 @@ PAGES_SCALAIRES_MOBILITE <- c(
   "nb_buildings", "surface_reseaux_routiers", "offre_tc", "bornes_recharge",
   "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
   "bornes_ev_par_station_service", "stationnement_velo_par_voiture",
+  "stations_service", "stations_service_1000", "bornes_recharge_1000",
   "tot_loss_t", "tot_loss_b",
   "iso_alimentation", "iso_sante", "iso_administration", "iso_ecole", "iso_banque",
   "avg_tot_car", "avg_tot_b", "avg_tot_t", "avg_div_car", "avg_div_b", "avg_div_t",
   "raccordement_tc"
+)
+
+# Les clés déclarées que le Parquet Mobilité COMMIS ne porte pas encore : la
+# publication réelle des faits appartient au prochain run (l'artefact conservé
+# est le snapshot précédent). La parité des FAITS les exclut explicitement —
+# jamais un test qui prétend les avoir publiées.
+PAGES_SCALAIRES_MOBILITE_EN_ATTENTE_DE_PUBLICATION <- c(
+  "stations_service", "stations_service_1000", "bornes_recharge_1000"
 )
 
 racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
@@ -79,6 +88,76 @@ test_that("le ratio bornes par station-service déclare ses deux sources (#900 :
     unlist(page$sources, use.names = FALSE),
     c("bpe_b316", "bornes-recharges")
   )
+})
+
+test_that("les densités de ravitaillement déclarent leur page, source et contrat scalaire (#953)", {
+  meta <- lire_theme_metadata("mobilite")
+  attendu <- list(
+    stations_service = list(
+      label = "Stations-service", unit = "stations", source = "bpe_b316"),
+    stations_service_1000 = list(
+      label = "Stations-service pour 1 000 hab.",
+      unit = "stations / 1 000 hab", source = "bpe_b316"),
+    bornes_recharge_1000 = list(
+      label = "Bornes de recharge pour 1 000 hab.",
+      unit = "bornes / 1 000 hab", source = "bornes-recharges")
+  )
+  groupes <- stats::setNames(
+    lapply(meta$subgroups, `[[`, "indicators"),
+    vapply(meta$subgroups, `[[`, character(1L), "key")
+  )
+  # le regroupement de fiche documenté : les trois densités vivent avec le
+  # couple motorisation / ravitaillement (CONTEXT.md « L'offre de mobilité
+  # alternative »), jamais dans l'accès aux services
+  expect_true(all(names(attendu) %in% groupes[["motorisation"]]))
+  expect_false(any(names(attendu) %in% groupes[["acces-aux-services"]]))
+
+  for (cle in names(attendu)) {
+    spec <- attendu[[cle]]
+    page <- meta$indicator_pages[[cle]]
+    expect_identical(page$family, "scalar", info = cle)
+    expect_identical(page$label, spec$label, info = cle)
+    expect_identical(page$unit, spec$unit, info = cle)
+    expect_identical(page$direction, "high", info = cle)
+    expect_identical(unlist(page$levels, use.names = FALSE),
+                     c("commune", "epci", "departement"), info = cle)
+    expect_identical(unlist(page$sources, use.names = FALSE), spec$source,
+                     info = cle)
+    expect_identical(meta$sources[[cle]], spec$source, info = cle)
+    expect_identical(meta$indicator_labels[[cle]], spec$label, info = cle)
+    # la facette de comparaison déclare son axe fermé et son détail par défaut
+    # — sur la paire de ravitaillement, la barre des bornes est le défaut de la
+    # clé / 1 000 hab. qui porte la lecture
+    expect_identical(unlist(page$comparison$details, use.names = FALSE), cle,
+                     info = cle)
+    expect_identical(page$comparison$detail, cle, info = cle)
+    expect_identical(page$comparison$unit, spec$unit, info = cle)
+    expect_true(nzchar(page$definition), info = cle)
+    contract <- meta$scalar_contracts[[cle]]
+    expect_identical(unlist(contract$allowed_levels, use.names = FALSE),
+                     c("commune", "epci", "departement"), info = cle)
+    expect_identical(contract$comparison_facet, cle, info = cle)
+    expect_identical(contract$missing_status, "not_available", info = cle)
+  }
+  expect_no_error(valider_theme_metadata(meta,
+                                        directions_module = DIRECTIONS_MOBILITE))
+})
+
+test_that("les deux copies de métadonnées portent les mêmes entrées de ravitaillement (#953)", {
+  skip_if_not(dir.exists(racine_public), "public/data absent — la racine du dépôt est introuvable")
+  canon <- lire_theme_metadata("mobilite")
+  public <- jsonlite::fromJSON(file.path(racine_public, "theme_mobilite.json"),
+                               simplifyVector = FALSE)
+  cles <- c("stations_service", "stations_service_1000", "bornes_recharge_1000")
+  expect_identical(canon$indicator_labels[cles], public$indicator_labels[cles])
+  expect_identical(canon$sources[cles], public$sources[cles])
+  expect_identical(canon$indicator_pages[cles], public$indicator_pages[cles])
+  expect_true(all(cles %in% unlist(public$indicator_keys)))
+  groupe <- Filter(function(g) identical(g$key, "motorisation"),
+                   public$subgroups)[[1L]]
+  expect_true(all(cles %in% unlist(groupe$indicators)))
+  # la projection navigateur garde son contrat : aucun champ producteur servi
+  expect_false("scalar_contracts" %in% names(public))
 })
 
 test_that("la trajectoire raccordement déclare exactement la grille publiée et ses repères humains", {
@@ -176,7 +255,16 @@ test_that("parité pages scalaires ↔ Parquet Mobilité conservé : niveaux, un
   skip_if_not(dir.exists(racine_public), "public/data absent — la racine du dépôt est introuvable")
   meta <- lire_theme_metadata("mobilite")
   faits <- nanoparquet::read_parquet(file.path(racine_public, "indicateurs_mobilite.parquet"))
-  for (cle in PAGES_SCALAIRES_MOBILITE) {
+  # L'artefact COMMIS est le snapshot de la publication précédente : il ne
+  # porte pas encore les trois densités de ravitaillement (#953), dont les
+  # faits naîtront au prochain run. La parité couvre les clés publiées, et le
+  # diff est explicitement nommé — jamais une clé oubliée derrière un filtre.
+  cles_publiees <- intersect(PAGES_SCALAIRES_MOBILITE, unique(faits$key))
+  expect_setequal(
+    setdiff(PAGES_SCALAIRES_MOBILITE, cles_publiees),
+    PAGES_SCALAIRES_MOBILITE_EN_ATTENTE_DE_PUBLICATION
+  )
+  for (cle in cles_publiees) {
     page <- meta$indicator_pages[[cle]]
     lignes <- faits[faits$key == cle, ]
     expect_true(nrow(lignes) > 0L, info = cle)

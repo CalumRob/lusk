@@ -2318,12 +2318,14 @@ test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle"
   agg <- agreger_offre_territoires(offre_tc, bornes, velo, base, cyclable)
 
   # la forme : une ligne par (territoire × clé × détail) — 4 communes + 2
-  # EPCIs + 2 départements + la région, les trois clés scalaires (détail NA)
-  # + les 5 détails de la clé offre_cyclable
+  # EPCIs + 2 départements + la région, les QUATRE clés scalaires (détail NA,
+  # dont le taux de bornes / 1 000 hab de l'issue #953) + les 5 détails de la
+  # clé offre_cyclable
   expect_named(agg, c("code", "key", "detail", "value"))
-  expect_equal(nrow(agg), (4 + 2 + 2 + 1) * (3 + 5))
+  expect_equal(nrow(agg), (4 + 2 + 2 + 1) * (4 + 5))
   expect_setequal(unique(agg$key), c("offre_tc", "bornes_recharge",
                                      "places_stationnement_velo_1000",
+                                     "bornes_recharge_1000",
                                      "offre_cyclable"))
   lire <- function(code, key, detail = NA) {
     ok <- agg$code == code & agg$key == key &
@@ -2399,6 +2401,120 @@ test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle"
   expect_true(!is.unsorted(paste(agg$code, agg$key, agg$detail)))
 })
 
+# Les densités de ravitaillement (issue #953) : le compte de stations-service
+# B316 et les deux taux pour 1 000 hab. Les EPCI/départements SOMMENT les
+# comptes des parties (jamais une moyenne de taux), puis recalculent le taux
+# avec la population du territoire — le dénominateur du hub stationnement vélo,
+# le même que les densités de stationnement. Une observation BPE absente reste
+# absente (jamais un zéro inventé) ; le zéro observé d'une commune rurale sans
+# station reste un fait.
+test_that("agreger_offre_territoires : stations-service et densités / 1 000 hab. recalculées depuis les comptes (#953)", {
+  base <- tibble::tribble(
+    ~CODGEO, ~EPCI, ~DEP,
+    "22001", "200000001", "22",
+    "22002", "200000001", "22",
+    "29001", "200000002", "29",
+    "29002", NA, "29"
+  )
+  offre_tc <- tibble::tribble(
+    ~commune, ~n_batiments, ~n_proches, ~part_proche,
+    "22001", 100, 50, 0.5,
+    "22002", 300, 240, 0.8,
+    "29001", 200, 40, 0.2,
+    "29002", 400, 240, 0.6
+  )
+  bornes <- tibble::tribble(
+    ~commune, ~nb_bornes,
+    "22001", 3, "29002", 2
+  )
+  velo <- tibble::tribble(
+    ~commune, ~annee, ~places, ~population, ~places_1000,
+    "22001", "2025", 30, 1000, 30,
+    "22002", "2025", 90, 3000, 30,
+    "29001", "2025", 40, 2000, 20,
+    "29002", "2025", 120, 4000, 30
+  )
+  cyclable <- tibble::tribble(
+    ~commune, ~population, ~protege_longueur, ~partage_longueur,
+    ~total_longueur, ~protege_km_1000, ~partage_km_1000,
+    "22001", 1000, 3.0, 2.0, 5.0, 3.0, 2.0,
+    "22002", 3000, 1.0, 1.0, 2.0, 1 / 3, 1 / 3,
+    "29001", 2000, 0, 0, 0, 0, 0,
+    "29002", 4000, 2.0, 4.0, 6.0, 0.5, 1.0
+  )
+  # BPE B316 observée pour les quatre communes — 22002 est un zéro OBSERVÉ
+  fuel <- tibble::tibble(
+    code = c("22001", "22002", "29001", "29002"),
+    fuel = c(2, 0, 1, 3))
+
+  agg <- agreger_offre_territoires(
+    offre_tc, bornes, velo, base, cyclable, fuel_communes = fuel)
+
+  lire <- function(code, key) {
+    agg$value[agg$code == code & agg$key == key]
+  }
+  expect_true(all(c("stations_service", "stations_service_1000",
+                    "bornes_recharge_1000") %in% unique(agg$key)))
+  expect_true(all(is.na(agg$detail[agg$key %in% c(
+    "stations_service", "stations_service_1000", "bornes_recharge_1000")])))
+  # le compte : une ligne par territoire, le zéro observé est un fait
+  for (code in c("22001", "22002", "29001", "29002")) {
+    expect_equal(lire(code, "stations_service"),
+                 fuel$fuel[fuel$code == code], info = code)
+  }
+  expect_equal(lire("200000001", "stations_service"), 2)
+  # 29002 (sans EPCI) n'agrège à aucun niveau EPCI — l'EPCI 200000002 ne
+  # porte que la station de 29001
+  expect_equal(lire("200000002", "stations_service"), 1)
+  expect_equal(lire("22", "stations_service"), 2)
+  expect_equal(lire("29", "stations_service"), 4)
+  expect_equal(lire("53", "stations_service"), 6)
+
+  # les taux sont RECALCULÉS depuis les comptes et la population du territoire
+  # — jamais la moyenne des taux communaux (EPCI 200000001 : 2 / 4 000 × 1 000
+  # = 0,5, pas la moyenne de 2 et 0)
+  expect_equal(lire("200000001", "stations_service_1000"), 0.5)
+  expect_equal(lire("200000002", "stations_service_1000"), 0.5)
+  expect_equal(lire("22", "stations_service_1000"), 0.5)
+  expect_equal(lire("29", "stations_service_1000"), 4 / 6000 * 1000)
+  expect_equal(lire("53", "stations_service_1000"), 6 / 10000 * 1000)
+  # le taux de bornes suit la même règle (Σ bornes ÷ Σ population × 1 000) ;
+  # le zéro porté d'une commune sans borne reste un fait
+  expect_equal(lire("22001", "bornes_recharge_1000"), 3)
+  expect_equal(lire("22002", "bornes_recharge_1000"), 0)
+  expect_equal(lire("200000001", "bornes_recharge_1000"), 3 / 4000 * 1000)
+  expect_equal(lire("200000002", "bornes_recharge_1000"), 0)
+  expect_equal(lire("53", "bornes_recharge_1000"), 5 / 10000 * 1000)
+
+  # une observation BPE absente n'est jamais un zéro : le compte et son taux
+  # restent absents à tous les niveaux qui contiennent la commune, tandis que
+  # la densité de bornes reste calculable
+  fuel_incomplet <- fuel[fuel$code != "22002", ]
+  agg_na <- agreger_offre_territoires(
+    offre_tc, bornes, velo, base, cyclable, fuel_communes = fuel_incomplet)
+  lire_na <- function(code, key) {
+    agg_na$value[agg_na$code == code & agg_na$key == key]
+  }
+  expect_true(is.na(lire_na("22002", "stations_service")))
+  expect_true(is.na(lire_na("22002", "stations_service_1000")))
+  expect_true(is.na(lire_na("200000001", "stations_service")))
+  expect_true(is.na(lire_na("200000001", "stations_service_1000")))
+  expect_true(is.na(lire_na("22", "stations_service")))
+  expect_true(is.na(lire_na("53", "stations_service")))
+  expect_equal(lire_na("200000001", "bornes_recharge_1000"),
+               3 / 4000 * 1000)
+  # les autres communes observées gardent leur fait
+  expect_equal(lire_na("29001", "stations_service"), 1)
+
+  # la forme : les douze clés du bloc pour chaque territoire (les trois
+  # scalaires, les cinq mesures cyclables, le ratio et les trois nouvelles)
+  expect_equal(nrow(agg), 9L * 12L)
+  expect_equal(sort(unique(agg$key)), sort(c(
+    "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
+    "offre_cyclable", "bornes_ev_par_station_service",
+    "stations_service", "stations_service_1000", "bornes_recharge_1000")))
+})
+
 # INDICATEURS_MOBILITE -----------------------------------------------------------
 test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacune estampillée de SA source de référence", {
   ind <- INDICATEURS_MOBILITE
@@ -2413,7 +2529,9 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
   # + les TROIS clés du raccordement (issue #486 : le scalaire, sa courbe,
   # la référence médiane — multiplicités 1 / 11 / NA, la référence ne vit
   # que sur la région)
-   expect_equal(nrow(ind), 43L)
+  # + les TROIS densités de ravitaillement (issue #953 : stations-service,
+  # stations-service / 1 000 hab., bornes / 1 000 hab.)
+   expect_equal(nrow(ind), 46L)
    expect_setequal(ind$key, c("voitures_menage", "reseaux",
                                "reseaux_par_habitant",
                                "surface_reseaux_routiers",
@@ -2422,6 +2540,8 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
                               "places_stationnement_voiture_1000",
                               "bornes_ev_par_station_service",
                               "stationnement_velo_par_voiture",
+                              "stations_service", "stations_service_1000",
+                              "bornes_recharge_1000",
                               "tot_loss_t", "tot_loss_b",
                              "offre_cyclable",
                               "iso_alimentation", "iso_sante",
@@ -2439,6 +2559,17 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
   expect_equal(ind$multiplicite[ind$key == "offre_tc"], 1L)
   expect_equal(ind$multiplicite[ind$key == "bornes_recharge"], 1L)
   expect_equal(ind$multiplicite[ind$key == "places_stationnement_velo_1000"], 1L)
+  # les trois densités de ravitaillement (#953) : un compte et deux taux, une
+  # ligne par territoire ; la source de référence est celle des numérateurs
+  for (cle in c("stations_service", "stations_service_1000",
+                "bornes_recharge_1000")) {
+    expect_equal(ind$multiplicite[ind$key == cle], 1L, info = cle)
+  }
+  expect_equal(ind$source_reference[ind$key == "stations_service"], "bpe_b316")
+  expect_equal(ind$source_reference[ind$key == "stations_service_1000"],
+               "bpe_b316")
+  expect_equal(ind$source_reference[ind$key == "bornes_recharge_1000"],
+               "bornes-recharges")
   # la figure « L'offre cyclable » (issue #231) : la multiplicité 5 — les
   # longueurs protégé/partagé/total et les km/1 000 hab
   expect_equal(ind$multiplicite[ind$key == "offre_cyclable"], 5L)
@@ -2605,7 +2736,9 @@ fixture_indicateurs_mobilite <- function() {
   offre_territoires <- dplyr::bind_rows(
     tidyr::crossing(
       code = codes, key = c("offre_tc", "bornes_recharge",
-                            "places_stationnement_velo_1000")
+                            "places_stationnement_velo_1000",
+                            "stations_service", "stations_service_1000",
+                            "bornes_recharge_1000")
     ) %>%
       dplyr::mutate(detail = NA_character_,
                     value = dplyr::if_else(key == "offre_tc", 0.5, 10)),
@@ -2649,15 +2782,18 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
 
   ind <- construire_indicateurs_mobilite(fx, territoires, vintages_mobilite())
 
-  # les seize clés : la demande/réseaux + le sous-bloc
+  # les clés : la demande/réseaux + le sous-bloc
   # (issue #140 + #231) + les 5 parts d'isolation (issue #141) + le
    # raccordement national (issue #728) — une ligne par (territoire × détail) ;
-   # `nb_buildings` publie la taille des bâtiments par territoire.
+   # `nb_buildings` publie la taille des bâtiments par territoire ; les trois
+   # densités de ravitaillement (#953) complètent le sous-bloc.
   expect_setequal(unique(ind$key), c(
      "voitures_menage", "reseaux", "reseaux_par_habitant", "surface_reseaux_routiers",
     "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
     "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
-    "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
+    "stationnement_velo_par_voiture",
+    "stations_service", "stations_service_1000", "bornes_recharge_1000",
+    "tot_loss_t", "tot_loss_b",
     "offre_cyclable",
     "iso_alimentation", "iso_sante", "iso_administration",
     "iso_ecole", "iso_banque",
@@ -2669,7 +2805,7 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
   grille_n <- length(grille_raccordement_national())
     # Même multiplicité sur tout le référentiel : familles historiques, taille,
     # scalaire national et 73 points par territoire ; référence régionale seule.
-    expect_equal(nrow(ind), n_territoires * (24 + 1 + length(CLES_ACCES_MOBILITE) +
+    expect_equal(nrow(ind), n_territoires * (27 + 1 + length(CLES_ACCES_MOBILITE) +
                    length(CLES_MOYENNES_ACCES_MOBILITE) + 1 + 1 + grille_n + 3) + grille_n)
    expect_equal(sum(ind$key == "nb_buildings"), n_territoires)
   expect_equal(sum(ind$key == "voitures_menage"), n_territoires * 3)
@@ -2677,9 +2813,23 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
    expect_equal(sum(ind$key == "reseaux_par_habitant"), n_territoires * 3)
    expect_equal(sum(ind$key == "surface_reseaux_routiers"), n_territoires)
   for (cle in c("offre_tc", "bornes_recharge",
-                "places_stationnement_velo_1000")) {
+                "places_stationnement_velo_1000", "stations_service",
+                "stations_service_1000", "bornes_recharge_1000")) {
     expect_equal(sum(ind$key == cle), n_territoires, info = cle)
   }
+  # les unités publiées sont celles du contrat de la fiche (issue #953)
+  expect_equal(unique(ind$unit[ind$key == "stations_service"]), "stations")
+  expect_equal(unique(ind$unit[ind$key == "stations_service_1000"]),
+               "stations / 1 000 hab")
+  expect_equal(unique(ind$unit[ind$key == "bornes_recharge_1000"]),
+               "bornes / 1 000 hab")
+  # les trois clés sont classées (direction high, le rang ordinal de la fiche)
+  for (cle in c("stations_service", "stations_service_1000",
+                "bornes_recharge_1000")) {
+    expect_true(any(!is.na(ind$rang_epci[ind$key == cle])), info = cle)
+  }
+  expect_true(all(is.na(ind$detail[ind$key %in% c(
+    "stations_service", "stations_service_1000", "bornes_recharge_1000")])))
   # la figure « L'offre cyclable » (issue #231) : les 5 mesures par territoire
   expect_equal(sum(ind$key == "offre_cyclable"), n_territoires * 5)
   expect_setequal(unique(ind$detail[ind$key == "offre_cyclable"]),

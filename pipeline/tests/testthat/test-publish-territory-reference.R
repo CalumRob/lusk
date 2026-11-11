@@ -80,8 +80,13 @@ test_that("retained scalar snapshot is assembled without legacy service-share pr
     # The committed Mobility facts carry the historical raccordement source;
     # keep that bundle assertion in test-publish-scalar.R rather than pairing
     # it with the current canonical owner declaration here.
-    if (identical(theme, "mobilite"))
+    if (identical(theme, "mobilite")) {
       metadata$scalar_contracts$raccordement_tc <- NULL
+      # #953 : déclarées au canon, matérialisées au prochain run seulement
+      metadata$scalar_contracts$stations_service <- NULL
+      metadata$scalar_contracts$stations_service_1000 <- NULL
+      metadata$scalar_contracts$bornes_recharge_1000 <- NULL
+    }
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme, artifacts)
   }
   reference <- project_territory_reference(territories)

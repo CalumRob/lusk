@@ -15,8 +15,15 @@ seed_scalar_artifact_fixture_from_producer_outputs <- function(themes) {
     # The committed Mobility numeric fixture is an older source/vintage bundle;
     # its raccordement contract is exercised separately below with that historic
     # metadata. Do not combine those rows with the current canonical declaration.
-    if (identical(theme, "mobilite"))
+    if (identical(theme, "mobilite")) {
       metadata$scalar_contracts$raccordement_tc <- NULL
+      # #953 : les trois densités de ravitaillement sont déclarées au canon mais
+      # leurs faits naissent au prochain run — l'artefact conservé ne les porte
+      # pas encore, le fixture ne peut donc pas les projeter.
+      metadata$scalar_contracts$stations_service <- NULL
+      metadata$scalar_contracts$stations_service_1000 <- NULL
+      metadata$scalar_contracts$bornes_recharge_1000 <- NULL
+    }
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme, destination)
   }
   destination
@@ -140,6 +147,9 @@ test_that("retained scalar snapshot combines exact producer-declared owners dete
   # The checked-in Mobility facts are an older raccordement vintage and are not
   # a valid fixture for the canonical scalar owner declared by current extdata.
   expected <- setdiff(expected, "raccordement_tc")
+  # #953 : déclarées, pas encore matérialisées dans l'artefact conservé
+  expected <- setdiff(expected, c("stations_service", "stations_service_1000",
+                                  "bornes_recharge_1000"))
   expect_setequal(snapshot$scalar$descriptors$indicator_id, expected)
   expect_identical(snapshot$scalar, assemble_scalar_snapshot(snapshot$scalar))
   expect_gt(nrow(snapshot$comparison$groups), 0L)
@@ -352,6 +362,14 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
   # The static fixture has only the retired raccordement vintage; canonical
   # scalar serving is covered with its owner-produced rows in the bundle test.
   ids <- setdiff(ids, "raccordement_tc")
+  # The retained Mobility Parquet predates the three refuelling densities
+  # (#953): their pages and producer contracts are declared now and their facts
+  # publish on the next run. The cohort parity then covers the published keys;
+  # a separate assertion keeps the declaration honest.
+  pending <- c("stations_service", "stations_service_1000",
+               "bornes_recharge_1000")
+  expect_true(all(pending %in% names(metadata$scalar_contracts)))
+  ids <- setdiff(ids, pending)
   territory_fixture <- territoires_producteur_fixture(themes, root)
   eligible <- unique(data.frame(territory_id=as.character(territory_fixture$territoire),
     territory_type=as.character(territory_fixture$type)))
@@ -469,6 +487,11 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     }, logical(1))]
   }), use.names=FALSE)
   expected_ids <- setdiff(expected_ids, "raccordement_tc")
+  # les densités de ravitaillement (#953) naissent au prochain run : le
+  # snapshot conservé ne les porte pas encore
+  expected_ids <- setdiff(expected_ids,
+                          c("stations_service", "stations_service_1000",
+                            "bornes_recharge_1000"))
   expect_setequal(snapshot$descriptors$indicator_id, expected_ids)
   expect_gt(length(retained_scalar_artifact_owners()), 0L)
   expect_equal(sum(snapshot$facts$indicator_id %in% ids), nrow(projection$facts))
