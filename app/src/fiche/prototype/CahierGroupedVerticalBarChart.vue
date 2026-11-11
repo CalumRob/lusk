@@ -8,6 +8,7 @@ import type {
   CahierTooltipRow,
 } from '@/fiche/cahierFigureGrammaire'
 import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
+import { formatServedRank } from '@/fiche/figureGrammaire'
 import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -113,13 +114,32 @@ function categoryLabel(index: number): string {
 }
 
 const tooltipRows = computed<readonly CahierTooltipRow[]>(() => {
-  if (selectedCategoryIndex.value === null) return []
-  return props.figure.series.map((series) => {
-    const value = series.values[selectedCategoryIndex.value!]
+  const categoryIndex = selectedCategoryIndex.value
+  if (categoryIndex === null) return []
+  const comparedSeries = new Map(
+    props.figure.series
+      .filter((series) => series.comparisonFor)
+      .map((series) => [series.comparisonFor!, series]),
+  )
+  return props.figure.series.filter((series) => !series.comparisonFor).map((series) => {
+    const value = series.values[categoryIndex]
+    const compared = comparedSeries.get(series.key)
+    const comparedValue = compared?.values[categoryIndex]
     return {
       label: series.label,
       value: value === null || value === undefined ? UNAVAILABLE_LABEL : formatValue(value),
+      icon: series.icon,
       markerColor: series.color,
+      ...(compared
+        ? {
+            comparison: {
+              value: comparedValue === null || comparedValue === undefined
+                ? UNAVAILABLE_LABEL
+                : formatValue(comparedValue),
+              rank: formatServedRank(compared.ranks?.[categoryIndex]),
+            },
+          }
+        : {}),
     }
   })
 })
@@ -234,5 +254,5 @@ function categoryHitboxStyle(index: number): Record<string, string> {
 .cahier-grouped-vertical-bar-chart__hitboxes { position: absolute; inset: 0; }
 .cahier-grouped-vertical-bar-chart__category-hitbox { position: absolute; display: block; margin: 0; padding: 0; border: 0; background: transparent; cursor: help; }
 .cahier-grouped-vertical-bar-chart__category-hitbox:hover, .cahier-grouped-vertical-bar-chart__category-hitbox:focus-visible { outline: 1px solid color-mix(in srgb, var(--cahier-theme-strong) 34%, transparent); outline-offset: -1px; }
-.cahier-grouped-vertical-bar-chart__tooltip { width: min(290px, calc(100% - 24px)); pointer-events: none; }
+.cahier-grouped-vertical-bar-chart__tooltip { width: min(300px, calc(100vw - 32px)); pointer-events: none; }
 </style>

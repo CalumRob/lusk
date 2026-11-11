@@ -54,6 +54,18 @@ export function puceRangDirection(rang: string, direction: DirectionRang): PuceR
  *  le tiers inférieur reste muet. Encre neutre, aucune couleur de statut. */
 export type AccentPositionRang = 'fort' | 'faible' | null
 
+/**
+ * Formate un rang servi par le producteur (« 1er/3 », « 2e/3 ») — jamais dérivé
+ * des faits locaux. Le type reste structurel : `ComparisonRank` le satisfait.
+ */
+export function formatServedRank(rank: { position: number; size: number } | null | undefined): string | null {
+  if (!rank) return null
+  const { position, size } = rank
+  if (!Number.isInteger(position) || !Number.isInteger(size)) return null
+  if (position < 1 || size < 2 || position > size) return null
+  return `${position === 1 ? '1er' : `${position}e`}/${size}`
+}
+
 export function accentPositionRang(rang: number | null, taille: number | null): AccentPositionRang {
   if (rang === null || taille === null || taille <= 1) return null
   const tiers = taille / 3

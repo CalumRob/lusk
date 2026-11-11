@@ -560,11 +560,14 @@ describe('VarianteCahierLibre — AEDAR access', () => {
     const referenceMark = sharedRampLegend[5]!.find('.cahier-figure-legend-mark')
     expect(referenceMark.classes()).toContain('cahier-figure-legend-mark--dash')
 
-    // The reference values land in the tooltip note per mode.
+    // The reference values land in one comparison row per visible mode.
     await wrapper.find('.aedar-ramp [aria-label="Temps d\'accès : 15 min"]').trigger('focus')
-    expect(wrapper.find('.aedar-ramp [role="tooltip"]').text()).toContain('Groupe comparé : 2,5')
-    expect(wrapper.find('.aedar-ramp [role="tooltip"]').text()).not.toContain('EPCI X')
-    expect(wrapper.find('.aedar-ramp [role="tooltip"]').html()).toContain('Moyenne de EPCI X')
+    const rampTooltip = wrapper.get('.aedar-ramp [role="tooltip"]')
+    expect(rampTooltip.findAll('.cahier-figure-tooltip-row-comparison').length).toBeGreaterThan(0)
+    expect(rampTooltip.text()).toContain('Groupe comparé')
+    expect(rampTooltip.text()).toContain('2,5')
+    expect(rampTooltip.text()).not.toContain('EPCI X')
+    expect(rampTooltip.html()).toContain('Moyenne de EPCI X')
     // #860 (ruling) — une seule légende par figure : la note « Groupe comparé »
     // séparée est retirée ; la loi de nommage vit dans la légende des modes
     // (entrée « peer » libellée) et dans les marques de pair des figures.

@@ -106,7 +106,37 @@ describe('AEDAR equipment decile distribution figure', () => {
     expect(categories[10]?.attributes('aria-label')).toContain('Maximum : Voiture : 10 établissements')
 
     await categories[1]!.trigger('focus')
-    expect(wrapper.get('.cahier-grouped-vertical-bar-chart__tooltip').text()).toContain('1 établissement')
+    const tooltip = wrapper.get('.cahier-grouped-vertical-bar-chart__tooltip')
+    expect(tooltip.text()).toContain('1 établissement')
+    expect(tooltip.findAll('svg.cahier-figure-tooltip-icon')).toHaveLength(1)
+    expect(tooltip.get('svg.cahier-figure-tooltip-icon').attributes('style')).toContain('color: var(--cahier-mode-car)')
+    expect(tooltip.find('.cahier-figure-tooltip-marker').exists()).toBe(false)
+  })
+
+  it('attaches an unranked compared series under the mode row without inventing a rank', async () => {
+    const wrapper = mount(AedarEquipmentQuantileFigureCahier, {
+      props: {
+        fact: fact(),
+        horizonMinutes: 15,
+        selectedModes: ['car'],
+        evidence: explorerEvidence(),
+        referenceFact: fact(),
+        comparisonLabel: 'Moyenne de test',
+      },
+    })
+
+    const categories = wrapper.findAll('button.cahier-grouped-vertical-bar-chart__category-hitbox')
+    await categories[1]!.trigger('focus')
+    const tooltip = wrapper.get('.cahier-grouped-vertical-bar-chart__tooltip')
+    const focalRow = tooltip.get('.cahier-figure-tooltip-row')
+    const comparison = focalRow.get('.cahier-figure-tooltip-row-comparison')
+
+    expect(tooltip.findAll('.cahier-figure-tooltip-row')).toHaveLength(1)
+    expect(focalRow.get('dt').text()).toBe('Voiture')
+    expect(comparison.get('.cahier-figure-tooltip-comparison-label').text()).toBe('Groupe comparé')
+    expect(comparison.get('.cahier-figure-tooltip-comparison-value').text()).toContain('Indisponible')
+    expect(tooltip.find('.cahier-figure-tooltip-comparison-rank').exists()).toBe(false)
+    expect(tooltip.text()).not.toContain('Groupe comparé : Voiture')
   })
 
   it('keeps repeated cutpoints as equal-height bars and groups one bar per selected mode', () => {
