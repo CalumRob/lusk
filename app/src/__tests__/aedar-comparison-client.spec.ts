@@ -350,6 +350,28 @@ describe('lecture AEDAR de la Sélection', () => {
     if (result.status !== 'ready') throw new Error('Expected a ranked fixed per-cell response')
     expect(result.evidence.cells[0]).toMatchObject({ group_value: 7.4, ...overrides })
   })
+  it('admet une population d’un seul territoire servie 1/1 et n’affiche aucun badge', async () => {
+    // Le producteur classe une population éligible singleton (seule la focale
+    // publie la cellule) : 1er/1 est une preuve valide, mais le tooltip n’a
+    // aucun pair contre qui se positionner, donc l’affichage replie sur rien.
+    mockResponse(fixedCellResponse(fixedCellRow({ rank: 1, rank_size: 1, rank_ties: 1 })))
+    const result = await fetchAedarComparison('commune', '22001', fixedCellRequest)
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('Expected a singleton-population fixed per-cell response')
+    expect(result.evidence.cells[0]).toMatchObject({ group_value: 7.4,
+      rank: 1, rank_size: 1, rank_ties: 1 })
+    expect(aedarComparisonRank(result.evidence.cells[0])).toBeNull()
+  })
+  it('conserve l’acceptation d’une population singleton sur une lecture selected', async () => {
+    // Même loi partagée : un seul membre éligible sert 1/1 sans invalider la
+    // lecture (régression du seuil d’affichage appliqué à la validation).
+    mockResponse({ ...envelope, comparisons: [{ ...cell, rank: 1, rank_size: 1, rank_ties: 1 }] })
+    const result = await fetchAedarComparison('commune', 'sel-c1', options)
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('Expected a singleton-population selected response')
+    expect(result.evidence.cells[0]).toMatchObject({ rank: 1, rank_size: 1, rank_ties: 1 })
+    expect(aedarComparisonRank(result.evidence.cells[0])).toBeNull()
+  })
   it.each([
     ['rang sans taille ni égalités', { rank: 2, rank_size: null, rank_ties: null }],
     ['taille sans rang', { rank: null, rank_size: 3, rank_ties: 1 }],
@@ -365,7 +387,7 @@ describe('lecture AEDAR de la Sélection', () => {
     ['rang nul', { rank: 0, rank_size: 3, rank_ties: 1 }],
     ['rang hors population', { rank: 4, rank_size: 3, rank_ties: 1 }],
     ['égalités débordant la population', { rank: 3, rank_size: 3, rank_ties: 2 }],
-    ['population d’un seul territoire', { rank: 1, rank_size: 1, rank_ties: 1 }],
+    ['population vide', { rank: 1, rank_size: 0, rank_ties: 1 }],
     ['rang non entier', { rank: 1.5, rank_size: 3, rank_ties: 1 }],
   ])('refuse un rang fixe hors bornes (%s)', async (_label, overrides) => {
     mockResponse(fixedCellResponse(fixedCellRow(overrides)))

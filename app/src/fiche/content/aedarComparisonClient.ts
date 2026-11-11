@@ -75,10 +75,16 @@ const successfulReads = new WeakMap<typeof fetch, Map<string, Extract<AedarCompa
 const record = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
 const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
 const nonempty = (x: unknown): x is string => typeof x === 'string' && x.length > 0
-const RANK_FIELDS = new Set(['rank', 'rank_size', 'rank_ties'])
+const RANK_FIELD_NAMES = ['rank', 'rank_size', 'rank_ties'] as const
+const RANK_FIELDS = new Set<string>(RANK_FIELD_NAMES)
 function invalid(): never { throw new Error('Comparaison AEDAR incompatible ou incomplète') }
 /** Producer-served ranks are all-or-nothing: three integers, or three nulls for
  * an unranked facet or an unavailable focal. Nothing is derived from the value.
+ *
+ * A singleton eligible population is valid evidence: when only the focal
+ * publishes a cell the producer serves 1/1, so `rank_size` is bounded below by
+ * 1 here. Hiding a rank that has nothing to position against is the display
+ * helper's job, not a reason to fail the whole read.
  */
 function servedRank(row: Record<string, unknown>): readonly [number, number, number] | null {
   const values = [row.rank, row.rank_size, row.rank_ties]
@@ -86,7 +92,7 @@ function servedRank(row: Record<string, unknown>): readonly [number, number, num
   if (values.every((value) => value === null)) return null
   if (!values.every((value) => Number.isInteger(value))) invalid()
   const [position, size, ties] = values as [number, number, number]
-  if (position < 1 || size < 2 || ties < 1 || position + ties - 1 > size) invalid()
+  if (position < 1 || size < 1 || ties < 1 || position + ties - 1 > size) invalid()
   return [position, size, ties]
 }
 
@@ -145,10 +151,10 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
       items.push({ id: `aedar-comparison-${items.length}`, resource: 'aedar_territorial_aggregate',
         target: { kind: 'territory', type, id }, coordinates: { ...(aggregate ? {} : { typequ: options.typequ.slice(start, start + cellBudget) }), measure: [...measures] },
         intent, fields: aggregate
-          ? ['group_value', ...(measures.some((measure) => rankMeasures!.has(measure)) ? ['rank', 'rank_size', 'rank_ties'] : [])]
+          ? ['group_value', ...(measures.some((measure) => rankMeasures!.has(measure)) ? RANK_FIELD_NAMES : [])]
           // Fixed per-cell ranks are opt-in too (#951): the producer serves them
           // on every ranked facet and returns nulls when it cannot rank.
-          : ['group_value', 'rank', 'rank_size', 'rank_ties'] })
+          : ['group_value', ...RANK_FIELD_NAMES] })
     }
     const cells: AedarComparisonCell[] = []
     let comparisonVersion: string | undefined
@@ -219,7 +225,7 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
             // unranked facet never serves a rank, every requested rank carries
             // all three fields, and a selection bounds its own population.
             const rank = servedRank(row)
-            if (aggregate && declaration && !declaration.ranked && rank) invalid()
+            if (aggregate && !declaration?.ranked && rank) invalid()
             if (rank && selected && (rank[1] > members!.length
               || !members!.some((m) => m.territory_type === type && m.territory_id === id))) invalid()
           }
@@ -263,9 +269,13 @@ export function aedarAggregateComparisonCell(evidence: AedarComparisonEvidence |
   return aedarComparisonCell(evidence, undefined, measure)
 }
 
+/** A served 1/1 is valid evidence but has no peer to position against: the
+ * tooltip needs a population of at least two, so only this display helper
+ * applies the threshold. */
+const RENDERABLE_RANK_SIZE = 2
 /** The producer-served ordinal of a comparison cell, or null when it is not rankable. */
 export function aedarComparisonRank(cell: AedarComparisonCell | null | undefined): ComparisonRank | null {
-  return cell?.rank && cell.rank_size && cell.rank_size >= 2
+  return cell?.rank && cell.rank_size && cell.rank_size >= RENDERABLE_RANK_SIZE
     ? { position: cell.rank, size: cell.rank_size }
     : null
 }
