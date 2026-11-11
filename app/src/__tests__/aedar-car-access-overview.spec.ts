@@ -132,4 +132,52 @@ describe('AEDAR summary-driven car access overview', () => {
     expect(overview.scalars[0]?.rank).toBeNull()
     expect(overview.scalars[0]?.reference?.value).toBe(0.5)
   })
+
+  it('attache le rang servi à chaque point des deux rampes, tous modes et horizons confondus', () => {
+    const focal = summary({ meanDiversity: 4 / 3, meanVolume: 7 / 3 })
+    const ranked = comparison(focal)
+    // One served ordinal per aggregate reading, deliberately not derivable from
+    // the focal or reference values (ties on the first measure).
+    ranked.cells = Object.keys(AEDAR_AGGREGATE_READING_MEASURES).map((measure, index) => ({
+      ...ranked.cells[0]!, measure, group_value: 1,
+      rank: index + 1, rank_size: 41, rank_ties: index === 0 ? 3 : 1,
+    }))
+    const sections = aedarPrototypeSections(focal, null, territory, {
+      comparison: ranked,
+      comparisonRequest: { intent: { kind: 'fixed_comparison', context: 'density_class' }, label: 'Classe de densité' },
+    })
+    const access = sections[1].evidence
+    if (access?.kind !== 'aedar-access') throw new Error('Expected AEDAR ramp evidence')
+    for (const ramp of access.ramps) {
+      const statistic = ramp.rampKey === 'diversity' ? 'share' : 'mean'
+      for (const mode of ['car', 'bike_lts2', 'bike_lts4', 'transit', 'walk'] as const) {
+        expect(ramp.referenceRanks?.[mode]).toHaveLength(4)
+        ramp.xAxis.values.forEach((horizon, index) => {
+          const measure = Object.entries(AEDAR_AGGREGATE_READING_MEASURES)
+            .find(([, sourceMeasure]) => sourceMeasure === `count_${horizon}_${mode}_${statistic}`)![0]
+          const served = ranked.cells.find((candidate) => candidate.measure === measure)!
+          expect(ramp.referenceRanks?.[mode]?.[index]).toEqual({
+            position: served.rank, size: served.rank_size, ties: served.rank_ties,
+          })
+        })
+      }
+    }
+  })
+
+  it('laisse chaque rampe sans rang quand la comparaison ne sert que des valeurs', () => {
+    const focal = summary({ meanDiversity: 4 / 3, meanVolume: 7 / 3 })
+    const unranked = comparison(focal)
+    unranked.cells = unranked.cells.map((cell) => ({ ...cell, rank: null, rank_size: null, rank_ties: null }))
+    const access = aedarPrototypeSections(focal, null, territory, {
+      comparison: unranked,
+      comparisonRequest: { intent: { kind: 'fixed_comparison', context: 'density_class' }, label: 'Classe de densité' },
+    })[1].evidence
+    if (access?.kind !== 'aedar-access') throw new Error('Expected AEDAR ramp evidence')
+    for (const ramp of access.ramps) {
+      expect(ramp.reference).not.toBeNull()
+      for (const mode of ['car', 'bike_lts2', 'bike_lts4', 'transit', 'walk'] as const) {
+        expect(ramp.referenceRanks?.[mode]).toEqual([null, null, null, null])
+      }
+    }
+  })
 })

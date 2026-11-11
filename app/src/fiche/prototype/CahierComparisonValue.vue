@@ -5,7 +5,7 @@ import { RouterLink } from 'vue-router'
 import type { NumericFact, TerritorialScalarReference } from '@/fiche/content/territoryFacts'
 import CahierRank from './CahierRank.vue'
 import { comparisonRank } from '@/fiche/content/comparisonRank'
-import { puceRangDirection } from '@/fiche/figureGrammaire'
+import { formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import { AlertTriangle, LoaderCircle } from 'lucide-vue-next'
 import { ref, useId } from 'vue'
 
@@ -14,7 +14,7 @@ const props = withDefaults(
     fact?: NumericFact
     /** A named mean (direct territory or selection); its identity stays in the accessible label. */
     namedReference?: Pick<TerritorialScalarReference, 'label' | 'value' | 'unit'> | null
-    servedRank?: { position: number; size: number; direction: import('@/methodes/indicateurs').DirectionRang; key: string } | null
+    servedRank?: { position: number; size: number; ties?: number | null; direction: import('@/methodes/indicateurs').DirectionRang; key: string } | null
     to?: RouteLocationRaw | null
     maximumFractionDigits?: number
     comparisonStatus?: 'idle' | 'loading' | 'ready' | 'unavailable' | 'error'
@@ -47,7 +47,7 @@ function comparisonAccessibleName(): string {
     ?? (comparison?.scope.label ? `${statistic} des ${comparison.scope.label}` : null)
   const served = props.servedRank && props.servedRank.size >= 2 && props.servedRank.position > 0
   const rank = served
-    ? puceRangDirection(`${props.servedRank!.position === 1 ? '1er' : `${props.servedRank!.position}e`}/${props.servedRank!.size}`, props.servedRank!.direction).phrase
+    ? puceRangDirection(formatServedRankAria(props.servedRank!)!, props.servedRank!.direction).phrase
     : !props.namedReference && props.fact ? comparisonRank(props.fact)?.phrase : null
   return `Groupe comparé : ${comparisonText()}${rank ? `. Rang ${rank}` : ''}${description ? `. ${description}` : ''}`
 }

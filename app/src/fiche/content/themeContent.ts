@@ -5,6 +5,7 @@ import { comparisonScopeLabel as resolveComparisonScopeLabel } from './compariso
 import type { ThemeMetadata, TrajectoryMetadata } from '@/payload/types'
 import type { AedarFact } from './aedarApiClient'
 import type {
+  ComparisonRank,
   ComparisonScope,
   FactAvailability,
   FactProvenance,
@@ -218,6 +219,8 @@ export interface AedarTimeRampEvidence {
   territory: Readonly<Record<AedarRampMode, readonly (number | null)[]>>
   /** Per-mode reference-territory values, or null when no honest reference evidence exists. */
   reference: Readonly<Record<AedarRampMode, readonly (number | null)[]>> | null
+  /** Producer-served ordinal per mode and horizon for the compared reading; never derived locally. */
+  referenceRanks?: Readonly<Record<AedarRampMode, readonly (ComparisonRank | null)[]>> | null
   /** Explicit reference-territory label (e.g. an EPCI or region name), never a fabricated cohort. */
   referenceLabel: string | null
   availability: FactAvailability

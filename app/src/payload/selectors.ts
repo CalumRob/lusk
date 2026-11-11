@@ -499,7 +499,9 @@ export interface DetailsRang {
   rang: number
   /** The group size of the comparison (« / Y »), or null when absent. */
   taille: number | null
-  /** The formatted chip, e.g. « 3e/41 · communes de l’EPCI ». */
+  /** The producer-served tie count, present only when the position is shared. */
+  ties?: number
+  /** The formatted chip, e.g. « 3e/41 · communes de l’EPCI » or « =1er/41 ». */
   libelle: string
   /** Scope-silent page chip; the scope remains in its accessible name. */
   libelleCourt: string
@@ -507,14 +509,17 @@ export interface DetailsRang {
 
 export function detailsRangEnContexte(indicateur: Pick<Indicateur, 'comparaisonApi'>): DetailsRang | null {
   if (!indicateur.comparaisonApi) return null
-  const { rang, taille, portee } = indicateur.comparaisonApi
+  const { rang, taille, portee, ties } = indicateur.comparaisonApi
   if (rang === null) return null
   if (taille !== null && taille < 2) return null
-  return { rang, taille, libelle: formaterRangApi(rang, taille, portee), libelleCourt: formaterRangApi(rang, taille, null) }
+  const partage = typeof ties === 'number' && Number.isInteger(ties) && ties > 1
+  return { rang, taille, ...(partage ? { ties } : {}),
+    libelle: formaterRangApi(rang, taille, portee, ties), libelleCourt: formaterRangApi(rang, taille, null, ties) }
 }
 
-function formaterRangApi(rang: number, taille: number | null, portee: string | null): string {
-  return `${ordinalFrancais(rang)}${taille === null ? '' : `/${taille}`}${portee === null ? '' : ` · ${portee}`}`
+function formaterRangApi(rang: number, taille: number | null, portee: string | null, ties?: number | null): string {
+  const partage = typeof ties === 'number' && Number.isInteger(ties) && ties > 1 ? '=' : ''
+  return `${partage}${ordinalFrancais(rang)}${taille === null ? '' : `/${taille}`}${portee === null ? '' : ` · ${portee}`}`
 }
 
 /** French number: comma decimal separator, thin-space thousands, zeros trimmed. */

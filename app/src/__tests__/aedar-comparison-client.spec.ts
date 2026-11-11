@@ -67,6 +67,9 @@ describe('lecture AEDAR de la Sélection', () => {
     expect(items).toHaveLength(40)
     expect(items.every((item: { coordinates: Record<string, unknown> }) => !('typequ' in item.coordinates))).toBe(true)
     expect(items.map((item: { coordinates: { measure: string[] } }) => item.coordinates.measure[0])).toEqual(measures)
+    // Ranks are tooltip-wide: with no `rankMeasures` allow-list the client ranks
+    // every requested aggregate measure, never a narrow default.
+    expect(items.every((item: { fields: string[] }) => item.fields.includes('rank'))).toBe(true)
   })
   it('valide le groupe agrégé fixed avec sommes observées dépassant les adresses et 40 valeurs distinctes', async () => {
     const measures = aggregateMeasures
@@ -328,7 +331,7 @@ describe('lecture AEDAR de la Sélection', () => {
     expect(result.evidence.cells).toHaveLength(1)
     expect(result.evidence.cells[0]).toMatchObject({ typequ: 'A104', measure: 'count_5_walk_mean',
       group_value: 7.4, rank: 2, rank_size: 41, rank_ties: 1 })
-    expect(aedarComparisonRank(result.evidence.cells[0])).toEqual({ position: 2, size: 41 })
+    expect(aedarComparisonRank(result.evidence.cells[0])).toEqual({ position: 2, size: 41, ties: 1 })
   })
   it('admet une comparaison fixe par cellule sans rang servi et laisse la ligne valeur-seule', async () => {
     mockResponse(fixedCellResponse(fixedCellRow({ rank: null, rank_size: null, rank_ties: null })))

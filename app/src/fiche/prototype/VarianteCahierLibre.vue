@@ -292,6 +292,7 @@ function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureDa
       xLabel: ramp.xAxis.labels[index] ?? `${xValue}`,
       value: ramp.territory[mode][index] ?? null,
       referenceValue: ramp.reference?.[mode][index] ?? null,
+      referenceRank: ramp.referenceRanks?.[mode][index] ?? null,
     })),
   }))
   return {
@@ -499,7 +500,7 @@ onBeforeUnmount(() => {
                           <CahierComparisonValue
                             v-if="scalar.reference"
                             :named-reference="scalar.reference"
-                            :served-rank="scalar.rank && scalar.rankSize && scalar.rankSize >= 2 && scalar.rankDirection ? { position: scalar.rank, size: scalar.rankSize, direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' : 'moins-est-mieux', key: scalar.key } : null"
+                            :served-rank="scalar.rank && scalar.rankSize && scalar.rankSize >= 2 && scalar.rankDirection ? { position: scalar.rank, size: scalar.rankSize, ties: scalar.rankTies ?? null, direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' : 'moins-est-mieux', key: scalar.key } : null"
                             :comparison-status="comparisonStatus"
                             :comparison-error="comparisonError"
                           />

@@ -148,6 +148,32 @@ describe('Rang de la sélection — valeur du Groupe comparé', () => {
     }
   })
 
+  it('marque un rang partagé servi d’un « = » dans la puce Cahier et dit « ex æquo » en aria', async () => {
+    const tied = fact()
+    tied.comparison = { ...tied.comparison!, rank: { position: 1, size: 41, ties: 3 } }
+    const wrapper = mount(CahierComparisonValue, { props: { fact: tied } })
+    expect(wrapper.get('.cahier-rank').text()).toBe('=1er/41')
+    const mark = wrapper.get('.cahier-comparison-value__reference')
+    expect(mark.attributes('aria-label')).toContain('1er/41 (ex æquo)')
+    expect(mark.attributes('aria-label')).not.toContain('=1er')
+    const untied = fact()
+    untied.comparison = { ...untied.comparison!, rank: { position: 1, size: 41, ties: 1 } }
+    await wrapper.setProps({ fact: untied })
+    expect(wrapper.get('.cahier-rank').text()).toBe('1er/41')
+  })
+
+  it('porte le « = » jusqu’à la puce de page depuis le rang servi par l’API', () => {
+    const row = { ...indicateursHabitatFixture[0]!, key: 'part_passoires', detail: null }
+    const lignes = lignesAvecComparaisonApi([row], { results: [{ indicator_id: row.key, status: 'available',
+      direction: 'low', median: .3, rank: 1, rank_size: 41, rank_ties: 3 }], profile_comparisons: [] },
+    'communes de la sélection')
+    expect(lignes[0]!.comparaisonApi?.ties).toBe(3)
+    const wrapper = mount(IndicatorFigure, { props: { lignes, clef: row.key, theme: 'habitat', libelle: 'Passoires' } })
+    const mark = wrapper.get('.figure-indicateur-comparaison')
+    expect(mark.text()).toContain('=1er/41')
+    expect(mark.get('[role="img"]').attributes('aria-label')).toContain('=1er/41')
+  })
+
   it('actualise le rang et sa portée sans conserver la sélection précédente, puis masque le rang du singleton', async () => {
     const wrapper = mount(CahierComparisonValue, { props: { fact: fact() } })
     const selected = fact()

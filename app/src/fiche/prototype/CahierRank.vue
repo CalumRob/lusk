@@ -4,12 +4,12 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import type { NumericFact } from '@/fiche/content/territoryFacts'
 import { comparisonRank } from '@/fiche/content/comparisonRank'
-import { puceRangDirection } from '@/fiche/figureGrammaire'
+import { formatServedRank, puceRangDirection } from '@/fiche/figureGrammaire'
 
 const props = withDefaults(
   defineProps<{
     fact?: NumericFact
-    servedRank?: { position: number; size: number; direction: import('@/methodes/indicateurs').DirectionRang; key: string } | null
+    servedRank?: { position: number; size: number; ties?: number | null; direction: import('@/methodes/indicateurs').DirectionRang; key: string } | null
     to?: RouteLocationRaw | null
     placement?: 'inline' | 'comparison' | 'access'
     decorative?: boolean
@@ -17,12 +17,8 @@ const props = withDefaults(
   { to: null, placement: 'inline', decorative: false },
 )
 
-function rankText(fact?: NumericFact, servedRank?: { position: number; size: number } | null): string | null {
-  const rank = servedRank ?? fact?.comparison?.rank
-  if (rank) {
-    if (!Number.isInteger(rank.position) || !Number.isInteger(rank.size) || rank.position < 1 || rank.size < 2 || rank.position > rank.size) return null
-    return `${rank.position === 1 ? '1er' : `${rank.position}e`}/${rank.size}`
-  }
+function rankText(fact?: NumericFact, servedRank?: { position: number; size: number; ties?: number | null } | null): string | null {
+  if (servedRank) return formatServedRank(servedRank)
   return fact ? comparisonRank(fact)?.rang ?? null : null
 }
 

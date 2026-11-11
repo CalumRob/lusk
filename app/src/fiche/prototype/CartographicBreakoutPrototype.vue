@@ -12,7 +12,7 @@ import { mapAssetUrl } from '@/fiche/mapAssetUrl'
 import type { CahierTooltipComparison, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
 import { groupeCompareAria } from '@/fiche/content/comparisonWording'
-import { formatServedRank } from '@/fiche/figureGrammaire'
+import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 import type { ContentFact, CyclingOfferEvidence, SharingNetworksEvidence } from '@/fiche/content/themeContent'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -151,7 +151,7 @@ function comparisonForFact(fact: ContentFact, scope: string | null): CahierToolt
   return {
     value,
     rank,
-    ariaLabel: groupeCompareAria(value, rank, scope ?? 'Indisponible'),
+    ariaLabel: groupeCompareAria(value, formatServedRankAria(comparison.rank), scope ?? 'Indisponible'),
   }
 }
 

@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import type { AedarFact } from '@/fiche/content/aedarApiClient'
+import type { AedarComparisonCell } from '@/fiche/content/aedarComparisonClient'
 import { AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarEquipmentExplorerEvidence } from '@/fiche/content/themeContent'
 import AedarEquipmentQuantileFigureCahier from '@/fiche/prototype/AedarEquipmentQuantileFigureCahier.vue'
@@ -137,6 +138,31 @@ describe('AEDAR equipment decile distribution figure', () => {
     expect(comparison.get('.cahier-figure-tooltip-comparison-value').text()).toContain('Indisponible')
     expect(tooltip.find('.cahier-figure-tooltip-comparison-rank').exists()).toBe(false)
     expect(tooltip.text()).not.toContain('Groupe comparé : Voiture')
+  })
+
+  it('rend le rang servi du minimum et du maximum de la distribution, et rien sans rang', async () => {
+    const comparisonCell = (measure: string, rank: number | null): AedarComparisonCell => ({
+      typequ: 'B207', measure, group_value: 7.4, group_coverage_status: 'covered',
+      group_n_addresses: 50, group_n_observed: 42, statistic: 'pooled',
+      source_id: 'aedar_bretagne', vintage_id: '2026-v1', reference_date: null, publication_date: null,
+      rank, rank_size: rank === null ? null : 2, rank_ties: rank === null ? null : 1,
+    }) as AedarComparisonCell
+    const wrapper = mount(AedarEquipmentQuantileFigureCahier, {
+      props: { fact: fact(), horizonMinutes: 15, selectedModes: ['car'], evidence: explorerEvidence(),
+        comparison: {
+          label: 'Classe de densité', contentVersion: 'test-content-v1', referenceContentVersion: 'test-reference-v1',
+          cells: [comparisonCell('count_15_car_min', 1), comparisonCell('count_15_car_max', 2)],
+        },
+        comparisonLabel: 'Classe de densité' },
+    })
+    const categories = wrapper.findAll('button.cahier-grouped-vertical-bar-chart__category-hitbox')
+    await categories[0]!.trigger('focus')
+    expect(wrapper.get('.cahier-figure-tooltip-comparison-rank').text()).toBe('1er/2')
+    await categories[10]!.trigger('focus')
+    expect(wrapper.get('.cahier-figure-tooltip-comparison-rank').text()).toBe('2e/2')
+    // A decile the producer does not rank renders no badge at all.
+    await categories[1]!.trigger('focus')
+    expect(wrapper.find('.cahier-figure-tooltip-comparison-rank').exists()).toBe(false)
   })
 
   it('keeps repeated cutpoints as equal-height bars and groups one bar per selected mode', () => {

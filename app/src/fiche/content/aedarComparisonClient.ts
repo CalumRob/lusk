@@ -283,6 +283,6 @@ const RENDERABLE_RANK_SIZE = 2
 /** The producer-served ordinal of a comparison cell, or null when it is not rankable. */
 export function aedarComparisonRank(cell: AedarComparisonCell | null | undefined): ComparisonRank | null {
   return cell?.rank && cell.rank_size && cell.rank_size >= RENDERABLE_RANK_SIZE
-    ? { position: cell.rank, size: cell.rank_size }
+    ? { position: cell.rank, size: cell.rank_size, ties: cell.rank_ties ?? null }
     : null
 }

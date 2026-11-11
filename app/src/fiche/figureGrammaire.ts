@@ -55,15 +55,24 @@ export function puceRangDirection(rang: string, direction: DirectionRang): PuceR
 export type AccentPositionRang = 'fort' | 'faible' | null
 
 /**
- * Formate un rang servi par le producteur (« 1er/3 », « 2e/3 ») — jamais dérivé
- * des faits locaux. Le type reste structurel : `ComparisonRank` le satisfait.
+ * Formate un rang servi par le producteur (« 1er/3 », « 2e/3 », « =1er/3 » quand
+ * le rang est partagé) — jamais dérivé des faits locaux. Le type reste
+ * structurel : `ComparisonRank` le satisfait.
  */
-export function formatServedRank(rank: { position: number; size: number } | null | undefined): string | null {
+export function formatServedRank(rank: { position: number; size: number; ties?: number | null } | null | undefined): string | null {
   if (!rank) return null
-  const { position, size } = rank
+  const { position, size, ties } = rank
   if (!Number.isInteger(position) || !Number.isInteger(size)) return null
   if (position < 1 || size < 2 || position > size) return null
-  return `${position === 1 ? '1er' : `${position}e`}/${size}`
+  const shared = typeof ties === 'number' && Number.isInteger(ties) && ties > 1
+  return `${shared ? '=' : ''}${position === 1 ? '1er' : `${position}e`}/${size}`
+}
+
+/** Le même rang pour les technologies d'assistance : le « = » visible devient « ex æquo ». */
+export function formatServedRankAria(rank: { position: number; size: number; ties?: number | null } | null | undefined): string | null {
+  const text = formatServedRank(rank)
+  if (!text) return null
+  return text.startsWith('=') ? `${text.slice(1)} (ex æquo)` : text
 }
 
 export function accentPositionRang(rang: number | null, taille: number | null): AccentPositionRang {
