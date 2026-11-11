@@ -126,6 +126,7 @@ export async function mountSandboxGroupedBarFigure(container: Element) {
       ],
       distributionAxisTitle: 'Quantile',
       distributionYAxisTitle: 'NOMBRE D’ÉTABLISSEMENTS',
+      distributionValueUnit: 'établissement',
       distributionDescription: 'Distribution synthétique par quantile.',
       distributionUnavailableDescription: 'Distribution indisponible.',
       source: null,

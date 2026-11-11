@@ -53,6 +53,9 @@ export const CONTENU_CATALOGUE_INDICATEURS = [
           { resourceKey: 'voitures_menage', figureFamily: 'composition' },
           { resourceKey: 'bornes_recharge', figureFamily: 'scalar' },
           { resourceKey: 'bornes_ev_par_station_service', figureFamily: 'scalar' },
+          { resourceKey: 'stations_service', figureFamily: 'scalar' },
+          { resourceKey: 'stations_service_1000', figureFamily: 'scalar' },
+          { resourceKey: 'bornes_recharge_1000', figureFamily: 'scalar' },
         ],
       },
       {

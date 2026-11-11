@@ -198,6 +198,8 @@ export interface AedarEquipmentExplorerEvidence {
   distributionStatistics: readonly AedarEquipmentQuantileStatistic[]
   distributionAxisTitle: string
   distributionYAxisTitle: string
+  /** Display noun for the distribution's count values (accessible readings only; the producer declares no unit). */
+  distributionValueUnit: string
   distributionDescription: string
   distributionUnavailableDescription: string
   source: AedarEvidenceSource | null

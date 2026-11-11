@@ -465,6 +465,8 @@ export function aedarEquipmentExplorerSection(data: AedarReady, options: AedarAc
       distributionStatistics: AEDAR_EQUIPMENT_QUANTILE_STATISTICS,
       distributionAxisTitle: 'Décile',
       distributionYAxisTitle: 'Nombre d’établissements',
+      /** Stable display noun for the count measures (the producer declares no unit). */
+      distributionValueUnit: 'établissement',
       distributionDescription: 'Les barres montrent les seuils publiés : minimum, déciles et maximum.',
       distributionUnavailableDescription: 'Distribution indisponible pour ce type d’équipement et cet horizon.',
       source: aedarEvidenceSource(data),

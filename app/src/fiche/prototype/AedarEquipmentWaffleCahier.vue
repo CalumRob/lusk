@@ -241,7 +241,7 @@ watch(horizonMinutes, (horizon) => {
           v-if="tooltipType"
           class="aedar-waffle-tile-tooltip cahier-figure-tooltip--chart"
           :title="`${tooltipType.label} (${tooltipType.typequ})`"
-          :unit="tooltipType.bucketLabel"
+          :subtitle="tooltipType.bucketLabel"
           :rows="[]"
           :anchor="tooltipAnchor"
         />

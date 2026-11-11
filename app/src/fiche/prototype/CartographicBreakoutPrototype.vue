@@ -282,7 +282,6 @@ async function inspect(mode: ModeKey): Promise<void> {
           :class="[`plate-network-tooltip--${activeMode}`]"
           :style="tooltipTop ? { '--plate-network-tooltip-top': tooltipTop } : undefined"
           :title="categoryLabel(activeMode ?? 'car')"
-          :unit="props.evidence?.figure.unit"
           :rows="networkTooltipRows(activeMode ?? 'car')"
         />
       </div>

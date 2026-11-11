@@ -14,7 +14,6 @@ import {
 } from '../indicateurs/catalogue'
 import { CONTENU_CATALOGUE_INDICATEURS } from '../indicateurs/catalogueContent'
 import { FAMILLES_FIGURE, THEMES_CANONIQUES } from '../payload/types'
-import type { Theme } from '../payload/types'
 import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 import { rechercherIndicateurs } from '../search/recherche'
 import { routes } from '../router'
@@ -116,7 +115,7 @@ describe('catalogue des Pages d’indicateur app-owned', () => {
     expect(entreesRechercheIndicateurs(ressourcesNatives).map(({ label }) => label)).toContain('Densité de population')
   })
 
-  it('relie les 31 pages éditoriales conservées aux déclarations producteur retenues', () => {
+  it('relie exactement les 34 pages conservées aux déclarations producteur retenues', () => {
     const declarations = declarationsProducteur()
     const pagesDeclarees = declarations.flatMap(({ pages }) => pages)
     const conservees = pagesDeclarees.filter(({ retired }) => !retired)
@@ -126,36 +125,20 @@ describe('catalogue des Pages d’indicateur app-owned', () => {
         sousGroupe.pages.map(({ resourceKey }) => `${groupe.theme}/${resourceKey}`),
       ),
     )
-    // #953 publishes these three facts; #954 consumes them in the fiche without
-    // adding them to the editorial /indicateurs membership (owner ruling #952 §14.8).
-    const declaredSansPageEditoriale = new Set([
-      'mobilite/bornes_recharge_1000',
-      'mobilite/stations_service',
-      'mobilite/stations_service_1000',
-    ])
-
     // Recomputed from canonical declarations via sources -> source_records;
     // editorial labels are deliberately not compared to producer metadata.
+    // #962 added the three Mobility supply pages (stations_service,
+    // stations_service_1000, bornes_recharge_1000): 45 -> 48 declared pages,
+    // 31 -> 34 retained.
     expect(pagesDeclarees).toHaveLength(48)
     expect(retirees).toHaveLength(14)
     expect(conservees).toHaveLength(34)
-    expect(pagesCatalogue).toHaveLength(31)
     expect(new Set(pagesCatalogue).size).toBe(pagesCatalogue.length)
     expect(pagesCatalogue.sort()).toEqual(
-      conservees
-        .map(({ theme, resourceKey }) => `${theme}/${resourceKey}`)
-        .filter((key) => !declaredSansPageEditoriale.has(key))
-        .sort(),
+      conservees.map(({ theme, resourceKey }) => `${theme}/${resourceKey}`).sort(),
     )
-    for (const key of declaredSansPageEditoriale) {
-      expect(pagesCatalogue).not.toContain(key)
-      expect(entreesRechercheIndicateurs(ressourcesNatives).some((entry) =>
-        `${entry.theme}/${entry.href.split('/').at(-1)}` === key,
-      )).toBe(false)
-    }
 
-    for (const key of pagesCatalogue) {
-      const [theme, resourceKey] = key.split('/') as [Theme, string]
+    for (const { theme, resourceKey } of conservees) {
       expect(entreesRechercheIndicateurs(ressourcesNatives).some((entry) =>
         entry.theme === theme && entry.href === `/indicateurs/${theme}/${resourceKey}`,
       )).toBe(true)
@@ -242,7 +225,7 @@ describe('catalogue et recherche — labels factuels liés à la découverte nat
     expect(groupes[0]?.sousGroupes.map(({ key }) => key)).toEqual([
       'partage-de-lespace-public', 'motorisation', 'offre-transports-commun',
     ])
-    expect(pages).toHaveLength(31)
+    expect(pages).toHaveLength(34)
     expect(pages.find(({ indicateur }) => indicateur === 'densite')?.label).toBe('Densité de population')
     for (const resourceKey of Object.keys(labelsModifies).filter((key) => key !== 'densite')) {
       const label = labelsModifies[resourceKey]
@@ -280,7 +263,9 @@ describe('catalogue et recherche — labels factuels liés à la découverte nat
 
     expect(pages.some(({ href }) => href === '/indicateurs/habitat/prix_m2')).toBe(false)
     expect(recherche.some(({ href }) => href === '/indicateurs/habitat/prix_m2')).toBe(false)
-    expect(pages).toHaveLength(30)
+    // 34 retained pages (#962 added three Mobility supply pages), minus the
+    // prix_m2 page whose native shape no longer matches its app family.
+    expect(pages).toHaveLength(33)
     expect(['reseaux', 'structure_age', 'distribution_dpe', 'raccordement_courbe', 'subventions_par_domaine']
       .every((key) => pages.some(({ indicateur }) => indicateur === key))).toBe(true)
   })

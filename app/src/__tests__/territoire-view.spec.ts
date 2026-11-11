@@ -2137,10 +2137,19 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const retried = selectedReads().slice(selectedBeforeRetry)
     expect(retried.length).toBeLessThanOrEqual(2)
     expect(retried.every((items) => items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
-    // Les 23 lectures de comparaison Mobilité (16 ressources + les détails
-    // réseau/cyclables déclarés) repartent en lots bornés, jamais une requête
-    // par figure ni une relecture des faits focaux.
-    expect(retried.flat()).toHaveLength(23)
+    // Chaque ressource Mobilité comparable repart avec ses détails déclarés,
+    // en lots bornés —
+    // jamais une requête par figure ni une relecture des faits focaux.
+    const comparaisonsAttendues = nativeResources('mobilite')
+      .filter((resource) => resource.resource_kind === 'indicator'
+        && resource.allowed_levels.includes('commune')
+        && resource.target_kinds.includes('territory')
+        && resource.intents.includes('selected_comparison'))
+      .map((resource) => resource.resource_id)
+      .sort()
+    // #962 added the three Mobility supply resources to the comparison set.
+    expect(comparaisonsAttendues).toContain('stations_service')
+    expect([...new Set(retried.flat().map((item) => item.resource))].sort()).toEqual(comparaisonsAttendues)
     expect(requests.slice(requestsBeforeRetry).flat().some((item) =>
       item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
     expect(wrapper.find('.transit-comparison-retry').exists()).toBe(false)

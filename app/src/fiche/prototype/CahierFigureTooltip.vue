@@ -10,7 +10,7 @@ withDefaults(
   defineProps<{
     title: string
     rows: readonly CahierTooltipRow[]
-    unit?: string
+    subtitle?: string
     anchor?: CahierFigureTooltipAnchor
     popover?: boolean
     compact?: boolean
@@ -45,7 +45,7 @@ function rowAriaLabel(row: CahierTooltipRow): string {
     role="tooltip"
   >
     <strong>{{ title }}</strong>
-    <small v-if="unit" class="cahier-figure-tooltip-unit">{{ unit }}</small>
+    <small v-if="subtitle" class="cahier-figure-tooltip-subtitle">{{ subtitle }}</small>
     <dl v-if="rows.length">
       <div
         v-for="row in rows"

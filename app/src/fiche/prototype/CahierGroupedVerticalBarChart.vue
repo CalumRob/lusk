@@ -34,6 +34,11 @@ function formatValue(value: number): string {
     ?? new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
 }
 
+/** Accessible reading of the same value: the unit lives here, never in the visible row. */
+function formatAriaValue(value: number): string {
+  return props.figure.formatAriaValue?.(value) ?? formatValue(value)
+}
+
 function formatAxisTick(value: number): string {
   return props.figure.formatAxisTick?.(value)
     ?? new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
@@ -108,7 +113,7 @@ function categoryLabel(index: number): string {
   const category = props.figure.categories[index]!
   const values = props.figure.series.map((series) => {
     const value = series.values[index]
-    return `${series.label} : ${value === null || value === undefined ? UNAVAILABLE_LABEL : formatValue(value)}`
+    return `${series.label} : ${value === null || value === undefined ? UNAVAILABLE_LABEL : formatAriaValue(value)}`
   })
   return `${category.label} : ${values.length ? values.join(' ; ') : 'Aucune série'}`
 }
@@ -164,7 +169,7 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
 
 const accessibleLabel = computed(() => {
   const seriesReadings = props.figure.series.map((series) => `${series.label} : ${series.values.map((value) =>
-    value === null || !Number.isFinite(value) ? UNAVAILABLE_LABEL : formatValue(value),
+    value === null || !Number.isFinite(value) ? UNAVAILABLE_LABEL : formatAriaValue(value),
   ).join(', ')}`).join(' ; ')
   return `${props.figure.description} Axe horizontal : ${props.figure.xAxisTitle}. Axe vertical : ${props.figure.yAxisTitle}. ${seriesReadings}`
 })
