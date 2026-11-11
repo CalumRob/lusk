@@ -17,6 +17,15 @@ normally returns `422`; an unknown territory/resource/indicator is generally
 `404`; an absent, stale or incompatible publication dependency fails closed
 with `503`. Individual operations may have additional documented errors.
 
+A resource is declared by the producer catalogue independently of whether its
+publication is currently present. A declared resource whose published
+descriptor or required publication dependency is absent therefore fails closed
+with `503` for every intent it declares — `facts`, `fixed_comparison` and
+`selected_comparison` alike, single or batch — rather than being reported as an
+unknown identity with `404`. Unknown resource identities, territories and
+comparison members keep their existing `422`/`404` validation semantics, so a
+publication gap and a malformed or unknown request are never conflated.
+
 `GET /api/resources` is the producer-derived retained-resource catalogue. It
 does not connect to PostgreSQL; its inventory and logical shape declarations
 come from the pipeline's checked-in theme producer descriptors. Excluded
