@@ -2343,7 +2343,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
                                     include_scalar_facet=False,
                                     scalar_facet_projection=False,
                                     scalar_facet_theme_id=None,
-                                    profile_coordinates=None, intent_kind=None):
+                                    profile_coordinates=None, intent_kind=None,
+                                    require_declared_resource=False):
     _validate_comparison_fields(selected_fields,
         _COMPARISON_RESULT_FIELDS - {"mean", "mean_curve", "focal_value"})
     focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
@@ -2412,6 +2413,12 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
     if len(shapes) > 1:
         raise HTTPException(503, "Indicator has ambiguous published storage shapes")
     if not shapes:
+        if require_declared_resource:
+            # The semantic grammar admits only producer-declared resources, so
+            # an absent published descriptor is a missing publication
+            # dependency (503), never an unknown identity (404). The endpoint
+            # contract distinguishes the two and callers isolate only 503.
+            raise HTTPException(503, "Declared resource publication is unavailable")
         raise HTTPException(404, "Indicator descriptor is unavailable")
     if shapes[0][1] in ("scalar", "profile"):
         table, shape = shapes[0]
@@ -2451,7 +2458,7 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
                                    scalar_facet_projection=False,
                                    scalar_facet_theme_id=None,
                                    profile_coordinates=None, collection_coordinates=None,
-                                   intent_kind=None):
+                                   intent_kind=None, require_declared_resource=False):
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
                 if snapshot_state is not None else None)
     active_owned = resource.owned_route if resource else _owned_series_route(conn,indicator_id)
@@ -2515,6 +2522,12 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
     if len(shapes) > 1:
         raise HTTPException(503, "Indicator has ambiguous published storage shapes")
     if not shapes:
+        if require_declared_resource:
+            # The semantic grammar admits only producer-declared resources, so
+            # an absent published descriptor is a missing publication
+            # dependency (503), never an unknown identity (404). The endpoint
+            # contract distinguishes the two and callers isolate only 503.
+            raise HTTPException(503, "Declared resource publication is unavailable")
         raise HTTPException(404, "Indicator descriptor is unavailable")
     shape = shapes[0][1]
     if shape in ("scalar","profile"):
