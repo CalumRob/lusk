@@ -87,7 +87,7 @@ function invalid(): never { throw new Error('Comparaison AEDAR incompatible ou i
  * helper's job, not a reason to fail the whole read.
  */
 function servedRank(row: Record<string, unknown>): readonly [number, number, number] | null {
-  const values = [row.rank, row.rank_size, row.rank_ties]
+  const values = RANK_FIELD_NAMES.map((field) => row[field])
   if (values.some((value) => value === undefined)) invalid()
   if (values.every((value) => value === null)) return null
   if (!values.every((value) => Number.isInteger(value))) invalid()
@@ -148,12 +148,15 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
         : [options.measures]
       : options.measures.map((measure) => [measure])
     for (const measures of measureGroups) for (let start = 0; start < (aggregate ? 1 : options.typequ.length); start += cellBudget) {
+      // Request policy by shape: aggregate readings rank only the measures the
+      // caller named in `rankMeasures`; selected and fixed per-cell comparisons
+      // always ask, because the cahier tooltip renders whatever ordinal the
+      // producer serves. The API keeps the fields opt-in request-side and
+      // answers a cell it cannot rank with a null triple, not an omission.
       items.push({ id: `aedar-comparison-${items.length}`, resource: 'aedar_territorial_aggregate',
         target: { kind: 'territory', type, id }, coordinates: { ...(aggregate ? {} : { typequ: options.typequ.slice(start, start + cellBudget) }), measure: [...measures] },
         intent, fields: aggregate
           ? ['group_value', ...(measures.some((measure) => rankMeasures!.has(measure)) ? RANK_FIELD_NAMES : [])]
-          // Fixed per-cell ranks are opt-in too (#951): the producer serves them
-          // on every ranked facet and returns nulls when it cannot rank.
           : ['group_value', ...RANK_FIELD_NAMES] })
     }
     const cells: AedarComparisonCell[] = []
@@ -195,7 +198,9 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
           const expectedRows = (item.coordinates.typequ?.length ?? 1) * item.coordinates.measure.length
           if (!Array.isArray(rows) || rows.length !== expectedRows) invalid()
         const returned = new Set<string>()
-        const rankRequested = item.fields.some((field) => RANK_FIELDS.has(field))
+        // Only the aggregate's unranked measure group omits the rank fields, so
+        // this guards the response law rather than a per-shape request option.
+        const rankFieldsRequested = item.fields.some((field) => RANK_FIELDS.has(field))
         for (const row of rows) {
            if (!record(row) || (aggregate ? row.typequ !== null : typeof row.typequ !== 'string' || !item.coordinates.typequ!.includes(row.typequ as string))
              || typeof row.measure !== 'string' || !item.coordinates.measure.includes(row.measure) || returned.has(`${row.typequ ?? ''}/${row.measure}`)
@@ -214,16 +219,18 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
             || !(row.reference_date === null || typeof row.reference_date === 'string')
             || !(row.publication_date === null || typeof row.publication_date === 'string')) invalid()
           let normalizedDirection: 'high' | 'low' | undefined
-          const declaration = aggregateFacets?.[row.measure as string]
+          // Facet declarations exist for the aggregate readings only; a fixed
+          // per-cell row has no declaration map to consult.
+          const declaration = aggregate ? aggregateFacets?.[row.measure as string] : undefined
           if (selected || aggregate) {
             if (aggregate && (!declaration || (selected && row.direction !== declaration.direction))) invalid()
             if (selected && row.direction !== 'high' && row.direction !== 'low') invalid()
             normalizedDirection = aggregate ? declaration?.direction : row.direction as 'high' | 'low' | undefined
           }
-          if (rankRequested) {
-            // One shared law for the selected and both fixed shapes: a declared
-            // unranked facet never serves a rank, every requested rank carries
-            // all three fields, and a selection bounds its own population.
+          if (rankFieldsRequested) {
+            // One shared law for the selected and both fixed shapes: an aggregate
+            // facet declared unranked never serves a rank, every requested rank
+            // carries all three fields, and a selection bounds its own population.
             const rank = servedRank(row)
             if (aggregate && !declaration?.ranked && rank) invalid()
             if (rank && selected && (rank[1] > members!.length
