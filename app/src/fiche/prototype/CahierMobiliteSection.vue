@@ -72,14 +72,47 @@ function ratioValueLabel(ratio: MobiliteRatioEvidence): string {
     : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)} ${ratio.value.fact.unit}`
 }
 
-function ratioAriaLabel(ratio: MobiliteRatioEvidence, scope: string | null): string {
-  const value = ratioValueLabel(ratio)
-  const comparison = ratio.value.fact.comparison
-  const direction = comparison?.direction ? LIBELLES_DIRECTION[comparison.direction] : null
-  const rank = comparison
-    ? puceRangDirection(comparison.rank, comparison.direction, scope)?.phraseAria ?? formatServedRankAria(comparison.rank)
-    : null
-  return `${ratio.label} : ${value}${rank ? `. Rang ${rank}` : direction ? `. ${direction}` : ''}`
+function ratioAriaLabel(
+  ratio: MobiliteRatioEvidence,
+  scope: string | null,
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable',
+  error?: string,
+): string {
+  const fact = ratio.value.fact
+  const parts = [`${ratio.label} : ${ratioValueLabel(ratio)}`]
+  if (fact.value === null) {
+    parts.push(ratio.note ?? 'Valeur indisponible')
+    return parts.join('. ')
+  }
+  if (status === 'loading') {
+    parts.push('Comparaison en cours de chargement')
+    return parts.join('. ')
+  }
+  if (status === 'error') {
+    parts.push(`Comparaison indisponible : ${error ?? 'échec du chargement'}`)
+    return parts.join('. ')
+  }
+  if (status === 'unavailable') {
+    parts.push('Comparaison indisponible')
+    return parts.join('. ')
+  }
+  const comparison = fact.comparison
+  if (!comparison) {
+    parts.push('Comparaison indisponible')
+    return parts.join('. ')
+  }
+  const reference = comparison.reference
+  const referenceValue = reference
+    ? `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(reference.value)} ${fact.unit}`
+    : 'référence indisponible'
+  const scopeLabel = scope ?? comparison.scope.label ?? 'portée non précisée'
+  parts.push(`Référence ${referenceValue} (${scopeLabel})`)
+  const direction = LIBELLES_DIRECTION[comparison.direction] ?? null
+  const rank = puceRangDirection(comparison.rank, comparison.direction, scope)?.phraseAria
+    ?? formatServedRankAria(comparison.rank)
+  if (rank) parts.push(`Rang ${rank}`)
+  else if (direction) parts.push(direction)
+  return parts.join('. ')
 }
 </script>
 
@@ -148,7 +181,7 @@ function ratioAriaLabel(ratio: MobiliteRatioEvidence, scope: string | null): str
             :value="ratioValueLabel(column.ratio)"
             :label="column.ratio.label"
             label-role="metric"
-            :aria-label="ratioAriaLabel(column.ratio, column.bars.comparisonLabel)"
+            :aria-label="ratioAriaLabel(column.ratio, column.bars.comparisonLabel, effectiveComparison.status, effectiveComparison.error)"
           >
             <template #reference>
               <CahierComparisonValue

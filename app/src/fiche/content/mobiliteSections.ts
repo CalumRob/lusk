@@ -46,17 +46,11 @@ const DETAIL_LABELS: Readonly<Record<string, string>> = {
   'reseaux_par_habitant:t_km_1000': 'Longueur — à pied',
   'reseaux_par_habitant:b_km_1000': 'Longueur — à vélo',
   'reseaux_par_habitant:c_km_1000': 'Longueur — en voiture',
-  'reseaux:t_longueur': 'Longueur — à pied ou en transports en commun',
-  'reseaux:b_longueur': 'Longueur — à vélo',
-  'reseaux:c_longueur': 'Longueur — en voiture',
+  'reseaux:t_longueur': 'Longueur brute — à pied',
+  'reseaux:b_longueur': 'Longueur brute — à vélo',
+  'reseaux:c_longueur': 'Longueur brute — en voiture',
   'offre_cyclable:protege_km_1000': 'Protégé',
   'offre_cyclable:partage_km_1000': 'Partagé',
-}
-
-const AXIS_LABELS: Readonly<Record<string, string>> = {
-  t_km_1000: 'à pied',
-  b_km_1000: 'à vélo',
-  c_km_1000: 'en voiture',
 }
 
 function text(value: string): TextSegment {
@@ -347,9 +341,9 @@ export function buildMobiliteNetworksSection(
   metadata?: ThemeMetadata,
 ): MobiliteNetworksSection {
   const networkModes = [
-    { mode: 'walkTransit' as const, tone: 't' as const, density: 't_km_1000', raw: 't_longueur' },
-    { mode: 'bike' as const, tone: 'b' as const, density: 'b_km_1000', raw: 'b_longueur' },
-    { mode: 'car' as const, tone: 'c' as const, density: 'c_km_1000', raw: 'c_longueur' },
+    { mode: 'walkTransit' as const, tone: 't' as const, density: 't_km_1000', raw: 't_longueur', axis: 'à pied' },
+    { mode: 'bike' as const, tone: 'b' as const, density: 'b_km_1000', raw: 'b_longueur', axis: 'à vélo' },
+    { mode: 'car' as const, tone: 'c' as const, density: 'c_km_1000', raw: 'c_longueur', axis: 'en voiture' },
   ]
   const bikeSegments = [
     {
@@ -371,7 +365,10 @@ export function buildMobiliteNetworksSection(
       'km / 1 000 hab.',
       metadata,
     )
-    const rawValue = contentDetailFact(facts, 'reseaux', definition.raw, 'km', metadata)
+    const rawFact = contentDetailFact(facts, 'reseaux', definition.raw, 'km', metadata)
+    // App-owned raw row wording: the new page says walking only, so a stale
+    // producer alias ("à pied ou en transports en commun") never leaks out.
+    const rawValue: ContentFact = { ...rawFact, label: `Longueur brute — ${definition.axis}` }
     const normalizedSplit = isPartition(partitionValues(bikeSegments.map((segment) => segment.value)), value.fact.value)
     const rawSplit = isPartition(
       partitionValues(bikeSegments.map((segment) => segment.rawValue)),
@@ -391,7 +388,7 @@ export function buildMobiliteNetworksSection(
     return {
       key: definition.mode,
       label: MOBILITE_RESEAU_MODE_LABELS[definition.mode],
-      axisLabel: value.fact.detailLabel?.split(' — ').at(-1) ?? AXIS_LABELS[definition.density] ?? definition.density,
+      axisLabel: definition.axis,
       tone: definition.tone,
       value,
       rawValue,

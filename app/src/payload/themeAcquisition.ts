@@ -299,21 +299,41 @@ export function producerCatalogue(): Promise<SemanticResourceDeclaration[]> {
   return catalogueRequest
 }
 
-function chunked<T>(items: T[], size = 12, keepTogether?: (left: T, right: T) => boolean): T[][] {
-  const batches: T[][] = []
-  for (let index = 0; index < items.length;) {
-    let end = Math.min(index + size, items.length)
-    if (end < items.length && keepTogether?.(items[end - 1]!, items[end]!)) end -= 1
-    batches.push(items.slice(index, end))
-    index = end
-  }
-  return batches
+function readGroupKey(item: SemanticReadItem): string {
+  const target = item.target
+  const targetId = 'id' in target && target.id ? target.id : ''
+  const department = 'department_id' in target ? target.department_id ?? '' : ''
+  const epci = 'epci_id' in target ? target.epci_id ?? '' : ''
+  return [item.resource, target.kind, 'type' in target ? target.type : '', targetId, department, epci].join('\u0000')
 }
 
-function sharesFocalDefaultComparison(left: SemanticReadItem, right: SemanticReadItem): boolean {
-  return left.resource === right.resource && left.target.kind === 'territory' && right.target.kind === 'territory' &&
-    left.target.type === right.target.type && left.target.id === right.target.id &&
-    left.intent.kind === 'facts' && right.intent.kind === 'fixed_comparison' && right.intent.context === 'default'
+/**
+ * Keep every read of one resource+target together (focal/default facts and all
+ * declared per-detail comparisons). A group larger than the batch limit fails
+ * loudly rather than splitting or looping forever.
+ */
+function chunkedGroups<T>(items: T[], size = 12, groupKey: (item: T) => string): T[][] {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const key = groupKey(item)
+    const group = groups.get(key)
+    if (group) group.push(item)
+    else groups.set(key, [item])
+  }
+  const batches: T[][] = []
+  let batch: T[] = []
+  for (const group of groups.values()) {
+    if (group.length > size) {
+      throw new Error(`Lot sémantique indivisible supérieur à la limite de ${size} lectures.`)
+    }
+    if (batch.length + group.length > size) {
+      batches.push(batch)
+      batch = []
+    }
+    batch.push(...group)
+  }
+  if (batch.length) batches.push(batch)
+  return batches
 }
 
 function territoryItem(resource: string, type: string, id: string, intent: SemanticReadItem['intent']): SemanticReadItem {
@@ -339,10 +359,15 @@ function retainedThemeResources(catalogue: SemanticResourceDeclaration[], theme:
 }
 
 async function readAll(items: SemanticReadItem[]): Promise<Array<{ resource: string; data: Record<string, unknown> }>> {
-  const output: Array<{ resource: string; data: Record<string, unknown> }> = []
-  for (const batch of chunked(items, 12, sharesFocalDefaultComparison)) {
+  // Grouping keeps every resource+target read in one batch, so batch order no
+  // longer follows request order; results are placed back by original index.
+  const originalIndex = new Map(items.map((item, index) => [item, index]))
+  const output: Array<{ resource: string; data: Record<string, unknown> }> = new Array(items.length)
+  for (const batch of chunkedGroups(items, 12, readGroupKey)) {
     const data = await lireRessourcesBatch(batch)
-    output.push(...batch.map((item, index) => ({ resource: item.resource, data: data[index]! })))
+    batch.forEach((item, index) => {
+      output[originalIndex.get(item)!] = { resource: item.resource, data: data[index]! }
+    })
   }
   return output
 }

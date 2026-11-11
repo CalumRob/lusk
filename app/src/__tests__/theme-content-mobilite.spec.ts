@@ -220,6 +220,12 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
     expect(walk!.rawValue?.fact).toMatchObject({ key: 'reseaux', detail: 't_longueur', value: 10, unit: 'km' })
     expect(bike!.rawValue?.fact).toMatchObject({ key: 'reseaux', detail: 'b_longueur', value: 6, unit: 'km' })
     expect(car!.rawValue?.fact).toMatchObject({ key: 'reseaux', detail: 'c_longueur', value: 30, unit: 'km' })
+    // App-owned raw row wording overrides the stale producer alias: the new
+    // page says walking only, while the fact identity and unit stay published.
+    expect(walk!.rawValue?.label).toBe('Longueur brute — à pied')
+    expect(walk!.rawValue?.label).not.toContain('transports en commun')
+    expect(bike!.rawValue?.label).toBe('Longueur brute — à vélo')
+    expect(car!.rawValue?.label).toBe('Longueur brute — en voiture')
 
     expect(evidence.sources.map((source) => [source.id, source.source, source.url, source.licence])).toEqual([
       ['osm_reseaux', 'OpenStreetMap', 'https://osm.example/reseaux', 'ODbL'],

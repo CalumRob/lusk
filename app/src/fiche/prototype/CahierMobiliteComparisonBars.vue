@@ -8,7 +8,7 @@
  * median and stays unsegmented (segment medians are never additive). Raw values
  * live in the tooltip only; the optional ratio line owns its reference and rank.
  */
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import type {
   CahierFigureAxisTick,
@@ -58,7 +58,34 @@ const UNAVAILABLE_LABEL = 'Indisponible'
 
 const comparisonVisible = ref(true)
 const plotElement = ref<HTMLElement | null>(null)
-const selectedCategoryIndex = ref<number | null>(null)
+const hoveredCategoryIndex = ref<number | null>(null)
+const pinnedCategoryIndex = ref<number | null>(null)
+const selectedCategoryIndex = computed(() => pinnedCategoryIndex.value ?? hoveredCategoryIndex.value)
+
+function activateCategory(index: number): void {
+  if (pinnedCategoryIndex.value === index) {
+    pinnedCategoryIndex.value = null
+    hoveredCategoryIndex.value = null
+    return
+  }
+  pinnedCategoryIndex.value = index
+  hoveredCategoryIndex.value = index
+}
+
+function dismissCategory(): void {
+  pinnedCategoryIndex.value = null
+  hoveredCategoryIndex.value = null
+}
+
+function dismissOutside(event: Event): void {
+  const target = event.target
+  if (plotElement.value && target instanceof Node && !plotElement.value.contains(target)) {
+    dismissCategory()
+  }
+}
+
+onMounted(() => document.addEventListener('pointerdown', dismissOutside))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissOutside))
 
 function formatValue(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value)
@@ -521,12 +548,12 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
               type="button"
               :style="categoryHitboxStyle(index)"
               :aria-label="categoryAriaLabel(index)"
-              @mouseenter="selectedCategoryIndex = index"
-              @mouseleave="selectedCategoryIndex = null"
-              @focus="selectedCategoryIndex = index"
-              @blur="selectedCategoryIndex = null"
-              @click="selectedCategoryIndex = selectedCategoryIndex === index ? null : index"
-              @keydown.esc="selectedCategoryIndex = null"
+              @mouseenter="hoveredCategoryIndex = index"
+              @mouseleave="hoveredCategoryIndex = null"
+              @focus="hoveredCategoryIndex = index"
+              @blur="dismissCategory"
+              @click="activateCategory(index)"
+              @keydown.esc="dismissCategory"
             />
           </div>
           <CahierFigureTooltip

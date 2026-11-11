@@ -576,7 +576,7 @@ describe('Variante E — partage de l’espace public', () => {
       'Longueur protégée',
       'Partagé',
       'Longueur partagée',
-      'Longueur — à vélo',
+      'Longueur brute — à vélo',
     ])
     expect(tooltip.findAll('.cahier-figure-tooltip-row-comparison')).toHaveLength(1)
     expect(rows[5]!.text()).toContain('km')

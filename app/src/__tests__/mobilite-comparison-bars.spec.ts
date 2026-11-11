@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 import CahierMobiliteComparisonBars from '@/fiche/prototype/CahierMobiliteComparisonBars.vue'
@@ -164,6 +164,48 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
     expect(tooltip.text()).toContain('Partagé')
     expect(tooltip.text()).toContain('20')
     expect(tooltip.text()).toContain('km')
+  })
+
+  it('shows the tooltip on the first real press and dismisses on blur, Escape or a tap away', async () => {
+    const wrapper = mount(CahierMobiliteComparisonBars, {
+      props: { figure, comparison: { status: 'ready' } },
+      attachTo: document.body,
+    })
+    const tooltip = () => wrapper.find('.mobilite-comparison-bars__tooltip')
+    const hitbox = (index: number) => wrapper.findAll('.mobilite-comparison-bars__hitbox')[index]!
+
+    // Desktop hover alone already exposes the details.
+    await hitbox(0).trigger('mouseenter')
+    expect(tooltip().exists()).toBe(true)
+    await hitbox(0).trigger('mouseleave')
+    expect(tooltip().exists()).toBe(false)
+
+    // A real pointer press focuses the control before the click: the first
+    // click must open the tooltip, not toggle it back off.
+    await hitbox(1).trigger('focus')
+    await hitbox(1).trigger('mouseenter')
+    expect(tooltip().exists()).toBe(true)
+    await hitbox(1).trigger('click')
+    expect(tooltip().exists()).toBe(true)
+    expect(tooltip().text()).toContain('Total vélo')
+
+    // Escape dismisses even while the control keeps focus.
+    await hitbox(1).trigger('keydown', { key: 'Escape' })
+    expect(tooltip().exists()).toBe(false)
+
+    // Touch/keyboard activation (focus then click) behaves the same way.
+    await hitbox(1).trigger('focus')
+    await hitbox(1).trigger('click')
+    expect(tooltip().exists()).toBe(true)
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    await nextTick()
+    expect(tooltip().exists()).toBe(false)
+
+    await hitbox(2).trigger('focus')
+    expect(tooltip().exists()).toBe(true)
+    await hitbox(2).trigger('blur')
+    expect(tooltip().exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('toggles the compared series and reports the pressed state', async () => {
@@ -338,5 +380,71 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
     expect(stamp.text()).toContain('Producteur sans URL')
     expect(stamp.text()).toContain('Licence Ouverte')
     expect(stamp.element.closest('a')).toBeNull()
+  })
+
+  it('exposes the full ratio comparison in the role=img accessible name', () => {
+    const section = {
+      key: 'stationnement-ravitaillement',
+      label: 'Se garer et se ravitailler',
+      availability: 'complete',
+      indicators: [],
+      evidence: {
+        kind: 'mobilite-stationnement-ravitaillement',
+        columns: [
+          { key: 'stationnement', prose: [], sources: [], bars: figure, ratio },
+          { key: 'ravitaillement', prose: [], sources: [], bars: figure, ratio },
+        ],
+      },
+      provenance: [],
+      lecture: null,
+      explorationTargets: [],
+    } as any
+    const wrapper = mount(CahierMobiliteSection, {
+      props: {
+        section,
+        unit: { key: 'partage-de-lespace-public', label: 'Le partage de l’espace public' },
+        comparison: { status: 'ready' },
+      },
+    })
+    const scalar = wrapper.get('.mobilite-ratio-scalar .cahier-figure-scalar')
+    expect(scalar.attributes('role')).toBe('img')
+    const label = scalar.attributes('aria-label')!
+    expect(label).toContain('Places de stationnement vélo pour 1 place voiture')
+    expect(label).toContain('0,2 places vélo / place voiture')
+    expect(label).toContain('0,3 places vélo / place voiture')
+    expect(label).toContain('Médiane des communes de EPCI X')
+    expect(label).toContain('Rang')
+    expect(label).toContain('2e/3')
+    expect(label).toContain('plus = mieux')
+  })
+
+  it('states loading, error and unavailable comparison states in the ratio accessible name', () => {
+    const section = {
+      key: 'stationnement-ravitaillement',
+      label: 'Se garer et se ravitailler',
+      availability: 'complete',
+      indicators: [],
+      evidence: {
+        kind: 'mobilite-stationnement-ravitaillement',
+        columns: [
+          { key: 'stationnement', prose: [], sources: [], bars: figure, ratio },
+          { key: 'ravitaillement', prose: [], sources: [], bars: figure, ratio },
+        ],
+      },
+      provenance: [],
+      lecture: null,
+      explorationTargets: [],
+    } as any
+    const render = (comparison: any) => mount(CahierMobiliteSection, {
+      props: {
+        section,
+        unit: { key: 'partage-de-lespace-public', label: 'Le partage de l’espace public' },
+        comparison,
+      },
+    }).get('.mobilite-ratio-scalar .cahier-figure-scalar').attributes('aria-label')!
+
+    expect(render({ status: 'loading' })).toContain('Comparaison en cours de chargement')
+    expect(render({ status: 'error', error: 'lecture refusée' })).toContain('Comparaison indisponible : lecture refusée')
+    expect(render({ status: 'unavailable' })).toContain('Comparaison indisponible')
   })
 })

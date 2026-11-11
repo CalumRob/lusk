@@ -61,7 +61,10 @@ function applyCoherentNetworkCapture(item: Record<string, any>, data: Record<str
   return data
 }
 
-function semanticFetch(requestLog: Array<Record<string, any>> = []) {
+function semanticFetch(
+  requestLog: Array<Record<string, any>> = [],
+  batchLog: Array<Array<Record<string, any>>> = [],
+) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url === '/api/resources') return nativeCatalogueResponse()
@@ -72,6 +75,7 @@ function semanticFetch(requestLog: Array<Record<string, any>> = []) {
       items: Array<Record<string, any>>
     }
     requestLog.push(...items)
+    batchLog.push(items)
     const results = items.map((item) => {
       const resource = catalogue.find((candidate) => candidate.resource_id === item.resource)
       if (!resource) throw new Error(`Unknown fixture resource ${item.resource}`)
@@ -98,7 +102,8 @@ afterEach(() => vi.unstubAllGlobals())
 describe('Mobilité page 2 — production values and per-network comparisons', () => {
   it('flows the published per-capita facts and all three network references into the delegate figure', async () => {
     const requestLog: Array<Record<string, any>> = []
-    vi.stubGlobal('fetch', semanticFetch(requestLog))
+    const batchLog: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', semanticFetch(requestLog, batchLog))
 
     const acquired = await acquireThemeFacts('commune', '35238', 'mobilite')
     const selection = [
@@ -138,6 +143,28 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     expect(requestedDetails('offre_cyclable')).toEqual(new Set([
       'protege_longueur', 'partage_longueur', 'protege_km_1000', 'partage_km_1000',
     ]))
+
+    // Each related focal/default + declared-detail group travels in one batch.
+    const networkResources = ['reseaux_par_habitant', 'reseaux', 'offre_cyclable'] as const
+    for (const resource of networkResources) {
+      const resourceBatches = batchLog
+        .map((batch) => batch.filter((item) => item.resource === resource))
+        .filter((batch) => batch.length > 0)
+      expect(resourceBatches.length).toBeGreaterThanOrEqual(2)
+      for (const resourceBatch of resourceBatches) {
+        expect(resourceBatch.length).toBeLessThanOrEqual(12)
+        const details = new Set(resourceBatch
+          .filter((item) => Array.isArray(item.coordinates?.detail))
+          .map((item) => item.coordinates.detail[0] as string))
+        if (resourceBatch.some((item) => item.intent.kind === 'facts')) {
+          expect(resourceBatch.some((item) => item.intent.kind === 'fixed_comparison')).toBe(true)
+          expect(details).toEqual(requestedDetails(resource))
+        } else {
+          expect(resourceBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+          expect(details).toEqual(requestedDetails(resource))
+        }
+      }
+    }
 
     const bike = categories.find((category) => category.key === 'bike')!
     expect(bike.value.fact.value).toBeCloseTo(liveNetworks.reseauxParHabitant.b_km_1000, 12)
@@ -220,6 +247,32 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     expect(networks.text()).toContain('Partagé')
     expect(wrapper.text()).not.toContain('Une piste ne suffit pas')
     expect(wrapper.text()).not.toContain('La motorisation')
+  })
+
+  it('rejects a cross-generation declared-detail comparison without losing the focal facts', async () => {
+    const base = semanticFetch()
+    let mutated = false
+    const stale = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await base(input, init)
+      if (String(input) !== '/api/resources/read-batch') return response
+      const body = await response.clone().json() as {
+        results: Array<Record<string, any>>
+      }
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      const index = items.findIndex((item) =>
+        item.resource === 'reseaux' && item.intent?.kind === 'fixed_comparison' &&
+        item.coordinates?.detail?.[0] === 'c_longueur')
+      if (index >= 0) {
+        mutated = true
+        body.results[index]!.data.reference_content_version = 'stale-generation-ref'
+      }
+      return new Response(JSON.stringify(body), { status: 200 })
+    })
+    vi.stubGlobal('fetch', stale)
+    const acquired = await acquireThemeFacts('commune', '35238', 'mobilite')
+    expect(mutated).toBe(true)
+    expect(acquired.comparison_error).toBe(true)
+    expect(acquired.resource_reads?.length).toBeGreaterThan(0)
   })
 
   it('renders the paired parking and refuelling figures with their ratio references and ranks', async () => {
