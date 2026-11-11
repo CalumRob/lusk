@@ -85,7 +85,7 @@ function pucePour(ligne: Indicateur | null): PuceRangDirection | null {
   if (!ligne || !direction.value) return null
   const details = detailsRangEnContexte(ligne)
   if (!details) return null
-  return puceRangDirection(details.libelle, direction.value)
+  return puceRangDirection({ position: details.rang, size: details.taille, ties: details.ties }, direction.value, details.portee)
 }
 
 const puceProtege = computed(() => pucePour(protege.value))

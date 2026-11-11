@@ -258,7 +258,7 @@ describe('IndicateurView — routed URL seam', () => {
     const base = indicateursProgrammesFixture.find((fact) => fact.key === 'subventions_par_domaine' && fact.detail === 'Agriculture')!
     // QUATRE communes portent la MÊME catégorie/période avec des montants différents :
     // 4 membres mesurés → eligible_count = 4 (contrat api/migrations/030) ; le focal
-    // porte la valeur la plus haute (direction high) → rang API « 1er / 4 » —
+    // porte la valeur la plus haute (direction high) → rang API « 1er/4 » —
     // un rang calculé localement existerait pour chaque pair si on le laissait passer
     const programmesFacts = [
       ...indicateursProgrammesFixture.filter((fact) => fact.key !== 'subventions_par_domaine'),
@@ -281,8 +281,8 @@ describe('IndicateurView — routed URL seam', () => {
     const focal = rows.find(estFocal)!
     const pairs = rows.filter((row) => !estFocal(row))
     expect(pairs.length).toBe(3)
-    // le focal affiche le rang API EXACT (1er / 4 = rank 1, rank_size = eligible_count 4)
-    expect(celluleRang(focal)).toBe('1er / 4')
+    // le focal affiche le rang API EXACT (1er/4 = rank 1, rank_size = eligible_count 4)
+    expect(celluleRang(focal)).toBe('1er/4')
     // les pairs sans évidence de comparaison API par membre : AUCUN rang affiché
     // (pas de rang calculé localement, aucune taille de groupe fabriquée)
     for (const row of pairs) {

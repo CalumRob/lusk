@@ -867,6 +867,7 @@ describe('ProductionMobiliteAedar', () => {
   it.each([
     ['fixed ambient', 2, 3, 'Classe de densité'],
     ['selected', 1, 3, 'Moyenne de la sélection'],
+    ['tied', 1, 3, 'Classe de densité'],
     ['singleton', 1, 1, 'Classe de densité'],
     ['suppressed', null, null, 'Classe de densité'],
   ])('renders served overview ranks in the real cahier DOM (%s)', async (label, position, size, comparisonLabel) => {
@@ -884,7 +885,8 @@ describe('ProductionMobiliteAedar', () => {
       cells: ['meanDiversity', 'meanVolume'].map((measure) => ({
         typequ: null, measure, source_id: 'aedar_bretagne', vintage_id: '2026-v1', reference_date: '2026-01-01', publication_date: '2026-09-30',
         group_value: 2.5, group_coverage_status: 'covered', group_n_addresses: 100, group_n_observed: 90,
-        statistic: 'pooled', rank: position, rank_size: size, rank_ties: position === null ? null : 1, direction: 'high',
+        statistic: 'pooled', rank: position, rank_size: size,
+        rank_ties: position === null ? null : label === 'tied' ? 2 : 1, direction: 'high',
       })),
     } })
     const wrapper = mount(ProductionMobiliteAedar, { props: {
@@ -897,8 +899,10 @@ describe('ProductionMobiliteAedar', () => {
     expect(scalars).toHaveLength(2)
     expect(scalars[0]!.get('.cahier-comparison-value').text()).toContain('Groupe comparé : 2,5')
     if (size !== null && size >= 2) {
-      expect(scalars[0]!.get('.cahier-rank').text()).toBe(`${position === 1 ? '1er' : '2e'}/${size}`)
-      expect(scalars[0]!.attributes('aria-label')).toContain(`Rang ${position} sur ${size}`)
+      const ordinal = `${position === 1 ? '1er' : '2e'}/${size}`
+      const tied = label === 'tied'
+      expect(scalars[0]!.get('.cahier-rank').text()).toBe(`${tied ? '=' : ''}${ordinal}`)
+      expect(scalars[0]!.attributes('aria-label')).toContain(`Rang ${ordinal}${tied ? ' (ex æquo)' : ''}`)
       expect(scalars[0]!.get('.cahier-rank').attributes('aria-hidden')).toBe('true')
     } else {
       expect(scalars[0]!.find('.cahier-rank').exists()).toBe(false)

@@ -4,7 +4,7 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import type { NumericFact } from '@/fiche/content/territoryFacts'
 import { comparisonRank } from '@/fiche/content/comparisonRank'
-import { formatServedRank, puceRangDirection } from '@/fiche/figureGrammaire'
+import { RANK_DISPLAY_MIN_SIZE, formatServedRank, puceRangDirection } from '@/fiche/figureGrammaire'
 
 const props = withDefaults(
   defineProps<{
@@ -22,11 +22,11 @@ function rankText(fact?: NumericFact, servedRank?: { position: number; size: num
   return fact ? comparisonRank(fact)?.rang ?? null : null
 }
 
-function rankDescription(fact?: NumericFact, servedRank?: { position: number; size: number; direction: string } | null): string | null {
-  const rank = rankText(fact, servedRank)
-  const direction = servedRank?.direction ?? fact?.comparison?.direction
-  if (!rank || !direction) return null
-  return puceRangDirection(rank, direction as import('@/methodes/indicateurs').DirectionRang).phrase
+function rankDescription(fact?: NumericFact, servedRank?: { position: number; size: number; ties?: number | null; direction: import('@/methodes/indicateurs').DirectionRang } | null): string | null {
+  const served = servedRank && servedRank.size >= RANK_DISPLAY_MIN_SIZE
+    ? puceRangDirection(servedRank, servedRank.direction) : null
+  if (served) return served.phraseAria
+  return fact ? comparisonRank(fact)?.phraseAria ?? null : null
 }
 
 function isExtreme(fact?: NumericFact): boolean {

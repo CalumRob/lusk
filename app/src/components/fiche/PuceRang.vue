@@ -22,7 +22,7 @@ defineProps<{
 </script>
 
 <template>
-  <span class="puce-rang" :role="decorative ? undefined : 'img'" :aria-label="decorative ? undefined : puce.phrase" :aria-hidden="decorative ? 'true' : undefined" :title="decorative ? undefined : puce.phrase">
+  <span class="puce-rang" :role="decorative ? undefined : 'img'" :aria-label="decorative ? undefined : puce.phraseAria" :aria-hidden="decorative ? 'true' : undefined" :title="decorative ? undefined : puce.phrase">
     <span class="puce-rang-texte">{{ puce.rang }}</span>
   </span>
 </template>

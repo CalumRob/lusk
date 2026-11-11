@@ -85,7 +85,8 @@ const direction = computed(() => props.direction !== undefined
 /** La puce de rang directionnelle — glyphe + phrase accessible (#367). */
 const puce = computed(() =>
   detailsRang.value && direction.value
-    ? puceRangDirection(detailsRang.value.libelle, direction.value)
+    ? puceRangDirection({ position: detailsRang.value.rang, size: detailsRang.value.taille, ties: detailsRang.value.ties },
+      direction.value, detailsRang.value.portee)
     : null,
 )
 

@@ -43,26 +43,24 @@ const SUFFIXE_RANG: Record<ColonneRang, string> = {
   rang_reg: 'de la région',
 }
 
-/** Le nombre ordinal français : 1er, 2e, 3e… (jamais « 1e », jamais « 2er »). */
-function ordinalFrancais(n: number): string {
-  return n === 1 ? '1er' : `${n}e`
-}
-
 /**
- * The rank-in-context chip (ADR-0015): the direction-aware ordinal position
- * with its group size — « 1er/41 de l'EPCI » (1 = best). A null rank means no
- * comparison group at that level — no chip (null). The group size is always
- * shown: the « / Y » of the ordinal, never hidden.
+ * The rank-in-context label (ADR-0015): the direction-aware ordinal position
+ * with its group size — « 1er/41 de l'EPCI » (1 = best). The rank grammar is
+ * the shared one (`formatServedRank`), so a shared position carries the same
+ * « = » marker as every chip; only the legacy rank-column suffix is local. A
+ * null rank or a missing group size means no rank at all (null), never a bare
+ * ordinal — the group size is always shown.
  */
 export function formaterRang(
   rang: number | null,
   taille: number | null,
   colonne?: ColonneRang,
+  ties?: number | null,
 ): string | null {
-  if (rang === null) return null
-  const sur = taille === null ? '' : colonne ? `/${taille}` : ` / ${taille}`
-  const suffixe = colonne ? ` ${SUFFIXE_RANG[colonne]}` : ''
-  return `${ordinalFrancais(rang)}${sur}${suffixe}`
+  if (rang === null || taille === null) return null
+  const rangFormate = formatServedRank({ position: rang, size: taille, ties })
+  if (rangFormate === null) return null
+  return `${rangFormate}${colonne ? ` ${SUFFIXE_RANG[colonne]}` : ''}`
 }
 
 const MOIS_FRANCAIS = [
@@ -498,8 +496,12 @@ export function rangEnContexte(indicateur: Indicateur): string | null {
 export interface DetailsRang {
   /** The ordinal position (1 = best, ADR-0015). */
   rang: number
-  /** The group size of the comparison (« / Y »), or null when the producer omits it. */
-  taille: number | null
+  /** The group size of the comparison (« / Y ») — always shown, never null. */
+  taille: number
+  /** The producer-declared comparison scope, when the response names one. */
+  portee: string | null
+  /** The producer-served tie count, itself included; null/absent when not shared. */
+  ties?: number | null
   /** The formatted chip, e.g. « 3e/41 · communes de l’EPCI » or « =1er/41 · … ». */
   libelle: string
   /** Scope-silent page chip; the scope remains in its accessible name. */
@@ -512,13 +514,17 @@ export function detailsRangEnContexte(indicateur: Pick<Indicateur, 'comparaisonA
   if (!indicateur.comparaisonApi) return null
   const { rang, taille, portee, ties } = indicateur.comparaisonApi
   if (rang === null) return null
-  if (taille !== null && taille < RANK_DISPLAY_MIN_SIZE) return null
+  // The group size is always shown: a rank without a published population is
+  // not a chip (and a singleton population is not renderable either).
+  if (taille === null || taille < RANK_DISPLAY_MIN_SIZE) return null
   // The shared grammar owns the ordinal, the « /Y » and the « = » tie marker;
   // only the declared scope is appended here.
-  const libelleCourt = formatServedRank({ position: rang, size: taille, ties })
-  const rangAria = formatServedRankAria({ position: rang, size: taille, ties })
+  const rank = { position: rang, size: taille, ties }
+  const libelleCourt = formatServedRank(rank)
+  const rangAria = formatServedRankAria(rank)
   if (libelleCourt === null || rangAria === null) return null
-  return { rang, taille, libelle: `${libelleCourt}${portee === null ? '' : ` · ${portee}`}`, libelleCourt, rangAria }
+  return { rang, taille, portee, ties,
+    libelle: `${libelleCourt}${portee === null ? '' : ` · ${portee}`}`, libelleCourt, rangAria }
 }
 
 /** French number: comma decimal separator, thin-space thousands, zeros trimmed. */

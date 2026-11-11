@@ -5,7 +5,7 @@ import { RouterLink } from 'vue-router'
 import type { NumericFact, TerritorialScalarReference } from '@/fiche/content/territoryFacts'
 import CahierRank from './CahierRank.vue'
 import { comparisonRank } from '@/fiche/content/comparisonRank'
-import { RANK_DISPLAY_MIN_SIZE, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
+import { RANK_DISPLAY_MIN_SIZE, puceRangDirection } from '@/fiche/figureGrammaire'
 import { AlertTriangle, LoaderCircle } from 'lucide-vue-next'
 import { ref, useId } from 'vue'
 
@@ -46,11 +46,9 @@ function comparisonAccessibleName(): string {
   const description = props.namedReference?.label
     ?? (comparison?.scope.label ? `${statistic} des ${comparison.scope.label}` : null)
   const served = props.servedRank && props.servedRank.size >= RANK_DISPLAY_MIN_SIZE && props.servedRank.position > 0
-    ? props.servedRank : null
-  const servedText = served ? formatServedRankAria(served) : null
-  const rank = served && servedText
-    ? puceRangDirection(servedText, served.direction).phrase
-    : !props.namedReference && props.fact ? comparisonRank(props.fact)?.phrase : null
+    ? puceRangDirection(props.servedRank, props.servedRank.direction) : null
+  const rank = served?.phraseAria
+    ?? (!props.namedReference && props.fact ? comparisonRank(props.fact)?.phraseAria : null)
   return `Groupe comparé : ${comparisonText()}${rank ? `. Rang ${rank}` : ''}${description ? `. ${description}` : ''}`
 }
 </script>

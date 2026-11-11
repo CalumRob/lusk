@@ -141,23 +141,26 @@ describe('AEDAR equipment decile distribution figure', () => {
   })
 
   it('rend le rang servi du minimum et du maximum de la distribution, et rien sans rang', async () => {
-    const comparisonCell = (measure: string, rank: number | null): AedarComparisonCell => ({
+    const comparisonCell = (measure: string, rank: number | null, ties: number | null = 1): AedarComparisonCell => ({
       typequ: 'B207', measure, group_value: 7.4, group_coverage_status: 'covered',
       group_n_addresses: 50, group_n_observed: 42, statistic: 'pooled',
       source_id: 'aedar_bretagne', vintage_id: '2026-v1', reference_date: null, publication_date: null,
-      rank, rank_size: rank === null ? null : 2, rank_ties: rank === null ? null : 1,
+      rank, rank_size: rank === null ? null : 2, rank_ties: rank === null ? null : ties,
     }) as AedarComparisonCell
     const wrapper = mount(AedarEquipmentQuantileFigureCahier, {
       props: { fact: fact(), horizonMinutes: 15, selectedModes: ['car'], evidence: explorerEvidence(),
         comparison: {
           label: 'Classe de densité', contentVersion: 'test-content-v1', referenceContentVersion: 'test-reference-v1',
-          cells: [comparisonCell('count_15_car_min', 1), comparisonCell('count_15_car_max', 2)],
+          cells: [comparisonCell('count_15_car_min', 1, 2), comparisonCell('count_15_car_max', 2)],
         },
         comparisonLabel: 'Classe de densité' },
     })
     const categories = wrapper.findAll('button.cahier-grouped-vertical-bar-chart__category-hitbox')
     await categories[0]!.trigger('focus')
-    expect(wrapper.get('.cahier-figure-tooltip-comparison-rank').text()).toBe('1er/2')
+    expect(wrapper.get('.cahier-figure-tooltip-comparison-rank').text()).toBe('=1er/2')
+    // The composed row name spells the tie out instead of reading the symbol.
+    expect(wrapper.get('.cahier-figure-tooltip-row').attributes('aria-label')).toContain('1er/2 (ex æquo)')
+    expect(wrapper.get('.cahier-figure-tooltip-row').attributes('aria-label')).not.toContain('=1er')
     await categories[10]!.trigger('focus')
     expect(wrapper.get('.cahier-figure-tooltip-comparison-rank').text()).toBe('2e/2')
     // A decile the producer does not rank renders no badge at all.

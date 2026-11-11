@@ -709,10 +709,10 @@ describe('ordinary scalar consumers on semantic resources', () => {
     const memberIds = ['200000001', '200000002']
     const cohortFacts = cohortResult('demographie', 'densite', target, memberIds, [
       observation('demographie', 'densite', memberIds[0]!, 'measured', 901),
-      observation('demographie', 'densite', memberIds[1]!, 'not_available', null),
+      observation('demographie', 'densite', memberIds[1]!, 'measured', 902),
     ])
     const values = new Map([[memberIds[0]!, { status: 'measured', value: 901 }],
-      [memberIds[1]!, { status: 'not_available', value: null }]])
+      [memberIds[1]!, { status: 'measured', value: 902 }]])
     const requests: Array<Record<string, any>> = []
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -750,8 +750,10 @@ describe('ordinary scalar consumers on semantic resources', () => {
       expect(comparisonRead?.intent.members).toBeUndefined()
       expect(wrapper.get('[data-testid="scalar-comparison-summary"]').text()).toContain('Médiane API')
       const rows = wrapper.findAll('tbody tr').map((row) => row.text())
-      expect(rows.find((row) => row.includes('EPCI X'))).toContain('1er / 1')
-      expect(wrapper.get('[data-testid="scalar-comparison-summary"]').text()).toContain('1 valeurs comparables')
+      // Both cohort members are measured, so the published ordinal is displayable
+      // through the shared rank grammar (901 against 902 on a high-is-better facet).
+      expect(rows.find((row) => row.includes('EPCI X'))).toContain('2e/2')
+      expect(wrapper.get('[data-testid="scalar-comparison-summary"]').text()).toContain('2 valeurs comparables')
       expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     } finally {
       wrapper.unmount()
@@ -868,9 +870,9 @@ describe('ordinary scalar consumers on semantic resources', () => {
     const defaultRows = wrapper.findAll('tbody tr')
     expect(defaultRows).toHaveLength(3)
     const defaultText = defaultRows.map((row) => row.text())
-    expect(defaultText.find((row) => row.includes('Commune A1'))).toContain('1er / 3')
-    expect(defaultText.find((row) => row.includes('Commune D'))).toContain('1er / 3')
-    expect(defaultText.find((row) => row.includes('Commune B'))).toContain('3e / 3')
+    expect(defaultText.find((row) => row.includes('Commune A1'))).toContain('1er/3')
+    expect(defaultText.find((row) => row.includes('Commune D'))).toContain('1er/3')
+    expect(defaultText.find((row) => row.includes('Commune B'))).toContain('3e/3')
     expect(defaultText.some((row) => row.includes('Commune C'))).toBe(false)
 
     await router.replace({ query: { territoire: '22001', niveau: 'commune', epci: '200000001' } })
@@ -884,8 +886,8 @@ describe('ordinary scalar consumers on semantic resources', () => {
     expect(targets[2]).toMatchObject({ epci_id: '200000002' })
     expect(wrapper.findAll('tbody tr')).toHaveLength(2)
     const filteredRows = wrapper.findAll('tbody tr').map((row) => row.text())
-    expect(filteredRows.find((row) => row.includes('Commune B'))).toContain('2e / 2')
-    expect(filteredRows.find((row) => row.includes('Commune C'))).toContain('1er / 2')
+    expect(filteredRows.find((row) => row.includes('Commune B'))).toContain('2e/2')
+    expect(filteredRows.find((row) => row.includes('Commune C'))).toContain('1er/2')
     expect(filteredRows.some((row) => row.includes('Commune A1'))).toBe(false)
 
     resolveStaleScope!()

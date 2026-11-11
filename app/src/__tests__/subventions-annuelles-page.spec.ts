@@ -174,7 +174,7 @@ describe('Page d’indicateur subventions_annuelles — lecture native complète
     // Rang API exact publié à 2025 pour 22001 (évidence member_ranks), taille
     // d'éligibilité — PAS la taille 725 du périmètre calculée navigateur.
     expect(rangApi).not.toBeNull()
-    const attendu = `${rangApi!.rang === 1 ? '1er' : `${rangApi!.rang}e`} / ${rangApi!.taille}`
+    const attendu = `${rangApi!.rang === 1 ? '1er' : `${rangApi!.rang}e`}/${rangApi!.taille}`
     expect(ligne!.findAll('td')[2]!.text().trim()).toBe(attendu)
     // Le changement de niveau reste peuplé : les 61 EPCIs bretons comparés.
     await router.replace({ query: { ...router.currentRoute.value.query, niveau: 'epci' } })
