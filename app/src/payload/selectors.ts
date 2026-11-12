@@ -567,7 +567,7 @@ export function phraseRaccordement(
   if (ligne.key !== 'raccordement_tc' || ligne.value === null) return null
   const valeur = formaterValeur(ligne)
   if (valeur === null) return null
-  return `Un mercredi de période scolaire, ${valeur} % de la population bretonne peut rejoindre ${nomTerritoire} en moins de 90 minutes en train, en car ou en bus de mairie à mairie.`
+  return `Depuis ${nomTerritoire}, ${valeur} % de la population bretonne est joignable en moins de 90 minutes en transports en commun, par des trajets planifiés aller simple entre arrêts.`
 }
 
 /** A signed integer — the Démographie story's soldes ("+70", "-380", "0"). */

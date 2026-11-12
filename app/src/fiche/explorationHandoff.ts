@@ -126,6 +126,9 @@ const PAGE_KEY_FOR_TARGET: Readonly<Record<string, string>> = {
   places_stationnement_velo_1000: 'places_stationnement_velo_1000',
   places_stationnement_voiture_1000: 'places_stationnement_voiture_1000',
   stationnement_velo_par_voiture: 'stationnement_velo_par_voiture',
+  offre_tc: 'offre_tc',
+  raccordement_tc: 'raccordement_tc',
+  raccordement_courbe: 'raccordement_courbe',
 }
 
 const ACCESS_PAGE_KEY_FOR_SERVICE: Readonly<Record<string, string>> = {
@@ -162,7 +165,8 @@ const SECTION_PAGE_FALLBACKS: Readonly<Record<ContentSection['key'], string | nu
   'aedar-equipment-profile': null,
   'aedar-equipment-explorer': null,
   'stationnement-ravitaillement': 'places_stationnement_velo_1000',
-  'offre-transports-commun': 'offre_tc',
+  'couverture-du-territoire': 'offre_tc',
+  'visiter-la-bretagne': 'raccordement_courbe',
 }
 
 export function routePourSectionExploration(

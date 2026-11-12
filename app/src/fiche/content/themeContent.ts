@@ -12,6 +12,8 @@ import type {
 import { CONTENU_SOUS_GROUPES_FICHE } from './ficheGrammar'
 import {
   buildMobiliteNetworksSection,
+  buildMobiliteRaccordementSection,
+  buildMobiliteShareSection,
   buildMobiliteStationnementRavitaillementSection,
   buildPartageSubtitle,
 } from './mobiliteSections'
@@ -304,6 +306,50 @@ export interface MobiliteStationnementRavitaillementEvidence {
   columns: readonly [MobilitePairedColumnEvidence, MobilitePairedColumnEvidence]
 }
 
+/** Page 3 — the 0–100 % share track of « Couverture du territoire ». */
+export interface MobiliteShareEvidence {
+  kind: 'mobilite-share'
+  /** The full published indicator label, including its proximity threshold. */
+  figureTitle: string
+  value: ContentFact
+  unit: string
+  /** Resolved statistic + scope of the active header comparison (ARIA only). */
+  comparisonLabel: string | null
+  prose: readonly TextBlock[]
+  sources: readonly ContentSource[]
+  unavailableResources?: readonly string[]
+  unavailableComparisons?: readonly string[]
+}
+
+/** Producer-declared numeric trajectory axis; never inferred from detail names. */
+export interface MobiliteTrajectoryAxis {
+  values: readonly { detail: string; numericValue: number }[]
+  minimum: number
+  maximum: number
+}
+
+/** Page 3 — the cumulative raccordement curve of « Visiter la Bretagne ». */
+export interface MobiliteRaccordementEvidence {
+  kind: 'mobilite-raccordement'
+  figureTitle: string
+  territoryName: string
+  level: TerritoryIdentity['type']
+  /** Focal cumulative curve, one fact per published duration grid point. */
+  points: readonly ContentFact[]
+  /** Active header comparison mean curve; null means no reference is shown. */
+  comparison: ComparisonTrajectoryContent | null
+  trajectory: TrajectoryMetadata | null
+  /** Declared numeric positions from the producer descriptor, when valid. */
+  axis: MobiliteTrajectoryAxis | null
+  /** Published scalar at the trajectory marker, used in prose and the marker tooltip only. */
+  markerValue: ContentFact | null
+  comparisonLabel: string | null
+  prose: readonly TextBlock[]
+  sources: readonly ContentSource[]
+  unavailableResources?: readonly string[]
+  unavailableComparisons?: readonly string[]
+}
+
 export type ContentEvidence =
   | AedarCarAccessOverviewEvidence
   | AedarDiversityLossEvidence
@@ -312,8 +358,8 @@ export type ContentEvidence =
   | AedarEquipmentExplorerEvidence
   | MobiliteNetworksEvidence
   | MobiliteStationnementRavitaillementEvidence
-  | { kind: 'public-transport'; offer: ContentFact | null; trajectory: readonly ContentFact[];
-      comparisonTrajectory: ComparisonTrajectoryContent | null; trajectoryMetadata: TrajectoryMetadata | null }
+  | MobiliteShareEvidence
+  | MobiliteRaccordementEvidence
 
 interface ContentSectionBase<Key extends string, Evidence> {
   key: Key
@@ -341,7 +387,15 @@ export interface MobiliteStationnementRavitaillementSection
   label: 'Se garer et se ravitiller'
 }
 
-export interface OffreTransportsSection extends ContentSectionBase<'offre-transports-commun', Extract<ContentEvidence, {kind:'public-transport'}>> { label: string }
+export interface MobiliteShareSection
+  extends ContentSectionBase<'couverture-du-territoire', MobiliteShareEvidence> {
+  label: 'Couverture du territoire'
+}
+
+export interface MobiliteRaccordementSection
+  extends ContentSectionBase<'visiter-la-bretagne', MobiliteRaccordementEvidence> {
+  label: 'Visiter la Bretagne'
+}
 
 export type MobiliteContentSection =
   | AedarCarAccessOverviewSection
@@ -351,7 +405,8 @@ export type MobiliteContentSection =
   | AedarEquipmentExplorerSection
   | MobiliteNetworksSection
   | MobiliteStationnementRavitaillementSection
-  | OffreTransportsSection
+  | MobiliteShareSection
+  | MobiliteRaccordementSection
 
 export type ContentSection = MobiliteContentSection
 
@@ -374,7 +429,7 @@ export interface PartageEspacePublicContentUnit {
   sections: readonly [MobiliteNetworksSection, MobiliteStationnementRavitaillementSection]
 }
 
-export interface OffreTransportsContentUnit { key: 'offre-transports-commun'; label: string; introduction: readonly TextBlock[]; rundown: readonly TextBlock[]; sections: readonly [OffreTransportsSection] }
+export interface OffreTransportsContentUnit { key: 'offre-transports-commun'; label: string; introduction: readonly TextBlock[]; rundown: readonly TextBlock[]; sections: readonly [MobiliteShareSection, MobiliteRaccordementSection] }
 
 export type MobiliteContentUnit = AccesAuxServicesContentUnit | PartageEspacePublicContentUnit | OffreTransportsContentUnit
 export type ContentUnit = MobiliteContentUnit
@@ -393,64 +448,6 @@ export type SingleUnitThemeContent = Omit<ThemeContent, 'units'> & {
   units: readonly [ContentUnit]
 }
 /** Public labels for this grammar's published indicators and content metrics. */
-const CONTENT_LABELS: Readonly<Record<string, string>> = {
-  reseaux: 'Réseaux piéton, cyclable et routier',
-  reseaux_par_habitant: 'Longueur du réseau par habitant',
-  offre_cyclable: 'L’offre cyclable',
-  places_stationnement_velo_1000: 'Places de stationnement vélo pour 1 000 hab.',
-  places_stationnement_voiture_1000: 'Places de stationnement voiture pour 1 000 hab.',
-  stationnement_velo_par_voiture: 'Places de stationnement vélo pour 1 place voiture',
-  surface_reseaux_routiers: 'Emprise routière',
-  bornes_recharge: 'Bornes de recharge pour véhicules électriques',
-  bornes_recharge_1000: 'Bornes de recharge pour 1 000 hab.',
-  stations_service: 'Stations-service',
-  stations_service_1000: 'Stations-service pour 1 000 hab.',
-  bornes_ev_par_station_service: 'Bornes de recharge par station-service',
-}
-
-function complete(fact: NumericFact): fact is NumericFact & { value: number } {
-  return fact.availability === 'complete' && fact.value !== null
-}
-
-function hasValue(fact: NumericFact): boolean {
-  return fact.availability !== 'absent'
-}
-
-function contentFact(fact: NumericFact, label: string): ContentFact {
-  return { fact, label }
-}
-
-function labelFor(key: string): string | null {
-  return CONTENT_LABELS[key] ?? null
-}
-
-function contentIndicator(fact: NumericFact): ContentIndicator | null {
-  const label = fact.label ?? labelFor(fact.key)
-  return label ? contentFact(fact, label) : null
-}
-
-function indicatorFor(facts: TerritoryFacts, key: string): NumericFact | null {
-  return facts.mobility.indicators.find((fact) => fact.key === key) ?? null
-}
-
-function indicatorsFor(facts: TerritoryFacts, keys: readonly string[]): ContentIndicator[] {
-  return keys
-    .map((key) => indicatorFor(facts, key))
-    .filter((fact): fact is NumericFact => fact !== null)
-    .map(contentIndicator)
-    .filter((indicator): indicator is ContentIndicator => indicator !== null)
-}
-
-function sourceIdsFor(values: readonly ContentFact[]): string[] {
-  return [
-    ...new Set(
-      values
-        .map((value) => value.fact.provenance?.sourceId)
-        .filter((sourceId): sourceId is string => sourceId !== null),
-    ),
-  ]
-}
-
 function sourceFrom(provenance: FactProvenance | null, metadata?: ThemeMetadata): ContentSource | null {
   if (!provenance?.sourceId) return null
   const record = metadata?.source_records?.[provenance.sourceId]
@@ -501,38 +498,18 @@ function registerFor(sections: readonly MobiliteContentSection[], metadata?: The
         add(column.ratio.value)
       }
     }
-    if (section.evidence?.kind === 'public-transport') {
-      add(section.evidence.offer)
-      for (const fact of section.evidence.trajectory) add(fact)
+    if (section.evidence?.kind === 'mobilite-share') {
+      add(section.evidence.value)
+    }
+    if (section.evidence?.kind === 'mobilite-raccordement') {
+      for (const fact of section.evidence.points) add(fact)
+      if (section.evidence.markerValue) add(section.evidence.markerValue)
+      if (section.evidence.comparison) {
+        for (const fact of section.evidence.comparison.points) add(fact)
+      }
     }
   }
   return [...sources.values()]
-}
-
-function targetFor(
-  fact: NumericFact,
-  territory: TerritoryIdentity,
-): ExplorationTarget | null {
-  if (!hasValue(fact)) return null
-  const label = fact.label ?? labelFor(fact.key)
-  if (!label) return null
-  return {
-    kind: 'indicator',
-    theme: 'mobilite',
-    key: fact.key,
-    detail: fact.detail,
-    label,
-    territory,
-  }
-}
-
-function targetsFor(
-  facts: readonly NumericFact[],
-  territory: TerritoryIdentity,
-): ExplorationTarget[] {
-  return facts
-    .map((fact) => targetFor(fact, territory))
-    .filter((target): target is ExplorationTarget => target !== null)
 }
 
 export function text(value: string): TextSegment {
@@ -613,34 +590,19 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
     buildMobiliteNetworksSection(facts, metadata),
     buildMobiliteStationnementRavitaillementSection(facts, metadata),
   ] as const
-  const factFor = (key: string): ContentFact | null => {
-    const fact = indicatorFor(facts, key)
-    return fact ? contentFact(fact, fact.label ?? key) : null
-  }
   const subgroupLabel = (key: keyof typeof CONTENU_SOUS_GROUPES_FICHE.mobilite, fallback: string): string =>
     CONTENU_SOUS_GROUPES_FICHE.mobilite[key] ?? fallback
-  const curve = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe').map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
-  const selectedComparison = facts.mobility.selectedTrajectoryComparison
-  const comparisonTrajectory: ComparisonTrajectoryContent | null = selectedComparison ? {
-    statistic: selectedComparison.statistic, scope: selectedComparison.scope,
-    selectedMemberCount: selectedComparison.selectedMemberCount, eligibleCount: selectedComparison.eligibleCount,
-    modelZeroReasonCounts: selectedComparison.modelZeroReasonCounts,
-    points: selectedComparison.points.map((fact) => contentFact(fact, fact.detail ?? fact.key)),
-  } : null
-  // A selected peer mean is independent from the global national reference.
-  const offer = factFor('offre_tc')
-  const transitFacts = [...(offer ? [offer] : []), ...curve]
-  const transitEvidence = transitFacts.length ? {
-    kind: 'public-transport' as const, offer, trajectory: curve, comparisonTrajectory,
-    trajectoryMetadata: metadata?.indicator_pages?.raccordement_courbe?.family === 'trajectory'
-      ? metadata.indicator_pages.raccordement_courbe.trajectory : null,
-  } : null
+  const transitSections = [
+    buildMobiliteShareSection(facts, metadata),
+    buildMobiliteRaccordementSection(facts, metadata),
+  ] as const
   const transitLabel = subgroupLabel('offre-transports-commun', 'Offre de transports en commun')
-  const transitSection: OffreTransportsSection = {
-    key: 'offre-transports-commun', label: transitLabel, indicators: indicatorsFor(facts, ['offre_tc', 'raccordement_courbe']),
-    availability: !transitEvidence ? 'absent' : transitFacts.every(({fact}) => complete(fact)) ? 'complete' : 'incomplete',
-    evidence: transitEvidence, provenance: sourceIdsFor(transitFacts), lecture: null,
-    explorationTargets: targetsFor(transitFacts.map(({fact}) => fact), facts.territory),
+  const transitUnit: OffreTransportsContentUnit = {
+    key: 'offre-transports-commun',
+    label: transitLabel,
+    introduction: [],
+    rundown: [],
+    sections: transitSections,
   }
   const accessUnit: AccesAuxServicesContentUnit = {
     key: 'acces-aux-services',
@@ -656,7 +618,6 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
     introduction: buildPartageSubtitle(facts),
     sections: sharingSections,
   }
-  const transitUnit: OffreTransportsContentUnit = { key: 'offre-transports-commun', label: transitLabel, introduction: [], rundown: [], sections: [transitSection] }
 
   return {
     theme: 'mobilite',
@@ -664,6 +625,6 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
     territory: facts.territory,
     introduction: accessUnit.introduction,
     units: [accessUnit, sharingUnit, transitUnit],
-    sourceRegister: registerFor([...accessSections, ...sharingSections, transitSection], metadata),
+    sourceRegister: registerFor([...accessSections, ...sharingSections, ...transitSections], metadata),
   }
 }

@@ -37,6 +37,8 @@ function fakePage() {
 const catalogueFixture = { contract: 'semantic-resource-catalogue-v1', resources: [{ resource_id: 'FIXTURE-CATALOGUE' }] }
 const deps = {
   catalogue: () => ({ json: async () => catalogueFixture }),
+  resourceKind: (resource) => resource === 'aedar_territorial_aggregate' ? 'aedar_source_grain'
+    : resource === 'aedar_territory_summary' ? 'aedar_territory_summary' : null,
   themeBatch: ({ items }) => ({ results: items.map((item) => ({ id: item.id, resource: item.resource, data: { fixture: 'theme-batch' } })) }),
   aedarBatch: ({ items }) => ({ results: items.map((item) => ({ id: item.id, resource: item.resource, data: { fixture: 'aedar-batch' } })) }),
   readCalls: { retiredThemeFactsRoutes: 0, themeBatches: 0, aedarBatches: 0, aedarItems: [] },
@@ -57,14 +59,18 @@ assert.deepEqual(JSON.parse(catalogue.body), catalogueFixture)
 // POST read-batch -> fixtures thème + AEDAR
 const batch = await page.fetch('/api/resources/read-batch', { items: [
   { id: 't1', resource: 'subventions_annuelles', target: { kind: 'territory', type: 'commune', id: '35238' }, intent: { kind: 'facts' } },
-  { id: 'a1', resource: 'aedar_territorial_aggregate', target: { kind: 'territory', type: 'commune', id: '35238' }, coordinates: { typequ: ['A'] }, fields: [] },
+  { id: 'a1', resource: 'aedar_territorial_aggregate', target: { kind: 'territory', type: 'commune', id: '35238' }, coordinates: { typequ: ['A'] }, intent: { kind: 'facts' }, fields: [] },
+  { id: 's1', resource: 'aedar_territory_summary', target: { kind: 'territory', type: 'commune', id: '35238' }, intent: { kind: 'facts' } },
+  { id: 'c1', resource: 'aedar_territorial_aggregate', target: { kind: 'territory', type: 'commune', id: '35238' }, coordinates: { measure: ['count_20_car_mean'] }, intent: { kind: 'fixed_comparison', context: 'density_class' }, fields: ['group_value'] },
 ] })
 assert.equal(batch.status, 200)
 const batchBody = JSON.parse(batch.body)
 assert.equal(batchBody.contract, 'semantic-read-batch-v1')
-assert.deepEqual(batchBody.results.map((r) => r.data.fixture).sort(), ['aedar-batch', 'theme-batch'])
+assert.deepEqual(batchBody.results.map((r) => r.data.fixture).sort(), ['aedar-batch', 'aedar-batch', 'aedar-batch', 'theme-batch'])
 assert.equal(deps.readCalls.themeBatches, 1)
 assert.equal(deps.readCalls.aedarBatches, 1)
+assert.equal(deps.readCalls.aedarSummaryBatches, 1)
+assert.equal(deps.readCalls.aedarComparisonBatches, 1)
 assert.equal(deps.readCalls.aedarItems.length, 1)
 
 // API inconnue -> 599 fail-closed

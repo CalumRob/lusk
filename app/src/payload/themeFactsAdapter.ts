@@ -879,9 +879,13 @@ export function themeFactsEnvelopeFromSemantic(theme: ThemeKey, acquired: ThemeR
     }
     const owner = reads.find((candidate) => candidate.data.dataset_id === read.data.dataset_id)
     const ownerData = owner?.data
+    // An isolated focal-series failure leaves no owner for an auxiliary named
+    // reference. The reference cannot be bound, so it is honestly omitted;
+    // an owner that IS present but contradicts its reference still fails closed.
+    if (!ownerData) continue
     const ownerVersion = isRecord(ownerData) ? ownerData.content_version ?? ownerData.publication_id : undefined
     const namedVersion = read.data.content_version ?? read.data.publication_id
-    if (!ownerData || typeof ownerVersion !== 'string' || !ownerVersion ||
+    if (typeof ownerVersion !== 'string' || !ownerVersion ||
         typeof namedVersion !== 'string' || ownerVersion !== namedVersion ||
         ownerData.reference_content_version !== read.data.reference_content_version) {
       throw new Error(`Dépendance de référence nommée incompatible : ${read.resource}`)

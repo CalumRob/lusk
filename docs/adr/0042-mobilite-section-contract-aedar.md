@@ -1,6 +1,6 @@
 # ADR-0042: The Mobilité fiche adopts the AEDAR section contract
 
-- **Status:** accepted — product owner through PRD #952, 2026-11-11; implemented by #954.
+- **Status:** accepted — product owner through PRD #952, 2026-11-11; page 2 implemented by #954, page 3 by #955.
 - **Supersedes:** ADR-0026 for the Mobilité theme only, and the
   « Figure « Réseaux » de la Variante E » CONTEXT entry (2026-11-10).
 - **Related:** ADR-0039 / ADR-0041 (published and request-scoped comparison
@@ -34,9 +34,10 @@ browser-side peer computation. #953 publishes the refuelling densities.
    `absent` / `incomplete` states.
 2. **Narrow delegate (C8).** New sections render through
    `CahierMobiliteSection` with exactly `{ section, unit, comparison }`. No AEDAR
-   prop, mode/horizon state or pagination is forwarded. The delegate may read
-   the shared comparison control only through the already-injected
-   `CONTROLE_COMPARAISON_KEY` (it currently does not need to).
+   prop, mode/horizon state or pagination is forwarded. The delegate reads the
+   already-injected `CONTROLE_COMPARAISON_KEY` only to turn an explicitly empty
+   selection into an honest inactive state; it reads nothing else from the
+   AEDAR context.
 3. **Page 2 subtitle (C2).** One paragraph replaces both the old introduction
    and the rundown. It composes the car-owner share from the published parts
    (`une_voiture + deux_plus`), the two-or-more share, and the road footprint in
@@ -81,6 +82,23 @@ browser-side peer computation. #953 publishes the refuelling densities.
    zero, rank or reference is fabricated. Other themes keep their existing
    atomic default contract.
 
+10. **Page 3 (C5/§7.5–7.6, #955).** « Couverture du territoire » renders
+    `offre_tc` as a compact 0–100 % share track with the active comparison tick
+    and its value, under the full published indicator label; the Korrigo
+    proximity universe stays distinct from the national GTFS raccordement
+    sources. « Visiter la Bretagne » renders the full native
+    `raccordement_courbe` grid, the marker from
+    `indicator_pages.raccordement_courbe.trajectory`, the territory line in
+    `--brand-500`, and the **active header group mean** as a neutral dashed
+    line. That mean comes from `selectedTrajectoryComparison`; there is no
+    named-Brittany fallback, no third series and no automatic reference for an
+    empty selection. `raccordement_tc` is prose only. The GTFS model is
+    outbound planned stop-to-stop, and aggregate curves are equal means of
+    member communes including model zeros. Both figures expose their honest
+    loading/error/retry/unavailable/empty states without blanking the other
+    section. The old `public-transport` evidence kind and
+    `CahierOffreTransportsFigure` are retired.
+
 ## AEDAR preservation rule (C7)
 
 `aedarAccessSection.ts`, every `Aedar*` component, the `aedar-*` branches of
@@ -105,8 +123,13 @@ absence of any Marelle inside the unit.
   figure, not a page error: the page keeps its published maps, bars, parking
   column, ratio and prose while the missing publication remains visibly
   unavailable until a fresh read after publication.
-- The new Cahier figure family (`CahierMobiliteComparisonBars`) is reusable by
-  page 3 (#955), which is intentionally out of scope here.
+- The new Cahier figure families (`CahierMobiliteComparisonBars`,
+  `CahierMobiliteShareTrack`, `CahierMobiliteRaccordementCurve`) are the
+  Mobilité pages' shared presentation layer; page 3 uses the same grammar and
+  primitives as page 2.
+- The raccordement source identity, method registry and test fixtures now name
+  `raccordement_gtfs_national` and the outbound stop-to-stop model; the old
+  mairie-to-mairie alias is retired from the app's factual methods copy.
 - `DESIGN.md` is not rewritten; this ADR stands in until the human-owned
   DESIGN.md v2 campaign (#511).
 

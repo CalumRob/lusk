@@ -158,6 +158,14 @@
   background: transparent;
 }
 
+.cahier-figure-legend-mark--tick {
+  width: 0;
+  height: 14px;
+  border-inline-start: 2px solid currentColor;
+  border-radius: 0;
+  background: transparent;
+}
+
 .cahier-figure-legend-mark--slash {
   width: 16px;
   height: 16px;

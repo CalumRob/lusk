@@ -42,16 +42,6 @@ import type { RaccordementSemanticProjection } from '@/payload/raccordementSeman
 import { acquireSparseCollectionFacts, reacquireSparseCollectionComparison } from '@/payload/sparseCollectionPage'
 import type { SparseCollectionPageRead } from '@/payload/sparseCollectionPage'
 
-const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
-const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
-
-function dateLongue(iso: string, avecJour = true): string {
-  const date = new Date(`${iso}T00:00:00Z`)
-  return Number.isNaN(date.getTime())
-    ? iso
-    : `${avecJour ? `${JOURS_FR[date.getUTCDay()]} ` : ''}${date.getUTCDate()} ${MOIS_FR[date.getUTCMonth()]} ${date.getUTCFullYear()}`
-}
-
 const route = useRoute(); const router = useRouter(); const recherche = ref('')
 // La lecture du niveau mémorisé reste une fine couture d'effet de bord (#508) :
 // elle se fait au montage, puis l'applier de persistance la tient à jour. Les
@@ -1319,21 +1309,11 @@ const sources = computed(() => {
     .map((source) => ({ ...source, ficheSourceLiee: true, ancreSourceId: source.id }))
 })
 /**
- * Some source versions describe a planned service day while their reference
- * date records acquisition. Keep those clocks distinct in the page copy; do
- * not infer the service day from the publication/freshness date.
+ * Raccordement service dates are not inferred from prose clock labels or
+ * publication/freshness dates. The producer's structured source contract is
+ * the only owner of such facts; when it does not publish a service-day field,
+ * the page stays honestly silent.
  */
-const horlogeService = computed(() => {
-  for (const source of sources.value) {
-    const clock = source.clocks.find((candidate) => candidate.reference.includes('mercredi réel de période scolaire'))
-    const serviceDate = clock?.reference.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0]
-    const acquisitionDate = serviceDate
-      ? source.vintages.find((vintage) => vintage.version === serviceDate)?.dateReference ?? null
-      : null
-    if (serviceDate && acquisitionDate) return { service: dateLongue(serviceDate), acquisition: dateLongue(acquisitionDate, false) }
-  }
-  return null
-})
 // Les faits du THÈME entier — chaque consommateur filtre par SA clé (la
 // facette résumée d'une distribution lit souvent une AUTRE clé publiée que
 // la page, #440 ; les trajectoires et le modèle par détail filtrent déjà).
@@ -1769,7 +1749,7 @@ watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niv
           </template></RepereFamilyOutlet></main>
         <section v-else-if="vue === 'carte' && profileRegionalFactOnly" class="carte-indicateur" role="status" data-testid="profile-regional-map-unavailable">La Région dispose de faits publiés, mais pas d’une géométrie de comparaison pour cette carte.</section>
         <section v-else-if="vue === 'carte'" class="carte-indicateur"><div v-if="geometrie.masques.value" class="map-wrap"><MapExplorer :masques="geometrie.masques.value" :payload="payloadCarte" :active-ids="payloadCarte.indicateurs.map((fact) => fact.territoire)" :theme="theme as Theme" :couche="couche" :niveau="niveauMasque" :territoire-cible="territoireCible" :requete-zoom="requeteZoom" /></div><div v-else role="status">Chargement de la carte…</div></section>
-        <aside v-else><h2>L’indicateur</h2><dl><template v-if="raccordementApiLecture"><dt>Définition</dt><dd>{{ raccordementApiLecture.metadata.label }}</dd><dt>Unité</dt><dd>{{ raccordementApiLecture.metadata.unit }}</dd><dt>Mesure</dt><dd>{{ raccordementApiLecture.metadata.comparison_contract.statistic }} · {{ raccordementApiLecture.metadata.axis_values.length }} points déclarés</dd></template><template v-else><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></template></dl><p v-if="horlogeService && !raccordementApiLecture" class="indicator-date-caveat" data-testid="raccordement-dates">Les résultats reposent sur les horaires planifiés pour le {{ horlogeService.service }} ; les sources ont été acquises le {{ horlogeService.acquisition }}.</p><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink v-if="source.ficheSourceLiee" :to="{ name: 'sources', hash: `#${ancreSource(source.ancreSourceId ?? source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}<span v-if="vintage.revisionHash"> · Révision : {{ vintage.revisionHash }}</span></li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
+        <aside v-else><h2>L’indicateur</h2><dl><template v-if="raccordementApiLecture"><dt>Définition</dt><dd>{{ raccordementApiLecture.metadata.label }}</dd><dt>Unité</dt><dd>{{ raccordementApiLecture.metadata.unit }}</dd><dt>Mesure</dt><dd>{{ raccordementApiLecture.metadata.comparison_contract.statistic }} · {{ raccordementApiLecture.metadata.axis_values.length }} points déclarés</dd></template><template v-else><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></template></dl><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink v-if="source.ficheSourceLiee" :to="{ name: 'sources', hash: `#${ancreSource(source.ancreSourceId ?? source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}<span v-if="vintage.revisionHash"> · Révision : {{ vintage.revisionHash }}</span></li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
      </template>
   </section>
 </template>

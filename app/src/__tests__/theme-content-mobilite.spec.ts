@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
+
+import CahierMobiliteSection from '@/fiche/prototype/CahierMobiliteSection.vue'
 
 import type {
   ComparisonScope,
@@ -8,7 +11,7 @@ import type {
   TerritoryFacts,
 } from '@/fiche/content/territoryFacts'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
-import { buildPartageSubtitle } from '@/fiche/content/mobiliteSections'
+import { buildPartageSubtitle, buildMobiliteRaccordementSection, buildMobiliteShareSection } from '@/fiche/content/mobiliteSections'
 import type { ThemeMetadata } from '@/payload/types'
 import liveNetworks from './fixtures/rennes-network-live.json'
 
@@ -340,5 +343,123 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
         ['reseaux', 'absent', null],
         ['stationnement-ravitaillement', 'absent', null],
       ])
+  })
+})
+
+const page3Metadata = {
+  ...metadata,
+  indicator_labels: {
+    ...metadata.indicator_labels,
+    offre_tc: 'Part des bâtiments près d’un arrêt (à 500 m)',
+    raccordement_courbe: 'Courbe de population bretonne jointe selon le temps de trajet',
+    raccordement_tc: 'Population bretonne jointe en 90 minutes en transports en commun',
+  },
+  indicator_pages: {
+    raccordement_courbe: {
+      family: 'trajectory',
+      trajectory: {
+        endpoints: ['t0000', 't0360'],
+        axis: 'numeric',
+        axisLabels: { x: 'Temps de trajet (minutes)', y: 'Population joignable (%)' },
+        ticks: [{ detail: 't0000', label: '0' }, { detail: 't0090', label: '1 h 30' }, { detail: 't0360', label: '6 h' }],
+        marker: { detail: 't0090', label: '1 h 30 (90 min)' },
+      },
+    },
+  },
+  source_records: {
+    ...metadata.source_records,
+    korrigo: { dataset: 'Korrigo', publisher: 'Bretagne Mobilité', url: 'https://korrigo.example', licence: 'ODbL', vintage: '2026-02', freshness: '' },
+    raccordement_gtfs_national: { dataset: 'GTFS national', publisher: 'Lusk', url: 'https://github.com/CalumRob/lusk', licence: 'ODbL', vintage: '2026-10', freshness: '' },
+  },
+} as unknown as ThemeMetadata
+
+function withTerritory(facts: TerritoryFacts, type: TerritoryFacts['territory']['type']): TerritoryFacts {
+  return { ...facts, territory: { ...facts.territory, type } }
+}
+
+describe('Couverture du territoire + Visiter la Bretagne — #955 content contract', () => {
+  it('builds the share gauge from the published offre_tc fact and keeps zero as a valid share', () => {
+    const complete = buildMobiliteShareSection(factsWith([
+      fact('offre_tc', 0.573, '%', null, 'korrigo'),
+    ]), page3Metadata)
+    expect(complete.key).toBe('couverture-du-territoire')
+    expect(complete.label).toBe('Couverture du territoire')
+    if (complete.evidence?.kind !== 'mobilite-share') throw new Error('Share evidence expected')
+    expect(complete.evidence.figureTitle).toContain('500 m')
+    expect(complete.evidence.value.fact.value).toBe(0.573)
+    expect(complete.evidence.comparisonLabel).toContain('Médiane des communes de EPCI X')
+    expect(complete.evidence.sources[0]).toMatchObject({
+      id: 'korrigo', source: 'Bretagne Mobilité', url: 'https://korrigo.example',
+    })
+    expect(complete.availability).toBe('complete')
+
+    const zero = buildMobiliteShareSection(factsWith([fact('offre_tc', 0, '%', null, 'korrigo')]), page3Metadata)
+    expect(zero.availability).toBe('complete')
+    if (zero.evidence?.kind !== 'mobilite-share') throw new Error('Zero share evidence expected')
+    expect(zero.evidence.value.fact.value).toBe(0)
+
+    const incomplete = buildMobiliteShareSection(factsWith([fact('offre_tc', null, '%', null, 'korrigo')]), page3Metadata)
+    expect(incomplete.availability).toBe('incomplete')
+    if (incomplete.evidence?.kind !== 'mobilite-share') throw new Error('Incomplete share evidence expected')
+    expect(incomplete.evidence.value.fact.value).toBeNull()
+
+    const absent = buildMobiliteShareSection(factsWith([]), page3Metadata)
+    expect(absent.availability).toBe('absent')
+    expect(absent.evidence).toBeNull()
+  })
+
+  it('builds the cumulative curve from the active comparison and silences the missing marker sentence', () => {
+    const facts = factsWith([
+      fact('raccordement_courbe', 0.2, '%', 't0090', 'raccordement_gtfs_national'),
+      fact('raccordement_tc', 0.2, '%', null, 'raccordement_gtfs_national'),
+    ])
+    const section = buildMobiliteRaccordementSection(facts, page3Metadata)
+    expect(section.key).toBe('visiter-la-bretagne')
+    expect(section.label).toBe('Visiter la Bretagne')
+    if (section.evidence?.kind !== 'mobilite-raccordement') throw new Error('Curve evidence expected')
+    const prose = section.evidence.prose.flat().map((segment) => segment.value).join(' ')
+    expect(prose).toContain('À 1 h 30 (90 min), 20 % de la population bretonne est joignable depuis les arrêts du territoire.')
+    expect(prose).not.toContain('Le pointillé représente la moyenne du groupe comparé.')
+    expect(prose).toContain('zéros du modèle inclus.')
+    expect(section.evidence.sources[0].id).toBe('raccordement_gtfs_national')
+    expect(section.evidence).not.toHaveProperty('namedReference')
+
+    const missingMarker = buildMobiliteRaccordementSection(factsWith([
+      fact('raccordement_courbe', 0.2, '%', 't0090', 'raccordement_gtfs_national'),
+    ]), page3Metadata)
+    if (missingMarker.evidence?.kind !== 'mobilite-raccordement') throw new Error('Curve without marker evidence expected')
+    const silentProse = missingMarker.evidence.prose.flat().map((segment) => segment.value).join(' ')
+    expect(missingMarker.evidence.markerValue).toBeNull()
+    expect(silentProse).not.toContain('À 1 h 30')
+    expect(silentProse).not.toMatch(/undefined|NaN/u)
+    expect(silentProse).toContain('Les parts portent sur toute la population bretonne')
+
+    const aggregate = buildMobiliteRaccordementSection(withTerritory(facts, 'epci'), page3Metadata)
+    if (aggregate.evidence?.kind !== 'mobilite-raccordement') throw new Error('Aggregate curve evidence expected')
+    expect(aggregate.evidence.prose.flat().map((segment) => segment.value).join(' '))
+      .toContain('les communes du territoire permettent de rejoindre en moyenne 20 % de la population bretonne')
+
+    const absent = buildMobiliteRaccordementSection(factsWith([]), page3Metadata)
+    expect(absent.availability).toBe('absent')
+    expect(absent.evidence).toBeNull()
+  })
+
+  it('keeps a missing source URL as a visible text stamp instead of dropping the source', () => {
+    const section = buildMobiliteShareSection(factsWith([
+      fact('offre_tc', 0.4, '%', null, 'korrigo'),
+    ]), page3Metadata)
+    if (section.evidence?.kind !== 'mobilite-share') throw new Error('Share evidence expected')
+    section.evidence.sources = section.evidence.sources.map((source) => ({ ...source, url: null }))
+    const wrapper = mount(CahierMobiliteSection, {
+      props: {
+        section,
+        unit: { key: 'offre-transports-commun', label: 'L’offre de transports en commun' },
+        comparison: { status: 'ready' },
+      },
+    })
+    expect(wrapper.text()).toContain('Bretagne Mobilité')
+    expect(wrapper.find('[data-source-url-missing]').exists()).toBe(true)
+    expect(wrapper.find('.cahier-evidence-source a').exists()).toBe(false)
+    wrapper.unmount()
   })
 })

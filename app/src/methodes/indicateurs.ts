@@ -532,33 +532,33 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       raccordement_tc: {
         label: 'Population bretonne joignable en 90 minutes en TC',
         definition:
-          'La part de la population bretonne qui peut rejoindre le territoire en moins de 90 minutes en train, en car ou en bus, de mairie à mairie. Le calcul retient le meilleur départ d’un mercredi réel de période scolaire, avec une marche plafonnée à 40 minutes à chaque extrémité, sans aucun trajet en voiture.',
+          'La part de la population bretonne vivant dans les communes atteintes depuis les arrêts de transports en commun du territoire en 90 minutes, par des trajets planifiés aller simple entre arrêts. Le calcul retient le meilleur départ de la date réelle du modèle, avec une marche de correspondance plafonnée, sans aucun trajet en voiture.',
         unite: '%',
         source:
-          'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',
-        sourceId: 'matrice_temps_mairies',
+          'Lusk — matrice nationale de trajets GTFS planifiés entre arrêts communaux',
+        sourceId: 'raccordement_gtfs_national',
         direction: 'plus-est-mieux',
         caveat:
-          'Aux niveaux agrégés, les communes non routées sont exclues du dénominateur et la couverture réellement mesurée est signalée. Une commune non routée reste indisponible, jamais ramenée à zéro.',
+          'Aux niveaux agrégés, les courbes des communes membres ont le même poids, zéros du modèle inclus ; ces zéros ne signifient pas une absence réelle de transport. Aucune durée de retour ni liaison bâtiment–arrêt n’est modélisée.',
       },
       raccordement_courbe: {
-        label: 'Courbe cumulative — population bretonne joignable en TC',
+        label: 'Courbe de population bretonne jointe selon le temps de trajet',
         definition:
-          'La courbe cumulative de la part de population bretonne joignable selon le temps de trajet en transports en commun, de mairie à mairie, jusqu’à 6 heures, publiée sur la grille complète des temps de trajet de 0 à 360 minutes par pas de 5 minutes.',
+          'La courbe cumulative de la part de population bretonne vivant dans les communes atteintes depuis les arrêts du territoire, selon la durée du trajet planifié aller simple.',
         unite: '%',
         source:
-          'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',
-        sourceId: 'matrice_temps_mairies',
+          'Lusk — matrice nationale de trajets GTFS planifiés entre arrêts communaux',
+        sourceId: 'raccordement_gtfs_national',
         direction: 'plus-est-mieux',
       },
       raccordement_reference: {
-        label: 'Référence médiane — commune bretonne',
+        label: 'Référence nommée — moyenne des courbes communales évaluées',
         definition:
-          'La courbe médiane des communes bretonnes routées, affichée comme référence sur la courbe cumulative du raccordement.',
+          'La moyenne des courbes communales évaluées, publiée comme référence nommée. Ce n’est pas une médiane et ce n’est pas la série de comparaison de la fiche Mobilité, qui suit le groupe actif.',
         unite: '%',
         source:
-          'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',
-        sourceId: 'matrice_temps_mairies',
+          'Lusk — matrice nationale de trajets GTFS planifiés entre arrêts communaux',
+        sourceId: 'raccordement_gtfs_national',
         direction: 'plus-est-mieux',
       },
       bornes_recharge: {

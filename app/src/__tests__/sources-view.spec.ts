@@ -178,9 +178,9 @@ describe('SourcesView — route dataset-centric', () => {
     expect(wrapper.find('a[href="/indicateurs/programmes/couverture_programmes"]').exists()).toBe(false)
 
     // Les déclarations restent représentées en texte, avec leur libellé producteur.
-    const matrice = wrapper.find('#source-matrice-temps-mairies')
+    const matrice = wrapper.find('#source-raccordement-gtfs-national')
     expect(matrice.exists()).toBe(true)
-    expect(matrice.text()).toContain('Référence médiane — commune bretonne')
+    expect(matrice.text()).toContain('Référence nommée — moyenne des courbes communales évaluées')
     const snapshot = wrapper.find('#source-mobilite-snapshot')
     expect(snapshot.exists()).toBe(true)
     expect(snapshot.text()).toContain('Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)')
@@ -198,11 +198,11 @@ describe('SourcesView — route dataset-centric', () => {
 
     // L'ancre de la fiche, l'identité de jeu, l'éditeur, le millésime et les
     // horloges demeurent — la réconciliation ne retire que le lien mensonger.
-    const matrice = wrapper.find('#source-matrice-temps-mairies')
-    expect(matrice.text()).toContain('Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)')
+    const matrice = wrapper.find('#source-raccordement-gtfs-national')
+    expect(matrice.text()).toContain('Lusk — matrice nationale de trajets GTFS planifiés entre arrêts communaux')
     expect(matrice.text()).toContain('Éditeur : Lusk')
-    expect(matrice.text()).toContain('2026-08')
-    expect(matrice.text()).toContain('Le meilleur départ de la journée')
+    expect(matrice.text()).toContain('national-gtfs-outbound-v1')
+    expect(matrice.text()).toContain('Horaires GTFS du raccordement')
 
     const referentiel = wrapper.find('#source-classe-densite-communale')
     expect(referentiel.text()).toContain('Grille de densité 2025 — maille communale')
@@ -219,14 +219,14 @@ describe('SourcesView — route dataset-centric', () => {
 
   it('marque visiblement les déclarations sans page courante, distinctes des pages liées (#872)', async () => {
     const wrapper = await monter(chargerAvec(payloadSourcesNavigation()))
-    const matrice = wrapper.find('#source-matrice-temps-mairies')
+    const matrice = wrapper.find('#source-raccordement-gtfs-national')
     const consommateurs = matrice.findAll('.source-record__consumers li')
     expect(consommateurs).toHaveLength(3)
 
     // La référence nommée sans page : aucun lien, mais un cue VISIBLE qui la
     // reconnaît comme déclaration de source sans page d'indicateur courante —
     // jamais du texte nu indiscernable d'un consommateur de page.
-    const reference = consommateurs.find((item) => item.text().includes('Référence médiane — commune bretonne'))!
+    const reference = consommateurs.find((item) => item.text().includes('Référence nommée — moyenne des courbes communales évaluées'))!
     expect(reference.find('a').exists()).toBe(false)
     expect(reference.text()).toContain('Déclaration sans page d’indicateur courante')
 
@@ -273,9 +273,9 @@ describe('SourcesView — route dataset-centric', () => {
 
     // La liaison rend le libellé EXACT du module éditorial, pas une copie.
     const wrapper = await monter(chargerAvec(payloadSourcesNavigation()))
-    const matrice = wrapper.find('#source-matrice-temps-mairies')
+    const matrice = wrapper.find('#source-raccordement-gtfs-national')
     const reference = matrice.findAll('.source-record__consumers li')
-      .find((item) => item.text().includes('Référence médiane — commune bretonne'))!
+      .find((item) => item.text().includes('Référence nommée — moyenne des courbes communales évaluées'))!
     expect(reference.text()).toContain(`· ${MENTION_DECLARATION_SANS_PAGE}`)
   })
 })

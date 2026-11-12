@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { applyThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
 import type { TerritoryComparisonContext } from '@/fiche/comparisonContext'
-import { metadonneesThemesFixtures, histoiresMobiliteFixture } from '@/payload/fixtures'
+import { metadonneesThemesFixtures, histoiresMobiliteFixture, metadonneesMobiliteRaccordementFixture } from '@/payload/fixtures'
 import type { Payload } from '@/payload/types'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
-import CahierOffreTransportsFigure from '@/fiche/prototype/CahierOffreTransportsFigure.vue'
+import CahierMobiliteRaccordementCurve from '@/fiche/prototype/CahierMobiliteRaccordementCurve.vue'
 import { mount } from '@vue/test-utils'
 import { nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
 import { projectRaccordementSemanticComparison } from '../payload/raccordementSemanticProjection'
@@ -278,7 +278,6 @@ describe('SQL Mobilité response to Variant E facts', () => {
     const curve = facts.mobility.indicators.filter((fact)=>fact.key==='raccordement_courbe')
     const axes = synthetic.factsData.axis_values as string[]
     const values = (synthetic.factsData.points as Array<{ value: number }>).map((point) => point.value)
-    const numericAxes = synthetic.factsData.axis_numeric_values as number[]
     const reference = synthetic.referenceData.points as Array<{ axis: string; value: number }>
     expect(composition.map((fact)=>fact.detail)).toEqual(['sans_voiture','une_voiture','deux_plus'])
     expect(composition.map((fact)=>fact.value)).toEqual(parts)
@@ -294,61 +293,48 @@ describe('SQL Mobilité response to Variant E facts', () => {
     })
     expect(namedReference).not.toHaveProperty('territory')
     expect(curve.some((fact)=>fact.key==='raccordement_reference')).toBe(false)
-    const content = resolveMobiliteThemeContent(facts)
+    const content = resolveMobiliteThemeContent(facts, metadonneesMobiliteRaccordementFixture)
     const sharing = content.units.find((unit)=>unit.key==='partage-de-lespace-public')
     expect(sharing?.sections.map((section)=>section.key)).toEqual(['reseaux', 'stationnement-ravitaillement'])
     expect(JSON.stringify(content)).not.toContain('motorisation')
     expect(content.units.map((unit)=>unit.key)).toEqual([
       'acces-aux-services', 'partage-de-lespace-public', 'offre-transports-commun',
     ])
-    const section = content.units.find((unit)=>unit.key==='offre-transports-commun')?.sections[0]
-    expect(section?.evidence?.kind).toBe('public-transport')
-    if (section?.evidence?.kind !== 'public-transport') throw new Error('Regional transport content missing')
-    const rendered = mount(CahierOffreTransportsFigure, { props: {
-      offer: section.evidence.offer, trajectory: section.evidence.trajectory,
-      metadata: { axis:'numeric',axisLabels:{x:'Temps (minutes)',y:'Population joignable (%)'},
-        ticks:numericAxes.filter((minute) => minute % 30 === 0).map((minute) => ({
-          detail: axes[numericAxes.indexOf(minute)]!, label: String(minute),
-        })),
-        endpoints:[axes[0]!, axes.at(-1)!] },
+    const section = content.units.find((unit)=>unit.key==='offre-transports-commun')?.sections[1]
+    expect(section?.evidence?.kind).toBe('mobilite-raccordement')
+    if (section?.evidence?.kind !== 'mobilite-raccordement') throw new Error('Regional transport content missing')
+    const rendered = mount(CahierMobiliteRaccordementCurve, { props: {
+      figure: section.evidence, comparison: { status: 'idle' },
     } })
     expect(rendered.find('[data-series="territory"]').exists()).toBe(true)
     expect(rendered.find('[data-series="reference"]').exists()).toBe(false)
-    expect(rendered.findAll('.transit-point--territory')).toHaveLength(axes.length)
-    expect(rendered.findAll('.transit-point--reference')).toHaveLength(0)
-    expect(rendered.find('.transit-legend-reference').exists()).toBe(false)
-    expect(rendered.findAll('.transit-point--territory').map((point)=>point.attributes('data-value')))
+    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(axes.length)
+    expect(rendered.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
+    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory').map((point)=>point.attributes('data-value')))
       .toEqual(values.map(String))
   })
   it('renders the producer-derived synthetic mean curve separately from the focal curve and named reference', () => {
     const synthetic = nativeRaccordementReads()
     const contract = synthetic.facts.mobility.trajectoryContract!
-    const numericAxes = contract.axisNumericValues
     const axes = contract.axisValues
     const compared = applyThemeComparisonApiFacts(synthetic.facts, synthetic.comparison, context)
-    const content = resolveMobiliteThemeContent(compared)
-    const section = content.units.find((unit) => unit.key === 'offre-transports-commun')?.sections[0]
-    expect(section?.evidence?.kind).toBe('public-transport')
-    if (section?.evidence?.kind !== 'public-transport') throw new Error('Transport trajectory missing')
-    const rendered = mount(CahierOffreTransportsFigure, { props: {
-      offer: section.evidence.offer, trajectory: section.evidence.trajectory,
-      comparisonTrajectory: section.evidence.comparisonTrajectory,
-      metadata: { axis: 'numeric', axisLabels: { x: 'Temps (minutes)', y: 'Population joignable (%)' },
-        ticks: numericAxes.filter((minute: number) => minute % 30 === 0).map((minute: number) => ({
-          detail: axes[numericAxes.indexOf(minute)]!, label: String(minute),
-        })), endpoints: [axes[0]!, axes.at(-1)!],
-        marker: { detail: contract.comparisonPoint, label: `Seuil de ${numericAxes[axes.indexOf(contract.comparisonPoint)]} minutes` } },
+    const content = resolveMobiliteThemeContent(compared, metadonneesMobiliteRaccordementFixture)
+    const section = content.units.find((unit) => unit.key === 'offre-transports-commun')?.sections[1]
+    expect(section?.evidence?.kind).toBe('mobilite-raccordement')
+    if (section?.evidence?.kind !== 'mobilite-raccordement') throw new Error('Transport trajectory missing')
+    const rendered = mount(CahierMobiliteRaccordementCurve, { props: {
+      figure: section.evidence, comparison: { status: 'ready' },
     } })
-    expect(rendered.findAll('.transit-point--territory')).toHaveLength(axes.length)
-    expect(rendered.findAll('.transit-point--comparison')).toHaveLength(axes.length)
+    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(axes.length)
+    expect(rendered.find('.mobilite-raccordement-curve__comparison').exists()).toBe(true)
     expect(((rendered.find('[data-series="territory"]').attributes('d') ?? '').match(/L/g) ?? [])).toHaveLength(axes.length - 1)
-    expect(((rendered.find('[data-series="comparison"]').attributes('d') ?? '').match(/L/g) ?? [])).toHaveLength(axes.length - 1)
+    expect(((rendered.find('.mobilite-raccordement-curve__comparison').attributes('d') ?? '').match(/L/g) ?? [])).toHaveLength(axes.length - 1)
     expect(rendered.find('[data-series="reference"]').exists()).toBe(false)
-    expect(rendered.findAll('.transit-point--comparison').map((point) => point.attributes('data-value')))
-      .toEqual(synthetic.comparisonData.result.mean_curve.points.map((point: any) => String(point.value)))
-    expect(rendered.find('.transit-legend-comparison').text()).toBe('Groupe comparé')
-    expect(rendered.find('.transit-legend-comparison').attributes('aria-label')).toContain(context.scope.label)
-    expect(rendered.find('.transit-legend-comparison').attributes('aria-label')).toContain('Moyenne')
+    expect(rendered.get('.mobilite-raccordement-curve__legend').text()).toContain('Groupe comparé')
+    const comparisonLegend = rendered.findAll('.mobilite-raccordement-curve__legend button')
+      .find((button) => (button.attributes('aria-label') ?? '').includes('Groupe comparé'))!
+    expect(comparisonLegend.attributes('aria-label')).toContain(context.scope.label)
+    expect(comparisonLegend.attributes('aria-label')).toContain('Moyenne')
     expect(synthetic.factsData.synthetic_fixture).toMatchObject({ publication_parity: false })
     expect(compared.mobility.namedTrajectoryReferences.some((reference) =>
       reference.id === synthetic.referenceData.reference.id)).toBe(true)
@@ -511,19 +497,15 @@ describe('SQL Mobilité response to Variant E facts', () => {
       fact.key === 'raccordement_courbe' && fact.detail === axis)!
     expect(zero).toMatchObject({ value: 0, availability: 'complete', reason: null,
       provenance: { sourceId: synthetic.curve.sources[0] } })
-    const content = resolveMobiliteThemeContent(synthetic.facts)
-    const section = content.units.find((unit) => unit.key === 'offre-transports-commun')?.sections[0]
-    expect(section?.evidence?.kind).toBe('public-transport')
-    if (section?.evidence?.kind !== 'public-transport') throw new Error('Synthetic curve missing')
-    const trajectory = section.evidence.trajectory
-    const numericAxes = contract.axisNumericValues
-    const rendered = mount(CahierOffreTransportsFigure, { props: { offer: null, trajectory,
-      comparisonTrajectory: null, metadata: { axis: 'numeric', axisLabels: { x: 'Temps (minutes)', y: 'Population joignable (%)' },
-        ticks: numericAxes.filter((minute) => minute % 30 === 0).map((minute) => ({
-          detail: contract.axisValues[numericAxes.indexOf(minute)]!, label: String(minute),
-        })), endpoints: [contract.axisValues[0]!, contract.axisValues.at(-1)!] } } })
-    expect(rendered.findAll('.transit-point--territory')).toHaveLength(contract.axisValues.length)
-    expect(rendered.findAll('.transit-point--territory')[0]?.attributes('data-value')).toBe('0')
+    const content = resolveMobiliteThemeContent(synthetic.facts, metadonneesMobiliteRaccordementFixture)
+    const section = content.units.find((unit) => unit.key === 'offre-transports-commun')?.sections[1]
+    expect(section?.evidence?.kind).toBe('mobilite-raccordement')
+    if (section?.evidence?.kind !== 'mobilite-raccordement') throw new Error('Synthetic curve missing')
+    const rendered = mount(CahierMobiliteRaccordementCurve, { props: {
+      figure: section.evidence, comparison: { status: 'idle' },
+    } })
+    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(contract.axisValues.length)
+    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory')[0]?.attributes('data-value')).toBe('0')
     expect(((rendered.find('[data-series="territory"]').attributes('d') ?? '').match(/L/g) ?? [])
       .length).toBe(contract.axisValues.length - 1)
     expect(rendered.text()).not.toContain('sans transport')

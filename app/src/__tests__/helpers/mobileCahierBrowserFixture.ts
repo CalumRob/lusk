@@ -1,14 +1,16 @@
 import { createApp, nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
+import publishedMobilite from '../../../../public/data/theme_mobilite.json'
+
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import AccessRampFigureCahier from '@/fiche/prototype/AccessRampFigureCahier.vue'
 import AedarEquipmentQuantileFigureCahier from '@/fiche/prototype/AedarEquipmentQuantileFigureCahier.vue'
-import CahierOffreTransportsFigure from '@/fiche/prototype/CahierOffreTransportsFigure.vue'
+import CahierMobiliteRaccordementCurve from '@/fiche/prototype/CahierMobiliteRaccordementCurve.vue'
 import type { CahierPagination } from '@/fiche/prototype/cahierPagination'
-import type { ContentFact, ThemeContent } from '@/fiche/content/themeContent'
+import type { ContentFact, MobiliteRaccordementEvidence, ThemeContent } from '@/fiche/content/themeContent'
 import type { TimeRampFigureData } from '@/fiche/content/territoryFacts'
-import type { TrajectoryMetadata } from '@/payload/types'
+import type { ThemeMetadata } from '@/payload/types'
 import { routes } from '@/router'
 
 /** Return the rendered tick boxes that intersect a y-axis title lane. */
@@ -137,39 +139,58 @@ export async function mountSandboxGroupedBarFigure(container: Element) {
   return app
 }
 
-/** Mounts the transport-offer trajectory, whose y ticks are SVG text nodes. */
-export async function mountCahierOffreTransportsFigure(container: Element) {
-  const trajectory: ContentFact[] = [0, 0.5, 1].map((value, index) => ({
-    label: `Période ${index + 1}`,
+/** Mounts the Mobilité raccordement curve, whose y ticks are HTML labels. */
+export async function mountCahierMobiliteRaccordementCurve(container: Element) {
+  const published = publishedMobilite as ThemeMetadata
+  const page = published.indicator_pages?.raccordement_courbe
+  if (page?.family !== 'trajectory') throw new Error('Published raccordement curve metadata missing')
+  const details = (page.comparison?.details ?? page.trajectory.ticks?.map((tick) => tick.detail) ?? []) as string[]
+  const numeric = (detail: string) => Number(detail.replace(/^t/u, ''))
+  const contentFact = (detail: string, value: number): ContentFact => ({
+    label: detail,
     fact: {
-      key: `trajectory-${index}`,
-      detail: `period-${index + 1}`,
-      axisValue: index,
+      key: 'raccordement_courbe',
+      detail,
+      axisValue: numeric(detail),
       value,
       unit: '%',
       availability: 'complete',
       provenance: null,
       comparison: null,
-      comparisonBasis: 'territory-median',
+      comparisonBasis: 'territory-mean',
       reason: null,
     },
-  }))
-  const metadata: TrajectoryMetadata = {
-    endpoints: ['period-1', 'period-3'],
-    axis: 'numeric',
-    axisLabels: {
-      x: 'Période observée',
-      y: 'Établissements accessibles au fil du temps',
+  })
+  const points = details.map((detail) => contentFact(detail, Math.min(1, 0.22 + numeric(detail) / 1200)))
+  const evidence: MobiliteRaccordementEvidence = {
+    kind: 'mobilite-raccordement',
+    figureTitle: page.label ?? 'Courbe de population bretonne jointe selon le temps de trajet',
+    territoryName: 'Rennes',
+    level: 'commune',
+    points,
+    comparison: {
+      statistic: 'mean',
+      scope: { kind: 'selection', label: 'communes de la classe de densité' },
+      selectedMemberCount: 2,
+      eligibleCount: 2,
+      modelZeroReasonCounts: {},
+      points: points.map((point) => ({ ...point,
+        fact: { ...point.fact, value: Math.min(1, (point.fact.value ?? 0) * 0.82) } })),
     },
-    ticks: trajectory.map((item, index) => ({
-      detail: item.fact.detail!,
-      label: `Période ${index + 1}`,
-    })),
+    trajectory: page.trajectory,
+    axis: {
+      values: points.map((point) => ({ detail: point.fact.detail!, numericValue: point.fact.axisValue! })),
+      minimum: 0,
+      maximum: Math.max(...points.map((point) => point.fact.axisValue ?? 0)),
+    },
+    markerValue: contentFact(page.trajectory.marker!.detail, 0.38),
+    comparisonLabel: 'Moyenne des communes de la classe de densité',
+    prose: [],
+    sources: [],
   }
-  const app = createApp(CahierOffreTransportsFigure, {
-    offer: null,
-    trajectory,
-    metadata,
+  const app = createApp(CahierMobiliteRaccordementCurve, {
+    figure: evidence,
+    comparison: { status: 'ready' },
   })
   app.mount(container)
   await nextTick()

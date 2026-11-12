@@ -54,11 +54,32 @@ export function makeApiHandlers(deps) {
     },
     'read-batch': async (route) => {
       const request = route.request().postDataJSON()
-      const aedarItems = request.items.filter((item) => Array.isArray(item.coordinates?.typequ))
-      const themeItems = request.items.filter((item) => !Array.isArray(item.coordinates?.typequ))
+      // Route by the DECLARED producer resource kind, not by the shape of one
+      // item: the AEDAR summary and aggregate-comparison reads carry no TYPEQU
+      // coordinate and must never fall into the theme-facts fixture (#955).
+      const resourceKind = deps.resourceKind ?? (() => undefined)
+      const isAedarItem = (item) => {
+        const kind = resourceKind(item.resource)
+        return kind ? kind.startsWith('aedar_') : Array.isArray(item.coordinates?.typequ)
+      }
+      const aedarItems = request.items.filter(isAedarItem)
+      const themeItems = request.items.filter((item) => !isAedarItem(item))
       if (aedarItems.length) {
-        deps.readCalls.aedarBatches += 1
-        deps.readCalls.aedarItems.push(...aedarItems.map((item) => ({
+        const aedarFactItems = aedarItems.filter((item) =>
+          item.intent?.kind === 'facts' && Array.isArray(item.coordinates?.typequ))
+        const aedarSummaryItems = aedarItems.filter((item) => item.resource === 'aedar_territory_summary')
+        const aedarComparisonItems = aedarItems.filter((item) =>
+          item.resource === 'aedar_territorial_aggregate' && item.intent?.kind !== 'facts')
+        if (aedarFactItems.length) deps.readCalls.aedarBatches += 1
+        if (aedarSummaryItems.length) {
+          deps.readCalls.aedarSummaryBatches = (deps.readCalls.aedarSummaryBatches ?? 0) + 1
+          deps.readCalls.aedarSummaryTargets ??= []
+          deps.readCalls.aedarSummaryTargets.push(...aedarSummaryItems.map((item) => ({
+            id: item.id, target: item.target,
+          })))
+        }
+        if (aedarComparisonItems.length) deps.readCalls.aedarComparisonBatches = (deps.readCalls.aedarComparisonBatches ?? 0) + 1
+        deps.readCalls.aedarItems.push(...aedarFactItems.map((item) => ({
           id: item.id,
           resource: item.resource,
           target: item.target,

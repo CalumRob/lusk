@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest'
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import VarianteCahierLibreE from '@/fiche/prototype/VarianteCahierLibreE.vue'
 import CartographicBreakoutPrototype from '@/fiche/prototype/CartographicBreakoutPrototype.vue'
-import CahierOffreTransportsFigure from '@/fiche/prototype/CahierOffreTransportsFigure.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
@@ -156,99 +155,6 @@ describe('figures des unités Mobilité ajoutées', () => {
       wrapper.unmount()
     },
   )
-  const contentFact = (key: string, detail: string | null, value: number, label: string, unit = '%') => ({
-    label,
-    fact: {
-      key, detail, value, label, unit, availability: 'complete' as const, provenance: null,
-      comparison: null, comparisonBasis: 'territory-median' as const, reason: null,
-    },
-  })
-
-  it('trace une seule série raccordement pour le territoire sélectionné', () => {
-    const trajectory = [contentFact('raccordement_courbe', 't0000', 0.1, '0'), contentFact('raccordement_courbe', 't0090', 0.7, '1 h 30')]
-    const published = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
-    const metadata = published.indicator_pages.raccordement_courbe
-    if (metadata.family !== 'trajectory') throw new Error('Fixture must declare a trajectory')
-    const wrapper = mount(CahierOffreTransportsFigure, {
-      props: { offer: contentFact('offre_tc', null, 0.4, 'Part des bâtiments près d’un arrêt'), trajectory, metadata: metadata.trajectory },
-    })
-    expect(wrapper.find('path[data-series="territory"]').attributes('d')).toContain('M')
-    expect(wrapper.find('path[data-series="reference"]').exists()).toBe(false)
-    expect(wrapper.findAll('path.transit-series')).toHaveLength(1)
-    expect(wrapper.findAll('.transit-point')).toHaveLength(2)
-    expect(wrapper.text()).not.toContain(metadata.trajectory.reference?.label)
-    expect(wrapper.find('.transit-marker').attributes('data-detail')).toBe(metadata.trajectory.marker?.detail)
-    expect(wrapper.find('.transit-marker-label').text()).toBe(metadata.trajectory.marker?.label)
-    expect(wrapper.findAll('.cahier-figure-axis').length).toBe(2)
-
-    expect(wrapper.find('.transit-legend-reference').exists()).toBe(false)
-    expect(wrapper.find('.transit-legend-territory').exists()).toBe(true)
-    expect(wrapper.find('.transit-legend-territory').attributes('aria-label')).toBe('Série du territoire')
-    expect(wrapper.find('svg[role="img"]').attributes('aria-label')).toContain('Territoire')
-    expect(wrapper.find('svg[role="img"]').attributes('aria-label')).not.toContain(metadata.trajectory.reference?.label)
-
-    const riderFigure = mount(CahierOffreTransportsFigure, {
-      props: {
-        offer: { ...contentFact('offre_tc', null, 0, 'Part des bâtiments près d’un arrêt'), fact: { ...contentFact('offre_tc', null, 0, 'Part des bâtiments près d’un arrêt').fact, value: null, reason: 'Aucune station desservie' } },
-        trajectory: [{ ...contentFact('raccordement_courbe', 't0090', 0, '1 h 30'), fact: { ...contentFact('raccordement_courbe', 't0090', 0, '1 h 30').fact, value: null, reason: 'Courbe non calculable' } }],
-        metadata: metadata.trajectory,
-      },
-    })
-    expect(riderFigure.text()).toContain('Indisponible')
-    expect(riderFigure.text()).toContain('Aucune station desservie')
-    expect(riderFigure.text()).toContain('Courbe non calculable')
-  })
-
-  it('associe la légende d’erreur de comparaison à son infobulle accessible', async () => {
-    const published = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
-    const metadata = published.indicator_pages.raccordement_courbe
-    const wrapper = mount(CahierOffreTransportsFigure, { props: {
-      offer: null, trajectory: [
-        contentFact('raccordement_courbe', 't0000', .1, '0'),
-        contentFact('raccordement_courbe', 't0090', .7, '1 h 30'),
-      ], metadata: metadata.trajectory,
-      comparisonStatus: 'error', comparisonError: 'lecture refusée',
-    } })
-    const trigger = wrapper.get('.transit-comparison-warning')
-    await trigger.trigger('focus')
-    const tooltip = wrapper.get('[role="tooltip"]')
-    expect(trigger.attributes('aria-expanded')).toBe('true')
-    expect(trigger.attributes('aria-describedby')).toBe(tooltip.attributes('id'))
-    expect(tooltip.text()).toContain('lecture refusée')
-    wrapper.unmount()
-  })
-
-  it('ne réserve le trait pointillé qu’à la pastille de comparaison, jamais à la racine du repère indisponible', () => {
-    const published = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
-    const metadata = published.indicator_pages.raccordement_courbe
-    const trajectory = [
-      contentFact('raccordement_courbe', 't0000', .1, '0'),
-      contentFact('raccordement_courbe', 't0090', .7, '1 h 30'),
-    ]
-    const unavailable = mount(CahierOffreTransportsFigure, { props: {
-      offer: null, trajectory, metadata: metadata.trajectory, comparisonStatus: 'unavailable',
-    } })
-    const legend = unavailable.get('.transit-legend-comparison')
-    expect(legend.find('.comparison-unavailable-cue').exists()).toBe(true)
-    expect(legend.find('.transit-legend-swatch').exists()).toBe(false)
-    expect(legend.get('.comparison-unavailable-cue').classes()).not.toContain('transit-legend-swatch')
-    unavailable.unmount()
-
-    const comparisonTrajectory = {
-      statistic: 'mean', scope: { label: 'EPCI de test' }, selectedMemberCount: 2,
-      eligibleCount: 2, modelZeroReasonCounts: {},
-      points: trajectory.map((item) => ({ ...item,
-        fact: { ...item.fact, value: Math.max(0, (item.fact.value ?? 0) * .8) } })),
-    } as any
-    const ready = mount(CahierOffreTransportsFigure, { props: {
-      offer: null, trajectory, metadata: metadata.trajectory,
-      comparisonStatus: 'ready', comparisonTrajectory,
-    } })
-    expect(ready.findAll('.transit-legend-comparison > .transit-legend-swatch')).toHaveLength(1)
-    expect(ready.get('.transit-legend-swatch').attributes('aria-hidden')).toBe('true')
-    ready.unmount()
-  })
-
 })
 
 describe('Variante D — le seam ThemeContent → Cahier', () => {
@@ -506,7 +412,7 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.text()).not.toContain('Une piste ne suffit pas')
     expect(wrapper.text()).not.toContain('Trois longueurs, un horizon')
     expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(0)
-    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(3)
+    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(4)
     expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(0)
   })
 

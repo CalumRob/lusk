@@ -34,7 +34,8 @@ describe('verify-mobile-cahier-overflow — fixture wiring (no browser)', () => 
 
   it('no longer references the retirement-removed mounts (#627)', () => {
     const referenced = referencedFixtureMembers(script)
-    for (const retired of ['mountLongYAxisFigure', 'mountAccessRampRampFigure', 'mountBivariateDistributionFigure']) {
+    for (const retired of ['mountLongYAxisFigure', 'mountAccessRampRampFigure', 'mountBivariateDistributionFigure',
+      'mountCahierOffreTransportsFigure']) {
       expect(referenced, `${retired} was removed from the helper with the accessibility surface`)
         .not.toContain(retired)
     }
@@ -44,7 +45,7 @@ describe('verify-mobile-cahier-overflow — fixture wiring (no browser)', () => 
     const referenced = new Set(referencedFixtureMembers(script))
     // Retained mounts and the shared audit stay referenced and exported.
     for (const retained of ['mountPlainCahier', 'mountAccessRampLongYAxisFigure',
-      'mountSandboxGroupedBarFigure', 'mountCahierOffreTransportsFigure', 'auditYAxisTitleTickOverlap']) {
+      'mountSandboxGroupedBarFigure', 'mountCahierMobiliteRaccordementCurve', 'auditYAxisTitleTickOverlap']) {
       expect(referenced.has(retained), `${retained} must stay referenced by the verifier`).toBe(true)
       expect(typeof helperExports[retained], `${retained} must stay exported by the helper`).toBe('function')
     }

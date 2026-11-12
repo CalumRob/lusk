@@ -4,6 +4,7 @@ import type {
   FactAvailability,
   FactProvenance,
   NumericFact,
+  SelectedTrajectoryComparison,
   TerritoryFacts,
   TerritoryIdentity,
 } from './territoryFacts'
@@ -12,13 +13,19 @@ import type {
   ContentFact,
   ContentIndicator,
   ContentSource,
+  ComparisonTrajectoryContent,
   ExplorationTarget,
   MobiliteBarCategoryEvidence,
   MobiliteBarsFigureEvidence,
   MobiliteNetworksSection,
   MobilitePairedColumnEvidence,
+  MobiliteRaccordementEvidence,
+  MobiliteRaccordementSection,
   MobiliteRatioEvidence,
+  MobiliteShareEvidence,
+  MobiliteShareSection,
   MobiliteStationnementRavitaillementSection,
+  MobiliteTrajectoryAxis,
   TextBlock,
   TextSegment,
 } from './themeContent'
@@ -636,6 +643,187 @@ export function buildMobiliteStationnementRavitaillementSection(
       'bornes_ev_par_station_service',
     ]),
     evidence: hasAny ? { kind: 'mobilite-stationnement-ravitaillement', columns } : null,
+    provenance: sourceIdsFor(allFacts),
+    lecture: null,
+    explorationTargets: targetsFor(allFacts, facts.territory),
+  }
+}
+
+/** §7.5 — proximity is not service frequency, timetable amplitude or destinations. */
+function shareProse(): readonly TextBlock[] {
+  return [[text('Une proximité à vol d’oiseau, pas une mesure de la fréquence, des horaires ni des destinations desservies. Seuls les arrêts référencés par Korrigo entrent dans le calcul ; un réseau absent de cette base reste invisible.')]]
+}
+
+function percentText(fact: NumericFact): string | null {
+  const value = numericValue(fact)
+  return value === null ? null : formatNumber(value * 100, 0)
+}
+
+/**
+ * §16 — condensed §7.5/7.6 copy at the AEDAR page's concision. The numbered
+ * sentence is emitted only when the published scalar and its marker label are
+ * both available; otherwise the remaining prose stays grammatical and silent.
+ */
+function raccordementProse(
+  facts: TerritoryFacts,
+  markerValue: ContentFact | null,
+  markerLabel: string | null,
+  hasComparison: boolean,
+): readonly TextBlock[] {
+  const blocks: string[] = [
+    'La courbe lit la part de la population bretonne joignable depuis le territoire par des trajets planifiés aller simple entre arrêts, au meilleur départ du jour étudié et avec une marche de correspondance plafonnée.'
+      + (hasComparison ? ' Le pointillé représente la moyenne du groupe comparé.' : ''),
+  ]
+  const part = markerValue ? percentText(markerValue.fact) : null
+  if (part !== null && markerLabel) {
+    blocks.push(facts.territory.type === 'commune'
+      ? `À ${markerLabel}, ${part} % de la population bretonne est joignable depuis les arrêts du territoire.`
+      : `À ${markerLabel}, les communes du territoire permettent de rejoindre en moyenne ${part} % de la population bretonne.`)
+  }
+  blocks.push('Les parts portent sur toute la population bretonne ; aux niveaux agrégés, les courbes des communes membres ont le même poids, zéros du modèle inclus. Le trajet bâtiment–arrêt et le retour ne sont pas modélisés.')
+  return blocks.map((value) => [text(value)])
+}
+
+function finiteAxisValue(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+/**
+ * Read the numeric trajectory axis from the producer descriptor. Detail names
+ * are never parsed and array indices are never used as coordinates: a missing
+ * or invalid coordinate leaves that point unpositioned.
+ */
+function trajectoryAxisFor(facts: TerritoryFacts): MobiliteTrajectoryAxis | null {
+  const contract = facts.mobility.trajectoryContract
+  const declared = contract && contract.axisValues.length === contract.axisNumericValues.length
+    ? contract.axisValues.map((detail, index) => ({
+      detail,
+      numericValue: contract.axisNumericValues[index],
+    }))
+    : facts.mobility.indicators
+      .filter((fact) => fact.key === 'raccordement_courbe')
+      .flatMap((fact) => fact.detail !== null && finiteAxisValue(fact.axisValue)
+        ? [{ detail: fact.detail, numericValue: fact.axisValue }]
+        : [])
+  const values = declared.filter((value): value is { detail: string; numericValue: number } =>
+    Boolean(value.detail) && finiteAxisValue(value.numericValue))
+  if (values.length < 2) return null
+  const unique = new Map(values.map((value) => [value.detail, value.numericValue]))
+  if (unique.size !== values.length) return null
+  const numeric = [...unique.values()]
+  if (numeric.some((value, index) => index > 0 && value <= numeric[index - 1]!)) return null
+  return { values: [...unique].map(([detail, numericValue]) => ({ detail, numericValue })),
+    minimum: Math.min(...numeric), maximum: Math.max(...numeric) }
+}
+
+function trajectoryMetadataFor(metadata?: ThemeMetadata) {
+  const page = metadata?.indicator_pages?.raccordement_courbe
+  return page?.family === 'trajectory' ? page.trajectory : null
+}
+
+function trajectoryComparisonLabel(
+  comparison: SelectedTrajectoryComparison | null,
+  territory: TerritoryIdentity,
+): string | null {
+  if (!comparison) return null
+  const scope = comparisonScopeLabel(comparison.scope.kind, comparison.scope.label, territory.epciName)
+  return scope ? `Moyenne des ${scope}` : null
+}
+
+export function buildMobiliteShareSection(
+  facts: TerritoryFacts,
+  metadata?: ThemeMetadata,
+): MobiliteShareSection {
+  const value = contentIndicatorFact(
+    facts,
+    'offre_tc',
+    '%',
+    'Part des bâtiments près d’un arrêt',
+    metadata,
+  )
+  const allFacts = [value]
+  const notes = figureResourceNotes(facts, ['offre_tc'])
+  const evidence: MobiliteShareEvidence | null = value.fact.availability === 'absent' &&
+    !(notes.unavailableResources?.length ?? 0)
+    ? null
+    : {
+      kind: 'mobilite-share',
+      figureTitle: value.label,
+      value,
+      unit: value.fact.unit,
+      comparisonLabel: comparisonLabelFor(allFacts, facts.territory),
+      prose: shareProse(),
+      sources: sourcesFor(allFacts, metadata),
+      ...notes,
+    }
+  return {
+    key: 'couverture-du-territoire',
+    label: 'Couverture du territoire',
+    availability: availabilityFor(allFacts),
+    indicators: indicatorsFor(facts, ['offre_tc']),
+    evidence,
+    provenance: sourceIdsFor(allFacts),
+    lecture: null,
+    explorationTargets: targetsFor(allFacts, facts.territory),
+  }
+}
+
+export function buildMobiliteRaccordementSection(
+  facts: TerritoryFacts,
+  metadata?: ThemeMetadata,
+): MobiliteRaccordementSection {
+  const points = facts.mobility.indicators
+    .filter((fact) => fact.key === 'raccordement_courbe')
+    .map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
+  const markerFact = indicatorFor(facts, 'raccordement_tc')
+  const markerValue = markerFact
+    ? contentFact(
+      { ...markerFact, label: markerFact.label ?? metadata?.indicator_labels?.raccordement_tc ?? null },
+      markerFact.label ?? metadata?.indicator_labels?.raccordement_tc ?? 'Population bretonne jointe',
+    )
+    : null
+  const selected = facts.mobility.selectedTrajectoryComparison ?? null
+  const comparison: ComparisonTrajectoryContent | null = selected
+    ? {
+      statistic: selected.statistic,
+      scope: selected.scope,
+      selectedMemberCount: selected.selectedMemberCount,
+      eligibleCount: selected.eligibleCount,
+      modelZeroReasonCounts: selected.modelZeroReasonCounts,
+      points: selected.points.map((fact) => contentFact(fact, fact.detail ?? fact.key)),
+    }
+    : null
+  const trajectory = trajectoryMetadataFor(metadata)
+  const markerLabel = trajectory?.marker?.label ?? null
+  const axis = trajectoryAxisFor(facts)
+  const notes = figureResourceNotes(facts, ['raccordement_courbe', 'raccordement_tc'])
+  const allFacts = [...points, ...(markerValue ? [markerValue] : [])]
+  const hasAny = points.length > 0 || markerValue !== null ||
+    (notes.unavailableResources?.length ?? 0) > 0 || (notes.unavailableComparisons?.length ?? 0) > 0
+  const evidence: MobiliteRaccordementEvidence | null = hasAny
+    ? {
+      kind: 'mobilite-raccordement',
+      figureTitle: metadata?.indicator_labels?.raccordement_courbe
+        ?? 'Courbe de population bretonne jointe selon le temps de trajet',
+      territoryName: facts.territory.name,
+      level: facts.territory.type,
+      points,
+      comparison,
+      trajectory,
+      axis,
+      markerValue,
+      comparisonLabel: trajectoryComparisonLabel(selected, facts.territory),
+      prose: raccordementProse(facts, markerValue, markerLabel, comparison !== null),
+      sources: sourcesFor(allFacts, metadata),
+      ...notes,
+    }
+    : null
+  return {
+    key: 'visiter-la-bretagne',
+    label: 'Visiter la Bretagne',
+    availability: availabilityFor(allFacts),
+    indicators: indicatorsFor(facts, ['raccordement_courbe', 'raccordement_tc']),
+    evidence,
     provenance: sourceIdsFor(allFacts),
     lecture: null,
     explorationTargets: targetsFor(allFacts, facts.territory),
