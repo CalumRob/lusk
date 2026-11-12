@@ -80,7 +80,10 @@ browser-side peer computation. #953 publishes the refuelling densities.
    keeps fresh focal facts while that comparison stays explicitly unavailable.
    Affected figures list the unavailable publication visibly and accessibly; no
    zero, rank or reference is fabricated. Other themes keep their existing
-   atomic default contract.
+   atomic default contract. Independent bounded waves of one Mobilité
+   acquisition may overlap, but a single gate caps the whole acquisition
+   (isolation and facts-only recovery included) at two active semantic reads,
+   because the shared serving API pool is small (#977).
 
 10. **Page 3 (C5/§7.5–7.6, #955).** « Couverture du territoire » renders
     `offre_tc` as a compact 0–100 % share track with the active comparison tick
