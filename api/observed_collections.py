@@ -24,9 +24,9 @@ def collection_marker(conn, descriptor):
         FROM observed_collection_publication p LEFT JOIN table_publication t
           ON t.table_name='territory_reference' WHERE p.indicator_id=%s""", (indicator,)).fetchone()
     if not marker or not marker[0]:
-        publication_unavailable("collection", "Observed collection publication is unavailable")
+        publication_unavailable("collection", "Observed collection publication is missing or incompatible")
     if marker[1] != marker[2]:
-        raise HTTPException(503,"Observed collection publication is stale or incompatible")
+        raise HTTPException(503,"Observed collection publication is missing or incompatible")
     if descriptor["kind"] not in ("period_detail","anchored_membership"):
         raise HTTPException(503,"Unknown observed collection contract")
     # Full parity is enforced by the deferred publication constraint at commit.
@@ -153,8 +153,8 @@ def collection_comparison_preflight(conn, descriptor, fields, fixed_context, mar
         reference_content_version,lineage_complete FROM observed_collection_comparison_publication
         WHERE indicator_id=%s""", (descriptor["indicator_id"],)).fetchone()
     if not publication or not publication[0]:
-        publication_unavailable("comparison",
-            "Observed collection comparison publication is unavailable")
+        publication_unavailable("collection",
+            "Observed collection comparison publication is missing or incompatible")
     if (publication[1] != marker["content_version"]
             or publication[2] != marker["reference_content_version"] or publication[3] is not True):
         raise HTTPException(503,"Observed collection comparison publication is missing or incompatible")
@@ -175,8 +175,8 @@ def _published_collection_comparison(conn, descriptor, territory_type, territory
         reference_content_version,group_row_count,territory_row_count,lineage_row_count,lineage_complete
         FROM observed_collection_comparison_publication WHERE indicator_id=%s""", (indicator,)).fetchone()
     if not publication or not publication[0]:
-        publication_unavailable("comparison",
-            "Observed collection comparison publication is unavailable")
+        publication_unavailable("collection",
+            "Observed collection comparison publication is missing or incompatible")
     if (publication[1] != marker["content_version"]
         or publication[2] != marker["reference_content_version"]):
         raise HTTPException(503, "Observed collection comparison publication is missing or incompatible")

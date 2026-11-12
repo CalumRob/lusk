@@ -1,4 +1,4 @@
-﻿"""Typed publication outcomes for the shared semantic batch contract (issue #984).
+"""Typed publication outcomes for the shared semantic batch contract (issue #984).
 
 The v2 batch contract is the only place an absent publication becomes a result
 instead of a request failure. These tests pin the boundary: only the explicit
@@ -13,8 +13,10 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from api import main
-from api.publication_outcomes import PublicationUnavailable, publication_unavailable
+from api.publication_outcomes import (PublicationUnavailable, family_for_resource,
+                                      publication_unavailable)
 from api.resource_catalogue import default_resource_catalogue
+from api.resource_requests import ResourceReadItem
 
 
 COMMON = {"target": {"kind": "territory", "type": "commune", "id": "22001"},
@@ -51,18 +53,20 @@ class Repository:
         self.connections = Pool()
 
 
-def install(monkeypatch, repository, reader, preflight):
+def install(monkeypatch, repository, reader, preflight, admit=None):
     def read_with_state(conn, item, catalogue=None, *, snapshot_state=None):
         return reader(conn, item, catalogue)
 
     def preflight_with_state(conn, item, catalogue=None, *, work_budget=None, snapshot_state=None):
         return preflight(conn, item, catalogue, work_budget=work_budget)
 
+    injected = type("InjectedReader", (), {"read": staticmethod(read_with_state),
+                                           "preflight": staticmethod(preflight_with_state)})()
+    if admit is not None:
+        injected.admit = staticmethod(admit)
     main.app.dependency_overrides[main.get_repository] = lambda: repository
     main.app.dependency_overrides[main.get_resource_catalogue] = default_resource_catalogue
-    main.app.dependency_overrides[main.get_semantic_resource_reader] = lambda: type(
-        "InjectedReader", (), {"read": staticmethod(read_with_state),
-                                "preflight": staticmethod(preflight_with_state)})()
+    main.app.dependency_overrides[main.get_semantic_resource_reader] = lambda: injected
 
 
 def post(items, *, contract=None):
@@ -267,3 +271,92 @@ def test_publication_unavailable_rejects_unknown_families():
         PublicationUnavailable("not_a_family", "detail")
     with pytest.raises(ValueError):
         publication_unavailable("not_a_family", "detail")
+
+
+def test_family_is_derived_from_the_producer_declaration_not_the_lookup():
+    catalogue = default_resource_catalogue()
+    expected = {
+        "densite": "scalar",
+        "bornes_recharge_1000": "scalar",
+        "structure_age": "profile",
+        "prix_m2": "ordered_series",
+        "raccordement_reference": "named_reference",
+        "demographie_selected_reading": "typed_reading",
+        "subventions_par_domaine": "collection",
+        "aedar_territorial_aggregate": "aedar",
+        "aedar_territory_summary": "aedar",
+    }
+    assert {resource_id: family_for_resource(catalogue.resources_by_id[resource_id])
+            for resource_id in expected} == expected
+
+
+def test_v2_identity_admission_runs_before_any_item_preflight(monkeypatch):
+    repository = Repository()
+    events = []
+
+    def admit(conn, items):
+        events.append(("admit", tuple(item.id for item in items)))
+
+    def preflight(conn, resource_item, catalogue=None, *, work_budget=None):
+        events.append(("preflight", resource_item.id))
+        return 1
+
+    install(monkeypatch, repository, lambda *_: {"value": 1}, preflight, admit=admit)
+    try:
+        v2 = post([item("a", "densite"), item("b", "structure_age")],
+                  contract="semantic-read-batch-v2")
+    finally:
+        main.app.dependency_overrides.clear()
+    assert v2.status_code == 200, v2.text
+    assert events == [("admit", ("a", "b")), ("preflight", "a"), ("preflight", "b")]
+
+    events.clear()
+    install(monkeypatch, repository, lambda *_: {"value": 1}, preflight, admit=admit)
+    try:
+        v1 = post([item("a", "densite")])
+    finally:
+        main.app.dependency_overrides.clear()
+    assert v1.status_code == 200, v1.text
+    assert events == [("preflight", "a")]
+
+
+def test_v2_identity_admission_failure_has_no_publication_outcomes(monkeypatch):
+    repository = Repository()
+    events = []
+
+    def admit(conn, items):
+        raise HTTPException(404, "Focal territory not found")
+
+    def preflight(conn, resource_item, catalogue=None, *, work_budget=None):
+        events.append(resource_item.id)
+        return 1
+
+    install(monkeypatch, repository, lambda *_: pytest.fail("no read"), preflight, admit=admit)
+    try:
+        response = post([item("healthy", "densite"),
+                         item("unpublished", "bornes_recharge_1000"),
+                         item("unknown", "structure_age",
+                              target={"kind": "territory", "type": "commune", "id": "nope"})],
+                        contract="semantic-read-batch-v2")
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Focal territory not found"}
+    assert "results" not in response.json()
+    assert events == []
+
+
+def test_v2_admission_rejects_a_missing_required_relation_as_schema_fatal():
+    class MissingRelationConnection:
+        def execute(self, sql, params=None):
+            assert "to_regclass" in sql
+            return type("Cursor", (), {"fetchone": lambda self: (None,)})()
+
+    reader = main.get_semantic_resource_reader()
+    with pytest.raises(HTTPException) as error:
+        reader.admit(MissingRelationConnection(),
+                     [ResourceReadItem.model_validate(
+                         {"resource": "densite", **COMMON})],
+                     default_resource_catalogue())
+    assert error.value.status_code == 503
+    assert error.value.detail == "Required publication storage relation is unavailable"

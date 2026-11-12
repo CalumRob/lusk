@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from api.cohort_reads import (preflight_cohort, read_cohort, resolve_territory_cohort,
                               validate_typed_reading_integrity)
 from api.profile_reads import focal_profiles
-from api.publication_outcomes import publication_unavailable
+from api.publication_outcomes import family_for_resource, publication_unavailable
 from api.resource_catalogue import ResourceCatalogue, default_resource_catalogue
 
 
@@ -35,15 +35,103 @@ class SemanticResourceReader:
 
     @staticmethod
     def _publication_family(resource):
-        """Name the publication family an unavailable item belongs to."""
-        shapes = set(resource.shapes)
+        """Name the publication family from the producer declaration."""
+        return family_for_resource(resource)
+
+    @staticmethod
+    def _required_relation_groups(resource):
+        """Producer-declared storage relations; a missing group is schema-fatal.
+
+        These are checked only by v2 admission so a missing SQL relation can
+        never be reported as an absent publication. Alternative groups cover
+        the legacy/owned series compatibility pairs.
+        """
+        kind = getattr(resource, "resource_kind", "")
+        if kind == "typed_reading":
+            groups = [tuple(relation for relation in (resource.storage_relation,) if relation)]
+            groups.extend((side["storage_relation"],) for side in resource.side_relations)
+            return [group for group in groups if group]
+        if kind == "aedar_source_grain":
+            return [("aedar_territorial_aggregate",)]
+        if kind == "aedar_territory_summary":
+            return [("aedar_territory_summary",), ("aedar_territorial_aggregate",)]
+        shapes = set(getattr(resource, "shapes", ()))
+        groups = []
+        if "scalar" in shapes:
+            groups.append(("scalar_descriptor",))
         if "declared_profile" in shapes:
-            return "profile"
-        if "ordered_series" in shapes or "named_reference" in shapes:
-            return "ordered_series" if "ordered_series" in shapes else "named_reference"
+            groups.append(("profile_descriptor",))
+        if "ordered_series" in shapes:
+            groups.append(("series_dataset_descriptor", "series_descriptor"))
+        if "named_reference" in shapes:
+            groups.append(("series_named_reference_descriptor",))
         if "period_detail" in shapes or "anchored_membership" in shapes:
-            return "collection"
-        return "scalar"
+            groups.append(("observed_collection_descriptor",))
+        return groups
+
+    def admit(self, conn, items, catalogue: ResourceCatalogue | None = None):
+        """v2-only identity admission before any publication outcome can mask it.
+
+        This validates only producer/global-reference facts: declared territory
+        level, focal identity, selected-member identity/type and cohort
+        resolvability. Publication-specific descriptors/coordinates are left to
+        per-item preflight, so an unpublished resource still reports a typed
+        absence for a valid target. v1 never calls this method, preserving its
+        historical precedence exactly.
+        """
+        catalogue = catalogue or default_resource_catalogue()
+        identities = []
+        cohort_targets = []
+        relation_groups = []
+        for item in items:
+            resource = catalogue.resources_by_id[item.resource]
+            relation_groups.extend(self._required_relation_groups(resource))
+            if item.target.kind == "territory":
+                if item.target.type not in resource.allowed_levels:
+                    raise HTTPException(422, "Territory target type is not declared for this resource")
+                identities.append((item.target.id, item.target.type, "focal"))
+            elif item.target.kind == "territory_cohort":
+                cohort_targets.append(item.target)
+            if item.intent.kind == "selected_comparison":
+                for member in item.intent.members:
+                    identities.append((member.id, member.type, "member"))
+        seen_relations = {}
+        for group in relation_groups:
+            if any(seen_relations.get(relation, False) for relation in group):
+                continue
+            for relation in group:
+                if relation not in seen_relations:
+                    seen_relations[relation] = bool(conn.execute(
+                        "SELECT to_regclass(%s)", (relation,)).fetchone()[0])
+            if not any(seen_relations[relation] for relation in group):
+                raise HTTPException(503, "Required publication storage relation is unavailable")
+        needs_reference = bool(identities or cohort_targets)
+        if needs_reference:
+            reference = conn.execute(
+                "SELECT content_version,row_count FROM table_publication WHERE table_name='territory_reference'"
+            ).fetchone()
+            if (not reference or not reference[0] or int(reference[1]) < 1):
+                raise HTTPException(503, "Territory reference publication is unavailable")
+        if identities:
+            ids = sorted({identity for identity, _type, _role in identities})
+            rows = conn.execute(
+                "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY(%s)",
+                (ids,)).fetchall()
+            by_id = {row[0]: row[1] for row in rows}
+            for identity, expected_type, role in identities:
+                if identity not in by_id:
+                    raise HTTPException(404, "Selected comparison territory not found"
+                                        if role == "member" else "Focal territory not found")
+                if by_id[identity] != expected_type:
+                    raise HTTPException(422, "Selected comparison territory type does not match"
+                                        if role == "member" else "Focal territory type does not match route")
+        seen_cohorts = set()
+        for target in cohort_targets:
+            key = (target.type, target.department_id, target.epci_id)
+            if key in seen_cohorts:
+                continue
+            resolve_territory_cohort(conn, target, work_budget=200_000)
+            seen_cohorts.add(key)
 
     def _require_dual_series_route(self, conn, resource):
         route = self._owned_series_route(conn, resource.resource_id)
@@ -465,7 +553,8 @@ class SemanticResourceReader:
             base_item = item.model_copy(update={"fields": base_fields or ["status"],
                                                 "coordinates": None})
             data = self.read(conn, base_item, catalogue, snapshot_state=snapshot_state)
-            data["result"]["axis_comparisons"] = read_axis_comparisons(conn, item)
+            data["result"]["axis_comparisons"] = read_axis_comparisons(
+                conn, item, family=self._publication_family(resource))
             return data
         if item.target.kind == "territory_cohort":
             cohort = self._cohort_scopes.pop(id(item), None)
@@ -599,18 +688,18 @@ class SemanticResourceReader:
         reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
         if not marker or not marker[0]:
             publication_unavailable("typed_reading",
-                "Typed-reading publication is unavailable")
+                "Typed-reading publication is unavailable or stale")
         if not reference or not reference[0]:
-            raise HTTPException(503, "Territory reference publication is unavailable")
+            raise HTTPException(503, "Typed-reading publication is unavailable or stale")
         if marker[2] != reference[0]:
-            raise HTTPException(503, "Typed-reading publication is stale or incompatible")
+            raise HTTPException(503, "Typed-reading publication is unavailable or stale")
         if resource.publication_table == "selected_reading":
             owner_marker = conn.execute("""SELECT content_version,row_count,reference_content_version
                 FROM selected_reading_publication WHERE theme_id=%s""",
                 (resource.theme_id,)).fetchone()
             if not owner_marker or not owner_marker[0]:
                 publication_unavailable("typed_reading",
-                    "Selected-reading publication is unavailable")
+                    "Selected-reading publication is inconsistent")
             if (owner_marker[0] != marker[0] or
                     owner_marker[1] != marker[1] or owner_marker[2] != marker[2]):
                 raise HTTPException(503, "Selected-reading publication is inconsistent")
@@ -631,9 +720,9 @@ class SemanticResourceReader:
                 FROM table_publication WHERE table_name=%s""", (side["publication_table"],)).fetchone()
             if not side_marker or not side_marker[0]:
                 publication_unavailable("typed_reading",
-                    "Typed-reading evidence publication is unavailable")
+                    "Typed-reading evidence publication is unavailable or stale")
             if side_marker[1] != reference[0]:
-                raise HTTPException(503, "Typed-reading evidence publication is stale or incompatible")
+                raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
             if side["publication_table"] == resource.publication_table and side_marker[0] != marker[0]:
                 raise HTTPException(503, "Typed-reading evidence publication is incompatible")
             if side.get("same_content_version_as") == "resource" and side_marker[0] != marker[0]:
@@ -689,9 +778,9 @@ class SemanticResourceReader:
             (resource.publication_table,)).fetchone()
         if not marker or not marker[0]:
             publication_unavailable("typed_reading",
-                "Typed-reading publication is unavailable")
+                "Typed-reading publication is unavailable or stale")
         if not marker[1] or not marker[2] or marker[1] != marker[2]:
-            raise HTTPException(503, "Typed-reading publication is stale or incompatible")
+            raise HTTPException(503, "Typed-reading publication is unavailable or stale")
         descriptor = typed_reading_descriptor(conn, resource, marker)
         coordinates = item.coordinates or {}
         selected_fields = set(resource.fields) if item.fields is None else set(item.fields)

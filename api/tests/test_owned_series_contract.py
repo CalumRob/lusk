@@ -182,7 +182,7 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
     assert all("value" not in point for point in projected["points"])
     assert "value" not in projected["scalar_facet"]["observation"]
     assert [point["axis"] for point in projected["points"]] == ["2024", "2025", "2026"]
-    with pytest.raises(HTTPException, match="stale or incompatible"):
+    with pytest.raises(HTTPException, match="stale or unavailable"):
         reader.read(Connection(reference_version="ref-v7"), item, catalogue)
     with pytest.raises(HTTPException, match="type does not match"):
         reader.read(Connection(territory_type="epci"), item, catalogue)

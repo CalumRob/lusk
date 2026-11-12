@@ -192,13 +192,17 @@ def test_stale_publication_markers_fail_closed_before_any_read():
         with pytest.raises(HTTPException) as excinfo:
             projection.read_axis_comparisons(conn, read_item())
         assert excinfo.value.status_code == 503
-        assert "stale" in excinfo.value.detail
+        assert excinfo.value.detail == "Series comparison axis publication is unavailable or stale"
     from api.publication_outcomes import PublicationUnavailable
-    with pytest.raises(PublicationUnavailable):
+    with pytest.raises(PublicationUnavailable) as missing:
         projection.read_axis_comparisons(ProjectionConnection(stale="missing"), read_item())
+    assert missing.value.detail == "Series comparison axis publication is unavailable or stale"
+    assert missing.value.family == "ordered_series"
     conn = ProjectionConnection(missing_publication=True)
-    with pytest.raises(PublicationUnavailable):
+    with pytest.raises(PublicationUnavailable) as unpublished:
         projection.read_axis_comparisons(conn, read_item())
+    assert unpublished.value.detail == "Series comparison axis publication is unavailable or stale"
+    assert unpublished.value.family == "ordered_series"
 
 
 def test_singleton_published_population_is_unavailable_with_null_ranks():

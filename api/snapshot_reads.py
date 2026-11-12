@@ -349,7 +349,7 @@ def _selected_profile_comparison_sources(conn, *, external, details, cohort_type
             _comparison_sources_by_indicator(detail_sources))
 
 
-def _profile_comparison_publication_marker(conn):
+def _profile_comparison_publication_marker(conn, family="profile"):
     installed = conn.execute("SELECT to_regclass('profile_comparison_publication')").fetchone()
     if not installed or not installed[0]:
         raise HTTPException(503, "Published profile comparison is unavailable")
@@ -362,13 +362,13 @@ def _profile_comparison_publication_marker(conn):
         own = conn.execute("""SELECT content_version FROM profile_comparison_publication
             WHERE singleton""").fetchone()
         if not own or not own[0]:
-            publication_unavailable("comparison", "Published profile comparison is unavailable")
+            publication_unavailable(family, "Published profile comparison is stale or incompatible")
         dependencies = conn.execute("""SELECT d.content_version,t.content_version
             FROM table_publication d JOIN table_publication t
               ON t.table_name='territory_reference'
             WHERE d.table_name='declared_profile'""").fetchone()
         if not dependencies or not dependencies[0] or not dependencies[1]:
-            raise HTTPException(503, "Published profile comparison dependency is unavailable")
+            raise HTTPException(503, "Published profile comparison is stale or incompatible")
         raise HTTPException(503, "Published profile comparison is stale or incompatible")
     if (marker[1] != marker[5] or marker[2] != marker[6]
             or marker[3] < 1 or marker[4] < 1):
@@ -810,7 +810,7 @@ def _selected_scalar_comparison_inputs(conn, *, theme_id, indicator_id, cohort_t
     return observations, _comparison_sources_by_indicator(source_rows)
 
 
-def _scalar_comparison_publication_marker(conn):
+def _scalar_comparison_publication_marker(conn, family="scalar"):
     """Return a compatible fixed-scalar comparison marker from this snapshot."""
     installed = conn.execute("SELECT to_regclass('scalar_comparison_publication')").fetchone()
     if not installed or not installed[0]:
@@ -826,13 +826,13 @@ def _scalar_comparison_publication_marker(conn):
         own = conn.execute("""SELECT content_version FROM scalar_comparison_publication
             WHERE singleton""").fetchone()
         if not own or not own[0]:
-            publication_unavailable("comparison", "Published scalar comparison is unavailable")
+            publication_unavailable(family, "Published scalar comparison is stale or incompatible")
         dependencies = conn.execute("""SELECT s.content_version,t.content_version
             FROM table_publication s JOIN table_publication t
               ON t.table_name='territory_reference'
             WHERE s.table_name='scalar_observation'""").fetchone()
         if not dependencies or not dependencies[0] or not dependencies[1]:
-            raise HTTPException(503, "Published scalar comparison dependency is unavailable")
+            raise HTTPException(503, "Published scalar comparison is stale or incompatible")
         raise HTTPException(503, "Published scalar comparison is stale or incompatible")
     if (marker[1] != marker[5] or marker[2] != marker[7]
             or marker[6] != marker[7] or marker[3] < 1 or marker[4] < 1):
@@ -1350,12 +1350,12 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
     marker = conn.execute("""SELECT content_version,reference_content_version,row_count,published_at
         FROM series_dataset_publication WHERE dataset_id=%s""", (dataset_id,)).fetchone()
     if not marker or not marker[0]:
-        publication_unavailable("ordered_series", "Owned-series publication is unavailable")
+        publication_unavailable("ordered_series", "Owned-series publication is stale or unavailable")
     reference = conn.execute(
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
     ).fetchone()
     if not reference or not reference[0] or marker[1] != reference[0]:
-        raise HTTPException(503, "Owned-series publication is stale or incompatible")
+        raise HTTPException(503, "Owned-series publication is stale or unavailable")
     descriptor = conn.execute("""SELECT axis_kind,axis_values,axis_numeric_values,completeness,label,unit,
         direction,descriptor_version,allowed_levels,comparison_point,theme_id,observation_period_kind,
         COALESCE(to_jsonb(series_dataset_descriptor)->>'absence_semantics','unavailable'),
@@ -1477,11 +1477,11 @@ def _owned_named_reference_snapshot(conn, route, territory_type, territory_id, i
     marker=conn.execute("""SELECT content_version,reference_content_version,row_count
         FROM series_dataset_publication WHERE dataset_id=%s""",(dataset_id,)).fetchone()
     if not marker or not marker[0]:
-        publication_unavailable("named_reference", "Owned named-reference publication is unavailable")
+        publication_unavailable("named_reference", "Owned named-reference publication is unavailable or stale")
     reference=conn.execute(
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
     if not reference or not reference[0] or marker[1]!=reference[0]:
-        raise HTTPException(503,"Owned named-reference publication is stale or incompatible")
+        raise HTTPException(503,"Owned named-reference publication is unavailable or stale")
     if reference_target_id is None:
         territory=conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
                                (territory_id,)).fetchone()
@@ -1553,11 +1553,11 @@ def _owned_reference_comparison_result(conn, route, territory_type, territory_id
     marker=conn.execute("""SELECT content_version,reference_content_version
         FROM series_dataset_publication WHERE dataset_id=%s""",(dataset_id,)).fetchone()
     if not marker or not marker[0]:
-        publication_unavailable("named_reference", "Owned analytical-reference publication is unavailable")
+        publication_unavailable("named_reference", "Owned analytical-reference publication is unavailable or stale")
     reference=conn.execute(
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
     if not reference or not reference[0] or marker[1]!=reference[0]:
-        raise HTTPException(503,"Owned analytical-reference publication is stale or incompatible")
+        raise HTTPException(503,"Owned analytical-reference publication is unavailable or stale")
     territory=conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
                            (territory_id,)).fetchone()
     if not territory: raise HTTPException(404,"Territory context not found")
@@ -1594,11 +1594,11 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
           ON t.table_name='territory_reference' WHERE p.dataset_id=ANY(%s)""",(datasets,)).fetchall()
     marker_by_dataset={row[0]:row for row in markers}
     if any(row[3] is None or not row[3] for row in markers):
-        raise HTTPException(503,"Territory reference publication is unavailable")
+        raise HTTPException(503,"Owned-series publication is unavailable or stale")
     if len(marker_by_dataset)!=len(datasets) or any(not row[1] for row in markers):
-        publication_unavailable("ordered_series", "Owned-series publication is unavailable")
+        publication_unavailable("ordered_series", "Owned-series publication is stale or unavailable")
     if any(row[2]!=row[3] for row in markers):
-        raise HTTPException(503,"Owned-series publication is stale or incompatible")
+        raise HTTPException(503,"Owned-series publication is stale or unavailable")
     ids=list(dict.fromkeys([*members,territory_id]))
     descriptors=conn.execute("""SELECT d.dataset_id,d.indicator_id,d.theme_id,d.comparison_point,d.label,d.unit,
         d.direction,d.allowed_levels,d.descriptor_version,d.axis_values,d.comparison_statistic,
@@ -1951,7 +1951,7 @@ def _scalar_facet_descriptor(conn, indicator_id, territory_type, expected_theme_
         allowed_levels,denominator_semantics,completeness,descriptor_version
         FROM scalar_descriptor WHERE indicator_id=%s""", (indicator_id,)).fetchone()
     if not row:
-        publication_unavailable("scalar", "Declared scalar facet descriptor is unavailable")
+        publication_unavailable("scalar", "Declared scalar facet descriptor is unavailable or incompatible")
     if not row[9] or (expected_theme_id is not None and row[1] != expected_theme_id):
         raise HTTPException(503, "Declared scalar facet descriptor is unavailable or incompatible")
     descriptor = dict(zip(("indicator_id", "theme_id", "label", "unit", "direction",
@@ -1969,7 +1969,7 @@ def _scalar_facet_snapshot(conn, territory_type, territory_id, indicator_id, fie
         FROM table_publication p LEFT JOIN table_publication t
           ON t.table_name='territory_reference' WHERE p.table_name='scalar_observation'""").fetchone()
     if not marker or not marker[0]:
-        publication_unavailable("scalar", "Scalar facet publication is unavailable")
+        publication_unavailable("scalar", "Scalar facet publication is stale or incompatible")
     if not marker[1] or not marker[2] or marker[1] != marker[2]:
         raise HTTPException(503, "Scalar facet publication is stale or incompatible")
     descriptor = _scalar_facet_descriptor(conn, indicator_id, territory_type, expected_theme_id)
@@ -2106,9 +2106,9 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
                 FROM table_publication s LEFT JOIN table_publication t
                   ON t.table_name='territory_reference' WHERE s.table_name='ordered_series'""").fetchone()
             if not marker or not marker[0]:
-                publication_unavailable("ordered_series", "Series publication is unavailable")
+                publication_unavailable("ordered_series", "Series publication is unavailable or incompatible")
             if not marker[1] or not marker[2] or marker[1] != marker[2]:
-                raise HTTPException(503, "Series publication is stale or incompatible")
+                raise HTTPException(503, "Series publication is unavailable or incompatible")
             return {"content_version": marker[0], "reference_content_version": marker[1],
                     "supported_fields": set()}
         scalar_selection = normalize_field_selection(
@@ -2117,7 +2117,7 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
             territory.content_version FROM table_publication scalar LEFT JOIN table_publication territory
             ON territory.table_name='territory_reference' WHERE scalar.table_name='scalar_observation'""").fetchone()
         if not marker or not marker[0]:
-            publication_unavailable("scalar", "Scalar publication is unavailable")
+            publication_unavailable("scalar", "Scalar publication is stale or incompatible")
         if not marker[1] or marker[1] != marker[2]:
             raise HTTPException(503, "Scalar publication is stale or incompatible")
         descriptor = ((resource.scalar_descriptor[1],) if snapshot_state is not None else
@@ -2223,9 +2223,9 @@ def _series_comparison_snapshot(conn, territory_type, territory_id, indicator_id
            WHERE s.table_name='ordered_series'"""
     ).fetchone()
     if not marker or not marker[0]:
-        publication_unavailable("ordered_series", "Series publication is unavailable")
+        publication_unavailable("ordered_series", "Series publication is unavailable or incompatible")
     if not marker[1] or not marker[2] or marker[1] != marker[2]:
-        raise HTTPException(503, "Series publication is stale or incompatible")
+        raise HTTPException(503, "Series publication is unavailable or incompatible")
     descriptor = conn.execute(
         """SELECT comparison_point,label,unit,direction,allowed_levels,descriptor_version,
                   axis_values,completeness,source_id,vintage_id
@@ -2473,7 +2473,7 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
             # The semantic grammar admits only producer-declared resources: an
             # absent published descriptor is a missing publication dependency,
             # reported as the item's typed outcome under v2 and as 503 under v1
-            # — never as an unknown identity (404).
+            # â€” never as an unknown identity (404).
             publication_unavailable(publication_family,
                 "Declared resource publication is unavailable")
         raise HTTPException(404, "Indicator descriptor is unavailable")
@@ -2587,7 +2587,7 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
             # The semantic grammar admits only producer-declared resources: an
             # absent published descriptor is a missing publication dependency,
             # reported as the item's typed outcome under v2 and as 503 under v1
-            # — never as an unknown identity (404).
+            # â€” never as an unknown identity (404).
             publication_unavailable(publication_family,
                 "Declared resource publication is unavailable")
         raise HTTPException(404, "Indicator descriptor is unavailable")
@@ -2664,9 +2664,9 @@ def _focal_series_snapshot(conn, territory_type, territory_id, indicator_id, *, 
            WHERE s.table_name='ordered_series'"""
     ).fetchone()
     if not marker or not marker[0]:
-        publication_unavailable("ordered_series", "Series publication is unavailable")
+        publication_unavailable("ordered_series", "Series publication is unavailable or incompatible")
     if not marker[1] or not marker[2] or marker[1] != marker[2]:
-        raise HTTPException(503, "Series publication is stale or incompatible")
+        raise HTTPException(503, "Series publication is unavailable or incompatible")
     descriptor = conn.execute(
         """SELECT axis_kind,axis_values,completeness,comparison_point,label,unit,direction,
                   source_id,vintage_id,descriptor_version,allowed_levels

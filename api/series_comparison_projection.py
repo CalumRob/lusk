@@ -13,7 +13,7 @@ from api.publication_outcomes import publication_unavailable
 from api.snapshot_reads import _comparison_cohort, _fixed_scalar_comparison_context
 
 
-def _context(conn, item):
+def _context(conn, item, family="ordered_series"):
     descriptor = conn.execute("""SELECT d.dataset_id,d.axis_kind,d.axis_values,d.direction,
         d.comparison_statistic,d.comparison_scope,d.descriptor_version,
         p.content_version,p.reference_content_version,t.content_version
@@ -21,13 +21,13 @@ def _context(conn, item):
         LEFT JOIN table_publication t ON t.table_name='territory_reference'
         WHERE d.indicator_id=%s AND d.active_read_route""", (item.resource,)).fetchone()
     if not descriptor:
-        publication_unavailable("ordered_series",
+        publication_unavailable(family,
             "Series comparison descriptor/publication is unavailable")
     if not descriptor[7]:
-        publication_unavailable("comparison",
-            "Series comparison axis publication is unavailable")
+        publication_unavailable(family,
+            "Series comparison axis publication is unavailable or stale")
     if not descriptor[8] or not descriptor[9] or descriptor[8] != descriptor[9]:
-        raise HTTPException(503, "Series comparison descriptor/publication is incompatible")
+        raise HTTPException(503, "Series comparison descriptor/publication is unavailable")
     statistic = descriptor[4] or "median"
     if statistic == "mean" and descriptor[5] != "selected_group":
         # The established owned-series contract supports a declared mean only
@@ -47,9 +47,9 @@ def _context(conn, item):
         reference_content_version FROM ordered_series_comparison_publication
         WHERE dataset_id=%s AND indicator_id=%s""", (descriptor[0], item.resource)).fetchone()
     if not publication:
-        publication_unavailable("comparison", "Series comparison axis publication is unavailable")
+        publication_unavailable(family, "Series comparison axis publication is unavailable or stale")
     if publication[1:] != descriptor[7:9]:
-        raise HTTPException(503, "Series comparison axis publication is stale or incompatible")
+        raise HTTPException(503, "Series comparison axis publication is unavailable or stale")
     declared = publication[0]
     requested = item.coordinates or {}
     if requested and (len(requested) != 1 or next(iter(requested)) != descriptor[1]):
@@ -80,8 +80,8 @@ def preflight_axis_comparisons(conn, item, budget):
     return max(1, work + extra)
 
 
-def read_axis_comparisons(conn, item):
-    descriptor, level, members, fixed, axes = _context(conn, item)
+def read_axis_comparisons(conn, item, *, family="ordered_series"):
+    descriptor, level, members, fixed, axes = _context(conn, item, family)
     if not fixed:
         return _selected_axes(conn, item, descriptor, level, members, axes)
     groups = conn.execute("""SELECT axis_value,statistic,group_value,member_count,eligible_count,

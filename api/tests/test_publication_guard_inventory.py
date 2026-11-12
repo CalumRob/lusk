@@ -8,7 +8,7 @@ from api.scripts.generate_publication_guard_inventory import (
 
 
 REQUIRED_FAMILIES = {"scalar", "profile", "ordered_series", "named_reference",
-                     "typed_reading", "collection", "comparison", "aedar"}
+                     "typed_reading", "collection", "aedar"}
 
 # Generic helpers whose caller supplies the declared family at runtime. They
 # still emit the actual family in the v2 outcome; the inventory records the
@@ -19,6 +19,9 @@ DYNAMIC_FAMILY_GUARDS = {
     ("snapshot_reads.py", "_indicator_comparison_snapshot"),
     ("snapshot_reads.py", "_owned_series_route"),
     ("cohort_reads.py", "_indicator_shape"),
+    ("series_comparison_projection.py", "_context"),
+    ("snapshot_reads.py", "_profile_comparison_publication_marker"),
+    ("snapshot_reads.py", "_scalar_comparison_publication_marker"),
 }
 
 

@@ -39,23 +39,23 @@ def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measu
             "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
         ).fetchone()
         if not reference or not reference[0]:
-            raise HTTPException(503, "Territory reference publication is unavailable")
+            raise HTTPException(503, "AEDAR territory summary publication is unavailable or stale")
         summary = conn.execute("""SELECT content_version,row_count FROM table_publication
             WHERE table_name='aedar_territory_summary'""").fetchone()
         if not summary or not summary[0] or summary[1] < 1:
             publication_unavailable("aedar",
-                "AEDAR territory summary publication is unavailable")
+                "AEDAR territory summary publication is unavailable or stale")
         aedar = conn.execute(
             "SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'"
         ).fetchone()
         if not aedar or not aedar[0]:
-            raise HTTPException(503, "AEDAR territory summary dependency publication is unavailable")
-        raise HTTPException(503, "AEDAR territory summary publication is stale or incompatible")
+            raise HTTPException(503, "AEDAR territory summary publication is unavailable or stale")
+        raise HTTPException(503, "AEDAR territory summary publication is unavailable or stale")
     if not marker[0] or marker[1] < 1 or not marker[3]:
-        publication_unavailable("aedar", "AEDAR territory summary publication is unavailable")
+        publication_unavailable("aedar", "AEDAR territory summary publication is unavailable or stale")
     if (marker[2] != marker[6] or marker[4] != marker[3]
             or marker[5] != marker[6]):
-        raise HTTPException(503, "AEDAR territory summary publication is stale or incompatible")
+        raise HTTPException(503, "AEDAR territory summary publication is unavailable or stale")
     if preflight_only:
         return {"content_version": marker[0], "aedar_content_version": marker[3],
                 "reference_content_version": marker[2]}
@@ -172,7 +172,7 @@ def _aedar_requested_rank_fields(fields, aggregate):
     """The rank fields this comparison actually requests.
 
     The fixed per-cell default projection predates the rank fields, so `None`
-    (the full default response) only carries them on the aggregate readings —
+    (the full default response) only carries them on the aggregate readings ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â
     the shape #914 established. Per-cell ranks are strictly opt-in, which keeps
     every unranked request byte-equivalent to its pre-#951 response.
     """
@@ -185,7 +185,7 @@ def _aedar_peer_rank(values, focal_id, direction):
     """Direction-aware flat ordinal of one focal among eligible peer values.
 
     Ranks are competition ranks (`1, 1, 3`): ties share the focal's rank and
-    the next rank skips. Only eligible peers are in `values` — an unavailable
+    the next rank skips. Only eligible peers are in `values` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â an unavailable
     peer is excluded, never converted to zero or ranked. An ineligible focal is
     not ranked at all.
     """
@@ -256,16 +256,16 @@ def _aedar_territorial_aggregate_snapshot(conn, territory_type, territory_id,
             "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
         ).fetchone()
         if not reference or not reference[0]:
-            raise HTTPException(503, "Territory reference publication is unavailable")
+            raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
         own = conn.execute("""SELECT content_version,row_count FROM table_publication
             WHERE table_name='aedar_territorial_aggregate'""").fetchone()
         if not own or not own[0] or own[1] < 1:
-            publication_unavailable("aedar", "AEDAR territorial publication is unavailable")
-        raise HTTPException(503, "AEDAR territorial publication is stale or incompatible")
+            publication_unavailable("aedar", "AEDAR territorial publication is unavailable or incompatible")
+        raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
     if not marker[0] or marker[1] < 1:
-        publication_unavailable("aedar", "AEDAR territorial publication is unavailable")
+        publication_unavailable("aedar", "AEDAR territorial publication is unavailable or incompatible")
     if marker[2] != marker[3]:
-        raise HTTPException(503, "AEDAR territorial publication is stale or incompatible")
+        raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
     supported = conn.execute("SELECT 1 FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
                              (territory_type,territory_id)).fetchone()
     if not supported:
@@ -321,16 +321,16 @@ def _aedar_comparison_marker(conn):
             "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
         ).fetchone()
         if not reference or not reference[0]:
-            raise HTTPException(503, "Territory reference publication is unavailable")
-        publication_unavailable("aedar", "AEDAR comparison publication is unavailable")
+            raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
+        publication_unavailable("aedar", "AEDAR comparison publication is unavailable or stale")
     if marker[9] is None or marker[10] is None:
-        raise HTTPException(503, "AEDAR comparison dependency publication is unavailable")
+        raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
     if (marker[2] != marker[9] or marker[3] != marker[10] or marker[6] < 1 or
              marker[7] != 0 or marker[8] != "reference_only" or marker[1] != "2026-v1" or
              marker[11] < 1 or marker[12] != len(AEDAR_AGGREGATE_READINGS) or
              marker[13] != marker[11] * marker[12] or marker[14] != marker[13] or
              marker[15] != marker[11] or marker[16] < 1):
-        raise HTTPException(503, "AEDAR comparison publication is stale or incompatible")
+        raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
     return marker
 
 
@@ -394,14 +394,14 @@ def _aedar_aggregate_available(inputs, registry_size, underlying):
 
     Applied once, over the single record type both adapters emit. Mirrors
     `carAccessMeans` (app/src/fiche/content/aedarAccessSection.ts) and
-    CONTEXT.md « Moyennes d'accès en voiture AEDAR »: the reading is available
+    CONTEXT.md Ãƒâ€šÃ‚Â« Moyennes d'accÃƒÆ’Ã‚Â¨s en voiture AEDAR Ãƒâ€šÃ‚Â»: the reading is available
     only over the complete TYPEQU registry, with one shared source
     vintage/provenance across all rows, one uniform statistic, every row
     `covered`, an agreeing positive address population, valid observed counts
     (0 <= n_observed <= n_addresses; NULL counts as bad) and finite
     non-negative per-type values (<= 1 for share readings). Incomplete,
     uncovered or unknown evidence never becomes a partial sum or a fabricated
-    zero — the reading is honestly unavailable.
+    zero ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the reading is honestly unavailable.
     """
     return bool(
         inputs.n_rows == registry_size
@@ -442,8 +442,8 @@ def _aedar_aggregate_records(conn, territory_type, territory_ids, underlying, re
     A territory's reading is the sum over its complete published registry and
     is available only under the full compatibility law above; otherwise it
     stays unknown, never a partial value (ADR-0039's 2026-11-04 amendment,
-    #914). All law inputs — including provenance uniformity and observed
-    validity — are computed in SQL.
+    #914). All law inputs ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â including provenance uniformity and observed
+    validity ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â are computed in SQL.
     """
     cursor = conn.execute(_AEDAR_AGGREGATE_RECORDS_SQL,
                           (underlying, underlying, underlying, underlying,
@@ -526,9 +526,9 @@ def _aedar_density_class_summary_records(conn, group_id, measures, marker):
         WHERE comparison_content_version=%s AND group_id=%s AND measure=ANY(%s::text[])""",
         (marker[0], group_id, sorted(requested))).fetchall()
     if not rows:
-        publication_unavailable("aedar", "AEDAR density-class summary is unavailable")
+        publication_unavailable("aedar", "AEDAR density-class summary is missing or incomplete")
     if len(rows) != len(requested) or len({row[0] for row in rows}) != len(requested):
-        raise HTTPException(503, "AEDAR density-class summary is incomplete")
+        raise HTTPException(503, "AEDAR density-class summary is missing or incomplete")
     result = {}
     for (measure, value, status, n_typequ, n_addresses, n_observed, coverage_status,
          aedar_version, reference_version, input_version) in rows:
@@ -560,7 +560,7 @@ def _aedar_fixed_peer_ids(conn, territory_type, territory_id, context):
 
     The ambient comparison group behind a request-time aggregate rank: the
     communes of the focal EPCI, all Breton communes, the density class, or the
-    same-level territories — resolved from the published territory reference
+    same-level territories ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â resolved from the published territory reference
     in the same committed snapshot.
     """
     focal = conn.execute(
@@ -771,10 +771,10 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
     """One fixed-context registry-wide aggregate reading with its request-time rank.
 
     The group statistic keeps the declared context semantics unchanged (the
-    direct EPCI/Bretagne/Région aggregate, or the producer-published pooled
+    direct EPCI/Bretagne/RÃƒÆ’Ã‚Â©gion aggregate, or the producer-published pooled
     density summary); the focal's direction-aware rank, group size
     and tie count are computed per request over the context's resolved peer
-    group from the published territory summaries in the same committed snapshot — no
+    group from the published territory summaries in the same committed snapshot ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â no
     peer/rank rows are published (#810 stance intact; ADR-0039's 2026-11-04
     amendment, #914). Both the reference and the peer/focal readings flow
     through producer-owned summary projections. Density references read final
@@ -1125,7 +1125,7 @@ def _aedar_selected_aggregate_snapshot(conn, territory_type, territory_id, resol
         records = records_by_measure[measure]
         # A member whose rows do not satisfy the compatibility law contributes
         # no comparable value: its reading is honestly unavailable and the
-        # member is ineligible — never converted to zero, never ranked, and
+        # member is ineligible ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â never converted to zero, never ranked, and
         # excluded from the pooled statistic (family contract semantics).
         values = []
         for level, code in resolved:

@@ -27,7 +27,9 @@ pytestmark = pytest.mark.integration
 MUTEX_NAME = r"Local\LuskIntegrationContractDb"
 MUTEX_TIMEOUT_MS = 180_000
 REQUIRED_FAMILIES = {"scalar", "profile", "ordered_series", "named_reference",
-                     "typed_reading", "collection", "comparison", "aedar"}
+                     "typed_reading", "collection", "aedar"}
+REFUELLING_KEYS = ("bornes_recharge", "bornes_recharge_1000",
+                   "bornes_ev_par_station_service")
 
 
 def _acquire_mutex():
@@ -92,10 +94,24 @@ def integration_db_mutex():
         _release_mutex(handle)
 
 
+def _guarded_configuration_or_skip():
+    """Resolve the exact guarded target and require explicit cleanup opt-in.
+
+    Ordinary collection without test DSNs skips normally. A guarded run that
+    could connect must fail before its first connection/DDL unless cleanup is
+    explicitly enabled; this suite never retains fixtures.
+    """
+    publish_dsn, read_dsn = _aedar_guarded_configuration()
+    if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") != "1":
+        pytest.fail("guarded #984 v2 proof requires LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1 "
+                    "before any database connection or DDL")
+    return publish_dsn, read_dsn
+
+
 @pytest.fixture(scope="module")
 def outcome_db(integration_db_mutex):
     psycopg = pytest.importorskip("psycopg")
-    publish_dsn, read_dsn = _aedar_guarded_configuration()
+    publish_dsn, read_dsn = _guarded_configuration_or_skip()
     schema = "it_outcome_" + uuid.uuid4().hex[:16]
     scoped_publish = _dsn_with_schema(publish_dsn, schema)
     scoped_read = _dsn_with_schema(read_dsn, schema)
@@ -105,8 +121,6 @@ def outcome_db(integration_db_mutex):
     with _guarded_identity(publish_dsn, read_dsn) as (publisher, _reader):
         state_before = (_user_schemas(publisher), _public_relations(publisher),
                         _database_bytes(publisher))
-        if state_before[0] or state_before[1]:
-            pytest.fail(f"guarded database must start clean before the lock: {state_before[:2]}")
     try:
         with psycopg.connect(publish_dsn, autocommit=True) as publisher:
             publisher.execute(f'CREATE SCHEMA "{schema}"')
@@ -130,12 +144,37 @@ def outcome_db(integration_db_mutex):
                                _database_bytes(publisher))
                 if schema in state_after[0]:
                     pytest.fail("own guarded schema could not be removed before unlock")
-                if state_after[0]:
-                    pytest.fail(f"user schemas remain after guarded cleanup: {state_after[0]}")
                 if state_after[1] != 0:
                     pytest.fail("public relations exist after guarded cleanup")
+                if not set(state_after[0]) <= set(state_before[0]):
+                    pytest.fail(f"guarded run introduced a user schema: "
+                                f"{sorted(set(state_after[0]) - set(state_before[0]))}")
                 print(f"guarded database bytes: before={state_before[2]} "
-                      f"after={state_after[2]} schemas_after={state_after[0]}", flush=True)
+                      f"after={state_after[2]} schemas_before={state_before[0]} "
+                      f"schemas_after={state_after[0]}", flush=True)
+
+
+@pytest.mark.parametrize("flag", [None, "0", "true", ""])
+def test_guarded_run_refuses_without_cleanup_opt_in_before_any_connection(monkeypatch, flag):
+    import psycopg
+
+    if flag is None:
+        monkeypatch.delenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP", raising=False)
+    else:
+        monkeypatch.setenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP", flag)
+    monkeypatch.setattr(psycopg, "connect",
+                        lambda *args, **kwargs: pytest.fail("database connection attempted"))
+    with pytest.raises(pytest.fail.Exception, match="LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1"):
+        next(outcome_db.__wrapped__(None))
+
+
+def test_guarded_run_skips_normally_without_test_dsns(monkeypatch):
+    for name in ("LUSK_TEST_PUBLISH_DSN", "LUSK_TEST_READ_DSN",
+                 "LUSK_TEST_DATABASE_NAME", "LUSK_TEST_DATABASE_PREFIX",
+                 "LUSK_TEST_ALLOW_SCHEMA_CLEANUP"):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(pytest.skip.Exception):
+        next(outcome_db.__wrapped__(None))
 
 
 def _seed(connection):
@@ -205,8 +244,25 @@ def _by_id(payload):
     return {result["id"]: result for result in payload["results"]}
 
 
+def _refuelling_items():
+    """Three actual refuelling scalar keys, all unpublished in this fixture."""
+    items = []
+    for key in REFUELLING_KEYS:
+        items.extend([
+            _item(f"{key}-facts", key),
+            _item(f"{key}-fixed", key,
+                  intent={"kind": "fixed_comparison", "context": "default"}),
+            _item(f"{key}-selected", key,
+                  intent={"kind": "selected_comparison", "members": [
+                      {"type": "commune", "id": "oc-c1"},
+                      {"type": "commune", "id": "oc-c2"}]}),
+        ])
+    return items
+
+
 def test_v2_mixed_batch_across_all_publication_families(outcome_db, monkeypatch):
     client, pool = _client(outcome_db, monkeypatch)
+    refuelling = _refuelling_items()
     items = [
         _item("scalar", "densite"),
         _item("comparison", "densite",
@@ -215,6 +271,7 @@ def test_v2_mixed_batch_across_all_publication_families(outcome_db, monkeypatch)
               fields=["median", "rank", "rank_size"]),
         _item("cohort", "densite",
               target={"kind": "territory_cohort", "type": "commune"}),
+        *refuelling,
         _item("profile", "structure_age"),
         _item("series", "prix_m2"),
         _item("named-reference", "raccordement_reference",
@@ -270,15 +327,24 @@ def test_v2_mixed_batch_across_all_publication_families(outcome_db, monkeypatch)
         assert outcome["reason"] == "publication_absent"
         assert outcome["family"] == family, item_id
         assert "data" not in outcome
+    for brick in refuelling:
+        outcome = results[brick["id"]]
+        assert outcome["status"] == "publication_unavailable", brick["id"]
+        assert outcome["reason"] == "publication_absent"
+        assert outcome["family"] == "scalar", brick["id"]
+        assert "data" not in outcome
+        assert "content_version" not in outcome and "reference_content_version" not in outcome
 
 
 def test_v2_all_unavailable_is_a_valid_envelope_and_v1_stays_atomic(outcome_db, monkeypatch):
     client, pool = _client(outcome_db, monkeypatch)
+    refuelling = _refuelling_items()
     items = [
         _item("profile", "structure_age"),
         _item("series", "prix_m2"),
         _item("comparison", "densite",
               intent={"kind": "fixed_comparison", "context": "default"}),
+        *refuelling,
         _item("aedar", "aedar_territory_summary"),
         _item("typed-reading", "demographie_selected_reading"),
         _item("collection", "subventions_par_domaine"),
@@ -292,7 +358,7 @@ def test_v2_all_unavailable_is_a_valid_envelope_and_v1_stays_atomic(outcome_db, 
     assert all(result["status"] == "publication_unavailable"
                for result in v2.json()["results"])
     assert {result["family"] for result in v2.json()["results"]} == {
-        "profile", "ordered_series", "comparison", "aedar", "typed_reading", "collection"}
+        "profile", "ordered_series", "scalar", "aedar", "typed_reading", "collection"}
     assert v1.status_code == 503
     assert "results" not in v1.json()
 
@@ -311,6 +377,20 @@ def test_v2_hard_request_and_global_integrity_failures_abort_the_request(outcome
         missing_member = client.post("/api/resources/read-batch", json=_v2([
             _item("member", "densite", intent={"kind": "selected_comparison", "members": [
                 {"type": "commune", "id": "oc-c1"}, {"type": "commune", "id": "oc-nope"}]})]))
+        unpublished_unknown_target = client.post("/api/resources/read-batch", json=_v2([
+            _item("healthy", "densite"),
+            _item("unpublished-unknown", "bornes_recharge_1000",
+                  target={"kind": "territory", "type": "commune", "id": "oc-missing"})]))
+        unpublished_unknown_member = client.post("/api/resources/read-batch", json=_v2([
+            _item("healthy", "densite"),
+            _item("unpublished-member", "bornes_recharge_1000",
+                  intent={"kind": "selected_comparison", "members": [
+                      {"type": "commune", "id": "oc-c1"},
+                      {"type": "commune", "id": "oc-nope"}]})]))
+        unpublished_wrong_member_type = client.post("/api/resources/read-batch", json=_v2([
+            _item("unpublished-member-type", "bornes_recharge_1000",
+                  intent={"kind": "selected_comparison", "members": [
+                      {"type": "epci", "id": "oc-c1"}]})]))
         with psycopg.connect(outcome_db["publisher_dsn"], autocommit=True) as publisher:
             publisher.execute(f'SET search_path TO "{outcome_db["schema"]}"')
             publisher.execute("""UPDATE table_publication
@@ -328,6 +408,14 @@ def test_v2_hard_request_and_global_integrity_failures_abort_the_request(outcome
     assert unknown.status_code == 404
     assert wrong_level.status_code == 422
     assert missing_member.status_code == 404
+    assert unpublished_unknown_target.status_code == 404
+    assert unpublished_unknown_target.json() == {"detail": "Focal territory not found"}
+    assert unpublished_unknown_member.status_code == 404
+    assert unpublished_unknown_member.json() == {"detail": "Selected comparison territory not found"}
+    assert unpublished_wrong_member_type.status_code == 422
+    for response in (unknown, wrong_level, missing_member, unpublished_unknown_target,
+                     unpublished_unknown_member, unpublished_wrong_member_type):
+        assert "results" not in response.json()
     assert stale.status_code == 503
     assert "results" not in stale.json()
     assert stale.json()["detail"] == "Scalar publication is stale or incompatible"

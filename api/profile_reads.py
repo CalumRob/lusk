@@ -19,7 +19,7 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
         FROM table_publication p LEFT JOIN table_publication t ON t.table_name='territory_reference'
         WHERE p.table_name='declared_profile'""").fetchone()
     if not marker or not marker[0]:
-        publication_unavailable("profile", "Profile publication is unavailable")
+        publication_unavailable("profile", "Profile publication is unavailable or incompatible")
     if not marker[1] or not marker[2] or marker[1] != marker[2]:
         raise HTTPException(503, 'Profile publication is unavailable or incompatible')
     dependencies = [d[8] for d in descriptors if d[8] is not None]
@@ -27,7 +27,7 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
         scalar_marker = conn.execute("""SELECT content_version,reference_content_version
             FROM table_publication WHERE table_name='scalar_observation'""").fetchone()
         if not scalar_marker or not scalar_marker[0]:
-            publication_unavailable("profile", "Profile scalar dependency is unavailable")
+            publication_unavailable("profile", "Profile scalar dependency is stale or incompatible")
         scalar_descriptors = {r[0]: r[1:] for r in conn.execute("""SELECT indicator_id,unit,direction,
             allowed_levels,comparison_facet FROM scalar_descriptor WHERE indicator_id=ANY(%s)""", (dependencies,)).fetchall()}
         for d in descriptors:

@@ -150,7 +150,7 @@ def _milieux_reading_marker(conn):
             "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
         ).fetchone()
         if not reference or not reference[0]:
-            raise HTTPException(503, "Territory reference publication is unavailable")
+            raise HTTPException(503, "Milieux reading publication is unavailable")
         publication_unavailable("typed_reading", "Milieux reading publication is unavailable")
     if not marker[0] or marker[1] < 1 or marker[2] != marker[3]:
         raise HTTPException(503, "Milieux reading publication is unavailable or incompatible")

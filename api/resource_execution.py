@@ -29,7 +29,8 @@ def _encoded(value):
     return json.dumps(value, separators=(",", ":"), default=str).encode("utf-8")
 
 
-def _read_snapshot(pool, items, catalogue, preflight, read, *, batch, outcomes=False):
+def _read_snapshot(pool, items, catalogue, preflight, read, *, batch, outcomes=False,
+                   admit=None):
     """Preflight the whole request and then read it on one read-only RR snapshot.
 
     With ``outcomes`` the executor may replace a *classified*
@@ -46,6 +47,10 @@ def _read_snapshot(pool, items, catalogue, preflight, read, *, batch, outcomes=F
     with pool.connection() as connection:
         with connection.transaction():
             connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            if admit is not None:
+                # v2 admission validates actual identity/grammar before any
+                # publication absence can become a typed item outcome.
+                admit(connection, items)
             work_units = 0
             for index, item in enumerate(items):
                 try:
@@ -107,6 +112,6 @@ def execute_single(pool, item, catalogue, preflight, read):
     return _read_snapshot(pool, [item], catalogue, preflight, read, batch=False)
 
 
-def execute_batch(pool, request, catalogue, preflight, read, *, outcomes=False):
+def execute_batch(pool, request, catalogue, preflight, read, *, outcomes=False, admit=None):
     return _read_snapshot(pool, request.items, catalogue, preflight, read,
-                          batch=True, outcomes=outcomes)
+                          batch=True, outcomes=outcomes, admit=admit)
