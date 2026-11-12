@@ -2433,7 +2433,7 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
   // explicite est cohérent avec les tests d'intégration voisins (20 s).
   }, 20_000)
 
-  it('une URL de membres tapés résout et acquiert la sélection telle quelle', async () => {
+  it('une URL de membres tapés résout et acquiert la sélection telle quelle et rend les références Mobilité (#981)', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
     const membres = 'commune:22001,commune:22002'
@@ -2450,6 +2450,154 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     ])
     expect(wrapper.get('.page-heading .bouton-comparaison__declencheur').attributes('aria-label'))
       .toBe('Comparaison : 2 communes')
+    // #981 — la réponse sélectionnée reste acquise : les figures Mobilité
+    // rendent leur référence et nomment la portée custom dans le nom accessible,
+    // elles ne la remplacent pas par « Groupe comparé : Indisponible ».
+    const networks = wrapper.get('.mobilite-section--reseaux')
+    expect(networks.findAll('.mobilite-comparison-bars__comparison').length).toBeGreaterThan(0)
+    expect(networks.get('.cahier-figure-legend-item[aria-label^="Groupe comparé"]').attributes('aria-label'))
+      .toContain('2 communes sélectionnées')
+    expect(networks.get('svg[role="img"]').attributes('aria-label')).not.toContain('Groupe comparé : Indisponible')
+    const parking = wrapper.get('.mobilite-section--stationnement-ravitaillement')
+    expect(parking.find('.cahier-comparison-value__reference').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('garde le rang servi d’un groupe tapé à travers preset → custom → autre custom → vide, y compris face à une réponse tardive (#981)', async () => {
+    const territoryId = '22001'
+    const legacy = nativeResources('programmes').find((resource) =>
+      resource.resource_id === 'subventions_annuelles')!
+    const sourceId = legacy.sources[0]!
+    const vintageId = lireMetadataSnapshot('programmes').source_records?.[sourceId]?.vintages?.[0]?.id
+    const descriptorVersion = 'programmes-series-descriptor-v1'
+    const publicationVersion = 'programmes-api-facts-sentinel-v1'
+    const requests: Array<Array<Record<string, any>>> = []
+    let releaseTardive!: () => void
+    const tardive = new Promise<void>((resolve) => { releaseTardive = resolve })
+    let tardiveRetenue = false
+
+    const memos = (item: Record<string, any>) =>
+      ((item.intent as { members?: Array<{ type: string; id: string }> }).members ?? [])
+        .map((member) => ({ territory_type: member.type, territory_id: member.id }))
+
+    const comparisonData = (item: Record<string, any>) => {
+      const selection = memos(item)
+      const cle = selection.map((member) => member.territory_id).join(',')
+      // Le premier groupe tapé de 2 communes est retenu : sa réponse arrive
+      // après le passage au groupe de 3 communes.
+      const served = cle === '22001,22002'
+        ? { median: 999, rank: 1, rank_size: 2 }
+        : cle === '22001,22002,22003'
+          // Un membre du groupe n'est pas mesuré : le rang servi porte
+          // l'éligibilité (2), jamais le compte de sélection (3).
+          ? { median: 111, rank: 2, rank_size: 2 }
+          : selection.length
+            ? { median: 555, rank: 1, rank_size: selection.length }
+            : { median: null, rank: null, rank_size: null }
+      return { resource: legacy.resource_id, target: item.target,
+        contract: 'indicator-comparison-v1', complete_theme: false,
+        indicator_id: legacy.indicator_id, shape: 'series', content_version: publicationVersion,
+        reference_content_version: 'programmes-reference-v1', selection,
+        scope: { kind: 'explicit_selection', member_count: selection.length },
+        result: { indicator_id: legacy.indicator_id, source_facet: '2024', unit: legacy.unit,
+          direction: legacy.direction, descriptor_version: descriptorVersion,
+          status: served.median === null ? 'unavailable' : 'available',
+          selected_member_count: selection.length, eligible_count: served.rank_size ?? 0,
+          missing_count: selection.length - (served.rank_size ?? 0),
+          median: served.median, rank: served.rank, rank_size: served.rank_size } }
+    }
+
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') {
+        return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [legacy] }))
+      }
+      if (url !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${url}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      requests.push(items)
+      const retenue = items.some((item) => item.intent?.kind === 'selected_comparison' &&
+        memos(item).map((member) => member.territory_id).join(',') === '22001,22002')
+      if (retenue && !tardiveRetenue) { tardiveRetenue = true; await tardive }
+      return nativeBatchResponse(items, (item) => {
+        if (item.intent.kind !== 'facts') return comparisonData(item)
+        return { resource: legacy.resource_id, target: item.target,
+          publication_id: publicationVersion,
+          territory: { id: territoryId, type: 'commune', name: cibleReference(territoryId).nom },
+          indicator_id: legacy.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+          label: legacy.label, unit: legacy.unit, direction: legacy.direction,
+          descriptor_version: descriptorVersion, comparison_point: '2024',
+          points: [{ axis: '2024', status: 'measured', observation_period: '2024', value: 987,
+            source_id: sourceId, vintage_id: vintageId, source_version: 'api-facts-clock-v1',
+            source_reference_date: null, source_publication_date: '2026-08-05' }],
+          availability: 'observed' }
+      })
+    })
+    vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter(`/territoire/commune/${territoryId}?theme=programmes&comparaison=epci`,
+      chargerReferenceReelle)
+    await flushPromises()
+
+    const comparaisonApi = () => {
+      const payload = wrapper.findComponent(BlocProgrammes).props('payload') as Payload
+      return payload.indicateurs.find((row) => row.territoire === territoryId &&
+        row.key === 'subventions_annuelles' && row.dimension === '2024')?.comparaisonApi
+    }
+
+    // Preset : la portée publiée du preset reste nommée telle quelle.
+    expect(comparaisonApi()).toMatchObject({
+      portee: contextesReference(territoryId).epci!.scope.label,
+      reference: { kind: 'median', value: 555 },
+    })
+
+    // Groupe tapé de 2 communes : sa réponse est retenue (réponse tardive).
+    await router.replace({ query: { theme: 'programmes', comparaison: 'commune:22001,commune:22002' } })
+    await flushPromises()
+    expect(comparaisonApi()).toBeUndefined()
+
+    // Autre groupe tapé de 3 communes : sa propre portée et son rang servi.
+    await router.replace({ query: {
+      theme: 'programmes', comparaison: 'commune:22001,commune:22002,commune:22003' } })
+    await flushPromises()
+    expect(comparaisonApi()).toMatchObject({
+      portee: '3 communes sélectionnées', rang: 2, taille: 2,
+      reference: { kind: 'median', value: 111 },
+    })
+
+    // La réponse du premier groupe arrive trop tard : elle ne remplace rien.
+    releaseTardive()
+    await flushPromises()
+    expect(comparaisonApi()).toMatchObject({
+      portee: '3 communes sélectionnées', rang: 2, taille: 2,
+      reference: { kind: 'median', value: 111 },
+    })
+
+    // Sélection vidée : aucune référence, jamais un repli Bretagne.
+    await router.replace({ query: { theme: 'programmes', comparaison: '' } })
+    await flushPromises()
+    expect(comparaisonApi()).toBeUndefined()
+    expect(wrapper.find('.figure-indicateur-comparaison [role="img"]').exists()).toBe(false)
+    expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
+    wrapper.unmount()
+  }, 20_000)
+
+  it('nomme la portée custom dans le nom accessible de la puce d’un thème générique (#981)', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+    const { wrapper } = await monter(
+      '/territoire/commune/22001?theme=demographie&comparaison=commune:22001,commune:22002', chargerReferenceReelle)
+    await flushPromises()
+
+    const comparison = wrapper.get('[data-clef="densite"] .figure-indicateur-comparaison [role="img"]')
+    expect(comparison.attributes('aria-label')).toContain('Groupe comparé')
+    expect(comparison.attributes('aria-label')).toContain('2 communes sélectionnées')
+    // Le libellé visible reste « Groupe comparé » ; la portée résolue ne vit
+    // que dans le nom accessible.
+    expect(comparison.text()).toContain('Groupe comparé')
+    expect(comparison.text()).not.toContain('communes sélectionnées')
+    expect(wrapper.find('[data-clef="densite"] .puce-rang').exists()).toBe(true)
+    expect(wrapper.find('.comparison-warning').exists()).toBe(false)
+    expect(requests.flat().some((item) => item.resource === 'densite' &&
+      item.intent.kind === 'selected_comparison')).toBe(true)
     wrapper.unmount()
   })
 
