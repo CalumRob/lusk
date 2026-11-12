@@ -1,17 +1,32 @@
 # Transaction composition for the retained backend. The normal publishers each
 # own a transaction and call dbWithTransaction directly. A wrapper that must
-# cover several owners atomically sets an outer publication transaction; the
-# inner owner transactions then execute inside it (PostgreSQL xact locks remain
-# held until the outer commit). Ordinary direct calls keep their own transaction.
+# cover several owners atomically sets an outer publication transaction bound to
+# ONE connection; the inner owner transactions then execute inside it
+# (PostgreSQL xact locks remain held until the outer commit). The active
+# connection identity is tracked, not a boolean: a different connection inside
+# the outer context fails before SQL instead of silently skipping its own
+# transaction. Ordinary direct calls keep their own transaction.
+.publication_transaction_state <- new.env(parent = emptyenv())
+.publication_transaction_state$connection <- NULL
+
 publication_transaction <- function(con, expr) {
-  if (isTRUE(getOption("lusk.publication.outer_transaction"))) return(force(expr))
+  active <- .publication_transaction_state$connection
+  if (!is.null(active)) {
+    if (!identical(active, con))
+      stop("Outer publication transaction is active on a different ",
+           "connection; the single-connection outer contract is violated.",
+           call. = FALSE)
+    return(force(expr))
+  }
   DBI::dbWithTransaction(con, expr)
 }
 
 with_publication_transaction <- function(con, expr) {
-  previous <- getOption("lusk.publication.outer_transaction")
-  options(lusk.publication.outer_transaction = TRUE)
-  on.exit(options(lusk.publication.outer_transaction = previous), add = TRUE)
+  state <- .publication_transaction_state
+  if (!is.null(state$connection))
+    stop("Nested outer publication transaction is not supported", call. = FALSE)
+  state$connection <- con
+  on.exit({ state$connection <- NULL }, add = TRUE)
   DBI::dbWithTransaction(con, force(expr))
 }
 

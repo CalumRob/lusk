@@ -128,7 +128,10 @@ companion is refreshed metadata-only from its existing facts (only the
 `required_scalar_version` descriptor token changes; DPE fact rows are identical)
 through `refresh_declared_profile_scalar_binding()`, then published by the normal
 registered profile owner. The existing owner transactions compose into the outer
-transaction (`publication_transaction()`), so a failure after any stage rolls
+transaction (`publication_transaction()`), which tracks the active **connection
+identity**: inner publishers join only on the identical connection; a different
+connection fails before SQL; nested outer calls are refused; the state is
+cleared on every exit/error. A failure after any stage rolls
 back every owner; the pre-refresh profile artifacts are restored and a retry
 after clearing the failure succeeds. The scalar/comparison tables remain
 wholesale replaces: unchanged facts/provenance/descriptors are identical, while
@@ -156,8 +159,13 @@ explicit and not hidden by the guard.
 
 `pipeline/tests/testthat/test-retained-baseline-guard.R`: scope parsing,
 prior-snapshot reconstruction, and exact marker matching/refusal for scalar,
-territory, typed, comparison, series, reference-binding and missing-marker
-cases (pure, no database).
+territory, typed, comparison, profile/comparison, DPE required scalar, selected
+linked, series, reference-binding and missing-marker cases (pure, no database).
+
+`pipeline/tests/testthat/test-publication-transaction.R`: single-connection
+outer contract — inner publishers join only the identical connection, a
+different connection fails before SQL, nested outer calls are refused, state is
+cleared after errors, and direct calls still open their own transaction.
 
 Guarded test-only database proof (never the serving DB; holds
 `Local\LuskIntegrationContractDb`, creates one random `serving_it_*` schema,

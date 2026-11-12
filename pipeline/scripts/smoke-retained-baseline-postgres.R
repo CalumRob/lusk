@@ -339,6 +339,13 @@ tryCatch({
   profile_facts_before <- DBI::dbGetQuery(connection, paste(
     "SELECT * FROM profile_observation",
     "ORDER BY indicator_id,territory_id,detail_key,sex_key"))
+  profile_sources_before <- DBI::dbGetQuery(connection, paste(
+    "SELECT * FROM profile_observation_source",
+    "ORDER BY indicator_id,territory_id,detail_key,sex_key,source_id,vintage_id"))
+  profile_source_digest <- function() DBI::dbGetQuery(connection, paste(
+    "SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), '')) AS h",
+    "FROM profile_observation_source t"))$h[[1L]]
+  profile_source_digest_before <- profile_source_digest()
 
   # Forced failure AFTER the scalar + profile companion stage, BEFORE the
   # selected reading completes. The outer transaction must roll back every
@@ -399,6 +406,10 @@ tryCatch({
   stopifnot(identical(profile_facts_before, DBI::dbGetQuery(connection, paste(
     "SELECT * FROM profile_observation",
     "ORDER BY indicator_id,territory_id,detail_key,sex_key"))))
+  stopifnot(identical(profile_sources_before, DBI::dbGetQuery(connection, paste(
+    "SELECT * FROM profile_observation_source",
+    "ORDER BY indicator_id,territory_id,detail_key,sex_key,source_id,vintage_id"))),
+    identical(profile_source_digest_before, profile_source_digest()))
   unchanged <- c("territory_reference", "demographic_typed_reading",
                  "selected_reading", "economy_typed_reading",
                  "economy_activity_evidence", "milieux_typed_reading",

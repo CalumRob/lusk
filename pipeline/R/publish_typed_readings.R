@@ -703,4 +703,3 @@ publish_economy_reading_family <- function(con, facts, canonical) {
   })
   invisible(list(content_version=version,row_count=expected_count,changed=!unchanged))
 }
-

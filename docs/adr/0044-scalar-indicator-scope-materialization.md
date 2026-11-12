@@ -106,7 +106,11 @@ can be scoped.
    The wrapper then opens **one outer transaction** via
    `with_publication_transaction()`; the existing owner adapters and typed
    readers now use `publication_transaction()`, so their inner transactions
-   compose into it. Order: territory reference → scalar → refreshed profile →
+   compose into it. The active **connection identity** is tracked (not a
+   process boolean): inner publishers join only on the identical connection; a
+   different connection inside the outer context fails before SQL; nested outer
+   calls are refused; the active state is cleared on every exit/error. Order:
+   territory reference → scalar → refreshed profile →
    demographic/habitat selected reading → economy → Milieux/series. Any failure
    rolls back every owner and the wrapper restores the pre-refresh profile
    artifacts; a retry after clearing the failure succeeds. This is not a second

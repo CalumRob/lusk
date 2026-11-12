@@ -80,4 +80,3 @@ publish_canonical_territory_reference <- function(con, sortie="../public/data") 
     territory_reference_postgres_adapter(con))
   invisible(list(projection=projection, publication=result))
 }
-
