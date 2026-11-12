@@ -27,6 +27,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY, usePayload } from '../payload/usePayload'
+import { invalidateSemanticReads } from '../payload/semanticResourceClient'
 import type { ChargerFichier } from '../payload/usePayload'
 import type { Fichier } from '../payload/loader'
 import { THEMES_CANONIQUES } from '../payload/types'
@@ -212,7 +213,7 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
               rank_ties: selectedMembers.length >= 2 ? 1 : null })),
             comparison_sources: selectedMembers.length >= 2 ? [{ source_id: sourceId, name: resource.label,
               vintage_id: 'map-fixture-v1', version: 'map-fixture-v1', reference_date: null, publication_date: null }] : [] }
-          results.push({ id: item.id, resource: item.resource, data: { resource: item.resource, target: item.target,
+          results.push({ id: item.id, resource: item.resource, status: 'available', data: { resource: item.resource, target: item.target,
             contract: 'indicator-comparison-v1', indicator_id: item.resource, shape: 'scalar',
             content_version: `map-${item.resource}-v1`, reference_content_version: 'map-ref-v1',
             selection: selected ? selectedMembers.map((member: any) => ({ territory_type: member.type, territory_id: member.id })) : null,
@@ -321,9 +322,9 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
           }) }
         }
         data.synthetic_fixture = NATIVE_API_FIXTURE_NOTICE
-        results.push({ id: item.id, resource: item.resource, data })
+        results.push({ id: item.id, resource: item.resource, status: 'available', data })
       }
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }))
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results }))
     }
     if (url === '/api/resources/read') return new Response('', { status: 404 })
     throw new Error(`Unexpected map API fixture request: ${url}`)
@@ -580,7 +581,7 @@ describe('CarteView — la carte avec fond publié', () => {
             support_count: 41, denominator_count: 100,
             sources: [{ source_id: resource.sources[0], name: 'Source', vintage_id: 'v1', version: '2026',
               reference_date: null, publication_date: null }] }] }
-        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, resource: 'densite', data }] }))
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results: [{ id: item.id, resource: 'densite', status: 'available', data }] }))
       }
       throw new Error(`Unexpected request: ${url}`)
     }))
@@ -1669,8 +1670,10 @@ describe('CarteView — #901 : magasin partagé CHAUD (aucun chargeur injecté �
     const marqueur2 = demandesData.length
 
     // Phase 2 — API failure: no numeric fallback, unavailable state + Retry,
-    // with tabs/URL stable.
+    // with tabs/URL stable. This simulates a cold page load while the API is
+    // down, so the warm shared outcome cache is explicitly released first.
     apiEnEchec = true
+    invalidateSemanticReads()
     wrapper.unmount()
     const { router: router2, wrapper: wrapper2 } = await monterSurMagasinChaud()
     expect(wrapper2.find('[role="alert"]').text()).toContain('Impossible de charger les valeurs natives de la carte.')

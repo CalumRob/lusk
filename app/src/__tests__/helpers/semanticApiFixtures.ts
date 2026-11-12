@@ -1396,8 +1396,35 @@ export function nativeBatchResponse<T extends Record<string, any>>(
         JSON.stringify(data.target) !== JSON.stringify(item.target)) {
       throw new Error(`Native read fixture did not echo resource/target identity: ${item.resource}`)
     }
-    return { id: item.id, resource: item.resource, data }
-  }).reverse()
-    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results,
+    return { id: item.id, resource: item.resource, status: 'available', data }
+  })
+    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results,
       synthetic_fixture: NATIVE_API_FIXTURE_NOTICE }), { status: 200 })
+}
+
+/**
+ * Re-envelope a recorded v1 read-batch capture for the v2 client contract.
+ * The captured `data` bytes are replayed unchanged; only the protocol wrapper
+ * (one explicit `available` outcome per item, in request order) is upgraded.
+ * This is fixture plumbing, never a live API proof of v2 availability.
+ */
+export function replayCapturedBatchV2(captured: unknown,
+  requests?: ReadonlyArray<{ id?: unknown; resource?: unknown }>): Record<string, unknown> {
+  if (!captured || typeof captured !== 'object' || Array.isArray(captured)) {
+    throw new Error('Captured semantic batch must be an object')
+  }
+  const envelope = captured as { contract?: unknown; results?: unknown }
+  if (envelope.contract !== 'semantic-read-batch-v1' || !Array.isArray(envelope.results)) {
+    throw new Error('Captured semantic batch is not a v1 read-batch envelope')
+  }
+  return {
+    contract: 'semantic-read-batch-v2',
+    results: envelope.results.map((result, index) => {
+      if (!result || typeof result !== 'object') throw new Error('Captured semantic result is malformed')
+      const item = result as { id?: unknown; resource?: unknown; data?: unknown }
+      const request = requests?.[index]
+      return { ...item, ...(request?.id === undefined ? {} : { id: request.id }),
+        ...(request?.resource === undefined ? {} : { resource: request.resource }), status: 'available' }
+    }),
+  }
 }

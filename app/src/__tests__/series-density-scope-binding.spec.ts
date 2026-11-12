@@ -188,8 +188,8 @@ describe('région fixed_comparison : fail-closed (niveau non supporté par les r
       const item = items[0]
       // écho d'identité exacte exigé par le client de lot (corrélation requête/réponse)
       comparisonData.target = item.target
-      return Response.json({ contract: 'semantic-read-batch-v1',
-        results: [{ id: item.id, resource: item.resource, data: comparisonData }] }, { status: 200 })
+      return Response.json({ contract: 'semantic-read-batch-v2',
+        results: [{ id: item.id, resource: item.resource, status: 'available', data: comparisonData }] }, { status: 200 })
     })
   }
   const baseComparison: Record<string, any> = {

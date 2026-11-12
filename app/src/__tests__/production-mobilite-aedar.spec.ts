@@ -117,8 +117,8 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
       return new Response(JSON.stringify(catalogue), { status: response.status })
     }
     if (String(input) === '/api/resources/read-batch') {
-       const body = JSON.parse(String(init?.body)) as { items: Array<{ id: string; target: { type: string; id: string }; coordinates: { measure: string[] }; fields: string[] }> }
-      const results = body.items.map((item) => ({ id: item.id, data: {
+       const body = JSON.parse(String(init?.body)) as { items: Array<{ id: string; resource: string; target: { type: string; id: string }; coordinates: { measure: string[] }; fields: string[] }> }
+      const results = body.items.map((item) => ({ id: item.id, resource: item.resource, status: 'available', data: {
         resource: 'aedar_territorial_aggregate', target: { kind: 'territory', ...item.target },
         territory: { territory_type: item.target.type, territory_id: item.target.id },
          content_version: 'bridged-comparison-v1', summary_content_version: aedarSummaryReady.summary.summaryContentVersion,
@@ -136,7 +136,7 @@ it('adapte une réponse AEDAR capturée en lectures de production et pose ses va
              ...(item.fields.includes('rank') ? { rank: null, rank_size: null, rank_ties: null } : {}), direction: 'high' }
         }),
       } }))
-      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results }) } as Response
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2', results }) } as Response
     }
     return originalFetch(input, init)
   }))

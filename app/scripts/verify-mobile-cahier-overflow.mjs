@@ -454,10 +454,10 @@ try {
 
   function aedarBatchResponse(request) {
     if (!Array.isArray(request.items)) {
-      return { contract: 'semantic-read-batch-v1', results: [] }
+      return { contract: 'semantic-read-batch-v2', results: [] }
     }
     return {
-      contract: 'semantic-read-batch-v1',
+      contract: 'semantic-read-batch-v2',
       results: request.items.map((item) => {
         if (item.resource === 'aedar_territory_summary') {
           return {
@@ -1461,7 +1461,8 @@ try {
       const focal = items.filter((item) => item.target.type === 'commune')
       assert.equal(focal.length, projection.partitions.length, `Focal AEDAR items at ${width}px`)
       for (const [index, item] of focal.entries()) {
-        assert.equal(item.id, `aedar-${index}`, `Unexpected AEDAR item id at ${width}px, projection index ${index}`)
+        assert.equal(item.id, `semantic-${index}-aedar_territorial_aggregate`,
+          `Unexpected AEDAR item id at ${width}px, projection index ${index}`)
         assert.equal(item.resource, 'aedar_territorial_aggregate', `Unexpected AEDAR resource at ${width}px, item ${index}`)
         assert.deepEqual(item.target, { kind: 'territory', type: 'commune', id: '35238' },
           `Unexpected focal AEDAR target at ${width}px, item ${index}`)

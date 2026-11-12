@@ -91,16 +91,17 @@ function publicationAwareFetch(state: { published: boolean }) {
       return new Response('not available in this fixture', { status: 404 })
     }
     const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-    if (!state.published && items.some((item) => UNPUBLISHED.has(item.resource))) {
-      return new Response(JSON.stringify({ detail: 'Declared resource publication is unavailable' }), { status: 503 })
-    }
     const results = items.map((item) => {
       const resource = catalogue.find((candidate) => candidate.resource_id === item.resource)
       if (!resource) throw new Error(`Unknown fixture resource ${item.resource}`)
+      if (!state.published && UNPUBLISHED.has(item.resource)) {
+        return { id: item.id, resource: item.resource, status: 'publication_unavailable',
+          reason: 'publication_absent', family: 'scalar' }
+      }
       const data = applyPublishedScalar(item, applyCoherentNetworkCapture(item, nativeReadFixture(item, resource)), state.published)
-      return { id: item.id, resource: item.resource, data }
+      return { id: item.id, resource: item.resource, status: 'available', data }
     })
-    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }), { status: 200 })
+    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results }), { status: 200 })
   })
 }
 
@@ -135,7 +136,9 @@ describe('Mobilité partial publication availability', () => {
     const acquired = await acquireThemeFacts('commune', '35238', 'mobilite')
 
     expect(acquired.comparison_error).not.toBe(true)
-    expect(acquired.resource_failures?.map((failure) => failure.resource).sort())
+    expect([...new Set(acquired.resource_failures?.map((failure) => failure.resource))].sort())
+      .toEqual([...UNPUBLISHED_SCALARS].sort())
+    expect(acquired.resource_failures?.filter((failure) => failure.stage === 'facts').map((failure) => failure.resource).sort())
       .toEqual([...UNPUBLISHED_SCALARS].sort())
     expect(acquired.resource_reads?.map((read) => read.resource)).toEqual(expect.arrayContaining([
       'reseaux_par_habitant', 'reseaux', 'offre_cyclable',
@@ -199,7 +202,7 @@ describe('Mobilité partial publication availability', () => {
       (selection, theme, key) => acquireThemeComparison(key!.type, key!.id, theme, selection),
     )
     const first = await cache.get('commune', '35238', 'mobilite')
-    expect(first.focal.resource_failures).toHaveLength(3)
+    expect(first.focal.resource_failures?.filter((failure) => failure.stage === 'facts')).toHaveLength(3)
     expect(first.focal.resource_reads?.some((read) => read.resource === 'bornes_recharge_1000')).toBe(false)
 
     state.published = true

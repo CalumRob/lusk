@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chargerCatalogueRessources, lireRessourcesBatch } from '@/payload/semanticResourceClient'
 import type { SemanticReadItem } from '@/payload/semanticResourceClient'
+import { replayCapturedBatchV2 } from './helpers/semanticApiFixtures'
 import { orderedSeriesFacts } from '@/payload/orderedSeriesAdapter'
 import type { OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
@@ -23,8 +24,11 @@ async function readNative(name: 'cohort' | 'focal' | 'fixed' | 'calendar' | 'sel
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input) === '/api/resources') return Response.json(wire.catalogue)
     expect(String(input)).toBe('/api/resources/read-batch')
-    expect(JSON.parse(String(init?.body))).toEqual(captured.request)
-    return Response.json(captured.response, { status: captured.response_status })
+    const request = JSON.parse(String(init?.body)) as { contract: string; items: Array<Record<string, any>> }
+    expect(request.contract).toBe('semantic-read-batch-v2')
+    expect(request.items.map(({ id: _id, ...rest }) => rest))
+      .toEqual(captured.request.items.map(({ id: _capturedId, ...rest }: Record<string, any>) => rest))
+    return Response.json(replayCapturedBatchV2(captured.response, request.items), { status: captured.response_status })
   })
   vi.stubGlobal('fetch', fetcher)
   const catalogue = await chargerCatalogueRessources()

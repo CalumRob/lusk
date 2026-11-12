@@ -252,8 +252,8 @@ describe('MapExplorer — the active layer choropleth (ADR-0019)', () => {
         observations: [{ territory: { id: focal.territoire, type: focal.type, name: focal.nom }, status: 'measured', value: 9876,
           support_count: 41, denominator_count: 100,
           sources: [{ source_id: 'src', name: 'Source API', vintage_id: 'v1', version: '2026', reference_date: null, publication_date: null }] }] }
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1',
-        results: [{ id: item.id, resource: 'densite', data }] }))
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: [{ id: item.id, resource: 'densite', status: 'available', data }] }))
     }))
     const facts = await chargerCohorteScalaire('densite', 'demographie', page,
       territoiresFixture.find((territory) => territory.territoire === '22001')!, 'commune', territoiresFixture, {})

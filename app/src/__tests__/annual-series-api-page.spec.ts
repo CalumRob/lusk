@@ -11,6 +11,7 @@ import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
 import { validerThemeMetadata } from '../payload/validate'
 import { nativeBatchResponse, nativeCatalogueResponse, nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
+import { invalidateSemanticReadsForTarget } from '../payload/semanticResourceClient'
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
@@ -642,7 +643,10 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
 
     // --- cas de rejet : scope density_class incohérent avec le focal acquis ->
     // la comparaison est rejetée au seam d'acquisition (facts admis, pas de rangs)
+    // La nouvelle publication simulée est un retry explicite : elle invalide les
+    // lectures sémantiques déjà acquises pour ce territoire.
     forcerClasseIncoherente = true
+    invalidateSemanticReadsForTarget('commune', '22002')
     const wrapperRejet = await monterPrix('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&detail=2022')
     try {
       await flushPromises()

@@ -170,9 +170,9 @@ function nativeSemanticFetch(requests: Array<Array<Record<string, any>>> = [], o
       const comparisonReferenceClock = options.comparisonReferenceClock?.() ?? 'semantic-reference-fixture-v1'
       if (items.every((item) => item.resource === 'aedar_territorial_aggregate' && item.intent?.kind !== 'facts'
         && !(item.coordinates?.typequ?.length))) {
-        const results = items.map((item) => ({ id: item.id, resource: item.resource,
+        const results = items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
           data: aedarComparisonFixture(item, comparisonClock, comparisonAedarClock, comparisonReferenceClock) }))
-        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }), { status: 200 })
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results }), { status: 200 })
       }
       return nativeBatchResponse(items, (item, resource) => {
         if (resource.resource_id === 'aedar_territory_summary') return aedarSummaryFixture(item,
@@ -467,7 +467,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const requests: Array<Array<Record<string, any>>> = []
     const focalReads: Array<Record<string, any>> = []
     let successfulComparison: Record<string, any> | undefined
-    let comparisonAttempts = 0
+    let selectedComparisonAttempts = 0
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/resources') return new Response(JSON.stringify({
@@ -476,12 +476,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       if (url === '/api/resources/read-batch') {
         const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
         requests.push(items)
-        if (items.some((item) => item.intent.kind === 'facts') &&
-            items.some((item) => item.intent.kind === 'fixed_comparison')) {
-          return new Response('paired legacy snapshot unavailable', { status: 503 })
-        }
-        if (items.every((item) => item.intent.kind === 'facts')) {
-          return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => {
+        const results = items.map((item) => {
+          if (item.intent.kind === 'facts') {
             const data = { resource: legacy.resource_id, target: item.target,
               publication_id: 'legacy-series-v1',
               territory: { id: item.target.id, type: item.target.type, name: cibleReference('22001').nom },
@@ -497,11 +493,18 @@ describe('TerritoireView — modèle atomique par territoire', () => {
                   source_reference_date: null, source_publication_date: null },
               ], availability: 'incomplete' }
             focalReads.push(data)
-            return { id: item.id, resource: item.resource, data }
-          }) }))
-        }
-        if (comparisonAttempts++ === 0) return new Response('comparison retry offline', { status: 503 })
-        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => {
+            return { id: item.id, resource: item.resource, status: 'available', data }
+          }
+          if (item.intent.kind === 'fixed_comparison') {
+            // The paired publication is absent: an explicit item outcome in the
+            // same snapshot, never a whole-request 503 nor a facts-only re-read.
+            return { id: item.id, resource: item.resource, status: 'publication_unavailable',
+              reason: 'publication_absent', family: 'ordered_series' }
+          }
+          if (selectedComparisonAttempts++ === 0) {
+            return { id: item.id, resource: item.resource, status: 'publication_unavailable',
+              reason: 'publication_absent', family: 'ordered_series' }
+          }
           // #860 — la sélection par défaut d'une commune est niveau-natif (son
           // EPCI) : la passe selected_comparison échoie les membres tapés demandés.
           const members = (item.intent as { members?: Array<{ type: string; id: string }> }).members ?? null
@@ -520,8 +523,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
               reason: 'unsupported_comparison_contract', selected_member_count: 2,
               eligible_count: 0, missing_count: 2, median: null, rank: null, comparison_sources: [] } }
           successfulComparison = data
-          return { id: item.id, resource: item.resource, data }
-        }) }))
+          return { id: item.id, resource: item.resource, status: 'available', data }
+        })
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results }))
       }
       if (url.startsWith('/data/')) {
         return new Response(readFileSync(resolve(process.cwd(), `../public/data/${url.slice('/data/'.length)}`), 'utf8'))
@@ -557,15 +561,15 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       .map((candidate) => ({ territory_type: 'commune' as const, territory_id: candidate.territoire }))
       .sort((a, b) => a.territory_id.localeCompare(b.territory_id))
     expect(requests.map((items) => items.map((item) => item.intent.kind))).toEqual([
-      ['facts', 'fixed_comparison'], ['facts'], ['selected_comparison'],
+      ['facts', 'fixed_comparison'], ['selected_comparison'],
     ])
-    expect(requests[2]![0]!.intent.members).toEqual(membresDefaut.map((m) => ({ type: m.territory_type, id: m.territory_id })))
+    expect(requests[1]![0]!.intent.members).toEqual(membresDefaut.map((m) => ({ type: m.territory_type, id: m.territory_id })))
 
     await wrapper.get('.programmes-comparison-retry').trigger('click')
     await flushPromises()
 
-    expect(requests).toHaveLength(4)
-    expect(requests[3]!.map((item) => item.intent.kind)).toEqual(['selected_comparison'])
+    expect(requests).toHaveLength(3)
+    expect(requests[2]!.map((item) => item.intent.kind)).toEqual(['selected_comparison'])
     const comparison = { theme_id: 'programmes' as const, selection: membresDefaut, comparison_reads: [{
       resource: legacy.resource_id, shapes: legacy.shapes, declaration: legacy, data: successfulComparison!,
     }] }
@@ -970,8 +974,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it('réessaie une acquisition native du thème après échec, sans repli sur les faits statiques', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     const habitatResources = new Set(nativeResources('habitat').map((resource) => resource.resource_id))
-    let failedPairedRead = false
-    let failedFactsRecovery = false
+    let failedFocalRead = false
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/resources') return nativeCatalogueResponse()
@@ -980,14 +983,14 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         requests.push(items)
         const habitatFocalReads = items.filter((item) =>
           habitatResources.has(item.resource) && item.target.kind === 'territory')
-        if (!failedPairedRead && habitatFocalReads.some((item) => item.intent.kind === 'fixed_comparison')) {
-          failedPairedRead = true
-          return new Response('fixture unavailable', { status: 503 })
-        }
-        if (failedPairedRead && !failedFactsRecovery && habitatFocalReads.length > 0 &&
-            habitatFocalReads.every((item) => item.intent.kind === 'facts')) {
-          failedFactsRecovery = true
-          return new Response('fixture unavailable', { status: 503 })
+        if (!failedFocalRead && habitatFocalReads.length) {
+          // One settled absence per requested item: the whole theme is
+          // unavailable, but this is not a request-level failure and no
+          // discovery/facts-only retry follows automatically.
+          failedFocalRead = true
+          return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+            results: items.map((item) => ({ id: item.id, resource: item.resource,
+              status: 'publication_unavailable', reason: 'publication_absent', family: 'scalar' })) }))
         }
         return nativeBatchResponse(items, nativeFicheReadFixture)
       }
@@ -997,14 +1000,14 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const { wrapper } = await monter('/territoire/commune/22001?theme=habitat',
       chargerReferenceReelle)
 
-    expect(wrapper.get('[role="alert"]').text()).toContain('indicateurs de ce thème')
-    expect(failedPairedRead).toBe(true)
-    expect(failedFactsRecovery).toBe(true)
+    expect(wrapper.get('[role="alert"]').text()).toContain('Les lectures de ce thème')
+    expect(failedFocalRead).toBe(true)
+    const failedRequests = requests.length
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
 
-    expect(failedPairedRead).toBe(true)
-    expect(failedFactsRecovery).toBe(true)
+    expect(requests.length).toBeGreaterThan(failedRequests)
+    expect(failedFocalRead).toBe(true)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     const passoires = nativeResources('habitat').find((resource) => resource.resource_id === 'part_passoires')!
     expect(wrapper.get(`[data-clef="${passoires.resource_id}"] .valeur-numerique`).text()).toBe('13')
@@ -1256,6 +1259,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       const bretagneLabel = contextesReference('22001').bretagne!.scope.label
       verifyCloudAndRank(bretagneMembers.length, bretagneLabel, bretagneMembers.map((member) => member.territoire))
       expect(requests.slice(requestCountBeforeRegion).flat().some((item) => item.target.kind === 'territory_cohort' &&
+        item.resource === readingResource.resource_id && item.target.type === 'commune' && !item.target.epci_id &&
+        !item.target.department_id) || requests.flat().some((item) => item.target.kind === 'territory_cohort' &&
         item.resource === readingResource.resource_id && item.target.type === 'commune' && !item.target.epci_id &&
         !item.target.department_id)).toBe(true)
       expect(selectedRanks.at(-1)).toEqual({ scopeCount: bretagneMembers.length, rankSize: bretagneMembers.length })
@@ -2024,9 +2029,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
             const measure = item.coordinates.measure[0]
             const data = comparisonsByMeasure.get(measure)
             if (!data) throw new Error(`Missing guarded fixed-comparison response for ${measure}`)
-            return { id: item.id, resource: item.resource, data }
+            return { id: item.id, resource: item.resource, status: 'available', data }
           })
-          return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }), { status: 200 })
+          return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results }), { status: 200 })
         }
         if (items.some((item) => item.resource === 'aedar_territorial_aggregate'
           && item.intent?.kind === 'facts')) {
@@ -2038,7 +2043,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
             && item.fields?.join(',') === 'measures.count_15_car_mean') {
             const captured = artifact.typedFactResponse
             return new Response(JSON.stringify({ ...captured, results: captured.results.map((result: Record<string, any>) => ({
-              ...result, id: item.id, resource: item.resource,
+              ...result, id: item.id, resource: item.resource, status: 'available',
             })) }), { status: 200 })
           }
           throw new Error('Unexpected AEDAR typed read in guarded bridge replay')
@@ -2160,18 +2165,16 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it('garde les comparaisons scalaires prêtes quand seul le nuage demandé manque, puis le rétablit depuis le réessai de la section', async () => {
     const requests: Array<Array<Record<string, any>>> = []
-    let comparisonSeen = false
     let cloudBroken = false
     const fixtureFetch = nativeSemanticFetch(requests)
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) !== '/api/resources/read-batch') return fixtureFetch(input, init)
       const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      if (items.some((item) => item.intent.kind === 'selected_comparison')) comparisonSeen = true
       const cloudItem = items.find((item) => item.resource === 'demographie_selected_reading' &&
         item.target?.kind === 'territory_cohort')
-      // Seule la lecture auxiliaire de la comparaison sélectionnée est mutilée :
-      // le nuage par défaut des faits reste intact et indépendant.
-      if (!cloudItem || !comparisonSeen || cloudBroken) return fixtureFetch(input, init)
+      // La seule lecture de nuage est mutilée une fois ; les autres lectures
+      // restent saines et indépendantes.
+      if (!cloudItem || cloudBroken) return fixtureFetch(input, init)
       const response = await fixtureFetch(input, init)
       cloudBroken = true
       // La lecture de cohorte répond, mais sans le contrat de nuage demandé :

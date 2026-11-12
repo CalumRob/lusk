@@ -83,20 +83,26 @@ function semanticFetch(
       return {
         id: item.id,
         resource: item.resource,
+        status: 'available',
         data: applyCoherentNetworkCapture(item, nativeReadFixture(item, resource)),
       }
     })
-    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }), { status: 200 })
+    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results }), { status: 200 })
   })
 }
 
 /**
- * #974 — the deployed contract distinguishes a declared-but-unpublished
- * resource (HTTP 503, per bounded group) from an unknown identity (404/422).
- * This stub applies one of those shapes to a batch that contains a gated
- * resource, so the production acquisition/UI path is exercised, not a mock.
+ * #974/#985 — the shared v2 contract distinguishes a declared-but-unpublished
+ * resource (one typed `publication_unavailable` outcome) from an unknown
+ * identity (a hard 404/422 whole-request failure). This stub applies one of
+ * those shapes to a batch that contains a gated resource, so the production
+ * acquisition/UI path is exercised, not a mock.
  */
 const GATED_PUBLICATIONS = ['bornes_recharge_1000', 'stations_service', 'stations_service_1000'] as const
+
+function familyForGated(resource: string): string {
+  return resource === 'bornes_recharge_1000' ? 'scalar' : 'ordered_series'
+}
 
 function gatedBatchFetch(
   gate: (items: Array<Record<string, any>>) => { status: number; detail: string } | null,
@@ -107,10 +113,18 @@ function gatedBatchFetch(
     if (url !== '/api/resources/read-batch') return base(input, init)
     const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
     const rejection = gate(items)
-    if (rejection) {
+    if (rejection && rejection.status !== 503) {
       return new Response(JSON.stringify({ detail: rejection.detail }), { status: rejection.status })
     }
-    return base(input, init)
+    const response = await base(input, init)
+    if (!rejection) return response
+    const body = await response.clone().json() as { results: Array<Record<string, any>> }
+    const gated = new Set(includesGated(items).map((item) => item.id))
+    return new Response(JSON.stringify({ ...body,
+      results: body.results.map((result) => gated.has(result.id)
+        ? { id: result.id, resource: result.resource, status: 'publication_unavailable',
+          reason: 'publication_absent', family: familyForGated(result.resource) }
+        : result) }), { status: 200 })
   })
 }
 

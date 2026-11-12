@@ -94,8 +94,19 @@ export function makeApiHandlers(deps) {
       const batchResults = async (batch) => (batch && typeof batch.json === 'function' ? (await batch.json()).results : batch?.results) ?? []
       if (themeItems.length) results.push(...await batchResults(deps.themeBatch({ items: themeItems })))
       if (aedarItems.length) results.push(...await batchResults(deps.aedarBatch({ items: aedarItems })))
+      // v2 correlation is ordered: one outcome per requested item, in request
+      // order. Fixtures that only fill some items keep the rest explicit.
+      const byId = new Map(results.map((result) => [result.id, result]))
+      const ordered = request.items.map((item) => {
+        const result = byId.get(item.id)
+        return result
+          ? { ...result, resource: result.resource ?? item.resource,
+            status: result.status ?? 'available' }
+          : { id: item.id, resource: item.resource, status: 'publication_unavailable',
+            reason: 'publication_absent', family: 'scalar' }
+      })
       await route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify({ contract: 'semantic-read-batch-v1', results }) })
+        body: JSON.stringify({ contract: 'semantic-read-batch-v2', results: ordered }) })
     },
     'retired-599': async (route) => {
       deps.readCalls.retiredThemeFactsRoutes += 1

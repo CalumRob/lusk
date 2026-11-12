@@ -111,7 +111,7 @@ function profileDescriptor(spec: ProfileSpec) {
 }
 
 function responseEnvelope(item: JsonRecord, data: JsonRecord) {
-  return { id: item.id, resource: item.resource, data }
+  return { id: item.id, resource: item.resource, status: 'available', data }
 }
 
 function createTransport(options: { failComparisons?: number; failProfileFacts?: number; failCatalogues?: number;
@@ -314,11 +314,11 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
       if (options.deferFirstProfile && profileFactsCalls.length === 1 && !deferredResponse) {
         return new Promise<Response>((resolve) => {
           deferredResponse = () => resolve(new Response(JSON.stringify({
-            contract: 'semantic-read-batch-v1', results,
+            contract: 'semantic-read-batch-v2', results,
           }), { status: 200 }))
         })
       }
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }), { status: 200 })
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results }), { status: 200 })
     }
     return new Response('unexpected request', { status: 404 })
   })

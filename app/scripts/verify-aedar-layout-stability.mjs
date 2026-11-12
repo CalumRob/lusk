@@ -59,12 +59,63 @@ try {
 
   // Same synthetic contract-valid AEDAR fixture shape as the existing browser
   // harness (verify-mobile-cahier-overflow.mjs) — not published facts.
-  function aedarFixture(items) {
+  const catalogueResources = (await nativeCatalogueResponse().json()).resources
+  const summaryDeclaration = catalogueResources
+    .find((resource) => resource.resource_id === 'aedar_territory_summary')
+  const aggregateDeclaration = catalogueResources
+    .find((resource) => resource.resource_id === 'aedar_territorial_aggregate')
+  assert(summaryDeclaration?.measure_facets && aggregateDeclaration?.measure_facets,
+    'AEDAR declarations must publish their measure facets')
+  const summaryMeasureKeys = Object.keys(summaryDeclaration.measure_facets)
+  const aedarContentVersion = 'fixture-985-aedar-v1'
+  const aedarReferenceVersion = 'fixture-985-territories-v1'
+  const aedarSummaryVersion = 'fixture-985-aedar-summary-v1'
+  const fixtureAttribution = 'Synthetic browser fixture; not published AEDAR facts'
+  const summaryReading = (measure) => ({
+    measure, value: 0.5, status: 'available', n_typequ: 235, n_addresses: 100,
+    n_observed: 100, coverage_status: 'covered', statistic: 'direct',
+    source_id: aedarContract.source_id, vintage_id: '2026-v1',
+    source_url: 'https://example.test/aedar-fixture', licence: 'Licence Ouverte 2.0',
+    attribution: fixtureAttribution, reference_date: '2026-01-01',
+    publication_date: '2026-10-22',
+  })
+  const aggregateComparison = (item) => {
+    const selected = item.intent.kind === 'selected_comparison'
+    const members = selected
+      ? item.intent.members.map((member) => ({ type: member.type, id: member.id }))
+      : null
+    const rows = item.coordinates.measure.map((measure) => ({
+      typequ: null, measure,
+      comparison_context: selected ? 'selected_comparison' : item.intent.context,
+      statistic: selected ? 'pooled' : 'direct',
+      group_value: 0.5, group_n_addresses: 100, group_n_observed: 100,
+      group_coverage_status: 'covered',
+      direction: aggregateDeclaration.measure_facets[measure].direction,
+      source_id: aedarContract.source_id, vintage_id: '2026-v1',
+      reference_date: '2026-01-01', publication_date: '2026-10-22',
+      rank: null, rank_size: null, rank_ties: null,
+    }))
     return {
-      contract: 'semantic-read-batch-v1',
-      results: items.map((item) => ({
-        id: item.id,
-        data: {
+      resource: item.resource, target: item.target,
+      content_version: aedarContentVersion, aedar_content_version: aedarContentVersion,
+      reference_content_version: aedarReferenceVersion,
+      summary_content_version: aedarSummaryVersion,
+      ...(selected
+        ? { comparisons: rows, scope: { kind: 'explicit_selection', member_count: members.length },
+          selection: members }
+        : { comparison: rows[0] }),
+    }
+  }
+  function aedarFixture(items) {
+    const typequItems = items.filter((item) =>
+      Array.isArray(item.coordinates?.typequ) && item.intent?.kind === 'facts')
+    const otherItems = items.filter((item) => !typequItems.includes(item))
+    return {
+      contract: 'semantic-read-batch-v2',
+      results: [
+        ...typequItems.map((item) => ({
+          id: item.id,
+          data: {
           resource: item.resource,
           target: item.target,
           territory: { territory_type: item.target.type, territory_id: item.target.id },
@@ -115,6 +166,16 @@ try {
           }),
         },
       })),
+        ...otherItems.map((item) => ({ id: item.id,
+          data: item.resource === 'aedar_territory_summary'
+            ? { resource: item.resource, target: item.target,
+              territory: { territory_type: item.target.type, territory_id: item.target.id },
+              summary_content_version: aedarSummaryVersion,
+              aedar_content_version: aedarContentVersion,
+              reference_content_version: aedarReferenceVersion,
+              readings: summaryMeasureKeys.map(summaryReading) }
+            : aggregateComparison(item) })),
+      ],
     }
   }
 
@@ -125,6 +186,16 @@ try {
   const focalGate = new Promise((resolvePromise) => { releaseFocalAedar = resolvePromise })
   let gateOpen = false
   const readCalls = { focalAedarBatches: 0, referenceAedarBatches: 0, themeBatches: 0, otherApi: 0 }
+  const v2Envelope = (items, results) => {
+    const byId = new Map(results.map((result) => [result.id, result]))
+    return { contract: 'semantic-read-batch-v2', results: items.map((item) => {
+      const result = byId.get(item.id)
+      return result
+        ? { ...result, resource: result.resource ?? item.resource, status: result.status ?? 'available' }
+        : { id: item.id, resource: item.resource, status: 'publication_unavailable',
+          reason: 'publication_absent', family: 'scalar' }
+    }) }
+  }
 
   browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) })
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
@@ -144,8 +215,11 @@ try {
   })
   await page.route('**/api/resources/read-batch', async (route) => {
     const request = route.request().postDataJSON()
-    const aedarItems = request.items.filter((item) => Array.isArray(item.coordinates?.typequ))
-    const themeItems = request.items.filter((item) => !Array.isArray(item.coordinates?.typequ))
+    // Classify by the declared producer resource identity, never by one
+    // coordinate: AEDAR summary and aggregate-comparison reads carry only
+    // `measure` and must not fall into the theme fixture.
+    const aedarItems = request.items.filter((item) => String(item.resource).startsWith('aedar_'))
+    const themeItems = request.items.filter((item) => !String(item.resource).startsWith('aedar_'))
     const focalItems = aedarItems.filter((item) => item.target?.kind === 'territory' && item.target?.id === FOCAL_ID)
     const referenceItems = aedarItems.filter((item) => !focalItems.includes(item))
     if (themeItems.length) {
@@ -162,17 +236,17 @@ try {
         if (!gateOpen) await focalGate // hold the focal hydration until released
         results.push(...aedarFixture(focalItems).results)
       }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ contract: 'semantic-read-batch-v1', results }) })
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(v2Envelope(request.items, results)) })
       return
     }
     if (referenceItems.length) {
       readCalls.referenceAedarBatches += 1
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(aedarFixture(referenceItems)) })
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(v2Envelope(referenceItems, aedarFixture(referenceItems).results)) })
       return
     }
     readCalls.focalAedarBatches += 1
     if (!gateOpen) await focalGate
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(aedarFixture(focalItems)) })
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(v2Envelope(focalItems, aedarFixture(focalItems).results)) })
   })
 
   await page.goto(`${baseUrl}territoire/commune/${FOCAL_ID}?theme=mobilite`, { waitUntil: 'domcontentloaded' })

@@ -12,6 +12,7 @@ import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { ThemeMetadata } from '@/payload/types'
 import { acquireThemeComparison, acquireThemeFacts } from '@/payload/themeAcquisition'
+import { invalidateSemanticReadsForTarget } from '@/payload/semanticResourceClient'
 import {
   histoiresMobiliteFixture,
   metadonneesThemesFixtures,
@@ -59,18 +60,19 @@ function semanticFetch(state: FailureState) {
     const { items } = JSON.parse(String(init?.body)) as {
       items: Array<Record<string, any>>
     }
-    const failed = items.some((item) => item.intent?.kind === 'facts'
-      ? state.facts.has(item.resource)
-      : state.comparisons.has(item.resource))
-    if (failed) {
-      return new Response(JSON.stringify({ detail: 'Declared publication is unavailable' }), { status: 503 })
-    }
     const results = items.map((item) => {
+      const failed = item.intent?.kind === 'facts'
+        ? state.facts.has(item.resource)
+        : state.comparisons.has(item.resource)
+      if (failed) {
+        return { id: item.id, resource: item.resource, status: 'publication_unavailable',
+          reason: 'publication_absent', family: 'ordered_series' }
+      }
       const resource = catalogue.find((candidate) => candidate.resource_id === item.resource)
       if (!resource) throw new Error(`Unknown fixture resource ${item.resource}`)
-      return { id: item.id, resource: item.resource, data: nativeReadFixture(item, resource) }
+      return { id: item.id, resource: item.resource, status: 'available', data: nativeReadFixture(item, resource) }
     })
-    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }), { status: 200 })
+    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results }), { status: 200 })
   })
 }
 
@@ -248,6 +250,9 @@ describe('Mobilité page 3 — per-resource publication failures', () => {
 
     state.facts.clear()
     state.comparisons.clear()
+    // A settled absence is not re-probed automatically: the explicit retry
+    // invalidates that territory's item generations first.
+    invalidateSemanticReadsForTarget('commune', '35238')
     const recovered = await resolvePage3()
     const recoveredWrapper = await mountPage3(recovered.content)
     const section = recoveredWrapper.get('[data-section="visiter-la-bretagne"]')
