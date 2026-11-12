@@ -1871,6 +1871,93 @@ try {
         await captureSurface(page.locator('[data-column="ravitaillement"] .mobilite-ratio-scalar'),
           'issue974-page2-ratio-refuelling-390.png')
       }
+      // #976 — the owner's two review surfaces: the recalibrated captions and
+      // the charging category's distinct ink, captured from the real route.
+      await captureSurface(page.locator('[data-column="stationnement"] .mobilite-ratio-scalar'),
+        `issue976-page2-ratio-parking-${width}.png`)
+      await captureSurface(page.locator('[data-column="ravitaillement"] .mobilite-ratio-scalar'),
+        `issue976-page2-ratio-refuelling-${width}.png`)
+      await captureSurface(page.locator('[data-column="ravitaillement"] .mobilite-section-figure'),
+        `issue976-page2-refuelling-figure-${width}.png`)
+    }
+
+    // #976 — the page-2 ratio captions must wear the exact AEDAR scalar caption
+    // role, not a lookalike: compare the real computed typography with the AEDAR
+    // car-overview scalar caption on the same route. The charging bar, its
+    // legend key and its tooltip marker must share the app brand ink, while the
+    // fuel-station category keeps the theme ink it already had.
+    if (width === 390 || width === 1440) {
+      const captionIdentity = await page.evaluate(() => {
+        const styleOf = (element) => {
+          const style = getComputedStyle(element)
+          return {
+            fontFamily: style.fontFamily,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+            lineHeight: style.lineHeight,
+            letterSpacing: style.letterSpacing,
+            textTransform: style.textTransform,
+          }
+        }
+        const aedarCaption = document.querySelector(
+          '#section-aedar-car-overview .aedar-car-overview-scalars .cahier-figure-scalar-label')
+        const ratioCaptions = [...document.querySelectorAll('.mobilite-ratio-scalar .cahier-figure-scalar-label')]
+        const column = document.querySelector(
+          '.mobilite-section--stationnement-ravitaillement [data-column="ravitaillement"]')
+        const legendItem = (label) => [...(column?.querySelectorAll('.cahier-figure-legend-item') ?? [])]
+          .find((item) => item.querySelector('.cahier-figure-legend-label')?.textContent === label)
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--brand-500)'
+        document.body.append(probe)
+        const brand = getComputedStyle(probe).color
+        probe.remove()
+        const fillOf = (element) => element ? getComputedStyle(element).fill : null
+        const inkOf = (element) => element ? getComputedStyle(element).color : null
+        const bar = column?.querySelector('rect[data-category="charging"]')
+        return {
+          aedar: aedarCaption ? { ...styleOf(aedarCaption), text: aedarCaption.textContent } : null,
+          ratios: ratioCaptions.map((caption) => ({ ...styleOf(caption), text: caption.textContent })),
+          brand,
+          chargingBar: fillOf(bar),
+          fuelBar: fillOf(column?.querySelector('rect[data-category="fuel-stations"]')),
+          chargingLegend: inkOf(legendItem('Bornes de recharge')?.querySelector('.cahier-figure-legend-mark')),
+          fuelLegend: inkOf(legendItem('Stations-service')?.querySelector('.cahier-figure-legend-mark')),
+          aria: column?.querySelector('svg[role="img"]')?.getAttribute('aria-label') ?? null,
+        }
+      })
+      assert(captionIdentity.aedar, `AEDAR scalar caption must render at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.equal(captionIdentity.ratios.length, 2,
+        `Both page-2 ratio captions must render at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      for (const caption of captionIdentity.ratios) {
+        assert.equal(caption.textTransform, 'uppercase',
+          `Page-2 ratio caption must render uppercase at ${width}px: ${JSON.stringify(caption)}`)
+        for (const property of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textTransform']) {
+          assert.equal(caption[property], captionIdentity.aedar[property],
+            `Page-2 ratio caption ${property} must match the AEDAR scalar caption at ${width}px: ${JSON.stringify({ caption, aedar: captionIdentity.aedar })}`)
+        }
+      }
+      assert.equal(captionIdentity.chargingBar, captionIdentity.brand,
+        `Charging bar must use the app brand ink at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.equal(captionIdentity.chargingLegend, captionIdentity.brand,
+        `Charging legend key must use the app brand ink at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.equal(captionIdentity.fuelBar, captionIdentity.fuelLegend,
+        `Fuel-station bar and legend key must share one ink at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.notEqual(captionIdentity.fuelBar, captionIdentity.brand,
+        `Fuel stations must stay distinct from charging at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert(captionIdentity.aria?.includes('Bornes de recharge') && captionIdentity.aria?.includes('Stations-service'),
+        `The factual category names must stay in the accessible reading at ${width}px: ${JSON.stringify(captionIdentity)}`)
+
+      const chargingHitbox = page.locator(
+        '.mobilite-section--stationnement-ravitaillement [data-column="ravitaillement"] .mobilite-comparison-bars__hitbox').first()
+      await chargingHitbox.focus()
+      const tooltipMarker = await page.evaluate(() => {
+        const marker = document.querySelector(
+          '.mobilite-section--stationnement-ravitaillement [data-column="ravitaillement"] .mobilite-comparison-bars__tooltip .cahier-figure-tooltip-marker')
+        return marker ? getComputedStyle(marker).backgroundColor : null
+      })
+      await chargingHitbox.press('Escape')
+      assert.equal(tooltipMarker, captionIdentity.brand,
+        `Charging tooltip marker must use the app brand ink at ${width}px: ${JSON.stringify({ tooltipMarker, brand: captionIdentity.brand })}`)
     }
 
     let plainMarginLayout = null
