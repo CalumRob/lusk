@@ -59,10 +59,15 @@ import type {
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
-import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
+import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, producerCatalogue,
+  ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
+import type { AcquiredTheme, ThemeFactsDemand, ThemeKey, ThemeResponse, ThemeSelectionMember } from '@/payload/themeAcquisition'
+import { AcquisitionDemandScheduler } from '@/payload/acquisitionDemand'
+import { chapitreDemande, chapitreDemandeDepuisAncre, chapitreNumeriqueParDefaut,
+  chapitresDemandes } from '@/fiche/content/demandInventory'
+import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
   themeFactsRowsFromSemantic, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
-import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { SelectedTrajectoryComparison, TerritoryFacts } from '@/fiche/content/territoryFacts'
 import { echelleContexte } from '@/fiche/echelleContexte'
@@ -206,9 +211,134 @@ watch([() => referenceTerritoire.reference.value, selection, typeRoute, idRoute,
     }
   }, { immediate: true })
 const cacheAcquisition = new ThemeAcquisitionCache(
-  (theme, key) => acquireThemeFacts(key!.type, key!.id, theme),
-  (selection, theme, key, coherence) => acquireThemeComparison(key!.type, key!.id, theme, selection, coherence),
+  (theme, key, demand) => acquireThemeFacts(key!.type, key!.id, theme, demand),
+  (selection, theme, key, coherence, indicators) =>
+    acquireThemeComparison(key!.type, key!.id, theme, selection, coherence, indicators),
 )
+
+/**
+ * #986 — the reader's requested chapter is critical, its sibling chapters are
+ * deferred and unrelated themes idle. The shared client still owns outcome
+ * validation, caching and the two-active-read bound; this gate only decides
+ * which background work may start, and drops it when a critical demand appears.
+ */
+const demandeScheduler = new AcquisitionDemandScheduler()
+let catalogueParNiveau: Promise<SemanticResourceDeclaration[]> | null = null
+let catalogueParNiveauFetcher: typeof fetch | null = null
+async function declarationsPourNiveau(type: string): Promise<SemanticResourceDeclaration[]> {
+  // The producer catalogue is the only resource registry: the app never keeps a
+  // second list of numerical resources.
+  if (catalogueParNiveauFetcher !== fetch) {
+    catalogueParNiveauFetcher = fetch
+    catalogueParNiveau = null
+  }
+  if (!catalogueParNiveau) catalogueParNiveau = producerCatalogue()
+  return (await catalogueParNiveau).filter((declaration) =>
+    (declaration.allowed_levels as string[]).includes(type))
+}
+async function demandeChapitreNiveau(type: string, theme: ThemeKey, chapterKey: string,
+  selection: readonly ThemeSelectionMember[] | null | undefined): Promise<ThemeFactsDemand | undefined> {
+  const declarations = await declarationsPourNiveau(type)
+  const chapter = chapitreDemande(theme, chapterKey, declarations)
+  if (!chapter) return undefined
+  return { indicators: chapter.indicators, selection }
+}
+const chapitresDemandesMobilite = (declarations: SemanticResourceDeclaration[]) =>
+  chapitresDemandes('mobilite', declarations)
+
+/**
+ * Non-mobilite themes have no chapter split: their whole theme is the requested
+ * chapter, and the comparison the header displays is read by the comparison pass
+ * (`select`) exactly once — never a fixed default fetched then discarded.
+ */
+function demandeThemeActif(): ThemeFactsDemand {
+  return { selection: null }
+}
+
+/** Sibling chapters of the requested one: deferred, read once, after first useful. */
+const chapitreComparaisonIndisponible = ref<string | null>(null)
+/** Chapter demands already planned for this territory/selection: planning is idempotent. */
+const chapitresPlanifies = new Set<string>()
+
+async function relaunchChapitreComparaison(type: string, code: string): Promise<void> {
+  const chapterKey = chapitreComparaisonIndisponible.value
+  if (!chapterKey) return
+  const selectionActive = membresAcquisition.value
+  if (selectionActive === null) return
+  const declarations = await declarationsPourNiveau(type)
+  const chapter = chapitreDemande('mobilite', chapterKey, declarations)
+  if (!chapter) return
+  const merged = await cacheAcquisition.recompare(type, code, 'mobilite', selectionActive, chapter.indicators)
+  chapitreComparaisonIndisponible.value = null
+  if (!productionMobilite.value || !payloadPourRendu.value) return
+  mobilityComparisonStatus.value = 'ready'
+  appliquerAcquisitionMobilite(merged, selectionActive)
+}
+
+async function planifierChapitresDifferes(type: string, code: string, critique: string | undefined): Promise<void> {
+  const declarations = await declarationsPourNiveau(type)
+  const selection = membresAcquisition.value === null ? null : membresAcquisition.value
+  for (const chapter of chapitresDemandesMobilite(declarations)) {
+    if (chapter.key === critique || !chapter.indicators.length) continue
+    const planKey = `${type}/${code}/${chapter.key}/${JSON.stringify(selection ?? null)}`
+    if (chapitresPlanifies.has(planKey)) continue
+    chapitresPlanifies.add(planKey)
+    demandeScheduler.enqueue({ key: `chapter:${chapter.key}`, priority: 'deferred', run: async () => {
+      const demand = await demandeChapitreNiveau(type, 'mobilite', chapter.key, selection)
+      if (!demand) return
+      let merged: AcquiredTheme<ThemeResponse>
+      let comparaisonEchouee = false
+      try {
+        merged = await cacheAcquisition.chapter(type, code, 'mobilite', demand)
+      } catch {
+        // A hard failure of the deferred chapter never reaches the requested
+        // page: its facts are still read so the chapter renders honestly, and
+        // the section's own retry re-reads only its comparisons.
+        try {
+          merged = await cacheAcquisition.chapter(type, code, 'mobilite', { ...demand, selection: null })
+        } catch { return }
+        comparaisonEchouee = true
+      }
+      if (!productionMobilite.value || !payloadPourRendu.value) return
+      const courante = membresAcquisition.value
+      // A late chapter never applies a comparison the header no longer asks for.
+      if (JSON.stringify(courante ?? null) !== JSON.stringify(selection ?? null)) return
+      try {
+        appliquerAcquisitionMobilite(merged, courante)
+      } catch (error) {
+        return
+      }
+      const comparables = declarations.filter((declaration) =>
+        chapter.indicators.includes(declaration.indicator_id) &&
+        declaration.target_kinds.includes('territory') &&
+        declaration.intents.includes('selected_comparison'))
+      const key = cleSelectionComparaison(courante ?? undefined)
+      const reads = merged.comparisons.get(key)?.comparison_reads ?? []
+      const manquantes = comparables.some((declaration) =>
+        !reads.some((read) => read.resource === declaration.resource_id))
+      if (comparaisonEchouee || manquantes) {
+        chapitreComparaisonIndisponible.value = chapter.key
+        mobilityComparisonStatus.value = 'error'
+      } else chapitreComparaisonIndisponible.value = null
+    } })
+  }
+}
+
+/**
+ * Unrelated themes stay IDLE: facts only, one coalesced batch per theme, never
+ * before the requested chapter is useful, and dropped when a new critical
+ * demand appears. Counts as the documented idle budget of the scheduler.
+ */
+function planifierRechauffementThemes(type: string, code: string, themeActif: Theme): void {
+  for (const autreTheme of THEMES_ACQUISITION_API) {
+    if (autreTheme === themeActif) continue
+    demandeScheduler.enqueue({ key: `theme:${autreTheme}`, priority: 'idle', run: async () => {
+      await cacheAcquisition.get(type, code, autreTheme,
+        { selection: null, auxiliary: false, priority: 'background' }).catch(() => undefined)
+    } })
+  }
+}
+
 const faitsThemeRows = ref<Indicateur[] | null>(null)
 const histoiresThemeRows = ref<Histoire[] | null>(null)
 const preuvesThemeIndisponibles = ref(false)
@@ -481,9 +611,10 @@ const ongletsFiche: readonly Theme[] = [
 ]
 
 
-/** Le thème actif est prioritaire ; après son acquisition — réussie ou non —
- * les autres thèmes du registre se réchauffent en arrière-plan. Le rendu ne
- * lit que l'actif. */
+/** Le thème actif est prioritaire ; après sa première réponse utile — réussie
+ * ou non — le chapitre demandé puis les autres thèmes du registre se
+ * réchauffent en arrière-plan, sous la porte de demande #986. Le rendu ne lit
+ * que l'actif. */
 watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value, retryAcquisition],
   async ([reference, theme, code], _old, onCleanup) => {
     if (!theme || !reference || !typeValide.value) {
@@ -496,20 +627,15 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
       statutComparaison.value = 'idle'
       statutNuageComparaison.value = 'idle'
       cleFaitsPrets = null
+      demandeScheduler.reset()
       return
     }
     // Mobilité shares the facts cache, but its production cahier owns its
-    // rendered status and retries. Keep the cache warm without mutating the
-    // generic theme renderer state.
+    // rendered status and retries (and the chapter demand). The generic watcher
+    // only resets the demand gate: the cahier's own watcher performs the read.
     if (theme === 'mobilite') {
-      const request = ++sequenceAcquisition
-      let cancelled = false
-      onCleanup(() => { cancelled = true })
-      try { await cacheAcquisition.get(typeRoute.value, code, 'mobilite') } catch { /* dedicated cahier reports failure */ }
-      if (cancelled || request !== sequenceAcquisition) return
-      for (const autreTheme of THEMES_ACQUISITION_API) {
-        if (autreTheme !== 'mobilite') void cacheAcquisition.get(typeRoute.value, code, autreTheme).catch(() => {})
-      }
+      demandeScheduler.reset()
+      demandeScheduler.critical()
       return
     }
     // Revisite déjà acquise (même territoire, même thème) : les faits restent,
@@ -519,6 +645,8 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
     const request = ++sequenceAcquisition
     let cancelled = false
     onCleanup(() => { cancelled = true })
+    demandeScheduler.reset()
+    demandeScheduler.critical()
     faitsThemeRows.value = null
     histoiresThemeRows.value = null
     preuvesThemeIndisponibles.value = false
@@ -528,23 +656,23 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
     statutComparaison.value = 'idle'
     statutNuageComparaison.value = 'idle'
     try {
-      const acquired = await cacheAcquisition.get(typeRoute.value, code, themeActif)
+      const acquired = await cacheAcquisition.get(typeRoute.value, code, themeActif,
+        demandeThemeActif())
       if (cancelled || request !== sequenceAcquisition) return
       const target = reference.find((item) => item.territoire === code)
       if (!target || target.type !== typeRoute.value) throw new Error('Territoire focal absent')
       const rows = themeFactsRowsFromSemantic(themeActif, acquired.focal, { territoire: code, type: target.type }, {
         epci: target.epci, region: reference.find((item) => item.type === 'region')?.territoire ?? null,
       }, payloadReference.value?.themeMetadata?.[themeActif])
-       // #860 — le défaut déclaré niché (« omitted ») ne sert que les niveaux
-       // dont il est le contexte (EPCI/département/région). Une commune lit son
-       // défaut niveau-natif via la passe selected_comparison du watcher dédié.
+       // #986 — the comparison shown is the one the header resolved: the same
+       // intent the focal facts were read with, never a discarded default.
        const membresActifs = membresAcquisition.value
-       const comparison = membresActifs === undefined
-         ? semanticComparisonForTheme(acquired.comparisons.get('omitted'), {
+       const comparison = membresActifs === null
+         ? null
+         : semanticComparisonForTheme(acquired.comparisons.get(cleSelectionComparaison(membresActifs)), {
            target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
            territories: [...reference],
          }, acquired.focal.resource_reads)
-         : null
         const comparisonScopeLabel = comparison ? libellePorteeSemantic(comparison, target) : null
         faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs,
           comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
@@ -568,20 +696,12 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
         statutAcquisition.value = 'error'
       }
     }
-    // Réchauffage d'arrière-plan (décision propriétaire 2026-10-07) : le thème
-    // actif garde la priorité — sa requête est déjà partie — puis tout le
-    // registre se réchauffe pour ce territoire, SANS jamais toucher l'état de
-    // rendu des thèmes inactifs. Il part aussi quand l'acquisition active
-    // échoue : l'onglet défaillant expose SA propre erreur réessayable à sa
-    // visite, jamais les autres. Mobilité reste au prototype E tant que
-    // celui-ci en est propriétaire. Le cache isole les entrées par
-    // (territoire, thème) : une réponse tardive d'un ancien territoire ne peut
-    // se fondre nulle part ailleurs que dans sa propre clé.
+    // #986 — background work only starts once the requested theme is useful,
+    // and never competes with it: one coalesced idle batch per unrelated theme,
+    // facts only (its comparison is read when that tab is actually requested).
     if (!cancelled && request === sequenceAcquisition) {
-      for (const autreTheme of THEMES_ACQUISITION_API) {
-        if (autreTheme === themeActif) continue
-        void cacheAcquisition.get(typeRoute.value, code, autreTheme).catch(() => {})
-      }
+      demandeScheduler.unlockIdle()
+      planifierRechauffementThemes(typeRoute.value, code, themeActif)
     }
   }, { immediate: true })
 
@@ -658,6 +778,14 @@ function retryAcquisitionTheme(): void {
 }
 function retryThemeComparison(): void {
   const theme = selection.value
+  // A deferred Mobilite chapter that could not serve its comparison retries its
+  // OWN comparison read: the requested chapter's facts and comparisons are never
+  // re-read.
+  if (theme === 'mobilite' && chapitreComparaisonIndisponible.value) {
+    void relaunchChapitreComparaison(typeRoute.value, idRoute.value).catch(() => {})
+    retryThemeComparaison.value++
+    return
+  }
   // Relance la SEULE acquisition de comparaison propriétaire : une réponse
   // réussie peut avoir omis le nuage demandé, donc l'entrée en cache doit
   // tomber sans invalider les faits focaux ni les sélections voisines.
@@ -711,6 +839,43 @@ let lastFocalModel: object | null = null
 let lastComparisonKey: string | null = null
 let lastComparisonModel: object | null = null
 
+/**
+ * #986 — apply one Mobilite acquisition to the cahier model. The focal facts
+ * may arrive chapter by chapter (critical page-2 demand, then the deferred
+ * page-3 chapter); the comparison always comes from the entry's own key, which
+ * is the header's resolved selection — never the producer default when the
+ * header carries a custom/preset group.
+ */
+function appliquerAcquisitionMobilite(acquired: AcquiredTheme<ThemeResponse>,
+  selection: readonly ThemeSelectionMember[] | null | undefined): void {
+  const data = acquired.focal
+  if (!payloadPourRendu.value || !isRecord(data)) return
+  const code = idRoute.value
+  const presentation = toRaw(payloadPourRendu.value)
+  const context = resolutionSelection.value?.contexte ?? undefined
+  let combined = mobilityFactsFromThemeApi(presentation, code, data)
+  const comparison = selection === null
+    ? undefined : acquired.comparisons.get(cleSelectionComparaison(selection))
+  combined = comparison
+    ? applyThemeComparisonApiFacts(combined, comparison, context, selection ?? undefined)
+    : clearThemeComparisonApiFacts(combined)
+  mobilityFocal.value = combined
+  mobilityComparisonFacts.value = combined
+  mobilityCurveComparison.value = combined.mobility.selectedTrajectoryComparison ?? null
+  mobilityComparisonStatus.value = data.comparison_error ? 'error' : 'ready'
+  statutFaitsMobilite.value = 'ready'
+}
+
+/** The chapter the reader asked for (route anchor), else the theme's default numeric chapter. */
+async function chapitreDemandeMobilite(type: string): Promise<string | undefined> {
+  const declarations = await declarationsPourNiveau(type)
+  const chapters = chapitresDemandesMobilite(declarations)
+  const anchor = chapitreDemandeDepuisAncre('mobilite', route.hash)
+  const anchored = anchor ? chapters.find((chapter) => chapter.key === anchor) : undefined
+  if (anchored && anchored.indicators.length > anchored.namedReferences.length) return anchored.key
+  return chapitreNumeriqueParDefaut('mobilite', declarations)?.key
+}
+
 watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
   () => referenceTerritoire.reference.value], (_values, _oldValues, onCleanup) => {
   if (!productionMobilite.value) return
@@ -739,27 +904,29 @@ watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
     if (!settled) { lastFocalKey = null; lastFocalModel = null }
   })
   const code = idRoute.value
-  void cacheAcquisition.get(typeRoute.value, code, 'mobilite').then((acquired) => {
-    const data = acquired.focal
-    if (request !== focalRequestSequence || !payloadPourRendu.value || !isRecord(data)) return
-    const presentation = toRaw(payloadPourRendu.value)
-    // #860 — le défaut niveau-natif d'une commune (son EPCI, ou Bretagne) n'est
-    // plus la densité niché : la commune passe par la sélection explicite du
-    // watcher de comparaison ci-dessous.
-    const initialContext = resolutionSelection.value?.contexte ?? undefined
-    let combined = mobilityFactsFromThemeApi(presentation, code, data)
-    const initialComparison = membresAcquisition.value === undefined
-      ? acquired.comparisons.get('omitted')
+  const type = typeRoute.value
+  chapitresPlanifies.clear()
+  demandeScheduler.reset()
+  demandeScheduler.critical()
+  void (async () => {
+    const critique = await chapitreDemandeMobilite(type)
+    const selectionActive = membresAcquisition.value
+    const demand = critique
+      ? await demandeChapitreNiveau(type, 'mobilite', critique, selectionActive)
       : undefined
-    combined = initialComparison
-      ? applyThemeComparisonApiFacts(combined, initialComparison, initialContext)
-      : clearThemeComparisonApiFacts(combined)
-    mobilityFocal.value = combined
-    mobilityComparisonFacts.value = combined
-    mobilityCurveComparison.value = combined.mobility.selectedTrajectoryComparison ?? null
-    mobilityComparisonStatus.value = data.comparison_error ? 'error' : 'ready'
-    statutFaitsMobilite.value = 'ready'
+    const acquired = await cacheAcquisition.get(type, code, 'mobilite', demand)
+    return { acquired, critique }
+  })().then(({ acquired, critique }) => {
+    if (request !== focalRequestSequence || controller.signal.aborted || !payloadPourRendu.value) return
+    appliquerAcquisitionMobilite(acquired, membresAcquisition.value)
     settled = true
+    // The requested chapter is useful: only now may its sibling chapters and
+    // unrelated themes start, and never before it.
+    demandeScheduler.unlockIdle()
+    void (async () => {
+      await planifierChapitresDifferes(type, code, critique)
+      planifierRechauffementThemes(type, code, 'mobilite')
+    })()
   }).catch(() => {
     settled = true
     if (request === focalRequestSequence) {
@@ -822,6 +989,9 @@ watch([productionMobilite, typeRoute, idRoute, () => membresAcquisition.value,
        mobilityComparisonFacts.value = updated
        mobilityCurveComparison.value = updated.mobility.selectedTrajectoryComparison ?? null
       mobilityComparisonStatus.value = isRecord(data) && data.comparison_error === true ? 'error' : 'ready'
+      // A deferred chapter whose own comparison is still unpublished keeps its
+      // explicit retry surface: it never hides behind the requested chapter.
+      if (chapitreComparaisonIndisponible.value) mobilityComparisonStatus.value = 'error'
       settled = true
     }).catch((error: unknown) => {
       settled = true

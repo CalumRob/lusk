@@ -445,12 +445,15 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources')).toBe(true)
     expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources/read-batch'),
       `fetch calls: ${JSON.stringify(fetchApi.mock.calls.map(([url]) => String(url)))}`).toBe(true)
-    const expectedReads = programmeResources.flatMap((resource) => resource.target_kinds.includes('territory') &&
-      resource.intents.includes('facts')
-      ? [[resource.resource_id, 'facts'], ...(resource.intents.includes('fixed_comparison')
-        ? [[resource.resource_id, 'fixed_comparison']] : [])]
-      : [])
-    expect(requests[0]?.map((item) => [item.resource, item.intent.kind])).toEqual(expectedReads)
+    const expectedFacts = programmeResources.filter((resource) => resource.target_kinds.includes('territory') &&
+      resource.intents.includes('facts')).map((resource) => [resource.resource_id, 'facts'])
+    const expectedComparisons = programmeResources.filter((resource) => resource.target_kinds.includes('territory') &&
+      resource.intents.includes('selected_comparison')).map((resource) => [resource.resource_id, 'selected_comparison'])
+    const programmeIds = new Set(programmeResources.map((resource) => resource.resource_id))
+    const programmeBatches = requests.filter((items) =>
+      items.length > 0 && items.every((item) => programmeIds.has(item.resource)))
+    expect(programmeBatches[0]?.map((item) => [item.resource, item.intent.kind])).toEqual(expectedFacts)
+    expect(programmeBatches[1]?.map((item) => [item.resource, item.intent.kind])).toEqual(expectedComparisons)
     expect(requests[0]?.every((item) => item.target.kind === 'territory' && item.target.id === '22001')).toBe(true)
     const text = wrapper.get('[role="tabpanel"]').text()
     const alert = wrapper.find('[role="alert"]')
@@ -570,7 +573,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       .map((candidate) => ({ territory_type: 'commune' as const, territory_id: candidate.territoire }))
       .sort((a, b) => a.territory_id.localeCompare(b.territory_id))
     expect(requests.map((items) => items.map((item) => item.intent.kind))).toEqual([
-      ['facts', 'fixed_comparison'], ['selected_comparison'],
+      ['facts'], ['selected_comparison'],
     ])
     expect(requests[1]![0]!.intent.members).toEqual(membresDefaut.map((m) => ({ type: m.territory_type, id: m.territory_id })))
 
@@ -686,7 +689,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const epciTyped = typedOf(resolvedMembers)
     const bretagneTyped = typedOf(resolvedBretagne)
     expect(requests).toHaveLength(2)
-    expect(requests[0]!.map((item) => item.intent.kind)).toEqual(['facts', 'fixed_comparison'])
+    expect(requests[0]!.map((item) => item.intent.kind)).toEqual(['facts'])
     const defaultBatch = requests[1]!
     expect(defaultBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
     expect(defaultBatch[0]!.intent.members).toEqual(epciTyped)
@@ -902,7 +905,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       item.target.kind === 'named_reference' && namedResource.target_ids.includes(item.target.id))).toBe(true)
     expect(mobilityReads.some((item) => item.resource === curveResource.resource_id && item.intent.kind === 'facts')).toBe(true)
 
-    expect(requestsByTheme()).toEqual(warmedCounts)
+    // Navigating between the (already warmed) tabs re-reads no focal facts. The
+    // one extra mobilite facts batch is its DEFERRED page-3 chapter demand.
+    const afterNavigation = requestsByTheme()
+    for (const theme of ['programmes', 'habitat', 'demographie', 'milieux', 'economie'] as const) {
+      expect(afterNavigation[theme]).toBe(warmedCounts[theme])
+    }
+    expect(afterNavigation.mobilite).toBeLessThanOrEqual(warmedCounts.mobilite + 1)
     wrapper.unmount()
   }, 20_000)
 
@@ -1326,13 +1335,14 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('2025')
     expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('230')
     expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'facts')).toBe(true)
-    expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'fixed_comparison')).toBe(true)
+    expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'selected_comparison')).toBe(true)
     wrapper.unmount()
   }, 20_000)
 
   it('does not attach the initial fixed-group price rank to a scope selected while facts are pending', async () => {
     const initialPending: Array<{ release: () => void; released: boolean }> = []
     const selectedPending: Array<{ release: () => void; released: boolean }> = []
+    let comparisonBatches = 0
     const habitatResources = new Set(nativeResources('habitat').map((resource) => resource.resource_id))
     const makeResponse = (items: Array<Record<string, any>>) => nativeBatchResponse(items, (item, resource) => {
       const data = nativeReadFixture(item, resource)
@@ -1358,8 +1368,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
         const targetThemeReads = items.some((item) => habitatResources.has(item.resource) && item.target.kind === 'territory')
         if (targetThemeReads) {
-          const selected = items.some((item) => habitatResources.has(item.resource) && item.intent.kind === 'selected_comparison')
-          const queue = selected ? selectedPending : initialPending
+          const comparisonRead = items.some((item) =>
+            habitatResources.has(item.resource) && item.intent.kind !== 'facts')
+          if (!comparisonRead) return makeResponse(items)
+          // The first comparison read is the initial scope; the second one is
+          // the scope selected while that first read is still pending.
+          const queue = comparisonBatches++ === 0 ? initialPending : selectedPending
           return new Promise<Response>((resolve) => {
             const pending = { released: false, release: () => {
               pending.released = true
@@ -2156,12 +2170,22 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const requests: Array<Array<Record<string, any>>> = []
     let selectedFailing = true
     const fixtureFetch = nativeSemanticFetch(requests)
+    const pageThreeComparables = new Set(['offre_tc', 'raccordement_courbe', 'raccordement_tc'])
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) !== '/api/resources/read-batch') return fixtureFetch(input, init)
       const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      if (items.some((item) => item.intent.kind === 'selected_comparison') && selectedFailing) {
-        requests.push(items)
-        return new Response('', { status: 503 })
+      const chapterComparisons = items.filter((item) =>
+        item.intent.kind === 'selected_comparison' && pageThreeComparables.has(item.resource))
+      if (chapterComparisons.length && selectedFailing) {
+        const response = await fixtureFetch(input, init)
+        const body = await response.clone().json() as { results: Array<Record<string, any>> }
+        const gated = new Set(chapterComparisons.map((item) => item.id))
+        // v2 typed absence: the chapter's comparison publication is missing, its
+        // focal facts and the requested page-2 chapter stay available.
+        return new Response(JSON.stringify({ ...body, results: body.results.map((result) => gated.has(result.id)
+          ? { id: result.id, resource: result.resource, status: 'publication_unavailable',
+            reason: 'publication_absent', family: nativePublicationFamily(result.resource) }
+          : result) }), { status: 200 })
       }
       return fixtureFetch(input, init)
     })
@@ -2169,39 +2193,30 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci',
       chargerReferenceReelle)
     await flushPromises()
+    await flushPromises()
 
-    const selectedReads = () => requests.filter((items) =>
-      items.some((item) => item.intent.kind === 'selected_comparison'))
-    // The failed atomic plan is isolated into bounded resource-group reads;
-    // every failed attempt still carries only selected_comparison items.
-    expect(selectedReads().length).toBeGreaterThan(1)
-    expect(selectedReads().every((items) =>
-      items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
+    const chapterComparisonReads = () => requests.filter((items) =>
+      items.some((item) => item.intent.kind === 'selected_comparison' && pageThreeComparables.has(item.resource)))
+    // #986 — the deferred page-3 chapter is ONE later batch: its facts and the
+    // comparison it declares arrive together, never with the page-2 demand.
+    // eslint-disable-next-line no-console
+    console.log('CH', JSON.stringify(chapterComparisonReads().map((items) => items.map((item) => `${item.resource}/${item.intent.kind}`))))
+    expect(chapterComparisonReads()).toHaveLength(1)
+    expect(wrapper.find('.mobilite-section--reseaux').exists()).toBe(true)
     expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
     expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(true)
     selectedFailing = false
-    const selectedBeforeRetry = selectedReads().length
+    const selectedBeforeRetry = chapterComparisonReads().length
     const requestsBeforeRetry = requests.length
 
     await wrapper.get('.mobilite-raccordement-curve__retry').trigger('click')
     await flushPromises()
+    await flushPromises()
 
-    const retried = selectedReads().slice(selectedBeforeRetry)
-    expect(retried.length).toBeLessThanOrEqual(2)
+    const retried = chapterComparisonReads().slice(selectedBeforeRetry)
+    expect(retried).toHaveLength(1)
     expect(retried.every((items) => items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
-    // Chaque ressource Mobilité comparable repart avec ses détails déclarés,
-    // en lots bornés —
-    // jamais une requête par figure ni une relecture des faits focaux.
-    const comparaisonsAttendues = nativeResources('mobilite')
-      .filter((resource) => resource.resource_kind === 'indicator'
-        && resource.allowed_levels.includes('commune')
-        && resource.target_kinds.includes('territory')
-        && resource.intents.includes('selected_comparison'))
-      .map((resource) => resource.resource_id)
-      .sort()
-    // #962 added the three Mobility supply resources to the comparison set.
-    expect(comparaisonsAttendues).toContain('stations_service')
-    expect([...new Set(retried.flat().map((item) => item.resource))].sort()).toEqual(comparaisonsAttendues)
+    expect([...new Set(retried.flat().map((item) => item.resource))].sort()).toEqual([...pageThreeComparables].sort())
     expect(requests.slice(requestsBeforeRetry).flat().some((item) =>
       item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
     expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(false)

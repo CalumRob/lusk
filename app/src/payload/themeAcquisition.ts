@@ -40,6 +40,16 @@ export interface ThemeResponse {
   tokens?: Record<string, unknown>
   resource_reads?: SemanticThemeRead[]
   default_comparison?: { theme_id?: ThemeKey; selection?: readonly ThemeSelectionMember[]; comparison_reads: SemanticThemeRead[] }
+  /**
+   * #986 — the comparison the active header actually displays, read in the SAME
+   * acquisition as the focal facts (one snapshot, one publication identity).
+   * `default_comparison` stays the producer's declared default and is therefore
+   * empty here: a custom/preset page must never fall back to the default scope.
+   */
+  demand_comparison?: { selection: readonly ThemeSelectionMember[]; comparison_reads: SemanticThemeRead[]
+    /** Every declared comparison of this demand stayed unavailable: explicit retry only. */
+    comparison_error?: boolean
+    comparison_failure?: string }
   comparison_reads?: SemanticThemeRead[]
   cohort_reads?: SemanticThemeRead[]
   named_reference_reads?: SemanticThemeRead[]
@@ -245,6 +255,29 @@ export function normalizePublicationTokens(response: ThemeResponse): Record<stri
   return normalized
 }
 
+/** One theme's critical demand: the chapter the reader requested, not the whole register. */
+export interface ThemeFactsDemand {
+  /**
+   * Producer indicator identities the requested chapter displays. Omitted means
+   * every retained resource (the historical whole-theme read).
+   */
+  indicators?: readonly string[]
+  /**
+   * The comparison intent the active header displays:
+   * - `undefined` — the producer's declared nested default;
+   * - an explicit member list — the selected/preset group, read with the facts;
+   * - `null` — no comparison now (a deferred chapter owns it).
+   */
+  selection?: readonly ThemeSelectionMember[] | null
+  /**
+   * Whether this demand owns the chapter's typed-cohort and named-reference
+   * reads. A page that displays neither defers them with their chapter.
+   */
+  auxiliary?: boolean
+  /** Background warming never competes with the reader's critical demand. */
+  priority?: 'critical' | 'background'
+}
+
 /** La clé de cache d'une sélection : « omitted » (défaut déclaré) se distingue
  * toujours de la sélection explicitement vide `[]` (aucune comparaison). */
 export function cleSelectionComparaison(selection: readonly ThemeSelectionMember[] | undefined): string {
@@ -314,8 +347,8 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
   private readonly legacyReferenceVersions = new Map<string, Map<string, string>>()
 
   constructor(
-    private readonly acquireFacts: (theme: ThemeKey, key?: Key) => Promise<T>,
-    private readonly acquireComparison?: (selection: readonly ThemeSelectionMember[] | undefined, theme: ThemeKey, key?: Key, coherence?: string) => Promise<ThemeResponse>,
+    private readonly acquireFacts: (theme: ThemeKey, key?: Key, demand?: ThemeFactsDemand) => Promise<T>,
+    private readonly acquireComparison?: (selection: readonly ThemeSelectionMember[] | undefined, theme: ThemeKey, key?: Key, coherence?: string, indicators?: readonly string[]) => Promise<ThemeResponse>,
   ) {}
 
   private key({ type, id, theme }: Key): string { return JSON.stringify([type, id, theme]) }
@@ -327,7 +360,8 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     }
   }
 
-  async get(type: string, id: string, theme: ThemeKey): Promise<AcquiredTheme<T>> {
+  async get(type: string, id: string, theme: ThemeKey,
+    demand?: ThemeFactsDemand): Promise<AcquiredTheme<T>> {
     const key = { type, id, theme }
     const cacheKey = this.key(key)
     const cached = this.entries.get(cacheKey)
@@ -335,13 +369,29 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     const pending = this.pendingFacts.get(cacheKey)
     if (pending) return pending
     const generation = this.generations.get(cacheKey) ?? 0
-    const request = this.acquireFacts(theme, key).then((focal) => {
+    const request = this.acquireFacts(theme, key, demand).then((focal) => {
       if (generation !== (this.generations.get(cacheKey) ?? 0)) throw new Error('Stale theme acquisition response')
       const comparisons = new Map<string, ThemeResponse>()
-      if (focal.default_comparison) comparisons.set('omitted', {
-        ...focal.default_comparison, cohort_reads: focal.cohort_reads,
-        cohort_error: focal.cohort_error,
+      const auxiliary = {
+        cohort_reads: focal.cohort_reads, cohort_error: focal.cohort_error,
         named_reference_reads: focal.named_reference_reads,
+      }
+      if (focal.demand_comparison) {
+        // The header's own selection was read with the focal facts. It is
+        // stored under its selection key only: the producer default slot stays
+        // empty so a custom/preset page can never render the default scope.
+        const comparisonFailures = (focal.resource_failures ?? [])
+          .filter((failure) => failure.stage === 'comparison')
+        comparisons.set(cleSelectionComparaison(focal.demand_comparison.selection), {
+          theme_id: theme, selection: focal.demand_comparison.selection,
+          comparison_reads: focal.demand_comparison.comparison_reads,
+          ...(comparisonFailures.length ? { resource_failures: comparisonFailures } : {}),
+          ...(focal.demand_comparison.comparison_error
+            ? { comparison_error: true, comparison_failure: focal.demand_comparison.comparison_failure } : {}),
+          ...auxiliary,
+        } as ThemeResponse)
+      } else if (focal.default_comparison) comparisons.set('omitted', {
+        ...focal.default_comparison, ...auxiliary,
       } as ThemeResponse)
       const result = { focal, comparisons }
       this.entries.set(cacheKey, result)
@@ -353,7 +403,66 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     return request
   }
 
-  async select(type: string, id: string, theme: ThemeKey, selection: readonly ThemeSelectionMember[] | undefined): Promise<AcquiredTheme<T>> {
+  /**
+   * #986 — read one deferred chapter into the existing acquisition. The focal
+   * entry stays the one publication identity: facts, named references and the
+   * chapter's comparison are merged, never re-read, and a stale generation
+   * rejects the whole merge.
+   */
+  async chapter(type: string, id: string, theme: ThemeKey,
+    demand: ThemeFactsDemand): Promise<AcquiredTheme<T>> {
+    const key = { type, id, theme }
+    const cacheKey = this.key(key)
+    const current = await this.get(type, id, theme)
+    const generation = this.generations.get(cacheKey) ?? 0
+    const extra = await this.acquireFacts(theme, key, { ...demand, auxiliary: demand.auxiliary !== false })
+    if (generation !== (this.generations.get(cacheKey) ?? 0)) throw new Error('Stale theme acquisition response')
+    const latest = this.entries.get(cacheKey) ?? current
+    if (latest !== current) this.assertCurrentFocal(cacheKey, generation, latest)
+    const mergeReads = (base: readonly SemanticThemeRead[] | undefined,
+      added: readonly SemanticThemeRead[] | undefined): SemanticThemeRead[] => {
+      // Exact duplicates (a re-read of the same item) collapse; distinct
+      // comparison reads of one resource (its declared detail points) never do.
+      const merged = new Map<string, SemanticThemeRead>((base ?? [])
+        .map((read) => [`${read.resource}\u0000${JSON.stringify(read.data)}`, read] as const))
+      for (const read of added ?? []) merged.set(`${read.resource}\u0000${JSON.stringify(read.data)}`, read)
+      return [...merged.values()]
+    }
+    const failures = new Map<string, ThemeResourceFailure>()
+    for (const failure of [...(latest.focal.resource_failures ?? []), ...(extra.resource_failures ?? [])]) {
+      failures.set(`${failure.resource}\u0000${failure.stage}`, failure)
+    }
+    const comparisons = new Map(latest.comparisons)
+    if (extra.demand_comparison) {
+      const selectionKey = cleSelectionComparaison(extra.demand_comparison.selection)
+      const prior = comparisons.get(selectionKey)
+      const comparisonReads = mergeReads(prior?.comparison_reads, extra.demand_comparison.comparison_reads)
+      const chapterFailures = (extra.resource_failures ?? []).filter((failure) => failure.stage === 'comparison')
+      const priorFailures = (prior?.resource_failures ?? []) as ThemeResourceFailure[]
+      comparisons.set(selectionKey, {
+        ...(prior ?? { theme_id: theme, selection: extra.demand_comparison.selection }),
+        comparison_reads: comparisonReads,
+        ...(chapterFailures.length || priorFailures.length
+          ? { resource_failures: [...priorFailures, ...chapterFailures] } : {}),
+      } as ThemeResponse)
+    }
+    const mergedComparisonReads = [...comparisons.values()].flatMap((entry) => entry.comparison_reads ?? [])
+    const focal: T = {
+      ...latest.focal,
+      resource_reads: mergeReads(latest.focal.resource_reads, extra.resource_reads),
+      named_reference_reads: mergeReads(latest.focal.named_reference_reads, extra.named_reference_reads),
+      cohort_reads: mergeReads(latest.focal.cohort_reads, extra.cohort_reads),
+      ...(failures.size ? { resource_failures: [...failures.values()] } : {}),
+      comparison_error: mergedComparisonReads.length
+        ? false : Boolean(latest.focal.comparison_error || extra.comparison_error),
+    } as T
+    const result = { focal, comparisons }
+    this.entries.set(cacheKey, result)
+    return result
+  }
+
+  async select(type: string, id: string, theme: ThemeKey, selection: readonly ThemeSelectionMember[] | undefined,
+    demand?: ThemeFactsDemand): Promise<AcquiredTheme<T>> {
     const key = { type, id, theme }
     const cacheKey = this.key(key)
     const focalGeneration = this.generations.get(cacheKey) ?? 0
@@ -362,7 +471,13 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     if (!this.acquireComparison) return focal
     const selectionKey = cleSelectionComparaison(selection)
     const existing = focal.comparisons.get(selectionKey)
-    if (existing && !existing.cohort_error) return this.entries.get(cacheKey)!
+    if (existing && !existing.cohort_error) {
+      if (existing.comparison_error === true) {
+        throw new Error(typeof existing.comparison_failure === 'string'
+          ? existing.comparison_failure : 'Publication de comparaison indisponible')
+      }
+      return this.entries.get(cacheKey)!
+    }
     const pendingKey = JSON.stringify([cacheKey, selectionKey])
     const pending = this.pendingComparisons.get(pendingKey)
     if (pending) {
@@ -372,7 +487,13 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     }
     const generation = (this.comparisonGenerations.get(pendingKey) ?? 0) + 1
     this.comparisonGenerations.set(pendingKey, generation)
-    const request = this.acquireComparison(selection, theme, key, acquisitionCoherence(focal.focal)).then((comparison) => {
+    // A chapter-scoped acquisition reads only its own comparison evidence: a
+    // theme-wide comparison pass would fetch related groups the focal entry does
+    // not hold and then be (correctly) rejected as cross-resource incompatible.
+    const focalIndicators = (focal.focal.resource_reads ?? [])
+      .map((read) => read.declaration?.indicator_id ?? read.resource)
+    const scoped = demand?.indicators ?? (focalIndicators.length ? focalIndicators : undefined)
+    const request = this.acquireComparison(selection, theme, key, acquisitionCoherence(focal.focal), scoped).then((comparison) => {
       if (generation !== this.comparisonGenerations.get(pendingKey)) throw new Error('Stale theme comparison response')
       // A comparison-only response whose every declared comparison stayed
       // unavailable is an explicit retryable error, never a ready page.
@@ -442,6 +563,47 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     await request
     this.assertCurrentFocal(cacheKey, focalGeneration, focal)
     return this.entries.get(cacheKey)!
+  }
+
+  /**
+   * #986 — explicit comparison retry that never re-reads the focal facts: the
+   * comparison of a selection is re-read for the given chapter's resources and
+   * merged into the existing acquisition entry.
+   */
+  async recompare(type: string, id: string, theme: ThemeKey, selection: readonly ThemeSelectionMember[] | undefined,
+    indicators: readonly string[]): Promise<AcquiredTheme<T>> {
+    const key = { type, id, theme }
+    const cacheKey = this.key(key)
+    const focalGeneration = this.generations.get(cacheKey) ?? 0
+    const focal = await this.get(type, id, theme)
+    if (!this.acquireComparison) return focal
+    this.assertCurrentFocal(cacheKey, focalGeneration, focal)
+    const selectionKey = cleSelectionComparaison(selection)
+    const pendingKey = JSON.stringify([cacheKey, selectionKey, indicators.join('|')])
+    this.comparisonGenerations.set(pendingKey, (this.comparisonGenerations.get(pendingKey) ?? 0) + 1)
+    const comparison = await this.acquireComparison(selection, theme, key,
+      acquisitionCoherence(focal.focal), indicators)
+    if (comparison.comparison_error === true) {
+      throw new Error(typeof comparison.comparison_failure === 'string'
+        ? comparison.comparison_failure : 'Publication de comparaison indisponible')
+    }
+    this.assertCurrentFocal(cacheKey, focalGeneration, focal)
+    const current = this.entries.get(cacheKey) ?? focal
+    const prior = current.comparisons.get(selectionKey)
+    const reads = new Map<string, SemanticThemeRead>((prior?.comparison_reads ?? [])
+      .map((read) => [`${read.resource}\u0000${JSON.stringify(read.data)}`, read]))
+    for (const read of comparison.comparison_reads ?? []) {
+      reads.set(`${read.resource}\u0000${JSON.stringify(read.data)}`, read)
+    }
+    const merged = {
+      ...current,
+      comparisons: new Map(current.comparisons).set(selectionKey, {
+        ...(prior ?? { theme_id: theme, selection }),
+        comparison_reads: [...reads.values()],
+      } as ThemeResponse),
+    }
+    this.entries.set(cacheKey, merged)
+    return merged
   }
 
   /** Drop one aggregate without disturbing its already acquired focal facts or sibling selections. */
@@ -554,11 +716,13 @@ async function readThemeOutcomes(
   items: SemanticReadItem[],
   resources: SemanticResourceDeclaration[],
   coherence?: string,
+  priority?: 'critical' | 'background',
 ): Promise<{ reads: Array<AlignedRead | null>; failures: ThemeResourceFailure[] }> {
   const expectedFamilies = new Map(resources.map((resource) =>
     [resource.resource_id, publicationFamilyForResource(resource)] as const))
   const outcomes = await readSemanticOutcomes(items, {
     ...(coherence === undefined ? {} : { coherence }), expectedFamilies,
+    ...(priority === undefined ? {} : { priority }),
   })
   const factEntries: GenerationEntry[] = []
   const reads: Array<AlignedRead | null> = new Array(items.length).fill(null)
@@ -727,31 +891,35 @@ function declaredDetailComparisonItems(
   }))
 }
 
-function factAndDefaultComparisonItems(resources: SemanticResourceDeclaration[], type: string, id: string): SemanticReadItem[] {
+function factAndComparisonItems(resources: SemanticResourceDeclaration[], type: string, id: string,
+  intent: SemanticReadItem['intent'] | null): SemanticReadItem[] {
   return resources.flatMap((resource) => {
     if (!resource.target_kinds.includes('territory') || !resource.intents.includes('facts')) return []
     const items = [territoryItem(resource.resource_id, type, id, { kind: 'facts' })]
-    if (resource.intents.includes('fixed_comparison')) {
-      const detailItems = declaredDetailComparisonItems(resource, type, id,
-        { kind: 'fixed_comparison', context: 'default' })
-      items.push(...(detailItems.length
-        ? detailItems
-        : [territoryItem(resource.resource_id, type, id, { kind: 'fixed_comparison', context: 'default' })]))
-    }
+    if (intent === null || !resource.intents.includes(intent.kind)) return items
+    const detailItems = declaredDetailComparisonItems(resource, type, id, intent)
+    items.push(...(detailItems.length
+      ? detailItems
+      : [territoryItem(resource.resource_id, type, id, intent)]))
     return items
   })
 }
 
 function typedCohortItems(resources: SemanticResourceDeclaration[], type: string,
-  selection?: readonly ThemeSelectionMember[]): SemanticReadItem[] {
+  selection?: readonly ThemeSelectionMember[], indicators?: readonly string[]): SemanticReadItem[] {
+  const wanted = indicators ? new Set(indicators) : null
   return resources.filter((resource) => resource.shapes.includes('typed_reading') &&
+    (!wanted || wanted.has(resource.indicator_id)) &&
     resource.allowed_levels.includes(type as SemanticTerritoryTarget['type']) &&
     resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
     .map((resource) => cohortItem(resource.resource_id, type, selection))
 }
 
-function namedReferenceItems(resources: SemanticResourceDeclaration[]): SemanticReadItem[] {
+function namedReferenceItems(resources: SemanticResourceDeclaration[],
+  indicators?: readonly string[]): SemanticReadItem[] {
+  const wanted = indicators ? new Set(indicators) : null
   return resources.filter((resource) => resource.shapes.includes('named_reference') &&
+    (!wanted || wanted.has(resource.indicator_id)) &&
     resource.target_kinds.includes('named_reference') && resource.intents.includes('facts'))
     .flatMap((resource) => (resource.target_ids ?? []).map((id) => namedReferenceItem(resource.resource_id, id)))
 }
@@ -764,16 +932,16 @@ function namedReferenceItems(resources: SemanticResourceDeclaration[]): Semantic
  */
 async function readAuxiliary(resources: SemanticResourceDeclaration[], type: string,
   includeNamedReferences = true, selection?: readonly ThemeSelectionMember[],
-  coherence?: string,
+  coherence?: string, indicators?: readonly string[], priority?: 'critical' | 'background',
 ): Promise<{ responses: Partial<ThemeResponse>; failures: ThemeResourceFailure[]
   reads: SemanticThemeRead[]; items: SemanticReadItem[] }> {
-  const cohorts = typedCohortItems(resources, type, selection)
-  const namedReferences = includeNamedReferences ? namedReferenceItems(resources) : []
+  const cohorts = typedCohortItems(resources, type, selection, indicators)
+  const namedReferences = includeNamedReferences ? namedReferenceItems(resources, indicators) : []
   const allItems = [...cohorts, ...namedReferences]
   const [cohortResult, namedResult] = await Promise.allSettled([
-    cohorts.length ? readThemeOutcomes(cohorts, resources, coherence)
+    cohorts.length ? readThemeOutcomes(cohorts, resources, coherence, priority)
       : Promise.resolve({ reads: [], failures: [] }),
-    namedReferences.length ? readThemeOutcomes(namedReferences, resources, coherence)
+    namedReferences.length ? readThemeOutcomes(namedReferences, resources, coherence, priority)
       : Promise.resolve({ reads: [], failures: [] }),
   ])
   for (const result of [cohortResult, namedResult]) {
@@ -1046,40 +1214,91 @@ function failureResponse(failures: readonly ThemeResourceFailure[]): { resource_
  * a typed outcome: healthy resources stay rendered, a publication absence is an
  * explicit per-resource failure, and no discovery retry or facts-only re-read
  * follows it.
+ *
+ * #986 — `demand` narrows the read to the chapter the reader requested and to
+ * the comparison the active header displays. Without a demand the acquisition
+ * keeps its historical whole-theme shape (facts + declared default).
  */
 export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
-  _selection?: readonly ThemeSelectionMember[]): Promise<ThemeResponse> {
+  demand: ThemeFactsDemand = {}): Promise<ThemeResponse> {
   return (async () => {
     const themeResources = (await producerCatalogue()).filter((resource) => resource.theme_id === theme)
-    const resources = retainedThemeResources(themeResources, theme, type)
-    const items = factAndDefaultComparisonItems(resources, type, id)
+    const retained = retainedThemeResources(themeResources, theme, type)
+    const wanted = demand.indicators === undefined ? null : new Set(demand.indicators)
+    const resources = wanted ? retained.filter((resource) => wanted.has(resource.indicator_id)) : retained
+    const intent: SemanticReadItem['intent'] | null = demand.selection === null
+      ? null
+      : demand.selection === undefined
+        ? { kind: 'fixed_comparison', context: 'default' }
+        : { kind: 'selected_comparison',
+          members: demand.selection.map(({ territory_type, territory_id }) => ({ type: territory_type, id: territory_id })) }
+    const chapterScoped = demand.indicators !== undefined
+    // A chapter demand owns its named references in the SAME read set: the
+    // page-3 curve's reference is part of that chapter, not a separate probe.
+    const chapterNamedReferences = chapterScoped && demand.auxiliary !== false
+      ? namedReferenceItems(themeResources, demand.indicators)
+      : []
+    const items = [...factAndComparisonItems(resources, type, id, intent), ...chapterNamedReferences]
     if (!items.length) {
-      const auxiliary = await readAuxiliary(themeResources, type)
+      const auxiliary = demand.auxiliary === false
+        ? { responses: {}, failures: [], reads: [], items: [] }
+        : await readAuxiliary(themeResources, type, true, undefined, undefined, demand.indicators, demand.priority)
       return { theme_id: theme, resource_reads: [],
-        default_comparison: { theme_id: theme, comparison_reads: [] },
+        ...(demand.selection === null ? {} : {
+          default_comparison: { theme_id: theme, comparison_reads: [] } }),
         ...auxiliary.responses, ...failureResponse(auxiliary.failures) }
     }
-    const { reads, failures } = await readThemeOutcomes(items, resources)
+    // A chapter demand fuses the displayed comparison with its focal facts: one
+    // read set, at most three batches for page 2. A hard request failure there
+    // still lets the focal facts render (one bounded facts-only recovery), so an
+    // unavailable comparison never blanks the requested page.
+    const fused = chapterScoped
+    let reads: Array<AlignedRead | null>
+    let failures: ThemeResourceFailure[]
+    try {
+      ({ reads, failures } = await readThemeOutcomes(items, resources, undefined, demand.priority))
+    } catch (error) {
+      const hasComparisonItems = items.some((item) => item.intent.kind !== 'facts')
+      if (!fused || !hasComparisonItems) throw error
+      const factOnly = items.filter((item) => item.intent.kind === 'facts')
+      const recovered = await readThemeOutcomes(factOnly, resources, undefined, demand.priority)
+      reads = items.map((item) => item.intent.kind === 'facts'
+        ? recovered.reads[factOnly.indexOf(item)] ?? null : null)
+      failures = [...recovered.failures, ...items
+        .filter((item) => item.intent.kind !== 'facts')
+        .map((item) => resourceFailure(resources, item.resource, 'comparison', error))]
+    }
     const compatibilityFailures = filterCompatibleComparisons(items, reads, resources, type, id)
     const allFailures: ThemeResourceFailure[] = [...failures, ...compatibilityFailures]
-    const resourceReads = items
+    const factReads = items
       .map((item, index) => item.intent.kind === 'facts' ? reads[index] : null)
       .filter((read): read is AlignedRead => read !== null)
       .map((read) => decorateRead(read, resources))
+    const isNamedReference = (read: SemanticThemeRead): boolean =>
+      read.declaration?.target_kinds.includes('named_reference') === true ||
+      read.declaration?.shapes.includes('named_reference') === true
+    const resourceReads = factReads.filter((read) => !isNamedReference(read))
+    const namedReferenceReads = chapterNamedReferences.length
+      ? factReads.filter(isNamedReference) : []
     const factItems = items.filter((item) => item.intent.kind === 'facts')
     // The admitted facts' observed dataset vector plus global reference is the
     // one acquisition identity auxiliary/cohort reads may reuse; without it
     // they re-read.
-    let auxiliary: Awaited<ReturnType<typeof readAuxiliary>> | undefined
+    let auxiliary: Awaited<ReturnType<typeof readAuxiliary>> = {
+      responses: {}, failures: [], reads: [], items: [],
+    }
     try {
-      auxiliary = await readAuxiliary(themeResources, type, true, undefined,
-        acquisitionCoherence({ resource_reads: resourceReads }))
-      // Facts and auxiliary facts are one acquisition: every available read
-      // must share its dataset-family clock and the global reference.
-      validateAcquisitionGenerations([
-        ...resourceReads.map((read, index) => ({ read, item: factItems[index] })),
-        ...auxiliary.reads.map((read) => ({ read })),
-      ], resources)
+      if (demand.auxiliary !== false) {
+        auxiliary = await readAuxiliary(themeResources, type, !chapterScoped, undefined,
+          acquisitionCoherence({ resource_reads: resourceReads }), demand.indicators, demand.priority)
+        // Facts and auxiliary facts are one acquisition: every available read
+        // must share its dataset-family clock and the global reference.
+        validateAcquisitionGenerations([
+          ...resourceReads.map((read, index) => ({ read, item: factItems[index] })),
+          ...namedReferenceReads.map((read) => ({ read })),
+          ...auxiliary.reads.map((read) => ({ read })),
+        ], resources)
+      }
     } catch (error) {
       if (error instanceof ThemeAcquisitionCoherenceError) {
         invalidateSemanticItems([...items, ...(auxiliary?.items ?? []), ...error.items])
@@ -1090,10 +1309,21 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
       .map((item, index) => item.intent.kind !== 'facts' ? reads[index] : null)
       .filter((read): read is AlignedRead => read !== null)
       .map((read) => decorateRead(read, resources))
-    const defaultComparison = { theme_id: theme, comparison_reads: comparisonReads }
+    const demandComparison: ThemeResponse['demand_comparison'] =
+      demand.selection !== undefined && demand.selection !== null
+        ? { selection: [...demand.selection], comparison_reads: comparisonReads }
+        : undefined
+    // A page whose header displays a selection never seeds the producer's
+    // default slot: the default scope can only render when it was requested.
+    const defaultComparison = { theme_id: theme,
+      comparison_reads: demandComparison ? [] : comparisonReads }
     const result: ThemeResponse = { theme_id: theme, resource_reads: resourceReads,
-      default_comparison: defaultComparison }
-    if (comparisonReads.length && !semanticPublicationsCompatible(result, defaultComparison, { type, id })) {
+      ...(demand.selection === null ? {} : { default_comparison: defaultComparison }) }
+    const comparisonSnapshot: ThemeResponse = demandComparison
+      ? { ...result, default_comparison: { theme_id: theme, comparison_reads: comparisonReads } }
+      : result
+    if (comparisonReads.length && !semanticPublicationsCompatible(comparisonSnapshot,
+      { theme_id: theme, comparison_reads: comparisonReads }, { type, id })) {
       // The per-resource checks passed; this is a cross-resource incompatibility.
       // Drop every comparison rather than surfacing a ready but mismatched value.
       for (const read of comparisonReads) {
@@ -1101,16 +1331,27 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
           new Error('Publications sémantiques focales et comparées incompatibles')))
       }
       comparisonReads.length = 0
+      if (demandComparison) demandComparison.comparison_reads = comparisonReads
     }
-    const declaredComparisonResources = resources.filter((resource) =>
-      resource.target_kinds.includes('territory') && resource.intents.includes('fixed_comparison'))
+    const declaredComparisonResources = intent === null ? [] : resources.filter((resource) =>
+      resource.target_kinds.includes('territory') && resource.intents.includes(intent.kind))
     const successfulComparisonResources = new Set(comparisonReads.map((read) => read.resource))
     const comparison_error = declaredComparisonResources.length > 0 &&
       declaredComparisonResources.every((resource) => !successfulComparisonResources.has(resource.resource_id))
+    if (demandComparison && comparison_error) {
+      // Every declared comparison of the requested intent stayed unavailable.
+      // It is a settled absence: the cache keeps it so the next select() throws
+      // to the explicit retry surface instead of re-probing by itself.
+      demandComparison.comparison_error = true
+      demandComparison.comparison_failure = uniqueFailures(allFailures)
+        .find((failure) => failure.stage === 'comparison')?.message
+    }
     const unique = uniqueFailures([...allFailures, ...auxiliary.failures])
     return {
       ...result,
+      ...(demandComparison ? { demand_comparison: demandComparison } : {}),
       ...auxiliary.responses,
+      ...(chapterNamedReferences.length ? { named_reference_reads: namedReferenceReads } : {}),
       ...(unique.length ? { resource_failures: unique } : {}),
       ...(comparison_error ? {
         comparison_error: true,
@@ -1121,10 +1362,13 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
 }
 
 export function acquireThemeComparison(type: string, id: string, theme: ThemeKey,
-  selection?: readonly ThemeSelectionMember[], coherence?: string): Promise<ThemeResponse> {
+  selection?: readonly ThemeSelectionMember[], coherence?: string,
+  indicators?: readonly string[]): Promise<ThemeResponse> {
   return (async () => {
     const themeResources = (await producerCatalogue()).filter((resource) => resource.theme_id === theme)
+    const wanted = indicators === undefined ? null : new Set(indicators)
     const resources = retainedThemeResources(themeResources, theme, type)
+      .filter((resource) => !wanted || wanted.has(resource.indicator_id))
       .filter((resource) => resource.target_kinds.includes('territory') && resource.intents.includes(selection === undefined ? 'fixed_comparison' : 'selected_comparison'))
     const intent: SemanticReadItem['intent'] = selection === undefined
       ? { kind: 'fixed_comparison', context: 'default' }

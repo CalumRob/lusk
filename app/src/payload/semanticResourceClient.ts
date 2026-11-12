@@ -144,6 +144,12 @@ export interface SemanticReadOptions {
    * the catalogue. A typed absence whose family disagrees is rejected.
    */
   expectedFamilies?: ReadonlyMap<string, SemanticPublicationFamily>
+  /**
+   * Queue priority of this caller's unstarted batches. `background` work never
+   * takes the slot a `critical` reader is waiting for; identity, outcome
+   * correlation and the two-active-read bound are unchanged.
+   */
+  priority?: 'critical' | 'background'
 }
 
 const FAMILY_SET = new Set<string>(SEMANTIC_PUBLICATION_FAMILIES)
@@ -333,24 +339,29 @@ export function groupSemanticItems(items: readonly SemanticReadItem[]): Semantic
 
 class SemanticReadScheduler {
   private active = 0
-  private readonly waiting: Array<() => void> = []
+  private readonly waiting: Array<{ priority: 'critical' | 'background'; start: () => void }> = []
 
   constructor(private readonly limit: number) {}
 
-  run<T>(read: () => Promise<T>): Promise<T> {
+  run<T>(read: () => Promise<T>, priority: 'critical' | 'background' = 'critical'): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const execute = () => {
         read().then(resolve, reject).finally(() => {
           const next = this.waiting.shift()
           // Handing the slot straight to the next waiter keeps `active` unchanged.
-          if (next) next()
+          if (next) next.start()
           else this.active -= 1
         })
       }
       if (this.active < this.limit) {
         this.active += 1
         execute()
-      } else this.waiting.push(execute)
+      } else if (priority === 'critical') {
+        // A critical read queues ahead of every background read, without
+        // reordering critical reads among themselves.
+        const at = this.waiting.findIndex((waiter) => waiter.priority === 'background')
+        this.waiting.splice(at < 0 ? this.waiting.length : at, 0, { priority, start: execute })
+      } else this.waiting.push({ priority, start: execute })
     })
   }
 }
@@ -614,7 +625,8 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
       await Promise.all(batches.map(async (batch) => {
         const indexes = batch.map((item) => indexOfItem.get(item)!)
         try {
-          const outcomes = await state.scheduler.run(() => postBatch(fetcher, batch, options))
+          const outcomes = await state.scheduler.run(() => postBatch(fetcher, batch, options),
+            options.priority ?? 'critical')
           outcomes.forEach((outcome, position) => {
             const index = indexes[position]!
             const key = keys[index]!
