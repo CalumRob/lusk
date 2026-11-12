@@ -377,7 +377,7 @@ def _profile_comparison_publication_marker(conn, family="profile"):
 
 
 def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_type, members, territory_id,
-                                         selected_fields=None):
+                                         selected_fields=None, publication_family=None):
     """Read published detail aggregates and the focal row; scalar-backed profiles use scalar publication.
 
     The canonical profile publisher validates full membership and derives every peer's
@@ -390,7 +390,8 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
         return {}
     selected = _validate_comparison_fields(selected_fields,
         _COMPARISON_RESULT_FIELDS-{"mean","mean_curve"})
-    marker = _profile_comparison_publication_marker(conn)
+    marker = _profile_comparison_publication_marker(
+        conn, family=publication_family or "profile")
     ids = [p["indicator"] for p in details]
     # Peer-rank arrays can be cohort-sized. Preserve the existing compact default
     # response and load them only when callers explicitly request that field.
@@ -521,7 +522,8 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
 
 
 def _profile_comparison_results(conn, profiles, members, cohort_type, territory_id, fixed_context=None,
-                                selected_fields=None, profile_coordinates=None):
+                                selected_fields=None, profile_coordinates=None,
+                                publication_family=None):
     """Compare only declared profile facets, using one batch query per facet grain."""
     external = [p for p in profiles if p.get("comparison_scalar")]
     details = [p for p in profiles if not p.get("comparison_scalar")]
@@ -543,13 +545,16 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
         internal_profile_fields = tuple(dict.fromkeys((*internal_profile_fields,
             "selected_member_count")))
     published_detail = (_published_profile_comparison_results(conn, details, fixed_context,
-        cohort_type, members, territory_id, **({} if internal_profile_fields is None else {"selected_fields":internal_profile_fields}))
+        cohort_type, members, territory_id,
+        **({} if publication_family is None else {"publication_family": publication_family}),
+        **({} if internal_profile_fields is None else {"selected_fields":internal_profile_fields}))
         if fixed_context and details else {})
     scalar_descriptors = (conn.execute("""SELECT indicator_id,label,unit,direction,comparison_facet,
         allowed_levels,descriptor_version FROM scalar_descriptor WHERE indicator_id=ANY(%s)""",
         ([p["comparison_scalar"] for p in external],)).fetchall() if fixed_context and external else [])
     published_scalar = (_published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
         cohort_type, members, territory_id, include_ties=True,
+        **({} if publication_family is None else {"publication_family": publication_family}),
         **({"include_member_ranks": True} if internal_profile_fields is not None and
            "member_ranks" in internal_profile_fields else {}),
         **({} if internal_profile_fields is None else {"selected_fields":internal_profile_fields})) if fixed_context and external else {})
@@ -842,14 +847,16 @@ def _scalar_comparison_publication_marker(conn, family="scalar"):
 
 def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
                                          cohort_type, members, territory_id, *, include_ties=False,
-                                         include_member_ranks=False, selected_fields=None):
+                                         include_member_ranks=False, selected_fields=None,
+                                         publication_family=None):
     """Read validated group statistics and one territory's precomputed result."""
     context, group_id, territory_type = fixed_context
     comparable = [row for row in scalar_descriptors
         if row[4] == row[0] and row[3] in ("high", "low") and cohort_type in row[5]]
     if not comparable:
         return {}
-    marker = _scalar_comparison_publication_marker(conn)
+    marker = _scalar_comparison_publication_marker(
+        conn, family=publication_family or "scalar")
     indicator_ids = [row[0] for row in comparable]
     selected = (_COMPARISON_RESULT_FIELDS - {"member_ranks"}) if selected_fields is None else set(selected_fields)
     groups = _execute_comparison_publication_read(conn, """SELECT indicator_id,statistic,
@@ -961,7 +968,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                                *, indicator_id=None, profiles=None, profile_version=None, has_readings=False,
                                result_fields=None, preflight_only=False, snapshot_state=None,
                                include_owned_series=True, include_fixed_context=False,
-                               profile_coordinates=None, profile_member_ranks_allowed=True):
+                               profile_coordinates=None, profile_member_ranks_allowed=True,
+                               publication_family=None):
     """Read scalar and profile comparisons from the caller's MVCC snapshot."""
     if (not profile_member_ranks_allowed and result_fields is not None
             and "member_ranks" in result_fields):
@@ -1055,12 +1063,14 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                         or profile_marker[1] != profile_marker[2]):
                     raise HTTPException(503, "Profile publication is unavailable or incompatible")
             elif fixed_context:
-                _profile_comparison_publication_marker(conn)
+                _profile_comparison_publication_marker(
+                    conn, family=publication_family or "profile")
         scalar_backed_profiles = [p for p in (profiles or []) if p["comparison_scalar"]]
         comparable_scalars = [row for row in scalar_descriptors
             if row[4] == row[0] and row[3] in ("high", "low") and cohort_type in row[5]]
         if fixed_context and (comparable_scalars or scalar_backed_profiles):
-            _scalar_comparison_publication_marker(conn)
+            _scalar_comparison_publication_marker(
+                conn, family=publication_family or "scalar")
         if include_owned_series and owned_descriptors:
             routes = [(dataset_id,theme_id,False,indicator,None)
                       for dataset_id,indicator in owned_descriptors]
@@ -1087,7 +1097,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             fixed_context, cohort_type, members, territory_id,
             selected_fields=result_fields,
             include_ties=(result_fields is not None and "rank_ties" in result_fields),
-            include_member_ranks=(result_fields is not None and "member_ranks" in result_fields))
+            include_member_ranks=(result_fields is not None and "member_ranks" in result_fields),
+            publication_family=publication_family)
             if fixed_context else {})
         if fixed_context:
             scalar_sources_by_indicator = {}
@@ -1165,8 +1176,10 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     profile_result_kwargs = {} if result_fields is None else {"selected_fields":result_fields}
     if profile_coordinates is not None:
         profile_result_kwargs["profile_coordinates"] = profile_coordinates
+    family_kwargs = {} if publication_family is None else {
+        "publication_family": publication_family}
     profile_results = _profile_comparison_results(conn, profiles, members, cohort_type, territory_id,
-        profile_fixed_context, **profile_result_kwargs)
+        profile_fixed_context, **family_kwargs, **profile_result_kwargs)
     owned_markers = {}
     if include_owned_series:
         owned_results,owned_markers,_,_,_=_owned_series_comparison_results(conn,
@@ -2146,6 +2159,8 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
         comparison_fields = _theme_comparison_projection(profile_selection)
         profile_comparison_results = _profile_comparison_results(
             conn, [profile], members, cohort_type, territory_id, fixed_context,
+            **({} if publication_family == "scalar" else
+               {"publication_family": publication_family}),
             **({} if comparison_fields is None else {"selected_fields":comparison_fields}))
         profile["default_comparison"] = {
             "scope": scope, "results": profile_comparison_results}
@@ -2317,14 +2332,15 @@ def _series_comparison_snapshot(conn, territory_type, territory_id, indicator_id
 
 
 def _scalar_facet_comparison_preflight(conn, territory_type, territory_id, indicator_id,
-                                       theme_id, selection, selected_fields):
+                                       theme_id, selection, selected_fields, *,
+                                       publication_family="scalar"):
     descriptor = _scalar_facet_descriptor(conn, indicator_id, territory_type, theme_id)
     if (descriptor["comparison_facet"] != indicator_id
             or descriptor["direction"] not in ("high", "low")):
         raise HTTPException(503, "Declared scalar facet comparison is incompatible")
     checked = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
         indicator_id=indicator_id, result_fields=selected_fields, preflight_only=True,
-        include_owned_series=False)
+        include_owned_series=False, publication_family=publication_family)
     cohort_type = checked["cohort_type"]
     if cohort_type not in descriptor["allowed_levels"]:
         raise HTTPException(422, "Scalar facet comparison is not declared for this cohort level")
@@ -2365,14 +2381,15 @@ def _scalar_facet_comparison_preflight(conn, territory_type, territory_id, indic
 
 
 def _scalar_facet_comparison_snapshot(conn, territory_type, territory_id, indicator_id,
-                                      theme_id, selection, selected_fields):
+                                      theme_id, selection, selected_fields, *,
+                                      publication_family="scalar"):
     descriptor = _scalar_facet_descriptor(conn, indicator_id, territory_type, theme_id)
     if (descriptor["comparison_facet"] != indicator_id
             or descriptor["direction"] not in ("high", "low")):
         raise HTTPException(503, "Declared scalar facet comparison is incompatible")
     comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
         indicator_id=indicator_id, result_fields=selected_fields, include_owned_series=False,
-        include_fixed_context=True)
+        include_fixed_context=True, publication_family=publication_family)
     if len(comparison["results"]) != 1:
         raise HTTPException(503, "Published scalar facet comparison is unavailable or ambiguous")
     result = dict(comparison["results"][0])
@@ -2386,7 +2403,8 @@ def _scalar_facet_comparison_snapshot(conn, territory_type, territory_id, indica
         "descriptor": descriptor, "selection": comparison["selection"],
         "scope": comparison["scope"], "result": result}
     if comparison["_fixed_context"] is not None:
-        facet["comparison_content_version"] = _scalar_comparison_publication_marker(conn)[0]
+        facet["comparison_content_version"] = _scalar_comparison_publication_marker(
+            conn, family=publication_family)[0]
     return facet
 
 
@@ -2436,7 +2454,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
         scalar_work = 0
         if include_scalar_facet:
             scalar_work = _scalar_facet_comparison_preflight(conn, territory_type, territory_id,
-                indicator_id, scalar_facet_theme_id, selection, scalar_fields)
+                indicator_id, scalar_facet_theme_id, selection, scalar_fields,
+                publication_family=publication_family)
         return {"shape": "ordered_series", "cohort_type": cohort[0],
                 "members": cohort[1], "scope": cohort[2], "fixed_context": checked[2],
                 "checked": checked, "scalar_facet_work_units": scalar_work}
@@ -2495,7 +2514,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
                                    snapshot_state=snapshot_state,
                                    profile_coordinates=profile_coordinates,
                                    profile_member_ranks_allowed=(
-                                       shape != "profile" or intent_kind != "fixed_comparison"))
+                                       shape != "profile" or intent_kind != "fixed_comparison"),
+                                   publication_family=publication_family)
         return {**estimate, "theme_id": descriptor[0], "shape": shape}
     elif shapes[0][1] == "series":
         result = _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id,
@@ -2546,7 +2566,7 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
             # caller-selected projection independently of the series result.
             projected["scalar_facet"] = _scalar_facet_comparison_snapshot(
                 conn, territory_type, territory_id, indicator_id, scalar_facet_theme_id,
-                selection, scalar_fields)
+                selection, scalar_fields, publication_family=publication_family)
         return projected
     collections = list(resource.collections) if resource else collection_descriptors(
         conn,indicator_id=indicator_id)
@@ -2629,7 +2649,8 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
         descriptor[0], selection, indicator_id=indicator_id,result_fields=selected_fields,
         snapshot_state=snapshot_state, profile_coordinates=profile_coordinates,
         profile_member_ranks_allowed=(
-            shape != "profile" or intent_kind != "fixed_comparison"))
+            shape != "profile" or intent_kind != "fixed_comparison"),
+        publication_family=publication_family)
     result_rows = comparison["results"] if shape == "scalar" else comparison["profile_comparisons"]
     if len(result_rows) != 1:
         raise HTTPException(503, "Indicator comparison facet is unavailable or ambiguous")
