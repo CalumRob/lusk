@@ -122,6 +122,32 @@ project_fixture_scalar <- function(payload, descriptor, completeness, indicator_
   project_scalar_canonical_rows(rows, descriptor, ids, eligible, fixture_policy)
 }
 
+# scalar_descriptor_row ---------------------------------------------------------
+# La ligne de descripteur d'UN indicateur scalaire, dérivée de la métadonnée
+# canonique (la page d'indicateur et son contrat scalaire). Extrait pour être
+# PARTAGÉ entre la projection complète (project_scalar_canonical_rows) et la
+# garde d'une matérialisation ciblée (#989) : la garde compare le descripteur
+# existant à CETTE ligne — jamais une seconde construction de descripteur.
+scalar_descriptor_row <- function(metadata, id, policy = NULL) {
+  page <- metadata$indicator_pages[[id]]
+  if (is.null(page) || !identical(as.character(page$indicator), id))
+    stop("Scalar indicator is not declared by canonical metadata: ", id, call.=FALSE)
+  if (is.null(policy)) policy <- metadata$scalar_contracts[[id]]
+  if (!is.list(policy))
+    stop("Producer scalar contract is missing for indicator: ", id, call.=FALSE)
+  theme_id <- as.character(metadata$theme)
+  if (length(theme_id) != 1L || is.na(theme_id) || !grepl("^[a-z][a-z0-9_]{0,63}$", theme_id))
+    stop("Canonical theme identity is missing for scalar metadata: ", id, call.=FALSE)
+  source_ids <- as.character(unlist(page$sources, use.names=FALSE))
+  levels <- as.character(unlist(policy$allowed_levels, use.names=FALSE))
+  data.frame(indicator_id=id, theme_id=theme_id, allowed_sources=I(list(source_ids)),
+    label=as.character(page$label), unit=as.character(page$unit), direction=as.character(page$direction),
+    comparison_facet=as.character(policy$comparison_facet), allowed_levels=I(list(levels)),
+    denominator_semantics=as.character(page$calculation), completeness=as.character(policy$completeness),
+    descriptor_version=scalar_content_version(list(theme=theme_id, page=page, scalar_contract=policy)),
+    stringsAsFactors=FALSE)
+}
+
 # Shared canonical fact-to-serving projection. Fixture-only completeness is
 # explicitly passed by the fixture adapter; production uses metadata's
 # producer-owned scalar_contract for eligible levels, completeness, facet and
@@ -182,14 +208,7 @@ project_scalar_canonical_rows <- function(rows, metadata, indicator_ids,
       territory_type=as.character(selected$territory_type), value=as.numeric(selected$value),
       status=ifelse(is.na(selected$value), missing, "measured"),
       support_count=support, denominator_count=support, stringsAsFactors=FALSE)
-    theme_id <- as.character(metadata$theme)
-    if (length(theme_id) != 1L || is.na(theme_id) || !grepl("^[a-z][a-z0-9_]{0,63}$", theme_id))
-      stop("Canonical theme identity is missing for scalar metadata: ", id, call.=FALSE)
-    descriptors_out[[id]] <- data.frame(indicator_id=id, theme_id=theme_id, allowed_sources=I(list(source_ids)),
-      label=as.character(page$label), unit=as.character(page$unit), direction=as.character(page$direction),
-      comparison_facet=as.character(policy$comparison_facet), allowed_levels=I(list(levels)),
-      denominator_semantics=as.character(page$calculation), completeness=completeness,
-      descriptor_version=scalar_content_version(list(theme=theme_id, page=page, scalar_contract=policy)), stringsAsFactors=FALSE)
+    descriptors_out[[id]] <- scalar_descriptor_row(metadata, id, policy = policy)
     if (length(source_ids) == 1L) {
       provenance_out[[id]] <- unique(data.frame(indicator_id=id, territory_id=as.character(selected$territory_id),
         source_id=source_ids[[1L]], vintage_id=paste(selected$source_version, selected$reference_date, sep="/"),
@@ -701,7 +720,7 @@ publish_registered_scalar_comparison <- function(projection, db) {
 scalar_comparison_postgres_adapter <- function(con) {
   if (!requireNamespace("DBI", quietly=TRUE)) stop("DBI is required")
   list(
-    transaction=function(expr) DBI::dbWithTransaction(con, expr),
+    transaction=function(expr) publication_transaction(con, expr),
     lock=function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
     input_markers=function() DBI::dbGetQuery(con, paste(
       "SELECT scalar.content_version AS scalar_content_version,",
@@ -985,7 +1004,7 @@ publish_registered_scalar <- function(registry, name, canonical, db,
 scalar_postgres_adapter <- function(con) {
   if (!requireNamespace("DBI", quietly = TRUE)) stop("DBI is required")
   list(
-    transaction = function(expr) DBI::dbWithTransaction(con, expr),
+    transaction = function(expr) publication_transaction(con, expr),
     lock = function(owner_arg) DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
     marker = function(name) DBI::dbGetQuery(con,
       "SELECT content_version, reference_content_version FROM table_publication WHERE table_name = $1", params = list(name)),

@@ -246,3 +246,53 @@ read_profile_scalar_binding <- function(directory) {
     stop("Declared profile scalar binding is invalid", call.=FALSE)
   binding
 }
+
+# refresh_declared_profile_scalar_binding --------------------------------------
+# The NORMAL metadata-only companion refresh: when the global scalar snapshot
+# version advances, a scalar-bound declared profile (DPE) must point at the new
+# scalar version. This reads the existing owner artifact (the unchanged payload
+# facts) with its prior binding, changes ONLY the descriptor's
+# required_scalar_version, re-writes the same owner artifact through the normal
+# profile transport, and advances the binding companion. Profile facts, axes,
+# provenance, eligible territories and descriptors other than the binding token
+# are untouched. It never recomputes the profile and never writes a DB row; the
+# registered profile publisher consumes the refreshed artifact.
+refresh_declared_profile_scalar_binding <- function(artifact_directory, owners,
+                                                     scalar_binding) {
+  if (!is.character(scalar_binding) || length(scalar_binding) != 1L ||
+      is.na(scalar_binding) || !grepl("^[a-f0-9]{32}$", scalar_binding))
+    stop("Declared profile companion refresh requires a scalar binding", call.=FALSE)
+  old_binding <- read_profile_scalar_binding(artifact_directory)
+  if (identical(as.character(old_binding), as.character(scalar_binding)))
+    return(invisible(character()))
+  profiles <- read_profile_serving_profiles(artifact_directory, owners,
+                                            scalar_binding = old_binding)
+  changed <- character()
+  for (name in names(profiles)) {
+    projection <- profiles[[name]]
+    required <- projection$descriptor$required_scalar_version
+    if (is.null(required) || length(required) == 0L || is.na(required)) next
+    if (!identical(as.character(required), as.character(old_binding)))
+      stop("Declared profile companion binding is not the artifact's prior ",
+           "scalar version: ", name, call.=FALSE)
+    facts_before <- projection$facts
+    axes_before <- projection$axes
+    provenance_before <- projection$provenance
+    descriptor_before <- projection$descriptor
+    descriptor_before$required_scalar_version <- NULL
+    projection$descriptor$required_scalar_version <- scalar_binding
+    if (!identical(projection$facts, facts_before) ||
+        !identical(projection$axes, axes_before) ||
+        !identical(projection$provenance, provenance_before) ||
+        !identical(projection$descriptor[setdiff(names(projection$descriptor),
+          "required_scalar_version")], descriptor_before))
+      stop("Declared profile companion refresh changed owner facts or ",
+           "descriptors beyond the scalar binding: ", name, call.=FALSE)
+    write_profile_serving_artifact(projection,
+      file.path(artifact_directory, "profile-serving", name),
+      scalar_binding = scalar_binding)
+    changed <- c(changed, name)
+  }
+  cache_profile_scalar_binding(scalar_binding, artifact_directory)
+  invisible(changed)
+}

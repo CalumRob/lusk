@@ -87,6 +87,23 @@ if (nzchar(selection)) {
 }
 for (t in THEMES_RUN) assign(paste0("manifeste_", t$theme), t$manifest)
 
+# La génération scalaire CIBLÉE (#989) : une sélection ENREGISTRÉE
+# "<thème>:<id1>,<id2>…" matérialise uniquement ces indicateurs depuis LEURS
+# sources légères, puis les fusionne dans l'artefact canonique courant. La
+# cible ne dépend que des cibles de fichiers de ces sources (+ le référentiel
+# EPCI et la référence territoriale) : elle n'atteint JAMAIS brut_<thème>,
+# publie_<thème>, raccordement_<thème> ni une source OSM/OCS-GE. Absente par
+# défaut : le graphe normal ne change pas.
+scalar_scope_selection <- Sys.getenv("LUSK_SCALAR_SCOPE", unset = "")
+scalar_scope <- NULL
+if (nzchar(scalar_scope_selection)) {
+  scalar_scope <- parse_scalar_scope(scalar_scope_selection)
+  if (!scalar_scope$theme %in% names(THEMES_RUN)) {
+    stop("LUSK_SCALAR_SCOPE exige un thème présent dans le run : ",
+         scalar_scope$theme, call. = FALSE)
+  }
+}
+
 # Le canon des noms publics EPCI — une épingle suivie PAR CONTENU, partagée par
 # tous les thèmes. Chaque target de compute/publication qui rend la référence
 # des territoires en dépend explicitement ; une mise à jour du snapshot rejoue
@@ -1140,6 +1157,8 @@ for (t in THEMES_RUN) {
   }
   if (!is.null(t$raccordement)) besoin_epci <- TRUE
 }
+# La matérialisation scalaire ciblée lit le référentiel EPCI extrait du cache.
+if (!is.null(scalar_scope)) besoin_epci <- TRUE
 publication_programmes <- list()
 if (selection_complete) {
   # le manifeste COMPLET du thème Programmes (les six sources ANCT/DGALN +
@@ -1164,6 +1183,89 @@ if (selection_complete) {
 }
 if (besoin_epci) {
   verifications <- c(verifications, list(construire_fichier_epci_extrait()))
+}
+
+# La cible de matérialisation scalaire CIBLÉE (#989) : construite depuis le
+# contrat ENREGISTRÉ et les cibles de fichiers de SES sources. La fermeture de
+# dépendances est donc explicite et fermée : tar_network ne peut atteindre ni
+# brut_<thème>, ni publie_<thème>, ni raccordement_<thème>, ni une source
+# OSM/OCS-GE. `format = "file"` suit le pointeur de l'artefact réécrit.
+scalar_scope_targets <- function(scope, cache = CACHE_RUN, sortie = SORTIE_RUN,
+                                 mode = MODE_RUN) {
+  manifeste_scope <- as.name(paste0("manifeste_", scope$theme))
+  sources_scope <- as.name("sources_scalar_scope")
+  suffixes <- gsub("[^A-Za-z0-9_]", "_", scope$sources)
+  fichiers_scope <- lapply(seq_along(scope$sources), function(i) {
+    id <- scope$sources[[i]]
+    tar_target_raw(
+      paste0("fichier_scalar_scope_", suffixes[[i]]),
+      bquote({
+        .(sources_scope)
+        fichier <- .(manifeste_scope)$fichier[.(manifeste_scope)$id == .(id)]
+        stopifnot(length(fichier) == 1L)
+        file.path(.(cache), fichier)
+      }),
+      format = "file"
+    )
+  })
+  vintages_scope <- as.name(paste0("vintages_table_", scope$theme))
+  c(
+    list(
+      tar_target_raw(
+        "sources_scalar_scope",
+        bquote(download_sources(
+          .(manifeste_scope)[.(manifeste_scope)$id %in% .(scope$sources), ,
+                             drop = FALSE],
+          cache = .(cache), mode = .(mode)
+        ))
+      )
+    ),
+    fichiers_scope,
+    list(
+      tar_target_raw(
+        "fichier_scalar_base",
+        bquote(file.path(.(sortie), "scalar-serving", .(scope$theme),
+                         "scalar-current.json")),
+        format = "file"
+      ),
+      tar_target_raw(
+        "fichier_scalar_scope_territoires",
+        bquote(file.path(.(sortie), "territoires.parquet")),
+        format = "file"
+      ),
+      tar_target_raw(
+        "scalar_serving_scope",
+        as.call(c(
+          list(as.name("{")),
+          lapply(paste0("fichier_scalar_scope_", suffixes), as.name),
+          list(
+            as.name("fichier_epci_extrait"),
+            as.name("fichier_scalar_base"),
+            as.name("fichier_scalar_scope_territoires"),
+            vintages_scope,
+            bquote(materialize_scoped_scalar_artifact(
+              theme = .(scope$theme),
+              indicator_ids = .(scope$indicators),
+              cache = .(cache),
+              metadata = lire_theme_metadata(.(scope$theme)),
+              vintages = .(vintages_scope),
+              reference_rows = project_territory_reference(
+                nanoparquet::read_parquet(fichier_scalar_scope_territoires))$rows,
+              directory = .(sortie)
+            )),
+            bquote(file.path(.(sortie), "scalar-serving",
+                             .(scope$theme), "scalar-current.json"))
+          )
+        )),
+        format = "file"
+      )
+    )
+  )
+}
+scalar_scope_graph <- if (!is.null(scalar_scope)) {
+  scalar_scope_targets(scalar_scope)
+} else {
+  list()
 }
 
 # La fusion PARTAGÉE des vintages : les CINQ thèmes du run — plus, sur le run
@@ -1241,5 +1343,6 @@ list(
   rapports,
   tar_target(geometrie, publier_geometrie(SORTIE_RUN)),
   verifications,
-  publication_programmes
+  publication_programmes,
+  scalar_scope_graph
 )

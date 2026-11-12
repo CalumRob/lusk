@@ -20,6 +20,7 @@ if (selector_count==1L) {
 }
 args <- args[args!="--all"]
 if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets",
+                                                "--scalar-scope", "--scalar-scope-check",
                                                 "--scalar-fixture-check", "--scalar-fixture-publish",
                                                 "--series-fixture-check", "--series-fixture-publish",
                                                 "--series-check", "--series-publish",
@@ -182,23 +183,73 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
     stop("Targets publication failed: ", paste(failed, collapse = ", "),
          call. = FALSE)
   }
-} else if (args[[1L]] == "--check") {
+} else if (args[[1L]] %in% c("--scalar-scope", "--scalar-scope-check")) {
+  # Matérialisation scalaire CIBLÉE (#989) : les indicateurs enregistrés du
+  # périmètre, depuis LEURS sources légères, fusionnés dans l'artefact
+  # canonique courant. Strictement local, sans connexion ni écriture en base ;
+  # la publication reste le --publish plein snapshot de l'opérateur.
+  if (identical(Sys.getenv("LUSK_MODE", unset = "full"), "cron")) {
+    stop("Scalar scope materialization is not enabled for the cron graph.",
+         call. = FALSE)
+  }
+  selection <- parse_scalar_scope(Sys.getenv("LUSK_SCALAR_SCOPE", unset = ""))
   sortie <- Sys.getenv("LUSK_SORTIE", file.path("..", "public", "data"))
+  cache <- Sys.getenv("LUSK_CACHE", unset = "data/raw")
+  if (args[[1L]] == "--scalar-scope") {
+    targets::tar_make(names = "scalar_serving_scope", callr_function = NULL)
+    failed <- targets::tar_errored()
+    if (length(failed)) {
+      stop("Scalar scope materialization failed: ", paste(failed, collapse = ", "),
+           call. = FALSE)
+    }
+  }
+  descripteur <- match.fun(paste0("theme_", selection$theme))()
+  vintages <- if ("cache" %in% names(formals(descripteur$vintages))) {
+    descripteur$vintages(cache = cache)
+  } else {
+    descripteur$vintages()
+  }
   reference <- project_territory_reference(nanoparquet::read_parquet(
     file.path(sortie, "territoires.parquet")))
-  snapshot <- project_retained_scalar_snapshot(sortie, reference)
-  scalar_projection <- snapshot$scalar
-  comparison_projection <- snapshot$comparison
-  cat("Validated retained scalar snapshot:", nrow(scalar_projection$facts), "facts across",
-      nrow(scalar_projection$descriptors), "registered indicators; version",
-      scalar_content_version(scalar_projection), "\n")
-  cat("Validated fixed-context scalar comparisons:", nrow(comparison_projection$groups),
-      "group statistics and", nrow(comparison_projection$territories),
-      "territory results; version", comparison_projection$content_version,
-      "; scalar input", comparison_projection$scalar_content_version,
-      "; territory reference", comparison_projection$reference_content_version, "\n")
-  cat("Validated canonical territory reference:", nrow(reference$rows), "territories; version",
-      reference$content_version, "\n")
+  # La vérification est un BYTE-CHECK : on rejoue la matérialisation dans un
+  # répertoire temporaire, sur une copie de l'artefact courant, et on compare
+  # le jeton de génération produit au pointeur publié. Un artefact qui ne
+  # reproduit pas exactement la même génération n'est pas « à jour ».
+  check_dir <- tempfile("scalar-scope-check-")
+  on.exit(unlink(check_dir, recursive = TRUE), add = TRUE)
+  dir.create(check_dir, recursive = TRUE)
+  dir.create(file.path(check_dir, "scalar-serving"), recursive = TRUE)
+  file.copy(file.path(sortie, "scalar-serving", selection$theme),
+            file.path(check_dir, "scalar-serving"),
+            recursive = TRUE)
+  fresh <- materialize_scoped_scalar_artifact(
+    theme = selection$theme,
+    indicator_ids = selection$indicators,
+    cache = cache,
+    metadata = lire_theme_metadata(selection$theme),
+    vintages = vintages,
+    reference_rows = reference$rows,
+    directory = check_dir,
+    contract = selection,
+    dry_run = FALSE)
+  current <- read_scalar_serving_artifact(
+    file.path(sortie, "scalar-serving", selection$theme))
+  pointer <- jsonlite::fromJSON(file.path(
+    sortie, "scalar-serving", selection$theme, "scalar-current.json"),
+    simplifyVector = FALSE)
+  if (!identical(fresh$version, pointer$version)) {
+    stop("Scoped scalar artifact does not match a fresh materialization; ",
+         "run --scalar-scope before checking.", call. = FALSE)
+  }
+  cat("Validated scoped scalar materialization for", selection$theme, ":",
+      paste(selection$indicators, collapse = ", "), "\n")
+  cat("Artifact facts", nrow(current$facts), "across",
+      nrow(current$descriptors), "retained indicators; content version",
+      scalar_content_version(current), "\n")
+  verifier_snapshot_retention_scalaire(sortie, reference = reference)
+} else if (args[[1L]] == "--check") {
+  sortie <- Sys.getenv("LUSK_SORTIE", file.path("..", "public", "data"))
+  verifier_snapshot_retention_scalaire(sortie)
 } else {
   # Recovery only: use already-published retained artifacts, without rebuilding upstream.
   changed <- publish_retained_backend_from_parquet(

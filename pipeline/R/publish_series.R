@@ -784,7 +784,7 @@ register_owned_series_publishers <- function(registry, metadata, habitat_metadat
 owned_series_postgres_adapter <- function(con) {
   if (!requireNamespace("DBI", quietly=TRUE)) stop("DBI is required")
   list(
-    transaction=function(expr) DBI::dbWithTransaction(con, expr),
+    transaction=function(expr) publication_transaction(con, expr),
     lock=function(dataset_id) DBI::dbGetQuery(con,
       "SELECT pg_advisory_xact_lock(hashtext('owned-series'),hashtext($1))", params=list(dataset_id)),
     dataset_marker=function(dataset_id) DBI::dbGetQuery(con,
@@ -1152,7 +1152,7 @@ series_postgres_adapter <- function(con) {
   quote <- function(x) if (length(x) == 1L && is.na(x)) "NULL" else
     as.character(DBI::dbQuoteString(con, as.character(x)))
   list(
-    transaction=function(expr) DBI::dbWithTransaction(con, expr),
+    transaction=function(expr) publication_transaction(con, expr),
     lock=function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(597, 1)"),
     marker=function(name) DBI::dbGetQuery(con,
       "SELECT content_version,reference_content_version FROM table_publication WHERE table_name=$1", params=list(name)),

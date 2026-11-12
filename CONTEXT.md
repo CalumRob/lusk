@@ -74,6 +74,10 @@ _Avoid_: le flag (name the switch and its default), le préchargement bloquant (
 The content identity of one complete Lusk serving table derived from canonical R facts. It changes only when that table's validated facts or meaning change; it is distinct from a source's observation date or vintage, a Parquet file's encoding, and a whole-site release.
 _Avoid_: version globale, vintage de la source, date de déploiement
 
+**Matérialisation scalaire ciblée**:
+The registered, indicator-scoped materialization (#989, ADR-0044) that produces the missing facts of a few declared scalar indicators from their own light producer sources and merges them into the current canonical per-theme scalar artifact, leaving every unrelated descriptor, fact, provenance row, version and the shared territory reference unchanged. It is not a partial serving snapshot: the artifact stays complete for the theme, and the normal full-snapshot publisher remains the only database path. The full theme producer stays the oracle for the same facts; a semantic metadata change to an unrecomputed indicator fails closed instead of preserving it.
+_Avoid_: publication partielle, rustine Mobilité, génération par indicateur (the artifact remains one per-theme generation), recalcul du thème
+
 **ContentUnit**:
 A coherent semantic subject within ThemeContent, such as « Accès aux services » in Mobilité. It groups related indicators and ContentSections, but is not a page, spread, or other presentation container; its order and interpretation belong to typed theme grammar rather than the published payload contract.
 _Avoid_: page, bloc de mise en page, subgroup (the legacy payload assembly term)
