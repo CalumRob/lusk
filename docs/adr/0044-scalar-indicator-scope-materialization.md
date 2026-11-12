@@ -46,13 +46,14 @@ can be scoped.
    `assembler_indicateurs_mobilite()` and called by the full
    `construire_indicateurs_mobilite()`. Fixture tests prove equality, so the
    scoped path is the same arithmetic and shaping as the full producer.
-4. Refuse stale bases. Every preserved descriptor must be **semantically
-   identical** to what current metadata produces (label, unit, direction,
-   facet, levels, sources, completeness, denominator semantics); every
-   preserved source vintage must equal the current canonical vintage; the
+4. Refuse producer-side stale bases. Every preserved descriptor must be
+   **semantically identical** to what current metadata produces (label, unit,
+   direction, facet, levels, sources, completeness, denominator semantics);
+   every preserved source vintage must equal the current canonical vintage; the
    base eligible universe must equal the current reference universe at the
    retained contracts' levels. A semantic mismatch stops the materialization
-   and names the indicator — a full theme regeneration is then required.
+   and names the indicator — a full theme regeneration is then required. These
+   are producer-artifact checks; they do **not** prove the serving baseline.
 5. A **documentation-only** metadata edit (for example a definition or caveat
    change that only moves `descriptor_version`) does not block preservation and
    does not rewrite the preserved descriptor: the published descriptor row is
@@ -66,9 +67,34 @@ can be scoped.
    - CLI `publish-serving-tables.R --scalar-scope` (local materialization, no DB)
      and `--scalar-scope-check` (byte-check that replays the materialization in
      a temporary directory and compares the generation token).
-7. Keep the publisher unchanged. `--check`, `--publish` and `--targets` keep
-   their full-snapshot semantics and locks; the scoped path only prepares a
-   canonical artifact that the standard publisher consumes.
+7. Keep the full-snapshot publication path, markers and advisory locks; add only
+   a **pre-write serving baseline guard**. When a scoped publication is
+   requested (`LUSK_SCALAR_SCOPE` set), `publish_retained_backend_from_parquet()`
+   requires `LUSK_SCALAR_BASELINE_SORTIE` — the canonical generation the serving
+   database was published from — and, under the existing scalar advisory lock
+   (`pg_advisory_lock(594,1)`), compares the live markers before any write:
+   - **unchanged owners** (territory reference, demographic/habitat/economy/
+     milieux typed readings and the Milieux absence marker, the owned series
+     dataset) must match the **candidate** artifacts;
+   - **scalar and scalar comparison** must match the **prior baseline**
+     artifacts, not the updated candidate (whose scalar version necessarily
+     changes);
+   - candidate vs baseline must differ **exactly** by the declared scoped
+     indicators (facts/descriptors/provenance/comparison identical after
+     removing them; typed/series/reference artifacts identical).
+   Any mismatch — including an unreadable/invalid baseline artifact under the
+   current producer contracts — hard-refuses with **zero writes** and a report
+   naming each marker and expected value, instructing the operator to retrieve
+   the latest canonical generation that matches serving; never to regenerate,
+   force or overwrite. This is a precondition, not a second publisher.
+8. Document the whole-snapshot dependency honestly. The scalar table and its
+   comparison remain whole-table replaces: representative rows for unchanged
+   indicators keep their values, provenance and descriptor rows, while the
+   table content version changes and the scoped indicators are added. A scalar
+   version change also advances scalar-bound dependent owners (the DPE profile
+   `required_scalar_version`, the selected habitat reading's linked version);
+   those owners are republished/rebound by their normal registered publishers,
+   not by fabricated per-row writes.
 
 ## Consequences
 
@@ -78,8 +104,19 @@ can be scoped.
 - The full theme producer remains the oracle for the same facts; parity is
   enforced at the shared aggregation/assembly seams and in fixture tests.
 - A scoped artifact is a complete theme artifact (11 retained Mobility
-  scalars), so the existing `--check`/`--publish` contract, markers and advisory
-  locks are untouched.
+  scalars), so the existing `--check`/`--publish` whole-snapshot contract,
+  markers and advisory locks remain the publication path; the guard only adds a
+  read-only precondition under the existing scalar lock.
+- A publication is allowed only when the live serving markers match the
+  candidate for unchanged owners and the supplied prior baseline for the scalar
+  and its comparison; any mismatch refuses with zero writes and asks for the
+  current canonical generation. The guard also proves candidate vs baseline
+  differ only by the scoped indicators.
+- The scalar/comparison tables remain whole-table replaces. Unchanged rows keep
+  their facts, provenance and descriptors, but the table content version changes
+  and scalar-bound dependents (DPE profile binding, habitat reading linked
+  version) advance through their normal owners. No per-row write semantics are
+  claimed.
 - A semantic metadata change to an unrecomputed indicator fails loudly and
   requires the full theme path; this is deliberate — the scoped path cannot
   silently relabel an old fact.
@@ -95,5 +132,7 @@ can be scoped.
   semantics.
 - A scoped DB upsert: contradicts the whole-table snapshot and the complete-
   snapshot guard; would desynchronise the table marker from the row set.
-- Reusing the Oct-2026 generation wholesale: it predates #953 and does not
-  contain the three resources.
+- Reusing the Oct-2026 generation as an **unverified** baseline: it predates
+  #953 and does not contain the three resources; as a *declared prior baseline*
+  it is a valid input only when the live serving markers match it, which the
+  guard now proves before any write. Using it without that proof is rejected.

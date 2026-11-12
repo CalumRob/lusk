@@ -21,9 +21,36 @@ configuration_service_postgres <- function() {
 }
 
 publish_retained_backend_from_parquet <- function(sortie="../public/data",
-                                                   conso_source_path=NULL) {
+                                                   conso_source_path=NULL,
+                                                   baseline_sortie=Sys.getenv(
+                                                     "LUSK_SCALAR_BASELINE_SORTIE",
+                                                     unset=""),
+                                                   scalar_scope=Sys.getenv(
+                                                     "LUSK_SCALAR_SCOPE",
+                                                     unset="")) {
   config <- configuration_service_postgres()
   con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), config))
-  tryCatch(publish_retained_backend_snapshot(con, sortie,
-    conso_source_path=conso_source_path), finally=DBI::dbDisconnect(con))
+  locked <- FALSE
+  tryCatch({
+    # A scoped retained publication (the three #989 supply scalars) must prove
+    # the serving baseline before any write. The guard reads the live markers
+    # under the existing scalar advisory lock and refuses on any mismatch; the
+    # rest of the publication stays the normal full-snapshot path.
+    scope_ids <- retained_backend_scope_ids(scalar_scope)
+    if (length(scope_ids)) {
+      if (!nzchar(baseline_sortie))
+        stop("A scoped retained publication requires LUSK_SCALAR_BASELINE_SORTIE ",
+             "pointing to the canonical generation the serving database was ",
+             "published from; refusing with zero writes.", call. = FALSE)
+      DBI::dbGetQuery(con, "SELECT pg_advisory_lock(594, 1)")
+      locked <- TRUE
+      assert_retained_backend_baseline(con, sortie, baseline_sortie, scope_ids)
+    }
+    publish_retained_backend_snapshot(con, sortie,
+      conso_source_path=conso_source_path)
+  }, finally={
+    if (locked) try(DBI::dbGetQuery(con, "SELECT pg_advisory_unlock(594, 1)"),
+                    silent=TRUE)
+    DBI::dbDisconnect(con)
+  })
 }
