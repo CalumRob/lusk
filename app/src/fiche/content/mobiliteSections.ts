@@ -377,11 +377,16 @@ export function buildMobiliteNetworksSection(
   const bikeSegments = [
     {
       key: 'protege_km_1000',
+      // App-owned legend identities: the legend names the two drawn cycling
+      // networks in full, so the producer's short tooltip label stays a tooltip
+      // label and the total bike key never appears beside them (#974).
+      legendLabel: 'Réseau cyclable protégé',
       value: contentDetailFact(facts, 'offre_cyclable', 'protege_km_1000', 'km / 1 000 hab.', metadata),
       rawValue: contentDetailFact(facts, 'offre_cyclable', 'protege_longueur', 'km', metadata),
     },
     {
       key: 'partage_km_1000',
+      legendLabel: 'Réseau cyclable partagé',
       value: contentDetailFact(facts, 'offre_cyclable', 'partage_km_1000', 'km / 1 000 hab.', metadata),
       rawValue: contentDetailFact(facts, 'offre_cyclable', 'partage_longueur', 'km', metadata),
     },
@@ -407,6 +412,7 @@ export function buildMobiliteNetworksSection(
       ? bikeSegments.map((segment) => ({
         key: segment.key,
         label: segment.value.label,
+        legendLabel: segment.legendLabel,
         value: segment.value,
         rawValue: rawSplit ? segment.rawValue : null,
       }))

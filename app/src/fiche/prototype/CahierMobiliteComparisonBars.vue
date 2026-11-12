@@ -418,24 +418,20 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
 })
 
 const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
-  const entries: FigureLegendEntry[] = props.figure.categories.map((category) => ({
-    key: category.key,
-    label: category.label,
-    marker: 'square',
-    ariaLabel: `${category.label} : série du territoire`,
-    ...(category.key === 'bike'
-      ? {
-        markBackground: 'linear-gradient(135deg, var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike))), var(--cahier-cycle-shared, #8c4c9e))',
-      }
-      : {}),
-  }))
-  const segments = props.figure.categories.flatMap((category) => category.segments)
-  if (segments.some((segment) => segment.key === 'protege_km_1000')) {
-    entries.push({ key: 'protege_km_1000', label: 'Protégé', marker: 'square' })
-  }
-  if (segments.some((segment) => segment.key === 'partage_km_1000')) {
-    entries.push({ key: 'partage_km_1000', label: 'Partagé', marker: 'square' })
-  }
+  // A segmented bar's parts are the drawn series: the legend names them (in
+  // full) and never repeats the segmentable total as a redundant key (#974).
+  const entries: FigureLegendEntry[] = props.figure.categories.flatMap((category) =>
+    category.segments.length
+      ? category.segments.map((segment) => {
+        const label = segment.legendLabel ?? segment.label
+        return { key: segment.key, label, marker: 'square' as const, ariaLabel: `${label} : série du territoire` }
+      })
+      : [{
+        key: category.key,
+        label: category.label,
+        marker: 'square' as const,
+        ariaLabel: `${category.label} : série du territoire`,
+      }])
   const comparisonCanToggle = props.comparison.status === 'loading' ||
     props.comparison.status === 'error' ||
     (props.comparison.status === 'ready' && hasComparisonReference.value)
@@ -587,7 +583,7 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
       :selected-keys="legendSelected"
       :comparison-status="comparison.status"
       :comparison-error="comparison.error"
-      label="Séries, Protégé, Partagé et groupe comparé"
+      label="Séries du territoire et groupe comparé"
       @toggle="toggleLegend"
     />
 

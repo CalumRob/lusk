@@ -74,12 +74,14 @@ const figure: MobiliteBarsFigureEvidence = {
         {
           key: 'protege_km_1000',
           label: 'Protégé',
+          legendLabel: 'Réseau cyclable protégé',
           value: fact('offre_cyclable', 'protege_km_1000', 5, 'km / 1 000 hab.'),
           rawValue: fact('offre_cyclable', 'protege_longueur', 4, 'km'),
         },
         {
           key: 'partage_km_1000',
           label: 'Partagé',
+          legendLabel: 'Réseau cyclable partagé',
           value: fact('offre_cyclable', 'partage_km_1000', 3, 'km / 1 000 hab.'),
           rawValue: fact('offre_cyclable', 'partage_longueur', 2, 'km'),
         },
@@ -133,22 +135,32 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
     expect(label).toContain('Protégé')
     expect(label).toContain('Partagé')
     const legend = wrapper.get('.mobilite-comparison-bars__legend')
-    expect(legend.text()).toContain('Réseau piéton')
-    expect(legend.text()).toContain('Réseau cyclable')
-    expect(legend.text()).toContain('Réseau automobile')
-    expect(legend.text()).toContain('Protégé')
-    expect(legend.text()).toContain('Partagé')
-    expect(legend.text()).toContain('Groupe comparé')
+    const networkLegend = legend.findAll('.cahier-figure-legend-item')
+      .filter((item) => !item.text().includes('Groupe comparé'))
+    // #974 — exactly the four drawn network identities, in reading order. A
+    // segmented bar's parts are its series; the redundant bike total is gone.
+    expect(networkLegend.map((item) => item.get('.cahier-figure-legend-label').text())).toEqual([
+      'Réseau piéton',
+      'Réseau cyclable protégé',
+      'Réseau cyclable partagé',
+      'Réseau automobile',
+    ])
+    expect(networkLegend.every((item) => !item.get('.cahier-figure-legend-mark')
+      .classes().includes('cahier-figure-legend-mark--composite'))).toBe(true)
+    const markColor = (label: string) => networkLegend
+      .find((item) => item.get('.cahier-figure-legend-label').text() === label)!
+      .get('.cahier-figure-legend-mark').attributes('style') ?? ''
+    expect(markColor('Réseau piéton')).toContain('var(--cahier-mode-foot')
+    expect(markColor('Réseau cyclable protégé')).toContain('var(--cahier-cycle-protected')
+    expect(markColor('Réseau cyclable partagé')).toContain('var(--cahier-cycle-shared')
+    expect(markColor('Réseau automobile')).toContain('var(--cahier-mode-car')
+    // The compared bar stays its own legend key, never a fifth network identity.
     const comparisonLegend = legend.findAll('.cahier-figure-legend-item')
       .find((item) => item.text().includes('Groupe comparé'))!
+    expect(comparisonLegend.get('.cahier-figure-legend-label').text()).toBe('Groupe comparé')
+    expect(comparisonLegend.attributes('aria-label')).toContain('Médiane des communes de EPCI X')
     expect(comparisonLegend.find('.cahier-figure-legend-mark--square').exists()).toBe(true)
     expect(comparisonLegend.find('.cahier-figure-legend-mark--dash').exists()).toBe(false)
-    const bikeLegend = legend.findAll('.cahier-figure-legend-item')
-      .find((item) => item.text().includes('Réseau cyclable'))!
-    expect(bikeLegend.get('.cahier-figure-legend-mark').classes()).toContain('cahier-figure-legend-mark--composite')
-    const protectedLegend = legend.findAll('.cahier-figure-legend-item')
-      .find((item) => item.text().includes('Protégé'))!
-    expect(protectedLegend.get('.cahier-figure-legend-mark').classes()).not.toContain('cahier-figure-legend-mark--composite')
     expect(wrapper.get('.cahier-comparison-value__reference').attributes('aria-label')).toContain('Médiane des communes de EPCI X')
     expect(wrapper.get('.cahier-comparison-value__reference').attributes('aria-label')).toContain('2e/3')
   })

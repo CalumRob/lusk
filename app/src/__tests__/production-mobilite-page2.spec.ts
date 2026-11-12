@@ -219,6 +219,19 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     const comparisonBars = figure.findAll('.mobilite-comparison-bars__comparison')
     expect(comparisonBars).toHaveLength(3)
     expect(figure.findAll('.mobilite-comparison-bars__segment')).toHaveLength(2)
+
+    // #974 — exactly the four drawn network identities; no redundant total-bike
+    // key, and the comparison stays its own key rather than a fifth identity.
+    const legend = figure.get('.mobilite-comparison-bars__legend')
+    const networkLegend = legend.findAll('.cahier-figure-legend-item')
+      .filter((item) => !item.text().includes('Groupe comparé'))
+    expect(networkLegend.map((item) => item.get('.cahier-figure-legend-label').text())).toEqual([
+      'Réseau piéton',
+      'Réseau cyclable protégé',
+      'Réseau cyclable partagé',
+      'Réseau automobile',
+    ])
+    expect(legend.text()).toContain('Groupe comparé')
     const bikeGroup = figure.get('g[data-category="bike"]')
     const totalHeight = Number(bikeGroup.attributes('data-total-height'))
     const segmentHeights = bikeGroup.findAll('rect[data-segment]')
@@ -320,5 +333,45 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     const stampLabels = paired.findAll('.cahier-evidence-source a').map((stamp) => stamp.text())
     expect(stampLabels).toEqual(expect.arrayContaining(['Ecolab', 'OpenStreetMap', 'Etalab', 'INSEE']))
     expect(paired.text()).not.toContain('Médiane des communes de EPCI X')
+
+    // #974 — both ratios read through the AEDAR scalar anatomy, on the
+    // producer's own scale, with the complete accessible reading intact.
+    const section = content.units
+      .find((unit) => unit.key === 'partage-de-lespace-public')!
+      .sections.find((candidate) => candidate.key === 'stationnement-ravitaillement')!
+    if (section.evidence?.kind !== 'mobilite-stationnement-ravitaillement') {
+      throw new Error('Paired evidence expected')
+    }
+    const ratioAnatomy = (column: 'stationnement' | 'ravitaillement') => {
+      const scalar = paired.get(`[data-column="${column}"] .mobilite-ratio-scalar .cahier-figure-scalar`)
+      return {
+        scalar,
+        parts: scalar.findAll('[data-ratio-part]').map((part) => part.attributes('data-ratio-part')),
+        value: scalar.get('.cahier-figure-scalar-value strong').text(),
+        label: scalar.get('.cahier-figure-scalar-label').text(),
+        aria: scalar.attributes('aria-label')!,
+      }
+    }
+    const parking = ratioAnatomy('stationnement')
+    const refuellingRatio = ratioAnatomy('ravitaillement')
+    expect(parking.parts).toEqual(['bike', 'divide', 'car'])
+    expect(refuellingRatio.parts).toEqual(['charging', 'divide', 'fuel'])
+    const parkingFact = section.evidence.columns[0].ratio.value.fact
+    const refuellingFact = section.evidence.columns[1].ratio.value.fact
+    expect(parking.value).toBe(new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 })
+      .format(parkingFact.value as number))
+    expect(parking.value).not.toContain('%')
+    expect(parking.label).toBe('places de stationnement vélo pour 1 place voiture')
+    expect(refuellingRatio.label).toBe('Bornes de recharge par station-service')
+    expect(parking.aria).toContain(`${parkingFact.value!.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} ${parkingFact.unit}`)
+    expect(parking.aria).toContain('Référence')
+    expect(parking.aria).toContain('Rang')
+    expect(refuellingRatio.aria).toContain(refuellingFact.unit)
+    for (const reference of section.evidence.columns.map((column) => column.ratio.value.fact.comparison?.reference?.value)) {
+      if (typeof reference === 'number') {
+        expect([parking.aria, refuellingRatio.aria].join(' '))
+          .toContain(new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(reference))
+      }
+    }
   })
 })
