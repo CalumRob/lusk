@@ -11,7 +11,7 @@ for the network figures (`reseaux`, `reseaux_par_habitant`, `offre_cyclable`).
 The owner approved one equal-weight arithmetic mean of the selected communes,
 not a population-weighted rate and not a stack of independently published
 medians: each eligible commune counts once, with its native unit. The producer
-facts are already additive across the Geovelo total/ protected/shared partitions
+facts are already additive across the Geovelo total/protected/shared partitions
 for the same commune population; the obstacle was the median-only selected
 comparison projection in the API.
 
