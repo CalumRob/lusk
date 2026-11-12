@@ -172,7 +172,7 @@ def _aedar_requested_rank_fields(fields, aggregate):
     """The rank fields this comparison actually requests.
 
     The fixed per-cell default projection predates the rank fields, so `None`
-    (the full default response) only carries them on the aggregate readings ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â
+    (the full default response) only carries them on the aggregate readings —
     the shape #914 established. Per-cell ranks are strictly opt-in, which keeps
     every unranked request byte-equivalent to its pre-#951 response.
     """
@@ -185,7 +185,7 @@ def _aedar_peer_rank(values, focal_id, direction):
     """Direction-aware flat ordinal of one focal among eligible peer values.
 
     Ranks are competition ranks (`1, 1, 3`): ties share the focal's rank and
-    the next rank skips. Only eligible peers are in `values` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â an unavailable
+    the next rank skips. Only eligible peers are in `values` — an unavailable
     peer is excluded, never converted to zero or ranked. An ineligible focal is
     not ranked at all.
     """
@@ -394,14 +394,14 @@ def _aedar_aggregate_available(inputs, registry_size, underlying):
 
     Applied once, over the single record type both adapters emit. Mirrors
     `carAccessMeans` (app/src/fiche/content/aedarAccessSection.ts) and
-    CONTEXT.md Ãƒâ€šÃ‚Â« Moyennes d'accÃƒÆ’Ã‚Â¨s en voiture AEDAR Ãƒâ€šÃ‚Â»: the reading is available
+    CONTEXT.md « Moyennes d'accès en voiture AEDAR »: the reading is available
     only over the complete TYPEQU registry, with one shared source
     vintage/provenance across all rows, one uniform statistic, every row
     `covered`, an agreeing positive address population, valid observed counts
     (0 <= n_observed <= n_addresses; NULL counts as bad) and finite
     non-negative per-type values (<= 1 for share readings). Incomplete,
     uncovered or unknown evidence never becomes a partial sum or a fabricated
-    zero ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the reading is honestly unavailable.
+    zero — the reading is honestly unavailable.
     """
     return bool(
         inputs.n_rows == registry_size
@@ -442,8 +442,8 @@ def _aedar_aggregate_records(conn, territory_type, territory_ids, underlying, re
     A territory's reading is the sum over its complete published registry and
     is available only under the full compatibility law above; otherwise it
     stays unknown, never a partial value (ADR-0039's 2026-11-04 amendment,
-    #914). All law inputs ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â including provenance uniformity and observed
-    validity ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â are computed in SQL.
+    #914). All law inputs — including provenance uniformity and observed
+    validity — are computed in SQL.
     """
     cursor = conn.execute(_AEDAR_AGGREGATE_RECORDS_SQL,
                           (underlying, underlying, underlying, underlying,
@@ -560,7 +560,7 @@ def _aedar_fixed_peer_ids(conn, territory_type, territory_id, context):
 
     The ambient comparison group behind a request-time aggregate rank: the
     communes of the focal EPCI, all Breton communes, the density class, or the
-    same-level territories ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â resolved from the published territory reference
+    same-level territories — resolved from the published territory reference
     in the same committed snapshot.
     """
     focal = conn.execute(
@@ -771,10 +771,10 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
     """One fixed-context registry-wide aggregate reading with its request-time rank.
 
     The group statistic keeps the declared context semantics unchanged (the
-    direct EPCI/Bretagne/RÃƒÆ’Ã‚Â©gion aggregate, or the producer-published pooled
+    direct EPCI/Bretagne/Région aggregate, or the producer-published pooled
     density summary); the focal's direction-aware rank, group size
     and tie count are computed per request over the context's resolved peer
-    group from the published territory summaries in the same committed snapshot ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â no
+    group from the published territory summaries in the same committed snapshot — no
     peer/rank rows are published (#810 stance intact; ADR-0039's 2026-11-04
     amendment, #914). Both the reference and the peer/focal readings flow
     through producer-owned summary projections. Density references read final
@@ -1125,7 +1125,7 @@ def _aedar_selected_aggregate_snapshot(conn, territory_type, territory_id, resol
         records = records_by_measure[measure]
         # A member whose rows do not satisfy the compatibility law contributes
         # no comparable value: its reading is honestly unavailable and the
-        # member is ineligible ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â never converted to zero, never ranked, and
+        # member is ineligible — never converted to zero, never ranked, and
         # excluded from the pooled statistic (family contract semantics).
         values = []
         for level, code in resolved:

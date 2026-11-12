@@ -1,4 +1,4 @@
-﻿# ADR-0043 : Shared typed publication outcomes for batch reads
+# ADR-0043 : Shared typed publication outcomes for batch reads
 
 - **Status:** accepted (owner decision 2026-11-12, issue #984; supersedes the
   atomic-only availability stance of ADR-0040 for batch reads)
@@ -37,8 +37,11 @@ exception. v1 remains a migration bridge only.
    never matches English messages and never catches `HTTPException` broadly.
    V2 first admits actual target/member/cohort identity and declared level
    before any publication absence can become an outcome, so a bad identity is
-   never masked by an unpublished resource. V1 keeps its historical precedence
-   and its exact status/detail strings during migration.
+   never masked by an unpublished resource. Admission is charged to the same
+   200,000-unit budget before its SQL, uses the route's producer catalogue, and
+   does not enumerate cohort members; v2 preflight resolves each distinct
+   cohort once and still charges each item's fact work. V1 keeps its historical
+   precedence and its exact status/detail strings during migration.
 4. These remain whole-request failures in both contracts, with no partial
    envelope: `404` identity/member, `422` malformed/unknown/field/coordinate,
    `413` work/byte bounds; SQL/schema/pool/service faults; a failed or changed

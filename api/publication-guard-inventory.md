@@ -1,15 +1,15 @@
-﻿# Publication guard inventory (#984)
+# Publication guard inventory (#984)
 
 The semantic batch contract may report an absent publication as one correlated
 `publication_unavailable` result instead of failing the whole request. That
 softening is deliberately narrow and explicit:
 
-- **`unavailable`** â€” the guard calls `publication_unavailable(family, detail)`.
+- **`unavailable`** — the guard calls `publication_unavailable(family, detail)`.
   It means the requested item's own or directly required publication (marker,
   descriptor, facts or active read route) is not present. The v2 executor
   converts it to one typed result; v1 still returns `503`. No data, versions or
   fake zero is invented.
-- **`fatal`** â€” every other `503` guard. It aborts the whole request, even in
+- **`fatal`** — every other `503` guard. It aborts the whole request, even in
   v2. This includes SQL/schema faults, the shared `territory_reference` clock,
   snapshot changes inside one repeatable-read read, conflicting provenance,
   malformed or incomplete published rows, ambiguous producer declarations and
@@ -37,11 +37,15 @@ it. A `?` family marks the small set of generic helpers whose caller supplies th
 declared resource family at runtime; the emitted v2 outcome still carries the
 actual family.
 
-Two boundary notes for reviewers:
+Boundary notes for reviewers:
 
 - A missing required SQL relation is schema-fatal, not absence: v2 admission
   checks the producer-declared relation group with `to_regclass` before any item
   outcome, and real `UndefinedTable`/`UndefinedColumn` errors are never caught.
+- v2 admission is charged to the same 200,000-unit request budget before its SQL
+  and receives the route's producer catalogue explicitly. It does not enumerate
+  cohort members; v2 preflight resolves each distinct cohort once and charges
+  each item's own facts/evidence work.
 - Where a soft guard also accepts an empty `content_version` on an existing
   marker, that empty value is treated as "no usable publication". Canonical
   publishers never emit it (`table_publication.content_version` is `NOT NULL`
@@ -77,9 +81,8 @@ Two boundary notes for reviewers:
 | `unavailable` | `profile_reads.py` | `focal_profiles` | `profile` | Profile publication is unavailable or incompatible |
 | `unavailable` | `profile_reads.py` | `focal_profiles` | `profile` | Profile scalar dependency is stale or incompatible |
 | `unavailable` | `semantic_resource_reader.py` | `_coordinate_values` | `profile` | Profile coordinate descriptor is unavailable |
-| `unavailable` | `semantic_resource_reader.py` | `_coordinate_values` | `named_reference` | Series coordinate descriptor is unavailable |
-| `unavailable` | `semantic_resource_reader.py` | `_coordinate_values` | `ordered_series` | Series coordinate descriptor is unavailable |
-| `unavailable` | `semantic_resource_reader.py` | `_require_dual_series_route` | `ordered_series` | Declared ordered-series facet publication is unavailable |
+| `unavailable` | `semantic_resource_reader.py` | `_coordinate_values` | `?` | Series coordinate descriptor is unavailable |
+| `unavailable` | `semantic_resource_reader.py` | `_require_dual_series_route` | `ordered_series` | Declared ordered-series facet publication is unavailable or incompatible |
 | `unavailable` | `semantic_resource_reader.py` | `_typed_reading_preflight` | `typed_reading` | Selected-reading publication is inconsistent |
 | `unavailable` | `semantic_resource_reader.py` | `_typed_reading_preflight` | `typed_reading` | Typed-reading evidence publication is unavailable or stale |
 | `unavailable` | `semantic_resource_reader.py` | `_typed_reading_preflight` | `typed_reading` | Typed-reading publication is unavailable or stale |
@@ -214,6 +217,7 @@ Two boundary notes for reviewers:
 | `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile scalar dependency is stale or incompatible |
 | `fatal` | `repository.py` | `search_territories` | `—` | No territory reference has been published |
 | `fatal` | `repository.py` | `search_territories` | `—` | Territory reference exceeds search scan bound |
+| `fatal` | `resource_execution.py` | `_read_snapshot` | `—` | Resource admission returned an invalid work estimate |
 | `fatal` | `resource_execution.py` | `_read_snapshot` | `—` | Resource preflight returned an invalid work estimate |
 | `fatal` | `semantic_resource_reader.py` | `_coordinate_values` | `—` | Series coordinate descriptor is unavailable |
 | `fatal` | `semantic_resource_reader.py` | `_filter_coordinates` | `—` | Published resource does not expose its declared coordinate rows |

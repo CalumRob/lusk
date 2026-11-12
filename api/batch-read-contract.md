@@ -1,4 +1,4 @@
-﻿# Semantic resource batch reads (issues #689, #797 and #984)
+# Semantic resource batch reads (issues #689, #797 and #984)
 
 `GET /api/resources` exposes the producer-derived retained-resource catalogue.
 `POST /api/resources/read` reads one declared item; `POST /api/resources/read-batch`
@@ -43,9 +43,14 @@ order, and replaces a *classified publication absence* with a typed outcome:
   focal territory, selected members and cohort filters against the published
   reference, plus the catalogue-declared territory level. An unknown or
   mistyped identity therefore rejects the whole request (`404`/`422`) even when
-  that resource is unpublished. V1 keeps its historical precedence, status and
-  exact detail strings during migration; the v2 outcome deliberately carries no
-  human `detail`.
+  that resource is unpublished. Admission is cheap identity/grammar work: it is
+  charged to the same 200,000-unit budget before any such SQL runs, but it does
+  not enumerate cohort members. Preflight resolves each distinct cohort target
+  once per v2 request and charges the selected members per item with the existing
+  estimator; identical cohort targets share resolution, while each item still
+  pays its own facts/evidence work. V1 keeps its historical precedence, status
+  and exact detail strings during migration; the v2 outcome deliberately carries
+  no human `detail`.
 - An all-unavailable batch is a valid `200` envelope, not a retry storm.
 
 The soft classification is deliberately narrow and explicit at the server:
@@ -91,11 +96,11 @@ are coordinates and fixed comparisons use the declared comparison context.
 AEDAR reference reads use the canonical territory-reference scope: commune EPCI
 and Bretagne values are direct source aggregates, density-class values come from
 the pooled producer artifact, and EPCI/departement same-level presets read the
-RÃ©gion's own direct published aggregate (Â« Moyenne de Bretagne Â»); the retired
+Région's own direct published aggregate (« Moyenne de Bretagne »); the retired
 same-level median summaries are no longer served. AEDAR publishes no peer or
-rank rows: every request-time statistic â€” including the aggregate-reading ranks
-below â€” is computed per request from published facts in one committed snapshot.
-The four selected-reading resources for DÃ©mographie, Ã‰conomie/Emploi, Habitat,
+rank rows: every request-time statistic — including the aggregate-reading ranks
+below — is computed per request from published facts in one committed snapshot.
+The four selected-reading resources for Démographie, Économie/Emploi, Habitat,
 and Milieux expose the already-published reading facts. Producer-declared ranked
 activity evidence, Milieux source absences, and Milieux source bindings are separate
 named evidence fields; they do not copy or recompute scalar/series measurements.
@@ -107,7 +112,7 @@ Focal scalar, profile, and typed-reading responses expose their publication's
 publication token, and each returned fact and selected evidence row carries its own
 `source` object (`source_id`, name, `vintage_id`, version, reference date, publication date).
 Clocks are resolved from that exact source/vintage pair or the row's published
-Milieux provenance binding; nullable dates remain `null`. DÃ©mographie also returns
+Milieux provenance binding; nullable dates remain `null`. Démographie also returns
 its published descriptor version, rate unit, and declared source clock. Habitat
 returns its existing selected-reading descriptor and linked publication version.
 Missing or incompatible required lineage fails closed with `503`.
@@ -176,10 +181,10 @@ target with `typequ`/`measure` coordinates. The selection must be same-level as
 the focal territory: every member is resolved against the published territory
 reference in the same snapshot, and unknown, mistyped, mixed-level or partial
 members fail closed (404/422) naming the failed member. For each requested
-TYPEQU Ã— measure cell the response returns the group statistic computed per
+TYPEQU × measure cell the response returns the group statistic computed per
 request: the address-weighted mean of the members' published aggregate values
-(weights = published `n_addresses`) â€” exactly the pooled address aggregate of
-the selection, reported as `statistic: "pooled"` with the summed source counts â€”
+(weights = published `n_addresses`) — exactly the pooled address aggregate of
+the selection, reported as `statistic: "pooled"` with the summed source counts —
 for scalar readings and per-cell curve readings alike. The group coverage is
 derived from the members' published coverage statuses, never fabricated:
 `covered` only when every member is covered; a lesser status is reflected as
@@ -216,12 +221,12 @@ TYPEQU rows (#940; the no-peer/rank-row stance in #810 remains intact):
 
 An aggregate reading is available only when the territory's published rows
 satisfy the same compatibility law as the fiche's displayed sums (CONTEXT.md
-Â« Moyennes d'accÃ¨s en voiture AEDAR Â»): the complete TYPEQU registry is
+« Moyennes d'accès en voiture AEDAR »): the complete TYPEQU registry is
 present, all rows share one source vintage/provenance (`source_id`,
 `vintage_id`, `source_url`, `licence`, `attribution`, reference/publication
 dates), every row is `covered`, the address population agrees and is positive,
-every observed count is valid (`0 â‰¤ n_observed â‰¤ n_addresses`, NULL counts as
-bad), and every per-type value is a finite number â‰¥ 0 (â‰¤ 1 for share
+every observed count is valid (`0 ≤ n_observed ≤ n_addresses`, NULL counts as
+bad), and every per-type value is a finite number ≥ 0 (≤ 1 for share
 readings). Incomplete, uncovered or unknown evidence never becomes a partial
 sum or a fabricated zero: the reading is honestly unavailable (null value,
 `status: "not_available"`).
@@ -231,10 +236,10 @@ to the already-pooled density facts before publication. Density summaries bind
 to the comparison, AEDAR source, territory-reference, and density-input
 identities; missing or stale rows fail closed. `n_observed` is summed over
 TYPEQU coordinates and may therefore exceed `n_addresses`; each contributing
-TYPEQU observation still has to satisfy `0 â‰¤ n_observed â‰¤ n_addresses`.
+TYPEQU observation still has to satisfy `0 ≤ n_observed ≤ n_addresses`.
 
 - `fixed_comparison` keeps each declared context's reference semantics (the
-  direct EPCI/Bretagne/RÃ©gion aggregate, or the published pooled density-class
+  direct EPCI/Bretagne/Région aggregate, or the published pooled density-class
   summary) and adds the opt-in `rank`/`rank_size`/`rank_ties`: a
   direction-aware flat ordinal of the focal's registry-wide reading within the
   context's resolved peer group (the EPCI's communes, all Breton communes, the
@@ -242,8 +247,8 @@ TYPEQU observation still has to satisfy `0 â‰¤ n_observed â‰¤ n_addresse
   whose rows fail the law are ineligible: never converted to zero or ranked,
   and `rank_size` reflects the eligible population.
 - `selected_comparison` keeps #859's address-weighted pooled semantics over
-  each member's registry-wide reading (weights = published `n_addresses`) â€”
-  exactly the pooled address aggregate of the selection â€” with the focal rank
+  each member's registry-wide reading (weights = published `n_addresses`) —
+  exactly the pooled address aggregate of the selection — with the focal rank
   when it is a member and available. Members failing the law contribute no
   comparable value: they are excluded from the pooled statistic and the rank
   (`rank_size` counts the eligible members) while the requested membership
@@ -261,27 +266,27 @@ unchanged and the selected intent keeps its existing grant. For each requested
   `aedar_territorial_aggregate` in the same snapshot, alongside the declared
   reference (unchanged `group_value`, statistic and versions);
 - the peer group is resolved by `_aedar_fixed_peer_ids_cached`, exactly as the
-  aggregate ranks resolve it â€” the focal EPCI's communes, all Breton communes,
-  the density class, or the same-level territories â€” so `epci`,
+  aggregate ranks resolve it — the focal EPCI's communes, all Breton communes,
+  the density class, or the same-level territories — so `epci`,
   `density_class`, `same_level` and `bretagne` share one peer **group** across
   both shapes. The eligible population is not shared, because the two readings
   have different availability laws: a peer's per-cell reading is eligible when
   the producer publishes a finite value for that cell (below), whereas a peer's
   aggregate reading is eligible only when its `aedar_territory_summary` row is
   `available` (complete TYPEQU registry, one provenance, agreeing positive
-  address population, valid observed counts â€” #914/#938);
+  address population, valid observed counts — #914/#938);
 - one set-wise read of the peer group per comparison item supplies every peer's
-  published value for that `(typequ, measure)` â€” never a per-peer round trip,
+  published value for that `(typequ, measure)` — never a per-peer round trip,
   and the preflight work estimate is `1 + |peers|` like the aggregate reading;
 - a peer is eligible when the producer publishes a finite value for that cell.
   This is the selected comparison's law: the producer publishes no value for an
   uncovered row (`uncovered_no_address_origins` with no address origin), while a
   genuine `0` is a real reading and stays rankable. Peers without a published
-  value are excluded from the rank population â€” never zeroed, never ranked â€” and
+  value are excluded from the rank population — never zeroed, never ranked — and
   `rank_size` counts the eligible peers including the focal; ties share the
   focal's rank (competition ranking);
-- every declared AEDAR distribution facet is ranked â€” the deciles since #948 and
-  the min/max cutpoints since #963 â€” so no curve reading is unranked today; a
+- every declared AEDAR distribution facet is ranked — the deciles since #948 and
+  the min/max cutpoints since #963 — so no curve reading is unranked today; a
   facet the producer does not declare ranked, or an unavailable focal, returns
   `200` with `null` rank fields. The focal's existing `value`/`status`
   semantics are untouched.
@@ -316,7 +321,7 @@ just like omission. Unknown axes/values, partial axes and multi-value profile
 comparison coordinates are rejected with `422`. A scalar-backed profile such as
 the DPE distribution keeps its linked scalar comparison facet: `fixed_comparison`
 rejects profile coordinates with `422` because that facet is the linked scalar,
-while `selected_comparison` retains its existing coordinate semantics â€” the
+while `selected_comparison` retains its existing coordinate semantics — the
 declared profile coordinates are accepted but never reinterpret the DPE bins as
 the linked scalar. The fixed-profile result stays compact: `member_ranks` remains
 a selected-comparison projection and is rejected with `422` for fixed profile
@@ -326,7 +331,7 @@ comparisons, the published default and alternate declared points alike.
 `{type,id}` territory identities. The response `selection` echoes those requested
 typed identities; the `scope` reports `kind: "explicit_selection"` and
 `member_count`, not an invented `scope.territory_type`. The API resolves supported
-commune/EPCI/dÃ©partement/rÃ©gion targets through the same published reference to a
+commune/EPCI/département/région targets through the same published reference to a
 bounded set of unique communes. Overlapping parent and commune selections are
 deduplicated for calculation; result counts and optional peer rows describe that
 resolved population, while the typed selection echo remains the caller's original
@@ -343,7 +348,7 @@ intents. It contains one row per resolved member identity, with API-owned
 `rank`, `rank_size`, and `rank_ties` for comparable members, or null rank fields
 when that member is not comparable. Those peer ranks come from the selected profile
 facet's native comparison or, for a scalar-backed profile, its separately declared
-scalar facetâ€”not from client-derived/static ranks. An exact published comparison
+scalar facet—not from client-derived/static ranks. An exact published comparison
 scope may reuse its validated published ranks; otherwise the API computes ranks
 from the selected facet's native observations. The result's `unit`, direction,
 facet, denominator semantics, and comparison-source provenance follow that actual

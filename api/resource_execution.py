@@ -47,11 +47,16 @@ def _read_snapshot(pool, items, catalogue, preflight, read, *, batch, outcomes=F
     with pool.connection() as connection:
         with connection.transaction():
             connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            if admit is not None:
-                # v2 admission validates actual identity/grammar before any
-                # publication absence can become a typed item outcome.
-                admit(connection, items)
             work_units = 0
+            if admit is not None:
+                # v2 admission is part of the same bounded work budget and runs
+                # before any publication absence can become a typed outcome.
+                used = admit(connection, items, catalogue, MAX_WORK_UNITS - work_units)
+                if not isinstance(used, int) or used < 0:
+                    raise HTTPException(503, "Resource admission returned an invalid work estimate")
+                work_units += used
+                if work_units > MAX_WORK_UNITS:
+                    raise HTTPException(413, "Resource request exceeds the bounded work limit")
             for index, item in enumerate(items):
                 try:
                     estimate = preflight(connection, item, MAX_WORK_UNITS - work_units)

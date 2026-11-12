@@ -7,6 +7,8 @@ v1 atomic failure semantics.
 """
 
 from contextlib import contextmanager
+from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -53,7 +55,7 @@ class Repository:
         self.connections = Pool()
 
 
-def install(monkeypatch, repository, reader, preflight, admit=None):
+def install(monkeypatch, repository, reader, preflight, admit=None, catalogue=None):
     def read_with_state(conn, item, catalogue=None, *, snapshot_state=None):
         return reader(conn, item, catalogue)
 
@@ -65,7 +67,8 @@ def install(monkeypatch, repository, reader, preflight, admit=None):
     if admit is not None:
         injected.admit = staticmethod(admit)
     main.app.dependency_overrides[main.get_repository] = lambda: repository
-    main.app.dependency_overrides[main.get_resource_catalogue] = default_resource_catalogue
+    main.app.dependency_overrides[main.get_resource_catalogue] = (
+        lambda: catalogue if catalogue is not None else default_resource_catalogue())
     main.app.dependency_overrides[main.get_semantic_resource_reader] = lambda: injected
 
 
@@ -294,8 +297,9 @@ def test_v2_identity_admission_runs_before_any_item_preflight(monkeypatch):
     repository = Repository()
     events = []
 
-    def admit(conn, items):
+    def admit(conn, items, catalogue=None, *, snapshot_state=None, work_budget=None):
         events.append(("admit", tuple(item.id for item in items)))
+        return 0
 
     def preflight(conn, resource_item, catalogue=None, *, work_budget=None):
         events.append(("preflight", resource_item.id))
@@ -324,7 +328,7 @@ def test_v2_identity_admission_failure_has_no_publication_outcomes(monkeypatch):
     repository = Repository()
     events = []
 
-    def admit(conn, items):
+    def admit(conn, items, catalogue=None, *, snapshot_state=None, work_budget=None):
         raise HTTPException(404, "Focal territory not found")
 
     def preflight(conn, resource_item, catalogue=None, *, work_budget=None):
@@ -360,3 +364,183 @@ def test_v2_admission_rejects_a_missing_required_relation_as_schema_fatal():
                      default_resource_catalogue())
     assert error.value.status_code == 503
     assert error.value.detail == "Required publication storage relation is unavailable"
+
+
+def test_v2_admission_budget_aggregates_distinct_cohorts_before_sql():
+    catalogue = default_resource_catalogue()
+    target = SimpleNamespace(kind="territory_cohort", type="commune",
+                             department_id="29", epci_id=None)
+    intent = SimpleNamespace(kind="facts", members=[])
+    # 100,001 distinct filtered cohorts: per-item + per-filter admission costs
+    # exceed 200,000 before any SQL is issued.
+    items = [SimpleNamespace(resource="densite", target=SimpleNamespace(
+                 kind="territory_cohort", type="commune", department_id="29",
+                 epci_id=f"e{index}"), intent=intent)
+             for index in range(100_001)]
+    class NoSqlConnection:
+        def execute(self, *args, **kwargs):
+            pytest.fail("admission issued SQL before enforcing its work budget")
+    reader = main.get_semantic_resource_reader()
+    with pytest.raises(HTTPException) as error:
+        reader.admit(NoSqlConnection(), items, catalogue, work_budget=200_000)
+    assert error.value.status_code == 413
+    assert error.value.detail == "Resource request exceeds the bounded work limit"
+
+
+def test_v2_executor_charges_admission_to_the_same_work_budget(monkeypatch):
+    repository = Repository()
+    events = []
+
+    def admit(conn, items, catalogue=None, *, snapshot_state=None, work_budget=None):
+        events.append(("admit", work_budget))
+        return 200_000
+
+    def preflight(conn, resource_item, catalogue=None, *, work_budget=None):
+        events.append(("preflight", work_budget))
+        return 1
+
+    install(monkeypatch, repository, lambda *_: {"value": 1}, preflight, admit=admit)
+    try:
+        response = post([item("a", "densite")], contract="semantic-read-batch-v2")
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 413
+    assert events == [("admit", 200_000), ("preflight", 0)]
+
+
+def test_v2_admission_receives_the_route_catalogue(monkeypatch):
+    repository = Repository()
+    seen = {}
+    base = default_resource_catalogue()
+    injected_resource = replace(base.resources_by_id["densite"],
+                                resource_id="injected_scalar")
+    injected = replace(base, resources=(*base.resources, injected_resource))
+
+    def admit(conn, items, catalogue=None, *, snapshot_state=None, work_budget=None):
+        seen["catalogue"] = catalogue
+        return 0
+
+    install(monkeypatch, repository, lambda *_: {"value": 1},
+            lambda *_, **__: 1, admit=admit, catalogue=injected)
+    try:
+        response = post([{"id": "a", "resource": "injected_scalar", **COMMON}],
+                        contract="semantic-read-batch-v2")
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 200, response.text
+    assert seen["catalogue"] is injected
+    assert response.json()["results"][0]["resource"] == "injected_scalar"
+
+
+def test_real_admission_uses_the_injected_catalogue_without_private_metadata():
+    base = default_resource_catalogue()
+    injected_resource = replace(base.resources_by_id["densite"],
+                                resource_id="injected_scalar")
+    injected = replace(base, resources=(*base.resources, injected_resource))
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+        def fetchall(self):
+            return self.rows
+
+    class Connection:
+        def execute(self, sql, params=None):
+            if "to_regclass" in sql:
+                return Cursor([(True,)])
+            if "table_name='territory_reference'" in sql:
+                return Cursor([("ref-v1", 1)])
+            if "territory_id=ANY" in sql:
+                return Cursor([("c1", "commune")])
+            raise AssertionError(sql)
+
+    reader = main.get_semantic_resource_reader()
+    injected_item = ResourceReadItem.model_validate({
+        "resource": "injected_scalar",
+        "target": {"kind": "territory", "type": "commune", "id": "c1"},
+        "intent": {"kind": "facts"}})
+    assert reader.admit(Connection(), [injected_item], injected, work_budget=1000) > 0
+
+    without = replace(base, resources=tuple(
+        resource for resource in base.resources if resource.resource_id != "densite"))
+    default_only_item = ResourceReadItem.model_validate({
+        "resource": "densite",
+        "target": {"kind": "territory", "type": "commune", "id": "c1"},
+        "intent": {"kind": "facts"}})
+    with pytest.raises(HTTPException) as error:
+        reader.admit(Connection(), [default_only_item], without, work_budget=1000)
+    assert error.value.status_code == 422
+    assert error.value.detail == "unknown semantic resource"
+
+
+def test_v2_admission_cost_aggregates_before_preflight_remaining_budget():
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+        def fetchall(self):
+            return self.rows
+
+    class Connection:
+        def execute(self, sql, params=None):
+            if "to_regclass" in sql:
+                return Cursor([(True,)])
+            if "table_name='territory_reference'" in sql:
+                return Cursor([("ref-v1", 1)])
+            if "territory_type='departement'" in sql or "territory_type='epci'" in sql:
+                return Cursor([(1,)])
+            raise AssertionError(sql)
+
+    target = lambda department: SimpleNamespace(
+        kind="territory_cohort", type="commune", department_id=department, epci_id=None)
+    intent = SimpleNamespace(kind="facts", members=[])
+    items = [SimpleNamespace(resource="densite", target=target("29"), intent=intent),
+             SimpleNamespace(resource="densite", target=target("22"), intent=intent)]
+    reader = main.get_semantic_resource_reader()
+    cost = reader.admit(Connection(), items, default_resource_catalogue(), work_budget=1000)
+    # 2 items + 1 relation group + 1 reference marker + 2 distinct filters.
+    assert cost == 6
+
+
+def test_v2_same_cohort_is_resolved_once_within_the_request(monkeypatch):
+    import api.semantic_resource_reader as module
+
+    calls = []
+    sentinel = object()
+
+    def fake_resolve(conn, target, *, work_budget):
+        calls.append((target.type, target.department_id, target.epci_id))
+        return sentinel
+
+    monkeypatch.setattr(module, "resolve_territory_cohort", fake_resolve)
+    reader = main.get_semantic_resource_reader()
+    state = {"v2_admission": True}
+    target = SimpleNamespace(type="commune", department_id="29", epci_id=None)
+    assert reader._cohort_for_request(None, target, 1000, state) is sentinel
+    assert reader._cohort_for_request(None, target, 1000, state) is sentinel
+    assert len(calls) == 1
+    other = SimpleNamespace(type="commune", department_id="22", epci_id=None)
+    assert reader._cohort_for_request(None, other, 1000, state) is sentinel
+    assert len(calls) == 2
+
+
+def test_family_mapping_is_central_for_a_declared_multi_shape_resource():
+    resource = SimpleNamespace(resource_kind="indicator",
+                               shapes=("named_reference", "ordered_series"))
+    assert family_for_resource(resource) == "ordered_series"
+    assert main.get_semantic_resource_reader()._publication_family(resource) == "ordered_series"
+
+
+def test_v1_missing_dual_series_facet_keeps_the_base_detail(monkeypatch):
+    reader = main.get_semantic_resource_reader()
+    monkeypatch.setattr(reader, "_owned_series_route",
+                        lambda *args, **kwargs: None)
+    resource = default_resource_catalogue().resources_by_id["prix_m2"]
+    with pytest.raises(PublicationUnavailable) as error:
+        reader._require_dual_series_route(None, resource)
+    assert error.value.detail == \
+        "Declared ordered-series facet publication is unavailable or incompatible"
+    assert error.value.family == "ordered_series"

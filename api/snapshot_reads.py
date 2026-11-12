@@ -2473,7 +2473,7 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
             # The semantic grammar admits only producer-declared resources: an
             # absent published descriptor is a missing publication dependency,
             # reported as the item's typed outcome under v2 and as 503 under v1
-            # â€” never as an unknown identity (404).
+            # — never as an unknown identity (404).
             publication_unavailable(publication_family,
                 "Declared resource publication is unavailable")
         raise HTTPException(404, "Indicator descriptor is unavailable")
@@ -2587,7 +2587,7 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
             # The semantic grammar admits only producer-declared resources: an
             # absent published descriptor is a missing publication dependency,
             # reported as the item's typed outcome under v2 and as 503 under v1
-            # â€” never as an unknown identity (404).
+            # — never as an unknown identity (404).
             publication_unavailable(publication_family,
                 "Declared resource publication is unavailable")
         raise HTTPException(404, "Indicator descriptor is unavailable")

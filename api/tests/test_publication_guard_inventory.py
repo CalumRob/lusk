@@ -22,6 +22,7 @@ DYNAMIC_FAMILY_GUARDS = {
     ("series_comparison_projection.py", "_context"),
     ("snapshot_reads.py", "_profile_comparison_publication_marker"),
     ("snapshot_reads.py", "_scalar_comparison_publication_marker"),
+    ("semantic_resource_reader.py", "_coordinate_values"),
 }
 
 

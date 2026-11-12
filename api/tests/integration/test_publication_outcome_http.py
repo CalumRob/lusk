@@ -271,6 +271,8 @@ def test_v2_mixed_batch_across_all_publication_families(outcome_db, monkeypatch)
               fields=["median", "rank", "rank_size"]),
         _item("cohort", "densite",
               target={"kind": "territory_cohort", "type": "commune"}),
+        _item("profile-cohort", "structure_age",
+              target={"kind": "territory_cohort", "type": "commune"}),
         *refuelling,
         _item("profile", "structure_age"),
         _item("series", "prix_m2"),
@@ -320,7 +322,7 @@ def test_v2_mixed_batch_across_all_publication_families(outcome_db, monkeypatch)
     expected = {"profile": "profile", "series": "ordered_series",
                 "named-reference": "named_reference", "aedar-summary": "aedar",
                 "aedar-source": "aedar", "typed-reading": "typed_reading",
-                "collection": "collection"}
+                "collection": "collection", "profile-cohort": "profile"}
     for item_id, family in expected.items():
         outcome = results[item_id]
         assert outcome["status"] == "publication_unavailable", item_id
