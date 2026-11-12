@@ -83,6 +83,26 @@ export type SemanticPublicationFamily = typeof SEMANTIC_PUBLICATION_FAMILIES[num
 export const SEMANTIC_PUBLICATION_REASONS = ['publication_absent'] as const
 export type SemanticPublicationReason = typeof SEMANTIC_PUBLICATION_REASONS[number]
 
+/**
+ * The one app mirror of the API's `family_for_resource`: the typed-absence
+ * family comes from the producer declaration, never from the failed lookup.
+ */
+export function publicationFamilyForResource(
+  declaration: Pick<SemanticResourceDeclaration, 'shapes'> & { resource_kind?: unknown },
+): SemanticPublicationFamily {
+  const kind = typeof declaration.resource_kind === 'string' ? declaration.resource_kind : ''
+  const shapes = new Set(declaration.shapes)
+  if (kind === 'typed_reading' || shapes.has('typed_reading')) return 'typed_reading'
+  if (kind.startsWith('aedar_') || shapes.has('aedar_source_grain') || shapes.has('aedar_territory_summary')) {
+    return 'aedar'
+  }
+  if (shapes.has('declared_profile')) return 'profile'
+  if (shapes.has('named_reference') && !shapes.has('ordered_series')) return 'named_reference'
+  if (shapes.has('ordered_series')) return 'ordered_series'
+  if (shapes.has('period_detail') || shapes.has('anchored_membership')) return 'collection'
+  return 'scalar'
+}
+
 export interface SemanticOutcomeIdentity {
   /** Producer-declared resource identity as requested. */
   resource: string
@@ -107,14 +127,23 @@ export interface SemanticReadOptions {
   fetcher?: typeof fetch
   /** Caller-scoped cancellation: it never aborts the shared coalesced read. */
   signal?: AbortSignal
-  /** A clock-observing probe ignores the settled outcome cache; an in-flight identical read is still joined. */
+  /**
+   * A clock-observing probe never reuses a settled outcome. It still joins an
+   * identical in-flight read; one caller's cancellation never affects joiners.
+   */
   fresh?: boolean
   /**
-   * Caller-owned cache scope when one semantic item is validated against a
-   * different expectation (for example expected publication clocks). It never
-   * changes the wire item, only which settled outcome a caller may reuse.
+   * Caller-owned publication identity. A settled outcome is reusable only for
+   * the same semantic item AND the same coherence token. Without a token the
+   * transport keeps per-item state but never replays a settled read into a new
+   * acquisition, so an assembled group can never mix dataset generations.
    */
-  vary?: string
+  coherence?: string
+  /**
+   * Producer-declared family per resource, when the caller already discovered
+   * the catalogue. A typed absence whose family disagrees is rejected.
+   */
+  expectedFamilies?: ReadonlyMap<string, SemanticPublicationFamily>
 }
 
 const FAMILY_SET = new Set<string>(SEMANTIC_PUBLICATION_FAMILIES)
@@ -211,8 +240,10 @@ async function poster(path: string, body: RecordValue, options: SemanticReadOpti
     throw new PayloadError('fetch', path, `Lecture sémantique indisponible : ${cause instanceof Error ? cause.message : String(cause)}`)
   }
   if (!response.ok) {
-    // Les erreurs membre 404/422 du contrat nomment une identité typée.
-    // Un corps illisible ou un autre échec reste l'erreur HTTP générique.
+    // Publication classification never inspects messages. The legacy producer
+    // still names a hard 422 member identity in `detail`; extracting that typed
+    // member for UI copy is the existing identity contract, not publication
+    // classification, and a failure without a typed identity stays HTTP-generic.
     if (response.status === 404 || response.status === 422) {
       const error: unknown = await response.json().catch(() => null)
       const identity = isRecord(error) && typeof error.detail === 'string'
@@ -326,6 +357,7 @@ class SemanticReadScheduler {
 
 interface CachedOutcome {
   item: SemanticReadItem
+  coherence: string
   generation: number
   outcome: SemanticReadOutcome
 }
@@ -336,11 +368,20 @@ interface PendingRead {
   promise: Promise<SemanticReadOutcome>
 }
 
+interface ItemState {
+  item: SemanticReadItem
+  state: Exclude<SemanticReadState, 'unrequested'>
+  generation: number
+}
+
 interface SemanticClientState {
   scheduler: SemanticReadScheduler
+  /** Settled outcomes, scoped by semantic item key and caller coherence token. */
   cache: Map<string, CachedOutcome>
+  /** Identical in-flight items, always keyed by semantic item key only. */
   pending: Map<string, PendingRead>
-  errors: Map<string, { item: SemanticReadItem; error: PayloadError }>
+  /** Per-item availability/error state, retained even without settled reuse. */
+  states: Map<string, ItemState>
   generations: Map<string, number>
 }
 
@@ -350,7 +391,7 @@ function clientStateFor(fetcher: typeof fetch): SemanticClientState {
   let state = stateByFetcher.get(fetcher)
   if (!state) {
     state = { scheduler: new SemanticReadScheduler(SEMANTIC_MAX_ACTIVE_READS), cache: new Map(),
-      pending: new Map(), errors: new Map(), generations: new Map() }
+      pending: new Map(), states: new Map(), generations: new Map() }
     stateByFetcher.set(fetcher, state)
   }
   return state
@@ -360,13 +401,30 @@ function generationOf(state: SemanticClientState, key: string): number {
   return state.generations.get(key) ?? 0
 }
 
-function remember(state: SemanticClientState, key: string, item: SemanticReadItem,
+function cacheKey(key: string, coherence: string): string {
+  return `${key}\u0000${coherence}`
+}
+
+function remember(state: SemanticClientState, item: SemanticReadItem, coherence: string,
   generation: number, outcome: SemanticReadOutcome): void {
+  const key = semanticItemKey(item)
   // A late reply for an invalidated generation never enters the cache.
   if (generationOf(state, key) !== generation) return
-  state.cache.delete(key)
-  state.cache.set(key, { item, generation, outcome })
-  state.errors.delete(key)
+  const store = (token: string) => {
+    const scoped = cacheKey(key, token)
+    state.cache.delete(scoped)
+    state.cache.set(scoped, { item, coherence: token, generation, outcome })
+  }
+  store(coherence)
+  // An outcome also names its own publication identity. Storing that identity
+  // lets a later acquisition of the same item reuse it only when it asks for
+  // the same global reference clock — never when the dataset generation moved.
+  if (outcome.status === 'available') {
+    const reference = outcome.data.reference_content_version
+    if (typeof reference === 'string' && reference.length > 0) {
+      store(`territory-reference:${reference}`)
+    }
+  }
   while (state.cache.size > MAX_CACHED_OUTCOMES) {
     const oldest = state.cache.keys().next().value
     if (oldest === undefined) break
@@ -379,7 +437,8 @@ function semanticRequestId(item: SemanticReadItem, index: number): string {
 }
 
 /** Strict v2 envelope: one correlated outcome per requested item, in request order. */
-export function parseSemanticBatchOutcomes(raw: unknown, items: readonly SemanticReadItem[]): SemanticReadOutcome[] {
+export function parseSemanticBatchOutcomes(raw: unknown, items: readonly SemanticReadItem[],
+  expectedFamilies?: ReadonlyMap<string, SemanticPublicationFamily>): SemanticReadOutcome[] {
   const path = SEMANTIC_BATCH_PATH
   const results = isRecord(raw) && raw.contract === SEMANTIC_BATCH_CONTRACT && Array.isArray(raw.results)
     ? raw.results : null
@@ -408,6 +467,11 @@ export function parseSemanticBatchOutcomes(raw: unknown, items: readonly Semanti
           typeof result.family !== 'string' || !FAMILY_SET.has(result.family)) {
         throw new PayloadError('validation', path, 'Un état de publication indisponible est hors contrat.')
       }
+      const expectedFamily = expectedFamilies?.get(item.resource)
+      if (expectedFamily !== undefined && result.family !== expectedFamily) {
+        throw new PayloadError('validation', path,
+          `La famille d’un état de publication indisponible ne correspond pas à la ressource déclarée (${item.resource}: ${result.family} != ${expectedFamily}).`)
+      }
       if ('data' in result || 'content_version' in result || 'reference_content_version' in result ||
           'descriptor_version' in result || 'version' in result) {
         throw new PayloadError('validation', path, 'Un état de publication indisponible invente des données ou une version.')
@@ -419,7 +483,8 @@ export function parseSemanticBatchOutcomes(raw: unknown, items: readonly Semanti
   })
 }
 
-async function postBatch(fetcher: typeof fetch, batch: readonly SemanticReadItem[]): Promise<SemanticReadOutcome[]> {
+async function postBatch(fetcher: typeof fetch, batch: readonly SemanticReadItem[],
+  options: SemanticReadOptions = {}): Promise<SemanticReadOutcome[]> {
   const body = {
     contract: SEMANTIC_BATCH_CONTRACT,
     items: batch.map((item, index) => ({ ...item, id: semanticRequestId(item, index) })),
@@ -427,7 +492,7 @@ async function postBatch(fetcher: typeof fetch, batch: readonly SemanticReadItem
   // No AbortSignal is forwarded: one caller cancelling never invalidates data
   // another caller is coalesced on.
   const raw = await poster(SEMANTIC_BATCH_PATH, body, { fetcher })
-  return parseSemanticBatchOutcomes(raw, batch)
+  return parseSemanticBatchOutcomes(raw, batch, options.expectedFamilies)
 }
 
 function abortedError(): PayloadError {
@@ -485,66 +550,87 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
   options: SemanticReadOptions): Promise<SemanticReadOutcome[]> {
   const fetcher = options.fetcher ?? globalThis.fetch
   const state = clientStateFor(fetcher)
-  const variant = options.vary === undefined ? '' : `\u0000${options.vary}`
-  const keys = items.map((item) => semanticItemKey(item) + variant)
+  const keys = items.map((item) => semanticItemKey(item))
   const generations = keys.map((key) => generationOf(state, key))
   const resolved: Array<SemanticReadOutcome | undefined> = new Array(items.length)
   const failures: Array<unknown | undefined> = new Array(items.length)
-  const freshByKey = new Map<string, number>()
+  const primaryByKey = new Map<string, number>()
   const aliases: Array<[number, number]> = []
   const waiting: Array<{ index: number; promise: Promise<SemanticReadOutcome> }> = []
 
-  keys.forEach((key, index) => {
-    const cached = options.fresh ? undefined : state.cache.get(key)
-    if (cached && cached.generation === generations[index]) {
-      resolved[index] = cached.outcome
-      return
+  for (let index = 0; index < items.length; index += 1) {
+    const key = keys[index]!
+    const generation = generations[index]!
+    // A settled outcome is reused only for the same item AND the caller's own
+    // publication identity. Without a coherence token a new acquisition never
+    // replays an arbitrary settled read into an assembled group.
+    if (!options.fresh && options.coherence !== undefined) {
+      const cached = state.cache.get(cacheKey(key, options.coherence))
+      if (cached && cached.generation === generation) {
+        resolved[index] = cached.outcome
+        continue
+      }
     }
-    const pending = options.fresh ? undefined : state.pending.get(key)
-    if (pending && pending.generation === generations[index]) {
+    // Identical in-flight work is always shared, including clock-observing
+    // reads: `fresh` bypasses only a settled outcome, never a live fetch.
+    const pending = state.pending.get(key)
+    if (pending && pending.generation === generation) {
       waiting.push({ index, promise: pending.promise })
-      return
+      continue
     }
-    const primary = freshByKey.get(key)
+    const primary = primaryByKey.get(key)
     if (primary !== undefined) aliases.push([index, primary])
-    else freshByKey.set(key, index)
-  })
+    else primaryByKey.set(key, index)
+  }
 
-  if (freshByKey.size) {
-    // Register every fresh item's shared promise before issuing any batch so a
-    // concurrent caller with an identical item joins this read instead of
-    // issuing a duplicate request.
-    const owned = new Map<number, OwnedItem>()
-    const indexOfItem = new Map<SemanticReadItem, number>()
-    for (const index of freshByKey.values()) {
-      let resolve!: (outcome: SemanticReadOutcome) => void
-      let reject!: (error: unknown) => void
-      const promise = new Promise<SemanticReadOutcome>((ok, fail) => { resolve = ok; reject = fail })
-      // A coalesced read may have no waiter left after a caller cancels; the
-      // rejection must never surface as an unhandled promise rejection.
-      promise.catch(() => undefined)
-      state.pending.set(keys[index]!, { item: items[index]!, generation: generations[index]!, promise })
-      owned.set(index, { resolve, reject, promise })
-      indexOfItem.set(items[index]!, index)
+  const owned = new Map<number, OwnedItem>()
+  const indexOfItem = new Map<SemanticReadItem, number>()
+  // Registration pass. Re-checking the pending map here guarantees a racing
+  // caller can never overwrite an in-flight entry another caller is joined on.
+  for (const [key, index] of [...primaryByKey]) {
+    const generation = generations[index]!
+    const existing = state.pending.get(key)
+    if (existing && existing.generation === generation) {
+      primaryByKey.delete(key)
+      waiting.push({ index, promise: existing.promise })
+      continue
     }
+    let resolve!: (outcome: SemanticReadOutcome) => void
+    let reject!: (error: unknown) => void
+    const promise = new Promise<SemanticReadOutcome>((ok, fail) => { resolve = ok; reject = fail })
+    // A coalesced read may have no waiter left after a caller cancels; the
+    // rejection must never surface as an unhandled promise rejection.
+    promise.catch(() => undefined)
+    state.pending.set(key, { item: items[index]!, generation, promise })
+    state.states.set(key, { item: items[index]!, state: 'pending', generation })
+    owned.set(index, { resolve, reject, promise })
+    indexOfItem.set(items[index]!, index)
+  }
+
+  if (owned.size) {
     try {
-      const freshItems = [...freshByKey.values()].map((index) => items[index]!)
+      const freshItems = [...owned.keys()].map((index) => items[index]!)
       const batches = groupSemanticItems(freshItems)
       await Promise.all(batches.map(async (batch) => {
         const indexes = batch.map((item) => indexOfItem.get(item)!)
         try {
-          const outcomes = await state.scheduler.run(() => postBatch(fetcher, batch))
+          const outcomes = await state.scheduler.run(() => postBatch(fetcher, batch, options))
           outcomes.forEach((outcome, position) => {
             const index = indexes[position]!
             const key = keys[index]!
             const entry = owned.get(index)!
             if (generationOf(state, key) !== generations[index]) {
-              state.pending.delete(key)
+              if (state.pending.get(key)?.promise === entry.promise) state.pending.delete(key)
               entry.reject(new SemanticReadSupersededError(key))
               return
             }
-            remember(state, key, items[index]!, generations[index]!, outcome)
-            state.pending.delete(key)
+            state.states.set(key, { item: items[index]!,
+              state: outcome.status === 'available' ? 'available' : 'unavailable',
+              generation: generations[index]! })
+            if (options.coherence !== undefined) {
+              remember(state, items[index]!, options.coherence, generations[index]!, outcome)
+            }
+            if (state.pending.get(key)?.promise === entry.promise) state.pending.delete(key)
             resolved[index] = outcome
             entry.resolve(outcome)
           })
@@ -553,10 +639,7 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
             const key = keys[index]!
             failures[index] = error
             if (generationOf(state, key) === generations[index]) {
-              state.errors.set(key, { item: items[index]!,
-                error: error instanceof PayloadError ? error
-                  : new PayloadError('fetch', SEMANTIC_BATCH_PATH,
-                    `Lecture sémantique indisponible : ${error instanceof Error ? error.message : String(error)}`) })
+              state.states.set(key, { item: items[index]!, state: 'error', generation: generations[index]! })
             }
             if (state.pending.get(key)?.promise === owned.get(index)!.promise) state.pending.delete(key)
             owned.get(index)!.reject(error)
@@ -597,50 +680,61 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
 /** Explicit state of one semantic item for the current client session. */
 export function semanticReadState(item: SemanticReadItem, options: SemanticReadOptions = {}): SemanticReadState {
   const state = clientStateFor(options.fetcher ?? globalThis.fetch)
-  const key = semanticItemKey(item) + (options.vary === undefined ? '' : `\u0000${options.vary}`)
-  const cached = state.cache.get(key)
-  if (cached && cached.generation === generationOf(state, key)) {
-    return cached.outcome.status === 'available' ? 'available' : 'unavailable'
-  }
-  if (state.errors.has(key)) return 'error'
+  const key = semanticItemKey(item)
+  const generation = generationOf(state, key)
   const pending = state.pending.get(key)
-  if (pending && pending.generation === generationOf(state, key)) return 'pending'
+  if (pending && pending.generation === generation) return 'pending'
+  const entry = state.states.get(key)
+  if (entry && entry.generation === generation) return entry.state
   return 'unrequested'
+}
+
+function invalidateKeys(state: SemanticClientState, keys: ReadonlySet<string>): number {
+  let invalidated = 0
+  for (const key of keys) {
+    state.generations.set(key, generationOf(state, key) + 1)
+    invalidated += 1
+  }
+  for (const [cacheId, entry] of [...state.cache]) {
+    if (keys.has(semanticItemKey(entry.item))) state.cache.delete(cacheId)
+  }
+  for (const key of [...state.pending.keys()]) if (keys.has(key)) state.pending.delete(key)
+  for (const key of [...state.states.keys()]) if (keys.has(key)) state.states.delete(key)
+  return invalidated
+}
+
+/**
+ * Explicit retry for an exact set of semantic items. Matching is by semantic
+ * identity, so a structurally equal item object still invalidates the real
+ * settled entry and any in-flight generation.
+ */
+export function invalidateSemanticItems(items: readonly SemanticReadItem[],
+  options: SemanticReadOptions = {}): number {
+  const state = clientStateFor(options.fetcher ?? globalThis.fetch)
+  return invalidateKeys(state, new Set(items.map((item) => semanticItemKey(item))))
 }
 
 /**
  * Explicit invalidation/retry: bump the item generation so a late reply never
- * applies, drop its cached absence and let the next acquisition re-probe.
+ * applies, drop its settled absence and let the next acquisition re-probe.
  */
 export function invalidateSemanticReads(
   predicate?: (item: SemanticReadItem, key: string) => boolean,
   options: SemanticReadOptions = {},
 ): number {
   const state = clientStateFor(options.fetcher ?? globalThis.fetch)
-  let invalidated = 0
-  for (const [key, entry] of [...state.cache]) {
-    if (predicate && !predicate(entry.item, key)) continue
-    state.cache.delete(key)
-    state.errors.delete(key)
-    state.generations.set(key, generationOf(state, key) + 1)
-    invalidated += 1
+  const keys = new Set<string>()
+  for (const entry of state.cache.values()) {
+    const key = semanticItemKey(entry.item)
+    if (!predicate || predicate(entry.item, key)) keys.add(key)
   }
-  for (const [key, entry] of [...state.pending]) {
-    if (predicate && !predicate(entry.item, key)) continue
-    state.pending.delete(key)
-    state.errors.delete(key)
-    state.generations.set(key, generationOf(state, key) + 1)
-    invalidated += 1
+  for (const [key, entry] of state.pending) {
+    if (!predicate || predicate(entry.item, key)) keys.add(key)
   }
-  // A hard failure is also an explicit state: an in-place retry must not keep
-  // reporting the previous error for the same item generation.
-  for (const [key, entry] of [...state.errors]) {
-    if (state.cache.has(key) || state.pending.has(key)) continue
-    if (predicate && !predicate(entry.item, key)) continue
-    state.errors.delete(key)
-    invalidated += 1
+  for (const [key, entry] of state.states) {
+    if (!predicate || predicate(entry.item, key)) keys.add(key)
   }
-  return invalidated
+  return invalidateKeys(state, keys)
 }
 
 /** Invalidate every cached read for one territory, optionally limited to resources. */

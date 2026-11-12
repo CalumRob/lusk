@@ -48,7 +48,7 @@ let browser
 try {
   await server.listen()
   const baseUrl = server.resolvedUrls.local[0]
-  const { nativeBatchResponse, nativeReadFixture, nativeCatalogueResponse } =
+  const { nativeBatchResponse, nativeReadFixture, nativeCatalogueResponse, nativePublicationFamily } =
     await server.ssrLoadModule('/src/__tests__/helpers/semanticApiFixtures.ts')
   const { AEDAR_TYPEQU_REGISTRY } = await server.ssrLoadModule('/src/fiche/content/aedarTypequRegistry.ts')
   const semanticContracts = JSON.parse(await readFile(

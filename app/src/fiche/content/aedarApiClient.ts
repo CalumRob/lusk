@@ -1,6 +1,7 @@
 import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
 import { producerCatalogue } from '@/payload/themeAcquisition'
-import { invalidateSemanticReadsForTarget, readSemanticOutcomes } from '@/payload/semanticResourceClient'
+import { invalidateSemanticItems, invalidateSemanticReadsForTarget, publicationFamilyForResource,
+  readSemanticOutcomes } from '@/payload/semanticResourceClient'
 import type { SemanticReadItem } from '@/payload/semanticResourceClient'
 import { PayloadError } from '@/payload/validate'
 
@@ -184,9 +185,15 @@ async function readAedarTerritorySummary(
     }
     const item: SemanticReadItem = { resource: summaryDeclaration.resource_id,
       target: { kind: 'territory', type: territoryType, id: territoryId }, intent: { kind: 'facts' } }
+    const invalidSummary = (message: string) => {
+      invalidateSemanticItems([item], { fetcher })
+      return summaryError('invalid-response', message)
+    }
     let outcome
     try {
-      [outcome] = await readSemanticOutcomes([item], { fetcher, fresh: true })
+      [outcome] = await readSemanticOutcomes([item], { fetcher, fresh: true,
+        expectedFamilies: new Map([[summaryDeclaration.resource_id,
+          publicationFamilyForResource(summaryDeclaration)]]) })
     } catch (error) {
       if (error instanceof PayloadError) {
         if (error.status === 404) return summaryError('unknown-territory', 'Territoire inconnu pour la synthèse AEDAR')
@@ -208,18 +215,18 @@ async function readAedarTerritorySummary(
         !isText(data.aedar_content_version) || !data.aedar_content_version.trim() ||
         !isText(data.reference_content_version) || !data.reference_content_version.trim() ||
         !Array.isArray(data.readings) || data.readings.length !== measures.length) {
-      return summaryError('invalid-response', 'Synthèse AEDAR incomplète ou liée à un autre territoire')
+      return invalidSummary('Synthèse AEDAR incomplète ou liée à un autre territoire')
     }
     const readings = data.readings
     const returned = new Map<string, AedarTerritorySummaryReading>()
     for (const reading of readings) {
       if (!validSummaryReading(reading) || !measureSet.has(reading.measure) || returned.has(reading.measure)) {
-        return summaryError('invalid-response', 'Lecture de synthèse AEDAR invalide')
+        return invalidSummary('Lecture de synthèse AEDAR invalide')
       }
       returned.set(reading.measure, reading)
     }
     if (measures.some((measure) => !returned.has(measure))) {
-      return summaryError('invalid-response', 'Synthèse AEDAR incomplète')
+      return invalidSummary('Synthèse AEDAR incomplète')
     }
     const normalized = measures.map((measure) => returned.get(measure)!)
     const first = normalized[0]!
@@ -228,7 +235,7 @@ async function readAedarTerritorySummary(
     if (normalized.some((reading) => provenanceKeys.some((key) => reading[key] !== first[key]) ||
         reading.n_addresses !== first.n_addresses || reading.n_observed !== first.n_observed ||
         (reading.status === 'available' && reading.n_typequ !== firstAvailable?.n_typequ))) {
-      return summaryError('invalid-response', 'Provenance ou support incohérent dans la synthèse AEDAR')
+      return invalidSummary('Provenance ou support incohérent dans la synthèse AEDAR')
     }
     const provenanceSource = Object.fromEntries(provenanceKeys.map((key) => [key, first[key]])) as AedarProvenance['sources'][number]
     return { status: 'ready', summary: {
@@ -413,7 +420,11 @@ async function readAedarAggregates(
       const batch = items.slice(start, start + 12)
       let outcomes
       try {
-        outcomes = await readSemanticOutcomes(batch, { fetcher })
+        outcomes = await readSemanticOutcomes(batch, { fetcher, fresh: true,
+          expectedFamilies: new Map([['aedar_territorial_aggregate', 'aedar']]),
+          ...(options.expectedContentVersion !== undefined || options.expectedReferenceContentVersion !== undefined
+            ? { coherence: JSON.stringify([options.expectedContentVersion ?? null,
+              options.expectedReferenceContentVersion ?? null]) } : {}) })
       } catch (error) {
         if (error instanceof PayloadError) {
           if (error.status === 404) return errorResult('unknown-territory', 'Territoire inconnu pour la publication AEDAR')
@@ -435,6 +446,9 @@ async function readAedarAggregates(
           || data.target.kind !== 'territory' || data.target.type !== territoryType || data.target.id !== territoryId) invalid()
         const page = validateAedarResponse(data, expected, options.measures)
         if (page.offset !== 0 || page.limit !== 100
+          || (options.expectedContentVersion !== undefined && page.content_version !== options.expectedContentVersion)
+          || (options.expectedReferenceContentVersion !== undefined &&
+            page.reference_content_version !== options.expectedReferenceContentVersion)
           || (contentVersion !== undefined && contentVersion !== page.content_version)
           || (referenceContentVersion !== undefined && referenceContentVersion !== page.reference_content_version)) invalid()
         const returnedCodes = new Set(page.facts.map((fact) => fact.typequ))
@@ -446,6 +460,8 @@ async function readAedarAggregates(
       }
     }
   } catch {
+    // A rejected aggregate page never settles: an explicit retry re-probes.
+    invalidateSemanticItems(items, { fetcher })
     return errorResult('invalid-response', 'Réponse AEDAR invalide')
   }
   const sources = new Map<string, AedarProvenance['sources'][number]>()
@@ -456,6 +472,7 @@ async function readAedarAggregates(
   })
   if ((options.expectedContentVersion !== undefined && options.expectedContentVersion !== contentVersion)
     || (options.expectedReferenceContentVersion !== undefined && options.expectedReferenceContentVersion !== referenceContentVersion)) {
+    invalidateSemanticItems(items, { fetcher })
     return errorResult('invalid-response', 'Publication AEDAR incompatible avec les faits déjà affichés')
   }
   return { status: 'ready', facts, contentVersion: contentVersion!, referenceContentVersion: referenceContentVersion!,

@@ -1,10 +1,11 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
 import type { TerritoireType, Theme } from './types'
 import { validerReponseComparaisonTheme } from './themeFactsAdapter'
-import { chargerCatalogueRessources, invalidateSemanticReads, invalidateSemanticReadsForTarget,
-  readSemanticOutcomes } from './semanticResourceClient'
+import { chargerCatalogueRessources, invalidateSemanticItems, invalidateSemanticReads,
+  invalidateSemanticReadsForTarget, publicationFamilyForResource, readSemanticOutcomes } from './semanticResourceClient'
 import type { SemanticPublicationFamily, SemanticPublicationReason, SemanticReadItem,
   SemanticReadOutcome, SemanticResourceDeclaration, SemanticTerritoryTarget } from './semanticResourceClient'
+import { PayloadError } from './validate'
 /** Every canonical theme is acquired (active priority, then background warm-up) unless an owner-owned flow handles it. */
 export const THEMES_ACQUISITION_API: readonly Theme[] = ['programmes', 'demographie', 'habitat', 'economie', 'milieux', 'mobilite']
 export type ThemeSelectionMember = { territory_type: 'commune' | 'epci' | 'departement' | 'region'; territory_id: string }
@@ -56,6 +57,20 @@ export interface SemanticThemeRead {
   shapes?: string[]
   declaration?: SemanticResourceDeclaration
   data: Record<string, unknown>
+}
+
+/**
+ * The admitted facts' global territory-reference clock is the acquisition
+ * identity comparison/auxiliary reads may reuse. It is intentionally not a
+ * per-resource content version: different resources are different datasets.
+ */
+function acquisitionCoherence(response: ThemeResponse): string | undefined {
+  const references = new Set<string>()
+  for (const read of response.resource_reads ?? []) {
+    const value = read.data.reference_content_version
+    if (typeof value === 'string' && value.length > 0) references.add(value)
+  }
+  return references.size === 1 ? `territory-reference:${[...references][0]}` : undefined
 }
 
 export function normalizePublicationTokens(response: ThemeResponse): Record<string, unknown> {
@@ -148,7 +163,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
 
   constructor(
     private readonly acquireFacts: (theme: ThemeKey, key?: Key) => Promise<T>,
-    private readonly acquireComparison?: (selection: readonly ThemeSelectionMember[] | undefined, theme: ThemeKey, key?: Key) => Promise<ThemeResponse>,
+    private readonly acquireComparison?: (selection: readonly ThemeSelectionMember[] | undefined, theme: ThemeKey, key?: Key, coherence?: string) => Promise<ThemeResponse>,
   ) {}
 
   private key({ type, id, theme }: Key): string { return JSON.stringify([type, id, theme]) }
@@ -205,7 +220,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     }
     const generation = (this.comparisonGenerations.get(pendingKey) ?? 0) + 1
     this.comparisonGenerations.set(pendingKey, generation)
-    const request = this.acquireComparison(selection, theme, key).then((comparison) => {
+    const request = this.acquireComparison(selection, theme, key, acquisitionCoherence(focal.focal)).then((comparison) => {
       if (generation !== this.comparisonGenerations.get(pendingKey)) throw new Error('Stale theme comparison response')
       // A comparison-only response whose every declared comparison stayed
       // unavailable is an explicit retryable error, never a ready page.
@@ -219,8 +234,22 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
           candidate.resource === read.resource && candidate.data.shape === 'series'))
       const hasNativeProfileFocal = (focal.focal.resource_reads ?? []).some((read) =>
         read.shapes?.includes('declared_profile') === true)
-      if (legacySeriesResponse || hasNativeProfileFocal) {
+      const nativeComparisonShape = Array.isArray(comparison.comparison_reads) &&
+        comparison.theme_id === theme
+      if (nativeComparisonShape || hasNativeProfileFocal || legacySeriesResponse) {
         validerReponseComparaisonTheme(theme, comparison, selection, { type: type as TerritoireType, id })
+      }
+      if (nativeComparisonShape && selection !== undefined) {
+        // The typed selection echo and its declared scope are one contract for
+        // every theme, not only for legacy/profile resources.
+        for (const read of comparison.comparison_reads!) {
+          const scope = read.data.scope
+          if (typeof scope !== 'object' || scope === null || Array.isArray(scope) ||
+              (scope as Record<string, unknown>).kind !== 'explicit_selection' ||
+              (scope as Record<string, unknown>).member_count !== selection.length) {
+            throw new Error('La portée de la comparaison sélectionnée est incohérente')
+          }
+        }
       }
       const references = this.legacyReferenceVersions.get(cacheKey) ?? new Map<string, string>()
       const compatible = semanticPublicationsCompatible(focal.focal, comparison, { type, id }, {
@@ -364,12 +393,21 @@ type AlignedRead = { resource: string; data: Record<string, unknown> }
  * requested item yields exactly one outcome: the unchanged data payload or an
  * explicit publication-unavailable state. Nothing re-reads a resource group and
  * no automatic discovery request follows an absence.
+ *
+ * `coherence` is the caller-owned publication identity: comparison/auxiliary
+ * reads bind to the admitted focal facts' territory-reference clock, so an
+ * identical item can be reused only within that same acquisition identity.
  */
 async function readThemeOutcomes(
   items: SemanticReadItem[],
   resources: SemanticResourceDeclaration[],
+  coherence?: string,
 ): Promise<{ reads: Array<AlignedRead | null>; failures: ThemeResourceFailure[] }> {
-  const outcomes = await readSemanticOutcomes(items)
+  const expectedFamilies = new Map(resources.map((resource) =>
+    [resource.resource_id, publicationFamilyForResource(resource)] as const))
+  const outcomes = await readSemanticOutcomes(items, {
+    ...(coherence === undefined ? {} : { coherence }), expectedFamilies,
+  })
   const reads: Array<AlignedRead | null> = new Array(items.length).fill(null)
   const failures: ThemeResourceFailure[] = []
   outcomes.forEach((outcome, index) => {
@@ -381,6 +419,22 @@ async function readThemeOutcomes(
     failures.push(publicationFailure(resources, item.resource,
       item.intent.kind === 'facts' ? 'facts' : 'comparison', outcome))
   })
+  // Facts and auxiliary facts from one acquisition share the global territory
+  // reference clock. A batch boundary must never assemble two reference
+  // generations into one ready response. Resource-owned content versions may
+  // legitimately differ between datasets and are intentionally not compared.
+  const references = new Set<string>()
+  outcomes.forEach((outcome, index) => {
+    const item = items[index]!
+    if (outcome.status !== 'available' || item.intent.kind !== 'facts') return
+    const reference = outcome.data.reference_content_version
+    if (typeof reference === 'string' && reference.length > 0) references.add(reference)
+  })
+  if (references.size > 1) {
+    invalidateSemanticItems(items)
+    throw new PayloadError('validation', '/api/resources/read-batch',
+      'Les lectures sémantiques de cette acquisition ne partagent pas le même référentiel territorial.')
+  }
   return { reads, failures }
 }
 
@@ -557,12 +611,14 @@ function namedReferenceItems(resources: SemanticResourceDeclaration[]): Semantic
  */
 async function readAuxiliary(resources: SemanticResourceDeclaration[], type: string,
   includeNamedReferences = true, selection?: readonly ThemeSelectionMember[],
+  coherence?: string,
 ): Promise<{ responses: Partial<ThemeResponse>; failures: ThemeResourceFailure[] }> {
   const cohorts = typedCohortItems(resources, type, selection)
   const namedReferences = includeNamedReferences ? namedReferenceItems(resources) : []
   const [cohortResult, namedResult] = await Promise.allSettled([
-    cohorts.length ? readThemeOutcomes(cohorts, resources) : Promise.resolve({ reads: [], failures: [] }),
-    namedReferences.length ? readThemeOutcomes(namedReferences, resources)
+    cohorts.length ? readThemeOutcomes(cohorts, resources, coherence)
+      : Promise.resolve({ reads: [], failures: [] }),
+    namedReferences.length ? readThemeOutcomes(namedReferences, resources, coherence)
       : Promise.resolve({ reads: [], failures: [] }),
   ])
   const present = (reads: Array<AlignedRead | null>) => reads
@@ -823,13 +879,16 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
         ...auxiliary.responses, ...failureResponse(auxiliary.failures) }
     }
     const { reads, failures } = await readThemeOutcomes(items, resources)
-    const auxiliary = await readAuxiliary(themeResources, type)
     const compatibilityFailures = filterCompatibleComparisons(items, reads, resources, type, id)
     const allFailures: ThemeResourceFailure[] = [...failures, ...compatibilityFailures]
     const resourceReads = items
       .map((item, index) => item.intent.kind === 'facts' ? reads[index] : null)
       .filter((read): read is AlignedRead => read !== null)
       .map((read) => decorateRead(read, resources))
+    // The admitted facts' global reference clock is the one acquisition
+    // identity auxiliary/cohort reads may reuse; without it they re-read.
+    const auxiliary = await readAuxiliary(themeResources, type, true, undefined,
+      acquisitionCoherence({ resource_reads: resourceReads }))
     const comparisonReads = items
       .map((item, index) => item.intent.kind !== 'facts' ? reads[index] : null)
       .filter((read): read is AlignedRead => read !== null)
@@ -865,7 +924,7 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
 }
 
 export function acquireThemeComparison(type: string, id: string, theme: ThemeKey,
-  selection?: readonly ThemeSelectionMember[]): Promise<ThemeResponse> {
+  selection?: readonly ThemeSelectionMember[], coherence?: string): Promise<ThemeResponse> {
   return (async () => {
     const themeResources = (await producerCatalogue()).filter((resource) => resource.theme_id === theme)
     const resources = retainedThemeResources(themeResources, theme, type)
@@ -880,10 +939,10 @@ export function acquireThemeComparison(type: string, id: string, theme: ThemeKey
         : [territoryItem(resource.resource_id, type, id, intent)]
     })
     const { reads, failures } = items.length
-      ? await readThemeOutcomes(items, resources)
+      ? await readThemeOutcomes(items, resources, coherence)
       : { reads: [] as Array<AlignedRead | null>, failures: [] as ThemeResourceFailure[] }
     const comparisons = reads.filter((read): read is AlignedRead => read !== null)
-    const auxiliary = await readAuxiliary(themeResources, type, false, selection)
+    const auxiliary = await readAuxiliary(themeResources, type, false, selection, coherence)
     const echoedSelection = comparisons.length ? comparisons[0]!.data.selection : undefined
     if (comparisons.some(({ data }) => JSON.stringify(data.selection ?? null) !== JSON.stringify(echoedSelection ?? null))) {
       throw new Error('Les comparaisons sémantiques ne reflètent pas la même sélection')

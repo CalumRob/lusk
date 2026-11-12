@@ -311,7 +311,7 @@ try {
   const { cahierPaginationFor } = await server.ssrLoadModule('/src/fiche/prototype/cahierPagination.ts')
   // #868 : les faits du thème actif passent par /api/resources/read-batch (contrat sémantique),
   // servis ici par les fixtures natives du suite (semanticApiFixtures).
-  const { nativeBatchResponse, nativeReadFixture, nativeCatalogueResponse } =
+  const { nativeBatchResponse, nativeReadFixture, nativeCatalogueResponse, nativePublicationFamily } =
     await server.ssrLoadModule('/src/__tests__/helpers/semanticApiFixtures.ts')
   const cataloguePayload = await (await nativeCatalogueResponse()).json()
   const catalogueResources = cataloguePayload.resources

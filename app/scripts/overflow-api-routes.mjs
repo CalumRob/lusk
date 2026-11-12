@@ -99,11 +99,16 @@ export function makeApiHandlers(deps) {
       const byId = new Map(results.map((result) => [result.id, result]))
       const ordered = request.items.map((item) => {
         const result = byId.get(item.id)
-        return result
-          ? { ...result, resource: result.resource ?? item.resource,
+        if (result) {
+          return { ...result, resource: result.resource ?? item.resource,
             status: result.status ?? 'available' }
-          : { id: item.id, resource: item.resource, status: 'publication_unavailable',
-            reason: 'publication_absent', family: 'scalar' }
+        }
+        const family = deps.familyForResource?.(item.resource)
+        if (!family) {
+          throw new Error(`Fixture has no declared publication family for ${item.resource}`)
+        }
+        return { id: item.id, resource: item.resource, status: 'publication_unavailable',
+          reason: 'publication_absent', family }
       })
       await route.fulfill({ status: 200, contentType: 'application/json',
         body: JSON.stringify({ contract: 'semantic-read-batch-v2', results: ordered }) })

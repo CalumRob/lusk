@@ -207,7 +207,7 @@ watch([() => referenceTerritoire.reference.value, selection, typeRoute, idRoute,
   }, { immediate: true })
 const cacheAcquisition = new ThemeAcquisitionCache(
   (theme, key) => acquireThemeFacts(key!.type, key!.id, theme),
-  (selection, theme, key) => acquireThemeComparison(key!.type, key!.id, theme, selection),
+  (selection, theme, key, coherence) => acquireThemeComparison(key!.type, key!.id, theme, selection, coherence),
 )
 const faitsThemeRows = ref<Indicateur[] | null>(null)
 const histoiresThemeRows = ref<Histoire[] | null>(null)
@@ -561,8 +561,9 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
         // its reader and must not invalidate successful rank/value cells.
         statutComparaison.value = acquired.focal.comparison_error ? 'error' : 'ready'
       cleFaitsPrets = `${typeRoute.value}/${code}/${themeActif}`
-    } catch {
+    } catch (error) {
       if (!cancelled && request === sequenceAcquisition) {
+        console.log('DEBUG_TERR_ACQ', error)
         faitsThemeRows.value = null
         histoiresThemeRows.value = null
         statutAcquisition.value = 'error'

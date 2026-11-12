@@ -1,6 +1,6 @@
 import type { Territoire, TerritoireType } from './types'
 import type { OrderedSeriesRead } from './orderedSeriesAdapter'
-import { invalidateSemanticReads, lireRessourcesBatch } from './semanticResourceClient'
+import { invalidateSemanticItems, invalidateSemanticReads, lireRessourcesBatch } from './semanticResourceClient'
 import type { SemanticReadItem } from './semanticResourceClient'
 
 type Row = Record<string, any>
@@ -60,6 +60,16 @@ function invalidateSeriesReads(input: Pick<OrderedSeriesAcquireInput,
     return item.target.kind === 'territory' && item.target.type === input.focal.type &&
       item.target.id === input.focal.territoire
   })
+}
+
+/**
+ * An explicit route/focal change abandons the previous focal read. The next
+ * acquisition must not join that abandoned in-flight item, while a comparison
+ * retry for the same focal is untouched.
+ */
+export function invalidateOrderedSeriesFocalTarget(resource: string, type: TerritoireType, id: string): void {
+  invalidateSemanticItems([{ resource, target: { kind: 'territory', type, id },
+    intent: { kind: 'facts' } }])
 }
 
 export interface OrderedSeriesAcquireInput {

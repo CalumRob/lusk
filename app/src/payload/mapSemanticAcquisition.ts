@@ -5,7 +5,7 @@ import { adapterCohorteScalairePourCarte } from './scalarCohort'
 import { adapterProfilDeclare } from './profileAcquisition'
 import { periodDetailCohortFacts } from './sparseCollectionPage'
 import { orderedSeriesAdapterFor, orderedSeriesFacts } from './orderedSeriesAdapter'
-import { chargerCatalogueRessources, lireRessourcesBatch } from './semanticResourceClient'
+import { chargerCatalogueRessources, invalidateSemanticItems, lireRessourcesBatch } from './semanticResourceClient'
 import type { SemanticReadItem, SemanticResourceDeclaration } from './semanticResourceClient'
 import { PayloadError } from './validate'
 
@@ -327,21 +327,28 @@ export async function acquireMapThemeFacts(theme: Theme, level: TerritoireType,
             : { fields: ['value'] }),
       intent: { kind: 'facts' } }))
     const responses = await lireRessourcesBatch(items)
-    for (let index = 0; index < declarations.length; index++) {
-      const admitted = factsCarteDepuisLectureCohorte(declarations[index]!, responses[index], territories, readingParams, pages)
-      output.facts.push(...admitted.facts)
-      output.stories.push(...admitted.stories)
-      output.memberships.push(...admitted.memberships)
-      output.grants.push(...admitted.grants)
-      Object.assign(output.axes, admitted.axes)
-      output.declarations.push(declarations[index]!)
-      output.identities[declarations[index]!.indicator_id] = admitted.identity
-      Object.assign(output.nativeContracts, admitted.nativeContracts)
-      if (output.identity.referenceContentVersion && output.identity.referenceContentVersion !== admitted.identity.referenceContentVersion) {
-        throw new Error('Les ressources natives de la carte utilisent des référentiels différents')
+    try {
+      for (let index = 0; index < declarations.length; index++) {
+        const admitted = factsCarteDepuisLectureCohorte(declarations[index]!, responses[index], territories, readingParams, pages)
+        output.facts.push(...admitted.facts)
+        output.stories.push(...admitted.stories)
+        output.memberships.push(...admitted.memberships)
+        output.grants.push(...admitted.grants)
+        Object.assign(output.axes, admitted.axes)
+        output.declarations.push(declarations[index]!)
+        output.identities[declarations[index]!.indicator_id] = admitted.identity
+        Object.assign(output.nativeContracts, admitted.nativeContracts)
+        if (output.identity.referenceContentVersion && output.identity.referenceContentVersion !== admitted.identity.referenceContentVersion) {
+          throw new Error('Les ressources natives de la carte utilisent des référentiels différents')
+        }
+        output.identity.referenceContentVersion = admitted.identity.referenceContentVersion
+        output.identity.contentVersion += `${output.identity.contentVersion ? ',' : ''}${declarations[index]!.resource_id}:${admitted.identity.contentVersion}`
       }
-      output.identity.referenceContentVersion = admitted.identity.referenceContentVersion
-      output.identity.contentVersion += `${output.identity.contentVersion ? ',' : ''}${declarations[index]!.resource_id}:${admitted.identity.contentVersion}`
+    } catch (error) {
+      // A rejected map adapter never settles: an explicit retry re-probes the
+      // exact semantic keys through the shared transport.
+      invalidateSemanticItems(items)
+      throw error
     }
   }
   return output

@@ -159,7 +159,8 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
       items.slice(index * batchSize, (index + 1) * batchSize))
     const responses = await Promise.all(batches.map(async (batch) => {
       const outcomes = await readSemanticOutcomes(batch, { fetcher, signal: options.signal, fresh: true,
-        vary: JSON.stringify([options.expectedContentVersion, options.expectedReferenceContentVersion,
+        expectedFamilies: new Map([['aedar_territorial_aggregate', 'aedar']]),
+        coherence: JSON.stringify([options.expectedContentVersion, options.expectedReferenceContentVersion,
           options.expectedSummaryContentVersion]) })
       return { batch, outcomes }
     }))

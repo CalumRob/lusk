@@ -1,6 +1,6 @@
 import type { Indicateur, NativeThemeFactContract, Territoire, TerritoireType, Theme, IndicatorPageMetadata, ThemeMetadata } from './types'
 import { PayloadError } from './validate'
-import { chargerCatalogueRessources, invalidateSemanticReads, lireRessourcesBatch } from './semanticResourceClient'
+import { chargerCatalogueRessources, invalidateSemanticItems, lireRessourcesBatch } from './semanticResourceClient'
 import type { SemanticReadItem, SemanticResourceDeclaration } from './semanticResourceClient'
 
 type Row = Record<string, unknown>
@@ -122,7 +122,7 @@ export async function chargerCohorteScalaire(indicator: string, theme: Theme, pa
   try {
     return adapterCohorteScalaire(data!, declaration, indicator, theme, page, level, territories, scope, identity)
   } catch (error) {
-    invalidateSemanticReads((item) => items.includes(item))
+    invalidateSemanticItems(items)
     throw error
   }
 }
@@ -420,7 +420,7 @@ export async function chargerComparaisonsScalaires(indicators: string[], theme: 
   } catch (error) {
     // A rejected comparison is not a settled publication: the explicit retry
     // must re-probe these exact reads rather than replay the rejected outcome.
-    invalidateSemanticReads((item) => items.includes(item))
+    invalidateSemanticItems(items)
     throw error
   }
 }
