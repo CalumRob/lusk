@@ -646,7 +646,7 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
 .mobilite-comparison-retry { min-height: 2.75rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
 .mobilite-comparison-retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
 .mobilite-comparison-retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
-.mobilite-ratio { display: grid; gap: var(--space-1); border-top: 1px solid color-mix(in srgb, var(--cahier-theme) 22%, var(--paper)); padding-top: var(--space-3); }
+.mobilite-ratio { display: grid; gap: var(--space-1); }
 .mobilite-ratio__value { margin: 0; color: var(--cahier-default); font: var(--text-body-sm); }
 .mobilite-ratio__note { margin: 0; color: var(--text-secondary); font: var(--text-caption); }
 </style>

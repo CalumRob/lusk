@@ -490,7 +490,10 @@ function stationnementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): M
   )
   const allFacts = [bikeSpaces, carSpaces, ratioFact]
   const ratio: MobiliteRatioEvidence = {
-    label: ratioFact.label,
+    // App-owned caption: the value line already carries the bike ÷ car
+    // anatomy, so the caption reads as its sentence-case legend (#974). The
+    // producer keeps ownership of the value, its unit and its scale.
+    label: 'places de stationnement vélo pour 1 place voiture',
     value: ratioFact,
     note: parkingRatioNote(bikeSpaces, carSpaces, ratioFact),
   }
@@ -570,6 +573,7 @@ function ravitaillementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): 
   )
   const allFacts = [bornes, stations, bornesRaw, stationsRaw, ratioFact]
   const ratio: MobiliteRatioEvidence = {
+    // The factual producer label stays below the charging ÷ fuel anatomy.
     label: ratioFact.label,
     value: ratioFact,
     note: ravitaillementRatioNote(bornesRaw, stationsRaw, ratioFact),
