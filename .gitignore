@@ -57,6 +57,9 @@
 # Reader dispositions of the #827/#619 serving cleanups — versioned like the
 # ADRs their readers cite.
 !/docs/cleanup-indicator-runtime-871.md
+# Le runbook de la matérialisation scalaire ciblée (#989, ADR-0043) est une
+# procédure de publication versionnée, comme les ADR qu'elle cite.
+!/docs/scalar-scoped-publication.md
 # Le prototype #499 (jetable) : son dossier de revue — README + captures —
 # est l'artefact de décision versionné, comme les rapports d'audit des
 # PRs #451/#452/#455/#491.
