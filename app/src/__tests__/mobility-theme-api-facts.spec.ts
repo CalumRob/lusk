@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
 import type { TerritoryComparisonContext } from '@/fiche/comparisonContext'
+import { contexteMembresSelectionnes } from '@/fiche/comparisonContext'
 import { metadonneesThemesFixtures, histoiresMobiliteFixture, metadonneesMobiliteRaccordementFixture } from '@/payload/fixtures'
 import type { Payload } from '@/payload/types'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
@@ -440,16 +441,82 @@ describe('SQL Mobilité response to Variant E facts', () => {
     const synthetic = nativeRaccordementReads('22001', 'commune', payload,
       { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) =>
         ({ type: territory_type, id: territory_id })) })
-    const selectedContext: TerritoryComparisonContext = { ...context, mode: 'epci', scope: {
-      kind: 'communes-epci', label: 'Deux communes sélectionnées',
-    } }
+    // #981 — the typed group is its own context; no preset is fabricated.
+    const selectedContext = contexteMembresSelectionnes(selection)!
+    expect(selectedContext).toMatchObject({ mode: 'custom',
+      scope: { kind: 'selection', label: '2 communes sélectionnées' } })
     const compared = applyThemeComparisonApiFacts(synthetic.facts, synthetic.comparison, selectedContext, selection)
     expect(compared.mobility.selectedTrajectoryComparison).toMatchObject({
       statistic: 'mean', selectedMemberCount: selection.length, eligibleCount: selection.length,
+      scope: { kind: 'selection', label: '2 communes sélectionnées',
+        territoryIds: ['22001', '35238'] },
       points: synthetic.comparisonData.result.mean_curve.points.map((point: any) => expect.objectContaining({
         detail: point.axis, value: point.value,
       })),
     })
+  })
+  it('names a custom group in the scope of every served comparison without inventing a preset (#981)', () => {
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '22001' },
+      { territory_type: 'commune' as const, territory_id: '22002' },
+      { territory_type: 'commune' as const, territory_id: '22003' },
+    ]
+    const customContext = contexteMembresSelectionnes(selection)!
+    const facts = mobilityFacts(response(), '22001')
+    const comparisons = { contract: 'theme-comparison-v1', theme_id: 'mobilite', profile_comparisons: [
+      { indicator: 'reseaux_par_habitant', facet: { detail: 't_km_1000', sex: null },
+        status: 'available', direction: 'high', median: 12, rank: 1, rank_size: 2 },
+    ], results: [{ indicator_id: 'places_stationnement_velo_1000', status: 'available', direction: 'low',
+      median: 41, rank: 2, rank_size: 2, rank_ties: 1 }] }
+    const compared = applyThemeComparisonApiFacts(facts, comparisons, customContext, selection)
+    const scalar = compared.mobility.indicators
+      .find((fact) => fact.key === 'places_stationnement_velo_1000')!
+    expect(scalar.comparison).toMatchObject({
+      direction: 'moins-est-mieux',
+      scope: { mode: 'custom', kind: 'selection', label: '3 communes sélectionnées' },
+      // The served rank population is eligibility (2), never the selection
+      // count (3) substituted as a denominator.
+      rank: { position: 2, size: 2, ties: 1 },
+      reference: { kind: 'median', value: 41 },
+    })
+    expect(compared.mobility.indicators.find((fact) => fact.key === 'reseaux_par_habitant')?.comparison)
+      .toMatchObject({ scope: { mode: 'custom', kind: 'selection', label: '3 communes sélectionnées' },
+        rank: { position: 1, size: 2 } })
+  })
+  it('keeps the API answer for a typed selection when the caller has no presentation context (#981)', () => {
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '22001' },
+      { territory_type: 'commune' as const, territory_id: '22002' },
+    ]
+    const facts = mobilityFacts(response(), '22001')
+    const comparisons = { contract: 'theme-comparison-v1', theme_id: 'mobilite', profile_comparisons: [],
+      results: [{ indicator_id: 'places_stationnement_velo_1000', status: 'available', direction: 'high',
+        median: 41, rank: 1, rank_size: 2 }] }
+    const compared = applyThemeComparisonApiFacts(facts, comparisons, undefined, selection)
+    expect(compared.mobility.indicators
+      .find((fact) => fact.key === 'places_stationnement_velo_1000')?.comparison)
+      .toMatchObject({ scope: { mode: 'custom', kind: 'selection', label: '2 communes sélectionnées' },
+        rank: { position: 1, size: 2 } })
+  })
+  it('retains a served eligibility smaller than the selected membership on ranked facts (#981)', () => {
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '22001' },
+      { territory_type: 'commune' as const, territory_id: '22002' },
+      { territory_type: 'commune' as const, territory_id: '22003' },
+    ]
+    const facts = mobilityFacts(response(), '22001')
+    const comparisons = { contract: 'theme-comparison-v1', theme_id: 'mobilite', profile_comparisons: [],
+      results: [{ indicator_id: 'places_stationnement_velo_1000', status: 'available', direction: 'high',
+        median: 41, rank: 2, rank_size: 2 }] }
+    const customContext = contexteMembresSelectionnes(selection)!
+    const compared = applyThemeComparisonApiFacts(facts, comparisons, customContext, selection)
+    const scalar = compared.mobility.indicators
+      .find((fact) => fact.key === 'places_stationnement_velo_1000')!
+    // 3 membres sélectionnés, 2 territoires éligibles servis : le rang garde
+    // le dénominateur d'éligibilité servi, jamais le compte de sélection.
+    expect(scalar.comparison?.rank).toEqual({ position: 2, size: 2 })
+    expect(customContext.scope).toMatchObject({ label: '3 communes sélectionnées',
+      territoryIds: ['22001', '22002', '22003'] })
   })
   it.each([
     {
