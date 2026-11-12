@@ -1893,6 +1893,12 @@ try {
         `issue976-page2-ratio-refuelling-${width}.png`)
       await captureSurface(page.locator('[data-column="ravitaillement"] .mobilite-section-figure'),
         `issue976-page2-refuelling-figure-${width}.png`)
+      // #988 — the legend cleanup review surfaces: the network legend and the
+      // parking figure, where only the comparison key remains.
+      await captureSurface(page.locator('.mobilite-section--reseaux .mobilite-section-figure'),
+        `issue988-page2-network-legend-${width}.png`)
+      await captureSurface(page.locator('[data-column="stationnement"] .mobilite-section-figure'),
+        `issue988-page2-parking-figure-${width}.png`)
     }
 
     // #976 — the page-2 ratio captions must wear the exact AEDAR scalar caption
