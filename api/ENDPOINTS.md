@@ -65,13 +65,17 @@ the API does not guess or repair producer declarations.
 `target`, optional closed `coordinates`, `fields`, and typed `intent`). The
 single-read request and each batch item have the same fields; only a batch item
 adds its correlation `id`. `POST /api/resources/read-batch` validates all items
-before returning results. Under v1 any item failure returns no partial result;
-under the opt-in `"contract": "semantic-read-batch-v2"` only a classified
-absent-publication item becomes one `publication_unavailable` result, while
-validation, member, SQL/service, global-clock/provenance and snapshot failures
-still abort the whole request. Both versions execute on one
-`READ ONLY REPEATABLE READ` snapshot. Nonempty batches have no
-item-count ceiling and are bounded by 200,000 preflight work units and 8 MB serialized output. Supported intents
+before returning results. Under v1 any item failure returns no partial result
+and keeps its historical status/detail wording. Under the opt-in
+`"contract": "semantic-read-batch-v2"` the batch first admits the actual focal
+target, selected members, cohort filters and declared territory level, then
+returns one result per item: only a classified absent publication becomes
+`publication_unavailable`, while validation, identity, SQL/service,
+global-clock/provenance and snapshot failures still abort the whole request.
+The declared `family` always comes from the producer resource declaration, not
+the failed lookup. Both versions execute on one `READ ONLY REPEATABLE READ`
+snapshot. Nonempty batches have no item-count ceiling and are bounded by
+200,000 preflight work units and 8 MB serialized output. Supported intents
 are `facts`, `fixed_comparison` with its declared closed comparison context, and
 bounded `selected_comparison` with at most 1,500 unique typed territory members. Facts
 coordinates and optional fields are producer-declared; status, availability,

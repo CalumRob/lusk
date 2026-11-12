@@ -1,4 +1,4 @@
-# ADR-0043 : Shared typed publication outcomes for batch reads
+﻿# ADR-0043 : Shared typed publication outcomes for batch reads
 
 - **Status:** accepted (owner decision 2026-11-12, issue #984; supersedes the
   atomic-only availability stance of ADR-0040 for batch reads)
@@ -27,12 +27,18 @@ exception. v1 remains a migration bridge only.
 2. A v2 response has one result per requested item, in request order:
    - `status: "available"` with the unchanged `data` payload, or
    - `status: "publication_unavailable"` with a closed `reason`
-     (`publication_absent`) and declared `family` (`scalar`, `profile`,
-     `ordered_series`, `named_reference`, `typed_reading`, `collection`,
-     `comparison`, `aedar`). No data, version, rank or zero is invented.
+     (`publication_absent`) and declared `family`. The family is derived from
+     the producer resource declaration, never from which lookup failed: a
+     comparison intent on an ordered series still names `ordered_series`, and
+     a scalar/profile comparison names its resource family. No data, version,
+     rank or zero is invented.
 3. Only the explicit server-side `PublicationUnavailable` guard type
    (`api/publication_outcomes.py`) may become an item outcome. The executor
    never matches English messages and never catches `HTTPException` broadly.
+   V2 first admits actual target/member/cohort identity and declared level
+   before any publication absence can become an outcome, so a bad identity is
+   never masked by an unpublished resource. V1 keeps its historical precedence
+   and its exact status/detail strings during migration.
 4. These remain whole-request failures in both contracts, with no partial
    envelope: `404` identity/member, `422` malformed/unknown/field/coordinate,
    `413` work/byte bounds; SQL/schema/pool/service faults; a failed or changed

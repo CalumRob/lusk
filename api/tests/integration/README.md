@@ -95,16 +95,24 @@ connection, keeps it for the whole test process including cleanup/verification,
 and releases it last. Do not point another worker at `lusk_it_contract` while it
 holds the lock. The proof creates one random `it_outcome_*` schema, seeds only
 its own families, and always drops that schema in `finally`; it fails before the
-unlock if any user schema or `public` relation remains, and prints the database
-byte size before and after. It is not a retained benchmark fixture.
+unlock if its own schema or any schema introduced by the run remains, or if a
+`public` relation remains, and prints the database byte size/schema state before
+and after. On a clean serialized target this verifies zero user schemas; a
+sibling's pre-existing schema is reported but never dropped by this fixture. It
+is not a retained benchmark fixture.
 
 The suite proves mixed and all-unavailable envelopes across scalar, profile,
 owned series, named reference, typed reading, collection, comparison and AEDAR;
+three actual refuelling scalar keys exercise facts/fixed/selected absence;
 unchanged values/ranks/units/clocks/provenance; item correlation and one
-repeatable-read snapshot; hard `404`/`422` member/malformed failures; global
-clock/provenance and SQL/service faults rejecting the whole request; the v1
-atomic bridge; and the executor's work/byte bounds (ordinary unit tests). Use
-the documented guarded DSNs, dedicated roles and private `PGPASSFILE`:
+repeatable-read snapshot; v2 identity admission (unknown target/member with an
+unpublished resource still rejects the whole request); hard `404`/`422`
+member/malformed failures; global clock/provenance and SQL/service faults
+rejecting the whole request; the v1 atomic bridge; and the executor's
+work/byte bounds (ordinary unit tests). The run refuses before its first
+connection/DDL unless `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`; ordinary collection
+without test DSNs skips normally. Use the documented guarded DSNs, dedicated
+roles and private `PGPASSFILE`:
 
 ```powershell
 $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
