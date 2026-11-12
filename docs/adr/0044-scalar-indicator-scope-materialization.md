@@ -2,6 +2,8 @@
 
 - **Status:** Accepted — implementation decision for #989, 2026-11-12. The
   serving database publication remains the separately gated operator step.
+  Amended by #995 (2026-11-12): the pre-write guard and the write are scoped to
+  the registered scalar dependency closure instead of every retained owner.
 - **Parent:** ADR-0038 (common indicator serving contract), ADR-0035 (serving
   grains and scoped comparisons), ADR-0037 (publish tables independently from
   R).
@@ -71,48 +73,53 @@ can be scoped.
    **pre-write serving baseline guard** plus the **atomic profile companion**.
    When a scoped publication is requested (`LUSK_SCALAR_SCOPE` set),
    `publish_retained_backend_from_parquet()` requires
-   `LUSK_SCALAR_BASELINE_SORTIE` — the canonical generation the serving database
-   was published from — and, under the existing scalar advisory lock
-   (`pg_advisory_lock(594,1)`), compares the live markers before any write:
-   - **unchanged owners** (territory reference, demographic/habitat/economy/
-     milieux typed readings and the Milieux absence marker, the owned series
-     dataset) must match the **candidate** artifacts;
-   - **scalar and scalar comparison** must match the **prior baseline**
-     artifacts, not the updated candidate (whose scalar version necessarily
-     changes);
-   - **declared profile** (`declared_profile`), **profile comparison**
-     (`profile_comparison_publication`), the **DPE required scalar version**,
-     and the **selected habitat reading** (`selected_reading`,
-     `selected_reading_publication`, `selected_reading_descriptor.
-     linked_content_version`) must match the **prior baseline** composite
-     (profile version + baseline scalar version + reference version);
-   - the **candidate profile artifact** must already be bound to the
-     **candidate scalar version**;
-   - candidate vs baseline must differ **exactly** by the declared scoped
-     indicators (facts/descriptors/provenance/comparison identical after
-     removing them; typed/series/reference/profile facts identical).
-   Any mismatch — including an unreadable/invalid baseline artifact under the
-   current producer contracts — hard-refuses with **zero writes** and a report
-   naming each marker and expected value, instructing the operator to retrieve
-   the latest canonical generation that matches serving; never to regenerate,
-   force or overwrite. This is a precondition, not a second publisher.
-8. Execute the scalar-bound profile companion through its normal owner, inside
-   one atomic publication transaction. `refresh_declared_profile_scalar_binding()`
-   reads the existing declared-profile artifacts with their prior binding,
-   changes **only** the descriptor's `required_scalar_version` to the candidate
-   scalar version, and re-writes the same owner artifacts through the normal
-   profile transport (facts, axes, provenance and eligible territories are
-   identical; DPE fact rows are untouched). It never recomputes the profile.
-   The wrapper then opens **one outer transaction** via
+   `LUSK_SCALAR_BASELINE_SORTIE` — the counterpart generation: the canonical
+   generation the serving database was published from when publishing forward,
+   or the published candidate when recovering. Under the existing scalar
+   advisory lock (`pg_advisory_lock(594,1)`), the wrapper derives the
+   **registered dependency closure** from producer metadata and declared-profile
+   artifacts (amended by #995; this supersedes the all-owner guard):
+   - the retained **scalar snapshot + its comparison** (whole-table writers);
+   - every declared profile that carries a `required_scalar_version` binding
+     (the scalar token is global, so the DPE companion is affected);
+   - every typed-reading resource whose declared `source_keys` intersect those
+     profile `comparison_scalar` facets (the linked Habitat selected reading);
+   - the **territory reference** must match both generations and is never
+     rewritten by this path.
+   Before any write, the guard requires the live markers of **that closure** to
+   match the *current* generation exactly: scalar + scalar comparison,
+   declared profile + profile comparison, DPE required scalar/descriptor,
+   selected-reading content and linked version. Unrelated owners — demographic,
+   economy, Milieux and owned-series rows **and markers** — are outside the
+   plan: they are not read as expectations, not published, and a newer live
+   version cannot fail a scoped publication. The same plan also proves target
+   vs current differ **exactly** by the declared scoped indicators
+   (facts/descriptors/provenance/comparison identical after removing them;
+   profile facts/descriptors identical after removing the scalar binding;
+   affected selected-reading content identical). Any closure mismatch
+   hard-refuses with **zero writes** and a report naming each marker and
+   expected value, instructing the operator to retrieve the exact counterpart
+   generation; never to regenerate, force or overwrite.
+8. Execute only the closure through its normal owners, inside one atomic
+   publication transaction. Forward, the candidate declared-profile artifact is
+   refreshed metadata-only to the candidate scalar version by
+   `refresh_declared_profile_scalar_binding()` (only the descriptor's
+   `required_scalar_version` changes; DPE facts/axes/provenance are untouched),
+   then the registered scalar, profile and selected-reading publishers run.
+   Recovery uses the same plan with the frozen prior baseline as target and the
+   published candidate as current: the scalar publisher's normal explicit
+   **retirement policy** omits the three scoped indicators from the restored
+   generation (metadata still declares them, so the API reports them as
+   declared-but-unpublished, exactly as before #989); the profile companion is
+   restored from the baseline artifact and the linked Habitat reading from the
+   baseline artifact. The wrapper opens **one outer transaction** via
    `with_publication_transaction()`; the existing owner adapters and typed
-   readers now use `publication_transaction()`, so their inner transactions
-   compose into it. The active **connection identity** is tracked (not a
-   process boolean): inner publishers join only on the identical connection; a
-   different connection inside the outer context fails before SQL; nested outer
-   calls are refused; the active state is cleared on every exit/error. Order:
-   territory reference → scalar → refreshed profile →
-   demographic/habitat selected reading → economy → Milieux/series. Any failure
-   rolls back every owner and the wrapper restores the pre-refresh profile
+   readers compose into it through `publication_transaction()`. The active
+   **connection identity** is tracked (not a process boolean): inner publishers
+   join only on the identical connection; a different connection fails before
+   SQL; nested outer calls are refused; the active state is cleared on every
+   exit/error. Order: scalar → profiles → linked selected reading. Any failure
+   rolls back every owner and (forward) restores the pre-refresh profile
    artifacts; a retry after clearing the failure succeeds. This is not a second
    publisher and not an ad-hoc SQL seed.
    The scalar `pg_advisory_lock(594,1)` serializes scalar publishers; it does
@@ -132,17 +139,25 @@ can be scoped.
   markers and advisory locks remain the publication path; the wrapper adds the
   baseline guard and composes the owner transactions into one atomic
   publication (with the profile companion refreshed metadata-only).
-- A publication is allowed only when the live serving markers match the
-  candidate for unchanged owners and the supplied prior baseline for the scalar,
-  its comparison, the declared profile/comparison, and the selected habitat
-  linked reading; any mismatch refuses with zero writes and asks for the current
-  canonical generation. The guard also proves candidate vs baseline differ only
-  by the scoped indicators.
-- The scalar/comparison tables remain whole-table replaces. Unchanged rows keep
-  their facts, provenance and descriptors, but the table content version changes
-  and scalar-bound dependents (DPE profile binding, habitat reading linked
-  version) advance through their normal owners. No per-row write semantics are
-  claimed.
+- A publication is allowed only when the live markers of the registered scalar
+  dependency closure (scalar/comparison, bound profile/comparison, DPE required
+  scalar, Habitat selected reading/linked version) match the current generation,
+  and the target/current artifacts differ only by the scoped indicators. Any
+  closure mismatch refuses with zero writes and asks for the exact counterpart
+  generation. Unrelated owner markers may legitimately be newer and neither
+  block nor change.
+- The scalar/comparison and declared-profile tables remain whole-table replaces.
+  Unchanged rows keep their facts, provenance and descriptors, but the table
+  content version changes and scalar-bound dependents (DPE profile binding,
+  habitat reading linked version) advance through their normal owners. No
+  per-row write semantics are claimed. Demographic, economy, Milieux and
+  owned-series rows and markers are not read or written by the scoped path.
+- Recovery is the same normal wrapper/plan in the opposite direction: the
+  frozen prior baseline is the target and the published candidate is the current
+  guard state. The registered scalar retirement policy omits the three scoped
+  indicators (declared but unpublished), and the same atomic transaction
+  restores the baseline profile and linked Habitat reading without touching
+  newer unrelated owners.
 - A semantic metadata change to an unrecomputed indicator fails loudly and
   requires the full theme path; this is deliberate — the scoped path cannot
   silently relabel an old fact.

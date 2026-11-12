@@ -58,35 +58,49 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
     backup
   }
   tryCatch({
-    # A scoped retained publication (the three #989 supply scalars) must prove
-    # the serving baseline before any write. The guard reads the live markers
-    # under the existing scalar advisory lock and refuses on any mismatch; the
-    # rest of the publication stays the normal full-snapshot path.
+    # A scoped retained publication (the three #989 supply scalars) publishes
+    # only the registered dependency closure: scalar snapshot/comparisons, the
+    # scalar-bound declared-profile companion, and the linked selected reading.
+    # The scoped plan proves the delta against the explicitly supplied
+    # current/baseline generation and guards the live markers of that closure;
+    # unrelated owner markers are neither expectations nor writes. Without a
+    # scope, the normal full-backend publication is unchanged.
     scope_ids <- retained_backend_scope_ids(scalar_scope)
     if (length(scope_ids)) {
       if (!nzchar(baseline_sortie))
         stop("A scoped retained publication requires LUSK_SCALAR_BASELINE_SORTIE ",
-             "pointing to the canonical generation the serving database was ",
-             "published from; refusing with zero writes.", call. = FALSE)
+             "pointing to the counterpart generation (prior baseline when ",
+             "forward, published candidate when recovering); refusing with ",
+             "zero writes.", call. = FALSE)
       DBI::dbGetQuery(con, "SELECT pg_advisory_lock(594, 1)")
       locked <- TRUE
-      # Prepare the normal metadata-only profile companion BEFORE the guard:
-      # the candidate profile artifact must be bound to the candidate scalar
-      # version before any write. The prior artifacts are restored on failure.
-      profile_backup <- backup_profile()
-      candidate_reference <- project_territory_reference(
+      # Forward only: the candidate declared-profile artifact must be bound to
+      # the candidate scalar version before the plan reads it. The prior
+      # artifacts are restored on failure. Recovery consumes the frozen
+      # baseline artifacts unchanged (its binding is already the baseline
+      # scalar version).
+      target_reference <- project_territory_reference(
         nanoparquet::read_parquet(file.path(sortie, "territoires.parquet")))
-      candidate_scalar <- project_retained_scalar_snapshot(sortie,
-        candidate_reference)
-      refresh_declared_profile_scalar_binding(sortie,
-        declared_profile_owners(),
-        scalar_content_version(candidate_scalar$scalar))
-      assert_retained_backend_baseline(con, sortie, baseline_sortie, scope_ids)
+      target_snapshot <- project_retained_scalar_snapshot(sortie,
+                                                          target_reference)
+      forward <- all(scope_ids %in%
+        target_snapshot$scalar$descriptors$indicator_id)
+      if (forward) {
+        profile_backup <- backup_profile()
+        refresh_declared_profile_scalar_binding(sortie,
+          declared_profile_owners(),
+          scalar_content_version(target_snapshot$scalar))
+      }
+      plan <- scoped_publication_plan(sortie, baseline_sortie, scope_ids)
+      if (!identical(plan$direction, if (forward) "forward" else "recovery"))
+        stop("Scoped publication direction could not be derived from the ",
+             "supplied generations; refusing with zero writes.", call. = FALSE)
+      assert_scoped_publication_baseline(con, plan)
+      publish_scoped_retained_backend(con, plan)
+    } else {
+      publish_retained_backend_snapshot(con, sortie,
+        conso_source_path=conso_source_path)
     }
-    publish_retained_backend_snapshot(con, sortie,
-      conso_source_path=conso_source_path,
-      atomic = length(scope_ids) > 0L,
-      companion_profiles = length(scope_ids) > 0L)
     success <- TRUE
   }, finally={
     if (locked) try(DBI::dbGetQuery(con, "SELECT pg_advisory_unlock(594, 1)"),
