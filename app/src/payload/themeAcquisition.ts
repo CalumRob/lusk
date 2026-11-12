@@ -60,17 +60,169 @@ export interface SemanticThemeRead {
 }
 
 /**
- * The admitted facts' global territory-reference clock is the acquisition
- * identity comparison/auxiliary reads may reuse. It is intentionally not a
- * per-resource content version: different resources are different datasets.
+ * A hard acquisition-level incoherence. The error carries every semantic key
+ * the failed acquisition asked for so the caller can fence the whole group,
+ * not one resource at a time.
+ */
+export class ThemeAcquisitionCoherenceError extends PayloadError {
+  constructor(message: string, readonly items: readonly SemanticReadItem[]) {
+    super('validation', '/api/resources/read-batch', message)
+    this.name = 'ThemeAcquisitionCoherenceError'
+  }
+}
+
+interface DatasetGeneration {
+  family: string
+  owner: string
+  version: string
+}
+
+const nonEmptyVersion = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.trim().length > 0 ? value : undefined
+
+function dataOwner(data: Record<string, unknown>, resource: string): string {
+  const dataset = nonEmptyVersion(data.dataset_id)
+  if (dataset) return dataset
+  const descriptor = data.descriptor
+  if (typeof descriptor === 'object' && descriptor !== null && !Array.isArray(descriptor)) {
+    const nested = nonEmptyVersion((descriptor as Record<string, unknown>).dataset_id)
+    if (nested) return nested
+  }
+  return `resource:${resource}`
+}
+
+/**
+ * One observed published-dataset marker per declared family. The public token
+ * fields are the source of truth:
+ * - every scalar resource shares the global `scalar_observation` clock;
+ * - every declared profile shares the global `declared_profile` clock;
+ * - owned series and typed readings are independent owners, keyed by their
+ *   actual `dataset_id` (or resource when the producer exposes no dataset id);
+ * - collections and named references are keyed by their owner resource.
+ * A family clock that the contract requires but the response omits is a hard
+ * failure: the reference clock is never used as a substitute.
+ */
+function datasetGeneration(read: SemanticThemeRead, declaration: SemanticResourceDeclaration): DatasetGeneration {
+  const family = publicationFamilyForResource(declaration)
+  const data = read.data
+  const required = (version: unknown, field: string): string => {
+    const value = nonEmptyVersion(version)
+    if (value) return value
+    throw new ThemeAcquisitionCoherenceError(
+      `La lecture « ${read.resource} » ne publie pas la version ${field} exigée par son contrat.`, [])
+  }
+  if (family === 'scalar') {
+    return { family: 'scalar_observation', owner: 'scalar_observation',
+      version: required(data.content_version, 'content_version') }
+  }
+  if (family === 'profile') {
+    const profile = nonEmptyVersion(data.profile_content_version)
+    const content = nonEmptyVersion(data.content_version)
+    if (profile && content && profile !== content) {
+      throw new ThemeAcquisitionCoherenceError(
+        `La lecture « ${read.resource} » publie deux versions de profil ambiguës.`, [])
+    }
+    const version = profile ?? content
+    if (!version) {
+      throw new ThemeAcquisitionCoherenceError(
+        `La lecture « ${read.resource} » ne publie pas la version profile_content_version exigée par son contrat.`, [])
+    }
+    return { family: 'declared_profile', owner: 'declared_profile', version }
+  }
+  if (family === 'ordered_series') {
+    const content = nonEmptyVersion(data.content_version)
+    const publication = nonEmptyVersion(data.publication_id)
+    if (content && publication && content !== publication) {
+      throw new ThemeAcquisitionCoherenceError(
+        `La lecture « ${read.resource} » publie deux versions de série ambiguës.`, [])
+    }
+    return { family: 'ordered_series', owner: dataOwner(data, read.resource),
+      version: required(content ?? publication, 'content_version') }
+  }
+  if (family === 'typed_reading') {
+    return { family: 'typed_reading', owner: dataOwner(data, read.resource),
+      version: required(data.content_version, 'content_version') }
+  }
+  if (family === 'named_reference') {
+    return { family: 'named_reference', owner: dataOwner(data, read.resource),
+      version: required(data.publication_id ?? data.content_version, 'publication_id') }
+  }
+  if (family === 'collection') {
+    return { family: 'collection', owner: dataOwner(data, read.resource),
+      version: required(data.content_version ?? data.collection_content_version, 'content_version') }
+  }
+  if (family === 'aedar') {
+    return { family: 'aedar', owner: 'aedar', version: required(data.content_version, 'content_version') }
+  }
+  // `shape` is not used to classify the family: the declaration is the closed
+  // contract. This branch only keeps the exhaustiveness of the closed set.
+  throw new ThemeAcquisitionCoherenceError(
+    `La famille de publication de « ${read.resource} » est absente du contrat.`, [])
+}
+
+interface GenerationEntry {
+  read: SemanticThemeRead
+  item?: SemanticReadItem
+}
+
+/**
+ * Validate one acquisition's available facts/auxiliary reads against their
+ * dataset-family clocks and the global territory reference, and return the
+ * exact publication vector used as the cache/coherence identity. Unavailable
+ * outcomes carry no versions and are therefore never compared.
+ */
+function validateAcquisitionGenerations(entries: readonly GenerationEntry[],
+  resources: readonly SemanticResourceDeclaration[],): string | undefined {
+  const byResource = new Map(resources.map((resource) => [resource.resource_id, resource]))
+  const versions = new Map<string, DatasetGeneration>()
+  const references = new Set<string>()
+  for (const entry of entries) {
+    const declaration = entry.read.declaration ?? byResource.get(entry.read.resource)
+    if (!declaration) {
+      throw new ThemeAcquisitionCoherenceError(
+        `La lecture « ${entry.read.resource} » n’a pas de déclaration producteur.`,
+        entry.item ? [entry.item] : [])
+    }
+    const generation = datasetGeneration(entry.read, declaration)
+    const key = `${generation.family}:${generation.owner}`
+    const prior = versions.get(key)
+    if (prior && prior.version !== generation.version) {
+      throw new ThemeAcquisitionCoherenceError(
+        `Les lectures sémantiques de cette acquisition mélangent plusieurs générations de publication (${key}).`,
+        entries.flatMap(({ item }) => item ? [item] : []))
+    }
+    versions.set(key, generation)
+    const reference = nonEmptyVersion(entry.read.data.reference_content_version)
+    if (reference) references.add(reference)
+  }
+  if (references.size > 1) {
+    throw new ThemeAcquisitionCoherenceError(
+      'Les lectures sémantiques de cette acquisition ne partagent pas le même référentiel territorial.',
+      entries.flatMap(({ item }) => item ? [item] : []))
+  }
+  if (!versions.size) return undefined
+  const datasets = [...versions.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, { family, owner, version }]) => ({ family, owner, key, version }))
+  return `dataset-generation:${JSON.stringify({ datasets,
+    reference: references.size === 1 ? [...references][0] : null })}`
+}
+
+/**
+ * The admitted facts' observed dataset vector plus the global territory
+ * reference is the acquisition identity comparison/auxiliary reads may reuse.
+ * Different resources are different datasets; only the same family owner must
+ * carry the same published version.
  */
 function acquisitionCoherence(response: ThemeResponse): string | undefined {
-  const references = new Set<string>()
-  for (const read of response.resource_reads ?? []) {
-    const value = read.data.reference_content_version
-    if (typeof value === 'string' && value.length > 0) references.add(value)
+  try {
+    return validateAcquisitionGenerations(
+      (response.resource_reads ?? []).map((read) => ({ read })), [])
+  } catch {
+    // A malformed/legacy response has no reusable identity; comparison and aux
+    // reads then re-read over HTTP rather than binding to the reference alone.
+    return undefined
   }
-  return references.size === 1 ? `territory-reference:${[...references][0]}` : undefined
 }
 
 export function normalizePublicationTokens(response: ThemeResponse): Record<string, unknown> {
@@ -408,32 +560,33 @@ async function readThemeOutcomes(
   const outcomes = await readSemanticOutcomes(items, {
     ...(coherence === undefined ? {} : { coherence }), expectedFamilies,
   })
+  const factEntries: GenerationEntry[] = []
   const reads: Array<AlignedRead | null> = new Array(items.length).fill(null)
   const failures: ThemeResourceFailure[] = []
   outcomes.forEach((outcome, index) => {
     const item = items[index]!
     if (outcome.status === 'available') {
       reads[index] = { resource: item.resource, data: outcome.data }
+      if (item.intent.kind === 'facts') factEntries.push({ read: reads[index]!, item })
       return
     }
     failures.push(publicationFailure(resources, item.resource,
       item.intent.kind === 'facts' ? 'facts' : 'comparison', outcome))
   })
   // Facts and auxiliary facts from one acquisition share the global territory
-  // reference clock. A batch boundary must never assemble two reference
-  // generations into one ready response. Resource-owned content versions may
-  // legitimately differ between datasets and are intentionally not compared.
-  const references = new Set<string>()
-  outcomes.forEach((outcome, index) => {
-    const item = items[index]!
-    if (outcome.status !== 'available' || item.intent.kind !== 'facts') return
-    const reference = outcome.data.reference_content_version
-    if (typeof reference === 'string' && reference.length > 0) references.add(reference)
-  })
-  if (references.size > 1) {
-    invalidateSemanticItems(items)
-    throw new PayloadError('validation', '/api/resources/read-batch',
-      'Les lectures sémantiques de cette acquisition ne partagent pas le même référentiel territorial.')
+  // reference clock, and each declared dataset family shares its own published
+  // generation. A batch boundary must never assemble two generations into one
+  // ready response. Unavailable outcomes carry no versions and are excluded.
+  try {
+    validateAcquisitionGenerations(factEntries, resources)
+  } catch (error) {
+    if (error instanceof ThemeAcquisitionCoherenceError) {
+      // Fence the entire semantic key set of this read, including default
+      // comparisons that were in the same request, so no higher cache commits.
+      invalidateSemanticItems(items)
+      throw new ThemeAcquisitionCoherenceError(error.message, items)
+    }
+    throw error
   }
   return { reads, failures }
 }
@@ -612,21 +765,49 @@ function namedReferenceItems(resources: SemanticResourceDeclaration[]): Semantic
 async function readAuxiliary(resources: SemanticResourceDeclaration[], type: string,
   includeNamedReferences = true, selection?: readonly ThemeSelectionMember[],
   coherence?: string,
-): Promise<{ responses: Partial<ThemeResponse>; failures: ThemeResourceFailure[] }> {
+): Promise<{ responses: Partial<ThemeResponse>; failures: ThemeResourceFailure[]
+  reads: SemanticThemeRead[]; items: SemanticReadItem[] }> {
   const cohorts = typedCohortItems(resources, type, selection)
   const namedReferences = includeNamedReferences ? namedReferenceItems(resources) : []
+  const allItems = [...cohorts, ...namedReferences]
   const [cohortResult, namedResult] = await Promise.allSettled([
     cohorts.length ? readThemeOutcomes(cohorts, resources, coherence)
       : Promise.resolve({ reads: [], failures: [] }),
     namedReferences.length ? readThemeOutcomes(namedReferences, resources, coherence)
       : Promise.resolve({ reads: [], failures: [] }),
   ])
+  for (const result of [cohortResult, namedResult]) {
+    if (result.status === 'rejected' && result.reason instanceof ThemeAcquisitionCoherenceError) {
+      // One auxiliary subgroup already fenced itself; surface the whole
+      // auxiliary key set to the acquisition owner so facts + aux are fenced
+      // together and nothing is committed.
+      throw new ThemeAcquisitionCoherenceError(result.reason.message, allItems)
+    }
+  }
   const present = (reads: Array<AlignedRead | null>) => reads
     .filter((read): read is AlignedRead => read !== null).map((read) => decorateRead(read, resources))
+  const cohortReads = cohortResult.status === 'fulfilled' ? present(cohortResult.value.reads) : []
+  const namedReads = namedResult.status === 'fulfilled' ? present(namedResult.value.reads) : []
+  // The two auxiliary groups are one acquisition: their dataset-family clocks
+  // and territory reference must agree with each other and with the focal facts.
+  try {
+    validateAcquisitionGenerations([
+      ...cohortReads.map((read) => ({ read })),
+      ...namedReads.map((read) => ({ read })),
+    ], resources)
+  } catch (error) {
+    if (error instanceof ThemeAcquisitionCoherenceError) {
+      invalidateSemanticItems(allItems)
+      throw new ThemeAcquisitionCoherenceError(error.message, allItems)
+    }
+    throw error
+  }
   return {
+    reads: [...cohortReads, ...namedReads],
+    items: allItems,
     responses: {
-      ...(cohortResult.status === 'fulfilled' ? { cohort_reads: present(cohortResult.value.reads) } : { cohort_error: true }),
-      ...(namedResult.status === 'fulfilled' ? { named_reference_reads: present(namedResult.value.reads) }
+      ...(cohortResult.status === 'fulfilled' ? { cohort_reads: cohortReads } : { cohort_error: true }),
+      ...(namedResult.status === 'fulfilled' ? { named_reference_reads: namedReads }
         : { named_reference_error: true }),
     },
     failures: [
@@ -885,10 +1066,26 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
       .map((item, index) => item.intent.kind === 'facts' ? reads[index] : null)
       .filter((read): read is AlignedRead => read !== null)
       .map((read) => decorateRead(read, resources))
-    // The admitted facts' global reference clock is the one acquisition
-    // identity auxiliary/cohort reads may reuse; without it they re-read.
-    const auxiliary = await readAuxiliary(themeResources, type, true, undefined,
-      acquisitionCoherence({ resource_reads: resourceReads }))
+    const factItems = items.filter((item) => item.intent.kind === 'facts')
+    // The admitted facts' observed dataset vector plus global reference is the
+    // one acquisition identity auxiliary/cohort reads may reuse; without it
+    // they re-read.
+    let auxiliary: Awaited<ReturnType<typeof readAuxiliary>> | undefined
+    try {
+      auxiliary = await readAuxiliary(themeResources, type, true, undefined,
+        acquisitionCoherence({ resource_reads: resourceReads }))
+      // Facts and auxiliary facts are one acquisition: every available read
+      // must share its dataset-family clock and the global reference.
+      validateAcquisitionGenerations([
+        ...resourceReads.map((read, index) => ({ read, item: factItems[index] })),
+        ...auxiliary.reads.map((read) => ({ read })),
+      ], resources)
+    } catch (error) {
+      if (error instanceof ThemeAcquisitionCoherenceError) {
+        invalidateSemanticItems([...items, ...(auxiliary?.items ?? []), ...error.items])
+      }
+      throw error
+    }
     const comparisonReads = items
       .map((item, index) => item.intent.kind !== 'facts' ? reads[index] : null)
       .filter((read): read is AlignedRead => read !== null)
@@ -942,7 +1139,16 @@ export function acquireThemeComparison(type: string, id: string, theme: ThemeKey
       ? await readThemeOutcomes(items, resources, coherence)
       : { reads: [] as Array<AlignedRead | null>, failures: [] as ThemeResourceFailure[] }
     const comparisons = reads.filter((read): read is AlignedRead => read !== null)
-    const auxiliary = await readAuxiliary(themeResources, type, false, selection, coherence)
+    let auxiliary: Awaited<ReturnType<typeof readAuxiliary>> | undefined
+    try {
+      auxiliary = await readAuxiliary(themeResources, type, false, selection, coherence)
+    } catch (error) {
+      if (error instanceof ThemeAcquisitionCoherenceError) {
+        invalidateSemanticItems([...items, ...error.items])
+      }
+      throw error
+    }
+    if (!auxiliary) throw new ThemeAcquisitionCoherenceError('Acquisition auxiliaire incomplète.', items)
     const echoedSelection = comparisons.length ? comparisons[0]!.data.selection : undefined
     if (comparisons.some(({ data }) => JSON.stringify(data.selection ?? null) !== JSON.stringify(echoedSelection ?? null))) {
       throw new Error('Les comparaisons sémantiques ne reflètent pas la même sélection')

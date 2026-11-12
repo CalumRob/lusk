@@ -561,9 +561,8 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
         // its reader and must not invalidate successful rank/value cells.
         statutComparaison.value = acquired.focal.comparison_error ? 'error' : 'ready'
       cleFaitsPrets = `${typeRoute.value}/${code}/${themeActif}`
-    } catch (error) {
+    } catch {
       if (!cancelled && request === sequenceAcquisition) {
-        console.log('DEBUG_TERR_ACQ', error)
         faitsThemeRows.value = null
         histoiresThemeRows.value = null
         statutAcquisition.value = 'error'

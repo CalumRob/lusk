@@ -1254,7 +1254,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
 
       await flushPromises()
-      console.log('DEBUG_VIEW_HTML', wrapper.html().slice(-4000))
       const epciLabel = contextesReference('22001').epci!.scope.label
       verifyCloudAndRank(epciMembers.length, epciLabel, epciMembers.map((member) => member.territoire))
       // #860 — la sélection EPCI part en membres communaux développés : la

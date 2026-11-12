@@ -189,6 +189,13 @@ function sourceFor(resource: Resource, fact?: Record<string, any>, target?: Reco
 function publicationFor(resource: Resource): string {
   const dataset = resource.resource_id === 'raccordement_courbe' || resource.resource_id === 'raccordement_reference'
     ? raccordementRoute.dataset_id : resource.resource_id
+  const shapes = new Set(resource.shapes)
+  // The real producer publishes one global marker per scalar_observation and
+  // one per declared_profile table. Fixtures must expose the same family
+  // generation, otherwise unrelated resources would falsely mix generations.
+  if (shapes.has('declared_profile')) return 'declared_profile-fixture-publication-v1'
+  if (shapes.has('ordered_series')) return `${dataset}-fixture-publication-v1`
+  if (shapes.has('scalar')) return 'scalar_observation-fixture-publication-v1'
   return `${dataset}-fixture-publication-v1`
 }
 
