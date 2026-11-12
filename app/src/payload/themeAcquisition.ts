@@ -371,6 +371,60 @@ function retainedThemeResources(catalogue: SemanticResourceDeclaration[], theme:
 
 type AlignedRead = { resource: string; data: Record<string, unknown> }
 
+/**
+ * #977 — the shared semantic API pool is small (`max_size=4`), so the Mobilité
+ * isolation path never holds more than two semantic reads in flight. The gate
+ * only covers the HTTP read itself, never the surrounding orchestration, so a
+ * recovering batch can never wait on a slot it already owns.
+ */
+const MOBILITE_MAX_ACTIVE_READS = 2
+
+class SemanticReadGate {
+  private active = 0
+  private readonly waiting: Array<() => void> = []
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(read: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) await new Promise<void>((resolve) => this.waiting.push(resolve))
+    else this.active += 1
+    try {
+      return await read()
+    } finally {
+      const next = this.waiting.shift()
+      // Handing the slot straight to the next waiter keeps `active` unchanged.
+      if (next) next()
+      else this.active -= 1
+    }
+  }
+}
+
+/**
+ * Run bounded tasks in order with at most `limit` in flight, returning results by
+ * task index. A failure starts no further task, lets in-flight reads settle, then
+ * rethrows the lowest-index failure so error identity never depends on timing.
+ */
+async function runBounded<T>(tasks: ReadonlyArray<() => Promise<T>>, limit: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length)
+  const failures = new Map<number, unknown>()
+  let next = 0
+  const worker = async () => {
+    while (next < tasks.length && failures.size === 0) {
+      const index = next++
+      try {
+        results[index] = await tasks[index]!()
+      } catch (error) {
+        failures.set(index, error)
+        return
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker))
+  const firstFailure = [...failures.keys()].sort((left, right) => left - right)[0]
+  if (firstFailure !== undefined) throw failures.get(firstFailure)
+  return results
+}
+
 async function readAll(items: SemanticReadItem[]): Promise<AlignedRead[]> {
   // Grouping keeps every resource+target read in one batch, so batch order no
   // longer follows request order; results are placed back by original index.
@@ -439,10 +493,11 @@ function groupReadItems(items: SemanticReadItem[]): SemanticReadItem[][] {
 async function readIsolatedGroup(
   group: SemanticReadItem[],
   resources: SemanticResourceDeclaration[],
+  gate: SemanticReadGate,
 ): Promise<{ data: Array<Record<string, unknown> | null>; failures: ThemeResourceFailure[] }> {
   const facts = group.filter((item) => item.intent.kind === 'facts')
   try {
-    return { data: await lireRessourcesBatch(group), failures: [] }
+    return { data: await gate.run(() => lireRessourcesBatch(group)), failures: [] }
   } catch (error) {
     if (!isPublicationUnavailable(error)) throw error
     if (!facts.length) {
@@ -452,7 +507,7 @@ async function readIsolatedGroup(
       }
     }
     try {
-      const data = await lireRessourcesBatch(facts)
+      const data = await gate.run(() => lireRessourcesBatch(facts))
       return {
         data: group.map((item) => {
           const index = facts.indexOf(item)
@@ -477,6 +532,10 @@ async function readIsolatedGroup(
  * Mobilite-only isolation seam: a failed atomic batch is never partially
  * salvaged. Every resource group in it is re-read in its own bounded snapshot,
  * with an explicit failure entry for the resources the publication cannot serve.
+ *
+ * Independent waves of a single acquisition overlap through one gate bounded to
+ * two active semantic reads (#977); their results are still placed back by
+ * original index, so correlation and resource order never follow response order.
  */
 async function readAllWithIsolation(
   items: SemanticReadItem[],
@@ -484,31 +543,32 @@ async function readAllWithIsolation(
 ): Promise<{ reads: Array<AlignedRead | null>; failures: ThemeResourceFailure[] }> {
   const originalIndex = new Map(items.map((item, index) => [item, index]))
   const reads: Array<AlignedRead | null> = new Array(items.length).fill(null)
-  const failures: ThemeResourceFailure[] = []
+  const gate = new SemanticReadGate(MOBILITE_MAX_ACTIVE_READS)
   const assign = (group: SemanticReadItem[], data: Array<Record<string, unknown> | null>) => {
     group.forEach((item, index) => {
       const value = data[index]
       if (value) reads[originalIndex.get(item)!] = { resource: item.resource, data: value }
     })
   }
-  for (const batch of chunkedGroups(items, 12, readGroupKey)) {
-    try {
-      assign(batch, await lireRessourcesBatch(batch))
-    } catch (batchError) {
-      // Only a real HTTP 503 publication/service gap is isolated. Member
-      // identity, validation/shape/target and transport errors keep their
-      // typed propagation instead of being misreported as "unpublished".
-      if (!isPublicationUnavailable(batchError)) throw batchError
-      // Never reuse a successful prefix from the rejected atomic batch.
-      const groups = groupReadItems(batch)
-      const outcomes = await Promise.all(groups.map((group) => readIsolatedGroup(group, resources)))
-      groups.forEach((group, index) => {
-        assign(group, outcomes[index]!.data)
-        failures.push(...outcomes[index]!.failures)
-      })
-    }
-  }
-  return { reads, failures: uniqueFailures(failures) }
+  const waveFailures = await runBounded(chunkedGroups(items, 12, readGroupKey).map((batch) =>
+    async (): Promise<ThemeResourceFailure[]> => {
+      try {
+        assign(batch, await gate.run(() => lireRessourcesBatch(batch)))
+        return []
+      } catch (batchError) {
+        // Only a real HTTP 503 publication/service gap is isolated. Member
+        // identity, validation/shape/target and transport errors keep their
+        // typed propagation instead of being misreported as "unpublished".
+        if (!isPublicationUnavailable(batchError)) throw batchError
+        // Never reuse a successful prefix from the rejected atomic batch.
+        const groups = groupReadItems(batch)
+        const outcomes = await runBounded(groups.map((group) => async () =>
+          readIsolatedGroup(group, resources, gate)), MOBILITE_MAX_ACTIVE_READS)
+        groups.forEach((group, index) => assign(group, outcomes[index]!.data))
+        return outcomes.flatMap((outcome) => outcome.failures)
+      }
+    }), MOBILITE_MAX_ACTIVE_READS)
+  return { reads, failures: uniqueFailures(waveFailures.flat()) }
 }
 
 /**
