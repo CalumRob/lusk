@@ -49,6 +49,8 @@ withDefaults(
         :stroke-width="2.2"
         aria-hidden="true"
       />
+      <!-- A ratio reads its operator anatomy before the value (issue #974). -->
+      <slot name="value-prefix" />
       <strong>{{ value }}</strong>
     </span>
     <span v-if="showLabel" class="cahier-figure-scalar-label" :class="{ 'type-figure-label': labelRole === 'metric' }">

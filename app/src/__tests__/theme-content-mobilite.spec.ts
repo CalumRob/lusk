@@ -274,6 +274,21 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
     expect(refuelling!.prose.flat().map((segment) => segment.value).join(' ')).toContain('aucune station n’est recensée')
   })
 
+  // #974 — the ratio captions are app presentation, and the value keeps the
+  // producer's own scale: the owner's `%VALUE%` placeholder is this raw number.
+  it('captions the two ratios without re-basing their producer scale', () => {
+    const content = resolveMobiliteThemeContent(factsWith(sharingFacts()), metadata)
+    const section = content.units[1].sections[1]
+    if (section.evidence?.kind !== 'mobilite-stationnement-ravitaillement') throw new Error('Paired evidence expected')
+    const [parking, refuelling] = section.evidence.columns
+
+    expect(parking!.ratio.label).toBe('places de stationnement vélo pour 1 place voiture')
+    expect(parking!.ratio.value.fact.value).toBe(0.2)
+    expect(parking!.ratio.value.fact.unit).toBe('places vélo / place voiture')
+    expect(refuelling!.ratio.label).toBe('Bornes de recharge par station-service')
+    expect(refuelling!.ratio.value.fact.value).toBe(3.5)
+  })
+
   it('keeps ratios honest: zero car denominator and zero stations never fabricate a ratio', () => {
     const indicators = sharingFacts().map((candidate) => {
       if (candidate.key === 'places_stationnement_voiture_1000') return { ...candidate, value: 0 }

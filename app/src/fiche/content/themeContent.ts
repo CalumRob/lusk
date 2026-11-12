@@ -240,6 +240,11 @@ export type MobiliteBarTone = 't' | 'b' | 'c' | 'neutral'
 export interface MobiliteBarSegmentEvidence {
   key: string
   label: string
+  /**
+   * App-owned legend identity of the drawn segment, when the legend must name it
+   * in full rather than repeat the producer's tooltip label (#974).
+   */
+  legendLabel?: string
   /** Per-segment density; its sum is the category total by producer contract. */
   value: ContentFact
   /** Published raw segment length carried in the tooltip only, when declared. */

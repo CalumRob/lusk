@@ -89,8 +89,40 @@ function semanticFetch(
   })
 }
 
-const comparisonContext = {
-  mode: 'densite' as const,
+/**
+ * #974 — the deployed contract distinguishes a declared-but-unpublished
+ * resource (HTTP 503, per bounded group) from an unknown identity (404/422).
+ * This stub applies one of those shapes to a batch that contains a gated
+ * resource, so the production acquisition/UI path is exercised, not a mock.
+ */
+const GATED_PUBLICATIONS = ['bornes_recharge_1000', 'stations_service', 'stations_service_1000'] as const
+
+function gatedBatchFetch(
+  gate: (items: Array<Record<string, any>>) => { status: number; detail: string } | null,
+) {
+  const base = semanticFetch()
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url !== '/api/resources/read-batch') return base(input, init)
+    const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+    const rejection = gate(items)
+    if (rejection) {
+      return new Response(JSON.stringify({ detail: rejection.detail }), { status: rejection.status })
+    }
+    return base(input, init)
+  })
+}
+
+function includesGated(items: Array<Record<string, any>>): Array<Record<string, any>> {
+  return items.filter((item) => (GATED_PUBLICATIONS as readonly string[]).includes(item.resource))
+}
+
+const comparisonSelection = [
+  { territory_type: 'commune' as const, territory_id: '35238' },
+  { territory_type: 'commune' as const, territory_id: '35240' },
+]
+
+const comparisonContext = {  mode: 'densite' as const,
   scope: { kind: 'communes-densite' as const, label: 'communes de la classe de densité' },
   facts: [],
   buildingDistribution: null,
@@ -219,6 +251,19 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     const comparisonBars = figure.findAll('.mobilite-comparison-bars__comparison')
     expect(comparisonBars).toHaveLength(3)
     expect(figure.findAll('.mobilite-comparison-bars__segment')).toHaveLength(2)
+
+    // #974 — exactly the four drawn network identities; no redundant total-bike
+    // key, and the comparison stays its own key rather than a fifth identity.
+    const legend = figure.get('.mobilite-comparison-bars__legend')
+    const networkLegend = legend.findAll('.cahier-figure-legend-item')
+      .filter((item) => !item.text().includes('Groupe comparé'))
+    expect(networkLegend.map((item) => item.get('.cahier-figure-legend-label').text())).toEqual([
+      'Réseau piéton',
+      'Réseau cyclable protégé',
+      'Réseau cyclable partagé',
+      'Réseau automobile',
+    ])
+    expect(legend.text()).toContain('Groupe comparé')
     const bikeGroup = figure.get('g[data-category="bike"]')
     const totalHeight = Number(bikeGroup.attributes('data-total-height'))
     const segmentHeights = bikeGroup.findAll('rect[data-segment]')
@@ -249,8 +294,105 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     expect(wrapper.text()).not.toContain('La motorisation')
   })
 
-  it('rejects a cross-generation declared-detail comparison without losing the focal facts', async () => {
-    const base = semanticFetch()
+  // #974 — comparison availability through the real acquisition path. The
+  // documented contract isolates an absent publication (503) per bounded group,
+  // so the published comparisons keep working beside it.
+  it('keeps the fixed and active-header comparisons usable while a declared publication answers 503', async () => {
+    vi.stubGlobal('fetch', gatedBatchFetch((items) => includesGated(items).length
+      ? { status: 503, detail: 'Declared resource publication is unavailable' }
+      : null))
+
+    const acquired = await acquireThemeFacts('commune', '35238', 'mobilite')
+    const comparisonData = await acquireThemeComparison('commune', '35238', 'mobilite', comparisonSelection)
+
+    // The absent publications are named as data failures, never as zeros.
+    expect(acquired.resource_failures?.map((failure) => failure.resource))
+      .toEqual(expect.arrayContaining([...GATED_PUBLICATIONS]))
+    expect(comparisonData.resource_failures?.map((failure) => failure.resource))
+      .toEqual(expect.arrayContaining([...GATED_PUBLICATIONS]))
+    expect(comparisonData.comparison_error).not.toBe(true)
+
+    // Every published resource still served its selected comparison.
+    const healthy = ['reseaux_par_habitant', 'reseaux', 'offre_cyclable',
+      'places_stationnement_velo_1000', 'places_stationnement_voiture_1000',
+      'stationnement_velo_par_voiture']
+    expect(comparisonData.comparison_reads?.map((read) => read.resource))
+      .toEqual(expect.arrayContaining(healthy))
+    expect(comparisonData.comparison_reads?.some((read) =>
+      (GATED_PUBLICATIONS as readonly string[]).includes(read.resource))).toBe(false)
+
+    const facts = applyThemeComparisonApiFacts(
+      mobilityFactsFromThemeApi(payload, '35238', acquired),
+      comparisonData,
+      comparisonContext,
+      comparisonSelection,
+    )
+    const content = resolveMobiliteThemeContent(facts, publicMetadata)
+    const sharing = content.units.find((unit) => unit.key === 'partage-de-lespace-public')!
+    const networks = sharing.sections.find((section) => section.key === 'reseaux')!
+    if (networks.evidence?.kind !== 'mobilite-networks') throw new Error('Réseaux evidence expected')
+    for (const category of networks.evidence.figure.categories) {
+      expect(category.value.fact.comparison?.reference?.value).not.toBeNull()
+    }
+    const paired = sharing.sections.find((section) => section.key === 'stationnement-ravitaillement')!
+    if (paired.evidence?.kind !== 'mobilite-stationnement-ravitaillement') {
+      throw new Error('Paired evidence expected')
+    }
+    expect(paired.evidence.columns[0].ratio.value.fact.comparison?.reference?.value).not.toBeNull()
+    expect(paired.evidence.columns[1].bars.unavailableResources?.length).toBeGreaterThan(0)
+
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(VarianteCahierLibre, {
+      props: {
+        content,
+        pagination: cahierPaginationFor(payload, content, true),
+        presentation: 'plain',
+        layoutVariant: 'indexed-sections',
+        showAllUnits: true,
+        nativeComparisonStatus: 'ready',
+      },
+      global: { plugins: [router] },
+    })
+    await router.isReady()
+    await flushPromises()
+    const figure = wrapper.get('.mobilite-section--reseaux .mobilite-comparison-bars')
+    expect(figure.findAll('.mobilite-comparison-bars__comparison')).toHaveLength(3)
+    const stationnement = wrapper.get('[data-column="stationnement"] .mobilite-ratio-scalar')
+    expect(stationnement.find('.cahier-comparison-value__reference').exists()).toBe(true)
+    expect(wrapper.get('.mobilite-section--stationnement-ravitaillement').text())
+      .toContain('Publication indisponible')
+  })
+
+  // #974 — the app must never launder an unknown identity into "unpublished".
+  // Before #972 the deployed API answered 404 for the declared-but-unpublished
+  // scalar, and the atomic batch took every comparison down with it: that is a
+  // deployment gap, not something the UI may swallow.
+  it.each([
+    { status: 404, detail: 'Indicator descriptor is unavailable', expected: /HTTP 404/u },
+    { status: 422, detail: 'Indicator is not declared for this territory level', expected: /HTTP 422/u },
+    { status: 404, detail: 'Unknown selected comparison member commune/99999', expected: /Membre de comparaison indisponible/u },
+  ])('keeps a genuine $status identity error hard instead of reporting an unavailable publication', async ({ status, detail, expected }) => {
+    // The owner-reported symptom is the active-header comparison batch; the
+    // published fixed comparisons arrive with the focal facts and are untouched
+    // by that batch's typed error.
+    vi.stubGlobal('fetch', gatedBatchFetch((items) => includesGated(items)
+      .some((item) => item.intent?.kind === 'selected_comparison') ? { status, detail } : null))
+
+    // The published fixed comparisons still arrive with the focal facts.
+    const acquired = await acquireThemeFacts('commune', '35238', 'mobilite')
+    expect(acquired.comparison_error).not.toBe(true)
+    const facts = mobilityFactsFromThemeApi(payload, '35238', acquired)
+    const networkFact = facts.mobility.indicators.find((fact) =>
+      fact.key === 'reseaux_par_habitant' && fact.detail === 'b_km_1000')
+    expect(networkFact?.comparison?.reference?.value).not.toBeNull()
+
+    // The comparison batch keeps its typed error: no resource_failures, no
+    // "unavailable" verdict, no fabricated reference.
+    await expect(acquireThemeComparison('commune', '35238', 'mobilite', comparisonSelection))
+      .rejects.toThrow(expected)
+  })
+
+  it('rejects a cross-generation declared-detail comparison without losing the focal facts', async () => {    const base = semanticFetch()
     let mutated = false
     const stale = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const response = await base(input, init)
@@ -320,5 +462,46 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     const stampLabels = paired.findAll('.cahier-evidence-source a').map((stamp) => stamp.text())
     expect(stampLabels).toEqual(expect.arrayContaining(['Ecolab', 'OpenStreetMap', 'Etalab', 'INSEE']))
     expect(paired.text()).not.toContain('Médiane des communes de EPCI X')
+
+    // #974 — both ratios read through the AEDAR scalar anatomy, on the
+    // producer's own scale, with the complete accessible reading intact.
+    const section = content.units
+      .find((unit) => unit.key === 'partage-de-lespace-public')!
+      .sections.find((candidate) => candidate.key === 'stationnement-ravitaillement')!
+    if (section.evidence?.kind !== 'mobilite-stationnement-ravitaillement') {
+      throw new Error('Paired evidence expected')
+    }
+    const ratioAnatomy = (column: 'stationnement' | 'ravitaillement') => {
+      const scalar = paired.get(`[data-column="${column}"] .mobilite-ratio-scalar .cahier-figure-scalar`)
+      return {
+        scalar,
+        parts: scalar.findAll('[data-ratio-part]').map((part) => part.attributes('data-ratio-part')),
+        value: scalar.get('.cahier-figure-scalar-value strong').text(),
+        label: scalar.get('.cahier-figure-scalar-label').text(),
+        aria: scalar.attributes('aria-label')!,
+      }
+    }
+    const parking = ratioAnatomy('stationnement')
+    const refuellingRatio = ratioAnatomy('ravitaillement')
+    expect(parking.parts).toEqual(['bike', 'divide', 'car'])
+    expect(refuellingRatio.parts).toEqual(['charging', 'divide', 'fuel'])
+    const parkingFact = section.evidence.columns[0].ratio.value.fact
+    const refuellingFact = section.evidence.columns[1].ratio.value.fact
+    expect(parking.value).toBe(new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 })
+      .format(parkingFact.value as number))
+    expect(parking.value).not.toContain('%')
+    expect(parking.label).toBe('places de stationnement vélo pour 1 place voiture')
+    expect(parking.scalar.get('.cahier-figure-scalar-label').classes()).not.toContain('type-figure-label')
+    expect(refuellingRatio.label).toBe('Bornes de recharge par station-service')
+    expect(parking.aria).toContain(`${parkingFact.value!.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} ${parkingFact.unit}`)
+    expect(parking.aria).toContain('Référence')
+    expect(parking.aria).toContain('Rang')
+    expect(refuellingRatio.aria).toContain(refuellingFact.unit)
+    for (const reference of section.evidence.columns.map((column) => column.ratio.value.fact.comparison?.reference?.value)) {
+      if (typeof reference === 'number') {
+        expect([parking.aria, refuellingRatio.aria].join(' '))
+          .toContain(new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(reference))
+      }
+    }
   })
 })

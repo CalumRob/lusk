@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { mount } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
@@ -71,12 +74,14 @@ const figure: MobiliteBarsFigureEvidence = {
         {
           key: 'protege_km_1000',
           label: 'Protégé',
+          legendLabel: 'Réseau cyclable protégé',
           value: fact('offre_cyclable', 'protege_km_1000', 5, 'km / 1 000 hab.'),
           rawValue: fact('offre_cyclable', 'protege_longueur', 4, 'km'),
         },
         {
           key: 'partage_km_1000',
           label: 'Partagé',
+          legendLabel: 'Réseau cyclable partagé',
           value: fact('offre_cyclable', 'partage_km_1000', 3, 'km / 1 000 hab.'),
           rawValue: fact('offre_cyclable', 'partage_longueur', 2, 'km'),
         },
@@ -130,22 +135,32 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
     expect(label).toContain('Protégé')
     expect(label).toContain('Partagé')
     const legend = wrapper.get('.mobilite-comparison-bars__legend')
-    expect(legend.text()).toContain('Réseau piéton')
-    expect(legend.text()).toContain('Réseau cyclable')
-    expect(legend.text()).toContain('Réseau automobile')
-    expect(legend.text()).toContain('Protégé')
-    expect(legend.text()).toContain('Partagé')
-    expect(legend.text()).toContain('Groupe comparé')
+    const networkLegend = legend.findAll('.cahier-figure-legend-item')
+      .filter((item) => !item.text().includes('Groupe comparé'))
+    // #974 — exactly the four drawn network identities, in reading order. A
+    // segmented bar's parts are its series; the redundant bike total is gone.
+    expect(networkLegend.map((item) => item.get('.cahier-figure-legend-label').text())).toEqual([
+      'Réseau piéton',
+      'Réseau cyclable protégé',
+      'Réseau cyclable partagé',
+      'Réseau automobile',
+    ])
+    expect(networkLegend.every((item) => !item.get('.cahier-figure-legend-mark')
+      .classes().includes('cahier-figure-legend-mark--composite'))).toBe(true)
+    const markColor = (label: string) => networkLegend
+      .find((item) => item.get('.cahier-figure-legend-label').text() === label)!
+      .get('.cahier-figure-legend-mark').attributes('style') ?? ''
+    expect(markColor('Réseau piéton')).toContain('var(--cahier-mode-foot')
+    expect(markColor('Réseau cyclable protégé')).toContain('var(--cahier-cycle-protected')
+    expect(markColor('Réseau cyclable partagé')).toContain('var(--cahier-cycle-shared')
+    expect(markColor('Réseau automobile')).toContain('var(--cahier-mode-car')
+    // The compared bar stays its own legend key, never a fifth network identity.
     const comparisonLegend = legend.findAll('.cahier-figure-legend-item')
       .find((item) => item.text().includes('Groupe comparé'))!
+    expect(comparisonLegend.get('.cahier-figure-legend-label').text()).toBe('Groupe comparé')
+    expect(comparisonLegend.attributes('aria-label')).toContain('Médiane des communes de EPCI X')
     expect(comparisonLegend.find('.cahier-figure-legend-mark--square').exists()).toBe(true)
     expect(comparisonLegend.find('.cahier-figure-legend-mark--dash').exists()).toBe(false)
-    const bikeLegend = legend.findAll('.cahier-figure-legend-item')
-      .find((item) => item.text().includes('Réseau cyclable'))!
-    expect(bikeLegend.get('.cahier-figure-legend-mark').classes()).toContain('cahier-figure-legend-mark--composite')
-    const protectedLegend = legend.findAll('.cahier-figure-legend-item')
-      .find((item) => item.text().includes('Protégé'))!
-    expect(protectedLegend.get('.cahier-figure-legend-mark').classes()).not.toContain('cahier-figure-legend-mark--composite')
     expect(wrapper.get('.cahier-comparison-value__reference').attributes('aria-label')).toContain('Médiane des communes de EPCI X')
     expect(wrapper.get('.cahier-comparison-value__reference').attributes('aria-label')).toContain('2e/3')
   })
@@ -471,5 +486,156 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
     expect(render({ status: 'loading' })).toContain('Comparaison en cours de chargement')
     expect(render({ status: 'error', error: 'lecture refusée' })).toContain('Comparaison indisponible : lecture refusée')
     expect(render({ status: 'unavailable' })).toContain('Comparaison indisponible')
+  })
+})
+
+/**
+ * #974 — the two paired ratios adopt the AEDAR scalar anatomy instead of an
+ * ad-hoc ratio treatment: the same shared scalar brick, its value/typography
+ * roles and its reference line, with the operator anatomy above the value.
+ */
+describe('CahierMobiliteSection — paired ratios use the AEDAR scalar anatomy', () => {
+  const parking: MobiliteRatioEvidence = {
+    label: 'places de stationnement vélo pour 1 place voiture',
+    value: {
+      label: 'places de stationnement vélo pour 1 place voiture',
+      fact: {
+        key: 'stationnement_velo_par_voiture', detail: null, value: 0.2,
+        unit: 'places vélo / place voiture', availability: 'complete', provenance: null,
+        comparison: {
+          direction: 'plus-est-mieux',
+          scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+          reference: { kind: 'median', value: 0.3 },
+          rank: { position: 2, size: 3 },
+        },
+        comparisonBasis: 'territory-median', reason: null,
+      },
+    },
+    note: null,
+  }
+
+  const refuelling: MobiliteRatioEvidence = {
+    label: 'Bornes de recharge par station-service',
+    value: {
+      label: 'Bornes de recharge par station-service',
+      fact: {
+        key: 'bornes_ev_par_station_service', detail: null, value: 3.5,
+        unit: 'bornes / station', availability: 'complete', provenance: null,
+        comparison: {
+          direction: 'plus-est-mieux',
+          scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+          reference: { kind: 'median', value: 2.5 },
+          rank: { position: 1, size: 3 },
+        },
+        comparisonBasis: 'territory-median', reason: null,
+      },
+    },
+    note: null,
+  }
+
+  const citedFigure: MobiliteBarsFigureEvidence = {
+    ...figure,
+    figureTitle: 'Stationnement vélo et voiture',
+    categories: figure.categories.slice(0, 2),
+  }
+
+  function mountSection(): ReturnType<typeof mount> {
+    const section = {
+      key: 'stationnement-ravitaillement',
+      label: 'Se garer et se ravitailler',
+      availability: 'complete',
+      indicators: [],
+      evidence: {
+        kind: 'mobilite-stationnement-ravitaillement',
+        columns: [
+          { key: 'stationnement', prose: [], sources: [], bars: citedFigure, ratio: parking },
+          { key: 'ravitaillement', prose: [], sources: [], bars: citedFigure, ratio: refuelling },
+        ],
+      },
+      provenance: [],
+      lecture: null,
+      explorationTargets: [],
+    } as any
+    return mount(CahierMobiliteSection, {
+      props: {
+        section,
+        unit: { key: 'partage-de-lespace-public', label: 'Le partage de l’espace public' },
+        comparison: { status: 'ready' },
+      },
+    })
+  }
+
+  const scalarIn = (wrapper: ReturnType<typeof mountSection>, column: string) =>
+    wrapper.get(`[data-column="${column}"] .mobilite-ratio-scalar .cahier-figure-scalar`)
+  const partsIn = (wrapper: ReturnType<typeof mountSection>, column: string) =>
+    scalarIn(wrapper, column).findAll('[data-ratio-part]')
+      .map((part) => part.attributes('data-ratio-part'))
+
+  it('draws the parking ratio as bike ÷ car above its producer-scale value, label and comparison', () => {
+    const scalar = scalarIn(mountSection(), 'stationnement')
+
+    expect(scalar.attributes('role')).toBe('img')
+    // Top line: the division anatomy travels with the value, in reading order.
+    const valueLine = scalar.get('.cahier-figure-scalar-value')
+    expect(valueLine.findAll('[data-ratio-part]').map((part) => part.attributes('data-ratio-part')))
+      .toEqual(['bike', 'divide', 'car'])
+    expect(valueLine.get('[data-ratio-part="bike"]').classes()).toContain('mobilite-ratio__icon--bike')
+    expect(valueLine.get('[data-ratio-part="car"]').classes()).toContain('mobilite-ratio__icon--car')
+    expect(valueLine.get('[data-ratio-part="divide"]').classes()).toContain('mobilite-ratio__icon--divide')
+    // The value stays on the producer's own scale: 0,2 place vélo/place voiture, never a percentage.
+    expect(valueLine.get('strong').text()).toBe('0,2')
+    expect(valueLine.text()).not.toContain('%')
+    // The shared AEDAR green/brand value treatment, with no per-mode tone override.
+    expect(scalar.classes()).toContain('cahier-figure-scalar--colored')
+    expect(scalar.classes().some((name) => /^cahier-figure-scalar--(?:t|b|c)$/u.test(name))).toBe(false)
+    // Second line: the exact lowercase caption, in the scalar's sentence-case
+    // label role (the uppercase metric role would break the requested casing).
+    const caption = scalar.get('.cahier-figure-scalar-label')
+    expect(caption.text()).toBe('places de stationnement vélo pour 1 place voiture')
+    expect(caption.classes()).not.toContain('type-figure-label')
+    // Third line: the AEDAR comparison primitive with its rank rules.
+    const reference = scalar.get('.cahier-figure-scalar-reference')
+    expect(reference.get('.cahier-comparison-value').text()).toContain('Groupe comparé')
+    expect(reference.get('.cahier-comparison-value').text()).toContain('0,3')
+    expect(reference.find('.cahier-rank').exists()).toBe(true)
+  })
+
+  it('draws the refuelling ratio as charging ÷ fuel in the car colour above its factual label', () => {
+    const scalar = scalarIn(mountSection(), 'ravitaillement')
+
+    expect(partsIn(mountSection(), 'ravitaillement')).toEqual(['charging', 'divide', 'fuel'])
+    expect(scalar.get('[data-ratio-part="charging"]').classes()).toContain('mobilite-ratio__icon--car')
+    expect(scalar.get('[data-ratio-part="fuel"]').classes()).toContain('mobilite-ratio__icon--car')
+    expect(scalar.get('.cahier-figure-scalar-value strong').text()).toBe('3,5')
+    const caption = scalar.get('.cahier-figure-scalar-label')
+    expect(caption.text()).toBe('Bornes de recharge par station-service')
+    expect(caption.classes()).not.toContain('type-figure-label')
+    expect(scalar.get('.cahier-figure-scalar-reference .cahier-comparison-value').text()).toContain('Groupe comparé')
+  })
+
+  it('keeps the accessible reading complete: units, served scope, rank and direction', () => {
+    const label = scalarIn(mountSection(), 'stationnement').attributes('aria-label')!
+    expect(label).toContain('places de stationnement vélo pour 1 place voiture')
+    expect(label).toContain('0,2 places vélo / place voiture')
+    expect(label).toContain('Médiane des communes de EPCI X')
+    expect(label).toContain('Rang')
+    expect(label).toContain('plus = mieux')
+  })
+
+  it('removes the horizontal separator above and between the bars and their ratio scalars', () => {
+    const section = readFileSync(join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierMobiliteSection.vue'), 'utf8')
+    const attribute = readFileSync(
+      join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierMobiliteComparisonBars.vue'), 'utf8')
+    const rule = (source: string, selector: string) =>
+      source.match(new RegExp(`${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`, 'u'))?.[1] ?? ''
+    for (const block of [rule(section, '.mobilite-ratio-scalar'), rule(attribute, '.mobilite-ratio')]) {
+      expect(block).not.toMatch(/border(?:-top)?\s*:/u)
+      expect(block).not.toMatch(/padding-top\s*:/u)
+    }
+    // Icons reuse the shared semantic mode inks: never a literal colour.
+    for (const ink of ['var(--cahier-mode-bike', 'var(--cahier-mode-car']) {
+      expect(section).toContain(ink)
+    }
+    expect(section).not.toMatch(/mobilite-ratio__icon[^}]*#[0-9a-f]{3,8}/iu)
   })
 })

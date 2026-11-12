@@ -8,6 +8,8 @@
  * selection into an honest inactive state without widening this interface.
  */
 import { computed, inject } from 'vue'
+import type { Component } from 'vue'
+import { Bike, CarFront, Divide, Fuel, PlugZap } from 'lucide-vue-next'
 
 import { CONTROLE_COMPARAISON_KEY } from '@/fiche/comparisonContext'
 import { formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
@@ -75,11 +77,46 @@ function stampSource(source: ContentSource): AedarEvidenceSource {
   }
 }
 
+/**
+ * #974 — the ratio's own scale reads as a division in the AEDAR scalar value
+ * line. Only shared semantic inks are used: bike, car, and the neutral ink for
+ * the operator. A charging point is a car-side equipment, so it wears the car
+ * ink like the fuel pump it is divided by.
+ */
+type RatioPart = { key: string; icon: Component; tone: 'bike' | 'car' | 'divide' }
+
+const RATIO_PARTS: Readonly<Record<'stationnement' | 'ravitaillement', readonly RatioPart[]>> = {
+  stationnement: [
+    { key: 'bike', icon: Bike, tone: 'bike' },
+    { key: 'divide', icon: Divide, tone: 'divide' },
+    { key: 'car', icon: CarFront, tone: 'car' },
+  ],
+  ravitaillement: [
+    { key: 'charging', icon: PlugZap, tone: 'car' },
+    { key: 'divide', icon: Divide, tone: 'divide' },
+    { key: 'fuel', icon: Fuel, tone: 'car' },
+  ],
+}
+
+function ratioParts(columnKey: 'stationnement' | 'ravitaillement'): readonly RatioPart[] {
+  return RATIO_PARTS[columnKey]
+}
+
+function formatRatioValue(value: number): string {
+  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
+}
+
+/** The producer's own scale, never re-based: the placeholder `%VALUE%` is this number. */
+function ratioDisplayValue(ratio: MobiliteRatioEvidence): string {
+  const value = ratio.value.fact.value
+  return value === null ? '—' : formatRatioValue(value)
+}
+
 function ratioValueLabel(ratio: MobiliteRatioEvidence): string {
   const value = ratio.value.fact.value
   return value === null
     ? 'Indisponible'
-    : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)} ${ratio.value.fact.unit}`
+    : `${formatRatioValue(value)} ${ratio.value.fact.unit}`
 }
 
 function ratioAriaLabel(
@@ -188,11 +225,24 @@ function ratioAriaLabel(
         </figure>
         <figure class="mobilite-ratio-scalar">
           <CahierFigureScalar
-            :value="ratioValueLabel(column.ratio)"
+            :value="ratioDisplayValue(column.ratio)"
             :label="column.ratio.label"
-            label-role="metric"
+            color-value
             :aria-label="ratioAriaLabel(column.ratio, column.bars.comparisonLabel, effectiveComparison.status, effectiveComparison.error)"
           >
+            <template #value-prefix>
+              <component
+                :is="part.icon"
+                v-for="part in ratioParts(column.key)"
+                :key="`${column.key}-${part.key}`"
+                class="mobilite-ratio__icon"
+                :class="`mobilite-ratio__icon--${part.tone}`"
+                :data-ratio-part="part.key"
+                :size="15"
+                :stroke-width="2.2"
+                aria-hidden="true"
+              />
+            </template>
             <template #reference>
               <CahierComparisonValue
                 v-if="column.ratio.value.fact.comparison?.reference || effectiveComparison.status === 'loading' || effectiveComparison.status === 'error'"
@@ -278,9 +328,13 @@ function ratioAriaLabel(
   margin: 0;
   display: grid;
   gap: var(--space-1);
-  border-top: 1px solid color-mix(in srgb, var(--cahier-theme) 22%, var(--paper));
-  padding-top: var(--space-3);
 }
+/* The ratio keeps the paired row's own rhythm: no rule, no separator margin
+ * between the bars and the ratio (issue #974). */
+.mobilite-ratio__icon { flex: 0 0 auto; }
+.mobilite-ratio__icon--bike { color: var(--cahier-mode-bike, var(--mode-bike)); }
+.mobilite-ratio__icon--car { color: var(--cahier-mode-car, var(--mode-car)); }
+.mobilite-ratio__icon--divide { color: var(--cahier-default, var(--editorial-muted)); }
 .mobilite-ratio__note { margin: 0; color: var(--text-secondary); font: var(--text-caption); }
 @media (max-width: 760px) {
   .mobilite-section-spread,

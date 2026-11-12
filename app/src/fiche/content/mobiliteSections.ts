@@ -377,11 +377,16 @@ export function buildMobiliteNetworksSection(
   const bikeSegments = [
     {
       key: 'protege_km_1000',
+      // App-owned legend identities: the legend names the two drawn cycling
+      // networks in full, so the producer's short tooltip label stays a tooltip
+      // label and the total bike key never appears beside them (#974).
+      legendLabel: 'Réseau cyclable protégé',
       value: contentDetailFact(facts, 'offre_cyclable', 'protege_km_1000', 'km / 1 000 hab.', metadata),
       rawValue: contentDetailFact(facts, 'offre_cyclable', 'protege_longueur', 'km', metadata),
     },
     {
       key: 'partage_km_1000',
+      legendLabel: 'Réseau cyclable partagé',
       value: contentDetailFact(facts, 'offre_cyclable', 'partage_km_1000', 'km / 1 000 hab.', metadata),
       rawValue: contentDetailFact(facts, 'offre_cyclable', 'partage_longueur', 'km', metadata),
     },
@@ -407,6 +412,7 @@ export function buildMobiliteNetworksSection(
       ? bikeSegments.map((segment) => ({
         key: segment.key,
         label: segment.value.label,
+        legendLabel: segment.legendLabel,
         value: segment.value,
         rawValue: rawSplit ? segment.rawValue : null,
       }))
@@ -490,7 +496,10 @@ function stationnementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): M
   )
   const allFacts = [bikeSpaces, carSpaces, ratioFact]
   const ratio: MobiliteRatioEvidence = {
-    label: ratioFact.label,
+    // App-owned caption: the value line already carries the bike ÷ car
+    // anatomy, so the caption reads as its sentence-case legend (#974). The
+    // producer keeps ownership of the value, its unit and its scale.
+    label: 'places de stationnement vélo pour 1 place voiture',
     value: ratioFact,
     note: parkingRatioNote(bikeSpaces, carSpaces, ratioFact),
   }
@@ -570,6 +579,7 @@ function ravitaillementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): 
   )
   const allFacts = [bornes, stations, bornesRaw, stationsRaw, ratioFact]
   const ratio: MobiliteRatioEvidence = {
+    // The factual producer label stays below the charging ÷ fuel anatomy.
     label: ratioFact.label,
     value: ratioFact,
     note: ravitaillementRatioNote(bornesRaw, stationsRaw, ratioFact),
