@@ -1478,4 +1478,327 @@ describe('theme acquisition cache', () => {
       result: { profile_descriptor_version: 'profile-descriptor-v1', required_scalar_version: 'scalar-v3' },
     } }] })).toBe(false)
   })
+
+  // #977 — the Mobilité acquisition overlaps independent bounded batches, but
+  // the shared API pool (max_size=4) must never receive more than two semantic
+  // reads at once, including 503 isolation and facts-only recovery.
+  describe('Mobilité bounded batch overlap', () => {
+    const settle = async () => {
+      for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    const scalarDeclaration = (resource_id: string, intents: string[] = ['facts']) => ({
+      resource_id, theme_id: 'mobilite', indicator_id: resource_id, label: resource_id, unit: 'u',
+      direction: 'none', allowed_levels: ['commune'], sources: [], shapes: ['scalar'],
+      target_kinds: ['territory'], fields: ['value', 'status'], intents,
+    })
+    const scalarDeclarations = (count: number, intents: string[] = ['facts']) =>
+      Array.from({ length: count }, (_, index) => scalarDeclaration(`mobilite_scalar_${index}`, intents))
+    const catalogueResponse = (resources: unknown[]) => new Response(JSON.stringify({
+      contract: 'semantic-resource-catalogue-v1', resources,
+    }))
+    const scalarBatchResponse = (items: Array<Record<string, any>>, version: string) => new Response(JSON.stringify({
+      contract: 'semantic-read-batch-v1', results: items.map((item) => ({
+        id: item.id, resource: item.resource,
+        data: {
+          resource: item.resource, target: item.target, content_version: version,
+          reference_content_version: 'reference-v1', descriptor_version: 'descriptor-v1',
+          value: item.resource, status: 'measured',
+          ...(item.intent.kind === 'facts' ? {} : { result: { descriptor_version: 'descriptor-v1' } }),
+        },
+      })),
+    }))
+    /** A read-batch fetcher whose responses are released by the test, with in-flight accounting. */
+    const controllableReads = (resources: unknown[]) => {
+      const pending: Array<{ items: Array<Record<string, any>>; settle(response: Response): void }> = []
+      let active = 0
+      let maxActive = 0
+      const fetcher = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+        if (String(url) === '/api/resources') return Promise.resolve(catalogueResponse(resources))
+        if (String(url) !== '/api/resources/read-batch') {
+          return Promise.reject(new Error(`Unexpected request: ${String(url)}`))
+        }
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        active += 1
+        maxActive = Math.max(maxActive, active)
+        return new Promise<Response>((resolve) => pending.push({
+          items, settle: (response) => { active -= 1; resolve(response) },
+        }))
+      })
+      return { fetcher, pending, active: () => active, maxActive: () => maxActive }
+    }
+
+    it('overlaps independent batches while never running more than two semantic reads at once', async () => {
+      vi.resetModules()
+      const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+      const resources = scalarDeclarations(25)
+      const reads = controllableReads(resources)
+      vi.stubGlobal('fetch', reads.fetcher)
+      try {
+        const acquisition = acquireThemeFacts('commune', '22001', 'mobilite')
+        await settle()
+
+        expect(reads.pending).toHaveLength(2)
+        expect(reads.maxActive()).toBe(2)
+
+        for (const request of [...reads.pending]) request.settle(scalarBatchResponse(request.items, 'wave-v1'))
+        await settle()
+        expect(reads.pending).toHaveLength(3)
+        reads.pending[2]!.settle(scalarBatchResponse(reads.pending[2]!.items, 'wave-v1'))
+
+        const acquired = await acquisition
+        expect(acquired.resource_reads?.map((read) => read.resource))
+          .toEqual(resources.map((resource) => resource.resource_id))
+        expect(reads.maxActive()).toBe(2)
+      } finally { vi.unstubAllGlobals() }
+    })
+
+    it('returns original resource order when overlapping batches answer out of order', async () => {
+      vi.resetModules()
+      const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+      const resources = scalarDeclarations(13)
+      const reads = controllableReads(resources)
+      vi.stubGlobal('fetch', reads.fetcher)
+      try {
+        const acquisition = acquireThemeFacts('commune', '22001', 'mobilite')
+        await settle()
+        expect(reads.pending).toHaveLength(2)
+        const [first, second] = reads.pending
+        second!.settle(scalarBatchResponse(second!.items, 'second-wave'))
+        await settle()
+        first!.settle(scalarBatchResponse(first!.items, 'first-wave'))
+
+        const acquired = await acquisition
+        expect(acquired.resource_reads?.map((read) => read.resource))
+          .toEqual(resources.map((resource) => resource.resource_id))
+        expect(acquired.resource_reads?.map((read) => read.data.content_version)).toEqual([
+          ...Array.from({ length: 12 }, () => 'first-wave'), 'second-wave',
+        ])
+        expect(reads.maxActive()).toBe(2)
+      } finally { vi.unstubAllGlobals() }
+    })
+
+    it('keeps at most two reads active while isolating a 503 batch per resource group', async () => {
+      vi.resetModules()
+      const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+      const resources = [
+        ...scalarDeclarations(6),
+        ...Array.from({ length: 2 }, (_, index) =>
+          scalarDeclaration(`mobilite_paired_${index}`, ['facts', 'fixed_comparison'])),
+      ]
+      const reads = controllableReads(resources)
+      vi.stubGlobal('fetch', reads.fetcher)
+      try {
+        const acquisition = acquireThemeFacts('commune', '22001', 'mobilite')
+        await settle()
+        expect(reads.pending).toHaveLength(1)
+        const [atomic] = reads.pending
+        expect(atomic!.items).toHaveLength(10)
+        atomic!.settle(new Response('publication unavailable', { status: 503 }))
+        await settle()
+
+        // Every group is re-read in a fresh snapshot: an atomic batch is never
+        // salvaged. The gate keeps recovery at two active reads, not eight.
+        expect(reads.pending.length).toBeGreaterThan(1)
+        expect(reads.active()).toBeLessThanOrEqual(2)
+        for (let index = 0; index < reads.pending.length; index += 1) {
+          const request = reads.pending[index]!
+          expect(reads.active()).toBeLessThanOrEqual(2)
+          request.settle(request.items.length > 1
+            ? new Response('publication unavailable', { status: 503 })
+            : scalarBatchResponse(request.items, 'fresh-v2'))
+          await settle()
+        }
+        expect(reads.maxActive()).toBe(2)
+
+        const acquired = await acquisition
+        expect(acquired.resource_reads?.map((read) => read.resource))
+          .toEqual(resources.map((resource) => resource.resource_id))
+        expect(acquired.resource_reads?.every((read) => read.data.content_version === 'fresh-v2')).toBe(true)
+        // The paired comparisons stayed unavailable while their fresh focal
+        // facts survived; the isolation never reported them as ready.
+        expect(acquired.default_comparison?.comparison_reads).toEqual([])
+        expect(acquired.resource_failures).toEqual(expect.arrayContaining([
+          expect.objectContaining({ resource: 'mobilite_paired_0', stage: 'comparison' }),
+          expect.objectContaining({ resource: 'mobilite_paired_1', stage: 'comparison' }),
+        ]))
+      } finally { vi.unstubAllGlobals() }
+    })
+
+    it('does not mix generations when an isolated wave recovers while another wave commits', async () => {
+      vi.resetModules()
+      const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+      const resources = scalarDeclarations(24)
+      const reads = controllableReads(resources)
+      vi.stubGlobal('fetch', reads.fetcher)
+      try {
+        const acquisition = acquireThemeFacts('commune', '22001', 'mobilite')
+        await settle()
+        expect(reads.pending).toHaveLength(2)
+        const [first, second] = reads.pending
+        expect(second!.items[0]!.resource).toBe('mobilite_scalar_12')
+
+        // The second bounded wave commits while the first one is rejected and
+        // re-read in fresh per-resource snapshots.
+        second!.settle(scalarBatchResponse(second!.items, 'wave-2'))
+        first!.settle(new Response('publication unavailable', { status: 503 }))
+        await settle()
+
+        for (let index = 0; index < reads.pending.length; index += 1) {
+          const request = reads.pending[index]!
+          if (request === second || request === first) continue
+          request.settle(request.items.some((item) => item.resource === 'mobilite_scalar_5')
+            ? new Response('publication unavailable', { status: 503 })
+            : scalarBatchResponse(request.items, 'fresh-wave-1'))
+          await settle()
+        }
+
+        const acquired = await acquisition
+        const version = (resource: string) => acquired.resource_reads
+          ?.find((read) => read.resource === resource)?.data.content_version
+        expect(version('mobilite_scalar_0')).toBe('fresh-wave-1')
+        expect(version('mobilite_scalar_11')).toBe('fresh-wave-1')
+        expect(version('mobilite_scalar_12')).toBe('wave-2')
+        expect(version('mobilite_scalar_23')).toBe('wave-2')
+        // The rejected group is reported, never fabricated from the other generation.
+        expect(version('mobilite_scalar_5')).toBeUndefined()
+        expect(acquired.resource_failures).toContainEqual(expect.objectContaining({
+          resource: 'mobilite_scalar_5', stage: 'facts',
+        }))
+      } finally { vi.unstubAllGlobals() }
+    })
+
+    it('keeps every resource facts and declared-detail comparisons in one request', async () => {
+      vi.resetModules()
+      const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+      const reseaux = {
+        ...scalarDeclaration('reseaux_par_habitant', ['facts', 'fixed_comparison']),
+        axis_values: [['detail', ['t_km_1000', 'b_km_1000', 'c_km_1000']]],
+      }
+      const resources = [reseaux, ...scalarDeclarations(20)]
+      const reads = controllableReads(resources)
+      vi.stubGlobal('fetch', reads.fetcher)
+      try {
+        const acquisition = acquireThemeFacts('commune', '22001', 'mobilite')
+        await settle()
+        expect(reads.pending).toHaveLength(2)
+
+        const declared = reads.pending[0]!.items.filter((item) => item.resource === 'reseaux_par_habitant')
+        expect(declared).toHaveLength(4)
+        expect(declared.map((item) => item.coordinates?.detail?.[0]))
+          .toEqual([undefined, 't_km_1000', 'b_km_1000', 'c_km_1000'])
+        expect(reads.pending.every((request) => request.items.length <= 12)).toBe(true)
+        expect(reads.pending.flatMap((request) => request.items)
+          .filter((item) => item.resource === 'reseaux_par_habitant')).toHaveLength(4)
+
+        for (let index = 0; index < reads.pending.length; index += 1) {
+          const request = reads.pending[index]!
+          request.settle(scalarBatchResponse(request.items, 'wave-v1'))
+          await settle()
+        }
+        const acquired = await acquisition
+        expect(acquired.default_comparison?.comparison_reads
+          .filter((read) => read.resource === 'reseaux_par_habitant')).toHaveLength(3)
+        expect(acquired.comparison_error).not.toBe(true)
+      } finally { vi.unstubAllGlobals() }
+    })
+
+    it('propagates a member error from an overlapping comparison wave', async () => {
+      vi.resetModules()
+      const { acquireThemeComparison } = await import('../payload/themeAcquisition')
+      const { SemanticMemberError } = await import('../payload/semanticResourceClient')
+      const resources = scalarDeclarations(13, ['facts', 'selected_comparison'])
+      const reads = controllableReads(resources)
+      vi.stubGlobal('fetch', reads.fetcher)
+      const selection = [
+        { territory_type: 'commune' as const, territory_id: '35238' },
+        { territory_type: 'commune' as const, territory_id: '35240' },
+      ]
+      try {
+        const acquisition = acquireThemeComparison('commune', '35238', 'mobilite', selection)
+        await settle()
+        expect(reads.pending).toHaveLength(2)
+        reads.pending[0]!.settle(scalarBatchResponse(reads.pending[0]!.items, 'wave-1'))
+        reads.pending[1]!.settle(new Response(JSON.stringify({
+          detail: 'selected comparison member commune/35240',
+        }), { status: 422 }))
+
+        let failure: unknown
+        try { await acquisition } catch (error) { failure = error }
+        expect(failure).toBeInstanceOf(SemanticMemberError)
+        expect((failure as InstanceType<typeof SemanticMemberError>).member).toEqual({ type: 'commune', id: '35240' })
+      } finally { vi.unstubAllGlobals() }
+    })
+
+    it('propagates an overlapping 404 instead of reporting an unavailable publication', async () => {
+      vi.resetModules()
+      const { acquireThemeComparison } = await import('../payload/themeAcquisition')
+      const { PayloadError } = await import('../payload/validate')
+      const resources = scalarDeclarations(13, ['facts', 'selected_comparison'])
+      const reads = controllableReads(resources)
+      vi.stubGlobal('fetch', reads.fetcher)
+      const selection = [
+        { territory_type: 'commune' as const, territory_id: '35238' },
+        { territory_type: 'commune' as const, territory_id: '35240' },
+      ]
+      try {
+        const acquisition = acquireThemeComparison('commune', '35238', 'mobilite', selection)
+        await settle()
+        expect(reads.pending).toHaveLength(2)
+        reads.pending[0]!.settle(scalarBatchResponse(reads.pending[0]!.items, 'wave-1'))
+        reads.pending[1]!.settle(new Response(JSON.stringify({
+          detail: 'Indicator descriptor is unavailable',
+        }), { status: 404 }))
+
+        let failure: unknown
+        try { await acquisition } catch (error) { failure = error }
+        expect(failure).toBeInstanceOf(PayloadError)
+        expect((failure as InstanceType<typeof PayloadError>).kind).toBe('fetch')
+        expect((failure as InstanceType<typeof PayloadError>).status).toBe(404)
+      } finally { vi.unstubAllGlobals() }
+    })
+
+    it('does not cache a rejected overlapping acquisition, so a retry reads fresh facts', async () => {
+      vi.resetModules()
+      const { acquireThemeFacts, ThemeAcquisitionCache } = await import('../payload/themeAcquisition')
+      const { PayloadError } = await import('../payload/validate')
+      const resources = scalarDeclarations(24)
+      const reads = controllableReads(resources)
+      vi.stubGlobal('fetch', reads.fetcher)
+      try {
+        const cache = new ThemeAcquisitionCache(
+          (theme: ThemeKey, key?: { type: string; id: string }) =>
+            acquireThemeFacts(key!.type, key!.id, theme))
+        const attempt = cache.get('commune', '22001', 'mobilite')
+        await settle()
+        expect(reads.pending).toHaveLength(2)
+        reads.pending[0]!.settle(scalarBatchResponse(reads.pending[0]!.items, 'wave-1'))
+        // A malformed correlated batch must reject the whole acquisition; the
+        // committed sibling wave cannot authorize a ready cache entry.
+        reads.pending[1]!.settle(new Response(JSON.stringify({
+          contract: 'semantic-read-batch-v1',
+          results: reads.pending[1]!.items.map((item) => ({
+            id: item.id, resource: item.resource, data: { resource: 'wrong-resource', target: item.target },
+          })),
+        })))
+
+        let failure: unknown
+        try { await attempt } catch (error) { failure = error }
+        expect(failure).toBeInstanceOf(PayloadError)
+        expect((failure as InstanceType<typeof PayloadError>).kind).toBe('validation')
+
+        reads.pending.length = 0
+        const retried = cache.get('commune', '22001', 'mobilite')
+        await settle()
+        for (let turn = 0; turn < 8 && reads.pending.length; turn += 1) {
+          const request = reads.pending.shift()!
+          request.settle(scalarBatchResponse(request.items, 'retry-v3'))
+          await settle()
+        }
+        const acquired = await retried
+        expect(acquired.focal.resource_reads?.map((read) => read.resource))
+          .toEqual(resources.map((resource) => resource.resource_id))
+        expect(acquired.focal.resource_reads?.every((read) => read.data.content_version === 'retry-v3')).toBe(true)
+      } finally { vi.unstubAllGlobals() }
+    })
+  })
 })
