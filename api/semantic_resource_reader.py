@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from api.cohort_reads import (preflight_cohort, read_cohort, resolve_territory_cohort,
                               validate_typed_reading_integrity)
 from api.profile_reads import focal_profiles
+from api.publication_outcomes import publication_unavailable
 from api.resource_catalogue import ResourceCatalogue, default_resource_catalogue
 
 
@@ -32,9 +33,24 @@ class SemanticResourceReader:
         return (resource.resource_kind == "indicator"
                 and "scalar" in resource.shapes and "ordered_series" in resource.shapes)
 
+    @staticmethod
+    def _publication_family(resource):
+        """Name the publication family an unavailable item belongs to."""
+        shapes = set(resource.shapes)
+        if "declared_profile" in shapes:
+            return "profile"
+        if "ordered_series" in shapes or "named_reference" in shapes:
+            return "ordered_series" if "ordered_series" in shapes else "named_reference"
+        if "period_detail" in shapes or "anchored_membership" in shapes:
+            return "collection"
+        return "scalar"
+
     def _require_dual_series_route(self, conn, resource):
         route = self._owned_series_route(conn, resource.resource_id)
-        if (not route or route[2] or route[1] != resource.theme_id):
+        if not route:
+            publication_unavailable("ordered_series",
+                "Declared ordered-series facet publication is unavailable")
+        if route[2] or route[1] != resource.theme_id:
             raise HTTPException(503, "Declared ordered-series facet publication is unavailable or incompatible")
 
     @staticmethod
@@ -89,17 +105,25 @@ class SemanticResourceReader:
                 rows = conn.execute("SELECT axis_key FROM profile_axis WHERE indicator_id=%s AND axis_name=%s",
                                     (indicator, axis)).fetchall()
                 if not rows:
-                    raise HTTPException(503, "Profile coordinate descriptor is unavailable")
+                    publication_unavailable("profile", "Profile coordinate descriptor is unavailable")
                 domains[axis] = {str(row[0]) for row in rows}
         if "ordered_series" in resource.shapes or "named_reference" in resource.shapes:
-            route = self._owned_series_route(conn, indicator)
+            family = ("named_reference" if "named_reference" in resource.shapes
+                      else "ordered_series")
+            route = self._owned_series_route(conn, indicator, family=family)
             if route:
                 row = conn.execute("SELECT axis_values FROM series_dataset_descriptor WHERE dataset_id=%s AND indicator_id=%s AND active_read_route",
                                    (route[0], route[3])).fetchone()
             else:
                 row = conn.execute("SELECT axis_values FROM series_descriptor WHERE indicator_id=%s",
                                    (indicator,)).fetchone()
-            if not row or not row[0]:
+            if not row:
+                if "named_reference" in resource.shapes:
+                    publication_unavailable("named_reference",
+                        "Series coordinate descriptor is unavailable")
+                publication_unavailable("ordered_series",
+                    "Series coordinate descriptor is unavailable")
+            if not row[0]:
                 raise HTTPException(503, "Series coordinate descriptor is unavailable")
             axis = resource.axes[0] if resource.axes else "axis"
             domains[axis] = {str(value) for value in row[0]}
@@ -299,7 +323,8 @@ class SemanticResourceReader:
                 scalar_facet_projection=bool(item.fields and "scalar_facet" in item.fields),
                 profile_coordinates=profile_coordinates,
                 intent_kind=item.intent.kind,
-                require_declared_resource=True)
+                require_declared_resource=True,
+                publication_family=self._publication_family(resource))
             resource = catalogue.resources_by_id[item.resource]
             members = ([member_id for _, member_id in selection] if selection else
                        list(estimate.get("members", ())) if isinstance(estimate, dict) else [])
@@ -363,8 +388,10 @@ class SemanticResourceReader:
 
         requested_fields = self._legacy_fields(item, catalogue)
         if item.target.kind == "named_reference":
-            route = self._owned_series_route(conn, item.resource)
-            if not route or not route[2]:
+            route = self._owned_series_route(conn, item.resource, family="named_reference")
+            if not route:
+                publication_unavailable("named_reference", "Named reference publication is unavailable")
+            if not route[2]:
                 raise HTTPException(503, "Named reference publication is unavailable")
             self._owned_named_reference_snapshot(conn, route, None, None, item.resource,
                 fields=requested_fields, preflight_only=True, reference_target_id=item.target.id)
@@ -376,12 +403,13 @@ class SemanticResourceReader:
                 "SELECT allowed_levels FROM profile_descriptor WHERE indicator_id=%s",
                 (item.resource,)).fetchone()
             if not descriptor:
-                raise HTTPException(503, "Declared profile publication is unavailable")
+                publication_unavailable("profile", "Declared profile publication is unavailable")
             if item.target.type not in descriptor[0]:
                 raise HTTPException(422, "Profile is not declared for this territory level")
         estimate = self._indicator_facts_snapshot(
             conn, item.target.type, item.target.id, item.resource,
-            requested_fields, preflight_only=True, require_declared_resource=True)
+            requested_fields, preflight_only=True, require_declared_resource=True,
+            publication_family=self._publication_family(resource))
         if not isinstance(estimate, dict):
             return 1
         scalar_facet_work = 0
@@ -496,15 +524,18 @@ class SemanticResourceReader:
                 profile_coordinates=self._profile_comparison_coordinates(conn, item, resource),
                 collection_coordinates=item.coordinates if "period_detail" in resource.shapes else None,
                 intent_kind=item.intent.kind,
-                require_declared_resource=True)
+                require_declared_resource=True,
+                publication_family=self._publication_family(resource))
             if item.coordinates:
                 data = self._filter_coordinates(data, item.coordinates, resource)
             return {"resource": item.resource, "target": item.target.model_dump(), **data}
 
         requested_fields = self._legacy_fields(item, catalogue)
         if item.target.kind == "named_reference":
-            route = self._owned_series_route(conn, item.resource)
-            if not route or not route[2]:
+            route = self._owned_series_route(conn, item.resource, family="named_reference")
+            if not route:
+                publication_unavailable("named_reference", "Named reference publication is unavailable")
+            if not route[2]:
                 raise HTTPException(503, "Named reference publication is unavailable")
             data = self._owned_named_reference_snapshot(conn, route, None, None, item.resource,
                 fields=requested_fields, reference_target_id=item.target.id)
@@ -518,14 +549,16 @@ class SemanticResourceReader:
                 "SELECT allowed_levels FROM profile_descriptor WHERE indicator_id=%s",
                 (item.resource,)).fetchone()
             if not descriptor:
-                raise HTTPException(503, "Declared profile publication is unavailable")
+                publication_unavailable("profile", "Declared profile publication is unavailable")
             if item.target.type not in descriptor[0]:
                 raise HTTPException(422, "Profile is not declared for this territory level")
             profiles, version = focal_profiles(
                 conn, item.target.type, item.target.id, indicator_id=item.resource,
                 fields=requested_fields)
-            if len(profiles) != 1:
+            if len(profiles) > 1:
                 raise HTTPException(503, "Declared profile publication is unavailable")
+            if not profiles:
+                publication_unavailable("profile", "Declared profile publication is unavailable")
             profile = profiles[0]
             observations = profile.pop("cells")
             if item.coordinates:
@@ -539,7 +572,8 @@ class SemanticResourceReader:
 
         data = self._indicator_facts_snapshot(
             conn, item.target.type, item.target.id, item.resource, requested_fields,
-            require_declared_resource=True)
+            require_declared_resource=True,
+            publication_family=self._publication_family(resource))
         if item.coordinates:
             data = self._filter_coordinates(data, item.coordinates, resource)
         if (self._has_dual_scalar_series(resource) and item.target.kind == "territory"):
@@ -563,13 +597,21 @@ class SemanticResourceReader:
         marker = conn.execute("""SELECT content_version,row_count,reference_content_version
             FROM table_publication WHERE table_name=%s""", (resource.publication_table,)).fetchone()
         reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
-        if not marker or not marker[0] or not reference or marker[2] != reference[0]:
-            raise HTTPException(503, "Typed-reading publication is unavailable or stale")
+        if not marker or not marker[0]:
+            publication_unavailable("typed_reading",
+                "Typed-reading publication is unavailable")
+        if not reference or not reference[0]:
+            raise HTTPException(503, "Territory reference publication is unavailable")
+        if marker[2] != reference[0]:
+            raise HTTPException(503, "Typed-reading publication is stale or incompatible")
         if resource.publication_table == "selected_reading":
             owner_marker = conn.execute("""SELECT content_version,row_count,reference_content_version
                 FROM selected_reading_publication WHERE theme_id=%s""",
                 (resource.theme_id,)).fetchone()
-            if (not owner_marker or owner_marker[0] != marker[0] or
+            if not owner_marker or not owner_marker[0]:
+                publication_unavailable("typed_reading",
+                    "Selected-reading publication is unavailable")
+            if (owner_marker[0] != marker[0] or
                     owner_marker[1] != marker[1] or owner_marker[2] != marker[2]):
                 raise HTTPException(503, "Selected-reading publication is inconsistent")
         if (resource.publication_table in {"demographic_typed_reading", "selected_reading"}
@@ -587,8 +629,11 @@ class SemanticResourceReader:
         for side in resource.side_relations:
             side_marker = conn.execute("""SELECT content_version,reference_content_version,row_count
                 FROM table_publication WHERE table_name=%s""", (side["publication_table"],)).fetchone()
-            if not side_marker or side_marker[1] != reference[0]:
-                raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
+            if not side_marker or not side_marker[0]:
+                publication_unavailable("typed_reading",
+                    "Typed-reading evidence publication is unavailable")
+            if side_marker[1] != reference[0]:
+                raise HTTPException(503, "Typed-reading evidence publication is stale or incompatible")
             if side["publication_table"] == resource.publication_table and side_marker[0] != marker[0]:
                 raise HTTPException(503, "Typed-reading evidence publication is incompatible")
             if side.get("same_content_version_as") == "resource" and side_marker[0] != marker[0]:
@@ -642,8 +687,11 @@ class SemanticResourceReader:
             FROM table_publication p LEFT JOIN table_publication t
               ON t.table_name='territory_reference' WHERE p.table_name=%s""",
             (resource.publication_table,)).fetchone()
-        if not marker or not marker[0] or not marker[1] or marker[1] != marker[2]:
-            raise HTTPException(503, "Typed-reading publication is unavailable or stale")
+        if not marker or not marker[0]:
+            publication_unavailable("typed_reading",
+                "Typed-reading publication is unavailable")
+        if not marker[1] or not marker[2] or marker[1] != marker[2]:
+            raise HTTPException(503, "Typed-reading publication is stale or incompatible")
         descriptor = typed_reading_descriptor(conn, resource, marker)
         coordinates = item.coordinates or {}
         selected_fields = set(resource.fields) if item.fields is None else set(item.fields)

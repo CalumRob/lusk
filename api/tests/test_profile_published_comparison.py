@@ -51,6 +51,10 @@ class DetailConnection:
             return Cursor(("profile_comparison_publication",))
         if "FROM profile_comparison_publication p" in sql:
             return Cursor(self.marker)
+        if "WHERE d.table_name='declared_profile'" in sql:
+            return Cursor(("profile-v1", "ref-v1"))
+        if "FROM profile_comparison_publication" in sql and "WHERE singleton" in sql:
+            return Cursor((self.marker[0],) if self.marker else ())
         if "FROM profile_comparison_group" in sql:
             self.comparison_rows_returned += len(self.group)
             return Cursor(rows=self.group)

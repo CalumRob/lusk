@@ -187,16 +187,18 @@ def test_published_evidence_mismatch_fails_closed():
 
 
 def test_stale_publication_markers_fail_closed_before_any_read():
-    for stale in ("series", "reference", "missing"):
+    for stale in ("series", "reference"):
         conn = ProjectionConnection(stale=stale)
         with pytest.raises(HTTPException) as excinfo:
             projection.read_axis_comparisons(conn, read_item())
         assert excinfo.value.status_code == 503
-        assert "unavailable" in excinfo.value.detail
+        assert "stale" in excinfo.value.detail
+    from api.publication_outcomes import PublicationUnavailable
+    with pytest.raises(PublicationUnavailable):
+        projection.read_axis_comparisons(ProjectionConnection(stale="missing"), read_item())
     conn = ProjectionConnection(missing_publication=True)
-    with pytest.raises(HTTPException) as excinfo:
+    with pytest.raises(PublicationUnavailable):
         projection.read_axis_comparisons(conn, read_item())
-    assert excinfo.value.status_code == 503
 
 
 def test_singleton_published_population_is_unavailable_with_null_ranks():

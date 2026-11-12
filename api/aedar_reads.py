@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from api.aedar_models import AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS
 from api.field_selection import normalize_field_selection
+from api.publication_outcomes import publication_unavailable
 
 
 def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measures, *,
@@ -30,9 +31,31 @@ def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measu
         JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
         JOIN table_publication r ON r.table_name='territory_reference'
         WHERE s.table_name='aedar_territory_summary'""").fetchone()
-    if (not marker or not marker[0] or marker[1] < 1 or marker[2] != marker[6]
-            or marker[4] != marker[3] or marker[5] != marker[6] or not marker[3]):
-        raise HTTPException(503, "AEDAR territory summary publication is unavailable or stale")
+    if not marker:
+        # The joins hide which publication is absent. The shared territory
+        # reference is request-wide; only the AEDAR summary's own absence is a
+        # typed item outcome.
+        reference = conn.execute(
+            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
+        ).fetchone()
+        if not reference or not reference[0]:
+            raise HTTPException(503, "Territory reference publication is unavailable")
+        summary = conn.execute("""SELECT content_version,row_count FROM table_publication
+            WHERE table_name='aedar_territory_summary'""").fetchone()
+        if not summary or not summary[0] or summary[1] < 1:
+            publication_unavailable("aedar",
+                "AEDAR territory summary publication is unavailable")
+        aedar = conn.execute(
+            "SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'"
+        ).fetchone()
+        if not aedar or not aedar[0]:
+            raise HTTPException(503, "AEDAR territory summary dependency publication is unavailable")
+        raise HTTPException(503, "AEDAR territory summary publication is stale or incompatible")
+    if not marker[0] or marker[1] < 1 or not marker[3]:
+        publication_unavailable("aedar", "AEDAR territory summary publication is unavailable")
+    if (marker[2] != marker[6] or marker[4] != marker[3]
+            or marker[5] != marker[6]):
+        raise HTTPException(503, "AEDAR territory summary publication is stale or incompatible")
     if preflight_only:
         return {"content_version": marker[0], "aedar_content_version": marker[3],
                 "reference_content_version": marker[2]}
@@ -228,8 +251,21 @@ def _aedar_territorial_aggregate_snapshot(conn, territory_type, territory_id,
     marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
               FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
               WHERE p.table_name='aedar_territorial_aggregate'""").fetchone()
-    if not marker or not marker[0] or marker[1] < 1 or marker[2] != marker[3]:
-        raise HTTPException(503,"AEDAR territorial publication is unavailable or incompatible")
+    if not marker:
+        reference = conn.execute(
+            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
+        ).fetchone()
+        if not reference or not reference[0]:
+            raise HTTPException(503, "Territory reference publication is unavailable")
+        own = conn.execute("""SELECT content_version,row_count FROM table_publication
+            WHERE table_name='aedar_territorial_aggregate'""").fetchone()
+        if not own or not own[0] or own[1] < 1:
+            publication_unavailable("aedar", "AEDAR territorial publication is unavailable")
+        raise HTTPException(503, "AEDAR territorial publication is stale or incompatible")
+    if not marker[0] or marker[1] < 1:
+        publication_unavailable("aedar", "AEDAR territorial publication is unavailable")
+    if marker[2] != marker[3]:
+        raise HTTPException(503, "AEDAR territorial publication is stale or incompatible")
     supported = conn.execute("SELECT 1 FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
                              (territory_type,territory_id)).fetchone()
     if not supported:
@@ -277,15 +313,24 @@ def _aedar_comparison_marker(conn):
                   WHERE s.comparison_content_version=p.content_version),
               p.density_summary_typequ_count
               FROM aedar_comparison_publication p
-              JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
-              JOIN table_publication r ON r.table_name='territory_reference'
+              LEFT JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
+              LEFT JOIN table_publication r ON r.table_name='territory_reference'
               WHERE p.singleton""").fetchone()
-    if (not marker or marker[2] != marker[9] or marker[3] != marker[10] or marker[6] < 1 or
+    if not marker or not marker[0]:
+        reference = conn.execute(
+            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
+        ).fetchone()
+        if not reference or not reference[0]:
+            raise HTTPException(503, "Territory reference publication is unavailable")
+        publication_unavailable("aedar", "AEDAR comparison publication is unavailable")
+    if marker[9] is None or marker[10] is None:
+        raise HTTPException(503, "AEDAR comparison dependency publication is unavailable")
+    if (marker[2] != marker[9] or marker[3] != marker[10] or marker[6] < 1 or
              marker[7] != 0 or marker[8] != "reference_only" or marker[1] != "2026-v1" or
              marker[11] < 1 or marker[12] != len(AEDAR_AGGREGATE_READINGS) or
              marker[13] != marker[11] * marker[12] or marker[14] != marker[13] or
              marker[15] != marker[11] or marker[16] < 1):
-        raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
+        raise HTTPException(503, "AEDAR comparison publication is stale or incompatible")
     return marker
 
 
@@ -480,8 +525,10 @@ def _aedar_density_class_summary_records(conn, group_id, measures, marker):
         FROM aedar_density_class_summary
         WHERE comparison_content_version=%s AND group_id=%s AND measure=ANY(%s::text[])""",
         (marker[0], group_id, sorted(requested))).fetchall()
+    if not rows:
+        publication_unavailable("aedar", "AEDAR density-class summary is unavailable")
     if len(rows) != len(requested) or len({row[0] for row in rows}) != len(requested):
-        raise HTTPException(503, "AEDAR density-class summary is missing or incomplete")
+        raise HTTPException(503, "AEDAR density-class summary is incomplete")
     result = {}
     for (measure, value, status, n_typequ, n_addresses, n_observed, coverage_status,
          aedar_version, reference_version, input_version) in rows:

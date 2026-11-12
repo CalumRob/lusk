@@ -85,9 +85,11 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
                 return Cursor([])
             if "WHERE reference_indicator_id=%s LIMIT 1" in sql:
                 return Cursor([])
-            if "FROM series_dataset_publication p CROSS JOIN table_publication" in sql:
+            if "FROM series_dataset_publication WHERE dataset_id=%s" in sql:
                 return Cursor([("series-v2", self.reference_version, 6,
-                                "2026-10-01T00:00:00Z", "ref-v8")])
+                                "2026-10-01T00:00:00Z")])
+            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+                return Cursor([("ref-v8",)])
             if "WHERE p.table_name='scalar_observation'" in sql:
                 return Cursor([("scalar-v4", "ref-v8", "ref-v8")])
             if "FROM scalar_descriptor WHERE indicator_id=%s" in sql:
@@ -180,7 +182,7 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
     assert all("value" not in point for point in projected["points"])
     assert "value" not in projected["scalar_facet"]["observation"]
     assert [point["axis"] for point in projected["points"]] == ["2024", "2025", "2026"]
-    with pytest.raises(HTTPException, match="stale or unavailable"):
+    with pytest.raises(HTTPException, match="stale or incompatible"):
         reader.read(Connection(reference_version="ref-v7"), item, catalogue)
     with pytest.raises(HTTPException, match="type does not match"):
         reader.read(Connection(territory_type="epci"), item, catalogue)
