@@ -102,8 +102,15 @@ class ResourceBatchItem(ResourceReadItem):
 
 
 class ResourceBatchRequest(BaseModel):
+    """Nonempty batch; the optional contract opts into correlated outcomes.
+
+    Omitting ``contract`` keeps the v1 response and its atomic whole-request
+    failure semantics. Only ``semantic-read-batch-v2`` is accepted as an
+    opt-in; any other value is a closed-grammar ``422`` before a connection.
+    """
     model_config = ConfigDict(extra="forbid")
     items: list[ResourceBatchItem] = Field(min_length=1)
+    contract: Literal["semantic-read-batch-v2"] | None = None
 
     @model_validator(mode="after")
     def validate_unique_ids(self):
