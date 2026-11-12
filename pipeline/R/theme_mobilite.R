@@ -759,6 +759,54 @@ construire_territoires_mobilite <- function(base_epci, analytiques,
   territoires
 }
 
+# aligner_indicateur_mobilite ---------------------------------------------------
+# L'alignement d'une agrégation scalaire sur le squelette des territoires : une
+# ligne par territoire (NA si la donnée manque — jamais une ligne absente),
+# avec la clé, l'unité et le rider éventuel. Extrait de
+# construire_indicateurs_mobilite pour être PARTAGÉ avec la matérialisation
+# scalaire ciblée (#989) : une seule règle de forme.
+aligner_indicateur_mobilite <- function(territoires, table_agregee, key, unit) {
+  if (!"rider" %in% names(table_agregee)) table_agregee$rider <- NA_character_
+  dplyr::left_join(territoires["code"], table_agregee, by = "code") %>%
+    dplyr::transmute(
+      code = code, key = key, detail = NA_character_,
+      value = value, unit = unit, rider = rider
+    )
+}
+
+# assembler_indicateurs_mobilite ------------------------------------------------
+# L'assemblage final des indicateurs du thème : les lignes alignées + leurs
+# rangs + le type de territoire + les estampilles de vintage. Extrait de
+# construire_indicateurs_mobilite pour être PARTAGÉ avec la matérialisation
+# scalaire ciblée (#989) — le même code produit la ligne complète et la ligne
+# ciblée, jamais deux assemblages.
+assembler_indicateurs_mobilite <- function(lignes, rangs_combines, territoires,
+                                           vintages) {
+  tampons <- INDICATEURS_MOBILITE %>%
+    dplyr::select(key, source_reference) %>%
+    dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
+    dplyr::select(key,
+                  vintage_source = source,
+                  vintage_version = version,
+                  vintage_date_reference = date_reference,
+                  vintage_date_publication = date_publication)
+
+  lignes %>%
+    dplyr::left_join(rangs_combines, by = c("code", "key", "detail")) %>%
+    dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
+    dplyr::rename(territoire = code) %>%
+    dplyr::mutate(theme = "mobilite") %>%
+    dplyr::left_join(tampons, by = "key") %>%
+    dplyr::select(dplyr::any_of(c(
+      "territoire", "type", "theme", "key", "detail", "value", "unit",
+      "rang_epci", "rang_dep", "rang_reg",
+      "rang_epci_n", "rang_dep_n", "rang_reg_n",
+      "vintage_source", "vintage_version",
+       "vintage_date_reference", "vintage_date_publication", "rider",
+       "observation_period"
+    )))
+}
+
 # construire_indicateurs_mobilite ----------------------------------------------
 # Les indicateurs publiés du thème : les clés déclarées, dont `nb_buildings`,
 # la taille target-scoped des bâtiments résidentiels analysés,
@@ -815,12 +863,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
   }
 
   aligner <- function(table_agregee, key, unit) {
-    if (!"rider" %in% names(table_agregee)) table_agregee$rider <- NA_character_
-    dplyr::left_join(territoires["code"], table_agregee, by = "code") %>%
-      dplyr::transmute(
-        code = code, key = key, detail = NA_character_,
-        value = value, unit = unit, rider = rider
-      )
+    aligner_indicateur_mobilite(territoires, table_agregee, key, unit)
   }
   sous_bloc <- function(key) {
     dplyr::left_join(
@@ -1014,16 +1057,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
   # l'assemblage : les onze clés + leurs rangs (le détail NA des clés
   # scalaires joint sur le détail NA des rangs partagés) + les tampons de la
   # table déclarative — la même forme que la machinerie partagée
-  # assembler_indicateurs
-  tampons <- INDICATEURS_MOBILITE %>%
-    dplyr::select(key, source_reference) %>%
-    dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
-    dplyr::select(key,
-                  vintage_source = source,
-                  vintage_version = version,
-                  vintage_date_reference = date_reference,
-                  vintage_date_publication = date_publication)
-
+  # assembler_indicateurs. L'assemblage vit dans assembler_indicateurs_mobilite,
+  # partagé avec la matérialisation scalaire ciblée (#989).
   rangs_combines <- dplyr::bind_rows(
     dplyr::bind_rows(lapply(rangs, function(rang) {
       rang %>% dplyr::mutate(detail = NA_character_)
@@ -1037,43 +1072,35 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     ,rangs_tot_loss
   )
 
-  dplyr::bind_rows(
-     tables$nb_buildings,
-     tables$offre_tc,
-    tables$bornes_recharge,
-    tables$places_stationnement_velo_1000,
-    tables$places_stationnement_voiture_1000,
-    tables$bornes_ev_par_station_service,
-     tables$stationnement_velo_par_voiture,
-     tables$surface_reseaux_routiers,
-      tables$stations_service,
-      tables$stations_service_1000,
-      tables$bornes_recharge_1000,
-      dplyr::bind_rows(moyennes),
-     tot_loss,
-    dplyr::bind_rows(acces),
-    dplyr::bind_rows(isolation),
-    voitures,
-    reseaux,
-    reseaux_par_habitant,
-    offre_cyclable,
-    tables$raccordement_tc,
-    raccordement_courbe,
-    raccordement_reference
-  ) %>%
-    dplyr::left_join(rangs_combines, by = c("code", "key", "detail")) %>%
-    dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
-    dplyr::rename(territoire = code) %>%
-    dplyr::mutate(theme = "mobilite") %>%
-    dplyr::left_join(tampons, by = "key") %>%
-    dplyr::select(dplyr::any_of(c(
-      "territoire", "type", "theme", "key", "detail", "value", "unit",
-      "rang_epci", "rang_dep", "rang_reg",
-      "rang_epci_n", "rang_dep_n", "rang_reg_n",
-      "vintage_source", "vintage_version",
-       "vintage_date_reference", "vintage_date_publication", "rider",
-       "observation_period"
-    )))
+  assembler_indicateurs_mobilite(
+    dplyr::bind_rows(
+       tables$nb_buildings,
+       tables$offre_tc,
+      tables$bornes_recharge,
+      tables$places_stationnement_velo_1000,
+      tables$places_stationnement_voiture_1000,
+      tables$bornes_ev_par_station_service,
+       tables$stationnement_velo_par_voiture,
+       tables$surface_reseaux_routiers,
+        tables$stations_service,
+        tables$stations_service_1000,
+        tables$bornes_recharge_1000,
+        dplyr::bind_rows(moyennes),
+       tot_loss,
+      dplyr::bind_rows(acces),
+      dplyr::bind_rows(isolation),
+      voitures,
+      reseaux,
+      reseaux_par_habitant,
+      offre_cyclable,
+      tables$raccordement_tc,
+      raccordement_courbe,
+      raccordement_reference
+    ),
+    rangs_combines,
+    territoires,
+    vintages
+  )
 }
 
 # construire_rangs_detail --------------------------------------------------------

@@ -1001,6 +1001,112 @@ calculer_stationnement_velo_communes <- function(velo) {
     dplyr::arrange(commune)
 }
 
+# agreger_ravitaillement_territoires --------------------------------------------
+# Le bloc de ravitaillement (issue #953) ISOLÉ de l'agrégation d'offre : le
+# compte des bornes IRVE et son taux / 1 000 hab, le compte B316 des
+# stations-service et son taux. C'est le seam PARTAGÉ entre la génération
+# complète du thème Mobilité (agreger_offre_territoires) et la matérialisation
+# scalaire ciblée (#989) : les deux chemins exécutent CE code — une seule
+# arithmétique, jamais une seconde implémentation à maintenir en parallèle.
+#
+# Les règles sont celles du bloc historique, inchangées :
+#   - `bornes` : la SOMME des stations distinctes par commune, avec le ZÉRO
+#     porté par toute commune du référentiel partagé (base_epci) ;
+#   - les taux : Σ compte ÷ Σ population × 1 000, RECOMPOSÉS depuis les
+#     parties à chaque niveau (jamais une moyenne de taux communaux). La
+#     population du dénominateur est celle du hub stationnement vélo ;
+#   - BPE absente : NA propagé (jamais un zéro inventé) ; le zéro OBSERVÉ
+#     d'une commune sans station reste un fait ;
+#   - les communes sans EPCI (les îles) n'agrègent à aucun niveau EPCI.
+#
+# Une entrée `fuel_communes` NULL (aucune source BPE déclarée) ne produit
+# aucune ligne stations-service : `$stations` vaut NULL, jamais un NA inventé.
+agreger_ravitaillement_territoires <- function(bornes_communes, velo_communes,
+                                                fuel_communes, ref) {
+  communes_univers <- sort(unique(as.character(ref$CODGEO)))
+  ctx_b <- tibble::tibble(
+    commune = communes_univers,
+    nb_bornes = 0L
+  ) %>%
+    dplyr::rows_update(
+      bornes_communes %>% dplyr::mutate(nb_bornes = as.integer(nb_bornes)),
+      by = "commune"
+    ) %>%
+    dplyr::rename(value = nb_bornes) %>%
+    dplyr::left_join(ref, by = c("commune" = "CODGEO")) %>%
+    # la population du dénominateur des taux / 1 000 hab est celle du hub
+    # stationnement vélo — le même dénominateur que les densités de parking
+    dplyr::left_join(velo_communes[c("commune", "population")],
+                     by = "commune")
+  bornes <- dplyr::bind_rows(
+    ctx_b %>% dplyr::transmute(code = commune, value),
+    ctx_b %>% dplyr::filter(!is.na(EPCI)) %>%
+      dplyr::group_by(code = EPCI) %>%
+      dplyr::summarise(value = sum(value), .groups = "drop"),
+    ctx_b %>% dplyr::group_by(code = DEP) %>%
+      dplyr::summarise(value = sum(value), .groups = "drop"),
+    ctx_b %>% dplyr::summarise(code = "53", value = sum(value),
+                               .groups = "drop")
+  ) %>%
+    dplyr::mutate(key = "bornes_recharge", detail = NA_character_)
+  bornes_1000 <- dplyr::bind_rows(
+    ctx_b %>% dplyr::transmute(code = commune,
+                               value = value / population * 1000),
+    ctx_b %>% dplyr::filter(!is.na(EPCI)) %>%
+      dplyr::group_by(code = EPCI) %>%
+      dplyr::summarise(value = sum(value) / sum(population) * 1000,
+                       .groups = "drop"),
+    ctx_b %>% dplyr::group_by(code = DEP) %>%
+      dplyr::summarise(value = sum(value) / sum(population) * 1000,
+                       .groups = "drop"),
+    ctx_b %>% dplyr::summarise(
+      code = "53",
+      value = sum(value) / sum(population) * 1000,
+      .groups = "drop")
+  ) %>%
+    dplyr::mutate(key = "bornes_recharge_1000", detail = NA_character_)
+
+  stations <- NULL
+  if (!is.null(fuel_communes)) {
+    ctx_r <- ctx_b %>%
+      dplyr::left_join(
+        fuel_communes %>% dplyr::rename(fuel_value = fuel),
+        by = c("commune" = "code")
+      )
+    agreger_compte <- function(g) {
+      ctx_r %>% dplyr::filter(!is.na(.data[[g]])) %>%
+        dplyr::group_by(code = .data[[g]]) %>% dplyr::summarise(
+          population = sum(population),
+          # A missing BPE observation means unavailable, not zero. A group is
+          # unavailable when any of its members is unavailable.
+          fuel = if (anyNA(fuel_value)) NA_real_ else sum(fuel_value),
+          .groups = "drop")
+    }
+    stations_ctx <- dplyr::bind_rows(
+      ctx_r %>% dplyr::transmute(code = commune, stations = fuel_value,
+                                 population = population),
+      agreger_compte("EPCI") %>% dplyr::transmute(code, stations = fuel,
+                                                  population = population),
+      agreger_compte("DEP") %>% dplyr::transmute(code, stations = fuel,
+                                                 population = population),
+      ctx_r %>% dplyr::summarise(
+        code = "53",
+        stations = if (anyNA(fuel_value)) NA_real_ else sum(fuel_value),
+        population = sum(population))
+    )
+    stations <- dplyr::bind_rows(
+      stations_ctx %>%
+        dplyr::transmute(code, key = "stations_service",
+                         detail = NA_character_, value = stations),
+      stations_ctx %>%
+        dplyr::transmute(code, key = "stations_service_1000",
+                         detail = NA_character_,
+                         value = stations / population * 1000)
+    )
+  }
+  list(bornes = bornes, bornes_1000 = bornes_1000, stations = stations)
+}
+
 # agreger_offre_territoires -----------------------------------------------------
 # Le sous-bloc aux QUATRE niveaux de territoire (commune / EPCI / département /
 # région), chaque indicateur agrégé par SA règle (CONTEXT.md « Taille » — un
@@ -1060,54 +1166,14 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
   ) %>%
     dplyr::mutate(key = "offre_tc", detail = NA_character_)
 
-  # bornes : la SOMME, avec le zéro porté par toute commune du référentiel
-  # partagé (base_epci — jamais un NA) ; les communes sans EPCI (les îles)
-  # n'agrègent à aucun niveau EPCI
-  communes_univers <- sort(unique(as.character(ref$CODGEO)))
-  ctx_b <- tibble::tibble(
-    commune = communes_univers,
-    nb_bornes = 0L
-  ) %>%
-    dplyr::rows_update(
-      bornes_communes %>% dplyr::mutate(nb_bornes = as.integer(nb_bornes)),
-      by = "commune"
-    ) %>%
-    dplyr::rename(value = nb_bornes) %>%
-    dplyr::left_join(ref, by = c("commune" = "CODGEO")) %>%
-    # la population du dénominateur des taux / 1 000 hab est celle du hub
-    # stationnement vélo — le même dénominateur que les densités de parking
-    dplyr::left_join(velo_communes[c("commune", "population")],
-                     by = "commune")
-  bornes <- dplyr::bind_rows(
-    ctx_b %>% dplyr::transmute(code = commune, value),
-    ctx_b %>% dplyr::filter(!is.na(EPCI)) %>%
-      dplyr::group_by(code = EPCI) %>%
-      dplyr::summarise(value = sum(value), .groups = "drop"),
-    ctx_b %>% dplyr::group_by(code = DEP) %>%
-      dplyr::summarise(value = sum(value), .groups = "drop"),
-    ctx_b %>% dplyr::summarise(code = "53", value = sum(value),
-                               .groups = "drop")
-  ) %>%
-    dplyr::mutate(key = "bornes_recharge", detail = NA_character_)
-  # le taux de bornes (issue #953) : Σ bornes ÷ Σ population × 1 000, recalculé
-  # depuis les parties à chaque niveau — jamais la moyenne des taux communaux.
-  # Le zéro porté par une commune sans borne reste un fait (jamais un NA).
-  bornes_1000 <- dplyr::bind_rows(
-    ctx_b %>% dplyr::transmute(code = commune,
-                               value = value / population * 1000),
-    ctx_b %>% dplyr::filter(!is.na(EPCI)) %>%
-      dplyr::group_by(code = EPCI) %>%
-      dplyr::summarise(value = sum(value) / sum(population) * 1000,
-                       .groups = "drop"),
-    ctx_b %>% dplyr::group_by(code = DEP) %>%
-      dplyr::summarise(value = sum(value) / sum(population) * 1000,
-                       .groups = "drop"),
-    ctx_b %>% dplyr::summarise(
-      code = "53",
-      value = sum(value) / sum(population) * 1000,
-      .groups = "drop")
-  ) %>%
-    dplyr::mutate(key = "bornes_recharge_1000", detail = NA_character_)
+  # le bloc ravitaillement (issue #953) : le compte de bornes IRVE et son taux,
+  # le compte B316 des stations-service et son taux. Il vit dans SA fonction
+  # partagée avec la matérialisation scalaire ciblée (#989) — les deux chemins
+  # exécutent le MÊME code, jamais deux arithmétiques qui pourraient diverger.
+  ravitaillement <- agreger_ravitaillement_territoires(
+    bornes_communes, velo_communes, fuel_communes, ref)
+  bornes <- ravitaillement$bornes
+  bornes_1000 <- ravitaillement$bornes_1000
 
   # velo : Σ places ÷ Σ population × 1 000 — recomposé depuis les parties
   # (jamais la moyenne des taux) ; les communes sans EPCI n'agrègent à aucun
@@ -1226,33 +1292,9 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
       tibble::tibble(code = rr$code, places_voiture = NA_real_)) %>%
        dplyr::transmute(code, key = "bornes_ev_par_station_service", detail = NA_character_,
                         value = bornes_ev_par_station_service, rider)
-    # Le compte de stations-service B316 et son taux / 1 000 hab (issue #953) :
-    # les parties sont SOMMÉES à chaque niveau, le taux est recalculé avec la
-    # population du territoire (jamais une moyenne de taux). Une observation
-    # BPE absente se propage en NA — jamais un zéro inventé ; le zéro OBSERVÉ
-    # d'une commune sans station reste un fait.
-    stations_ctx <- dplyr::bind_rows(
-      ctx_r %>% dplyr::transmute(code = commune, stations = fuel_value,
-                                 population = population),
-      agg("EPCI") %>% dplyr::transmute(code, stations = fuel,
-                                       population = population),
-      agg("DEP") %>% dplyr::transmute(code, stations = fuel,
-                                      population = population),
-      ctx_r %>% dplyr::summarise(
-        code = "53",
-        stations = if (anyNA(fuel_value)) NA_real_ else sum(fuel_value),
-        population = sum(population))
-    )
-    stations <- dplyr::bind_rows(
-      stations_ctx %>%
-        dplyr::transmute(code, key = "stations_service",
-                         detail = NA_character_, value = stations),
-      stations_ctx %>%
-        dplyr::transmute(code, key = "stations_service_1000",
-                         detail = NA_character_,
-                         value = stations / population * 1000)
-    )
-    ratios <- dplyr::bind_rows(ratios, stations)
+    # Le compte de stations-service B316 et son taux / 1 000 hab sont produits
+    # par le bloc ravitaillement partagé (#953/#989) — jamais recomposés ici.
+    ratios <- dplyr::bind_rows(ratios, ravitaillement$stations)
   }
   dplyr::bind_rows(offre_tc, bornes, bornes_1000, velo, cyclable, voiture, ratios) %>%
     dplyr::select(code, key, detail, value, dplyr::any_of("rider")) %>%
