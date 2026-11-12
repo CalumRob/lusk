@@ -517,6 +517,7 @@ onBeforeUnmount(() => {
               >
                 <AedarDiversityLossMapsCahier
                   :evidence="aedarDiversityLossEvidenceFor(section)!"
+                  :active="props.aedarChapterActive !== false"
                 />
               </section>
 

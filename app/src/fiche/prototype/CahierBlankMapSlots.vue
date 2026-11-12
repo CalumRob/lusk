@@ -88,6 +88,9 @@ function markCarMapUnavailable(code: string): void {
 }
 
 async function inspectCarMap(): Promise<void> {
+  // The pending page-1 surface never opens the gallery before its chapter is
+  // requested: that would download the inspection asset for an unrequested page.
+  if (props.active === false) return
   inspectionUnavailable.value = !await mapGallery.value?.open('car')
 }
 
@@ -115,7 +118,7 @@ function markInspectionUnavailable(): void {
           v-if="usesCarMap(slot.key)"
           class="blank-map-slot__viewport"
           :style="{ '--mode-ring': `var(--cahier-mode-${slot.tone})` }"
-          :image-url="aedarCarMapAssetUrl(props.territory.code, 'inline')"
+          :image-url="props.active === false ? undefined : aedarCarMapAssetUrl(props.territory.code, 'inline')"
           :image-alt="carMapAlternativeText"
           :accessible-name="`Agrandir : ${slot.label} à ${props.territory.name}`"
           :number="String(index + 1).padStart(2, '0')"

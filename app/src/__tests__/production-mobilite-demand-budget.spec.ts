@@ -103,6 +103,17 @@ function expectNoDuplicateOrOverlappingItem(allItems: Array<Record<string, any>>
   }
 }
 
+/**
+ * #986 — a fetch stub never sees an <img> download. The DOM proof reads the
+ * image sources actually present: no AEDAR map asset may exist while the page-1
+ * chapter is not requested, and the expected one must appear once it is.
+ */
+function aedarImageSources(wrapper: ReturnType<typeof mount>): string[] {
+  return wrapper.findAll('img[src]')
+    .map((image) => image.attributes('src') ?? '')
+    .filter((src) => src.includes('/maps/aedar/'))
+}
+
 function expectOnlyRequestedChapter(beforeUseful: Array<Record<string, any>>): void {
   const foreign = beforeUseful.filter((item) =>
     !PAGE_TWO.includes(item.resource))
@@ -164,6 +175,9 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     // navigation: both belong to chapters the reader did not request.
     expect(postsTouching(calls, PAGE_THREE)).toHaveLength(0)
     expect(posts(calls).flatMap((call) => call.items).filter(isAedar)).toEqual([])
+    // The pending page-1 car map must not download its image either (a fetch
+    // stub cannot observe <img>, so the DOM is asserted directly).
+    expect(aedarImageSources(wrapper)).toEqual([])
     // The page-1 asset reads are gated with the page-1 chapter too.
     expect(calls.filter((call) => call.url.startsWith('https://images.'))).toEqual([])
 
@@ -303,6 +317,11 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     const aedarAfterPageOne = items(calls).filter(isAedar)
     expect(aedarAfterPageOne.length).toBeGreaterThan(0)
     expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    // The requested chapter loads its expected car map (plus its own hydrated
+    // loss maps), all for the requested territory.
+    const pageOneImages = aedarImageSources(wrapper)
+    expect(pageOneImages.filter((src) => src.endsWith('/35238-car-inline.webp'))).toHaveLength(1)
+    expect(pageOneImages.every((src) => src.includes('/35238-'))).toBe(true)
 
     // Back to page 2: the settled page-1 demand is not re-read.
     const beforeBack = posts(calls).length
@@ -310,6 +329,10 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
       hash: '#figure-partage-de-lespace-public' })
     await flushPromises()
     expect(posts(calls).slice(beforeBack).flatMap((call) => call.items).filter(isAedar)).toEqual([])
+    // Back on page 2 the page-1 chapter is inactive again: no AEDAR image source
+    // is rendered, and no page-1 API request was issued (asserted above). The
+    // admitted page-1 data stays in memory and re-renders on the next page-1 visit.
+    expect(aedarImageSources(wrapper)).toEqual([])
     expect(wrapper.find('.mobilite-section--reseaux .mobilite-comparison-bars').exists()).toBe(true)
     wrapper.unmount()
   }, 60000)

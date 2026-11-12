@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const props = withDefaults(defineProps<{
-  imageUrl: string
+  /** Absent while the owning chapter is not requested: no image element, no download. */
+  imageUrl?: string
   imageAlt: string
   accessibleName: string
   number: string
@@ -26,7 +27,7 @@ const emit = defineEmits<{
   >
     <span class="map-panel-number" aria-hidden="true">{{ props.number }}</span>
     <img
-      v-if="!props.unavailable"
+      v-if="!props.unavailable && props.imageUrl"
       :src="props.imageUrl"
       :alt="props.imageAlt"
       @load="emit('loaded')"
