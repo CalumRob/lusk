@@ -15,6 +15,7 @@ import { semanticComparisonForTheme, validerReponseComparaisonTheme } from '../p
 import {
   nativeBatchResponse,
   nativeCatalogueResponse,
+  nativePublicationFamily,
   nativeReadFixture,
   nativeResources,
 } from './helpers/semanticApiFixtures'
@@ -344,7 +345,7 @@ describe('theme acquisition cache', () => {
       const cache = new ThemeAcquisitionCache(async () => focal, acquire)
       const first = await cache.get('region', '53', 'mobilite')
 
-      await expect(cache.select('region', '53', 'mobilite', undefined)).rejects.toThrow(/publication/i)
+      await expect(cache.select('region', '53', 'mobilite', undefined)).rejects.toThrow(/publication|comparaison|s?mantique|cible|identit?/i)
       expect((await cache.get('region', '53', 'mobilite')).focal).toBe(first.focal)
       const retried = await cache.select('region', '53', 'mobilite', undefined)
 
@@ -452,7 +453,7 @@ describe('theme acquisition cache', () => {
       batchRequests.push(request)
       const results = request.items.map((item) => item.intent.kind !== 'facts'
         ? { id: item.id, resource: item.resource, status: 'publication_unavailable',
-          reason: 'publication_absent', family: 'ordered_series' }
+          reason: 'publication_absent', family: nativePublicationFamily('reseaux') }
         : { id: item.id, resource: item.resource, status: 'available',
           data: nativeReadFixture(item, nativeResources('mobilite')
             .find((resource) => resource.resource_id === item.resource)!) })
@@ -469,7 +470,7 @@ describe('theme acquisition cache', () => {
       expect(acquired.default_comparison?.comparison_reads).toEqual([])
       expect(acquired.resource_failures).toContainEqual(expect.objectContaining({
         resource: 'reseaux', stage: 'comparison', state: 'publication_unavailable',
-        family: 'ordered_series', reason: 'publication_absent',
+        family: nativePublicationFamily('reseaux'), reason: 'publication_absent',
       }))
       expect(acquired.comparison_error).toBe(true)
       const failure = acquired.resource_failures?.find((entry) => entry.stage === 'comparison')
@@ -683,7 +684,6 @@ describe('theme acquisition cache', () => {
   it('does not retry a hard batch failure by itself; a new acquisition reads the recovered publication', async () => {
     vi.resetModules()
     const { acquireThemeFacts } = await import('../payload/themeAcquisition')
-    const { invalidateSemanticReadsForTarget } = await import('../payload/semanticResourceClient')
     const resource = { resource_id: 'part_passoires', theme_id: 'habitat', indicator_id: 'part_passoires',
       label: 'Part des passoires', unit: '%', direction: 'low', allowed_levels: ['commune'], sources: ['dpe'],
       shapes: ['scalar'], target_kinds: ['territory'], fields: ['value', 'status'],
@@ -711,7 +711,6 @@ describe('theme acquisition cache', () => {
       expect(batchRequests).toHaveLength(1)
 
       publicationAvailable = true
-      invalidateSemanticReadsForTarget('commune', '22001')
       const acquired = await acquireThemeFacts('commune', '22001', 'habitat')
       expect(batchRequests).toHaveLength(2)
       expect(acquired.resource_reads?.[0]?.data.value).toBe(0.2)
@@ -721,7 +720,6 @@ describe('theme acquisition cache', () => {
   it('settles a publication absence without an automatic re-read and re-probes on explicit retry', async () => {
     vi.resetModules()
     const { acquireThemeFacts } = await import('../payload/themeAcquisition')
-    const { invalidateSemanticReadsForTarget } = await import('../payload/semanticResourceClient')
     const resource = { resource_id: 'part_passoires', theme_id: 'habitat', indicator_id: 'part_passoires',
       label: 'Part des passoires', unit: '%', direction: 'low', allowed_levels: ['commune'], sources: ['dpe'],
       shapes: ['scalar'], target_kinds: ['territory'], fields: ['value', 'status'],
@@ -761,14 +759,14 @@ describe('theme acquisition cache', () => {
       expect(first.resource_failures).toContainEqual(expect.objectContaining({
         resource: 'part_passoires', stage: 'comparison', state: 'publication_unavailable' }))
 
+      // A new acquisition never replays the settled absence: it re-probes.
       const replayed = await acquireThemeFacts('commune', '22001', 'habitat')
-      expect(batchRequests).toHaveLength(1)
-      expect(replayed).toEqual(first)
+      expect(batchRequests).toHaveLength(2)
+      expect(replayed.resource_failures).toEqual(first.resource_failures)
 
       comparisonAvailable = true
-      invalidateSemanticReadsForTarget('commune', '22001')
       const retried = await acquireThemeFacts('commune', '22001', 'habitat')
-      expect(batchRequests).toHaveLength(2)
+      expect(batchRequests).toHaveLength(3)
       expect(retried.resource_failures).toBeUndefined()
     } finally { vi.unstubAllGlobals() }
   })
@@ -806,6 +804,105 @@ describe('theme acquisition cache', () => {
       expect(new Set(keys).size).toBe(keys.length)
       // Every batch respects the shared twelve-item packing budget.
       expect(requests.every(({ items }) => items.length <= 12)).toBe(true)
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('rejects facts spanning two territory-reference generations and re-reads coherently', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const resources = ['coherence_a', 'coherence_b'].map((resource_id) => ({
+      resource_id, theme_id: 'habitat', indicator_id: resource_id, label: resource_id, unit: '%',
+      direction: 'high', allowed_levels: ['commune'], sources: [], shapes: ['scalar'],
+      target_kinds: ['territory'], fields: ['value'], intents: ['facts'],
+    }))
+    let coherent = false
+    const batchRequests: Array<{ items: Array<Record<string, any>> }> = []
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources,
+      }))
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      batchRequests.push(request)
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: request.items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
+          data: { resource: item.resource, target: item.target, content_version: 'facts-v1',
+            reference_content_version: coherent || item.resource === 'coherence_a' ? 'ref-a' : 'ref-b',
+            value: 1, status: 'measured' } })) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      await expect(acquireThemeFacts('commune', '22001', 'habitat'))
+        .rejects.toThrow(/référentiel territorial/)
+      expect(batchRequests).toHaveLength(1)
+      coherent = true
+      const acquired = await acquireThemeFacts('commune', '22001', 'habitat')
+      expect(batchRequests).toHaveLength(2)
+      expect(acquired.resource_reads).toHaveLength(2)
+      expect(acquired.resource_reads?.every((read) => read.data.reference_content_version === 'ref-a')).toBe(true)
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('rejects publication, descriptor, target, identity, reference, selection and scope mutations, then retries over HTTP', async () => {
+    vi.resetModules()
+    const { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, ThemeAcquisitionCache } =
+      await import('../payload/themeAcquisition')
+    const resource = nativeResources('demographie').find((candidate) =>
+      candidate.resource_id === 'densite')!
+    let patch: ((data: Record<string, any>) => void) | null = null
+    let comparisonRequests = 0
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources: [resource],
+      }))
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: request.items.map((item) => {
+          const data = nativeReadFixture(item, resource) as Record<string, any>
+          if (item.intent.kind === 'selected_comparison') {
+            comparisonRequests += 1
+            patch?.(data)
+          }
+          return { id: item.id, resource: item.resource, status: 'available', data }
+        }) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const cache = new ThemeAcquisitionCache(
+        (theme: ThemeKey, key?: { type: string; id: string }) =>
+          acquireThemeFacts(key!.type, key!.id, theme),
+        (selected: readonly { territory_type: 'commune' | 'epci' | 'departement' | 'region'; territory_id: string }[] | undefined,
+          theme: ThemeKey, key?: { type: string; id: string }) =>
+          acquireThemeComparison(key!.type, key!.id, theme, selected))
+      const focal = await cache.get('commune', '22001', 'demographie')
+      expect(comparisonRequests).toBe(0)
+      const cases: Array<[string, (data: Record<string, any>) => void]> = [
+        ['publication', (data) => { data.content_version = 'stale-publication' }],
+        ['descriptor', (data) => { data.result.descriptor_version = 'stale-descriptor' }],
+        ['target', (data) => { data.target.id = '99999' }],
+        ['identity', (data) => { data.indicator_id = 'other-indicator' }],
+        ['reference', (data) => { data.reference_content_version = 'stale-reference' }],
+        ['selection', (data) => { data.selection[0]!.territory_id = '99999' }],
+        ['scope', (data) => { data.scope = null }],
+      ]
+      for (const [name, mutate] of cases) {
+        const selected = [{ territory_type: 'commune' as const, territory_id: '22002' }]
+        const selectionKey = cleSelectionComparaison(selected)
+        // Each case is a fresh explicit retry of the same selection.
+        cache.invalidateComparison('commune', '22001', 'demographie', selected)
+        patch = mutate
+        const outcome = await cache.select('commune', '22001', 'demographie', selected)
+          .then(() => 'resolved' as const, () => 'rejected' as const)
+        expect(outcome, name).toBe('rejected')
+        expect((await cache.get('commune', '22001', 'demographie')).comparisons.has(selectionKey), name).toBe(false)
+        patch = null
+        const recovered = await cache.select('commune', '22001', 'demographie', selected)
+        expect(recovered.comparisons.get(selectionKey), name).toBeDefined()
+      }
+      expect(comparisonRequests).toBe(cases.length * 2)
+      expect(focal.focal.resource_reads).toHaveLength(1)
+      expect(focal.focal.resource_reads?.[0]?.resource).toBe('densite')
     } finally { vi.unstubAllGlobals() }
   })
 
@@ -1350,7 +1447,7 @@ describe('theme acquisition cache', () => {
       .mockResolvedValueOnce(valid)
     const cache = new ThemeAcquisitionCache(async () => facts, compare)
     const acquired = await cache.get('commune', '22001', 'habitat')
-    await expect(cache.select('commune', '22001', 'habitat', undefined)).rejects.toThrow(/publication/i)
+    await expect(cache.select('commune', '22001', 'habitat', undefined)).rejects.toThrow(/publication|comparaison|s?mantique|cible|identit?/i)
     expect((await cache.get('commune', '22001', 'habitat')).focal).toBe(acquired.focal)
     const retried = await cache.select('commune', '22001', 'habitat', undefined)
     expect(compare).toHaveBeenCalledTimes(2)
@@ -1542,7 +1639,7 @@ describe('theme acquisition cache', () => {
       } finally { vi.unstubAllGlobals() }
     })
 
-    it('keeps the healthy wave cached when another bounded wave is a hard 503', async () => {
+    it('re-reads a hard-failed wave coherently instead of mixing generations', async () => {
       vi.resetModules()
       const { acquireThemeFacts } = await import('../payload/themeAcquisition')
       const resources = scalarDeclarations(24)
@@ -1560,22 +1657,23 @@ describe('theme acquisition cache', () => {
         const failure = await acquisition.catch((error: unknown) => error)
         expect(failure).toMatchObject({ status: 503 })
 
-        // Only the failed batch is re-read; the healthy wave stays cached.
+        // A new acquisition re-reads both waves: one ready response can never
+        // assemble the old wave-2 snapshot beside a new one.
         const retry = acquireThemeFacts('commune', '22001', 'mobilite')
         await settle()
-        expect(reads.pending).toHaveLength(3)
-        const retried = reads.pending[2]!
-        expect(retried.items.map((item) => item.resource))
-          .toEqual(Array.from({ length: 12 }, (_, index) => `mobilite_scalar_${index}`))
-        retried.settle(scalarBatchResponse(retried.items, 'wave-1-retry'))
+        expect(reads.pending).toHaveLength(4)
+        const retriedRequests = reads.pending.slice(2)
+        for (const request of retriedRequests) {
+          request.settle(scalarBatchResponse(request.items, 'wave-coherent'))
+          await settle()
+        }
 
         const acquired = await retry
         const version = (resource: string) => acquired.resource_reads
           ?.find((read) => read.resource === resource)?.data.content_version
-        expect(version('mobilite_scalar_0')).toBe('wave-1-retry')
-        expect(version('mobilite_scalar_11')).toBe('wave-1-retry')
-        expect(version('mobilite_scalar_12')).toBe('wave-2')
-        expect(version('mobilite_scalar_23')).toBe('wave-2')
+        expect(acquired.resource_reads?.every((read) => read.data.content_version === 'wave-coherent')).toBe(true)
+        expect(version('mobilite_scalar_0')).toBe('wave-coherent')
+        expect(version('mobilite_scalar_23')).toBe('wave-coherent')
         expect(reads.maxActive()).toBe(2)
       } finally { vi.unstubAllGlobals() }
     })
@@ -1702,8 +1800,9 @@ describe('theme acquisition cache', () => {
         reads.pending.length = 0
         const retried = cache.get('commune', '22001', 'mobilite')
         await settle()
-        // Only the rejected wave is re-read; the healthy one is still cached.
-        expect(reads.pending).toHaveLength(1)
+        // A new acquisition re-reads both bounded waves: no old/new generation
+        // may be assembled into one ready response.
+        expect(reads.pending).toHaveLength(2)
         for (let turn = 0; turn < 8 && reads.pending.length; turn += 1) {
           const request = reads.pending.shift()!
           request.settle(scalarBatchResponse(request.items, 'retry-v3'))
@@ -1712,13 +1811,7 @@ describe('theme acquisition cache', () => {
         const acquired = await retried
         expect(acquired.focal.resource_reads?.map((read) => read.resource))
           .toEqual(resources.map((resource) => resource.resource_id))
-        const version = (resource: string) => acquired.focal.resource_reads
-          ?.find((read) => read.resource === resource)?.data.content_version
-        // The healthy bounded wave stays cached; only the rejected wave is re-read.
-        expect(version('mobilite_scalar_0')).toBe('wave-1')
-        expect(version('mobilite_scalar_11')).toBe('wave-1')
-        expect(version('mobilite_scalar_12')).toBe('retry-v3')
-        expect(version('mobilite_scalar_23')).toBe('retry-v3')
+        expect(acquired.focal.resource_reads?.every((read) => read.data.content_version === 'retry-v3')).toBe(true)
       } finally { vi.unstubAllGlobals() }
     })
   })

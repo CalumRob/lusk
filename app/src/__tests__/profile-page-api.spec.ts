@@ -10,7 +10,7 @@ import { territoiresFixture } from '../payload/fixtures'
 import type { ThemeMetadata, TerritoireType } from '../payload/types'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { routes } from '../router'
-import { nativeResources } from './helpers/semanticApiFixtures'
+import { nativePublicationFamily, nativeResources } from './helpers/semanticApiFixtures'
 import IndicateurView from '../views/IndicateurView.vue'
 
 type JsonRecord = Record<string, unknown>
@@ -114,7 +114,7 @@ function responseEnvelope(item: JsonRecord, data: JsonRecord) {
   return { id: item.id, resource: item.resource, status: 'available', data }
 }
 
-function createTransport(options: { failComparisons?: number; failProfileFacts?: number; failCatalogues?: number;
+function createTransport(options: { failComparisons?: number; failProfileFacts?: number; unavailableProfileFacts?: number; failCatalogues?: number;
   emptyProfileCohort?: boolean; suppressDpeSignature?: boolean; deferFirstProfile?: boolean;
   mixedProfileVintages?: boolean; incompatibleCatalogueResource?: string;
   profileCellOverrides?: Record<string, { value: number | null; status: string }> } = {}) {
@@ -125,6 +125,7 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
   const comparisonCalls: JsonRecord[] = []
   let comparisonFailures = options.failComparisons ?? 0
   let profileFailures = options.failProfileFacts ?? 0
+  let profileAbsences = options.unavailableProfileFacts ?? 0
   let catalogueFailures = options.failCatalogues ?? 0
   let deferredResponse: (() => void) | null = null
 
@@ -155,6 +156,11 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
         if (intent.kind === 'facts' && target.kind === 'territory') {
           const spec = profileSpecs.find((candidate) => candidate.indicator === resource)!
           profileFactsCalls.push(item)
+          if (profileAbsences > 0) {
+            profileAbsences -= 1
+            return { id: item.id, resource: item.resource, status: 'publication_unavailable',
+              reason: 'publication_absent', family: nativePublicationFamily(resource) }
+          }
           const territory = territoiresFixture.find((candidate) => candidate.territoire === target.id && candidate.type === target.type)!
           const memberIndex = cohortMembers(target.type as TerritoireType, null, null).findIndex((candidate) => candidate.id === territory.territoire)
           const descriptor = profileDescriptor(spec)
@@ -179,6 +185,11 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
           const spec = profileSpecs.find((candidate) => candidate.indicator === resource)
           if (spec) {
             profileFactsCalls.push(item)
+            if (profileAbsences > 0) {
+              profileAbsences -= 1
+              return { id: item.id, resource: item.resource, status: 'publication_unavailable',
+                reason: 'publication_absent', family: nativePublicationFamily(resource) }
+            }
             if (profileFailures > 0) {
               profileFailures -= 1
               throw new Error('simulate profile fact transport outage')
@@ -553,6 +564,21 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     expect(retryTransport.calls.some(({ url }) => url.startsWith('/data/indicateurs_'))).toBe(false)
     expect(retryPage.wrapper.get('h1').text()).toBe(spec.title)
     retryPage.wrapper.unmount()
+  })
+
+  it('re-probes a typed profile publication absence from the real retry alert', async () => {
+    const spec = profileSpecs[0]!
+    const transport = createTransport({ unavailableProfileFacts: 1 })
+    const page = await mountPage(spec.theme, spec.indicator, transport)
+    await flushPromises()
+    const retry = page.wrapper.find('[role="alert"] button')
+    expect(retry.exists()).toBe(true)
+    await retry.trigger('click')
+    await flushPromises()
+    expect(transport.profileFactsCalls).toHaveLength(2)
+    expect(page.wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(page.wrapper.get('h1').text()).toBe(spec.title)
+    page.wrapper.unmount()
   })
 
   it('alimente la Carte avec le facet API sélectionné, en conservant les deux cellules de sexe et le comparateur DPE séparé', async () => {

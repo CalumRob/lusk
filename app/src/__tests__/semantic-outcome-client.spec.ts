@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   groupSemanticItems,
+  invalidateSemanticItems,
   invalidateSemanticReads,
-  invalidateSemanticReadsForTarget,
   lireRessourcesBatch,
   parseSemanticBatchOutcomes,
   readSemanticOutcomes,
@@ -267,27 +267,63 @@ describe('coalescing, cache and explicit retry', () => {
     expect(new Set(sent).size).toBe(5)
   })
 
-  it('serves a repeated item from the per-item cache without another HTTP read', async () => {
+  it('does not replay a settled outcome into a new acquisition without a coherence token', async () => {
     const fetcher = respond((entry) => availableWire(entry))
     await readSemanticOutcomes([item('densite')], { fetcher })
     await readSemanticOutcomes([item('densite')], { fetcher })
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher).toHaveBeenCalledTimes(2)
   })
 
-  it('re-probes an explicitly invalidated item, including a settled absence', async () => {
+  it('reuses a settled outcome only within the same coherence identity', async () => {
+    const fetcher = respond((entry) => availableWire(entry))
+    await readSemanticOutcomes([item('densite')], { fetcher, coherence: 'publication-a' })
+    await readSemanticOutcomes([item('densite')], { fetcher, coherence: 'publication-a' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    await readSemanticOutcomes([item('densite')], { fetcher, coherence: 'publication-b' })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('re-probes a settled absence after an explicit invalidation of its semantic key', async () => {
     let published = false
     const fetcher = respond((entry) => published ? availableWire(entry) : unavailableWire(entry))
-    const [first] = await readSemanticOutcomes([item('densite')], { fetcher })
-    expect(first!.status).toBe('publication_unavailable')
-    published = true
-    // A second read without an explicit retry replays the settled absence.
-    const [cached] = await readSemanticOutcomes([item('densite')], { fetcher })
-    expect(cached!.status).toBe('publication_unavailable')
+    await readSemanticOutcomes([item('densite')], { fetcher, coherence: 'publication-a' })
+    const [replayed] = await readSemanticOutcomes([item('densite')], { fetcher,
+      coherence: 'publication-a' })
+    expect(replayed!.status).toBe('publication_unavailable')
     expect(fetcher).toHaveBeenCalledTimes(1)
-    invalidateSemanticReadsForTarget('commune', '22001', undefined, { fetcher })
-    const [retried] = await readSemanticOutcomes([item('densite')], { fetcher })
+    published = true
+    // A structurally equal item object still matches the exact semantic key.
+    expect(invalidateSemanticItems([{ ...item('densite') }], { fetcher })).toBe(1)
+    const [retried] = await readSemanticOutcomes([item('densite')], { fetcher,
+      coherence: 'publication-a' })
     expect(retried!.status).toBe('available')
     expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('joins one in-flight read for concurrent fresh and regular callers', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { items: WireItem[] }
+      await gate
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: body.items.map((entry) => availableWire(entry)) }))
+    })
+    const freshA = readSemanticOutcomes([item('densite')], { fetcher, fresh: true })
+    const freshB = readSemanticOutcomes([item('densite')], { fetcher, fresh: true })
+    const regular = readSemanticOutcomes([item('densite')], { fetcher })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    release()
+    const [a, b, c] = await Promise.all([freshA, freshB, regular])
+    expect(a).toEqual(b)
+    expect(b).toEqual(c)
+  })
+
+  it('rejects a typed absence whose family disagrees with the declaration', async () => {
+    const fetcher = respond((entry) => unavailableWire(entry, 'scalar'))
+    await expect(readSemanticOutcomes([item('structure_age')], { fetcher,
+      expectedFamilies: new Map([['structure_age', 'profile']]) }))
+      .rejects.toThrow(/famille|déclarée/)
   })
 
   it('never applies a late reply whose generation was invalidated', async () => {

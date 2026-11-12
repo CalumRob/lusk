@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { publicationFamilyForResource } from '../../payload/semanticResourceClient'
+import type { SemanticPublicationFamily } from '../../payload/semanticResourceClient'
 import { NATIVE_API_FIXTURE_NOTICE, NATIVE_API_SCENARIOS } from '../fixtures/nativeApiScenarios'
 
 type Resource = {
@@ -66,6 +68,17 @@ export function nativeCatalogueResponse(): Response {
 /** The declarations are loaded from the same producer catalogue served by the API. */
 export function nativeResources(theme?: string): Resource[] {
   return catalogue.resources.filter((resource) => theme === undefined || resource.theme_id === theme)
+}
+
+/**
+ * The typed-absence family of a fixture resource, derived from its declared
+ * producer capabilities exactly like the API's central family mapping. Tests
+ * must never satisfy the closed family check with an invented `scalar` default.
+ */
+export function nativePublicationFamily(resourceId: string): SemanticPublicationFamily {
+  const resource = catalogue.resources.find((candidate) => candidate.resource_id === resourceId)
+  if (!resource) throw new Error(`Unknown native fixture resource: ${resourceId}`)
+  return publicationFamilyForResource(resource)
 }
 
 const territories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8')) as Array<Record<string, any>>

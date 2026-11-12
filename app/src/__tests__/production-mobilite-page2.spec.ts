@@ -23,6 +23,7 @@ import type { Payload } from '@/payload/types'
 import { routes } from '@/router'
 import {
   nativeCatalogueResponse,
+  nativePublicationFamily,
   nativeReadFixture,
   nativeResources,
 } from './helpers/semanticApiFixtures'
@@ -101,7 +102,7 @@ function semanticFetch(
 const GATED_PUBLICATIONS = ['bornes_recharge_1000', 'stations_service', 'stations_service_1000'] as const
 
 function familyForGated(resource: string): string {
-  return resource === 'bornes_recharge_1000' ? 'scalar' : 'ordered_series'
+  return nativePublicationFamily(resource)
 }
 
 function gatedBatchFetch(

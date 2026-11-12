@@ -23,6 +23,7 @@ import type { Payload } from '@/payload/types'
 import { routes } from '@/router'
 import {
   nativeCatalogueResponse,
+  nativePublicationFamily,
   nativeReadFixture,
   nativeResources,
 } from './helpers/semanticApiFixtures'
@@ -66,7 +67,7 @@ function semanticFetch(state: FailureState) {
         : state.comparisons.has(item.resource)
       if (failed) {
         return { id: item.id, resource: item.resource, status: 'publication_unavailable',
-          reason: 'publication_absent', family: 'ordered_series' }
+          reason: 'publication_absent', family: nativePublicationFamily(item.resource) }
       }
       const resource = catalogue.find((candidate) => candidate.resource_id === item.resource)
       if (!resource) throw new Error(`Unknown fixture resource ${item.resource}`)

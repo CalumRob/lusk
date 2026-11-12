@@ -408,6 +408,31 @@ describe('AEDAR API client', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 
+  it('re-probes a typed aggregate absence on explicit retry instead of a permanent invalid loop', async () => {
+    let absent = true
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<{ id: string
+        resource: string; target: Record<string, unknown>; coordinates: { typequ: string[] } }> }
+      if (absent) {
+        absent = false
+        return jsonResponse({ contract: 'semantic-read-batch-v2',
+          results: items.map((item) => ({ id: item.id, resource: item.resource,
+            status: 'publication_unavailable', reason: 'publication_absent', family: 'aedar' })) })
+      }
+      return jsonResponse({ contract: 'semantic-read-batch-v2',
+        results: items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
+          data: { ...response(item.coordinates.typequ.map(fact), { limit: 100 }),
+            resource: 'aedar_territorial_aggregate', target: item.target } })) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await fetchAedarAggregates('commune', '22001', { typequ: ['A'] }))
+      .toMatchObject({ status: 'error', error: { code: 'publication-unavailable' } })
+    const recovered = await fetchAedarAggregates('commune', '22001', { typequ: ['A'] })
+    expect(recovered).toMatchObject({ status: 'ready', facts: [{ typequ: 'A' }] })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it.each(['missing', 'extra'] as const)('rejects %s measure keys', (change) => {
     const measures = { ...fact('A').measures }
     if (change === 'missing') delete measures[measureKeys()[0]!]

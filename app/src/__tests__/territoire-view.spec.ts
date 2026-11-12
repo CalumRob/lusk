@@ -34,6 +34,7 @@ import { routes } from '../router'
 import {
   nativeBatchResponse,
   nativeCatalogueResponse,
+  nativePublicationFamily,
   nativeReadFixture,
   nativeResources,
 } from './helpers/semanticApiFixtures'
@@ -147,6 +148,7 @@ function aedarComparisonFixture(item: Record<string, any>, summaryClock: string,
 function nativeSemanticFetch(requests: Array<Array<Record<string, any>>> = [], options: {
   failSummary?: (items: Array<Record<string, any>>) => boolean
   failTypedDetail?: (items: Array<Record<string, any>>) => boolean
+  unavailableTypedDetail?: (items: Array<Record<string, any>>) => boolean
   summaryContentVersion?: () => string
   aedarContentVersion?: () => string
   referenceContentVersion?: () => string
@@ -165,6 +167,13 @@ function nativeSemanticFetch(requests: Array<Array<Record<string, any>>> = [], o
       }
       if (items.some((item) => item.resource === 'aedar_territorial_aggregate' && item.intent?.kind === 'facts')
         && options.failTypedDetail?.(items)) return new Response('', { status: 503 })
+      if (items.every((item) => item.resource === 'aedar_territorial_aggregate' && item.intent?.kind === 'facts')
+        && options.unavailableTypedDetail?.(items)) {
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+          results: items.map((item) => ({ id: item.id, resource: item.resource,
+            status: 'publication_unavailable', reason: 'publication_absent', family: 'aedar' })) }),
+        { status: 200 })
+      }
       const comparisonClock = options.comparisonSummaryClock?.() ?? 'aedar-summary-fixture-v1'
       const comparisonAedarClock = options.comparisonAedarClock?.() ?? 'aedar_territorial_aggregate-fixture-publication-v1'
       const comparisonReferenceClock = options.comparisonReferenceClock?.() ?? 'semantic-reference-fixture-v1'
@@ -990,7 +999,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
           failedFocalRead = true
           return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
             results: items.map((item) => ({ id: item.id, resource: item.resource,
-              status: 'publication_unavailable', reason: 'publication_absent', family: 'scalar' })) }))
+              status: 'publication_unavailable', reason: 'publication_absent',
+              family: nativePublicationFamily(item.resource) })) }))
         }
         return nativeBatchResponse(items, nativeFicheReadFixture)
       }
@@ -1244,6 +1254,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
 
       await flushPromises()
+      console.log('DEBUG_VIEW_HTML', wrapper.html().slice(-4000))
       const epciLabel = contextesReference('22001').epci!.scope.label
       verifyCloudAndRank(epciMembers.length, epciLabel, epciMembers.map((member) => member.territoire))
       // #860 — la sélection EPCI part en membres communaux développés : la
@@ -1258,11 +1269,16 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       await flushPromises()
       const bretagneLabel = contextesReference('22001').bretagne!.scope.label
       verifyCloudAndRank(bretagneMembers.length, bretagneLabel, bretagneMembers.map((member) => member.territoire))
-      expect(requests.slice(requestCountBeforeRegion).flat().some((item) => item.target.kind === 'territory_cohort' &&
-        item.resource === readingResource.resource_id && item.target.type === 'commune' && !item.target.epci_id &&
-        !item.target.department_id) || requests.flat().some((item) => item.target.kind === 'territory_cohort' &&
-        item.resource === readingResource.resource_id && item.target.type === 'commune' && !item.target.epci_id &&
-        !item.target.department_id)).toBe(true)
+      // The unfiltered Bretagne cohort is one publication read for this
+      // acquisition identity: it is reused across preset changes, never
+      // duplicated, and the switched cloud/rank above prove it is the right
+      // group rather than an arbitrary cached cohort.
+      const unfilteredCohort = (batches: Array<Array<Record<string, any>>>) =>
+        batches.flat().filter((item) => item.target.kind === 'territory_cohort' &&
+          item.resource === readingResource.resource_id && item.target.type === 'commune' &&
+          !item.target.epci_id && !item.target.department_id)
+      expect(unfilteredCohort(requests)).toHaveLength(1)
+      expect(unfilteredCohort(requests.slice(requestCountBeforeRegion))).toHaveLength(0)
       expect(selectedRanks.at(-1)).toEqual({ scopeCount: bretagneMembers.length, rankSize: bretagneMembers.length })
       expect(region.type).toBe('region')
       wrapper.unmount()
@@ -1830,6 +1846,38 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       .toBeGreaterThan(detailReadsBeforeRetry)
     detailMounted.wrapper.unmount()
   }, 20_000)
+
+  it('re-probes a typed AEDAR publication absence from the real retry alert', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    let absent = true
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests, {
+      unavailableTypedDetail: (items) => {
+        const focal = items.some((item) => item.resource === 'aedar_territorial_aggregate'
+          && item.intent.kind === 'facts' && item.target.id === '22001')
+        if (!focal || !absent) return false
+        absent = false
+        return true
+      },
+    }))
+    const mounted = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
+    const alert = mounted.wrapper.findAll('.aedar-state')
+      .find((node) => node.text().includes('Les détails AEDAR ne sont pas disponibles.'))
+    expect(alert).toBeDefined()
+    const detailReadsBefore = requests.flat().filter((item) =>
+      item.resource === 'aedar_territorial_aggregate' && item.intent.kind === 'facts').length
+    expect(detailReadsBefore).toBeGreaterThan(0)
+
+    // A typed absence is a settled item state; the retry alert is the explicit
+    // re-probe and must issue a fresh semantic read.
+    await alert!.find('button').trigger('click')
+    await flushPromises()
+    expect(mounted.wrapper.text()).not.toContain('Les détails AEDAR ne sont pas disponibles.')
+    expect(mounted.wrapper.find('[data-section="aedar-equipment-profile"] .aedar-waffle-grid').exists()).toBe(true)
+    expect(requests.flat().filter((item) =>
+      item.resource === 'aedar_territorial_aggregate' && item.intent.kind === 'facts').length)
+      .toBeGreaterThan(detailReadsBefore)
+    mounted.wrapper.unmount()
+  })
 
   it('keeps summary clocks, singleton rank, focal reset, and the EPCI → density → EPCI → density → custom sequence coherent', async () => {
     const requests: Array<Array<Record<string, any>>> = []
