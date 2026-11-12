@@ -778,9 +778,9 @@ async function readAuxiliary(resources: SemanticResourceDeclaration[], type: str
   ])
   for (const result of [cohortResult, namedResult]) {
     if (result.status === 'rejected' && result.reason instanceof ThemeAcquisitionCoherenceError) {
-      // One auxiliary subgroup already fenced itself; surface the whole
-      // auxiliary key set to the acquisition owner so facts + aux are fenced
-      // together and nothing is committed.
+      // One auxiliary subgroup already fenced itself; fence the whole
+      // auxiliary key set so facts + aux are never partially committed.
+      invalidateSemanticItems(allItems)
       throw new ThemeAcquisitionCoherenceError(result.reason.message, allItems)
     }
   }
