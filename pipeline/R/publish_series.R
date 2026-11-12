@@ -77,7 +77,7 @@ project_conso_enaf_series <- function(payload, metadata) {
     stop("Canonical annual series is mislabeled with a different theme", call.=FALSE)
   if (anyNA(all_annual$detail) || any(!as.character(all_annual$detail) %in% axis))
     stop("Canonical annual series contains an undeclared axis point", call.=FALSE)
-  # Canonical territory-fiche data also contains the RÃ©gion observation. It is
+  # Canonical territory-fiche data also contains the RÃƒÂ©gion observation. It is
   # explicitly accounted for by the declared levels of this projection;
   # all other non-eligible levels fail rather than disappearing in a filter.
   recognized_levels <- c(allowed_levels, "region")
@@ -704,7 +704,7 @@ read_conso_enaf_reading_artifact <- function(directory) {
 # owner to the content version this attempt computed (write_owned_series_artifact()
 # returns the semantic version even when the artifact already existed and the
 # pointer was left untouched). An attempt that fails before completing is not
-# reported owner by owner — the caller reports the whole family blocked rather
+# reported owner by owner â€” the caller reports the whole family blocked rather
 # than risk presenting a retained generation as the current attempt's success.
 materialize_theme_series_artifacts <- function(payload, metadata, vintages, theme, directory) {
   if (is.null(metadata$owned_series_routes)) return(invisible(NULL))
@@ -784,7 +784,7 @@ register_owned_series_publishers <- function(registry, metadata, habitat_metadat
 owned_series_postgres_adapter <- function(con) {
   if (!requireNamespace("DBI", quietly=TRUE)) stop("DBI is required")
   list(
-    transaction=function(expr) DBI::dbWithTransaction(con, expr),
+    transaction=function(expr) publication_transaction(con, expr),
     lock=function(dataset_id) DBI::dbGetQuery(con,
       "SELECT pg_advisory_xact_lock(hashtext('owned-series'),hashtext($1))", params=list(dataset_id)),
     dataset_marker=function(dataset_id) DBI::dbGetQuery(con,
@@ -810,7 +810,7 @@ owned_series_postgres_adapter <- function(con) {
         describe <- function(rows,limit=20L) {
           rows <- rows[order(rows$territory_type,rows$territory_id),,drop=FALSE]
           labels <- paste0(rows$territory_type,"/",rows$territory_id)
-          suffix <- if (length(labels)>limit) paste0(" … et ",length(labels)-limit," autre(s)") else ""
+          suffix <- if (length(labels)>limit) paste0(" â€¦ et ",length(labels)-limit," autre(s)") else ""
           paste0(paste(head(labels,limit),collapse=", "),suffix)
         }
         missing <- expected[!key(expected) %in% key(actual),,drop=FALSE]
@@ -1152,7 +1152,7 @@ series_postgres_adapter <- function(con) {
   quote <- function(x) if (length(x) == 1L && is.na(x)) "NULL" else
     as.character(DBI::dbQuoteString(con, as.character(x)))
   list(
-    transaction=function(expr) DBI::dbWithTransaction(con, expr),
+    transaction=function(expr) publication_transaction(con, expr),
     lock=function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(597, 1)"),
     marker=function(name) DBI::dbGetQuery(con,
       "SELECT content_version,reference_content_version FROM table_publication WHERE table_name=$1", params=list(name)),
@@ -1391,3 +1391,4 @@ project_series_comparison_group <- function(points, axis_values, member_ids,
   list(groups=do.call(rbind, groups), territories=territories,
     axis_values=axes, statistic=statistic, direction=direction)
 }
+

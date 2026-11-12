@@ -519,7 +519,7 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
         write_profile_comparison_parquets(comparison_artifact, artifact_directory)
       }
     },
-    transaction = function(expr) DBI::dbWithTransaction(con, expr),
+    transaction=function(expr) publication_transaction(con, expr),
     lock = function(owner) DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(596, 1)"),
     marker = function(name) DBI::dbGetQuery(con,
       "SELECT content_version,reference_content_version FROM table_publication WHERE table_name=$1", params=list(name)),
@@ -677,3 +677,4 @@ declared_detail_profile_ids <- function(metadata) {
   names(Filter(function(contract) identical(contract$completeness, "dense_complete") &&
     !is.null(contract$detail_units), contracts))
 }
+

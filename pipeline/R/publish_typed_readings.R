@@ -311,7 +311,7 @@ publish_demographic_reading <- function(con, projection, canonical) {
     stop("Demographic reading territory identities do not match the registered territory reference",call.=FALSE)
   version <- canonical$content_version
   unchanged <- FALSE
-  DBI::dbWithTransaction(con, {
+  publication_transaction(con, {
     marker <- DBI::dbGetQuery(con,"SELECT p.content_version,p.row_count,p.reference_content_version,
       d.descriptor_version,d.source_id,d.vintage_id,d.rate_unit FROM table_publication p
       JOIN demographic_reading_descriptor d ON d.singleton WHERE p.table_name='demographic_typed_reading'")
@@ -423,7 +423,7 @@ publish_selected_reading_family <- function(con, facts, canonical, theme) {
          identical(as.character(generic_marker$reference_content_version[[1L]]),as.character(reference_version[[1L]])))
         return(invisible(list(content_version=version,row_count=count,changed=FALSE)))
   }
-  DBI::dbWithTransaction(con, {
+  publication_transaction(con, {
     DBI::dbExecute(con,paste("DELETE FROM",target))
     if(theme=="habitat") {
      facts <- facts[c("territory_id","territory_type","groupe","story_key","salience_reason","classification",
@@ -615,7 +615,7 @@ publish_milieux_reading <- function(con, facts, canonical) {
   }
   version <- scalar_content_version(list(facts=facts,source_bindings=bindings,source_absences=absences))
   expected_count <- nrow(facts); expected_sources <- nrow(bindings); unchanged <- FALSE
-  DBI::dbWithTransaction(con, {
+  publication_transaction(con, {
     revision <- population_revisions[1,,drop=FALSE]
     DBI::dbExecute(con,"INSERT INTO milieux_population_provenance_revision(population_revision_id,source_id,vintage_id,source_name,dataset_name,source_version,reference_date,publication_date,revision_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(population_revision_id) DO NOTHING",
       params=unname(as.list(revision[1,c("population_revision_id","source_id","vintage_id","source_name","dataset_name","source_version","reference_date","publication_date","revision_hash")])))
@@ -674,7 +674,7 @@ publish_economy_reading_family <- function(con, facts, canonical) {
   version <- canonical$content_version
   expected_count <- nrow(facts)
   unchanged <- FALSE
-  DBI::dbWithTransaction(con, {
+  publication_transaction(con, {
     marker <- DBI::dbGetQuery(con,"SELECT p.content_version,p.row_count,p.reference_content_version,e.content_version AS evidence_version,e.row_count AS evidence_count,e.reference_content_version AS evidence_reference FROM table_publication p LEFT JOIN table_publication e ON e.table_name='economy_activity_evidence' WHERE p.table_name='economy_typed_reading'")
     if(nrow(marker)==1L && identical(as.character(marker$content_version[[1L]]),version) && marker$row_count[[1L]]==expected_count &&
        identical(as.character(marker$reference_content_version[[1L]]),as.character(reference_version[[1L]])) &&
@@ -703,3 +703,4 @@ publish_economy_reading_family <- function(con, facts, canonical) {
   })
   invisible(list(content_version=version,row_count=expected_count,changed=!unchanged))
 }
+

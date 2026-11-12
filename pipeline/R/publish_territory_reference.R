@@ -26,7 +26,7 @@ project_territory_reference <- function(territories) {
 
 territory_reference_postgres_adapter <- function(con) {
   list(
-    transaction=function(expr) DBI::dbWithTransaction(con, expr),
+    transaction=function(expr) publication_transaction(con, expr),
     lock=function(owner) DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(593, 1)"),
     marker=function(owner) DBI::dbGetQuery(con,
       "SELECT content_version,reference_content_version FROM table_publication WHERE table_name=$1",
@@ -80,3 +80,4 @@ publish_canonical_territory_reference <- function(con, sortie="../public/data") 
     territory_reference_postgres_adapter(con))
   invisible(list(projection=projection, publication=result))
 }
+

@@ -127,8 +127,20 @@ publish_retained_scalar_snapshot <- function(con, snapshot, sortie) {
   list(scalar=scalar, comparison=comparison)
 }
 
+# declared_profile_owners ------------------------------------------------------
+# The normal declared-profile owner set used by the graph/profile publication.
+declared_profile_owners <- function() {
+  unique(c(
+    profile_serving_owners(lire_theme_metadata("demographie")),
+    profile_serving_owners(lire_theme_metadata("habitat")),
+    profile_serving_owners(lire_theme_metadata("mobilite"))))
+}
+
 publish_retained_backend_snapshot <- function(con, sortie="../public/data",
-                                             conso_source_path=NULL) {
+                                             conso_source_path=NULL,
+                                             atomic = FALSE,
+                                             companion_profiles = FALSE) {
+  body <- function() {
   territory_path <- file.path(sortie, "territoires.parquet")
   if (!file.exists(territory_path))
     stop("Canonical territory artifact is required for retained publication", call.=FALSE)
@@ -138,9 +150,17 @@ publish_retained_backend_snapshot <- function(con, sortie="../public/data",
   scalar_snapshot <- project_retained_scalar_snapshot(sortie, reference)
   scalar_result <- publish_retained_scalar_snapshot(con, scalar_snapshot, sortie)
 
-  # Mobility's old story/clock projection is excluded. These owner-scoped
-  # canonical readings are retained and keep their independent publication
-  # tokens and typed validators.
+  # The scalar snapshot version changes when scoped indicators are added. A
+  # scalar-bound declared profile (DPE) must advance to that new version before
+  # the Habitat selected reading validates its dependency. The artifact was
+  # refreshed metadata-only by the caller; this publishes the normal owner
+  # profile rows inside the same outer transaction.
+  profile_result <- NULL
+  if (isTRUE(companion_profiles)) {
+    profile_result <- publier_declared_profiles_postgres(sortie,
+      declared_profile_owners(), con=con)
+  }
+
   demographic <- publish_canonical_demographic_reading(con, sortie)
   habitat <- publish_canonical_habitat_reading(con, sortie)
   economy_publication <- read_typed_reading_publication_from(sortie, "economie")
@@ -149,7 +169,9 @@ publish_retained_backend_snapshot <- function(con, sortie="../public/data",
     "economie", economy_publication, con)
   milieux <- publish_canonical_milieux_reading(con, sortie,
     conso_source_path=conso_source_path)
-  list(reference=reference_result, scalar=scalar_result,
+  list(reference=reference_result, scalar=scalar_result, profiles=profile_result,
     demographic=demographic, habitat=habitat, economy=economy,
     milieux=milieux$reading, milieux_state_series=milieux$owned_series)
+  }
+  if (isTRUE(atomic)) with_publication_transaction(con, body()) else body()
 }

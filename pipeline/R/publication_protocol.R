@@ -1,3 +1,20 @@
+# Transaction composition for the retained backend. The normal publishers each
+# own a transaction and call dbWithTransaction directly. A wrapper that must
+# cover several owners atomically sets an outer publication transaction; the
+# inner owner transactions then execute inside it (PostgreSQL xact locks remain
+# held until the outer commit). Ordinary direct calls keep their own transaction.
+publication_transaction <- function(con, expr) {
+  if (isTRUE(getOption("lusk.publication.outer_transaction"))) return(force(expr))
+  DBI::dbWithTransaction(con, expr)
+}
+
+with_publication_transaction <- function(con, expr) {
+  previous <- getOption("lusk.publication.outer_transaction")
+  options(lusk.publication.outer_transaction = TRUE)
+  on.exit(options(lusk.publication.outer_transaction = previous), add = TRUE)
+  DBI::dbWithTransaction(con, force(expr))
+}
+
 # Shared owner-scoped publication transaction protocol.
 # Adapters retain their typed descriptor, source, grain and completeness checks;
 # this function owns only the common token/no-op/dependency-rebind decision.

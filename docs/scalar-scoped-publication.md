@@ -99,6 +99,11 @@ Before any write, under the existing scalar advisory lock
 | `territory_reference` | candidate territory reference |
 | `scalar_observation` | **prior baseline** scalar snapshot version |
 | `scalar_comparison_publication` | **prior baseline** comparison version and scalar version |
+| `declared_profile` | **prior baseline** declared-profile publication version |
+| `profile_descriptor[distribution_dpe]` | baseline descriptor version and baseline `required_scalar_version` |
+| `profile_comparison_publication` | **prior baseline** profile comparison version/profile/reference |
+| `selected_reading_publication[habitat]` | habitat reading content/reference |
+| `selected_reading_descriptor[habitat]` | descriptor version and **prior baseline** `linked_content_version` |
 | `demographic_typed_reading` | candidate artifact version |
 | `selected_reading` (habitat) | candidate artifact version |
 | `economy_typed_reading` + `economy_activity_evidence` | candidate artifact version |
@@ -107,20 +112,32 @@ Before any write, under the existing scalar advisory lock
 
 It also proves candidate vs baseline differ **exactly** by the declared scoped
 indicators (all other scalar facts/descriptors/provenance and the comparison
-rows are identical; typed/series/reference artifacts are identical). Any
-mismatch, including an invalid/unreadable baseline artifact under current
-producer contracts, hard-refuses with **zero writes** and lists every marker
-with live vs expected values, plus the instruction:
+rows are identical; typed/series/reference/**profile facts** are identical),
+and that the candidate profile artifact is bound to the **candidate** scalar
+version. Any mismatch, including an invalid/unreadable baseline artifact or a
+newer live profile/linked reading, hard-refuses with **zero writes** and lists
+every marker with live vs expected values, plus the instruction:
 
 > Retrieve the latest canonical generation that matches serving; do not force,
 > regenerate or overwrite the serving tables.
 
-The whole-snapshot publisher still replaces the scalar and comparison tables
-wholesale. Rows for unchanged indicators keep their values/provenance/
-descriptors, but the scalar content version changes and scalar-bound dependents
-advance: the DPE profile `required_scalar_version` and the delivery of the
-selected habitat reading. Those are republished/rebound by their normal
-registered owners; this is not per-row writing.
+The wrapper then executes the normal owner publications in one **outer
+transaction**: territory reference → scalar → refreshed declared profile →
+demographic/habitat selected reading → economy → Milieux/series. The profile
+companion is refreshed metadata-only from its existing facts (only the
+`required_scalar_version` descriptor token changes; DPE fact rows are identical)
+through `refresh_declared_profile_scalar_binding()`, then published by the normal
+registered profile owner. The existing owner transactions compose into the outer
+transaction (`publication_transaction()`), so a failure after any stage rolls
+back every owner; the pre-refresh profile artifacts are restored and a retry
+after clearing the failure succeeds. The scalar/comparison tables remain
+wholesale replaces: unchanged facts/provenance/descriptors are identical, while
+the table version changes and the three resources are added.
+
+The scalar `pg_advisory_lock(594,1)` serializes scalar publishers; it does not
+cover the other owners' locks. **The operator must still ensure no concurrent
+publication of any other owner** (maintenance window); this prerequisite is
+explicit and not hidden by the guard.
 
 ## Tests
 
@@ -150,17 +167,24 @@ cleanup always on, zero residual schemas):
 $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
 $env:LUSK_SCALAR_TEST_DATABASE = 'lusk_it_contract'
 $env:LUSK_SCALAR_TEST_USER = 'lusk_it_contract_pub'
-$env:LUSK_RETAINED_BASELINE_RECEIPT = 'E:\Temp\opencode\lusk-989-publication-preparation\27-baseline-smoke-receipt.txt'
+$env:LUSK_RETAINED_BASELINE_RECEIPT = 'E:\Temp\opencode\lusk-989-publication-preparation\49-atomic-smoke-receipt.txt'
 pipeline\scripts\run-retained-baseline-smoke.ps1 `
   -CandidateDir <candidate sortie> -BaselineDir <prior baseline sortie>
 ```
 
-Receipt status PASS on 2026-11-12: baseline 20 286 facts / 16 descriptors,
-candidate 24 087 / 19 (exact +3, +3 801 facts; comparisons 1 136→1 349 groups,
-58 688→69 692 territory results); both mismatch cases refused with a
-whole-schema digest unchanged; unchanged owners no-op; schema cleaned and no
-residual `serving_it_*` schema. DB bytes before/after are recorded in the
-receipt (the catalogue does not shrink without operator maintenance).
+Receipt status PASS on 2026-11-12 (one actual wrapper call): baseline 20 286
+facts / 16 descriptors, candidate 24 087 / 19 (exact +3, +3 801 facts;
+comparisons 1 136→1 349 groups, 58 688→69 692 territory results). Live scalar,
+habitat, declared-profile, profile-comparison, DPE required-scalar and
+selected-linked mismatches all refused with a whole-schema digest unchanged.
+A forced failure after the scalar/profile stage rolled back the entire schema
+(digest unchanged) and restored the pre-refresh profile artifact; retry
+succeeded. Unchanged owner markers/versions and unchanged scalar/profile facts
+are identical; DPE profile facts are byte/row identical, only the normal binding
+token and selected linked version advance. HTTP before/after: DPE + habitat
+read 200 with descriptor/source; after, the three scalar facts and fixed
+comparisons (ranks) read 200. Schema cleaned; zero residual `serving_it_*`;
+`public` tables unchanged. DB bytes before/after in the receipt.
 
 Run:
 
@@ -196,15 +220,14 @@ publication-ready under current producer contracts**:
 
 - its demographic typed-reading artifact is rejected (`invalid persisted source
   clock; rematerialize it`), so neither the candidate nor the baseline can pass
-  the typed-reading reader;
-- the candidate scalar version changes, so the scalar-bound DPE profile binding
-  and the selected habitat reading must advance through their normal owners; a
-  profile artifact bound to the old scalar cannot be republished as-is.
+  the typed-reading reader.
 
-The guarded DB proof therefore rematerializes the demographic reading and
-rebinds the DPE profile binding **on private test copies only** (documented in
-the smoke); that is test fixture repair, not production evidence. A real
-publication requires the operator/orchestrator to retrieve or generate the
-**current canonical generation** that serving holds (or a current producer
-generation for all owners), then rerun the light scoped materialization on top
-of it. Do not force, regenerate or overwrite serving to work around this.
+The guarded DB proof therefore rematerializes that ONE demographic reading
+**on private test copies only**; that is test fixture repair, not production
+evidence. The scalar-bound DPE profile companion is **not** a test fixture
+repair: the wrapper refreshes it metadata-only through the normal owner and
+publishes it inside the atomic transaction. A real publication still requires
+the operator/orchestrator to retrieve or generate the **current canonical
+generation** that serving holds (all owners), then rerun the light scoped
+materialization on top of it. Do not force, regenerate or overwrite serving to
+work around the demographic artifact blocker.

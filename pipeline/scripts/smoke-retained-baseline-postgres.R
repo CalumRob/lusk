@@ -42,6 +42,9 @@ passfile <- Sys.getenv("PGPASSFILE", unset = "")
 stopifnot(nzchar(passfile), file.exists(passfile),
           !startsWith(tolower(normalizePath(passfile, winslash = "/")),
                       tolower(normalizePath("..", winslash = "/"))))
+read_user <- Sys.getenv("LUSK_TEST_READ_USER", unset = "")
+read_dsn <- Sys.getenv("LUSK_TEST_READ_DSN", unset = "")
+stopifnot(nzchar(read_user), nzchar(read_dsn))
 receipt_path <- Sys.getenv("LUSK_RETAINED_BASELINE_RECEIPT",
   unset = file.path(tempdir(), "retained-baseline-receipt.txt"))
 stopifnot(requireNamespace("DBI", quietly = TRUE),
@@ -82,30 +85,6 @@ rematerialize_demographic_fixture <- function(directory) {
 }
 rematerialize_demographic_fixture(candidate_dir)
 rematerialize_demographic_fixture(baseline_dir)
-
-# TEST-ONLY dependency rebind: the candidate scalar version changes, so the
-# scalar-bound DPE profile artifact's binding token must advance with it. The
-# profile FACTS are untouched; only the descriptor token changes. Production
-# still needs the normal profile artifact regeneration/publication step.
-profile_owners <- unique(c(
-  profile_serving_owners(lire_theme_metadata("demographie")),
-  profile_serving_owners(lire_theme_metadata("habitat")),
-  profile_serving_owners(lire_theme_metadata("mobilite"))))
-rebind_profile_binding <- function(directory, old_binding, new_binding) {
-  profiles <- read_profile_serving_profiles(directory, profile_owners,
-    scalar_binding = old_binding)
-  for (name in names(profiles)) {
-    projection <- profiles[[name]]
-    required <- projection$descriptor$required_scalar_version
-    if (is.null(required) || length(required) == 0L || is.na(required)) next
-    projection$descriptor$required_scalar_version <- new_binding
-    write_profile_serving_artifact(projection,
-      file.path(directory, "profile-serving", name),
-      scalar_binding = new_binding)
-  }
-}
-rebind_profile_binding(candidate_dir, profile_scalar_binding(baseline_dir),
-                       profile_scalar_binding(candidate_dir))
 
 Sys.setenv(PGCONNECT_TIMEOUT = "5",
   PGOPTIONS = "-c statement_timeout=180000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=300000")
@@ -152,6 +131,60 @@ marker_version <- function(table, column = "content_version") {
     "SELECT ", column, " AS v FROM table_publication WHERE table_name=$1"),
     params = list(table))$v[[1L]]
 }
+http_probe <- function(stage, scalar_version) {
+  python <- Sys.which("python")
+  if (!nzchar(python)) stop("Python executable is unavailable", call. = FALSE)
+  code <- c(
+    "import os",
+    "from fastapi.testclient import TestClient",
+    "from api.main import app",
+    "stage = os.environ['LUSK_HTTP_STAGE']",
+    "scalar = os.environ['LUSK_HTTP_SCALAR']",
+    "with TestClient(app) as c:",
+    "    r = c.get('/api/resources')",
+    "    assert r.status_code == 200, r.text",
+    "    ids = {x['resource_id'] for x in r.json()['resources']}",
+    "    need = {'distribution_dpe','habitat_selected_reading','stations_service'}",
+    "    assert need <= ids, (need - ids)",
+    "    def read(res, intent):",
+    "        r = c.post('/api/resources/read', json={'resource':res,'target':{'kind':'territory','type':'commune','id':'35238'},'intent':intent})",
+    "        assert r.status_code == 200, (res, r.status_code, r.text)",
+    "        return r",
+    "    d = read('distribution_dpe', {'kind':'facts'})",
+    "    assert 'sources' in d.text and 'unit' in d.text",
+    "    h = read('habitat_selected_reading', {'kind':'facts'})",
+    "    assert 'descriptor' in h.text and 'part_passoires' in h.text, h.text[:800]",
+    "    assert scalar in d.text, (scalar, d.text[:300])",
+    "    if stage == 'after':",
+    "        for res in ('stations_service','stations_service_1000','bornes_recharge_1000'):",
+    "            x = read(res, {'kind':'facts'})",
+    "            assert 'unit' in x.text and 'sources' in x.text",
+    "            y = read(res, {'kind':'fixed_comparison','context':'default'})",
+    "            assert 'rank' in y.text"
+  )
+  script <- tempfile(fileext = ".py")
+  writeLines(code, script)
+  keys <- c("PYTHONPATH", "DATABASE_URL", "PGOPTIONS", "LUSK_HTTP_STAGE",
+            "LUSK_HTTP_SCALAR")
+  previous <- Sys.getenv(keys, unset = NA_character_)
+  on.exit({
+    for (i in seq_along(keys)) {
+      if (is.na(previous[[i]])) Sys.unsetenv(keys[[i]])
+      else do.call(Sys.setenv, setNames(list(previous[[i]]), keys[[i]]))
+    }
+    unlink(script)
+  }, add = TRUE)
+  Sys.setenv(PYTHONPATH = normalizePath("..", winslash = "/", mustWork = TRUE),
+    DATABASE_URL = read_dsn,
+    PGOPTIONS = paste0("-c search_path=", schema,
+      " -c statement_timeout=60000 -c lock_timeout=5000"),
+    LUSK_HTTP_STAGE = stage, LUSK_HTTP_SCALAR = scalar_version)
+  status <- system2(python, shQuote(script), stdout = "", stderr = "")
+  if (!identical(status, 0L))
+    stop("HTTP probe failed at stage: ", stage, call. = FALSE)
+  invisible(TRUE)
+}
+
 own_schema_cleanup <- function() {
   if (!created) return(invisible(NULL))
   check <- DBI::dbGetQuery(connection, paste(
@@ -177,6 +210,11 @@ tryCatch({
   schema_sql <- paste(readLines(file.path("..", "api", "schema.sql"), warn = FALSE),
                       collapse = "\n")
   for (statement in split_postgres_sql(schema_sql)) DBI::dbExecute(connection, statement)
+  DBI::dbExecute(connection, paste0("GRANT USAGE ON SCHEMA ", quoted_schema,
+    " TO ", as.character(DBI::dbQuoteIdentifier(connection, read_user))))
+  DBI::dbExecute(connection, paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ",
+    quoted_schema, " TO ",
+    as.character(DBI::dbQuoteIdentifier(connection, read_user))))
 
   reference <- project_territory_reference(nanoparquet::read_parquet(
     file.path(baseline_dir, "territoires.parquet")))
@@ -192,14 +230,6 @@ tryCatch({
   publish_retained_backend_snapshot(connection, baseline_dir, conso_source_path = NULL)
   baseline_state <- schema_digest()
   baseline_markers <- retained_backend_markers(connection)
-  expected <- retained_baseline_marker_expectations(candidate_dir, baseline_dir,
-                                                    scope_ids)
-  baseline_mismatches <- verifier_retained_backend_baseline(baseline_markers,
-                                                           expected)
-  if (nrow(baseline_mismatches)) {
-    print(baseline_mismatches, row.names = FALSE)
-    stop("Seeded baseline does not match the artifact expectations.", call. = FALSE)
-  }
   baseline_counts <- c(
     facts = DBI::dbGetQuery(connection,
       "SELECT count(*) AS n FROM scalar_observation")$n[[1L]],
@@ -211,6 +241,8 @@ tryCatch({
       "SELECT count(*) AS n FROM scalar_comparison_territory")$n[[1L]])
   receipt <- c(receipt, paste("baseline_scalar_version:",
                               marker_version("scalar_observation")))
+  http_probe("before", marker_version("scalar_observation"))
+  receipt <- c(receipt, "http_before: PASS (DPE + Habitat available; scalar 3 discovered)")
 
   # Mismatch proofs use the normal integrated wrapper; it refuses before any
   # write, so the seeded baseline must remain byte-identical.
@@ -252,29 +284,121 @@ tryCatch({
   receipt <- c(receipt, "mismatch_owner_case: PASS (refused, zero writes)")
   stopifnot(identical(schema_digest(), baseline_state))
 
-  # MATCH: the guard passes, then the normal registered publishers publish the
-  # candidate scalar and the dependent DPE profile binding before the typed
-  # readings. (The single wrapper call cannot insert the profile republication
-  # between scalar and habitat; that dependency-order limitation is documented
-  # as a separate production finding.)
-  assert_retained_backend_baseline(connection, candidate_dir, baseline_dir,
-                                   scope_ids)
+  # Mismatch: a newer live declared profile, selected-reading linked clock, or
+  # DPE required scalar version must refuse with zero writes.
+  declared_before <- marker_version("declared_profile")
+  DBI::dbExecute(connection, paste(
+    "UPDATE table_publication SET content_version='newer-profile-test'",
+    "WHERE table_name='declared_profile'"))
+  mutated <- schema_digest()
+  refused <- tryCatch({ publish_retained_backend_from_parquet(candidate_dir); NULL },
+                      error = function(e) e)
+  stopifnot(inherits(refused, "error"),
+    grepl("Serving baseline mismatch", conditionMessage(refused), fixed = TRUE))
+  stopifnot(identical(mutated, schema_digest()))
+  DBI::dbExecute(connection, paste(
+    "UPDATE table_publication SET content_version=$1",
+    "WHERE table_name='declared_profile'"), params = list(declared_before))
+
+  linked_before <- DBI::dbGetQuery(connection, paste(
+    "SELECT linked_content_version FROM selected_reading_descriptor",
+    "WHERE theme_id='habitat'"))$linked_content_version[[1L]]
+  DBI::dbExecute(connection, paste(
+    "UPDATE selected_reading_descriptor SET linked_content_version='newer-link-test'",
+    "WHERE theme_id='habitat'"))
+  mutated <- schema_digest()
+  refused <- tryCatch({ publish_retained_backend_from_parquet(candidate_dir); NULL },
+                      error = function(e) e)
+  stopifnot(inherits(refused, "error"),
+    grepl("Serving baseline mismatch", conditionMessage(refused), fixed = TRUE))
+  stopifnot(identical(mutated, schema_digest()))
+  DBI::dbExecute(connection, paste(
+    "UPDATE selected_reading_descriptor SET linked_content_version=$1",
+    "WHERE theme_id='habitat'"), params = list(linked_before))
+
+  required_before <- DBI::dbGetQuery(connection, paste(
+    "SELECT required_scalar_version FROM profile_descriptor",
+    "WHERE indicator_id='distribution_dpe'"))$required_scalar_version[[1L]]
+  DBI::dbExecute(connection, paste(
+    "UPDATE profile_descriptor SET required_scalar_version='newer-required-test'",
+    "WHERE indicator_id='distribution_dpe'"))
+  mutated <- schema_digest()
+  refused <- tryCatch({ publish_retained_backend_from_parquet(candidate_dir); NULL },
+                      error = function(e) e)
+  stopifnot(inherits(refused, "error"),
+    grepl("Serving baseline mismatch", conditionMessage(refused), fixed = TRUE))
+  stopifnot(identical(mutated, schema_digest()))
+  DBI::dbExecute(connection, paste(
+    "UPDATE profile_descriptor SET required_scalar_version=$1",
+    "WHERE indicator_id='distribution_dpe'"), params = list(required_before))
+  receipt <- c(receipt,
+    "mismatch_profile_cases: PASS (refused, zero writes)")
+  stopifnot(identical(schema_digest(), baseline_state),
+            identical(read_profile_scalar_binding(candidate_dir),
+                      profile_scalar_binding(baseline_dir)))
+  profile_facts_before <- DBI::dbGetQuery(connection, paste(
+    "SELECT * FROM profile_observation",
+    "ORDER BY indicator_id,territory_id,detail_key,sex_key"))
+
+  # Forced failure AFTER the scalar + profile companion stage, BEFORE the
+  # selected reading completes. The outer transaction must roll back every
+  # owner and the wrapper must restore the pre-refresh profile artifact.
+  DBI::dbExecute(connection, paste(
+    "CREATE FUNCTION reject_habitat_smoke() RETURNS trigger LANGUAGE plpgsql AS $$",
+    "BEGIN RAISE EXCEPTION 'injected habitat failure'; END $$"))
+  DBI::dbExecute(connection, paste(
+    "CREATE TRIGGER reject_habitat_smoke BEFORE INSERT ON habitat_typed_reading",
+    "FOR EACH ROW EXECUTE FUNCTION reject_habitat_smoke()"))
+  before_failure <- schema_digest()
+  failed <- tryCatch({ publish_retained_backend_from_parquet(candidate_dir); NULL },
+                     error = function(e) e)
+  stopifnot(inherits(failed, "error"),
+    grepl("injected habitat failure", conditionMessage(failed), fixed = TRUE))
+  stopifnot(identical(before_failure, schema_digest()),
+            identical(read_profile_scalar_binding(candidate_dir),
+                      profile_scalar_binding(baseline_dir)))
+  DBI::dbExecute(connection,
+    "DROP TRIGGER reject_habitat_smoke ON habitat_typed_reading")
+  DBI::dbExecute(connection, "DROP FUNCTION reject_habitat_smoke()")
+  receipt <- c(receipt,
+    "atomic_rollback_case: PASS (whole-schema digest unchanged; profile artifact restored)")
+
+  # MATCH: ONE actual normal wrapper call. The wrapper refreshes the profile
+  # companion, passes the guard, and publishes all owners atomically.
+  publish_retained_backend_from_parquet(candidate_dir)
   candidate_reference <- project_territory_reference(nanoparquet::read_parquet(
     file.path(candidate_dir, "territoires.parquet")))
-  publish_territory_reference_projection(candidate_reference,
-    territory_reference_postgres_adapter(connection))
   candidate_snapshot <- project_retained_scalar_snapshot(candidate_dir,
                                                          candidate_reference)
-  publish_retained_scalar_snapshot(connection, candidate_snapshot, tempdir())
-  publier_declared_profiles_postgres(candidate_dir, profile_owners, con = connection)
-  publish_retained_backend_snapshot(connection, candidate_dir,
-                                    conso_source_path = NULL)
+  candidate_scalar_version <- scalar_content_version(candidate_snapshot$scalar)
+  candidate_profile <- retained_profile_publication(candidate_dir,
+    candidate_scalar_version, candidate_reference$content_version)
+  candidate_habitat <- read_typed_reading_publication_from(candidate_dir,
+                                                           "habitat")
+  candidate_linked <- retained_selected_linked_version(candidate_habitat,
+    candidate_profile$version, candidate_scalar_version,
+    candidate_reference$content_version)
 
   after_markers <- retained_backend_markers(connection)
   stopifnot(identical(marker_version("scalar_observation"),
-                      scalar_content_version(candidate_snapshot$scalar)))
+                      candidate_scalar_version))
   stopifnot(identical(after_markers$comparison$content_version[[1L]],
                       candidate_snapshot$comparison$content_version))
+  stopifnot(identical(marker_version("declared_profile"),
+                      candidate_profile$version),
+    identical(after_markers$profile_comparison$content_version[[1L]],
+              candidate_profile$comparison_version),
+    identical(DBI::dbGetQuery(connection, paste(
+      "SELECT linked_content_version FROM selected_reading_descriptor",
+      "WHERE theme_id='habitat'"))$linked_content_version[[1L]],
+      candidate_linked),
+    identical(DBI::dbGetQuery(connection, paste(
+      "SELECT required_scalar_version FROM profile_descriptor",
+      "WHERE indicator_id='distribution_dpe'"))$required_scalar_version[[1L]],
+      candidate_scalar_version))
+  stopifnot(identical(profile_facts_before, DBI::dbGetQuery(connection, paste(
+    "SELECT * FROM profile_observation",
+    "ORDER BY indicator_id,territory_id,detail_key,sex_key"))))
   unchanged <- c("territory_reference", "demographic_typed_reading",
                  "selected_reading", "economy_typed_reading",
                  "economy_activity_evidence", "milieux_typed_reading",
@@ -329,6 +453,9 @@ tryCatch({
     paste("baseline_counts:", paste(names(baseline_counts),
                                     baseline_counts, collapse = " ")),
     "match_case: PASS (guard passed; exact three added; unchanged owners no-op)")
+  http_probe("after", candidate_scalar_version)
+  receipt <- c(receipt,
+    "http_after: PASS (DPE + Habitat available; scalar 3 facts + fixed ranks)")
 }, error = function(e) {
   failure <<- conditionMessage(e)
   stop(e)

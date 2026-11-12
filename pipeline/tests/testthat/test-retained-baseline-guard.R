@@ -50,13 +50,16 @@ marker_fixture <- function() {
   list(
     tables = data.frame(
       table_name = c("territory_reference", "scalar_observation",
-                     "demographic_typed_reading", "selected_reading",
-                     "economy_typed_reading", "economy_activity_evidence",
-                     "milieux_typed_reading", "milieux_reading_absence"),
-      content_version = c("ref-v1", "scalar-base", "demo-v1", "habitat-v1",
-                          "eco-v1", "eco-v1", "milieux-v1", "milieux-v1"),
+                     "declared_profile", "demographic_typed_reading",
+                     "selected_reading", "economy_typed_reading",
+                     "economy_activity_evidence", "milieux_typed_reading",
+                     "milieux_reading_absence"),
+      content_version = c("ref-v1", "scalar-base", "profile-v1", "demo-v1",
+                          "habitat-v1", "eco-v1", "eco-v1", "milieux-v1",
+                          "milieux-v1"),
       reference_content_version = c(NA, "ref-v1", "ref-v1", "ref-v1",
-                                    "ref-v1", "ref-v1", "ref-v1", "ref-v1"),
+                                    "ref-v1", "ref-v1", "ref-v1", "ref-v1",
+                                    "ref-v1"),
       stringsAsFactors = FALSE),
     comparison = data.frame(
       content_version = "comparison-base",
@@ -65,7 +68,23 @@ marker_fixture <- function() {
     series = data.frame(
       dataset_id = "ocsge_artif_etats",
       content_version = "series-v1", reference_content_version = "ref-v1",
-      stringsAsFactors = FALSE))
+      stringsAsFactors = FALSE),
+    profile_comparison = data.frame(
+      content_version = "profile-comparison-v1",
+      profile_content_version = "profile-v1",
+      reference_content_version = "ref-v1",
+      group_row_count = 1L, territory_row_count = 1L,
+      stringsAsFactors = FALSE),
+    selected_publication = data.frame(
+      theme_id = "habitat", content_version = "habitat-v1",
+      reference_content_version = "ref-v1", row_count = 2L,
+      stringsAsFactors = FALSE),
+    selected_descriptor = data.frame(
+      theme_id = "habitat", descriptor_version = "habitat-v1",
+      linked_content_version = "linked-v1", stringsAsFactors = FALSE),
+    profile_descriptor = data.frame(
+      indicator_id = "distribution_dpe", descriptor_version = "dpe-v1",
+      required_scalar_version = "scalar-base", stringsAsFactors = FALSE))
 }
 
 expected_fixture <- function() {
@@ -75,6 +94,12 @@ expected_fixture <- function() {
                  economie = "eco-v1", milieux = "milieux-v1"),
        series = list(dataset_id = "ocsge_artif_etats",
                      content_version = "series-v1"),
+       profile_version = "profile-v1",
+       profile_comparison_version = "profile-comparison-v1",
+       profile_descriptor_version = "dpe-v1",
+       profile_required_scalar = "scalar-base",
+       habitat_version = "habitat-v1",
+       selected_linked = "linked-v1",
        scope_ids = "scoped_scalar")
 }
 
@@ -121,6 +146,16 @@ test_that("the baseline marker verifier refuses every stale owner marker", {
       m$tables$table_name == "selected_reading"] <- "newer-habitat"; m },
     comparison = function(m) { m$comparison$content_version <- "newer"; m },
     series = function(m) { m$series$content_version <- "newer-series"; m },
+    profile = function(m) { m$tables$content_version[
+      m$tables$table_name == "declared_profile"] <- "newer-profile"; m },
+    profile_comparison = function(m) {
+      m$profile_comparison$content_version <- "newer-profile-comparison"; m },
+    linked = function(m) { m$selected_descriptor$linked_content_version <-
+      "newer-linked"; m },
+    profile_required = function(m) {
+      m$profile_descriptor$required_scalar_version <- "newer-scalar"; m },
+    selected_publication = function(m) {
+      m$selected_publication$content_version <- "newer-selected"; m },
     reference_binding = function(m) {
       m$tables$reference_content_version[
         m$tables$table_name == "scalar_observation"] <- "other-ref"; m },
@@ -145,3 +180,4 @@ test_that("the baseline marker verifier reports a missing owner marker", {
   expect_true(any(mismatches$marker == "milieux_typed_reading" &
                     mismatches$field == "presence"))
 })
+

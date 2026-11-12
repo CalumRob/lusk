@@ -67,11 +67,12 @@ can be scoped.
    - CLI `publish-serving-tables.R --scalar-scope` (local materialization, no DB)
      and `--scalar-scope-check` (byte-check that replays the materialization in
      a temporary directory and compares the generation token).
-7. Keep the full-snapshot publication path, markers and advisory locks; add only
-   a **pre-write serving baseline guard**. When a scoped publication is
-   requested (`LUSK_SCALAR_SCOPE` set), `publish_retained_backend_from_parquet()`
-   requires `LUSK_SCALAR_BASELINE_SORTIE` — the canonical generation the serving
-   database was published from — and, under the existing scalar advisory lock
+7. Keep the full-snapshot publication path, markers and advisory locks; add a
+   **pre-write serving baseline guard** plus the **atomic profile companion**.
+   When a scoped publication is requested (`LUSK_SCALAR_SCOPE` set),
+   `publish_retained_backend_from_parquet()` requires
+   `LUSK_SCALAR_BASELINE_SORTIE` — the canonical generation the serving database
+   was published from — and, under the existing scalar advisory lock
    (`pg_advisory_lock(594,1)`), compares the live markers before any write:
    - **unchanged owners** (territory reference, demographic/habitat/economy/
      milieux typed readings and the Milieux absence marker, the owned series
@@ -79,22 +80,41 @@ can be scoped.
    - **scalar and scalar comparison** must match the **prior baseline**
      artifacts, not the updated candidate (whose scalar version necessarily
      changes);
+   - **declared profile** (`declared_profile`), **profile comparison**
+     (`profile_comparison_publication`), the **DPE required scalar version**,
+     and the **selected habitat reading** (`selected_reading`,
+     `selected_reading_publication`, `selected_reading_descriptor.
+     linked_content_version`) must match the **prior baseline** composite
+     (profile version + baseline scalar version + reference version);
+   - the **candidate profile artifact** must already be bound to the
+     **candidate scalar version**;
    - candidate vs baseline must differ **exactly** by the declared scoped
      indicators (facts/descriptors/provenance/comparison identical after
-     removing them; typed/series/reference artifacts identical).
+     removing them; typed/series/reference/profile facts identical).
    Any mismatch — including an unreadable/invalid baseline artifact under the
    current producer contracts — hard-refuses with **zero writes** and a report
    naming each marker and expected value, instructing the operator to retrieve
    the latest canonical generation that matches serving; never to regenerate,
    force or overwrite. This is a precondition, not a second publisher.
-8. Document the whole-snapshot dependency honestly. The scalar table and its
-   comparison remain whole-table replaces: representative rows for unchanged
-   indicators keep their values, provenance and descriptor rows, while the
-   table content version changes and the scoped indicators are added. A scalar
-   version change also advances scalar-bound dependent owners (the DPE profile
-   `required_scalar_version`, the selected habitat reading's linked version);
-   those owners are republished/rebound by their normal registered publishers,
-   not by fabricated per-row writes.
+8. Execute the scalar-bound profile companion through its normal owner, inside
+   one atomic publication transaction. `refresh_declared_profile_scalar_binding()`
+   reads the existing declared-profile artifacts with their prior binding,
+   changes **only** the descriptor's `required_scalar_version` to the candidate
+   scalar version, and re-writes the same owner artifacts through the normal
+   profile transport (facts, axes, provenance and eligible territories are
+   identical; DPE fact rows are untouched). It never recomputes the profile.
+   The wrapper then opens **one outer transaction** via
+   `with_publication_transaction()`; the existing owner adapters and typed
+   readers now use `publication_transaction()`, so their inner transactions
+   compose into it. Order: territory reference → scalar → refreshed profile →
+   demographic/habitat selected reading → economy → Milieux/series. Any failure
+   rolls back every owner and the wrapper restores the pre-refresh profile
+   artifacts; a retry after clearing the failure succeeds. This is not a second
+   publisher and not an ad-hoc SQL seed.
+   The scalar `pg_advisory_lock(594,1)` serializes scalar publishers; it does
+   **not** replace the operator's no-concurrent-other-owner-publish window. The
+   other owners keep their own locks, so the maintenance-window prerequisite
+   remains explicit and is not hidden.
 
 ## Consequences
 
@@ -105,13 +125,15 @@ can be scoped.
   enforced at the shared aggregation/assembly seams and in fixture tests.
 - A scoped artifact is a complete theme artifact (11 retained Mobility
   scalars), so the existing `--check`/`--publish` whole-snapshot contract,
-  markers and advisory locks remain the publication path; the guard only adds a
-  read-only precondition under the existing scalar lock.
+  markers and advisory locks remain the publication path; the wrapper adds the
+  baseline guard and composes the owner transactions into one atomic
+  publication (with the profile companion refreshed metadata-only).
 - A publication is allowed only when the live serving markers match the
-  candidate for unchanged owners and the supplied prior baseline for the scalar
-  and its comparison; any mismatch refuses with zero writes and asks for the
-  current canonical generation. The guard also proves candidate vs baseline
-  differ only by the scoped indicators.
+  candidate for unchanged owners and the supplied prior baseline for the scalar,
+  its comparison, the declared profile/comparison, and the selected habitat
+  linked reading; any mismatch refuses with zero writes and asks for the current
+  canonical generation. The guard also proves candidate vs baseline differ only
+  by the scoped indicators.
 - The scalar/comparison tables remain whole-table replaces. Unchanged rows keep
   their facts, provenance and descriptors, but the table content version changes
   and scalar-bound dependents (DPE profile binding, habitat reading linked

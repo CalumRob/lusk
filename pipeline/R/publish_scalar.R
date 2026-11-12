@@ -123,11 +123,11 @@ project_fixture_scalar <- function(payload, descriptor, completeness, indicator_
 }
 
 # scalar_descriptor_row ---------------------------------------------------------
-# La ligne de descripteur d'UN indicateur scalaire, dérivée de la métadonnée
-# canonique (la page d'indicateur et son contrat scalaire). Extrait pour être
-# PARTAGÉ entre la projection complète (project_scalar_canonical_rows) et la
-# garde d'une matérialisation ciblée (#989) : la garde compare le descripteur
-# existant à CETTE ligne — jamais une seconde construction de descripteur.
+# La ligne de descripteur d'UN indicateur scalaire, dÃ©rivÃ©e de la mÃ©tadonnÃ©e
+# canonique (la page d'indicateur et son contrat scalaire). Extrait pour Ãªtre
+# PARTAGÃ‰ entre la projection complÃ¨te (project_scalar_canonical_rows) et la
+# garde d'une matÃ©rialisation ciblÃ©e (#989) : la garde compare le descripteur
+# existant Ã  CETTE ligne â€” jamais une seconde construction de descripteur.
 scalar_descriptor_row <- function(metadata, id, policy = NULL) {
   page <- metadata$indicator_pages[[id]]
   if (is.null(page) || !identical(as.character(page$indicator), id))
@@ -720,7 +720,7 @@ publish_registered_scalar_comparison <- function(projection, db) {
 scalar_comparison_postgres_adapter <- function(con) {
   if (!requireNamespace("DBI", quietly=TRUE)) stop("DBI is required")
   list(
-    transaction=function(expr) DBI::dbWithTransaction(con, expr),
+    transaction=function(expr) publication_transaction(con, expr),
     lock=function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
     input_markers=function() DBI::dbGetQuery(con, paste(
       "SELECT scalar.content_version AS scalar_content_version,",
@@ -1004,7 +1004,7 @@ publish_registered_scalar <- function(registry, name, canonical, db,
 scalar_postgres_adapter <- function(con) {
   if (!requireNamespace("DBI", quietly = TRUE)) stop("DBI is required")
   list(
-    transaction = function(expr) DBI::dbWithTransaction(con, expr),
+    transaction=function(expr) publication_transaction(con, expr),
     lock = function(owner_arg) DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
     marker = function(name) DBI::dbGetQuery(con,
       "SELECT content_version, reference_content_version FROM table_publication WHERE table_name = $1", params = list(name)),
@@ -1110,3 +1110,4 @@ scalar_postgres_adapter <- function(con) {
     }
   )
 }
+

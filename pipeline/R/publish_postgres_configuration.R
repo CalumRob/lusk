@@ -31,6 +31,32 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
   config <- configuration_service_postgres()
   con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), config))
   locked <- FALSE
+  profile_backup <- NULL
+  success <- FALSE
+  restore_profile <- function() {
+    if (is.null(profile_backup) || !dir.exists(profile_backup)) return(invisible(NULL))
+    if (dir.exists(file.path(profile_backup, "profile-serving"))) {
+      unlink(file.path(sortie, "profile-serving"), recursive = TRUE)
+      file.copy(file.path(profile_backup, "profile-serving"), sortie,
+                recursive = TRUE)
+    }
+    binding <- file.path(profile_backup, "binding.json")
+    if (file.exists(binding)) {
+      dir.create(file.path(sortie, "scalar-serving"), recursive = TRUE,
+                 showWarnings = FALSE)
+      file.copy(binding, file.path(sortie, "scalar-serving", "binding.json"),
+                overwrite = TRUE)
+    }
+  }
+  backup_profile <- function() {
+    backup <- tempfile("profile-companion-")
+    dir.create(backup)
+    if (dir.exists(file.path(sortie, "profile-serving")))
+      file.copy(file.path(sortie, "profile-serving"), backup, recursive = TRUE)
+    binding <- file.path(sortie, "scalar-serving", "binding.json")
+    if (file.exists(binding)) file.copy(binding, backup)
+    backup
+  }
   tryCatch({
     # A scoped retained publication (the three #989 supply scalars) must prove
     # the serving baseline before any write. The guard reads the live markers
@@ -44,13 +70,29 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
              "published from; refusing with zero writes.", call. = FALSE)
       DBI::dbGetQuery(con, "SELECT pg_advisory_lock(594, 1)")
       locked <- TRUE
+      # Prepare the normal metadata-only profile companion BEFORE the guard:
+      # the candidate profile artifact must be bound to the candidate scalar
+      # version before any write. The prior artifacts are restored on failure.
+      profile_backup <- backup_profile()
+      candidate_reference <- project_territory_reference(
+        nanoparquet::read_parquet(file.path(sortie, "territoires.parquet")))
+      candidate_scalar <- project_retained_scalar_snapshot(sortie,
+        candidate_reference)
+      refresh_declared_profile_scalar_binding(sortie,
+        declared_profile_owners(),
+        scalar_content_version(candidate_scalar$scalar))
       assert_retained_backend_baseline(con, sortie, baseline_sortie, scope_ids)
     }
     publish_retained_backend_snapshot(con, sortie,
-      conso_source_path=conso_source_path)
+      conso_source_path=conso_source_path,
+      atomic = length(scope_ids) > 0L,
+      companion_profiles = length(scope_ids) > 0L)
+    success <- TRUE
   }, finally={
     if (locked) try(DBI::dbGetQuery(con, "SELECT pg_advisory_unlock(594, 1)"),
                     silent=TRUE)
+    if (!success) restore_profile()
+    if (!is.null(profile_backup)) unlink(profile_backup, recursive=TRUE)
     DBI::dbDisconnect(con)
   })
 }
