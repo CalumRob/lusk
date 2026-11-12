@@ -421,20 +421,15 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
 })
 
 const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
-  // A segmented bar's parts are the drawn series: the legend names them (in
-  // full) and never repeats the segmentable total as a redundant key (#974).
+  // #988 — every category is already named by the x axis, so a category key in
+  // the legend would only repeat an axis label. The legend keeps the drawn
+  // cycling segment series (the one distinction the axis cannot carry) and the
+  // served comparison reference; each category's ink stays on the drawn bar.
   const entries: FigureLegendEntry[] = props.figure.categories.flatMap((category) =>
-    category.segments.length
-      ? category.segments.map((segment) => {
-        const label = segment.legendLabel ?? segment.label
-        return { key: segment.key, label, marker: 'square' as const, ariaLabel: `${label} : série du territoire` }
-      })
-      : [{
-        key: category.key,
-        label: category.label,
-        marker: 'square' as const,
-        ariaLabel: `${category.label} : série du territoire`,
-      }])
+    category.segments.map((segment) => {
+      const label = segment.legendLabel ?? segment.label
+      return { key: segment.key, label, marker: 'square' as const, ariaLabel: `${label} : série du territoire` }
+    }))
   const comparisonCanToggle = props.comparison.status === 'loading' ||
     props.comparison.status === 'error' ||
     (props.comparison.status === 'ready' && hasComparisonReference.value)
@@ -450,15 +445,11 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
   return entries
 })
 
-const legendColors = computed<Readonly<Record<string, string>>>(() => {
-  const colors: Record<string, string> = Object.fromEntries(
-    props.figure.categories.map((category) => [category.key, toneColor(category.tone)]),
-  )
-  colors.protege_km_1000 = segmentColors.protege_km_1000
-  colors.partage_km_1000 = segmentColors.partage_km_1000
-  colors.comparison = 'color-mix(in srgb, var(--cahier-theme-strong, var(--brand-500)) 45%, var(--paper))'
-  return colors
-})
+const legendColors = computed<Readonly<Record<string, string>>>(() => ({
+  protege_km_1000: segmentColors.protege_km_1000,
+  partage_km_1000: segmentColors.partage_km_1000,
+  comparison: 'color-mix(in srgb, var(--cahier-theme-strong, var(--brand-500)) 45%, var(--paper))',
+}))
 
 const legendSelected = computed(() => showComparison.value ? ['comparison'] : [])
 
