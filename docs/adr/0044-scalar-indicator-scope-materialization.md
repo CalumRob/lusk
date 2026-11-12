@@ -1,4 +1,4 @@
-# ADR-0043: Indicator-scoped canonical scalar materialization
+# ADR-0044: Indicator-scoped canonical scalar materialization
 
 - **Status:** Accepted — implementation decision for #989, 2026-11-12. The
   serving database publication remains the separately gated operator step.

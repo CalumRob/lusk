@@ -1,6 +1,6 @@
 # Scoped canonical scalar materialization (Mobility supply scalars)
 
-Companion to [ADR-0043](adr/0043-scalar-indicator-scope-materialization.md).
+Companion to [ADR-0044](adr/0044-scalar-indicator-scope-materialization.md).
 This is a normal, registered pipeline capability — not a one-off script.
 
 ## What it is
