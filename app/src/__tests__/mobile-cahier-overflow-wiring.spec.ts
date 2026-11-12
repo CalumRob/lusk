@@ -65,10 +65,14 @@ describe('verify-mobile-cahier-overflow — fixture wiring (no browser)', () => 
 
   it('keeps the #976 caption-role and charging-ink checks wired', () => {
     // The verifier compares real computed typography with the AEDAR caption and
-    // proves the bar, legend key and tooltip marker share the brand ink.
+    // proves both the focal and compared fills, legend keys and tooltip markers
+    // use the brand / car roles with a served reference.
     expect(script).toContain('#section-aedar-car-overview .aedar-car-overview-scalars .cahier-figure-scalar-label')
     expect(script).toContain('textTransform')
     expect(script).toContain("rect[data-category=\"charging\"]")
+    expect(script).toContain("rect[data-comparison=\"charging\"]")
+    expect(script).toContain('var(--cahier-mode-car)')
+    expect(script).toContain('constructeur-comparaison__preset')
     expect(script).toContain('issue976-page2-ratio-parking-${width}.png')
     expect(script).toContain('issue976-page2-ratio-refuelling-${width}.png')
     expect(script).toContain('issue976-page2-refuelling-figure-${width}.png')

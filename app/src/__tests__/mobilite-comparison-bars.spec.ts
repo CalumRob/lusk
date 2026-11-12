@@ -687,7 +687,7 @@ describe('CahierMobiliteComparisonBars — the charging category keeps its own i
         key: 'fuel-stations',
         label: 'Stations-service',
         axisLabel: 'Stations-service',
-        tone: 'neutral',
+        tone: 'c',
         value: fact('stations_service_1000', null, 0.1, 'équipements / 1 000 hab.', 0.2, { position: 2, size: 3 }),
         rawValue: fact('stations_service', null, 2, 'stations'),
         segments: [],
@@ -701,20 +701,30 @@ describe('CahierMobiliteComparisonBars — the charging category keeps its own i
       props: { figure: refuellingFigure, comparison: { status: 'ready' } },
     })
     expect(wrapper.get('rect[data-category="charging"]').attributes('fill')).toBe('var(--brand-500)')
-    expect(wrapper.get('rect[data-category="fuel-stations"]').attributes('fill')).toBe('var(--cahier-theme-strong)')
+    expect(wrapper.get('rect[data-category="fuel-stations"]').attributes('fill')).toBe('var(--cahier-mode-car)')
     // The compared bar is the series' own 45 % mix so the two offers stay
     // distinguishable in both the territory and compared series.
-    expect(wrapper.get('rect[data-comparison="charging"]').attributes('fill'))
-      .toBe('color-mix(in srgb, var(--brand-500) 45%, var(--paper))')
+    const chargingCompared = wrapper.get('rect[data-comparison="charging"]').attributes('fill')!
+    const fuelCompared = wrapper.get('rect[data-comparison="fuel-stations"]').attributes('fill')!
+    expect(chargingCompared).toBe('color-mix(in srgb, var(--brand-500) 45%, var(--paper))')
+    expect(fuelCompared).toBe('color-mix(in srgb, var(--cahier-mode-car) 45%, var(--paper))')
+    // Four semantic expressions, four rendered fills: neither the focal pair
+    // nor the compared pair collapses onto one colour.
+    expect(new Set([
+      'var(--brand-500)', 'var(--cahier-mode-car)', chargingCompared, fuelCompared,
+    ]).size).toBe(4)
     const legendMark = (label: string) => wrapper.findAll('.cahier-figure-legend-item')
       .find((item) => item.get('.cahier-figure-legend-label').text() === label)!
       .get('.cahier-figure-legend-mark').attributes('style') ?? ''
     expect(legendMark('Bornes de recharge')).toContain('var(--brand-500)')
-    expect(legendMark('Stations-service')).toContain('var(--cahier-theme-strong)')
+    expect(legendMark('Stations-service')).toContain('var(--cahier-mode-car)')
 
     await wrapper.findAll('.mobilite-comparison-bars__hitbox')[0]!.trigger('focus')
-    const marker = wrapper.get('.mobilite-comparison-bars__tooltip .cahier-figure-tooltip-marker')
-    expect(marker.attributes('style')).toContain('background: var(--brand-500)')
+    expect(wrapper.get('.mobilite-comparison-bars__tooltip .cahier-figure-tooltip-marker')
+      .attributes('style')).toContain('background: var(--brand-500)')
+    await wrapper.findAll('.mobilite-comparison-bars__hitbox')[1]!.trigger('focus')
+    expect(wrapper.get('.mobilite-comparison-bars__tooltip .cahier-figure-tooltip-marker')
+      .attributes('style')).toContain('background: var(--cahier-mode-car)')
 
     // The real category identities, units and comparison stay untouched.
     const label = wrapper.get('svg[role="img"]').attributes('aria-label')!

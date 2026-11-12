@@ -613,7 +613,11 @@ function ravitaillementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): 
           key: 'fuel-stations',
           label: 'Stations-service',
           axisLabel: 'Stations-service',
-          tone: 'neutral',
+          // #976 — the fuel-station category already carries the car meaning
+          // (the ratio's fuel icon is car-coloured too); it takes the existing
+          // car ink so the pair stays distinct from the brand-green charging
+          // bar without a new colour.
+          tone: 'c',
           value: stations,
           rawValue: stationsRaw,
           segments: [],

@@ -275,9 +275,10 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
   })
 
   // #976 — the owner asked for a distinct colour for the charging category.
-  // Charging takes the app's own brand ink; the fuel-station category keeps the
-  // theme ink it already had. Neither category identity changes.
-  it('gives the charging bar the brand tone and keeps the fuel-station theme tone', () => {
+  // Charging keeps the app's brand ink; the fuel-station category takes the
+  // existing car ink its fuel meaning already carries. Neither category
+  // identity changes.
+  it('gives the charging bar the brand tone and the fuel-station bar the car tone', () => {
     const content = resolveMobiliteThemeContent(factsWith(sharingFacts()), metadata)
     const section = content.units[1].sections[1]
     if (section.evidence?.kind !== 'mobilite-stationnement-ravitaillement') throw new Error('Paired evidence expected')
@@ -285,7 +286,7 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
 
     expect(refuelling.bars.categories.map(({ key, tone }) => ({ key, tone }))).toEqual([
       { key: 'charging', tone: 'brand' },
-      { key: 'fuel-stations', tone: 'neutral' },
+      { key: 'fuel-stations', tone: 'c' },
     ])
     // The factual labels, values and raw counts stay untouched.
     expect(refuelling.bars.categories.map((category) => category.label)).toEqual([
