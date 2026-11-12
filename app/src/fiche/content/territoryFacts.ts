@@ -6,7 +6,7 @@ import type {
   Territoire,
   TerritoireType,
 } from '@/payload/types'
-import type { TerritoryComparisonContext } from '@/fiche/comparisonContext'
+import type { ModeContexteComparaison, TerritoryComparisonContext } from '@/fiche/comparisonContext'
 
 /** The availability of a normalized fact, independent of how a surface lays it out. */
 export type FactAvailability = 'complete' | 'incomplete' | 'absent'
@@ -34,7 +34,7 @@ export type ComparisonScopeKind =
 export interface ComparisonScope {
   kind: ComparisonScopeKind
   territoryIds?: readonly string[]
-  mode?: 'densite' | 'epci' | 'bretagne'
+  mode?: ModeContexteComparaison
   label?: string
 }
 

@@ -11,6 +11,14 @@ import { comparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 // model remains.
 export type TerritoryComparisonMode = 'densite' | 'epci' | 'bretagne'
 
+/**
+ * #981 — le mode d'un contexte de comparaison : les trois presets historiques,
+ * ou `custom` pour un groupe de membres tapés. Un groupe tapé n'est PAS un
+ * preset et n'emprunte jamais l'identité d'une cohorte producteur : il porte
+ * son propre libellé, dérivé de la sélection résolue.
+ */
+export type ModeContexteComparaison = TerritoryComparisonMode | 'custom'
+
 export interface TerritoryComparisonFact {
   key: string
   detail: string | null
@@ -23,15 +31,18 @@ export interface TerritoryComparisonFact {
 }
 
 export interface TerritoryComparisonContext {
-  mode: TerritoryComparisonMode
+  mode: ModeContexteComparaison
   scope: {
     kind:
+      | 'selection'
       | 'communes-densite'
       | 'communes-epci'
       | 'communes-bretagne'
       | 'epcis-bretagne'
       | 'departements-bretagne'
     label: string
+    /** #981 — identités ordonnées de la sélection tapée (URL), absentes des presets. */
+    territoryIds?: readonly string[]
   }
   facts: TerritoryComparisonFact[]
   buildingDistribution: {
@@ -168,6 +179,31 @@ export function contextesDepuisReference(
   return contextes
 }
 
+/**
+ * #981 — un groupe de membres tapés est un contexte de comparaison à part
+ * entière. Il ne réclame aucune identité de preset ni cohorte producteur : la
+ * sélection EST sa portée. Le libellé dit le compte RÉSOLU (jamais un effectif
+ * fabriqué), dans la convention française partagée des groupes, et les
+ * identités gardent l'ordre de l'URL pour lier l'écho de l'API. Une liste vide
+ * n'est pas une comparaison (clear → aucun contexte, jamais Bretagne).
+ */
+export function contexteMembresSelectionnes(
+  membres: readonly { territory_type: string; territory_id: string }[],
+): TerritoryComparisonContext | null {
+  if (!membres.length) return null
+  return {
+    mode: 'custom',
+    scope: {
+      kind: 'selection',
+      label: libellePorteeMembres(membres),
+      territoryIds: membres.map((membre) => membre.territory_id),
+    },
+    facts: [],
+    buildingDistribution: null,
+    accessRamp: null,
+  }
+}
+
 /** Sérialise une sélection en sa valeur d’URL canonique (undefined = absent = défaut). */
 export function serialiserSelection(selection: SelectionComparaison): string | undefined {
   switch (selection.etat) {
@@ -219,7 +255,11 @@ export interface ResolutionSelectionComparaison {
    * comparaison, sinon la liste explicite envoyée en `selected_comparison`.
    */
   membres: readonly MembreSelection[] | null | undefined
-  /** Contexte résolu (libellé de portée) — null quand aucune comparaison. */
+  /**
+   * Contexte résolu (libellé de portée) — null quand aucune comparaison. Un
+   * groupe de membres tapés porte son propre contexte `custom` (#981) : il
+   * n'emprunte jamais l'identité d'un preset ni d'une cohorte producteur.
+   */
   contexte: TerritoryComparisonContext | null
   /** Preset effectif (explicite, ou résolu depuis le défaut niveau-natif). */
   preset: PresetComparaison | null
@@ -377,7 +417,9 @@ export function resoudreSelectionComparaison(options: {
   return {
     selection: { etat: 'membres', membres: retenus },
     membres: retenus,
-    contexte: null,
+    // #981 — le groupe tapé porte son propre contexte : sans lui, les
+    // adaptateurs et les figures jetaient une comparaison réellement servie.
+    contexte: contexteMembresSelectionnes(retenus),
     preset: null,
     canonicaliser: invalides,
   }
@@ -425,11 +467,11 @@ export function presetsDisponibles(options: {
   return liste
 }
 
-const MOTS_TYPE: Record<TerritoireType, [string, string]> = {
-  commune: ['commune', 'communes'],
-  epci: ['EPCI', 'EPCI'],
-  departement: ['département', 'départements'],
-  region: ['région', 'régions'],
+const MOTS_TYPE: Record<TerritoireType, { singulier: string; pluriel: string; feminin: boolean }> = {
+  commune: { singulier: 'commune', pluriel: 'communes', feminin: true },
+  epci: { singulier: 'EPCI', pluriel: 'EPCI', feminin: false },
+  departement: { singulier: 'département', pluriel: 'départements', feminin: false },
+  region: { singulier: 'région', pluriel: 'régions', feminin: true },
 }
 
 /** Libellé compact d’une sélection de membres tapés (« 3 communes », « 2 territoires »). */
@@ -437,10 +479,29 @@ export function libelleMembres(membres: readonly MembreSelection[]): string {
   if (!membres.length) return 'Aucune comparaison'
   const types = [...new Set(membres.map((membre) => membre.territory_type))]
   if (types.length === 1) {
-    const [singulier, pluriel] = MOTS_TYPE[types[0]!]
-    return `${membres.length} ${membres.length > 1 ? pluriel : singulier}`
+    const mot = MOTS_TYPE[types[0]!]
+    return `${membres.length} ${membres.length > 1 ? mot.pluriel : mot.singulier}`
   }
   return `${membres.length} territoires`
+}
+
+/**
+ * #981 — portée d’un groupe tapé (« 2 communes sélectionnées », « 1 EPCI
+ * sélectionné ») : le compte réel et son genre, jamais un nom de preset ni une
+ * identité de cohorte. Le libellé visible des figures reste « Groupe comparé » ;
+ * cette portée vit dans les noms accessibles.
+ */
+export function libellePorteeMembres(
+  membres: readonly { territory_type: string; territory_id?: string }[],
+): string {
+  if (!membres.length) return 'Aucune comparaison'
+  const types = [...new Set(membres.map((membre) => membre.territory_type))]
+  const mot = types.length === 1 ? MOTS_TYPE[types[0] as TerritoireType] : undefined
+  if (mot) {
+    const nom = membres.length > 1 ? mot.pluriel : mot.singulier
+    return `${membres.length} ${nom} sélectionné${mot.feminin ? 'e' : ''}${membres.length > 1 ? 's' : ''}`
+  }
+  return `${membres.length} territoires sélectionnés`
 }
 
 /** Libellé de la portée active pour la puce d’en-tête (défaut/preset/vide/membres). */

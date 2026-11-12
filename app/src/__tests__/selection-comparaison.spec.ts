@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  contexteMembresSelectionnes,
   developperMembresCommunes,
   libelleMembres,
+  libellePorteeMembres,
   libelleSelectionComparaison,
   lireSelectionBrute,
   presetsDisponibles,
@@ -263,7 +265,7 @@ describe('résolution de la sélection — membres tapés et vide explicite', ()
     expect(resolution.canonicaliser).toBe(false)
   })
 
-  it('les membres tapés valides même niveau sont retenus tels quels', () => {
+  it('les membres tapés valides même niveau sont retenus tels quels et portent leur propre contexte (#981)', () => {
     const resolution = resoudre({ territoire: commune, demande: 'commune:22001,commune:22002' })
     expect(resolution.selection).toEqual({
       etat: 'membres',
@@ -273,9 +275,32 @@ describe('résolution de la sélection — membres tapés et vide explicite', ()
       ],
     })
     expect(resolution.membres).toEqual(resolution.selection.etat === 'membres' ? resolution.selection.membres : null)
-    expect(resolution.contexte).toBeNull()
+    // #981 — un groupe tapé est un contexte de comparaison à part entière :
+    // ni preset, ni cohorte producteur inventée. Le libellé porte le compte
+    // réel et les identités gardent l'ordre de l'URL.
+    expect(resolution.contexte).toEqual({
+      mode: 'custom',
+      scope: { kind: 'selection', label: '2 communes sélectionnées', territoryIds: ['22001', '22002'] },
+      facts: [],
+      buildingDistribution: null,
+      accessRamp: null,
+    })
     expect(resolution.preset).toBeNull()
     expect(resolution.canonicaliser).toBe(false)
+  })
+
+  it('un groupe tapé d’un seul membre reste un contexte custom honnête (#981)', () => {
+    const resolution = resoudre({ territoire: commune, demande: 'commune:22001' })
+    expect(resolution.contexte?.mode).toBe('custom')
+    expect(resolution.contexte?.scope).toMatchObject({ kind: 'selection', label: '1 commune sélectionnée' })
+    expect(libellePorteeMembres(resolution.membres ?? [])).toBe('1 commune sélectionnée')
+  })
+
+  it('un groupe tapé non résoluble reste vide — jamais Bretagne ni un contexte par défaut (#981)', () => {
+    const resolution = resoudre({ territoire: commune, demande: 'commune:99999' })
+    expect(resolution.selection).toEqual({ etat: 'vide' })
+    expect(resolution.contexte).toBeNull()
+    expect(contexteMembresSelectionnes([])).toBeNull()
   })
 
   it('les doublons et membres hors niveau ou inconnus sont retirés et l’URL canonisée', () => {
@@ -394,6 +419,28 @@ describe('libellés de la puce de sélection', () => {
       { territory_type: 'epci', territory_id: '200000001' },
     ])).toBe('2 territoires')
     expect(libelleMembres([])).toBe('Aucune comparaison')
+  })
+
+  it('libellePorteeMembres : la portée custom dit le compte réel et son genre, sans nom de preset (#981)', () => {
+    expect(libellePorteeMembres([{ territory_type: 'commune', territory_id: '22001' }]))
+      .toBe('1 commune sélectionnée')
+    expect(libellePorteeMembres([
+      { territory_type: 'commune', territory_id: '22001' },
+      { territory_type: 'commune', territory_id: '22002' },
+    ])).toBe('2 communes sélectionnées')
+    expect(libellePorteeMembres([
+      { territory_type: 'epci', territory_id: '200000001' },
+      { territory_type: 'epci', territory_id: '200000002' },
+    ])).toBe('2 EPCI sélectionnés')
+    expect(libellePorteeMembres([
+      { territory_type: 'departement', territory_id: '22' },
+      { territory_type: 'departement', territory_id: '29' },
+    ])).toBe('2 départements sélectionnés')
+    expect(libellePorteeMembres([
+      { territory_type: 'commune', territory_id: '22001' },
+      { territory_type: 'epci', territory_id: '200000001' },
+    ])).toBe('2 territoires sélectionnés')
+    expect(libellePorteeMembres([])).toBe('Aucune comparaison')
   })
 })
 
