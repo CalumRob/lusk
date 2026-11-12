@@ -134,6 +134,45 @@ schemas under the same mutex, then verify zero user schemas and zero `public`
 relations. Do not run retained #814/lineage smokes as part of this cleanup
 regime.
 
+### Selected-profile equal-weight mean proof (#996, owner #979)
+
+The focused mean proof is a non-retained guarded suite. It acquires the same
+`Local\LuskIntegrationContractDb` mutex before its first connection, waits (up to
+10 minutes) for the concurrent pipeline publisher worker instead of colliding
+with it, and holds the lock through cleanup and verification. Without the
+guarded `LUSK_TEST_*` DSNs the whole module skips, so ordinary collection never
+waits on the operator database. With the DSNs present it refuses before its
+first connection/DDL unless `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`, requires the
+database to be empty before the run, creates one random `it_mean_*` schema,
+seeds only its own declared profiles, and always drops that schema in `finally`.
+It fails before the unlock unless zero user schemas and zero `public` relations
+remain, and prints the database byte size/schema state before and after. Proofs
+are never retained.
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:LUSK_TEST_DATABASE_PREFIX = 'lusk_it_'
+$env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
+$env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
+$env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
+$env:PYTHONPATH = '.'
+$env:PGCONNECT_TIMEOUT = '5'
+$env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000'
+$env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
+python -m pytest api/tests/integration/test_selected_profile_mean_http.py -q -s
+```
+
+The suite proves the equal-weight arithmetic over actual measured peers (mean and
+median differ, a measured zero stays eligible, a missing cell is never zeroed),
+the identical `eligible_members` population behind an additive
+total/protected/shared stack and raw/per-capita units, equal counts with
+different identities (honest non-population evidence), empty/one/missing
+selections and a focal outside the selection, served rank/ties,
+profile/reference clocks and source lineage, single/v2 batch parity, typed
+publication-absent outcomes, `422` statistic/field combinations, and the shared
+work bound. It does not publish fixed mean rows, change schema, run R/pipeline
+work or touch the serving database.
+
 The R publisher-to-PostgreSQL smokes are a separate opt-in path. The operator
 must provision a permanent **test-only database on the Pi server** whose name
 begins `lusk_it_`, plus dedicated publisher and read roles restricted to that

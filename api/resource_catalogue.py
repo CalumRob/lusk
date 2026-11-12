@@ -328,6 +328,13 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
     if (resource.resource_kind == "indicator" and item.intent.kind == "fixed_comparison"
             and item.intent.context != "default"):
         raise ValueError("comparison context is not declared for this resource")
+    if (item.intent.kind == "selected_comparison"
+            and item.intent.statistic is not None
+            and "declared_profile" not in resource.shapes):
+        # Equal-weight means are defined over declared-profile member cells.
+        # Scalar, series, collection and AEDAR selections keep their own
+        # declared statistic and never infer a mean from a request flag.
+        raise ValueError("comparison statistic is not declared for this resource")
     if item.intent.kind not in resource.intents:
         raise ValueError("intent is not declared for this resource")
     return resource
