@@ -843,15 +843,19 @@ describe('theme acquisition cache', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
-  it('rejects a mixed global scalar dataset generation across bounded waves and re-reads every key over HTTP', async () => {
+  it('rejects a mixed global scalar dataset generation across actual bounded waves and re-reads every key over HTTP', async () => {
     vi.resetModules()
     const { acquireThemeFacts, ThemeAcquisitionCache } = await import('../payload/themeAcquisition')
     const { semanticReadState } = await import('../payload/semanticResourceClient')
-    const resources = ['coherence_scalar_a', 'coherence_scalar_b'].map((resource_id) => ({
-      resource_id, theme_id: 'habitat', indicator_id: resource_id, label: resource_id, unit: '%',
-      direction: 'high', allowed_levels: ['commune'], sources: [], shapes: ['scalar'],
-      target_kinds: ['territory'], fields: ['value'], intents: ['facts'],
-    }))
+    // Facts-only declarations: 13 scalar facts force two real bounded waves
+    // (12 + 1), so the mixed generation is observed across HTTP batches, not
+    // inside one synthetic response. No default/aux key exists to fake.
+    const resources = Array.from({ length: 13 }, (_, index) => {
+      const resource_id = `coherence_scalar_${index}`
+      return { resource_id, theme_id: 'habitat', indicator_id: resource_id, label: resource_id, unit: '%',
+        direction: 'high', allowed_levels: ['commune'], sources: [], shapes: ['scalar'],
+        target_kinds: ['territory'], fields: ['value'], intents: ['facts'] }
+    })
     let wave: 'mixed' | 'fresh' = 'mixed'
     const batchRequests: Array<{ items: Array<Record<string, any>> }> = []
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -861,38 +865,44 @@ describe('theme acquisition cache', () => {
       if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
       const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
       batchRequests.push(request)
+      // One publication change is observed between the two actual waves of the
+      // first acquisition: wave 1 (12 items) publishes 10cfd, wave 2 (1 item)
+      // publishes f4e, with the same reference 6fd. The clean retry publishes
+      // f4e in every wave.
+      const version = wave === 'mixed' && request.items.length === 1
+        ? 'scalar-f4e' : wave === 'mixed' ? 'scalar-10cfd' : 'scalar-f4e'
       return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
         results: request.items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
-          data: { resource: item.resource, target: item.target,
-            // A-10cfd and B-f4e share the reference clock but not the global
-            // scalar_observation generation; the next wave publishes f4e.
-            content_version: wave === 'mixed' && item.resource === 'coherence_scalar_b'
-              ? 'scalar-f4e' : wave === 'mixed' ? 'scalar-10cfd' : 'scalar-f4e',
+          data: { resource: item.resource, target: item.target, content_version: version,
             reference_content_version: 'reference-6fd', value: 1, status: 'measured' } })) }))
     })
     vi.stubGlobal('fetch', fetcher)
     const cache = new ThemeAcquisitionCache(
       (theme, key) => acquireThemeFacts(key!.type, key!.id, theme))
+    const item = (index: number) => ({ resource: `coherence_scalar_${index}`,
+      target: { kind: 'territory' as const, type: 'commune' as const, id: '22001' },
+      intent: { kind: 'facts' as const } })
     try {
       await expect(cache.get('commune', '22001', 'habitat'))
-        .rejects.toThrow(/générations de publication/)
-      expect(batchRequests).toHaveLength(1)
-      expect(batchRequests[0]!.items.map((item) => item.resource))
-        .toEqual(['coherence_scalar_a', 'coherence_scalar_b'])
-      // The higher theme cache never commits the mixed acquisition and every
-      // semantic key of the group is fenced, including the already settled B.
-      const item = (resource: string) => ({ resource,
-        target: { kind: 'territory' as const, type: 'commune' as const, id: '22001' },
-        intent: { kind: 'facts' as const } })
-      expect(semanticReadState(item('coherence_scalar_a'))).toBe('unrequested')
-      expect(semanticReadState(item('coherence_scalar_b'))).toBe('unrequested')
-      wave = 'fresh'
-      const acquired = await cache.get('commune', '22001', 'habitat')
+        .rejects.toThrow(/g?n?rations de publication/)
+      // Both actual waves were read before the group verdict; the first
+      // acquisition did not collapse into one synthetic batch.
       expect(batchRequests).toHaveLength(2)
-      expect(batchRequests[1]!.items.map((entry) => entry.resource))
-        .toEqual(['coherence_scalar_a', 'coherence_scalar_b'])
+      expect(batchRequests.map((request) => request.items.length)).toEqual([12, 1])
+      expect(batchRequests.flatMap((request) => request.items.map((entry) => entry.resource)))
+        .toEqual(resources.map((resource) => resource.resource_id))
+      // The higher theme cache commits nothing and every facts key is fenced.
+      for (let index = 0; index < resources.length; index += 1) {
+        expect(semanticReadState(item(index))).toBe('unrequested')
+      }
+      wave = 'fresh'
+      // An explicit retry through the higher cache re-reads every group over
+      // HTTP; neither wave from the rejected acquisition is replayed.
+      const acquired = await cache.select('commune', '22001', 'habitat', undefined)
+      expect(batchRequests).toHaveLength(4)
+      expect(batchRequests.slice(2).map((request) => request.items.length)).toEqual([12, 1])
       expect(acquired.focal.resource_reads?.map((read) => read.data.content_version))
-        .toEqual(['scalar-f4e', 'scalar-f4e'])
+        .toEqual(Array.from({ length: 13 }, () => 'scalar-f4e'))
       expect(acquired.focal.resource_reads?.every((read) =>
         read.data.reference_content_version === 'reference-6fd')).toBe(true)
     } finally { vi.unstubAllGlobals() }
