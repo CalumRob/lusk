@@ -100,6 +100,53 @@ def test_batch_uses_one_connection_snapshot_and_preflights_all_before_reads(monk
     assert [entry["id"] for entry in response.json()["results"]] == ["density", "age"]
 
 
+def test_v1_single_and_batch_missing_dual_series_facet_preserve_base_detail(monkeypatch):
+    class Cursor:
+        def __init__(self, row):
+            self.row = row
+        def fetchone(self):
+            return self.row
+        def fetchall(self):
+            return [self.row]
+
+    class DualConnection(Connection):
+        def execute(self, sql, params=None):
+            self.statements.append(sql)
+            if sql.startswith("SET TRANSACTION"):
+                return None
+            if "FROM series_descriptor WHERE indicator_id" in sql:
+                return Cursor((["2024"],))
+            raise AssertionError(sql)
+
+    class DualPool(Pool):
+        def __init__(self):
+            self.value = DualConnection()
+            self.opens = 0
+
+    repository = Repository()
+    repository.connections = DualPool()
+    reader = main.get_semantic_resource_reader()
+    monkeypatch.setattr(reader, "_owned_series_route",
+                        lambda *args, **kwargs: None)
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    main.app.dependency_overrides[main.get_resource_catalogue] = default_resource_catalogue
+    main.app.dependency_overrides[main.get_semantic_resource_reader] = lambda: reader
+    payload = {"resource": "prix_m2",
+               "target": {"kind": "territory", "type": "commune", "id": "22001"},
+               "intent": {"kind": "facts"}}
+    expected = "Declared ordered-series facet publication is unavailable or incompatible"
+    try:
+        single = TestClient(main.app).post("/api/resources/read", json=payload)
+        batch = TestClient(main.app).post("/api/resources/read-batch",
+                                          json={"items": [{"id": "dual", **payload}]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert single.status_code == 503
+    assert single.json() == {"detail": expected}
+    assert batch.status_code == 503
+    assert batch.json() == {"detail": expected}
+
+
 def test_batch_failure_returns_no_partial_envelope_and_rolls_back(monkeypatch):
     repository = Repository()
     reads = []

@@ -2,6 +2,8 @@
 
 from fastapi import HTTPException
 
+from api.publication_outcomes import publication_unavailable
+
 
 def typed_reading_fact_fields(resource, requested_fields):
     """Project typed readings without dropping their native fact rows or metadata."""
@@ -144,7 +146,12 @@ def _milieux_reading_marker(conn):
         p.content_version FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
         WHERE p.table_name='milieux_typed_reading'""").fetchone()
     if not marker:
-        raise HTTPException(503, "Milieux reading publication is unavailable")
+        reference = conn.execute(
+            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
+        ).fetchone()
+        if not reference or not reference[0]:
+            raise HTTPException(503, "Milieux reading publication is unavailable")
+        publication_unavailable("typed_reading", "Milieux reading publication is unavailable")
     if not marker[0] or marker[1] < 1 or marker[2] != marker[3]:
         raise HTTPException(503, "Milieux reading publication is unavailable or incompatible")
     absence_exists = conn.execute("SELECT to_regclass('milieux_reading_absence')").fetchone()[0]

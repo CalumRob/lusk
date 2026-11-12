@@ -85,9 +85,11 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
                 return Cursor([])
             if "WHERE reference_indicator_id=%s LIMIT 1" in sql:
                 return Cursor([])
-            if "FROM series_dataset_publication p CROSS JOIN table_publication" in sql:
+            if "FROM series_dataset_publication WHERE dataset_id=%s" in sql:
                 return Cursor([("series-v2", self.reference_version, 6,
-                                "2026-10-01T00:00:00Z", "ref-v8")])
+                                "2026-10-01T00:00:00Z")])
+            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+                return Cursor([("ref-v8",)])
             if "WHERE p.table_name='scalar_observation'" in sql:
                 return Cursor([("scalar-v4", "ref-v8", "ref-v8")])
             if "FROM scalar_descriptor WHERE indicator_id=%s" in sql:

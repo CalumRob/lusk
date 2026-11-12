@@ -213,6 +213,60 @@ def test_published_scalar_peer_rows_match_group_counts_and_tie_span(corruption):
     assert error.value.status_code == 503
 
 
+def test_dual_shape_scalar_facet_marker_uses_declared_family_for_preflight_and_read(monkeypatch):
+    from api.publication_outcomes import PublicationUnavailable, family_for_resource
+    from api.resource_catalogue import default_resource_catalogue
+
+    class Cursor:
+        def __init__(self, row=None, rows=None):
+            self.row = row
+            self.rows = rows or []
+        def fetchone(self):
+            return self.row
+        def fetchall(self):
+            return self.rows
+
+    class Connection:
+        def execute(self, sql, params=None):
+            if "FROM scalar_descriptor WHERE indicator_id=%s" in sql:
+                return Cursor(("prix_m2", "habitat", "Prix", "€/m²", "low", "prix_m2",
+                               ["commune"], "transactions", "sparse", "descriptor-v1"))
+            if "SELECT indicator_id,label,unit,direction,comparison_facet" in sql:
+                return Cursor(rows=[("prix_m2", "Prix", "€/m²", "low", "prix_m2",
+                                     ["commune"], "descriptor-v1")])
+            if "SELECT indicator_id,comparison_scalar FROM profile_descriptor" in sql:
+                return Cursor(rows=[])
+            if "to_regclass('series_dataset_descriptor')" in sql:
+                return Cursor((None,))
+            if "to_regclass('scalar_comparison_publication')" in sql:
+                return Cursor((True,))
+            if "FROM scalar_comparison_publication p" in sql:
+                return Cursor(None)
+            if "FROM scalar_comparison_publication" in sql:
+                return Cursor(None)
+            if "table_name='territory_reference'" in sql:
+                return Cursor(("reference-v1",))
+            if "table_name='scalar_observation'" in sql:
+                return Cursor(("scalar-v1", "reference-v1"))
+            raise AssertionError(sql)
+
+    monkeypatch.setattr(main, "focal_profiles", lambda *args, **kwargs: ([], None))
+    monkeypatch.setattr(main, "collection_descriptors", lambda *args, **kwargs: [])
+    monkeypatch.setattr(main, "_comparison_cohort", lambda *_args: (
+        "commune", ("c1", "c2"), {"kind": "density_class"}))
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: (
+        "density_class", "A", "commune"))
+    family = family_for_resource(default_resource_catalogue().resources_by_id["prix_m2"])
+    assert family == "ordered_series"
+    for operation in (main._scalar_facet_comparison_preflight,
+                      main._scalar_facet_comparison_snapshot):
+        with pytest.raises(PublicationUnavailable) as error:
+            operation(Connection(), "commune", "c1", "prix_m2", "habitat", None,
+                      ["median"], publication_family=family)
+        assert error.value.family == "ordered_series"
+        assert error.value.detail == "Published scalar comparison is stale or incompatible"
+
+
 def test_theme_comparison_uses_published_fixed_scalar_results_but_keeps_dynamic_selection(monkeypatch):
     descriptor = ("population", "Population", "persons", "high", "population", ["commune"], "d-v1")
     dynamic_calls = []

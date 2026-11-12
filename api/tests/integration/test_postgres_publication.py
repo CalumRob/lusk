@@ -88,6 +88,8 @@ def _lineage_r_library_preflight():
     """Validate retained-proof settings before any schema or database work."""
     if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
         pytest.fail("Issue #814 comparison proof always retains its schema; unset LUSK_TEST_ALLOW_SCHEMA_CLEANUP")
+    if not os.environ.get("LUSK_TEST_PUBLISH_DSN"):
+        pytest.skip("guarded R publisher proof requires explicit LUSK_TEST_* DSNs")
     r_libs_user = os.environ.get("R_LIBS_USER", "")
     if not r_libs_user or not Path(r_libs_user).is_dir():
         pytest.fail("Guarded R publisher proof requires R_LIBS_USER to name an existing populated R library (Rscript uses --vanilla)")

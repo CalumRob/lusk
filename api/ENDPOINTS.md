@@ -18,12 +18,16 @@ normally returns `422`; an unknown territory/resource/indicator is generally
 with `503`. Individual operations may have additional documented errors.
 
 A resource is declared by the producer catalogue independently of whether its
-publication is currently present. A declared resource whose published
-descriptor or required publication dependency is absent therefore fails closed
+publication is currently present. On the v1 contract a declared resource whose
+published descriptor or required publication dependency is absent fails closed
 with `503` for every intent it declares — `facts`, `fixed_comparison` and
 `selected_comparison` alike, single or batch — rather than being reported as an
-unknown identity with `404`. Unknown resource identities, territories and
-comparison members keep their existing `422`/`404` validation semantics, so a
+unknown identity with `404`. A v2 batch instead reports that item as
+`status: "publication_unavailable"` with a closed reason/family, while keeping
+one correlated result per item; see `batch-read-contract.md`. Unknown resource
+identities, territories and comparison members keep their existing `422`/`404`
+validation semantics, and hard validation, SQL/service, global-clock, provenance
+and snapshot failures still reject the whole request in both versions, so a
 publication gap and a malformed or unknown request are never conflated.
 
 `GET /api/resources` is the producer-derived retained-resource catalogue. It
@@ -61,9 +65,17 @@ the API does not guess or repair producer declarations.
 `target`, optional closed `coordinates`, `fields`, and typed `intent`). The
 single-read request and each batch item have the same fields; only a batch item
 adds its correlation `id`. `POST /api/resources/read-batch` validates all items
-before returning results and returns no partial result if any item fails. Both
-execute on one `READ ONLY REPEATABLE READ` snapshot. Nonempty batches have no
-item-count ceiling and are bounded by 200,000 preflight work units and 8 MB serialized output. Supported intents
+before returning results. Under v1 any item failure returns no partial result
+and keeps its historical status/detail wording. Under the opt-in
+`"contract": "semantic-read-batch-v2"` the batch first admits the actual focal
+target, selected members, cohort filters and declared territory level, then
+returns one result per item: only a classified absent publication becomes
+`publication_unavailable`, while validation, identity, SQL/service,
+global-clock/provenance and snapshot failures still abort the whole request.
+The declared `family` always comes from the producer resource declaration, not
+the failed lookup. Both versions execute on one `READ ONLY REPEATABLE READ`
+snapshot. Nonempty batches have no item-count ceiling and are bounded by
+200,000 preflight work units and 8 MB serialized output. Supported intents
 are `facts`, `fixed_comparison` with its declared closed comparison context, and
 bounded `selected_comparison` with at most 1,500 unique typed territory members. Facts
 coordinates and optional fields are producer-declared; status, availability,
@@ -197,6 +209,7 @@ These are the model fields reachable from request bodies, including nested and d
 | `ResourceReadItem` | `fields` | no | array of string; max items: `32` |
 | `ResourceReadItem` | `intent` | yes | one of FactsIntent / FixedComparisonIntent / SelectedComparisonIntent |
 | `ResourceBatchRequest` | `items` | yes | array of ResourceBatchItem; min items: `1` |
+| `ResourceBatchRequest` | `contract` | no | string; const: `semantic-read-batch-v2` |
 | `TerritoryTarget` | `kind` | yes | string; const: `territory` |
 | `TerritoryTarget` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
 | `TerritoryTarget` | `id` | yes | string; min chars: `1`; max chars: `32` |
@@ -240,7 +253,10 @@ each item in the batch contract below.
 ### `POST /api/resources/read-batch`
 
 Executes bounded semantic resource items on one read-only repeatable-read
-snapshot; failures reject the request without partial results.
+snapshot; v1 failures reject the request without partial results. An optional
+`"contract": "semantic-read-batch-v2"` returns one result per item, replacing
+only a classified absent publication with `status: "publication_unavailable"`,
+`reason` and `family`; hard failures still abort the whole request.
 
 ### `GET /api/territories/search`
 

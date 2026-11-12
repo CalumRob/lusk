@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException
 
+from api.publication_outcomes import family_for_resource, publication_unavailable
+
 
 @dataclass(frozen=True)
 class TerritoryCohort:
@@ -119,14 +121,16 @@ def _scalar_contract(conn, resource_id, territory_type, cohort):
         comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version
         FROM scalar_descriptor WHERE indicator_id=%s""", (resource_id,)).fetchone()
     if not descriptor:
-        raise HTTPException(503, "Declared scalar publication is unavailable")
+        publication_unavailable("scalar", "Declared scalar publication is unavailable")
     if territory_type not in descriptor[6]:
         raise HTTPException(422, "Indicator is not declared for this cohort level")
     marker = conn.execute("""SELECT p.content_version,p.reference_content_version,t.content_version
         FROM table_publication p LEFT JOIN table_publication t
           ON t.table_name='territory_reference'
         WHERE p.table_name='scalar_observation'""").fetchone()
-    if not marker or not marker[0] or not marker[1] or marker[1] != marker[2] or marker[1] != cohort.reference_content_version:
+    if not marker or not marker[0]:
+        publication_unavailable("scalar", "Scalar publication is stale or incompatible")
+    if not marker[1] or not marker[2] or marker[1] != marker[2] or marker[1] != cohort.reference_content_version:
         raise HTTPException(503, "Scalar publication is stale or incompatible")
     return descriptor, marker
 
@@ -211,14 +215,16 @@ def _profile_context(conn, item, cohort, fields):
 
     profiles, version = focal_profiles(conn, item.target.type, "", indicator_id=item.resource,
         include_cells=False, fields=fields, include_all_descriptors=True)
-    if len(profiles) != 1:
+    if len(profiles) > 1:
         raise HTTPException(503, "Declared profile publication is unavailable")
+    if not profiles:
+        publication_unavailable("profile", "Declared profile publication is unavailable")
     descriptor = conn.execute("""SELECT indicator_id,theme_id,label,unit,allowed_levels,completeness,
         descriptor_version,comparison_detail,comparison_sex,comparison_direction,comparison_scalar,
         required_scalar_version,denominator_semantics,detail_units_required
         FROM profile_descriptor WHERE indicator_id=%s""", (item.resource,)).fetchone()
     if not descriptor:
-        raise HTTPException(503, "Declared profile publication is unavailable")
+        publication_unavailable("profile", "Declared profile publication is unavailable")
     if item.target.type not in descriptor[4]:
         raise HTTPException(422, "Profile is not declared for this cohort level")
     axes = conn.execute("""SELECT axis_name,axis_key,label,ordinal,unit FROM profile_axis
@@ -256,7 +262,9 @@ def _profile_context(conn, item, cohort, fields):
         raise HTTPException(422, "Profile coordinate selection is empty")
     marker = conn.execute("""SELECT content_version,reference_content_version FROM table_publication
         WHERE table_name='declared_profile'""").fetchone()
-    if not marker or marker[0] != version or marker[1] != cohort.reference_content_version:
+    if not marker or not marker[0]:
+        publication_unavailable("profile", "Profile publication is unavailable or incompatible")
+    if marker[0] != version or marker[1] != cohort.reference_content_version:
         raise HTTPException(503, "Profile publication is unavailable or incompatible")
     return descriptor, marker, axes_by_name, detail_units, selected_details, selected_sexes
 
@@ -376,6 +384,9 @@ def _indicator_shape(conn, item, resource):
         if conn.execute("SELECT to_regclass(%s)", (relation,)).fetchone()[0] and conn.execute(
                 f"SELECT 1 FROM {relation} WHERE indicator_id=%s", (item.resource,)).fetchone():
             shapes.append(shape)
+    if not shapes:
+        publication_unavailable(family_for_resource(resource),
+            "Indicator has ambiguous or unavailable published storage shapes")
     if len(shapes) != 1:
         raise HTTPException(503, "Indicator has ambiguous or unavailable published storage shapes")
     shape = shapes[0]
@@ -396,14 +407,20 @@ def _owned_series_context(conn, item, resource, cohort):
     from api.snapshot_reads import _owned_series_route
 
     route = _owned_series_route(conn, item.resource)
-    if not route or route[2]:
+    if not route:
+        publication_unavailable("ordered_series", "Owned-series cohort route is unavailable")
+    if route[2]:
         raise HTTPException(503, "Owned-series cohort route is unavailable")
     dataset_id, _theme_id, _is_reference, indicator_id, _reference_id = route
-    marker = conn.execute("""SELECT p.content_version,p.reference_content_version,p.row_count,
-        p.published_at,t.content_version FROM series_dataset_publication p
-        CROSS JOIN table_publication t WHERE p.dataset_id=%s AND t.table_name='territory_reference'""",
+    marker = conn.execute("""SELECT content_version,reference_content_version,row_count,published_at
+        FROM series_dataset_publication WHERE dataset_id=%s""",
         (dataset_id,)).fetchone()
-    if not marker or not marker[0] or marker[1] != marker[4] or marker[1] != cohort.reference_content_version:
+    reference = conn.execute(
+        "SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
+    if not marker or not marker[0]:
+        publication_unavailable("ordered_series", "Owned-series publication is stale or unavailable")
+    if (not reference or not reference[0] or marker[1] != reference[0]
+            or marker[1] != cohort.reference_content_version):
         raise HTTPException(503, "Owned-series publication is stale or unavailable")
     descriptor = conn.execute("""SELECT axis_kind,axis_values,axis_numeric_values,completeness,label,unit,
         direction,descriptor_version,allowed_levels,comparison_point,theme_id,observation_period_kind,
@@ -536,7 +553,9 @@ def _legacy_series_context(conn, item, cohort):
     marker = conn.execute("""SELECT s.content_version,s.reference_content_version,t.content_version
         FROM table_publication s LEFT JOIN table_publication t
           ON t.table_name='territory_reference' WHERE s.table_name='ordered_series'""").fetchone()
-    if not marker or not marker[0] or marker[1] != marker[2] or marker[1] != cohort.reference_content_version:
+    if not marker or not marker[0]:
+        publication_unavailable("ordered_series", "Series publication is unavailable or incompatible")
+    if not marker[1] or not marker[2] or marker[1] != marker[2] or marker[1] != cohort.reference_content_version:
         raise HTTPException(503, "Series publication is unavailable or incompatible")
     descriptor = conn.execute("""SELECT axis_kind,axis_values,completeness,comparison_point,label,unit,
         direction,source_id,vintage_id,descriptor_version,allowed_levels
@@ -807,8 +826,13 @@ def _typed_reading_context(conn, item, resource, cohort):
     reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
     marker = conn.execute("""SELECT content_version,row_count,reference_content_version
         FROM table_publication WHERE table_name=%s""", (resource.publication_table,)).fetchone()
-    if (not reference or reference[0] != cohort.reference_content_version or not marker or
-            not marker[0] or marker[1] < 1 or marker[2] != reference[0]):
+    if not reference or not reference[0]:
+        raise HTTPException(503, "Typed-reading publication is unavailable or stale")
+    if reference[0] != cohort.reference_content_version:
+        raise HTTPException(503, "Typed-reading publication is unavailable or stale")
+    if not marker or not marker[0]:
+        publication_unavailable("typed_reading", "Typed-reading publication is unavailable or stale")
+    if marker[1] < 1 or marker[2] != reference[0]:
         raise HTTPException(503, "Typed-reading publication is unavailable or stale")
     if item.target.type not in resource.allowed_levels:
         raise HTTPException(422, "Typed reading is not declared for this cohort level")
@@ -817,7 +841,9 @@ def _typed_reading_context(conn, item, resource, cohort):
     if resource.publication_table == "selected_reading":
         owner_marker = conn.execute("""SELECT content_version,row_count,reference_content_version
             FROM selected_reading_publication WHERE theme_id=%s""", (resource.theme_id,)).fetchone()
-        if not owner_marker or tuple(owner_marker) != tuple(marker):
+        if not owner_marker or not owner_marker[0]:
+            publication_unavailable("typed_reading", "Selected-reading publication is inconsistent")
+        if tuple(owner_marker) != tuple(marker):
             raise HTTPException(503, "Selected-reading publication is inconsistent")
     descriptor = typed_reading_descriptor(conn, resource, marker)
 
@@ -827,7 +853,10 @@ def _typed_reading_context(conn, item, resource, cohort):
             raise HTTPException(503, "Typed-reading evidence storage is unavailable")
         side_marker = conn.execute("""SELECT content_version,reference_content_version,row_count
             FROM table_publication WHERE table_name=%s""", (side["publication_table"],)).fetchone()
-        if not side_marker or side_marker[1] != reference[0]:
+        if not side_marker or not side_marker[0]:
+            publication_unavailable("typed_reading",
+                "Typed-reading evidence publication is unavailable or stale")
+        if side_marker[1] != reference[0]:
             raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
         if ((side["publication_table"] == resource.publication_table or
              side.get("same_content_version_as") == "resource") and side_marker[0] != marker[0]):

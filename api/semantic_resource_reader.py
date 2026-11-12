@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from api.cohort_reads import (preflight_cohort, read_cohort, resolve_territory_cohort,
                               validate_typed_reading_integrity)
 from api.profile_reads import focal_profiles
+from api.publication_outcomes import family_for_resource, publication_unavailable
 from api.resource_catalogue import ResourceCatalogue, default_resource_catalogue
 
 
@@ -32,9 +33,145 @@ class SemanticResourceReader:
         return (resource.resource_kind == "indicator"
                 and "scalar" in resource.shapes and "ordered_series" in resource.shapes)
 
+    @staticmethod
+    def _publication_family(resource):
+        """Name the publication family from the producer declaration."""
+        return family_for_resource(resource)
+
+    @staticmethod
+    def _required_relation_groups(resource):
+        """Producer-declared storage relations; a missing group is schema-fatal.
+
+        These are checked only by v2 admission so a missing SQL relation can
+        never be reported as an absent publication. Alternative groups cover
+        the legacy/owned series compatibility pairs.
+        """
+        kind = getattr(resource, "resource_kind", "")
+        if kind == "typed_reading":
+            groups = [tuple(relation for relation in (resource.storage_relation,) if relation)]
+            groups.extend((side["storage_relation"],) for side in resource.side_relations)
+            return [group for group in groups if group]
+        if kind == "aedar_source_grain":
+            return [("aedar_territorial_aggregate",)]
+        if kind == "aedar_territory_summary":
+            return [("aedar_territory_summary",), ("aedar_territorial_aggregate",)]
+        shapes = set(getattr(resource, "shapes", ()))
+        groups = []
+        if "scalar" in shapes:
+            groups.append(("scalar_descriptor",))
+        if "declared_profile" in shapes:
+            groups.append(("profile_descriptor",))
+        if "ordered_series" in shapes:
+            groups.append(("series_dataset_descriptor", "series_descriptor"))
+        if "named_reference" in shapes:
+            groups.append(("series_named_reference_descriptor",))
+        if "period_detail" in shapes or "anchored_membership" in shapes:
+            groups.append(("observed_collection_descriptor",))
+        return groups
+
+    def admit(self, conn, items, catalogue: ResourceCatalogue | None = None, *,
+              snapshot_state=None, work_budget=200_000):
+        """v2-only identity admission charged to the same request work budget.
+
+        Cheap grammar/identity checks only: declared territory level, focal and
+        selected-member identity/type, required relation groups and cohort
+        filter identities. Cohort members are not enumerated here; the existing
+        preflight resolves them once, within the remaining work budget, and a
+        request-local cache reuses that resolution for the same cohort target.
+        v1 never calls this method.
+        """
+        catalogue = catalogue or default_resource_catalogue()
+        identities = []
+        cohort_targets = {}
+        relation_groups = []
+        for item in items:
+            resource = catalogue.resources_by_id.get(item.resource)
+            if resource is None:
+                raise HTTPException(422, "unknown semantic resource")
+            relation_groups.extend(self._required_relation_groups(resource))
+            if item.target.kind == "territory":
+                if item.target.type not in resource.allowed_levels:
+                    raise HTTPException(422, "Territory target type is not declared for this resource")
+                identities.append((item.target.id, item.target.type, "focal"))
+            elif item.target.kind == "territory_cohort":
+                key = (item.target.type, item.target.department_id, item.target.epci_id)
+                cohort_targets[key] = item.target
+            if item.intent.kind == "selected_comparison":
+                for member in item.intent.members:
+                    identities.append((member.id, member.type, "member"))
+        relation_checks = len({relation for group in relation_groups for relation in group})
+        needs_reference = bool(identities or cohort_targets)
+        filter_checks = sum((1 if target.department_id is not None else 0) +
+                            (1 if target.epci_id is not None else 0)
+                            for target in cohort_targets.values())
+        cost = (len(items) + len(identities) + relation_checks +
+                (1 if needs_reference else 0) + filter_checks)
+        if cost > work_budget:
+            raise HTTPException(413, "Resource request exceeds the bounded work limit")
+        if isinstance(snapshot_state, dict):
+            snapshot_state["v2_admission"] = True
+        seen_relations = {}
+        for group in relation_groups:
+            for relation in group:
+                if relation not in seen_relations:
+                    seen_relations[relation] = bool(conn.execute(
+                        "SELECT to_regclass(%s)", (relation,)).fetchone()[0])
+            if not any(seen_relations[relation] for relation in group):
+                raise HTTPException(503, "Required publication storage relation is unavailable")
+        if needs_reference:
+            reference = conn.execute(
+                "SELECT content_version,row_count FROM table_publication WHERE table_name='territory_reference'"
+            ).fetchone()
+            if (not reference or not reference[0] or int(reference[1]) < 1):
+                raise HTTPException(503, "Territory reference publication is unavailable")
+        if identities:
+            ids = sorted({identity for identity, _type, _role in identities})
+            rows = conn.execute(
+                "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY(%s)",
+                (ids,)).fetchall()
+            by_id = {row[0]: row[1] for row in rows}
+            for identity, expected_type, role in identities:
+                if identity not in by_id:
+                    raise HTTPException(404, "Selected comparison territory not found"
+                                        if role == "member" else "Focal territory not found")
+                if by_id[identity] != expected_type:
+                    raise HTTPException(422, "Selected comparison territory type does not match"
+                                        if role == "member" else "Focal territory type does not match route")
+        for target in cohort_targets.values():
+            if target.department_id is not None:
+                parent = conn.execute("""SELECT 1 FROM territory_reference
+                    WHERE territory_id=%s AND territory_type='departement'""",
+                    (target.department_id,)).fetchone()
+                if not parent:
+                    raise HTTPException(422, "Cohort department filter is not a published department")
+            if target.epci_id is not None:
+                parent = conn.execute("""SELECT 1 FROM territory_reference
+                    WHERE territory_id=%s AND territory_type='epci'""",
+                    (target.epci_id,)).fetchone()
+                if not parent:
+                    raise HTTPException(422, "Cohort EPCI filter is not a published EPCI")
+        return cost
+
+    @staticmethod
+    def _cohort_for_request(conn, target, work_budget, snapshot_state):
+        """Resolve a cohort once per v2 request; preflight still charges it."""
+        cache = None
+        if isinstance(snapshot_state, dict) and snapshot_state.get("v2_admission"):
+            cache = snapshot_state.setdefault("cohort_cache", {})
+            key = (target.type, target.department_id, target.epci_id)
+            if key in cache:
+                return cache[key]
+        cohort = resolve_territory_cohort(conn, target, work_budget=work_budget)
+        if cache is not None:
+            cache[key] = cohort
+        return cohort
+
     def _require_dual_series_route(self, conn, resource):
         route = self._owned_series_route(conn, resource.resource_id)
-        if (not route or route[2] or route[1] != resource.theme_id):
+        if not route:
+            publication_unavailable("ordered_series",
+                "Declared ordered-series facet publication is unavailable or incompatible")
+        if route[2] or route[1] != resource.theme_id:
             raise HTTPException(503, "Declared ordered-series facet publication is unavailable or incompatible")
 
     @staticmethod
@@ -89,17 +226,20 @@ class SemanticResourceReader:
                 rows = conn.execute("SELECT axis_key FROM profile_axis WHERE indicator_id=%s AND axis_name=%s",
                                     (indicator, axis)).fetchall()
                 if not rows:
-                    raise HTTPException(503, "Profile coordinate descriptor is unavailable")
+                    publication_unavailable("profile", "Profile coordinate descriptor is unavailable")
                 domains[axis] = {str(row[0]) for row in rows}
         if "ordered_series" in resource.shapes or "named_reference" in resource.shapes:
-            route = self._owned_series_route(conn, indicator)
+            family = self._publication_family(resource)
+            route = self._owned_series_route(conn, indicator, family=family)
             if route:
                 row = conn.execute("SELECT axis_values FROM series_dataset_descriptor WHERE dataset_id=%s AND indicator_id=%s AND active_read_route",
                                    (route[0], route[3])).fetchone()
             else:
                 row = conn.execute("SELECT axis_values FROM series_descriptor WHERE indicator_id=%s",
                                    (indicator,)).fetchone()
-            if not row or not row[0]:
+            if not row:
+                publication_unavailable(family, "Series coordinate descriptor is unavailable")
+            if not row[0]:
                 raise HTTPException(503, "Series coordinate descriptor is unavailable")
             axis = resource.axes[0] if resource.axes else "axis"
             domains[axis] = {str(value) for value in row[0]}
@@ -145,7 +285,7 @@ class SemanticResourceReader:
             self._require_dual_series_route(conn, resource)
         if resource.resource_kind == "typed_reading":
             if item.target.kind == "territory_cohort":
-                cohort = resolve_territory_cohort(conn, item.target, work_budget=work_budget)
+                cohort = self._cohort_for_request(conn, item.target, work_budget, snapshot_state)
                 estimate = preflight_cohort(conn, item, resource, cohort,
                     self._legacy_fields(item, catalogue), work_budget)
                 self._cohort_scopes[id(item)] = cohort
@@ -160,7 +300,7 @@ class SemanticResourceReader:
                 resource.fields, preflight_only=True)
             return len(AEDAR_AGGREGATE_READINGS if measures is None else measures)
         if item.target.kind == "territory_cohort":
-            cohort = resolve_territory_cohort(conn, item.target, work_budget=work_budget)
+            cohort = self._cohort_for_request(conn, item.target, work_budget, snapshot_state)
             estimate = preflight_cohort(conn, item, resource, cohort,
                 self._legacy_fields(item, catalogue), work_budget)
             if item.fields and "scalar_facet" in item.fields and self._has_dual_scalar_series(resource):
@@ -299,7 +439,8 @@ class SemanticResourceReader:
                 scalar_facet_projection=bool(item.fields and "scalar_facet" in item.fields),
                 profile_coordinates=profile_coordinates,
                 intent_kind=item.intent.kind,
-                require_declared_resource=True)
+                require_declared_resource=True,
+                publication_family=self._publication_family(resource))
             resource = catalogue.resources_by_id[item.resource]
             members = ([member_id for _, member_id in selection] if selection else
                        list(estimate.get("members", ())) if isinstance(estimate, dict) else [])
@@ -363,8 +504,10 @@ class SemanticResourceReader:
 
         requested_fields = self._legacy_fields(item, catalogue)
         if item.target.kind == "named_reference":
-            route = self._owned_series_route(conn, item.resource)
-            if not route or not route[2]:
+            route = self._owned_series_route(conn, item.resource, family=self._publication_family(resource))
+            if not route:
+                publication_unavailable("named_reference", "Named reference publication is unavailable")
+            if not route[2]:
                 raise HTTPException(503, "Named reference publication is unavailable")
             self._owned_named_reference_snapshot(conn, route, None, None, item.resource,
                 fields=requested_fields, preflight_only=True, reference_target_id=item.target.id)
@@ -376,12 +519,13 @@ class SemanticResourceReader:
                 "SELECT allowed_levels FROM profile_descriptor WHERE indicator_id=%s",
                 (item.resource,)).fetchone()
             if not descriptor:
-                raise HTTPException(503, "Declared profile publication is unavailable")
+                publication_unavailable("profile", "Declared profile publication is unavailable")
             if item.target.type not in descriptor[0]:
                 raise HTTPException(422, "Profile is not declared for this territory level")
         estimate = self._indicator_facts_snapshot(
             conn, item.target.type, item.target.id, item.resource,
-            requested_fields, preflight_only=True, require_declared_resource=True)
+            requested_fields, preflight_only=True, require_declared_resource=True,
+            publication_family=self._publication_family(resource))
         if not isinstance(estimate, dict):
             return 1
         scalar_facet_work = 0
@@ -437,12 +581,13 @@ class SemanticResourceReader:
             base_item = item.model_copy(update={"fields": base_fields or ["status"],
                                                 "coordinates": None})
             data = self.read(conn, base_item, catalogue, snapshot_state=snapshot_state)
-            data["result"]["axis_comparisons"] = read_axis_comparisons(conn, item)
+            data["result"]["axis_comparisons"] = read_axis_comparisons(
+                conn, item, family=self._publication_family(resource))
             return data
         if item.target.kind == "territory_cohort":
             cohort = self._cohort_scopes.pop(id(item), None)
             if cohort is None:
-                cohort = resolve_territory_cohort(conn, item.target, work_budget=200_000)
+                cohort = self._cohort_for_request(conn, item.target, 200_000, snapshot_state)
             data = read_cohort(conn, item, resource, cohort,
                                self._legacy_fields(item, catalogue))
             if item.fields and "scalar_facet" in item.fields and self._has_dual_scalar_series(resource):
@@ -496,15 +641,18 @@ class SemanticResourceReader:
                 profile_coordinates=self._profile_comparison_coordinates(conn, item, resource),
                 collection_coordinates=item.coordinates if "period_detail" in resource.shapes else None,
                 intent_kind=item.intent.kind,
-                require_declared_resource=True)
+                require_declared_resource=True,
+                publication_family=self._publication_family(resource))
             if item.coordinates:
                 data = self._filter_coordinates(data, item.coordinates, resource)
             return {"resource": item.resource, "target": item.target.model_dump(), **data}
 
         requested_fields = self._legacy_fields(item, catalogue)
         if item.target.kind == "named_reference":
-            route = self._owned_series_route(conn, item.resource)
-            if not route or not route[2]:
+            route = self._owned_series_route(conn, item.resource, family=self._publication_family(resource))
+            if not route:
+                publication_unavailable("named_reference", "Named reference publication is unavailable")
+            if not route[2]:
                 raise HTTPException(503, "Named reference publication is unavailable")
             data = self._owned_named_reference_snapshot(conn, route, None, None, item.resource,
                 fields=requested_fields, reference_target_id=item.target.id)
@@ -518,14 +666,16 @@ class SemanticResourceReader:
                 "SELECT allowed_levels FROM profile_descriptor WHERE indicator_id=%s",
                 (item.resource,)).fetchone()
             if not descriptor:
-                raise HTTPException(503, "Declared profile publication is unavailable")
+                publication_unavailable("profile", "Declared profile publication is unavailable")
             if item.target.type not in descriptor[0]:
                 raise HTTPException(422, "Profile is not declared for this territory level")
             profiles, version = focal_profiles(
                 conn, item.target.type, item.target.id, indicator_id=item.resource,
                 fields=requested_fields)
-            if len(profiles) != 1:
+            if len(profiles) > 1:
                 raise HTTPException(503, "Declared profile publication is unavailable")
+            if not profiles:
+                publication_unavailable("profile", "Declared profile publication is unavailable")
             profile = profiles[0]
             observations = profile.pop("cells")
             if item.coordinates:
@@ -539,7 +689,8 @@ class SemanticResourceReader:
 
         data = self._indicator_facts_snapshot(
             conn, item.target.type, item.target.id, item.resource, requested_fields,
-            require_declared_resource=True)
+            require_declared_resource=True,
+            publication_family=self._publication_family(resource))
         if item.coordinates:
             data = self._filter_coordinates(data, item.coordinates, resource)
         if (self._has_dual_scalar_series(resource) and item.target.kind == "territory"):
@@ -563,13 +714,21 @@ class SemanticResourceReader:
         marker = conn.execute("""SELECT content_version,row_count,reference_content_version
             FROM table_publication WHERE table_name=%s""", (resource.publication_table,)).fetchone()
         reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
-        if not marker or not marker[0] or not reference or marker[2] != reference[0]:
+        if not marker or not marker[0]:
+            publication_unavailable("typed_reading",
+                "Typed-reading publication is unavailable or stale")
+        if not reference or not reference[0]:
+            raise HTTPException(503, "Typed-reading publication is unavailable or stale")
+        if marker[2] != reference[0]:
             raise HTTPException(503, "Typed-reading publication is unavailable or stale")
         if resource.publication_table == "selected_reading":
             owner_marker = conn.execute("""SELECT content_version,row_count,reference_content_version
                 FROM selected_reading_publication WHERE theme_id=%s""",
                 (resource.theme_id,)).fetchone()
-            if (not owner_marker or owner_marker[0] != marker[0] or
+            if not owner_marker or not owner_marker[0]:
+                publication_unavailable("typed_reading",
+                    "Selected-reading publication is inconsistent")
+            if (owner_marker[0] != marker[0] or
                     owner_marker[1] != marker[1] or owner_marker[2] != marker[2]):
                 raise HTTPException(503, "Selected-reading publication is inconsistent")
         if (resource.publication_table in {"demographic_typed_reading", "selected_reading"}
@@ -587,7 +746,10 @@ class SemanticResourceReader:
         for side in resource.side_relations:
             side_marker = conn.execute("""SELECT content_version,reference_content_version,row_count
                 FROM table_publication WHERE table_name=%s""", (side["publication_table"],)).fetchone()
-            if not side_marker or side_marker[1] != reference[0]:
+            if not side_marker or not side_marker[0]:
+                publication_unavailable("typed_reading",
+                    "Typed-reading evidence publication is unavailable or stale")
+            if side_marker[1] != reference[0]:
                 raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
             if side["publication_table"] == resource.publication_table and side_marker[0] != marker[0]:
                 raise HTTPException(503, "Typed-reading evidence publication is incompatible")
@@ -642,7 +804,10 @@ class SemanticResourceReader:
             FROM table_publication p LEFT JOIN table_publication t
               ON t.table_name='territory_reference' WHERE p.table_name=%s""",
             (resource.publication_table,)).fetchone()
-        if not marker or not marker[0] or not marker[1] or marker[1] != marker[2]:
+        if not marker or not marker[0]:
+            publication_unavailable("typed_reading",
+                "Typed-reading publication is unavailable or stale")
+        if not marker[1] or not marker[2] or marker[1] != marker[2]:
             raise HTTPException(503, "Typed-reading publication is unavailable or stale")
         descriptor = typed_reading_descriptor(conn, resource, marker)
         coordinates = item.coordinates or {}

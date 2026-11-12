@@ -1,6 +1,7 @@
 """Focal-only declared profiles inside the caller's read-only DB snapshot."""
 from fastapi import HTTPException
 from api.field_selection import normalize_field_selection
+from api.publication_outcomes import publication_unavailable
 
 
 def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicator_id=None, include_cells=True,
@@ -17,19 +18,23 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
     marker = conn.execute("""SELECT p.content_version,p.reference_content_version,t.content_version
         FROM table_publication p LEFT JOIN table_publication t ON t.table_name='territory_reference'
         WHERE p.table_name='declared_profile'""").fetchone()
-    if not marker or not marker[0] or not marker[1] or marker[1] != marker[2]:
+    if not marker or not marker[0]:
+        publication_unavailable("profile", "Profile publication is unavailable or incompatible")
+    if not marker[1] or not marker[2] or marker[1] != marker[2]:
         raise HTTPException(503, 'Profile publication is unavailable or incompatible')
     dependencies = [d[8] for d in descriptors if d[8] is not None]
     if dependencies:
         scalar_marker = conn.execute("""SELECT content_version,reference_content_version
             FROM table_publication WHERE table_name='scalar_observation'""").fetchone()
+        if not scalar_marker or not scalar_marker[0]:
+            publication_unavailable("profile", "Profile scalar dependency is stale or incompatible")
         scalar_descriptors = {r[0]: r[1:] for r in conn.execute("""SELECT indicator_id,unit,direction,
             allowed_levels,comparison_facet FROM scalar_descriptor WHERE indicator_id=ANY(%s)""", (dependencies,)).fetchall()}
         for d in descriptors:
             if d[8] is None:
                 continue
             facet = scalar_descriptors.get(d[8])
-            if (not scalar_marker or scalar_marker[0] != d[9] or scalar_marker[1] != marker[2]
+            if (scalar_marker[0] != d[9] or scalar_marker[1] != marker[2]
                     or not facet or facet[0] != d[2] or facet[1] != d[7]
                     or not set(d[3]).issubset(facet[2]) or facet[3] != d[8]):
                 raise HTTPException(503, 'Profile scalar dependency is stale or incompatible')

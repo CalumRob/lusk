@@ -33,9 +33,16 @@ def create_resource_router(*, get_repository, get_catalogue, get_reader):
                             catalogue: ResourceCatalogue = Depends(get_catalogue),
                             reader: SemanticResourceReader = Depends(get_reader)) -> dict:
         snapshot_state = {}
+        outcomes = request.contract == "semantic-read-batch-v2"
+        admit = None
+        if outcomes and hasattr(reader, "admit"):
+            admit = (lambda conn, items, catalogue, work_budget:
+                     reader.admit(conn, items, catalogue,
+                                  snapshot_state=snapshot_state, work_budget=work_budget))
         return execute_batch(repository.connections, request, catalogue,
             lambda conn, resource_item, work_budget: reader.preflight(
                 conn, resource_item, catalogue, work_budget=work_budget, snapshot_state=snapshot_state),
-            lambda conn, resource_item: reader.read(conn, resource_item, catalogue, snapshot_state=snapshot_state))
+            lambda conn, resource_item: reader.read(conn, resource_item, catalogue, snapshot_state=snapshot_state),
+            outcomes=outcomes, admit=admit)
 
     return router

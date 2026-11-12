@@ -62,9 +62,12 @@ installed in any live environment. Check the deployed source/schema/publication
 versions with the operator before relying on a route. Routes can return `503`
 when required publication markers are absent or stale, or dependent published
 tables are incompatible; this is intentional fail-closed availability, not an
-empty successful result. Missing focal records and invalid inputs have their
-own `404` and `422` behavior; see the endpoint reference and OpenAPI for the
-operation's declared responses.
+empty successful result. A `semantic-read-batch-v2` batch instead reports a
+classified absent publication as one `publication_unavailable` item outcome;
+hard validation, SQL/service, global-clock, provenance and snapshot failures
+still return `503`/`4xx` for the whole request. Missing focal records and
+invalid inputs have their own `404` and `422` behavior; see the endpoint
+reference and OpenAPI for the operation's declared responses.
 
 The API's deployment requires an operator-provisioned PostgreSQL read role and
 private runtime configuration, an initialized compatible schema, and coherent

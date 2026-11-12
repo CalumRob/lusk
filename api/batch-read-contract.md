@@ -1,4 +1,4 @@
-# Semantic resource batch reads (issues #689 and #797)
+# Semantic resource batch reads (issues #689, #797 and #984)
 
 `GET /api/resources` exposes the producer-derived retained-resource catalogue.
 `POST /api/resources/read` reads one declared item; `POST /api/resources/read-batch`
@@ -10,6 +10,74 @@ optional declared coordinates/fields, and typed intent as the single-read route.
 `data` preserves the single-read payload. Unknown resources, invalid targets,
 coordinates, fields, or intents reject before reads; any item failure aborts the
 whole request. Batches are bounded by 200,000 preflight work units and 8 MB output.
+
+## Typed publication outcomes (v2, #984)
+
+A caller may send `"contract": "semantic-read-batch-v2"` at the top level of the
+batch body. The v2 response keeps one result per requested item, in request
+order, and replaces a *classified publication absence* with a typed outcome:
+
+```json
+{
+  "contract": "semantic-read-batch-v2",
+  "results": [
+    {"id": "density", "resource": "densite", "status": "available", "data": {"...": "..." }},
+    {"id": "age", "resource": "structure_age", "status": "publication_unavailable",
+     "reason": "publication_absent", "family": "profile"}
+  ]
+}
+```
+
+- `status: "available"` carries the unchanged `data` payload, including its
+  native versions, descriptor, units, ranks and provenance. No value, version or
+  zero is invented for any other item.
+- `status: "publication_unavailable"` carries a closed `reason` and the declared
+  `family` (`scalar`, `profile`, `ordered_series`, `named_reference`,
+  `typed_reading`, `collection`, `aedar`). The family always comes from the
+  producer resource declaration, never from which lookup failed, so a
+  comparison intent keeps its resource family. A cohort target names the
+  underlying resource family. No `data` is present; the client must not
+  synthesize a version or retry resource discovery automatically. An explicit
+  refresh may re-probe the publication later.
+- Before any publication absence can become an outcome, v2 admits the actual
+  focal territory, selected members and cohort filters against the published
+  reference, plus the catalogue-declared territory level. An unknown or
+  mistyped identity therefore rejects the whole request (`404`/`422`) even when
+  that resource is unpublished. Admission is cheap identity/grammar work: it is
+  charged to the same 200,000-unit budget before any such SQL runs, but it does
+  not enumerate cohort members. Preflight resolves each distinct cohort target
+  once per v2 request and charges the selected members per item with the existing
+  estimator; identical cohort targets share resolution, while each item still
+  pays its own facts/evidence work. V1 keeps its historical precedence, status
+  and exact detail strings during migration; the v2 outcome deliberately carries
+  no human `detail`.
+- An all-unavailable batch is a valid `200` envelope, not a retry storm.
+
+The soft classification is deliberately narrow and explicit at the server:
+only a guard that raises `PublicationUnavailable` (through the central
+`api.publication_outcomes` contract) is converted. Missing publication markers,
+descriptors, facts or an inactive owned read route belong here. The following
+remain whole-request failures in **both** v1 and v2, with no partial envelope:
+
+- `404` unknown territory, member, or identity; `422` malformed request,
+  coordinate, field, member or target; `413` work/response bounds;
+- SQL and schema faults, pool/service errors, and a failed snapshot;
+- the shared `territory_reference` publication/clock, stale or incompatible
+  dependency versions, conflicting or incomplete provenance, malformed published
+  rows, ambiguous producer declarations and incompatible facet contracts;
+- any unclassified `503`. The executor inspects the exception type, never its
+  English message, and never converts a database error into an outcome.
+
+Preflight still runs for every item before any read. An unavailable item consumes
+at least its one per-item work unit and is not read; available items share the
+same repeatable-read snapshot, so a publication change cannot split one batch.
+The shared acquisition client's packing budget remains at most 12 items per
+semantic request (unchanged by this contract); the API itself keeps the
+200,000-unit/8 MB bounds and no independent item-count ceiling.
+Omitting `contract` keeps the v1 response and its atomic whole-request failure
+semantics; v1 is a migration bridge, not the shared acquisition contract.
+The guard-by-guard classification is generated in
+[`publication-guard-inventory.md`](publication-guard-inventory.md).
 
 ## Resource shapes and intents
 
