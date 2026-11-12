@@ -87,6 +87,45 @@ Python fixtures retain their schemas for inspection. With
 by that invocation; proofs explicitly designated retained refuse the flag.
 Review the selected test and exact cleanup path before enabling it.
 
+### Shared v2 publication-outcome proof (#984)
+
+The v2 outcome proof is a focused, non-retained guarded suite. It acquires the
+Windows named mutex `Local\LuskIntegrationContractDb` before its first
+connection, keeps it for the whole test process including cleanup/verification,
+and releases it last. Do not point another worker at `lusk_it_contract` while it
+holds the lock. The proof creates one random `it_outcome_*` schema, seeds only
+its own families, and always drops that schema in `finally`; it fails before the
+unlock if any user schema or `public` relation remains, and prints the database
+byte size before and after. It is not a retained benchmark fixture.
+
+The suite proves mixed and all-unavailable envelopes across scalar, profile,
+owned series, named reference, typed reading, collection, comparison and AEDAR;
+unchanged values/ranks/units/clocks/provenance; item correlation and one
+repeatable-read snapshot; hard `404`/`422` member/malformed failures; global
+clock/provenance and SQL/service faults rejecting the whole request; the v1
+atomic bridge; and the executor's work/byte bounds (ordinary unit tests). Use
+the documented guarded DSNs, dedicated roles and private `PGPASSFILE`:
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:LUSK_TEST_DATABASE_PREFIX = 'lusk_it_'
+$env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
+$env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
+$env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
+$env:PYTHONPATH = '.'
+$env:PGCONNECT_TIMEOUT = '5'
+$env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000'
+$env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
+python -m pytest api/tests/integration/test_publication_outcome_http.py -q -s
+```
+
+Before the run, verify both connections report `current_database() =
+lusk_it_contract` and the expected roles; the suite does this itself before any
+DDL. If the process dies before cleanup, remove only its own `it_outcome_*`
+schemas under the same mutex, then verify zero user schemas and zero `public`
+relations. Do not run retained #814/lineage smokes as part of this cleanup
+regime.
+
 The R publisher-to-PostgreSQL smokes are a separate opt-in path. The operator
 must provision a permanent **test-only database on the Pi server** whose name
 begins `lusk_it_`, plus dedicated publisher and read roles restricted to that
