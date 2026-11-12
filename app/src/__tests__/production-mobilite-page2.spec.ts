@@ -491,6 +491,7 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
       .format(parkingFact.value as number))
     expect(parking.value).not.toContain('%')
     expect(parking.label).toBe('places de stationnement vélo pour 1 place voiture')
+    expect(parking.scalar.get('.cahier-figure-scalar-label').classes()).not.toContain('type-figure-label')
     expect(refuellingRatio.label).toBe('Bornes de recharge par station-service')
     expect(parking.aria).toContain(`${parkingFact.value!.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} ${parkingFact.unit}`)
     expect(parking.aria).toContain('Référence')

@@ -227,7 +227,6 @@ function ratioAriaLabel(
           <CahierFigureScalar
             :value="ratioDisplayValue(column.ratio)"
             :label="column.ratio.label"
-            label-role="metric"
             color-value
             :aria-label="ratioAriaLabel(column.ratio, column.bars.comparisonLabel, effectiveComparison.status, effectiveComparison.error)"
           >

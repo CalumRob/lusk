@@ -54,4 +54,12 @@ describe('verify-mobile-cahier-overflow — fixture wiring (no browser)', () => 
     expect(script).toContain('installApiRoutes')
     expect(script).toContain('makeApiHandlers')
   })
+
+  it('keeps the page-2 ratio anatomy under the strict mobile contract (#974)', () => {
+    expect(script).toContain('.mobilite-ratio-scalar')
+    expect(script).toContain("['bike', 'divide', 'car'], ['charging', 'divide', 'fuel']")
+    expect(script).toContain('issue974-page2-ratio-parking-390.png')
+    expect(script).toContain('issue974-page2-ratio-refuelling-390.png')
+    expect(script).toContain('issue974-page2-legend-${width}.png')
+  })
 })

@@ -350,6 +350,17 @@ try {
   ))
   // Fixture read-batch pour les lectures non-AEDAR (thème Mobilité) : contrat sémantique,
   // jamais l'ancienne route theme-facts retirée.
+  // #974 — the page-2 review captures use the same coherent live network
+  // capture as the production page-2 spec, so the segmented cycling bar and its
+  // four-entry legend are drawn from a real partition rather than a synthetic one.
+  const liveNetworksModule = await server.ssrLoadModule(
+    '/src/__tests__/fixtures/rennes-network-live.json')
+  const liveNetworks = liveNetworksModule.default ?? liveNetworksModule
+  const liveNetworkCapture = {
+    reseaux_par_habitant: liveNetworks.reseauxParHabitant,
+    reseaux: liveNetworks.reseaux,
+    offre_cyclable: liveNetworks.offreCyclable,
+  }
   function themeBatchResponse(request) {
     return nativeBatchResponse(request.items, (item, resource) => {
       const data = nativeReadFixture(item, resource, { syntheticProfileComparisons: true })
@@ -357,6 +368,13 @@ try {
         // Exercise the high-coverage fill-aware label legibility at both widths.
         data.value = 0.9957355031616097
         data.status = 'measured'
+      }
+      const capture = liveNetworkCapture[item.resource]
+      if (item.intent?.kind === 'facts' && capture && Array.isArray(data.observations)) {
+        for (const observation of data.observations) {
+          const value = capture[observation.detail]
+          if (typeof value === 'number') observation.value = value
+        }
       }
       return data
     })
@@ -1817,6 +1835,44 @@ try {
     assert.equal(await page.locator('.constructeur-comparaison dialog[open]').count(), 0,
       'Le modal singleton doit être fermé après un seul clic')
 
+    // #974 — review captures of the corrected page-2 surfaces at the two
+    // review widths, taken from the real production route (all units render).
+    // Each element is centred first so the sticky header never paints over it.
+    if (width === 390 || width === 1440) {
+      const captureSurface = async (locator, name) => {
+        // Park the pointer first: a hover tooltip from the previous interaction
+        // must never sit over the captured surface.
+        await page.mouse.move(0, 0)
+        await locator.evaluate((element) => element.scrollIntoView({ block: 'center' }))
+        await page.waitForTimeout(150)
+        const box = await locator.boundingBox()
+        if (!box) throw new Error(`Capture target ${name} has no box`)
+        const pad = 8
+        const x = Math.max(0, box.x - pad)
+        const y = Math.max(0, box.y - pad)
+        await page.screenshot({
+          path: resolve(evidenceDir, name),
+          clip: {
+            x,
+            y,
+            width: Math.min(width - x, box.width + pad * 2),
+            height: Math.min(844 - y, box.height + pad * 2),
+          },
+        })
+      }
+      await captureSurface(page.locator('.mobilite-section--reseaux .mobilite-section-figure'),
+        `issue974-page2-legend-${width}.png`)
+      if (width === 1440) {
+        await captureSurface(page.locator('.mobilite-section--stationnement-ravitaillement'),
+          'issue974-page2-ratios-1440.png')
+      } else {
+        await captureSurface(page.locator('[data-column="stationnement"] .mobilite-ratio-scalar'),
+          'issue974-page2-ratio-parking-390.png')
+        await captureSurface(page.locator('[data-column="ravitaillement"] .mobilite-ratio-scalar'),
+          'issue974-page2-ratio-refuelling-390.png')
+      }
+    }
+
     let plainMarginLayout = null
     if (width === 601 || width === 760) {
       await page.evaluate(() => {
@@ -1865,10 +1921,70 @@ try {
         `Plain Cahier margin must not collide with its heading at ${width}px: ${JSON.stringify(plainMarginLayout)}`)
     }
 
+    // #974 — the page-2 paired ratios now carry the AEDAR scalar anatomy. Their
+    // operator line, value, caption and reference must stay inside the paper
+    // and on one line at every width, never widening the section.
+    await page.evaluate(() => {
+      const app = document.querySelector('#app')
+      if (app && getComputedStyle(app).display !== 'none') app.style.display = 'none'
+      const root = document.createElement('div')
+      root.id = 'mobilite-ratio-layout-fixture'
+      root.style.marginInline = 'var(--grid-margin-mobile)'
+      document.body.append(root)
+    })
+    await page.evaluate(async ({ baseUrl, content, pagination }) => {
+      const fixture = await import(new URL('src/__tests__/helpers/mobileCahierBrowserFixture.ts', baseUrl).href)
+      const root = document.querySelector('#mobilite-ratio-layout-fixture')
+      if (!root) throw new Error('Mobilité ratio fixture root was not mounted')
+      await fixture.mountPlainCahier(root, content, pagination)
+    }, { baseUrl, content: plainContent, pagination: plainPagination })
+    const ratioScalars = await page.evaluate(() => {
+      const host = document.querySelector('#mobilite-ratio-layout-fixture')
+      if (!host) throw new Error('Mobilité ratio fixture root disappeared')
+      const bounds = (element) => {
+        const { left, right, top, bottom, width } = element.getBoundingClientRect()
+        return { left, right, top, bottom, width }
+      }
+      const hostBounds = bounds(host)
+      return {
+        scalars: [...host.querySelectorAll('.mobilite-ratio-scalar')].map((scalar) => {
+          const scalarBounds = bounds(scalar)
+          const parts = [...scalar.querySelectorAll('[data-ratio-part]')].map(bounds)
+          const value = scalar.querySelector('.cahier-figure-scalar-value')
+          const label = scalar.querySelector('.cahier-figure-scalar-label')
+          const reference = scalar.querySelector('.cahier-figure-scalar-reference')
+          return {
+            column: scalar.closest('[data-column]')?.getAttribute('data-column') ?? null,
+            partKeys: [...scalar.querySelectorAll('[data-ratio-part]')]
+              .map((part) => part.getAttribute('data-ratio-part')),
+            partsOnOneLine: parts.every((part) => Math.abs(part.top - parts[0].top) <= 1),
+            partsInside: parts.every((part) =>
+              part.left >= scalarBounds.left - 1 && part.right <= scalarBounds.right + 1),
+            valueInside: !value || (bounds(value).left >= scalarBounds.left - 1 &&
+              bounds(value).right <= scalarBounds.right + 1),
+            labelInside: !label || (bounds(label).left >= hostBounds.left - 1 &&
+              bounds(label).right <= hostBounds.right + 1),
+            referenceInside: !reference || (bounds(reference).left >= hostBounds.left - 1 &&
+              bounds(reference).right <= hostBounds.right + 1),
+            scrollOverflow: scalar.scrollWidth > scalar.clientWidth + 1,
+          }
+        }),
+      }
+    })
+    assert.equal(ratioScalars.scalars.length, 2,
+      `Both page-2 ratio scalars must render at ${width}px: ${JSON.stringify(ratioScalars)}`)
+    assert.deepEqual(ratioScalars.scalars.map((scalar) => scalar.partKeys),
+      [['bike', 'divide', 'car'], ['charging', 'divide', 'fuel']],
+      `The ratio operator anatomy must keep its reading order at ${width}px: ${JSON.stringify(ratioScalars)}`)
+    for (const scalar of ratioScalars.scalars) {
+      assert(scalar.partsOnOneLine && scalar.partsInside &&
+        scalar.valueInside && scalar.labelInside && scalar.referenceInside && !scalar.scrollOverflow,
+      `Page-2 ratio scalar ${scalar.column} must stay inside the paper at ${width}px: ${JSON.stringify(scalar)}`)
+    }
+
     reports.push({
       width,
-      ...metrics,
-      w3: w3Summary,
+      ...metrics,      w3: w3Summary,
       cartographicMapChipInteraction,
       waffleLegendInteraction,
       mobileIndexInteraction,

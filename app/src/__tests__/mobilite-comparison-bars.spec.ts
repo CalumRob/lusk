@@ -588,9 +588,11 @@ describe('CahierMobiliteSection — paired ratios use the AEDAR scalar anatomy',
     // The shared AEDAR green/brand value treatment, with no per-mode tone override.
     expect(scalar.classes()).toContain('cahier-figure-scalar--colored')
     expect(scalar.classes().some((name) => /^cahier-figure-scalar--(?:t|b|c)$/u.test(name))).toBe(false)
-    // Second line: the exact lowercase caption.
-    expect(scalar.get('.cahier-figure-scalar-label').text())
-      .toBe('places de stationnement vélo pour 1 place voiture')
+    // Second line: the exact lowercase caption, in the scalar's sentence-case
+    // label role (the uppercase metric role would break the requested casing).
+    const caption = scalar.get('.cahier-figure-scalar-label')
+    expect(caption.text()).toBe('places de stationnement vélo pour 1 place voiture')
+    expect(caption.classes()).not.toContain('type-figure-label')
     // Third line: the AEDAR comparison primitive with its rank rules.
     const reference = scalar.get('.cahier-figure-scalar-reference')
     expect(reference.get('.cahier-comparison-value').text()).toContain('Groupe comparé')
@@ -605,7 +607,9 @@ describe('CahierMobiliteSection — paired ratios use the AEDAR scalar anatomy',
     expect(scalar.get('[data-ratio-part="charging"]').classes()).toContain('mobilite-ratio__icon--car')
     expect(scalar.get('[data-ratio-part="fuel"]').classes()).toContain('mobilite-ratio__icon--car')
     expect(scalar.get('.cahier-figure-scalar-value strong').text()).toBe('3,5')
-    expect(scalar.get('.cahier-figure-scalar-label').text()).toBe('Bornes de recharge par station-service')
+    const caption = scalar.get('.cahier-figure-scalar-label')
+    expect(caption.text()).toBe('Bornes de recharge par station-service')
+    expect(caption.classes()).not.toContain('type-figure-label')
     expect(scalar.get('.cahier-figure-scalar-reference .cahier-comparison-value').text()).toContain('Groupe comparé')
   })
 
