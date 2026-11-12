@@ -254,25 +254,42 @@ Rscript -e "testthat::test_local(stop_on_failure = TRUE)"   # before handoff
 
 ## Production handoff (operator, separately gated)
 
-The scoped step only prepares canonical artifacts. Publication remains the
-normal full-snapshot operator step:
+The scoped step only prepares the canonical artifacts; it does not connect to
+the serving database. The owner-approved recovery path is the **verified frozen
+affected baseline** plus its manifest and the normal restore proof, not a
+mandatory SQL dump:
 
-1. operator-verified `pg_dump` backup with recorded location;
-2. serving database/role/schema/current marker identity confirmed;
-3. no concurrent publisher;
-4. set `LUSK_SCALAR_SCOPE`, `LUSK_SORTIE` (the candidate generation) and
+- `baseline-current-demog` (218 files / 52.15 MB, read-only,
+  `baseline-current-demog.manifest.json`) is the accepted recovery copy for the
+  affected closure. Its actual scalar/comparison/profile/DPE/Habitat/reference
+  versions match the affected live clocks the guard checks. It intentionally
+  does not cover the unrelated Milieux/economy/series owners, which are neither
+  required nor written by this path.
+- An operator `pg_dump` is optional, not a precondition; the normal registered
+  wrapper can restore the affected baseline from a writable copy (see
+  **Recovery**). The guarded test-DB proof recorded in this document is the
+  executable restore proof for that copy.
+
+Publication is the **scoped atomic registered closure only** (scalar snapshot
+and comparison, scalar-bound declared profile and comparison, linked Habitat
+selected reading), never the previous full-backend step:
+
+1. serving database/role/schema/current marker identity confirmed read-only;
+2. no concurrent publisher (maintenance window);
+3. set `LUSK_SCALAR_SCOPE`, `LUSK_SORTIE` (the candidate generation) and
    `LUSK_SCALAR_BASELINE_SORTIE` (the canonical generation the serving DB was
    published from) and run the normal
    `Rscript scripts/publish-serving-tables.R --publish` (or the normal targets
-   publication) with the existing advisory locks and private libpq passfile. A
-   closure mismatch refuses before any write; unrelated owner markers may be
-   newer and are not touched;
-5. post-publication: facts, fixed/custom comparisons and batch reads return
+   publication) with the existing advisory locks and private libpq passfile. The
+   closure guard refuses before any write on a newer affected
+   scalar/profile/Habitat/linked marker; unrelated owner markers may be newer
+   and are not touched;
+4. post-publication: facts, fixed/custom comparisons and batch reads return
    actual data for all three resources; parity to the generated facts,
    descriptors, provenance, ranks and publication tokens; no fabricated zero.
 
 Until that operator step verifies, the status is **build/check complete**, not
-**published/live**.
+**published/live**; no serving publication has been performed yet.
 
 ## Current readiness note (2026-11-12, #995)
 
@@ -287,11 +304,18 @@ reads or publishes that owner.
 
 The frozen prior baseline `baseline-current-demog` (218 files / 52.15 MB,
 manifest `baseline-current-demog.manifest.json`, read-only) plus
-`candidate-current` are the ready artifact plan for the tested closure. A
-data-only recovery uses the same normal wrapper/plan from a writable copy; no
-SQL data dump is required. The 18 GB raw cache is not part of this plan.
+`candidate-current` are the ready artifact plan for the tested closure. Its
+scalar `10cfd…`, comparison `1b7c…`, profile `d97f…`, profile comparison
+`2c97…`, Habitat `2d64…` and reference `6fd9…` match the affected live clocks
+the guard checks. It intentionally does not cover the newer unrelated
+Milieux/economy/series owners, which this path neither reads as expectations nor
+writes. A data-only recovery uses the same normal wrapper/plan from a writable
+copy; no SQL data dump is mandatory (an operator `pg_dump` is optional). The
+18 GB raw cache is not part of this plan.
 
 The scalar-bound DPE profile companion is **not** a fixture repair: the wrapper
 refreshes it metadata-only through the normal owner and publishes it inside the
-atomic transaction. The operator still needs the private role/window and the
-normal backup step; this document does not perform the production publication.
+atomic transaction. The operator still needs the private publisher role, the
+maintenance window, and the guard; the verified canonical recovery copy above
+is the approved backup path. This document does not perform the production
+publication.
