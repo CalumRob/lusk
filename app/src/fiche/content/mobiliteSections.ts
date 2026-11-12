@@ -600,7 +600,10 @@ function ravitaillementColumn(facts: TerritoryFacts, metadata?: ThemeMetadata): 
           key: 'charging',
           label: 'Bornes de recharge',
           axisLabel: 'Bornes',
-          tone: 'c',
+          // #976 — a distinct app-owned ink for charging, owned by the brand
+          // role; the car ink stays the driving-mode identity, and the
+          // fuel-station category keeps the theme ink beside it.
+          tone: 'brand',
           value: bornes,
           rawValue: bornesRaw,
           segments: [],

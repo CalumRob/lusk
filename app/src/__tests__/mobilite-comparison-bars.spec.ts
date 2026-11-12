@@ -588,11 +588,11 @@ describe('CahierMobiliteSection — paired ratios use the AEDAR scalar anatomy',
     // The shared AEDAR green/brand value treatment, with no per-mode tone override.
     expect(scalar.classes()).toContain('cahier-figure-scalar--colored')
     expect(scalar.classes().some((name) => /^cahier-figure-scalar--(?:t|b|c)$/u.test(name))).toBe(false)
-    // Second line: the exact lowercase caption, in the scalar's sentence-case
-    // label role (the uppercase metric role would break the requested casing).
+    // Second line: the exact caption, in the AEDAR scalar's metric label role
+    // (#976 — the shared role itself renders the caption uppercase).
     const caption = scalar.get('.cahier-figure-scalar-label')
     expect(caption.text()).toBe('places de stationnement vélo pour 1 place voiture')
-    expect(caption.classes()).not.toContain('type-figure-label')
+    expect(caption.classes()).toContain('type-figure-label')
     // Third line: the AEDAR comparison primitive with its rank rules.
     const reference = scalar.get('.cahier-figure-scalar-reference')
     expect(reference.get('.cahier-comparison-value').text()).toContain('Groupe comparé')
@@ -609,7 +609,7 @@ describe('CahierMobiliteSection — paired ratios use the AEDAR scalar anatomy',
     expect(scalar.get('.cahier-figure-scalar-value strong').text()).toBe('3,5')
     const caption = scalar.get('.cahier-figure-scalar-label')
     expect(caption.text()).toBe('Bornes de recharge par station-service')
-    expect(caption.classes()).not.toContain('type-figure-label')
+    expect(caption.classes()).toContain('type-figure-label')
     expect(scalar.get('.cahier-figure-scalar-reference .cahier-comparison-value').text()).toContain('Groupe comparé')
   })
 
@@ -637,5 +637,90 @@ describe('CahierMobiliteSection — paired ratios use the AEDAR scalar anatomy',
       expect(section).toContain(ink)
     }
     expect(section).not.toMatch(/mobilite-ratio__icon[^}]*#[0-9a-f]{3,8}/iu)
+  })
+
+  it('reuses the AEDAR metric caption role, uppercase from the shared token, with no local casing copy', () => {
+    const wrapper = mountSection()
+    for (const column of ['stationnement', 'ravitaillement'] as const) {
+      const caption = scalarIn(wrapper, column).get('.cahier-figure-scalar-label')
+      expect(
+        caption.classes(),
+        `${column} ratio caption must use the shared AEDAR metric role`,
+      ).toContain('type-figure-label')
+      // No local class rides beside the shared role to re-case the caption.
+      expect(caption.classes()).toEqual(['cahier-figure-scalar-label', 'type-figure-label'])
+    }
+    const tokens = readFileSync(join(process.cwd(), 'src', 'styles', 'tokens.css'), 'utf8')
+    const sharedRole = tokens.match(/\.type-figure-label,\s*\.type-figure-column\s*\{([^}]*)\}/u)?.[1] ?? ''
+    expect(sharedRole).toContain('font: var(--type-figure-label)')
+    expect(sharedRole).toContain('text-transform: uppercase')
+    // The caption reuses that role through the scalar's prop, never a page-2 copy.
+    const section = readFileSync(join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierMobiliteSection.vue'), 'utf8')
+    expect(section).toContain('label-role="metric"')
+  })
+})
+
+/**
+ * #976 — the owner asked for another colour for Bornes, because the charging
+ * bar and the fuel-station bar must read as two distinct offers. Charging takes
+ * the app's own brand role; the fuel-station category keeps its theme ink.
+ */
+describe('CahierMobiliteComparisonBars — the charging category keeps its own identity', () => {
+  const refuellingFigure: MobiliteBarsFigureEvidence = {
+    figureTitle: 'Bornes de recharge et station-services',
+    unit: 'équipements / 1 000 hab.',
+    xAxisTitle: 'Équipement',
+    yAxisTitle: 'équipements / 1 000 hab.',
+    comparisonLabel: 'Médiane des communes de EPCI X',
+    categories: [
+      {
+        key: 'charging',
+        label: 'Bornes de recharge',
+        axisLabel: 'Bornes',
+        tone: 'brand',
+        value: fact('bornes_recharge_1000', null, 0.4, 'équipements / 1 000 hab.', 0.3, { position: 1, size: 3 }),
+        rawValue: fact('bornes_recharge', null, 7, 'bornes'),
+        segments: [],
+        splitNote: null,
+      },
+      {
+        key: 'fuel-stations',
+        label: 'Stations-service',
+        axisLabel: 'Stations-service',
+        tone: 'neutral',
+        value: fact('stations_service_1000', null, 0.1, 'équipements / 1 000 hab.', 0.2, { position: 2, size: 3 }),
+        rawValue: fact('stations_service', null, 2, 'stations'),
+        segments: [],
+        splitNote: null,
+      },
+    ],
+  }
+
+  it('draws the charging bar, legend key and tooltip marker from the app brand role', async () => {
+    const wrapper = mount(CahierMobiliteComparisonBars, {
+      props: { figure: refuellingFigure, comparison: { status: 'ready' } },
+    })
+    expect(wrapper.get('rect[data-category="charging"]').attributes('fill')).toBe('var(--brand-500)')
+    expect(wrapper.get('rect[data-category="fuel-stations"]').attributes('fill')).toBe('var(--cahier-theme-strong)')
+    // The compared bar is the series' own 45 % mix so the two offers stay
+    // distinguishable in both the territory and compared series.
+    expect(wrapper.get('rect[data-comparison="charging"]').attributes('fill'))
+      .toBe('color-mix(in srgb, var(--brand-500) 45%, var(--paper))')
+    const legendMark = (label: string) => wrapper.findAll('.cahier-figure-legend-item')
+      .find((item) => item.get('.cahier-figure-legend-label').text() === label)!
+      .get('.cahier-figure-legend-mark').attributes('style') ?? ''
+    expect(legendMark('Bornes de recharge')).toContain('var(--brand-500)')
+    expect(legendMark('Stations-service')).toContain('var(--cahier-theme-strong)')
+
+    await wrapper.findAll('.mobilite-comparison-bars__hitbox')[0]!.trigger('focus')
+    const marker = wrapper.get('.mobilite-comparison-bars__tooltip .cahier-figure-tooltip-marker')
+    expect(marker.attributes('style')).toContain('background: var(--brand-500)')
+
+    // The real category identities, units and comparison stay untouched.
+    const label = wrapper.get('svg[role="img"]').attributes('aria-label')!
+    expect(label).toContain('Bornes de recharge')
+    expect(label).toContain('Stations-service')
+    expect(label).toContain('équipements / 1 000 hab.')
+    expect(label).toContain('Groupe comparé')
   })
 })

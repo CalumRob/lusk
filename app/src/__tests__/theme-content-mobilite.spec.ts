@@ -274,6 +274,30 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
     expect(refuelling!.prose.flat().map((segment) => segment.value).join(' ')).toContain('aucune station n’est recensée')
   })
 
+  // #976 — the owner asked for a distinct colour for the charging category.
+  // Charging takes the app's own brand ink; the fuel-station category keeps the
+  // theme ink it already had. Neither category identity changes.
+  it('gives the charging bar the brand tone and keeps the fuel-station theme tone', () => {
+    const content = resolveMobiliteThemeContent(factsWith(sharingFacts()), metadata)
+    const section = content.units[1].sections[1]
+    if (section.evidence?.kind !== 'mobilite-stationnement-ravitaillement') throw new Error('Paired evidence expected')
+    const refuelling = section.evidence.columns[1]!
+
+    expect(refuelling.bars.categories.map(({ key, tone }) => ({ key, tone }))).toEqual([
+      { key: 'charging', tone: 'brand' },
+      { key: 'fuel-stations', tone: 'neutral' },
+    ])
+    // The factual labels, values and raw counts stay untouched.
+    expect(refuelling.bars.categories.map((category) => category.label)).toEqual([
+      'Bornes de recharge',
+      'Stations-service',
+    ])
+    expect(refuelling.bars.categories.map((category) => category.value.fact.key)).toEqual([
+      'bornes_recharge_1000',
+      'stations_service_1000',
+    ])
+  })
+
   // #974 — the ratio captions are app presentation, and the value keeps the
   // producer's own scale: the owner's `%VALUE%` placeholder is this raw number.
   it('captions the two ratios without re-basing their producer scale', () => {

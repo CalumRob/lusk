@@ -235,7 +235,8 @@ export interface AedarTimeRampEvidence {
   provenance: FactProvenance | null
   sourceCoverage: string
 }
-export type MobiliteBarTone = 't' | 'b' | 'c' | 'neutral'
+/** Semantic inks a Mobilité bar category may draw with. */
+export type MobiliteBarTone = 't' | 'b' | 'c' | 'neutral' | 'brand'
 
 export interface MobiliteBarSegmentEvidence {
   key: string
