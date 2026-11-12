@@ -843,6 +843,211 @@ describe('theme acquisition cache', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
+  it('rejects a mixed global scalar dataset generation across bounded waves and re-reads every key over HTTP', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts, ThemeAcquisitionCache } = await import('../payload/themeAcquisition')
+    const { semanticReadState } = await import('../payload/semanticResourceClient')
+    const resources = ['coherence_scalar_a', 'coherence_scalar_b'].map((resource_id) => ({
+      resource_id, theme_id: 'habitat', indicator_id: resource_id, label: resource_id, unit: '%',
+      direction: 'high', allowed_levels: ['commune'], sources: [], shapes: ['scalar'],
+      target_kinds: ['territory'], fields: ['value'], intents: ['facts'],
+    }))
+    let wave: 'mixed' | 'fresh' = 'mixed'
+    const batchRequests: Array<{ items: Array<Record<string, any>> }> = []
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources,
+      }))
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      batchRequests.push(request)
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: request.items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
+          data: { resource: item.resource, target: item.target,
+            // A-10cfd and B-f4e share the reference clock but not the global
+            // scalar_observation generation; the next wave publishes f4e.
+            content_version: wave === 'mixed' && item.resource === 'coherence_scalar_b'
+              ? 'scalar-f4e' : wave === 'mixed' ? 'scalar-10cfd' : 'scalar-f4e',
+            reference_content_version: 'reference-6fd', value: 1, status: 'measured' } })) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const cache = new ThemeAcquisitionCache(
+      (theme, key) => acquireThemeFacts(key!.type, key!.id, theme))
+    try {
+      await expect(cache.get('commune', '22001', 'habitat'))
+        .rejects.toThrow(/générations de publication/)
+      expect(batchRequests).toHaveLength(1)
+      expect(batchRequests[0]!.items.map((item) => item.resource))
+        .toEqual(['coherence_scalar_a', 'coherence_scalar_b'])
+      // The higher theme cache never commits the mixed acquisition and every
+      // semantic key of the group is fenced, including the already settled B.
+      const item = (resource: string) => ({ resource,
+        target: { kind: 'territory' as const, type: 'commune' as const, id: '22001' },
+        intent: { kind: 'facts' as const } })
+      expect(semanticReadState(item('coherence_scalar_a'))).toBe('unrequested')
+      expect(semanticReadState(item('coherence_scalar_b'))).toBe('unrequested')
+      wave = 'fresh'
+      const acquired = await cache.get('commune', '22001', 'habitat')
+      expect(batchRequests).toHaveLength(2)
+      expect(batchRequests[1]!.items.map((entry) => entry.resource))
+        .toEqual(['coherence_scalar_a', 'coherence_scalar_b'])
+      expect(acquired.focal.resource_reads?.map((read) => read.data.content_version))
+        .toEqual(['scalar-f4e', 'scalar-f4e'])
+      expect(acquired.focal.resource_reads?.every((read) =>
+        read.data.reference_content_version === 'reference-6fd')).toBe(true)
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('does not replay old cohort auxiliary data after a same-reference scalar generation change', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const resource = {
+      resource_id: 'coherence_reading', theme_id: 'habitat', indicator_id: 'coherence_reading',
+      label: 'Lecture', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: [],
+      shapes: ['typed_reading'], target_kinds: ['territory', 'territory_cohort'],
+      fields: ['groupe', 'status'], intents: ['facts'],
+    }
+    let version = 'reading-10cfd'
+    const batchRequests: Array<{ items: Array<Record<string, any>> }> = []
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources: [resource],
+      }))
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      batchRequests.push(request)
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: request.items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
+          data: { resource: item.resource, target: item.target, shape: 'typed_reading',
+            content_version: version, reference_content_version: 'reference-6fd',
+            ...(item.target.kind === 'territory_cohort'
+              ? { cohort: { territory_type: 'commune', department_id: null, epci_id: null,
+                  member_count: 1, members: [{ id: '22001', type: 'commune', name: 'Focal' }],
+                  reference_content_version: 'reference-6fd' }, territories: [] }
+              : { facts: [] }) } })) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const first = await acquireThemeFacts('commune', '22001', 'habitat')
+      expect(first.cohort_reads?.[0]?.data.content_version).toBe('reading-10cfd')
+      expect(batchRequests).toHaveLength(2)
+      // The reference clock is unchanged; only the typed-reading owner
+      // generation moves. Its old auxiliary settlement must not replay.
+      version = 'reading-f4e'
+      const second = await acquireThemeFacts('commune', '22001', 'habitat')
+      expect(batchRequests).toHaveLength(4)
+      expect(second.cohort_reads?.[0]?.data.content_version).toBe('reading-f4e')
+      expect(second.cohort_reads?.[0]?.data.reference_content_version).toBe('reference-6fd')
+      expect(second.resource_reads?.[0]?.data.reference_content_version).toBe('reference-6fd')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('accepts independent dataset owner versions for different declared families', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const resources = [
+      { resource_id: 'coherence_scalar_owner', theme_id: 'habitat', indicator_id: 'coherence_scalar_owner',
+        label: 'Scalaire', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: [],
+        shapes: ['scalar'], target_kinds: ['territory'], fields: ['value'], intents: ['facts'] },
+      { resource_id: 'coherence_reading_owner', theme_id: 'habitat', indicator_id: 'coherence_reading_owner',
+        label: 'Lecture', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: [],
+        shapes: ['typed_reading'], target_kinds: ['territory'], fields: ['groupe'], intents: ['facts'] },
+    ]
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources,
+      }))
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: request.items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
+          data: { resource: item.resource, target: item.target,
+            content_version: item.resource === 'coherence_scalar_owner' ? 'scalar-v1' : 'reading-v1',
+            reference_content_version: 'reference-6fd', value: 1, status: 'measured' } })) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const acquired = await acquireThemeFacts('commune', '22001', 'habitat')
+      expect(acquired.resource_reads?.map((read) => [read.resource, read.data.content_version])).toEqual([
+        ['coherence_scalar_owner', 'scalar-v1'],
+        ['coherence_reading_owner', 'reading-v1'],
+      ])
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('rejects an available scalar fact without its required content version and retries after correction', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const { semanticReadState } = await import('../payload/semanticResourceClient')
+    const resource = { resource_id: 'coherence_missing', theme_id: 'habitat', indicator_id: 'coherence_missing',
+      label: 'Sans version', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: [],
+      shapes: ['scalar'], target_kinds: ['territory'], fields: ['value'], intents: ['facts'] }
+    let version: string | undefined
+    const batchRequests: Array<{ items: Array<Record<string, any>> }> = []
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources: [resource],
+      }))
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      batchRequests.push(request)
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: request.items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
+          data: { resource: item.resource, target: item.target,
+            ...(version === undefined ? {} : { content_version: version }),
+            reference_content_version: 'reference-6fd', value: 1, status: 'measured' } })) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      await expect(acquireThemeFacts('commune', '22001', 'habitat'))
+        .rejects.toThrow(/content_version/)
+      expect(batchRequests).toHaveLength(1)
+      expect(semanticReadState({
+        resource: 'coherence_missing',
+        target: { kind: 'territory', type: 'commune', id: '22001' },
+        intent: { kind: 'facts' },
+      })).toBe('unrequested')
+      version = 'scalar-v1'
+      const acquired = await acquireThemeFacts('commune', '22001', 'habitat')
+      expect(batchRequests).toHaveLength(2)
+      expect(acquired.resource_reads?.[0]?.data.content_version).toBe('scalar-v1')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('rejects an available profile whose two published profile clocks are ambiguous', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const resource = { resource_id: 'coherence_profile', theme_id: 'habitat', indicator_id: 'coherence_profile',
+      label: 'Profil', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: [],
+      shapes: ['declared_profile'], target_kinds: ['territory'], fields: ['value'], intents: ['facts'] }
+    let ambiguous = true
+    const batchRequests: Array<{ items: Array<Record<string, any>> }> = []
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources: [resource],
+      }))
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      batchRequests.push(request)
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: request.items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
+          data: { resource: item.resource, target: item.target, shape: 'declared_profile',
+            content_version: 'profile-facts-v1',
+            ...(ambiguous ? { profile_content_version: 'profile-global-v2' } : {}),
+            reference_content_version: 'reference-6fd', value: 1, status: 'measured' } })) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      await expect(acquireThemeFacts('commune', '22001', 'habitat'))
+        .rejects.toThrow(/ambigu/)
+      expect(batchRequests).toHaveLength(1)
+      ambiguous = false
+      const acquired = await acquireThemeFacts('commune', '22001', 'habitat')
+      expect(batchRequests).toHaveLength(2)
+      expect(acquired.resource_reads?.[0]?.data.content_version).toBe('profile-facts-v1')
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('rejects publication, descriptor, target, identity, reference, selection and scope mutations, then retries over HTTP', async () => {
     vi.resetModules()
     const { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, ThemeAcquisitionCache } =
@@ -1585,15 +1790,15 @@ describe('theme acquisition cache', () => {
         await settle()
         expect(reads.pending).toHaveLength(2)
         const [first, second] = reads.pending
-        second!.settle(scalarBatchResponse(second!.items, 'second-wave'))
+        second!.settle(scalarBatchResponse(second!.items, 'coherent-wave'))
         await settle()
-        first!.settle(scalarBatchResponse(first!.items, 'first-wave'))
+        first!.settle(scalarBatchResponse(first!.items, 'coherent-wave'))
 
         const acquired = await acquisition
         expect(acquired.resource_reads?.map((read) => read.resource))
           .toEqual(resources.map((resource) => resource.resource_id))
         expect(acquired.resource_reads?.map((read) => read.data.content_version)).toEqual([
-          ...Array.from({ length: 12 }, () => 'first-wave'), 'second-wave',
+          ...Array.from({ length: 13 }, () => 'coherent-wave'),
         ])
         expect(reads.maxActive()).toBe(2)
       } finally { vi.unstubAllGlobals() }
