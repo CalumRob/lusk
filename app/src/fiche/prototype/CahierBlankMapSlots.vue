@@ -16,7 +16,7 @@ import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
 import CahierProse from './CahierProse.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   territory: Pick<TerritoryIdentity, 'type' | 'code' | 'name'>
   horizonMinutes: number
   /** Figure title owned by the semantic content layer (shared figure-title primitive). */
@@ -24,7 +24,9 @@ const props = defineProps<{
   modeKeys?: readonly ('car' | 'bike-lts2' | 'transit')[]
   /** Reading under the map grid: honest empty state and provisional horizon. */
   lecture?: readonly TextBlock[]
-}>()
+  /** #986 — its AEDAR chapter is the requested one: the legend asset may load. */
+  active?: boolean
+}>(), { active: true })
 
 const availableSlots: readonly { key: 'car' | 'bike-lts2' | 'transit'; label: string; icon: Component; tone: string }[] = [
   { key: 'car', label: 'Voiture', icon: CarFront, tone: 'car' },
@@ -47,13 +49,14 @@ const needsCarMapLegend = computed(() => slots.value.some((slot) => usesCarMap(s
 const showCarMapLegend = computed(() => needsCarMapLegend.value && carMapLegend.value !== null)
 
 watch(
-  () => [props.territory.type, props.territory.code, props.horizonMinutes, needsCarMapLegend.value].join('|'),
+  () => [props.territory.type, props.territory.code, props.horizonMinutes, needsCarMapLegend.value,
+    props.active !== false].join('|'),
   async (_, __, onCleanup) => {
     let current = true
     onCleanup(() => { current = false })
     carMapLegend.value = null
     legendStatus.value = 'loading'
-    if (!needsCarMapLegend.value) return
+    if (!needsCarMapLegend.value || props.active === false) return
     try {
       const legend = await fetchAedarCarMapLegend(props.territory)
       if (current) { carMapLegend.value = legend; legendStatus.value = 'ready' }

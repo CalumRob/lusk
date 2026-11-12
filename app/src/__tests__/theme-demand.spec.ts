@@ -127,25 +127,24 @@ describe('theme demand — Mobilite page 2 critical chapter', () => {
     expect(cleared.every((item) => PAGE_TWO.includes(item.resource))).toBe(true)
   })
 
-  it('defers the page-3 chapter to one later batch and merges it without re-reading page 2', async () => {
+  it('reads the page-3 chapter only when it is the requested chapter: one batch, never merged speculatively', async () => {
     vi.stubGlobal('fetch', fixtureFetch())
     const cache = cacheFor()
     await cache.get('commune', '35238', 'mobilite', {
       indicators: PAGE_TWO, selection: SELECTION, auxiliary: false,
     })
-    const afterPageTwo = posts.flatMap((post) => post.items).length
+    expect(posts.flatMap((post) => post.items).some((item) => PAGE_THREE.includes(item.resource))).toBe(false)
 
-    const merged = await cache.chapter('commune', '35238', 'mobilite', {
-      indicators: PAGE_THREE, selection: SELECTION, auxiliary: true,
+    const asked = await cache.get('commune', '35238', 'mobilite', {
+      indicators: PAGE_THREE, selection: SELECTION,
     })
-
-    const deferred = posts.flatMap((post) => post.items).slice(afterPageTwo)
-    expect(deferred).toHaveLength(7)
-    expect(new Set(deferred.map((item) => item.resource))).toEqual(new Set(PAGE_THREE))
+    const pageThreeItems = posts.flatMap((post) => post.items)
+      .filter((item) => PAGE_THREE.includes(item.resource))
+    expect(pageThreeItems).toHaveLength(7)
     expect(posts.filter((post) => post.items.some((item) => PAGE_THREE.includes(item.resource)))).toHaveLength(1)
-    expect(merged.focal.resource_reads).toHaveLength(16)
-    expect(merged.focal.named_reference_reads?.map((read) => read.resource)).toEqual(['raccordement_reference'])
-    expect(merged.comparisons.get(JSON.stringify(SELECTION))?.comparison_reads).toHaveLength(23)
+    expect(asked.focal.resource_reads).toHaveLength(16)
+    expect(asked.focal.named_reference_reads?.map((read) => read.resource)).toEqual(['raccordement_reference'])
+    expect(asked.comparisons.get(JSON.stringify(SELECTION))?.comparison_reads).toHaveLength(23)
     // One acquisition identity: no item was read twice across the two demands.
     const keys = posts.flatMap((post) => post.items.map((item) => JSON.stringify(item)))
     expect(new Set(keys).size).toBe(keys.length)

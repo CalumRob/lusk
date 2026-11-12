@@ -13,7 +13,7 @@ import type { AedarFetchResult, AedarSummaryFetchResult, AedarTerritoryType } fr
 import type { ContentSource, ThemeContent } from '@/fiche/content/themeContent'
 import type { CahierPagination } from '../prototype/cahierPagination'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   content: ThemeContent
   pagination: CahierPagination
   aedarData: AedarFetchResult | null
@@ -29,7 +29,9 @@ const props = defineProps<{
   nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   nativeComparisonError?: string
   retryNativeComparison?: () => void
-}>()
+  /** #986 — the reader is on the AEDAR (page-1) chapter: its own reads may start. */
+  aedarActive?: boolean
+}>(), { aedarActive: true })
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
@@ -91,17 +93,22 @@ watch([comparisonRequest, comparisonFocalIdentity, comparisonRetry], async ([req
 const lossMapMetadata = ref<AedarDiversityLossMapMetadata>({ status: 'loading', legend: null })
 let lossMapMetadataRequest = 0
 
-watch(() => `${props.content.territory.type}/${props.content.territory.code}`, async () => {
-  const request = ++lossMapMetadataRequest
-  const territory = props.content.territory
-  lossMapMetadata.value = { status: 'loading', legend: null }
-  try {
-    const legend = await fetchAedarDiversityLossMapLegend(territory)
-    if (request === lossMapMetadataRequest) lossMapMetadata.value = { status: 'ready', legend }
-  } catch {
-    if (request === lossMapMetadataRequest) lossMapMetadata.value = { status: 'unavailable', legend: null }
-  }
-}, { immediate: true })
+// #986 — the loss-map legend is page-1 evidence: it is read only when the AEDAR
+// chapter is the requested one, so a page-2 deep link issues no page-1 asset or
+// API request. The pending placeholder stays in place meanwhile.
+watch([() => `${props.content.territory.type}/${props.content.territory.code}`, () => props.aedarActive],
+  async ([, active]) => {
+    const request = ++lossMapMetadataRequest
+    if (!active) { lossMapMetadata.value = { status: 'loading', legend: null }; return }
+    const territory = props.content.territory
+    lossMapMetadata.value = { status: 'loading', legend: null }
+    try {
+      const legend = await fetchAedarDiversityLossMapLegend(territory)
+      if (request === lossMapMetadataRequest) lossMapMetadata.value = { status: 'ready', legend }
+    } catch {
+      if (request === lossMapMetadataRequest) lossMapMetadata.value = { status: 'unavailable', legend: null }
+    }
+  }, { immediate: true })
 
 const transformed = computed(() => {
   const summary = props.aedarSummaryData?.status === 'ready' ? props.aedarSummaryData.summary : null
@@ -197,6 +204,7 @@ const transformed = computed(() => {
     layout-variant="indexed-sections"
     network-figure-variant="traces"
     aedar-access-enabled
+    :aedar-chapter-active="props.aedarActive !== false"
   />
 </template>
 

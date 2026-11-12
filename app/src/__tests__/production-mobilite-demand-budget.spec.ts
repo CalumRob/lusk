@@ -12,12 +12,11 @@ import { routes } from '@/router'
 import { nativeBatchResponse, nativeCatalogueResponse, nativeReadFixture } from './helpers/semanticApiFixtures'
 
 /**
- * #986 — one cold navigation, every request counted.
+ * #986 — one cold navigation, every request counted, no owner exempt.
  *
  * The fixture transport is the same producer catalogue the API serves, so the
- * item inventory is derived, not invented. Timings here are fixture-relative
- * (ordering and request counts); they are NOT the live API latency, which the
- * PR reports separately.
+ * item inventory is derived, not invented. Ordering/counts here are
+ * fixture-relative; they are NOT live API latency.
  */
 
 function lireDonnee(relatif: string): string {
@@ -29,18 +28,16 @@ interface Call {
   url: string
   method: string
   items: Array<Record<string, any>>
-  activeAtStart: number
 }
 
-function createTransport(options: { delay?: (call: Call) => number } = {}) {
+function createTransport() {
   const calls: Call[] = []
   let active = 0
   let maxActive = 0
   const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const body = init?.body ? JSON.parse(String(init.body)) as { items?: Array<Record<string, any>> } : {}
-    const call: Call = { index: calls.length, url, method: init?.method ?? 'GET', items: body.items ?? [], activeAtStart: active }
-    calls.push(call)
+    calls.push({ index: calls.length, url, method: init?.method ?? 'GET', items: body.items ?? [] })
     if (url === '/data/territoires.json') return new Response(lireDonnee('territoires.json'), { status: 200 })
     if (url.startsWith('/data/theme_') && url.endsWith('.json')) {
       return new Response(lireDonnee(url.slice('/data/'.length)), { status: 200 })
@@ -49,16 +46,16 @@ function createTransport(options: { delay?: (call: Call) => number } = {}) {
     if (url === '/api/resources/read-batch') {
       active += 1
       maxActive = Math.max(maxActive, active)
-      const wait = options.delay?.(call) ?? 0
       try {
-        if (wait) await new Promise((done) => setTimeout(done, wait))
-        return await nativeBatchResponse(call.items,
-          (item, resource) => nativeReadFixture(item, resource, { syntheticProfileComparisons: true }))
+        return await nativeBatchResponse(callItems(), (item, resource) =>
+          nativeReadFixture(item, resource, { syntheticProfileComparisons: true }))
       } finally {
         active -= 1
       }
     }
     return new Response('', { status: 404 })
+
+    function callItems() { return calls[calls.length - 1]!.items }
   })
   return { transport, calls, maxActive: () => maxActive }
 }
@@ -69,14 +66,47 @@ const PAGE_TWO = ['reseaux', 'reseaux_par_habitant', 'surface_reseaux_routiers',
   'bornes_recharge_1000', 'stations_service', 'stations_service_1000']
 const PAGE_THREE = ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference']
 
-const posts = (calls: Call[]) => calls.filter((call) => call.method === 'POST')
+const isPost = (call: Call) => call.method === 'POST'
+const posts = (calls: Call[]) => calls.filter(isPost)
+const items = (calls: Call[]) => posts(calls).flatMap((call) => call.items)
+const postsTouching = (calls: Call[], resources: readonly string[]) =>
+  posts(calls).filter((call) => call.items.some((item) => resources.includes(item.resource)))
+const isAedar = (item: Record<string, any>) => String(item.resource).startsWith('aedar_')
 
-function postsTouching(calls: Call[], resources: readonly string[]): Call[] {
-  return posts(calls).filter((call) => call.items.some((item) => resources.includes(item.resource)))
+/** The shared client's exact semantic item identity (resource, target, intent, coordinates, fields). */
+function itemKey(item: Record<string, any>): string {
+  return JSON.stringify([item.resource, item.target, item.intent, item.coordinates ?? null,
+    item.fields ? [...item.fields].sort() : null])
 }
 
-function itemKey(item: Record<string, any>): string {
-  return JSON.stringify([item.resource, item.target, item.intent, item.coordinates ?? null])
+/**
+ * #986 — no item is read twice, and a coordinate partition projected with more
+ * than the semantic 32-field item limit is split into DISJOINT field chunks (the
+ * API's per-item field bound), never re-read with an overlapping projection.
+ */
+function expectNoDuplicateOrOverlappingItem(allItems: Array<Record<string, any>>): void {
+  const keys = allItems.map(itemKey)
+  expect(new Set(keys).size, `duplicate semantic items: ${JSON.stringify(
+    keys.filter((key, index) => keys.indexOf(key) !== index).slice(0, 5))}`).toBe(keys.length)
+
+  const projections = new Map<string, Set<string>>()
+  for (const item of allItems) {
+    const coordinateKey = JSON.stringify([item.resource, item.target, item.intent, item.coordinates ?? null])
+    const fields = item.fields ?? []
+    expect(fields.length).toBeLessThanOrEqual(32)
+    const seen = projections.get(coordinateKey) ?? new Set<string>()
+    for (const field of fields) {
+      expect(seen.has(field), `field ${field} re-read for ${coordinateKey.slice(0, 80)}`).toBe(false)
+      seen.add(field)
+    }
+    projections.set(coordinateKey, seen)
+  }
+}
+
+function expectOnlyRequestedChapter(beforeUseful: Array<Record<string, any>>): void {
+  const foreign = beforeUseful.filter((item) =>
+    !PAGE_TWO.includes(item.resource))
+  expect(foreign.map((item) => `${item.resource}/${item.intent.kind}`)).toEqual([])
 }
 
 async function monterFiche(chemin: string) {
@@ -91,12 +121,12 @@ async function monterFiche(chemin: string) {
 
 /** Poll the DOM per microtask turn so "when did the chapter become useful" is observable. */
 async function attendreChapitreUtile(wrapper: ReturnType<typeof mount>, calls: Call[],
-  selector: string): Promise<{ postsAtUseful: number; itemsAtUseful: number; tick: number }> {
+  selector: string): Promise<{ callsAtUseful: number; postsAtUseful: number; itemsAtUseful: number }> {
   for (let tick = 0; tick < 400; tick += 1) {
     await nextTick()
     if (wrapper.find(selector).exists()) {
-      return { postsAtUseful: posts(calls).length,
-        itemsAtUseful: posts(calls).flatMap((call) => call.items).length, tick }
+      return { callsAtUseful: calls.length, postsAtUseful: posts(calls).length,
+        itemsAtUseful: items(calls).length }
     }
   }
   throw new Error(`Chapitre non rendu : ${selector}`)
@@ -107,12 +137,15 @@ afterEach(() => {
 })
 
 describe('Mobilite page 2 — critical demand and request budget', () => {
-  it('reads the 33 displayed items in 3 batches, then the deferred chapter and idle themes', async () => {
+  it('issues ZERO AEDAR/page-3/unrelated request before page 2 is useful, then only its own 33 items', async () => {
     const { transport, calls, maxActive } = createTransport()
     vi.stubGlobal('fetch', transport)
     const { wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite#figure-partage-de-lespace-public')
 
     const useful = await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+    const beforeUsefulCalls = calls.slice(0, useful.callsAtUseful)
+    expectOnlyRequestedChapter(beforeUsefulCalls.filter(isPost).flatMap((call) => call.items))
+
     await flushPromises()
 
     // The requested chapter: 13 focal facts + the 20 displayed comparison
@@ -124,23 +157,20 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     expect(pageTwoItems.filter((item) => item.intent.kind === 'facts')).toHaveLength(13)
     expect(pageTwoItems.filter((item) => item.intent.kind === 'selected_comparison')).toHaveLength(20)
     expect(pageTwo.map((call) => call.items.length)).toEqual([11, 12, 10])
-    // The producer's nested default is never fetched then discarded, and no
-    // page-3 resource rides along with the critical demand.
+    // The producer's nested default is never fetched then discarded.
     expect(pageTwoItems.some((item) => item.intent.kind === 'fixed_comparison')).toBe(false)
-    expect(pageTwoItems.some((item) => PAGE_THREE.includes(item.resource))).toBe(false)
 
-    // The deferred sibling chapter is one later batch: 4 resources, 7 items.
-    const pageThree = postsTouching(calls, PAGE_THREE)
-    expect(pageThree).toHaveLength(1)
-    expect(pageThree[0]!.items).toHaveLength(7)
-    expect(new Set(pageThree[0]!.items.map((item) => item.resource))).toEqual(new Set(PAGE_THREE))
-    expect(pageThree[0]!.index).toBeGreaterThan(pageTwo[2]!.index)
+    // No page-3 chapter and no AEDAR read is speculatively acquired on this
+    // navigation: both belong to chapters the reader did not request.
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(0)
+    expect(posts(calls).flatMap((call) => call.items).filter(isAedar)).toEqual([])
+    // The page-1 asset reads are gated with the page-1 chapter too.
+    expect(calls.filter((call) => call.url.startsWith('https://images.'))).toEqual([])
 
     // Unrelated themes are IDLE: zero before the requested chapter is useful,
     // then at most five coalesced batches, facts only.
     const idleThemes = posts(calls).filter((call) => call.items.every((item) =>
-      !PAGE_TWO.includes(item.resource) && !PAGE_THREE.includes(item.resource) &&
-      item.resource !== 'aedar_territorial_aggregate' && item.resource !== 'aedar_territory_summary'))
+      !PAGE_TWO.includes(item.resource)))
     expect(idleThemes.length).toBeLessThanOrEqual(5)
     for (const call of idleThemes) {
       expect(call.index).toBeGreaterThan(pageTwo[2]!.index)
@@ -148,29 +178,19 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
       expect(call.items.every((item) => item.intent.kind === 'facts')).toBe(true)
     }
 
-    // No duplicate identical semantic item in the page flow. AEDAR's own
-    // aggregate re-reads are counted separately and reported as a residual.
-    const semanticItems = posts(calls).flatMap((call) => call.items)
-      .filter((item) => item.resource !== 'aedar_territorial_aggregate' &&
-        item.resource !== 'aedar_territory_summary')
-    const semanticKeys = semanticItems.map(itemKey)
-    expect(new Set(semanticKeys).size).toBe(semanticKeys.length)
-    // The shared client never exceeds two active semantic reads.
+    // Every owner, counted with the same exact identity: no item is read twice
+    // and no projection overlaps.
+    expectNoDuplicateOrOverlappingItem(items(calls))
     expect(maxActive()).toBeLessThanOrEqual(2)
 
-    // Explicit startup overhead, counted apart from the semantic budget.
-    expect(calls.filter((call) => call.url === '/api/resources')).toHaveLength(1)
-    expect(calls.filter((call) => call.url === '/data/territoires.json')).toHaveLength(1)
-
-    // Page 2 is useful before AEDAR's explorer detail and the background have
-    // finished: the requested chapter never waits for a sibling surface.
-    expect(useful.postsAtUseful).toBeLessThan(posts(calls).length)
-    // Page 2 is dispatched before AEDAR's explorer-comparison flood: the
-    // requested chapter never queues behind a sibling surface's detail work.
-    const aedarExplorer = posts(calls).find((call) => call.items.some((item) =>
-      item.resource === 'aedar_territorial_aggregate' && item.intent.kind === 'fixed_comparison'))
-    expect(aedarExplorer).toBeDefined()
-    expect(pageTwo[2]!.index).toBeLessThan(aedarExplorer!.index)
+    // Startup overhead counted explicitly, apart from the semantic budget.
+    const gets = calls.filter((call) => !isPost(call))
+    expect(gets.filter((call) => call.url === '/data/territoires.json')).toHaveLength(1)
+    expect(gets.filter((call) => call.url === '/api/resources')).toHaveLength(1)
+    expect(gets.filter((call) => call.url === '/data/theme_mobilite.json')).toHaveLength(1)
+    expect(gets.filter((call) => call.url.startsWith('https://images.'))).toHaveLength(0)
+    expect(gets.filter((call) => !['/data/territoires.json', '/api/resources', '/data/theme_mobilite.json']
+      .includes(call.url)).map((call) => call.url)).toEqual([])
 
     // Not a loading shell: the figure carries its served values and references.
     const figure = wrapper.get('.mobilite-section--reseaux .mobilite-comparison-bars')
@@ -187,17 +207,15 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
     await flushPromises()
 
-    const selected = posts(calls).flatMap((call) => call.items)
-      .filter((item) => item.intent.kind === 'selected_comparison')
+    const selected = items(calls).filter((item) => item.intent.kind === 'selected_comparison')
     expect(selected.length).toBeGreaterThan(0)
     expect(selected.every((item) => JSON.stringify(item.intent.members) ===
       JSON.stringify([{ type: 'commune', id: '35238' }, { type: 'commune', id: '35240' }]))).toBe(true)
-    expect(posts(calls).flatMap((call) => call.items)
-      .some((item) => item.intent.kind === 'fixed_comparison')).toBe(false)
+    expect(items(calls).some((item) => item.intent.kind === 'fixed_comparison')).toBe(false)
 
-    const pageTwoFacts = (items: Array<Record<string, any>>) => items
+    const pageTwoFacts = (entries: Array<Record<string, any>>) => entries
       .filter((item) => item.intent.kind === 'facts' && PAGE_TWO.includes(item.resource))
-    const factsBefore = pageTwoFacts(posts(calls).flatMap((call) => call.items)).length
+    const factsBefore = pageTwoFacts(items(calls)).length
     const afterCustom = posts(calls).length
 
     // No `comparaison` parameter asks for the producer default once:
@@ -209,11 +227,90 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     const cleared = posts(calls).slice(afterCustom).flatMap((call) => call.items)
       .filter((item) => PAGE_TWO.includes(item.resource) && item.intent.kind !== 'facts')
     expect(cleared).toHaveLength(20)
-    // One intent for the whole chapter: whatever the header now resolves to
-    // (a preset group or the producer default), it is read once, together.
     expect(new Set(cleared.map((item) => JSON.stringify(item.intent))).size).toBe(1)
-    const factsAfter = pageTwoFacts(posts(calls).flatMap((call) => call.items)).length
+    const factsAfter = pageTwoFacts(items(calls)).length
     expect(factsAfter).toBe(factsBefore)
+    wrapper.unmount()
+  }, 60000)
+
+  it('reads the page-3 chapter only when it is requested: one batch, 7 items, no page-2 re-read', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { router, wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite#figure-partage-de-lespace-public')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+    await flushPromises()
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(0)
+    const pageTwoFactsBefore = items(calls)
+      .filter((item) => item.intent.kind === 'facts' && PAGE_TWO.includes(item.resource)).length
+
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-offre-transports-commun' })
+    await flushPromises()
+    await flushPromises()
+
+    const pageThree = postsTouching(calls, PAGE_THREE)
+    expect(pageThree).toHaveLength(1)
+    expect(pageThree[0]!.items).toHaveLength(7)
+    expect(new Set(pageThree[0]!.items.map((item) => item.resource))).toEqual(new Set(PAGE_THREE))
+    const pageTwoFactsAfter = items(calls)
+      .filter((item) => item.intent.kind === 'facts' && PAGE_TWO.includes(item.resource)).length
+    expect(pageTwoFactsAfter).toBe(pageTwoFactsBefore)
+    expectNoDuplicateOrOverlappingItem(items(calls))
+    wrapper.unmount()
+  }, 60000)
+
+  it('keeps the page-1 landing AEDAR critical and reads its aggregate projections without overlap', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+    await flushPromises()
+    await flushPromises()
+
+    const aedarItems = items(calls).filter(isAedar)
+    expect(aedarItems.length).toBeGreaterThan(0)
+    const facts = aedarItems.filter((item) => item.intent.kind === 'facts')
+    expect(facts.length).toBeGreaterThan(0)
+    // Every 235 TYPEQU identity is requested, as page 1's prompt requires.
+    const covered = new Set(facts.flatMap((item) => item.coordinates?.typequ ?? []))
+    expect(covered.size).toBe(235)
+
+    // The full-owner proof: no exact duplicate, and the >32-field projections of
+    // one coordinate partition are DISJOINT chunks, never an overlapping re-read.
+    expectNoDuplicateOrOverlappingItem(items(calls))
+
+    // The page-2 numeric chapter still lands as its own 33-item demand.
+    const pageTwo = postsTouching(calls, PAGE_TWO)
+    expect(pageTwo).toHaveLength(3)
+    expect(pageTwo.flatMap((call) => call.items)).toHaveLength(33)
+    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
+    wrapper.unmount()
+  }, 60000)
+
+  it('launches AEDAR only when page 1 is actually requested, on navigation and back', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { router, wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite#figure-partage-de-lespace-public')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+    await flushPromises()
+    expect(items(calls).filter(isAedar)).toEqual([])
+
+    // Navigating to the page-1 chapter starts its own demand.
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-acces-aux-services' })
+    await flushPromises()
+    await flushPromises()
+    const aedarAfterPageOne = items(calls).filter(isAedar)
+    expect(aedarAfterPageOne.length).toBeGreaterThan(0)
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+
+    // Back to page 2: the settled page-1 demand is not re-read.
+    const beforeBack = posts(calls).length
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-partage-de-lespace-public' })
+    await flushPromises()
+    expect(posts(calls).slice(beforeBack).flatMap((call) => call.items).filter(isAedar)).toEqual([])
+    expect(wrapper.find('.mobilite-section--reseaux .mobilite-comparison-bars').exists()).toBe(true)
     wrapper.unmount()
   }, 60000)
 

@@ -58,7 +58,7 @@ import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 import type { AedarDiversityLossEvidence } from '@/fiche/content/themeContent'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   content: ThemeContent | SingleUnitThemeContent
   pagination: CahierPagination
   presentation?: 'ruled' | 'plain'
@@ -67,6 +67,8 @@ const props = defineProps<{
   networkFigureVariant?: 'traces'
   showMapPrototype?: boolean
   aedarAccessEnabled?: boolean
+  /** #986 — the AEDAR (page-1) chapter is the requested one: its own reads may start. */
+  aedarChapterActive?: boolean
   aedarStatus?: 'loading' | 'ready' | 'error'
   comparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
   comparisonError?: string
@@ -74,7 +76,7 @@ const props = defineProps<{
   nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   nativeComparisonError?: string
   retryNativeComparison?: () => void
-}>()
+}>(), { aedarChapterActive: true })
 const route = useRoute()
 
 /** #860 (ruling 2026-11-03) — le contrôle de comparaison fourni par la fiche
@@ -467,6 +469,7 @@ onBeforeUnmount(() => {
                   :horizon-minutes="aedarCarAccessOverviewEvidenceFor(section)!.horizonMinutes"
                   :title="aedarCarAccessOverviewEvidenceFor(section)!.mapFigureTitle"
                   :mode-keys="aedarCarAccessOverviewEvidenceFor(section)!.mapModes"
+                  :active="props.aedarChapterActive !== false"
                 />
                 <aside class="argument-side aedar-car-overview-reading">
                   <div class="aedar-car-overview-copy">

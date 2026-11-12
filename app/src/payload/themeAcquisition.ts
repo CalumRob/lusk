@@ -360,12 +360,82 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     }
   }
 
+  /** Indicator identities already carried by a settled entry (facts, cohorts, named references). */
+  private loadedIndicators(entry: AcquiredTheme<T>): Set<string> {
+    const focal = entry.focal
+    return new Set([
+      ...(focal.resource_reads ?? []).map((read) => read.declaration?.indicator_id ?? read.resource),
+      ...(focal.cohort_reads ?? []).map((read) => read.declaration?.indicator_id ?? read.resource),
+      ...(focal.named_reference_reads ?? []).map((read) => read.declaration?.indicator_id ?? read.resource),
+    ])
+  }
+
+  /**
+   * #986 — a chapter the reader actually navigated to is added to the settled
+   * entry: only its own items are read and merged, page 2 is never re-read. No
+   * sibling chapter is ever acquired speculatively; this runs only for the
+   * caller's demanded chapter.
+   */
+  private async extend(cacheKey: string, key: Key, current: AcquiredTheme<T>,
+    demand: ThemeFactsDemand): Promise<AcquiredTheme<T>> {
+    const generation = this.generations.get(cacheKey) ?? 0
+    const extra = await this.acquireFacts(key.theme, key, demand)
+    if (generation !== (this.generations.get(cacheKey) ?? 0)) throw new Error('Stale theme acquisition response')
+    const latest = this.entries.get(cacheKey) ?? current
+    this.assertCurrentFocal(cacheKey, generation, latest)
+    const mergeReads = (base: readonly SemanticThemeRead[] | undefined,
+      added: readonly SemanticThemeRead[] | undefined): SemanticThemeRead[] => {
+      // Exact duplicates (a re-read of the same item) collapse; distinct
+      // comparison reads of one resource (its declared detail points) never do.
+      const merged = new Map<string, SemanticThemeRead>((base ?? [])
+        .map((read) => [`${read.resource}\u0000${JSON.stringify(read.data)}`, read] as const))
+      for (const read of added ?? []) merged.set(`${read.resource}\u0000${JSON.stringify(read.data)}`, read)
+      return [...merged.values()]
+    }
+    const failures = new Map<string, ThemeResourceFailure>()
+    for (const failure of [...(latest.focal.resource_failures ?? []), ...(extra.resource_failures ?? [])]) {
+      failures.set(`${failure.resource}\u0000${failure.stage}`, failure)
+    }
+    const comparisons = new Map(latest.comparisons)
+    if (extra.demand_comparison) {
+      const selectionKey = cleSelectionComparaison(extra.demand_comparison.selection)
+      const prior = comparisons.get(selectionKey)
+      const chapterFailures = (extra.resource_failures ?? []).filter((failure) => failure.stage === 'comparison')
+      const priorFailures = (prior?.resource_failures ?? []) as ThemeResourceFailure[]
+      comparisons.set(selectionKey, {
+        ...(prior ?? { theme_id: key.theme, selection: extra.demand_comparison.selection }),
+        comparison_reads: mergeReads(prior?.comparison_reads, extra.demand_comparison.comparison_reads),
+        ...(chapterFailures.length || priorFailures.length
+          ? { resource_failures: [...priorFailures, ...chapterFailures] } : {}),
+      } as ThemeResponse)
+    }
+    const mergedComparisonReads = [...comparisons.values()].flatMap((entry) => entry.comparison_reads ?? [])
+    const focal: T = {
+      ...latest.focal,
+      resource_reads: mergeReads(latest.focal.resource_reads, extra.resource_reads),
+      named_reference_reads: mergeReads(latest.focal.named_reference_reads, extra.named_reference_reads),
+      cohort_reads: mergeReads(latest.focal.cohort_reads, extra.cohort_reads),
+      ...(failures.size ? { resource_failures: [...failures.values()] } : {}),
+      comparison_error: mergedComparisonReads.length
+        ? false : Boolean(latest.focal.comparison_error || extra.comparison_error),
+    } as T
+    const result = { focal, comparisons }
+    this.entries.set(cacheKey, result)
+    return result
+  }
+
   async get(type: string, id: string, theme: ThemeKey,
     demand?: ThemeFactsDemand): Promise<AcquiredTheme<T>> {
     const key = { type, id, theme }
     const cacheKey = this.key(key)
     const cached = this.entries.get(cacheKey)
-    if (cached) return cached
+    if (cached) {
+      const wanted = demand?.indicators
+      const loaded = this.loadedIndicators(cached)
+      const missing = wanted?.filter((indicator) => !loaded.has(indicator)) ?? []
+      if (!missing.length) return cached
+      return this.extend(cacheKey, key, cached, { ...demand, indicators: missing })
+    }
     const pending = this.pendingFacts.get(cacheKey)
     if (pending) return pending
     const generation = this.generations.get(cacheKey) ?? 0
@@ -401,64 +471,6 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     })
     this.pendingFacts.set(cacheKey, request)
     return request
-  }
-
-  /**
-   * #986 — read one deferred chapter into the existing acquisition. The focal
-   * entry stays the one publication identity: facts, named references and the
-   * chapter's comparison are merged, never re-read, and a stale generation
-   * rejects the whole merge.
-   */
-  async chapter(type: string, id: string, theme: ThemeKey,
-    demand: ThemeFactsDemand): Promise<AcquiredTheme<T>> {
-    const key = { type, id, theme }
-    const cacheKey = this.key(key)
-    const current = await this.get(type, id, theme)
-    const generation = this.generations.get(cacheKey) ?? 0
-    const extra = await this.acquireFacts(theme, key, { ...demand, auxiliary: demand.auxiliary !== false })
-    if (generation !== (this.generations.get(cacheKey) ?? 0)) throw new Error('Stale theme acquisition response')
-    const latest = this.entries.get(cacheKey) ?? current
-    if (latest !== current) this.assertCurrentFocal(cacheKey, generation, latest)
-    const mergeReads = (base: readonly SemanticThemeRead[] | undefined,
-      added: readonly SemanticThemeRead[] | undefined): SemanticThemeRead[] => {
-      // Exact duplicates (a re-read of the same item) collapse; distinct
-      // comparison reads of one resource (its declared detail points) never do.
-      const merged = new Map<string, SemanticThemeRead>((base ?? [])
-        .map((read) => [`${read.resource}\u0000${JSON.stringify(read.data)}`, read] as const))
-      for (const read of added ?? []) merged.set(`${read.resource}\u0000${JSON.stringify(read.data)}`, read)
-      return [...merged.values()]
-    }
-    const failures = new Map<string, ThemeResourceFailure>()
-    for (const failure of [...(latest.focal.resource_failures ?? []), ...(extra.resource_failures ?? [])]) {
-      failures.set(`${failure.resource}\u0000${failure.stage}`, failure)
-    }
-    const comparisons = new Map(latest.comparisons)
-    if (extra.demand_comparison) {
-      const selectionKey = cleSelectionComparaison(extra.demand_comparison.selection)
-      const prior = comparisons.get(selectionKey)
-      const comparisonReads = mergeReads(prior?.comparison_reads, extra.demand_comparison.comparison_reads)
-      const chapterFailures = (extra.resource_failures ?? []).filter((failure) => failure.stage === 'comparison')
-      const priorFailures = (prior?.resource_failures ?? []) as ThemeResourceFailure[]
-      comparisons.set(selectionKey, {
-        ...(prior ?? { theme_id: theme, selection: extra.demand_comparison.selection }),
-        comparison_reads: comparisonReads,
-        ...(chapterFailures.length || priorFailures.length
-          ? { resource_failures: [...priorFailures, ...chapterFailures] } : {}),
-      } as ThemeResponse)
-    }
-    const mergedComparisonReads = [...comparisons.values()].flatMap((entry) => entry.comparison_reads ?? [])
-    const focal: T = {
-      ...latest.focal,
-      resource_reads: mergeReads(latest.focal.resource_reads, extra.resource_reads),
-      named_reference_reads: mergeReads(latest.focal.named_reference_reads, extra.named_reference_reads),
-      cohort_reads: mergeReads(latest.focal.cohort_reads, extra.cohort_reads),
-      ...(failures.size ? { resource_failures: [...failures.values()] } : {}),
-      comparison_error: mergedComparisonReads.length
-        ? false : Boolean(latest.focal.comparison_error || extra.comparison_error),
-    } as T
-    const result = { focal, comparisons }
-    this.entries.set(cacheKey, result)
-    return result
   }
 
   async select(type: string, id: string, theme: ThemeKey, selection: readonly ThemeSelectionMember[] | undefined,
@@ -563,47 +575,6 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     await request
     this.assertCurrentFocal(cacheKey, focalGeneration, focal)
     return this.entries.get(cacheKey)!
-  }
-
-  /**
-   * #986 — explicit comparison retry that never re-reads the focal facts: the
-   * comparison of a selection is re-read for the given chapter's resources and
-   * merged into the existing acquisition entry.
-   */
-  async recompare(type: string, id: string, theme: ThemeKey, selection: readonly ThemeSelectionMember[] | undefined,
-    indicators: readonly string[]): Promise<AcquiredTheme<T>> {
-    const key = { type, id, theme }
-    const cacheKey = this.key(key)
-    const focalGeneration = this.generations.get(cacheKey) ?? 0
-    const focal = await this.get(type, id, theme)
-    if (!this.acquireComparison) return focal
-    this.assertCurrentFocal(cacheKey, focalGeneration, focal)
-    const selectionKey = cleSelectionComparaison(selection)
-    const pendingKey = JSON.stringify([cacheKey, selectionKey, indicators.join('|')])
-    this.comparisonGenerations.set(pendingKey, (this.comparisonGenerations.get(pendingKey) ?? 0) + 1)
-    const comparison = await this.acquireComparison(selection, theme, key,
-      acquisitionCoherence(focal.focal), indicators)
-    if (comparison.comparison_error === true) {
-      throw new Error(typeof comparison.comparison_failure === 'string'
-        ? comparison.comparison_failure : 'Publication de comparaison indisponible')
-    }
-    this.assertCurrentFocal(cacheKey, focalGeneration, focal)
-    const current = this.entries.get(cacheKey) ?? focal
-    const prior = current.comparisons.get(selectionKey)
-    const reads = new Map<string, SemanticThemeRead>((prior?.comparison_reads ?? [])
-      .map((read) => [`${read.resource}\u0000${JSON.stringify(read.data)}`, read]))
-    for (const read of comparison.comparison_reads ?? []) {
-      reads.set(`${read.resource}\u0000${JSON.stringify(read.data)}`, read)
-    }
-    const merged = {
-      ...current,
-      comparisons: new Map(current.comparisons).set(selectionKey, {
-        ...(prior ?? { theme_id: theme, selection }),
-        comparison_reads: [...reads.values()],
-      } as ThemeResponse),
-    }
-    this.entries.set(cacheKey, merged)
-    return merged
   }
 
   /** Drop one aggregate without disturbing its already acquired focal facts or sibling selections. */
