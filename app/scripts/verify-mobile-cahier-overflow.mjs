@@ -1897,9 +1897,9 @@ try {
 
     // #976 — the page-2 ratio captions must wear the exact AEDAR scalar caption
     // role, not a lookalike: compare the real computed typography with the AEDAR
-    // car-overview scalar caption on the same route. The charging bar, its
-    // legend key and its tooltip marker must share the app brand ink, while the
-    // fuel-station category keeps the theme ink it already had.
+    // car-overview scalar caption on the same route. The charging bar and its
+    // tooltip marker must share the app brand ink, while the fuel-station
+    // category keeps the theme ink it already had.
     if (width === 390 || width === 1440) {
       const captionIdentity = await page.evaluate(() => {
         const styleOf = (element) => {
@@ -1918,10 +1918,9 @@ try {
         const ratioCaptions = [...document.querySelectorAll('.mobilite-ratio-scalar .cahier-figure-scalar-label')]
         const column = document.querySelector(
           '.mobilite-section--stationnement-ravitaillement [data-column="ravitaillement"]')
-        const legendItem = (label) => [...(column?.querySelectorAll('.cahier-figure-legend-item') ?? [])]
-          .find((item) => item.querySelector('.cahier-figure-legend-label')?.textContent === label)
+        const legendLabels = (scope) => [...(scope?.querySelectorAll('.cahier-figure-legend-label') ?? [])]
+          .map((label) => label.textContent.trim())
         const fillOf = (element) => element ? getComputedStyle(element).fill : null
-        const inkOf = (element) => element ? getComputedStyle(element).color : null
         const bar = column?.querySelector('rect[data-category="charging"]')
         const comparedBar = (category) => column?.querySelector(`rect[data-comparison="${category}"]`)
         const probeColor = (value) => {
@@ -1942,8 +1941,10 @@ try {
           fuelBar: fillOf(column?.querySelector('rect[data-category="fuel-stations"]')),
           chargingCompared: fillOf(comparedBar('charging')),
           fuelCompared: fillOf(comparedBar('fuel-stations')),
-          chargingLegend: inkOf(legendItem('Bornes de recharge')?.querySelector('.cahier-figure-legend-mark')),
-          fuelLegend: inkOf(legendItem('Stations-service')?.querySelector('.cahier-figure-legend-mark')),
+          reseauxLegend: legendLabels(document.querySelector('.mobilite-section--reseaux')),
+          stationnementLegend: legendLabels(document.querySelector(
+            '.mobilite-section--stationnement-ravitaillement [data-column="stationnement"]')),
+          ravitaillementLegend: legendLabels(column),
           aria: column?.querySelector('svg[role="img"]')?.getAttribute('aria-label') ?? null,
         }
       })
@@ -1962,10 +1963,16 @@ try {
         `Charging bar must use the app brand ink at ${width}px: ${JSON.stringify(captionIdentity)}`)
       assert.equal(captionIdentity.fuelBar, captionIdentity.car,
         `Fuel-station bar must use the existing car ink at ${width}px: ${JSON.stringify(captionIdentity)}`)
-      assert.equal(captionIdentity.chargingLegend, captionIdentity.brand,
-        `Charging legend key must use the app brand ink at ${width}px: ${JSON.stringify(captionIdentity)}`)
-      assert.equal(captionIdentity.fuelLegend, captionIdentity.car,
-        `Fuel-station legend key must use the existing car ink at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      // #988 — the x axis names every category, so the page-2 legends keep only
+      // the drawn cycling segment series and the comparison reference. The
+      // category inks above stay on the drawn bars, never in a repeated key.
+      assert.deepEqual(captionIdentity.reseauxLegend,
+        ['Réseau cyclable protégé', 'Réseau cyclable partagé', 'Groupe comparé'],
+        `The network legend must keep only the two cycling segments and the comparison at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.deepEqual(captionIdentity.stationnementLegend, ['Groupe comparé'],
+        `The parking legend must keep only the comparison key at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.deepEqual(captionIdentity.ravitaillementLegend, ['Groupe comparé'],
+        `The refuelling legend must keep only the comparison key at ${width}px: ${JSON.stringify(captionIdentity)}`)
       const renderedFills = [
         captionIdentity.chargingBar, captionIdentity.fuelBar,
         captionIdentity.chargingCompared, captionIdentity.fuelCompared,

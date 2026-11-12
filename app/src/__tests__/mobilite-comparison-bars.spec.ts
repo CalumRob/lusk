@@ -118,6 +118,66 @@ const ratio: MobiliteRatioEvidence = {
   note: null,
 }
 
+const refuellingFigure: MobiliteBarsFigureEvidence = {
+  figureTitle: 'Bornes de recharge et station-services',
+  unit: 'équipements / 1 000 hab.',
+  xAxisTitle: 'Équipement',
+  yAxisTitle: 'équipements / 1 000 hab.',
+  comparisonLabel: 'Médiane des communes de EPCI X',
+  categories: [
+    {
+      key: 'charging',
+      label: 'Bornes de recharge',
+      axisLabel: 'Bornes',
+      tone: 'brand',
+      value: fact('bornes_recharge_1000', null, 0.4, 'équipements / 1 000 hab.', 0.3, { position: 1, size: 3 }),
+      rawValue: fact('bornes_recharge', null, 7, 'bornes'),
+      segments: [],
+      splitNote: null,
+    },
+    {
+      key: 'fuel-stations',
+      label: 'Stations-service',
+      axisLabel: 'Stations-service',
+      tone: 'c',
+      value: fact('stations_service_1000', null, 0.1, 'équipements / 1 000 hab.', 0.2, { position: 2, size: 3 }),
+      rawValue: fact('stations_service', null, 2, 'stations'),
+      segments: [],
+      splitNote: null,
+    },
+  ],
+}
+
+const parkingFigure: MobiliteBarsFigureEvidence = {
+  figureTitle: 'Stationnement vélo et voiture',
+  unit: 'places / 1 000 hab',
+  xAxisTitle: 'Mode',
+  yAxisTitle: 'places / 1 000 hab',
+  comparisonLabel: 'Médiane des communes de EPCI X',
+  categories: [
+    {
+      key: 'bike-parking',
+      label: 'Vélo',
+      axisLabel: 'Vélo',
+      tone: 'b',
+      value: fact('places_stationnement_velo_1000', null, 700, 'places / 1 000 hab', 500, { position: 1, size: 3 }),
+      rawValue: null,
+      segments: [],
+      splitNote: null,
+    },
+    {
+      key: 'car-parking',
+      label: 'Voiture',
+      axisLabel: 'Voiture',
+      tone: 'c',
+      value: fact('places_stationnement_voiture_1000', null, 25, 'places / 1 000 hab', 30, { position: 2, size: 3 }, 'moins-est-mieux'),
+      rawValue: null,
+      segments: [],
+      splitNote: null,
+    },
+  ],
+}
+
 describe('CahierMobiliteComparisonBars — comparison states and access', () => {
   it('draws one territory series, one compared series per category and an unsegmented bike comparison', () => {
     const wrapper = mount(CahierMobiliteComparisonBars, {
@@ -134,26 +194,37 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
     expect(label).toContain('plus = mieux')
     expect(label).toContain('Protégé')
     expect(label).toContain('Partagé')
+    // #988 — the accessible reading still names every category and its total.
+    expect(label).toContain('Réseau piéton : 12 km / 1 000 hab.')
+    expect(label).toContain('Total vélo : 8 km / 1 000 hab.')
+    expect(label).toContain('Réseau automobile : 80 km / 1 000 hab.')
     const legend = wrapper.get('.mobilite-comparison-bars__legend')
-    const networkLegend = legend.findAll('.cahier-figure-legend-item')
-      .filter((item) => !item.text().includes('Groupe comparé'))
-    // #974 — exactly the four drawn network identities, in reading order. A
-    // segmented bar's parts are its series; the redundant bike total is gone.
-    expect(networkLegend.map((item) => item.get('.cahier-figure-legend-label').text())).toEqual([
-      'Réseau piéton',
+    // #988 — the x axis already names the three networks, so the legend keeps
+    // only the two drawn cycling segment series plus the served comparison.
+    expect(legend.findAll('.cahier-figure-legend-label').map((item) => item.text())).toEqual([
       'Réseau cyclable protégé',
       'Réseau cyclable partagé',
-      'Réseau automobile',
+      'Groupe comparé',
     ])
+    expect(legend.text()).not.toContain('Réseau piéton')
+    expect(legend.text()).not.toContain('Réseau automobile')
+    // The removed category keys leave no visually hidden duplicate behind.
+    expect(legend.find('.visually-hidden, .sr-only, .sr-only-focusable').exists()).toBe(false)
+    // The axis keeps the category names, in reading order.
+    expect(wrapper.findAll('.cahier-figure-tick-label--x').map((tick) => tick.text()))
+      .toEqual(['à pied', 'à vélo', 'en voiture'])
+    // Every category keeps its semantic ink on the drawn bar.
+    expect(wrapper.get('rect[data-category="walkTransit"]').attributes('fill')).toBe('var(--cahier-mode-foot)')
+    expect(wrapper.get('rect[data-category="car"]').attributes('fill')).toBe('var(--cahier-mode-car)')
+    const networkLegend = legend.findAll('.cahier-figure-legend-item')
+      .filter((item) => !item.text().includes('Groupe comparé'))
     expect(networkLegend.every((item) => !item.get('.cahier-figure-legend-mark')
       .classes().includes('cahier-figure-legend-mark--composite'))).toBe(true)
     const markColor = (label: string) => networkLegend
       .find((item) => item.get('.cahier-figure-legend-label').text() === label)!
       .get('.cahier-figure-legend-mark').attributes('style') ?? ''
-    expect(markColor('Réseau piéton')).toContain('var(--cahier-mode-foot')
     expect(markColor('Réseau cyclable protégé')).toContain('var(--cahier-cycle-protected')
     expect(markColor('Réseau cyclable partagé')).toContain('var(--cahier-cycle-shared')
-    expect(markColor('Réseau automobile')).toContain('var(--cahier-mode-car')
     // The compared bar stays its own legend key, never a fifth network identity.
     const comparisonLegend = legend.findAll('.cahier-figure-legend-item')
       .find((item) => item.text().includes('Groupe comparé'))!
@@ -666,37 +737,7 @@ describe('CahierMobiliteSection — paired ratios use the AEDAR scalar anatomy',
  * the app's own brand role; the fuel-station category keeps its theme ink.
  */
 describe('CahierMobiliteComparisonBars — the charging category keeps its own identity', () => {
-  const refuellingFigure: MobiliteBarsFigureEvidence = {
-    figureTitle: 'Bornes de recharge et station-services',
-    unit: 'équipements / 1 000 hab.',
-    xAxisTitle: 'Équipement',
-    yAxisTitle: 'équipements / 1 000 hab.',
-    comparisonLabel: 'Médiane des communes de EPCI X',
-    categories: [
-      {
-        key: 'charging',
-        label: 'Bornes de recharge',
-        axisLabel: 'Bornes',
-        tone: 'brand',
-        value: fact('bornes_recharge_1000', null, 0.4, 'équipements / 1 000 hab.', 0.3, { position: 1, size: 3 }),
-        rawValue: fact('bornes_recharge', null, 7, 'bornes'),
-        segments: [],
-        splitNote: null,
-      },
-      {
-        key: 'fuel-stations',
-        label: 'Stations-service',
-        axisLabel: 'Stations-service',
-        tone: 'c',
-        value: fact('stations_service_1000', null, 0.1, 'équipements / 1 000 hab.', 0.2, { position: 2, size: 3 }),
-        rawValue: fact('stations_service', null, 2, 'stations'),
-        segments: [],
-        splitNote: null,
-      },
-    ],
-  }
-
-  it('draws the charging bar, legend key and tooltip marker from the app brand role', async () => {
+  it('draws the charging bar and tooltip marker from the app brand role', async () => {
     const wrapper = mount(CahierMobiliteComparisonBars, {
       props: { figure: refuellingFigure, comparison: { status: 'ready' } },
     })
@@ -713,11 +754,11 @@ describe('CahierMobiliteComparisonBars — the charging category keeps its own i
     expect(new Set([
       'var(--brand-500)', 'var(--cahier-mode-car)', chargingCompared, fuelCompared,
     ]).size).toBe(4)
-    const legendMark = (label: string) => wrapper.findAll('.cahier-figure-legend-item')
-      .find((item) => item.get('.cahier-figure-legend-label').text() === label)!
-      .get('.cahier-figure-legend-mark').attributes('style') ?? ''
-    expect(legendMark('Bornes de recharge')).toContain('var(--brand-500)')
-    expect(legendMark('Stations-service')).toContain('var(--cahier-mode-car)')
+    // #988 — both categories are named by the x axis, so the legend keeps only
+    // the comparison key; the brand/car distinction stays on the drawn bars and
+    // in the tooltip markers below.
+    expect(wrapper.findAll('.cahier-figure-legend-label').map((item) => item.text()))
+      .toEqual(['Groupe comparé'])
 
     await wrapper.findAll('.mobilite-comparison-bars__hitbox')[0]!.trigger('focus')
     expect(wrapper.get('.mobilite-comparison-bars__tooltip .cahier-figure-tooltip-marker')
@@ -732,5 +773,67 @@ describe('CahierMobiliteComparisonBars — the charging category keeps its own i
     expect(label).toContain('Stations-service')
     expect(label).toContain('équipements / 1 000 hab.')
     expect(label).toContain('Groupe comparé')
+  })
+})
+
+/**
+ * #988 — the owner approved dropping the legend keys whose names the x axis
+ * already carries. On page 2 that leaves the two cycling segment series (the
+ * only series the axis cannot name) and the comparison reference; every numeric
+ * reading, axis name, tooltip fact and accessible label survives unchanged.
+ */
+describe('CahierMobiliteComparisonBars — axis-named categories leave the legend (#988)', () => {
+  it('keeps only the comparison key on the parking figure and still names both axes', async () => {
+    const wrapper = mount(CahierMobiliteComparisonBars, {
+      props: { figure: parkingFigure, comparison: { status: 'ready' } },
+    })
+    expect(wrapper.findAll('.cahier-figure-legend-label').map((item) => item.text()))
+      .toEqual(['Groupe comparé'])
+    expect(wrapper.findAll('.cahier-figure-legend-toggle')).toHaveLength(1)
+    expect(wrapper.findAll('.cahier-figure-tick-label--x').map((tick) => tick.text()))
+      .toEqual(['Vélo', 'Voiture'])
+    // Both categories keep their semantic ink on the bars.
+    expect(wrapper.get('rect[data-category="bike-parking"]').attributes('fill')).toBe('var(--cahier-mode-bike)')
+    expect(wrapper.get('rect[data-category="car-parking"]').attributes('fill')).toBe('var(--cahier-mode-car)')
+    // The totals, the served comparison, the rank and the direction survive in
+    // the accessible reading.
+    const label = wrapper.get('svg[role="img"]').attributes('aria-label')!
+    expect(label).toContain('Vélo : 700 places / 1 000 hab')
+    expect(label).toContain('Voiture : 25 places / 1 000 hab')
+    expect(label).toContain('Groupe comparé : 500 places / 1 000 hab')
+    expect(label).toContain('Groupe comparé : 30 places / 1 000 hab')
+    expect(label).toContain('moins = mieux')
+    expect(label).toContain('rang 2e/3')
+    // The tooltip keeps the total and its compared value.
+    await wrapper.findAll('.mobilite-comparison-bars__hitbox')[1]!.trigger('focus')
+    const tooltip = wrapper.get('.mobilite-comparison-bars__tooltip')
+    const totalRow = tooltip.findAll('.cahier-figure-tooltip-row')[0]!
+    expect(totalRow.get('.cahier-figure-tooltip-label').text()).toBe('Voiture')
+    expect(totalRow.findAll('dd')[0]!.text()).toBe('25')
+    expect(totalRow.get('.cahier-figure-tooltip-comparison-value').text()).toBe('30')
+    expect(totalRow.attributes('aria-label')).toContain('25 places / 1 000 hab.')
+  })
+
+  it('keeps only the comparison key on the refuelling figure without losing any reading', async () => {
+    const wrapper = mount(CahierMobiliteComparisonBars, {
+      props: { figure: refuellingFigure, comparison: { status: 'ready' } },
+    })
+    expect(wrapper.findAll('.cahier-figure-legend-label').map((item) => item.text()))
+      .toEqual(['Groupe comparé'])
+    expect(wrapper.findAll('.cahier-figure-tick-label--x').map((tick) => tick.text()))
+      .toEqual(['Bornes', 'Stations-service'])
+    const label = wrapper.get('svg[role="img"]').attributes('aria-label')!
+    expect(label).toContain('Bornes de recharge : 0,4 équipements / 1 000 hab.')
+    expect(label).toContain('Stations-service : 0,1 équipements / 1 000 hab.')
+    expect(label).toContain('Groupe comparé : 0,3 équipements / 1 000 hab.')
+    expect(label).toContain('rang 1er/3')
+    // The raw counts stay in the detail tooltip, never in the legend.
+    expect(wrapper.get('.mobilite-comparison-bars__legend').text()).not.toContain('bornes')
+    await wrapper.findAll('.mobilite-comparison-bars__hitbox')[0]!.trigger('focus')
+    const tooltip = wrapper.get('.mobilite-comparison-bars__tooltip')
+    const rawRow = tooltip.findAll('.cahier-figure-tooltip-row')
+      .find((row) => row.get('.cahier-figure-tooltip-label').text() === 'bornes_recharge')!
+    expect(rawRow.findAll('dd')[0]!.text()).toBe('7')
+    expect(rawRow.attributes('aria-label')).toContain('(valeur brute)')
   })
 })

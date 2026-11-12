@@ -248,18 +248,21 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     expect(comparisonBars).toHaveLength(3)
     expect(figure.findAll('.mobilite-comparison-bars__segment')).toHaveLength(2)
 
-    // #974 — exactly the four drawn network identities; no redundant total-bike
-    // key, and the comparison stays its own key rather than a fifth identity.
+    // #988 — the x axis names the three networks, so the legend keeps only the
+    // two drawn cycling segment series and the served comparison key.
     const legend = figure.get('.mobilite-comparison-bars__legend')
-    const networkLegend = legend.findAll('.cahier-figure-legend-item')
-      .filter((item) => !item.text().includes('Groupe comparé'))
-    expect(networkLegend.map((item) => item.get('.cahier-figure-legend-label').text())).toEqual([
-      'Réseau piéton',
+    expect(legend.findAll('.cahier-figure-legend-label').map((item) => item.text())).toEqual([
       'Réseau cyclable protégé',
       'Réseau cyclable partagé',
-      'Réseau automobile',
+      'Groupe comparé',
     ])
-    expect(legend.text()).toContain('Groupe comparé')
+    expect(legend.text()).not.toContain('Réseau piéton')
+    expect(legend.text()).not.toContain('Réseau automobile')
+    // The axis names every category, and the category inks stay on the bars.
+    expect(figure.findAll('.cahier-figure-tick-label--x').map((tick) => tick.text()))
+      .toEqual(['à pied', 'à vélo', 'en voiture'])
+    expect(figure.get('rect[data-category="walkTransit"]').attributes('fill')).toBe('var(--cahier-mode-foot)')
+    expect(figure.get('rect[data-category="car"]').attributes('fill')).toBe('var(--cahier-mode-car)')
     const bikeGroup = figure.get('g[data-category="bike"]')
     const totalHeight = Number(bikeGroup.attributes('data-total-height'))
     const segmentHeights = bikeGroup.findAll('rect[data-segment]')
