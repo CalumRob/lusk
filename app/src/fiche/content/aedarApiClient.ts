@@ -1,5 +1,8 @@
 import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
 import { producerCatalogue } from '@/payload/themeAcquisition'
+import { invalidateSemanticReadsForTarget, readSemanticOutcomes } from '@/payload/semanticResourceClient'
+import type { SemanticReadItem } from '@/payload/semanticResourceClient'
+import { PayloadError } from '@/payload/validate'
 
 export type AedarTerritoryType = 'commune' | 'epci' | 'departement' | 'region'
 
@@ -94,12 +97,16 @@ function summaryCacheFor(fetcher: typeof fetch): SummaryReadCache {
   return cache
 }
 
-/** Invalidate only an in-flight summary acquisition; shared fetches are not aborted. */
+/** Explicit retry: drop the summary in-flight entry and re-probe the shared item. */
 export function invalidateAedarTerritorySummary(type: AedarTerritoryType, id: string): void {
   const cache = summaryCachesByFetch.get(globalThis.fetch)
-  if (!cache) return
-  const key = JSON.stringify([type, id])
-  cache.pending.delete(key)
+  if (cache) {
+    const key = JSON.stringify([type, id])
+    cache.pending.delete(key)
+  }
+  // Bump the shared item generation so a late reply from the abandoned read
+  // never becomes the next acquisition result.
+  invalidateSemanticReadsForTarget(type, id)
 }
 
 /**
@@ -175,22 +182,25 @@ async function readAedarTerritorySummary(
         measures.some((measure) => !summaryDeclaration.measure_facets?.[measure])) {
       return summaryError('invalid-response', 'Contrat de synthèse AEDAR indisponible')
     }
-    const item = { id: 'aedar-summary', resource: summaryDeclaration.resource_id,
+    const item: SemanticReadItem = { resource: summaryDeclaration.resource_id,
       target: { kind: 'territory', type: territoryType, id: territoryId }, intent: { kind: 'facts' } }
-    let response: Response
+    let outcome
     try {
-      response = await fetcher('/api/resources/read-batch', { method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: [item] }) })
-    } catch { return summaryError('network', 'Impossible de joindre la synthèse AEDAR') }
-    if (response.status === 404) return summaryError('unknown-territory', 'Territoire inconnu pour la synthèse AEDAR')
-    if (response.status === 503) return summaryError('publication-unavailable', 'Synthèse AEDAR indisponible ou incompatible')
-    if (!response.ok) return summaryError('invalid-response', `Réponse AEDAR inattendue (${response.status})`)
-    const body: unknown = await response.json()
-    if (!isRecord(body) || body.contract !== 'semantic-read-batch-v1' || !Array.isArray(body.results) || body.results.length !== 1 ||
-        !isRecord(body.results[0]) || body.results[0].id !== item.id || !isRecord(body.results[0].data)) {
+      [outcome] = await readSemanticOutcomes([item], { fetcher, fresh: true })
+    } catch (error) {
+      if (error instanceof PayloadError) {
+        if (error.status === 404) return summaryError('unknown-territory', 'Territoire inconnu pour la synthèse AEDAR')
+        if (error.status === 503) return summaryError('publication-unavailable', 'Synthèse AEDAR indisponible ou incompatible')
+        if (error.kind === 'fetch' && error.status === undefined) {
+          return summaryError('network', 'Impossible de joindre la synthèse AEDAR')
+        }
+      }
       return summaryError('invalid-response', 'Réponse de synthèse AEDAR invalide')
     }
-    const data = body.results[0].data
+    if (outcome.status === 'publication_unavailable') {
+      return summaryError('publication-unavailable', 'Synthèse AEDAR indisponible ou incompatible')
+    }
+    const data = outcome.data
     if (data.resource !== item.resource || !isRecord(data.target) || data.target.kind !== 'territory' ||
         data.target.type !== territoryType || data.target.id !== territoryId || !isRecord(data.territory) ||
         data.territory.territory_type !== territoryType || data.territory.territory_id !== territoryId ||
@@ -389,10 +399,10 @@ async function readAedarAggregates(
   let contentVersion: string | undefined
   let referenceContentVersion: string | undefined
   const codes = options.typequ ?? AEDAR_TYPEQU_REGISTRY.map(({ code }) => code)
-  const items = []
+  const items: SemanticReadItem[] = []
   for (let start = 0; start < codes.length; start += limit) {
     items.push({
-      id: `aedar-${items.length}`, resource: 'aedar_territorial_aggregate',
+      resource: 'aedar_territorial_aggregate',
       target: { kind: 'territory', type: territoryType, id: territoryId },
       intent: { kind: 'facts' }, coordinates: { typequ: codes.slice(start, start + limit) },
       ...(options.measures ? { fields: options.measures.map((key) => `measures.${key}`) } : {}),
@@ -401,41 +411,35 @@ async function readAedarAggregates(
   try {
     for (let start = 0; start < items.length; start += 12) {
       const batch = items.slice(start, start + 12)
-      let response: Response
+      let outcomes
       try {
-        response = await fetcher('/api/resources/read-batch', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: batch }),
-        })
-      } catch {
-        return errorResult('network', 'Impossible de joindre la publication AEDAR')
+        outcomes = await readSemanticOutcomes(batch, { fetcher })
+      } catch (error) {
+        if (error instanceof PayloadError) {
+          if (error.status === 404) return errorResult('unknown-territory', 'Territoire inconnu pour la publication AEDAR')
+          if (error.status === 503) return errorResult('publication-unavailable', 'Publication AEDAR indisponible ou incompatible')
+          if (error.kind === 'fetch' && error.status === undefined) {
+            return errorResult('network', 'Impossible de joindre la publication AEDAR')
+          }
+        }
+        return errorResult('invalid-response', 'Réponse AEDAR invalide')
       }
-      if (response.status === 404) return errorResult('unknown-territory', 'Territoire inconnu pour la publication AEDAR')
-      if (response.status === 503) return errorResult('publication-unavailable', 'Publication AEDAR indisponible ou incompatible')
-      if (!response.ok) return errorResult('invalid-response', `Réponse AEDAR inattendue (${response.status})`)
-      let body: unknown
-      try { body = await response.json() } catch {
-        return errorResult('invalid-response', 'Réponse AEDAR illisible')
-      }
-      if (!isRecord(body) || body.contract !== 'semantic-read-batch-v1' || !Array.isArray(body.results)
-        || body.results.length !== batch.length) invalid()
-      const results = new Map<string, unknown>()
-      for (const result of body.results) {
-        if (!isRecord(result) || typeof result.id !== 'string' || results.has(result.id)
-          || !batch.some((item) => item.id === result.id)) invalid()
-        results.set(result.id, result.data)
-      }
-      for (const item of batch) {
-        const data = results.get(item.id)
-        if (!isRecord(data) || data.resource !== item.resource || !isRecord(data.target)
+      for (let position = 0; position < batch.length; position += 1) {
+        const item = batch[position]!
+        const outcome = outcomes[position]!
+        if (outcome.status === 'publication_unavailable') {
+          return errorResult('publication-unavailable', 'Publication AEDAR indisponible ou incompatible')
+        }
+        const data = outcome.data
+        if (data.resource !== item.resource || !isRecord(data.target)
           || data.target.kind !== 'territory' || data.target.type !== territoryType || data.target.id !== territoryId) invalid()
         const page = validateAedarResponse(data, expected, options.measures)
         if (page.offset !== 0 || page.limit !== 100
           || (contentVersion !== undefined && contentVersion !== page.content_version)
           || (referenceContentVersion !== undefined && referenceContentVersion !== page.reference_content_version)) invalid()
         const returnedCodes = new Set(page.facts.map((fact) => fact.typequ))
-        if (page.facts.length !== item.coordinates.typequ.length || returnedCodes.size !== page.facts.length
-          || item.coordinates.typequ.some((code) => !returnedCodes.has(code))) invalid()
+        if (page.facts.length !== item.coordinates!.typequ!.length || returnedCodes.size !== page.facts.length
+          || item.coordinates!.typequ!.some((code) => !returnedCodes.has(code))) invalid()
         contentVersion = page.content_version
         referenceContentVersion = page.reference_content_version
         facts.push(...page.facts)

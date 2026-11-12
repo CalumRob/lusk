@@ -1,6 +1,6 @@
 import type { Territoire, TerritoireType } from './types'
 import type { OrderedSeriesRead } from './orderedSeriesAdapter'
-import { lireRessourcesBatch } from './semanticResourceClient'
+import { invalidateSemanticReads, lireRessourcesBatch } from './semanticResourceClient'
 import type { SemanticReadItem } from './semanticResourceClient'
 
 type Row = Record<string, any>
@@ -41,6 +41,25 @@ export interface OrderedSeriesSemanticSession {
   acquire(input: OrderedSeriesAcquireInput): Promise<OrderedSeriesRead>
   clearCohort(input: Pick<OrderedSeriesAcquireInput, 'resource' | 'level' | 'includeScalarFacet' | 'departmentId' | 'epciId'>): void
   refresh(input: OrderedSeriesAcquireInput): Promise<OrderedSeriesRead>
+}
+
+/**
+ * An explicit refresh or an invalidated cohort releases the shared semantic
+ * item generations for this exact series scope, so the next acquisition
+ * re-probes the publication instead of replaying a settled outcome.
+ */
+function invalidateSeriesReads(input: Pick<OrderedSeriesAcquireInput,
+  'resource' | 'level' | 'focal' | 'departmentId' | 'epciId'>): void {
+  invalidateSemanticReads((item) => {
+    if (item.resource !== input.resource) return false
+    if (item.target.kind === 'territory_cohort') {
+      return item.target.type === input.level &&
+        (item.target.department_id ?? null) === (input.departmentId ?? null) &&
+        (item.target.epci_id ?? null) === (input.epciId ?? null)
+    }
+    return item.target.kind === 'territory' && item.target.type === input.focal.type &&
+      item.target.id === input.focal.territoire
+  })
 }
 
 export interface OrderedSeriesAcquireInput {
@@ -494,7 +513,7 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
     const cached = entries.comparisons.get(compareKey)
     if (cached) return cached
     try {
-      const [comparisonData] = await lireRessourcesBatch([comparisonItem(input, members)])
+      const [comparisonData] = await lireRessourcesBatch([comparisonItem(input, members)], { fresh: true })
       const mismatch = publicationMismatch(comparisonData, admittedFocal)
       if (mismatch) throw new SeriesPublicationMismatchError(mismatch,
         'La publication native a changé depuis le chargement des faits.', admittedFocal)
@@ -514,7 +533,9 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
       return result
     } catch (cause) {
       if (cause instanceof SeriesPublicationMismatchError) throw cause
-      throw new SeriesComparisonRejectedError(cause instanceof Error ? cause.message : String(cause), admittedFocal)
+      invalidateSemanticReads((item) => item.resource === input.resource && item.intent.kind !== 'facts')
+      throw new SeriesComparisonRejectedError(cause instanceof Error ? cause.message : String(cause),
+        admittedFocal)
     }
   }
   const cohortTarget = { kind: 'territory_cohort' as const, type: input.level,
@@ -526,7 +547,7 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
   let comparisonData: Row | undefined
   if (admittedCohort) {
     try {
-      [focal] = await lireRessourcesBatch([focalItem])
+      [focal] = await lireRessourcesBatch([focalItem], { fresh: true })
     } catch (cause) {
       throw new SeriesCohortAvailableError('Les faits du territoire focal sont indisponibles.', admittedCohort)
     }
@@ -550,7 +571,7 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
         fields: input.includeScalarFacet ? ['value', 'scalar_facet'] : ['value'] },
       focalItem,
       comparisonItem(input, members),
-    ])
+    ], { fresh: true })
   }
   if (cohort.shape !== 'ordered_series' || !Array.isArray(cohort.series) ||
       !record(cohort.cohort) || !Array.isArray(cohort.cohort.members) ||
@@ -638,7 +659,7 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
     entries.focals.set(exactKey, facts)
   }
   try {
-    if (!comparisonData) [comparisonData] = await lireRessourcesBatch([comparisonItem(input, members)])
+    if (!comparisonData) [comparisonData] = await lireRessourcesBatch([comparisonItem(input, members)], { fresh: true })
     const comparison = bindComparisonEvidence(comparisonData, {
       descriptor, contentVersion: cohort.content_version,
       referenceContentVersion: cohort.reference_content_version,
@@ -654,6 +675,7 @@ async function acquireWithinSession(input: OrderedSeriesAcquireInput, entries: S
     }
     return result
   } catch (cause) {
+    invalidateSemanticReads((item) => item.resource === input.resource && item.intent.kind !== 'facts')
     throw new SeriesComparisonRejectedError(
       cause instanceof Error ? cause.message : String(cause), facts)
   }
@@ -903,6 +925,12 @@ export function createOrderedSeriesSemanticSession(): OrderedSeriesSemanticSessi
         if (JSON.parse(focal)[0] === key) entries.comparisons.delete(comparison)
       }
       entries.cohortGenerations.set(key, (entries.cohortGenerations.get(key) ?? 0) + 1)
+      invalidateSemanticReads((item) => {
+        if (item.resource !== input.resource) return false
+        return item.target.kind === 'territory_cohort' && item.target.type === input.level &&
+          (item.target.department_id ?? null) === (input.departmentId ?? null) &&
+          (item.target.epci_id ?? null) === (input.epciId ?? null)
+      })
     },
     refresh: async (input) => {
       const key = cohortKey(input)
@@ -913,6 +941,7 @@ export function createOrderedSeriesSemanticSession(): OrderedSeriesSemanticSessi
         if (JSON.parse(focal)[0] === key) entries.comparisons.delete(comparison)
       }
       entries.cohortGenerations.set(key, (entries.cohortGenerations.get(key) ?? 0) + 1)
+      invalidateSeriesReads(input)
       return acquireWithinSession(input, entries)
     },
   }
@@ -941,7 +970,10 @@ export async function reacquireOrderedSeriesComparison(input: {
     throw new Error('Faits admis incompatibles avec la cible de comparaison')
   }
   const members = scopedMembers(input)
-  const [comparisonData] = await lireRessourcesBatch([comparisonItem(input, members)])
+  // This seam is an explicit comparison re-acquisition: re-probe the shared
+  // item instead of replaying a previously rejected comparison outcome.
+  invalidateSemanticReads((item) => item.resource === input.resource && item.intent.kind !== 'facts')
+  const [comparisonData] = await lireRessourcesBatch([comparisonItem(input, members)], { fresh: true })
   if (!record(comparisonData)) throw new Error('Réponse de comparaison sémantique incompatible')
   return bindComparisonEvidence(comparisonData, {
     descriptor: input.facts.descriptor,

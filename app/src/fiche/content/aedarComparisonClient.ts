@@ -2,6 +2,8 @@ import type { AedarFact, AedarTerritoryType } from './aedarApiClient'
 import type { MembreSelection, PresetComparaison, SelectionComparaison } from '../comparisonContext'
 import type { ComparisonRank } from './territoryFacts'
 import { producerCatalogue } from '@/payload/themeAcquisition'
+import { readSemanticOutcomes } from '@/payload/semanticResourceClient'
+import type { SemanticReadItem } from '@/payload/semanticResourceClient'
 import { RANK_DISPLAY_MIN_SIZE } from '../figureGrammaire'
 import { AEDAR_AGGREGATE_READING_KEYS } from './aedarTimeRampFacts'
 
@@ -129,14 +131,13 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
       ? (await producerCatalogue()).find((resource) => resource.resource_id === 'aedar_territorial_aggregate')?.measure_facets
       : undefined
     if (aggregate && (!aggregateFacets || options.measures.some((measure) => !aggregateFacets[measure]))) invalid()
-    const intent = options.intent.kind === 'selected_comparison'
+    const intent: SemanticReadItem['intent'] = options.intent.kind === 'selected_comparison'
       ? { kind: 'selected_comparison', members: options.intent.members.map((m) => ({ type: m.territory_type, id: m.territory_id })) }
       : options.intent
     // Selected reads support a matrix; fixed reads declare one cell per item.
     const cellBudget = selected && !aggregate ? Math.max(1, Math.min(100, Math.floor(400 / options.measures.length),
       Math.floor(20000 / Math.max(1, members!.length)))) : 1
-    const items: Array<{ id: string; resource: string; target: { kind: string; type: AedarTerritoryType; id: string };
-      coordinates: { typequ?: string[]; measure: string[] }; intent: typeof intent; fields: string[] }> = []
+    const items: SemanticReadItem[] = []
     // A selection reads its measures as one matrix; every other shape declares
     // one cell per item.
     const measureGroups = selected ? [options.measures] : options.measures.map((measure) => [measure])
@@ -144,37 +145,33 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
       // Every shape asks for the same projection: the cahier tooltip renders
       // whatever ordinal the producer serves, and the API answers a cell it
       // cannot rank with a null triple rather than an omission.
-      items.push({ id: `aedar-comparison-${items.length}`, resource: 'aedar_territorial_aggregate',
+      items.push({ resource: 'aedar_territorial_aggregate',
         target: { kind: 'territory', type, id }, coordinates: { ...(aggregate ? {} : { typequ: options.typequ.slice(start, start + cellBudget) }), measure: [...measures] },
         intent, fields: ['group_value', ...RANK_FIELD_NAMES] })
     }
     const cells: AedarComparisonCell[] = []
     let comparisonVersion: string | undefined
     // Keep batches small enough even for large selections (preflight work counts
-    // members × cells). Read-batch items are stateless, so issue every batch
-    // concurrently and publish only after the complete set validates.
+    // members × cells). The shared acquisition scheduler bounds the HTTP reads
+    // to two at a time; every batch result is still validated before publishing.
     const batchSize = aggregate ? items.length : selected ? Math.max(1, Math.min(8, Math.floor(80000 / Math.max(1, members!.length * cellBudget)))) : 12
     const batches = Array.from({ length: Math.ceil(items.length / batchSize) }, (_, index) =>
       items.slice(index * batchSize, (index + 1) * batchSize))
     const responses = await Promise.all(batches.map(async (batch) => {
-      const response = await fetcher('/api/resources/read-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: batch }), signal: options.signal })
-      if (!response.ok) {
-        const error: unknown = await response.json().catch(() => null)
-        throw new Error(record(error) && typeof error.detail === 'string' ? error.detail : 'Comparaison AEDAR indisponible')
-      }
-      const body: unknown = await response.json()
-      if (!record(body) || body.contract !== 'semantic-read-batch-v1' || !Array.isArray(body.results) || body.results.length !== batch.length) invalid()
-      return { batch, body: body as Record<string, unknown> }
+      const outcomes = await readSemanticOutcomes(batch, { fetcher, signal: options.signal, fresh: true,
+        vary: JSON.stringify([options.expectedContentVersion, options.expectedReferenceContentVersion,
+          options.expectedSummaryContentVersion]) })
+      return { batch, outcomes }
     }))
-    for (const { batch, body } of responses) {
-      const seen = new Set<string>()
-      for (const result of body.results as unknown[]) {
-        if (!record(result) || typeof result.id !== 'string' || seen.has(result.id)) invalid()
-        seen.add(result.id)
-        const item = batch.find((item) => item.id === result.id)
-        const data = result.data
-        if (!item || !record(data) || data.resource !== item.resource || !record(data.target)
+    for (const { batch, outcomes } of responses) {
+      for (let position = 0; position < batch.length; position += 1) {
+        const item = batch[position]!
+        const outcome = outcomes[position]!
+        if (outcome.status === 'publication_unavailable') {
+          throw new Error(`Publication AEDAR indisponible (${outcome.family}).`)
+        }
+        const data = outcome.data
+        if (data.resource !== item.resource || !record(data.target)
           || data.target.kind !== 'territory' || data.target.type !== type || data.target.id !== id
           || !nonempty(data.content_version) || data.aedar_content_version !== options.expectedContentVersion
           || data.reference_content_version !== options.expectedReferenceContentVersion
@@ -184,12 +181,12 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
         if (members && (!record(data.scope) || data.scope.kind !== 'explicit_selection' || data.scope.member_count !== members.length
           || JSON.stringify(data.selection) !== JSON.stringify(members))) invalid()
         const rows = selected ? data.comparisons : [data.comparison]
-          const expectedRows = (item.coordinates.typequ?.length ?? 1) * item.coordinates.measure.length
+          const expectedRows = (item.coordinates?.typequ?.length ?? 1) * (item.coordinates?.measure.length ?? 0)
           if (!Array.isArray(rows) || rows.length !== expectedRows) invalid()
         const returned = new Set<string>()
         for (const row of rows) {
-           if (!record(row) || (aggregate ? row.typequ !== null : typeof row.typequ !== 'string' || !item.coordinates.typequ!.includes(row.typequ as string))
-             || typeof row.measure !== 'string' || !item.coordinates.measure.includes(row.measure) || returned.has(`${row.typequ ?? ''}/${row.measure}`)
+           if (!record(row) || (aggregate ? row.typequ !== null : typeof row.typequ !== 'string' || !item.coordinates!.typequ!.includes(row.typequ as string))
+             || typeof row.measure !== 'string' || !item.coordinates!.measure.includes(row.measure) || returned.has(`${row.typequ ?? ''}/${row.measure}`)
             || row.comparison_context !== (options.intent.kind === 'selected_comparison' ? 'selected_comparison' : options.intent.context)
             || (row.statistic !== 'direct' && row.statistic !== 'pooled') || (selected && row.statistic !== 'pooled')
             || !(row.group_value === null || finite(row.group_value))

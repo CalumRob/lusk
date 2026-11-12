@@ -734,10 +734,20 @@ export function themeFactsEnvelopeFromSemantic(theme: ThemeKey, acquired: ThemeR
     // eligible to resolve it.
   }
 
+  // A typed publication absence is an explicit per-resource state, never a
+  // fabricated value: surface it through the same unavailable-reading channel
+  // that already renders an accessible, retryable banner.
+  for (const failure of Array.isArray(acquired.resource_failures) ? acquired.resource_failures : []) {
+    if (isRecord(failure) && failure.stage === 'facts' && texteNonVide(failure.resource)) {
+      unavailableReadings.push(failure.resource)
+    }
+  }
+
   for (const read of reads) {
     const data = read.data
     const resource = read.resource
     const shapes = Array.isArray(read.shapes) ? read.shapes : []
+
     if (shapes.includes('typed_reading')) {
       if (!Array.isArray(data.facts)) throw new Error(`Lecture typée sémantique invalide : ${resource}`)
       for (const candidate of rows(data.facts, 'typed_reading.facts')) {

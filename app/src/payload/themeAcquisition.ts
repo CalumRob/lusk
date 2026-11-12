@@ -1,9 +1,10 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
 import type { TerritoireType, Theme } from './types'
 import { validerReponseComparaisonTheme } from './themeFactsAdapter'
-import { chargerCatalogueRessources, lireRessourcesBatch } from './semanticResourceClient'
-import type { SemanticReadItem, SemanticResourceDeclaration, SemanticTerritoryTarget } from './semanticResourceClient'
-import { PayloadError } from './validate'
+import { chargerCatalogueRessources, invalidateSemanticReads, invalidateSemanticReadsForTarget,
+  readSemanticOutcomes } from './semanticResourceClient'
+import type { SemanticPublicationFamily, SemanticPublicationReason, SemanticReadItem,
+  SemanticReadOutcome, SemanticResourceDeclaration, SemanticTerritoryTarget } from './semanticResourceClient'
 /** Every canonical theme is acquired (active priority, then background warm-up) unless an owner-owned flow handles it. */
 export const THEMES_ACQUISITION_API: readonly Theme[] = ['programmes', 'demographie', 'habitat', 'economie', 'milieux', 'mobilite']
 export type ThemeSelectionMember = { territory_type: 'commune' | 'epci' | 'departement' | 'region'; territory_id: string }
@@ -22,11 +23,15 @@ export interface PublicationTokens {
   building_publication_id?: unknown
 }
 
-/** Explicit per-resource failure so one unpublished resource never blanks a whole theme page. */
+/** Explicit per-resource outcome so one unpublished resource never blanks a whole theme page. */
 export interface ThemeResourceFailure {
   resource: string
   label: string | null
   stage: 'facts' | 'comparison'
+  /** A settled publication absence, or a hard request/validation failure. */
+  state: 'publication_unavailable' | 'error'
+  family?: SemanticPublicationFamily
+  reason?: SemanticPublicationReason
   message: string
 }
 
@@ -202,6 +207,12 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     this.comparisonGenerations.set(pendingKey, generation)
     const request = this.acquireComparison(selection, theme, key).then((comparison) => {
       if (generation !== this.comparisonGenerations.get(pendingKey)) throw new Error('Stale theme comparison response')
+      // A comparison-only response whose every declared comparison stayed
+      // unavailable is an explicit retryable error, never a ready page.
+      if (comparison.comparison_error === true) {
+        throw new Error(typeof comparison.comparison_failure === 'string'
+          ? comparison.comparison_failure : 'Publication de comparaison indisponible')
+      }
       this.assertCurrentFocal(cacheKey, focalGeneration, focal)
       const legacySeriesResponse = (focal.focal.resource_reads ?? []).some((read) =>
         isNativeLegacySeriesFocal(read) && comparison.comparison_reads?.some((candidate) =>
@@ -238,6 +249,11 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
       const result = { ...current, comparisons: new Map(current.comparisons).set(selectionKey, comparison) }
       this.entries.set(cacheKey, result)
       return comparison
+    }).catch((error: unknown) => {
+      // A rejected comparison is not a settled publication: release this
+      // territory's acquisition generation so an explicit retry re-probes it.
+      invalidateSemanticReadsForTarget(type, id)
+      throw error
     }).finally(() => {
       if (this.pendingComparisons.get(pendingKey) === request) this.pendingComparisons.delete(pendingKey)
     })
@@ -261,6 +277,11 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     }
     this.comparisonGenerations.set(pendingKey, (this.comparisonGenerations.get(pendingKey) ?? 0) + 1)
     this.pendingComparisons.delete(pendingKey)
+    // An explicit comparison retry re-probes the shared comparison items and
+    // their same-level cohort evidence; admitted focal facts stay reusable.
+    invalidateSemanticReads((item) => item.target.kind === 'territory'
+      ? item.target.type === type && item.target.id === id && item.intent.kind !== 'facts'
+      : item.target.kind === 'territory_cohort' && item.target.type === type)
   }
 
   invalidate(type: string, id: string, theme?: ThemeKey): void {
@@ -283,6 +304,10 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
         this.pendingComparisons.delete(pendingKey)
       }
     }
+    // An explicit retry also releases this territory's settled semantic item
+    // outcomes (including a cached publication absence) so the next acquisition
+    // re-probes the publication instead of replaying the absence forever.
+    invalidateSemanticReadsForTarget(type, id)
   }
 }
 
@@ -310,43 +335,6 @@ export function producerCatalogue(): Promise<SemanticResourceDeclaration[]> {
   return catalogueRequest
 }
 
-function readGroupKey(item: SemanticReadItem): string {
-  const target = item.target
-  const targetId = 'id' in target && target.id ? target.id : ''
-  const department = 'department_id' in target ? target.department_id ?? '' : ''
-  const epci = 'epci_id' in target ? target.epci_id ?? '' : ''
-  return [item.resource, target.kind, 'type' in target ? target.type : '', targetId, department, epci].join('\u0000')
-}
-
-/**
- * Keep every read of one resource+target together (focal/default facts and all
- * declared per-detail comparisons). A group larger than the batch limit fails
- * loudly rather than splitting or looping forever.
- */
-function chunkedGroups<T>(items: T[], size = 12, groupKey: (item: T) => string): T[][] {
-  const groups = new Map<string, T[]>()
-  for (const item of items) {
-    const key = groupKey(item)
-    const group = groups.get(key)
-    if (group) group.push(item)
-    else groups.set(key, [item])
-  }
-  const batches: T[][] = []
-  let batch: T[] = []
-  for (const group of groups.values()) {
-    if (group.length > size) {
-      throw new Error(`Lot sémantique indivisible supérieur à la limite de ${size} lectures.`)
-    }
-    if (batch.length + group.length > size) {
-      batches.push(batch)
-      batch = []
-    }
-    batch.push(...group)
-  }
-  if (batch.length) batches.push(batch)
-  return batches
-}
-
 function territoryItem(resource: string, type: string, id: string, intent: SemanticReadItem['intent']): SemanticReadItem {
   return { resource, target: { kind: 'territory', type: type as SemanticTerritoryTarget['type'], id }, intent }
 }
@@ -372,81 +360,46 @@ function retainedThemeResources(catalogue: SemanticResourceDeclaration[], theme:
 type AlignedRead = { resource: string; data: Record<string, unknown> }
 
 /**
- * #977 — the shared semantic API pool is small (`max_size=4`), so the Mobilité
- * isolation path never holds more than two semantic reads in flight. The gate
- * only covers the HTTP read itself, never the surrounding orchestration, so a
- * recovering batch can never wait on a slot it already owns.
+ * Read every requested item through the one shared acquisition seam. Each
+ * requested item yields exactly one outcome: the unchanged data payload or an
+ * explicit publication-unavailable state. Nothing re-reads a resource group and
+ * no automatic discovery request follows an absence.
  */
-const MOBILITE_MAX_ACTIVE_READS = 2
-
-class SemanticReadGate {
-  private active = 0
-  private readonly waiting: Array<() => void> = []
-
-  constructor(private readonly limit: number) {}
-
-  async run<T>(read: () => Promise<T>): Promise<T> {
-    if (this.active >= this.limit) await new Promise<void>((resolve) => this.waiting.push(resolve))
-    else this.active += 1
-    try {
-      return await read()
-    } finally {
-      const next = this.waiting.shift()
-      // Handing the slot straight to the next waiter keeps `active` unchanged.
-      if (next) next()
-      else this.active -= 1
+async function readThemeOutcomes(
+  items: SemanticReadItem[],
+  resources: SemanticResourceDeclaration[],
+): Promise<{ reads: Array<AlignedRead | null>; failures: ThemeResourceFailure[] }> {
+  const outcomes = await readSemanticOutcomes(items)
+  const reads: Array<AlignedRead | null> = new Array(items.length).fill(null)
+  const failures: ThemeResourceFailure[] = []
+  outcomes.forEach((outcome, index) => {
+    const item = items[index]!
+    if (outcome.status === 'available') {
+      reads[index] = { resource: item.resource, data: outcome.data }
+      return
     }
-  }
+    failures.push(publicationFailure(resources, item.resource,
+      item.intent.kind === 'facts' ? 'facts' : 'comparison', outcome))
+  })
+  return { reads, failures }
 }
 
-/**
- * Run bounded tasks in order with at most `limit` in flight, returning results by
- * task index. A failure starts no further task, lets in-flight reads settle, then
- * rethrows the lowest-index failure so error identity never depends on timing.
- */
-async function runBounded<T>(tasks: ReadonlyArray<() => Promise<T>>, limit: number): Promise<T[]> {
-  const results: T[] = new Array(tasks.length)
-  const failures = new Map<number, unknown>()
-  let next = 0
-  const worker = async () => {
-    while (next < tasks.length && failures.size === 0) {
-      const index = next++
-      try {
-        results[index] = await tasks[index]!()
-      } catch (error) {
-        failures.set(index, error)
-        return
-      }
-    }
+function publicationFailure(
+  resources: SemanticResourceDeclaration[],
+  resource: string,
+  stage: ThemeResourceFailure['stage'],
+  outcome: Extract<SemanticReadOutcome, { status: 'publication_unavailable' }>,
+): ThemeResourceFailure {
+  const label = resources.find((declaration) => declaration.resource_id === resource)?.label ?? null
+  return {
+    resource,
+    label,
+    stage,
+    state: 'publication_unavailable',
+    family: outcome.family,
+    reason: outcome.reason,
+    message: `La publication de « ${label ?? resource} » n’est pas encore disponible.`,
   }
-  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker))
-  const firstFailure = [...failures.keys()].sort((left, right) => left - right)[0]
-  if (firstFailure !== undefined) throw failures.get(firstFailure)
-  return results
-}
-
-async function readAll(items: SemanticReadItem[]): Promise<AlignedRead[]> {
-  // Grouping keeps every resource+target read in one batch, so batch order no
-  // longer follows request order; results are placed back by original index.
-  const originalIndex = new Map(items.map((item, index) => [item, index]))
-  const output: AlignedRead[] = new Array(items.length)
-  for (const batch of chunkedGroups(items, 12, readGroupKey)) {
-    const data = await lireRessourcesBatch(batch)
-    batch.forEach((item, index) => {
-      output[originalIndex.get(item)!] = { resource: item.resource, data: data[index]! }
-    })
-  }
-  return output
-}
-
-/**
- * Availability isolation is deliberately narrower than "any failed read": only
- * a real HTTP 503 service/publication gap may be downgraded to a per-resource
- * failure. Member identity, validation/shape/target and transport errors keep
- * propagating to their existing retry/error surfaces.
- */
-function isPublicationUnavailable(error: unknown): boolean {
-  return error instanceof PayloadError && error.kind === 'fetch' && error.status === 503
 }
 
 function resourceFailure(
@@ -459,6 +412,7 @@ function resourceFailure(
     resource,
     label: resources.find((declaration) => declaration.resource_id === resource)?.label ?? null,
     stage,
+    state: 'error',
     message: error instanceof Error ? error.message : String(error),
   }
 }
@@ -471,104 +425,6 @@ function uniqueFailures(failures: readonly ThemeResourceFailure[]): ThemeResourc
     seen.add(key)
     return true
   })
-}
-
-function groupReadItems(items: SemanticReadItem[]): SemanticReadItem[][] {
-  const groups = new Map<string, SemanticReadItem[]>()
-  for (const item of items) {
-    const key = readGroupKey(item)
-    const group = groups.get(key)
-    if (group) group.push(item)
-    else groups.set(key, [item])
-  }
-  return [...groups.values()]
-}
-
-/**
- * Read a single bounded resource group in a fresh snapshot. A paired read keeps
- * facts and their default comparison together; if only the comparison is
- * rejected, a fresh facts-only read preserves the focal value without ever
- * combining two generations.
- */
-async function readIsolatedGroup(
-  group: SemanticReadItem[],
-  resources: SemanticResourceDeclaration[],
-  gate: SemanticReadGate,
-): Promise<{ data: Array<Record<string, unknown> | null>; failures: ThemeResourceFailure[] }> {
-  const facts = group.filter((item) => item.intent.kind === 'facts')
-  try {
-    return { data: await gate.run(() => lireRessourcesBatch(group)), failures: [] }
-  } catch (error) {
-    if (!isPublicationUnavailable(error)) throw error
-    if (!facts.length) {
-      return {
-        data: group.map(() => null),
-        failures: group.map((item) => resourceFailure(resources, item.resource, 'comparison', error)),
-      }
-    }
-    try {
-      const data = await gate.run(() => lireRessourcesBatch(facts))
-      return {
-        data: group.map((item) => {
-          const index = facts.indexOf(item)
-          return index >= 0 ? data[index]! : null
-        }),
-        failures: group.filter((item) => item.intent.kind !== 'facts')
-          .map((item) => resourceFailure(resources, item.resource, 'comparison', error)),
-      }
-    } catch (factsError) {
-      // The paired read said "publication unavailable", but the fresh
-      // facts-only read must still be a real 503 to become a data failure.
-      if (!isPublicationUnavailable(factsError)) throw factsError
-      return {
-        data: group.map(() => null),
-        failures: [resourceFailure(resources, group[0]!.resource, 'facts', factsError)],
-      }
-    }
-  }
-}
-
-/**
- * Mobilite-only isolation seam: a failed atomic batch is never partially
- * salvaged. Every resource group in it is re-read in its own bounded snapshot,
- * with an explicit failure entry for the resources the publication cannot serve.
- *
- * Independent waves of a single acquisition overlap through one gate bounded to
- * two active semantic reads (#977); their results are still placed back by
- * original index, so correlation and resource order never follow response order.
- */
-async function readAllWithIsolation(
-  items: SemanticReadItem[],
-  resources: SemanticResourceDeclaration[],
-): Promise<{ reads: Array<AlignedRead | null>; failures: ThemeResourceFailure[] }> {
-  const originalIndex = new Map(items.map((item, index) => [item, index]))
-  const reads: Array<AlignedRead | null> = new Array(items.length).fill(null)
-  const gate = new SemanticReadGate(MOBILITE_MAX_ACTIVE_READS)
-  const assign = (group: SemanticReadItem[], data: Array<Record<string, unknown> | null>) => {
-    group.forEach((item, index) => {
-      const value = data[index]
-      if (value) reads[originalIndex.get(item)!] = { resource: item.resource, data: value }
-    })
-  }
-  const waveFailures = await runBounded(chunkedGroups(items, 12, readGroupKey).map((batch) =>
-    async (): Promise<ThemeResourceFailure[]> => {
-      try {
-        assign(batch, await gate.run(() => lireRessourcesBatch(batch)))
-        return []
-      } catch (batchError) {
-        // Only a real HTTP 503 publication/service gap is isolated. Member
-        // identity, validation/shape/target and transport errors keep their
-        // typed propagation instead of being misreported as "unpublished".
-        if (!isPublicationUnavailable(batchError)) throw batchError
-        // Never reuse a successful prefix from the rejected atomic batch.
-        const groups = groupReadItems(batch)
-        const outcomes = await runBounded(groups.map((group) => async () =>
-          readIsolatedGroup(group, resources, gate)), MOBILITE_MAX_ACTIVE_READS)
-        groups.forEach((group, index) => assign(group, outcomes[index]!.data))
-        return outcomes.flatMap((outcome) => outcome.failures)
-      }
-    }), MOBILITE_MAX_ACTIVE_READS)
-  return { reads, failures: uniqueFailures(waveFailures.flat()) }
 }
 
 /**
@@ -679,11 +535,6 @@ function factAndDefaultComparisonItems(resources: SemanticResourceDeclaration[],
   })
 }
 
-function factItems(resources: SemanticResourceDeclaration[], type: string, id: string): SemanticReadItem[] {
-  return resources.filter((resource) => resource.target_kinds.includes('territory') && resource.intents.includes('facts'))
-    .map((resource) => territoryItem(resource.resource_id, type, id, { kind: 'facts' }))
-}
-
 function typedCohortItems(resources: SemanticResourceDeclaration[], type: string,
   selection?: readonly ThemeSelectionMember[]): SemanticReadItem[] {
   return resources.filter((resource) => resource.shapes.includes('typed_reading') &&
@@ -698,21 +549,34 @@ function namedReferenceItems(resources: SemanticResourceDeclaration[]): Semantic
     .flatMap((resource) => (resource.target_ids ?? []).map((id) => namedReferenceItem(resource.resource_id, id)))
 }
 
-async function readAuxiliary(resources: SemanticResourceDeclaration[], type: string, includeNamedReferences = true,
-  selection?: readonly ThemeSelectionMember[]) {
+/**
+ * Cohort, named-reference and other auxiliary reads share the same outcome
+ * client. An unavailable auxiliary resource is recorded once and never turns a
+ * healthy focal render into a failure; only a hard request error sets the
+ * cohort/named-reference error flag used by the retry surfaces.
+ */
+async function readAuxiliary(resources: SemanticResourceDeclaration[], type: string,
+  includeNamedReferences = true, selection?: readonly ThemeSelectionMember[],
+): Promise<{ responses: Partial<ThemeResponse>; failures: ThemeResourceFailure[] }> {
   const cohorts = typedCohortItems(resources, type, selection)
   const namedReferences = includeNamedReferences ? namedReferenceItems(resources) : []
   const [cohortResult, namedResult] = await Promise.allSettled([
-    cohorts.length ? readAll(cohorts) : Promise.resolve([]),
-    namedReferences.length ? readAll(namedReferences) : Promise.resolve([]),
+    cohorts.length ? readThemeOutcomes(cohorts, resources) : Promise.resolve({ reads: [], failures: [] }),
+    namedReferences.length ? readThemeOutcomes(namedReferences, resources)
+      : Promise.resolve({ reads: [], failures: [] }),
   ])
-  const wrap = (reads: Array<{ resource: string; data: Record<string, unknown> }>) => reads.map((read) => {
-    const declaration = resources.find((resource) => resource.resource_id === read.resource)
-    return { ...read, shapes: declaration?.shapes, declaration }
-  })
+  const present = (reads: Array<AlignedRead | null>) => reads
+    .filter((read): read is AlignedRead => read !== null).map((read) => decorateRead(read, resources))
   return {
-    ...(cohortResult.status === 'fulfilled' ? { cohort_reads: wrap(cohortResult.value) } : { cohort_error: true }),
-    ...(namedResult.status === 'fulfilled' ? { named_reference_reads: wrap(namedResult.value) } : { named_reference_error: true }),
+    responses: {
+      ...(cohortResult.status === 'fulfilled' ? { cohort_reads: present(cohortResult.value.reads) } : { cohort_error: true }),
+      ...(namedResult.status === 'fulfilled' ? { named_reference_reads: present(namedResult.value.reads) }
+        : { named_reference_error: true }),
+    },
+    failures: [
+      ...(cohortResult.status === 'fulfilled' ? cohortResult.value.failures : []),
+      ...(namedResult.status === 'fulfilled' ? namedResult.value.failures : []),
+    ],
   }
 }
 
@@ -935,94 +799,67 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
   return true
 }
 
-async function acquireMobiliteFacts(
-  themeResources: SemanticResourceDeclaration[],
-  resources: SemanticResourceDeclaration[],
-  items: SemanticReadItem[],
-  theme: ThemeKey,
-  type: string,
-  id: string,
-): Promise<ThemeResponse> {
-  const { reads, failures } = await readAllWithIsolation(items, resources)
-  const hasFact = items.some((item, index) => item.intent.kind === 'facts' && reads[index] !== null)
-  if (!hasFact && failures.length) {
-    const factsFailure = uniqueFailures(failures).find((failure) => failure.stage === 'facts') ?? failures[0]
-    throw new Error(factsFailure!.message)
-  }
-  const compatibilityFailures = filterCompatibleComparisons(items, reads, resources, type, id)
-  const allFailures = uniqueFailures([...failures, ...compatibilityFailures]).slice()
-  const resourceReads = items
-    .map((item, index) => item.intent.kind === 'facts' ? reads[index] : null)
-    .filter((read): read is AlignedRead => read !== null)
-    .map((read) => decorateRead(read, resources))
-  const comparisonReads = items
-    .map((item, index) => item.intent.kind !== 'facts' ? reads[index] : null)
-    .filter((read): read is AlignedRead => read !== null)
-    .map((read) => decorateRead(read, resources))
-  const defaultComparison = { theme_id: theme, comparison_reads: comparisonReads }
-  const result: ThemeResponse = { theme_id: theme, resource_reads: resourceReads,
-    default_comparison: defaultComparison }
-  if (comparisonReads.length && !semanticPublicationsCompatible(result, defaultComparison, { type, id })) {
-    // The per-resource checks passed; this is a cross-resource incompatibility.
-    // Drop every comparison rather than surfacing a ready but mismatched value.
-    for (const read of comparisonReads) {
-      allFailures.push(resourceFailure(resources, read.resource, 'comparison',
-        new Error('Publications sémantiques focales et comparées incompatibles')))
-    }
-    comparisonReads.length = 0
-  }
-  const unique = uniqueFailures(allFailures)
-  const declaredComparisonResources = resources.filter((resource) =>
-    resource.target_kinds.includes('territory') && resource.intents.includes('fixed_comparison'))
-  const successfulComparisonResources = new Set(comparisonReads.map((read) => read.resource))
-  const comparison_error = declaredComparisonResources.length > 0 &&
-    declaredComparisonResources.every((resource) => !successfulComparisonResources.has(resource.resource_id))
-  return {
-    ...result,
-    ...(unique.length ? { resource_failures: unique } : {}),
-    ...(comparison_error ? {
-      comparison_error: true,
-      comparison_failure: unique.find((failure) => failure.stage === 'comparison')?.message,
-    } : {}),
-    ...(await readAuxiliary(themeResources, type)),
-  }
+function failureResponse(failures: readonly ThemeResourceFailure[]): { resource_failures?: ThemeResourceFailure[] } {
+  const unique = uniqueFailures(failures)
+  return unique.length ? { resource_failures: unique } : {}
 }
 
+/**
+ * One theme facts acquisition for every canonical theme. Each requested item is
+ * a typed outcome: healthy resources stay rendered, a publication absence is an
+ * explicit per-resource failure, and no discovery retry or facts-only re-read
+ * follows it.
+ */
 export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
   _selection?: readonly ThemeSelectionMember[]): Promise<ThemeResponse> {
   return (async () => {
     const themeResources = (await producerCatalogue()).filter((resource) => resource.theme_id === theme)
     const resources = retainedThemeResources(themeResources, theme, type)
     const items = factAndDefaultComparisonItems(resources, type, id)
-    if (!items.length) return { theme_id: theme, resource_reads: [],
-      default_comparison: { theme_id: theme, comparison_reads: [] },
-      ...(await readAuxiliary(themeResources, type)) }
-    if (theme === 'mobilite') {
-      return acquireMobiliteFacts(themeResources, resources, items, theme, type, id)
+    if (!items.length) {
+      const auxiliary = await readAuxiliary(themeResources, type)
+      return { theme_id: theme, resource_reads: [],
+        default_comparison: { theme_id: theme, comparison_reads: [] },
+        ...auxiliary.responses, ...failureResponse(auxiliary.failures) }
     }
-    try {
-      const paired = await readAll(items)
-      const resourceReads = paired.filter((_, index) => items[index]!.intent.kind === 'facts')
-        .map((read) => { const declaration = resources.find((resource) => resource.resource_id === read.resource)
-          return { ...read, shapes: declaration?.shapes, declaration } })
-      const comparisonReads = paired.filter((_, index) => items[index]!.intent.kind !== 'facts')
-        .map((read) => { const declaration = resources.find((resource) => resource.resource_id === read.resource)
-          return { ...read, shapes: declaration?.shapes, declaration } })
-      const defaultComparison = { theme_id: theme, comparison_reads: comparisonReads }
-      const result: ThemeResponse = { theme_id: theme, resource_reads: resourceReads, default_comparison: defaultComparison }
-      if (!semanticPublicationsCompatible(result, defaultComparison, { type, id })) {
-        throw new Error('Les publications sémantiques focales et comparées diffèrent')
+    const { reads, failures } = await readThemeOutcomes(items, resources)
+    const auxiliary = await readAuxiliary(themeResources, type)
+    const compatibilityFailures = filterCompatibleComparisons(items, reads, resources, type, id)
+    const allFailures: ThemeResourceFailure[] = [...failures, ...compatibilityFailures]
+    const resourceReads = items
+      .map((item, index) => item.intent.kind === 'facts' ? reads[index] : null)
+      .filter((read): read is AlignedRead => read !== null)
+      .map((read) => decorateRead(read, resources))
+    const comparisonReads = items
+      .map((item, index) => item.intent.kind !== 'facts' ? reads[index] : null)
+      .filter((read): read is AlignedRead => read !== null)
+      .map((read) => decorateRead(read, resources))
+    const defaultComparison = { theme_id: theme, comparison_reads: comparisonReads }
+    const result: ThemeResponse = { theme_id: theme, resource_reads: resourceReads,
+      default_comparison: defaultComparison }
+    if (comparisonReads.length && !semanticPublicationsCompatible(result, defaultComparison, { type, id })) {
+      // The per-resource checks passed; this is a cross-resource incompatibility.
+      // Drop every comparison rather than surfacing a ready but mismatched value.
+      for (const read of comparisonReads) {
+        allFailures.push(resourceFailure(resources, read.resource, 'comparison',
+          new Error('Publications sémantiques focales et comparées incompatibles')))
       }
-      return { ...result, ...(await readAuxiliary(themeResources, type)) }
-    } catch (pairedFailure) {
-      // A semantic batch is atomic. Never salvage a successful prefix: start a
-      // new facts-only read set, which has its own snapshots and dependencies.
-      const recovered = (await readAll(factItems(resources, type, id))).map((read) => ({ ...read,
-        shapes: resources.find((resource) => resource.resource_id === read.resource)?.shapes,
-        declaration: resources.find((resource) => resource.resource_id === read.resource) }))
-      return { theme_id: theme, resource_reads: recovered, comparison_error: true,
-        comparison_failure: pairedFailure instanceof Error ? pairedFailure.message : String(pairedFailure),
-        ...(await readAuxiliary(themeResources, type)) }
+      comparisonReads.length = 0
+    }
+    const declaredComparisonResources = resources.filter((resource) =>
+      resource.target_kinds.includes('territory') && resource.intents.includes('fixed_comparison'))
+    const successfulComparisonResources = new Set(comparisonReads.map((read) => read.resource))
+    const comparison_error = declaredComparisonResources.length > 0 &&
+      declaredComparisonResources.every((resource) => !successfulComparisonResources.has(resource.resource_id))
+    const unique = uniqueFailures([...allFailures, ...auxiliary.failures])
+    return {
+      ...result,
+      ...auxiliary.responses,
+      ...(unique.length ? { resource_failures: unique } : {}),
+      ...(comparison_error ? {
+        comparison_error: true,
+        comparison_failure: unique.find((failure) => failure.stage === 'comparison')?.message,
+      } : {}),
     }
   })()
 }
@@ -1042,23 +879,20 @@ export function acquireThemeComparison(type: string, id: string, theme: ThemeKey
         ? detailItems
         : [territoryItem(resource.resource_id, type, id, intent)]
     })
-    const isolated = theme === 'mobilite' ? await readAllWithIsolation(items, resources) : null
-    const comparisons = isolated
-      ? items.map((_item, index) => isolated.reads[index])
-        .filter((read): read is AlignedRead => read !== null)
-      : await readAll(items)
+    const { reads, failures } = items.length
+      ? await readThemeOutcomes(items, resources)
+      : { reads: [] as Array<AlignedRead | null>, failures: [] as ThemeResourceFailure[] }
+    const comparisons = reads.filter((read): read is AlignedRead => read !== null)
     const auxiliary = await readAuxiliary(themeResources, type, false, selection)
     const echoedSelection = comparisons.length ? comparisons[0]!.data.selection : undefined
     if (comparisons.some(({ data }) => JSON.stringify(data.selection ?? null) !== JSON.stringify(echoedSelection ?? null))) {
       throw new Error('Les comparaisons sémantiques ne reflètent pas la même sélection')
     }
-    const failures = isolated?.failures ?? []
-    const comparison_error = theme === 'mobilite' && items.length > 0 && comparisons.length === 0
+    const unique = uniqueFailures([...failures, ...auxiliary.failures])
+    const comparison_error = items.length > 0 && comparisons.length === 0
     return { theme_id: theme, ...(selection === undefined ? {} : { selection }),
-      comparison_reads: comparisons.map((read) => ({ ...read,
-        shapes: resources.find((resource) => resource.resource_id === read.resource)?.shapes,
-        declaration: resources.find((resource) => resource.resource_id === read.resource) })), ...auxiliary,
-      ...(failures.length ? { resource_failures: failures } : {}),
+      comparison_reads: comparisons.map((read) => decorateRead(read, resources)), ...auxiliary.responses,
+      ...(unique.length ? { resource_failures: unique } : {}),
       ...(comparison_error ? { comparison_error: true } : {}),
       ...(Array.isArray(echoedSelection) ? { selection: echoedSelection } : {}) }
   })()

@@ -1,6 +1,6 @@
 import type { Indicateur, NativeThemeFactContract, Territoire, TerritoireType, Theme, IndicatorPageMetadata, ThemeMetadata } from './types'
 import { PayloadError } from './validate'
-import { chargerCatalogueRessources, lireRessourcesBatch } from './semanticResourceClient'
+import { chargerCatalogueRessources, invalidateSemanticReads, lireRessourcesBatch } from './semanticResourceClient'
 import type { SemanticReadItem, SemanticResourceDeclaration } from './semanticResourceClient'
 
 type Row = Record<string, unknown>
@@ -116,9 +116,15 @@ export async function chargerCohorteScalaire(indicator: string, theme: Theme, pa
   identity?: ScalarIdentity,
 ): Promise<Indicateur[]> {
   const resources = await chargerCatalogueRessources()
-  const [data] = await lireRessourcesBatch([itemScalaire(indicator, level, scope)])
+  const items = [itemScalaire(indicator, level, scope)]
+  const [data] = await lireRessourcesBatch(items)
   const declaration = resources.find((resource) => resource.resource_id === indicator)
-  return adapterCohorteScalaire(data!, declaration, indicator, theme, page, level, territories, scope, identity)
+  try {
+    return adapterCohorteScalaire(data!, declaration, indicator, theme, page, level, territories, scope, identity)
+  } catch (error) {
+    invalidateSemanticReads((item) => items.includes(item))
+    throw error
+  }
 }
 
 /** Read the clicked territory's rank from the exact producer comparison group.
@@ -406,10 +412,17 @@ export async function chargerComparaisonsScalaires(indicators: string[], theme: 
     return itemComparaisonScalaire(indicator, focal, request, includeMemberRanks)
   })
   const data = await lireRessourcesBatch(items)
-  return Object.fromEntries(indicators.map((indicator, index) => [indicator, includeMemberRanks
-    ? adapterComparaisonScalaire(data[index]!, indicator, pages[indicator]!, focal, request,
-        identity, true, territories, resources.find((resource) => resource.resource_id === indicator)?.sources)
-    : adapterComparaisonScalaire(data[index]!, indicator, pages[indicator]!, focal, request, identity)]))
+  try {
+    return Object.fromEntries(indicators.map((indicator, index) => [indicator, includeMemberRanks
+      ? adapterComparaisonScalaire(data[index]!, indicator, pages[indicator]!, focal, request,
+          identity, true, territories, resources.find((resource) => resource.resource_id === indicator)?.sources)
+      : adapterComparaisonScalaire(data[index]!, indicator, pages[indicator]!, focal, request, identity)]))
+  } catch (error) {
+    // A rejected comparison is not a settled publication: the explicit retry
+    // must re-probe these exact reads rather than replay the rejected outcome.
+    invalidateSemanticReads((item) => items.includes(item))
+    throw error
+  }
 }
 
 function itemScalaire(indicator: string, level: TerritoireType,
