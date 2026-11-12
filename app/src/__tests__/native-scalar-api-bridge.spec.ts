@@ -6,7 +6,7 @@ import { validerCatalogueNavigateur } from '@/payload/validate'
 import type { ScalarComparisonRequest } from '@/payload/scalarCohort'
 import type { Territoire, TerritoireType } from '@/payload/types'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
-import { nativeResources } from './helpers/semanticApiFixtures'
+import { nativeResources, replayCapturedBatchV2 } from './helpers/semanticApiFixtures'
 
 type NativeCapture = {
   level: TerritoireType
@@ -53,13 +53,21 @@ async function adaptNativeCapture(wire: NativeCapture, corruption?: 'descriptor'
 
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     expect(String(input)).toBe('/api/resources/read-batch')
-    const request = JSON.parse(String(init?.body))
-    const item = request.items[0]
+    const request = JSON.parse(String(init?.body)) as { contract: string; items: Array<Record<string, any>> }
+    const item = request.items[0] as Record<string, any>
     const captured = item.intent.kind === 'facts'
       ? item.target.kind === 'territory_cohort' ? wire.cohort : { ...wire.focal, response: focalResponse }
       : { ...wire.comparison, response: comparisonResponse }
-    expect(request).toEqual(captured.request)
-    return new Response(JSON.stringify(captured.response), { status: captured.response_status ?? 200 })
+    expect(request.contract).toBe('semantic-read-batch-v2')
+    expect(request.items.map(({ id: _requestId, ...rest }) => rest))
+      .toEqual(captured.request.items.map(({ id: _capturedId, ...rest }: Record<string, any>) => rest))
+    // A captured hard failure keeps its status/body: it is a whole-request
+    // failure, never a typed publication outcome.
+    if ((captured.response_status ?? 200) >= 400) {
+      return new Response(JSON.stringify(captured.response), { status: captured.response_status })
+    }
+    return new Response(JSON.stringify(replayCapturedBatchV2(captured.response, request.items)),
+      { status: captured.response_status ?? 200 })
   })
   vi.stubGlobal('fetch', fetcher)
 

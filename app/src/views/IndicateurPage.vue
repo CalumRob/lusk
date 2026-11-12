@@ -34,7 +34,8 @@ import { adapterPageProfilDeclare, chargerCohorteProfilDeclare, chargerComparais
 import type { DeclaredProfileDescriptor, ProfileComparison, ProfilePageBinding, ProfilePublicationIdentity, ProfileTarget } from '@/payload/profileAcquisition'
 import { chargerCatalogueRessources } from '@/payload/semanticResourceClient'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
-import { createOrderedSeriesSemanticSession, projectAdmittedCohortForFocal,
+import { createOrderedSeriesSemanticSession, invalidateOrderedSeriesFocalTarget,
+  projectAdmittedCohortForFocal,
   SeriesCohortAvailableError, SeriesComparisonRejectedError,
   SeriesPublicationMismatchError } from '@/payload/seriesSemanticAcquisition'
 import { projectRaccordementSemanticComparison, projectRaccordementSemanticFocal } from '@/payload/raccordementSemanticProjection'
@@ -660,6 +661,7 @@ const serieErreur = ref(false)
 const serieChargement = ref(false)
 let serieRequete = 0
 let serieRequestKey: string | null = null
+let seriePreviousFocal: { resource: string; type: TerritoireType; id: string } | null = null
 let raccordementFocalKey: string | null = null
 const niveauSerie = computed<TerritoireType>(() => {
   const levels = (catalogueResourcesApi.value?.find((resource) => resource.resource_id === indicator.value)
@@ -702,6 +704,14 @@ async function chargerSerie(force = false) {
   if (!force && requestKey === serieRequestKey && (serieChargement.value || serieErreur.value || serieLecture.value ||
       raccordementApiLecture.value?.comparison || raccordementComparaisonChargement.value || raccordementComparaisonErreur.value)) return
   const request = ++serieRequete
+  if (seriePreviousFocal && (seriePreviousFocal.resource !== adapter.indicator ||
+      seriePreviousFocal.type !== focal.type || seriePreviousFocal.id !== focal.territoire)) {
+    // A new route/focal generation abandons the previous focal read; a
+    // comparison retry for the same focal keeps its in-flight acquisition.
+    invalidateOrderedSeriesFocalTarget(seriePreviousFocal.resource, seriePreviousFocal.type,
+      seriePreviousFocal.id)
+  }
+  seriePreviousFocal = { resource: adapter.indicator, type: focal.type, id: focal.territoire }
   serieRequestKey = requestKey
   const focalKey = JSON.stringify([focal.type, focal.territoire])
   const retainedFocal = raccordement && raccordementFocalKey === focalKey && raccordementApiLecture.value !== null

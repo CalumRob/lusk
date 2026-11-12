@@ -207,7 +207,7 @@ watch([() => referenceTerritoire.reference.value, selection, typeRoute, idRoute,
   }, { immediate: true })
 const cacheAcquisition = new ThemeAcquisitionCache(
   (theme, key) => acquireThemeFacts(key!.type, key!.id, theme),
-  (selection, theme, key) => acquireThemeComparison(key!.type, key!.id, theme, selection),
+  (selection, theme, key, coherence) => acquireThemeComparison(key!.type, key!.id, theme, selection, coherence),
 )
 const faitsThemeRows = ref<Indicateur[] | null>(null)
 const histoiresThemeRows = ref<Histoire[] | null>(null)

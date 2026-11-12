@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { aedarComparisonRank, fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import { invalidateSemanticReadsForTarget } from '@/payload/semanticResourceClient'
 import captured from './fixtures/aedar-selected-comparison-captured.json'
 const aggregateMeasures = ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) => [5, 10, 15, 20]
   .flatMap((horizon) => ['Diversity', 'Volume'].map((kind) => mode === 'car' && horizon === 15
@@ -31,8 +32,8 @@ function mockResponse(data: unknown) {
   const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
     const { items } = JSON.parse(init!.body as string)
-    return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1',
-      results: items.map((item: { id: string }) => ({ id: item.id, data })) }) } as Response
+    return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2',
+      results: items.map((item: { id: string; resource: string }) => ({ id: item.id, resource: item.resource, status: 'available', data })) }) } as Response
   })
   vi.stubGlobal('fetch', fetcher)
   return fetcher
@@ -60,10 +61,12 @@ describe('lecture AEDAR de la Sélection', () => {
     const result = await fetchAedarComparison('commune', '22001', { ...options,
       intent: { kind: 'fixed_comparison', context: 'density_class' }, label: 'Classe de densité', typequ: [], measures })
     expect(result.status).toBe('error')
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    // One catalogue discovery plus ceil(40 / 12) bounded semantic batches.
+    expect(fetcher).toHaveBeenCalledTimes(5)
     expect(fetcher.mock.calls[0]![0]).toBe('/api/resources')
-    const post = fetcher.mock.calls.find(([url]) => !isCatalogue(url))!
-    const items = JSON.parse(post[1]!.body as string).items
+    const posts = fetcher.mock.calls.filter(([url]) => !isCatalogue(url))
+    const items = posts.flatMap((post) => JSON.parse(post[1]!.body as string).items)
+    expect(posts.map((post) => JSON.parse(post[1]!.body as string).items.length)).toEqual([12, 12, 12, 4])
     expect(items).toHaveLength(40)
     expect(items.every((item: { coordinates: Record<string, unknown> }) => !('typequ' in item.coordinates))).toBe(true)
     expect(items.map((item: { coordinates: { measure: string[] } }) => item.coordinates.measure[0])).toEqual(measures)
@@ -78,10 +81,10 @@ describe('lecture AEDAR de la Sélection', () => {
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
       const { items } = JSON.parse(String(init?.body))
-      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results: items.map((item: any) => {
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2', results: items.map((item: any) => {
         const measure = item.coordinates.measure[0]
         const index = measures.indexOf(measure)
-        return { id: item.id, data: { resource: item.resource, target: item.target,
+        return { id: item.id, resource: item.resource, status: 'available', data: { resource: item.resource, target: item.target,
           content_version: 'comparison-v1', summary_content_version: 'summary-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1',
           comparison: { ...cell, typequ: null, measure, comparison_context: 'density_class',
             group_value: index + 0.25, group_n_addresses: 40, group_n_observed: 67,
@@ -99,24 +102,24 @@ describe('lecture AEDAR de la Sélection', () => {
         rank: 2, rank_size: 3, rank_ties: 1, direction: 'high',
       })
     }
-    expect(fetcher).toHaveBeenCalledTimes(2)
-    const post = fetcher.mock.calls.find(([url]) => !isCatalogue(url))!
-    expect(JSON.parse(String(post[1]!.body)).items).toHaveLength(40)
+    expect(fetcher).toHaveBeenCalledTimes(5)
+    expect(fetcher.mock.calls.filter(([url]) => !isCatalogue(url))
+      .flatMap((post) => JSON.parse(String(post[1]!.body)).items)).toHaveLength(40)
     await fetchAedarComparison('commune', 'sel-c1', request)
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher).toHaveBeenCalledTimes(5)
   })
   it('projette les rangs servis de chaque lecture fixe et conserve les 40 valeurs de groupe', async () => {
     const request = { ...options, intent: { kind: 'fixed_comparison' as const, context: 'density_class' as const },
       label: 'Classe', typequ: [], measures: aggregateMeasures }
-    let sent: any[] = []
+    const sent: any[] = []
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
       const { items } = JSON.parse(String(init?.body))
-      sent = items
-      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results: items.map((item: any) => {
+      sent.push(...items)
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2', results: items.map((item: any) => {
         const measure = item.coordinates.measure[0]
         const index = aggregateMeasures.indexOf(measure)
-        return { id: item.id, data: { resource: item.resource, target: item.target,
+        return { id: item.id, resource: item.resource, status: 'available', data: { resource: item.resource, target: item.target,
           content_version: 'comparison-v1', summary_content_version: 'summary-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1',
           comparison: { ...cell, typequ: null, measure, comparison_context: 'density_class',
             group_value: index + 0.25, group_n_addresses: 40, group_n_observed: 67,
@@ -127,7 +130,7 @@ describe('lecture AEDAR de la Sélection', () => {
     const result = await fetchAedarComparison('commune', 'sel-c1', request)
     expect(result.status).toBe('ready')
     if (result.status !== 'ready') throw new Error('Expected ready grouped aggregate response')
-    expect(fetcher.mock.calls.filter(([url]) => !isCatalogue(url))).toHaveLength(1)
+    expect(fetcher.mock.calls.filter(([url]) => !isCatalogue(url))).toHaveLength(4)
     expect(sent).toHaveLength(40)
     expect(sent.every((item) => item.fields.includes('rank'))).toBe(true)
     expect(result.evidence.cells).toHaveLength(40)
@@ -153,7 +156,7 @@ describe('lecture AEDAR de la Sélection', () => {
           group_n_observed: unavailable ? 0 : 67, group_coverage_status: unavailable ? null : 'covered',
           rank: unavailable ? null : 2, rank_size: unavailable ? null : 3, rank_ties: unavailable ? null : 1 }
       })
-      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2', results: [{ id: item.id, resource: item.resource, status: 'available', data: {
         resource: item.resource, target: item.target, content_version: 'comparison-v1', summary_content_version: 'summary-v1', aedar_content_version: 'facts-v1',
         reference_content_version: 'reference-v1', selection: members,
         scope: { kind: 'explicit_selection', member_count: members.length }, comparisons,
@@ -175,6 +178,8 @@ describe('lecture AEDAR de la Sélection', () => {
     expect(JSON.parse(String(post[1]!.body)).items).toHaveLength(1)
     expect(JSON.parse(String(post[1]!.body)).items[0].coordinates.measure).toHaveLength(40)
     allIneligible = true
+    // A changed publication is an explicit refresh, never an automatic re-read.
+    invalidateSemanticReadsForTarget('commune', 'sel-c1')
     const empty = await fetchAedarComparison('commune', 'sel-c1', { ...request, label: 'Moyenne sans membre admissible' })
     expect(empty.status).toBe('ready')
     if (empty.status !== 'ready') throw new Error('Expected an unavailable aggregate response')
@@ -184,6 +189,7 @@ describe('lecture AEDAR de la Sélection', () => {
     expect(fetcher.mock.calls.filter(([url]) => isCatalogue(url))).toHaveLength(1)
     expect(fetcher.mock.calls.filter(([url]) => !isCatalogue(url))).toHaveLength(2)
     selectedDirection = 'low'
+    invalidateSemanticReadsForTarget('commune', 'sel-c1')
     expect(await fetchAedarComparison('commune', 'sel-c1', { ...request, label: 'Direction mismatched' }))
       .toMatchObject({ status: 'error' })
   })
@@ -193,8 +199,8 @@ describe('lecture AEDAR de la Sélection', () => {
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
       const { items } = JSON.parse(String(init?.body))
-      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results: items.map((item: any) => ({
-        id: item.id, data: { resource: item.resource, target: item.target, content_version: 'comparison-v1',
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2', results: items.map((item: any) => ({
+        id: item.id, resource: item.resource, status: 'available', data: { resource: item.resource, target: item.target, content_version: 'comparison-v1',
           summary_content_version: 'summary-v1', aedar_content_version: 'facts-v1', reference_content_version: 'reference-v1', selection: members,
           scope: { kind: 'explicit_selection', member_count: members.length },
           comparisons: item.coordinates.measure.map((measure: string) => ({ ...cell, typequ: null, measure,
@@ -291,9 +297,10 @@ describe('lecture AEDAR de la Sélection', () => {
       .toMatchObject({ status: 'error' })
   })
   it('conserve le membre nommé par un échec API sans inventer de référence', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({ detail: 'Selected comparison member commune/nope has no published value' }) })))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 422,
+      json: async () => ({ detail: 'Selected comparison member commune/nope has no published value' }) })))
     expect(await fetchAedarComparison('commune', 'sel-c1', options)).toEqual({ status: 'error',
-      message: 'Selected comparison member commune/nope has no published value' })
+      message: 'Membre de comparaison indisponible : commune/nope.' })
   })
   it('lit le preset same_level comme agrégat direct de la Région en demandant ses rangs fixes', async () => {
     const fetcher = mockResponse({ ...envelope, target: { kind: 'territory', type: 'epci', id: 'sel-e1' },
@@ -393,11 +400,12 @@ describe('lecture AEDAR de la Sélection', () => {
     const resultPromise = fetchAedarComparison('commune', '22001', { ...options,
       intent: { kind: 'fixed_comparison', context: 'density_class' }, typequ,
       measures: ['count_5_walk_mean'], label: 'Classe de densité' })
-    // All 3 requests (ceil(25 cells / 12)) are dispatched before any response
-    // is awaited; the prior loop issued one request at a time.
-    expect(fetcher).toHaveBeenCalledTimes(3)
+    // The shared scheduler bounds semantic HTTP reads to two: only the first
+    // two of the three bounded batches are dispatched before a response settles.
+    expect(fetcher).toHaveBeenCalledTimes(2)
     const result = await resultPromise
     expect(result).toMatchObject({ status: 'error' })
+    expect(fetcher).toHaveBeenCalledTimes(3)
     const dispatched = fetcher.mock.calls.flatMap(([, init]) =>
       JSON.parse(init!.body as string).items as Array<{ coordinates: { typequ: string[]; measure: string[] } }>)
     expect(dispatched).toHaveLength(25)

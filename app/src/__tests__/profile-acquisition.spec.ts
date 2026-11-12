@@ -194,8 +194,8 @@ describe('l’acquisition du profil déclaré', () => {
   it('lit le cohort de faits d’une seule ressource à la cible filtrée du contrat', async () => {
     const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const request = JSON.parse(init?.body as string) as { items: Array<Record<string, unknown>> }
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: request.items.map((item) =>
-        ({ id: item.id, resource: item.resource, data: cohortResponse() })) }))
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results: request.items.map((item) =>
+        ({ id: item.id, resource: item.resource, status: 'available', data: cohortResponse() })) }))
     })
     vi.stubGlobal('fetch', fetcher)
     const result = await chargerCohorteProfilDeclare(declaration,
@@ -216,8 +216,8 @@ describe('l’acquisition du profil déclaré', () => {
       descriptor: { ...descriptor, completeness: undefined }, observations: [cell('principales', .55), cell('vacantes', .09)] }
     const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const request = JSON.parse(init?.body as string) as { items: Array<Record<string, unknown>> }
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: request.items.map((item) =>
-        ({ id: item.id, resource: item.resource, data: raw })) }))
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results: request.items.map((item) =>
+        ({ id: item.id, resource: item.resource, status: 'available', data: raw })) }))
     })
     vi.stubGlobal('fetch', fetcher)
     const acquired = adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },
@@ -235,8 +235,8 @@ describe('l’acquisition du profil déclaré', () => {
   it('relit seulement la comparaison explicite au détail sélectionné', async () => {
     const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const request = JSON.parse(init?.body as string) as { items: Array<Record<string, unknown>> }
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: request.items.map((item) =>
-        ({ id: item.id, resource: item.resource, data: comparisonResponse() })) }))
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results: request.items.map((item) =>
+        ({ id: item.id, resource: item.resource, status: 'available', data: comparisonResponse() })) }))
     })
     vi.stubGlobal('fetch', fetcher)
     const acquired = adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },

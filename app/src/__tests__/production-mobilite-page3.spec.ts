@@ -58,9 +58,9 @@ function semanticFetch() {
     const results = items.map((item) => {
       const resource = catalogue.find((candidate) => candidate.resource_id === item.resource)
       if (!resource) throw new Error(`Unknown fixture resource ${item.resource}`)
-      return { id: item.id, resource: item.resource, data: nativeReadFixture(item, resource) }
+      return { id: item.id, resource: item.resource, status: 'available', data: nativeReadFixture(item, resource) }
     })
-    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }), { status: 200 })
+    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results }), { status: 200 })
   })
 }
 

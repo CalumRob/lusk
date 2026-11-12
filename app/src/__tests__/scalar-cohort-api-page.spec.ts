@@ -97,8 +97,8 @@ function installCatalogueAndReads(resources: SemanticResourceDeclaration[], resp
     if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
     if (url === '/api/resources/read-batch') {
       const body = JSON.parse(init?.body as string) as { items: Array<SemanticReadItem & { id: string }> }
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: body.items.map((item) =>
-        ({ id: item.id, resource: item.resource, data: respond(item) })) }))
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results: body.items.map((item) =>
+        ({ id: item.id, resource: item.resource, status: 'available', data: respond(item) })) }))
     }
     throw new Error(`Unexpected semantic request: ${url}`)
   })
@@ -413,7 +413,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
       if (url === '/api/resources/read-batch') {
         const request = JSON.parse(init?.body as string) as { items: Array<SemanticReadItem & { id: string }> }
         const item = request.items[0]!
-        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, resource: indicator, data: {
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results: [{ id: item.id, resource: indicator, status: 'available', data: {
           resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
           shape: 'scalar', content_version: 'scalar-publication-v4',
            reference_content_version: 'reference-v7', selection: expectedMembers.map((id) => ({ territory_type: 'commune', territory_id: id })),
@@ -444,7 +444,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
       if (String(input) === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [resource] }))
       const request = JSON.parse(init?.body as string) as { items: Array<SemanticReadItem & { id: string }> }
       const item = request.items[0]!
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, resource: indicator, data: {
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results: [{ id: item.id, resource: indicator, status: 'available', data: {
         resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
         shape: 'scalar', content_version: 'scalar-publication-v4',
          reference_content_version: 'reference-v7', selection: null, scope: { kind: 'same_level', territory_type: 'epci', member_count: 2 },

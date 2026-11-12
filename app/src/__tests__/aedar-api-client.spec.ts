@@ -41,7 +41,7 @@ describe('AEDAR API client', () => {
         source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
         licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30',
       }))
-      return jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
+      return jsonResponse({ contract: 'semantic-read-batch-v2', results: [{ id: item.id, resource: item.resource, status: 'available', data: {
         resource: item.resource, target: item.target,
         territory: { territory_type: 'commune', territory_id: '22001' },
         summary_content_version: 'summary-v1', aedar_content_version: 'aedar-v1',
@@ -60,7 +60,7 @@ describe('AEDAR API client', () => {
       referenceContentVersion: 'reference-v1', territory: { territory_type: 'commune', territory_id: '22001' } })
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const item = JSON.parse(String(fetchMock.mock.calls[1]![1]?.body)).items[0]
-    expect(item).toEqual({ id: 'aedar-summary', resource: 'aedar_territory_summary',
+    expect(item).toEqual({ id: 'semantic-0-aedar_territory_summary', resource: 'aedar_territory_summary',
       target: { kind: 'territory', type: 'commune', id: '22001' }, intent: { kind: 'facts' } })
     expect(item).not.toHaveProperty('coordinates')
   })
@@ -73,7 +73,7 @@ describe('AEDAR API client', () => {
         if (String(url) === '/api/resources') return nativeCatalogueResponse()
         const { items } = JSON.parse(String(init?.body))
         const item = items[0]
-        return jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
+        return jsonResponse({ contract: 'semantic-read-batch-v2', results: [{ id: item.id, resource: item.resource, status: 'available', data: {
           resource: item.resource, target: item.target,
           territory: { territory_type: 'commune', territory_id: 'clock-boundary' },
           ...versions,
@@ -108,7 +108,7 @@ describe('AEDAR API client', () => {
     const pendingReads: Array<(response: Response) => void> = []
     let readCount = 0
     const responseFor = (item: any, version: string, value: number) => jsonResponse({
-      contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
+      contract: 'semantic-read-batch-v2', results: [{ id: item.id, resource: item.resource, status: 'available', data: {
         resource: item.resource, target: item.target,
         territory: { territory_type: 'commune', territory_id: 'late-write' },
         summary_content_version: version, aedar_content_version: version, reference_content_version: version,
@@ -157,7 +157,7 @@ describe('AEDAR API client', () => {
         licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30' }))
       if (scenario === 'incomplete') readings.pop()
       if (scenario === 'inconsistent-provenance') readings[1]!.vintage_id = 'other'
-      return jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: items[0].id, data: {
+      return jsonResponse({ contract: 'semantic-read-batch-v2', results: [{ id: items[0].id, resource: items[0].resource, status: 'available', data: {
         resource: items[0].resource, target: items[0].target,
         territory: { territory_type: 'commune', territory_id: '22001' },
         summary_content_version: 'summary-v1', aedar_content_version: scenario === 'missing-source-clock' ? '' : 'aedar-v1',
@@ -190,7 +190,7 @@ describe('AEDAR API client', () => {
         n_addresses: 10, n_observed: invalidSupport ? 2351 : 0, coverage_status: 'covered', statistic: 'direct',
         source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
         licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30' }))
-      return jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: items[0].id, data: {
+      return jsonResponse({ contract: 'semantic-read-batch-v2', results: [{ id: items[0].id, resource: items[0].resource, status: 'available', data: {
         resource: items[0].resource, target: items[0].target,
         territory: { territory_type: 'commune', territory_id: '22001' }, summary_content_version: 'summary-v1',
         aedar_content_version: 'aedar-v1', reference_content_version: 'reference-v1', readings,
@@ -217,7 +217,7 @@ describe('AEDAR API client', () => {
         source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
         licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30',
       }))
-      return jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: items[0].id, data: {
+      return jsonResponse({ contract: 'semantic-read-batch-v2', results: [{ id: items[0].id, resource: items[0].resource, status: 'available', data: {
         resource: items[0].resource, target: items[0].target,
         territory: { territory_type: 'commune', territory_id: '22001' },
         summary_content_version: 'summary-v1', aedar_content_version: 'aedar-v1',
@@ -236,8 +236,8 @@ describe('AEDAR API client', () => {
 
   it('reads selected equipment through the semantic resource API, not the retired GET route', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
-      contract: 'semantic-read-batch-v1',
-      results: [{ id: 'aedar-0', data: {
+      contract: 'semantic-read-batch-v2',
+      results: [{ id: 'semantic-0-aedar_territorial_aggregate', resource: 'aedar_territorial_aggregate', status: 'available', data: {
         resource: 'aedar_territorial_aggregate',
         target: { kind: 'territory', type: 'commune', id: '22001' },
         ...response([fact('B207')], { limit: 100 }),
@@ -252,8 +252,8 @@ describe('AEDAR API client', () => {
     const [url, init] = fetchMock.mock.calls[0]!
     expect(url).toBe('/api/resources/read-batch')
     expect(init).toMatchObject({ method: 'POST', headers: { 'Content-Type': 'application/json' } })
-    expect(JSON.parse(init.body)).toEqual({ items: [{
-      id: 'aedar-0', resource: 'aedar_territorial_aggregate',
+    expect(JSON.parse(init.body)).toEqual({ contract: 'semantic-read-batch-v2', items: [{
+      id: 'semantic-0-aedar_territorial_aggregate', resource: 'aedar_territorial_aggregate',
       target: { kind: 'territory', type: 'commune', id: '22001' },
       intent: { kind: 'facts' }, coordinates: { typequ: ['B207'] },
     }] })
@@ -263,8 +263,8 @@ describe('AEDAR API client', () => {
     const measures = ['count_15_car_share', 'count_15_car_mean']
     const projectedFact = { ...fact('B207'), measures: Object.fromEntries(measures.map((key) => [key, null])) }
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
-      contract: 'semantic-read-batch-v1',
-      results: [{ id: 'aedar-0', data: { resource: 'aedar_territorial_aggregate',
+      contract: 'semantic-read-batch-v2',
+      results: [{ id: 'semantic-0-aedar_territorial_aggregate', resource: 'aedar_territorial_aggregate', status: 'available', data: { resource: 'aedar_territorial_aggregate',
         target: { kind: 'territory', type: 'commune', id: '22001' }, ...response([projectedFact], { limit: 100 }) } }],
     }))
     vi.stubGlobal('fetch', fetchMock)
@@ -281,7 +281,7 @@ describe('AEDAR API client', () => {
       const selected = item.fields.map((field: string) => field.slice('measures.'.length))
       const source = fact('B207')
       const projected = { ...source, measures: Object.fromEntries(selected.map((key: string) => [key, source.measures[key]])) }
-      return Promise.resolve(jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
+      return Promise.resolve(jsonResponse({ contract: 'semantic-read-batch-v2', results: [{ id: item.id, resource: item.resource, status: 'available', data: {
         resource: item.resource, target: item.target, ...response([projected], { limit: 100 }),
       } }] }))
     })
@@ -310,7 +310,7 @@ describe('AEDAR API client', () => {
           else if (key.endsWith('_date')) dataFact[key] = '2025-01-01'
           else dataFact[key] = `changed-${key}`
         }
-        return Promise.resolve(jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
+        return Promise.resolve(jsonResponse({ contract: 'semantic-read-batch-v2', results: [{ id: item.id, resource: item.resource, status: 'available', data: {
           resource: item.resource, target: item.target, ...response([dataFact], {
             limit: 100, territory: { territory_type: 'commune', territory_id: item.target.id },
           }),
@@ -325,8 +325,8 @@ describe('AEDAR API client', () => {
     const measures = ['count_15_car_min']
     const source = { ...fact('B207'), territory_id: 'expected-version', measures: { count_15_car_min: 1 } }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
-      contract: 'semantic-read-batch-v1',
-      results: [{ id: 'aedar-0', data: { resource: 'aedar_territorial_aggregate',
+      contract: 'semantic-read-batch-v2',
+      results: [{ id: 'semantic-0-aedar_territorial_aggregate', resource: 'aedar_territorial_aggregate', status: 'available', data: { resource: 'aedar_territorial_aggregate',
         target: { kind: 'territory', type: 'commune', id: 'expected-version' },
         ...response([source], { limit: 100, territory: { territory_type: 'commune', territory_id: 'expected-version' } }) } }],
     })))
@@ -337,8 +337,8 @@ describe('AEDAR API client', () => {
 
   it('reuses successful reads for the same territory and TYPEQU selection', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
-      contract: 'semantic-read-batch-v1',
-      results: [{ id: 'aedar-0', data: {
+      contract: 'semantic-read-batch-v2',
+      results: [{ id: 'semantic-0-aedar_territorial_aggregate', resource: 'aedar_territorial_aggregate', status: 'available', data: {
         resource: 'aedar_territorial_aggregate',
         target: { kind: 'territory', type: 'commune', id: 'cache-id' },
         ...response([{ ...fact('B207'), territory_id: 'cache-id' }], {
@@ -359,13 +359,13 @@ describe('AEDAR API client', () => {
   it('reads the complete 235-type universe in bounded items on one semantic batch snapshot', async () => {
     const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
       const { items } = JSON.parse(init.body as string)
-      return Promise.resolve(jsonResponse({ contract: 'semantic-read-batch-v1', results: items.map((item: {
-        id: string; coordinates: { typequ: string[] }
-      }) => ({ id: item.id, data: {
+      return Promise.resolve(jsonResponse({ contract: 'semantic-read-batch-v2', results: items.map((item: {
+        id: string; resource: string; coordinates: { typequ: string[] }
+      }) => ({ id: item.id, resource: item.resource, status: 'available', data: {
         resource: 'aedar_territorial_aggregate',
         target: { kind: 'territory', type: 'commune', id: '22001' },
         ...response(item.coordinates.typequ.map(fact), { limit: 100 }),
-      } })).reverse() }))
+      } })) }))
     })
     vi.stubGlobal('fetch', fetchMock)
     const result = await fetchAedarAggregates('commune', '22001')
@@ -389,9 +389,9 @@ describe('AEDAR API client', () => {
     'fails closed when TYPEQU partitions disagree on %s', async (versionKey) => {
       const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
         const { items } = JSON.parse(init.body as string)
-        return Promise.resolve(jsonResponse({ contract: 'semantic-read-batch-v1', results: items.map((item: {
-          id: string; coordinates: { typequ: string[] }
-        }, index: number) => ({ id: item.id, data: {
+        return Promise.resolve(jsonResponse({ contract: 'semantic-read-batch-v2', results: items.map((item: {
+          id: string; resource: string; coordinates: { typequ: string[] }
+        }, index: number) => ({ id: item.id, resource: item.resource, status: 'available', data: {
           resource: 'aedar_territorial_aggregate', target: { kind: 'territory', type: 'commune', id: 'version-id' },
           ...response(item.coordinates.typequ.map(fact), {
             limit: 100,
@@ -407,6 +407,31 @@ describe('AEDAR API client', () => {
       expect(result).toMatchObject({ status: 'error', error: { code: 'invalid-response' } })
       expect(fetchMock).toHaveBeenCalledTimes(1)
     })
+
+  it('re-probes a typed aggregate absence on explicit retry instead of a permanent invalid loop', async () => {
+    let absent = true
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<{ id: string
+        resource: string; target: Record<string, unknown>; coordinates: { typequ: string[] } }> }
+      if (absent) {
+        absent = false
+        return jsonResponse({ contract: 'semantic-read-batch-v2',
+          results: items.map((item) => ({ id: item.id, resource: item.resource,
+            status: 'publication_unavailable', reason: 'publication_absent', family: 'aedar' })) })
+      }
+      return jsonResponse({ contract: 'semantic-read-batch-v2',
+        results: items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
+          data: { ...response(item.coordinates.typequ.map(fact), { limit: 100 }),
+            resource: 'aedar_territorial_aggregate', target: item.target } })) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await fetchAedarAggregates('commune', '22001', { typequ: ['A'] }))
+      .toMatchObject({ status: 'error', error: { code: 'publication-unavailable' } })
+    const recovered = await fetchAedarAggregates('commune', '22001', { typequ: ['A'] })
+    expect(recovered).toMatchObject({ status: 'ready', facts: [{ typequ: 'A' }] })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 
   it.each(['missing', 'extra'] as const)('rejects %s measure keys', (change) => {
     const measures = { ...fact('A').measures }
@@ -446,8 +471,8 @@ describe('AEDAR API client', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response('', { status: 503 }))
       .mockResolvedValueOnce(jsonResponse({
-        contract: 'semantic-read-batch-v1',
-        results: [{ id: 'aedar-0', data: {
+        contract: 'semantic-read-batch-v2',
+        results: [{ id: 'semantic-0-aedar_territorial_aggregate', resource: 'aedar_territorial_aggregate', status: 'available', data: {
           resource: 'aedar_territorial_aggregate',
           target: { kind: 'territory', type: 'commune', id: 'retry-id' },
           ...response([{ ...fact('B207'), territory_id: 'retry-id' }], {

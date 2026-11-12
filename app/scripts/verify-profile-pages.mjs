@@ -276,7 +276,8 @@ function createApiHarness(specs, territories) {
           }
         }
         await route.fulfill({ status: 200, contentType: 'application/json',
-          body: JSON.stringify({ contract: 'semantic-read-batch-v1', results }) })
+          body: JSON.stringify({ contract: 'semantic-read-batch-v2',
+            results: results.map((result) => ({ ...result, status: 'available' })) }) })
         return
       }
       unexpectedApi.push({ path, method: request.method() })

@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { publicationFamilyForResource } from '../../payload/semanticResourceClient'
+import type { SemanticPublicationFamily } from '../../payload/semanticResourceClient'
 import { NATIVE_API_FIXTURE_NOTICE, NATIVE_API_SCENARIOS } from '../fixtures/nativeApiScenarios'
 
 type Resource = {
@@ -66,6 +68,17 @@ export function nativeCatalogueResponse(): Response {
 /** The declarations are loaded from the same producer catalogue served by the API. */
 export function nativeResources(theme?: string): Resource[] {
   return catalogue.resources.filter((resource) => theme === undefined || resource.theme_id === theme)
+}
+
+/**
+ * The typed-absence family of a fixture resource, derived from its declared
+ * producer capabilities exactly like the API's central family mapping. Tests
+ * must never satisfy the closed family check with an invented `scalar` default.
+ */
+export function nativePublicationFamily(resourceId: string): SemanticPublicationFamily {
+  const resource = catalogue.resources.find((candidate) => candidate.resource_id === resourceId)
+  if (!resource) throw new Error(`Unknown native fixture resource: ${resourceId}`)
+  return publicationFamilyForResource(resource)
 }
 
 const territories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8')) as Array<Record<string, any>>
@@ -176,6 +189,13 @@ function sourceFor(resource: Resource, fact?: Record<string, any>, target?: Reco
 function publicationFor(resource: Resource): string {
   const dataset = resource.resource_id === 'raccordement_courbe' || resource.resource_id === 'raccordement_reference'
     ? raccordementRoute.dataset_id : resource.resource_id
+  const shapes = new Set(resource.shapes)
+  // The real producer publishes one global marker per scalar_observation and
+  // one per declared_profile table. Fixtures must expose the same family
+  // generation, otherwise unrelated resources would falsely mix generations.
+  if (shapes.has('declared_profile')) return 'declared_profile-fixture-publication-v1'
+  if (shapes.has('ordered_series')) return `${dataset}-fixture-publication-v1`
+  if (shapes.has('scalar')) return 'scalar_observation-fixture-publication-v1'
   return `${dataset}-fixture-publication-v1`
 }
 
@@ -1396,8 +1416,35 @@ export function nativeBatchResponse<T extends Record<string, any>>(
         JSON.stringify(data.target) !== JSON.stringify(item.target)) {
       throw new Error(`Native read fixture did not echo resource/target identity: ${item.resource}`)
     }
-    return { id: item.id, resource: item.resource, data }
-  }).reverse()
-    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results,
+    return { id: item.id, resource: item.resource, status: 'available', data }
+  })
+    return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results,
       synthetic_fixture: NATIVE_API_FIXTURE_NOTICE }), { status: 200 })
+}
+
+/**
+ * Re-envelope a recorded v1 read-batch capture for the v2 client contract.
+ * The captured `data` bytes are replayed unchanged; only the protocol wrapper
+ * (one explicit `available` outcome per item, in request order) is upgraded.
+ * This is fixture plumbing, never a live API proof of v2 availability.
+ */
+export function replayCapturedBatchV2(captured: unknown,
+  requests?: ReadonlyArray<{ id?: unknown; resource?: unknown }>): Record<string, unknown> {
+  if (!captured || typeof captured !== 'object' || Array.isArray(captured)) {
+    throw new Error('Captured semantic batch must be an object')
+  }
+  const envelope = captured as { contract?: unknown; results?: unknown }
+  if (envelope.contract !== 'semantic-read-batch-v1' || !Array.isArray(envelope.results)) {
+    throw new Error('Captured semantic batch is not a v1 read-batch envelope')
+  }
+  return {
+    contract: 'semantic-read-batch-v2',
+    results: envelope.results.map((result, index) => {
+      if (!result || typeof result !== 'object') throw new Error('Captured semantic result is malformed')
+      const item = result as { id?: unknown; resource?: unknown; data?: unknown }
+      const request = requests?.[index]
+      return { ...item, ...(request?.id === undefined ? {} : { id: request.id }),
+        ...(request?.resource === undefined ? {} : { resource: request.resource }), status: 'available' }
+    }),
+  }
 }

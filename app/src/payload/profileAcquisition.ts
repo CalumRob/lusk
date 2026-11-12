@@ -2,7 +2,8 @@ import type { IndicatorPageMetadata, Indicateur, NativeThemeFactAxis, NativeThem
   Territoire, TerritoireType, Theme } from './types'
 import { THEMES_CANONIQUES } from './types'
 import type { SemanticResourceDeclaration } from './semanticResourceClient'
-import { lireRessourcesBatch } from './semanticResourceClient'
+import { invalidateSemanticItems, lireRessourcesBatch } from './semanticResourceClient'
+import type { SemanticReadItem } from './semanticResourceClient'
 import { PayloadError } from './validate'
 
 type Row = Record<string, unknown>
@@ -816,14 +817,20 @@ export async function chargerComparaisonProfilDeclare(input: {
     detail: [coordinate.detail],
     ...(coordinate.sex === null ? {} : { sex: [coordinate.sex] }),
   }
-  const [data] = await lireRessourcesBatch([{
+  const item: SemanticReadItem = {
     resource: declaration.resource_id,
     target: { kind: 'territory', type: focal.type, id: focal.id },
     ...(coordinates ? { coordinates } : {}),
     fields: ['median', 'rank', 'rank_size', 'rank_ties', 'selected_member_count', 'eligible_count', 'missing_count', 'member_ranks'],
     intent: { kind: 'selected_comparison', members: memberIds.map((id) => ({ type: focal.type, id })) },
-  }])
-  return adapterProfilComparaison({ ...input, comparison: data })
+  }
+  const [data] = await lireRessourcesBatch([item])
+  try {
+    return adapterProfilComparaison({ ...input, comparison: data })
+  } catch (error) {
+    invalidateSemanticItems([item])
+    throw error
+  }
 }
 
 /** Bind API-owned profile facts and axes to the app-owned renderer family. */

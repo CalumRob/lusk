@@ -46,8 +46,8 @@ function serveBridge(bridge: { request: { items: any[] }; response: any; respons
     const requested = body.items[0]
     const expected = wire.request.items[comparisonIndex]
     expect(requested).toEqual({ ...expected, id: requested.id })
-    return Response.json({ contract: 'semantic-read-batch-v1',
-      results: [{ id: requested.id, resource: requested.resource, data: data[comparisonIndex] }] },
+    return Response.json({ contract: 'semantic-read-batch-v2',
+      results: [{ id: requested.id, resource: requested.resource, status: 'available', data: data[comparisonIndex] }] },
       { status: 200 })
   })
 }
@@ -178,7 +178,7 @@ describe('guarded native SQL/HTTP → shared ordered-series acquisition bridge',
             }
             expect(request.items).toHaveLength(1)
             expect(request.items[0]).toEqual({ ...bridge.request.items[2], id: request.items[0].id })
-            return Response.json({ contract: 'semantic-read-batch-v1', results: [{
+            return Response.json({ contract: 'semantic-read-batch-v2', results: [{
               id: request.items[0].id, resource, data: validData[2],
             }] }, { status: 200 })
           })

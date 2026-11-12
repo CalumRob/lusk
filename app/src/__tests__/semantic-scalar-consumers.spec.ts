@@ -152,8 +152,9 @@ function discovery(...resources: ReturnType<typeof resource>[]) {
   return { contract: 'semantic-resource-catalogue-v1', resources }
 }
 
-function batch(...entries: Array<{ id: string; resource: string; data: unknown }>) {
-  return { contract: 'semantic-read-batch-v1', results: entries }
+function batch(...entries: Array<{ id: string; resource: string; status?: string; data: unknown }>) {
+  return { contract: 'semantic-read-batch-v2',
+    results: entries.map((entry) => ({ status: 'available', ...entry })) }
 }
 
 function readBatchCall(fetcher: ReturnType<typeof vi.fn>) {
@@ -848,7 +849,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
           [row.territory.id, { status: row.status, value: row.value }]))
         const data = projectCohortFields(cohortResult('demographie', 'densite', item.target,
           refs.map((territory) => territory.territoire), observations), item.fields)
-        const response = new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data })))
+        const response = new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', status: 'available', data })))
         if (targets.length === 2) return new Promise<Response>((resolve) => { resolveStaleScope = () => resolve(response) })
         return response
       }
@@ -956,7 +957,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
       if (url === '/api/resources/read-batch') {
         const item = JSON.parse(init?.body as string).items[0]
         if (item.intent.kind === 'selected_comparison') return new Response(JSON.stringify(batch({
-          id: item.id, resource: 'densite', data: {
+          id: item.id, resource: 'densite', status: 'available', data: {
             resource: 'densite', target: item.target, contract: 'indicator-comparison-v1', indicator_id: 'densite', shape: 'scalar',
             content_version: 'scalar-publication-v4', reference_content_version: 'reference-v7',
             selection: item.intent.members.map((member: { type: string; id: string }) => ({ territory_type: member.type, territory_id: member.id })),
@@ -965,7 +966,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
               descriptor_version: 'scalar-descriptor-v3', selected_member_count: 2, eligible_count: 2, missing_count: 0, rank: 2, rank_size: 2 },
           },
         })))
-        return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: facts })))
+        return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', status: 'available', data: facts })))
       }
       throw new Error(`unexpected request: ${url}`)
     })
@@ -1033,7 +1034,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
           const members = item.intent.members.map((member: { type: string; id: string }) => ({
             territory_type: member.type, territory_id: member.id,
           }))
-          return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: {
+          return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', status: 'available', data: {
             resource: 'densite', target: item.target, contract: 'indicator-comparison-v1', indicator_id: 'densite',
             shape: 'scalar', content_version: 'scalar-publication-v4',
             reference_content_version: 'reference-v7', selection: members,
@@ -1044,7 +1045,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
               eligible_count: members.length, missing_count: 0, rank: 1, rank_size: members.length },
           } })))
         }
-        return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: facts })))
+        return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', status: 'available', data: facts })))
       }
       throw new Error(`unexpected request: ${url}`)
     })
@@ -1188,7 +1189,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
           // owns eligibility/missingness — unavailable, none eligible, every
           // selected member missing, no rank. The unit still binds to the
           // native descriptor (validated before the unavailable return).
-          return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: {
+          return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', status: 'available', data: {
             resource: 'densite', target: item.target, contract: 'indicator-comparison-v1', indicator_id: 'densite',
             shape: 'scalar', content_version: 'scalar-publication-v4',
             reference_content_version: 'reference-v7', selection: members,
@@ -1200,7 +1201,7 @@ describe('ordinary scalar consumers on semantic resources', () => {
               eligible_count: 0, missing_count: members.length, rank: null, rank_size: null },
           } })))
         }
-        return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data: facts })))
+        return new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', status: 'available', data: facts })))
       }
       throw new Error(`unexpected request: ${url}`)
     })

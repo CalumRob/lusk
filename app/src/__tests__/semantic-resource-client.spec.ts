@@ -4,21 +4,34 @@ import type { SemanticReadItem } from '../payload/semanticResourceClient'
 
 afterEach(() => vi.unstubAllGlobals())
 
+const v2 = (results: unknown[]) => new Response(JSON.stringify({
+  contract: 'semantic-read-batch-v2', results,
+}))
+
 describe('semantic read batches', () => {
-  it('sends forty reads together and returns data in request order', async () => {
+  it('packs forty reads into four bounded v2 requests and returns data in request order', async () => {
     const items: SemanticReadItem[] = Array.from({ length: 40 }, (_, index) => ({
       resource: 'densite', target: { kind: 'territory', type: 'commune', id: `220${String(index).padStart(2, '0')}` },
       intent: { kind: 'facts' },
     }))
+    const batches: Array<Array<{ id: string }>> = []
     const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      const request = JSON.parse(init?.body as string) as { items: Array<SemanticReadItem & { id: string }> }
-      expect(request.items).toHaveLength(40)
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [...request.items].reverse().map((item) => ({
-        id: item.id, resource: item.resource, data: { resource: item.resource, target: item.target, ordinal: Number(item.id.split('-')[1]) },
-      })) }))
+      const request = JSON.parse(init?.body as string) as { contract: string
+        items: Array<SemanticReadItem & { id: string }> }
+      expect(request.contract).toBe('semantic-read-batch-v2')
+      expect(request.items.length).toBeLessThanOrEqual(12)
+      batches.push(request.items)
+      return v2(request.items.map((item) => ({
+        id: item.id, resource: item.resource, status: 'available',
+        data: { resource: item.resource, target: item.target,
+          ordinal: items.findIndex((candidate) => candidate.target.kind === 'territory' &&
+            candidate.target.id === item.target.id) },
+      })))
     })
     vi.stubGlobal('fetch', fetcher)
     const result = await lireRessourcesBatch(items)
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    expect(batches.map((batch) => batch.length)).toEqual([12, 12, 12, 4])
     expect(result).toHaveLength(40)
     expect(result.map((entry) => entry.ordinal)).toEqual(Array.from({ length: 40 }, (_, index) => index))
   })
@@ -115,7 +128,7 @@ describe('semantic read batches', () => {
     await expect(chargerCatalogueRessources()).rejects.toThrow('mal formée')
   })
 
-  it('pairs repeated resources by unique item identity, regardless of response order', async () => {
+  it('keeps repeated resources correlated by their unique ordered item identity', async () => {
     const facts: SemanticReadItem = {
       resource: 'densite',
       target: { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: null },
@@ -131,10 +144,12 @@ describe('semantic read batches', () => {
       const request = JSON.parse(init?.body as string) as { items: Array<SemanticReadItem & { id: string }> }
       expect(new Set(request.items.map((item) => item.id)).size).toBe(2)
       expect(request.items.map((item) => item.resource)).toEqual(['densite', 'densite'])
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [
-        { id: request.items[1]!.id, resource: 'densite', data: { resource: 'densite', target: comparison.target, reading: 'rank' } },
-        { id: request.items[0]!.id, resource: 'densite', data: { resource: 'densite', target: facts.target, reading: 'facts' } },
-      ] }))
+      return v2([
+        { id: request.items[0]!.id, resource: 'densite', status: 'available',
+          data: { resource: 'densite', target: facts.target, reading: 'facts' } },
+        { id: request.items[1]!.id, resource: 'densite', status: 'available',
+          data: { resource: 'densite', target: comparison.target, reading: 'rank' } },
+      ])
     })
     vi.stubGlobal('fetch', fetcher)
 
@@ -151,10 +166,10 @@ describe('semantic read batches', () => {
     }
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const request = JSON.parse(init?.body as string) as { items: Array<SemanticReadItem & { id: string }> }
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [{
-        id: request.items[0]!.id, resource: 'densite',
+      return v2([{
+        id: request.items[0]!.id, resource: 'densite', status: 'available',
         data: { resource: 'densite', target: { ...item.target, id: '22002' } },
-      }] }))
+      }])
     }))
 
     await expect(lireRessourcesBatch([item])).rejects.toThrow('cible')
