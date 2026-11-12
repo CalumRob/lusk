@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SemanticMemberError } from '@/payload/semanticResourceClient'
+import { invalidateSemanticReads, SemanticMemberError } from '@/payload/semanticResourceClient'
 /**
  * La fiche d'identité — the shell (site-map.md §Fiche + layouts.md §2).
  *
@@ -59,12 +59,11 @@ import type {
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
-import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, producerCatalogue,
-  ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
+import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, comparisonDemandState,
+  producerCatalogue, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
 import type { AcquiredTheme, ThemeFactsDemand, ThemeKey, ThemeResponse, ThemeSelectionMember } from '@/payload/themeAcquisition'
 import { AcquisitionDemandScheduler } from '@/payload/acquisitionDemand'
-import { chapitreDemande, chapitreDemandeDepuisAncre, chapitreNumeriqueParDefaut,
-  chapitresDemandes } from '@/fiche/content/demandInventory'
+import { chapitreDemande, chapitreDemandeDepuisAncre } from '@/fiche/content/demandInventory'
 import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
@@ -145,11 +144,24 @@ const productionMobilite = computed(() => selection.value === 'mobilite')
  * the page-1 anchor), so a page-2/page-3 deep link never competes with page-1
  * work. The page-1 surface keeps its existing pending placeholder meanwhile.
  */
-const chapitreAedar = computed(() => sousGroupesFiche('mobilite')[0]?.key ?? null)
-const chapitreAffiche = computed(() =>
-  chapitreDemandeDepuisAncre('mobilite', route.hash) ?? chapitreAedar.value)
+const chapitresMobilite = computed(() => sousGroupesFiche('mobilite'))
+const chapitreAedar = computed(() => chapitresMobilite.value[0]?.key ?? null)
+/** The first chapter that actually serves numerics (the planner's fallback). */
+const chapitreNumerique = computed(() =>
+  chapitresMobilite.value.find((chapter) => chapter.indicators.length > 0)?.key ?? null)
+const chapitreAffiche = computed(() => {
+  const anchored = chapitreDemandeDepuisAncre('mobilite', route.hash)
+  if (anchored) return anchored
+  // No anchor is the spine's first chapter (AEDAR); an UNKNOWN anchor falls back
+  // to the SAME chapter the numeric planner uses, so AEDAR is not launched for a
+  // page it will never show.
+  return route.hash ? chapitreNumerique.value : chapitreAedar.value
+})
 const demandeAedar = computed(() => productionMobilite.value && chapitreAedar.value !== null &&
   chapitreAffiche.value === chapitreAedar.value)
+/** One token per theme activation: an AEDAR summary read observes the clocks again. */
+const aedarActivation = ref(0)
+watch(selection, () => { aedarActivation.value += 1 })
 const aedarData = ref<AedarFetchResult | null>(null)
 const aedarStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const aedarSummaryData = ref<AedarSummaryFetchResult | null>(null)
@@ -159,21 +171,48 @@ const aedarReferenceStatus = ref<'unavailable' | 'loading' | 'ready' | 'error'>(
 const retryAedarCount = ref(0)
 const retryAedarSummaryCount = ref(0)
 function retryAedar(): void { retryAedarCount.value++ }
+/** Settled AEDAR reads are reused for the same territory; only an explicit
+ *  refresh (its retry counter) or a territory change observes the API again. */
+let aedarSummaryIdentity: string | null = null
+let aedarSummaryActivation = -1
+let aedarSummaryRetrySeen = 0
 watch([productionMobilite, demandeAedar, typeRoute, idRoute, retryAedarSummaryCount],
   async ([active, demande, type, id], _old, onCleanup) => {
-    if (!active || !demande || !['commune','epci','departement','region'].includes(type)) {
-      aedarSummaryData.value = null; aedarSummaryStatus.value = 'loading'; return
+    if (!active || !demande || !['commune','epci','departement','region'].includes(type)) return
+    const identity = `${type}/${id}`
+    if (aedarSummaryIdentity !== null && aedarSummaryIdentity !== identity) {
+      aedarSummaryData.value = null; aedarSummaryStatus.value = 'loading'
     }
+    const forced = retryAedarSummaryCount.value !== aedarSummaryRetrySeen
+    if (!forced && aedarSummaryIdentity === identity && aedarSummaryActivation === aedarActivation.value &&
+        aedarSummaryStatus.value === 'ready') return
+    aedarSummaryRetrySeen = retryAedarSummaryCount.value
     let cancelled = false; onCleanup(() => { cancelled = true })
     aedarSummaryStatus.value = 'loading'; aedarSummaryData.value = null
     const result = await fetchAedarTerritorySummary(type as AedarTerritoryType, id)
-    if (!cancelled) { aedarSummaryData.value = result; aedarSummaryStatus.value = result.status === 'ready' ? 'ready' : 'error' }
+    if (!cancelled) {
+      aedarSummaryData.value = result
+      aedarSummaryStatus.value = result.status === 'ready' ? 'ready' : 'error'
+      if (result.status === 'ready') {
+        aedarSummaryIdentity = identity
+        aedarSummaryActivation = aedarActivation.value
+      }
+    }
   }, { immediate: true })
+let aedarAggregatesIdentity: string | null = null
+let aedarAggregatesActivation = -1
+let aedarAggregatesRetrySeen = 0
 watch([productionMobilite, demandeAedar, typeRoute, idRoute, retryAedarCount],
   async ([active, demande, type, id], _old, onCleanup) => {
-    if (!active || !demande || !['commune','epci','departement','region'].includes(type)) {
-      aedarData.value = null; aedarStatus.value = 'loading'; return
+    if (!active || !demande || !['commune','epci','departement','region'].includes(type)) return
+    const identityKey = `${type}/${id}`
+    if (aedarAggregatesIdentity !== null && aedarAggregatesIdentity !== identityKey) {
+      aedarData.value = null; aedarStatus.value = 'loading'
     }
+    const forced = retryAedarCount.value !== aedarAggregatesRetrySeen
+    if (!forced && aedarAggregatesIdentity === identityKey &&
+        aedarAggregatesActivation === aedarActivation.value && aedarStatus.value === 'ready') return
+    aedarAggregatesRetrySeen = retryAedarCount.value
   let cancelled = false; onCleanup(() => { cancelled = true }); aedarStatus.value = 'loading'; aedarData.value = null
   const identity = { type: type as AedarTerritoryType, id }
   const result = await fetchAedarAggregates(identity.type, id, { measures: AEDAR_CORE_MEASURE_KEYS })
@@ -189,6 +228,10 @@ watch([productionMobilite, demandeAedar, typeRoute, idRoute, retryAedarCount],
       aedarData.value = { ...aedarData.value, facts: aedarData.value.facts.map((fact) => fact.typequ === AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU && detailFact
         ? { ...fact, measures: { ...fact.measures, ...detailFact.measures } } : fact) }
     }
+  }
+  if (!cancelled && aedarData.value?.status === 'ready') {
+    aedarAggregatesIdentity = identityKey
+    aedarAggregatesActivation = aedarActivation.value
   }
   }, { immediate: true })
 /** Depuis #868 tous les thèmes canoniques sont acquis par l'API — il n'y a
@@ -267,9 +310,6 @@ async function demandeChapitreNiveau(type: string, theme: ThemeKey, chapterKey: 
 function demandeThemeActif(): ThemeFactsDemand {
   return { selection: null }
 }
-
-const chapitresDemandesMobilite = (declarations: SemanticResourceDeclaration[]) =>
-  chapitresDemandes('mobilite', declarations)
 
 /**
  * Unrelated themes stay IDLE: facts only, one coalesced batch per theme, never
@@ -500,7 +540,7 @@ function choisirSelection(selectionChoisie: SelectionComparaison): void {
   const valeur = serialiserSelection(selectionChoisie)
   if (valeur === undefined) delete query[PARAM_COMPARAISON]
   else query[PARAM_COMPARAISON] = valeur
-  void router.replace({ query })
+  void router.replace({ query, hash: route.hash })
 }
 
 /**
@@ -523,13 +563,37 @@ function retryAedarSummary(): void {
   invalidateAedarTerritorySummary(typeRoute.value as AedarTerritoryType, idRoute.value)
   retryAedarSummaryCount.value++
 }
+let aedarReferenceIdentity: string | null = null
+let aedarReferenceActivation = -1
 watch([productionMobilite, demandeAedar, aedarReferenceKey], async ([active, demande, key], _old, onCleanup) => {
-  if (!active || !demande || !key) { aedarReferenceData.value = null; aedarReferenceStatus.value = 'unavailable'; return }
+  if (!active || !demande) return
+  if (!key) {
+    // This scope has no single reference territory (density class, empty or
+    // custom group): release the settled reference so returning to a named
+    // group observes its clocks again.
+    aedarReferenceIdentity = null
+    aedarReferenceActivation = -1
+    aedarReferenceData.value = null
+    aedarReferenceStatus.value = 'unavailable'
+    return
+  }
+  if (aedarReferenceIdentity !== null && aedarReferenceIdentity !== key) {
+    aedarReferenceData.value = null; aedarReferenceStatus.value = 'unavailable'
+  }
+  if (aedarReferenceIdentity === key && aedarReferenceActivation === aedarActivation.value &&
+      aedarReferenceStatus.value === 'ready') return
   let cancelled = false; onCleanup(() => { cancelled = true })
   aedarReferenceStatus.value = 'loading'; aedarReferenceData.value = null
   const [type, id] = key.split('/')
   const result = await fetchAedarTerritorySummary(type as AedarTerritoryType, id)
-  if (!cancelled) { aedarReferenceData.value = result; aedarReferenceStatus.value = result.status === 'ready' ? 'ready' : 'error' }
+  if (!cancelled) {
+    aedarReferenceData.value = result
+    aedarReferenceStatus.value = result.status === 'ready' ? 'ready' : 'error'
+    if (result.status === 'ready') {
+      aedarReferenceIdentity = key
+      aedarReferenceActivation = aedarActivation.value
+    }
+  }
 }, { immediate: true })
 
 /**
@@ -723,8 +787,46 @@ function retryAcquisitionTheme(): void {
   cleFaitsPrets = null
   retryAcquisition.value++
 }
+/**
+ * #986 — explicit retry of the requested chapter's comparison. It re-probes the
+ * API for THAT chapter's scope (never replays another chapter's settled reads and
+ * never re-reads focal facts), then applies the demand's own state.
+ */
+let comparaisonMobiliteEnReessai = false
+async function relancerComparaisonMobilite(): Promise<void> {
+  comparaisonMobiliteEnReessai = true
+  try {
+    const type = typeRoute.value
+    const code = idRoute.value
+    const selectionActive = membresAcquisition.value
+    if (selectionActive === null) return
+    const critique = chapitreDemandeMobilite()
+    const demand = critique
+      ? await demandeChapitreNiveau(type, 'mobilite', critique, selectionActive)
+      : undefined
+    if (!demand?.indicators?.length) return
+    // An explicit retry re-probes this chapter's comparison items: their settled
+    // absence is released so no concurrent acquisition replays it.
+    const chapterIndicators = new Set(demand.indicators)
+    invalidateSemanticReads((item) => chapterIndicators.has(item.resource))
+    const acquired = await cacheAcquisition.retryComparison(type, code, 'mobilite', selectionActive,
+      [...demand.indicators])
+    if (!productionMobilite.value || !payloadPourRendu.value) return
+    appliquerAcquisitionMobilite(acquired, selectionActive, demand)
+  } finally {
+    comparaisonMobiliteEnReessai = false
+  }
+}
+
 function retryThemeComparison(): void {
   const theme = selection.value
+  if (theme === 'mobilite') {
+    // Fence any in-flight watcher run: its late failure must not overwrite the
+    // explicit retry's settled result.
+    comparisonRequestSequence += 1
+    void relancerComparaisonMobilite().catch(() => { mobilityComparisonStatus.value = 'error' })
+    return
+  }
   // Relance la SEULE acquisition de comparaison propriétaire : une réponse
   // réussie peut avoir omis le nuage demandé, donc l'entrée en cache doit
   // tomber sans invalider les faits focaux ni les sélections voisines.
@@ -786,7 +888,8 @@ let lastComparisonModel: object | null = null
  * header carries a custom/preset group.
  */
 function appliquerAcquisitionMobilite(acquired: AcquiredTheme<ThemeResponse>,
-  selection: readonly ThemeSelectionMember[] | null | undefined): void {
+  selection: readonly ThemeSelectionMember[] | null | undefined,
+  demand?: ThemeFactsDemand): void {
   const data = acquired.focal
   if (!payloadPourRendu.value || !isRecord(data)) return
   const code = idRoute.value
@@ -795,13 +898,30 @@ function appliquerAcquisitionMobilite(acquired: AcquiredTheme<ThemeResponse>,
   let combined = mobilityFactsFromThemeApi(presentation, code, data)
   const comparison = selection === null
     ? undefined : acquired.comparisons.get(cleSelectionComparaison(selection))
-  combined = comparison
-    ? applyThemeComparisonApiFacts(combined, comparison, context, selection ?? undefined)
-    : clearThemeComparisonApiFacts(combined)
+  if (comparison) {
+    try {
+      combined = applyThemeComparisonApiFacts(combined, comparison, context, selection ?? undefined)
+    } catch {
+      // A chapter-scoped comparison does not cover a sibling chapter the reader
+      // has not requested: the curve simply has no reference here, it is not an
+      // error of the requested chapter. The requested demand's own state decides
+      // the comparison status below.
+      combined = clearThemeComparisonApiFacts(combined)
+    }
+  } else {
+    combined = clearThemeComparisonApiFacts(combined)
+  }
   mobilityFocal.value = combined
   mobilityComparisonFacts.value = combined
   mobilityCurveComparison.value = combined.mobility.selectedTrajectoryComparison ?? null
-  mobilityComparisonStatus.value = data.comparison_error ? 'error' : 'ready'
+  // The requested chapter's own comparison demand decides ready/error: an
+  // earlier chapter's cached reads must not make a missing one look ready.
+  const demandState = demand?.indicators && selection !== null
+    ? comparisonDemandState(acquired, selection ?? undefined, demand.indicators)
+    : undefined
+  mobilityComparisonStatus.value = demandState
+    ? (demandState.status === 'error' ? 'error' : 'ready')
+    : (data.comparison_error ? 'error' : 'ready')
   statutFaitsMobilite.value = 'ready'
 }
 
@@ -819,26 +939,32 @@ watch(() => route.hash, async (_hash, _old, onCleanup) => {
   const request = focalRequestSequence
   demandeScheduler.critical()
   try {
-    const critique = await chapitreDemandeMobilite(type)
+    const critique = chapitreDemandeMobilite()
     const demand = critique
       ? await demandeChapitreNiveau(type, 'mobilite', critique, membresAcquisition.value)
       : undefined
     if (!demand || cancelled) return
     const acquired = await cacheAcquisition.get(type, code, 'mobilite', demand)
-    if (cancelled || request !== focalRequestSequence || !payloadPourRendu.value) return
-    appliquerAcquisitionMobilite(acquired, membresAcquisition.value)
+    // A hash jump while this read was in flight must not commit the previous
+    // chapter's result: the newer watcher owns the current request.
+    if (cancelled || request !== focalRequestSequence || !payloadPourRendu.value ||
+        chapitreDemandeMobilite() !== critique) return
+    appliquerAcquisitionMobilite(acquired, membresAcquisition.value, demand)
     demandeScheduler.unlockIdle()
   } catch { /* the chapter's own retry surface reports it */ }
 })
 
-/** The chapter the reader asked for (route anchor), else the theme's default numeric chapter. */
-async function chapitreDemandeMobilite(type: string): Promise<string | undefined> {
-  const declarations = await declarationsPourNiveau(type)
-  const chapters = chapitresDemandesMobilite(declarations)
-  const anchor = chapitreDemandeDepuisAncre('mobilite', route.hash)
-  const anchored = anchor ? chapters.find((chapter) => chapter.key === anchor) : undefined
-  if (anchored && anchored.indicators.length > anchored.namedReferences.length) return anchored.key
-  return chapitreNumeriqueParDefaut('mobilite', declarations)?.key
+/**
+ * The numeric chapter the reader asked for, resolved by the ONE chapter
+ * resolution (`chapitreAffiche`): a recognised numeric chapter is used as is,
+ * everything else falls back to the theme's default numeric chapter — exactly
+ * the chapter the AEDAR gate reasons about.
+ */
+function chapitreDemandeMobilite(): string | undefined {
+  const chapter = chapitreAffiche.value
+  const resolved = chapitresMobilite.value.find((candidate) => candidate.key === chapter)
+  if (resolved && resolved.indicators.length > 0) return resolved.key
+  return chapitreNumerique.value ?? undefined
 }
 
 watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
@@ -873,15 +999,16 @@ watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
   demandeScheduler.reset()
   demandeScheduler.critical()
   void (async () => {
-    const critique = await chapitreDemandeMobilite(type)
+    const critique = chapitreDemandeMobilite()
     const selectionActive = membresAcquisition.value
     const demand = critique
       ? await demandeChapitreNiveau(type, 'mobilite', critique, selectionActive)
       : undefined
-    return cacheAcquisition.get(type, code, 'mobilite', demand)
-  })().then((acquired) => {
+    const acquired = await cacheAcquisition.get(type, code, 'mobilite', demand)
+    return { acquired, demand }
+  })().then(({ acquired, demand }) => {
     if (request !== focalRequestSequence || controller.signal.aborted || !payloadPourRendu.value) return
-    appliquerAcquisitionMobilite(acquired, membresAcquisition.value)
+    appliquerAcquisitionMobilite(acquired, membresAcquisition.value, demand)
     settled = true
     // The requested chapter is useful: only now may unrelated themes warm, and
     // never before it. A sibling chapter is read only when it is requested.
@@ -913,7 +1040,6 @@ watch([productionMobilite, typeRoute, idRoute, () => membresAcquisition.value,
       if (!settled) lastComparisonKey = null
     })
     const target = payloadPourRendu.value.territoires.find((territory) => territory.territoire === idRoute.value)
-    const context = resolution?.contexte ?? undefined
     const cohort = reference ?? undefined
     if (!target || !cohort) {
       mobilityComparisonStatus.value = 'error'
@@ -940,19 +1066,27 @@ watch([productionMobilite, typeRoute, idRoute, () => membresAcquisition.value,
     mobilityCurveComparison.value = null
     mobilityComparisonStatus.value = 'loading'
     membreComparaisonIndisponible.value = null
-    void cacheAcquisition.select(typeRoute.value, idRoute.value, 'mobilite', explicitSelection).then((acquired) => {
-      if (request !== comparisonRequestSequence || controller.signal.aborted || !mobilityFocal.value) return
+    void (async () => {
+      const critique = chapitreDemandeMobilite()
+      const demand = critique
+        ? await demandeChapitreNiveau(typeRoute.value, 'mobilite', critique, explicitSelection)
+        : undefined
+      if (request !== comparisonRequestSequence || controller.signal.aborted) return undefined
+      const acquired = await cacheAcquisition.select(typeRoute.value, idRoute.value, 'mobilite', explicitSelection,
+        demand?.indicators ? { indicators: [...demand.indicators] } : undefined)
+      return { acquired, demand }
+    })().then((outcome) => {
+      if (!outcome || request !== comparisonRequestSequence || controller.signal.aborted || !mobilityFocal.value) return
+      const { acquired, demand } = outcome
       const data = acquired.comparisons.get(cleSelectionComparaison(explicitSelection))
       validerReponseComparaisonTheme('mobilite', data, explicitSelection,
         { type: target.type, id: target.territoire })
-      const updated = applyThemeComparisonApiFacts(mobilityFocal.value, data, context, explicitSelection)
-       mobilityComparisonFacts.value = updated
-       mobilityCurveComparison.value = updated.mobility.selectedTrajectoryComparison ?? null
-      mobilityComparisonStatus.value = isRecord(data) && data.comparison_error === true ? 'error' : 'ready'
+      appliquerAcquisitionMobilite(acquired, explicitSelection, demand)
       settled = true
     }).catch((error: unknown) => {
       settled = true
-      if (request === comparisonRequestSequence && !controller.signal.aborted) {
+      if (request === comparisonRequestSequence && !controller.signal.aborted &&
+          !comparaisonMobiliteEnReessai) {
         nommerEchecMembre(error)
         lastComparisonKey = null
         mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value!)
@@ -1005,7 +1139,7 @@ function choisirOnglet(slug: SlugOnglet): void {
   // #408) — la garde garde la jointure de type pour les autres shells.
   if (slug === null || !(THEMES_CANONIQUES as readonly string[]).includes(slug)) return
   // Preserve the comparison context and unrelated query state.
-  router.replace({ query: { ...route.query, theme: slug } })
+  router.replace({ query: { ...route.query, theme: slug }, hash: route.hash })
 }
 
 watch(
@@ -1014,7 +1148,7 @@ watch(
     if (variant === undefined) return
     const query = { ...route.query }
     delete query.variant
-    router.replace({ query })
+    router.replace({ query, hash: route.hash })
   },
   { immediate: true },
 )
@@ -1026,7 +1160,7 @@ watch(
         (typeof theme !== 'string' || !(THEMES_CANONIQUES as readonly string[]).includes(theme))) {
       const query = { ...route.query }
       delete query.theme
-      router.replace({ query })
+      router.replace({ query, hash: route.hash })
     }
   },
   { immediate: true },
@@ -1044,7 +1178,7 @@ watch(
     if (valeur === undefined) delete query[PARAM_COMPARAISON]
     else query[PARAM_COMPARAISON] = valeur
     delete query.variant
-    router.replace({ query })
+    router.replace({ query, hash: route.hash })
   },
   { immediate: true },
 )

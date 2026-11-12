@@ -9,7 +9,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import TerritoireView from '@/views/TerritoireView.vue'
 import { chargerMetadonneesTheme, THEME_METADATA_CHARGER_KEY } from '@/payload/themeCatalogue'
 import { routes } from '@/router'
-import { nativeBatchResponse, nativeCatalogueResponse, nativeReadFixture } from './helpers/semanticApiFixtures'
+import { nativeBatchResponse, nativeCatalogueResponse, nativePublicationFamily,
+  nativeReadFixture } from './helpers/semanticApiFixtures'
+import { carInlineLegend } from './fixtures/aedar-car-inline-legend'
+import { AEDAR_AGGREGATE_READING_KEYS } from '@/fiche/content/aedarTimeRampFacts'
+import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
 
 /**
  * #986 — one cold navigation, every request counted, no owner exempt.
@@ -30,14 +34,41 @@ interface Call {
   items: Array<Record<string, any>>
 }
 
-function createTransport() {
+interface TransportOptions {
+  /** Per-item typed publication absence (never a whole-request 503). */
+  gate?: (item: Record<string, any>) => boolean
+  /** Hold one read until the returned promise settles (a pending acquisition). */
+  hold?: (call: Call) => Promise<void> | undefined
+}
+
+/** Minimal valid producer summary envelope (the shared fixture has none). */
+function summaryFixture(item: Record<string, any>) {
+  const target = item.target
+  return {
+    resource: item.resource,
+    target,
+    territory: { territory_type: target.type, territory_id: target.id },
+    summary_content_version: 'aedar-summary-fixture-v1',
+    aedar_content_version: 'aedar_territorial_aggregate-fixture-publication-v1',
+    reference_content_version: 'semantic-reference-fixture-v1',
+    readings: AEDAR_AGGREGATE_READING_KEYS.map((measure) => ({
+      measure, value: 3.5, status: 'available', n_typequ: AEDAR_TYPEQU_REGISTRY.length,
+      n_addresses: 100, n_observed: 90, coverage_status: 'covered', statistic: 'direct',
+      source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
+      licence: 'ODbL', attribution: 'AEDAR', reference_date: '2026-01-01', publication_date: '2026-09-30',
+    })),
+  }
+}
+
+function createTransport(options: TransportOptions = {}) {
   const calls: Call[] = []
   let active = 0
   let maxActive = 0
   const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const body = init?.body ? JSON.parse(String(init.body)) as { items?: Array<Record<string, any>> } : {}
-    calls.push({ index: calls.length, url, method: init?.method ?? 'GET', items: body.items ?? [] })
+    const call: Call = { index: calls.length, url, method: init?.method ?? 'GET', items: body.items ?? [] }
+    calls.push(call)
     if (url === '/data/territoires.json') return new Response(lireDonnee('territoires.json'), { status: 200 })
     if (url.startsWith('/data/theme_') && url.endsWith('.json')) {
       return new Response(lireDonnee(url.slice('/data/'.length)), { status: 200 })
@@ -47,15 +78,21 @@ function createTransport() {
       active += 1
       maxActive = Math.max(maxActive, active)
       try {
-        return await nativeBatchResponse(callItems(), (item, resource) =>
+        await options.hold?.(call)
+        const response = await nativeBatchResponse(call.items, (item, resource) =>
           nativeReadFixture(item, resource, { syntheticProfileComparisons: true }))
+        if (!options.gate) return response
+        const wire = await response.clone().json() as { results: Array<Record<string, any>> }
+        return new Response(JSON.stringify({ ...wire, results: wire.results.map((result, index) =>
+          options.gate!({ ...call.items[index], ...result })
+          ? { id: result.id, resource: result.resource, status: 'publication_unavailable',
+            reason: 'publication_absent', family: nativePublicationFamily(result.resource) }
+          : result) }), { status: 200 })
       } finally {
         active -= 1
       }
     }
     return new Response('', { status: 404 })
-
-    function callItems() { return calls[calls.length - 1]!.items }
   })
   return { transport, calls, maxActive: () => maxActive }
 }
@@ -128,6 +165,19 @@ async function monterFiche(chemin: string) {
     global: { plugins: [router], provide: { [THEME_METADATA_CHARGER_KEY]: chargerMetadonneesTheme } },
   })
   return { router, wrapper }
+}
+
+/** Let an owner's in-flight read batches finish: its item count is stable across turns. */
+async function settleOwner(calls: Call[], predicate: (item: Record<string, any>) => boolean): Promise<void> {
+  let last = -1
+  let stable = 0
+  for (let tick = 0; tick < 800 && stable < 40; tick += 1) {
+    await nextTick()
+    if (tick % 8 === 0) await flushPromises()
+    const count = items(calls).filter(predicate).length
+    if (count === last) stable += 1
+    else { stable = 0; last = count }
+  }
 }
 
 /** Poll the DOM per microtask turn so "when did the chapter become useful" is observable. */
@@ -314,6 +364,7 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
       hash: '#figure-acces-aux-services' })
     await flushPromises()
     await flushPromises()
+    await settleOwner(calls, isAedar)
     const aedarAfterPageOne = items(calls).filter(isAedar)
     expect(aedarAfterPageOne.length).toBeGreaterThan(0)
     expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
@@ -334,6 +385,171 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     // admitted page-1 data stays in memory and re-renders on the next page-1 visit.
     expect(aedarImageSources(wrapper)).toEqual([])
     expect(wrapper.find('.mobilite-section--reseaux .mobilite-comparison-bars').exists()).toBe(true)
+    wrapper.unmount()
+  }, 60000)
+
+  it('marks the requested page-3 comparison as its own error and retries only that comparison', async () => {
+    let pageThreeComparisonAbsent = true
+    const pageThreeComparables = new Set(['offre_tc', 'raccordement_courbe', 'raccordement_tc'])
+    const { transport, calls } = createTransport({
+      gate: (item) => pageThreeComparisonAbsent && item.intent.kind === 'selected_comparison' &&
+        pageThreeComparables.has(item.resource),
+    })
+    vi.stubGlobal('fetch', transport)
+    const { router, wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite#figure-partage-de-lespace-public')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+    await flushPromises()
+
+    // Page 2 is ready; its comparison is not an error.
+    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(false)
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-offre-transports-commun' })
+    await flushPromises()
+    await flushPromises()
+
+    const chapterReads = () => posts(calls).filter((call) => call.items.some((item) =>
+      pageThreeComparables.has(item.resource) && item.intent.kind === 'selected_comparison'))
+    expect(chapterReads()).toHaveLength(1)
+    // The requested chapter's absent comparison is ITS error: the curve exposes
+    // its retry even though page 2's comparison reads are cached and ready.
+    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
+
+    pageThreeComparisonAbsent = false
+    const beforeRetry = posts(calls).length
+    const factsBefore = items(calls).filter((item) => item.intent.kind === 'facts').length
+    await wrapper.get('.mobilite-raccordement-curve__retry').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    const retried = posts(calls).slice(beforeRetry).flatMap((call) => call.items)
+    expect(retried.filter((item) => item.intent.kind === 'selected_comparison')).toHaveLength(3)
+    expect(retried.some((item) => item.intent.kind === 'facts')).toBe(false)
+    expect(items(calls).filter((item) => item.intent.kind === 'facts')).toHaveLength(factsBefore)
+    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(false)
+    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(true)
+    wrapper.unmount()
+  }, 60000)
+
+  it('completes the requested chapter when a hash jump happens during the initial read', async () => {
+    let release: (() => void) | undefined
+    let held = false
+    const { transport, calls } = createTransport({
+      hold: (call) => {
+        if (held) return undefined
+        if (!call.items.some((item) => PAGE_TWO.includes(item.resource) && item.intent.kind === 'facts')) return undefined
+        held = true
+        return new Promise<void>((resolve) => { release = resolve })
+      },
+    })
+    vi.stubGlobal('fetch', transport)
+    const { router, wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite#figure-partage-de-lespace-public')
+    await flushPromises()
+    expect(held).toBe(true)
+
+    // Jump to page 3 while page 2's read is still pending.
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-offre-transports-commun' })
+    await flushPromises()
+    release!()
+    await flushPromises()
+    await flushPromises()
+
+    const pageThreeReads = postsTouching(calls, PAGE_THREE)
+    expect(pageThreeReads).toHaveLength(1)
+    expect(pageThreeReads[0]!.items).toHaveLength(7)
+    // The pending page-2 read is not re-issued: each fact item stays requested once.
+    const pageTwoFacts = items(calls).filter((item) => item.intent.kind === 'facts' && PAGE_TWO.includes(item.resource))
+    expect(pageTwoFacts).toHaveLength(13)
+    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(false)
+
+    // Rapid back then territory change: no stale page-3 read for the old territory.
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-partage-de-lespace-public' })
+    await flushPromises()
+    const beforeTerritory = posts(calls).length
+    await router.push('/territoire/commune/22001?theme=mobilite#figure-partage-de-lespace-public')
+    await flushPromises()
+    expect(posts(calls).slice(beforeTerritory).flatMap((call) => call.items)
+      .some((item) => PAGE_THREE.includes(item.resource) && item.target?.id === '35238')).toBe(false)
+    expect(wrapper.find('h1').text()).toBe('Allineuc')
+    wrapper.unmount()
+  }, 60000)
+
+  it('falls back to the planner chapter for an unknown anchor, without launching AEDAR', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite#figure-sources')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+    await flushPromises()
+
+    expect(items(calls).filter(isAedar)).toEqual([])
+    expect(calls.filter((call) => call.url.startsWith('https://images.'))).toEqual([])
+    expect(aedarImageSources(wrapper)).toEqual([])
+    // The fallback chapter is the one the numeric planner actually reads.
+    expect(postsTouching(calls, PAGE_TWO)).toHaveLength(3)
+    wrapper.unmount()
+  }, 60000)
+
+  it('reuses settled AEDAR reads when returning to page 1, and keeps the 235 universe', async () => {
+    const { transport, calls } = createTransport()
+    const legendRequests: string[] = []
+    const summaryRequests: string[] = []
+    const fetchWithFixtures = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('-car-inline.json')) {
+        legendRequests.push(url)
+        return new Response(JSON.stringify(carInlineLegend({ type: 'region', code: '53', name: 'Bretagne' })),
+          { status: 200 })
+      }
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        if (items.length && items.every((item) => item.resource === 'aedar_territory_summary')) {
+          summaryRequests.push(url)
+          return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+            results: items.map((item) => ({ id: item.id, resource: item.resource,
+              status: 'available', data: summaryFixture(item) })) }), { status: 200 })
+        }
+      }
+      return transport(input, init)
+    })
+    vi.stubGlobal('fetch', fetchWithFixtures)
+    // A region page 1: AEDAR summary/aggregates and its legend are requested,
+    // and there is no comparison control that would add an unrelated read.
+    const { router, wrapper } = await monterFiche('/territoire/region/53?theme=mobilite')
+    // Page 1 is useful when its AEDAR evidence renders.
+    await attendreChapitreUtile(wrapper, calls, '[data-section="aedar-car-overview"]')
+    await settleOwner(calls, isAedar)
+    await flushPromises()
+
+    const aedarPosts = () => items(calls).filter(isAedar).length
+    const aedarSummaryPosts = () => summaryRequests.length
+    const legendReads = () => legendRequests.length
+    const aedarBefore = aedarPosts()
+    const summaryBefore = aedarSummaryPosts()
+    const legendsBefore = legendReads()
+    expect(aedarBefore).toBeGreaterThan(0)
+    expect(summaryBefore).toBe(1)
+    expect(legendsBefore).toBe(1)
+    const legendLabel = wrapper.get('.aedar-car-map-legend').attributes('aria-label')
+    expect(legendLabel).toContain('235')
+
+    await router.push({ path: '/territoire/region/53', query: { theme: 'mobilite' },
+      hash: '#figure-partage-de-lespace-public' })
+    await flushPromises()
+    expect(aedarImageSources(wrapper)).toEqual([])
+
+    await router.push({ path: '/territoire/region/53', query: { theme: 'mobilite' },
+      hash: '#figure-acces-aux-services' })
+    await flushPromises()
+    await settleOwner(calls, isAedar)
+    // A cached revisit of the same valid territory observes nothing again.
+    expect(aedarPosts()).toBe(aedarBefore)
+    expect(aedarSummaryPosts()).toBe(summaryBefore)
+    expect(legendReads()).toBe(legendsBefore)
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    expect(wrapper.get('.aedar-car-map-legend').attributes('aria-label')).toBe(legendLabel)
     wrapper.unmount()
   }, 60000)
 

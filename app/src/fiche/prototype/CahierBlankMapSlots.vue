@@ -48,18 +48,33 @@ const needsCarMapLegend = computed(() => slots.value.some((slot) => usesCarMap(s
   && !unavailableCarMapCodes.value.has(props.territory.code))
 const showCarMapLegend = computed(() => needsCarMapLegend.value && carMapLegend.value !== null)
 
+let legendIdentity: string | null = null
 watch(
   () => [props.territory.type, props.territory.code, props.horizonMinutes, needsCarMapLegend.value,
     props.active !== false].join('|'),
   async (_, __, onCleanup) => {
     let current = true
     onCleanup(() => { current = false })
+    if (!needsCarMapLegend.value) {
+      carMapLegend.value = null
+      legendStatus.value = 'loading'
+      legendIdentity = null
+      return
+    }
+    const identity = `${props.territory.type}/${props.territory.code}/${props.horizonMinutes}`
+    // A different territory/horizon invalidates the settled legend; merely
+    // leaving the chapter keeps it, so returning reuses it without a fetch.
+    if (legendIdentity !== null && legendIdentity !== identity) {
+      carMapLegend.value = null
+      legendStatus.value = 'loading'
+    }
+    if (props.active === false) return
+    if (legendIdentity === identity && carMapLegend.value) { legendStatus.value = 'ready'; return }
     carMapLegend.value = null
     legendStatus.value = 'loading'
-    if (!needsCarMapLegend.value || props.active === false) return
     try {
       const legend = await fetchAedarCarMapLegend(props.territory)
-      if (current) { carMapLegend.value = legend; legendStatus.value = 'ready' }
+      if (current) { carMapLegend.value = legend; legendStatus.value = 'ready'; legendIdentity = identity }
     } catch {
       if (current) legendStatus.value = 'unavailable'
     }

@@ -1,4 +1,7 @@
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+
+import AedarDiversityLossMapsCahier from '@/fiche/prototype/AedarDiversityLossMapsCahier.vue'
 
 import {
   aedarDiversityLossSection,
@@ -117,6 +120,40 @@ describe('AEDAR diversity-loss map section', () => {
       ['walk', 'À pied'], ['transit', 'Transports'], ['bike_lts2', 'Vélo LTS2'], ['bike_lts4', 'Vélo LTS4'],
     ])
     expect(section.evidence.maps.every((map) => map.inlineAvailable && map.inspectionAvailable)).toBe(true)
+  })
+
+  it('never opens the inspection gallery from a pending page-1 loss map, and opens it once active', async () => {
+    const legend = parseAedarInlineLegend(inlineLegend('walk'), territory, 'walk')
+    const section = aedarDiversityLossSection({ status: 'ready', legend }, territory)
+    if (section.evidence?.kind !== 'aedar-diversity-loss') throw new Error('Expected diversity-loss evidence')
+    document.querySelectorAll('.lusk-map-gallery').forEach((element) => element.remove())
+
+    const inactive = mount(AedarDiversityLossMapsCahier, { props: { evidence: section.evidence, active: false } })
+    try {
+      await flushPromises()
+      // The viewports stay (geometry preserved) but a click downloads nothing.
+      expect(inactive.findAll('.aedar-diversity-loss-map .map-viewport')).toHaveLength(modes.length)
+      await inactive.find('.aedar-diversity-loss-map--walk .map-viewport').trigger('click')
+      await flushPromises()
+      expect(inactive.findAll('.map-gallery-source img[src]')).toHaveLength(0)
+      expect(document.querySelector('.lusk-map-gallery')).toBeNull()
+    } finally {
+      inactive.unmount()
+    }
+
+    const active = mount(AedarDiversityLossMapsCahier, { props: { evidence: section.evidence, active: true } })
+    try {
+      await flushPromises()
+      await active.find('.aedar-diversity-loss-map--walk .map-viewport').trigger('click')
+      await flushPromises()
+      const opened = active.findAll('.map-gallery-source img')
+        .map((image) => image.attributes('src') ?? '')
+      expect(opened).toHaveLength(modes.length)
+      expect(opened).toContain('https://images.calumrobertson.fr/maps/aedar/v1/test-commune-walk-inspection.webp')
+      expect(opened.every((src) => src.includes('/test-commune-') && src.includes('-inspection.webp'))).toBe(true)
+    } finally {
+      active.unmount()
+    }
   })
 
   it('keeps production maps available while legend metadata is loading or unavailable', () => {

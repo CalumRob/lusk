@@ -1535,7 +1535,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       territory.type === 'commune' && territory.epci === cibleReference('22001').epci)
       .map((territory: any) => ({ type: territory.type, id: territory.territoire }))
       .sort((left: any, right: any) => left.id.localeCompare(right.id))
-    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } })
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' }, hash: '#figure-offre-transports-commun' })
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBe('epci')
     const epciRead = reads().find((item) => item.resource === curve.resource_id &&
@@ -1546,14 +1546,14 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const bretagneMembers = cohort.filter((territory: any) => territory.type === 'commune')
       .map((territory: any) => ({ type: territory.type, id: territory.territoire }))
       .sort((left: any, right: any) => left.id.localeCompare(right.id))
-    await router.replace({ query: { theme: 'mobilite', comparaison: 'bretagne' } })
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'bretagne' }, hash: '#figure-offre-transports-commun' })
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBe('bretagne')
     const bretagneReads = reads().filter((item) => item.resource === curve.resource_id &&
       item.intent.kind === 'selected_comparison')
     expect(bretagneReads.at(-1)?.intent.members).toEqual(bretagneMembers)
 
-    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } })
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' }, hash: '#figure-offre-transports-commun' })
     await flushPromises()
     expect(reads().filter((item) => item.resource === curve.resource_id &&
       item.intent.kind === 'selected_comparison' &&
@@ -2164,68 +2164,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const curve = wrapper.get('.mobilite-raccordement-curve')
     expect(curve.find('.cahier-figure-legend-comparison-error').exists()).toBe(false)
     expect(curve.find('[role="alert"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('réessaie une acquisition de comparaison Mobilité réellement échouée depuis la section et retrouve la courbe comparée', async () => {
-    const requests: Array<Array<Record<string, any>>> = []
-    let selectedFailing = true
-    const fixtureFetch = nativeSemanticFetch(requests)
-    const pageThreeResources = ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference']
-    const pageThreeComparables = new Set(['offre_tc', 'raccordement_courbe', 'raccordement_tc'])
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) !== '/api/resources/read-batch') return fixtureFetch(input, init)
-      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      const chapterComparisons = items.filter((item) =>
-        item.intent.kind === 'selected_comparison' && pageThreeComparables.has(item.resource))
-      if (chapterComparisons.length && selectedFailing) {
-        const response = await fixtureFetch(input, init)
-        const body = await response.clone().json() as { results: Array<Record<string, any>> }
-        const gated = new Set(chapterComparisons.map((item) => item.id))
-        // v2 typed absence: the requested chapter's comparison publication is
-        // missing while its focal facts stay available.
-        return new Response(JSON.stringify({ ...body, results: body.results.map((result) => gated.has(result.id)
-          ? { id: result.id, resource: result.resource, status: 'publication_unavailable',
-            reason: 'publication_absent', family: nativePublicationFamily(result.resource) }
-          : result) }), { status: 200 })
-      }
-      return fixtureFetch(input, init)
-    })
-    vi.stubGlobal('fetch', fetchApi)
-    // #986 — the page-3 chapter is read only when it is the requested chapter.
-    const { wrapper } = await monter(
-      '/territoire/commune/22001?theme=mobilite&comparaison=epci#figure-offre-transports-commun',
-      chargerReferenceReelle)
-    await flushPromises()
-    await flushPromises()
-
-    const chapterComparisonReads = () => requests.filter((items) =>
-      items.some((item) => item.intent.kind === 'selected_comparison' && pageThreeComparables.has(item.resource)))
-    // One fused batch for the requested chapter: its facts, its comparisons and
-    // its named reference, never a page-2 read and never a speculative sibling.
-    expect(chapterComparisonReads()).toHaveLength(1)
-    expect(chapterComparisonReads()[0]!.every((item) =>
-      pageThreeResources.includes(item.resource))).toBe(true)
-    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
-    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
-    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(true)
-    selectedFailing = false
-    const selectedBeforeRetry = chapterComparisonReads().length
-    const requestsBeforeRetry = requests.length
-
-    await wrapper.get('.mobilite-raccordement-curve__retry').trigger('click')
-    await flushPromises()
-    await flushPromises()
-
-    const retried = chapterComparisonReads().slice(selectedBeforeRetry)
-    expect(retried).toHaveLength(1)
-    expect(retried.every((items) => items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
-    expect([...new Set(retried.flat().map((item) => item.resource))].sort()).toEqual([...pageThreeComparables].sort())
-    expect(requests.slice(requestsBeforeRetry).flat().some((item) =>
-      item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
-    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(false)
-    expect(wrapper.find('.mobilite-raccordement-curve__legend .cahier-figure-legend-comparison-error').exists()).toBe(false)
-    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(true)
     wrapper.unmount()
   })
 

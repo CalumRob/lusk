@@ -59,6 +59,9 @@ function markUnavailable(mode: string): void {
 }
 
 async function inspectMap(map: AedarDiversityLossMapEvidence): Promise<void> {
+  // #986 — a pending page-1 panel never opens the gallery before its chapter is
+  // requested: that would download the inspection asset for an unrequested page.
+  if (props.active === false) return
   unavailableInspectionLabel.value = await mapGallery.value?.open(map.mode)
     ? null
     : map.label
