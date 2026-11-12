@@ -773,6 +773,42 @@ describe('theme acquisition cache', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
+  it('never requests the same semantic item twice across a cold Mobilite facts + comparison flow', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts, acquireThemeComparison } = await import('../payload/themeAcquisition')
+    const { semanticItemKey } = await import('../payload/semanticResourceClient')
+    const requests: Array<{ items: Array<Record<string, any>> }> = []
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return nativeCatalogueResponse()
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      requests.push(request)
+      return nativeBatchResponse(request.items, (item, resource) => nativeReadFixture(item, resource))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '35238' },
+      { territory_type: 'commune' as const, territory_id: '35240' },
+    ]
+    try {
+      await acquireThemeFacts('commune', '35238', 'mobilite')
+      await acquireThemeComparison('commune', '35238', 'mobilite', selection)
+
+      const keys = requests.flatMap(({ items }) => items.map((item) =>
+        semanticItemKey({
+          resource: item.resource,
+          target: item.target,
+          ...(item.coordinates ? { coordinates: item.coordinates } : {}),
+          ...(item.fields ? { fields: item.fields } : {}),
+          intent: item.intent,
+        } as Parameters<typeof semanticItemKey>[0])))
+      expect(keys.length).toBeGreaterThan(0)
+      expect(new Set(keys).size).toBe(keys.length)
+      // Every batch respects the shared twelve-item packing budget.
+      expect(requests.every(({ items }) => items.length <= 12)).toBe(true)
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('loads only requested themes and caches by territory, theme, and comparison context', async () => {
     const acquire = vi.fn(async (theme: string) => ({ theme, focal: 42, tokens: {} }))
     const cache = new ThemeAcquisitionCache(acquire)
