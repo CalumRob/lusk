@@ -106,7 +106,10 @@ function toneColor(tone: MobiliteBarCategoryEvidence['tone']): string {
       ? 'var(--cahier-mode-bike)'
       : tone === 't'
         ? 'var(--cahier-mode-foot)'
-        : 'var(--cahier-theme-strong)'
+        : tone === 'brand'
+          // The app's own ink, distinct from every mode colour (#976).
+          ? 'var(--brand-500)'
+          : 'var(--cahier-theme-strong)'
 }
 
 function comparisonFill(category: MobiliteBarCategoryEvidence): string {

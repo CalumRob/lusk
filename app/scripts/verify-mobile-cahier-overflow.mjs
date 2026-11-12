@@ -1835,6 +1835,20 @@ try {
     assert.equal(await page.locator('.constructeur-comparaison dialog[open]').count(), 0,
       'Le modal singleton doit être fermé après un seul clic')
 
+    // #976 — a custom member selection carries no producer scope label, so the
+    // theme comparison deliberately clears its references. Restore a
+    // producer-scoped preset so the coherent fixture serves references and the
+    // compared wash is really drawn before the colour proof and captures. This
+    // does not hide a production failure: the fixture is synthetic and the
+    // live comparison load is a separate, documented dependency.
+    await builderTrigger.click()
+    await page.locator('dialog[open] .constructeur-comparaison__preset').first().click()
+    await page.getByRole('button', { name: 'Fermer la fenêtre', exact: true }).click()
+    await page.locator('[data-column="ravitaillement"] rect[data-comparison="charging"]')
+      .waitFor({ state: 'attached' })
+    await page.locator('[data-column="ravitaillement"] rect[data-comparison="fuel-stations"]')
+      .waitFor({ state: 'attached' })
+
     // #974 — review captures of the corrected page-2 surfaces at the two
     // review widths, taken from the real production route (all units render).
     // Each element is centred first so the sticky header never paints over it.
@@ -1871,6 +1885,118 @@ try {
         await captureSurface(page.locator('[data-column="ravitaillement"] .mobilite-ratio-scalar'),
           'issue974-page2-ratio-refuelling-390.png')
       }
+      // #976 — the owner's two review surfaces: the recalibrated captions and
+      // the charging category's distinct ink, captured from the real route.
+      await captureSurface(page.locator('[data-column="stationnement"] .mobilite-ratio-scalar'),
+        `issue976-page2-ratio-parking-${width}.png`)
+      await captureSurface(page.locator('[data-column="ravitaillement"] .mobilite-ratio-scalar'),
+        `issue976-page2-ratio-refuelling-${width}.png`)
+      await captureSurface(page.locator('[data-column="ravitaillement"] .mobilite-section-figure'),
+        `issue976-page2-refuelling-figure-${width}.png`)
+    }
+
+    // #976 — the page-2 ratio captions must wear the exact AEDAR scalar caption
+    // role, not a lookalike: compare the real computed typography with the AEDAR
+    // car-overview scalar caption on the same route. The charging bar, its
+    // legend key and its tooltip marker must share the app brand ink, while the
+    // fuel-station category keeps the theme ink it already had.
+    if (width === 390 || width === 1440) {
+      const captionIdentity = await page.evaluate(() => {
+        const styleOf = (element) => {
+          const style = getComputedStyle(element)
+          return {
+            fontFamily: style.fontFamily,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+            lineHeight: style.lineHeight,
+            letterSpacing: style.letterSpacing,
+            textTransform: style.textTransform,
+          }
+        }
+        const aedarCaption = document.querySelector(
+          '#section-aedar-car-overview .aedar-car-overview-scalars .cahier-figure-scalar-label')
+        const ratioCaptions = [...document.querySelectorAll('.mobilite-ratio-scalar .cahier-figure-scalar-label')]
+        const column = document.querySelector(
+          '.mobilite-section--stationnement-ravitaillement [data-column="ravitaillement"]')
+        const legendItem = (label) => [...(column?.querySelectorAll('.cahier-figure-legend-item') ?? [])]
+          .find((item) => item.querySelector('.cahier-figure-legend-label')?.textContent === label)
+        const fillOf = (element) => element ? getComputedStyle(element).fill : null
+        const inkOf = (element) => element ? getComputedStyle(element).color : null
+        const bar = column?.querySelector('rect[data-category="charging"]')
+        const comparedBar = (category) => column?.querySelector(`rect[data-comparison="${category}"]`)
+        const probeColor = (value) => {
+          const host = column ?? document.body
+          const probe = document.createElement('span')
+          probe.style.color = value
+          host.append(probe)
+          const resolved = getComputedStyle(probe).color
+          probe.remove()
+          return resolved
+        }
+        return {
+          aedar: aedarCaption ? { ...styleOf(aedarCaption), text: aedarCaption.textContent } : null,
+          ratios: ratioCaptions.map((caption) => ({ ...styleOf(caption), text: caption.textContent })),
+          brand: probeColor('var(--brand-500)'),
+          car: probeColor('var(--cahier-mode-car)'),
+          chargingBar: fillOf(bar),
+          fuelBar: fillOf(column?.querySelector('rect[data-category="fuel-stations"]')),
+          chargingCompared: fillOf(comparedBar('charging')),
+          fuelCompared: fillOf(comparedBar('fuel-stations')),
+          chargingLegend: inkOf(legendItem('Bornes de recharge')?.querySelector('.cahier-figure-legend-mark')),
+          fuelLegend: inkOf(legendItem('Stations-service')?.querySelector('.cahier-figure-legend-mark')),
+          aria: column?.querySelector('svg[role="img"]')?.getAttribute('aria-label') ?? null,
+        }
+      })
+      assert(captionIdentity.aedar, `AEDAR scalar caption must render at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.equal(captionIdentity.ratios.length, 2,
+        `Both page-2 ratio captions must render at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      for (const caption of captionIdentity.ratios) {
+        assert.equal(caption.textTransform, 'uppercase',
+          `Page-2 ratio caption must render uppercase at ${width}px: ${JSON.stringify(caption)}`)
+        for (const property of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textTransform']) {
+          assert.equal(caption[property], captionIdentity.aedar[property],
+            `Page-2 ratio caption ${property} must match the AEDAR scalar caption at ${width}px: ${JSON.stringify({ caption, aedar: captionIdentity.aedar })}`)
+        }
+      }
+      assert.equal(captionIdentity.chargingBar, captionIdentity.brand,
+        `Charging bar must use the app brand ink at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.equal(captionIdentity.fuelBar, captionIdentity.car,
+        `Fuel-station bar must use the existing car ink at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.equal(captionIdentity.chargingLegend, captionIdentity.brand,
+        `Charging legend key must use the app brand ink at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.equal(captionIdentity.fuelLegend, captionIdentity.car,
+        `Fuel-station legend key must use the existing car ink at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      const renderedFills = [
+        captionIdentity.chargingBar, captionIdentity.fuelBar,
+        captionIdentity.chargingCompared, captionIdentity.fuelCompared,
+      ]
+      assert(renderedFills.every(Boolean),
+        `Both focal and compared fills must be drawn at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.equal(new Set(renderedFills).size, 4,
+        `The two focal fills and their compared washes must be four distinct rendered RGBA values at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.notEqual(captionIdentity.chargingCompared, captionIdentity.chargingBar,
+        `The charging compared wash must differ from its focal fill at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert.notEqual(captionIdentity.fuelCompared, captionIdentity.fuelBar,
+        `The fuel-station compared wash must differ from its focal fill at ${width}px: ${JSON.stringify(captionIdentity)}`)
+      assert(captionIdentity.aria?.includes('Bornes de recharge') && captionIdentity.aria?.includes('Stations-service'),
+        `The factual category names must stay in the accessible reading at ${width}px: ${JSON.stringify(captionIdentity)}`)
+
+      const hitbox = (index) => page.locator(
+        '.mobilite-section--stationnement-ravitaillement [data-column="ravitaillement"] .mobilite-comparison-bars__hitbox').nth(index)
+      const markerInk = async (index) => {
+        await hitbox(index).focus()
+        const ink = await page.evaluate(() => {
+          const marker = document.querySelector(
+            '.mobilite-section--stationnement-ravitaillement [data-column="ravitaillement"] .mobilite-comparison-bars__tooltip .cahier-figure-tooltip-marker')
+          return marker ? getComputedStyle(marker).backgroundColor : null
+        })
+        await hitbox(index).press('Escape')
+        return ink
+      }
+      assert.equal(await markerInk(0), captionIdentity.brand,
+        `Charging tooltip marker must use the app brand ink at ${width}px`)
+      assert.equal(await markerInk(1), captionIdentity.car,
+        `Fuel-station tooltip marker must use the existing car ink at ${width}px`)
     }
 
     let plainMarginLayout = null
