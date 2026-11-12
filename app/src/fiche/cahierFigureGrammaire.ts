@@ -151,6 +151,8 @@ export interface CahierFigureAxisTick {
   key: string | number
   position: number
   label: string | null
+  /** Optional presentation class for responsive label policies (e.g. mobile anchors). */
+  className?: string
 }
 
 export interface CahierGroupedVerticalBarCategory {

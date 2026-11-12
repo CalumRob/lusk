@@ -735,7 +735,7 @@ export const territoiresRaccordementFixture: Territoire[] = [
 ]
 
 const vintageRaccordementMobilite = {
-  vintage_source: 'Lusk — matrice temps mairie à mairie figée du raccordement (routage r5r sur SNCF Voyageurs national 2026-08-24 + KorrigoBret v80335, mercredi réel de période scolaire 2026-09-16, meilleur départ p01 — recherche raccordement, issue #485)',
+  vintage_source: 'Lusk — matrice nationale de trajets GTFS planifiés entre arrêts communaux',
   vintage_version: '2026-09-16',
   vintage_date_reference: '2026-08-25',
   vintage_date_publication: '2026-08-26',
@@ -1939,7 +1939,7 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
     key: 'offre-transports-commun',
     label: 'L’offre de transports en commun',
     framing:
-      'La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.',
+      'La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en transports en commun, par des trajets planifiés aller simple entre arrêts.',
     indicators: ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference'],
     figure: { family: 'scalar', indicator: 'offre_tc' },
   })
@@ -1951,15 +1951,15 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
   ]
   base.sources = {
     ...base.sources,
-    raccordement_tc: 'matrice_temps_mairies',
-    raccordement_courbe: 'matrice_temps_mairies',
-    raccordement_reference: 'matrice_temps_mairies',
+    raccordement_tc: 'raccordement_gtfs_national',
+    raccordement_courbe: 'raccordement_gtfs_national',
+    raccordement_reference: 'raccordement_gtfs_national',
   }
   base.indicator_labels = {
     ...base.indicator_labels,
     raccordement_tc: 'Population bretonne joignable en 90 minutes en TC',
-    raccordement_courbe: 'Courbe cumulative — population bretonne joignable en TC',
-    raccordement_reference: 'Référence médiane — commune bretonne',
+    raccordement_courbe: 'Courbe de population bretonne jointe selon le temps de trajet',
+    raccordement_reference: 'Référence nommée — moyenne des courbes communales évaluées',
   }
   base.detail_labels = {
     ...base.detail_labels,
@@ -1969,11 +1969,11 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
   base.indicator_caveats = {
     ...base.indicator_caveats,
     raccordement_tc:
-      'Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.',
+      'Trajets GTFS planifiés entre arrêts, au meilleur départ de la date réelle du modèle ; aucune durée de retour ni liaison bâtiment–arrêt n’est modélisée. Aux niveaux agrégés, les courbes des communes membres ont le même poids, zéros du modèle inclus.',
     raccordement_courbe:
-      'Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.',
+      'Trajets GTFS planifiés entre arrêts, au meilleur départ de la date réelle du modèle ; aucune durée de retour ni liaison bâtiment–arrêt n’est modélisée. Aux niveaux agrégés, les courbes des communes membres ont le même poids, zéros du modèle inclus.',
     raccordement_reference:
-      'Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.',
+      'Moyenne des courbes communales évaluées, jamais une médiane ; elle n’est pas la série de comparaison de la fiche Mobilité.',
   }
   base.map_layers = {
     ...base.map_layers,
@@ -1987,7 +1987,7 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
     unit: '%',
     direction: 'high' as const,
     levels: ['commune', 'epci', 'departement'] as ('commune' | 'epci' | 'departement')[],
-    sources: ['matrice_temps_mairies'],
+    sources: ['raccordement_gtfs_national'],
   }
   const caveat = base.indicator_caveats?.raccordement_tc ?? 'La couverture réellement mesurée par le réseau est signalée.'
   base.indicator_pages = {
@@ -1996,7 +1996,7 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
       ...pageBase,
       indicator: 'raccordement_tc',
       label: 'Population bretonne joignable en 90 minutes en TC',
-      definition: 'Part de la population bretonne pouvant rejoindre le territoire en transports en commun en moins de 90 minutes, de mairie à mairie.',
+      definition: 'Part de la population bretonne pouvant être rejointe depuis les arrêts du territoire par des trajets planifiés aller simple en transports en commun, en 90 minutes.',
       calculation: 'Meilleur départ d’un mercredi réel de période scolaire, avec marche plafonnée à 40 minutes et sans trajet en voiture.',
       caveats: caveat,
       family: 'scalar',
@@ -2004,9 +2004,9 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
     raccordement_courbe: {
       ...pageBase,
       indicator: 'raccordement_courbe',
-      label: 'Courbe cumulative — population bretonne joignable en TC',
+      label: 'Courbe de population bretonne jointe selon le temps de trajet',
       definition: 'Part de la population bretonne pouvant rejoindre le territoire selon le temps de trajet en transports en commun.',
-      calculation: 'Courbe cumulative de la matrice de temps mairie à mairie publiée par le pipeline.',
+      calculation: 'Somme des populations des communes de destination atteintes en trajet planifié aller simple, divisée par la population bretonne. Les agrégats sont les moyennes égales des courbes communales de leurs membres, zéros du modèle inclus.',
       caveats: caveat,
       family: 'trajectory',
       trajectory: {
@@ -2034,26 +2034,26 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
   }
   base.source_records = {
     ...(base.source_records ?? {}),
-    matrice_temps_mairies: {
-      dataset: 'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',
+    raccordement_gtfs_national: {
+      dataset: 'Lusk — matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)',
       publisher: 'Lusk',
       url: 'https://github.com/CalumRob/lusk',
-      licence: 'ODbL — © OpenStreetMap contributors (SNCF, Korrigo) et Licence Ouverte 2.0 (DILA)',
-      vintage: '2026-08',
-      freshness: '26 août 2026',
+      licence: 'ODbL — © OpenStreetMap contributors (GTFS SNCF/Korrigo) et licences des sources ouvertes',
+      vintage: 'national-gtfs-outbound-v1',
+      freshness: '10 octobre 2026',
       vintages: [{
-        id: 'matrice_temps_mairies',
-        label: 'Matrice figée du mercredi 16 septembre 2026',
-        version: '2026-09-16',
-        licence: 'ODbL + Licence Ouverte 2.0',
-        dateReference: '2026-08-25',
-        datePublication: '2026-08-26',
+        id: 'raccordement_gtfs_national',
+        label: 'Routage national GTFS',
+        version: 'national-gtfs-outbound-v1',
+        licence: 'ODbL et licences des flux sources',
+        dateReference: '2026-10-10',
+        datePublication: '2026-10-10',
       }],
       clocks: [{
-        name: 'Le meilleur départ de la journée',
-        frequency: 'figé — un nouveau millésime est un nouvel artefact versionné, acquis à la main (mode manuel)',
-        reference: 'mercredi réel de période scolaire 2026-09-16, fenêtre 07:00–20:00, p01',
-        trigger: 'Recalcul manuel sur décision après une nouvelle acquisition des feeds.',
+        name: 'Horaires GTFS du raccordement',
+        frequency: 'instantané versionné ; tout nouveau millésime exige une nouvelle matrice et un nouveau pin',
+        reference: 'trajets planifiés au meilleur départ de la date réelle du modèle',
+        trigger: 'Recalcul contrôlé après acquisition validée de nouveaux flux GTFS.',
       }],
     },
   }

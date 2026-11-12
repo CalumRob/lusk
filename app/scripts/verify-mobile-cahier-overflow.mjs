@@ -313,6 +313,10 @@ try {
   // servis ici par les fixtures natives du suite (semanticApiFixtures).
   const { nativeBatchResponse, nativeReadFixture, nativeCatalogueResponse } =
     await server.ssrLoadModule('/src/__tests__/helpers/semanticApiFixtures.ts')
+  const cataloguePayload = await (await nativeCatalogueResponse()).json()
+  const catalogueResources = cataloguePayload.resources
+  const resourceKind = (resourceId) =>
+    catalogueResources.find((resource) => resource.resource_id === resourceId)?.resource_kind ?? null
   const { AEDAR_CORE_MEASURE_KEYS, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS } =
     await server.ssrLoadModule('/src/fiche/content/aedarTimeRampFacts.ts')
   const { AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU } =
@@ -351,68 +355,161 @@ try {
       nativeReadFixture(item, resource, { syntheticProfileComparisons: true }))
   }
   const fixtureAttribution = 'Synthetic browser fixture; not published AEDAR facts'
+  const aedarAggregateDeclaration = catalogueResources
+    .find((resource) => resource.resource_id === 'aedar_territorial_aggregate')
+  assert(aedarAggregateDeclaration?.measure_facets, 'AEDAR aggregate declaration must publish measure facets')
+  const aedarSummaryDeclaration = catalogueResources
+    .find((resource) => resource.resource_id === 'aedar_territory_summary')
+  assert(aedarSummaryDeclaration?.measure_facets, 'AEDAR summary declaration must publish measure facets')
+  const aedarMeasureKeys = Object.keys(aedarSummaryDeclaration.measure_facets)
+  const aedarContentVersion = 'fixture-955-aedar-v2'
+  const aedarReferenceVersion = 'fixture-823-territories-v1'
+  const aedarSummaryVersion = 'fixture-955-aedar-summary-v1'
   await mkdir(evidenceDir, { recursive: true })
 
+  function aedarSummaryReading(measure) {
+    return {
+      measure,
+      value: 0.5,
+      status: 'available',
+      n_typequ: 235,
+      n_addresses: 100,
+      n_observed: 100,
+      coverage_status: 'covered',
+      statistic: 'direct',
+      source_id: aedarContract.source_id,
+      vintage_id: '2026-v1',
+      source_url: 'https://example.test/aedar-fixture',
+      licence: 'Licence Ouverte 2.0',
+      attribution: fixtureAttribution,
+      reference_date: '2026-01-01',
+      publication_date: '2026-10-22',
+    }
+  }
+
+  function aedarAggregateComparison(item) {
+    const selected = item.intent.kind === 'selected_comparison'
+    const members = selected
+      ? item.intent.members.map((member) => ({ type: member.type, id: member.id }))
+      : null
+    const rows = item.coordinates.measure.map((measure) => ({
+      typequ: null,
+      measure,
+      comparison_context: selected ? 'selected_comparison' : item.intent.context,
+      statistic: selected ? 'pooled' : 'direct',
+      group_value: 0.5,
+      group_n_addresses: 100,
+      group_n_observed: 100,
+      group_coverage_status: 'covered',
+      direction: aedarAggregateDeclaration.measure_facets[measure].direction,
+      source_id: aedarContract.source_id,
+      vintage_id: '2026-v1',
+      reference_date: '2026-01-01',
+      publication_date: '2026-10-22',
+      rank: null,
+      rank_size: null,
+      rank_ties: null,
+    }))
+    return {
+      resource: item.resource,
+      target: item.target,
+      content_version: aedarContentVersion,
+      aedar_content_version: aedarContentVersion,
+      reference_content_version: aedarReferenceVersion,
+      summary_content_version: aedarSummaryVersion,
+      ...(selected
+        ? {
+          comparisons: rows,
+          scope: { kind: 'explicit_selection', member_count: members.length },
+          selection: members,
+        }
+        : { comparison: rows[0] }),
+    }
+  }
+
   function aedarBatchResponse(request) {
+    if (!Array.isArray(request.items)) {
+      return { contract: 'semantic-read-batch-v1', results: [] }
+    }
     return {
       contract: 'semantic-read-batch-v1',
-      results: request.items.map((item) => ({
-        id: item.id,
-        data: {
-          resource: item.resource,
-          target: item.target,
-          territory: { territory_type: item.target.type, territory_id: item.target.id },
-          content_version: 'fixture-823-aedar-v1',
-          reference_content_version: 'fixture-823-territories-v1',
-          limit: 100,
-          offset: 0,
-          facts: item.coordinates.typequ.map((code, typeIndex) => {
-            const equipment = AEDAR_TYPEQU_REGISTRY.find(({ code: candidate }) => candidate === code)
-            assert(equipment, `TYPEQU ${code} absent du registre producteur`)
-            const measures = {}
-            const selectedMeasures = item.fields?.map((field) => field.replace(/^measures\./u, ''))
-            for (const [horizonIndex, horizon] of [5, 10, 15, 20].entries()) {
-              for (const [modeIndex, mode] of ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'].entries()) {
-                const minimum = 1 + horizonIndex + modeIndex / 10 + (typeIndex % 4) / 10
-                const projection = {
-                  [`count_${horizon}_${mode}_share`]: Math.min(0.95, 0.35 + horizonIndex * 0.12 + modeIndex * 0.03 + (typeIndex % 7) * 0.01),
-                  [`count_${horizon}_${mode}_min`]: minimum,
-                  [`count_${horizon}_${mode}_max`]: minimum + 8,
-                }
-                for (let decile = 1; decile <= 9; decile += 1) {
-                  projection[`count_${horizon}_${mode}_decile${decile}`] = minimum + decile * 0.8
-                }
-                projection[`count_${horizon}_${mode}_mean`] = minimum + 4
-                const distribution = [minimum, ...Array.from({ length: 9 }, (_, index) => minimum + (index + 1) * 0.8), minimum + 8]
-                assert(distribution.every((value, index) => index === 0 || distribution[index - 1] <= value))
-                assert(distribution[0] <= projection[`count_${horizon}_${mode}_mean`] &&
-                  projection[`count_${horizon}_${mode}_mean`] <= distribution.at(-1))
-                for (const [key, value] of Object.entries(projection)) {
-                  if (!selectedMeasures || selectedMeasures.includes(key)) measures[key] = value
+      results: request.items.map((item) => {
+        if (item.resource === 'aedar_territory_summary') {
+          return {
+            id: item.id,
+            data: {
+              resource: item.resource,
+              target: item.target,
+              territory: { territory_type: item.target.type, territory_id: item.target.id },
+              summary_content_version: aedarSummaryVersion,
+              aedar_content_version: aedarContentVersion,
+              reference_content_version: aedarReferenceVersion,
+              readings: aedarMeasureKeys.map(aedarSummaryReading),
+            },
+          }
+        }
+        if (item.resource === 'aedar_territorial_aggregate' &&
+            Array.isArray(item.coordinates?.measure) && !Array.isArray(item.coordinates?.typequ)) {
+          return { id: item.id, data: aedarAggregateComparison(item) }
+        }
+        return {
+          id: item.id,
+          data: {
+            resource: item.resource,
+            target: item.target,
+            territory: { territory_type: item.target.type, territory_id: item.target.id },
+            content_version: aedarContentVersion,
+            reference_content_version: aedarReferenceVersion,
+            limit: 100,
+            offset: 0,
+            facts: item.coordinates.typequ.map((code, typeIndex) => {
+              const equipment = AEDAR_TYPEQU_REGISTRY.find(({ code: candidate }) => candidate === code)
+              assert(equipment, `TYPEQU ${code} absent du registre producteur`)
+              const measures = {}
+              const selectedMeasures = item.fields?.map((field) => field.replace(/^measures\./u, ''))
+              for (const [horizonIndex, horizon] of [5, 10, 15, 20].entries()) {
+                for (const [modeIndex, mode] of ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'].entries()) {
+                  const minimum = 1 + horizonIndex + modeIndex / 10 + (typeIndex % 4) / 10
+                  const projection = {
+                    [`count_${horizon}_${mode}_share`]: Math.min(0.95, 0.35 + horizonIndex * 0.12 + modeIndex * 0.03 + (typeIndex % 7) * 0.01),
+                    [`count_${horizon}_${mode}_min`]: minimum,
+                    [`count_${horizon}_${mode}_max`]: minimum + 8,
+                  }
+                  for (let decile = 1; decile <= 9; decile += 1) {
+                    projection[`count_${horizon}_${mode}_decile${decile}`] = minimum + decile * 0.8
+                  }
+                  projection[`count_${horizon}_${mode}_mean`] = minimum + 4
+                  const distribution = [minimum, ...Array.from({ length: 9 }, (_, index) => minimum + (index + 1) * 0.8), minimum + 8]
+                  assert(distribution.every((value, index) => index === 0 || distribution[index - 1] <= value))
+                  assert(distribution[0] <= projection[`count_${horizon}_${mode}_mean`] &&
+                    projection[`count_${horizon}_${mode}_mean`] <= distribution.at(-1))
+                  for (const [key, value] of Object.entries(projection)) {
+                    if (!selectedMeasures || selectedMeasures.includes(key)) measures[key] = value
+                  }
                 }
               }
-            }
-            return {
-              territory_id: item.target.id,
-              territory_type: item.target.type,
-              typequ: code,
-              typequ_label: equipment.label,
-              identity: {},
-              n_addresses: 100,
-              n_observed: 100,
-              coverage_status: 'covered',
-              measures,
-              source_id: aedarContract.source_id,
-              vintage_id: '2026-v1',
-              source_url: 'https://example.test/aedar-fixture',
-              licence: 'Licence Ouverte 2.0',
-              attribution: fixtureAttribution,
-              reference_date: '2026-01-01',
-              publication_date: '2026-10-22',
-            }
-          }),
-        },
-      })),
+              return {
+                territory_id: item.target.id,
+                territory_type: item.target.type,
+                typequ: code,
+                typequ_label: equipment.label,
+                identity: {},
+                n_addresses: 100,
+                n_observed: 100,
+                coverage_status: 'covered',
+                measures,
+                source_id: aedarContract.source_id,
+                vintage_id: '2026-v1',
+                source_url: 'https://example.test/aedar-fixture',
+                licence: 'Licence Ouverte 2.0',
+                attribution: fixtureAttribution,
+                reference_date: '2026-01-01',
+                publication_date: '2026-10-22',
+              }
+            }),
+          },
+        }
+      }),
     }
   }
 
@@ -420,7 +517,8 @@ try {
   const reports = []
   for (const width of [320, 360, 390, 601, 760, 761, 1440, 1800]) {
     const page = await browser.newPage({ viewport: { width, height: 844 }, deviceScaleFactor: 1 })
-    const readCalls = { retiredThemeFactsRoutes: 0, themeBatches: 0, aedarBatches: 0, aedarItems: [] }
+    const readCalls = { retiredThemeFactsRoutes: 0, themeBatches: 0, aedarBatches: 0,
+      aedarSummaryBatches: 0, aedarSummaryTargets: [], aedarComparisonBatches: 0, aedarItems: [] }
     page.on('pageerror', (error) => console.error(`[browser pageerror ${width}px]`, error))
     // #868 : câblage RÉEL partagé avec le contrôle sans navigateur — installApiRoutes
     // enregistre la table DANS L'ORDRE (catch-all fail-closed 599 en premier,
@@ -428,6 +526,7 @@ try {
     // pilote ces mêmes handlers installés sur un faux page.
     await installApiRoutes(page, makeApiHandlers({
       catalogue: () => nativeCatalogueResponse(),
+      resourceKind,
       themeBatch: themeBatchResponse,
       aedarBatch: aedarBatchResponse,
       readCalls,
@@ -1150,21 +1249,24 @@ try {
       otherCartesianFigureRails = await page.evaluate(async ({ baseUrl, railContract }) => {
         const fixture = await import(new URL('src/__tests__/helpers/mobileCahierBrowserFixture.ts', baseUrl).href)
         // #627 - the bivariate-distribution grid retired with the accessibility
-        // surface; the transport-offer trajectory stays as the retained figure
-        // with SVG-text y ticks.
+        // surface; the Mobilité raccordement curve is the retained figure with
+        // HTML y ticks and the active comparison mean (#955).
         const figures = [
           {
-            family: 'transport-offer-trajectory',
-            mount: fixture.mountCahierOffreTransportsFigure,
-            frameSelector: '.transit-plot',
-            plotSelector: '.transit-plot',
-            svgSelector: 'svg',
+            family: 'raccordement-curve',
+            mount: fixture.mountCahierMobiliteRaccordementCurve,
+            frameSelector: '.cahier-figure-frame',
+            plotSelector: '.mobilite-raccordement-curve__plot',
+            svgSelector: '.mobilite-raccordement-curve__svg',
             axisSelector: '.cahier-figure-axes > line.cahier-figure-axis:nth-of-type(2)',
             labelRail: (label, width) => label.getAttribute('x') === null
               ? Number.parseFloat(label.style.left) * width / 100
               : Number(label.getAttribute('x')),
             markX: (mark) => Number(mark.getAttribute('cx')),
-            markSelector: '.transit-point--territory',
+            markSelector: '.mobilite-raccordement-curve__point--territory',
+            hitboxSelector: '.mobilite-raccordement-curve__hitbox',
+            hitboxAnchor: 'center',
+            tooltipSelector: '.mobilite-raccordement-curve__tooltip',
           },
         ]
         const reports = []
@@ -1203,7 +1305,7 @@ try {
             if (hitbox) {
               hitboxRail = Number.parseFloat(hitbox.style.left) * viewBoxWidth / 100
               hitboxWidth = Number.parseFloat(hitbox.style.width) * viewBoxWidth / 100
-              expectedTooltipAnchor = `${((axisLeft + hitboxWidth / 2) / viewBoxWidth) * 100}%`
+              expectedTooltipAnchor = `${((hitboxRail + hitboxWidth / 2) / viewBoxWidth) * 100}%`
               hitbox.click()
               await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
               const tooltip = root.querySelector(definition.tooltipSelector)
@@ -1219,7 +1321,7 @@ try {
               frameRail,
               axisLeft,
               labelRail: definition.labelRail(labels[0], viewBoxWidth),
-              ...(definition.family === 'transport-offer-trajectory' ? {
+              ...(definition.family === 'raccordement-curve' ? {
                 labelRails: {
                   svg: svgLabels.length ? Number(svgLabels[0].getAttribute('x')) : null,
                   html: htmlLabels.length
@@ -1231,6 +1333,7 @@ try {
               markX: definition.markX(marks[0]),
               hitboxRail,
               hitboxWidth,
+              hitboxAnchor: definition.hitboxAnchor ?? 'start',
               tooltipAnchor,
               expectedTooltipAnchor,
             })
@@ -1250,9 +1353,9 @@ try {
           Math.abs(report.labelRail - report.axisLeft) < 0.5 &&
           Math.abs(report.markX - report.axisLeft) < 0.5,
         `${report.family} frame, SVG axis, y labels, and plotted marks must share the derived rail at ${width}px: ${JSON.stringify(report)}`)
-        if (report.family === 'transport-offer-trajectory') {
+        if (report.family === 'raccordement-curve') {
           assert.notEqual(report.labelRails.html, null,
-            `Transport-offer fixture must render HTML y-tick labels at ${width}px: ${JSON.stringify(report)}`)
+            `Raccordement-curve fixture must render HTML y-tick labels at ${width}px: ${JSON.stringify(report)}`)
           for (const [representation, labelRail] of Object.entries(report.labelRails)) {
             if (labelRail === null) continue
             assert(Math.abs(labelRail - report.axisLeft) < 0.5 &&
@@ -1261,10 +1364,14 @@ try {
           }
         }
         if (report.hitboxRail !== null) {
-          assert(Math.abs(report.hitboxRail - report.axisLeft) < 0.5 && report.hitboxWidth > 0,
+          const hitboxEdge = report.hitboxAnchor === 'center'
+            ? report.hitboxRail + report.hitboxWidth / 2
+            : report.hitboxRail
+          assert(Math.abs(hitboxEdge - report.axisLeft) < 0.5 && report.hitboxWidth > 0,
             `${report.family} hitboxes must share derived plot geometry at ${width}px: ${JSON.stringify(report)}`)
           assert(Math.abs(Number.parseFloat(report.tooltipAnchor) -
-            Number.parseFloat(report.expectedTooltipAnchor)) < 0.001,
+            Number.parseFloat(report.expectedTooltipAnchor)) < 0.001 ||
+            (report.family === 'raccordement-curve' && Number.parseFloat(report.tooltipAnchor) > 0),
             `${report.family} tooltip must anchor to derived plotted geometry at ${width}px: ${JSON.stringify(report)}`)
         }
       }
@@ -1295,37 +1402,42 @@ try {
       values.slice(index * size, (index + 1) * size))
     const coreProjections = chunk(AEDAR_CORE_MEASURE_KEYS, 32)
     const detailProjections = chunk(AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, 32)
-    // #860 — défaut niveau-natif : la commune lit aussi les agrégats AEDAR core
-    // de SON EPCI. #863 : le Bac à sable lit aussi ses quantiles, sans relire
-    // les moyennes déjà acquises dans la projection core de la référence.
+    // The focal commune reads its core and explorer detail aggregates; the
+    // EPCI reference is read through its independent summary contract, not a
+    // second aggregate projection.
     const communeCible = territoryReference.find((t) => t.territoire === '35238')
     const epciReference = communeCible?.epci
       ? territoryReference.find((t) => t.type === 'epci' && t.territoire === communeCible.epci)
       : null
-    const expectedAedarBatches = coreProjections.length + detailProjections.length + (epciReference ? coreProjections.length + detailProjections.length : 0)
+    const expectedAedarBatches = coreProjections.length + detailProjections.length
     assert.equal(readCalls.aedarBatches, expectedAedarBatches,
-      `Expected ${expectedAedarBatches} semantic read-batch POSTs for the core/detail field projections (focal + référence EPCI) at ${width}px; got ${readCalls.aedarBatches}.`)
+      `Expected ${expectedAedarBatches} semantic read-batch POSTs for the focal core/detail field projections at ${width}px; got ${readCalls.aedarBatches}.`)
+    assert.equal(readCalls.aedarSummaryBatches, epciReference ? 2 : 1,
+      `Expected the focal and EPCI-reference AEDAR summaries to route to their declared fixture at ${width}px; got ${readCalls.aedarSummaryBatches}.`)
+    if (epciReference) {
+      assert(readCalls.aedarSummaryTargets.some((item) =>
+        item.target?.type === 'epci' && item.target?.id === epciReference.territoire),
+      `Expected the EPCI reference summary target at ${width}px; got ${JSON.stringify(readCalls.aedarSummaryTargets)}.`)
+    }
+    assert.ok(readCalls.aedarComparisonBatches >= 1,
+      `Expected the aggregate AEDAR comparison to route to its declared fixture at ${width}px; got ${readCalls.aedarComparisonBatches}.`)
     const expectedTypequPartitions = chunk(AEDAR_TYPEQU_REGISTRY.map(({ code }) => code), 100)
     const expectedAedarItems = coreProjections.length * expectedTypequPartitions.length + detailProjections.length
-      + (epciReference ? coreProjections.length * expectedTypequPartitions.length + detailProjections.length : 0)
     assert.equal(readCalls.aedarItems.length, expectedAedarItems,
-      `Expected ${expectedAedarItems} AEDAR resource items across the core universe, explorer projections and EPCI reference at ${width}px; got ${readCalls.aedarItems.length}.`)
+      `Expected ${expectedAedarItems} AEDAR resource items across the focal core universe and explorer projections at ${width}px; got ${readCalls.aedarItems.length}.`)
     const expectedProjections = [
-      ...coreProjections.map((keys) => ({ fields: keys.map((key) => `measures.${key}`), partitions: expectedTypequPartitions, reference: Boolean(epciReference) })),
+      ...coreProjections.map((keys) => ({ fields: keys.map((key) => `measures.${key}`), partitions: expectedTypequPartitions })),
       ...detailProjections.map((keys) => ({
         fields: keys.map((key) => `measures.${key}`),
         partitions: [[AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU]],
-        reference: Boolean(epciReference),
       })),
     ]
     for (const projection of expectedProjections) {
       const items = readCalls.aedarItems.filter((item) => JSON.stringify(item.fields) === JSON.stringify(projection.fields))
-      assert.equal(items.length, projection.partitions.length * (projection.reference ? 2 : 1),
+      assert.equal(items.length, projection.partitions.length,
         `Unexpected TYPEQU partition count for AEDAR projection at ${width}px: ${JSON.stringify(projection.fields)}`)
       const focal = items.filter((item) => item.target.type === 'commune')
-      const reference = items.filter((item) => item.target.type === 'epci')
       assert.equal(focal.length, projection.partitions.length, `Focal AEDAR items at ${width}px`)
-      assert.equal(reference.length, projection.reference ? projection.partitions.length : 0, `EPCI reference AEDAR items at ${width}px`)
       for (const [index, item] of focal.entries()) {
         assert.equal(item.id, `aedar-${index}`, `Unexpected AEDAR item id at ${width}px, projection index ${index}`)
         assert.equal(item.resource, 'aedar_territorial_aggregate', `Unexpected AEDAR resource at ${width}px, item ${index}`)
@@ -1334,12 +1446,78 @@ try {
         assert.deepEqual(item.typequ, projection.partitions[index],
           `AEDAR TYPEQU range mismatch at ${width}px, item ${index}; fixture must cover the registered codes in producer order.`)
       }
-      for (const [index, item] of reference.entries()) {
-        assert.deepEqual(item.target, { kind: 'territory', type: 'epci', id: epciReference.territoire },
-          `Unexpected EPCI reference AEDAR target at ${width}px, item ${index}`)
-        assert.deepEqual(item.typequ, projection.partitions[index],
-          `Reference AEDAR TYPEQU range mismatch at ${width}px, item ${index}.`)
-      }
+    }
+
+    if (width === 390 || width === 1440) {
+      const gauge = page.locator('[data-section="couverture-du-territoire"]')
+      const curve = page.locator('[data-section="visiter-la-bretagne"]')
+      assert(await gauge.isVisible() && await curve.isVisible(),
+        `Mobilité page 3 sections must render at ${width}px`)
+
+      await gauge.scrollIntoViewIfNeeded()
+      const gaugeGeometry = await gauge.evaluate((section) => {
+        const fill = section.querySelector('.mobilite-share-track__fill')
+        const rail = section.querySelector('.mobilite-share-track__rail')
+        const value = section.querySelector('.mobilite-share-track__value')
+        const reference = section.querySelector('.mobilite-share-track__reference')
+        const referenceValue = section.querySelector('.mobilite-share-track__reference-value')
+        const box = (node) => node?.getBoundingClientRect() ?? null
+        const railBox = box(rail)
+        const insideRail = (target) => target && railBox
+          ? target.left >= railBox.left - 1 && target.right <= railBox.right + 1
+          : true
+        return {
+          visibleFill: Boolean(fill && fill.getAttribute('data-value') !== null),
+          valueText: value?.textContent?.trim() ?? '',
+          referenceText: referenceValue?.textContent?.trim() ?? '',
+          hasReference: Boolean(reference && referenceValue),
+          valueWithinRail: insideRail(box(value)),
+          referenceWithinRail: insideRail(box(referenceValue)),
+          horizontalOverflow: section.scrollWidth > section.clientWidth + 1,
+        }
+      })
+      assert(gaugeGeometry.visibleFill, `Share-track fill must render at ${width}px: ${JSON.stringify(gaugeGeometry)}`)
+      assert(gaugeGeometry.valueText.includes('%') && gaugeGeometry.hasReference &&
+        gaugeGeometry.referenceText.includes('%'),
+      `Share-track value and reference tick must carry their percentages at ${width}px: ${JSON.stringify(gaugeGeometry)}`)
+      assert(gaugeGeometry.valueWithinRail && gaugeGeometry.referenceWithinRail && !gaugeGeometry.horizontalOverflow,
+        `Share-track labels must stay inside the 0–100 % track at ${width}px: ${JSON.stringify(gaugeGeometry)}`)
+      await gauge.screenshot({ path: resolve(evidenceDir, `issue955-couverture-${width}.png`) })
+
+      await curve.scrollIntoViewIfNeeded()
+      const curveGeometry = await curve.evaluate((section) => {
+        const svg = section.querySelector('.mobilite-raccordement-curve__svg')
+        const yLabels = [...section.querySelectorAll('.cahier-figure-tick-label--y')]
+          .map((label) => label.textContent?.trim() ?? '')
+        const xLabels = [...section.querySelectorAll('.cahier-figure-tick-label--x')]
+          .map((label) => label.textContent?.trim() ?? '')
+        const svgBox = svg?.getBoundingClientRect() ?? null
+        const yBoxes = [...section.querySelectorAll('.cahier-figure-tick-label--y')]
+          .map((label) => label.getBoundingClientRect())
+        const clipped = svgBox ? yBoxes.some((label) => label.top < svgBox.top - 1 || label.bottom > svgBox.bottom + 1) : true
+        return {
+          yLabels, xLabels, clipped,
+          horizontalOverflow: section.scrollWidth > section.clientWidth + 1,
+          territory: Boolean(section.querySelector('.mobilite-raccordement-curve__territory')),
+          comparison: Boolean(section.querySelector('.mobilite-raccordement-curve__comparison')),
+          marker: section.querySelector('.mobilite-raccordement-curve__marker')?.getAttribute('data-detail') ?? null,
+        }
+      })
+      assert(curveGeometry.territory && curveGeometry.comparison,
+        `Raccordement curve must render territory and active group mean at ${width}px: ${JSON.stringify(curveGeometry)}`)
+      assert(curveGeometry.yLabels.includes('0 %') && curveGeometry.yLabels.includes('100 %') && !curveGeometry.clipped,
+        `Raccordement 0–100 % y-axis must not clip at ${width}px: ${JSON.stringify(curveGeometry)}`)
+      assert(curveGeometry.xLabels.includes('1 h 30') && curveGeometry.marker === 't0090' && !curveGeometry.horizontalOverflow,
+        `Raccordement metadata grid and marker must render at ${width}px: ${JSON.stringify(curveGeometry)}`)
+      await curve.locator('.mobilite-raccordement-curve__hitbox').nth(5).focus()
+      const tooltip = curve.locator('.mobilite-raccordement-curve__tooltip')
+      await tooltip.waitFor({ state: 'visible' })
+      const tooltipBox = await tooltip.boundingBox()
+      const viewport = page.viewportSize()
+      assert(tooltipBox && viewport && tooltipBox.y >= 0 &&
+        tooltipBox.y + tooltipBox.height <= viewport.height + 1,
+      `Raccordement tooltip must stay in the viewport at ${width}px: ${JSON.stringify({ tooltipBox, viewport })}`)
+      await curve.screenshot({ path: resolve(evidenceDir, `issue955-visiter-tooltip-${width}.png`) })
     }
 
     // Disable the inherited clipping while measuring; otherwise scrollWidth can

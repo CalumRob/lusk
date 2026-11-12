@@ -89,7 +89,7 @@ try {
       await button.press('Escape')
       const marks = await page.locator('.cahier-comparison-value__reference').allTextContents()
       assert(marks.every((text) => !/Médiane|Moyenne|·/.test(text)))
-      const figureReferences = await page.locator('.cahier-network-bar-chart__reference-key, .cahier-figure-legend-item[aria-label^="Groupe comparé"], .transit-legend-comparison').evaluateAll((elements) =>
+      const figureReferences = await page.locator('.cahier-network-bar-chart__reference-key, .cahier-figure-legend-item[aria-label^="Groupe comparé"]').evaluateAll((elements) =>
         elements.map((element) => ({ text: element.textContent.trim(), aria: element.getAttribute('aria-label'), title: element.getAttribute('title') })))
       assert(figureReferences.every((reference) => reference.text === 'Groupe comparé'
         && reference.aria?.startsWith('Groupe comparé : ') && !reference.title), JSON.stringify(figureReferences))

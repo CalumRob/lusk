@@ -30,7 +30,7 @@ function ligne(detail: string, value: number | null): Indicateur {
     rang_dep_n: null,
     rang_reg: null,
     rang_reg_n: null,
-    vintage_source: 'Lusk — matrice temps mairie à mairie',
+    vintage_source: 'Lusk — matrice nationale de trajets GTFS planifiés entre arrêts communaux',
     vintage_version: '2026-09-16',
     vintage_date_reference: '2026-08-25',
     vintage_date_publication: '2026-08-26',
@@ -54,7 +54,7 @@ describe('raccordement — fiche et accessibilité', () => {
   it('compose la prose approuvée sans élision de la mesure', () => {
     const scalaire = { ...ligne('t0090', 0.42), key: 'raccordement_tc', detail: null }
     expect(phraseRaccordement('Allineuc', scalaire)).toBe(
-      'Un mercredi de période scolaire, 42 % de la population bretonne peut rejoindre Allineuc en moins de 90 minutes en train, en car ou en bus de mairie à mairie.',
+      'Un mercredi de période scolaire, depuis Allineuc, 42 % de la population bretonne est joignable en moins de 90 minutes en transports en commun, par des trajets planifiés aller simple entre arrêts.',
     )
   })
 
@@ -160,7 +160,7 @@ describe('raccordement — fiche et accessibilité', () => {
     )
 
     expect(validee.indicator_keys).toContain('raccordement_tc')
-    expect(validee.sources.raccordement_courbe).toBe('matrice_temps_mairies')
+    expect(validee.sources.raccordement_courbe).toBe('raccordement_gtfs_national')
     expect(Object.keys(validee.detail_labels.raccordement_courbe ?? {})).toEqual(
       Object.keys(metadonneesMobiliteRaccordementFixture.detail_labels.raccordement_courbe),
     )
@@ -172,18 +172,17 @@ describe('raccordement — fiche et accessibilité', () => {
     const raccordement = methodes.raccordement_tc
 
     expect(raccordement).toMatchObject({
-      sourceId: 'matrice_temps_mairies',
+      sourceId: 'raccordement_gtfs_national',
       direction: 'plus-est-mieux',
     })
-    expect(raccordement.definition).toMatch(/mairie à mairie/)
-    expect(raccordement.definition).toMatch(/mercredi réel de période scolaire/)
-    expect(raccordement.definition).toMatch(/meilleur départ/)
-    expect(raccordement.definition).toMatch(/marche plafonnée à 40 minutes/)
+    expect(raccordement.definition).toMatch(/trajets planifiés aller simple entre arrêts/)
+    expect(raccordement.definition).toMatch(/meilleur départ de la date réelle du modèle/)
+    expect(raccordement.definition).toMatch(/marche de correspondance plafonnée/)
     expect(raccordement.definition).toMatch(/sans aucun trajet en voiture/)
-    expect(SOURCES_METHODES.matrice_temps_mairies.caveat).toMatch(/SNCF Voyageurs national/)
-    expect(SOURCES_METHODES.matrice_temps_mairies.caveat).toMatch(/KorrigoBret hors SNCF/)
-    expect(SOURCES_METHODES.matrice_temps_mairies.caveat).toMatch(/TGV et maritime/)
-    expect(SOURCES_METHODES.matrice_temps_mairies.caveat).toMatch(/mairies DILA/)
+    expect(SOURCES_METHODES.raccordement_gtfs_national.caveat).toMatch(/GTFS/)
+    expect(SOURCES_METHODES.raccordement_gtfs_national.caveat).toMatch(/zéros structurels/)
+    expect(SOURCES_METHODES.raccordement_gtfs_national.caveat).toMatch(/aller simple/)
+    expect(SOURCES_METHODES.raccordement_gtfs_national.caveat).toMatch(/aucune durée de retour/)
   })
 
   it.each([

@@ -306,8 +306,8 @@ The territory's IRVE charging-station count reported per 1 000 inhabitants — t
 _Avoid_: points de charge (the count is stations), bornes par station (that is the ratio, not this density)
 
 **Offre TC — proximité d’un arrêt**:
-The share of a territory's geocoded residential buildings within 500 metres straight-line distance of a transit stop, using the same Korrigo and full national SNCF source universe as raccordement. This is a spatial-proximity fact, not a count of stops or people, a timetable-availability measure, or a claim of frequent service.
-_Avoid_: part de superficie couverte, part d’habitants desservis, arrêt actif (the proximity measure does not filter by scheduled activity)
+The share of a territory's geocoded residential buildings within 500 metres straight-line distance of a transit stop. Since #955 this figure's universe is **Korrigo only** (`source_records.korrigo`), distinct from the national GTFS sources behind the raccordement figure; it is not the full national SNCF universe. This is a spatial-proximity fact, not a count of stops or people, a timetable-availability measure, or a claim of frequent service.
+_Avoid_: part de superficie couverte, part d’habitants desservis, arrêt actif (the proximity measure does not filter by scheduled activity), confondre l’univers Korrigo avec les flux GTFS nationaux du raccordement
 
 **AOM (Autorité organisatrice de la mobilité)**:
 The authority associated with a commune in the dated administrative mobility-jurisdiction reference, identified by its recorded name. This is governance context, including the Région where recorded, not proof of active stops or usable passenger service; communes within a larger territory may have different authorities.
@@ -344,6 +344,28 @@ Le rendu passe par le delegate étroit `CahierMobiliteSection` (section, unité,
 ses composants restent inchangés (ADR-0042).
 _Avoid_: réintroduire une Marelle ou une prose de page qui répète les nombres
 des figures, ajouter un état AEDAR au delegate Mobilité.
+
+**Couverture du territoire**:
+La première section de la page 3 Mobilité : une jauge 0–100 % de la part des
+bâtiments proches d’un arrêt (`offre_tc`, univers Korrigo), remplie à la valeur
+du territoire, avec le repère « Groupe comparé » et sa valeur. Le libellé
+publié de l’indicateur porte le seuil de proximité et sert de titre de figure ;
+`nb_buildings` reste le dénominateur, jamais une seconde dimension. La jauge
+n’est ni un histogramme ni une mesure de fréquence ou d’amplitude horaire.
+_Avoid_: écrire le seuil en dur dans le template, transformer la jauge en
+deuxième graphique, confondre proximité et desserte.
+
+**Visiter la Bretagne**:
+La seconde section de la page 3 Mobilité : la courbe cumulative de la population
+bretonne joignable depuis les arrêts du territoire (`raccordement_courbe`), avec
+la ligne du territoire en `--brand-500`, la moyenne du groupe comparé actif en
+pointillé neutre et le repère du contrat `trajectory.marker`. La référence suit
+toujours le contrôle de comparaison d’en-tête, presets et sélections
+personnalisées compris ; une sélection vide n’affiche aucune référence et ne
+retombe jamais sur la Bretagne. La part à 90 minutes (`raccordement_tc`) vit
+dans la prose seulement, jamais dans un second graphe.
+_Avoid_: une troisième courbe de référence nommée, une moyenne de seulement les
+communes routées, un repère en minutes écrit en dur dans le template.
 
 **Se garer et se ravitiller**:
 La section Mobilité qui remplace les figures « Stationnement » et
@@ -579,16 +601,16 @@ The salience-fired Mobilité Story candidate (decided 2026-08-06, name provision
 _Avoid_: "Ce que le vélo pourrait apporter" (claims a counterfactual the data cannot support)
 
 **Population bretonne joignable en 90 minutes en TC**:
-The Mobilité raccordement indicator: the share of Brittany's population living in communes reachable within 90 minutes by scheduled transit from an eligible stop in the selected origin commune. This is **outbound, stop-to-stop connectivity**, with the same direction for focal and comparison curves; it is not the share of origin residents able to make the journey, an incoming population catchment, or a guarantee of a return trip.
+The Mobilité raccordement indicator: the share of Brittany's population living in communes reachable within 90 minutes by scheduled transit from an eligible stop in the selected origin commune. The published model is **outbound planned GTFS stop-to-stop connectivity**, from the source `raccordement_gtfs_national`, with the same direction for focal and comparison curves; it is not the share of origin residents able to make the journey, an incoming population catchment, a mairie-to-mairie model, or a guarantee of a return trip.
 _Avoid_: population pouvant rejoindre la commune (the superseded inbound reading), directions interchangeables (directed timetables need not mirror), centralité (structural hubness/betweenness is not this), indice or score (a share, never an index), accessibilité (overloaded — the flagship owns that word), arrivée en ville (the superseded reservoir working name)
 
 **Courbe de raccordement**:
-The cumulative share of Breton population living in destination communes reachable from an origin commune's eligible transit stops within each journey-duration threshold; no eligible departure under the dated model gives a complete zero curve, not an unknown value. An aggregate curve is the equal mean of its member communes' curves, including these model zeros; failed calculations or invalid required inputs are quality failures, not communes silently omitted from the mean.
-_Avoid_: moyenne des seules communes routées, courbe zéro comme preuve d’absence réelle de transport, trajet nul inventé (zero reachable population is not a fabricated zero-minute journey)
+The cumulative share of Breton population living in destination communes reachable from an origin commune's eligible transit stops within each journey-duration threshold; no eligible departure under the dated model gives a complete zero curve, not an unknown value. An aggregate curve is the equal mean of its member communes' curves, including these model zeros; failed calculations or invalid required inputs are quality failures, not communes silently omitted from the mean. The fiche's dashed comparison curve is the active header group mean from `selectedTrajectoryComparison`, never a named Brittany fallback; the published named reference remains a separate mean reference, not a median.
+_Avoid_: moyenne des seules communes routées, courbe zéro comme preuve d’absence réelle de transport, trajet nul inventé (zero reachable population is not a fabricated zero-minute journey), références interchangeables entre la moyenne du groupe actif et la référence nommée
 
-**Mairie à mairie**:
-The connectivity metric's geometry (decided 2026-08-25): journeys are measured from each commune's mairie — DILA Base de données locales geocoding, full 1 202/1 202 coverage including islands BDNB centroids missed. Empirically interchangeable with population-weighted BDNB centroids (ρ 0.93, MAD 0.06 pp); kept for universality and élu-legible narrative. No car leg anywhere in the base metric (a drive equivalent may return as a tension reading).
-_Avoid_: centroid (the tested-and-settled alternative), gare à gare (the service-level reading — a different question, not shipped)
+**Arrêt à arrêt (raccordement)**:
+The connectivity metric's current geometry (#955): journeys are measured between published GTFS stops, planned outbound one-way, with a capped transfer walk; neither a return leg nor a building-to-stop leg is modelled. This supersedes the historical mairie-to-mairie geometry, whose DILA mairie geocoding and r5r matrix are no longer the published raccordement model.
+_Avoid_: mairie à mairie (the superseded geometry, not the current contract), centroid (tested alternative, not shipped), gare à gare (a different service-level reading)
 
 **Le meilleur départ de la journée**:
 The connectivity metric's temporal semantic (decided 2026-08-25): for each origin-destination pair, the earliest-completing departure across the whole service day of one real date — a term-time Wednesday (p01 over an 07:00–20:00 window in r5r terms). Chosen over morning-only windows (they truncate afternoon connections: Redon −6.3 pp on share@90) and over cross-date selection (date variance empirically nil: Wed+1 week ρ = 1.000 — any term-time Wednesday is the best day).

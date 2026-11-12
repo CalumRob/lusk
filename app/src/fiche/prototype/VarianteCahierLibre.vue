@@ -47,7 +47,6 @@ import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
-import CahierOffreTransportsFigure from './CahierOffreTransportsFigure.vue'
 import CahierMobiliteSection from './CahierMobiliteSection.vue'
 import CahierBlankMapSlots from './CahierBlankMapSlots.vue'
 import AedarEquipmentWaffleCahier from './AedarEquipmentWaffleCahier.vue'
@@ -120,7 +119,9 @@ function isMobiliteSection(section: ContentSection): section is MobiliteContentS
   evidence: NonNullable<MobiliteContentSection['evidence']>
 } {
   return section.evidence?.kind === 'mobilite-networks' ||
-    section.evidence?.kind === 'mobilite-stationnement-ravitaillement'
+    section.evidence?.kind === 'mobilite-stationnement-ravitaillement' ||
+    section.evidence?.kind === 'mobilite-share' ||
+    section.evidence?.kind === 'mobilite-raccordement'
 }
 
 const pageEntry = computed(
@@ -640,12 +641,6 @@ onBeforeUnmount(() => {
                       v-model:comparison-visible="aedarAccessComparisonVisible"
                     />
                   </div>
-
-
-                  <figure v-else-if="section.evidence?.kind === 'public-transport'" class="evidence-side evidence-figure">
-                     <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
-                     <CahierOffreTransportsFigure :offer="section.evidence.offer" :trajectory="section.evidence.trajectory" :comparison-trajectory="section.evidence.comparisonTrajectory" :metadata="section.evidence.trajectoryMetadata" :comparison-status="props.nativeComparisonStatus" :comparison-error="props.nativeComparisonError" :retry-comparison="props.retryNativeComparison" />
-                   </figure>
 
 
                   <div v-else-if="!aedarAccessEvidenceFor(section) && !aedarEquipmentProfileEvidenceFor(section) && !aedarEquipmentExplorerEvidenceFor(section)" class="evidence-side evidence-placeholder" :role="sectionIsLoading(currentUnit.key) ? 'status' : 'note'">

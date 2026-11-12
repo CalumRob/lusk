@@ -875,7 +875,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       } else if (theme === 'mobilite') {
         // A separate AEDAR comparison request may fail without making the
         // independently valid native trajectory look unavailable.
-        expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
+        expect(wrapper.find('.mobilite-raccordement-curve__legend .cahier-figure-legend-comparison-error').exists()).toBe(false)
         expect(wrapper.findAll('[role="alert"]').some((node) => node.text().includes('Groupe comparé indisponible'))).toBe(false)
       } else {
         expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -1475,8 +1475,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const fixturePoint = (fixtureCurve.points as Array<Record<string, any>>)[0]!
     const reads = () => requests.flat()
 
-    expect(wrapper.find('.transit-series--territory').exists()).toBe(true)
-    const territoryPoints = wrapper.findAll('.transit-point--territory')
+    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
+    const territoryPoints = wrapper.findAll('.mobilite-raccordement-curve__point--territory')
     expect(declaredAxisCount).toBe(73)
     expect(territoryPoints).toHaveLength(declaredAxisCount)
     expect(territoryPoints[0]?.attributes('data-value')).toBe('0')
@@ -1497,7 +1497,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const epciRead = reads().find((item) => item.resource === curve.resource_id &&
       item.intent.kind === 'selected_comparison')
     expect(epciRead?.intent.members).toEqual(epciMembers)
-    expect(wrapper.findAll('.transit-point--territory')).toHaveLength(declaredAxisCount)
+    expect(wrapper.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(declaredAxisCount)
 
     const bretagneMembers = cohort.filter((territory: any) => territory.type === 'commune')
       .map((territory: any) => ({ type: territory.type, id: territory.territoire }))
@@ -1711,7 +1711,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.text()).not.toContain('Résumé')
     expect(wrapper.text()).not.toContain('Profils d’accès par mode')
     expect(wrapper.text()).not.toContain('Services essentiels')
-    expect(wrapper.find('.transit-point--territory').exists()).toBe(false)
+    expect(wrapper.find('.mobilite-raccordement-curve__point--territory').exists()).toBe(false)
 
     // The retained semantic-facts failure stays visible and retryable even
     // without a mobilityFocal — distinct from the comparison error.
@@ -1751,7 +1751,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     // The retry genuinely re-reads and admits the retained native facts…
     expect(wrapper.text()).not.toContain('Les indicateurs de ce thème ne sont pas disponibles.')
-    expect(wrapper.find('.transit-point--territory').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-raccordement-curve__point--territory').exists()).toBe(true)
     // …without forcing an AEDAR reread and with AEDAR still rendered.
     expect(aedarReads()).toHaveLength(aedarReadsBeforeRetry)
     expect(wrapper.find('.aedar-state').exists()).toBe(false)
@@ -2087,16 +2087,16 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
 
     expect(requests.flat().some((item) => item.intent.kind === 'selected_comparison')).toBe(false)
-    expect(wrapper.find('.transit-series--territory').exists()).toBe(true)
-    const cue = wrapper.get('.transit-legend-comparison .comparison-unavailable-cue__trigger')
+    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
+    const cue = wrapper.get('.mobilite-raccordement-curve__cue .comparison-unavailable-cue__trigger')
     expect(cue.attributes('aria-label')).toContain('Comparaison non disponible')
     await cue.trigger('focus')
     expect(wrapper.get('[role="tooltip"]').text()).toContain('identité du groupe comparé')
-    expect(wrapper.find('.transit-comparison-unavailable').exists()).toBe(false)
-    expect(wrapper.find('.transit-comparison-retry').exists()).toBe(false)
-    expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
-    expect(wrapper.find('.transit-comparison-spinner').exists()).toBe(false)
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('.mobilite-raccordement-curve__state').text()).toContain('Aucun groupe comparé')
+    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(false)
+    const curve = wrapper.get('.mobilite-raccordement-curve')
+    expect(curve.find('.cahier-figure-legend-comparison-error').exists()).toBe(false)
+    expect(curve.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -2125,13 +2125,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(selectedReads().length).toBeGreaterThan(1)
     expect(selectedReads().every((items) =>
       items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
-    expect(wrapper.find('.transit-series--comparison').exists()).toBe(false)
-    expect(wrapper.find('.transit-comparison-retry').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
+    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(true)
     selectedFailing = false
     const selectedBeforeRetry = selectedReads().length
     const requestsBeforeRetry = requests.length
 
-    await wrapper.get('.transit-comparison-retry').trigger('click')
+    await wrapper.get('.mobilite-raccordement-curve__retry').trigger('click')
     await flushPromises()
 
     const retried = selectedReads().slice(selectedBeforeRetry)
@@ -2152,9 +2152,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect([...new Set(retried.flat().map((item) => item.resource))].sort()).toEqual(comparaisonsAttendues)
     expect(requests.slice(requestsBeforeRetry).flat().some((item) =>
       item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
-    expect(wrapper.find('.transit-comparison-retry').exists()).toBe(false)
-    expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
-    expect(wrapper.find('.transit-series--comparison').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(false)
+    expect(wrapper.find('.mobilite-raccordement-curve__legend .cahier-figure-legend-comparison-error').exists()).toBe(false)
+    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -2257,20 +2257,20 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     }))
     const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=', chargerReferenceReelle)
     await flushPromises()
-    expect(wrapper.find('.transit-point--territory').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-raccordement-curve__point--territory').exists()).toBe(true)
     refuser = true
     await router.push('/territoire/commune/22001?theme=mobilite&comparaison=commune:22001,commune:22002')
     await flushPromises()
-    const comparisonWarning = wrapper.get('.transit-comparison-warning')
+    const comparisonWarning = wrapper.get('.mobilite-raccordement-curve__legend .cahier-figure-legend-comparison-error')
     await comparisonWarning.trigger('focus')
     expect(wrapper.find('[role="tooltip"]').text()).toContain(cibleReference('22002').nom)
-    expect(wrapper.find('.transit-point--territory').exists()).toBe(true)
-    expect(wrapper.find('.transit-point--comparison').exists()).toBe(false)
+    expect(wrapper.find('.mobilite-raccordement-curve__point--territory').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
     refuser = false
-    await wrapper.get('.transit-comparison-retry').trigger('click')
+    await wrapper.get('.mobilite-raccordement-curve__retry').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.transit-comparison-warning').exists()).toBe(false)
-    expect(wrapper.find('.transit-point--comparison').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-raccordement-curve__legend .cahier-figure-legend-comparison-error').exists()).toBe(false)
+    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(true)
     wrapper.unmount()
   }, 20_000)
   it('construit au même niveau, acquiert les membres visibles et recharge le lien partagé sans réinsérer le focal (#861)', async () => {

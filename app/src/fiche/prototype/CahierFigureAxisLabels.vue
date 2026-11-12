@@ -40,6 +40,7 @@ function yLabelStyle(tick: CahierFigureAxisTick): Record<string, string> {
       <span
         v-if="tick.label !== null"
         class="cahier-figure-tick-label cahier-figure-tick-label--x"
+        :class="tick.className"
         :style="xLabelStyle(tick)"
       >{{ tick.label }}</span>
     </template>
@@ -47,6 +48,7 @@ function yLabelStyle(tick: CahierFigureAxisTick): Record<string, string> {
       <span
         v-if="tick.label !== null"
         class="cahier-figure-tick-label cahier-figure-tick-label--y"
+        :class="tick.className"
         :style="yLabelStyle(tick)"
       >{{ tick.label }}</span>
     </template>

@@ -17,13 +17,17 @@ import type {
   ContentSource,
   MobiliteContentSection,
   MobiliteNetworksEvidence,
+  MobiliteRaccordementEvidence,
   MobiliteRatioEvidence,
+  MobiliteShareEvidence,
   MobiliteStationnementRavitaillementEvidence,
 } from '@/fiche/content/themeContent'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import CahierEvidenceSource from './CahierEvidenceSource.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierMobiliteComparisonBars from './CahierMobiliteComparisonBars.vue'
+import CahierMobiliteRaccordementCurve from './CahierMobiliteRaccordementCurve.vue'
+import CahierMobiliteShareTrack from './CahierMobiliteShareTrack.vue'
 import CahierProse from './CahierProse.vue'
 import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
 
@@ -54,6 +58,12 @@ const networks = computed<MobiliteNetworksEvidence | null>(() =>
 )
 const paired = computed<MobiliteStationnementRavitaillementEvidence | null>(() =>
   props.section.evidence?.kind === 'mobilite-stationnement-ravitaillement' ? props.section.evidence : null,
+)
+const share = computed<MobiliteShareEvidence | null>(() =>
+  props.section.evidence?.kind === 'mobilite-share' ? props.section.evidence : null,
+)
+const curve = computed<MobiliteRaccordementEvidence | null>(() =>
+  props.section.evidence?.kind === 'mobilite-raccordement' ? props.section.evidence : null,
 )
 
 function stampSource(source: ContentSource): AedarEvidenceSource {
@@ -199,6 +209,42 @@ function ratioAriaLabel(
         </figure>
       </section>
     </div>
+
+    <div v-else-if="share" class="mobilite-section-spread">
+      <div class="mobilite-section-copy">
+        <CahierProse class="argument-copy" :blocks="share.prose" />
+        <div v-if="share.sources.length" class="mobilite-section-sources">
+          <template v-for="source in share.sources" :key="`share-${source.id}-${source.version}`">
+            <CahierEvidenceSource v-if="source.url" :source="stampSource(source)" />
+            <p v-else class="cahier-evidence-source mobilite-source-stamp" data-source-url-missing>
+              {{ source.source }} {{ source.version }}<span v-if="source.licence"> · {{ source.licence }}</span>
+            </p>
+          </template>
+        </div>
+      </div>
+      <figure class="mobilite-section-figure">
+        <figcaption class="cahier-figure-title">{{ share.figureTitle }}</figcaption>
+        <CahierMobiliteShareTrack :figure="share" :comparison="effectiveComparison" />
+      </figure>
+    </div>
+
+    <div v-else-if="curve" class="mobilite-section-stack">
+      <div class="mobilite-section-copy">
+        <CahierProse class="argument-copy" :blocks="curve.prose" />
+        <div v-if="curve.sources.length" class="mobilite-section-sources">
+          <template v-for="source in curve.sources" :key="`curve-${source.id}-${source.version}`">
+            <CahierEvidenceSource v-if="source.url" :source="stampSource(source)" />
+            <p v-else class="cahier-evidence-source mobilite-source-stamp" data-source-url-missing>
+              {{ source.source }} {{ source.version }}<span v-if="source.licence"> · {{ source.licence }}</span>
+            </p>
+          </template>
+        </div>
+      </div>
+      <figure class="mobilite-section-figure mobilite-section-figure--wide">
+        <figcaption class="cahier-figure-title">{{ curve.figureTitle }}</figcaption>
+        <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" />
+      </figure>
+    </div>
   </div>
 </template>
 
@@ -206,11 +252,13 @@ function ratioAriaLabel(
 .mobilite-section { display: grid; gap: var(--space-6); min-width: 0; }
 .mobilite-networks-maps { min-width: 0; }
 .mobilite-section-spread { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: clamp(var(--space-4), 3vw, var(--space-8)); align-items: start; }
+.mobilite-section-stack { display: grid; gap: var(--space-4); min-width: 0; }
 .mobilite-section-copy { display: grid; gap: var(--space-3); align-content: start; min-width: 0; }
 .mobilite-section-copy .argument-copy { margin: 0; }
 .mobilite-section-sources { display: grid; gap: var(--space-1); }
 .mobilite-source-stamp { margin: 0; }
 .mobilite-section-figure { margin: 0; display: grid; gap: var(--space-2); min-width: 0; }
+.mobilite-section-figure--wide { width: 100%; }
 .mobilite-paired {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

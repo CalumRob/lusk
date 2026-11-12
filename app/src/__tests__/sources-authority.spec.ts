@@ -27,11 +27,11 @@ describe('sourceRecords — autorité dataset-centric publiée', () => {
     const metadata = structuredClone(metadonneesMobiliteRaccordementFixture)
     metadata.indicator_labels.raccordement_tc = 'Libellé de portée actualisé par le producteur'
     const record = sourceRecords({ ...payload, themeMetadata: { mobilite: metadata } })
-      .find((source) => source.id === 'matrice_temps_mairies')
+      .find((source) => source.id === 'raccordement_gtfs_national')
 
     expect(record?.consumers.find((consumer) => consumer.key === 'raccordement_tc')?.label)
       .toBe('Libellé de portée actualisé par le producteur')
-    expect(record?.vintages).toEqual(metadata.source_records?.matrice_temps_mairies?.vintages)
+    expect(record?.vintages).toEqual(metadata.source_records?.raccordement_gtfs_national?.vintages)
   })
 
   it('regroupe les lignes vintage et conserve toute la fraîcheur', () => {
@@ -142,17 +142,17 @@ describe('sourceRecords — la réconciliation navigation des consommateurs (#87
   }
 
   it('ne marque comme indicateur que les Pages d’indicateur courantes du catalogue partagé', () => {
-    const matrice = sourceRecords(payloadMobiliteSources).find((record) => record.id === 'matrice_temps_mairies')!
+    const matrice = sourceRecords(payloadMobiliteSources).find((record) => record.id === 'raccordement_gtfs_national')!
     const pages = matrice.consumers.filter((consumer) => consumer.kind === 'indicator')
     expect(pages.map((consumer) => consumer.key)).toEqual(['raccordement_tc', 'raccordement_courbe'])
     expect(pages.every((consumer) => consumer.theme === 'mobilite')).toBe(true)
   })
 
   it('la référence nommée sans page reste une déclaration représentée, jamais une URL de page fabriquée', () => {
-    const matrice = sourceRecords(payloadMobiliteSources).find((record) => record.id === 'matrice_temps_mairies')!
+    const matrice = sourceRecords(payloadMobiliteSources).find((record) => record.id === 'raccordement_gtfs_national')!
     const reference = matrice.consumers.find((consumer) => consumer.key === 'raccordement_reference')!
     expect(reference.kind).toBe('declaration')
-    expect(reference.label).toBe('Référence médiane — commune bretonne')
+    expect(reference.label).toBe('Référence nommée — moyenne des courbes communales évaluées')
     expect(reference.caveat).toBeTruthy()
   })
 
