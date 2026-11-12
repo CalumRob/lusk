@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { applyThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
+import { contexteMembresSelectionnes } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { ThemeMetadata } from '@/payload/types'
@@ -122,12 +123,7 @@ const comparisonSelection = [
   { territory_type: 'commune' as const, territory_id: '35240' },
 ]
 
-const comparisonContext = {  mode: 'densite' as const,
-  scope: { kind: 'communes-densite' as const, label: 'communes de la classe de densité' },
-  facts: [],
-  buildingDistribution: null,
-  accessRamp: null,
-}
+const comparisonContext = contexteMembresSelectionnes(comparisonSelection)!
 
 afterEach(() => vi.unstubAllGlobals())
 

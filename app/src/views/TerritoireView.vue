@@ -52,7 +52,11 @@ import {
   serialiserSelection,
   territoireReferencePourComparaison,
 } from '@/fiche/comparisonContext'
-import type { ControleComparaison, SelectionComparaison } from '@/fiche/comparisonContext'
+import type {
+  ControleComparaison,
+  SelectionComparaison,
+  TerritoryComparisonContext,
+} from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
 import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
@@ -268,6 +272,15 @@ const resolutionSelection = computed(() => entreeResolutionSelection.value
   ? resoudreSelectionComparaison({ ...entreeResolutionSelection.value, demande: route.query[PARAM_COMPARAISON] })
   : null)
 
+/**
+ * #981 — le contexte du groupe de membres tapés (custom), ou null pour un
+ * preset/vide/défaut : les presets gardent leur libellé résolu par portée.
+ */
+const contexteSelectionTapee = computed<TerritoryComparisonContext | null>(() => {
+  const resolution = resolutionSelection.value
+  return resolution?.selection.etat === 'membres' ? resolution.contexte : null
+})
+
 /** Le contexte par défaut niveau-natif (preset coché quand l'URL est absente). */
 const resolutionDefaut = computed(() => entreeResolutionSelection.value
   ? resoudreSelectionComparaison({ ...entreeResolutionSelection.value, demande: undefined })
@@ -301,7 +314,11 @@ function nommerEchecMembre(error: unknown): void {
     item.type === membre.territory_type && item.territoire === membre.territory_id)?.nom ?? membre.territory_id
 }
 
-function libellePorteeSemantic(comparison: unknown, target: Territoire): string | null {
+function libellePorteeSemantic(
+  comparison: unknown,
+  target: Territoire,
+  contexteSelectionTapee: TerritoryComparisonContext | null = null,
+): string | null {
   if (typeof comparison !== 'object' || comparison === null || Array.isArray(comparison)) return null
   const data = comparison as Record<string, unknown>
   if (typeof data.scope !== 'object' || data.scope === null || Array.isArray(data.scope)) return null
@@ -316,6 +333,17 @@ function libellePorteeSemantic(comparison: unknown, target: Territoire): string 
   }
   if (scope.kind !== 'explicit_selection' || !Array.isArray(data.selection)) return null
   const selected = data.selection as unknown[]
+  // #981 — un groupe de membres tapés est sa propre portée : l'API a répondu
+  // exactement la sélection envoyée (écho validé en amont). Sans ce libellé,
+  // une comparaison réellement servie était jetée faute de preset résoluble.
+  if (contexteSelectionTapee) {
+    const ids = contexteSelectionTapee.scope.territoryIds ?? []
+    const echoed = ids.length === selected.length && selected.every((item, index) =>
+      typeof item === 'object' && item !== null && !Array.isArray(item) &&
+      (item as Record<string, unknown>).territory_type === target.type &&
+      (item as Record<string, unknown>).territory_id === ids[index])
+    return echoed ? contexteSelectionTapee.scope.label : null
+  }
   const territories = referenceTerritoire.reference.value ?? []
   if (target.type === 'commune' && selected.length === 1) {
     const identity = selected[0]
@@ -606,7 +634,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
         histoiresNuageDemographie.value = histoiresDemographieNuage(comparison)
       }
         if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(comparison)
-        const comparisonScopeLabel = libellePorteeSemantic(comparison, target)
+        const comparisonScopeLabel = libellePorteeSemantic(comparison, target, contexteSelectionTapee.value)
         faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
           comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
         // Un select() abouti ne renvoie que la réponse de comparaison : les

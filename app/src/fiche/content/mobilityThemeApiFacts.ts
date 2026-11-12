@@ -1,10 +1,11 @@
 import type { Payload, Indicateur } from '@/payload/types'
-import type { TerritoryComparisonContext } from '@/fiche/comparisonContext'
+import type { ModeContexteComparaison, TerritoryComparisonContext } from '@/fiche/comparisonContext'
+import { libellePorteeMembres } from '@/fiche/comparisonContext'
 import type { ThemeResponse } from '@/payload/themeAcquisition'
 import { nativeFactContractFromEnvelope, semanticComparisonForTheme, themeFactsEnvelopeFromSemantic } from '@/payload/themeFactsAdapter'
 import { territoryFactsFor } from './territoryFacts'
-import type { FactProvenance, MobilityResourceFailure, MobilityTrajectoryContract, NamedTrajectoryReference,
-  NumericFact, SelectedTrajectoryComparison, TerritoryFacts } from './territoryFacts'
+import type { ComparisonScopeKind, FactProvenance, MobilityResourceFailure, MobilityTrajectoryContract,
+  NamedTrajectoryReference, NumericFact, SelectedTrajectoryComparison, TerritoryFacts } from './territoryFacts'
 
 type Row = Record<string, unknown>
 
@@ -355,7 +356,7 @@ function selectedTrajectoryComparison(
     // The API answered the typed selection it was sent: name that explicit
     // peer set, never the producer-pooled density-class artifact.
     ? { kind: 'selection', territoryIds: expectedSelection.map((member) => member.territory_id),
-        ...(context?.scope.label ? { label: context.scope.label } : {}) }
+        label: context?.scope.label ?? libellePorteeMembres(expectedSelection) }
     : context?.scope ?? { kind: 'selection', label: 'Groupe comparé' },
     selectedMemberCount: result.selected_member_count, eligibleCount: result.eligible_count,
     modelZeroReasonCounts: reasons as Record<string, number>, sourceLineage: lineage,
@@ -364,6 +365,26 @@ function selectedTrajectoryComparison(
       value: point.value as number, unit: facts.mobility.indicators.find((fact) => fact.key === 'raccordement_courbe')?.unit ?? '%',
       availability: 'complete', provenance: lineage[0] ?? null, sourceLineage: lineage,
       comparison: null, comparisonBasis: 'territory-mean', reason: null })) }
+}
+
+/**
+ * #981 — la portée présentée d'une comparaison servie. Le contexte résolu fait
+ * foi quand il porte un libellé (preset ou groupe tapé). Une sélection tapée
+ * sans contexte reste une comparaison valide : sa portée est dérivée des
+ * membres effectivement demandés, jamais d'un preset inventé — et une réponse
+ * servie n'est jamais jetée faute de libellé humain.
+ */
+function porteeComparaison(
+  context: TerritoryComparisonContext | undefined,
+  expectedSelection?: readonly { territory_type: string; territory_id: string }[],
+): { mode: ModeContexteComparaison; kind: ComparisonScopeKind; label: string } | null {
+  if (context && text(context.scope.label)) {
+    return { mode: context.mode, kind: context.scope.kind, label: context.scope.label }
+  }
+  if (expectedSelection?.length) {
+    return { mode: 'custom', kind: 'selection', label: libellePorteeMembres(expectedSelection) }
+  }
+  return null
 }
 
 /** Replace only comparison references; focal SQL facts and provenance remain untouched. */
@@ -392,6 +413,7 @@ export function applyThemeComparisonApiFacts(
     if (text(result.indicator_id)) comparisons.set(result.indicator_id, result)
     else if (text(result.indicator)) comparisons.set(result.indicator, result)
   }
+  const portee = porteeComparaison(context, expectedSelection)
   const comparisonFor = (fact: NumericFact, detail: unknown = null, sex: unknown = null): NumericFact => {
     const result = comparisons.get(fact.key) ?? profileRows.find((candidate) =>
       candidate.indicator === fact.key && isRecord(candidate.facet) &&
@@ -405,11 +427,9 @@ export function applyThemeComparisonApiFacts(
     const rank = finite(result.rank) && finite(result.rank_size)
       ? { position: result.rank, size: result.rank_size,
         ...(finite(result.rank_ties) ? { ties: result.rank_ties } : {}) } : null
-    const mode = context?.mode
-    const kind = context?.scope.kind
-    if (!mode || !kind || !text(context?.scope.label)) return { ...fact, comparison: null }
+    if (!portee) return { ...fact, comparison: null }
     return { ...fact, comparison: { direction: result.direction === 'low' ? 'moins-est-mieux' : 'plus-est-mieux',
-      scope: { mode, kind, label: context.scope.label }, rank, reference } }
+      scope: portee, rank, reference } }
   }
   const indicators = facts.mobility.indicators.map((fact) => comparisonFor(fact, fact.detail, fact.sex ?? null))
   const resourceFailures = mergeResourceFailures(facts.mobility.resourceFailures, comparisonFailures)
