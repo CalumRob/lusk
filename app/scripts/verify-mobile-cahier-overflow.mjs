@@ -351,8 +351,15 @@ try {
   // Fixture read-batch pour les lectures non-AEDAR (thème Mobilité) : contrat sémantique,
   // jamais l'ancienne route theme-facts retirée.
   function themeBatchResponse(request) {
-    return nativeBatchResponse(request.items, (item, resource) =>
-      nativeReadFixture(item, resource, { syntheticProfileComparisons: true }))
+    return nativeBatchResponse(request.items, (item, resource) => {
+      const data = nativeReadFixture(item, resource, { syntheticProfileComparisons: true })
+      if (item.intent?.kind === 'facts' && item.resource === 'offre_tc') {
+        // Exercise the high-coverage fill-aware label legibility at both widths.
+        data.value = 0.9957355031616097
+        data.status = 'measured'
+      }
+      return data
+    })
   }
   const fixtureAttribution = 'Synthetic browser fixture; not published AEDAR facts'
   const aedarAggregateDeclaration = catalogueResources
@@ -1264,8 +1271,6 @@ try {
               : Number(label.getAttribute('x')),
             markX: (mark) => Number(mark.getAttribute('cx')),
             markSelector: '.mobilite-raccordement-curve__point--territory',
-            hitboxSelector: '.mobilite-raccordement-curve__hitbox',
-            hitboxAnchor: 'center',
             tooltipSelector: '.mobilite-raccordement-curve__tooltip',
           },
         ]
@@ -1370,8 +1375,7 @@ try {
           assert(Math.abs(hitboxEdge - report.axisLeft) < 0.5 && report.hitboxWidth > 0,
             `${report.family} hitboxes must share derived plot geometry at ${width}px: ${JSON.stringify(report)}`)
           assert(Math.abs(Number.parseFloat(report.tooltipAnchor) -
-            Number.parseFloat(report.expectedTooltipAnchor)) < 0.001 ||
-            (report.family === 'raccordement-curve' && Number.parseFloat(report.tooltipAnchor) > 0),
+            Number.parseFloat(report.expectedTooltipAnchor)) < 0.001,
             `${report.family} tooltip must anchor to derived plotted geometry at ${width}px: ${JSON.stringify(report)}`)
         }
       }
@@ -1466,6 +1470,22 @@ try {
         const insideRail = (target) => target && railBox
           ? target.left >= railBox.left - 1 && target.right <= railBox.right + 1
           : true
+        const valueBox = box(value)
+        const fillBox = box(fill)
+        const fillStyle = fill ? getComputedStyle(fill) : null
+        const valueStyle = value ? getComputedStyle(value) : null
+        const paper = getComputedStyle(document.querySelector('.cahier-page')).backgroundColor
+        const canvas = document.createElement('canvas')
+        canvas.width = 1
+        canvas.height = 1
+        const context = canvas.getContext('2d', { willReadFrequently: true })
+        const rgb = (color) => {
+          context.clearRect(0, 0, 1, 1)
+          context.fillStyle = color
+          context.fillRect(0, 0, 1, 1)
+          const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data
+          return { red, green, blue, alpha }
+        }
         return {
           visibleFill: Boolean(fill && fill.getAttribute('data-value') !== null),
           valueText: value?.textContent?.trim() ?? '',
@@ -1473,6 +1493,12 @@ try {
           hasReference: Boolean(reference && referenceValue),
           valueWithinRail: insideRail(box(value)),
           referenceWithinRail: insideRail(box(referenceValue)),
+          valueRgb: valueStyle ? rgb(valueStyle.color) : null,
+          fillRgb: fillStyle ? rgb(fillStyle.backgroundColor) : null,
+          paperRgb: rgb(paper),
+          valueOverFill: Boolean(valueBox && fillBox &&
+            valueBox.left < fillBox.right && valueBox.right > fillBox.left &&
+            valueBox.top < fillBox.bottom && valueBox.bottom > fillBox.top),
           horizontalOverflow: section.scrollWidth > section.clientWidth + 1,
         }
       })
@@ -1482,6 +1508,13 @@ try {
       `Share-track value and reference tick must carry their percentages at ${width}px: ${JSON.stringify(gaugeGeometry)}`)
       assert(gaugeGeometry.valueWithinRail && gaugeGeometry.referenceWithinRail && !gaugeGeometry.horizontalOverflow,
         `Share-track labels must stay inside the 0–100 % track at ${width}px: ${JSON.stringify(gaugeGeometry)}`)
+      const gaugeBackground = gaugeGeometry.valueOverFill ? gaugeGeometry.fillRgb : gaugeGeometry.paperRgb
+      const gaugeContrast = contrastRatioFromChannels(
+        [gaugeGeometry.valueRgb.red, gaugeGeometry.valueRgb.green, gaugeGeometry.valueRgb.blue],
+        [gaugeBackground.red, gaugeBackground.green, gaugeBackground.blue],
+      )
+      assert(gaugeContrast >= 4.5,
+        `Share-track value must retain 4.5:1 contrast on its actual background at ${width}px: ${JSON.stringify({ ...gaugeGeometry, gaugeContrast })}`)
       await gauge.screenshot({ path: resolve(evidenceDir, `issue955-couverture-${width}.png`) })
 
       await curve.scrollIntoViewIfNeeded()
@@ -1491,12 +1524,20 @@ try {
           .map((label) => label.textContent?.trim() ?? '')
         const xLabels = [...section.querySelectorAll('.cahier-figure-tick-label--x')]
           .map((label) => label.textContent?.trim() ?? '')
+        const xLabelBoxes = [...section.querySelectorAll('.cahier-figure-tick-label--x')]
+          .map((label) => label.getBoundingClientRect())
+          .sort((left, right) => left.left - right.left)
+        const xLabelsOverlap = xLabelBoxes.some((box, index) =>
+          index > 0 && box.left < xLabelBoxes[index - 1].right + 1)
+        const hitSurface = section.querySelector('.mobilite-raccordement-curve__hit-surface')
+        const hitSurfaceBox = hitSurface?.getBoundingClientRect() ?? null
         const svgBox = svg?.getBoundingClientRect() ?? null
         const yBoxes = [...section.querySelectorAll('.cahier-figure-tick-label--y')]
           .map((label) => label.getBoundingClientRect())
         const clipped = svgBox ? yBoxes.some((label) => label.top < svgBox.top - 1 || label.bottom > svgBox.bottom + 1) : true
         return {
-          yLabels, xLabels, clipped,
+          yLabels, xLabels, clipped, xLabelsOverlap,
+          hitSurface: hitSurfaceBox ? { width: hitSurfaceBox.width, height: hitSurfaceBox.height } : null,
           horizontalOverflow: section.scrollWidth > section.clientWidth + 1,
           territory: Boolean(section.querySelector('.mobilite-raccordement-curve__territory')),
           comparison: Boolean(section.querySelector('.mobilite-raccordement-curve__comparison')),
@@ -1509,7 +1550,11 @@ try {
         `Raccordement 0–100 % y-axis must not clip at ${width}px: ${JSON.stringify(curveGeometry)}`)
       assert(curveGeometry.xLabels.includes('1 h 30') && curveGeometry.marker === 't0090' && !curveGeometry.horizontalOverflow,
         `Raccordement metadata grid and marker must render at ${width}px: ${JSON.stringify(curveGeometry)}`)
-      await curve.locator('.mobilite-raccordement-curve__hitbox').nth(5).focus()
+      assert(!curveGeometry.xLabelsOverlap,
+        `Raccordement visible x labels must not overlap at ${width}px: ${JSON.stringify(curveGeometry)}`)
+      assert(curveGeometry.hitSurface && curveGeometry.hitSurface.width >= 24 && curveGeometry.hitSurface.height >= 24,
+        `Raccordement touch surface must retain a usable target at ${width}px: ${JSON.stringify(curveGeometry)}`)
+      await curve.locator('.mobilite-raccordement-curve__hit-surface').focus()
       const tooltip = curve.locator('.mobilite-raccordement-curve__tooltip')
       await tooltip.waitFor({ state: 'visible' })
       const tooltipBox = await tooltip.boundingBox()
@@ -1517,6 +1562,50 @@ try {
       assert(tooltipBox && viewport && tooltipBox.y >= 0 &&
         tooltipBox.y + tooltipBox.height <= viewport.height + 1,
       `Raccordement tooltip must stay in the viewport at ${width}px: ${JSON.stringify({ tooltipBox, viewport })}`)
+      const clampProof = await curve.evaluate((section) => {
+        const tooltip = section.querySelector('.mobilite-raccordement-curve__tooltip')
+        const marker = section.querySelector('.mobilite-raccordement-curve__marker line')
+        const svg = section.querySelector('.mobilite-raccordement-curve__svg')
+        const plot = section.querySelector('.mobilite-raccordement-curve__plot')
+        const firstLabel = section.querySelector('.cahier-figure-tick-label--x')
+        const anchor = Number.parseFloat(tooltip.style.getPropertyValue('--cahier-figure-tooltip-anchor-x')) / 100
+        const viewBoxWidth = svg.viewBox.baseVal.width
+        const plotWidth = plot.getBoundingClientRect().width
+        const tooltipWidth = tooltip.getBoundingClientRect().width
+        const half = tooltipWidth / 2 / plotWidth
+        const markerX = Number(marker.getAttribute('x1'))
+        const expectedMarker = Math.max(half, Math.min(1 - half, markerX / viewBoxWidth))
+        const firstX = Number.parseFloat(firstLabel.style.left) / 100
+        const expectedFirst = Math.max(half, Math.min(1 - half, firstX))
+        const plotBox = plot.getBoundingClientRect()
+        const tooltipRect = tooltip.getBoundingClientRect()
+        return { anchor, expectedMarker, expectedFirst, half, markerX, viewBoxWidth, plotWidth,
+          tooltipWidth, plotBox: { left: plotBox.left, right: plotBox.right },
+          tooltipRect: { left: tooltipRect.left, right: tooltipRect.right } }
+      })
+      assert(Math.abs(clampProof.anchor - clampProof.expectedMarker) < 0.001,
+        `Raccordement tooltip must use the exact clamp-aware marker anchor at ${width}px: ${JSON.stringify(clampProof)}`)
+      assert(clampProof.tooltipRect.left >= clampProof.plotBox.left - 1 &&
+        clampProof.tooltipRect.right <= clampProof.plotBox.right + 1,
+      `Raccordement tooltip must stay inside its plot at ${width}px: ${JSON.stringify(clampProof)}`)
+
+      const surfaceBox = await curve.locator('.mobilite-raccordement-curve__hit-surface').boundingBox()
+      const svgBox = await curve.locator('.mobilite-raccordement-curve__svg').boundingBox()
+      assert(surfaceBox && svgBox, `Raccordement interaction geometry missing at ${width}px`)
+      await page.mouse.click(surfaceBox.x + 2, surfaceBox.y + surfaceBox.height / 2)
+      await tooltip.waitFor({ state: 'visible' })
+      const boundaryProof = await curve.evaluate((section) => {
+        const tooltip = section.querySelector('.mobilite-raccordement-curve__tooltip')
+        const anchor = Number.parseFloat(tooltip.style.getPropertyValue('--cahier-figure-tooltip-anchor-x')) / 100
+        return { anchor, title: tooltip.querySelector('strong')?.textContent?.trim() ?? '' }
+      })
+      assert(Math.abs(boundaryProof.anchor - clampProof.expectedFirst) < 0.001,
+        `Raccordement boundary tap must clamp to the first declared tick at ${width}px: ${JSON.stringify({ boundaryProof, clampProof })}`)
+
+      await curve.locator('.mobilite-raccordement-curve__hit-surface').press('Escape')
+      await curve.locator('.mobilite-raccordement-curve__hit-surface').evaluate((element) => element.blur())
+      await curve.locator('.mobilite-raccordement-curve__hit-surface').focus()
+      await tooltip.waitFor({ state: 'visible' })
       await curve.screenshot({ path: resolve(evidenceDir, `issue955-visiter-tooltip-${width}.png`) })
     }
 

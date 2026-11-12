@@ -151,8 +151,6 @@ export interface CahierFigureAxisTick {
   key: string | number
   position: number
   label: string | null
-  /** Optional presentation class for responsive label policies (e.g. mobile anchors). */
-  className?: string
 }
 
 export interface CahierGroupedVerticalBarCategory {
@@ -328,7 +326,7 @@ export function layoutCahierSummaryPlot(groupCount: number, rowCount: number): C
 }
 
 /** A semantic legend entry declared by evidence and rendered by a figure. */
-export type FigureLegendMarker = 'icon' | 'line' | 'dot' | 'dash' | 'square' | 'slash'
+export type FigureLegendMarker = 'icon' | 'line' | 'dot' | 'dash' | 'square' | 'slash' | 'tick'
 
 export interface FigureLegendEntry {
   key: string

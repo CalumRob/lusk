@@ -163,6 +163,7 @@ describe('Mobilité page 3 — Couverture du territoire + Visiter la Bretagne', 
     expect(curveAria).toContain('Groupe comparé')
     expect(curveAria).toContain('Moyenne')
     expect(curveAria).toContain(comparisonContext.scope.label)
+    expect(curveAria).toContain('Rang')
     expect(curveAria).toContain('%')
     expect(figure.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(curve.length)
     expect(figure.findAll('.cahier-figure-tick-label--x')).toHaveLength(
@@ -184,9 +185,7 @@ describe('Mobilité page 3 — Couverture du territoire + Visiter la Bretagne', 
     expect(figure.findAll('.mobilite-raccordement-curve__territory')).toHaveLength(1)
 
     // Visible tooltip values are bare; the accessible reading keeps units and scope.
-    const markerHitbox = figure.findAll('.mobilite-raccordement-curve__hitbox')
-      .find((hitbox) => (hitbox.attributes('aria-label') ?? '').includes(trajectory.trajectory.marker!.label))!
-    await markerHitbox.trigger('focus')
+    await figure.get('.mobilite-raccordement-curve__hit-surface').trigger('focus')
     const tooltip = figure.get('.mobilite-raccordement-curve__tooltip')
     expect(tooltip.text()).not.toContain('%')
     const comparisonRow = tooltip.findAll('.cahier-figure-tooltip-row')

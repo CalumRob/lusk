@@ -270,11 +270,19 @@ function selectedTrajectoryComparison(
   context?: TerritoryComparisonContext,
   envelope?: Row,
   expectedSelection?: readonly { territory_type: string; territory_id: string }[],
+  comparisonFailures: readonly MobilityResourceFailure[] = [],
 ): SelectedTrajectoryComparison | null {
   const contract = facts.mobility.trajectoryContract
   if (!contract) return null
   const result = resultRows.find((candidate) => candidate.indicator_id === 'raccordement_courbe')
-  if (!result) throw new Error('Comparaison moyenne de trajectoire Mobilité absente')
+  if (!result) {
+    // An isolated comparison publication failure leaves the focal curve
+    // healthy and makes the reference explicitly unavailable; malformed
+    // responses without that recorded failure still fail closed.
+    return comparisonFailures.some((failure) => failure.key === 'raccordement_courbe')
+      ? null
+      : (() => { throw new Error('Comparaison moyenne de trajectoire Mobilité absente') })()
+  }
   if (result.status !== 'available') return null
   if (result.statistic !== contract.comparisonStatistic || result.source_facet !== contract.comparisonPoint ||
       !finite(result.mean) || !finite(result.selected_member_count) || !finite(result.eligible_count) ||
@@ -407,7 +415,7 @@ export function applyThemeComparisonApiFacts(
   const resourceFailures = mergeResourceFailures(facts.mobility.resourceFailures, comparisonFailures)
   return { ...facts, mobility: { ...facts.mobility, indicators,
     ...(resourceFailures.length ? { resourceFailures } : {}),
-    selectedTrajectoryComparison: selectedTrajectoryComparison(facts, resultRows, context, response, expectedSelection) } }
+    selectedTrajectoryComparison: selectedTrajectoryComparison(facts, resultRows, context, response, expectedSelection, comparisonFailures) } }
 }
 
 export function clearThemeComparisonApiFacts(facts: TerritoryFacts): TerritoryFacts {

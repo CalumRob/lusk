@@ -54,7 +54,7 @@ describe('raccordement — fiche et accessibilité', () => {
   it('compose la prose approuvée sans élision de la mesure', () => {
     const scalaire = { ...ligne('t0090', 0.42), key: 'raccordement_tc', detail: null }
     expect(phraseRaccordement('Allineuc', scalaire)).toBe(
-      'Un mercredi de période scolaire, depuis Allineuc, 42 % de la population bretonne est joignable en moins de 90 minutes en transports en commun, par des trajets planifiés aller simple entre arrêts.',
+      'Depuis Allineuc, 42 % de la population bretonne est joignable en moins de 90 minutes en transports en commun, par des trajets planifiés aller simple entre arrêts.',
     )
   })
 
@@ -183,6 +183,24 @@ describe('raccordement — fiche et accessibilité', () => {
     expect(SOURCES_METHODES.raccordement_gtfs_national.caveat).toMatch(/zéros structurels/)
     expect(SOURCES_METHODES.raccordement_gtfs_national.caveat).toMatch(/aller simple/)
     expect(SOURCES_METHODES.raccordement_gtfs_national.caveat).toMatch(/aucune durée de retour/)
+  })
+
+  it('ne réintroduit pas le modèle mairie/scolaire ni les facteurs recopiés dans les fixtures et méthodes', () => {
+    const metadata = structuredClone(metadonneesMobiliteRaccordementFixture)
+    const serialized = JSON.stringify(metadata)
+    expect(serialized).not.toMatch(/mairie à mairie/iu)
+    expect(serialized).not.toMatch(/mercredi réel de période scolaire/iu)
+    expect(serialized).not.toMatch(/40 minutes/iu)
+    expect(serialized).not.toMatch(/p01/iu)
+    expect(metadata.source_records?.raccordement_gtfs_national?.vintages?.[0]).toMatchObject({
+      id: 'raccordement_gtfs_national',
+      version: 'national-gtfs-outbound-v1',
+      dateReference: '2026-10-10',
+      datePublication: '2026-10-10',
+    })
+    const tc = THEMES_METHODES.mobilite.indicateurs.raccordement_tc
+    expect(tc.definition).not.toMatch(/mairie à mairie|mercredi|40 minutes/iu)
+    expect(SOURCES_METHODES.raccordement_gtfs_national.caveat).not.toMatch(/40 minutes|mairie à mairie/iu)
   })
 
   it.each([

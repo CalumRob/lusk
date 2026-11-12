@@ -317,6 +317,15 @@ export interface MobiliteShareEvidence {
   comparisonLabel: string | null
   prose: readonly TextBlock[]
   sources: readonly ContentSource[]
+  unavailableResources?: readonly string[]
+  unavailableComparisons?: readonly string[]
+}
+
+/** Producer-declared numeric trajectory axis; never inferred from detail names. */
+export interface MobiliteTrajectoryAxis {
+  values: readonly { detail: string; numericValue: number }[]
+  minimum: number
+  maximum: number
 }
 
 /** Page 3 — the cumulative raccordement curve of « Visiter la Bretagne ». */
@@ -330,6 +339,8 @@ export interface MobiliteRaccordementEvidence {
   /** Active header comparison mean curve; null means no reference is shown. */
   comparison: ComparisonTrajectoryContent | null
   trajectory: TrajectoryMetadata | null
+  /** Declared numeric positions from the producer descriptor, when valid. */
+  axis: MobiliteTrajectoryAxis | null
   /** Published scalar at the trajectory marker, used in prose and the marker tooltip only. */
   markerValue: ContentFact | null
   comparisonLabel: string | null

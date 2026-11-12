@@ -34,9 +34,10 @@ browser-side peer computation. #953 publishes the refuelling densities.
    `absent` / `incomplete` states.
 2. **Narrow delegate (C8).** New sections render through
    `CahierMobiliteSection` with exactly `{ section, unit, comparison }`. No AEDAR
-   prop, mode/horizon state or pagination is forwarded. The delegate may read
-   the shared comparison control only through the already-injected
-   `CONTROLE_COMPARAISON_KEY` (it currently does not need to).
+   prop, mode/horizon state or pagination is forwarded. The delegate reads the
+   already-injected `CONTROLE_COMPARAISON_KEY` only to turn an explicitly empty
+   selection into an honest inactive state; it reads nothing else from the
+   AEDAR context.
 3. **Page 2 subtitle (C2).** One paragraph replaces both the old introduction
    and the rundown. It composes the car-owner share from the published parts
    (`une_voiture + deux_plus`), the two-or-more share, and the road footprint in

@@ -18,7 +18,7 @@ import type {
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import type { MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
 import type { NumericFact } from '@/fiche/content/territoryFacts'
-import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
+import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import ComparisonUnavailableCue from '@/components/fiche/ComparisonUnavailableCue.vue'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureAxes from './CahierFigureAxes.vue'
@@ -69,32 +69,24 @@ function ariaPercent(value: number | null, unit: string): string {
   return value === null ? UNAVAILABLE_LABEL : `${formatNumber(percentValue(value))} ${unit}`
 }
 
-function numericAxisValue(fact: NumericFact, fallback: number): number {
+const axisByDetail = computed(() => new Map(
+  (props.figure.axis?.values ?? []).map((value) => [value.detail, value.numericValue]),
+))
+
+function axisForDetail(detail: string | null): number | null {
+  if (!detail) return null
+  const declared = axisByDetail.value.get(detail)
+  return declared !== undefined && Number.isFinite(declared) ? declared : null
+}
+
+function axisForFact(fact: NumericFact): number | null {
   if (typeof fact.axisValue === 'number' && Number.isFinite(fact.axisValue)) return fact.axisValue
-  const declared = fact.detail?.match(/^t(\d+)$/u)
-  return declared ? Number(declared[1]) : fallback
+  return axisForDetail(fact.detail)
 }
 
-function axisValueForDetail(detail: string): number | null {
-  const index = props.figure.points.findIndex((point) => point.fact.detail === detail)
-  if (index >= 0) return numericAxisValue(props.figure.points[index]!.fact, index)
-  const declared = detail.match(/^t(\d+)$/u)
-  return declared ? Number(declared[1]) : null
-}
-
-const axisDomain = computed(() => {
-  const values = props.figure.points
-    .map((point, index) => numericAxisValue(point.fact, index))
-    .filter((value) => Number.isFinite(value))
-  const comparisonValues = (props.figure.comparison?.points ?? [])
-    .map((point, index) => numericAxisValue(point.fact, index))
-    .filter((value) => Number.isFinite(value))
-  const all = [...values, ...comparisonValues]
-  if (!all.length) return { minimum: 0, maximum: 1 }
-  const minimum = Math.min(...all)
-  const maximum = Math.max(...all)
-  return { minimum, maximum: maximum === minimum ? minimum + 1 : maximum }
-})
+const axisDomain = computed(() => props.figure.axis
+  ? { minimum: props.figure.axis.minimum, maximum: props.figure.axis.maximum }
+  : { minimum: 0, maximum: 1 })
 
 const yTickLabels = computed(() => Y_TICKS.map((value) => `${value * 100} %`))
 const geometry = useMeasuredCahierFigureGeometry(plotElement, yTickLabels, BASE_FIGURE_GEOMETRY)
@@ -114,13 +106,14 @@ function yFor(value: number): number {
 
 function seriesPath(points: readonly { fact: NumericFact }[]): string {
   let started = false
-  return points.map((point, index) => {
+  return points.map((point) => {
     const value = point.fact.value
-    if (value === null || !Number.isFinite(value)) {
+    const axis = axisForFact(point.fact)
+    if (value === null || !Number.isFinite(value) || axis === null) {
       started = false
       return ''
     }
-    const x = xForAxis(numericAxisValue(point.fact, index))
+    const x = xForAxis(axis)
     const y = yFor(value)
     const command = `${started ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`
     started = true
@@ -130,18 +123,18 @@ function seriesPath(points: readonly { fact: NumericFact }[]): string {
 
 const territoryPath = computed(() => seriesPath(props.figure.points))
 const comparisonPath = computed(() => seriesPath(props.figure.comparison?.points ?? []))
+const drawablePoints = computed(() => props.figure.points.flatMap((point) => {
+  const axis = axisForFact(point.fact)
+  return point.fact.value !== null && Number.isFinite(point.fact.value) && axis !== null
+    ? [{ point, x: xForAxis(axis), y: yFor(point.fact.value) }]
+    : []
+}))
+const hasDrawablePoints = computed(() => drawablePoints.value.length > 0)
 
 const declaredTicks = computed(() => props.figure.trajectory?.ticks ?? [])
 const xTicks = computed<readonly CahierFigureAxisTick[]>(() => declaredTicks.value.flatMap((tick) => {
-  const axisValue = axisValueForDetail(tick.detail)
-  return axisValue === null ? [] : [{
-    key: tick.detail,
-    label: tick.label,
-    position: xForAxis(axisValue),
-    className: tick.mobile
-      ? 'mobilite-raccordement-curve__tick--mobile'
-      : 'mobilite-raccordement-curve__tick--desktop',
-  }]
+  const axisValue = axisForDetail(tick.detail)
+  return axisValue === null ? [] : [{ key: tick.detail, label: tick.label, position: xForAxis(axisValue) }]
 }))
 const yTicks = computed<readonly CahierFigureAxisTick[]>(() => Y_TICKS.map((value) => ({
   key: value,
@@ -149,15 +142,58 @@ const yTicks = computed<readonly CahierFigureAxisTick[]>(() => Y_TICKS.map((valu
   position: yFor(value),
 })))
 
+const renderedPlotWidth = ref(0)
+let plotObserver: ResizeObserver | null = null
+function measurePlotWidth(): void {
+  renderedPlotWidth.value = plotElement.value?.getBoundingClientRect().width ?? 0
+}
+
+function approximateLabelWidth(label: string | null): number {
+  return Math.max(18, (label?.length ?? 2) * 7)
+}
+
+/**
+ * Keep the producer's full native grid and path, but label only the declared
+ * ticks that fit at the measured width. Endpoints and the declared marker are
+ * protected; remaining declared ticks fill the available space in metadata
+ * order, with the producer's mobile anchors considered first.
+ */
+const visibleXTicks = computed<readonly CahierFigureAxisTick[]>(() => {
+  const ticks = xTicks.value
+  const width = renderedPlotWidth.value
+  if (!width || ticks.length < 2) return ticks
+  const pixelsPerUnit = width / geometry.value.width
+  const selected: CahierFigureAxisTick[] = []
+  const fits = (tick: CahierFigureAxisTick): boolean => {
+    const x = tick.position * pixelsPerUnit
+    const half = approximateLabelWidth(tick.label) / 2
+    return selected.every((other) => {
+      const otherX = other.position * pixelsPerUnit
+      const otherHalf = approximateLabelWidth(other.label) / 2
+      return Math.abs(x - otherX) >= half + otherHalf + 10
+    })
+  }
+  const add = (tick: CahierFigureAxisTick | undefined) => {
+    if (tick && !selected.includes(tick) && fits(tick)) selected.push(tick)
+  }
+  add(ticks[0])
+  add(ticks.find((tick) => marker.value && String(tick.key) === marker.value.detail))
+  add(ticks.at(-1))
+  for (const tick of ticks.filter((tick) => declaredTicks.value.find((declared) =>
+    declared.detail === String(tick.key))?.mobile)) add(tick)
+  for (const tick of ticks) add(tick)
+  return [...selected].sort((left, right) => left.position - right.position)
+})
+
 const marker = computed(() => props.figure.trajectory?.marker ?? null)
-const markerAxisValue = computed(() => marker.value ? axisValueForDetail(marker.value.detail) : null)
+const markerAxisValue = computed(() => marker.value ? axisForDetail(marker.value.detail) : null)
 const markerPoint = computed(() => {
   if (!marker.value) return null
   return props.figure.points.find((point) => point.fact.detail === marker.value!.detail) ?? null
 })
 const markerX = computed(() => markerAxisValue.value === null ? null : xForAxis(markerAxisValue.value))
-const markerY = computed(() => markerPoint.value?.fact.value == null
-  ? plotBottom.value
+const markerY = computed(() => markerPoint.value?.fact.value === null || markerPoint.value?.fact.value === undefined
+  ? null
   : yFor(markerPoint.value.fact.value))
 
 const comparisonAvailable = computed(() =>
@@ -176,6 +212,26 @@ const comparisonDetail = computed(() => {
   }
 })
 
+const curvesCoincide = computed(() => {
+  const comparison = props.figure.comparison
+  if (!comparison || comparison.points.length !== props.figure.points.length) return false
+  const values = new Map(comparison.points.map((point) => [point.fact.detail, point.fact.value]))
+  return props.figure.points.every((point) => values.get(point.fact.detail) === point.fact.value)
+})
+
+const publicationNotes = computed(() => [
+  ...(props.figure.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
+  ...(props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`),
+])
+
+const markerComparison = computed(() => props.figure.markerValue?.fact.comparison ?? null)
+const markerRankAria = computed(() => {
+  const comparison = markerComparison.value
+  if (!comparison?.rank) return null
+  return puceRangDirection(comparison.rank, comparison.direction, comparisonDetail.value?.label)?.phraseAria
+    ?? formatServedRankAria(comparison.rank)
+})
+
 function pointAt(detail: string, points: readonly { fact: NumericFact }[]): NumericFact | null {
   return points.find((point) => point.fact.detail === detail)?.fact ?? null
 }
@@ -191,10 +247,18 @@ function comparisonRankForTick(detail: string) {
   return props.figure.markerValue?.fact.comparison?.rank ?? null
 }
 
-function comparisonTickAria(detail: string): string {
-  if (!props.figure.comparison || !showComparison.value) return ''
-  return tickAriaValue(detail, props.figure.comparison.points, curveUnit.value)
-}
+
+const comparisonStateText = computed(() => {
+  if (props.comparison.status === 'loading') return 'Comparaison en cours de chargement.'
+  if (props.comparison.status === 'error') {
+    return props.figure.unavailableComparisons?.length
+      ? `Comparaison indisponible : ${props.figure.unavailableComparisons.join(', ')}.`
+      : `Comparaison indisponible : ${props.comparison.error ?? 'la lecture a échoué.'}`
+  }
+  if (props.comparison.status === 'unavailable') return 'Aucun groupe comparé actif.'
+  if (props.figure.comparison === null) return 'Aucune courbe de référence disponible pour cette sélection.'
+  return ''
+})
 
 const accessibleLabel = computed(() => {
   const readings = xTicks.value
@@ -205,25 +269,24 @@ const accessibleLabel = computed(() => {
       .map((tick) => `${tick.label} : ${tickAriaValue(String(tick.key), props.figure.comparison!.points, curveUnit.value)}`)
       .join(' ; ')
     : ''
-  const markerReading = marker.value ? ` Repère : ${marker.value.label}.` : ''
+  const markerReading = marker.value
+    ? ` Repère : ${marker.value.label}.${markerRankAria.value ? ` Rang ${markerRankAria.value}.` : ''}`
+    : ''
   const comparisonReading = comparisonReadings && comparisonDetail.value
     ? ` ${GROUPE_COMPARE_LABEL} — ${comparisonDetail.value.statistic} des ${comparisonDetail.value.label} : ${comparisonReadings}.`
     : ''
+  const coincidence = curvesCoincide.value && showComparison.value
+    ? ' Le groupe comparé est superposé au territoire dans cette sélection.'
+    : ''
+  const notes = [...publicationNotes.value, comparisonStateText.value].filter(Boolean).join(' ')
   return `${props.figure.figureTitle}. Courbe cumulative de la population bretonne joignable selon le temps de trajet. ` +
     `Axe horizontal : ${props.figure.trajectory?.axisLabels?.x ?? 'temps de trajet'}. ` +
     `Axe vertical : ${props.figure.trajectory?.axisLabels?.y ?? 'population joignable (%)'}. ` +
-    `Territoire : ${readings}.${comparisonReading}${markerReading}`
+    `Territoire : ${readings}.${comparisonReading}${coincidence}${markerReading}${notes ? ` ${notes}` : ''}`
 })
 
 const selectedTick = computed(() => xTicks.value.find((tick) => String(tick.key) === selectedTickKey.value) ?? null)
 const selectedTickTitle = computed(() => selectedTick.value?.label ?? '')
-
-function tickAriaLabel(tick: CahierFigureAxisTick): string {
-  const label = marker.value && String(tick.key) === marker.value.detail
-    ? marker.value.label
-    : tick.label ?? String(tick.key)
-  return `${label} — Territoire : ${tickAriaValue(String(tick.key), props.figure.points, curveUnit.value)}${showComparison.value && props.figure.comparison ? ` ; ${GROUPE_COMPARE_LABEL} : ${comparisonTickAria(String(tick.key))}` : ''}`
-}
 
 function tooltipRows(detail: string): readonly CahierTooltipRow[] {
   const unit = curveUnit.value
@@ -271,24 +334,61 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
   }
 })
 
-function tickHitboxStyle(tick: CahierFigureAxisTick): Record<string, string> {
-  const width = 28
-  return {
-    left: `${((tick.position - width / 2) / geometry.value.width) * 100}%`,
-    top: `${(geometry.value.margin.top / geometry.value.height) * 100}%`,
-    width: `${(width / geometry.value.width) * 100}%`,
-    height: `${(plotHeight.value / geometry.value.height) * 100}%`,
-  }
+const hitSurfaceLabel = 'Explorer les valeurs par temps de trajet. Flèches gauche et droite pour changer de repère.'
+
+const hitSurfaceStyle = computed(() => ({
+  left: `${(geometry.value.margin.left / geometry.value.width) * 100}%`,
+  top: `${(geometry.value.margin.top / geometry.value.height) * 100}%`,
+  width: `${(plotWidth.value / geometry.value.width) * 100}%`,
+  height: `${(plotHeight.value / geometry.value.height) * 100}%`,
+}))
+
+function nearestTick(clientX: number, element: HTMLElement): CahierFigureAxisTick | null {
+  const rect = element.getBoundingClientRect()
+  if (!rect.width || !xTicks.value.length) return null
+  const x = ((clientX - rect.left) / rect.width) * geometry.value.width
+  return xTicks.value.reduce((nearest, tick) =>
+    Math.abs(tick.position - x) < Math.abs(nearest.position - x) ? tick : nearest,
+  )
 }
 
-function activateTick(key: string): void {
-  if (pinnedTickKey.value === key) {
-    pinnedTickKey.value = null
-    hoveredTickKey.value = null
-    return
-  }
-  pinnedTickKey.value = key
-  hoveredTickKey.value = key
+function selectTick(tick: CahierFigureAxisTick | null, pin = false): void {
+  if (!tick) return
+  hoveredTickKey.value = String(tick.key)
+  if (pin) pinnedTickKey.value = String(tick.key)
+}
+
+function onPointerMove(event: PointerEvent): void {
+  selectTick(nearestTick(event.clientX, event.currentTarget as HTMLElement))
+}
+
+function onPointerDown(event: PointerEvent): void {
+  selectTick(nearestTick(event.clientX, event.currentTarget as HTMLElement), true)
+}
+
+function onPointerLeave(): void {
+  if (pinnedTickKey.value === null) hoveredTickKey.value = null
+}
+
+function onFocus(): void {
+  if (selectedTickKey.value !== null) return
+  const markerSeed = xTicks.value.find((tick) => marker.value && String(tick.key) === marker.value.detail)
+  selectTick(markerSeed ?? xTicks.value[0] ?? null)
+}
+
+function moveSelectedTick(delta: number): void {
+  if (!xTicks.value.length) return
+  const current = xTicks.value.findIndex((tick) => String(tick.key) === selectedTickKey.value)
+  const index = current < 0 ? 0 : Math.max(0, Math.min(xTicks.value.length - 1, current + delta))
+  selectTick(xTicks.value[index] ?? null, pinnedTickKey.value !== null)
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key === 'ArrowLeft') { event.preventDefault(); moveSelectedTick(-1); return }
+  if (event.key === 'ArrowRight') { event.preventDefault(); moveSelectedTick(1); return }
+  if (event.key === 'Home') { event.preventDefault(); selectTick(xTicks.value[0] ?? null, pinnedTickKey.value !== null); return }
+  if (event.key === 'End') { event.preventDefault(); selectTick(xTicks.value.at(-1) ?? null, pinnedTickKey.value !== null); return }
+  if (event.key === 'Escape') { event.preventDefault(); dismissTick() }
 }
 
 function dismissTick(): void {
@@ -301,11 +401,24 @@ function dismissOutside(event: Event): void {
   if (plotElement.value && target instanceof Node && !plotElement.value.contains(target)) dismissTick()
 }
 
-onMounted(() => document.addEventListener('pointerdown', dismissOutside))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissOutside))
+onMounted(() => {
+  document.addEventListener('pointerdown', dismissOutside)
+  measurePlotWidth()
+  if (typeof ResizeObserver !== 'undefined' && plotElement.value) {
+    plotObserver = new ResizeObserver(measurePlotWidth)
+    plotObserver.observe(plotElement.value)
+  }
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', dismissOutside)
+  plotObserver?.disconnect()
+  plotObserver = null
+})
 
 const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
   const canToggle = props.comparison.status === 'loading' || props.comparison.status === 'error' || comparisonAvailable.value
+  const comparisonAria = `${GROUPE_COMPARE_LABEL} : ${props.figure.comparisonLabel ?? UNAVAILABLE_LABEL}`
+    + (curvesCoincide.value && showComparison.value ? ' (superposé au territoire)' : '')
   return [
     {
       key: 'territory',
@@ -320,7 +433,7 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
       marker: 'dash',
       tone: 'peer',
       persistentToggle: canToggle,
-      ariaLabel: `${GROUPE_COMPARE_LABEL} : ${props.figure.comparisonLabel ?? UNAVAILABLE_LABEL}`,
+      ariaLabel: comparisonAria,
     },
   ]
 })
@@ -336,16 +449,31 @@ function toggleLegend(key: string): void {
 
 const stateMessage = computed(() => {
   if (props.comparison.status === 'loading') return 'Chargement du groupe comparé…'
-  if (props.comparison.status === 'error') return props.comparison.error ?? 'Groupe comparé indisponible.'
+  if (props.comparison.status === 'error') {
+    if (props.figure.unavailableComparisons?.length) return null
+    return props.comparison.error ?? 'Groupe comparé indisponible.'
+  }
   if (props.comparison.status === 'unavailable') return 'Aucun groupe comparé actif : aucune courbe de référence n’est affichée.'
-  if (props.figure.comparison === null) return 'Aucune courbe de référence disponible pour cette sélection.'
+  if (props.figure.comparison === null) {
+    return props.figure.unavailableComparisons?.length ? null : 'Aucune courbe de référence disponible pour cette sélection.'
+  }
   return null
+})
+
+const unavailableState = computed(() => {
+  if (props.figure.points.length && props.figure.axis === null) {
+    return `${props.figure.figureTitle} : repères de trajectoire indisponibles.`
+  }
+  if (props.figure.points.length && !hasDrawablePoints.value) {
+    return `${props.figure.figureTitle} indisponible : aucune valeur publiée.`
+  }
+  return `${props.figure.figureTitle} indisponible.`
 })
 </script>
 
 <template>
   <div class="mobilite-raccordement-curve">
-    <template v-if="figure.trajectory && figure.points.length">
+    <template v-if="figure.trajectory && figure.axis && hasDrawablePoints">
       <CahierFigureFrame
         size="compact"
         :geometry="geometry"
@@ -364,14 +492,14 @@ const stateMessage = computed(() => {
               <CahierFigureAxes :geometry="geometry" :x-ticks="xTicks" :y-ticks="yTicks" :show-labels="false" />
               <path class="mobilite-raccordement-curve__territory" data-series="territory" :d="territoryPath" />
               <circle
-                v-for="(point, index) in figure.points"
-                :key="`territory-${point.fact.detail ?? index}`"
+                v-for="entry in drawablePoints"
+                :key="`territory-${entry.point.fact.detail}`"
                 class="mobilite-raccordement-curve__point mobilite-raccordement-curve__point--territory"
                 data-series="territory"
-                :data-detail="point.fact.detail"
-                :data-value="point.fact.value"
-                :cx="xForAxis(numericAxisValue(point.fact, index))"
-                :cy="point.fact.value === null ? plotBottom : yFor(point.fact.value)"
+                :data-detail="entry.point.fact.detail"
+                :data-value="entry.point.fact.value"
+                :cx="entry.x"
+                :cy="entry.y"
                 r="2.6"
               />
               <path
@@ -389,9 +517,11 @@ const stateMessage = computed(() => {
                   :y2="plotBottom"
                 />
                 <circle
+                  v-if="markerPoint && markerY !== null"
                   class="mobilite-raccordement-curve__marker-point"
                   :cx="markerX"
                   :cy="markerY"
+                  :data-value="markerPoint.fact.value"
                   r="4.5"
                 />
                 <text
@@ -401,23 +531,19 @@ const stateMessage = computed(() => {
                 >{{ marker.label }}</text>
               </g>
             </svg>
-            <CahierFigureAxisLabels :geometry="geometry" :x-ticks="xTicks" :y-ticks="yTicks" />
-            <div class="mobilite-raccordement-curve__hitboxes" role="group" aria-label="Valeurs par temps de trajet">
-              <button
-                v-for="tick in xTicks"
-                :key="`hit-${tick.key}`"
-                type="button"
-                class="mobilite-raccordement-curve__hitbox"
-                :style="tickHitboxStyle(tick)"
-                :aria-label="tickAriaLabel(tick)"
-                @mouseenter="hoveredTickKey = String(tick.key)"
-                @mouseleave="hoveredTickKey = null"
-                @focus="hoveredTickKey = String(tick.key)"
-                @blur="dismissTick"
-                @click="activateTick(String(tick.key))"
-                @keydown.esc="dismissTick"
-              />
-            </div>
+            <CahierFigureAxisLabels :geometry="geometry" :x-ticks="visibleXTicks" :y-ticks="yTicks" />
+            <button
+              type="button"
+              class="mobilite-raccordement-curve__hit-surface"
+              :style="hitSurfaceStyle"
+              :aria-label="hitSurfaceLabel"
+              @pointermove="onPointerMove"
+              @pointerdown="onPointerDown"
+              @pointerleave="onPointerLeave"
+              @focus="onFocus"
+              @blur="dismissTick"
+              @keydown="onKeydown"
+            />
             <CahierFigureTooltip
               v-if="selectedTick"
               class="mobilite-raccordement-curve__tooltip cahier-figure-tooltip--chart"
@@ -441,7 +567,12 @@ const stateMessage = computed(() => {
         @toggle="toggleLegend"
       />
     </template>
-    <p v-else class="mobilite-raccordement-curve__unavailable">Repères de trajectoire indisponibles.</p>
+    <p v-else class="mobilite-raccordement-curve__unavailable" role="status">{{ unavailableState }}</p>
+
+    <p v-for="note in publicationNotes" :key="note" class="mobilite-raccordement-curve__state" role="note">{{ note }}</p>
+    <p v-if="curvesCoincide && showComparison" class="mobilite-raccordement-curve__state" role="note">
+      Groupe comparé superposé au territoire dans cette sélection.
+    </p>
 
     <p v-if="stateMessage" class="mobilite-raccordement-curve__state" role="status">
       <ComparisonUnavailableCue
@@ -491,13 +622,19 @@ const stateMessage = computed(() => {
   font: var(--text-caption);
   font-weight: 700;
 }
-.mobilite-raccordement-curve__hitboxes { position: absolute; inset: 0; }
-.mobilite-raccordement-curve__hitbox {
-  position: absolute; display: block; margin: 0; padding: 0;
-  border: 0; background: transparent; cursor: help;
+.mobilite-raccordement-curve__hit-surface {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: crosshair;
+  touch-action: manipulation;
 }
-.mobilite-raccordement-curve__hitbox:hover,
-.mobilite-raccordement-curve__hitbox:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.mobilite-raccordement-curve__hit-surface:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
 .mobilite-raccordement-curve__tooltip { width: min(320px, calc(100vw - 32px)); max-width: calc(100% - 16px); pointer-events: none; }
 .mobilite-raccordement-curve__legend { flex-wrap: wrap; }
 .mobilite-raccordement-curve__state { margin: 0; display: flex; align-items: center; gap: var(--space-2); color: var(--cahier-default, var(--editorial-muted)); font: var(--text-body-sm); }
@@ -509,9 +646,4 @@ const stateMessage = computed(() => {
 }
 .mobilite-raccordement-curve__retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
 .mobilite-raccordement-curve__retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
-@media (max-width: 760px) {
-  :deep(.cahier-figure-axis-labels .cahier-figure-tick-label.mobilite-raccordement-curve__tick--desktop) {
-    display: none;
-  }
-}
 </style>

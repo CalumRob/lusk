@@ -419,7 +419,7 @@ describe('Couverture du territoire + Visiter la Bretagne — #955 content contra
     if (section.evidence?.kind !== 'mobilite-raccordement') throw new Error('Curve evidence expected')
     const prose = section.evidence.prose.flat().map((segment) => segment.value).join(' ')
     expect(prose).toContain('À 1 h 30 (90 min), 20 % de la population bretonne est joignable depuis les arrêts du territoire.')
-    expect(prose).toContain('Le pointillé représente la moyenne du groupe comparé.')
+    expect(prose).not.toContain('Le pointillé représente la moyenne du groupe comparé.')
     expect(prose).toContain('zéros du modèle inclus.')
     expect(section.evidence.sources[0].id).toBe('raccordement_gtfs_national')
     expect(section.evidence).not.toHaveProperty('namedReference')

@@ -734,11 +734,22 @@ export const territoiresRaccordementFixture: Territoire[] = [
   { territoire: '53', type: 'region', nom: 'Bretagne', departement: null, epci: null },
 ]
 
+/** Synthetic fixture identity derived from the current producer source record; not a new data publication. */
+const RACCORDEMENT_GTFS_FIXTURE_SOURCE = 'Lusk — matrice nationale de trajets GTFS planifiés entre arrêts communaux'
+const RACCORDEMENT_GTFS_FIXTURE_VINTAGE = {
+  id: 'raccordement_gtfs_national',
+  label: 'Routage national GTFS',
+  version: 'national-gtfs-outbound-v1',
+  licence: 'ODbL et licences des flux sources',
+  dateReference: '2026-10-10',
+  datePublication: '2026-10-10',
+} as const
+
 const vintageRaccordementMobilite = {
-  vintage_source: 'Lusk — matrice nationale de trajets GTFS planifiés entre arrêts communaux',
-  vintage_version: '2026-09-16',
-  vintage_date_reference: '2026-08-25',
-  vintage_date_publication: '2026-08-26',
+  vintage_source: RACCORDEMENT_GTFS_FIXTURE_SOURCE,
+  vintage_version: RACCORDEMENT_GTFS_FIXTURE_VINTAGE.version,
+  vintage_date_reference: RACCORDEMENT_GTFS_FIXTURE_VINTAGE.dateReference,
+  vintage_date_publication: RACCORDEMENT_GTFS_FIXTURE_VINTAGE.datePublication,
 }
 
 function pointRaccordementFixture(
@@ -1996,8 +2007,8 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
       ...pageBase,
       indicator: 'raccordement_tc',
       label: 'Population bretonne joignable en 90 minutes en TC',
-      definition: 'Part de la population bretonne pouvant être rejointe depuis les arrêts du territoire par des trajets planifiés aller simple en transports en commun, en 90 minutes.',
-      calculation: 'Meilleur départ d’un mercredi réel de période scolaire, avec marche plafonnée à 40 minutes et sans trajet en voiture.',
+      definition: 'Part de la population bretonne vivant dans les communes atteintes depuis les arrêts de transports en commun de ce territoire en 90 minutes.',
+      calculation: 'Somme des populations des communes de destination atteintes depuis les arrêts du territoire, divisée par la population bretonne. Les agrégats sont les moyennes égales des courbes communales de leurs membres, zéros du modèle inclus.',
       caveats: caveat,
       family: 'scalar',
     },
@@ -2005,7 +2016,7 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
       ...pageBase,
       indicator: 'raccordement_courbe',
       label: 'Courbe de population bretonne jointe selon le temps de trajet',
-      definition: 'Part de la population bretonne pouvant rejoindre le territoire selon le temps de trajet en transports en commun.',
+      definition: 'Part de la population bretonne vivant dans les communes atteintes depuis les arrêts du territoire, selon la durée du trajet planifié aller simple.',
       calculation: 'Somme des populations des communes de destination atteintes en trajet planifié aller simple, divisée par la population bretonne. Les agrégats sont les moyennes égales des courbes communales de leurs membres, zéros du modèle inclus.',
       caveats: caveat,
       family: 'trajectory',
@@ -2026,8 +2037,8 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
           { detail: 't0300', label: '5 h', mobile: false },
           { detail: 't0360', label: '6 h', mobile: true },
         ],
-        reference: { indicator: 'raccordement_reference', territoire: '53', label: 'Commune bretonne médiane' },
-          marker: { detail: 't0090', label: 'Seuil de 90 minutes' },
+        reference: { indicator: 'raccordement_reference', territoire: '53', label: 'Bretagne — moyenne des courbes communales évaluées' },
+          marker: { detail: 't0090', label: '1 h 30 (90 min)' },
       },
       comparison: { details: Object.keys(detailsCourbe), detail: 't0090', unit: '%' },
     },
@@ -2035,20 +2046,13 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
   base.source_records = {
     ...(base.source_records ?? {}),
     raccordement_gtfs_national: {
-      dataset: 'Lusk — matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)',
+      dataset: `${RACCORDEMENT_GTFS_FIXTURE_SOURCE} (issue #728)`,
       publisher: 'Lusk',
       url: 'https://github.com/CalumRob/lusk',
       licence: 'ODbL — © OpenStreetMap contributors (GTFS SNCF/Korrigo) et licences des sources ouvertes',
-      vintage: 'national-gtfs-outbound-v1',
-      freshness: '10 octobre 2026',
-      vintages: [{
-        id: 'raccordement_gtfs_national',
-        label: 'Routage national GTFS',
-        version: 'national-gtfs-outbound-v1',
-        licence: 'ODbL et licences des flux sources',
-        dateReference: '2026-10-10',
-        datePublication: '2026-10-10',
-      }],
+      vintage: RACCORDEMENT_GTFS_FIXTURE_VINTAGE.version,
+      freshness: RACCORDEMENT_GTFS_FIXTURE_VINTAGE.datePublication,
+      vintages: [{ ...RACCORDEMENT_GTFS_FIXTURE_VINTAGE }],
       clocks: [{
         name: 'Horaires GTFS du raccordement',
         frequency: 'instantané versionné ; tout nouveau millésime exige une nouvelle matrice et un nouveau pin',

@@ -55,6 +55,11 @@ function curveFigure(overrides: Partial<MobiliteRaccordementEvidence> = {}): Mob
         fact: { ...item.fact, value: item.fact.value === null ? null : item.fact.value * 0.8 } })),
     },
     trajectory,
+    axis: {
+      values: points.map((item) => ({ detail: item.fact.detail!, numericValue: item.fact.axisValue! })),
+      minimum: 0,
+      maximum: 360,
+    },
     markerValue: {
       label: 'Population bretonne jointe en 90 minutes',
       fact: { ...point('t0090', 90, 0.4).fact, key: 'raccordement_tc',
@@ -82,6 +87,8 @@ describe('CahierMobiliteRaccordementCurve — Visiter la Bretagne', () => {
     expect(aria).toContain('Groupe comparé')
     expect(aria).toContain('Moyenne')
     expect(aria).toContain('communes de la classe de densité')
+    expect(aria).toContain('Rang')
+    expect(aria).toContain('2e/5')
     expect(wrapper.findAll('.cahier-figure-tick-label--x')).toHaveLength(3)
     expect(wrapper.text()).toContain('1 h 30')
     const marker = wrapper.get('.mobilite-raccordement-curve__marker')
@@ -114,6 +121,7 @@ describe('CahierMobiliteRaccordementCurve — Visiter la Bretagne', () => {
     expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
     expect(wrapper.find('[data-series="reference"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Aucun groupe comparé')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).toContain('Aucun groupe comparé actif')
     expect(wrapper.text()).not.toContain('Bretagne — moyenne')
   })
 
@@ -136,16 +144,15 @@ describe('CahierMobiliteRaccordementCurve — Visiter la Bretagne', () => {
     })
     expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
     expect(wrapper.text()).toContain('lecture refusée')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).toContain('Comparaison indisponible')
     await wrapper.get('.mobilite-raccordement-curve__retry').trigger('click')
     expect(retry).toHaveBeenCalledTimes(1)
   })
 
   it('exposes bare tooltip values with full units and the served rank in the accessible reading', async () => {
     const wrapper = mount(CahierMobiliteRaccordementCurve, { props: { figure: curveFigure(), comparison: ready } })
-    const hitboxes = wrapper.findAll('.mobilite-raccordement-curve__hitbox')
-    const markerHitbox = hitboxes.find((hitbox) =>
-      (hitbox.attributes('aria-label') ?? '').includes('1 h 30 (90 min)'))!
-    await markerHitbox.trigger('focus')
+    const surface = wrapper.get('.mobilite-raccordement-curve__hit-surface')
+    await surface.trigger('focus')
     const tooltip = wrapper.get('.mobilite-raccordement-curve__tooltip')
     expect(tooltip.text()).not.toContain('%')
     const row = tooltip.findAll('.cahier-figure-tooltip-row')
@@ -165,7 +172,7 @@ describe('CahierMobiliteRaccordementCurve — Visiter la Bretagne', () => {
       props: { figure: curveFigure(), comparison: ready },
       attachTo: document.body,
     })
-    const hitbox = wrapper.findAll('.mobilite-raccordement-curve__hitbox')[1]!
+    const hitbox = wrapper.get('.mobilite-raccordement-curve__hit-surface')
     await hitbox.trigger('focus')
     expect(wrapper.find('.mobilite-raccordement-curve__tooltip').exists()).toBe(true)
     await hitbox.trigger('keydown', { key: 'Escape' })
@@ -175,6 +182,108 @@ describe('CahierMobiliteRaccordementCurve — Visiter la Bretagne', () => {
     document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     await wrapper.vm.$nextTick()
     expect(wrapper.find('.mobilite-raccordement-curve__tooltip').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('breaks the path across missing values and never draws a baseline mark for them', () => {
+    const figure = curveFigure({
+      trajectory: {
+        ...trajectory,
+        ticks: [
+          { detail: 't0000', label: '0' },
+          { detail: 't0045', label: '45' },
+          { detail: 't0090', label: '1 h 30' },
+          { detail: 't0120', label: '2 h' },
+          { detail: 't0360', label: '6 h' },
+        ],
+      },
+      points: [
+        point('t0000', 0, 0),
+        point('t0045', 45, 0.2),
+        point('t0090', 90, null),
+        point('t0120', 120, 0.5),
+        point('t0360', 360, 0.8),
+      ],
+      axis: { values: [
+        { detail: 't0000', numericValue: 0 },
+        { detail: 't0045', numericValue: 45 },
+        { detail: 't0090', numericValue: 90 },
+        { detail: 't0120', numericValue: 120 },
+        { detail: 't0360', numericValue: 360 },
+      ], minimum: 0, maximum: 360 },
+      comparison: null,
+    })
+    const wrapper = mount(CahierMobiliteRaccordementCurve, { props: { figure, comparison: { status: 'unavailable' } } })
+    const points = wrapper.findAll('.mobilite-raccordement-curve__point--territory')
+    expect(points).toHaveLength(4)
+    expect(points.map((point) => point.attributes('data-value'))).toEqual(['0', '0.2', '0.5', '0.8'])
+    const path = wrapper.get('.mobilite-raccordement-curve__territory').attributes('d')!
+    expect(path).not.toContain('NaN')
+    expect((path.match(/M/g) ?? [])).toHaveLength(2)
+    expect((path.match(/L/g) ?? [])).toHaveLength(2)
+    expect(wrapper.findAll('.cahier-figure-tick-label--x')).toHaveLength(5)
+    wrapper.unmount()
+  })
+
+  it('does not draw a marker vertex at zero when the marker value is missing', () => {
+    const figure = curveFigure()
+    figure.points = [point('t0000', 0, 0), point('t0090', 90, null), point('t0360', 360, 0.8)]
+    figure.axis = { values: [
+      { detail: 't0000', numericValue: 0 },
+      { detail: 't0090', numericValue: 90 },
+      { detail: 't0360', numericValue: 360 },
+    ], minimum: 0, maximum: 360 }
+    const wrapper = mount(CahierMobiliteRaccordementCurve, { props: { figure, comparison: ready } })
+    expect(wrapper.find('.mobilite-raccordement-curve__marker').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-raccordement-curve__marker-point').exists()).toBe(false)
+    const markerLabel = wrapper.get('.mobilite-raccordement-curve__marker-label')
+    expect(markerLabel.text()).toBe('1 h 30 (90 min)')
+    wrapper.unmount()
+  })
+
+  it('positions semantic detail names from declared numeric coordinates, never from names or indices', async () => {
+    const figure = curveFigure({
+      trajectory: {
+        endpoints: ['depart', 'fin'],
+        axis: 'numeric',
+        axisLabels: { x: 'Temps de trajet (minutes)', y: 'Population joignable (%)' },
+        ticks: [
+          { detail: 'depart', label: '0' },
+          { detail: 'milieu', label: '1 h 30' },
+          { detail: 'fin', label: '6 h' },
+          { detail: 'inconnu', label: 'sans coordonnée' },
+        ],
+        marker: { detail: 'milieu', label: '1 h 30 (90 min)' },
+      },
+      points: [point('depart', 0, 0), point('milieu', 90, 0.5), point('fin', 360, 0.8)],
+      axis: { values: [
+        { detail: 'depart', numericValue: 0 },
+        { detail: 'milieu', numericValue: 90 },
+        { detail: 'fin', numericValue: 360 },
+      ], minimum: 0, maximum: 360 },
+    })
+    const wrapper = mount(CahierMobiliteRaccordementCurve, { props: { figure, comparison: ready } })
+    expect(wrapper.findAll('.cahier-figure-tick-label--x')).toHaveLength(3)
+    expect(wrapper.text()).not.toContain('sans coordonnée')
+    const path = wrapper.get('.mobilite-raccordement-curve__territory').attributes('d')!
+    expect(path).not.toContain('NaN')
+    expect((path.match(/L/g) ?? [])).toHaveLength(2)
+    const surface = wrapper.get('.mobilite-raccordement-curve__hit-surface')
+    await surface.trigger('focus')
+    expect(wrapper.get('.mobilite-raccordement-curve__tooltip').text()).toContain('1 h 30')
+    wrapper.unmount()
+  })
+
+  it('omits a served 1/1 rank from the figure accessible name', () => {
+    const figure = curveFigure()
+    figure.markerValue = {
+      ...figure.markerValue!,
+      fact: { ...figure.markerValue!.fact,
+        comparison: { ...figure.markerValue!.fact.comparison!,
+          rank: { position: 1, size: 1 } } },
+    }
+    const wrapper = mount(CahierMobiliteRaccordementCurve, { props: { figure, comparison: ready } })
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).not.toContain('Rang')
     wrapper.unmount()
   })
 

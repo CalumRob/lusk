@@ -59,9 +59,10 @@ function percentPosition(candidate: number | null): number {
 
 const fillPercent = computed(() => percentPosition(value.value))
 const referencePercent = computed(() => percentPosition(reference.value))
+const valueOnFill = computed(() => value.value !== null && fillPercent.value >= 92)
 const valueStyle = computed(() => ({
   left: `${fillPercent.value}%`,
-  transform: fillPercent.value >= 92 ? 'translateX(-100%)' : 'translateX(0.35rem)',
+  transform: valueOnFill.value ? 'translateX(-100%)' : 'translateX(0.35rem)',
 }))
 const referenceStyle = computed(() => {
   const percent = referencePercent.value
@@ -82,13 +83,20 @@ const comparisonDetail = computed(() => {
   }
 })
 
+const publicationNotes = computed(() => [
+  ...(props.figure.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
+  ...(props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`),
+])
+
 const accessibleLabel = computed(() => {
   const parts = [props.figure.figureTitle, 'Jauge de 0 à 100 %.',
     `Territoire : ${valueLabel.value}`]
   if (props.comparison.status === 'loading') {
     parts.push('Groupe comparé en cours de chargement')
   } else if (props.comparison.status === 'error') {
-    parts.push(`Groupe comparé indisponible : ${props.comparison.error ?? 'échec du chargement'}`)
+    parts.push(props.figure.unavailableComparisons?.length
+      ? `Comparaison indisponible : ${props.figure.unavailableComparisons.join(', ')}`
+      : `Groupe comparé indisponible : ${props.comparison.error ?? 'échec du chargement'}`)
   } else if (props.comparison.status === 'unavailable') {
     parts.push('Groupe comparé indisponible')
   } else if (reference.value !== null && comparisonDetail.value) {
@@ -98,6 +106,7 @@ const accessibleLabel = computed(() => {
   } else {
     parts.push('Groupe comparé indisponible')
   }
+  parts.push(...publicationNotes.value)
   return parts.join('. ')
 })
 
@@ -112,7 +121,7 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => [
   {
     key: 'comparison',
     label: GROUPE_COMPARE_LABEL,
-    marker: 'dash',
+    marker: 'tick',
     tone: 'peer',
     ariaLabel: `${GROUPE_COMPARE_LABEL} : ${comparisonDetail.value?.label ?? 'Indisponible'}`,
   },
@@ -125,10 +134,14 @@ const legendColors = {
 
 const stateMessage = computed(() => {
   if (props.comparison.status === 'loading') return 'Chargement du groupe comparé…'
-  if (props.comparison.status === 'error') return props.comparison.error ?? 'Groupe comparé indisponible.'
+  if (props.comparison.status === 'error') {
+    return props.figure.unavailableComparisons?.length ? null : props.comparison.error ?? 'Groupe comparé indisponible.'
+  }
   if (props.comparison.status === 'unavailable') return 'Groupe comparé indisponible pour cette sélection.'
   if (props.comparison.status === 'idle') return 'Aucune comparaison active : aucun repère de groupe comparé n’est affiché.'
-  if (reference.value === null) return 'Aucun repère de groupe comparé disponible pour cette sélection.'
+  if (reference.value === null && (props.figure.unavailableComparisons?.length ?? 0) === 0) {
+    return 'Aucun repère de groupe comparé disponible pour cette sélection.'
+  }
   return null
 })
 </script>
@@ -150,7 +163,11 @@ const stateMessage = computed(() => {
           :data-value="value"
           :style="{ width: `${fillPercent}%` }"
         />
-        <span class="mobilite-share-track__value" :style="valueStyle">{{ valueLabel }}</span>
+        <span
+          class="mobilite-share-track__value"
+          :class="{ 'mobilite-share-track__value--on-fill': valueOnFill }"
+          :style="valueStyle"
+        >{{ valueLabel }}</span>
         <template v-if="reference !== null">
           <span
             class="mobilite-share-track__reference"
@@ -176,6 +193,7 @@ const stateMessage = computed(() => {
       label="Territoire et groupe comparé"
     />
 
+    <p v-for="note in publicationNotes" :key="note" class="mobilite-share-track__state" role="note">{{ note }}</p>
     <p v-if="stateMessage" class="mobilite-share-track__state" role="status">{{ stateMessage }}</p>
     <button
       v-if="comparison.status === 'error' && comparison.retry"
@@ -208,21 +226,19 @@ const stateMessage = computed(() => {
   inset-inline-start: 0;
   min-width: 0;
   border-radius: var(--radius-sm) 2px 2px var(--radius-sm);
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--cahier-theme-strong, var(--brand-600)) 74%, transparent),
-    var(--cahier-theme-strong, var(--brand-600))
-  );
+  background-color: var(--cahier-theme-strong, var(--brand-600));
+  background-image: none;
 }
 .mobilite-share-track__value {
   position: absolute;
   bottom: 0.55rem;
-  color: var(--cahier-ink, var(--text-primary));
+  color: var(--text-primary);
   font: var(--text-body-sm);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.mobilite-share-track__value--on-fill { color: var(--paper); }
 .mobilite-share-track__reference {
   position: absolute;
   top: 1.35rem;

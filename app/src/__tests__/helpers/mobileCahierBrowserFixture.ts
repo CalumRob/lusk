@@ -178,6 +178,11 @@ export async function mountCahierMobiliteRaccordementCurve(container: Element) {
         fact: { ...point.fact, value: Math.min(1, (point.fact.value ?? 0) * 0.82) } })),
     },
     trajectory: page.trajectory,
+    axis: {
+      values: points.map((point) => ({ detail: point.fact.detail!, numericValue: point.fact.axisValue! })),
+      minimum: 0,
+      maximum: Math.max(...points.map((point) => point.fact.axisValue ?? 0)),
+    },
     markerValue: contentFact(page.trajectory.marker!.detail, 0.38),
     comparisonLabel: 'Moyenne des communes de la classe de densité',
     prose: [],

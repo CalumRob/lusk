@@ -81,6 +81,19 @@ describe('CahierMobiliteShareTrack — Couverture du territoire', () => {
     expect(wrapper.get('.mobilite-share-track__reference-value').text()).toBe('0 %')
   })
 
+  it('uses fill-aware text roles for low and high coverage', () => {
+    const low = mount(CahierMobiliteShareTrack, { props: { figure: shareFigure(), comparison: ready } })
+    expect(low.get('.mobilite-share-track__value').classes()).not.toContain('mobilite-share-track__value--on-fill')
+    low.unmount()
+
+    const figure = shareFigure()
+    figure.value = { ...figure.value, fact: { ...figure.value.fact, value: 1 } }
+    const high = mount(CahierMobiliteShareTrack, { props: { figure, comparison: ready } })
+    expect(high.get('.mobilite-share-track__value').classes()).toContain('mobilite-share-track__value--on-fill')
+    expect(high.get('.mobilite-share-track__value').attributes('style')).toContain('translateX(-100%)')
+    high.unmount()
+  })
+
   it('keeps a null share honestly unavailable while the comparison state stays explicit', () => {
     const figure = shareFigure()
     figure.value = {
