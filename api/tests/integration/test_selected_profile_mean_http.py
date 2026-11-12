@@ -627,8 +627,9 @@ def test_mean_request_respects_the_shared_work_limit(mean_db, monkeypatch):
     try:
         assert client.post("/api/resources/read-batch",
                            json={"items": items}).status_code == 200
+        single_item = {key: value for key, value in items[0].items() if key != "id"}
         monkeypatch.setattr(resource_execution, "MAX_WORK_UNITS", 10)
-        over_budget = client.post("/api/resources/read", json=items[0])
+        over_budget = client.post("/api/resources/read", json=single_item)
         over_budget_batch = client.post("/api/resources/read-batch",
                                         json={"items": items})
     finally:
