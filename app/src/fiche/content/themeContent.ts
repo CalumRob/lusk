@@ -397,7 +397,7 @@ export interface MobiliteNetworksSection
 
 export interface MobiliteStationnementRavitaillementSection
   extends ContentSectionBase<'stationnement-ravitaillement', MobiliteStationnementRavitaillementEvidence> {
-  label: 'Se garer et se ravitiller'
+  label: 'Se garer et se ravitailler'
 }
 
 export interface MobiliteShareSection

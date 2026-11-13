@@ -142,6 +142,7 @@ const tooltipRows = computed<readonly CahierTooltipRow[]>(() => {
                 ? UNAVAILABLE_LABEL
                 : formatValue(comparedValue),
               rank: formatServedRank(compared.ranks?.[categoryIndex]),
+              rankEvidence: compared.ranks?.[categoryIndex],
               rankAria: formatServedRankAria(compared.ranks?.[categoryIndex]),
             },
           }

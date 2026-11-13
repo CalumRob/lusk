@@ -15,6 +15,7 @@
     "verify:network-means": "node scripts/verify-network-means.mjs",
     "verify:aedar-layout-stability": "node scripts/verify-aedar-layout-stability.mjs",
     "verify:aedar-demand": "node scripts/verify-aedar-demand.mjs",
+    "verify:rank-circles": "node scripts/verify-rank-circles.mjs",
     "preview": "vite preview",
     "test": "vitest run"
   },

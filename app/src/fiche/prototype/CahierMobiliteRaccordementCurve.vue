@@ -300,6 +300,7 @@ function tooltipRows(detail: string): readonly CahierTooltipRow[] {
     comparison = {
       value: visiblePercent(group?.value ?? null),
       rank: rankText,
+      rankEvidence: rank,
       rankAria,
       ariaLabel: `${GROUPE_COMPARE_LABEL} : ${ariaPercent(group?.value ?? null, unit)} (${comparisonDetail.value?.statistic ?? 'Moyenne'} des ${comparisonDetail.value?.label ?? 'groupe comparé'})${rankAria ? `. Rang ${rankAria}` : ''}`,
     }

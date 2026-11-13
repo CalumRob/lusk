@@ -246,7 +246,7 @@ describe('resolveMobiliteThemeContent — #954 page 2 contract', () => {
     const content = resolveMobiliteThemeContent(factsWith(sharingFacts()), metadata)
     const section = content.units[1].sections[1]
 
-    expect([section.key, section.label]).toEqual(['stationnement-ravitaillement', 'Se garer et se ravitiller'])
+    expect([section.key, section.label]).toEqual(['stationnement-ravitaillement', 'Se garer et se ravitailler'])
     expect(section.lecture).toBeNull()
     expect(section.evidence?.kind).toBe('mobilite-stationnement-ravitaillement')
     if (section.evidence?.kind !== 'mobilite-stationnement-ravitaillement') throw new Error('Paired evidence expected')

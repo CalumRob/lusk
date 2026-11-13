@@ -1,3 +1,4 @@
+@import "./cahierRankCircle.css";
 /*
  * The Cahier figure foundation. Figure-specific marks stay local; this file
  * owns only the shared frame grammar, type treatment, surfaces, and tooltip
@@ -462,6 +463,9 @@
 
 .cahier-figure-tooltip-comparison-rank {
   grid-column: 2;
+  /* The shared extreme outline is an overlay outside the ink box; this stable
+   * clearance keeps its stroke off the compared value above (#1004). */
+  margin-block-start: 3px;
   color: var(--brand-200);
   font: inherit;
   font-weight: 700;

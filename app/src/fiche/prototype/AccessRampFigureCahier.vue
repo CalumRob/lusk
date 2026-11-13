@@ -169,6 +169,7 @@ const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
       row.comparison = {
         value: compared.visible,
         rank: formatServedRank(point.referenceRank),
+        rankEvidence: point.referenceRank,
         ariaLabel: groupeCompareAria(compared.aria, formatServedRankAria(point.referenceRank), timeRamp.comparisonLabel ?? 'Indisponible'),
       }
     }

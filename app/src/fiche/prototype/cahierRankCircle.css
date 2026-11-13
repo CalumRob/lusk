@@ -1,0 +1,41 @@
+/*
+ * The shared hand-drawn outline of an extreme rank (#1004). It is decoration:
+ * the ink box keeps the same padding whether or not the outline is drawn, and
+ * both strokes are absolutely positioned overlays, so gaining or losing the
+ * circle never moves the rank, its value line, or the copy around it. The same
+ * file dresses the rank of the page and the rank already shown in a tooltip;
+ * only the shared eligibility rule (figureGrammaire.estRangExtreme) decides
+ * which ranks are circled.
+ */
+.cahier-rank-ink {
+  position: relative;
+  display: inline-block;
+  padding: 4px 2px 5px;
+  line-height: 1.2;
+}
+
+.cahier-rank-ink.is-extreme::before,
+.cahier-rank-ink.is-extreme::after {
+  position: absolute;
+  z-index: 0;
+  content: '';
+  pointer-events: none;
+}
+
+.cahier-rank-ink.is-extreme::before {
+  inset: -2px -2px -3px;
+  border: 1px solid var(--red, var(--editorial-margin, #a44f51));
+  border-top-color: color-mix(in srgb, var(--red, var(--editorial-margin, #a44f51)) 48%, transparent);
+  border-radius: var(--rank-radius-a, 48% 53% 46% 52% / 54% 45% 55% 47%);
+  transform: rotate(var(--rank-angle-a, -4deg));
+}
+
+.cahier-rank-ink.is-extreme::after {
+  inset: -3px -2px -2px -3px;
+  border: 1px solid transparent;
+  border-left-color: color-mix(in srgb, var(--red, var(--editorial-margin, #a44f51)) 48%, transparent);
+  border-right-color: color-mix(in srgb, var(--red, var(--editorial-margin, #a44f51)) 72%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--red, var(--editorial-margin, #a44f51)) 72%, transparent);
+  border-radius: var(--rank-radius-b, 53% 46% 54% 47% / 46% 56% 44% 54%);
+  transform: rotate(var(--rank-angle-b, 4deg));
+}

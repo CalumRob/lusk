@@ -385,7 +385,7 @@ dans la prose seulement, jamais dans un second graphe.
 _Avoid_: une troisième courbe de référence nommée, une moyenne de seulement les
 communes routées, un repère en minutes écrit en dur dans le template.
 
-**Se garer et se ravitiller**:
+**Se garer et se ravitailler**:
 La section Mobilité qui remplace les figures « Stationnement » et
 « Motorisation » séparées : deux colonnes appariées, « Stationnement vélo et
 voiture » et « Bornes de recharge et station-services ». Chaque colonne porte
