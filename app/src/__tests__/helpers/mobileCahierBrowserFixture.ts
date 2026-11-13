@@ -7,8 +7,9 @@ import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import AccessRampFigureCahier from '@/fiche/prototype/AccessRampFigureCahier.vue'
 import AedarEquipmentQuantileFigureCahier from '@/fiche/prototype/AedarEquipmentQuantileFigureCahier.vue'
 import CahierMobiliteRaccordementCurve from '@/fiche/prototype/CahierMobiliteRaccordementCurve.vue'
+import CahierMobiliteComparisonBars from '@/fiche/prototype/CahierMobiliteComparisonBars.vue'
 import type { CahierPagination } from '@/fiche/prototype/cahierPagination'
-import type { ContentFact, MobiliteRaccordementEvidence, ThemeContent } from '@/fiche/content/themeContent'
+import type { ContentFact, MobiliteBarsFigureEvidence, MobiliteRaccordementEvidence, ThemeContent } from '@/fiche/content/themeContent'
 import type { TimeRampFigureData } from '@/fiche/content/territoryFacts'
 import type { ThemeMetadata } from '@/payload/types'
 import { routes } from '@/router'
@@ -190,6 +191,82 @@ export async function mountCahierMobiliteRaccordementCurve(container: Element) {
   }
   const app = createApp(CahierMobiliteRaccordementCurve, {
     figure: evidence,
+    comparison: { status: 'ready' },
+  })
+  app.mount(container)
+  await nextTick()
+  return app
+}
+
+/** #997 — the page-2 compared protected/shared mean stack, for the browser proof. */
+export function mobiliteNetworkMeanFigure(
+  variant: 'coherent' | 'mismatch' = 'coherent',
+): MobiliteBarsFigureEvidence {
+  const members = ['22001', '22002']
+  const scope = { kind: 'communes-epci' as const, label: 'communes de EPCI X' }
+  const fact = (
+    key: string,
+    detail: string,
+    value: number,
+    unit: string,
+    reference: number | null = null,
+    eligibleMembers: readonly string[] = members,
+  ): ContentFact => ({
+    label: detail,
+    fact: {
+      key, detail, value, unit, availability: 'complete', provenance: null,
+      comparison: reference === null ? null : {
+        direction: 'plus-est-mieux', scope, rank: { position: 1, size: 2 },
+        reference: { kind: 'mean', value: reference, eligibleMembers },
+      },
+      comparisonBasis: reference === null ? 'territory-median' : 'territory-mean',
+      reason: null,
+    },
+  })
+  const segment = (
+    key: string, label: string, legendLabel: string, value: number, raw: number,
+    reference: number, rawReference: number, eligibleMembers: readonly string[] = members,
+  ) => ({
+    key, label, legendLabel,
+    value: fact('offre_cyclable', key, value, 'km / 1 000 hab.', reference, eligibleMembers),
+    rawValue: fact('offre_cyclable', key.replace('_km_1000', '_longueur'), raw, 'km', rawReference,
+      eligibleMembers),
+  })
+  return {
+    figureTitle: 'Longueur du réseau par habitant',
+    unit: 'km / 1 000 hab.',
+    xAxisTitle: 'Réseau',
+    yAxisTitle: 'km / 1 000 hab.',
+    comparisonLabel: 'Moyenne des communes de EPCI X',
+    categories: [
+      { key: 'walkTransit', label: 'Réseau piéton', axisLabel: 'à pied', tone: 't',
+        value: fact('reseaux_par_habitant', 't_km_1000', 12, 'km / 1 000 hab.', 10),
+        rawValue: fact('reseaux', 't_longueur', 10, 'km', 14), segments: [], splitNote: null },
+      { key: 'bike', label: 'Réseau cyclable', axisLabel: 'à vélo', tone: 'b',
+        value: fact('reseaux_par_habitant', 'b_km_1000', 8, 'km / 1 000 hab.', 6),
+        rawValue: fact('reseaux', 'b_longueur', 20, 'km', 12),
+        segments: [
+          segment('protege_km_1000', 'Protégé', 'Réseau cyclable protégé', 5, 4, 4, 8),
+          segment('partage_km_1000', 'Partagé', 'Réseau cyclable partagé', 3, 2, 2, 4,
+            variant === 'mismatch' ? ['22001', '22003'] : members),
+        ],
+        splitNote: null,
+        ...(variant === 'coherent' ? { comparisonSplit: true } : {
+          comparisonSplitNote: 'Répartition comparée Protégé/Partagé indisponible : les moyennes servies ne portent pas les mêmes communes.',
+        }) },
+      { key: 'car', label: 'Réseau automobile', axisLabel: 'en voiture', tone: 'c',
+        value: fact('reseaux_par_habitant', 'c_km_1000', 80, 'km / 1 000 hab.', 70),
+        rawValue: fact('reseaux', 'c_longueur', 30, 'km', 30), segments: [], splitNote: null },
+    ],
+  }
+}
+
+export async function mountMobiliteNetworkMeans(
+  container: Element,
+  variant: 'coherent' | 'mismatch' = 'coherent',
+) {
+  const app = createApp(CahierMobiliteComparisonBars, {
+    figure: mobiliteNetworkMeanFigure(variant),
     comparison: { status: 'ready' },
   })
   app.mount(container)
