@@ -11,14 +11,21 @@
 #   - candidate and prior-baseline artifact sorties.
 #
 # One random `serving_it_*` schema is created and seeded with the normal
-# baseline publication. Then:
-#   MISMATCH (newer unrelated scalar, newer other-owner marker) -> the normal
-#     scoped publication wrapper hard-refuses with zero writes (whole-schema
-#     digest unchanged);
-#   MATCH -> the guard passes; the normal registered publishers then publish the
-#     candidate scalar, the dependent DPE profile binding, and the typed/series
-#     owners, proving the publication delta is exactly the three scoped
-#     indicators and every unrelated owner is a no-op.
+# baseline publication. Unrelated owners (demographic/economy/Milieux/series)
+# are then advanced to newer publication markers, exactly as a live serving
+# database may be ahead of the local accepted pack. Then:
+#   MISMATCH (newer affected scalar/profile/selected-reading marker or linked
+#     dependency) -> the normal scoped publication wrapper hard-refuses with
+#     zero writes (whole-schema digest unchanged);
+#   MATCH -> the guard passes; the normal registered publishers publish the
+#     candidate scalar, the dependent DPE profile binding, and the linked
+#     Habitat selected reading inside one atomic transaction. The unrelated
+#     owners keep their newer markers and their rows are byte-identical;
+#   RECOVERY -> the same normal wrapper/plan is called with the frozen baseline
+#     as target and the published candidate as current; it restores the exact
+#     baseline affected versions and removes the three scoped facts through the
+#     registered retirement policy, without touching unrelated owners;
+#   REPUBLISH -> the candidate is published again through the same normal path.
 # The test-only fixture repair below rematerializes ONE invalid demographic
 # reading on private copies; it does not make the production evidence current.
 pkgload::load_all(".", quiet = TRUE)
@@ -85,6 +92,65 @@ rematerialize_demographic_fixture <- function(directory) {
 }
 rematerialize_demographic_fixture(candidate_dir)
 rematerialize_demographic_fixture(baseline_dir)
+
+# TEST-ONLY preparation (private copies): make the candidate start from the
+# prior profile binding so the normal metadata-only companion refresh and its
+# artifact restore on failure are exercised. Profile facts are identical; only
+# the declared `required_scalar_version` is re-bound by the wrapper.
+unlink(file.path(candidate_dir, "profile-serving"), recursive = TRUE)
+stopifnot(file.copy(file.path(baseline_dir, "profile-serving"), candidate_dir,
+                    recursive = TRUE))
+stopifnot(file.copy(file.path(baseline_dir, "scalar-serving", "binding.json"),
+                    file.path(candidate_dir, "scalar-serving", "binding.json"),
+                    overwrite = TRUE))
+for (path in list.files(candidate_dir, recursive = TRUE, full.names = TRUE,
+                        all.files = TRUE)) Sys.chmod(path, mode = "0666")
+candidate_binding_before <- read_profile_scalar_binding(candidate_dir)
+
+# TEST-ONLY source/vintage fixture (private candidate copy): attach two source
+# rows to a scoped indicator's provenance/descriptor. Forward will insert them
+# through the normal scalar publisher; recovery removes the scoped indicator and
+# must retire the unreferenced source while preserving the one referenced by an
+# unrelated series owner. This exercises the registered source retirement policy
+# without changing the canonical artifacts.
+add_scoped_test_sources <- function(directory) {
+  owner_dir <- file.path(directory, "scalar-serving", "mobilite")
+  projection <- read_scalar_serving_artifact(owner_dir)
+  ids <- c("scope-test-unreferenced", "scope-test-referenced")
+  projection$datasets <- rbind(
+    projection$datasets,
+    data.frame(source_id = ids,
+               name = c("Scope test unreferenced source",
+                        "Scope test referenced source"),
+               stringsAsFactors = FALSE))
+  projection$vintages <- rbind(
+    projection$vintages,
+    data.frame(source_id = ids,
+               vintage_id = rep("2025/2025-01-01", length(ids)),
+               version = "2025",
+               reference_date = as.Date("2025-01-01"),
+               publication_date = as.Date("2025-01-02"),
+               stringsAsFactors = FALSE))
+  indicator <- "stations_service"
+  descriptor <- which(projection$descriptors$indicator_id == indicator)
+  stopifnot(length(descriptor) == 1L)
+  projection$descriptors$allowed_sources[[descriptor]] <- c(
+    projection$descriptors$allowed_sources[[descriptor]], ids)
+  territory <- projection$facts$territory_id[
+    projection$facts$indicator_id == indicator][[1L]]
+  projection$provenance <- rbind(
+    projection$provenance,
+    data.frame(indicator_id = rep(indicator, length(ids)),
+               territory_id = rep(territory, length(ids)),
+               source_id = ids,
+               vintage_id = rep("2025/2025-01-01", length(ids)),
+               stringsAsFactors = FALSE))
+  write_scalar_serving_artifact(projection, owner_dir)
+  invisible(ids)
+}
+scoped_test_source_ids <- add_scoped_test_sources(candidate_dir)
+for (path in list.files(candidate_dir, recursive = TRUE, full.names = TRUE,
+                        all.files = TRUE)) Sys.chmod(path, mode = "0666")
 
 Sys.setenv(PGCONNECT_TIMEOUT = "5",
   PGOPTIONS = "-c statement_timeout=180000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=300000")
@@ -244,6 +310,49 @@ tryCatch({
   http_probe("before", marker_version("scalar_observation"))
   receipt <- c(receipt, "http_before: PASS (DPE + Habitat available; scalar 3 discovered)")
 
+  # Unrelated owners are advanced to newer publication markers, exactly as a
+  # live serving database may legitimately be ahead of the local accepted pack.
+  # A scoped publication must neither require nor rewrite them.
+  affected_table <- function(name) grepl(paste0(
+    "^(table_publication$|scalar_|profile_|selected_reading_|",
+    "habitat_typed_reading$|comparison_source_lineage$|",
+    "source_dataset$|source_vintage$)"), name)
+  unrelated_digests <- function() {
+    hashes <- schema_digest()
+    hashes[!affected_table(names(hashes))]
+  }
+  newer_markers <- c(
+    demographic_typed_reading = "newer-demographic-test",
+    economy_typed_reading = "newer-economy-test",
+    economy_activity_evidence = "newer-activity-test",
+    milieux_typed_reading = "newer-milieux-test",
+    milieux_reading_absence = "newer-absence-test")
+  for (name in names(newer_markers))
+    DBI::dbExecute(connection, paste(
+      "UPDATE table_publication SET content_version=$1 WHERE table_name=$2"),
+      params = list(newer_markers[[name]], name))
+  DBI::dbExecute(connection, paste(
+    "UPDATE series_dataset_publication SET content_version='newer-series-test'"))
+  # TEST-ONLY unrelated-owner reference: a series provenance revision points at
+  # the synthetic scope source. Recovery must preserve that source row instead
+  # of deleting it and leaving a dangling owner reference.
+  DBI::dbExecute(connection, paste(
+    "INSERT INTO series_provenance_revision(provenance_revision_id, source_id,",
+    "vintage_id, source_name, dataset_name, source_version, reference_date,",
+    "publication_date, revision_hash) VALUES",
+    "('scope-test-revision','scope-test-referenced','2025/2025-01-01',",
+    "'Scope test referenced source','Scope test dataset','2025',",
+    "'2025-01-01','2025-01-02','scope-test-revision-hash')"))
+  source_rows <- function() list(
+    datasets = DBI::dbGetQuery(connection, paste(
+      "SELECT source_id, name FROM source_dataset ORDER BY source_id")),
+    vintages = DBI::dbGetQuery(connection, paste(
+      "SELECT source_id, vintage_id, version, reference_date,",
+      "publication_date FROM source_vintage ORDER BY source_id, vintage_id")))
+  source_before <- source_rows()
+  unrelated_rows_before <- unrelated_digests()
+  after_unrelated_mutation <- schema_digest()
+
   # Mismatch proofs use the normal integrated wrapper; it refuses before any
   # write, so the seeded baseline must remain byte-identical.
   Sys.setenv(LUSK_PUBLISH_HOST = config$HOST, LUSK_PUBLISH_PORT = config$PORT,
@@ -261,7 +370,7 @@ tryCatch({
   refused <- tryCatch({ publish_retained_backend_from_parquet(candidate_dir); NULL },
                       error = function(e) e)
   stopifnot(inherits(refused, "error"),
-    grepl("Serving baseline mismatch", conditionMessage(refused), fixed = TRUE))
+    grepl("Scoped publication baseline mismatch", conditionMessage(refused), fixed = TRUE))
   stopifnot(identical(mutated, schema_digest()))
   DBI::dbExecute(connection, paste(
     "UPDATE table_publication SET content_version=$1",
@@ -276,13 +385,13 @@ tryCatch({
   refused <- tryCatch({ publish_retained_backend_from_parquet(candidate_dir); NULL },
                       error = function(e) e)
   stopifnot(inherits(refused, "error"),
-    grepl("Serving baseline mismatch", conditionMessage(refused), fixed = TRUE))
+    grepl("Scoped publication baseline mismatch", conditionMessage(refused), fixed = TRUE))
   stopifnot(identical(mutated, schema_digest()))
   DBI::dbExecute(connection, paste(
     "UPDATE table_publication SET content_version=$1",
     "WHERE table_name='selected_reading'"), params = list(habitat_before))
   receipt <- c(receipt, "mismatch_owner_case: PASS (refused, zero writes)")
-  stopifnot(identical(schema_digest(), baseline_state))
+  stopifnot(identical(schema_digest(), after_unrelated_mutation))
 
   # Mismatch: a newer live declared profile, selected-reading linked clock, or
   # DPE required scalar version must refuse with zero writes.
@@ -294,7 +403,7 @@ tryCatch({
   refused <- tryCatch({ publish_retained_backend_from_parquet(candidate_dir); NULL },
                       error = function(e) e)
   stopifnot(inherits(refused, "error"),
-    grepl("Serving baseline mismatch", conditionMessage(refused), fixed = TRUE))
+    grepl("Scoped publication baseline mismatch", conditionMessage(refused), fixed = TRUE))
   stopifnot(identical(mutated, schema_digest()))
   DBI::dbExecute(connection, paste(
     "UPDATE table_publication SET content_version=$1",
@@ -310,7 +419,7 @@ tryCatch({
   refused <- tryCatch({ publish_retained_backend_from_parquet(candidate_dir); NULL },
                       error = function(e) e)
   stopifnot(inherits(refused, "error"),
-    grepl("Serving baseline mismatch", conditionMessage(refused), fixed = TRUE))
+    grepl("Scoped publication baseline mismatch", conditionMessage(refused), fixed = TRUE))
   stopifnot(identical(mutated, schema_digest()))
   DBI::dbExecute(connection, paste(
     "UPDATE selected_reading_descriptor SET linked_content_version=$1",
@@ -326,16 +435,56 @@ tryCatch({
   refused <- tryCatch({ publish_retained_backend_from_parquet(candidate_dir); NULL },
                       error = function(e) e)
   stopifnot(inherits(refused, "error"),
-    grepl("Serving baseline mismatch", conditionMessage(refused), fixed = TRUE))
+    grepl("Scoped publication baseline mismatch", conditionMessage(refused), fixed = TRUE))
   stopifnot(identical(mutated, schema_digest()))
   DBI::dbExecute(connection, paste(
     "UPDATE profile_descriptor SET required_scalar_version=$1",
     "WHERE indicator_id='distribution_dpe'"), params = list(required_before))
   receipt <- c(receipt,
     "mismatch_profile_cases: PASS (refused, zero writes)")
-  stopifnot(identical(schema_digest(), baseline_state),
+
+  # Mismatch: newer live shared source_dataset/source_vintage rows must refuse
+  # with zero writes. These rows are upserted by the whole-snapshot scalar and
+  # profile publishers, so they are part of the affected closure.
+  shared_source_before <- DBI::dbGetQuery(connection, paste(
+    "SELECT name FROM source_dataset WHERE source_id='stationnement-velo'"))$name[[1L]]
+  DBI::dbExecute(connection, paste(
+    "UPDATE source_dataset SET name='newer-shared-source-test'",
+    "WHERE source_id='stationnement-velo'"))
+  mutated <- schema_digest()
+  refused <- tryCatch({ publish_retained_backend_from_parquet(candidate_dir); NULL },
+                      error = function(e) e)
+  stopifnot(inherits(refused, "error"),
+    grepl("Scoped publication baseline mismatch", conditionMessage(refused), fixed = TRUE))
+  stopifnot(identical(mutated, schema_digest()))
+  DBI::dbExecute(connection, paste(
+    "UPDATE source_dataset SET name=$1 WHERE source_id='stationnement-velo'"),
+    params = list(shared_source_before))
+
+  shared_vintage_before <- DBI::dbGetQuery(connection, paste(
+    "SELECT version, reference_date, publication_date FROM source_vintage",
+    "WHERE source_id='stationnement-velo'"))
+  DBI::dbExecute(connection, paste(
+    "UPDATE source_vintage SET version='newer-shared-vintage-test'",
+    "WHERE source_id='stationnement-velo'"))
+  mutated <- schema_digest()
+  refused <- tryCatch({ publish_retained_backend_from_parquet(candidate_dir); NULL },
+                      error = function(e) e)
+  stopifnot(inherits(refused, "error"),
+    grepl("Scoped publication baseline mismatch", conditionMessage(refused), fixed = TRUE))
+  stopifnot(identical(mutated, schema_digest()))
+  DBI::dbExecute(connection, paste(
+    "UPDATE source_vintage SET version=$1, reference_date=$2, publication_date=$3",
+    "WHERE source_id='stationnement-velo'"),
+    params = list(shared_vintage_before$version[[1L]],
+                  shared_vintage_before$reference_date[[1L]],
+                  shared_vintage_before$publication_date[[1L]]))
+  receipt <- c(receipt,
+    "mismatch_source_cases: PASS (refused, zero writes)")
+
+  stopifnot(identical(schema_digest(), after_unrelated_mutation),
             identical(read_profile_scalar_binding(candidate_dir),
-                      profile_scalar_binding(baseline_dir)))
+                      candidate_binding_before))
   profile_facts_before <- DBI::dbGetQuery(connection, paste(
     "SELECT * FROM profile_observation",
     "ORDER BY indicator_id,territory_id,detail_key,sex_key"))
@@ -363,7 +512,7 @@ tryCatch({
     grepl("injected habitat failure", conditionMessage(failed), fixed = TRUE))
   stopifnot(identical(before_failure, schema_digest()),
             identical(read_profile_scalar_binding(candidate_dir),
-                      profile_scalar_binding(baseline_dir)))
+                      candidate_binding_before))
   DBI::dbExecute(connection,
     "DROP TRIGGER reject_habitat_smoke ON habitat_typed_reading")
   DBI::dbExecute(connection, "DROP FUNCTION reject_habitat_smoke()")
@@ -372,7 +521,7 @@ tryCatch({
 
   # MATCH: ONE actual normal wrapper call. The wrapper refreshes the profile
   # companion, passes the guard, and publishes all owners atomically.
-  publish_retained_backend_from_parquet(candidate_dir)
+  forward_receipt <- publish_retained_backend_from_parquet(candidate_dir)
   candidate_reference <- project_territory_reference(nanoparquet::read_parquet(
     file.path(candidate_dir, "territoires.parquet")))
   candidate_snapshot <- project_retained_scalar_snapshot(candidate_dir,
@@ -385,6 +534,8 @@ tryCatch({
   candidate_linked <- retained_selected_linked_version(candidate_habitat,
     candidate_profile$version, candidate_scalar_version,
     candidate_reference$content_version)
+  stopifnot(identical(read_profile_scalar_binding(candidate_dir),
+                      candidate_scalar_version))
 
   after_markers <- retained_backend_markers(connection)
   stopifnot(identical(marker_version("scalar_observation"),
@@ -410,11 +561,10 @@ tryCatch({
     "SELECT * FROM profile_observation_source",
     "ORDER BY indicator_id,territory_id,detail_key,sex_key,source_id,vintage_id"))),
     identical(profile_source_digest_before, profile_source_digest()))
-  unchanged <- c("territory_reference", "demographic_typed_reading",
-                 "selected_reading", "economy_typed_reading",
-                 "economy_activity_evidence", "milieux_typed_reading",
-                 "milieux_reading_absence")
-  for (table in unchanged) {
+  # The selected reading keeps its content marker (only its linked dependency
+  # moves); the reference is a required match that is never rewritten; the
+  # unrelated owners keep the newer markers they had before this publication.
+  for (table in c("territory_reference", "selected_reading")) {
     before <- baseline_markers$tables[baseline_markers$tables$table_name == table, ]
     after <- after_markers$tables[after_markers$tables$table_name == table, ]
     stopifnot(nrow(before) == 1L, nrow(after) == 1L,
@@ -422,8 +572,48 @@ tryCatch({
       identical(before$reference_content_version[[1L]],
                 after$reference_content_version[[1L]]))
   }
-  stopifnot(identical(baseline_markers$series$content_version[[1L]],
-                      after_markers$series$content_version[[1L]]))
+  for (table in names(newer_markers)) {
+    live <- after_markers$tables[after_markers$tables$table_name == table, ]
+    stopifnot(nrow(live) == 1L,
+      identical(as.character(live$content_version[[1L]]),
+                newer_markers[[table]]))
+  }
+  stopifnot(identical(as.character(after_markers$series$content_version[[1L]]),
+                      "newer-series-test"),
+    identical(unrelated_rows_before, unrelated_digests()))
+
+  # The forward publication inserts the two synthetic source rows through the
+  # normal scalar publisher and leaves every shared source/vintage row exactly
+  # as it was.
+  source_after_forward <- source_rows()
+  stopifnot(
+    all(scoped_test_source_ids %in% source_after_forward$datasets$source_id),
+    all(scoped_test_source_ids %in% source_after_forward$vintages$source_id),
+    all(source_after_forward$vintages$vintage_id[
+      source_after_forward$vintages$source_id %in% scoped_test_source_ids] ==
+      "2025/2025-01-01"))
+  reset_rows <- function(rows) {
+    rownames(rows) <- NULL
+    rows
+  }
+  non_test_datasets <- function(rows)
+    rows[!rows$source_id %in% scoped_test_source_ids, , drop = FALSE]
+  non_test_vintages <- function(rows)
+    rows[!rows$source_id %in% scoped_test_source_ids, , drop = FALSE]
+  stopifnot(
+    identical(reset_rows(non_test_datasets(source_after_forward$datasets)),
+              reset_rows(source_before$datasets)),
+    identical(reset_rows(non_test_vintages(source_after_forward$vintages)),
+              reset_rows(source_before$vintages)))
+  stopifnot(
+    all(scoped_test_source_ids %in% forward_receipt$preserved$datasets),
+    all(vapply(scoped_test_source_ids, function(id)
+      any(grepl(id, forward_receipt$preserved$vintages, fixed = TRUE)),
+      logical(1))),
+    length(forward_receipt$retired$datasets) == 0L,
+    length(forward_receipt$retired$vintages) == 0L)
+  receipt <- c(receipt,
+    "source_forward_case: PASS (scope sources inserted and referenced; shared rows unchanged)")
 
   scope_sql <- paste(vapply(scope_ids, function(id)
     as.character(DBI::dbQuoteString(connection, id)), character(1)),
@@ -467,6 +657,109 @@ tryCatch({
   http_probe("after", candidate_scalar_version)
   receipt <- c(receipt,
     "http_after: PASS (DPE + Habitat available; scalar 3 facts + fixed ranks)")
+
+  # RECOVERY: the same normal wrapper and plan, with the frozen baseline as the
+  # target generation and the just-published candidate as the current one. The
+  # registered scalar publisher's explicit retirement policy omits the three
+  # scoped facts; the same atomic transaction restores the profile companion and
+  # the linked Habitat reading. Unrelated owners are not read or written.
+  recovery_receipt <- publish_retained_backend_from_parquet(baseline_dir,
+                                        baseline_sortie = candidate_dir)
+  restored_markers <- retained_backend_markers(connection)
+  baseline_scalar_version <- scalar_content_version(baseline_snapshot$scalar)
+  restored_scope_count <- DBI::dbGetQuery(connection, paste0(
+    "SELECT count(*) AS n FROM scalar_observation WHERE indicator_id IN (",
+    scope_sql, ")"))$n[[1L]]
+  stopifnot(
+    identical(marker_version("scalar_observation"), baseline_scalar_version),
+    identical(restored_markers$comparison$content_version[[1L]],
+              baseline_snapshot$comparison$content_version),
+    identical(restored_markers$tables$content_version[
+                restored_markers$tables$table_name == "declared_profile"],
+              baseline_markers$tables$content_version[
+                baseline_markers$tables$table_name == "declared_profile"]),
+    identical(restored_markers$profile_comparison$content_version[[1L]],
+              baseline_markers$profile_comparison$content_version[[1L]]),
+    identical(restored_markers$selected_descriptor$linked_content_version[[1L]],
+              baseline_markers$selected_descriptor$linked_content_version[[1L]]),
+    identical(DBI::dbGetQuery(connection, paste(
+      "SELECT required_scalar_version FROM profile_descriptor",
+      "WHERE indicator_id='distribution_dpe'"))$required_scalar_version[[1L]],
+      baseline_scalar_version),
+    restored_scope_count == 0L,
+    identical(profile_facts_before, DBI::dbGetQuery(connection, paste(
+      "SELECT * FROM profile_observation",
+      "ORDER BY indicator_id,territory_id,detail_key,sex_key"))),
+    identical(profile_source_digest_before, profile_source_digest()),
+    identical(unrelated_rows_before, unrelated_digests()))
+  for (table in names(newer_markers)) {
+    live <- restored_markers$tables[restored_markers$tables$table_name == table, ]
+    stopifnot(nrow(live) == 1L,
+      identical(as.character(live$content_version[[1L]]),
+                newer_markers[[table]]))
+  }
+  stopifnot(identical(as.character(
+    restored_markers$series$content_version[[1L]]), "newer-series-test"))
+  stopifnot(
+    "scope-test-unreferenced" %in% recovery_receipt$retired$datasets,
+    "scope-test-referenced" %in% recovery_receipt$preserved$datasets,
+    any(grepl("scope-test-unreferenced", recovery_receipt$retired$vintages,
+              fixed = TRUE)),
+    any(grepl("scope-test-referenced", recovery_receipt$preserved$vintages,
+              fixed = TRUE)))
+  source_after_recovery <- source_rows()
+  stopifnot(
+    !"scope-test-unreferenced" %in% source_after_recovery$datasets$source_id,
+    "scope-test-referenced" %in% source_after_recovery$datasets$source_id,
+    !"scope-test-unreferenced" %in% source_after_recovery$vintages$source_id,
+    "scope-test-referenced" %in% source_after_recovery$vintages$source_id,
+    all(source_after_recovery$vintages$vintage_id[
+      source_after_recovery$vintages$source_id == "scope-test-referenced"] ==
+      "2025/2025-01-01"),
+    DBI::dbGetQuery(connection, paste(
+      "SELECT count(*) AS n FROM series_provenance_revision",
+      "WHERE provenance_revision_id='scope-test-revision'"))$n[[1L]] == 1L,
+    identical(reset_rows(non_test_datasets(source_after_recovery$datasets)),
+              reset_rows(source_before$datasets)),
+    identical(reset_rows(non_test_vintages(source_after_recovery$vintages)),
+              reset_rows(source_before$vintages)))
+  receipt <- c(receipt,
+    "recovery_source_case: PASS (unreferenced scope source retired; referenced source preserved; shared rows exact)")
+  receipt <- c(receipt,
+    "recovery_case: PASS (normal wrapper restored the frozen affected baseline; three omitted; unrelated owners untouched)")
+
+  # REPUBLISH: the candidate can be published again through the same normal
+  # wrapper once the baseline guard state is restored.
+  publish_retained_backend_from_parquet(candidate_dir)
+  republished_markers <- retained_backend_markers(connection)
+  republished_scope_count <- DBI::dbGetQuery(connection, paste0(
+    "SELECT count(*) AS n FROM scalar_observation WHERE indicator_id IN (",
+    scope_sql, ")"))$n[[1L]]
+  stopifnot(
+    identical(marker_version("scalar_observation"), candidate_scalar_version),
+    republished_scope_count == 3L * 1267L,
+    identical(unrelated_rows_before, unrelated_digests()))
+  for (table in names(newer_markers)) {
+    live <- republished_markers$tables[
+      republished_markers$tables$table_name == table, ]
+    stopifnot(nrow(live) == 1L,
+      identical(as.character(live$content_version[[1L]]),
+                newer_markers[[table]]))
+  }
+  source_after_republish <- source_rows()
+  stopifnot(
+    all(scoped_test_source_ids %in% source_after_republish$datasets$source_id),
+    all(scoped_test_source_ids %in% source_after_republish$vintages$source_id),
+    all(source_after_republish$vintages$vintage_id[
+      source_after_republish$vintages$source_id %in% scoped_test_source_ids] ==
+      "2025/2025-01-01"),
+    DBI::dbGetQuery(connection, paste(
+      "SELECT count(*) AS n FROM series_provenance_revision",
+      "WHERE provenance_revision_id='scope-test-revision'"))$n[[1L]] == 1L)
+  receipt <- c(receipt,
+    "republish_source_case: PASS (scope sources reinserted; unrelated reference intact)")
+  receipt <- c(receipt,
+    "republish_case: PASS (candidate published again through the normal wrapper)")
 }, error = function(e) {
   failure <<- conditionMessage(e)
   stop(e)

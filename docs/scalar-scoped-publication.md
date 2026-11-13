@@ -82,65 +82,129 @@ row is kept as-is.
 ## Pre-publication serving baseline guard (database)
 
 These producer checks do **not** prove the serving database holds the same
-generation. The normal `--publish`/`--targets` path therefore adds a pre-write
-guard when a scoped publication is requested:
+generation. When a scoped publication is requested, the normal
+`--publish`/`--targets` path derives the **registered dependency closure** and
+guards only that closure:
 
 ```powershell
 $env:LUSK_SCALAR_SCOPE = 'mobilite:stations_service,stations_service_1000,bornes_recharge_1000'
-$env:LUSK_SCALAR_BASELINE_SORTIE = '<canonical generation the serving DB was published from>'
+$env:LUSK_SCALAR_BASELINE_SORTIE = '<counterpart generation>'   # see forward/recovery below
 Rscript scripts/publish-serving-tables.R --publish
 ```
 
+The closure is derived from producer metadata, never a hardcoded owner list:
+
+1. the retained **scalar snapshot + scalar comparison** (whole-table writers);
+2. every declared profile carrying a `required_scalar_version` binding (the
+   scalar token is global, so the DPE companion is affected);
+3. every typed-reading resource whose declared `source_keys` intersect those
+   profile `comparison_scalar` facets (the linked **Habitat selected reading**);
+4. the **territory reference** must match but is not rewritten;
+5. the `source_dataset`/`source_vintage` rows those scalar/profile projections
+   will upsert. Existing rows are guarded; recovery retires only newly
+   introduced rows that no owner table references.
+
 Before any write, under the existing scalar advisory lock
-(`pg_advisory_lock(594,1)`), the guard reads the live markers and requires:
+(`pg_advisory_lock(594,1)`), the guard reads the live markers and requires
+exactly the **current** generation of that closure:
 
-| Marker | Must match |
+| Marker (closure) | Must match |
 | --- | --- |
-| `territory_reference` | candidate territory reference |
-| `scalar_observation` | **prior baseline** scalar snapshot version |
-| `scalar_comparison_publication` | **prior baseline** comparison version and scalar version |
-| `declared_profile` | **prior baseline** declared-profile publication version |
-| `profile_descriptor[distribution_dpe]` | baseline descriptor version and baseline `required_scalar_version` |
-| `profile_comparison_publication` | **prior baseline** profile comparison version/profile/reference |
-| `selected_reading_publication[habitat]` | habitat reading content/reference |
-| `selected_reading_descriptor[habitat]` | descriptor version and **prior baseline** `linked_content_version` |
-| `demographic_typed_reading` | candidate artifact version |
-| `selected_reading` (habitat) | candidate artifact version |
-| `economy_typed_reading` + `economy_activity_evidence` | candidate artifact version |
-| `milieux_typed_reading` + `milieux_reading_absence` | candidate Milieux publisher version |
-| `series_dataset_publication[<owned dataset>]` | candidate owned-series version |
+| `territory_reference` | both generations' reference (unchanged, never rewritten) |
+| `scalar_observation` | current scalar snapshot version |
+| `scalar_comparison_publication` | current comparison + scalar + reference version |
+| `declared_profile` | current declared-profile publication version |
+| `profile_descriptor[distribution_dpe]` | current descriptor version and current `required_scalar_version` |
+| `profile_comparison_publication` | current profile comparison version/profile/reference |
+| `selected_reading` + `selected_reading_publication[habitat]` | current Habitat content/reference |
+| `selected_reading_descriptor[habitat]` | current descriptor version and `linked_content_version` |
 
-It also proves candidate vs baseline differ **exactly** by the declared scoped
-indicators (all other scalar facts/descriptors/provenance and the comparison
-rows are identical; typed/series/reference/**profile facts** are identical),
-and that the candidate profile artifact is bound to the **candidate** scalar
-version. Any mismatch, including an invalid/unreadable baseline artifact or a
-newer live profile/linked reading, hard-refuses with **zero writes** and lists
-every marker with live vs expected values, plus the instruction:
+The source/vintage rows are guarded separately from the publication markers:
+every target row that already exists live must match exactly, so a newer shared
+`source_dataset.name` or `source_vintage.version/date` hard-refuses with
+**zero writes**. Target rows absent live are recorded. Forward may insert them
+through the normal scalar/profile publishers. In the same transaction, any
+inserted row that remains unreferenced is retired; a referenced row is
+preserved. Recovery additionally retires a row that is present only in the
+candidate generation. A row is retired only when no base table in the serving
+schema references its `source_id`/`vintage_id` (FK-backed or text-only,
+including Milieux/series provenance). Shared or referenced rows are preserved,
+so unrelated owners are never cascaded or left dangling. The result is exact
+for unreferenced scope-only source rows; referenced rows are intentionally
+preserved.
 
-> Retrieve the latest canonical generation that matches serving; do not force,
-> regenerate or overwrite the serving tables.
+Demographic, economy, Milieux and owned-series rows **and markers** are outside
+the plan: they are not read as expectations and not published. A newer live
+version of one of them neither blocks nor changes a scoped publication.
 
-The wrapper then executes the normal owner publications in one **outer
-transaction**: territory reference → scalar → refreshed declared profile →
-demographic/habitat selected reading → economy → Milieux/series. The profile
-companion is refreshed metadata-only from its existing facts (only the
-`required_scalar_version` descriptor token changes; DPE fact rows are identical)
-through `refresh_declared_profile_scalar_binding()`, then published by the normal
-registered profile owner. The existing owner transactions compose into the outer
-transaction (`publication_transaction()`), which tracks the active **connection
-identity**: inner publishers join only on the identical connection; a different
-connection fails before SQL; nested outer calls are refused; the state is
-cleared on every exit/error. A failure after any stage rolls
-back every owner; the pre-refresh profile artifacts are restored and a retry
-after clearing the failure succeeds. The scalar/comparison tables remain
-wholesale replaces: unchanged facts/provenance/descriptors are identical, while
-the table version changes and the three resources are added.
+The plan also proves target vs current differ **exactly** by the declared
+scoped indicators (all other scalar facts/descriptors/provenance and the
+comparison rows are identical; profile facts/descriptors identical after
+removing the scalar binding; affected selected-reading content identical), and
+that the target profile artifact is bound to the target scalar version. Any
+closure mismatch, including a newer live affected scalar/profile/selected
+reading or linked dependency, hard-refuses with **zero writes** and lists every
+marker with live vs expected values, plus the instruction:
+
+> Retrieve the exact counterpart generation; do not force, regenerate or
+> overwrite the serving tables.
+
+### Forward write
+
+`sortie` = candidate generation, `LUSK_SCALAR_BASELINE_SORTIE` = prior baseline.
+The wrapper refreshes the candidate declared-profile artifact metadata-only
+(only `required_scalar_version` changes; DPE fact rows are identical) and runs
+the normal registered publishers in **one outer transaction**:
+
+```
+scalar snapshot + comparison -> declared profiles + comparison -> linked Habitat selected reading
+```
+
+The existing owner transactions compose into the outer transaction
+(`publication_transaction()`), which tracks the active **connection identity**:
+inner publishers join only on the identical connection; a different connection
+fails before SQL; nested outer calls are refused; the state is cleared on every
+exit/error. A failure rolls back every owner; the pre-refresh profile artifacts
+are restored and a retry after clearing the failure succeeds. The
+scalar/comparison/profile tables remain wholesale replaces: unchanged
+facts/provenance/descriptors are identical, while the global versions change and
+the three resources are added. The same normal publishers upsert the target
+`source_dataset`/`source_vintage` rows; shared rows were guarded, and target-only
+rows may be inserted. No per-row write semantics are claimed.
+
+### Recovery
+
+The **same** normal wrapper, plan and publishers restore the frozen prior
+baseline after a successful candidate commit:
+
+```powershell
+$env:LUSK_SCALAR_SCOPE = 'mobilite:stations_service,stations_service_1000,bornes_recharge_1000'
+$env:LUSK_SORTIE = '<writable copy of the frozen prior baseline>'   # target
+$env:LUSK_SCALAR_BASELINE_SORTIE = '<candidate-current>'            # current live state
+Rscript scripts/publish-serving-tables.R --publish
+```
+
+The direction is derived from the artifacts (exactly one generation carries the
+scoped indicators), so there is no separate recovery flag. The guard expects
+the live **candidate** markers of the closure; the scalar publisher's normal
+explicit retirement policy omits the three scoped indicators from the restored
+generation (`retired_indicator_ids`), then the same atomic transaction restores
+the baseline declared-profile and linked Habitat reading. The three remain
+declared by metadata but unpublished (the pre-#989 state). After those writes,
+the same transaction retires the forward-introduced `source_dataset`/
+`source_vintage` rows that no owner table references; shared or referenced rows
+are preserved. The affected scalar/profile/selected state and unreferenced
+scope-only source rows are restored exactly; shared/referenced source rows are
+intentionally untouched. Newer unrelated Milieux/economy/series rows and
+markers are untouched, so no full baseline hunt is needed for them. Recovery
+must run on a **writable copy** of the frozen baseline (the canonical set is
+read-only; the plan identity is proven by its manifest).
 
 The scalar `pg_advisory_lock(594,1)` serializes scalar publishers; it does not
 cover the other owners' locks. **The operator must still ensure no concurrent
 publication of any other owner** (maintenance window); this prerequisite is
-explicit and not hidden by the guard.
+explicit and not hidden by the guard. Leaving `LUSK_SCALAR_SCOPE` unset keeps
+the previous full-backend publication path unchanged.
 
 ## Tests
 
@@ -158,9 +222,14 @@ explicit and not hidden by the guard.
   `brut_*`, `publie_*`, `raccordement_*`, OSM or OCS-GE target.
 
 `pipeline/tests/testthat/test-retained-baseline-guard.R`: scope parsing,
-prior-snapshot reconstruction, and exact marker matching/refusal for scalar,
-territory, typed, comparison, profile/comparison, DPE required scalar, selected
-linked, series, reference-binding and missing-marker cases (pure, no database).
+prior-snapshot reconstruction, and exact marker matching/refusal for the
+full-backend path (pure, no database).
+
+`pipeline/tests/testthat/test-scoped-publication-plan.R` (#995): dependency
+closure derivation (linked Habitat owner from DPE `part_passoires`), target vs
+current delta in both directions, refusal of a difference outside the scope or
+of indicators present on both/neither side, and the scoped guard accepting the
+affected current markers while ignoring a newer unrelated owner marker.
 
 `pipeline/tests/testthat/test-publication-transaction.R`: single-connection
 outer contract — inner publishers join only the identical connection, a
@@ -175,67 +244,117 @@ cleanup always on, zero residual schemas):
 $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
 $env:LUSK_SCALAR_TEST_DATABASE = 'lusk_it_contract'
 $env:LUSK_SCALAR_TEST_USER = 'lusk_it_contract_pub'
-$env:LUSK_RETAINED_BASELINE_RECEIPT = 'E:\Temp\opencode\lusk-989-publication-preparation\49-atomic-smoke-receipt.txt'
+$env:LUSK_RETAINED_BASELINE_RECEIPT = 'E:\Temp\opencode\lusk-989-publication-preparation\83-source-policy-receipt.txt'
 pipeline\scripts\run-retained-baseline-smoke.ps1 `
   -CandidateDir <candidate sortie> -BaselineDir <prior baseline sortie>
 ```
 
-Receipt status PASS on 2026-11-12 (one actual wrapper call): baseline 20 286
+Receipt status PASS on 2026-11-13 (#995 source-policy run): baseline 20 286
 facts / 16 descriptors, candidate 24 087 / 19 (exact +3, +3 801 facts;
-comparisons 1 136→1 349 groups, 58 688→69 692 territory results). Live scalar,
-habitat, declared-profile, profile-comparison, DPE required-scalar and
-selected-linked mismatches all refused with a whole-schema digest unchanged.
-A forced failure after the scalar/profile stage rolled back the entire schema
-(digest unchanged) and restored the pre-refresh profile artifact; retry
-succeeded. Unchanged owner markers/versions and unchanged scalar/profile facts
-are identical; DPE profile facts are byte/row identical, only the normal binding
-token and selected linked version advance. HTTP before/after: DPE + habitat
-read 200 with descriptor/source; after, the three scalar facts and fixed
-comparisons (ranks) read 200. Schema cleaned; zero residual `serving_it_*`;
-`public` tables unchanged. DB bytes before/after in the receipt.
+comparisons 1 136→1 349 groups, 58 688→69 692 territory results). Unrelated
+demographic, economy, Milieux and owned-series markers were advanced to
+**newer** values before the forward call; the scoped publication still
+succeeded, kept those markers and their table rows byte-identical, and changed
+only the closure. Newer affected scalar/profile/Habitat/linked markers all
+refused with a whole-schema digest unchanged. The source-policy proof uses two
+test-only `source_dataset`/`source_vintage` rows on a private candidate copy:
+one unreferenced and one referenced by a `series_provenance_revision`. Newer
+live shared source/vintage rows refused with zero writes; forward inserted both
+test rows through the normal scalar publisher; recovery retired the
+unreferenced row, preserved the referenced row (the series reference stayed
+intact), and left every shared source/vintage row byte-identical; republish
+reinserted both. A forced failure after the scalar/profile stage rolled back
+the entire schema and restored the pre-refresh profile artifact. Then the
+**same normal wrapper/plan** recovered the frozen baseline from the committed
+candidate (scalar `10cfd…`, comparison `1b7c…`, profile `d97f…`, profile
+comparison `2c97…`, linked `-d97f…-10cfd…-6fd9…`, DPE required scalar
+`10cfd…`, three scoped facts absent) while the newer unrelated markers/rows
+stayed untouched; the candidate was then republished through the same wrapper.
+HTTP before/after: DPE + habitat read 200 with descriptor/source; after, the
+three scalar facts and fixed comparisons (ranks) read 200. Schema cleaned; zero
+residual `serving_it_*`; `public` tables unchanged. DB bytes before/after in the
+receipt. Receipt:
+`E:\Temp\opencode\lusk-989-publication-preparation\83-source-policy-receipt.txt`;
+focused serial log:
+`E:\Temp\opencode\lusk-1000-focused-R-serial-995-source.log` (125 PASS,
+0 FAIL/WARN/SKIP).
 
 Run:
 
 ```powershell
-Rscript -e "testthat::test_local(filter = 'scalar-scope', stop_on_failure = TRUE)"
+$env:TESTTHAT_PARALLEL = 'FALSE'
+Rscript -e "testthat::test_local(filter = 'scoped-publication-plan|publication-transaction|retained-baseline-guard|scalar-scope', stop_on_failure = TRUE)"
 Rscript -e "testthat::test_local(stop_on_failure = TRUE)"   # before handoff
 ```
 
 ## Production handoff (operator, separately gated)
 
-The scoped step only prepares canonical artifacts. Publication remains the
-normal full-snapshot operator step:
+The scoped step only prepares the canonical artifacts; it does not connect to
+the serving database. The owner-approved recovery path is the **verified frozen
+affected baseline** plus its manifest and the normal restore proof, not a
+mandatory SQL dump:
 
-1. operator-verified `pg_dump` backup with recorded location;
-2. serving database/role/schema/current marker identity confirmed;
-3. no concurrent publisher;
-4. set `LUSK_SCALAR_SCOPE` and `LUSK_SCALAR_BASELINE_SORTIE` (the canonical
-   generation the serving DB was published from) and run the normal
+- `baseline-current-demog` (218 files / 52.15 MB, read-only,
+  `baseline-current-demog.manifest.json`) is the accepted recovery copy for the
+  affected closure. Its actual scalar/comparison/profile/DPE/Habitat/reference
+  versions match the affected live clocks the guard checks. It intentionally
+  does not cover the unrelated Milieux/economy/series owners, which are neither
+  required nor written by this path.
+- An operator `pg_dump` is optional, not a precondition; the normal registered
+  wrapper can restore the affected baseline from a writable copy (see
+  **Recovery**). The guarded test-DB proof recorded in this document is the
+  executable restore proof for that copy.
+
+Publication is the **scoped atomic registered closure only** (scalar snapshot
+and comparison, scalar-bound declared profile and comparison, linked Habitat
+selected reading), never the previous full-backend step:
+
+1. serving database/role/schema/current marker identity confirmed read-only;
+2. no concurrent publisher (maintenance window);
+3. set `LUSK_SCALAR_SCOPE`, `LUSK_SORTIE` (the candidate generation) and
+   `LUSK_SCALAR_BASELINE_SORTIE` (the canonical generation the serving DB was
+   published from) and run the normal
    `Rscript scripts/publish-serving-tables.R --publish` (or the normal targets
-   publication) with the existing advisory locks and private libpq passfile. A
-   baseline mismatch refuses before any write;
-5. post-publication: facts, fixed/custom comparisons and batch reads return
+   publication) with the existing advisory locks and private libpq passfile. The
+   closure guard refuses before any write on a newer affected
+   scalar/profile/Habitat/linked marker; unrelated owner markers may be newer
+   and are not touched;
+4. post-publication: facts, fixed/custom comparisons and batch reads return
    actual data for all three resources; parity to the generated facts,
    descriptors, provenance, ranks and publication tokens; no fabricated zero.
 
 Until that operator step verifies, the status is **build/check complete**, not
-**published/live**.
+**published/live**; no serving publication has been performed yet.
 
-## Current readiness note (2026-11-12)
+## Current readiness note (2026-11-13, #995)
 
-The available prior canonical generation on this workstation is **not
-publication-ready under current producer contracts**:
+The scoped path reads only the registered closure. It therefore does **not**
+require the local demographic typed reading, the Milieux typed reading, the
+economy reading or the owned-series marker to match the newer live serving
+state; the earlier all-owner mismatch is no longer a blocker for the three
+Mobility scalars. The guarded DB proof rematerializes the demographic reading
+**on private test copies only** because it seeds a complete baseline through the
+full backend for comparison; the scoped forward/recovery path itself never
+reads or publishes that owner.
 
-- its demographic typed-reading artifact is rejected (`invalid persisted source
-  clock; rematerialize it`), so neither the candidate nor the baseline can pass
-  the typed-reading reader.
+The frozen prior baseline `baseline-current-demog` (218 files / 52.15 MB,
+manifest `baseline-current-demog.manifest.json`, read-only) plus
+`candidate-current` are the ready artifact plan for the tested closure. Its
+scalar `10cfd…`, comparison `1b7c…`, profile `d97f…`, profile comparison
+`2c97…`, Habitat `2d64…` and reference `6fd9…` match the affected live clocks
+the guard checks. It intentionally does not cover the newer unrelated
+Milieux/economy/series owners, which this path neither reads as expectations nor
+writes. A data-only recovery uses the same normal wrapper/plan from a writable
+copy; no SQL data dump is mandatory (an operator `pg_dump` is optional). The
+18 GB raw cache is not part of this plan.
 
-The guarded DB proof therefore rematerializes that ONE demographic reading
-**on private test copies only**; that is test fixture repair, not production
-evidence. The scalar-bound DPE profile companion is **not** a test fixture
-repair: the wrapper refreshes it metadata-only through the normal owner and
-publishes it inside the atomic transaction. A real publication still requires
-the operator/orchestrator to retrieve or generate the **current canonical
-generation** that serving holds (all owners), then rerun the light scoped
-materialization on top of it. Do not force, regenerate or overwrite serving to
-work around the demographic artifact blocker.
+The production candidate remains `candidate-current` (scalar `f4e9…`,
+comparison `fc2d…`); the guarded source-policy proof modifies only a private
+copy with two test-only source rows and does not alter the ready artifacts.
+
+The scalar-bound DPE profile companion is **not** a fixture repair: the wrapper
+refreshes it metadata-only through the normal owner and publishes it inside the
+atomic transaction. The operator still needs the private publisher role, the
+maintenance window, and the guard; the verified canonical recovery copy above
+is the approved backup path. This document does not perform the production
+publication.
