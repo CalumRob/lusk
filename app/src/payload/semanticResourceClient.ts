@@ -163,7 +163,17 @@ export interface SemanticReadOptions {
 
 const FAMILY_SET = new Set<string>(SEMANTIC_PUBLICATION_FAMILIES)
 const REASON_SET = new Set<string>(SEMANTIC_PUBLICATION_REASONS)
-const MAX_CACHED_OUTCOMES = 500
+/**
+ * #1002 — a settled outcome is stored under the caller's coherence token AND
+ * under its own `territory-reference:<clock>` identity, so one available item
+ * costs up to two entries. The requested Mobilité chapter alone settles ~295
+ * AEDAR items (235-universe projections, B207 detail, the 40-reading aggregate
+ * comparison and 240 per-TYPEQU cells) on top of the requested page-2 demand and
+ * the idle warm-up; a smaller bound evicted early page-1 items and made the
+ * return to page 1 re-read them. The bound stays hard — it is a memory cap, not
+ * a request budget.
+ */
+const MAX_CACHED_OUTCOMES = 1200
 
 const isRecord = (value: unknown): value is RecordValue =>
   typeof value === 'object' && value !== null && !Array.isArray(value)

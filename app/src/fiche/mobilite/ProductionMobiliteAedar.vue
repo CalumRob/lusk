@@ -97,7 +97,12 @@ watch([comparisonDemand, comparisonRetry, () => props.aedarActive], async ([dema
   // #986/#1002 — the reader is not on the AEDAR chapter: its comparison is not
   // started. Settled evidence stays; an in-flight read keeps settling into the
   // client, and returning re-reads only what is genuinely missing.
-  if (!props.aedarActive) return
+  if (!props.aedarActive) {
+    // Nothing is in flight for this figure: an honest idle status, never a
+    // pending spinner on the chapter the reader actually asked for.
+    if (comparisonState.value === 'loading') comparisonState.value = 'idle'
+    return
+  }
   const fresh = comparisonRetry.value !== comparisonRetrySeen
   comparisonRetrySeen = comparisonRetry.value
   const abort = new AbortController()

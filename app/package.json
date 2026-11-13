@@ -14,6 +14,7 @@
     "verify:mobile-cahier-overflow": "node scripts/verify-mobile-cahier-overflow.mjs",
     "verify:network-means": "node scripts/verify-network-means.mjs",
     "verify:aedar-layout-stability": "node scripts/verify-aedar-layout-stability.mjs",
+    "verify:aedar-demand": "node scripts/verify-aedar-demand.mjs",
     "preview": "vite preview",
     "test": "vitest run"
   },

@@ -14,7 +14,7 @@ import { routes } from '@/router'
 import { nativeBatchResponse, nativeCatalogueResponse, nativePublicationFamily,
   nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
 import { carInlineLegend } from './fixtures/aedar-car-inline-legend'
-import { AEDAR_AGGREGATE_READING_KEYS } from '@/fiche/content/aedarTimeRampFacts'
+import { AEDAR_AGGREGATE_READING_KEYS, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS } from '@/fiche/content/aedarTimeRampFacts'
 import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
 
 /**
@@ -688,7 +688,11 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
  */
 const AEDAR_CLOCKS = {
   summary: 'aedar-summary-fixture-v1',
-  aedar: 'aedar_territorial_aggregate-fixture-publication-v1',
+  // The facts, the summary and every comparison describe one publication.
+  aedar: nativeReadFixture({ resource: 'aedar_territorial_aggregate',
+    target: { kind: 'territory', type: 'commune', id: '35238' }, intent: { kind: 'facts' },
+    coordinates: { typequ: [] } },
+  nativeResources().find((resource) => resource.resource_id === 'aedar_territorial_aggregate')!).content_version,
   reference: 'semantic-reference-fixture-v1',
 }
 const AEDAR_SOURCE = {
@@ -698,9 +702,22 @@ const AEDAR_SOURCE = {
 const isAggregateComparison = (item: Record<string, any>) =>
   item.resource === 'aedar_territorial_aggregate' && item.intent?.kind !== 'facts' &&
   (item.coordinates?.typequ?.length ?? 0) === 0
+const isCellComparison = (item: Record<string, any>) =>
+  item.resource === 'aedar_territorial_aggregate' && item.intent?.kind !== 'facts' &&
+  (item.coordinates?.typequ?.length ?? 0) > 0
+const isAedarAggregateFact = (item: Record<string, any>) =>
+  item.resource === 'aedar_territorial_aggregate' && item.intent?.kind === 'facts'
+/** Every AEDAR page-1 read: core/detail projections AND every comparison shape. */
+const isAedarDemand = (item: Record<string, any>) =>
+  isAggregateComparison(item) || isCellComparison(item) || isAedarAggregateFact(item)
 const aggregateComparisons = (entries: Array<Record<string, any>>) => entries.filter(isAggregateComparison)
+const cellComparisons = (entries: Array<Record<string, any>>) => entries.filter(isCellComparison)
 const aggregateComparisonPosts = (list: Call[]) =>
   posts(list).filter((call) => aggregateComparisons(call.items).length > 0)
+const cellComparisonPosts = (list: Call[]) =>
+  posts(list).filter((call) => cellComparisons(call.items).length > 0)
+/** POSTs carrying any AEDAR page-1 demand (facts, detail projections, cells). */
+const aedarDemandPosts = (list: Call[]) => posts(list).filter((call) => call.items.some(isAedarDemand))
 
 function aedarSummaryEnvelope(item: Record<string, any>) {
   return {
@@ -718,8 +735,9 @@ function aedarSummaryEnvelope(item: Record<string, any>) {
 
 function aedarComparisonEnvelope(item: Record<string, any>) {
   const measures = (item.coordinates?.measure ?? []) as string[]
+  const typequ = (item.coordinates?.typequ ?? [])[0] ?? null
   const rows = measures.map((measure) => ({
-    typequ: null, measure, comparison_context: item.intent.context, statistic: 'direct',
+    typequ, measure, comparison_context: item.intent.context, statistic: 'direct',
     group_value: 3.5, group_n_addresses: 100, group_n_observed: 90, group_coverage_status: 'covered',
     rank: 1, rank_size: 43, rank_ties: 1, direction: 'high', ...AEDAR_SOURCE,
   }))
@@ -737,6 +755,8 @@ function aedarComparisonEnvelope(item: Record<string, any>) {
 function createAedarTransport(options: {
   /** Hold every AEDAR comparison read (a queued, off-screen demand). */
   holdComparison?: () => Promise<void>
+  /** Hold only the per-TYPEQU cell comparisons (the explorer's page-1 read). */
+  holdCellsOnly?: boolean
   /** Serve one typed publication absence (never a fabricated value). */
   absent?: (item: Record<string, any>) => boolean
 } = {}) {
@@ -757,7 +777,9 @@ function createAedarTransport(options: {
         return nativeBatchResponse(call.items, (item, resource) =>
           nativeReadFixture(item, resource, { syntheticProfileComparisons: true }))
       }
-      if (call.items.some(isAggregateComparison)) await options.holdComparison?.()
+      if (call.items.some(options.holdCellsOnly ? isCellComparison : isAggregateComparison)) {
+        await options.holdComparison?.()
+      }
       const results = call.items.map((item) => {
         if (options.absent?.(item)) {
           return { id: item.id, resource: item.resource, status: 'publication_unavailable',
@@ -788,15 +810,20 @@ describe('Mobilite page 1 — comparaisons AEDAR coalescées et différées (#10
     await vi.waitFor(() => expect(aggregateComparisonPosts(calls)).toHaveLength(2), { timeout: 15000 })
     expect(aggregateComparisons(items(calls))).toHaveLength(24)
 
-    // The reader leaves page 1 while the rest is still queued.
+    // The reader leaves page 1 while the rest is still queued. Both active
+    // slots are held, so the count is stable across the demand change.
+    const beforeLeaving = aedarDemandPosts(calls).length
     await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
       hash: '#figure-partage-de-lespace-public' })
     await flushPromises()
+    expect(aedarDemandPosts(calls).length).toBe(beforeLeaving)
     release()
     await settleOwner(calls, (item) => String(item.resource).startsWith('aedar_'))
     await flushPromises()
 
-    // No NEW page-1 comparison batch started after the demand change.
+    // No NEW page-1 demand batch of ANY shape (core/detail/cells/aggregates)
+    // started after the demand change; only the batches already in flight settle.
+    expect(aedarDemandPosts(calls).length).toBe(beforeLeaving)
     expect(aggregateComparisonPosts(calls)).toHaveLength(2)
     // The requested chapter is not starved: its own 33 items still land.
     const pageTwo = postsTouching(calls, PAGE_TWO)
@@ -823,6 +850,70 @@ describe('Mobilite page 1 — comparaisons AEDAR coalescées et différées (#10
     expect(covered.size).toBe(235)
     expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
     expect(wrapper.find('.aedar-comparison-retry').exists()).toBe(false)
+    wrapper.unmount()
+  }, 60000)
+
+  it('ne démarre ni les cellules ni le détail de l’explorateur hors du chapitre AEDAR', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    // The explorer's 240 per-TYPEQU cell comparisons (20 bounded batches) and its
+    // detail read are page-1 evidence: hold the cells so most stay queued.
+    const { transport, calls } = createAedarTransport({
+      holdComparison: () => held,
+      holdCellsOnly: true,
+    })
+    vi.stubGlobal('fetch', transport)
+    const { router, wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite')
+
+    // The explorer is mounted and its cell comparison reached the scheduler.
+    await vi.waitFor(() => expect(cellComparisonPosts(calls)).toHaveLength(2), { timeout: 20000 })
+    const intendedMeasures = [...AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, ...[5, 10, 15, 20].flatMap((horizon) =>
+      ['car', 'bike_lts2', 'bike_lts4', 'transit', 'walk'].map((mode) => `count_${horizon}_${mode}_mean`))]
+    expect(intendedMeasures).toHaveLength(240)
+    expect(cellComparisons(items(calls))).toHaveLength(24)
+    expect(cellComparisons(items(calls)).every((item) => item.coordinates.typequ.length === 1 &&
+      item.coordinates.measure.length === 1)).toBe(true)
+
+    const beforeLeaving = aedarDemandPosts(calls).length
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-partage-de-lespace-public' })
+    await flushPromises()
+    expect(aedarDemandPosts(calls).length).toBe(beforeLeaving)
+    release()
+    await settleOwner(calls, (item) => String(item.resource).startsWith('aedar_'))
+    await flushPromises()
+
+    // No queued explorer cell/detail batch started after the demand change.
+    expect(aedarDemandPosts(calls).length).toBe(beforeLeaving)
+    expect(cellComparisonPosts(calls)).toHaveLength(2)
+    // The requested chapter is not starved by page-1 work.
+    const pageTwo = postsTouching(calls, PAGE_TWO)
+    expect(pageTwo).toHaveLength(3)
+    expect(pageTwo.flatMap((call) => call.items)).toHaveLength(33)
+
+    // Returning resumes the missing cells once; settled cells are not re-read.
+    const beforeReturn = posts(calls).length
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-acces-aux-services' })
+    await flushPromises()
+    await settleOwner(calls, (item) => String(item.resource).startsWith('aedar_'))
+    await flushPromises()
+    const resumed = cellComparisons(posts(calls).slice(beforeReturn).flatMap((call) => call.items))
+    expect(resumed).toHaveLength(216)
+    expect(cellComparisons(items(calls))).toHaveLength(240)
+    expect(new Set(cellComparisons(items(calls)).map((item) => item.coordinates.measure[0])).size).toBe(240)
+    expect(new Set(cellComparisons(items(calls)).flatMap((item) => item.coordinates.measure))).toEqual(new Set(intendedMeasures))
+    expectNoDuplicateOrOverlappingItem(items(calls))
+
+    // The demanded page-1 evidence is complete again: 235 TYPEQU universe, the
+    // served rank, and the explorer's detail values.
+    const covered = new Set(items(calls).filter((item) => item.intent.kind === 'facts' && isAedar(item))
+      .flatMap((item) => item.coordinates?.typequ ?? []))
+    expect(covered.size).toBe(235)
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    expect(wrapper.html()).toContain('/43')
+    expect(wrapper.find('.aedar-equipment-explorer-retry').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Chargement des valeurs pour ce type d’équipement')
     wrapper.unmount()
   }, 60000)
 
