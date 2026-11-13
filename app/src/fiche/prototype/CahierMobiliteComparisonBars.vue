@@ -276,6 +276,43 @@ function stackedSegments(category: MobiliteBarCategoryEvidence, categoryIndex: n
   })
 }
 
+/**
+ * #997 — the compared bike bar is the served protected/shared mean stack, drawn
+ * beside the focal stack with the same role inks at the compared 45 % mix. The
+ * evidence builder has already proven one eligible population and an additive
+ * total within machine-float slack.
+ */
+function comparisonSegmentFill(segment: { key: string }): string {
+  return `color-mix(in srgb, ${segmentColor(segment)} 45%, var(--paper))`
+}
+
+function comparisonStackedSegments(category: MobiliteBarCategoryEvidence, categoryIndex: number) {
+  if (!category.comparisonSplit) return []
+  const total = referenceValue(category)
+  if (total === null || total < 0) return []
+  const segments = category.segments.map((segment) => ({
+    ...segment,
+    numeric: finiteValue(segment.value.fact.comparison?.reference?.value),
+  }))
+  if (!segments.length || segments.some((segment) => segment.numeric === null)) return []
+  let offset = 0
+  return segments.map((segment) => {
+    const value = segment.numeric as number
+    const height = total === 0 ? 0 : (Math.max(0, value) / total) * barHeight(total)
+    const y = plotBottom.value - offset - height
+    offset += height
+    return {
+      key: segment.key,
+      label: segment.label,
+      x: barX(categoryIndex, 1),
+      y,
+      width: barWidth(),
+      height,
+      fill: comparisonSegmentFill(segment),
+    }
+  })
+}
+
 function comparisonTooltip(
   fact: ContentFact,
   unit: string,
@@ -304,7 +341,8 @@ function tooltipRows(category: MobiliteBarCategoryEvidence): readonly CahierTool
     markerColor: toneColor(category.tone),
     ariaLabel: `${totalRowLabel(category)} : ${value === null ? UNAVAILABLE_LABEL : `${formatValue(value)} ${props.figure.unit}`}`,
     comparison: showComparison.value
-      ? comparisonTooltip(category.value, props.figure.unit, category.segments.length > 0)
+      ? comparisonTooltip(category.value, props.figure.unit,
+        category.segments.length > 0 && !category.comparisonSplit)
       : undefined,
   }]
   if (category.splitNote) {
@@ -314,6 +352,15 @@ function tooltipRows(category: MobiliteBarCategoryEvidence): readonly CahierTool
       tone: 'neutral',
       marker: 'slash',
       ariaLabel: category.splitNote,
+    })
+  }
+  if (showComparison.value && category.comparisonSplitNote) {
+    rows.push({
+      label: 'Répartition comparée Protégé/Partagé',
+      value: UNAVAILABLE_LABEL,
+      tone: 'neutral',
+      marker: 'slash',
+      ariaLabel: category.comparisonSplitNote,
     })
   }
   for (const segment of category.segments) {
@@ -367,7 +414,8 @@ function categoryAriaLabel(index: number): string {
       if (reference) {
         const rank = rankPhrase(comparison)
         const direction = comparisonDirection(comparison)
-        parts.push(`${GROUPE_COMPARE_LABEL} ${segment.label} : ${formatValue(reference.value)} ${props.figure.unit}${rank ? ` — rang ${rank}` : direction ? ` — ${direction}` : ''}`)
+        const description = comparisonDescription(comparison, props.figure.comparisonLabel)
+        parts.push(`${GROUPE_COMPARE_LABEL} ${segment.label} : ${formatValue(reference.value)} ${props.figure.unit} (${description})${rank ? ` — rang ${rank}` : direction ? ` — ${direction}` : ''}`)
       }
     }
   }
@@ -375,7 +423,7 @@ function categoryAriaLabel(index: number): string {
     const reference = referenceValue(category)
     if (reference !== null) {
       const comparison = category.value.fact.comparison!
-      const unsplit = category.segments.length > 0
+      const unsplit = category.segments.length > 0 && !category.comparisonSplit
       const description = comparisonDescription(comparison, props.figure.comparisonLabel, unsplit)
       const rank = rankPhrase(comparison)
       const direction = comparisonDirection(comparison)
@@ -383,6 +431,7 @@ function categoryAriaLabel(index: number): string {
     } else {
       parts.push(`${GROUPE_COMPARE_LABEL} : Indisponible`)
     }
+    if (category.comparisonSplitNote) parts.push(category.comparisonSplitNote)
   }
   return parts.join(' ; ')
 }
@@ -528,17 +577,38 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
                   aria-hidden="true"
                 />
               </template>
-              <rect
-                v-if="showComparison && referenceValue(category) !== null"
-                class="mobilite-comparison-bars__comparison"
-                :data-comparison="category.key"
-                :x="barX(categoryIndex, 1)"
-                :y="yFor(referenceValue(category)!)"
-                :width="barWidth()"
-                :height="barHeight(referenceValue(category)!)"
-                :fill="comparisonFill(category)"
-                aria-hidden="true"
-              />
+              <template v-if="showComparison && referenceValue(category) !== null">
+                <g
+                  v-if="category.comparisonSplit && comparisonStackedSegments(category, categoryIndex).length"
+                  class="mobilite-comparison-bars__comparison"
+                  :data-comparison="category.key"
+                  data-comparison-split="true"
+                >
+                  <rect
+                    v-for="segment in comparisonStackedSegments(category, categoryIndex)"
+                    :key="`${category.key}-comparison-${segment.key}`"
+                    class="mobilite-comparison-bars__comparison-segment"
+                    :data-comparison-segment="segment.key"
+                    :x="segment.x"
+                    :y="segment.y"
+                    :width="segment.width"
+                    :height="segment.height"
+                    :fill="segment.fill"
+                    aria-hidden="true"
+                  />
+                </g>
+                <rect
+                  v-else
+                  class="mobilite-comparison-bars__comparison"
+                  :data-comparison="category.key"
+                  :x="barX(categoryIndex, 1)"
+                  :y="yFor(referenceValue(category)!)"
+                  :width="barWidth()"
+                  :height="barHeight(referenceValue(category)!)"
+                  :fill="comparisonFill(category)"
+                  aria-hidden="true"
+                />
+              </template>
             </g>
           </svg>
           <CahierFigureAxisLabels :geometry="figureGeometry" :x-ticks="xTicks" :y-ticks="yAxisTicks" :x-label-offset="8" />
@@ -589,6 +659,13 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
     >{{ category.splitNote }}</p>
 
     <p
+      v-for="category in figure.categories.filter((candidate) => showComparison && candidate.comparisonSplitNote)"
+      :key="`comparison-split-${category.key}`"
+      class="mobilite-comparison-state"
+      role="note"
+    >{{ category.comparisonSplitNote }}</p>
+
+    <p
       v-for="note in resourceNotes"
       :key="note"
       class="mobilite-comparison-state"
@@ -625,6 +702,7 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
 .mobilite-comparison-bars__bar { fill-opacity: .78; shape-rendering: crispEdges; }
 .mobilite-comparison-bars__segment { fill-opacity: .9; shape-rendering: crispEdges; }
 .mobilite-comparison-bars__comparison { fill-opacity: .62; shape-rendering: crispEdges; }
+.mobilite-comparison-bars__comparison-segment { fill-opacity: .9; shape-rendering: crispEdges; }
 .mobilite-comparison-bars__hitboxes { position: absolute; inset: 0; }
 .mobilite-comparison-bars__hitbox { position: absolute; display: block; margin: 0; padding: 0; border: 0; background: transparent; cursor: help; }
 .mobilite-comparison-bars__hitbox:hover, .mobilite-comparison-bars__hitbox:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }

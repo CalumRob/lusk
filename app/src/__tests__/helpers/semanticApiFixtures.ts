@@ -944,8 +944,17 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
       const middle = Math.floor(sorted.length / 2)
       const median = sorted.length === 0 ? null : sorted.length % 2
         ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2
-      const enough = eligible.length >= 2
-      const unit = profile.scalar?.unit ?? profile.descriptor.comparison_point?.unit ?? resource.unit
+      const statistic = item.intent.kind === 'selected_comparison' && item.intent.statistic === 'mean'
+        ? 'mean' : 'median'
+      // The owner-approved mean is available with one measured member; ranks
+      // still require two comparable values (ADR-0045 / #917).
+      const enough = statistic === 'mean' ? eligible.length >= 1 : eligible.length >= 2
+      const rankable = eligible.length >= 2
+      const mean = eligible.length === 0 ? null
+        : eligible.reduce((sum, row) => sum + (row.value as number), 0) / eligible.length
+      const detailAxis = (profile.descriptor.axes as Array<{ name: string; key: string; unit: string | null }>)
+        .find((axis) => axis.name === 'detail' && axis.key === coordinateDetail)
+      const unit = profile.scalar?.unit ?? detailAxis?.unit ?? resource.unit
       const rankFor = (value: number | null) => value === null ? null : rankByValue.get(value) ?? null
       const tiesFor = (value: number | null) => value === null ? null : counts.get(value) ?? null
       const focalInSelection = observed.some((row) => row.member.territoire === target.id && row.member.type === target.type)
@@ -959,18 +968,24 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
       const scalarVersion = profile.scalar ? profile.scalarVersion : null
       const result = {
         indicator_id: resource.indicator_id, status: enough ? 'available' : 'unavailable',
-        reason: enough ? null : 'fewer_than_two_comparable_values', unit, direction, statistic: 'median',
+        reason: enough ? null : statistic === 'mean'
+          ? 'no_selected_comparable_values' : 'fewer_than_two_comparable_values',
+        unit, direction, statistic,
         profile_descriptor_version: profile.descriptor.descriptor_version,
         denominator_semantics: profile.descriptor.denominator_semantics,
         focal_in_selection: focalInSelection, selected_member_count: observed.length,
         eligible_count: eligible.length, missing_count: observed.length - eligible.length,
-        median: enough ? median : null, rank: enough && focalInSelection ? rankFor(focalValue) : null,
-        rank_size: enough && focalInSelection && rankFor(focalValue) !== null ? eligible.length : null,
-        rank_ties: enough && focalInSelection ? tiesFor(focalValue) : null,
+        ...(statistic === 'mean'
+          ? { mean: enough ? mean : null,
+            eligible_members: eligible.map((row) => row.member.territoire).sort() }
+          : { median: enough ? median : null }),
+        rank: rankable && focalInSelection ? rankFor(focalValue) : null,
+        rank_size: rankable && focalInSelection && rankFor(focalValue) !== null ? eligible.length : null,
+        rank_ties: rankable && focalInSelection ? tiesFor(focalValue) : null,
         // #960 — a fixed declared-profile comparison stays compact: member_ranks
         // is a selected-comparison projection and the API rejects it for fixed.
         ...(item.intent.kind === 'fixed_comparison' ? {} : { member_ranks: observed.map(({ member, value }) => {
-          const rank = enough ? rankFor(value) : null
+          const rank = rankable ? rankFor(value) : null
           return { territory_id: member.territoire, rank,
             rank_size: rank === null ? null : eligible.length, rank_ties: rank === null ? null : tiesFor(value) }
         }) }),
@@ -1376,7 +1391,7 @@ export function nativeBatchResponse<T extends Record<string, any>>(
   const byId = new Map(catalogue.resources.map((resource) => [resource.resource_id, resource]))
   const results = items.map((item) => {
     const resource = byId.get(item.resource)
-    const profileComparisonFields = ['median', 'rank', 'rank_size', 'rank_ties', 'selected_member_count',
+    const profileComparisonFields = ['median', 'mean', 'rank', 'rank_size', 'rank_ties', 'selected_member_count',
       'eligible_count', 'missing_count', 'member_ranks']
     const scalarComparisonFields = ['median', 'rank', 'rank_size', 'rank_ties', 'selected_member_count',
       'eligible_count', 'missing_count', 'member_ranks']
@@ -1403,12 +1418,15 @@ export function nativeBatchResponse<T extends Record<string, any>>(
           return !measure || !aedarMeasureKeys.includes(measure)
         })
         : item.fields.some((field: string) => !allowedFields.has(field))))
+    const invalidStatistic = Boolean(item.intent?.statistic !== undefined &&
+      !(item.intent.kind === 'selected_comparison' && resource?.shapes.includes('declared_profile') &&
+        ['median', 'mean'].includes(item.intent.statistic)))
     if (!resource || typeof item.id !== 'string' || !item.id ||
         !resource.target_kinds.includes(item.target?.kind) ||
         !resource.intents.includes(item.intent?.kind) ||
         (item.target.kind !== 'named_reference' && !resource.allowed_levels.includes(item.target.type)) ||
         (item.target.kind === 'named_reference' && !resource.target_ids.includes(item.target.id)) ||
-        invalidCoordinates || invalidFields) {
+        invalidCoordinates || invalidFields || invalidStatistic) {
       throw new Error(`Undeclared native semantic request: ${JSON.stringify(item)}`)
     }
     const data = read(item, resource)

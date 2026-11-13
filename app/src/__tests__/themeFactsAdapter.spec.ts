@@ -1508,3 +1508,90 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(() => validerReponseComparaisonTheme('milieux', comparaison(attendue), attendue)).toThrow(/comparaison/)
   })
 })
+
+describe('explicit equal-weight mean profile comparisons (#997)', () => {
+  const selection: ThemeSelectionMember[] = [
+    { territory_type: 'commune', territory_id: '35238' },
+    { territory_type: 'commune', territory_id: '35240' },
+  ]
+  const target = { type: 'commune' as const, id: '35238' }
+  const response = (patch: Record<string, unknown> = {}) => ({
+    theme_id: 'mobilite',
+    selection,
+    comparison_reads: [{
+      resource: 'reseaux_par_habitant',
+      shapes: ['declared_profile'],
+      data: {
+        contract: 'indicator-comparison-v1', indicator_id: 'reseaux_par_habitant', shape: 'profile',
+        target: { kind: 'territory', type: 'commune', id: '35238' },
+        profile_content_version: 'profiles-v1', reference_content_version: 'ref-v1',
+        scalar_content_version: null, selection, scope: { kind: 'explicit_selection', member_count: 2 },
+        result: {
+          indicator_id: 'reseaux_par_habitant', source_facet: { detail: 'b_km_1000', sex: null },
+          status: 'available', reason: null, unit: 'km / 1 000 hab.', direction: 'high', statistic: 'mean',
+          profile_descriptor_version: 'profile-v1', denominator_semantics: 'population',
+          focal_in_selection: true, selected_member_count: 2, eligible_count: 2, missing_count: 0,
+          mean: 8, eligible_members: ['35238', '35240'], rank: 1, rank_size: 2, rank_ties: 1,
+          comparison_sources: [{ source_id: 'osm_reseaux' }],
+          ...patch,
+        },
+      },
+    }],
+  })
+
+  it('accepts the served mean identity list and keeps the served rank and unit', () => {
+    const comparison = semanticComparisonForTheme(response(), undefined, undefined, target)
+    expect((comparison?.profile_comparisons as Array<Record<string, unknown>>)[0]).toMatchObject({
+      indicator: 'reseaux_par_habitant', statistic: 'mean', mean: 8,
+      eligible_members: ['35238', '35240'], rank: 1, rank_size: 2, rank_ties: 1,
+      unit: 'km / 1 000 hab.', facet: { detail: 'b_km_1000', sex: null },
+    })
+    expect(() => validerReponseComparaisonTheme('mobilite', response(), selection, target,
+      ['reseaux_par_habitant'])).not.toThrow()
+  })
+
+  it('rejects a median answer to an explicit mean request', () => {
+    const medianAnswer = response()
+    const result = medianAnswer.comparison_reads[0]!.data.result as Record<string, unknown>
+    delete result.mean
+    delete result.eligible_members
+    Object.assign(result, { statistic: 'median', median: 5 })
+    expect(() => validerReponseComparaisonTheme('mobilite', medianAnswer, selection, target,
+      ['reseaux_par_habitant'])).toThrow(/moyenne demandée/u)
+  })
+
+  it.each([
+    ['missing identity evidence', { eligible_members: undefined }],
+    ['an eligible count that contradicts its identity list', { eligible_members: ['35238'] }],
+    ['a duplicated eligible identity', { eligible_members: ['35238', '35238'] }],
+    ['a missing mean on an available result', { mean: null }],
+    ['a median carried beside a mean', { median: 5 }],
+    ['an unavailable mean with a numeric value', { status: 'unavailable', mean: 0,
+      eligible_members: [], eligible_count: 0, missing_count: 2, rank: null, rank_size: null,
+      rank_ties: null, reason: 'no_selected_comparable_values' }],
+    ['an unavailable mean without the closed reason', { status: 'unavailable', mean: null,
+      eligible_members: [], eligible_count: 0, missing_count: 2, rank: null, rank_size: null,
+      rank_ties: null, reason: 'fewer_than_two_comparable_values' }],
+  ])('rejects %s', (_label, patch) => {
+    expect(() => validerReponseComparaisonTheme('mobilite', response(patch as Record<string, unknown>),
+      selection, target, ['reseaux_par_habitant'])).toThrow()
+  })
+
+  it('keeps a measured zero as a valid mean', () => {
+    const zero = response({ mean: 0, eligible_members: ['35238', '35240'] })
+    expect(() => validerReponseComparaisonTheme('mobilite', zero, selection, target,
+      ['reseaux_par_habitant'])).not.toThrow()
+    expect((semanticComparisonForTheme(zero, undefined, undefined, target)?.profile_comparisons as Array<Record<string, unknown>>)[0])
+      .toMatchObject({ statistic: 'mean', mean: 0 })
+  })
+
+  it('accepts an honest unavailable mean with no fabricated population', () => {
+    const unavailable = response({ status: 'unavailable', mean: null, eligible_members: [],
+      eligible_count: 0, missing_count: 2, rank: null, rank_size: null, rank_ties: null,
+      reason: 'no_selected_comparable_values' })
+    expect(() => validerReponseComparaisonTheme('mobilite', unavailable, selection, target,
+      ['reseaux_par_habitant'])).not.toThrow()
+    expect((semanticComparisonForTheme(unavailable, undefined, undefined, target)?.profile_comparisons as Array<Record<string, unknown>>)[0])
+      .toMatchObject({ status: 'unavailable', mean: null, eligible_members: [] })
+  })
+})

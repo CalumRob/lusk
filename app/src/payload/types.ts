@@ -191,7 +191,7 @@ export interface Indicateur extends Omit<VintageStamp, 'vintage_version'> {
   comparaisonApi?: { rang: number | null; taille: number | null; portee: string | null; direction?: 'high' | 'low';
     /** Producer-served tie count at this rank, itself included; > 1 renders the « = » marker. */
     ties?: number | null
-    reference?: { kind: 'median' | 'mean'; value: number } }
+    reference?: { kind: 'median' | 'mean'; value: number; eligibleMembers?: readonly string[] } }
 }
 
 /**

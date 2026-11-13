@@ -48,6 +48,12 @@ export interface ComparisonRank {
 export interface ComparisonReference {
   kind: 'mean' | 'median'
   value: number
+  /**
+   * API-owned contributing commune identities of an explicit equal-weight mean
+   * (#996/ADR-0045). Present only for a mean; a consumer compares this list
+   * across a total and its partitions instead of comparing counts.
+   */
+  eligibleMembers?: readonly string[]
 }
 
 /** A named territory's own mean, distinct from a statistic over peer territories. */
@@ -200,6 +206,8 @@ export interface MobilityFacts {
   resourceFailures?: readonly MobilityResourceFailure[]
   selectedTrajectoryComparison?: SelectedTrajectoryComparison | null
   trajectoryContract?: MobilityTrajectoryContract | null
+  /** The statistic the active comparison actually requested (#997). */
+  comparisonStatistic?: 'mean' | 'median'
 }
 
 /**

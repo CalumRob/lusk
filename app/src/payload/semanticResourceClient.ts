@@ -45,7 +45,16 @@ export type SemanticComparisonIntent =
   | { kind: 'facts' }
   /** Producer-declared comparison context (`default`, `epci`, `bretagne`, ...). */
   | { kind: 'fixed_comparison'; context: string }
-  | { kind: 'selected_comparison'; members: Array<{ type: TerritoireType; id: string }> }
+  | {
+    kind: 'selected_comparison'
+    members: Array<{ type: TerritoireType; id: string }>
+    /**
+     * Closed intent selector (#996/ADR-0045). Omission keeps the producer's
+     * declared median; an explicit mean is only declared by a detail-backed
+     * declared profile. It is never a `fields` projection flag.
+     */
+    statistic?: 'median' | 'mean'
+  }
 
 export interface SemanticReadItem {
   resource: string
@@ -282,7 +291,13 @@ export function semanticItemKey(item: SemanticReadItem): string {
     ? Object.fromEntries(Object.keys(item.coordinates).sort().map((axis) => [axis, [...item.coordinates![axis]!]]))
     : null
   const intent = item.intent.kind === 'selected_comparison'
-    ? { kind: item.intent.kind, members: item.intent.members.map(({ type, id }) => ({ type, id })) }
+    ? {
+      kind: item.intent.kind,
+      members: item.intent.members.map(({ type, id }) => ({ type, id })),
+      // Omitted means the producer's median default; an explicit mean is a
+      // different read and must never reuse a settled median outcome (#997).
+      statistic: item.intent.statistic ?? 'median',
+    }
     : item.intent.kind === 'fixed_comparison' ? { kind: item.intent.kind, context: item.intent.context } : { kind: item.intent.kind }
   return JSON.stringify([item.resource, canonicalTarget(item.target), intent,
     coordinates, item.fields ? [...item.fields].sort() : null])

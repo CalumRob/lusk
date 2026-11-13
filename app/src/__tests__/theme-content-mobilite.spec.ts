@@ -100,11 +100,12 @@ const territory = {
   epciName: 'EPCI X',
 }
 
-function factsWith(indicators: NumericFact[]): TerritoryFacts {
+function factsWith(indicators: NumericFact[], comparisonStatistic?: 'mean' | 'median'): TerritoryFacts {
   return {
     territory,
     theme: 'mobilite',
-    mobility: { namedTrajectoryReferences: [], indicators },
+    mobility: { namedTrajectoryReferences: [], indicators,
+      ...(comparisonStatistic ? { comparisonStatistic } : {}) },
   }
 }
 
@@ -501,5 +502,141 @@ describe('Couverture du territoire + Visiter la Bretagne — #955 content contra
     expect(wrapper.find('[data-source-url-missing]').exists()).toBe(true)
     expect(wrapper.find('.cahier-evidence-source a').exists()).toBe(false)
     wrapper.unmount()
+  })
+})
+
+describe('compared protected/shared means — #997', () => {
+  const members = ['22001', '22002']
+  function meanComparison(value: number, eligibleMembers: readonly string[] = members): FactComparison {
+    return {
+      direction: 'plus-est-mieux',
+      scope,
+      rank: { position: 1, size: 2 },
+      reference: { kind: 'mean', value, eligibleMembers },
+    }
+  }
+  function meanFact(
+    key: string,
+    value: number,
+    unit: string,
+    detail: string,
+    eligibleMembers: readonly string[] = members,
+    sourceId = 'osm_reseaux',
+  ): NumericFact {
+    return { ...fact(key, value, unit, detail, sourceId), comparison: meanComparison(value, eligibleMembers),
+      comparisonBasis: 'territory-mean' }
+  }
+  function networkFacts(): NumericFact[] {
+    const indicators = sharingFacts().filter((candidate) => ![
+      'reseaux_par_habitant', 'reseaux', 'offre_cyclable',
+    ].includes(candidate.key))
+    return [
+      ...indicators,
+      meanFact('reseaux_par_habitant', 12, 'km / 1 000 hab.', 't_km_1000'),
+      meanFact('reseaux_par_habitant', 8, 'km / 1 000 hab.', 'b_km_1000'),
+      meanFact('reseaux_par_habitant', 80, 'km / 1 000 hab.', 'c_km_1000'),
+      meanFact('reseaux', 10, 'km', 't_longueur'),
+      meanFact('reseaux', 6, 'km', 'b_longueur'),
+      meanFact('reseaux', 30, 'km', 'c_longueur'),
+      meanFact('offre_cyclable', 5, 'km / 1 000 hab.', 'protege_km_1000', members, 'amenagements_cyclables'),
+      meanFact('offre_cyclable', 3, 'km / 1 000 hab.', 'partage_km_1000', members, 'amenagements_cyclables'),
+      meanFact('offre_cyclable', 4, 'km', 'protege_longueur', members, 'amenagements_cyclables'),
+      meanFact('offre_cyclable', 2, 'km', 'partage_longueur', members, 'amenagements_cyclables'),
+    ]
+  }
+  function bike(indicators: NumericFact[], comparisonStatistic: 'mean' | 'median' = 'mean') {
+    const content = resolveMobiliteThemeContent(factsWith(indicators, comparisonStatistic), metadata)
+    const section = content.units.find((unit) => unit.key === 'partage-de-lespace-public')!
+      .sections.find((candidate) => candidate.key === 'reseaux')!
+    if (section.evidence?.kind !== 'mobilite-networks') throw new Error('Réseaux evidence expected')
+    return section.evidence.figure.categories.find((category) => category.key === 'bike')!
+  }
+
+  it('draws the compared bike stack only when the served means share one population and recompose the total', () => {
+    const category = bike(networkFacts())
+    expect(category.comparisonSplit).toBe(true)
+    expect(category.comparisonSplitNote).toBeUndefined()
+    expect(category.value.fact.comparison?.reference).toMatchObject({ kind: 'mean', value: 8,
+      eligibleMembers: members })
+    expect(category.value.fact.comparison?.scope.label).toBe('communes de EPCI X')
+    // Every other network reference is a mean too, while the motorisation
+    // profile keeps its own median contract.
+    expect(category.rawValue?.fact.comparison?.reference?.kind).toBe('mean')
+  })
+
+  it('does not call a legitimate median fixed comparison a missing mean', () => {
+    const category = bike(sharingFacts(), 'median')
+    expect(category.value.fact.comparison?.reference?.kind).toBe('median')
+    expect(category.comparisonSplit).toBeUndefined()
+    expect(category.comparisonSplitNote).toBeUndefined()
+  })
+
+  it('refuses a split when equal eligible counts name different communes', () => {
+    const indicators = networkFacts().map((candidate) => candidate.key === 'offre_cyclable' &&
+      candidate.detail === 'partage_km_1000'
+      ? { ...candidate, comparison: meanComparison(3, ['22001', '22003']) } : candidate)
+    const category = bike(indicators)
+    expect(category.comparisonSplit).toBeUndefined()
+    expect(category.comparisonSplitNote).toContain('ne portent pas les mêmes communes')
+  })
+
+  it('refuses a split when the served partition does not recompose the total', () => {
+    const indicators = networkFacts().map((candidate) => candidate.key === 'offre_cyclable' &&
+      candidate.detail === 'protege_km_1000'
+      ? { ...candidate, comparison: meanComparison(4) } : candidate)
+    const category = bike(indicators)
+    expect(category.comparisonSplit).toBeUndefined()
+    expect(category.comparisonSplitNote).toContain('ne recomposent pas la moyenne du total')
+  })
+
+  it('refuses a split when a segment mean is missing rather than shrinking the stack', () => {
+    const indicators = networkFacts().map((candidate) => candidate.key === 'offre_cyclable' &&
+      candidate.detail === 'partage_km_1000'
+      ? { ...candidate, comparison: comparison(3) } : candidate)
+    const category = bike(indicators)
+    expect(category.comparisonSplit).toBeUndefined()
+    expect(category.comparisonSplitNote).toContain('une moyenne servie est incomplète')
+  })
+
+  it('keeps a real zero as a valid mean partition', () => {
+    const indicators = networkFacts().map((candidate) => {
+      if (candidate.key === 'reseaux_par_habitant' && candidate.detail === 'b_km_1000') {
+        return { ...candidate, comparison: meanComparison(0) }
+      }
+      if (candidate.key === 'offre_cyclable' && (candidate.detail === 'protege_km_1000' ||
+          candidate.detail === 'partage_km_1000')) {
+        return { ...candidate, comparison: meanComparison(0) }
+      }
+      if (candidate.key === 'reseaux' && candidate.detail === 'b_longueur') {
+        return { ...candidate, comparison: meanComparison(0) }
+      }
+      if (candidate.key === 'offre_cyclable' && (candidate.detail === 'protege_longueur' ||
+          candidate.detail === 'partage_longueur')) {
+        return { ...candidate, comparison: meanComparison(0) }
+      }
+      return candidate
+    })
+    const category = bike(indicators)
+    expect(category.comparisonSplit).toBe(true)
+    expect(category.comparisonSplitNote).toBeUndefined()
+    expect(category.value.fact.comparison?.reference?.value).toBe(0)
+  })
+
+  it('refuses a raw split that does not recompose the raw total', () => {
+    const indicators = networkFacts().map((candidate) => candidate.key === 'offre_cyclable' &&
+      candidate.detail === 'partage_longueur'
+      ? { ...candidate, comparison: meanComparison(1) } : candidate)
+    const category = bike(indicators)
+    expect(category.comparisonSplit).toBeUndefined()
+    expect(category.comparisonSplitNote).toContain('moyennes brutes servies ne recomposent pas')
+  })
+
+  it('refuses a split that mixes units', () => {
+    const indicators = networkFacts().map((candidate) => candidate.key === 'offre_cyclable' &&
+      candidate.detail === 'protege_km_1000'
+      ? { ...candidate, unit: '%', comparison: meanComparison(5) } : candidate)
+    const category = bike(indicators)
+    expect(category.comparisonSplit).toBeUndefined()
+    expect(category.comparisonSplitNote).toContain('ne partagent pas la même unité')
   })
 })

@@ -100,6 +100,54 @@ function validerPorteeComparaison(scope: unknown, selection: unknown, target: un
   throw new Error('Portée de comparaison sémantique invalide')
 }
 
+function validerResultatMoyenneProfile(result: Row): void {
+  const statistic = result.statistic
+  if (statistic !== undefined && statistic !== 'median' && statistic !== 'mean') {
+    throw new Error('Statistique de comparaison sémantique invalide')
+  }
+  if (statistic !== 'mean') {
+    if ('mean' in result || 'eligible_members' in result) {
+      throw new Error('Une comparaison non moyenne porte une valeur moyenne')
+    }
+    return
+  }
+  if ('median' in result) {
+    throw new Error('Une comparaison moyenne porte une médiane')
+  }
+  const selected = result.selected_member_count
+  const eligible = result.eligible_count
+  const missing = result.missing_count
+  if (!Number.isInteger(selected) || (selected as number) < 0 ||
+      !Number.isInteger(eligible) || (eligible as number) < 0 ||
+      !Number.isInteger(missing) || (missing as number) < 0 ||
+      (eligible as number) + (missing as number) !== selected) {
+    throw new Error('Comptes de la comparaison moyenne invalides')
+  }
+  const members = result.eligible_members
+  if (!Array.isArray(members) || members.length !== eligible || members.length > 1500 ||
+      members.some((member) => !texteNonVide(member) || (member as string).length > 64) ||
+      new Set(members).size !== members.length) {
+    throw new Error('Identités éligibles de la comparaison moyenne invalides')
+  }
+  if (typeof result.focal_in_selection !== 'boolean' ||
+      !isRecord(result.source_facet) || !texteNonVide(result.source_facet.detail) ||
+      !(result.source_facet.sex === null || texteNonVide(result.source_facet.sex)) ||
+      !texteNonVide(result.unit)) {
+    throw new Error('Facette de la comparaison moyenne invalide')
+  }
+  if (result.status === 'available') {
+    if (!finite(result.mean) || result.reason !== null || members.length < 1 ||
+        !Array.isArray(result.comparison_sources) || result.comparison_sources.length === 0) {
+      throw new Error('Moyenne de comparaison sémantique invalide')
+    }
+    return
+  }
+  if (result.mean !== null || result.reason !== 'no_selected_comparable_values' ||
+      members.length !== 0 || eligible !== 0 || missing !== selected) {
+    throw new Error('Moyenne indisponible de comparaison sémantique invalide')
+  }
+}
+
 function validerResultatComparaison(result: Row, data: Row, declaration?: Row): void {
   if (result.status !== 'available' && result.status !== 'unavailable') {
     throw new Error('Statut de comparaison sémantique invalide')
@@ -146,6 +194,7 @@ function validerResultatComparaison(result: Row, data: Row, declaration?: Row): 
         rankSize !== null && rankSize !== undefined))) {
     throw new Error('Rang de comparaison incompatible avec son statut')
   }
+  if (data.shape === 'profile') validerResultatMoyenneProfile(result)
 }
 
 function validerLectureComparaison(read: Row, focalReads?: unknown, requireFocalSeries = false,
@@ -1178,7 +1227,8 @@ export function lignesAvecComparaisonApi(lignes: Indicateur[], comparison: unkno
     if (!match) return row
     validerResultatComparaison(match, profiles.includes(match) ? { shape: 'profile' } : {})
     if (match.status !== 'available') return row
-    const reference = finite(match.mean) ? { kind: 'mean' as const, value: match.mean }
+    const reference = finite(match.mean) ? { kind: 'mean' as const, value: match.mean,
+      ...(Array.isArray(match.eligible_members) ? { eligibleMembers: match.eligible_members as string[] } : {}) }
       : finite(match.median) ? { kind: 'median' as const, value: match.median } : undefined
     if (match.rank == null && !reference) return row
     return { ...row, comparaisonApi: { rang: (match.rank as number | null) ?? null, taille: (match.rank_size as number | null) ?? null,
@@ -1412,6 +1462,7 @@ export function validerReponseComparaisonTheme(
   response: unknown,
   selectionAttendue: readonly ThemeSelectionMember[] | undefined,
   targetAttendu?: { type: TerritoireType; id: string },
+  meanResources: readonly string[] = [],
 ): void {
   if (isRecord(response) && Array.isArray(response.comparison_reads)) {
     if (response.theme_id !== theme ||
@@ -1440,6 +1491,14 @@ export function validerReponseComparaisonTheme(
         throw new Error('Résultat de comparaison sémantique mal formé')
       }
       validerLectureComparaison(comparison, undefined, false, targetAttendu)
+      const expectsMean = selectionAttendue !== undefined &&
+        selectionAttendue.every((member) => member.territory_type === 'commune') &&
+        meanResources.includes(comparison.resource)
+      if (expectsMean && comparison.data.result.statistic !== 'mean') {
+        // A median answer to an explicit mean request is an integrity failure,
+        // never a comparison to relabel or to draw as a mean (#997).
+        throw new Error('La comparaison sélectionnée ne sert pas la moyenne demandée')
+      }
       if (selectionAttendue !== undefined) {
         const actual = comparison.data.selection as unknown[]
         if (actual.length !== selectionAttendue.length || actual.some((item, index) => !isRecord(item) ||

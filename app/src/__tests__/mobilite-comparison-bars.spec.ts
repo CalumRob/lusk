@@ -837,3 +837,103 @@ describe('CahierMobiliteComparisonBars — axis-named categories leave the legen
     expect(rawRow.attributes('aria-label')).toContain('(valeur brute)')
   })
 })
+
+describe('CahierMobiliteComparisonBars — compared protected/shared means (#997)', () => {
+  const mean = (value: number, eligibleMembers: readonly string[] = ['22001', '22002']) => ({
+    direction: 'plus-est-mieux' as const,
+    scope: { kind: 'communes-epci' as const, label: 'communes de EPCI X' },
+    rank: { position: 1, size: 2 },
+    reference: { kind: 'mean' as const, value, eligibleMembers },
+  })
+
+  function splitFigure(): MobiliteBarsFigureEvidence {
+    const result = structuredClone(figure) as MobiliteBarsFigureEvidence
+    result.comparisonLabel = 'Moyenne des communes de EPCI X'
+    const bike = result.categories.find((category) => category.key === 'bike')!
+    bike.value.fact.comparison = mean(6)
+    bike.rawValue!.fact.comparison = mean(12)
+    bike.segments[0]!.value.fact.comparison = mean(4)
+    bike.segments[0]!.rawValue!.fact.comparison = mean(8)
+    bike.segments[1]!.value.fact.comparison = mean(2)
+    bike.segments[1]!.rawValue!.fact.comparison = mean(4)
+    bike.comparisonSplit = true
+    return result
+  }
+
+  it('draws the pale protected/shared compared stack beside the focal stack', () => {
+    const wrapper = mount(CahierMobiliteComparisonBars, {
+      props: { figure: splitFigure(), comparison: { status: 'ready' } },
+    })
+    const bike = wrapper.get('g[data-comparison="bike"]')
+    expect(bike.attributes('data-comparison-split')).toBe('true')
+    const segments = bike.findAll('rect[data-comparison-segment]')
+    expect(segments.map((segment) => segment.attributes('data-comparison-segment')))
+      .toEqual(['protege_km_1000', 'partage_km_1000'])
+    // The compared stack uses the same role inks, at the compared 45 % mix.
+    expect(segments[0]!.attributes('fill')).toContain('var(--cahier-cycle-protected')
+    expect(segments[0]!.attributes('fill')).toContain('45%')
+    expect(segments[1]!.attributes('fill')).toContain('var(--cahier-cycle-shared')
+    // Its heights are the served mean partition of the compared total.
+    const comparedTotal = Number(wrapper.get('g[data-comparison="bike"]')
+      .findAll('rect[data-comparison-segment]').reduce((sum, segment) =>
+        sum + Number(segment.attributes('height')), 0))
+    const totalHeight = Number(wrapper.get('rect[data-comparison="walkTransit"]')
+      .attributes('height'))
+    expect(totalHeight).toBeGreaterThan(0)
+    expect(comparedTotal).toBeGreaterThan(0)
+    // The legend keeps its approved #990 keys; no new pale legend identity.
+    expect(wrapper.findAll('.cahier-figure-legend-label').map((item) => item.text()))
+      .toEqual(['Réseau cyclable protégé', 'Réseau cyclable partagé', 'Groupe comparé'])
+  })
+
+  it('names the mean, unit, scope, rank and both compared segments in the accessible reading', () => {
+    const wrapper = mount(CahierMobiliteComparisonBars, {
+      props: { figure: splitFigure(), comparison: { status: 'ready' } },
+    })
+    const label = wrapper.get('svg[role="img"]').attributes('aria-label')!
+    expect(label).toContain('Groupe comparé : 6 km / 1 000 hab. (Moyenne des communes de EPCI X)')
+    expect(label).toContain('Groupe comparé Protégé : 4 km / 1 000 hab. (Moyenne des communes de EPCI X)')
+    expect(label).toContain('Groupe comparé Partagé : 2 km / 1 000 hab. (Moyenne des communes de EPCI X)')
+    expect(label).not.toContain('médiane du total non segmenté')
+    expect(label).not.toContain('moyenne du total non segmenté')
+  })
+
+  it('keeps the unsegmented total and an explicit note when the served populations differ', async () => {
+    const unsafe = splitFigure()
+    const bike = unsafe.categories.find((category) => category.key === 'bike')!
+    bike.comparisonSplit = false
+    bike.comparisonSplitNote = 'Répartition comparée Protégé/Partagé indisponible : les moyennes servies ne portent pas les mêmes communes.'
+    const wrapper = mount(CahierMobiliteComparisonBars, {
+      props: { figure: unsafe, comparison: { status: 'ready' } },
+    })
+    expect(wrapper.find('g[data-comparison="bike"]').exists()).toBe(false)
+    expect(wrapper.find('rect[data-comparison="bike"]').exists()).toBe(true)
+    expect(wrapper.findAll('rect[data-comparison-segment]')).toHaveLength(0)
+    expect(wrapper.text()).toContain('Répartition comparée Protégé/Partagé indisponible')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label'))
+      .toContain('Répartition comparée Protégé/Partagé indisponible')
+    await wrapper.findAll('.mobilite-comparison-bars__hitbox')[1]!.trigger('focus')
+    expect(wrapper.get('.mobilite-comparison-bars__tooltip').text())
+      .toContain('Répartition comparée Protégé/Partagé')
+  })
+
+  it('keeps a real zero mean as a zero-height compared stack, not a missing value', () => {
+    const zero = splitFigure()
+    const bike = zero.categories.find((category) => category.key === 'bike')!
+    bike.value.fact.comparison = mean(0)
+    bike.rawValue!.fact.comparison = mean(0)
+    for (const segment of bike.segments) {
+      segment.value.fact.comparison = mean(0)
+      segment.rawValue!.fact.comparison = mean(0)
+    }
+    const wrapper = mount(CahierMobiliteComparisonBars, {
+      props: { figure: zero, comparison: { status: 'ready' } },
+    })
+    const group = wrapper.get('g[data-comparison="bike"]')
+    expect(group.attributes('data-comparison-split')).toBe('true')
+    const heights = group.findAll('rect[data-comparison-segment]')
+      .map((segment) => Number(segment.attributes('height')))
+    expect(heights).toEqual([0, 0])
+    expect(wrapper.text()).not.toContain('indisponible')
+  })
+})

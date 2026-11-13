@@ -1,6 +1,7 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
 import type { TerritoireType, Theme } from './types'
 import { validerReponseComparaisonTheme } from './themeFactsAdapter'
+import { DECLARED_DETAIL_COMPARISON_RESOURCES, meanComparisonResources } from './comparisonResources'
 import { chargerCatalogueRessources, invalidateSemanticItems, invalidateSemanticReads,
   invalidateSemanticReadsForTarget, publicationFamilyForResource, readSemanticOutcomes } from './semanticResourceClient'
 import type { SemanticPublicationFamily, SemanticPublicationReason, SemanticReadItem,
@@ -624,7 +625,8 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
       const nativeComparisonShape = Array.isArray(comparison.comparison_reads) &&
         comparison.theme_id === theme
       if (nativeComparisonShape || hasNativeProfileFocal || legacySeriesResponse) {
-        validerReponseComparaisonTheme(theme, comparison, selection, { type: type as TerritoireType, id })
+        validerReponseComparaisonTheme(theme, comparison, selection, { type: type as TerritoireType, id },
+          meanComparisonResources(theme))
       }
       if (nativeComparisonShape && selection !== undefined) {
         // The typed selection echo and its declared scope are one contract for
@@ -996,16 +998,9 @@ function decorateRead(
  * #954/#960 — the Mobilité page-2 tooltips need one served comparison per
  * declared point, not only the descriptor's published default. The expansion is
  * deliberately narrow: only these producer resources, and only the declared
- * points the figures actually display.
+ * points the figures actually display. The same identities are the detail-backed
+ * declared profiles that request the owner-approved equal-weight mean (#997).
  */
-const DECLARED_DETAIL_COMPARISON_RESOURCES: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
-  mobilite: {
-    reseaux_par_habitant: ['t_km_1000', 'b_km_1000', 'c_km_1000'],
-    reseaux: ['t_longueur', 'b_longueur', 'c_longueur'],
-    offre_cyclable: ['protege_longueur', 'partage_longueur', 'protege_km_1000', 'partage_km_1000'],
-  },
-}
-
 function declaredDetailComparisonItems(
   resource: SemanticResourceDeclaration,
   type: string,
@@ -1023,16 +1018,35 @@ function declaredDetailComparisonItems(
   }))
 }
 
+/**
+ * The mean selector belongs to the intent, never to `fields`. It is added only
+ * for an explicit selected comparison of a detail-backed declared profile the
+ * page-2 network figure draws; every other read keeps its declared default.
+ */
+function comparisonIntentForResource(
+  resource: SemanticResourceDeclaration,
+  intent: SemanticReadItem['intent'],
+): SemanticReadItem['intent'] {
+  if (intent.kind !== 'selected_comparison' ||
+      // The owner-approved statistic is an equal-weight mean of COMMUNES; an
+      // EPCI/département/région member group keeps its declared median.
+      intent.members.some((member) => member.type !== 'commune') ||
+      !resource.shapes.includes('declared_profile') ||
+      !meanComparisonResources(resource.theme_id).includes(resource.resource_id)) return intent
+  return { ...intent, statistic: 'mean' }
+}
+
 function factAndComparisonItems(resources: SemanticResourceDeclaration[], type: string, id: string,
   intent: SemanticReadItem['intent'] | null): SemanticReadItem[] {
   return resources.flatMap((resource) => {
     if (!resource.target_kinds.includes('territory') || !resource.intents.includes('facts')) return []
     const items = [territoryItem(resource.resource_id, type, id, { kind: 'facts' })]
     if (intent === null || !resource.intents.includes(intent.kind)) return items
-    const detailItems = declaredDetailComparisonItems(resource, type, id, intent)
+    const resourceIntent = comparisonIntentForResource(resource, intent)
+    const detailItems = declaredDetailComparisonItems(resource, type, id, resourceIntent)
     items.push(...(detailItems.length
       ? detailItems
-      : [territoryItem(resource.resource_id, type, id, intent)]))
+      : [territoryItem(resource.resource_id, type, id, resourceIntent)]))
     return items
   })
 }
@@ -1506,10 +1520,11 @@ export function acquireThemeComparison(type: string, id: string, theme: ThemeKey
       ? { kind: 'fixed_comparison', context: 'default' }
       : { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) => ({ type: territory_type, id: territory_id })) }
     const items = resources.flatMap((resource) => {
-      const detailItems = declaredDetailComparisonItems(resource, type, id, intent)
+      const resourceIntent = comparisonIntentForResource(resource, intent)
+      const detailItems = declaredDetailComparisonItems(resource, type, id, resourceIntent)
       return detailItems.length
         ? detailItems
-        : [territoryItem(resource.resource_id, type, id, intent)]
+        : [territoryItem(resource.resource_id, type, id, resourceIntent)]
     })
     const { reads, failures } = items.length
       ? await readThemeOutcomes(items, resources, coherence, undefined, fresh)
