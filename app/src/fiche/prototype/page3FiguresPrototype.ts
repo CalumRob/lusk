@@ -20,3 +20,10 @@ export const FigureCouverturePrototype: Component | null = PAGE3_FIGURES_PROTOTY
 export const FigureRaccordementPrototype: Component | null = PAGE3_FIGURES_PROTOTYPE
   ? defineAsyncComponent(() => import('./CahierMobiliteRaccordementCurve.prototype.vue'))
   : null
+
+/**
+ * [PROTOTYPE page 3 — JETABLE] Stable app-owned figure title for the curve.
+ * A presentation override only: no producer descriptor, contract or factual
+ * metadata is regenerated.
+ */
+export const TITRE_COURBE_PROTOTYPE = 'Population bretonne joignable en fonction du temps de trajet'

@@ -22,6 +22,7 @@ import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import type { MobiliteShareEvidence } from '@/fiche/content/themeContent'
 import { formatServedRankAria } from '@/fiche/figureGrammaire'
 import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
+import CahierRank from './CahierRank.vue'
 
 type ComparisonState = {
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
@@ -38,13 +39,25 @@ const props = defineProps<{
   comparisonNone?: boolean
 }>()
 
-function formatNumber(value: number, maximumFractionDigits = 0): string {
+function formatNumber(value: number, maximumFractionDigits: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
 }
 
-function displayed(value: number, unit: string): string {
-  const scaled = unit.trim() === '%' ? value * 100 : value
-  return formatNumber(scaled)
+function scaledValue(value: number, unit: string): number {
+  return unit.trim() === '%' ? value * 100 : value
+}
+
+/**
+ * Visible label: one decimal. The served 0,9957355… reads 99,6 %, never a
+ * synthetic 100 %, and the bar keeps its true 99,57 % width.
+ */
+function visibleLabel(value: number | null): string {
+  return value === null ? 'Indisponible' : `${formatNumber(scaledValue(value, props.figure.unit), 1)} %`
+}
+
+/** Accessible reading keeps the served value's actual precision, same % unit. */
+function preciseLabel(value: number | null): string {
+  return value === null ? 'Indisponible' : `${formatNumber(scaledValue(value, props.figure.unit), 4)} %`
 }
 
 const value = computed(() => {
@@ -60,12 +73,10 @@ const reference = computed(() => {
   return fact.reference.value
 })
 
-const valueLabel = computed(() => value.value === null
-  ? 'Indisponible'
-  : `${displayed(value.value, props.figure.unit)} %`)
-const referenceLabel = computed(() => reference.value === null
-  ? 'Indisponible'
-  : `${displayed(reference.value, props.figure.unit)} %`)
+const valueLabel = computed(() => visibleLabel(value.value))
+const referenceLabel = computed(() => visibleLabel(reference.value))
+const valueAriaLabel = computed(() => preciseLabel(value.value))
+const referenceAriaLabel = computed(() => preciseLabel(reference.value))
 
 function percentPosition(candidate: number | null): number {
   if (candidate === null) return 0
@@ -104,7 +115,7 @@ const remainderReading = 'Barre de 0 à 100 % ; le reste de la barre est le comp
 
 const territoryAria = computed(() => [
   props.figure.figureTitle,
-  `${territoryLabel.value} : ${valueLabel.value}`,
+  `${territoryLabel.value} : ${valueAriaLabel.value}`,
   remainderReading,
 ].join('. '))
 
@@ -120,7 +131,7 @@ const comparisonAria = computed(() => {
   const direction = comparisonDetail.value.direction
   return [
     props.figure.figureTitle,
-    `${GROUPE_COMPARE_LABEL} : ${referenceLabel.value}`,
+    `${GROUPE_COMPARE_LABEL} : ${referenceAriaLabel.value}`,
     scope ?? `${comparisonDetail.value.statistic} du groupe comparé`,
     rank ? `Rang ${rank}` : direction,
     remainderReading,
@@ -206,6 +217,12 @@ const stateMessage = computed(() => {
           {{ comparison.status === 'loading' ? 'Chargement…' : 'Indisponible' }}
         </span>
       </div>
+      <!-- The shared rank primitive: served rank, ties, extreme circle, 1/1 hidden. -->
+      <CahierRank
+        v-if="reference !== null"
+        :fact="figure.value.fact"
+        placement="comparison"
+      />
     </div>
 
     <p v-for="note in publicationNotes" :key="note" class="page3-share-proto__state" role="note">{{ note }}</p>

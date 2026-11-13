@@ -35,6 +35,7 @@ import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
 import {
   FigureCouverturePrototype,
   FigureRaccordementPrototype,
+  TITRE_COURBE_PROTOTYPE,
 } from './page3FiguresPrototype'
 
 const props = defineProps<{
@@ -319,12 +320,15 @@ function ratioAriaLabel(
         </div>
       </div>
       <figure class="mobilite-section-figure mobilite-section-figure--wide">
-        <figcaption class="cahier-figure-title">{{ curve.figureTitle }}</figcaption>
+        <figcaption class="cahier-figure-title">
+          {{ FigureRaccordementPrototype ? TITRE_COURBE_PROTOTYPE : curve.figureTitle }}
+        </figcaption>
         <component
           :is="FigureRaccordementPrototype"
           v-if="FigureRaccordementPrototype"
           :figure="curve"
           :comparison="effectiveComparison"
+          :territory-name="territoryName"
         />
         <CahierMobiliteRaccordementCurve v-else :figure="curve" :comparison="effectiveComparison" />
       </figure>

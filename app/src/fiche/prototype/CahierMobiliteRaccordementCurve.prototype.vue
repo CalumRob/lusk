@@ -30,6 +30,7 @@ import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
+import { TITRE_COURBE_PROTOTYPE } from './page3FiguresPrototype'
 import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
 
 type ComparisonState = {
@@ -41,7 +42,18 @@ type ComparisonState = {
 const props = defineProps<{
   figure: MobiliteRaccordementEvidence
   comparison: ComparisonState
+  /** Published territory display name (the fiche's validated identity). */
+  territoryName?: string
 }>()
+
+/**
+ * [PROTOTYPE page 3 — JETABLE] Stable app-owned figure title for this curve.
+ * It is a presentation override; the producer descriptor and its factual
+ * metadata are untouched.
+ */
+const FIGURE_TITLE = TITRE_COURBE_PROTOTYPE
+/** The unit is carried by the tick labels now, not by the axis title. */
+const X_AXIS_TITLE = 'Temps de trajet'
 
 /** Same compact proportions as the shared AEDAR ramps (no protected geometry touched). */
 const BASE_FIGURE_GEOMETRY = {
@@ -138,9 +150,25 @@ const drawablePoints = computed(() => props.figure.points.flatMap((point) => {
 const hasDrawablePoints = computed(() => drawablePoints.value.length > 0)
 
 const declaredTicks = computed(() => props.figure.trajectory?.ticks ?? [])
+
+/**
+ * Tick labels read the published numeric axis value (minutes), never the
+ * `tXXXX` key: 0 stays « 0 », the sub-hour ticks name their unit, and the
+ * published hour labels are kept verbatim. No duplicate « min » is appended
+ * when the declared label already carries a unit.
+ */
+function tickLabel(tick: { label: string }, axisValue: number): string {
+  if (axisValue > 0 && axisValue < 60 && !/min/iu.test(tick.label)) {
+    return `${formatNumber(axisValue, 0)} min`
+  }
+  return tick.label
+}
+
 const xTicks = computed<readonly CahierFigureAxisTick[]>(() => declaredTicks.value.flatMap((tick) => {
   const axisValue = axisForDetail(tick.detail)
-  return axisValue === null ? [] : [{ key: tick.detail, label: tick.label, position: xForAxis(axisValue) }]
+  return axisValue === null
+    ? []
+    : [{ key: tick.detail, label: tickLabel(tick, axisValue), position: xForAxis(axisValue) }]
 }))
 const yTicks = computed<readonly CahierFigureAxisTick[]>(() => Y_TICKS.map((value) => ({
   key: value,
@@ -193,31 +221,7 @@ const visibleXTicks = computed<readonly CahierFigureAxisTick[]>(() => {
 
 const marker = computed(() => props.figure.trajectory?.marker ?? null)
 const markerAxisValue = computed(() => marker.value ? axisForDetail(marker.value.detail) : null)
-const markerPoint = computed(() => {
-  if (!marker.value) return null
-  return props.figure.points.find((point) => point.fact.detail === marker.value!.detail) ?? null
-})
 const markerX = computed(() => markerAxisValue.value === null ? null : xForAxis(markerAxisValue.value))
-const markerY = computed(() => markerPoint.value?.fact.value === null || markerPoint.value?.fact.value === undefined
-  ? null
-  : yFor(markerPoint.value.fact.value))
-
-/**
- * The reference-time label lives in HTML, not in the scaled SVG text: it keeps
- * the figure's own label size at every width instead of shrinking with the
- * viewBox.
- */
-const markerLabelStyle = computed(() => {
-  if (markerX.value === null) return {}
-  const xPercent = (markerX.value / geometry.value.width) * 100
-  return {
-    left: `${xPercent}%`,
-    top: `${(geometry.value.margin.top / geometry.value.height) * 100}%`,
-    transform: xPercent > 66
-      ? 'translateX(calc(-100% - 0.5rem))'
-      : 'translateX(0.5rem)',
-  }
-})
 
 const comparisonAvailable = computed(() =>
   props.comparison.status === 'ready' && props.figure.comparison !== null,
@@ -301,8 +305,8 @@ const accessibleLabel = computed(() => {
     ? ' Le groupe comparé est superposé au territoire dans cette sélection.'
     : ''
   const notes = [...publicationNotes.value, comparisonStateText.value].filter(Boolean).join(' ')
-  return `${props.figure.figureTitle}. Courbe cumulative de la population bretonne joignable selon le temps de trajet. ` +
-    `Axe horizontal : ${props.figure.trajectory?.axisLabels?.x ?? 'temps de trajet'}. ` +
+  return `${FIGURE_TITLE}. Courbe cumulative de la population bretonne joignable selon le temps de trajet. ` +
+    `Axe horizontal : ${X_AXIS_TITLE}. ` +
     `Axe vertical : ${props.figure.trajectory?.axisLabels?.y ?? 'population joignable (%)'}. ` +
     `Territoire : ${readings}.${comparisonReading}${coincidence}${markerReading}${notes ? ` ${notes}` : ''}`
 })
@@ -458,13 +462,14 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
   const canToggle = props.comparison.status === 'loading' || props.comparison.status === 'error' || comparisonAvailable.value
   const comparisonAria = `${GROUPE_COMPARE_LABEL} : ${props.figure.comparisonLabel ?? UNAVAILABLE_LABEL}`
     + (curvesCoincide.value && showComparison.value ? ' (superposé au territoire)' : '')
+  const focalName = props.territoryName ?? props.figure.territoryName
   return [
     {
       key: 'territory',
-      label: 'Territoire',
+      label: focalName,
       marker: 'line',
       tone: 'theme',
-      ariaLabel: `Territoire : ${props.figure.territoryName}`,
+      ariaLabel: `Territoire : ${focalName}`,
     },
     {
       key: 'comparison',
@@ -478,7 +483,7 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
 })
 const legendColors = {
   territory: 'var(--brand-500)',
-  comparison: 'var(--color-figure-reference, var(--cahier-default, var(--editorial-muted)))',
+  comparison: 'var(--brand-200)',
 }
 const legendSelected = computed(() => showComparison.value ? ['comparison'] : [])
 
@@ -501,12 +506,12 @@ const stateMessage = computed(() => {
 
 const unavailableState = computed(() => {
   if (props.figure.points.length && props.figure.axis === null) {
-    return `${props.figure.figureTitle} : repères de trajectoire indisponibles.`
+    return `${FIGURE_TITLE} : repères de trajectoire indisponibles.`
   }
   if (props.figure.points.length && !hasDrawablePoints.value) {
-    return `${props.figure.figureTitle} indisponible : aucune valeur publiée.`
+    return `${FIGURE_TITLE} indisponible : aucune valeur publiée.`
   }
-  return `${props.figure.figureTitle} indisponible.`
+  return `${FIGURE_TITLE} indisponible.`
 })
 </script>
 
@@ -516,7 +521,7 @@ const unavailableState = computed(() => {
       <CahierFigureFrame
         size="compact"
         :geometry="geometry"
-        :x-title="figure.trajectory.axisLabels?.x"
+        :x-title="X_AXIS_TITLE"
         :y-title="figure.trajectory.axisLabels?.y"
       >
         <template #plot>
@@ -570,14 +575,6 @@ const unavailableState = computed(() => {
                   :y1="geometry.margin.top"
                   :y2="plotBottom"
                 />
-                <circle
-                  v-if="markerPoint && markerY !== null"
-                  class="page3-curve-proto__marker-point"
-                  :cx="markerX"
-                  :cy="markerY"
-                  :data-value="markerPoint.fact.value"
-                  r="4.5"
-                />
               </g>
 
               <g v-if="selectedTick" class="page3-curve-proto__cursor" aria-hidden="true">
@@ -605,11 +602,6 @@ const unavailableState = computed(() => {
               </g>
             </svg>
             <CahierFigureAxisLabels :geometry="geometry" :x-ticks="visibleXTicks" :y-ticks="yTicks" :x-label-offset="8" />
-            <span
-              v-if="marker && markerX !== null"
-              class="page3-curve-proto__marker-label"
-              :style="markerLabelStyle"
-            >{{ marker.label }}</span>
             <button
               type="button"
               class="page3-curve-proto__hit-surface"
@@ -690,7 +682,7 @@ const unavailableState = computed(() => {
 }
 .page3-curve-proto__comparison {
   fill: none;
-  stroke: var(--color-figure-reference, var(--cahier-default, var(--editorial-muted)));
+  stroke: var(--brand-200);
   stroke-width: 2.5;
   stroke-dasharray: 10 6;
   stroke-linecap: round;
@@ -701,22 +693,6 @@ const unavailableState = computed(() => {
   stroke: var(--cahier-default, var(--editorial-muted));
   stroke-width: 1.5;
   stroke-dasharray: 3 3;
-}
-.page3-curve-proto__marker-point {
-  fill: var(--paper);
-  stroke: var(--brand-600, var(--brand-500));
-  stroke-width: 2.5;
-}
-.page3-curve-proto__marker-label {
-  position: absolute;
-  z-index: 1;
-  margin: 0;
-  color: var(--cahier-default, var(--editorial-muted));
-  font: var(--type-figure-label);
-  font-size: var(--type-figure-tick-size);
-  font-weight: 700;
-  white-space: nowrap;
-  pointer-events: none;
 }
 .page3-curve-proto__cursor-line {
   stroke: color-mix(in srgb, var(--cahier-theme) 38%, transparent);
@@ -729,7 +705,7 @@ const unavailableState = computed(() => {
 }
 .page3-curve-proto__cursor-point--comparison {
   fill: var(--paper);
-  stroke: var(--color-figure-reference, var(--cahier-default, var(--editorial-muted)));
+  stroke: var(--brand-200);
   stroke-width: 2;
 }
 .page3-curve-proto__hit-surface {
