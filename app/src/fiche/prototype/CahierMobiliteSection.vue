@@ -265,7 +265,11 @@ function ratioAriaLabel(
       </section>
     </div>
 
-    <div v-else-if="share" class="mobilite-section-spread">
+    <div
+      v-else-if="share"
+      class="mobilite-section-spread"
+      :class="{ 'mobilite-section-spread--page3-proto': Boolean(FigureCouverturePrototype) }"
+    >
       <div class="mobilite-section-copy">
         <CahierProse class="argument-copy" :blocks="share.prose" />
         <div v-if="share.sources.length" class="mobilite-section-sources">
@@ -319,6 +323,9 @@ function ratioAriaLabel(
 .mobilite-section { display: grid; gap: var(--space-6); min-width: 0; }
 .mobilite-networks-maps { min-width: 0; }
 .mobilite-section-spread { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: clamp(var(--space-4), 3vw, var(--space-8)); align-items: start; }
+/* [PROTOTYPE page 3 — JETABLE] la prose de « Couverture du territoire » se
+ * centre verticalement sur la figure. Scopé à cette section seulement. */
+.mobilite-section-spread--page3-proto { align-items: center; }
 .mobilite-section-stack { display: grid; gap: var(--space-4); min-width: 0; }
 .mobilite-section-copy { display: grid; gap: var(--space-3); align-content: start; min-width: 0; }
 .mobilite-section-copy .argument-copy { margin: 0; }

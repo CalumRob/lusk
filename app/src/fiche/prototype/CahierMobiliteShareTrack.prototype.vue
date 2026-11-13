@@ -1,25 +1,24 @@
 <script setup lang="ts">
 /**
- * [PROTOTYPE page 3 — JETABLE] « Couverture du territoire ».
+ * [PROTOTYPE page 3 — JETABLE, v2] « Couverture du territoire ».
  *
- * Deux barres empilées à 100 % : la ligne « Territoire », puis la ligne du
- * groupe comparé actif de l'en-tête. Chaque barre se partage entre la part
- * publiée « à proximité d'un arrêt » et son complément. Le complément n'est
- * qu'une lecture visuelle du reste de la barre : ce n'est ni une mesure
- * publiée, ni un rang, ni une statistique recalculée dans le navigateur.
+ * Deux barres empilées à 100 % : « Territoire », puis le « Groupe comparé » de
+ * l'en-tête. Chaque barre porte la part publiée, puis son reste — laissé
+ * neutre et sans étiquette. Ce reste n'est qu'une lecture visuelle du complément
+ * de la part publiée : ce n'est ni une mesure publiée, ni un rang, ni une
+ * statistique recalculée dans le navigateur.
  *
  * Le seuil (« à 500 m ») reste porté par le titre publié de la figure ; la
- * légende ne nomme que les deux zones. À 100 %, le complément garde une
- * largeur nulle : aucune largeur factice n'est inventée pour zéro.
+ * portée résolue de la comparaison reste dans l'ARIA et le titre de la ligne.
+ * À 100 %, le reste garde une largeur nulle : aucune largeur factice n'est
+ * inventée pour zéro.
  */
 import { computed } from 'vue'
 
-import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import type { MobiliteShareEvidence } from '@/fiche/content/themeContent'
 import { formatServedRankAria } from '@/fiche/figureGrammaire'
 import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
-import CahierFigureLegend from './CahierFigureLegend.vue'
 
 type ComparisonState = {
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
@@ -31,9 +30,6 @@ const props = defineProps<{
   figure: MobiliteShareEvidence
   comparison: ComparisonState
 }>()
-
-const SHARE_LABEL = 'À proximité d’un arrêt'
-const COMPLEMENT_LABEL = 'Pas d’arrêt à proximité'
 
 function formatNumber(value: number, maximumFractionDigits = 0): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
@@ -71,20 +67,18 @@ function percentPosition(candidate: number | null): number {
 
 const fillPercent = computed(() => percentPosition(value.value))
 const referencePercent = computed(() => percentPosition(reference.value))
-/** The complement is only the rest of the published share, never a stored fact. */
+/** The remainder is only the rest of the published share, never a stored fact. */
 const complementPercent = computed(() => (value.value === null ? 0 : Math.max(0, 100 - fillPercent.value)))
 const referenceComplementPercent = computed(() =>
   reference.value === null ? 0 : Math.max(0, 100 - referencePercent.value))
 
-const comparisonRowLabel = computed(() => props.figure.comparisonLabel ?? GROUPE_COMPARE_LABEL)
+const comparisonScope = computed(() => props.figure.comparisonLabel)
 
 const comparisonDetail = computed(() => {
   const comparison = props.figure.value.fact.comparison
   if (!comparison) return null
-  const statistic = comparison.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane'
   return {
-    statistic,
-    label: props.figure.comparisonLabel ?? `${statistic} du groupe comparé`,
+    statistic: comparison.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane',
     rank: formatServedRankAria(comparison.rank),
     direction: LIBELLES_DIRECTION[comparison.direction] ?? null,
   }
@@ -95,54 +89,32 @@ const publicationNotes = computed(() => [
   ...(props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`),
 ])
 
-const splitReading = 'Barre de 0 à 100 % partagée entre « À proximité d’un arrêt » et « Pas d’arrêt à proximité ».'
+const remainderReading = 'Barre de 0 à 100 % ; le reste de la barre est le complément de la part publiée.'
 
 const territoryAria = computed(() => [
   props.figure.figureTitle,
   `Territoire : ${valueLabel.value}`,
-  splitReading,
+  remainderReading,
 ].join('. '))
 
 const comparisonAria = computed(() => {
   if (props.comparison.status === 'loading') {
-    return `${props.figure.figureTitle}. ${comparisonRowLabel.value} : chargement en cours.`
+    return `${props.figure.figureTitle}. ${GROUPE_COMPARE_LABEL} : chargement en cours.`
   }
   if (reference.value === null || !comparisonDetail.value) {
-    return `${props.figure.figureTitle}. ${comparisonRowLabel.value} : indisponible.`
+    return `${props.figure.figureTitle}. ${GROUPE_COMPARE_LABEL} : indisponible.`
   }
+  const scope = comparisonScope.value
   const rank = comparisonDetail.value.rank
   const direction = comparisonDetail.value.direction
   return [
     props.figure.figureTitle,
-    `${comparisonRowLabel.value} : ${referenceLabel.value}`,
-    `${comparisonDetail.value.statistic} du groupe comparé`,
+    `${GROUPE_COMPARE_LABEL} : ${referenceLabel.value}`,
+    scope ?? `${comparisonDetail.value.statistic} du groupe comparé`,
     rank ? `Rang ${rank}` : direction,
-    splitReading,
+    remainderReading,
   ].filter(Boolean).join('. ')
 })
-
-const legendEntries = computed<readonly FigureLegendEntry[]>(() => [
-  {
-    key: 'share',
-    label: SHARE_LABEL,
-    marker: 'square',
-    tone: 'theme',
-    ariaLabel: `${SHARE_LABEL} : ${valueLabel.value}`,
-  },
-  {
-    key: 'complement',
-    label: COMPLEMENT_LABEL,
-    marker: 'square',
-    tone: 'peer',
-    ariaLabel: `${COMPLEMENT_LABEL} : complément de la part publiée, sans mesure distincte`,
-  },
-])
-
-const legendColors = {
-  share: 'var(--cahier-theme-strong, var(--brand-600))',
-  complement: 'var(--page3-complement-fill)',
-}
-
 
 const stateMessage = computed(() => {
   if (props.comparison.status === 'loading') return 'Chargement du groupe comparé…'
@@ -196,7 +168,7 @@ const stateMessage = computed(() => {
     <div class="page3-share-proto__row" data-row="comparison">
       <div class="page3-share-proto__head">
         <span class="page3-share-proto__row-label page3-share-proto__row-label--comparison">
-          {{ comparisonRowLabel }}
+          {{ GROUPE_COMPARE_LABEL }}
         </span>
         <span class="page3-share-proto__row-value page3-share-proto__row-value--comparison">{{ referenceLabel }}</span>
       </div>
@@ -231,13 +203,6 @@ const stateMessage = computed(() => {
       </div>
     </div>
 
-    <CahierFigureLegend
-      class="page3-share-proto__legend"
-      :entries="legendEntries"
-      :mark-colors="legendColors"
-      label="Zones de la barre de couverture"
-    />
-
     <p v-for="note in publicationNotes" :key="note" class="page3-share-proto__state" role="note">{{ note }}</p>
     <p v-if="stateMessage" class="page3-share-proto__state" role="status">{{ stateMessage }}</p>
     <button
@@ -251,7 +216,7 @@ const stateMessage = computed(() => {
 
 <style scoped>
 .page3-share-proto {
-  --page3-complement-fill: color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 22%, var(--paper));
+  --page3-complement-fill: color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 18%, var(--paper));
   display: grid;
   gap: var(--space-3);
   min-width: 0;
@@ -283,7 +248,7 @@ const stateMessage = computed(() => {
   color: var(--cahier-default, var(--editorial-muted));
   text-transform: none;
   letter-spacing: normal;
-  font: var(--text-caption);
+  font: var(--type-figure-legend);
   font-weight: 600;
 }
 .page3-share-proto__row-value {
@@ -294,18 +259,18 @@ const stateMessage = computed(() => {
 }
 .page3-share-proto__row-value--comparison {
   color: var(--cahier-default, var(--editorial-muted));
-  font: var(--type-figure-comparison);
+  font: var(--type-figure-legend);
   font-weight: 600;
 }
 .page3-share-proto__track {
   display: flex;
   min-width: 0;
-  height: 1.75rem;
-  border: 1px solid color-mix(in srgb, var(--cahier-theme) 26%, transparent);
+  height: 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--cahier-theme) 20%, transparent);
   background: var(--page3-complement-fill);
 }
 .page3-share-proto__track--comparison {
-  border-color: color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 32%, transparent);
+  border-color: color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 24%, transparent);
 }
 .page3-share-proto__segment {
   display: block;
@@ -330,7 +295,6 @@ const stateMessage = computed(() => {
   font: var(--text-caption);
   font-variant-numeric: tabular-nums;
 }
-.page3-share-proto__legend { flex-wrap: wrap; }
 .page3-share-proto__state {
   margin: 0;
   color: var(--cahier-default, var(--editorial-muted));
@@ -350,7 +314,4 @@ const stateMessage = computed(() => {
 }
 .page3-share-proto__retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
 .page3-share-proto__retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
-@media (max-width: 520px) {
-  .page3-share-proto__track { height: 1.5rem; }
-}
 </style>

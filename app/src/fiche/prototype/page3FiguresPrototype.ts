@@ -4,7 +4,8 @@
  * Hors développement, les deux composants valent `null` : la branche morte est
  * éliminée au build, aucun chunk de prototype n'est produit, et la page 3 garde
  * exactement ses figures de production. Aucune route, aucun paramètre d'API,
- * aucune donnée : seul le rendu interne des deux figures est remplacé.
+ * aucune donnée : seul le rendu interne des deux figures est remplacé, avec
+ * l'alignement vertical de la prose de couverture scopé à cette section.
  */
 import { defineAsyncComponent } from 'vue'
 import type { Component } from 'vue'
