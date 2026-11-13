@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { invalidateSemanticReads, SemanticMemberError } from '@/payload/semanticResourceClient'
+import { SemanticMemberError } from '@/payload/semanticResourceClient'
 /**
  * La fiche d'identité — the shell (site-map.md §Fiche + layouts.md §2).
  *
@@ -805,10 +805,6 @@ async function relancerComparaisonMobilite(): Promise<void> {
       ? await demandeChapitreNiveau(type, 'mobilite', critique, selectionActive)
       : undefined
     if (!demand?.indicators?.length) return
-    // An explicit retry re-probes this chapter's comparison items: their settled
-    // absence is released so no concurrent acquisition replays it.
-    const chapterIndicators = new Set(demand.indicators)
-    invalidateSemanticReads((item) => chapterIndicators.has(item.resource))
     const acquired = await cacheAcquisition.retryComparison(type, code, 'mobilite', selectionActive,
       [...demand.indicators])
     if (!productionMobilite.value || !payloadPourRendu.value) return

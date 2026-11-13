@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import TerritoireView from '@/views/TerritoireView.vue'
 import { chargerMetadonneesTheme, THEME_METADATA_CHARGER_KEY } from '@/payload/themeCatalogue'
+import { semanticReadState } from '@/payload/semanticResourceClient'
+import type { SemanticReadItem } from '@/payload/semanticResourceClient'
 import { routes } from '@/router'
 import { nativeBatchResponse, nativeCatalogueResponse, nativePublicationFamily,
   nativeReadFixture } from './helpers/semanticApiFixtures'
@@ -57,6 +59,26 @@ function summaryFixture(item: Record<string, any>) {
       source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
       licence: 'ODbL', attribution: 'AEDAR', reference_date: '2026-01-01', publication_date: '2026-09-30',
     })),
+  }
+}
+
+/** The four published diversity-loss sidecars of one territory (CDN contract). */
+const LOSS_MODES = ['walk', 'transit', 'bike_lts2', 'bike_lts4'] as const
+function lossInlineLegend(mode: typeof LOSS_MODES[number], code = '53', name = 'Bretagne') {
+  return {
+    schema: 'lusk.aedar.inline-legend.v1',
+    territory: { kind: 'region', code, name },
+    mode,
+    measure: 'equipment_loss',
+    horizon_minutes: 15,
+    image: { key: `maps/aedar/v1/${code}-${mode}-inline.webp`, sha256: 'a'.repeat(64), bytes: 36412 },
+    scale: {
+      type: 'equal-width', semantics: 'car-only-typequ', scope: 'territory-local-pooled-loss',
+      minimum: 12, maximum: 92, boundaries: [12, 28, 44, 60, 76, 92],
+      colours: ['#716ca2', '#8f85b1', '#ad9ebf', '#b186a3', '#ac5b78'],
+      display_ticks: ['12', '28', '44,0', '60', '76', '92'],
+      regional_reference: null, regional_reference_label: null,
+    },
   }
 }
 
@@ -418,16 +440,38 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     pageThreeComparisonAbsent = false
     const beforeRetry = posts(calls).length
     const factsBefore = items(calls).filter((item) => item.intent.kind === 'facts').length
+    const chapterFacts = items(calls).filter((item) => item.intent.kind === 'facts' &&
+      PAGE_THREE.includes(item.resource))
+    expect(chapterFacts).toHaveLength(4)
     await wrapper.get('.mobilite-raccordement-curve__retry').trigger('click')
     await flushPromises()
     await flushPromises()
 
-    const retried = posts(calls).slice(beforeRetry).flatMap((call) => call.items)
-    expect(retried.filter((item) => item.intent.kind === 'selected_comparison')).toHaveLength(3)
-    expect(retried.some((item) => item.intent.kind === 'facts')).toBe(false)
+    // EXACTLY ONE retry batch, carrying only the page-3 comparables — never a
+    // second POST and never another chapter's resource.
+    const retryBatches = posts(calls).slice(beforeRetry)
+    expect(retryBatches).toHaveLength(1)
+    expect(retryBatches[0]!.items.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+    expect(retryBatches[0]!.items.map((item) => item.resource).sort())
+      .toEqual([...pageThreeComparables].sort())
     expect(items(calls).filter((item) => item.intent.kind === 'facts')).toHaveLength(factsBefore)
+    // The retry released only comparison reads: every admitted page-3 fact key is
+    // still settled in the semantic transport.
+    expect(chapterFacts.every((item) => semanticReadState(item as SemanticReadItem) === 'available')).toBe(true)
     expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(false)
     expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(true)
+
+    // A later chapter demand never silently re-probes the retried chapter's facts.
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-partage-de-lespace-public' })
+    await flushPromises()
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-offre-transports-commun' })
+    await flushPromises()
+    await flushPromises()
+    expect(items(calls).filter((item) => item.intent.kind === 'facts' &&
+      PAGE_THREE.includes(item.resource))).toHaveLength(chapterFacts.length)
+    expect(items(calls).filter((item) => item.intent.kind === 'facts')).toHaveLength(factsBefore)
     wrapper.unmount()
   }, 60000)
 
@@ -531,6 +575,7 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
   it('reuses settled AEDAR reads when returning to page 1, and keeps the 235 universe', async () => {
     const { transport, calls } = createTransport()
     const legendRequests: string[] = []
+    const lossLegendRequests: string[] = []
     const summaryRequests: string[] = []
     const fetchWithFixtures = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -538,6 +583,11 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
         legendRequests.push(url)
         return new Response(JSON.stringify(carInlineLegend({ type: 'region', code: '53', name: 'Bretagne' })),
           { status: 200 })
+      }
+      const lossMode = LOSS_MODES.find((candidate) => url.endsWith(`-${candidate}-inline.json`))
+      if (lossMode) {
+        lossLegendRequests.push(url)
+        return new Response(JSON.stringify(lossInlineLegend(lossMode)), { status: 200 })
       }
       if (url === '/api/resources/read-batch') {
         const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
@@ -558,6 +608,9 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     await attendreChapitreUtile(wrapper, calls, '[data-section="aedar-car-overview"]')
     await settleOwner(calls, isAedar)
     await flushPromises()
+    // All four diversity-loss sidecars settle with the page-1 legend.
+    await vi.waitFor(() => expect(lossLegendRequests).toHaveLength(LOSS_MODES.length))
+    await flushPromises()
 
     const aedarPosts = () => items(calls).filter(isAedar).length
     const aedarSummaryPosts = () => summaryRequests.length
@@ -565,9 +618,11 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     const aedarBefore = aedarPosts()
     const summaryBefore = aedarSummaryPosts()
     const legendsBefore = legendReads()
+    const lossLegendsBefore = lossLegendRequests.length
     expect(aedarBefore).toBeGreaterThan(0)
     expect(summaryBefore).toBe(1)
     expect(legendsBefore).toBe(1)
+    expect(lossLegendsBefore).toBe(LOSS_MODES.length)
     const legendLabel = wrapper.get('.aedar-car-map-legend').attributes('aria-label')
     expect(legendLabel).toContain('235')
 
@@ -575,15 +630,19 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
       hash: '#figure-partage-de-lespace-public' })
     await flushPromises()
     expect(aedarImageSources(wrapper)).toEqual([])
+    // Leaving the chapter fetches nothing: the settled legends stay in memory.
+    expect(lossLegendRequests).toHaveLength(lossLegendsBefore)
 
     await router.push({ path: '/territoire/region/53', query: { theme: 'mobilite' },
       hash: '#figure-acces-aux-services' })
     await flushPromises()
     await settleOwner(calls, isAedar)
-    // A cached revisit of the same valid territory observes nothing again.
+    // A cached revisit of the same valid territory observes nothing again: car
+    // legend AND all four loss legends are reused, never refetched.
     expect(aedarPosts()).toBe(aedarBefore)
     expect(aedarSummaryPosts()).toBe(summaryBefore)
     expect(legendReads()).toBe(legendsBefore)
+    expect(lossLegendRequests).toHaveLength(lossLegendsBefore)
     expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
     expect(wrapper.get('.aedar-car-map-legend').attributes('aria-label')).toBe(legendLabel)
     wrapper.unmount()

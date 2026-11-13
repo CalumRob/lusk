@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { chapitreDemande } from '@/fiche/content/demandInventory'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
-import { SEMANTIC_MAX_BATCH_ITEMS } from '@/payload/semanticResourceClient'
+import { SEMANTIC_MAX_BATCH_ITEMS, semanticReadState } from '@/payload/semanticResourceClient'
+import type { SemanticReadItem } from '@/payload/semanticResourceClient'
 import { ThemeAcquisitionCache, acquireThemeComparison, acquireThemeFacts,
   comparisonDemandState } from '@/payload/themeAcquisition'
 import type { ThemeFactsDemand } from '@/payload/themeAcquisition'
@@ -190,6 +191,32 @@ describe('theme demand — Mobilite page 2 critical chapter', () => {
     expect(comparisonDemandState(retried, SELECTION, PAGE_TWO)?.status).toBe('error')
     expect(retried.comparisons.get(selectionKey)?.comparison_error).not.toBe(true)
     expect(retried.comparisons.get(selectionKey)?.comparison_failure).toBeUndefined()
+  })
+
+  it('re-probes only comparison reads on an explicit retry: admitted facts stay settled', async () => {
+    vi.stubGlobal('fetch', fixtureFetch())
+    const cache = cacheFor()
+    await cache.get('commune', '35238', 'mobilite', {
+      indicators: PAGE_TWO, selection: SELECTION, auxiliary: false,
+    })
+    const posted = posts.flatMap((post) => post.items)
+    const factItems = posted.filter((item) => item.intent.kind === 'facts')
+    expect(factItems).toHaveLength(13)
+    expect(factItems.every((item) => semanticReadState(item as SemanticReadItem) === 'available')).toBe(true)
+
+    const retried = await cache.retryComparison('commune', '35238', 'mobilite', SELECTION, PAGE_TWO)
+    expect(comparisonDemandState(retried, SELECTION, PAGE_TWO)?.status).toBe('ready')
+    const retriedItems = posts.flatMap((post) => post.items).slice(posted.length)
+    expect(retriedItems.length).toBeGreaterThan(0)
+    expect(retriedItems.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+    // The retry released only comparison reads: every admitted fact key is still
+    // settled, so no later demand can silently re-probe it.
+    expect(factItems.every((item) => semanticReadState(item as SemanticReadItem) === 'available')).toBe(true)
+
+    await cache.get('commune', '35238', 'mobilite', { indicators: PAGE_THREE, selection: SELECTION })
+    const pageTwoFacts = posts.flatMap((post) => post.items)
+      .filter((item) => item.intent.kind === 'facts' && PAGE_TWO.includes(item.resource))
+    expect(pageTwoFacts).toHaveLength(factItems.length)
   })
 
   it('keeps healthy focal facts when one demanded comparison publication is absent, with no retry fan-out', async () => {

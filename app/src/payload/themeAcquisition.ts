@@ -696,6 +696,9 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     const focal = await this.get(type, id, theme)
     this.assertCurrentFocal(cacheKey, focalGeneration, focal)
     if (!this.acquireComparison) return focal
+    // Re-probe this territory's comparison-only reads: the settled absence is
+    // released, while focal facts, named references and cohorts stay settled.
+    this.invalidateComparisonReads(type, id)
     const comparison = await this.acquireComparison(selection, theme, key,
       acquisitionCoherence(focal.focal), indicators, true)
     this.assertCurrentFocal(cacheKey, focalGeneration, focal)
@@ -740,8 +743,15 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     }
     this.comparisonGenerations.set(pendingKey, (this.comparisonGenerations.get(pendingKey) ?? 0) + 1)
     this.pendingComparisons.delete(pendingKey)
-    // An explicit comparison retry re-probes the shared comparison items and
-    // their same-level cohort evidence; admitted focal facts stay reusable.
+    this.invalidateComparisonReads(type, id)
+  }
+
+  /**
+   * Release one territory's comparison-only semantic reads. Admitted focal facts,
+   * named references and their cohort evidence stay settled, so an explicit
+   * comparison retry can never force a silent facts re-read.
+   */
+  private invalidateComparisonReads(type: string, id: string): void {
     invalidateSemanticReads((item) => item.target.kind === 'territory'
       ? item.target.type === type && item.target.id === id && item.intent.kind !== 'facts'
       : item.target.kind === 'territory_cohort' && item.target.type === type)

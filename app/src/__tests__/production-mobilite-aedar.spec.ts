@@ -405,15 +405,17 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-function lossInlineLegend(mode: typeof lossMapModes[number]) {
+function lossInlineLegend(mode: typeof lossMapModes[number],
+  territory: { type: string; code: string; name: string } = { type: 'commune', code: '22001', name: 'Allineuc' },
+  ticks: readonly string[] = ['12', '28', '44,0', '60', '76', '92']) {
   return {
     schema: 'lusk.aedar.inline-legend.v1',
-    territory: { kind: 'commune', code: '22001', name: 'Allineuc' },
+    territory: { kind: territory.type, code: territory.code, name: territory.name },
     mode,
     measure: 'equipment_loss',
     horizon_minutes: 15,
     image: {
-      key: `maps/aedar/v1/22001-${mode}-inline.webp`,
+      key: `maps/aedar/v1/${territory.code}-${mode}-inline.webp`,
       sha256: 'a'.repeat(64),
       bytes: 36412,
     },
@@ -425,12 +427,62 @@ function lossInlineLegend(mode: typeof lossMapModes[number]) {
       maximum: 92,
       boundaries: [12, 28, 44, 60, 76, 92],
       colours: ['#716ca2', '#8f85b1', '#ad9ebf', '#b186a3', '#ac5b78'],
-      display_ticks: ['12', '28', '44,0', '60', '76', '92'],
+      display_ticks: [...ticks],
       regional_reference: null,
       regional_reference_label: null,
     },
   }
 }
+
+it('fences a late loss-map legend reply from the previous territory', async () => {
+  const requests: string[] = []
+  let releaseStale!: () => void
+  const staleGate = new Promise<void>((resolve) => { releaseStale = resolve })
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    const mode = lossMapModes.find((candidate) => url.endsWith(`-${candidate}-inline.json`))
+    if (!mode) return { ok: false, json: async () => ({}) } as Response
+    requests.push(url)
+    const code = url.slice(url.lastIndexOf('/') + 1).split('-')[0]!
+    if (code === '22001') {
+      await staleGate
+      return { ok: true, json: async () => lossInlineLegend(mode) } as Response
+    }
+    return { ok: true, json: async () => lossInlineLegend(mode,
+      { type: 'commune', code: '22002', name: 'Saint-Samson-sur-Rance' },
+      ['1', '2', '3', '4', '5', '6']) } as Response
+  }))
+  const content = baseContent()
+  const control = ref<ControleComparaison>({ focal: payload.territoires.find((territoire) =>
+    territoire.territoire === content.territory.code)!, territoires: payload.territoires,
+  selection: { etat: 'vide' }, libelleActif: null, presetDefaut: 'epci', presets: [], choisir: () => {} })
+  const wrapper = mount(ProductionMobiliteAedar, { props: { content,
+    pagination: cahierPaginationFor(payload, content), aedarData: aedarReady, aedarStatus: 'ready',
+    retryAedar: () => {}, aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready',
+    retryAedarSummary: () => {}, aedarActive: true },
+  global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
+  await flushPromises()
+  expect(requests.filter((url) => url.includes('22001-'))).toHaveLength(lossMapModes.length)
+
+  const next = { ...content, territory: { ...content.territory, code: '22002', name: 'Saint-Samson-sur-Rance' } } as ThemeContent
+  await wrapper.setProps({ content: next, pagination: cahierPaginationFor(payload, next) })
+  await flushPromises()
+  expect(requests.filter((url) => url.includes('22002-'))).toHaveLength(lossMapModes.length)
+  releaseStale()
+  await flushPromises()
+  await flushPromises()
+
+  const rendered = wrapper.findComponent(VarianteCahierLibre).props('content') as ThemeContent
+  const section = rendered.units[0].sections.find((candidate: ContentSection) =>
+    candidate.evidence?.kind === 'aedar-diversity-loss')
+  const evidence = section?.evidence
+  if (evidence?.kind !== 'aedar-diversity-loss') throw new Error('Loss section expected')
+  // The new territory's settled legends win; the late reply of the previous one
+  // is discarded rather than replacing them.
+  expect(evidence.metadataState).toBe('ready')
+  expect(evidence.legend?.tickLabels).toEqual(['1', '2', '3', '4', '5', '6'])
+  wrapper.unmount()
+})
 
 describe('VarianteCahierLibre — AEDAR access', () => {
   it('renders two standalone time ramps with existing mode controls, but no duplicate map slots', async () => {

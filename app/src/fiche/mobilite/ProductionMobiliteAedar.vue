@@ -92,19 +92,30 @@ watch([comparisonRequest, comparisonFocalIdentity, comparisonRetry], async ([req
 
 const lossMapMetadata = ref<AedarDiversityLossMapMetadata>({ status: 'loading', legend: null })
 let lossMapMetadataRequest = 0
+/** The territory whose four loss legends are settled (direction/horizon are fixed). */
+let lossMapLegendIdentity: string | null = null
 
-// #986 — the loss-map legend is page-1 evidence: it is read only when the AEDAR
-// chapter is the requested one, so a page-2 deep link issues no page-1 asset or
-// API request. The pending placeholder stays in place meanwhile.
+// #986 — the loss-map legends are page-1 evidence: they are read only when the
+// AEDAR chapter is the requested one, so a page-2 deep link issues no page-1
+// asset or API request. Leaving the chapter keeps the settled legends, so
+// returning reuses all four; another territory releases them and is fenced.
 watch([() => `${props.content.territory.type}/${props.content.territory.code}`, () => props.aedarActive],
-  async ([, active]) => {
+  async ([identity, active]) => {
+    if (lossMapLegendIdentity !== null && lossMapLegendIdentity !== identity) {
+      lossMapLegendIdentity = null
+      lossMapMetadata.value = { status: 'loading', legend: null }
+    }
+    if (!active) return
+    if (lossMapLegendIdentity === identity && lossMapMetadata.value.status === 'ready') return
     const request = ++lossMapMetadataRequest
-    if (!active) { lossMapMetadata.value = { status: 'loading', legend: null }; return }
     const territory = props.content.territory
     lossMapMetadata.value = { status: 'loading', legend: null }
     try {
       const legend = await fetchAedarDiversityLossMapLegend(territory)
-      if (request === lossMapMetadataRequest) lossMapMetadata.value = { status: 'ready', legend }
+      if (request === lossMapMetadataRequest) {
+        lossMapMetadata.value = { status: 'ready', legend }
+        lossMapLegendIdentity = identity
+      }
     } catch {
       if (request === lossMapMetadataRequest) lossMapMetadata.value = { status: 'unavailable', legend: null }
     }
