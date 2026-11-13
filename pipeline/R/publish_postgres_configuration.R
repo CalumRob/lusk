@@ -57,6 +57,7 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
     if (file.exists(binding)) file.copy(binding, backup)
     backup
   }
+  scoped_result <- NULL
   tryCatch({
     # A scoped retained publication (the three #989 supply scalars) publishes
     # only the registered dependency closure: scalar snapshot/comparisons, the
@@ -95,8 +96,9 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
       if (!identical(plan$direction, if (forward) "forward" else "recovery"))
         stop("Scoped publication direction could not be derived from the ",
              "supplied generations; refusing with zero writes.", call. = FALSE)
-      assert_scoped_publication_baseline(con, plan)
-      publish_scoped_retained_backend(con, plan)
+      guard <- assert_scoped_publication_baseline(con, plan)
+      scoped_result <- publish_scoped_retained_backend(con, plan,
+                                                       guard$absent_sources)
     } else {
       publish_retained_backend_snapshot(con, sortie,
         conso_source_path=conso_source_path)
@@ -109,4 +111,5 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
     if (!is.null(profile_backup)) unlink(profile_backup, recursive=TRUE)
     DBI::dbDisconnect(con)
   })
+  scoped_result
 }

@@ -85,7 +85,15 @@ can be scoped.
    - every typed-reading resource whose declared `source_keys` intersect those
      profile `comparison_scalar` facets (the linked Habitat selected reading);
    - the **territory reference** must match both generations and is never
-     rewritten by this path.
+     rewritten by this path;
+   - the `source_dataset`/`source_vintage` rows those scalar/profile projections
+     will upsert. Every target row already live must match exactly (a newer
+     shared row refuses with zero writes); target-only rows may be inserted
+     forward, and unreferenced inserted rows are retired in the same
+     transaction. Recovery additionally retires candidate-only rows. A row is
+     retired only when no base table in the serving schema references its
+     `source_id`/`vintage_id` (FK-backed or text-only); shared/referenced rows
+     are preserved, so unrelated owners are not cascaded or left dangling.
    Before any write, the guard requires the live markers of **that closure** to
    match the *current* generation exactly: scalar + scalar comparison,
    declared profile + profile comparison, DPE required scalar/descriptor,

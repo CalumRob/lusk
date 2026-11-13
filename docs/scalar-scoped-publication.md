@@ -99,7 +99,10 @@ The closure is derived from producer metadata, never a hardcoded owner list:
    scalar token is global, so the DPE companion is affected);
 3. every typed-reading resource whose declared `source_keys` intersect those
    profile `comparison_scalar` facets (the linked **Habitat selected reading**);
-4. the **territory reference** must match but is not rewritten.
+4. the **territory reference** must match but is not rewritten;
+5. the `source_dataset`/`source_vintage` rows those scalar/profile projections
+   will upsert. Existing rows are guarded; recovery retires only newly
+   introduced rows that no owner table references.
 
 Before any write, under the existing scalar advisory lock
 (`pg_advisory_lock(594,1)`), the guard reads the live markers and requires
@@ -115,6 +118,20 @@ exactly the **current** generation of that closure:
 | `profile_comparison_publication` | current profile comparison version/profile/reference |
 | `selected_reading` + `selected_reading_publication[habitat]` | current Habitat content/reference |
 | `selected_reading_descriptor[habitat]` | current descriptor version and `linked_content_version` |
+
+The source/vintage rows are guarded separately from the publication markers:
+every target row that already exists live must match exactly, so a newer shared
+`source_dataset.name` or `source_vintage.version/date` hard-refuses with
+**zero writes**. Target rows absent live are recorded. Forward may insert them
+through the normal scalar/profile publishers. In the same transaction, any
+inserted row that remains unreferenced is retired; a referenced row is
+preserved. Recovery additionally retires a row that is present only in the
+candidate generation. A row is retired only when no base table in the serving
+schema references its `source_id`/`vintage_id` (FK-backed or text-only,
+including Milieux/series provenance). Shared or referenced rows are preserved,
+so unrelated owners are never cascaded or left dangling. The result is exact
+for unreferenced scope-only source rows; referenced rows are intentionally
+preserved.
 
 Demographic, economy, Milieux and owned-series rows **and markers** are outside
 the plan: they are not read as expectations and not published. A newer live
@@ -151,7 +168,9 @@ exit/error. A failure rolls back every owner; the pre-refresh profile artifacts
 are restored and a retry after clearing the failure succeeds. The
 scalar/comparison/profile tables remain wholesale replaces: unchanged
 facts/provenance/descriptors are identical, while the global versions change and
-the three resources are added. No per-row write semantics are claimed.
+the three resources are added. The same normal publishers upsert the target
+`source_dataset`/`source_vintage` rows; shared rows were guarded, and target-only
+rows may be inserted. No per-row write semantics are claimed.
 
 ### Recovery
 
@@ -171,11 +190,15 @@ the live **candidate** markers of the closure; the scalar publisher's normal
 explicit retirement policy omits the three scoped indicators from the restored
 generation (`retired_indicator_ids`), then the same atomic transaction restores
 the baseline declared-profile and linked Habitat reading. The three remain
-declared by metadata but unpublished (the pre-#989 state). Newer unrelated
-Milieux/economy/series rows and markers are untouched, so no full baseline hunt
-is needed for them. Recovery must run on a **writable copy** of the frozen
-baseline (the canonical set is read-only; the plan identity is proven by its
-manifest).
+declared by metadata but unpublished (the pre-#989 state). After those writes,
+the same transaction retires the forward-introduced `source_dataset`/
+`source_vintage` rows that no owner table references; shared or referenced rows
+are preserved. The affected scalar/profile/selected state and unreferenced
+scope-only source rows are restored exactly; shared/referenced source rows are
+intentionally untouched. Newer unrelated Milieux/economy/series rows and
+markers are untouched, so no full baseline hunt is needed for them. Recovery
+must run on a **writable copy** of the frozen baseline (the canonical set is
+read-only; the plan identity is proven by its manifest).
 
 The scalar `pg_advisory_lock(594,1)` serializes scalar publishers; it does not
 cover the other owners' locks. **The operator must still ensure no concurrent
@@ -221,34 +244,46 @@ cleanup always on, zero residual schemas):
 $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
 $env:LUSK_SCALAR_TEST_DATABASE = 'lusk_it_contract'
 $env:LUSK_SCALAR_TEST_USER = 'lusk_it_contract_pub'
-$env:LUSK_RETAINED_BASELINE_RECEIPT = 'E:\Temp\opencode\lusk-989-publication-preparation\49-atomic-smoke-receipt.txt'
+$env:LUSK_RETAINED_BASELINE_RECEIPT = 'E:\Temp\opencode\lusk-989-publication-preparation\83-source-policy-receipt.txt'
 pipeline\scripts\run-retained-baseline-smoke.ps1 `
   -CandidateDir <candidate sortie> -BaselineDir <prior baseline sortie>
 ```
 
-Receipt status PASS on 2026-11-12 (#995 run): baseline 20 286 facts / 16
-descriptors, candidate 24 087 / 19 (exact +3, +3 801 facts; comparisons
-1 136→1 349 groups, 58 688→69 692 territory results). Unrelated demographic,
-economy, Milieux and owned-series markers were advanced to **newer** values
-before the forward call; the scoped publication still succeeded, kept those
-markers and their table rows byte-identical, and changed only the closure.
-Newer affected scalar/profile/Habitat/linked markers all refused with a
-whole-schema digest unchanged. A forced failure after the scalar/profile stage
-rolled back the entire schema and restored the pre-refresh profile artifact.
-Then the **same normal wrapper/plan** recovered the frozen baseline from the
-committed candidate (scalar `10cfd…`, comparison `1b7c…`, profile `d97f…`,
-profile comparison `2c97…`, linked `-d97f…-10cfd…-6fd9…`, DPE required scalar
+Receipt status PASS on 2026-11-13 (#995 source-policy run): baseline 20 286
+facts / 16 descriptors, candidate 24 087 / 19 (exact +3, +3 801 facts;
+comparisons 1 136→1 349 groups, 58 688→69 692 territory results). Unrelated
+demographic, economy, Milieux and owned-series markers were advanced to
+**newer** values before the forward call; the scoped publication still
+succeeded, kept those markers and their table rows byte-identical, and changed
+only the closure. Newer affected scalar/profile/Habitat/linked markers all
+refused with a whole-schema digest unchanged. The source-policy proof uses two
+test-only `source_dataset`/`source_vintage` rows on a private candidate copy:
+one unreferenced and one referenced by a `series_provenance_revision`. Newer
+live shared source/vintage rows refused with zero writes; forward inserted both
+test rows through the normal scalar publisher; recovery retired the
+unreferenced row, preserved the referenced row (the series reference stayed
+intact), and left every shared source/vintage row byte-identical; republish
+reinserted both. A forced failure after the scalar/profile stage rolled back
+the entire schema and restored the pre-refresh profile artifact. Then the
+**same normal wrapper/plan** recovered the frozen baseline from the committed
+candidate (scalar `10cfd…`, comparison `1b7c…`, profile `d97f…`, profile
+comparison `2c97…`, linked `-d97f…-10cfd…-6fd9…`, DPE required scalar
 `10cfd…`, three scoped facts absent) while the newer unrelated markers/rows
 stayed untouched; the candidate was then republished through the same wrapper.
 HTTP before/after: DPE + habitat read 200 with descriptor/source; after, the
 three scalar facts and fixed comparisons (ranks) read 200. Schema cleaned; zero
 residual `serving_it_*`; `public` tables unchanged. DB bytes before/after in the
-receipt.
+receipt. Receipt:
+`E:\Temp\opencode\lusk-989-publication-preparation\83-source-policy-receipt.txt`;
+focused serial log:
+`E:\Temp\opencode\lusk-1000-focused-R-serial-995-source.log` (125 PASS,
+0 FAIL/WARN/SKIP).
 
 Run:
 
 ```powershell
-Rscript -e "testthat::test_local(filter = 'scalar-scope', stop_on_failure = TRUE)"
+$env:TESTTHAT_PARALLEL = 'FALSE'
+Rscript -e "testthat::test_local(filter = 'scoped-publication-plan|publication-transaction|retained-baseline-guard|scalar-scope', stop_on_failure = TRUE)"
 Rscript -e "testthat::test_local(stop_on_failure = TRUE)"   # before handoff
 ```
 
@@ -291,7 +326,7 @@ selected reading), never the previous full-backend step:
 Until that operator step verifies, the status is **build/check complete**, not
 **published/live**; no serving publication has been performed yet.
 
-## Current readiness note (2026-11-12, #995)
+## Current readiness note (2026-11-13, #995)
 
 The scoped path reads only the registered closure. It therefore does **not**
 require the local demographic typed reading, the Milieux typed reading, the
@@ -312,6 +347,10 @@ Milieux/economy/series owners, which this path neither reads as expectations nor
 writes. A data-only recovery uses the same normal wrapper/plan from a writable
 copy; no SQL data dump is mandatory (an operator `pg_dump` is optional). The
 18 GB raw cache is not part of this plan.
+
+The production candidate remains `candidate-current` (scalar `f4e9…`,
+comparison `fc2d…`); the guarded source-policy proof modifies only a private
+copy with two test-only source rows and does not alter the ready artifacts.
 
 The scalar-bound DPE profile companion is **not** a fixture repair: the wrapper
 refreshes it metadata-only through the normal owner and publishes it inside the

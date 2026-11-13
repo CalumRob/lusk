@@ -188,3 +188,91 @@ test_that("the scoped reading publishers are the registered normal ones", {
   expect_setequal(names(publishers),
                   c("demographie", "habitat", "economie", "milieux"))
 })
+
+scoped_source_fixture <- function() {
+  list(
+    target_sources = list(
+      datasets = data.frame(
+        source_id = c("shared_source", "new_source"),
+        name = c("Shared source", "New source"), stringsAsFactors = FALSE),
+      vintages = data.frame(
+        source_id = c("shared_source", "new_source"),
+        vintage_id = c("2025/2025-01-01", "2025/2025-01-01"),
+        version = "2025", reference_date = as.Date("2025-01-01"),
+        publication_date = as.Date("2025-01-02"),
+        stringsAsFactors = FALSE)),
+    retire_sources = list(
+      datasets = data.frame(source_id = "retired_source",
+                            name = "Retired source", stringsAsFactors = FALSE),
+      vintages = data.frame(
+        source_id = "retired_source", vintage_id = "2025/2025-01-01",
+        version = "2025", reference_date = as.Date("2025-01-01"),
+        publication_date = as.Date("2025-01-02"),
+        stringsAsFactors = FALSE)))
+}
+
+scoped_live_source_fixture <- function() {
+  list(
+    datasets = data.frame(source_id = "shared_source", name = "Shared source",
+                          stringsAsFactors = FALSE),
+    vintages = data.frame(
+      source_id = "shared_source", vintage_id = "2025/2025-01-01",
+      version = "2025", reference_date = as.Date("2025-01-01"),
+      publication_date = as.Date("2025-01-02"), stringsAsFactors = FALSE))
+}
+
+test_that("the source guard accepts shared rows and records missing target rows", {
+  guard <- scoped_source_guard(scoped_source_fixture(),
+                               scoped_live_source_fixture())
+  expect_equal(nrow(guard$mismatches), 0L)
+  expect_identical(guard$absent$datasets, "new_source")
+  expect_identical(guard$absent$vintages,
+                   scoped_source_vintage_key("new_source", "2025/2025-01-01"))
+})
+
+test_that("the source guard refuses a newer shared source row", {
+  live <- scoped_live_source_fixture()
+  live$datasets$name <- "Newer shared source"
+  live$vintages$version <- "2026"
+  guard <- scoped_source_guard(scoped_source_fixture(), live)
+  expect_equal(nrow(guard$mismatches), 2L)
+  expect_true(any(guard$mismatches$marker == "source_dataset[shared_source]"))
+  expect_true(any(guard$mismatches$marker ==
+                    "source_vintage[shared_source|2025/2025-01-01]"))
+})
+
+test_that("the source retirement combines current-only and absent target rows", {
+  plan <- scoped_source_fixture()
+  absent <- list(
+    datasets = "new_source",
+    vintages = scoped_source_vintage_key("new_source", "2025/2025-01-01"))
+  candidates <- scoped_source_retirement(plan, absent)
+  expect_setequal(candidates$datasets$source_id,
+                  c("retired_source", "new_source"))
+  expect_setequal(candidates$vintages$source_id,
+                  c("retired_source", "new_source"))
+})
+
+test_that("the projection source set unions scalar and profile sources", {
+  scalar <- list(scalar = list(
+    datasets = data.frame(source_id = "scalar_source", name = "Scalar",
+                          stringsAsFactors = FALSE),
+    vintages = data.frame(
+      source_id = "scalar_source", vintage_id = "v1", version = "2025",
+      reference_date = as.Date("2025-01-01"),
+      publication_date = as.Date("2025-01-02"), stringsAsFactors = FALSE)))
+  profiles <- list(
+    list(datasets = data.frame(source_id = "profile_source", name = "Profile",
+                               stringsAsFactors = FALSE),
+         vintages = data.frame(
+           source_id = "profile_source", vintage_id = "v1", version = "2025",
+           reference_date = as.Date("2025-01-01"),
+           publication_date = as.Date("2025-01-02"), stringsAsFactors = FALSE)))
+  sources <- scoped_projection_sources(scalar, profiles)
+  expect_setequal(sources$datasets$source_id,
+                  c("scalar_source", "profile_source"))
+  expect_setequal(sources$vintages$source_id,
+                  c("scalar_source", "profile_source"))
+  expect_identical(scoped_source_difference(sources, sources)$datasets$source_id,
+                   character())
+})
