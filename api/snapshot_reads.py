@@ -56,6 +56,35 @@ def _validate_comparison_fields(fields, supported):
     return selection
 
 
+def _comparison_statistic_fields(statistic, supported):
+    """Expose only the value field of the explicitly requested statistic.
+
+    The statistic itself is an intent selector, never a ``fields`` flag: this
+    helper keeps ``fields`` a projection vocabulary by allowing the matching
+    numeric attribute (``mean`` or ``median``) and rejecting the other one.
+    An omitted statistic keeps the resource's declared default (median).
+    """
+    allowed = set(supported) - {"mean", "median"}
+    allowed.add("mean" if statistic == "mean" else "median")
+    return allowed
+
+
+def _validate_profile_statistic(profiles, statistic):
+    """Validate the explicit selected-comparison statistic for profile facets.
+
+    Only a detail-backed declared profile declares an explicit mean. An explicit
+    median is the unchanged default for every declared profile, including a
+    scalar-backed one; a non-profile shape has no declared profile facet here.
+    """
+    if statistic is None:
+        return
+    if statistic not in ("mean", "median"):
+        raise HTTPException(422, "Comparison statistic is not declared")
+    if not profiles or (statistic == "mean"
+                        and any(p.get("comparison_scalar") for p in profiles)):
+        raise HTTPException(422, "Comparison statistic is not declared for this resource")
+
+
 def _theme_comparison_projection(fields):
     if fields is None:
         return None
@@ -523,8 +552,21 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
 
 def _profile_comparison_results(conn, profiles, members, cohort_type, territory_id, fixed_context=None,
                                 selected_fields=None, profile_coordinates=None,
-                                publication_family=None):
-    """Compare only declared profile facets, using one batch query per facet grain."""
+                                publication_family=None, comparison_statistic=None):
+    """Compare only declared profile facets, using one batch query per facet grain.
+
+    ``comparison_statistic`` is the explicit selected-comparison statistic. An
+    explicit mean is always computed from the members' own measured cells; it is
+    never served from the published fixed/default median projection.
+    """
+    statistic = comparison_statistic or "median"
+    if statistic == "mean":
+        if any(p.get("comparison_scalar") for p in profiles):
+            raise HTTPException(422, "Comparison statistic is not declared for this resource")
+        # Defence in depth: a mean is never reconstructed from a published
+        # median (fixed) cohort; the caller already resolves this request to a
+        # request-scoped selection.
+        fixed_context = None
     external = [p for p in profiles if p.get("comparison_scalar")]
     details = [p for p in profiles if not p.get("comparison_scalar")]
     if profile_coordinates and details:
@@ -639,22 +681,32 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
         # #917: a single comparable member IS the group median; ranks stay below two.
         comparable = len(values) >= 1
         enough = len(values) >= 2
+        aggregate = ((sum(value for _, value in values) / len(values)
+                      if statistic == "mean" else median([value for _, value in values]))
+                     if comparable else None)
         result = {"indicator": indicator, "facet": facet, "label": profile["label"],
-            "unit": unit, "direction": direction, "statistic": "median",
+            "unit": unit, "direction": direction, "statistic": statistic,
             "profile_descriptor_version": profile.get("descriptor_version"),
             "scalar_descriptor_version": profile.get("scalar_descriptor_version"),
             "required_scalar_version": profile.get("required_scalar_version"),
             "source_facet_label": profile.get("source_facet_label"),
             "denominator_semantics": profile.get("denominator_semantics"),
             "status": "available" if comparable else "unavailable",
-            "reason": None if comparable else "fewer_than_two_comparable_values",
+            "reason": (None if comparable else
+                "no_selected_comparable_values" if statistic == "mean" else
+                "fewer_than_two_comparable_values"),
             "selected_member_count": len(members), "eligible_count": len(values),
             "focal_value": focal_value, "focal_in_selection": territory_id in members,
-            "median": median([v for _, v in values]) if comparable else None,
+            statistic: aggregate,
             "rank": better + 1 if enough and territory_id in members and focal_value is not None else None,
             "rank_size": len(values) if enough and territory_id in members and focal_value is not None else None,
             "rank_ties": ties if enough and territory_id in members and focal_value is not None else None,
             "comparison_sources": sources}
+        if statistic == "mean":
+            # Bounded identity evidence: the actual measured communes that
+            # produced this mean. A client can prove that a total and its
+            # partitions share one population instead of comparing counts.
+            result["eligible_members"] = sorted(member_id for member_id, _ in values)
         if selected_fields is not None and "member_ranks" in selected_fields:
             values_by_id = {member_id: value for member_id, value in values}
             counts = {}
@@ -969,7 +1021,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                                result_fields=None, preflight_only=False, snapshot_state=None,
                                include_owned_series=True, include_fixed_context=False,
                                profile_coordinates=None, profile_member_ranks_allowed=True,
-                               publication_family=None):
+                               publication_family=None, comparison_statistic=None):
     """Read scalar and profile comparisons from the caller's MVCC snapshot."""
     if (not profile_member_ranks_allowed and result_fields is not None
             and "member_ranks" in result_fields):
@@ -994,6 +1046,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     elif profiles is None:
         profiles, profile_version = focal_profiles(conn, territory_type, territory_id,
             theme_id=theme_id, indicator_id=indicator_id)
+    if comparison_statistic is not None:
+        _validate_profile_statistic(profiles, comparison_statistic)
     owned_descriptors=[]
     if include_owned_series and conn.execute(
             "SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
@@ -1009,7 +1063,11 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     collections = collection_descriptors(conn,indicator_id=indicator_id,theme_id=theme_id)
     available_comparison_fields = set()
     if scalar_descriptors or profiles:
-        available_comparison_fields.update(_COMPARISON_RESULT_FIELDS - {"mean", "mean_curve"})
+        profile_comparison_fields = _COMPARISON_RESULT_FIELDS - {"mean", "mean_curve"}
+        if comparison_statistic is not None:
+            profile_comparison_fields = _comparison_statistic_fields(
+                comparison_statistic, profile_comparison_fields)
+        available_comparison_fields.update(profile_comparison_fields)
     if owned_descriptors:
         owned_stats=conn.execute("""SELECT DISTINCT COALESCE(comparison_statistic,'median')
             FROM series_dataset_descriptor WHERE (dataset_id,indicator_id) IN
@@ -1055,6 +1113,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         if territory_id not in members:
             fixed_context = None
         if any(not p["comparison_scalar"] for p in (profiles or [])):
+            published_profile_context = (None if comparison_statistic == "mean"
+                                         else fixed_context)
             if profile_coordinates:
                 profile_marker = conn.execute("""SELECT p.content_version,p.reference_content_version,
                     t.content_version FROM table_publication p LEFT JOIN table_publication t
@@ -1062,7 +1122,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 if (not profile_marker or not profile_marker[0] or not profile_marker[1]
                         or profile_marker[1] != profile_marker[2]):
                     raise HTTPException(503, "Profile publication is unavailable or incompatible")
-            elif fixed_context:
+            elif published_profile_context:
                 _profile_comparison_publication_marker(
                     conn, family=publication_family or "profile")
         scalar_backed_profiles = [p for p in (profiles or []) if p["comparison_scalar"]]
@@ -1167,7 +1227,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                         if len(values) >= 1 and member_id in values_by_member else
                         {"rank": None, "rank_size": None, "rank_ties": None}),
                 } for member_id in members]
-    profile_fixed_context = fixed_context if profiles else None
+    profile_fixed_context = (fixed_context if profiles and comparison_statistic != "mean"
+                             else None)
     if profile_coordinates and any(not p.get("comparison_scalar") for p in (profiles or [])):
         # Published comparison projections contain the descriptor's default
         # point. A requested alternate cell is computed from its own published
@@ -1178,8 +1239,10 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         profile_result_kwargs["profile_coordinates"] = profile_coordinates
     family_kwargs = {} if publication_family is None else {
         "publication_family": publication_family}
+    statistic_kwargs = ({} if comparison_statistic is None else
+                        {"comparison_statistic": comparison_statistic})
     profile_results = _profile_comparison_results(conn, profiles, members, cohort_type, territory_id,
-        profile_fixed_context, **family_kwargs, **profile_result_kwargs)
+        profile_fixed_context, **family_kwargs, **profile_result_kwargs, **statistic_kwargs)
     owned_markers = {}
     if include_owned_series:
         owned_results,owned_markers,_,_,_=_owned_series_comparison_results(conn,
@@ -2415,9 +2478,13 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
                                     scalar_facet_theme_id=None,
                                     profile_coordinates=None, intent_kind=None,
                                     require_declared_resource=False,
-                                    publication_family="scalar"):
+                                    publication_family="scalar",
+                                    comparison_statistic=None):
     _validate_comparison_fields(selected_fields,
-        _COMPARISON_RESULT_FIELDS - {"mean", "mean_curve", "focal_value"})
+        _comparison_statistic_fields(comparison_statistic,
+            _COMPARISON_RESULT_FIELDS - {"mean", "mean_curve", "focal_value"}))
+    if comparison_statistic is not None and intent_kind not in (None, "selected_comparison"):
+        raise HTTPException(422, "Comparison statistic is not declared for this intent")
     focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
                          (territory_id,)).fetchone()
     if not focal:
@@ -2427,6 +2494,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
                 if snapshot_state is not None else None)
     active_owned = resource.owned_route if resource else _owned_series_route(conn,indicator_id)
+    if comparison_statistic is not None and active_owned:
+        raise HTTPException(422, "Comparison statistic is not declared for this resource")
     if include_scalar_facet and not active_owned:
         publication_unavailable("ordered_series",
             "Declared ordered-series facet publication is unavailable")
@@ -2462,6 +2531,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
     collections = list(resource.collections) if resource else collection_descriptors(
         conn,indicator_id=indicator_id)
     if collections:
+        if comparison_statistic is not None:
+            raise HTTPException(422, "Comparison statistic is not declared for this resource")
         descriptor = collections[0]
         focal_row = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
                                  (territory_id,)).fetchone()
@@ -2515,9 +2586,12 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
                                    profile_coordinates=profile_coordinates,
                                    profile_member_ranks_allowed=(
                                        shape != "profile" or intent_kind != "fixed_comparison"),
-                                   publication_family=publication_family)
+                                   publication_family=publication_family,
+                                   comparison_statistic=comparison_statistic)
         return {**estimate, "theme_id": descriptor[0], "shape": shape}
     elif shapes[0][1] == "series":
+        if comparison_statistic is not None:
+            raise HTTPException(422, "Comparison statistic is not declared for this resource")
         result = _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id,
                                            preflight_only=True, snapshot_state=snapshot_state)
         return {"shape": "series", "content_version": result.get("content_version")}
@@ -2536,10 +2610,12 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
                                    scalar_facet_theme_id=None,
                                    profile_coordinates=None, collection_coordinates=None,
                                    intent_kind=None, require_declared_resource=False,
-                                   publication_family="scalar"):
+                                   publication_family="scalar", comparison_statistic=None):
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
                 if snapshot_state is not None else None)
     active_owned = resource.owned_route if resource else _owned_series_route(conn,indicator_id)
+    if comparison_statistic is not None and active_owned:
+        raise HTTPException(422, "Comparison statistic is not declared for this resource")
     if include_scalar_facet and not active_owned:
         publication_unavailable("ordered_series",
             "Declared ordered-series facet publication is unavailable")
@@ -2571,6 +2647,8 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
     collections = list(resource.collections) if resource else collection_descriptors(
         conn,indicator_id=indicator_id)
     if collections:
+        if comparison_statistic is not None:
+            raise HTTPException(422, "Comparison statistic is not declared for this resource")
         focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",(territory_id,)).fetchone()
         if not focal:
             raise HTTPException(404,"Focal territory not found")
@@ -2612,10 +2690,9 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
                 "Declared resource publication is unavailable")
         raise HTTPException(404, "Indicator descriptor is unavailable")
     shape = shapes[0][1]
-    if shape in ("scalar","profile"):
-        _validate_comparison_fields(selected_fields,_COMPARISON_RESULT_FIELDS-{"mean","mean_curve","focal_value"})
-    else:
-        _validate_comparison_fields(selected_fields,_COMPARISON_RESULT_FIELDS-{"mean","mean_curve","focal_value"})
+    _validate_comparison_fields(selected_fields,
+        _comparison_statistic_fields(comparison_statistic,
+            _COMPARISON_RESULT_FIELDS - {"mean", "mean_curve", "focal_value"}))
     focal = conn.execute(
         "SELECT territory_type FROM territory_reference WHERE territory_id=%s",
         (territory_id,),
@@ -2625,6 +2702,8 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
     if focal[0] != territory_type:
         raise HTTPException(422, "Focal territory type does not match route")
     if shape == "series":
+        if comparison_statistic is not None:
+            raise HTTPException(422, "Comparison statistic is not declared for this resource")
         comparison = _series_comparison_snapshot(conn, territory_type, territory_id,
                                                  indicator_id, selection)
         comparison["result"] = _comparison_result_without_focal_value(comparison["result"])
@@ -2650,7 +2729,7 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
         snapshot_state=snapshot_state, profile_coordinates=profile_coordinates,
         profile_member_ranks_allowed=(
             shape != "profile" or intent_kind != "fixed_comparison"),
-        publication_family=publication_family)
+        publication_family=publication_family, comparison_statistic=comparison_statistic)
     result_rows = comparison["results"] if shape == "scalar" else comparison["profile_comparisons"]
     if len(result_rows) != 1:
         raise HTTPException(503, "Indicator comparison facet is unavailable or ambiguous")

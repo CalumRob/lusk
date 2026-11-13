@@ -439,6 +439,9 @@ class SemanticResourceReader:
                 scalar_facet_projection=bool(item.fields and "scalar_facet" in item.fields),
                 profile_coordinates=profile_coordinates,
                 intent_kind=item.intent.kind,
+                comparison_statistic=(
+                    item.intent.statistic
+                    if item.intent.kind == "selected_comparison" else None),
                 require_declared_resource=True,
                 publication_family=self._publication_family(resource))
             resource = catalogue.resources_by_id[item.resource]
@@ -641,6 +644,9 @@ class SemanticResourceReader:
                 profile_coordinates=self._profile_comparison_coordinates(conn, item, resource),
                 collection_coordinates=item.coordinates if "period_detail" in resource.shapes else None,
                 intent_kind=item.intent.kind,
+                comparison_statistic=(
+                    item.intent.statistic
+                    if item.intent.kind == "selected_comparison" else None),
                 require_declared_resource=True,
                 publication_family=self._publication_family(resource))
             if item.coordinates:

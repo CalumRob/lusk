@@ -216,6 +216,35 @@ def test_comparison_intents_are_closed_and_share_item_grammar():
         })
 
 
+def test_selected_comparison_explicit_statistic_is_declared_for_profiles_only():
+    catalogue = default_resource_catalogue()
+    target = {"kind": "territory", "type": "commune", "id": "22001"}
+    members = [{"type": "commune", "id": "22002"}, {"type": "commune", "id": "22003"}]
+
+    def read(resource, statistic, kind="selected_comparison"):
+        intent = ({"kind": kind, "members": members, "statistic": statistic}
+                  if kind == "selected_comparison" else
+                  {"kind": kind, "context": "default", "statistic": statistic})
+        return ResourceReadItem.model_validate({
+            "resource": resource, "target": target, "intent": intent})
+
+    # A detail-backed declared profile declares both statistics; median is the
+    # unchanged default and mean is the owner-approved equal-weight aggregate.
+    for statistic in ("median", "mean"):
+        item = read("offre_cyclable", statistic)
+        assert validate_resource_item(item, catalogue).resource_id == "offre_cyclable"
+
+    # A statistic selector is not a general query language: scalar, series and
+    # fixed intents reject it instead of silently computing another statistic.
+    for resource in ("densite", "subventions_annuelles"):
+        with pytest.raises(ValueError, match="statistic"):
+            validate_resource_item(read(resource, "mean"), catalogue)
+    with pytest.raises(ValidationError):
+        read("densite", "mean", kind="fixed_comparison")
+    with pytest.raises(ValidationError):
+        read("offre_cyclable", "mode")
+
+
 def test_cohort_target_is_closed_and_facts_only():
     catalogue = default_resource_catalogue()
     item = ResourceReadItem.model_validate({

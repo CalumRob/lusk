@@ -356,6 +356,41 @@ facet; DPE uses the linked scalar's own unit and source identity, not a DPE-bin
 rank. This projection remains subject to the semantic read's existing preflight
 work-unit and response-size bounds; it does not create an unbounded peer-list API.
 
+### Explicit equal-weight means (#996, owner #979)
+
+`selected_comparison` also accepts an optional closed intent `statistic`:
+`median` or `mean`. Omission keeps the resource's declared default, so the
+existing selected declared-profile response is the unchanged median. `statistic`
+is an intent selector, not a `fields` flag: `fields` remains a projection, and
+`fields: ["mean"]` without the selector (or `["median"]` with an explicit mean)
+is rejected with `422`. Only a detail-backed declared profile declares an
+explicit mean; scalar-backed profiles, scalars, owned series, collections and
+AEDAR selections return `422`, and a fixed comparison cannot carry a statistic.
+
+An explicit mean is the equal-weight arithmetic mean of the requested detail
+point's **actual measured member values**: each eligible commune counts once,
+raw and per-capita detail units are preserved, and no population weighting is
+applied. A measured `0` is a real value and stays eligible; a
+missing/suppressed/unsupported cell is excluded and never converted to zero. The
+mean is served with one comparable member (that value) and is `unavailable` with
+a null mean, empty `eligible_members` and `reason:
+"no_selected_comparable_values"` when none is comparable. Ranks keep their
+existing two-comparable-value threshold, direction, units, denominator
+semantics, source lineage, `profile_content_version` and
+`reference_content_version`; an empty selection has no fallback population.
+
+Every mean result carries the bounded, API-owned `eligible_members` list: the
+resolved commune identities that actually contributed, in stable order, derived
+from those measured cells. It is identity evidence, not a new statistic: it is
+not selectable/removable through `fields`. Per-detail coverage may honestly
+differ (and equal counts alone never prove one population); a consumer that
+needs an additive total/partition stack compares this list across responses and
+refuses an incoherent stack. The API never shrinks, weights or fabricates a
+group to make partitions agree. An explicit mean is computed request-scoped
+from the same committed profile cells as an identical explicit selection; it
+never reads or reconstructs the published default/fixed comparison projection.
+`member_ranks` remains available on the same selected-profile surface.
+
 Scalar fixed and selected comparisons also accept the opt-in
 `fields: ["member_ranks"]` projection. Each row describes one exact member of the
 published fixed group or requested selected population and contains the API-owned

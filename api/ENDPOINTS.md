@@ -101,6 +101,20 @@ linked scalar facet: `fixed_comparison` rejects its profile coordinates with
 Fixed profile comparisons (published default or alternate declared point) also
 reject `member_ranks` with `422`; that cohort-sized projection stays a
 selected-comparison field.
+A selected declared-profile comparison may explicitly request an equal-weight
+mean with the optional closed intent `statistic: "mean"` (or `"median"`, the
+unchanged default when omitted). The selector belongs to the intent, not to
+`fields`: `fields: ["mean"]` without it, or `["median"]` with it, is rejected
+with `422`, as is any scalar, owned-series, collection, scalar-backed-profile or
+fixed combination. The mean counts each actually measured commune once in the
+declared detail unit; a measured `0` stays eligible and a missing cell is never
+zeroed. The result carries `statistic: "mean"`, `mean`, the existing counts,
+direction-aware ranks and clocks, plus a bounded API-owned `eligible_members`
+list of the contributing commune identities (not removable by `fields`). Equal
+counts with different `eligible_members` are honest evidence, not one population:
+a consumer comparing a total/partition stack must compare that list and refuse an
+incoherent stack. An explicit mean is always computed from the members' committed
+cells and never from the published fixed/default median projection.
 Owned ordered-series comparisons additionally accept the requested-only
 `axis_comparisons` projection: it returns API-owned comparison values, eligibility,
 missing counts, ranks/ties, and lineage for the axes already present in the comparison
@@ -224,6 +238,7 @@ These are the model fields reachable from request bodies, including nested and d
 | `FixedComparisonIntent` | `context` | yes | string; min chars: `1`; max chars: `64` |
 | `SelectedComparisonIntent` | `kind` | yes | string; const: `selected_comparison` |
 | `SelectedComparisonIntent` | `members` | yes | array of TerritoryMember; max items: `1500` |
+| `SelectedComparisonIntent` | `statistic` | no | string; one of `median`, `mean` |
 | `ResourceBatchItem` | `resource` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
 | `ResourceBatchItem` | `target` | yes | one of TerritoryTarget / TerritoryCohortTarget / NamedReferenceTarget |
 | `ResourceBatchItem` | `coordinates` | no | object |

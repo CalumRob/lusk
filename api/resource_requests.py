@@ -59,6 +59,11 @@ class SelectedComparisonIntent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["selected_comparison"]
     members: list[TerritoryMember] = Field(max_length=1500)
+    # An explicit statistic is part of the selected-comparison grammar, not a
+    # field projection: omitting it keeps every resource's declared default
+    # (the published profile median, an owned series' declared mean). A value
+    # the resource does not declare is rejected before storage access.
+    statistic: Literal["median", "mean"] | None = None
 
     @model_validator(mode="after")
     def validate_unique_members(self):
