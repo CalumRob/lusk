@@ -748,7 +748,7 @@ export function buildMobiliteStationnementRavitaillementSection(
   const hasAny = allFacts.some((value) => hasValue(value.fact))
   return {
     key: 'stationnement-ravitaillement',
-    label: 'Se garer et se ravitiller',
+    label: 'Se garer et se ravitailler',
     availability: availabilityFor(allFacts),
     indicators: indicatorsFor(facts, [
       'places_stationnement_velo_1000',
