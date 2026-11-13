@@ -2,7 +2,7 @@ import type { AedarFact, AedarTerritoryType } from './aedarApiClient'
 import type { MembreSelection, PresetComparaison, SelectionComparaison } from '../comparisonContext'
 import type { ComparisonRank } from './territoryFacts'
 import { producerCatalogue } from '@/payload/themeAcquisition'
-import { readSemanticOutcomes } from '@/payload/semanticResourceClient'
+import { readSemanticOutcomes, SemanticReadDeferredError } from '@/payload/semanticResourceClient'
 import type { SemanticReadItem } from '@/payload/semanticResourceClient'
 import { RANK_DISPLAY_MIN_SIZE } from '../figureGrammaire'
 import { AEDAR_AGGREGATE_READING_KEYS } from './aedarTimeRampFacts'
@@ -68,11 +68,19 @@ export interface AedarComparisonRequest {
 }
 export type AedarComparisonResult = { status: 'ready'; evidence: AedarComparisonEvidence }
   | { status: 'error'; message: string }
+  /** #1002 — the read was intentionally not started: the chapter demand left. */
+  | { status: 'deferred' }
 type ComparisonReadOptions = AedarComparisonRequest & { typequ: readonly string[]; measures: readonly string[];
   expectedContentVersion: string; expectedReferenceContentVersion: string; signal?: AbortSignal;
   /** Aggregate comparisons bind to all three summary/source/reference clocks. */
-  expectedSummaryContentVersion?: string }
-const successfulReads = new WeakMap<typeof fetch, Map<string, Extract<AedarComparisonResult, { status: 'ready' }>>>()
+  expectedSummaryContentVersion?: string
+  /**
+   * Explicit retry: never replay a settled read for this demand. A newer
+   * generation is opened, so a late reply from the abandoned read can never
+   * repopulate it.
+   */
+  fresh?: boolean }
+
 const record = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
 const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
 const nonempty = (x: unknown): x is string => typeof x === 'string' && x.length > 0
@@ -99,23 +107,21 @@ function servedRank(row: Record<string, unknown>): readonly [number, number, num
 /** Read only comparison evidence. Focal observations remain owned by the facts read.
  * Small cell partitions bound both selected-member work and serialized output;
  * all partitions must bind to the displayed facts and the same comparison publication.
+ *
+ * #1002 — one comparison is a set of semantic items; the shared client owns
+ * their identity, coalescing, settled reuse and generation fences. The
+ * presentation `label` is deliberately NOT part of that identity: naming the
+ * same published group differently is the same numerical read, while a changed
+ * territory, group, coordinates or publication clock is a different one.
  */
 export async function fetchAedarComparison(type: AedarTerritoryType, id: string,
   options: ComparisonReadOptions,
 ): Promise<AedarComparisonResult> {
-  const fetcher = globalThis.fetch
-  let cache = successfulReads.get(fetcher)
-  if (!cache) { cache = new Map(); successfulReads.set(fetcher, cache) }
-  const key = JSON.stringify([type, id, options.intent, options.label, options.typequ, options.measures,
-    options.expectedContentVersion, options.expectedReferenceContentVersion, options.expectedSummaryContentVersion])
-  const cached = cache.get(key)
-  if (cached) { cache.delete(key); cache.set(key, cached); return cached }
-  const result = await readAedarComparison(fetcher, type, id, options)
-  if (result.status === 'ready' && !options.signal?.aborted) {
-    cache.set(key, result)
-    while (cache.size > 8) cache.delete(cache.keys().next().value!)
-  }
-  return result
+  const result = await readAedarComparison(globalThis.fetch, type, id, options)
+  // The evidence always carries the label the reader displays now; a settled
+  // read is renamed, never re-acquired.
+  return result.status === 'ready' && result.evidence.label !== options.label
+    ? { status: 'ready', evidence: { ...result.evidence, label: options.label } } : result
 }
 
 async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryType, id: string,
@@ -158,7 +164,13 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
     const batches = Array.from({ length: Math.ceil(items.length / batchSize) }, (_, index) =>
       items.slice(index * batchSize, (index + 1) * batchSize))
     const responses = await Promise.all(batches.map(async (batch) => {
-      const outcomes = await readSemanticOutcomes(batch, { fetcher, signal: options.signal, fresh: true,
+      // #1002 — settled outcomes are reused only under this exact publication
+      // identity, so an identical demand (pending or already settled, whatever
+      // its presentation label) shares one read, and a resumed demand reads the
+      // genuinely missing items only. An explicit retry (`fresh`) re-probes
+      // every item over HTTP and its generation fences the abandoned reply.
+      const outcomes = await readSemanticOutcomes(batch, { fetcher, fresh: options.fresh === true,
+        ...(options.signal ? { signal: options.signal } : {}),
         expectedFamilies: new Map([['aedar_territorial_aggregate', 'aedar']]),
         coherence: JSON.stringify([options.expectedContentVersion, options.expectedReferenceContentVersion,
           options.expectedSummaryContentVersion]) })
@@ -229,6 +241,8 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
       ...(aggregate ? { summaryContentVersion: options.expectedSummaryContentVersion,
         aedarContentVersion: options.expectedContentVersion } : {}), cells } }
   } catch (error) {
+    // #1002 — an unstarted batch whose chapter demand left is not a failure.
+    if (error instanceof SemanticReadDeferredError) return { status: 'deferred' }
     return { status: 'error', message: error instanceof Error ? error.message : 'Comparaison AEDAR indisponible' }
   }
 }

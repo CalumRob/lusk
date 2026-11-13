@@ -64,30 +64,64 @@ const comparisonFocalIdentity = computed(() => props.aedarSummaryData?.status ==
   ? JSON.stringify([props.content.territory.type, props.content.territory.code,
     props.aedarSummaryData.summary.summaryContentVersion, props.aedarSummaryData.summary.aedarContentVersion,
     props.aedarSummaryData.summary.referenceContentVersion]) : null)
-watch([comparisonRequest, comparisonFocalIdentity, comparisonRetry], async ([request], _old, cleanup) => {
+/** #1002 — the semantic identity of the displayed group, without its label. */
+const comparisonDemand = computed<string | null>(() => {
+  const request = comparisonRequest.value
+  const focal = comparisonFocalIdentity.value
+  return request && focal ? JSON.stringify([focal, request.intent]) : null
+})
+/**
+ * #1002 — the current presentation label over the settled numeric evidence. A
+ * group renamed while its publication is unchanged renames what is displayed;
+ * it never re-reads the numbers.
+ */
+const comparisonEvidence = computed<AedarComparisonEvidence | null>(() => {
+  const evidence = comparison.value
+  const label = comparisonRequest.value?.label
+  return evidence && label !== undefined && label !== evidence.label ? { ...evidence, label } : evidence
+})
+let comparisonDemandSeen: string | null = null
+let comparisonRetrySeen = 0
+watch([comparisonDemand, comparisonRetry, () => props.aedarActive], async ([demand], _old, cleanup) => {
+  const request = comparisonRequest.value
   const focal = props.aedarSummaryData?.status === 'ready' ? props.aedarSummaryData.summary : null
-  comparison.value = null
-  comparisonState.value = 'idle'
-  comparisonError.value = ''
-  if (!request || !focal) return
+  // Another group, territory or publication is another demand: the previous
+  // evidence is released. A presentation-only rename keeps it.
+  if (demand !== comparisonDemandSeen) {
+    comparisonDemandSeen = demand
+    comparison.value = null
+    comparisonState.value = 'idle'
+    comparisonError.value = ''
+  }
+  if (!demand || !request || !focal) return
+  // #986/#1002 — the reader is not on the AEDAR chapter: its comparison is not
+  // started. Settled evidence stays; an in-flight read keeps settling into the
+  // client, and returning re-reads only what is genuinely missing.
+  if (!props.aedarActive) return
+  const fresh = comparisonRetry.value !== comparisonRetrySeen
+  comparisonRetrySeen = comparisonRetry.value
   const abort = new AbortController()
   cleanup(() => abort.abort())
   comparisonState.value = 'loading'
-  const result = await fetchAedarComparison(props.content.territory.type as AedarTerritoryType, props.content.territory.code, {
-      ...request, typequ: [], measures: AEDAR_AGGREGATE_READING_KEYS,
-      expectedContentVersion: focal.aedarContentVersion,
-      expectedSummaryContentVersion: focal.summaryContentVersion,
-      expectedReferenceContentVersion: focal.referenceContentVersion, signal: abort.signal,
-  })
-  if (abort.signal.aborted) return
-  if (!result) {
-    comparisonState.value = 'error'
-    comparisonError.value = 'Comparaison AEDAR indisponible'
-    return
+  try {
+    const result = await fetchAedarComparison(props.content.territory.type as AedarTerritoryType, props.content.territory.code, {
+        ...request, typequ: [], measures: AEDAR_AGGREGATE_READING_KEYS,
+        expectedContentVersion: focal.aedarContentVersion,
+        expectedSummaryContentVersion: focal.summaryContentVersion,
+        expectedReferenceContentVersion: focal.referenceContentVersion, signal: abort.signal, fresh,
+    })
+    if (abort.signal.aborted) return
+    if (result.status === 'deferred') { comparisonState.value = 'idle'; return }
+    comparisonState.value = result.status === 'ready' ? 'ready' : 'error'
+    if (result.status === 'ready') comparison.value = result.evidence
+    else comparisonError.value = result.message
+  } catch {
+    // A caller leaving the chapter is not a failed comparison.
+    if (!abort.signal.aborted) {
+      comparisonState.value = 'error'
+      comparisonError.value = 'Comparaison AEDAR indisponible'
+    }
   }
-  comparisonState.value = result.status === 'ready' ? 'ready' : 'error'
-  if (result.status === 'ready') comparison.value = result.evidence
-  else comparisonError.value = result.message
 }, { immediate: true })
 
 const lossMapMetadata = ref<AedarDiversityLossMapMetadata>({ status: 'loading', legend: null })
@@ -154,7 +188,7 @@ const transformed = computed(() => {
   const directReferenceReady = referenceData !== null && props.aedarReferenceStatus !== 'error'
   const sections = aedarPrototypeSections(summary, detail, props.content.territory, {
     reference,
-    comparison: comparison.value,
+    comparison: comparisonEvidence.value,
     comparisonRequest: comparisonRequest.value,
     comparisonPending: directReferenceExpected && !directReferenceReady,
     comparisonAccessibleLabel: comparisonRequest.value?.intent.kind === 'fixed_comparison'

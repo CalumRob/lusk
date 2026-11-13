@@ -79,6 +79,11 @@ export interface AedarFetchOptions {
   /** Local cache/compatibility guard; not an API request field. */
   expectedContentVersion?: string
   expectedReferenceContentVersion?: string
+  /**
+   * #1002 — caller-scoped demand lifetime. It never aborts the shared read, but
+   * a queued batch nobody waits on any more is not started off-screen.
+   */
+  signal?: AbortSignal
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -421,6 +426,7 @@ async function readAedarAggregates(
       let outcomes
       try {
         outcomes = await readSemanticOutcomes(batch, { fetcher, fresh: true,
+          ...(options.signal ? { signal: options.signal } : {}),
           expectedFamilies: new Map([['aedar_territorial_aggregate', 'aedar']]),
           ...(options.expectedContentVersion !== undefined || options.expectedReferenceContentVersion !== undefined
             ? { coherence: JSON.stringify([options.expectedContentVersion ?? null,

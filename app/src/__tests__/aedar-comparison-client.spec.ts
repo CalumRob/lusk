@@ -412,3 +412,135 @@ describe('lecture AEDAR de la Sélection', () => {
     expect(dispatched.every((item) => item.coordinates.typequ.length === 1 && item.coordinates.measure.length === 1)).toBe(true)
   })
 })
+
+/**
+ * #1002 — the live audit measured 36 identical fixed-EPCI comparison items read
+ * twice: a second demand started while the first was still in flight, and the
+ * presentation label was part of the old cache key. The semantic identity is the
+ * published demand only (territory, group, coordinates, clocks).
+ */
+describe('identité sémantique et coalescence (#1002)', () => {
+  const aggregateRequest = (overrides: Record<string, unknown> = {}) => ({ ...options,
+    intent: { kind: 'fixed_comparison' as const, context: 'epci' as const },
+    label: 'Moyenne — Rennes Métropole', typequ: [], measures: aggregateMeasures, ...overrides })
+
+  /** One published aggregate cell per requested measure, in bounded batches. */
+  function aggregateTransport(hold?: () => Promise<void>,
+    clocks: () => { aedar: string; summary: string; reference: string } =
+      () => ({ aedar: 'facts-v1', summary: 'summary-v1', reference: 'reference-v1' })) {
+    const posts: Array<Array<Record<string, any>>> = []
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
+      const { items } = JSON.parse(String(init!.body)) as { items: Array<Record<string, any>> }
+      posts.push(items)
+      await hold?.()
+      const served = clocks()
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2',
+        results: items.map((item) => ({ id: item.id, resource: item.resource, status: 'available', data: {
+          resource: item.resource, target: item.target, content_version: 'comparison-v1',
+          summary_content_version: served.summary, aedar_content_version: served.aedar,
+          reference_content_version: served.reference,
+          comparison: { ...cell, typequ: null, measure: item.coordinates.measure[0],
+            comparison_context: item.intent.context, direction: 'high', group_value: 12 },
+        } })) }) } as Response
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const postCalls = () => fetcher.mock.calls.filter(([url]) => !isCatalogue(url))
+    return { fetcher, posts, postCalls }
+  }
+
+  it('partage une demande identique encore en vol, quel que soit son libellé', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const { posts, postCalls } = aggregateTransport(() => gate)
+    const first = fetchAedarComparison('commune', '35238', aggregateRequest())
+    // Only the two bounded active reads are in flight; the rest is queued.
+    await vi.waitFor(() => expect(posts).toHaveLength(2))
+    const second = fetchAedarComparison('commune', '35238', aggregateRequest({ label: 'Groupe comparé' }))
+    release()
+    const [a, b] = await Promise.all([first, second])
+    // The 40 items are acquired once, in four bounded batches — no second wave.
+    expect(posts).toHaveLength(4)
+    expect(postCalls()).toHaveLength(4)
+    expect(a).toMatchObject({ status: 'ready', evidence: { label: 'Moyenne — Rennes Métropole' } })
+    expect(b).toMatchObject({ status: 'ready', evidence: { label: 'Groupe comparé' } })
+  })
+
+  it('renomme une comparaison déjà réglée sans relire la publication', async () => {
+    const { postCalls } = aggregateTransport()
+    const first = await fetchAedarComparison('commune', '35238', aggregateRequest())
+    const reads = postCalls().length
+    expect(reads).toBe(4)
+    const renamed = await fetchAedarComparison('commune', '35238', aggregateRequest({ label: 'Moyenne du groupe comparé' }))
+    expect(postCalls()).toHaveLength(reads)
+    expect(renamed).toMatchObject({ status: 'ready', evidence: { label: 'Moyenne du groupe comparé' } })
+    if (first.status !== 'ready' || renamed.status !== 'ready') throw new Error('Expected two ready comparisons')
+    // Same served numbers, current presentation label.
+    expect(renamed.evidence.cells).toEqual(first.evidence.cells)
+  })
+
+  it.each([
+    ['un autre groupe', { intent: { kind: 'fixed_comparison', context: 'same_level' } }, '35238',
+      { aedar: 'facts-v1', summary: 'summary-v1', reference: 'reference-v1' }],
+    ['un autre territoire', {}, '22001', { aedar: 'facts-v1', summary: 'summary-v1', reference: 'reference-v1' }],
+    ['une autre horloge AEDAR', { expectedContentVersion: 'facts-v2' }, '35238',
+      { aedar: 'facts-v2', summary: 'summary-v1', reference: 'reference-v1' }],
+    ['une autre horloge de synthèse', { expectedSummaryContentVersion: 'summary-v2' }, '35238',
+      { aedar: 'facts-v1', summary: 'summary-v2', reference: 'reference-v1' }],
+    ['une autre horloge de référence', { expectedReferenceContentVersion: 'reference-v2' }, '35238',
+      { aedar: 'facts-v1', summary: 'summary-v1', reference: 'reference-v2' }],
+  ])('relit pour %s', async (_label, overrides, id, served) => {
+    let published = { aedar: 'facts-v1', summary: 'summary-v1', reference: 'reference-v1' }
+    const { postCalls } = aggregateTransport(undefined, () => published)
+    await fetchAedarComparison('commune', '35238', aggregateRequest())
+    const reads = postCalls().length
+    published = served as typeof published
+    const changed = await fetchAedarComparison('commune', id as string,
+      aggregateRequest(overrides as Record<string, unknown>))
+    expect(changed).toMatchObject({ status: 'ready' })
+    expect(postCalls().length).toBe(reads + 4)
+  })
+
+  it('relit réellement une réexécution explicite, même déjà réglée', async () => {
+    const { postCalls } = aggregateTransport()
+    await fetchAedarComparison('commune', '35238', aggregateRequest())
+    const reads = postCalls().length
+    const retried = await fetchAedarComparison('commune', '35238', aggregateRequest({ fresh: true }))
+    expect(retried).toMatchObject({ status: 'ready' })
+    expect(postCalls().length).toBe(reads + 4)
+  })
+
+  it('n’admet jamais une réponse tardive dont la génération a été invalidée', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const { posts, postCalls } = aggregateTransport(() => gate)
+    const stale = fetchAedarComparison('commune', '35238', aggregateRequest())
+    await vi.waitFor(() => expect(posts).toHaveLength(2))
+    invalidateSemanticReadsForTarget('commune', '35238', new Set(['aedar_territorial_aggregate']))
+    release()
+    expect(await stale).toMatchObject({ status: 'error' })
+    const reads = postCalls().length
+    // Nothing was admitted: the next demand observes the API again.
+    expect(await fetchAedarComparison('commune', '35238', aggregateRequest())).toMatchObject({ status: 'ready' })
+    expect(postCalls().length).toBe(reads + 4)
+  })
+
+  it('laisse la lecture partagée se régler quand un appelant quitte le chapitre', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const { posts, postCalls } = aggregateTransport(() => gate)
+    const controller = new AbortController()
+    const leaving = fetchAedarComparison('commune', '35238', aggregateRequest({ signal: controller.signal }))
+    await vi.waitFor(() => expect(posts).toHaveLength(2))
+    const staying = fetchAedarComparison('commune', '35238', aggregateRequest())
+    controller.abort()
+    expect(await leaving).toMatchObject({ status: 'error' })
+    release()
+    // The departed caller never cancelled the shared acquisition.
+    expect(await staying).toMatchObject({ status: 'ready' })
+    expect(postCalls()).toHaveLength(4)
+    // And its settled evidence is still reusable for the returning reader.
+    expect(await fetchAedarComparison('commune', '35238', aggregateRequest())).toMatchObject({ status: 'ready' })
+    expect(postCalls()).toHaveLength(4)
+  })
+})

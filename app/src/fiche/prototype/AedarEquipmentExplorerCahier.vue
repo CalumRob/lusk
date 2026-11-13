@@ -71,6 +71,7 @@ watch([comparisonIdentity, comparisonRetry], async (_value, _old, cleanup) => {
           typequ: [selectedTypequ.value], measures, expectedContentVersion: props.evidence.contentVersion,
           expectedReferenceContentVersion: props.evidence.referenceContentVersion, signal: abort.signal })
         if (cancelled) return
+        if (result.status === 'deferred') { comparisonStatus.value = 'idle'; return }
         comparisonStatus.value = result.status === 'ready' ? 'ready' : 'error'
         if (result.status === 'ready') detailComparison.value = result.evidence
         else comparisonError.value = result.message
@@ -113,7 +114,10 @@ const detailIdentity = computed(() => {
 watch([selectedTypequ, detailRetry, detailIdentity], async ([typequ, , identityAtStart], _old, onCleanup) => {
   const request = ++detailRequest
   let invalidated = false
-  onCleanup(() => { invalidated = true })
+  // #1002 — this detail read belongs to the requested chapter: leaving it stops
+  // waiting and never starts its remaining queued batches off-screen.
+  const abort = new AbortController()
+  onCleanup(() => { invalidated = true; abort.abort() })
   selectedDetail.value = null
   detailStatus.value = 'loading'
   const identity = selectedBaseFact.value
@@ -122,7 +126,7 @@ watch([selectedTypequ, detailRetry, detailIdentity], async ([typequ, , identityA
   const requestedContentVersion = props.evidence.contentVersion
   const requestedReferenceVersion = props.evidence.referenceContentVersion
   const result = await fetchAedarAggregates(requestedTerritory.type, requestedTerritory.id,
-    { typequ: [typequ], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS,
+    { typequ: [typequ], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, signal: abort.signal,
       expectedContentVersion: requestedContentVersion, expectedReferenceContentVersion: requestedReferenceVersion })
   if (!invalidated && request === detailRequest && detailIdentity.value === identityAtStart
     && selectedTypequ.value === typequ) {
