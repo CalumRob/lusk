@@ -26,4 +26,4 @@ export const FigureRaccordementPrototype: Component | null = PAGE3_FIGURES_PROTO
  * A presentation override only: no producer descriptor, contract or factual
  * metadata is regenerated.
  */
-export const TITRE_COURBE_PROTOTYPE = 'Population bretonne joignable en fonction du temps de trajet'
+export const TITRE_COURBE_PROTOTYPE = 'Population bretonne joignable selon le temps de trajet'
