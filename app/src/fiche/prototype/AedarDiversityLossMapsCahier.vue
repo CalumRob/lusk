@@ -13,9 +13,11 @@ import CahierMapPanel from './CahierMapPanel.vue'
 import CahierProse from './CahierProse.vue'
 import CahierEvidenceSource from './CahierEvidenceSource.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   evidence: AedarDiversityLossEvidence
-}>()
+  /** #986 — the AEDAR chapter is the requested one: its map assets may load. */
+  active?: boolean
+}>(), { active: true })
 
 const modePresentation: Readonly<Record<AedarDiversityLossMapEvidence['mode'], { icon: Component; tone: 'foot' | 'bike' }>> = {
   walk: { icon: Footprints, tone: 'foot' },
@@ -57,6 +59,9 @@ function markUnavailable(mode: string): void {
 }
 
 async function inspectMap(map: AedarDiversityLossMapEvidence): Promise<void> {
+  // #986 — a pending page-1 panel never opens the gallery before its chapter is
+  // requested: that would download the inspection asset for an unrequested page.
+  if (props.active === false) return
   unavailableInspectionLabel.value = await mapGallery.value?.open(map.mode)
     ? null
     : map.label
@@ -102,7 +107,7 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
               <CahierMapPanel
                 v-if="inlineMapUrl(map)"
                 class="aedar-diversity-loss-map__panel"
-                :image-url="inlineMapUrl(map)!"
+                :image-url="props.active === false ? undefined : inlineMapUrl(map)!"
                 :image-alt="`Carte de la perte de diversité en ${map.label} par rapport à la voiture, à ${props.evidence.territory.name}, en ${props.evidence.horizonMinutes} minutes.`"
                 :accessible-name="`Agrandir la carte ${map.label} pour ${props.evidence.territory.name}`"
                 :number="String(props.evidence.maps.findIndex((candidate) => candidate.mode === map.mode) + 1).padStart(2, '0')"

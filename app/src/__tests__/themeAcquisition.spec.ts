@@ -1306,7 +1306,8 @@ describe('theme acquisition cache', () => {
     const result = await selected
 
     expect(acquireFacts).toHaveBeenCalledTimes(1)
-    expect(acquireFacts).toHaveBeenCalledWith('programmes', { type: 'commune', id: '22001', theme: 'programmes' })
+    expect(acquireFacts).toHaveBeenCalledWith('programmes', { type: 'commune', id: '22001', theme: 'programmes' },
+      undefined)
     expect(acquireComparison).toHaveBeenCalledTimes(1)
     expect(result.comparisons.get('omitted')?.theme_id).toBe('programmes')
   })

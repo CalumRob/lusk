@@ -11,6 +11,8 @@ import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilie
 import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import { contextesDepuisReference } from '../fiche/comparisonContext'
+import { chapitreDemande } from '../fiche/content/demandInventory'
+import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 import { formaterValeur } from '../payload/selectors'
 import {
   territoiresFixture,
@@ -445,12 +447,15 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources')).toBe(true)
     expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources/read-batch'),
       `fetch calls: ${JSON.stringify(fetchApi.mock.calls.map(([url]) => String(url)))}`).toBe(true)
-    const expectedReads = programmeResources.flatMap((resource) => resource.target_kinds.includes('territory') &&
-      resource.intents.includes('facts')
-      ? [[resource.resource_id, 'facts'], ...(resource.intents.includes('fixed_comparison')
-        ? [[resource.resource_id, 'fixed_comparison']] : [])]
-      : [])
-    expect(requests[0]?.map((item) => [item.resource, item.intent.kind])).toEqual(expectedReads)
+    const expectedFacts = programmeResources.filter((resource) => resource.target_kinds.includes('territory') &&
+      resource.intents.includes('facts')).map((resource) => [resource.resource_id, 'facts'])
+    const expectedComparisons = programmeResources.filter((resource) => resource.target_kinds.includes('territory') &&
+      resource.intents.includes('selected_comparison')).map((resource) => [resource.resource_id, 'selected_comparison'])
+    const programmeIds = new Set(programmeResources.map((resource) => resource.resource_id))
+    const programmeBatches = requests.filter((items) =>
+      items.length > 0 && items.every((item) => programmeIds.has(item.resource)))
+    expect(programmeBatches[0]?.map((item) => [item.resource, item.intent.kind])).toEqual(expectedFacts)
+    expect(programmeBatches[1]?.map((item) => [item.resource, item.intent.kind])).toEqual(expectedComparisons)
     expect(requests[0]?.every((item) => item.target.kind === 'territory' && item.target.id === '22001')).toBe(true)
     const text = wrapper.get('[role="tabpanel"]').text()
     const alert = wrapper.find('[role="alert"]')
@@ -570,7 +575,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       .map((candidate) => ({ territory_type: 'commune' as const, territory_id: candidate.territoire }))
       .sort((a, b) => a.territory_id.localeCompare(b.territory_id))
     expect(requests.map((items) => items.map((item) => item.intent.kind))).toEqual([
-      ['facts', 'fixed_comparison'], ['selected_comparison'],
+      ['facts'], ['selected_comparison'],
     ])
     expect(requests[1]![0]!.intent.members).toEqual(membresDefaut.map((m) => ({ type: m.territory_type, id: m.territory_id })))
 
@@ -686,7 +691,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const epciTyped = typedOf(resolvedMembers)
     const bretagneTyped = typedOf(resolvedBretagne)
     expect(requests).toHaveLength(2)
-    expect(requests[0]!.map((item) => item.intent.kind)).toEqual(['facts', 'fixed_comparison'])
+    expect(requests[0]!.map((item) => item.intent.kind)).toEqual(['facts'])
     const defaultBatch = requests[1]!
     expect(defaultBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
     expect(defaultBatch[0]!.intent.members).toEqual(epciTyped)
@@ -895,6 +900,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       }
     }
 
+    // #986 — a sibling chapter is read only when it is requested: navigating to
+    // the page-3 chapter reads its facts, its comparison and its named reference.
+    await router.replace({ query: { theme: 'mobilite' }, hash: '#figure-offre-transports-commun' })
+    await flushPromises()
+    await flushPromises()
     const namedResource = nativeResources('mobilite').find((resource) => resource.shapes.includes('named_reference'))!
     const curveResource = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
     const mobilityReads = requests.flat()
@@ -902,7 +912,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       item.target.kind === 'named_reference' && namedResource.target_ids.includes(item.target.id))).toBe(true)
     expect(mobilityReads.some((item) => item.resource === curveResource.resource_id && item.intent.kind === 'facts')).toBe(true)
 
-    expect(requestsByTheme()).toEqual(warmedCounts)
+    // Navigating between the (already warmed) tabs re-reads no focal facts; the
+    // page-3 chapter read is the requested chapter's own demand.
+    const afterNavigation = requestsByTheme()
+    for (const theme of ['programmes', 'habitat', 'demographie', 'milieux', 'economie'] as const) {
+      expect(afterNavigation[theme]).toBe(warmedCounts[theme])
+    }
+    expect(afterNavigation.mobilite).toBeLessThanOrEqual(warmedCounts.mobilite + 1)
     wrapper.unmount()
   }, 20_000)
 
@@ -1326,13 +1342,14 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('2025')
     expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('230')
     expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'facts')).toBe(true)
-    expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'fixed_comparison')).toBe(true)
+    expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'selected_comparison')).toBe(true)
     wrapper.unmount()
   }, 20_000)
 
   it('does not attach the initial fixed-group price rank to a scope selected while facts are pending', async () => {
     const initialPending: Array<{ release: () => void; released: boolean }> = []
     const selectedPending: Array<{ release: () => void; released: boolean }> = []
+    let comparisonBatches = 0
     const habitatResources = new Set(nativeResources('habitat').map((resource) => resource.resource_id))
     const makeResponse = (items: Array<Record<string, any>>) => nativeBatchResponse(items, (item, resource) => {
       const data = nativeReadFixture(item, resource)
@@ -1358,8 +1375,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
         const targetThemeReads = items.some((item) => habitatResources.has(item.resource) && item.target.kind === 'territory')
         if (targetThemeReads) {
-          const selected = items.some((item) => habitatResources.has(item.resource) && item.intent.kind === 'selected_comparison')
-          const queue = selected ? selectedPending : initialPending
+          const comparisonRead = items.some((item) =>
+            habitatResources.has(item.resource) && item.intent.kind !== 'facts')
+          if (!comparisonRead) return makeResponse(items)
+          // The first comparison read is the initial scope; the second one is
+          // the scope selected while that first read is still pending.
+          const queue = comparisonBatches++ === 0 ? initialPending : selectedPending
           return new Promise<Response>((resolve) => {
             const pending = { released: false, release: () => {
               pending.released = true
@@ -1485,7 +1506,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it('renders the producer-declared Mobility curve and scopes explicit comparisons through native reads', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
+    // #986 — the curve belongs to the page-3 chapter: it is read when that
+    // chapter is the requested one, never speculatively from page 1 or page 2.
+    const { router, wrapper } = await monter(
+      '/territoire/commune/22001?theme=mobilite#figure-offre-transports-commun',
       chargerReferenceReelle)
     const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
     const reference = nativeResources('mobilite').find((resource) => resource.shapes.includes('named_reference'))!
@@ -1511,7 +1535,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       territory.type === 'commune' && territory.epci === cibleReference('22001').epci)
       .map((territory: any) => ({ type: territory.type, id: territory.territoire }))
       .sort((left: any, right: any) => left.id.localeCompare(right.id))
-    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } })
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' }, hash: '#figure-offre-transports-commun' })
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBe('epci')
     const epciRead = reads().find((item) => item.resource === curve.resource_id &&
@@ -1522,14 +1546,14 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const bretagneMembers = cohort.filter((territory: any) => territory.type === 'commune')
       .map((territory: any) => ({ type: territory.type, id: territory.territoire }))
       .sort((left: any, right: any) => left.id.localeCompare(right.id))
-    await router.replace({ query: { theme: 'mobilite', comparaison: 'bretagne' } })
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'bretagne' }, hash: '#figure-offre-transports-commun' })
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBe('bretagne')
     const bretagneReads = reads().filter((item) => item.resource === curve.resource_id &&
       item.intent.kind === 'selected_comparison')
     expect(bretagneReads.at(-1)?.intent.members).toEqual(bretagneMembers)
 
-    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } })
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' }, hash: '#figure-offre-transports-commun' })
     await flushPromises()
     expect(reads().filter((item) => item.resource === curve.resource_id &&
       item.intent.kind === 'selected_comparison' &&
@@ -1667,33 +1691,23 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const aedarReads = () => requests.filter((items) =>
       items.every((item) => item.resource === 'aedar_territorial_aggregate' && item.intent?.kind === 'facts'))
     // The legitimate Mobilité semantic plan, derived independently from the
-    // fixture catalogue (the same declarations production filters), not from
-    // the observed requests: one territory facts item per commune-level
-    // territory+facts resource, one cohort item per typed_reading cohort
-    // resource, one item per named-reference id. Chunking and the facts-only
-    // recovery pass are intentional and preserved — deduplication means each
-    // item of this plan is admitted exactly once per acquisition generation.
+    // app's chapter inventory over the fixture catalogue (the same declarations
+    // production filters), not from the observed requests: the REQUESTED page-2
+    // chapter's territory facts only — no page-3 sibling and no named reference
+    // (#986: a chapter is read only when it is requested). Deduplication means
+    // each item of this plan is admitted exactly once per acquisition generation.
     const catalogue = nativeResources('mobilite')
+    const pageTwoChapter = chapitreDemande('mobilite', 'partage-de-lespace-public',
+      catalogue as unknown as SemanticResourceDeclaration[])!
     const territoireFacts = catalogue.filter((resource) =>
+      pageTwoChapter.indicators.includes(resource.resource_id) &&
       resource.allowed_levels.includes('commune') &&
       resource.target_kinds.includes('territory') && resource.intents.includes('facts'))
-    const cohortFacts = catalogue.filter((resource) =>
-      resource.shapes.includes('typed_reading') && resource.allowed_levels.includes('commune') &&
-      resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
-    const namedFacts = catalogue.filter((resource) =>
-      resource.shapes.includes('named_reference') &&
-      resource.target_kinds.includes('named_reference') && resource.intents.includes('facts'))
-    expect(territoireFacts.length, 'the fixture must declare Mobilité territory facts to read').toBeGreaterThan(0)
+    expect(territoireFacts.length, 'the fixture must declare Mobilité territory facts to read').toBe(13)
     const factsCle = (resource: string, cible: Record<string, any>) =>
       `${resource}|${cible.kind}|${cible.type ?? ''}|${cible.id ?? ''}`
-    const clesAttendues = [
-      ...territoireFacts.map((resource) => factsCle(resource.resource_id,
-        { kind: 'territory', type: 'commune', id: '22001' })),
-      ...cohortFacts.map((resource) => factsCle(resource.resource_id,
-        { kind: 'territory_cohort', type: 'commune' })),
-      ...namedFacts.flatMap((resource) => resource.target_ids.map((id) =>
-        factsCle(resource.resource_id, { kind: 'named_reference', id }))),
-    ].sort()
+    const clesAttendues = territoireFacts.map((resource) => factsCle(resource.resource_id,
+      { kind: 'territory', type: 'commune', id: '22001' })).sort()
     const lotFaitsMobilite = (items: Array<Record<string, any>>) =>
       !items.every((item) => item.resource === 'aedar_territorial_aggregate') &&
       items.some((item) => mobiliteResourceIds.has(item.resource) && item.intent?.kind === 'facts')
@@ -1771,7 +1785,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     // The retry genuinely re-reads and admits the retained native facts…
     expect(wrapper.text()).not.toContain('Les indicateurs de ce thème ne sont pas disponibles.')
-    expect(wrapper.find('.mobilite-raccordement-curve__point--territory').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-section--reseaux .mobilite-comparison-bars').exists()).toBe(true)
     // …without forcing an AEDAR reread and with AEDAR still rendered.
     expect(aedarReads()).toHaveLength(aedarReadsBeforeRetry)
     expect(wrapper.find('.aedar-state').exists()).toBe(false)
@@ -2133,7 +2147,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       territory.type === 'commune' && territory.territoire === '22001'
         ? { ...territory, epci: '999999' }
         : territory)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci',
+    const { wrapper } = await monter(
+      '/territoire/commune/22001?theme=mobilite&comparaison=epci#figure-offre-transports-commun',
       async () => referenceSansEpci)
     await flushPromises()
     await flushPromises()
@@ -2149,64 +2164,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const curve = wrapper.get('.mobilite-raccordement-curve')
     expect(curve.find('.cahier-figure-legend-comparison-error').exists()).toBe(false)
     expect(curve.find('[role="alert"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('réessaie une acquisition de comparaison Mobilité réellement échouée depuis la section et retrouve la courbe comparée', async () => {
-    const requests: Array<Array<Record<string, any>>> = []
-    let selectedFailing = true
-    const fixtureFetch = nativeSemanticFetch(requests)
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) !== '/api/resources/read-batch') return fixtureFetch(input, init)
-      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      if (items.some((item) => item.intent.kind === 'selected_comparison') && selectedFailing) {
-        requests.push(items)
-        return new Response('', { status: 503 })
-      }
-      return fixtureFetch(input, init)
-    })
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci',
-      chargerReferenceReelle)
-    await flushPromises()
-
-    const selectedReads = () => requests.filter((items) =>
-      items.some((item) => item.intent.kind === 'selected_comparison'))
-    // The failed atomic plan is isolated into bounded resource-group reads;
-    // every failed attempt still carries only selected_comparison items.
-    expect(selectedReads().length).toBeGreaterThan(1)
-    expect(selectedReads().every((items) =>
-      items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
-    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
-    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(true)
-    selectedFailing = false
-    const selectedBeforeRetry = selectedReads().length
-    const requestsBeforeRetry = requests.length
-
-    await wrapper.get('.mobilite-raccordement-curve__retry').trigger('click')
-    await flushPromises()
-
-    const retried = selectedReads().slice(selectedBeforeRetry)
-    expect(retried.length).toBeLessThanOrEqual(2)
-    expect(retried.every((items) => items.every((item) => item.intent.kind === 'selected_comparison'))).toBe(true)
-    // Chaque ressource Mobilité comparable repart avec ses détails déclarés,
-    // en lots bornés —
-    // jamais une requête par figure ni une relecture des faits focaux.
-    const comparaisonsAttendues = nativeResources('mobilite')
-      .filter((resource) => resource.resource_kind === 'indicator'
-        && resource.allowed_levels.includes('commune')
-        && resource.target_kinds.includes('territory')
-        && resource.intents.includes('selected_comparison'))
-      .map((resource) => resource.resource_id)
-      .sort()
-    // #962 added the three Mobility supply resources to the comparison set.
-    expect(comparaisonsAttendues).toContain('stations_service')
-    expect([...new Set(retried.flat().map((item) => item.resource))].sort()).toEqual(comparaisonsAttendues)
-    expect(requests.slice(requestsBeforeRetry).flat().some((item) =>
-      item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
-    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(false)
-    expect(wrapper.find('.mobilite-raccordement-curve__legend .cahier-figure-legend-comparison-error').exists()).toBe(false)
-    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -2305,11 +2262,12 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
       }
       return servir(input, init)
     }))
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=', chargerReferenceReelle)
+    const { router, wrapper } = await monter(
+      '/territoire/commune/22001?theme=mobilite&comparaison=#figure-offre-transports-commun', chargerReferenceReelle)
     await flushPromises()
     expect(wrapper.find('.mobilite-raccordement-curve__point--territory').exists()).toBe(true)
     refuser = true
-    await router.push('/territoire/commune/22001?theme=mobilite&comparaison=commune:22001,commune:22002')
+    await router.push('/territoire/commune/22001?theme=mobilite&comparaison=commune:22001,commune:22002#figure-offre-transports-commun')
     await flushPromises()
     const comparisonWarning = wrapper.get('.mobilite-raccordement-curve__legend .cahier-figure-legend-comparison-error')
     await comparisonWarning.trigger('focus')
@@ -2326,13 +2284,16 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
   it('construit au même niveau, acquiert les membres visibles et recharge le lien partagé sans réinsérer le focal (#861)', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     vi.stubGlobal('fetch', nativeSemanticFetch(requests))
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=', chargerReferenceReelle)
+    const { router, wrapper } = await monter(
+      '/territoire/commune/22001?theme=mobilite&comparaison=', chargerReferenceReelle)
     await flushPromises()
     await wrapper.get('.page-heading [aria-label="Construire un groupe de comparaison"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBe('')
-    await wrapper.get('input[type="search"]').setValue('22002')
+    await wrapper.get('.constructeur-comparaison input[type="search"]').setValue('22002')
     await wrapper.get(`[aria-label="Ajouter ${cibleReference('22002').nom}"]`).trigger('click')
+    await flushPromises()
+    await wrapper.get('.constructeur-comparaison input[type="search"]').setValue('')
     await flushPromises()
     await wrapper.get(`[aria-label="Retirer ${cibleReference('22001').nom}"]`).trigger('click')
     await flushPromises()

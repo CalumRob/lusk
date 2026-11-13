@@ -16,7 +16,7 @@ import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
 import CahierProse from './CahierProse.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   territory: Pick<TerritoryIdentity, 'type' | 'code' | 'name'>
   horizonMinutes: number
   /** Figure title owned by the semantic content layer (shared figure-title primitive). */
@@ -24,7 +24,9 @@ const props = defineProps<{
   modeKeys?: readonly ('car' | 'bike-lts2' | 'transit')[]
   /** Reading under the map grid: honest empty state and provisional horizon. */
   lecture?: readonly TextBlock[]
-}>()
+  /** #986 — its AEDAR chapter is the requested one: the legend asset may load. */
+  active?: boolean
+}>(), { active: true })
 
 const availableSlots: readonly { key: 'car' | 'bike-lts2' | 'transit'; label: string; icon: Component; tone: string }[] = [
   { key: 'car', label: 'Voiture', icon: CarFront, tone: 'car' },
@@ -46,17 +48,33 @@ const needsCarMapLegend = computed(() => slots.value.some((slot) => usesCarMap(s
   && !unavailableCarMapCodes.value.has(props.territory.code))
 const showCarMapLegend = computed(() => needsCarMapLegend.value && carMapLegend.value !== null)
 
+let legendIdentity: string | null = null
 watch(
-  () => [props.territory.type, props.territory.code, props.horizonMinutes, needsCarMapLegend.value].join('|'),
+  () => [props.territory.type, props.territory.code, props.horizonMinutes, needsCarMapLegend.value,
+    props.active !== false].join('|'),
   async (_, __, onCleanup) => {
     let current = true
     onCleanup(() => { current = false })
+    if (!needsCarMapLegend.value) {
+      carMapLegend.value = null
+      legendStatus.value = 'loading'
+      legendIdentity = null
+      return
+    }
+    const identity = `${props.territory.type}/${props.territory.code}/${props.horizonMinutes}`
+    // A different territory/horizon invalidates the settled legend; merely
+    // leaving the chapter keeps it, so returning reuses it without a fetch.
+    if (legendIdentity !== null && legendIdentity !== identity) {
+      carMapLegend.value = null
+      legendStatus.value = 'loading'
+    }
+    if (props.active === false) return
+    if (legendIdentity === identity && carMapLegend.value) { legendStatus.value = 'ready'; return }
     carMapLegend.value = null
     legendStatus.value = 'loading'
-    if (!needsCarMapLegend.value) return
     try {
       const legend = await fetchAedarCarMapLegend(props.territory)
-      if (current) { carMapLegend.value = legend; legendStatus.value = 'ready' }
+      if (current) { carMapLegend.value = legend; legendStatus.value = 'ready'; legendIdentity = identity }
     } catch {
       if (current) legendStatus.value = 'unavailable'
     }
@@ -85,6 +103,9 @@ function markCarMapUnavailable(code: string): void {
 }
 
 async function inspectCarMap(): Promise<void> {
+  // The pending page-1 surface never opens the gallery before its chapter is
+  // requested: that would download the inspection asset for an unrequested page.
+  if (props.active === false) return
   inspectionUnavailable.value = !await mapGallery.value?.open('car')
 }
 
@@ -112,7 +133,7 @@ function markInspectionUnavailable(): void {
           v-if="usesCarMap(slot.key)"
           class="blank-map-slot__viewport"
           :style="{ '--mode-ring': `var(--cahier-mode-${slot.tone})` }"
-          :image-url="aedarCarMapAssetUrl(props.territory.code, 'inline')"
+          :image-url="props.active === false ? undefined : aedarCarMapAssetUrl(props.territory.code, 'inline')"
           :image-alt="carMapAlternativeText"
           :accessible-name="`Agrandir : ${slot.label} à ${props.territory.name}`"
           :number="String(index + 1).padStart(2, '0')"

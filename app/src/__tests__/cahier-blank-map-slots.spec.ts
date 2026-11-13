@@ -28,6 +28,36 @@ describe('CahierBlankMapSlots', () => {
     expect(wrapper.findAll('.blank-map-slot__viewport')).toHaveLength(3)
   })
 
+  it('suppresses the pending car image until its chapter is requested, keeping the map geometry', async () => {
+    const wrapper = mount(CahierBlankMapSlots, { props: { ...props, active: false } })
+    await flushPromises()
+
+    // #986 — no <img> at all (never an empty src, which would fetch the page).
+    // No image element carries a src: the car panel renders none, and the closed
+    // gallery keeps its inert placeholder without a URL (never an empty src).
+    expect(wrapper.find('.blank-map-slot--car img').exists()).toBe(false)
+    expect(wrapper.findAll('img[src]')).toHaveLength(0)
+    expect(wrapper.findAll('img').every((img) => img.attributes('src') === undefined)).toBe(true)
+    // The protected figure geometry is preserved: the circular map viewport stays.
+    const viewport = wrapper.find('.blank-map-slot--car .map-viewport')
+    expect(viewport.exists()).toBe(true)
+    expect(viewport.element.tagName).toBe('BUTTON')
+    expect(wrapper.findAll('.blank-map-slot__viewport')).toHaveLength(3)
+    // The legend is not fetched for an unrequested chapter either.
+    expect(wrapper.find('.aedar-car-map-legend').exists()).toBe(false)
+  })
+
+  it('loads the expected car image once its chapter is requested', async () => {
+    const wrapper = mount(CahierBlankMapSlots, { props: { ...props, active: true } })
+    await flushPromises()
+
+    const images = wrapper.findAll('.blank-map-slot--car img')
+    expect(images).toHaveLength(1)
+    expect(images[0]!.attributes('src')).toBe(
+      'https://images.calumrobertson.fr/maps/aedar/v1/22003-car-inline.webp')
+    expect(wrapper.find('.aedar-car-map-legend').exists()).toBe(true)
+  })
+
   it('shows the 15-minute car map and links to its inspection image', () => {
     const wrapper = mount(CahierBlankMapSlots, { props })
 

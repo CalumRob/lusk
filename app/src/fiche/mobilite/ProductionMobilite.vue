@@ -3,7 +3,7 @@ import ProductionMobiliteAedar from './ProductionMobiliteAedar.vue'
 import type { CahierPagination } from '@/fiche/prototype/cahierPagination'
 import type { AedarFetchResult, AedarSummaryFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import type { ThemeContent } from '@/fiche/content/themeContent'
-defineProps<{
+withDefaults(defineProps<{
   content: ThemeContent
   pagination: CahierPagination
   aedarData: AedarFetchResult | null
@@ -18,7 +18,9 @@ defineProps<{
   nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   nativeComparisonError?: string
   retryNativeComparison?: () => void
-}>()
+  /** #986 — the reader is on the AEDAR (page-1) chapter: its own reads may start. */
+  aedarActive?: boolean
+}>(), { aedarActive: true })
 </script>
 <template>
   <ProductionMobiliteAedar
@@ -36,5 +38,6 @@ defineProps<{
     :native-comparison-status="nativeComparisonStatus"
     :native-comparison-error="nativeComparisonError"
     :retry-native-comparison="retryNativeComparison"
+    :aedar-active="aedarActive"
   />
 </template>

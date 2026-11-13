@@ -1472,8 +1472,13 @@ try {
     }
 
     if (width === 390 || width === 1440) {
+      // #986 — a chapter is read only when it is requested: visit the page-3
+      // chapter before asserting its layout (the same navigation a reader makes).
+      await page.goto(`${baseUrl}territoire/commune/35238?theme=mobilite#figure-offre-transports-commun`,
+        { waitUntil: 'networkidle' })
       const gauge = page.locator('[data-section="couverture-du-territoire"]')
       const curve = page.locator('[data-section="visiter-la-bretagne"]')
+      await gauge.waitFor({ state: 'visible', timeout: 10000 })
       assert(await gauge.isVisible() && await curve.isVisible(),
         `Mobilité page 3 sections must render at ${width}px`)
 
@@ -1630,6 +1635,11 @@ try {
 
     // Disable the inherited clipping while measuring; otherwise scrollWidth can
     // falsely pass even when an oversized Cahier child sticks out of the page.
+    // #986 — the page-3 block above navigated to its own chapter; the shared
+    // overflow/AEDAR metrics describe the page-1 landing, so return to it.
+    await page.goto(`${baseUrl}territoire/commune/35238?theme=mobilite`, { waitUntil: 'networkidle' })
+    await page.locator('#section-aedar-car-overview').waitFor({ state: 'visible', timeout: 10000 })
+
     const metrics = await page.evaluate(async () => {
       const html = document.documentElement
       const body = document.body
