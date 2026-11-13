@@ -292,6 +292,9 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     const comparisonRows = tooltip.findAll('.cahier-figure-tooltip-row-comparison')
     expect(comparisonRows.length).toBeGreaterThanOrEqual(6)
     expect(comparisonRows.every((row) => row.find('.cahier-figure-tooltip-comparison-rank').exists())).toBe(true)
+    // #1004 — every tooltip rank wears the shared extreme-rank ink, so the
+    // outline rule reaches the production page, not only the component.
+    expect(comparisonRows.every((row) => row.get('.cahier-figure-tooltip-comparison-rank').classes().includes('cahier-rank-ink'))).toBe(true)
     expect(tooltip.text()).toContain('Longueur protégée')
     expect(tooltip.text()).toContain('Longueur partagée')
 

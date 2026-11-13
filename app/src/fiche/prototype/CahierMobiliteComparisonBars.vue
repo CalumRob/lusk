@@ -325,6 +325,7 @@ function comparisonTooltip(
     // Tooltip values are bare; the accessible label keeps the full unit, scope and rank.
     value: formatValue(reference.value),
     rank: formatServedRank(comparison.rank),
+    rankEvidence: comparison.rank,
     ariaLabel: comparisonAria(fact, props.figure.comparisonLabel, unit, unsplitTotal),
   }
 }

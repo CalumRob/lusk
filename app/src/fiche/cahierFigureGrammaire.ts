@@ -350,6 +350,9 @@ export interface CahierTooltipComparison {
   value: string
   /** Producer-served ordinal, already formatted (`1er/3`); never derived from local facts. */
   rank?: string | null
+  /** The structured producer ordinal behind `rank`: the shared extreme-rank
+   *  outline reads it instead of parsing the formatted text (#1004). */
+  rankEvidence?: { position: number; size: number; ties?: number | null } | null
   /** The same ordinal for assistive technology, spelled out (`1er/3 (ex æquo)`). */
   rankAria?: string | null
   /** Complete accessible reading, including the resolved scope; the visible label stays « Groupe comparé ». */

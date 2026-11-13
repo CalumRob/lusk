@@ -93,6 +93,24 @@ export function formatServedRank(
   return `${shared ? '=' : ''}${position === 1 ? '1er' : `${position}e`}/${size}`
 }
 
+/**
+ * Le rang extrême — la seule règle qui décide du tracé à la main autour d'un
+ * rang déjà affiché (#1004). La borne est celle du rang : le premier et le
+ * dernier `max(1, ceil(5 % de la population))` du groupe. Elle lit le rang
+ * servi, jamais le texte formaté, et ne cercle jamais un rang absent ou
+ * supprimé (un `1/1` n'a pas de position à montrer).
+ */
+export function estRangExtreme(
+  rank: { position: number; size: number } | null | undefined,
+): boolean {
+  if (!rank) return false
+  const { position, size } = rank
+  if (!Number.isInteger(position) || !Number.isInteger(size)) return false
+  if (position < 1 || size < RANK_DISPLAY_MIN_SIZE || position > size) return false
+  const edge = Math.max(1, Math.ceil(size * 0.05))
+  return position <= edge || position > size - edge
+}
+
 /** Le même rang pour les technologies d'assistance : le « = » visible devient « ex æquo ». */
 export function formatServedRankAria(
   rank: { position: number; size: number; ties?: number | null } | null | undefined,
