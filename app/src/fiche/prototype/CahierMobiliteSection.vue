@@ -45,9 +45,20 @@ const props = defineProps<{
     error?: string
     retry?: () => void
   }
+  /** [PROTOTYPE page 3 — JETABLE] published territory display name. */
+  territoryName?: string
 }>()
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
+
+/**
+ * [PROTOTYPE page 3 — JETABLE] « Aucune comparaison » explicite n'est pas une
+ * comparaison indisponible : la sélection vide du contrôle d'en-tête fait
+ * disparaître la ligne du groupe comparé au lieu d'afficher un échec. La source
+ * est l'état de sélection déjà fourni par le contrôle, jamais une liste vide
+ * interprétée comme une portée inconnue.
+ */
+const comparisonNone = computed(() => control.value?.selection.etat === 'vide')
 
 const effectiveComparison = computed(() => {
   if (props.comparison.status !== 'ready') return props.comparison
@@ -288,6 +299,8 @@ function ratioAriaLabel(
           v-if="FigureCouverturePrototype"
           :figure="share"
           :comparison="effectiveComparison"
+          :territory-name="territoryName"
+          :comparison-none="comparisonNone"
         />
         <CahierMobiliteShareTrack v-else :figure="share" :comparison="effectiveComparison" />
       </figure>

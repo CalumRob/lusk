@@ -530,6 +530,7 @@ onBeforeUnmount(() => {
                 <CahierMobiliteSection
                   :section="section"
                   :unit="{ key: currentUnit.key, label: currentUnit.label }"
+                  :territory-name="props.content.territory.name"
                   :comparison="{
                     status: props.nativeComparisonStatus ?? 'idle',
                     error: props.nativeComparisonError,

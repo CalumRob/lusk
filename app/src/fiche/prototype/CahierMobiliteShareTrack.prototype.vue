@@ -1,17 +1,20 @@
 <script setup lang="ts">
 /**
- * [PROTOTYPE page 3 — JETABLE, v2] « Couverture du territoire ».
+ * [PROTOTYPE page 3 — JETABLE, v3] « Couverture du territoire ».
  *
- * Deux barres empilées à 100 % : « Territoire », puis le « Groupe comparé » de
- * l'en-tête. Chaque barre porte la part publiée, puis son reste — laissé
- * neutre et sans étiquette. Ce reste n'est qu'une lecture visuelle du complément
- * de la part publiée : ce n'est ni une mesure publiée, ni un rang, ni une
- * statistique recalculée dans le navigateur.
+ * Deux barres empilées à 100 % : le nom du territoire, puis le « Groupe
+ * comparé » de l'en-tête. Chaque barre porte la part publiée, puis son reste —
+ * laissé neutre et sans étiquette. Ce reste n'est qu'une lecture visuelle du
+ * complément de la part publiée : ce n'est ni une mesure publiée, ni un rang,
+ * ni une statistique recalculée dans le navigateur.
  *
- * Le seuil (« à 500 m ») reste porté par le titre publié de la figure ; la
- * portée résolue de la comparaison reste dans l'ARIA et le titre de la ligne.
- * À 100 %, le reste garde une largeur nulle : aucune largeur factice n'est
- * inventée pour zéro.
+ * Le seuil (« à 500 m ») reste porté par le titre publié de la figure ; les
+ * pourcentages restent dans l'ARIA et les unités servies. Aucune graduation
+ * visible : la barre de 0 à 100 % est portée par le cadre fin. À 100 %, le
+ * reste garde une largeur nulle : aucune largeur factice pour zéro.
+ *
+ * « Aucune comparaison » explicite (sélection vide du contrôle d'en-tête)
+ * n'est pas une comparaison indisponible : la ligne entière disparaît.
  */
 import { computed } from 'vue'
 
@@ -29,6 +32,10 @@ type ComparisonState = {
 const props = defineProps<{
   figure: MobiliteShareEvidence
   comparison: ComparisonState
+  /** Published territory display name (the fiche's validated identity). */
+  territoryName?: string
+  /** Explicit « Aucune comparaison »: the whole compared row is absent. */
+  comparisonNone?: boolean
 }>()
 
 function formatNumber(value: number, maximumFractionDigits = 0): string {
@@ -72,6 +79,8 @@ const complementPercent = computed(() => (value.value === null ? 0 : Math.max(0,
 const referenceComplementPercent = computed(() =>
   reference.value === null ? 0 : Math.max(0, 100 - referencePercent.value))
 
+const territoryLabel = computed(() => props.territoryName ?? 'Territoire')
+
 const comparisonScope = computed(() => props.figure.comparisonLabel)
 
 const comparisonDetail = computed(() => {
@@ -86,14 +95,16 @@ const comparisonDetail = computed(() => {
 
 const publicationNotes = computed(() => [
   ...(props.figure.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
-  ...(props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`),
+  ...(props.comparisonNone
+    ? []
+    : (props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`)),
 ])
 
 const remainderReading = 'Barre de 0 à 100 % ; le reste de la barre est le complément de la part publiée.'
 
 const territoryAria = computed(() => [
   props.figure.figureTitle,
-  `Territoire : ${valueLabel.value}`,
+  `${territoryLabel.value} : ${valueLabel.value}`,
   remainderReading,
 ].join('. '))
 
@@ -117,6 +128,7 @@ const comparisonAria = computed(() => {
 })
 
 const stateMessage = computed(() => {
+  if (props.comparisonNone) return null
   if (props.comparison.status === 'loading') return 'Chargement du groupe comparé…'
   if (props.comparison.status === 'error') {
     return props.figure.unavailableComparisons?.length ? null : props.comparison.error ?? 'Groupe comparé indisponible.'
@@ -132,14 +144,9 @@ const stateMessage = computed(() => {
 
 <template>
   <div class="page3-share-proto">
-    <div class="page3-share-proto__scale" aria-hidden="true">
-      <span>0 %</span>
-      <span>100 %</span>
-    </div>
-
     <div class="page3-share-proto__row" data-row="territory">
       <div class="page3-share-proto__head">
-        <span class="page3-share-proto__row-label">Territoire</span>
+        <span class="page3-share-proto__row-label">{{ territoryLabel }}</span>
         <span class="page3-share-proto__row-value" :data-value="value ?? 'absent'">{{ valueLabel }}</span>
       </div>
       <div
@@ -165,11 +172,9 @@ const stateMessage = computed(() => {
       </div>
     </div>
 
-    <div class="page3-share-proto__row" data-row="comparison">
+    <div v-if="!comparisonNone" class="page3-share-proto__row" data-row="comparison">
       <div class="page3-share-proto__head">
-        <span class="page3-share-proto__row-label page3-share-proto__row-label--comparison">
-          {{ GROUPE_COMPARE_LABEL }}
-        </span>
+        <span class="page3-share-proto__row-label">{{ GROUPE_COMPARE_LABEL }}</span>
         <span class="page3-share-proto__row-value page3-share-proto__row-value--comparison">{{ referenceLabel }}</span>
       </div>
       <div
@@ -206,7 +211,7 @@ const stateMessage = computed(() => {
     <p v-for="note in publicationNotes" :key="note" class="page3-share-proto__state" role="note">{{ note }}</p>
     <p v-if="stateMessage" class="page3-share-proto__state" role="status">{{ stateMessage }}</p>
     <button
-      v-if="comparison.status === 'error' && comparison.retry"
+      v-if="!comparisonNone && comparison.status === 'error' && comparison.retry"
       type="button"
       class="page3-share-proto__retry"
       @click="comparison.retry()"
@@ -221,14 +226,6 @@ const stateMessage = computed(() => {
   gap: var(--space-3);
   min-width: 0;
 }
-.page3-share-proto__scale {
-  display: flex;
-  justify-content: space-between;
-  color: var(--cahier-default, var(--editorial-muted));
-  font: var(--type-figure-label);
-  font-size: var(--type-figure-tick-size);
-  font-variant-numeric: tabular-nums;
-}
 .page3-share-proto__row { display: grid; gap: var(--space-1); min-width: 0; }
 .page3-share-proto__head {
   display: grid;
@@ -237,19 +234,13 @@ const stateMessage = computed(() => {
   column-gap: var(--space-2);
   min-width: 0;
 }
+/* Axis-label typography, shared with the Cahier figures' own axis titles. */
 .page3-share-proto__row-label {
-  color: var(--cahier-theme-strong, var(--brand-600));
+  color: var(--cahier-default, var(--editorial-muted));
   font: var(--type-figure-label);
   letter-spacing: var(--type-figure-label-tracking);
   text-transform: uppercase;
   overflow-wrap: anywhere;
-}
-.page3-share-proto__row-label--comparison {
-  color: var(--cahier-default, var(--editorial-muted));
-  text-transform: none;
-  letter-spacing: normal;
-  font: var(--type-figure-legend);
-  font-weight: 600;
 }
 .page3-share-proto__row-value {
   color: var(--ink, var(--editorial-ink));
@@ -266,21 +257,16 @@ const stateMessage = computed(() => {
   display: flex;
   min-width: 0;
   height: 0.875rem;
-  border: 1px solid color-mix(in srgb, var(--cahier-theme) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 22%, transparent);
   background: var(--page3-complement-fill);
-}
-.page3-share-proto__track--comparison {
-  border-color: color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 24%, transparent);
 }
 .page3-share-proto__segment {
   display: block;
   height: 100%;
   flex: 0 0 auto;
 }
-.page3-share-proto__segment--share { background: var(--cahier-theme-strong, var(--brand-600)); }
-.page3-share-proto__segment--share-comparison {
-  background: color-mix(in srgb, var(--cahier-theme-strong, var(--brand-600)) 45%, var(--paper));
-}
+.page3-share-proto__segment--share { background: var(--brand-500); }
+.page3-share-proto__segment--share-comparison { background: var(--brand-200); }
 .page3-share-proto__segment--complement { background: transparent; }
 .page3-share-proto__track--empty {
   display: flex;
