@@ -17,6 +17,7 @@
     "verify:aedar-demand": "node scripts/verify-aedar-demand.mjs",
     "preview": "vite preview",
     "prototype:cahier-pdf": "node scripts/prototype-cahier-pdf.mjs",
+    "prototype:rennes-pdf": "node scripts/prototype-rennes-pdf.mjs",
     "test": "vitest run"
   },
   "dependencies": {

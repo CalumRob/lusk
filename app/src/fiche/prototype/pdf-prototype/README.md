@@ -26,3 +26,79 @@ Content flows through the existing `territoryFactsFor` → `resolveMobiliteTheme
 - pdfmake is lazy-imported at export. Its minified JS and default VFS fonts are approximately 835 KB + 855 KB uncompressed. A production version should ship only required fonts and check compressed transfer and memory on low-end phones.
 
 Prototype captured on branch `prototype/cahier-pdf`; no implementation issue was created because this is a feasibility artifact, not a shipping commitment.
+
+## Real Rennes / EPCI follow-up
+
+Run `npm run prototype:rennes-pdf` from `app/`.
+
+This starts the unmodified local territory route for commune `35238`, Mobilité,
+`comparaison=epci`, using the deployed API through the existing Vite proxy. It
+waits for validated chapter facts, aggregate comparisons, the B207 detail and
+comparison, the map legends, and all five displayed map images. No fixture
+interception, serving-database access or numerical recomputation is introduced.
+Normal read-only product API traffic is the only backend load; PDF generation
+remains client-side. The local Playwright browser is automation, not the PDF engine.
+
+Artifacts: `E:/Temp/opencode/cahier-rennes-pdf/`:
+
+- `rennes-equipements-epci.pdf`: 8 A4 sheets, real Rennes facts, fixed EPCI
+  comparison labelled by the app as « Moyenne — communes de Rennes Métropole ».
+- `rennes-equipements-epci-10min.pdf`: second export after a real click on the
+  explorer's 10-minute selector; the linked waffle classification updates too.
+- `snapshot.json`, `snapshot-10min.json`, timing receipts and source screenshot.
+- `page-1.png` ... `page-8.png`, `verification.json`: local PDF inspection receipts.
+
+Both files are about 1.52 MB (1.45 MiB). The most recent local run took roughly
+1.03 seconds for the default export including asset conversion/import, and 0.74
+seconds for the changed-horizon export. An earlier first PDF-generation pass took
+4.3 seconds; these are development-machine observations, not a cold-network,
+mobile, memory or Pi benchmark.
+
+### What the real test validated
+
+- Five native 900×900 WebP maps can be decoded client-side into PNG for pdfmake.
+  Their actual sidecar legends, including local loss-scale warnings, are retained.
+- Four existing chart SVGs retain geometry, dashed comparisons, alpha, numeric
+  ticks and mode colours. Their external HTML tick labels must be copied into the
+  exported vector. Legends must explicitly map the colours to mode names.
+- The HTML waffle becomes 235 vector tiles with counts from its existing
+  resolved classification, not an independent classification algorithm.
+- Scalar values, comparison values and served ranks are sourced from resolved
+  content. PDF inspection confirmed 209.3 vs 165.6 types/address, rank 1/43,
+  proper A4 dimensions, repeated context/page numbers and all five embedded maps.
+- All 235 categories remain accounted for. Changing 15 → 10 minutes changes
+  waffle counts from 111/44/38/12/10/20 to 77/19/57/37/17/28 in the renderer's
+  existing bucket order. The selected B207 distribution also follows 10 minutes.
+- Existing car/loss maps remain explicitly 15-minute maps even when the
+  equipment horizon changes; a report-wide blanket horizon would be false.
+
+### Limits exposed (not production-ready)
+
+- `rennes.js` reaches into Vue **development internals** to capture resolved
+  component props/computeds. This avoids parsing factual HTML but is deliberately
+  brittle. Production needs an explicit typed export-state seam that includes
+  the child-owned equipment detail/comparison and effective local selections.
+- Parent `aedarSelectedHorizon` is initially null while child figures really
+  show 15 minutes. The first experiment caught a `null minutes` footer; final
+  exports instead capture each child's effective horizon and verify it.
+- The snapshot, chart geometry, colours and selected modes are frozen before
+  asynchronous image conversion/import. Production still needs generation/coherence
+  guards for failures, late responses and user changes during preparation.
+- PNG maps dominate file size and conversion cost. Native map detail, compressed
+  transfer, low-end phone time/memory, and optional image downsampling need a
+  separate measurement. No Chromium memory burden is introduced on the Pi.
+- Eight sheets is a deliberately generous semantic template, not optimized
+  editorial pagination. A first map layout stranded interpretation prose on a
+  continuation page; moving that commentary intact to the source/method page
+  removed the orphan. No paper-height clipping or silent truncation is used.
+- Typography remains Roboto; screen typography and accessible PDF tagging are
+  unvalidated. Closed dialogs/tooltips and full equipment tables are not exported.
+- Existing source prose is preserved verbatim, including screen-only interaction
+  instructions and an overview sentence saying aggregate ranking is unavailable
+  although current scalar evidence supplies ranks. Those are content issues to
+  resolve explicitly, not facts for the PDF adapter to silently rewrite.
+
+Verdict: the real map-heavy chapter is feasible with browser-only pdfmake. The
+next engineering problem is an explicit, coherent export-state/figure interface,
+followed by a real A4 editorial pass and low-end-device performance checks—not a
+generic HTML-to-PDF parser or a Pi-hosted browser service.
