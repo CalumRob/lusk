@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chapitreDemande } from '@/fiche/content/demandInventory'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 import { SEMANTIC_MAX_BATCH_ITEMS } from '@/payload/semanticResourceClient'
-import { ThemeAcquisitionCache, acquireThemeComparison, acquireThemeFacts } from '@/payload/themeAcquisition'
+import { ThemeAcquisitionCache, acquireThemeComparison, acquireThemeFacts,
+  comparisonDemandState } from '@/payload/themeAcquisition'
 import type { ThemeFactsDemand } from '@/payload/themeAcquisition'
 import {
   nativeCatalogueResponse,
@@ -62,8 +63,8 @@ function fixtureFetch(isGated?: (item: Record<string, any>) => boolean) {
 function cacheFor() {
   return new ThemeAcquisitionCache(
     (theme, key, demand?: ThemeFactsDemand) => acquireThemeFacts(key!.type, key!.id, theme, demand),
-    (selection, theme, key, coherence, indicators) =>
-      acquireThemeComparison(key!.type, key!.id, theme, selection, coherence, indicators),
+    (selection, theme, key, coherence, indicators, fresh) =>
+      acquireThemeComparison(key!.type, key!.id, theme, selection, coherence, indicators, fresh),
   )
 }
 
@@ -148,6 +149,47 @@ describe('theme demand — Mobilite page 2 critical chapter', () => {
     // One acquisition identity: no item was read twice across the two demands.
     const keys = posts.flatMap((post) => post.items.map((item) => JSON.stringify(item)))
     expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('keeps per-demand comparison authority: a healthy later chapter is ready and the earlier absent one stays retryable', async () => {
+    let pageTwoComparisonAbsent = true
+    vi.stubGlobal('fetch', fixtureFetch((item) =>
+      pageTwoComparisonAbsent && item.intent.kind === 'selected_comparison' && PAGE_TWO.includes(item.resource)))
+    const cache = cacheFor()
+    const selectionKey = JSON.stringify(SELECTION)
+
+    // Page 2: every demanded comparison publication is absent -> ITS demand is an
+    // error, and the aggregate entry carries that failure.
+    const pageTwo = await cache.get('commune', '35238', 'mobilite', {
+      indicators: PAGE_TWO, selection: SELECTION, auxiliary: false,
+    })
+    expect(comparisonDemandState(pageTwo, SELECTION, PAGE_TWO)?.status).toBe('error')
+    expect(pageTwo.comparisons.get(selectionKey)?.comparison_error).toBe(true)
+
+    // Page 3 is healthy. Its own demand is ready even though page 2's failure is
+    // cached in the same selection scope, and the stale aggregate is cleared.
+    const pageThree = await cache.get('commune', '35238', 'mobilite', {
+      indicators: PAGE_THREE, selection: SELECTION,
+    })
+    expect(comparisonDemandState(pageThree, SELECTION, PAGE_THREE)?.status).toBe('ready')
+    expect(pageThree.comparisons.get(selectionKey)?.comparison_error).not.toBe(true)
+    expect(pageThree.comparisons.get(selectionKey)?.comparison_failure).toBeUndefined()
+
+    // Selecting the healthy chapter is ready; selecting page 2 still throws ITS
+    // own failure, so its retry stays honest rather than being erased.
+    await expect(cache.select('commune', '35238', 'mobilite', SELECTION, { indicators: PAGE_THREE }))
+      .resolves.toBeDefined()
+    await expect(cache.select('commune', '35238', 'mobilite', SELECTION, { indicators: PAGE_TWO }))
+      .rejects.toThrow(/disponible/i)
+
+    // An explicit retry of the HEALTHY demand clears any stale aggregate failure
+    // without touching page 2's own error state.
+    pageTwoComparisonAbsent = false
+    const retried = await cache.retryComparison('commune', '35238', 'mobilite', SELECTION, PAGE_THREE)
+    expect(comparisonDemandState(retried, SELECTION, PAGE_THREE)?.status).toBe('ready')
+    expect(comparisonDemandState(retried, SELECTION, PAGE_TWO)?.status).toBe('error')
+    expect(retried.comparisons.get(selectionKey)?.comparison_error).not.toBe(true)
+    expect(retried.comparisons.get(selectionKey)?.comparison_failure).toBeUndefined()
   })
 
   it('keeps healthy focal facts when one demanded comparison publication is absent, with no retry fan-out', async () => {

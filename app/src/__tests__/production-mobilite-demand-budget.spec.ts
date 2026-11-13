@@ -431,6 +431,42 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     wrapper.unmount()
   }, 60000)
 
+  it('serves a healthy chapter after an earlier absent one, and keeps the earlier absence retryable', async () => {
+    const { transport, calls } = createTransport({
+      // Page 2's whole demanded comparison scope is absent; page 3 is healthy.
+      gate: (item) => item.intent.kind !== 'facts' && PAGE_TWO.includes(item.resource),
+    })
+    vi.stubGlobal('fetch', transport)
+    const { router, wrapper } = await monterFiche(
+      '/territoire/commune/35238?theme=mobilite#figure-partage-de-lespace-public')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+    await flushPromises()
+    await flushPromises()
+
+    // Page 2's own comparison demand is absent: honest retry, never a ready page.
+    expect(wrapper.find('.mobilite-comparison-retry').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-comparison-bars__comparison').exists()).toBe(false)
+
+    // Page 3 is healthy even though page 2's failure is cached for the same
+    // selection: its own demand owns the ready state.
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-offre-transports-commun' })
+    await flushPromises()
+    await flushPromises()
+    expect(wrapper.find('.mobilite-raccordement-curve__retry').exists()).toBe(false)
+    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(true)
+
+    // Back on page 2 the absence is still ITS error: the retry stays available
+    // instead of being erased by the healthy sibling chapter.
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-partage-de-lespace-public' })
+    await flushPromises()
+    await flushPromises()
+    expect(wrapper.find('.mobilite-comparison-retry').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-comparison-bars__comparison').exists()).toBe(false)
+    wrapper.unmount()
+  }, 60000)
+
   it('completes the requested chapter when a hash jump happens during the initial read', async () => {
     let release: (() => void) | undefined
     let held = false

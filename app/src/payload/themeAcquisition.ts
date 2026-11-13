@@ -361,6 +361,19 @@ export function comparisonDemandState<T extends ThemeResponse>(entry: AcquiredTh
   return entry.demands?.get(comparisonDemandKey(selection, indicators))
 }
 
+/**
+ * #986 — the aggregate entry of one selection scope carries the LAST requested
+ * chapter's comparison outcome. A healthy chapter clears an earlier chapter's
+ * stale failure; that earlier chapter's own demand state keeps its error (and
+ * therefore its retry) untouched.
+ */
+function withComparisonOutcome(entry: ThemeResponse, failure: string | undefined): ThemeResponse {
+  const next: ThemeResponse = { ...entry }
+  delete next.comparison_error
+  delete next.comparison_failure
+  return failure === undefined ? next : { ...next, comparison_error: true, comparison_failure: failure }
+}
+
 /** Exact duplicate comparison reads collapse; distinct declared detail points never do. */
 function mergeComparisonReads(base: readonly SemanticThemeRead[] | undefined,
   added: readonly SemanticThemeRead[] | undefined): SemanticThemeRead[] {
@@ -436,17 +449,21 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
       failures.set(`${failure.resource}\u0000${failure.stage}`, failure)
     }
     const comparisons = new Map(latest.comparisons)
+    const chapterFailure = extra.demand_comparison?.comparison_error
+      ? (typeof extra.demand_comparison.comparison_failure === 'string'
+        ? extra.demand_comparison.comparison_failure : 'Publication de comparaison indisponible')
+      : undefined
     if (extra.demand_comparison) {
       const selectionKey = cleSelectionComparaison(extra.demand_comparison.selection)
       const prior = comparisons.get(selectionKey)
       const chapterFailures = (extra.resource_failures ?? []).filter((failure) => failure.stage === 'comparison')
       const priorFailures = (prior?.resource_failures ?? []) as ThemeResourceFailure[]
-      comparisons.set(selectionKey, {
+      comparisons.set(selectionKey, withComparisonOutcome({
         ...(prior ?? { theme_id: key.theme, selection: extra.demand_comparison.selection }),
         comparison_reads: mergeReads(prior?.comparison_reads, extra.demand_comparison.comparison_reads),
         ...(chapterFailures.length || priorFailures.length
           ? { resource_failures: [...priorFailures, ...chapterFailures] } : {}),
-      } as ThemeResponse)
+      } as ThemeResponse, chapterFailure))
     }
     const mergedComparisonReads = [...comparisons.values()].flatMap((entry) => entry.comparison_reads ?? [])
     const focal: T = {
@@ -464,8 +481,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     // already cached. A settled prior chapter stays reusable.
     const settled = extra.demand_comparison
       ? withDemandState(result, extra.demand_comparison.selection, demand.indicators ?? [],
-        extra.demand_comparison.comparison_error ? 'error' : 'ready',
-        extra.demand_comparison.comparison_failure)
+        chapterFailure === undefined ? 'ready' : 'error', chapterFailure)
       : result
     this.entries.set(cacheKey, settled)
     return settled
@@ -567,7 +583,10 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     // because an earlier chapter cached reads for the same selection.
     const demandedComplete = !demanded || settledDemand?.status === 'ready'
     if (existing && !existing.cohort_error && demandedComplete) {
-      if (existing.comparison_error === true) {
+      // The requested demand's own state already decided the outcome above; the
+      // aggregate flag is authoritative only for an unscoped selection, so an
+      // earlier chapter's stale failure can never fail a healthy chapter.
+      if (!demanded && existing.comparison_error === true) {
         throw new Error(typeof existing.comparison_failure === 'string'
           ? existing.comparison_failure : 'Publication de comparaison indisponible')
       }
@@ -684,19 +703,19 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     const selectionKey = cleSelectionComparaison(selection)
     const prior = current.comparisons.get(selectionKey)
     const priorFailures = (prior?.resource_failures ?? []) as ThemeResourceFailure[]
-    const entry = {
-      ...current,
-      comparisons: new Map(current.comparisons).set(selectionKey, {
-        ...(prior ?? { theme_id: theme, selection }),
-        comparison_reads: mergeComparisonReads(prior?.comparison_reads, comparison.comparison_reads),
-        ...(priorFailures.length || (comparison.resource_failures ?? []).length
-          ? { resource_failures: [...priorFailures, ...(comparison.resource_failures ?? [])] } : {}),
-      } as ThemeResponse),
-    }
     const failure = comparison.comparison_error === true
       ? (typeof comparison.comparison_failure === 'string'
         ? comparison.comparison_failure : 'Publication de comparaison indisponible')
       : undefined
+    const entry = {
+      ...current,
+      comparisons: new Map(current.comparisons).set(selectionKey, withComparisonOutcome({
+        ...(prior ?? { theme_id: theme, selection }),
+        comparison_reads: mergeComparisonReads(prior?.comparison_reads, comparison.comparison_reads),
+        ...(priorFailures.length || (comparison.resource_failures ?? []).length
+          ? { resource_failures: [...priorFailures, ...(comparison.resource_failures ?? [])] } : {}),
+      } as ThemeResponse, failure)),
+    }
     const result = withDemandState(entry, selection, indicators,
       failure === undefined ? 'ready' : 'error', failure)
     this.entries.set(cacheKey, result)
