@@ -459,6 +459,70 @@ describe('coalescing, cache and explicit retry', () => {
   })
 })
 
+/**
+ * #1002 — a chapter that is no longer requested must not START its remaining
+ * queued batches off-screen, while every already-started read keeps settling
+ * and one off-screen consumer never cancels another active reader.
+ */
+describe('unstarted batches of a departed demand (#1002)', () => {
+  const resources = (count: number) => Array.from({ length: count }, (_, index) => item(`d${index}`))
+
+  function heldTransport() {
+    const requests: Array<{ items: WireItem[]; settle: () => void }> = []
+    const fetcher = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { items: WireItem[] }
+      return new Promise<Response>((resolve) => requests.push({
+        items: body.items,
+        settle: () => resolve(new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+          results: body.items.map((entry) => availableWire(entry)) }))),
+      }))
+    })
+    return { fetcher, requests }
+  }
+
+  it('never starts a queued batch whose only caller is gone, and invents nothing', async () => {
+    const { fetcher, requests } = heldTransport()
+    const controller = new AbortController()
+    const read = readSemanticOutcomes(resources(25), { fetcher, signal: controller.signal })
+    await Promise.resolve()
+    // Two bounded reads are active; the third batch is only queued.
+    expect(requests).toHaveLength(2)
+    controller.abort()
+    await expect(read).rejects.toMatchObject({ kind: 'fetch' })
+
+    requests[0]!.settle()
+    await Promise.resolve()
+    await Promise.resolve()
+    requests[1]!.settle()
+    // The queued third batch is reached only to be deferred: its item stays
+    // genuinely unrequested — no value, no absence, no fake ready.
+    await vi.waitFor(() => expect(semanticReadState(item('d24'), { fetcher })).toBe('unrequested'))
+    expect(requests).toHaveLength(2)
+    expect(semanticReadState(item('d0'), { fetcher })).toBe('available')
+  })
+
+  it('still starts the batch another active caller waits on', async () => {
+    const { fetcher, requests } = heldTransport()
+    const controller = new AbortController()
+    const leaving = readSemanticOutcomes(resources(25), { fetcher, signal: controller.signal })
+    const staying = readSemanticOutcomes(resources(25), { fetcher })
+    await Promise.resolve()
+    expect(requests).toHaveLength(2)
+    controller.abort()
+    await expect(leaving).rejects.toMatchObject({ kind: 'fetch' })
+
+    requests[0]!.settle()
+    await Promise.resolve()
+    await Promise.resolve()
+    requests[1]!.settle()
+    await vi.waitFor(() => expect(requests).toHaveLength(3))
+    requests[2]!.settle()
+    const outcomes = await staying
+    expect(outcomes).toHaveLength(25)
+    expect(outcomes.every((outcome) => outcome.status === 'available')).toBe(true)
+  })
+})
+
 describe('shared semantic scheduler', () => {
   it('never runs more than two semantic HTTP reads at once across independent calls', async () => {
     const pending: Array<{ items: WireItem[]; settle(): void }> = []

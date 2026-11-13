@@ -22,12 +22,18 @@ import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import AedarEquipmentQuantileFigureCahier from './AedarEquipmentQuantileFigureCahier.vue'
 import CahierActionButton from './CahierActionButton.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   evidence: AedarEquipmentExplorerEvidence
   selectedModes?: readonly AedarRampMode[]
   selectedHorizon?: AedarEquipmentHorizon | null
   comparisonVisible?: boolean
-}>()
+  /**
+   * #1002 — the reader is on the AEDAR (page-1) chapter. Its cell comparisons and
+   * detail values are page-1 evidence: nothing starts while the chapter is not
+   * the requested one, and returning resumes only what is genuinely missing.
+   */
+  chapterActive?: boolean
+}>(), { chapterActive: true })
 const emit = defineEmits<{
   'update:selectedModes': [modes: readonly AedarRampMode[]]
   'update:selectedHorizon': [horizon: AedarEquipmentHorizon]
@@ -38,7 +44,7 @@ const HORIZONS = AEDAR_EQUIPMENT_BUCKET_HORIZONS
 
 const selectedTypequ = ref(props.evidence.initialTypequ)
 const selectedDetail = ref<AedarFact | null>(null)
-const detailStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const detailStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('loading')
 const detailRetry = ref(0)
 const retryDetail = () => { detailRetry.value += 1 }
 const comparisonRetry = ref(0)
@@ -51,14 +57,28 @@ const comparisonStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const comparisonError = ref('')
 const comparisonIdentity = computed(() => JSON.stringify([selectedTypequ.value, props.evidence.contentVersion,
   props.evidence.referenceContentVersion, props.evidence.comparisonRequest, props.evidence.reference?.territory]))
-watch([comparisonIdentity, comparisonRetry], async (_value, _old, cleanup) => {
-  detailComparison.value = null
-  referenceDetail.value = null
-  comparisonStatus.value = 'idle'
+let comparisonIdentitySeen: string | null = null
+let comparisonRetrySeen = 0
+watch([comparisonIdentity, comparisonRetry, () => props.chapterActive !== false], async (_value, _old, cleanup) => {
   const request = props.evidence.comparisonRequest
   const reference = props.evidence.reference
   const fact = selectedBaseFact.value
+  // Another equipment/territory/publication is another demand: release the
+  // previous evidence. A chapter visit alone keeps it.
+  if (comparisonIdentity.value !== comparisonIdentitySeen) {
+    comparisonIdentitySeen = comparisonIdentity.value
+    detailComparison.value = null
+    referenceDetail.value = null
+    comparisonStatus.value = 'idle'
+    comparisonError.value = ''
+  }
   if (!fact || (!request && !reference)) return
+  // #1002 — the reader is not on the AEDAR chapter: no cell comparison starts
+  // (a running one keeps settling into the shared cache), and the settled
+  // evidence stays for the return.
+  if (props.chapterActive === false) return
+  const fresh = comparisonRetry.value !== comparisonRetrySeen
+  comparisonRetrySeen = comparisonRetry.value
   let cancelled = false
   const abort = new AbortController()
   cleanup(() => { cancelled = true; abort.abort() })
@@ -69,8 +89,9 @@ watch([comparisonIdentity, comparisonRetry], async (_value, _old, cleanup) => {
       try {
         const result = await fetchAedarComparison(fact.territory_type, fact.territory_id, { ...request,
           typequ: [selectedTypequ.value], measures, expectedContentVersion: props.evidence.contentVersion,
-          expectedReferenceContentVersion: props.evidence.referenceContentVersion, signal: abort.signal })
+          expectedReferenceContentVersion: props.evidence.referenceContentVersion, signal: abort.signal, fresh })
         if (cancelled) return
+        if (result.status === 'deferred') { comparisonStatus.value = 'idle'; return }
         comparisonStatus.value = result.status === 'ready' ? 'ready' : 'error'
         if (result.status === 'ready') detailComparison.value = result.evidence
         else comparisonError.value = result.message
@@ -83,7 +104,7 @@ watch([comparisonIdentity, comparisonRetry], async (_value, _old, cleanup) => {
     const result = await fetchAedarAggregates(reference.territory.type as AedarFact['territory_type'], reference.territory.id, {
       typequ: [selectedTypequ.value], measures: [...AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, ...HORIZONS.flatMap((horizon) =>
         AEDAR_RAMP_MODES.map((mode) => `count_${horizon}_${mode}_mean`))], expectedContentVersion: props.evidence.contentVersion,
-      expectedReferenceContentVersion: props.evidence.referenceContentVersion })
+      expectedReferenceContentVersion: props.evidence.referenceContentVersion, signal: abort.signal })
     if (cancelled) return
     comparisonStatus.value = result.status === 'ready' ? 'ready' : 'error'
     if (result.status === 'ready') {
@@ -110,19 +131,33 @@ const detailIdentity = computed(() => {
     fact?.source_id, fact?.vintage_id, fact?.source_url, fact?.licence, fact?.attribution,
     fact?.reference_date, fact?.publication_date, fact?.identity])
 })
-watch([selectedTypequ, detailRetry, detailIdentity], async ([typequ, , identityAtStart], _old, onCleanup) => {
-  const request = ++detailRequest
-  let invalidated = false
-  onCleanup(() => { invalidated = true })
-  selectedDetail.value = null
-  detailStatus.value = 'loading'
+let detailIdentitySeen: string | null = null
+watch([selectedTypequ, detailRetry, detailIdentity, () => props.chapterActive !== false],
+  async ([typequ, , identityAtStart], _old, onCleanup) => {
+  // Another equipment/territory/publication releases the previous detail; a
+  // chapter visit alone keeps it.
+  if (detailIdentity.value !== detailIdentitySeen) {
+    detailIdentitySeen = detailIdentity.value
+    selectedDetail.value = null
+    detailStatus.value = 'idle'
+  }
   const identity = selectedBaseFact.value
   if (!identity) { detailStatus.value = 'error'; return }
+  // #1002 — the reader is not on the AEDAR chapter: this detail read belongs to
+  // page 1, so nothing starts here and the settled values stay.
+  if (props.chapterActive === false) return
+  const request = ++detailRequest
+  let invalidated = false
+  // #1002 — a running read stops waiting when the chapter or the selection
+  // leaves; it never starts its remaining queued batches off-screen.
+  const abort = new AbortController()
+  onCleanup(() => { invalidated = true; abort.abort() })
+  detailStatus.value = 'loading'
   const requestedTerritory = { type: identity.territory_type, id: identity.territory_id }
   const requestedContentVersion = props.evidence.contentVersion
   const requestedReferenceVersion = props.evidence.referenceContentVersion
   const result = await fetchAedarAggregates(requestedTerritory.type, requestedTerritory.id,
-    { typequ: [typequ], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS,
+    { typequ: [typequ], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, signal: abort.signal,
       expectedContentVersion: requestedContentVersion, expectedReferenceContentVersion: requestedReferenceVersion })
   if (!invalidated && request === detailRequest && detailIdentity.value === identityAtStart
     && selectedTypequ.value === typequ) {

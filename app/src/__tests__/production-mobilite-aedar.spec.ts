@@ -35,6 +35,91 @@ vi.mock('@/fiche/content/aedarComparisonClient', async (original) => ({
   ...await original<typeof import('@/fiche/content/aedarComparisonClient')>(), fetchAedarComparison: vi.fn(),
 }))
 
+it('renomme le groupe comparé sans relire la publication et affiche le libellé courant (#1002)', async () => {
+  const cell = (measure: string, value: number) => ({
+    typequ: null, measure, statistic: 'direct' as const, group_value: value,
+    group_n_addresses: 100, group_n_observed: 100, group_coverage_status: 'covered',
+    rank: 1, rank_size: 41, rank_ties: 1,
+    source_id: 'aedar_bretagne', vintage_id: '2026-v1',
+    reference_date: '2026-01-01', publication_date: '2026-09-30',
+  })
+  vi.mocked(fetchAedarComparison).mockResolvedValue({ status: 'ready', evidence: {
+    label: 'Moyenne — Rennes Métropole',
+    contentVersion: aedarReady.contentVersion,
+    summaryContentVersion: aedarSummaryReady.summary.summaryContentVersion,
+    aedarContentVersion: aedarSummaryReady.summary.aedarContentVersion,
+    referenceContentVersion: aedarReady.referenceContentVersion,
+    cells: [cell('meanDiversity', 7), cell('meanVolume', 9)],
+  } })
+  const control = ref<ControleComparaison>({
+    focal: payload.territoires.find((territoire) => territoire.territoire === '22001')!,
+    territoires: payload.territoires, selection: { etat: 'defaut' }, libelleActif: 'Rennes Métropole',
+    presetDefaut: 'epci', presets: [], choisir: () => {},
+  })
+  const content = baseContent()
+  const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
+    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+    aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
+    aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'Rennes Métropole' },
+    aedarReferenceData: aedarSummaryReferenceReady },
+  global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
+  await flushPromises()
+  expect(fetchAedarComparison).toHaveBeenCalledTimes(1)
+  const overviewFor = () => wrapper.findComponent(VarianteCahierLibre).props('content').units[0].sections[0].evidence
+  const before = overviewFor()
+  if (before?.kind !== 'aedar-car-overview') throw new Error('Overview expected')
+  expect(before.comparisonLabel).toBe('Moyenne — Rennes Métropole')
+  expect(before.scalars[0]!.reference).toMatchObject({ kind: 'selection-mean', value: 7 })
+
+  // A presentation-only rename: the same published group, named differently.
+  control.value = { ...control.value, libelleActif: 'EPCI renommé' }
+  await flushPromises()
+  expect(fetchAedarComparison).toHaveBeenCalledTimes(1)
+  const after = overviewFor()
+  if (after?.kind !== 'aedar-car-overview') throw new Error('Overview expected after rename')
+  expect(after.comparisonLabel).toBe('Moyenne — EPCI renommé')
+  expect(after.scalars[0]!.reference).toMatchObject({ kind: 'selection-mean', value: 7 })
+
+  // An explicit retry is honestly fresh: it asks again with the current label.
+  wrapper.findComponent(VarianteCahierLibre).props('retryComparison')!()
+  await flushPromises()
+  expect(fetchAedarComparison).toHaveBeenCalledTimes(1)
+  wrapper.unmount()
+})
+
+it('ne démarre la comparaison que sur le chapitre AEDAR demandé (#1002)', async () => {
+  vi.mocked(fetchAedarComparison).mockResolvedValue({ status: 'ready', evidence: {
+    label: 'Moyenne — Rennes Métropole', contentVersion: aedarReady.contentVersion,
+    summaryContentVersion: aedarSummaryReady.summary.summaryContentVersion,
+    aedarContentVersion: aedarSummaryReady.summary.aedarContentVersion,
+    referenceContentVersion: aedarReady.referenceContentVersion, cells: [],
+  } })
+  const control = ref<ControleComparaison>({
+    focal: payload.territoires.find((territoire) => territoire.territoire === '22001')!,
+    territoires: payload.territoires, selection: { etat: 'defaut' }, libelleActif: 'Rennes Métropole',
+    presetDefaut: 'epci', presets: [], choisir: () => {},
+  })
+  const content = baseContent()
+  const wrapper = mount(ProductionMobiliteAedar, { props: { content, pagination: cahierPaginationFor(payload, content),
+    aedarData: aedarReady, aedarStatus: 'ready', retryAedar: () => {},
+    aedarSummaryData: aedarSummaryReady, aedarSummaryStatus: 'ready', retryAedarSummary: () => {},
+    aedarActive: false },
+  global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control }, stubs: { VarianteCahierLibre: true } } })
+  await flushPromises()
+  // Off the AEDAR chapter nothing numerical starts.
+  expect(fetchAedarComparison).not.toHaveBeenCalled()
+  await wrapper.setProps({ aedarActive: true })
+  await flushPromises()
+  expect(fetchAedarComparison).toHaveBeenCalledTimes(1)
+  await wrapper.setProps({ aedarActive: false })
+  await flushPromises()
+  await wrapper.setProps({ aedarActive: true })
+  await flushPromises()
+  // Returning resumes the genuine demand exactly once, not once per visit.
+  expect(fetchAedarComparison).toHaveBeenCalledTimes(2)
+  wrapper.unmount()
+})
+
 it('acquiert uniquement la comparaison sélectionnée, garde le focal et écarte une sélection tardive', async () => {
   let complete!: (value: AedarComparisonResult) => void
   vi.mocked(fetchAedarComparison).mockReturnValueOnce(new Promise((resolve) => { complete = resolve }))

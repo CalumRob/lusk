@@ -12,9 +12,9 @@ import { semanticReadState } from '@/payload/semanticResourceClient'
 import type { SemanticReadItem } from '@/payload/semanticResourceClient'
 import { routes } from '@/router'
 import { nativeBatchResponse, nativeCatalogueResponse, nativePublicationFamily,
-  nativeReadFixture } from './helpers/semanticApiFixtures'
+  nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
 import { carInlineLegend } from './fixtures/aedar-car-inline-legend'
-import { AEDAR_AGGREGATE_READING_KEYS } from '@/fiche/content/aedarTimeRampFacts'
+import { AEDAR_AGGREGATE_READING_KEYS, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS } from '@/fiche/content/aedarTimeRampFacts'
 import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
 
 /**
@@ -677,6 +677,286 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     expect(afterSwitch.some((call) => call.items.some((item) =>
       item.target?.id === '35238' && PAGE_TWO.includes(item.resource)))).toBe(false)
     expect(wrapper.find('h1').text()).toBe('Allineuc')
+    wrapper.unmount()
+  }, 60000)
+})
+
+/**
+ * #1002 — the live audit measured 36 identical fixed-EPCI comparison items read
+ * twice and 20 page-1 detail batches still starting after the reader left page 1.
+ * This harness runs the actual route and the actual semantic client.
+ */
+const AEDAR_CLOCKS = {
+  summary: 'aedar-summary-fixture-v1',
+  // The facts, the summary and every comparison describe one publication.
+  aedar: nativeReadFixture({ resource: 'aedar_territorial_aggregate',
+    target: { kind: 'territory', type: 'commune', id: '35238' }, intent: { kind: 'facts' },
+    coordinates: { typequ: [] } },
+  nativeResources().find((resource) => resource.resource_id === 'aedar_territorial_aggregate')!).content_version,
+  reference: 'semantic-reference-fixture-v1',
+}
+const AEDAR_SOURCE = {
+  source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
+  licence: 'ODbL', attribution: 'AEDAR', reference_date: '2026-01-01', publication_date: '2026-09-30',
+}
+const isAggregateComparison = (item: Record<string, any>) =>
+  item.resource === 'aedar_territorial_aggregate' && item.intent?.kind !== 'facts' &&
+  (item.coordinates?.typequ?.length ?? 0) === 0
+const isCellComparison = (item: Record<string, any>) =>
+  item.resource === 'aedar_territorial_aggregate' && item.intent?.kind !== 'facts' &&
+  (item.coordinates?.typequ?.length ?? 0) > 0
+const isAedarAggregateFact = (item: Record<string, any>) =>
+  item.resource === 'aedar_territorial_aggregate' && item.intent?.kind === 'facts'
+/** Every AEDAR page-1 read: core/detail projections AND every comparison shape. */
+const isAedarDemand = (item: Record<string, any>) =>
+  isAggregateComparison(item) || isCellComparison(item) || isAedarAggregateFact(item)
+const aggregateComparisons = (entries: Array<Record<string, any>>) => entries.filter(isAggregateComparison)
+const cellComparisons = (entries: Array<Record<string, any>>) => entries.filter(isCellComparison)
+const aggregateComparisonPosts = (list: Call[]) =>
+  posts(list).filter((call) => aggregateComparisons(call.items).length > 0)
+const cellComparisonPosts = (list: Call[]) =>
+  posts(list).filter((call) => cellComparisons(call.items).length > 0)
+/** POSTs carrying any AEDAR page-1 demand (facts, detail projections, cells). */
+const aedarDemandPosts = (list: Call[]) => posts(list).filter((call) => call.items.some(isAedarDemand))
+
+function aedarSummaryEnvelope(item: Record<string, any>) {
+  return {
+    resource: item.resource, target: item.target,
+    territory: { territory_type: item.target.type, territory_id: item.target.id },
+    summary_content_version: AEDAR_CLOCKS.summary,
+    aedar_content_version: AEDAR_CLOCKS.aedar,
+    reference_content_version: AEDAR_CLOCKS.reference,
+    readings: AEDAR_AGGREGATE_READING_KEYS.map((measure) => ({
+      measure, value: 3.5, status: 'available', n_typequ: AEDAR_TYPEQU_REGISTRY.length,
+      n_addresses: 100, n_observed: 90, coverage_status: 'covered', statistic: 'direct', ...AEDAR_SOURCE,
+    })),
+  }
+}
+
+function aedarComparisonEnvelope(item: Record<string, any>) {
+  const measures = (item.coordinates?.measure ?? []) as string[]
+  const typequ = (item.coordinates?.typequ ?? [])[0] ?? null
+  const rows = measures.map((measure) => ({
+    typequ, measure, comparison_context: item.intent.context, statistic: 'direct',
+    group_value: 3.5, group_n_addresses: 100, group_n_observed: 90, group_coverage_status: 'covered',
+    rank: 1, rank_size: 43, rank_ties: 1, direction: 'high', ...AEDAR_SOURCE,
+  }))
+  return {
+    resource: item.resource, target: item.target,
+    content_version: 'aedar-comparison-fixture-v1',
+    summary_content_version: AEDAR_CLOCKS.summary,
+    aedar_content_version: AEDAR_CLOCKS.aedar,
+    reference_content_version: AEDAR_CLOCKS.reference,
+    comparison: rows[0],
+  }
+}
+
+/** The published AEDAR summary, comparison and facts of one territory. */
+function createAedarTransport(options: {
+  /** Hold every AEDAR comparison read (a queued, off-screen demand). */
+  holdComparison?: () => Promise<void>
+  /** Hold only the per-TYPEQU cell comparisons (the explorer's page-1 read). */
+  holdCellsOnly?: boolean
+  /** Serve one typed publication absence (never a fabricated value). */
+  absent?: (item: Record<string, any>) => boolean
+} = {}) {
+  const calls: Call[] = []
+  const resources = new Map(nativeResources().map((resource) => [resource.resource_id, resource]))
+  const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    const body = init?.body ? JSON.parse(String(init.body)) as { items?: Array<Record<string, any>> } : {}
+    const call: Call = { index: calls.length, url, method: init?.method ?? 'GET', items: body.items ?? [] }
+    calls.push(call)
+    if (url === '/data/territoires.json') return new Response(lireDonnee('territoires.json'), { status: 200 })
+    if (url.startsWith('/data/theme_') && url.endsWith('.json')) {
+      return new Response(lireDonnee(url.slice('/data/'.length)), { status: 200 })
+    }
+    if (url === '/api/resources') return nativeCatalogueResponse()
+    if (url === '/api/resources/read-batch') {
+      if (!call.items.some((item) => String(item.resource).startsWith('aedar_'))) {
+        return nativeBatchResponse(call.items, (item, resource) =>
+          nativeReadFixture(item, resource, { syntheticProfileComparisons: true }))
+      }
+      if (call.items.some(options.holdCellsOnly ? isCellComparison : isAggregateComparison)) {
+        await options.holdComparison?.()
+      }
+      const results = call.items.map((item) => {
+        if (options.absent?.(item)) {
+          return { id: item.id, resource: item.resource, status: 'publication_unavailable',
+            reason: 'publication_absent', family: 'aedar' }
+        }
+        const data = item.resource === 'aedar_territory_summary' ? aedarSummaryEnvelope(item)
+          : item.intent?.kind !== 'facts' ? aedarComparisonEnvelope(item)
+            : nativeReadFixture(item, resources.get(item.resource)!)
+        return { id: item.id, resource: item.resource, status: 'available', data }
+      })
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results }), { status: 200 })
+    }
+    return new Response('', { status: 404 })
+  })
+  return { transport, calls }
+}
+
+describe('Mobilite page 1 — comparaisons AEDAR coalescées et différées (#1002)', () => {
+  it('ne relance pas les comparaisons réglées et n’en démarre pas hors écran', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const { transport, calls } = createAedarTransport({ holdComparison: () => held })
+    vi.stubGlobal('fetch', transport)
+    const { router, wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite')
+
+    // The one 40-item comparison demand reaches the bounded scheduler: two
+    // active reads, the remaining batches only queued.
+    await vi.waitFor(() => expect(aggregateComparisonPosts(calls)).toHaveLength(2), { timeout: 15000 })
+    expect(aggregateComparisons(items(calls))).toHaveLength(24)
+
+    // The reader leaves page 1 while the rest is still queued. Both active
+    // slots are held, so the count is stable across the demand change.
+    const beforeLeaving = aedarDemandPosts(calls).length
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-partage-de-lespace-public' })
+    await flushPromises()
+    expect(aedarDemandPosts(calls).length).toBe(beforeLeaving)
+    release()
+    await settleOwner(calls, (item) => String(item.resource).startsWith('aedar_'))
+    await flushPromises()
+
+    // No NEW page-1 demand batch of ANY shape (core/detail/cells/aggregates)
+    // started after the demand change; only the batches already in flight settle.
+    expect(aedarDemandPosts(calls).length).toBe(beforeLeaving)
+    expect(aggregateComparisonPosts(calls)).toHaveLength(2)
+    // The requested chapter is not starved: its own 33 items still land.
+    const pageTwo = postsTouching(calls, PAGE_TWO)
+    expect(pageTwo).toHaveLength(3)
+    expect(pageTwo.flatMap((call) => call.items)).toHaveLength(33)
+
+    // Returning to page 1 resumes the genuinely missing items only, once.
+    const beforeReturn = posts(calls).length
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-acces-aux-services' })
+    await flushPromises()
+    await settleOwner(calls, (item) => String(item.resource).startsWith('aedar_'))
+    await flushPromises()
+    const resumed = aggregateComparisons(posts(calls).slice(beforeReturn).flatMap((call) => call.items))
+    expect(resumed).toHaveLength(16)
+    // Every semantic item is read exactly once across the whole visit.
+    expect(aggregateComparisons(items(calls))).toHaveLength(40)
+    expectNoDuplicateOrOverlappingItem(items(calls))
+
+    // The demanded page-1 evidence is complete again: the 235 TYPEQU universe
+    // and the served comparison rank, never a partial or fabricated value.
+    const covered = new Set(items(calls).filter((item) => item.intent.kind === 'facts' && isAedar(item))
+      .flatMap((item) => item.coordinates?.typequ ?? []))
+    expect(covered.size).toBe(235)
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    expect(wrapper.find('.aedar-comparison-retry').exists()).toBe(false)
+    wrapper.unmount()
+  }, 60000)
+
+  it('ne démarre ni les cellules ni le détail de l’explorateur hors du chapitre AEDAR', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    // The explorer's 240 per-TYPEQU cell comparisons (20 bounded batches) and its
+    // detail read are page-1 evidence: hold the cells so most stay queued.
+    const { transport, calls } = createAedarTransport({
+      holdComparison: () => held,
+      holdCellsOnly: true,
+    })
+    vi.stubGlobal('fetch', transport)
+    const { router, wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite')
+
+    // The explorer is mounted and its cell comparison reached the scheduler.
+    await vi.waitFor(() => expect(cellComparisonPosts(calls)).toHaveLength(2), { timeout: 20000 })
+    const intendedMeasures = [...AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, ...[5, 10, 15, 20].flatMap((horizon) =>
+      ['car', 'bike_lts2', 'bike_lts4', 'transit', 'walk'].map((mode) => `count_${horizon}_${mode}_mean`))]
+    expect(intendedMeasures).toHaveLength(240)
+    expect(cellComparisons(items(calls))).toHaveLength(24)
+    expect(cellComparisons(items(calls)).every((item) => item.coordinates.typequ.length === 1 &&
+      item.coordinates.measure.length === 1)).toBe(true)
+
+    const beforeLeaving = aedarDemandPosts(calls).length
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-partage-de-lespace-public' })
+    await flushPromises()
+    expect(aedarDemandPosts(calls).length).toBe(beforeLeaving)
+    release()
+    await settleOwner(calls, (item) => String(item.resource).startsWith('aedar_'))
+    await flushPromises()
+
+    // No queued explorer cell/detail batch started after the demand change.
+    expect(aedarDemandPosts(calls).length).toBe(beforeLeaving)
+    expect(cellComparisonPosts(calls)).toHaveLength(2)
+    // The requested chapter is not starved by page-1 work.
+    const pageTwo = postsTouching(calls, PAGE_TWO)
+    expect(pageTwo).toHaveLength(3)
+    expect(pageTwo.flatMap((call) => call.items)).toHaveLength(33)
+
+    // Returning resumes the missing cells once; settled cells are not re-read.
+    const beforeReturn = posts(calls).length
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-acces-aux-services' })
+    await flushPromises()
+    await settleOwner(calls, (item) => String(item.resource).startsWith('aedar_'))
+    await flushPromises()
+    const resumed = cellComparisons(posts(calls).slice(beforeReturn).flatMap((call) => call.items))
+    expect(resumed).toHaveLength(216)
+    expect(cellComparisons(items(calls))).toHaveLength(240)
+    expect(new Set(cellComparisons(items(calls)).map((item) => item.coordinates.measure[0])).size).toBe(240)
+    expect(new Set(cellComparisons(items(calls)).flatMap((item) => item.coordinates.measure))).toEqual(new Set(intendedMeasures))
+    expectNoDuplicateOrOverlappingItem(items(calls))
+
+    // The demanded page-1 evidence is complete again: 235 TYPEQU universe, the
+    // served rank, and the explorer's detail values.
+    const covered = new Set(items(calls).filter((item) => item.intent.kind === 'facts' && isAedar(item))
+      .flatMap((item) => item.coordinates?.typequ ?? []))
+    expect(covered.size).toBe(235)
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    expect(wrapper.html()).toContain('/43')
+    expect(wrapper.find('.aedar-equipment-explorer-retry').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Chargement des valeurs pour ce type d’équipement')
+    wrapper.unmount()
+  }, 60000)
+
+  it('écarte une comparaison AEDAR tardive après un changement de territoire', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const { transport, calls } = createAedarTransport({ holdComparison: () => held })
+    vi.stubGlobal('fetch', transport)
+    const { router, wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite')
+    await vi.waitFor(() => expect(aggregateComparisonPosts(calls)).toHaveLength(2), { timeout: 15000 })
+
+    const before = posts(calls).length
+    await router.push('/territoire/commune/22001?theme=mobilite')
+    await flushPromises()
+    release()
+    await settleOwner(calls, (item) => String(item.resource).startsWith('aedar_'))
+    await flushPromises()
+
+    const after = posts(calls).slice(before).flatMap((call) => call.items)
+    expect(after.some((item) => isAggregateComparison(item) && item.target?.id === '35238')).toBe(false)
+    expect(wrapper.find('h1').text()).toBe('Allineuc')
+    wrapper.unmount()
+  }, 60000)
+
+  it('garde une comparaison AEDAR absente visible et réessayable', async () => {
+    let absent = true
+    const { transport, calls } = createAedarTransport({ absent: (item) => absent && isAggregateComparison(item) })
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite')
+    await attendreChapitreUtile(wrapper, calls, '[data-section="aedar-car-overview"]')
+    await flushPromises()
+    await flushPromises()
+    // A typed absence is honest: the retry stays visible, no ready comparison.
+    expect(wrapper.find('.aedar-comparison-retry').exists()).toBe(true)
+
+    absent = false
+    const before = posts(calls).length
+    await wrapper.get('.aedar-comparison-retry').trigger('click')
+    await flushPromises()
+    await flushPromises()
+    // An explicit retry is honestly fresh: the whole demanded comparison re-reads.
+    expect(aggregateComparisons(posts(calls).slice(before).flatMap((call) => call.items))).toHaveLength(40)
+    expect(wrapper.find('.aedar-comparison-retry').exists()).toBe(false)
     wrapper.unmount()
   }, 60000)
 })

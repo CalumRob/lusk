@@ -640,6 +640,7 @@ onBeforeUnmount(() => {
                   >
                     <AedarEquipmentExplorerCahier
                       :evidence="aedarEquipmentExplorerEvidenceFor(section)!"
+                      :chapter-active="props.aedarChapterActive !== false"
                       v-model:selected-modes="aedarAccessSelectedModes"
                       v-model:selected-horizon="aedarSelectedHorizon"
                       v-model:comparison-visible="aedarAccessComparisonVisible"

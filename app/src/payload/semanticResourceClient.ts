@@ -163,7 +163,17 @@ export interface SemanticReadOptions {
 
 const FAMILY_SET = new Set<string>(SEMANTIC_PUBLICATION_FAMILIES)
 const REASON_SET = new Set<string>(SEMANTIC_PUBLICATION_REASONS)
-const MAX_CACHED_OUTCOMES = 500
+/**
+ * #1002 — a settled outcome is stored under the caller's coherence token AND
+ * under its own `territory-reference:<clock>` identity, so one available item
+ * costs up to two entries. The requested Mobilité chapter alone settles ~295
+ * AEDAR items (235-universe projections, B207 detail, the 40-reading aggregate
+ * comparison and 240 per-TYPEQU cells) on top of the requested page-2 demand and
+ * the idle warm-up; a smaller bound evicted early page-1 items and made the
+ * return to page 1 re-read them. The bound stays hard — it is a memory cap, not
+ * a request budget.
+ */
+const MAX_CACHED_OUTCOMES = 1200
 
 const isRecord = (value: unknown): value is RecordValue =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -242,6 +252,19 @@ export class SemanticReadSupersededError extends Error {
   constructor(readonly key: string) {
     super('Semantic acquisition generation changed')
     this.name = 'SemanticReadSupersededError'
+  }
+}
+
+/**
+ * #1002 — an unstarted batch was deliberately NOT read: its consumer left the
+ * requested chapter before the scheduler reached it. This is an intentional
+ * defer, never a failure, a publication absence or a fabricated value; the
+ * demand that returns asks again and only the genuinely missing items re-read.
+ */
+export class SemanticReadDeferredError extends Error {
+  constructor(readonly key: string) {
+    super('Lecture sémantique différée : le chapitre demandé a changé.')
+    this.name = 'SemanticReadDeferredError'
   }
 }
 
@@ -392,6 +415,12 @@ interface PendingRead {
   item: SemanticReadItem
   generation: number
   promise: Promise<SemanticReadOutcome>
+  /**
+   * Calls still waiting on this item (the owner plus every coalesced joiner).
+   * A queued batch is deferred only when its own call is gone AND nobody else
+   * waits, so one off-screen consumer never cancels another active reader.
+   */
+  waiters: number
 }
 
 interface ItemState {
@@ -583,6 +612,10 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
   const primaryByKey = new Map<string, number>()
   const aliases: Array<[number, number]> = []
   const waiting: Array<{ index: number; promise: Promise<SemanticReadOutcome> }> = []
+  // #1002 — every pending entry this call waits on, owner or joiner, so a
+  // caller that leaves releases exactly its own share of the demand.
+  const held: PendingRead[] = []
+  let callerGone = false
 
   for (let index = 0; index < items.length; index += 1) {
     const key = keys[index]!
@@ -601,6 +634,8 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
     // reads: `fresh` bypasses only a settled outcome, never a live fetch.
     const pending = state.pending.get(key)
     if (pending && pending.generation === generation) {
+      pending.waiters += 1
+      held.push(pending)
       waiting.push({ index, promise: pending.promise })
       continue
     }
@@ -618,6 +653,8 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
     const existing = state.pending.get(key)
     if (existing && existing.generation === generation) {
       primaryByKey.delete(key)
+      existing.waiters += 1
+      held.push(existing)
       waiting.push({ index, promise: existing.promise })
       continue
     }
@@ -627,81 +664,138 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
     // A coalesced read may have no waiter left after a caller cancels; the
     // rejection must never surface as an unhandled promise rejection.
     promise.catch(() => undefined)
-    state.pending.set(key, { item: items[index]!, generation, promise })
+    const entry: PendingRead = { item: items[index]!, generation, promise, waiters: 1 }
+    state.pending.set(key, entry)
     state.states.set(key, { item: items[index]!, state: 'pending', generation })
     owned.set(index, { resolve, reject, promise })
     indexOfItem.set(items[index]!, index)
+    held.push(entry)
   }
 
-  if (owned.size) {
-    try {
-      const freshItems = [...owned.keys()].map((index) => items[index]!)
-      const batches = groupSemanticItems(freshItems)
-      await Promise.all(batches.map(async (batch) => {
-        const indexes = batch.map((item) => indexOfItem.get(item)!)
-        try {
-          const outcomes = await state.scheduler.run(() => postBatch(fetcher, batch, options),
-            options.priority ?? 'critical')
-          outcomes.forEach((outcome, position) => {
-            const index = indexes[position]!
-            const key = keys[index]!
-            const entry = owned.get(index)!
-            if (generationOf(state, key) !== generations[index]) {
+  // A caller that leaves the requested chapter stops waiting, and releases its
+  // demand. It never aborts the shared read another caller may still need.
+  const release = () => {
+    for (const entry of held) entry.waiters = Math.max(0, entry.waiters - 1)
+    held.length = 0
+  }
+  const onCallerAbort = () => { callerGone = true; release() }
+  if (options.signal) {
+    if (options.signal.aborted) throw abortedError()
+    options.signal.addEventListener('abort', onCallerAbort, { once: true })
+  }
+  /**
+   * #1002 — a queued batch is read only while its own caller still asks for it
+   * (or another caller waits on the same items). Otherwise it is deferred: no
+   * HTTP starts off-screen, no value is invented, and the returning demand
+   * reads only what is genuinely missing.
+   */
+  const abandoned = (indexes: readonly number[]): boolean => {
+    if (!callerGone) return false
+    return indexes.every((index) => {
+      const key = keys[index]!
+      const entry = state.pending.get(key)
+      if (entry === undefined) return true
+      return entry.promise === owned.get(index)?.promise && entry.waiters === 0
+    })
+  }
+  const defer = (indexes: readonly number[]): void => {
+    for (const index of indexes) {
+      const key = keys[index]!
+      const entry = owned.get(index)
+      if (!entry) continue
+      owned.delete(index)
+      if (state.pending.get(key)?.promise === entry.promise) state.pending.delete(key)
+      state.states.delete(key)
+      const deferred = new SemanticReadDeferredError(key)
+      failures[index] = deferred
+      entry.reject(deferred)
+    }
+  }
+
+  try {
+    if (owned.size) {
+      try {
+        const freshItems = [...owned.keys()].map((index) => items[index]!)
+        const batches = groupSemanticItems(freshItems)
+        await Promise.all(batches.map(async (batch) => {
+          const indexes = batch.map((item) => indexOfItem.get(item)!)
+          try {
+            const outcomes = await state.scheduler.run(async () => {
+              if (abandoned(indexes)) { defer(indexes); return null }
+              return postBatch(fetcher, batch, options)
+            }, options.priority ?? 'critical')
+            if (outcomes === null) return
+            outcomes.forEach((outcome, position) => {
+              const index = indexes[position]!
+              const key = keys[index]!
+              const entry = owned.get(index)!
+              if (generationOf(state, key) !== generations[index]) {
+                if (state.pending.get(key)?.promise === entry.promise) state.pending.delete(key)
+                entry.reject(new SemanticReadSupersededError(key))
+                return
+              }
+              state.states.set(key, { item: items[index]!,
+                state: outcome.status === 'available' ? 'available' : 'unavailable',
+                generation: generations[index]! })
+              if (options.coherence !== undefined) {
+                remember(state, items[index]!, options.coherence, generations[index]!, outcome)
+              }
               if (state.pending.get(key)?.promise === entry.promise) state.pending.delete(key)
-              entry.reject(new SemanticReadSupersededError(key))
-              return
+              resolved[index] = outcome
+              entry.resolve(outcome)
+            })
+          } catch (error) {
+            for (const index of indexes) {
+              const key = keys[index]!
+              const entry = owned.get(index)
+              if (!entry) continue
+              failures[index] = error
+              if (generationOf(state, key) === generations[index]) {
+                state.states.set(key, { item: items[index]!, state: 'error', generation: generations[index]! })
+              }
+              if (state.pending.get(key)?.promise === entry.promise) state.pending.delete(key)
+              entry.reject(error)
             }
-            state.states.set(key, { item: items[index]!,
-              state: outcome.status === 'available' ? 'available' : 'unavailable',
-              generation: generations[index]! })
-            if (options.coherence !== undefined) {
-              remember(state, items[index]!, options.coherence, generations[index]!, outcome)
-            }
-            if (state.pending.get(key)?.promise === entry.promise) state.pending.delete(key)
-            resolved[index] = outcome
-            entry.resolve(outcome)
-          })
-        } catch (error) {
-          for (const index of indexes) {
-            const key = keys[index]!
-            failures[index] = error
-            if (generationOf(state, key) === generations[index]) {
-              state.states.set(key, { item: items[index]!, state: 'error', generation: generations[index]! })
-            }
-            if (state.pending.get(key)?.promise === owned.get(index)!.promise) state.pending.delete(key)
-            owned.get(index)!.reject(error)
           }
+        }))
+      } catch (error) {
+        for (const [index, entry] of owned) {
+          const key = keys[index]!
+          if (state.pending.get(key)?.promise === entry.promise) state.pending.delete(key)
+          entry.reject(error)
         }
-      }))
-    } catch (error) {
-      for (const [index, entry] of owned) {
-        const key = keys[index]!
-        if (state.pending.get(key)?.promise === entry.promise) state.pending.delete(key)
-        entry.reject(error)
+        throw error
       }
-      throw error
     }
-  }
 
-  for (const { index, promise } of waiting) {
-    const outcome = await promise
-    // A coalesced item may have been invalidated while it was in flight.
-    if (generationOf(state, keys[index]!) !== generations[index]) {
-      throw new SemanticReadSupersededError(keys[index]!)
+    for (const { index, promise } of waiting) {
+      const outcome = await promise
+      // A coalesced item may have been invalidated while it was in flight.
+      if (generationOf(state, keys[index]!) !== generations[index]) {
+        throw new SemanticReadSupersededError(keys[index]!)
+      }
+      resolved[index] = outcome
     }
-    resolved[index] = outcome
+    for (const [alias, source] of aliases) {
+      resolved[alias] = resolved[source]
+      // A duplicate item of this call shares its primary's verdict, including
+      // an intentional defer.
+      if (failures[alias] === undefined && failures[source] !== undefined) failures[alias] = failures[source]
+    }
+    if (options.signal?.aborted) throw abortedError()
+    return keys.map((key, index) => {
+      if (generationOf(state, key) !== generations[index]) throw new SemanticReadSupersededError(key)
+      const outcome = resolved[index]
+      if (!outcome) {
+        if (failures[index] !== undefined) throw failures[index]
+        throw new SemanticReadSupersededError(key)
+      }
+      return outcome
+    })
+  } finally {
+    options.signal?.removeEventListener('abort', onCallerAbort)
+    release()
   }
-  for (const [alias, source] of aliases) resolved[alias] = resolved[source]
-  if (options.signal?.aborted) throw abortedError()
-  return keys.map((key, index) => {
-    if (generationOf(state, key) !== generations[index]) throw new SemanticReadSupersededError(key)
-    const outcome = resolved[index]
-    if (!outcome) {
-      if (failures[index] !== undefined) throw failures[index]
-      throw new SemanticReadSupersededError(key)
-    }
-    return outcome
-  })
 }
 
 /** Explicit state of one semantic item for the current client session. */
