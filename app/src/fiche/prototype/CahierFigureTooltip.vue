@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { GROUPE_COMPARE_LABEL, groupeCompareAria } from '@/fiche/content/comparisonWording'
+import { estRangExtreme } from '@/fiche/figureGrammaire'
 import type {
   CahierFigureTooltipAnchor,
   CahierTooltipComparison,
@@ -28,6 +29,11 @@ function comparisonAria(comparison: CahierTooltipComparison): string {
 function rowAriaLabel(row: CahierTooltipRow): string {
   const focal = row.ariaLabel ?? `${row.label} : ${row.value}`
   return row.comparison ? `${focal}. ${comparisonAria(row.comparison)}` : focal
+}
+
+/** The same extreme rule as the page rank, fed by the producer's structured ordinal. */
+function rankExtreme(comparison: CahierTooltipComparison): boolean {
+  return estRangExtreme(comparison.rankEvidence)
 }
 </script>
 
@@ -79,7 +85,7 @@ function rowAriaLabel(row: CahierTooltipRow): string {
         <dd v-if="row.comparison" class="cahier-figure-tooltip-row-comparison">
           <span class="cahier-figure-tooltip-comparison-label">{{ GROUPE_COMPARE_LABEL }}</span>
           <span class="cahier-figure-tooltip-comparison-value">{{ row.comparison.value }}</span>
-          <small v-if="row.comparison.rank" class="cahier-figure-tooltip-comparison-rank">{{ row.comparison.rank }}</small>
+          <small v-if="row.comparison.rank" class="cahier-figure-tooltip-comparison-rank cahier-rank-ink" :class="{ 'is-extreme': rankExtreme(row.comparison) }">{{ row.comparison.rank }}</small>
         </dd>
       </div>
     </dl>

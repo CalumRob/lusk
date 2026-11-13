@@ -1,15 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
 
 import type { NumericFact } from '@/fiche/content/territoryFacts'
 import { comparisonRank } from '@/fiche/content/comparisonRank'
-import { RANK_DISPLAY_MIN_SIZE, formatServedRank, puceRangDirection } from '@/fiche/figureGrammaire'
+import { estRangExtreme, formatServedRank, puceRangDirection } from '@/fiche/figureGrammaire'
+import type { DirectionRang } from '@/methodes/indicateurs'
 
 const props = withDefaults(
   defineProps<{
     fact?: NumericFact
-    servedRank?: { position: number; size: number; ties?: number | null; direction: import('@/methodes/indicateurs').DirectionRang; key: string } | null
+    servedRank?: { position: number; size: number; ties?: number | null; direction: DirectionRang; key: string } | null
     to?: RouteLocationRaw | null
     placement?: 'inline' | 'comparison' | 'access'
     decorative?: boolean
@@ -17,23 +19,19 @@ const props = withDefaults(
   { to: null, placement: 'inline', decorative: false },
 )
 
-function rankText(fact?: NumericFact, servedRank?: { position: number; size: number; ties?: number | null } | null): string | null {
-  if (servedRank) return formatServedRank(servedRank)
-  return fact ? comparisonRank(fact)?.rang ?? null : null
-}
+/**
+ * The one rank this mark displays. A producer-served rank is authoritative when
+ * present (it belongs to the active selection); the fact's comparison rank is
+ * the fallback for a native fact. Text, tie marker, outline and accessible
+ * description all read this same input, so they can never disagree.
+ */
+const effectiveRank = computed(() => props.servedRank ?? props.fact?.comparison?.rank ?? null)
+const rankText = computed(() => formatServedRank(effectiveRank.value))
+const extreme = computed(() => estRangExtreme(effectiveRank.value))
 
-function rankDescription(fact?: NumericFact, servedRank?: { position: number; size: number; ties?: number | null; direction: import('@/methodes/indicateurs').DirectionRang } | null): string | null {
-  const served = servedRank && servedRank.size >= RANK_DISPLAY_MIN_SIZE
-    ? puceRangDirection(servedRank, servedRank.direction) : null
-  if (served) return served.phraseAria
-  return fact ? comparisonRank(fact)?.phraseAria ?? null : null
-}
-
-function isExtreme(fact?: NumericFact): boolean {
-  const rank = fact?.comparison?.rank
-  if (!rank) return false
-  const edge = Math.max(1, Math.ceil(rank.size * 0.05))
-  return rank.position <= edge || rank.position > rank.size - edge
+function rankDescription(): string | null {
+  if (props.servedRank) return puceRangDirection(props.servedRank, props.servedRank.direction)?.phraseAria ?? null
+  return props.fact ? comparisonRank(props.fact)?.phraseAria ?? null : null
 }
 
 function rankStyle(seed: string): Record<string, string> {
@@ -51,29 +49,29 @@ function rankStyle(seed: string): Record<string, string> {
 </script>
 
 <template>
-  <template v-if="rankText(props.fact, props.servedRank)">
+  <template v-if="rankText">
     <RouterLink
       v-if="props.to && props.fact"
       :to="props.to"
       target="_blank"
       rel="noopener noreferrer"
       class="cahier-rank rank-emphasis rank-link"
-      :class="[`cahier-rank--${props.placement}`, { 'is-extreme': isExtreme(props.fact) }]"
+      :class="`cahier-rank--${props.placement}`"
       :style="rankStyle(props.fact.key)"
-      :title="rankDescription(props.fact, props.servedRank) ?? undefined"
-      :aria-label="props.decorative ? undefined : rankDescription(props.fact) ?? undefined"
+      :title="rankDescription() ?? undefined"
+      :aria-label="props.decorative ? undefined : rankDescription() ?? undefined"
       :aria-hidden="props.decorative ? 'true' : undefined"
-    >{{ rankText(props.fact, props.servedRank) }}</RouterLink>
+    ><span class="cahier-rank-ink" :class="{ 'is-extreme': extreme }">{{ rankText }}</span></RouterLink>
     <span
       v-else
       class="cahier-rank rank-emphasis"
-      :class="[`cahier-rank--${props.placement}`, { 'is-extreme': isExtreme(props.fact) }]"
+      :class="`cahier-rank--${props.placement}`"
       :style="rankStyle(props.fact?.key ?? props.servedRank?.key ?? '')"
-      :title="rankDescription(props.fact, props.servedRank) ?? undefined"
+      :title="rankDescription() ?? undefined"
       role="img"
-      :aria-label="props.decorative ? undefined : rankDescription(props.fact, props.servedRank) ?? undefined"
+      :aria-label="props.decorative ? undefined : rankDescription() ?? undefined"
       :aria-hidden="props.decorative ? 'true' : undefined"
-    >{{ rankText(props.fact, props.servedRank) }}</span>
+    ><span class="cahier-rank-ink" :class="{ 'is-extreme': extreme }">{{ rankText }}</span></span>
   </template>
 </template>
 
@@ -95,46 +93,10 @@ function rankStyle(seed: string): Record<string, string> {
 .cahier-rank--comparison { text-align: center; }
 .cahier-rank--access { text-align: center; }
 
-.cahier-rank.is-extreme {
-  position: relative;
-  z-index: 0;
-  display: inline-block;
-  width: max-content;
-  padding: 4px 2px 5px;
-  border: 0;
-  line-height: 1.2;
-  text-decoration: none;
-}
-
-.cahier-rank.is-extreme::before,
-.cahier-rank.is-extreme::after {
-  position: absolute;
-  z-index: 0;
-  content: '';
-  pointer-events: none;
-}
-
-.cahier-rank.is-extreme::before {
-  inset: -2px -2px -3px;
-  border: 1px solid var(--red);
-  border-top-color: color-mix(in srgb, var(--red) 48%, transparent);
-  border-radius: var(--rank-radius-a, 48% 53% 46% 52% / 54% 45% 55% 47%);
-  transform: rotate(var(--rank-angle-a, -4deg));
-}
-
-.cahier-rank.is-extreme::after {
-  inset: -3px -2px -2px -3px;
-  border: 1px solid transparent;
-  border-left-color: color-mix(in srgb, var(--red) 48%, transparent);
-  border-right-color: color-mix(in srgb, var(--red) 72%, transparent);
-  border-bottom-color: color-mix(in srgb, var(--red) 72%, transparent);
-  border-radius: var(--rank-radius-b, 53% 46% 54% 47% / 46% 56% 44% 54%);
-  transform: rotate(var(--rank-angle-b, 4deg));
-}
-
-.cahier-rank--comparison.is-extreme { margin-left: auto; }
-.cahier-rank--access.is-extreme { margin-inline: auto; }
-
 .cahier-rank:hover { text-decoration: none; }
 .cahier-rank:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+</style>
+
+<style>
+@import "./cahierRankCircle.css";
 </style>

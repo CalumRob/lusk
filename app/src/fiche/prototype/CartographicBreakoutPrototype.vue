@@ -103,6 +103,7 @@ function comparisonForFact(
     // Visible values are bare; ARIA keeps the full unit, resolved scope and rank.
     value: visibleValue,
     rank,
+    rankEvidence: comparison.rank,
     ariaLabel: `${GROUPE_COMPARE_LABEL} : ${ariaValue} (${description})${rankAria ? `. Rang ${rankAria}` : direction ? `. ${direction}` : ''}`,
   }
 }
