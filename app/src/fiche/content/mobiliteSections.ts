@@ -393,6 +393,11 @@ function comparisonSplitState(
       : null }
   }
   const segmentReferences = segments.map((segment) => meanReference(segment.value.fact))
+  if (!segments.length) {
+    // The focal protected/shared partition is already missing: its own splitNote
+    // states that honestly. Never blame the compared means for the focal gap.
+    return { split: false, note: null }
+  }
   if (segments.length !== 2 || segmentReferences.some((reference) => reference === null)) {
     return { split: false,
       note: 'Répartition comparée Protégé/Partagé indisponible : une moyenne servie est incomplète.' }

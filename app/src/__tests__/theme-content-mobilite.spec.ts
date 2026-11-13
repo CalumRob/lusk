@@ -571,6 +571,17 @@ describe('compared protected/shared means — #997', () => {
     expect(category.comparisonSplitNote).toBeUndefined()
   })
 
+  it('does not blame the compared means when the focal partition is missing', () => {
+    const indicators = networkFacts().map((candidate) =>
+      candidate.key === 'reseaux_par_habitant' && candidate.detail === 'b_km_1000'
+        ? { ...candidate, value: 39 } : candidate)
+    const category = bike(indicators)
+    expect(category.segments).toEqual([])
+    expect(category.splitNote).toContain('ne recomposent pas le total')
+    expect(category.comparisonSplit).toBeUndefined()
+    expect(category.comparisonSplitNote).toBeUndefined()
+  })
+
   it('refuses a split when equal eligible counts name different communes', () => {
     const indicators = networkFacts().map((candidate) => candidate.key === 'offre_cyclable' &&
       candidate.detail === 'partage_km_1000'
