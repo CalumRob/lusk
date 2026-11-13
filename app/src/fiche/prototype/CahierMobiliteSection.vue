@@ -32,6 +32,10 @@ import CahierMobiliteRaccordementCurve from './CahierMobiliteRaccordementCurve.v
 import CahierMobiliteShareTrack from './CahierMobiliteShareTrack.vue'
 import CahierProse from './CahierProse.vue'
 import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
+import {
+  FigureCouverturePrototype,
+  FigureRaccordementPrototype,
+} from './page3FiguresPrototype'
 
 const props = defineProps<{
   section: MobiliteContentSection
@@ -275,7 +279,13 @@ function ratioAriaLabel(
       </div>
       <figure class="mobilite-section-figure">
         <figcaption class="cahier-figure-title">{{ share.figureTitle }}</figcaption>
-        <CahierMobiliteShareTrack :figure="share" :comparison="effectiveComparison" />
+        <component
+          :is="FigureCouverturePrototype"
+          v-if="FigureCouverturePrototype"
+          :figure="share"
+          :comparison="effectiveComparison"
+        />
+        <CahierMobiliteShareTrack v-else :figure="share" :comparison="effectiveComparison" />
       </figure>
     </div>
 
@@ -293,7 +303,13 @@ function ratioAriaLabel(
       </div>
       <figure class="mobilite-section-figure mobilite-section-figure--wide">
         <figcaption class="cahier-figure-title">{{ curve.figureTitle }}</figcaption>
-        <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" />
+        <component
+          :is="FigureRaccordementPrototype"
+          v-if="FigureRaccordementPrototype"
+          :figure="curve"
+          :comparison="effectiveComparison"
+        />
+        <CahierMobiliteRaccordementCurve v-else :figure="curve" :comparison="effectiveComparison" />
       </figure>
     </div>
   </div>
