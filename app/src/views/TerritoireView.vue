@@ -58,10 +58,11 @@ import type {
   TerritoryComparisonContext,
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
-import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
+import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, MeanComparisonContractError, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
 import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, comparisonDemandState,
   producerCatalogue, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
 import type { AcquiredTheme, ThemeFactsDemand, ThemeKey, ThemeResponse, ThemeSelectionMember } from '@/payload/themeAcquisition'
+import { meanComparisonResources } from '@/payload/comparisonResources'
 import { AcquisitionDemandScheduler } from '@/payload/acquisitionDemand'
 import { chapitreDemande, chapitreDemandeDepuisAncre } from '@/fiche/content/demandInventory'
 import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
@@ -755,7 +756,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
       if (cancelled || request !== sequenceComparaison) return
       const nativeComparison = acquired.comparisons.get(cleSelectionComparaison(selectionMembres ?? undefined))
       validerReponseComparaisonTheme(themeActif, nativeComparison, selectionMembres ?? undefined,
-        { type: target.type, id: target.territoire })
+        { type: target.type, id: target.territoire }, meanComparisonResources(themeActif))
       const comparison = semanticComparisonForTheme(nativeComparison, {
         target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
         territories: [...reference],
@@ -894,14 +895,17 @@ function appliquerAcquisitionMobilite(acquired: AcquiredTheme<ThemeResponse>,
   let combined = mobilityFactsFromThemeApi(presentation, code, data)
   const comparison = selection === null
     ? undefined : acquired.comparisons.get(cleSelectionComparaison(selection))
+  let meanContractError = false
   if (comparison) {
     try {
       combined = applyThemeComparisonApiFacts(combined, comparison, context, selection ?? undefined)
-    } catch {
+    } catch (error) {
       // A chapter-scoped comparison does not cover a sibling chapter the reader
       // has not requested: the curve simply has no reference here, it is not an
       // error of the requested chapter. The requested demand's own state decides
-      // the comparison status below.
+      // the comparison status below. A broken mean contract is different: the
+      // requested figure cannot silently render a median or a partial stack.
+      meanContractError = error instanceof MeanComparisonContractError
       combined = clearThemeComparisonApiFacts(combined)
     }
   } else {
@@ -915,9 +919,11 @@ function appliquerAcquisitionMobilite(acquired: AcquiredTheme<ThemeResponse>,
   const demandState = demand?.indicators && selection !== null
     ? comparisonDemandState(acquired, selection ?? undefined, demand.indicators)
     : undefined
-  mobilityComparisonStatus.value = demandState
-    ? (demandState.status === 'error' ? 'error' : 'ready')
-    : (data.comparison_error ? 'error' : 'ready')
+  mobilityComparisonStatus.value = meanContractError
+    ? 'error'
+    : demandState
+      ? (demandState.status === 'error' ? 'error' : 'ready')
+      : (data.comparison_error ? 'error' : 'ready')
   statutFaitsMobilite.value = 'ready'
 }
 
@@ -1076,7 +1082,7 @@ watch([productionMobilite, typeRoute, idRoute, () => membresAcquisition.value,
       const { acquired, demand } = outcome
       const data = acquired.comparisons.get(cleSelectionComparaison(explicitSelection))
       validerReponseComparaisonTheme('mobilite', data, explicitSelection,
-        { type: target.type, id: target.territoire })
+        { type: target.type, id: target.territoire }, meanComparisonResources('mobilite'))
       appliquerAcquisitionMobilite(acquired, explicitSelection, demand)
       settled = true
     }).catch((error: unknown) => {

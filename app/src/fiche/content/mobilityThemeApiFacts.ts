@@ -3,14 +3,18 @@ import type { ModeContexteComparaison, TerritoryComparisonContext } from '@/fich
 import { libellePorteeMembres } from '@/fiche/comparisonContext'
 import type { ThemeResponse } from '@/payload/themeAcquisition'
 import { nativeFactContractFromEnvelope, semanticComparisonForTheme, themeFactsEnvelopeFromSemantic } from '@/payload/themeFactsAdapter'
+import { meanComparisonResources } from '@/payload/comparisonResources'
 import { territoryFactsFor } from './territoryFacts'
 import type { ComparisonScopeKind, FactProvenance, MobilityResourceFailure, MobilityTrajectoryContract,
   NamedTrajectoryReference, NumericFact, SelectedTrajectoryComparison, TerritoryFacts } from './territoryFacts'
+import type { ComparisonReference } from './territoryFacts'
 
 type Row = Record<string, unknown>
 
 const isRecord = (value: unknown): value is Row =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+/** A selected mean was requested but the served comparison does not honour it. */
+export class MeanComparisonContractError extends Error {}
 const rows = (value: unknown, field: string): Row[] => {
   if (!Array.isArray(value) || value.some((row) => !isRecord(row))) {
     throw new Error(`Réponse Mobilité invalide : ${field}`)
@@ -262,6 +266,7 @@ export function mobilityFactsFromThemeApi(
   // are gone; no reading is fabricated from the retired subgroup declaration.
   const resourceFailures = resourceFailuresFrom(response)
   return { ...facts, mobility: { ...facts.mobility, namedTrajectoryReferences, trajectoryContract,
+    comparisonStatistic: 'median',
     ...(resourceFailures.length ? { resourceFailures } : {}) } }
 }
 
@@ -393,6 +398,7 @@ export function applyThemeComparisonApiFacts(
   response: unknown,
   context?: TerritoryComparisonContext,
   expectedSelection?: readonly { territory_type: string; territory_id: string }[],
+  meanResources: readonly string[] = meanComparisonResources('mobilite'),
 ): TerritoryFacts {
   const comparisonFailures = resourceFailuresFrom(response)
     .filter((failure) => failure.stage === 'comparison')
@@ -408,6 +414,12 @@ export function applyThemeComparisonApiFacts(
   const resultRows = Array.isArray(response.results) ? rows(response.results, 'results')
     : isRecord(response.result) ? [response.result] : rows(response.results, 'results')
   const profileRows = response.profile_comparisons === undefined ? [] : rows(response.profile_comparisons, 'profile_comparisons')
+  const meanRequested = expectedSelection !== undefined &&
+    expectedSelection.every((member) => member.territory_type === 'commune') &&
+    (resultRows.some((result) => meanResources.includes(result.indicator_id as string) &&
+      result.statistic === 'mean') ||
+     profileRows.some((result) => meanResources.includes(result.indicator as string) &&
+      result.statistic === 'mean'))
   const comparisons = new Map<string, Row>()
   for (const result of resultRows) {
     if (text(result.indicator_id)) comparisons.set(result.indicator_id, result)
@@ -418,12 +430,34 @@ export function applyThemeComparisonApiFacts(
     const result = comparisons.get(fact.key) ?? profileRows.find((candidate) =>
       candidate.indicator === fact.key && isRecord(candidate.facet) &&
       candidate.facet.detail === detail && candidate.facet.sex === sex)
+    const expectsMean = expectedSelection !== undefined &&
+      expectedSelection.every((member) => member.territory_type === 'commune') &&
+      meanResources.includes(fact.key)
+    if (expectsMean && result && result.statistic !== 'mean') {
+      // The page-2 network figure asks for the owner-approved mean. A median
+      // answer is an integrity failure, never a value to relabel or segment.
+      throw new MeanComparisonContractError(`Comparaison moyenne attendue pour ${fact.key}`)
+    }
     if (!result || result.status !== 'available' ||
         (result.direction !== 'high' && result.direction !== 'low')) return { ...fact, comparison: null }
     const meanValue = finite(result.mean) ? result.mean : null
     const medianValue = finite(result.median) ? result.median : null
-    const reference = meanValue !== null ? { kind: 'mean' as const, value: meanValue }
-      : medianValue !== null ? { kind: 'median' as const, value: medianValue } : null
+    const reference: ComparisonReference | null = meanValue !== null ? { kind: 'mean', value: meanValue }
+      : medianValue !== null ? { kind: 'median', value: medianValue } : null
+    if (expectsMean) {
+      if (reference?.kind !== 'mean' || !Array.isArray(result.eligible_members) ||
+          result.unit !== fact.unit) {
+        throw new MeanComparisonContractError(`Moyenne de comparaison incomplète pour ${fact.key}`)
+      }
+      reference.eligibleMembers = (result.eligible_members as unknown[])
+        .filter((member): member is string => typeof member === 'string')
+      const selectedIds = new Set((expectedSelection ?? []).map((member) => member.territory_id))
+      if (selectedIds.size && reference.eligibleMembers.some((member) => !selectedIds.has(member))) {
+        // The API's identity evidence must name communes the caller actually
+        // asked for; a foreign member is a hard integrity failure (#997).
+        throw new MeanComparisonContractError(`Identité éligible hors sélection pour ${fact.key}`)
+      }
+    }
     const rank = finite(result.rank) && finite(result.rank_size)
       ? { position: result.rank, size: result.rank_size,
         ...(finite(result.rank_ties) ? { ties: result.rank_ties } : {}) } : null
@@ -434,6 +468,7 @@ export function applyThemeComparisonApiFacts(
   const indicators = facts.mobility.indicators.map((fact) => comparisonFor(fact, fact.detail, fact.sex ?? null))
   const resourceFailures = mergeResourceFailures(facts.mobility.resourceFailures, comparisonFailures)
   return { ...facts, mobility: { ...facts.mobility, indicators,
+    comparisonStatistic: meanRequested ? 'mean' : 'median',
     ...(resourceFailures.length ? { resourceFailures } : {}),
     selectedTrajectoryComparison: selectedTrajectoryComparison(facts, resultRows, context, response, expectedSelection, comparisonFailures) } }
 }
@@ -443,7 +478,7 @@ export function clearThemeComparisonApiFacts(facts: TerritoryFacts): TerritoryFa
   const resourceFailures = (facts.mobility.resourceFailures ?? [])
     .filter((failure) => failure.stage === 'facts')
   const { resourceFailures: _discarded, ...mobility } = facts.mobility
-  return { ...facts, mobility: { ...mobility,
+  return { ...facts, mobility: { ...mobility, comparisonStatistic: 'median',
     indicators: facts.mobility.indicators.map(clear),
     ...(resourceFailures.length ? { resourceFailures } : {}),
     selectedTrajectoryComparison: null,

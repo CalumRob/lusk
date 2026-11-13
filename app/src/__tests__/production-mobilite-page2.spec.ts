@@ -247,7 +247,7 @@ describe('Mobilité page 2 — production values and per-network comparisons', (
     const accessible = svg.attributes('aria-label')!
     expect(accessible).toContain('Longueur du réseau par habitant')
     expect(accessible).toContain('km / 1 000 hab.')
-    expect(accessible).toContain('médiane du total non segmenté')
+    expect(accessible).toContain('moyenne du total non segmenté')
 
     for (const category of categories) {
       const value = category.value.fact.value as number

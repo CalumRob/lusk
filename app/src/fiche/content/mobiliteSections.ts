@@ -1,6 +1,7 @@
 import { comparisonScopeLabel } from './comparisonScopeLabel'
 import { MOBILITE_RESEAU_MODE_LABELS } from './territoryFacts'
 import type {
+  ComparisonReference,
   FactAvailability,
   FactProvenance,
   NumericFact,
@@ -16,6 +17,7 @@ import type {
   ComparisonTrajectoryContent,
   ExplorationTarget,
   MobiliteBarCategoryEvidence,
+  MobiliteBarSegmentEvidence,
   MobiliteBarsFigureEvidence,
   MobiliteNetworksSection,
   MobilitePairedColumnEvidence,
@@ -344,6 +346,100 @@ function partitionValues(values: readonly ContentFact[]): (number | null)[] {
   return values.map((value) => value.fact.value)
 }
 
+/** The served equal-weight mean of a fact, or null when it is not a mean. */
+function meanReference(fact: NumericFact | null): ComparisonReference | null {
+  const reference = fact?.comparison?.reference
+  return reference?.kind === 'mean' ? reference : null
+}
+
+/** Equal counts never prove one population: the actual identities must agree. */
+function sameEligibleMembers(references: readonly ComparisonReference[]): boolean {
+  if (references.some((reference) => !reference.eligibleMembers?.length)) return false
+  const first = [...references[0]!.eligibleMembers!].sort()
+  return references.every((reference) => {
+    const members = [...reference.eligibleMembers!].sort()
+    return members.length === first.length && members.every((member, index) => member === first[index])
+  })
+}
+
+function sameMeanUnit(facts: readonly NumericFact[]): boolean {
+  // Producer detail units differ in punctuation across resources
+  // (« km / 1 000 hab » vs « km / 1 000 hab. »). Normalise only that machine
+  // formatting; the unit/denominator itself stays the producer's fact.
+  const key = (unit: string) => unit.trim().toLocaleLowerCase('fr-FR')
+    .replace(/\s+/gu, ' ').replace(/\.$/u, '')
+  return new Set(facts.map((fact) => key(fact.unit))).size === 1
+}
+
+/**
+ * #997 — the compared bike bar may be drawn as the protected/shared stack only
+ * when the served total and partition means share the actual eligible communes,
+ * the same unit/denominator and recompose the total within machine-float slack.
+ * Otherwise the figure says so explicitly; it never shrinks, zeroes or stacks a
+ * partial population.
+ */
+function comparisonSplitState(
+  total: ContentFact,
+  rawTotal: ContentFact | null,
+  segments: readonly MobiliteBarSegmentEvidence[],
+  meanExpected: boolean,
+): { split: boolean; note: string | null } {
+  const totalReference = meanReference(total.fact)
+  if (!totalReference) {
+    // A legitimate median (the producer's declared default for a fixed group)
+    // is not a missing mean: only a selected mean contract can be unavailable.
+    return { split: false, note: meanExpected && total.fact.comparison?.reference?.kind !== 'median'
+      ? 'Répartition comparée Protégé/Partagé indisponible : la moyenne du total cyclable n’est pas servie.'
+      : null }
+  }
+  const segmentReferences = segments.map((segment) => meanReference(segment.value.fact))
+  if (!segments.length) {
+    // The focal protected/shared partition is already missing: its own splitNote
+    // states that honestly. Never blame the compared means for the focal gap.
+    return { split: false, note: null }
+  }
+  if (segments.length !== 2 || segmentReferences.some((reference) => reference === null)) {
+    return { split: false,
+      note: 'Répartition comparée Protégé/Partagé indisponible : une moyenne servie est incomplète.' }
+  }
+  const references = [totalReference, ...segmentReferences as ComparisonReference[]]
+  if (!sameEligibleMembers(references)) {
+    return { split: false,
+      note: 'Répartition comparée Protégé/Partagé indisponible : les moyennes servies ne portent pas les mêmes communes.' }
+  }
+  if (!sameMeanUnit([total.fact, ...segments.map((segment) => segment.value.fact)])) {
+    return { split: false,
+      note: 'Répartition comparée Protégé/Partagé indisponible : les moyennes servies ne partagent pas la même unité.' }
+  }
+  if (!isPartition(segmentReferences.map((reference) => reference!.value), totalReference.value)) {
+    return { split: false,
+      note: 'Répartition comparée Protégé/Partagé indisponible : les moyennes servies ne recomposent pas la moyenne du total.' }
+  }
+  const rawSegments = segments.map((segment) => segment.rawValue)
+  if (rawTotal && rawSegments.every((raw): raw is ContentFact => raw !== null)) {
+    const rawTotalReference = meanReference(rawTotal.fact)
+    const rawReferences = rawSegments.map((raw) => meanReference(raw.fact))
+    if (!rawTotalReference || rawReferences.some((reference) => reference === null)) {
+      return { split: false,
+        note: 'Répartition comparée Protégé/Partagé indisponible : une moyenne brute servie est incomplète.' }
+    }
+    const allRaw = [rawTotalReference, ...rawReferences as ComparisonReference[]]
+    if (!sameEligibleMembers(allRaw)) {
+      return { split: false,
+        note: 'Répartition comparée Protégé/Partagé indisponible : les moyennes brutes servies ne portent pas les mêmes communes.' }
+    }
+    if (!sameMeanUnit([rawTotal.fact, ...rawSegments.map((raw) => raw.fact)])) {
+      return { split: false,
+        note: 'Répartition comparée Protégé/Partagé indisponible : les moyennes brutes servies ne partagent pas la même unité.' }
+    }
+    if (!isPartition(rawReferences.map((reference) => reference!.value), rawTotalReference.value)) {
+      return { split: false,
+        note: 'Répartition comparée Protégé/Partagé indisponible : les moyennes brutes servies ne recomposent pas la moyenne du total.' }
+    }
+  }
+  return { split: true, note: null }
+}
+
 /** Narrow data-failure state: only resources actually used by this figure. */
 function figureResourceNotes(
   facts: TerritoryFacts,
@@ -420,6 +516,9 @@ export function buildMobiliteNetworksSection(
     const splitNote = definition.mode === 'bike' && !normalizedSplit
       ? 'Répartition Protégé/Partagé indisponible : les deux parties publiées ne recomposent pas le total.'
       : null
+    const comparisonSplit = definition.mode === 'bike'
+      ? comparisonSplitState(value, rawValue, segments, facts.mobility.comparisonStatistic === 'mean')
+      : null
     return {
       key: definition.mode,
       label: MOBILITE_RESEAU_MODE_LABELS[definition.mode],
@@ -429,6 +528,8 @@ export function buildMobiliteNetworksSection(
       rawValue,
       segments,
       splitNote,
+      ...(comparisonSplit?.split ? { comparisonSplit: true } : {}),
+      ...(comparisonSplit?.note ? { comparisonSplitNote: comparisonSplit.note } : {}),
     }
   })
   const allFacts = [

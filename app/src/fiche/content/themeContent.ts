@@ -266,6 +266,13 @@ export interface MobiliteBarCategoryEvidence {
   segments: readonly MobiliteBarSegmentEvidence[]
   /** Honest note when a declared split cannot be drawn as a partition. */
   splitNote: string | null
+  /**
+   * #997 — the compared bar is drawn as the same protected/shared stack because
+   * the served means share one eligible population and recompose the total.
+   */
+  comparisonSplit?: boolean
+  /** Honest note when a served mean split cannot be drawn as one partition. */
+  comparisonSplitNote?: string | null
 }
 
 export interface MobiliteBarsFigureEvidence {

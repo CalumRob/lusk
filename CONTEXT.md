@@ -336,14 +336,20 @@ partagée, sous-figure d’emprise routière ni Marelle interne. Sous les cartes
 une colonne de prose et ses cachets de source font face à une figure de barres
 verticales groupées dont les catégories sont les trois réseaux. Chaque réseau
 porte sa référence de groupe comparé servie par l’API ; la barre vélo du
-territoire reste segmentée Protégé/Partagé, tandis que sa barre de comparaison
-est la médiane du total, **non segmentée** — les médianes de segments ne
-s’additionnent jamais. Les kilomètres bruts vivent uniquement dans les
+territoire reste segmentée Protégé/Partagé, et, pour une sélection communale
+explicite, sa barre de comparaison est la **moyenne à poids égal des communes
+éligibles** (ADR-0045) — les comparaisons fixes ou non communales gardent leur
+médiane déclarée. La barre comparée est segmentée Protégé/Partagé lorsque les
+moyennes du total et des deux parties portent les mêmes `eligible_members`, la
+même unité et recomposent le total à la tolérance machine ; sinon la figure dit
+explicitement que la répartition comparée est indisponible et garde la moyenne
+du total non segmentée. Les kilomètres bruts vivent uniquement dans les
 infobulles. L’emprise routière n’est plus une sous-figure : elle est lue dans le
 sous-titre de page, sans comparaison.
 _Avoid_: une échelle ou une barre commune entre l’emprise routière et les trois
-longueurs de réseau, une barre vélo de comparaison reconstituée à partir des
-médianes Protégé/Partagé, une Marelle ou un cachet de source générique.
+longueurs de réseau, une barre vélo de comparaison reconstituée à partir de
+médianes ou de moyennes de segments indépendantes, une moyenne pondérée par la
+population, une Marelle ou un cachet de source générique.
 
 **Contrat de section Mobilité (AEDAR)**:
 La fiche Mobilité rend ses pages 2 et 3 comme des sections du contrat AEDAR :

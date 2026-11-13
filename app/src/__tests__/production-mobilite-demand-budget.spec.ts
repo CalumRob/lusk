@@ -313,7 +313,17 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     const cleared = posts(calls).slice(afterCustom).flatMap((call) => call.items)
       .filter((item) => PAGE_TWO.includes(item.resource) && item.intent.kind !== 'facts')
     expect(cleared).toHaveLength(20)
-    expect(new Set(cleared.map((item) => JSON.stringify(item.intent))).size).toBe(1)
+    // #997 — the network figure's 10 declared detail comparisons request the
+    // owner-approved mean; the other 10 keep their declared median default.
+    const clearedIntents = [...new Set(cleared.map((item) => JSON.stringify(item.intent)))]
+    expect(clearedIntents).toHaveLength(2)
+    expect(cleared.filter((item) => item.intent.statistic === 'mean')).toHaveLength(10)
+    expect(new Set(cleared.filter((item) => item.intent.statistic === 'mean')
+      .map((item) => item.resource))).toEqual(
+      new Set(['reseaux_par_habitant', 'offre_cyclable', 'reseaux']))
+    expect(cleared.filter((item) => item.intent.statistic === undefined)).toHaveLength(10)
+    expect(new Set(clearedIntents.map((intent) => JSON.parse(intent).statistic)))
+      .toEqual(new Set(['mean', undefined]))
     const factsAfter = pageTwoFacts(items(calls)).length
     expect(factsAfter).toBe(factsBefore)
     wrapper.unmount()

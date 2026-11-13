@@ -185,16 +185,60 @@ describe('semantic item identity and grouping', () => {
         members: [{ type: 'commune', id: '35238' }] } }),
       semanticItemKey({ ...base, intent: { kind: 'selected_comparison',
         members: [{ type: 'commune', id: '35239' }] } }),
+      semanticItemKey({ ...base, intent: { kind: 'selected_comparison',
+        members: [{ type: 'commune', id: '35238' }], statistic: 'mean' } }),
+      semanticItemKey({ ...base, intent: { kind: 'selected_comparison',
+        members: [{ type: 'commune', id: '35238' }], statistic: 'median' } }),
       semanticItemKey({ ...base, coordinates: { detail: ['ancien'] } }),
       semanticItemKey({ ...base, coordinates: { detail: ['recent'] } }),
       semanticItemKey({ ...base, fields: ['value'] }),
       semanticItemKey({ ...base, fields: ['value', 'status'] }),
       semanticItemKey({ ...base, target: { kind: 'territory', type: 'epci', id: '22001' } }),
     ])
-    expect(keys.size).toBe(9)
+    expect(keys.size).toBe(10)
     // Field projection order is not semantic; the same set is one read.
     expect(semanticItemKey({ ...base, fields: ['status', 'value'] }))
       .toBe(semanticItemKey({ ...base, fields: ['value', 'status'] }))
+    // An omitted statistic is the median default; an explicit mean is another read.
+    expect(semanticItemKey({ ...base, intent: { kind: 'selected_comparison',
+      members: [{ type: 'commune', id: '35238' }], statistic: 'median' } }))
+      .toBe(semanticItemKey({ ...base, intent: { kind: 'selected_comparison',
+        members: [{ type: 'commune', id: '35238' }] } }))
+    expect(semanticItemKey({ ...base, intent: { kind: 'selected_comparison',
+      members: [{ type: 'commune', id: '35238' }], statistic: 'mean' } }))
+      .not.toBe(semanticItemKey({ ...base, intent: { kind: 'selected_comparison',
+        members: [{ type: 'commune', id: '35238' }] } }))
+  })
+
+  it('never replays a settled median outcome for an explicit mean request', async () => {
+    const sent: WireItem[] = []
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { items: WireItem[] }
+      sent.push(...body.items)
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: body.items.map((entry) => ({
+          id: entry.id, resource: entry.resource, status: 'available',
+          data: { resource: entry.resource, target: entry.target,
+            result: entry.intent.kind === 'selected_comparison' && entry.intent.statistic === 'mean'
+              ? { statistic: 'mean', mean: 8 }
+              : { statistic: 'median', median: 5 } },
+        })) }))
+    })
+    const base: SemanticReadItem = item('reseaux_par_habitant', {
+      intent: { kind: 'selected_comparison', members: [{ type: 'commune', id: '35238' }] },
+    })
+    const median = await readSemanticOutcomes([base], { fetcher, coherence: 'selection-v1' })
+    const meanItem: SemanticReadItem = { ...base,
+      intent: { ...base.intent, statistic: 'mean' } as SemanticReadItem['intent'] }
+    const mean = await readSemanticOutcomes([meanItem], { fetcher, coherence: 'selection-v1' })
+    if (median[0]!.status !== 'available' || mean[0]!.status !== 'available') {
+      throw new Error('expected available outcomes')
+    }
+    expect((median[0]!.data.result as Record<string, unknown>).median).toBe(5)
+    expect((mean[0]!.data.result as Record<string, unknown>).mean).toBe(8)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(sent[1]!.intent).toMatchObject({ statistic: 'mean' })
+    expect(semanticReadState(meanItem, { fetcher })).toBe('available')
   })
 
   it('keeps resource groups together within the twelve-item budget', () => {
@@ -349,6 +393,38 @@ describe('coalescing, cache and explicit retry', () => {
     if (outcome!.status !== 'available') throw new Error('expected available')
     expect(outcome.data.content_version).toBe('fresh')
     expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('fences a late explicit-mean reply without disturbing a settled median item', async () => {
+    const meanItem: SemanticReadItem = item('reseaux_par_habitant', {
+      intent: { kind: 'selected_comparison', members: [{ type: 'commune', id: '35238' }],
+        statistic: 'mean' },
+    })
+    let releaseMean!: () => void
+    const meanGate = new Promise<void>((resolve) => { releaseMean = resolve })
+    let meanCalls = 0
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { items: WireItem[] }
+      if (body.items.some((entry) => entry.intent.kind === 'selected_comparison' &&
+          entry.intent.statistic === 'mean')) {
+        meanCalls += 1
+        if (meanCalls === 1) await meanGate
+      }
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: body.items.map((entry) => ({ id: entry.id, resource: entry.resource,
+          status: 'available', data: { resource: entry.resource, target: entry.target,
+            result: entry.intent.kind === 'selected_comparison' && entry.intent.statistic === 'mean'
+              ? { statistic: 'mean', mean: meanCalls === 1 ? 99 : 8 }
+              : { statistic: 'median', median: 5 } } })) }))
+    })
+    const inFlight = readSemanticOutcomes([meanItem], { fetcher })
+    invalidateSemanticItems([meanItem], { fetcher })
+    releaseMean()
+    await expect(inFlight).rejects.toBeInstanceOf(SemanticReadSupersededError)
+    const [fresh] = await readSemanticOutcomes([meanItem], { fetcher })
+    if (fresh!.status !== 'available') throw new Error('expected available outcome')
+    expect((fresh!.data.result as Record<string, unknown>).mean).toBe(8)
+    expect(meanCalls).toBe(2)
   })
 
   it('lets one caller cancel without invalidating the shared data another caller needs', async () => {

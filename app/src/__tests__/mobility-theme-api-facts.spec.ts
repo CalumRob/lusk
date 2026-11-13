@@ -468,7 +468,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
         status: 'available', direction: 'high', median: 12, rank: 1, rank_size: 2 },
     ], results: [{ indicator_id: 'places_stationnement_velo_1000', status: 'available', direction: 'low',
       median: 41, rank: 2, rank_size: 2, rank_ties: 1 }] }
-    const compared = applyThemeComparisonApiFacts(facts, comparisons, customContext, selection)
+    const compared = applyThemeComparisonApiFacts(facts, comparisons, customContext, selection, [])
     const scalar = compared.mobility.indicators
       .find((fact) => fact.key === 'places_stationnement_velo_1000')!
     expect(scalar.comparison).toMatchObject({
@@ -644,12 +644,25 @@ describe('SQL Mobilité response to Variant E facts', () => {
     const comparisons = { contract: 'theme-comparison-v1', theme_id: 'mobilite', results: [],
       profile_comparisons: [{ indicator: 'reseaux_par_habitant', facet: { detail: 't_km_1000', sex: 'F' },
         status: 'available', direction: 'high', median: 12 }] }
-    expect(applyThemeComparisonApiFacts(facts, comparisons, context).mobility.indicators
+    expect(applyThemeComparisonApiFacts(facts, comparisons, context, undefined, []).mobility.indicators
       .find((fact) => fact.key === 'reseaux_par_habitant')?.comparison?.reference?.value).toBe(12)
     comparisons.profile_comparisons[0]!.facet.sex = 'M'
-    expect(applyThemeComparisonApiFacts(facts, comparisons, context).mobility.indicators
+    expect(applyThemeComparisonApiFacts(facts, comparisons, context, undefined, []).mobility.indicators
       .find((fact) => fact.key === 'reseaux_par_habitant')?.comparison).toBeNull()
   })
+  it('keeps an EPCI member group on its declared median profile comparison', () => {
+    const epciSelection = [{ territory_type: 'epci' as const, territory_id: '200027027' }]
+    const context = contexteMembresSelectionnes(epciSelection)!
+    const comparisons = { contract: 'theme-comparison-v1', theme_id: 'mobilite', results: [],
+      profile_comparisons: [{ indicator: 'reseaux_par_habitant', facet: { detail: 't_km_1000', sex: null },
+        status: 'available', direction: 'high', median: 5, rank: 1, rank_size: 2 }] }
+    const compared = applyThemeComparisonApiFacts(mobilityFacts(response(), '22001'), comparisons,
+      context, epciSelection)
+    expect(compared.mobility.indicators
+      .find((fact) => fact.key === 'reseaux_par_habitant' && fact.detail === 't_km_1000')
+      ?.comparison?.reference).toEqual({ kind: 'median', value: 5 })
+  })
+
   it('never interprets an unspecified comparison direction as more-is-better', () => {
     const facts = mobilityFacts(response(), '22001')
     const comparisons = { contract: 'theme-comparison-v1', theme_id: 'mobilite', profile_comparisons: [],
