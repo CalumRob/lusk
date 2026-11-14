@@ -26,7 +26,7 @@ import { SemanticMemberError } from '@/payload/semanticResourceClient'
  * honest empty state when the territory (or its type) is unknown.
  */
 import { AlertCircle, ChevronRight, SearchX } from 'lucide-vue-next'
-import { computed, inject, provide, ref, toRaw, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, provide, ref, toRaw, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
@@ -65,6 +65,7 @@ import type { AcquiredTheme, ThemeFactsDemand, ThemeKey, ThemeResponse, ThemeSel
 import { meanComparisonResources } from '@/payload/comparisonResources'
 import { AcquisitionDemandScheduler } from '@/payload/acquisitionDemand'
 import { chapitreDemande, chapitreDemandeDepuisAncre } from '@/fiche/content/demandInventory'
+import type { ChapitreDemandStatus } from '@/fiche/content/demandInventory'
 import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
@@ -150,7 +151,103 @@ const chapitreAedar = computed(() => chapitresMobilite.value[0]?.key ?? null)
 /** The first chapter that actually serves numerics (the planner's fallback). */
 const chapitreNumerique = computed(() =>
   chapitresMobilite.value.find((chapter) => chapter.indicators.length > 0)?.key ?? null)
+/**
+ * #1008 — the visible chapter is the reader's actual chapter. The explicit
+ * anchor is a NAVIGATION INTENT, not a permanent lock: it wins until its target
+ * has actually entered the existing reading band, then the visible chapter
+ * takes over even while the URL still carries that anchor. A user wheel/touch/
+ * keyboard scroll before the target lands cancels the intent, and a bounded
+ * timer covers an anchor that never lands. No history entry or route change is
+ * written by passive scrolling.
+ */
+const chapitreVisible = ref<{ key: string; generation: string } | null>(null)
+const chapitreIntent = ref<{ chapter: string; landed: boolean; epoch: number } | null>(null)
+const chapitresStatut = ref<Record<string, ChapitreDemandStatus>>({})
+let chapitreIntentEpoch = 0
+let chapitreIntentTimer: ReturnType<typeof setTimeout> | null = null
+const chapitreGeneration = computed(() => `${selection.value}|${typeRoute.value}|${idRoute.value}`)
+
+function clearChapitreIntentTimer(): void {
+  if (chapitreIntentTimer !== null) {
+    clearTimeout(chapitreIntentTimer)
+    chapitreIntentTimer = null
+  }
+}
+
+function setChapitreStatut(chapter: string | undefined, statut: ChapitreDemandStatus): void {
+  if (!chapter) return
+  chapitresStatut.value = { ...chapitresStatut.value, [chapter]: statut }
+}
+
+function resetChapitresStatut(): void { chapitresStatut.value = {} }
+
+/** The existing IntersectionObserver owner reports the page it actually reads. */
+function onChapitreVisible(anchor: string): void {
+  const key = chapitreDemandeDepuisAncre('mobilite', `#${anchor}`)
+  if (!key) return
+  chapitreVisible.value = { key, generation: chapitreGeneration.value }
+  const intent = chapitreIntent.value
+  if (intent && !intent.landed && intent.chapter === key) {
+    chapitreIntent.value = { ...intent, landed: true }
+    clearChapitreIntentTimer()
+  }
+}
+
+function armChapitreIntent(chapter: string): void {
+  clearChapitreIntentTimer()
+  const epoch = ++chapitreIntentEpoch
+  const landed = chapitreVisible.value?.key === chapter &&
+    chapitreVisible.value.generation === chapitreGeneration.value
+  chapitreIntent.value = { chapter, landed, epoch }
+  if (landed) return
+  chapitreIntentTimer = setTimeout(() => {
+    chapitreIntentTimer = null
+    if (chapitreIntent.value?.epoch === epoch && !chapitreIntent.value.landed) {
+      chapitreIntent.value = null
+    }
+  }, 1500)
+}
+
+function interrompreChapitreIntent(): void {
+  if (!chapitreIntent.value || chapitreIntent.value.landed) return
+  chapitreIntent.value = null
+  clearChapitreIntentTimer()
+}
+
+function onUserScrollIntent(event: Event): void {
+  if (event.type === 'keydown') {
+    const key = (event as KeyboardEvent).key
+    if (!['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(key)) return
+  }
+  interrompreChapitreIntent()
+}
+
+onMounted(() => {
+  window.addEventListener('wheel', onUserScrollIntent, { passive: true })
+  window.addEventListener('touchmove', onUserScrollIntent, { passive: true })
+  window.addEventListener('keydown', onUserScrollIntent)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('wheel', onUserScrollIntent)
+  window.removeEventListener('touchmove', onUserScrollIntent)
+  window.removeEventListener('keydown', onUserScrollIntent)
+  clearChapitreIntentTimer()
+})
+
+watch(() => route.hash, (hash) => {
+  const anchored = chapitreDemandeDepuisAncre('mobilite', hash)
+  if (anchored) armChapitreIntent(anchored)
+  else {
+    chapitreIntent.value = null
+    clearChapitreIntentTimer()
+  }
+}, { immediate: true })
+
 const chapitreAffiche = computed(() => {
+  const intent = chapitreIntent.value
+  if (intent && !intent.landed) return intent.chapter
+  const visible = chapitreVisible.value
+  if (visible && visible.generation === chapitreGeneration.value) return visible.key
   const anchored = chapitreDemandeDepuisAncre('mobilite', route.hash)
   if (anchored) return anchored
   // No anchor is the spine's first chapter (AEDAR); an UNKNOWN anchor falls back
@@ -160,6 +257,7 @@ const chapitreAffiche = computed(() => {
 })
 const demandeAedar = computed(() => productionMobilite.value && chapitreAedar.value !== null &&
   chapitreAffiche.value === chapitreAedar.value)
+
 /** One token per theme activation: an AEDAR summary read observes the clocks again. */
 const aedarActivation = ref(0)
 watch(selection, () => { aedarActivation.value += 1 })
@@ -932,7 +1030,7 @@ function appliquerAcquisitionMobilite(acquired: AcquiredTheme<ThemeResponse>,
  * chapter's demand into the settled entry without blanking the rendered page.
  * Only the requested chapter is ever read; no sibling is acquired speculatively.
  */
-watch(() => route.hash, async (_hash, _old, onCleanup) => {
+watch(() => chapitreDemandeMobilite(), async (critique, _old, onCleanup) => {
   if (!productionMobilite.value || !payloadPourRendu.value || !typeValide.value) return
   let cancelled = false
   onCleanup(() => { cancelled = true })
@@ -940,20 +1038,23 @@ watch(() => route.hash, async (_hash, _old, onCleanup) => {
   const code = idRoute.value
   const request = focalRequestSequence
   demandeScheduler.critical()
+  setChapitreStatut(critique, 'loading')
   try {
-    const critique = chapitreDemandeMobilite()
     const demand = critique
       ? await demandeChapitreNiveau(type, 'mobilite', critique, membresAcquisition.value)
       : undefined
     if (!demand || cancelled) return
     const acquired = await cacheAcquisition.get(type, code, 'mobilite', demand)
-    // A hash jump while this read was in flight must not commit the previous
+    // A chapter jump while this read was in flight must not commit the previous
     // chapter's result: the newer watcher owns the current request.
     if (cancelled || request !== focalRequestSequence || !payloadPourRendu.value ||
         chapitreDemandeMobilite() !== critique) return
     appliquerAcquisitionMobilite(acquired, membresAcquisition.value, demand)
+    setChapitreStatut(critique, 'ready')
     demandeScheduler.unlockIdle()
-  } catch { /* the chapter's own retry surface reports it */ }
+  } catch {
+    if (!cancelled) setChapitreStatut(critique, 'error')
+  }
 })
 
 /**
@@ -976,6 +1077,7 @@ watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
   const key = `${typeRoute.value}/${idRoute.value}/${retryFaitsMobilite.value}`
   if (reference && lastFocalKey === key && lastFocalModel === reference) return
   const request = ++focalRequestSequence
+  resetChapitresStatut()
   statutFaitsMobilite.value = 'loading'
   mobilityFocal.value = null
   mobilityComparisonFacts.value = null
@@ -998,10 +1100,11 @@ watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
   })
   const code = idRoute.value
   const type = typeRoute.value
+  const critique = chapitreDemandeMobilite()
+  setChapitreStatut(critique, 'loading')
   demandeScheduler.reset()
   demandeScheduler.critical()
   void (async () => {
-    const critique = chapitreDemandeMobilite()
     const selectionActive = membresAcquisition.value
     const demand = critique
       ? await demandeChapitreNiveau(type, 'mobilite', critique, selectionActive)
@@ -1010,7 +1113,11 @@ watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
     return { acquired, demand }
   })().then(({ acquired, demand }) => {
     if (request !== focalRequestSequence || controller.signal.aborted || !payloadPourRendu.value) return
+    // The reader may have scrolled to another chapter while this full read was
+    // in flight: the chapter watcher owns the current demand and its entry.
+    if (chapitreDemandeMobilite() !== critique) { settled = true; return }
     appliquerAcquisitionMobilite(acquired, membresAcquisition.value, demand)
+    setChapitreStatut(critique, 'ready')
     settled = true
     // The requested chapter is useful: only now may unrelated themes warm, and
     // never before it. A sibling chapter is read only when it is requested.
@@ -1018,7 +1125,8 @@ watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
     planifierRechauffementThemes(type, code, 'mobilite')
   }).catch(() => {
     settled = true
-    if (request === focalRequestSequence) {
+    if (request === focalRequestSequence && chapitreDemandeMobilite() === critique) {
+      setChapitreStatut(critique, 'error')
       statutFaitsMobilite.value = 'error'
       mobilityComparisonStatus.value = 'error'
     }
@@ -1318,7 +1426,9 @@ watch(
               :native-comparison-status="mobilityComparisonStatus"
               :native-comparison-error="membreComparaisonIndisponible ? `Données indisponibles pour ${membreComparaisonIndisponible}` : 'La lecture de la comparaison a échoué.'"
               :retry-native-comparison="retryThemeComparison"
-              :aedar-active="demandeAedar" />
+              :aedar-active="demandeAedar"
+              :chapitres-statut="chapitresStatut"
+              @chapitre-visible="onChapitreVisible" />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation
                  pliée) lit SA paire hermétique ; les autres thèmes passent

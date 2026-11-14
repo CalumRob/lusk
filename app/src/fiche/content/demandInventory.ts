@@ -19,6 +19,10 @@ import { sousGroupesFiche } from './ficheGrammar'
  * distribution and fails when the producer adds an indicator the app has not
  * placed.
  */
+/** The demand state of one visible chapter: idle before admission, then the
+ *  bounded read's own lifecycle. Never inferred from a missing fact. */
+export type ChapitreDemandStatus = 'idle' | 'loading' | 'ready' | 'error'
+
 export interface ChapterDemandInventory {
   /** The app grammar subgroup key that owns these indicators. */
   key: string
@@ -91,7 +95,11 @@ export function chapitreDemandeDepuisAncre(theme: Theme, hash: string | undefine
   const anchor = (hash ?? '').replace(/^#/, '')
   if (!anchor) return undefined
   return sousGroupesFiche(theme)
-    .find((subgroup) => anchor === subgroup.key || anchor === `figure-${subgroup.key}`)
+    .find((subgroup) => anchor === subgroup.key || anchor === `figure-${subgroup.key}` ||
+      // #1008 — the spine's page-1 entry is the special `figure-lecture`
+      // anchor (cahierPagination), not `figure-acces-aux-services`. Without
+      // this mapping a scroll back to page 1 never reactivates AEDAR.
+      (subgroup.key === 'acces-aux-services' && anchor === 'figure-lecture'))
     ?.key
 }
 

@@ -40,6 +40,7 @@ import {
 } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode, AedarTimeRampEvidence } from '@/fiche/content/themeContent'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import type { ChapitreDemandStatus } from '@/fiche/content/demandInventory'
 import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 import type { CahierPagination } from './cahierPagination'
 import CahierProse from './CahierProse.vue'
@@ -76,7 +77,10 @@ const props = withDefaults(defineProps<{
   nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   nativeComparisonError?: string
   retryNativeComparison?: () => void
+  /** #1008 — the visible chapter's admission state, owned by the demand planner. */
+  chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
 }>(), { aedarChapterActive: true })
+const emit = defineEmits<{ 'chapitre-visible': [anchor: string] }>()
 const route = useRoute()
 
 /** #860 (ruling 2026-11-03) — le contrôle de comparaison fourni par la fiche
@@ -96,6 +100,15 @@ function ouvrirConstructeur(source: HTMLButtonElement | MouseEvent | null): void
 const rootRef = ref<HTMLElement | null>(null)
 const activeFigure = ref('')
 let observer: IntersectionObserver | null = null
+/** Every spine anchor that can carry `aria-current`, including the sources entry. */
+const pageAnchors = computed(() => new Set(props.pagination.entries.map((entry) => entry.anchor)))
+/** Chapter anchors only: the sources entry is not a demand chapter. */
+const chapterAnchors = computed(() => new Set(props.pagination.entries
+  .filter((entry) => entry.page !== null)
+  .map((entry) => entry.anchor)))
+const pageElements = new Map<string, HTMLElement>()
+const pageVisibility = new Map<string, boolean>()
+let emittedChapitre: string | null = null
 
 const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
 const unit = computed(() => units.value[0] ?? null)
@@ -187,8 +200,25 @@ function sectionIsLoading(unitKey: string): boolean {
   return props.aedarStatus === 'loading' && unitKey === 'acces-aux-services'
 }
 
+/**
+ * #1008 — a chapter the demand planner has not admitted yet is pending, not
+ * factually absent. The state is only known when the route provides the
+ * planner's map; standalone prototype mounts keep their historical absence
+ * rendering.
+ */
+function sectionIsPending(unitKey: string): boolean {
+  if (unitKey === 'acces-aux-services') return sectionIsLoading(unitKey)
+  if (props.chapitresStatut === undefined) return false
+  const statut = props.chapitresStatut[unitKey]
+  return statut === undefined || statut === 'idle' || statut === 'loading'
+}
+
 function sectionState(section: ContentSection, unitKey: string): string {
   if (sectionIsLoading(unitKey)) return 'Chargement des données AEDAR…'
+  if (unitKey !== 'acces-aux-services' && props.chapitresStatut?.[unitKey] === 'error') {
+    return 'Lecture indisponible avec les données disponibles.'
+  }
+  if (sectionIsPending(unitKey)) return 'Chargement des données…'
   return section.availability === 'absent'
     ? 'Contenu indisponible pour ce territoire.'
     : 'Lecture indisponible avec les données disponibles.'
@@ -310,13 +340,33 @@ onMounted(() => {
   activeFigure.value = pageEntry.value?.anchor ?? anchorForEntry('acces-aux-services')
   if (!rootRef.value || !('IntersectionObserver' in window)) return
   const figures = [...rootRef.value.querySelectorAll<HTMLElement>('[data-figure]')]
+  for (const figure of figures) {
+    const key = figure.getAttribute('data-figure')
+    if (key && pageAnchors.value.has(key)) pageElements.set(key, figure)
+  }
   observer = new IntersectionObserver(
     (entries) => {
-      const visible = entries
-        .filter((entry) => entry.isIntersecting)
-        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-      const key = visible[0]?.target.getAttribute('data-figure')
-      if (key) activeFigure.value = key
+      // Keep the page-level visibility of every observed page, not only the
+      // entries that changed in this callback: an intermediate page can leave
+      // while the next page enters, and the reader's page is the first one
+      // actually in the existing reading band.
+      for (const entry of entries) {
+        const key = entry.target.getAttribute('data-figure')
+        if (key && pageAnchors.value.has(key)) pageVisibility.set(key, entry.isIntersecting)
+      }
+      const active = [...pageVisibility.entries()]
+        .filter(([, visible]) => visible)
+        .map(([anchor]) => ({
+          anchor,
+          top: pageElements.get(anchor)?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
+        }))
+        .sort((left, right) => left.top - right.top)[0]?.anchor
+      if (!active) return
+      activeFigure.value = active
+      if (chapterAnchors.value.has(active) && active !== emittedChapitre) {
+        emittedChapitre = active
+        emit('chapitre-visible', active)
+      }
     },
     { rootMargin: '-14% 0px -66% 0px', threshold: [0, 0.25, 0.75] },
   )
@@ -572,7 +622,7 @@ onBeforeUnmount(() => {
                       class="cahier-baseline-anchor"
                     />
                   </div>
-                  <p v-if="!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'" class="cahier-section-state" :role="sectionIsLoading(currentUnit.key) ? 'status' : 'note'">{{ sectionState(section, currentUnit.key) }}</p>
+                  <p v-if="!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'" class="cahier-section-state" :role="sectionIsPending(currentUnit.key) ? 'status' : 'note'">{{ sectionState(section, currentUnit.key) }}</p>
 
                 </div>
 

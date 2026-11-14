@@ -96,6 +96,9 @@ describe('demand inventory — Mobilite page 2', () => {
       .toBe('partage-de-lespace-public')
     expect(chapitreDemandeDepuisAncre('mobilite', '#figure-offre-transports-commun'))
       .toBe('offre-transports-commun')
+    // #1008 — the spine's page-1 anchor is the special `figure-lecture`.
+    expect(chapitreDemandeDepuisAncre('mobilite', '#figure-lecture'))
+      .toBe('acces-aux-services')
     expect(chapitreDemandeDepuisAncre('mobilite', '#figure-sources')).toBeUndefined()
     expect(chapitreDemandeDepuisAncre('mobilite', '')).toBeUndefined()
   })

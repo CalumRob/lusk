@@ -11,6 +11,7 @@ import { fetchAedarDiversityLossMapLegend } from '@/fiche/content/aedarDiversity
 import type { AedarDiversityLossMapMetadata } from '@/fiche/content/aedarDiversityLossMaps'
 import type { AedarFetchResult, AedarSummaryFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import type { ContentSource, ThemeContent } from '@/fiche/content/themeContent'
+import type { ChapitreDemandStatus } from '@/fiche/content/demandInventory'
 import type { CahierPagination } from '../prototype/cahierPagination'
 
 const props = withDefaults(defineProps<{
@@ -31,7 +32,10 @@ const props = withDefaults(defineProps<{
   retryNativeComparison?: () => void
   /** #986 — the reader is on the AEDAR (page-1) chapter: its own reads may start. */
   aedarActive?: boolean
+  /** #1008 — the visible chapter's admission state, owned by the demand planner. */
+  chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
 }>(), { aedarActive: true })
+const emit = defineEmits<{ 'chapitre-visible': [anchor: string] }>()
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
@@ -255,6 +259,8 @@ const transformed = computed(() => {
     network-figure-variant="traces"
     aedar-access-enabled
     :aedar-chapter-active="props.aedarActive !== false"
+    :chapitres-statut="props.chapitresStatut"
+    @chapitre-visible="emit('chapitre-visible', $event)"
   />
 </template>
 
