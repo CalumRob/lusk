@@ -32,7 +32,7 @@ function copyProperties(from, to, properties) {
   const style = getComputedStyle(from)
   for (const property of properties) to.style.setProperty(property, style.getPropertyValue(property))
 }
-function prepare() {
+function prepare(publicPageUrl) {
   const source = document.querySelector('.cahier')
   const clone = source.cloneNode(true)
   const width = source.getBoundingClientRect().width
@@ -68,7 +68,7 @@ function prepare() {
   header.style.cssText = 'display:grid;grid-template-columns:1fr auto 1fr;align-items:center;column-gap:20px;padding-bottom:12px;'
   const brand = document.querySelector('.en-tete .lusk-marque').cloneNode(true)
   const home = document.createElement('a')
-  home.href = new URL('/', window.desktopPublicPageUrl).href
+  home.href = new URL('/', publicPageUrl).href
   home.style.cssText = 'display:inline-flex;justify-self:start;align-items:center;text-decoration:none;color:inherit;'
   home.appendChild(brand)
   const title = originalChapter.querySelector('.page-heading h2').cloneNode(true)
@@ -81,7 +81,7 @@ function prepare() {
   copyProperties(document.querySelector('.bouton-contact svg'), link, ['width', 'height', 'color', 'stroke-width'])
   link.style.color = getComputedStyle(originalChapter.querySelector('.page-heading-territory')).color
   right.append(territory, link)
-  right.href = window.desktopPublicPageUrl
+  right.href = publicPageUrl
   header.append(home, title, right)
   const main = chapter.querySelector('.page-main')
   header.style.width = `${main.getBoundingClientRect().width}px`
@@ -235,18 +235,26 @@ async function paint(pdf, element, placement, fontFor, stats) {
   await visit(element)
 }
 
-export async function exportDesktop() {
+export async function exportDesktop({ sectionKey } = {}) {
   if (!ready()) throw new Error('Cahier not ready')
   await document.fonts.ready
   const start = performance.now()
-  const ui = prepare()
+  const root = instances()[0]
+  const content = root.props.content.units[0]
+  const selectedSection = sectionKey ? content.sections.find(section => section.key === sectionKey) : null
+  if (sectionKey && !selectedSection) throw new Error(`Unknown section: ${sectionKey}`)
+  const publicPageUrl = new URL(window.desktopPublicPageUrl)
+  if (sectionKey) publicPageUrl.hash = `section-${sectionKey}`
+  const ui = prepare(publicPageUrl.href)
   try {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    const root = instances()[0]
     const overview = root.props.content.units[0].sections[0].evidence
     const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true, putOnlyUsedFonts: true })
     const fontFor = await loadFonts(pdf)
-    const blocks = [ui.chapter.querySelector('.page-copy'), ...ui.chapter.querySelectorAll('.concept-group')]
+    const sectionBlocks = [...ui.chapter.querySelectorAll('.concept-group')]
+    const blocks = sectionKey ? sectionBlocks.filter(block => block.dataset.section === sectionKey)
+      : [ui.chapter.querySelector('.page-copy'), ...sectionBlocks]
+    if (!blocks.length) throw new Error('Requested section has no rendered content')
     const bounds = blocks.map(block => block.getBoundingClientRect())
     const sizes = blocks.map((block, index) => ({ key: block.dataset.section ?? 'introduction', height: bounds[index].height,
       precedingGap: index ? Math.max(0, bounds[index].top - bounds[index - 1].bottom) : 0 }))
@@ -278,19 +286,19 @@ export async function exportDesktop() {
       pdf.setFont(fontFor(footerStyle), 'normal'); pdf.setFontSize(7)
       pdf.setTextColor(...rgba(p.getPropertyValue('--muted')).slice(0, 3))
       pdf.text(`${COMPARISON_MARK} ${GROUPE_COMPARE_LABEL} : ${overview.comparisonLabel}`, left, H - 35)
-      const invitation = `${FOOTER_INVITATION} ${new URL(window.desktopPublicPageUrl).hostname}`
+      const invitation = `${FOOTER_INVITATION} ${publicPageUrl.hostname}`
       pdf.text(invitation, left, H - 23)
-      pdf.link(left, H - 31, pdf.getTextWidth(invitation), 11, { url: new URL('/', window.desktopPublicPageUrl).href })
+      pdf.link(left, H - 31, pdf.getTextWidth(invitation), 11, { url: new URL('/', publicPageUrl).href })
       pdf.text(`${index + 1} / ${pages.length}`, W - left, H - 24, { align: 'right' })
     }
-    pdf.setProperties({ title: `${root.props.content.territory.name} — ${root.props.content.units[0].label}`, subject: overview.comparisonLabel, author: 'Lusk · desktop PDF prototype' })
+    pdf.setProperties({ title: `${root.props.content.territory.name} — ${content.label}${selectedSection ? ` — ${selectedSection.label}` : ''}`, subject: overview.comparisonLabel, author: 'Lusk · desktop PDF prototype' })
     const blob = pdf.output('blob')
     const link = document.createElement('a'); const url = URL.createObjectURL(blob)
-    link.href = url; link.download = 'rennes-desktop-epci.pdf'; link.click()
+    link.href = url; link.download = sectionKey ? `cahier-${root.props.content.territory.code}-${sectionKey}.pdf` : 'rennes-desktop-epci.pdf'; link.click()
     setTimeout(() => URL.revokeObjectURL(url), 30000)
     return { bytes: blob.size, totalMs: performance.now() - start, ...stats, scale,
       desktopWidth, pageContentHeight: capacity, removedInactiveControls: ui.removed,
       pages: pages.map(page => ({ occupiedHeight: page.used, centeringInset: (capacity - page.used) / 2, sections: page.items.map(item => item.key) })),
-      sectionSizes: sizes, url: window.desktopPublicPageUrl }
+      sectionSizes: sizes, url: publicPageUrl.href, sectionKey: sectionKey ?? null, sectionLabel: selectedSection?.label ?? null }
   } finally { ui.clone.remove() }
 }

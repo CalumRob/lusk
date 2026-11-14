@@ -3,7 +3,8 @@ import { createServer } from 'vite'
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
-const out = 'E:/Temp/opencode/cahier-desktop-pdf'
+const sectionsOnly = process.argv.includes('--sections')
+const out = sectionsOnly ? 'E:/Temp/opencode/cahier-section-pdf' : 'E:/Temp/opencode/cahier-desktop-pdf'
 await mkdir(out, { recursive: true })
 const server = await createServer({ optimizeDeps: { include: ['jspdf', 'svg2pdf.js'] }, server: { host: '127.0.0.1', port: 5198, strictPort: true } })
 await server.listen()
@@ -39,11 +40,15 @@ try {
     publicUrl.port = new URL(server.config.server.proxy['/api'].target).port
     publicUrl.protocol = new URL(server.config.server.proxy['/api'].target).protocol
     await page.evaluate(url => { window.desktopPublicPageUrl = url }, publicUrl.href)
-    const pending = page.waitForEvent('download', { timeout: 120000 })
-    const receipt = await page.evaluate(() => window.desktopPdf.exportDesktop())
-    await (await pending).saveAs(`${out}/rennes-desktop-epci.pdf`)
-    await writeFile(`${out}/receipt.json`, JSON.stringify(receipt, null, 2))
-    console.log(receipt)
+    const scopes = sectionsOnly ? ['aedar-diversity-loss', 'aedar-equipment-profile'] : [null]
+    for (const sectionKey of scopes) {
+      const pending = page.waitForEvent('download', { timeout: 120000 })
+      const receipt = await page.evaluate(sectionKey => window.desktopPdf.exportDesktop({ sectionKey }), sectionKey)
+      const stem = sectionKey ? `rennes-${sectionKey}` : 'rennes-desktop-epci'
+      await (await pending).saveAs(`${out}/${stem}.pdf`)
+      await writeFile(`${out}/${sectionKey ? `${stem}-receipt` : 'receipt'}.json`, JSON.stringify(receipt, null, 2))
+      console.log(receipt)
+    }
   }
 } catch (error) {
   if (page && !page.isClosed()) await writeFile(`${out}/failure.txt`, await page.locator('body').innerText())

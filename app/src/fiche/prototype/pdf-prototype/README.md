@@ -183,3 +183,23 @@ After generating the PDF, run `python scripts/verify-prototype-desktop-pdf.py`
 from `app/` (local PyMuPDF needed). It checks the real artifact's font provenance,
 header/homepage/CTA URLs, internal footnote destinations, dashed legend paths,
 page dimensions and retained text/vector output.
+
+## Per-section comparison experiment
+
+Run `npm run prototype:section-pdf` from `app/`. It exports the real Rennes/EPCI
+loss-map section and waffle section as separate PDFs under
+`E:/Temp/opencode/cahier-section-pdf/`. Both currently fit one portrait A4 sheet.
+The maps file is about 1.29 MB; the entirely vector/text waffle file is about
+85 KB. These are generated artifacts, not production export buttons.
+
+The same `exportDesktop({ sectionKey })` renderer selects a section by its actual
+resolved content identity. Unknown keys are rejected; there is no second section
+template. Title metadata and the public page's section fragment derive from that
+identity. Header, inline sources, active controls, comparison context, footer and
+selectable text remain. The chapter introduction and unrelated sections are not
+included. This changes capture scope, not the live page's acquisition strategy.
+
+The waffle's short desktop composition leaves substantial whitespace on portrait
+A4 when centred at the existing width-derived scale. Per-section export exposes
+that layout choice; it does not by itself make the figure bigger or justify
+stretching it. A content-sized or landscape variant would be a separate decision.
