@@ -4,6 +4,11 @@
 import { jsPDF } from 'jspdf'
 import 'svg2pdf.js'
 import { instances, ready } from './rennes'
+import { cornerRadii, borderPattern, boxPath } from './paintGeometry'
+import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
+
+const COMPARISON_MARK = '¹'
+const FOOTER_INVITATION = 'Retrouvez les cartes et explorez les données sur'
 
 const rgbCanvas = document.createElement('canvas')
 rgbCanvas.width = rgbCanvas.height = 1
@@ -41,12 +46,31 @@ function prepare() {
     ;(button.closest('.cahier-figure-legend-item') ?? button).remove()
   })
   chapter.querySelectorAll('[role="tooltip"], .cahier-figure-tooltip, .aedar-waffle-explore, .aedar-equipment-explorer-change, .cahier-section-footer, .aedar-comparison-retry-slot, .aedar-waffle-tile-tooltip').forEach(element => element.remove())
+  const textWalker = document.createTreeWalker(chapter, NodeFilter.SHOW_TEXT)
+  const comparisonLabels = []
+  while (textWalker.nextNode()) {
+    const node = textWalker.currentNode
+    if (node.parentElement.closest('.cahier-figure-legend-label, .cahier-comparison-value__reference') && node.data.includes(GROUPE_COMPARE_LABEL)) comparisonLabels.push(node)
+  }
+  comparisonLabels.forEach(node => {
+    const tail = node.splitText(node.data.indexOf(GROUPE_COMPARE_LABEL) + GROUPE_COMPARE_LABEL.length)
+    const reference = document.createElement('a')
+    reference.href = '#pdf-comparison-context'
+    reference.dataset.pdfFooterReference = ''
+    reference.style.cssText = 'font:inherit;color:inherit;text-decoration:none;'
+    reference.textContent = COMPARISON_MARK
+    node.parentNode.insertBefore(document.createTextNode(' '), tail)
+    node.parentNode.insertBefore(reference, tail)
+  })
   clone.querySelectorAll('.page-heading').forEach(element => { element.style.position = 'static' })
 
   const header = document.createElement('div')
   header.style.cssText = 'display:grid;grid-template-columns:1fr auto 1fr;align-items:center;column-gap:20px;padding-bottom:12px;'
   const brand = document.querySelector('.en-tete .lusk-marque').cloneNode(true)
-  brand.style.justifySelf = 'start'
+  const home = document.createElement('a')
+  home.href = new URL('/', window.desktopPublicPageUrl).href
+  home.style.cssText = 'display:inline-flex;justify-self:start;align-items:center;text-decoration:none;color:inherit;'
+  home.appendChild(brand)
   const title = originalChapter.querySelector('.page-heading h2').cloneNode(true)
   copyProperties(originalChapter.querySelector('.page-heading h2'), title, ['font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing', 'color'])
   title.style.cssText += ';margin:0;text-align:center;white-space:nowrap;'
@@ -58,7 +82,7 @@ function prepare() {
   link.style.color = getComputedStyle(originalChapter.querySelector('.page-heading-territory')).color
   right.append(territory, link)
   right.href = window.desktopPublicPageUrl
-  header.append(brand, title, right)
+  header.append(home, title, right)
   const main = chapter.querySelector('.page-main')
   header.style.width = `${main.getBoundingClientRect().width}px`
   header.style.borderBottom = getComputedStyle(originalChapter.querySelector('.page-heading')).borderBottom
@@ -164,21 +188,19 @@ async function paint(pdf, element, placement, fontFor, stats) {
       stats.svgs++
       return
     }
-    fill(style.backgroundColor, () => {
-      const radius = style.borderRadius.includes('%') ? Math.min(box.w, box.h) / 2 : Math.min(parseFloat(style.borderRadius) * scale || 0, box.w / 2, box.h / 2)
-      pdf.roundedRect(box.x, box.y, box.w, box.h, radius, radius, 'F')
-    })
-    const radius = style.borderRadius.includes('%') ? Math.min(box.w, box.h) / 2 : Math.min(parseFloat(style.borderRadius) * scale || 0, box.w / 2, box.h / 2)
-    const uniformBorder = radius > 0 && ['Right', 'Bottom', 'Left'].every(edge => style[`border${edge}Width`] === style.borderTopWidth && style[`border${edge}Color`] === style.borderTopColor)
+    const corners = cornerRadii(style, box.w, box.h, scale)
+    fill(style.backgroundColor, () => { pdf.path(boxPath(box, corners)).fill() })
+    const uniformBorder = corners.some(corner => corner.some(value => value > 0)) && ['Right', 'Bottom', 'Left'].every(edge => style[`border${edge}Width`] === style.borderTopWidth && style[`border${edge}Color`] === style.borderTopColor)
     if (uniformBorder && parseFloat(style.borderTopWidth)) fill(style.borderTopColor, () => {
       pdf.setLineWidth(parseFloat(style.borderTopWidth) * scale)
-      pdf.roundedRect(box.x, box.y, box.w, box.h, radius, radius, 'S')
+      pdf.path(boxPath(box, corners)).stroke()
     })
     for (const edge of uniformBorder ? [] : ['Top', 'Right', 'Bottom', 'Left']) {
       const width = parseFloat(style[`border${edge}Width`])
       if (!width || style[`border${edge}Style`] === 'none') continue
       fill(style[`border${edge}Color`], () => {
         pdf.setLineWidth(width * scale)
+        pdf.setLineDashPattern(borderPattern(style[`border${edge}Style`], width * scale), 0)
         if (edge === 'Top') pdf.line(box.x, box.y, box.x + box.w, box.y)
         if (edge === 'Bottom') pdf.line(box.x, box.y + box.h, box.x + box.w, box.y + box.h)
         if (edge === 'Left') pdf.line(box.x, box.y, box.x, box.y + box.h)
@@ -198,13 +220,15 @@ async function paint(pdf, element, placement, fontFor, stats) {
     const clipsChildren = ['hidden', 'clip'].includes(style.overflowX) || ['hidden', 'clip'].includes(style.overflowY)
     if (clipsChildren) {
       pdf.saveGraphicsState()
-      pdf.roundedRect(box.x, box.y, box.w, box.h, radius, radius, null)
+      pdf.path(boxPath(box, corners))
       pdf.clip(); pdf.discardPath()
     }
     for (const child of node.childNodes) await visit(child)
     if (clipsChildren) pdf.restoreGraphicsState()
     if (node instanceof HTMLAnchorElement && node.href) {
-      pdf.link(box.x, box.y, box.w, box.h, { url: node.href })
+      pdf.link(box.x, box.y, box.w, box.h, node.hasAttribute('data-pdf-footer-reference')
+        ? { pageNumber: pdf.internal.getCurrentPageInfo().pageNumber, top: pdf.internal.pageSize.getHeight() - 38 }
+        : { url: node.href })
       stats.links++
     }
   }
@@ -253,7 +277,10 @@ export async function exportDesktop() {
       const footerStyle = getComputedStyle(ui.chapter.querySelector('.cahier-evidence-source') ?? ui.chapter.querySelector('p'))
       pdf.setFont(fontFor(footerStyle), 'normal'); pdf.setFontSize(7)
       pdf.setTextColor(...rgba(p.getPropertyValue('--muted')).slice(0, 3))
-      pdf.text(overview.comparisonLabel, left, H - 24)
+      pdf.text(`${COMPARISON_MARK} ${GROUPE_COMPARE_LABEL} : ${overview.comparisonLabel}`, left, H - 35)
+      const invitation = `${FOOTER_INVITATION} ${new URL(window.desktopPublicPageUrl).hostname}`
+      pdf.text(invitation, left, H - 23)
+      pdf.link(left, H - 31, pdf.getTextWidth(invitation), 11, { url: new URL('/', window.desktopPublicPageUrl).href })
       pdf.text(`${index + 1} / ${pages.length}`, W - left, H - 24, { align: 'right' })
     }
     pdf.setProperties({ title: `${root.props.content.territory.name} — ${root.props.content.units[0].label}`, subject: overview.comparisonLabel, author: 'Lusk · desktop PDF prototype' })

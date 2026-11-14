@@ -28,7 +28,11 @@ for package in Path("node_modules/@fontsource-variable").iterdir():
 
 manifest = []
 for spec in inventory["fonts"]:
-    source = sources.get((spec["family"], spec["style"])) or sources.get((spec["family"], "normal"))
+    # Match the actual browser's loaded face, not every face installed in npm.
+    # The site currently synthesizes Newsreader italics from its normal face.
+    loaded_styles = {face["style"] for face in inventory["loadedFaces"] if face["family"] == spec["family"]}
+    source_style = spec["style"] if spec["style"] in loaded_styles else "normal"
+    source = sources.get((spec["family"], source_style))
     if not source:
         raise RuntimeError(f"No site font source for {spec}")
     font = TTFont(source)
@@ -41,14 +45,14 @@ for spec in inventory["fonts"]:
         transformed = {}
         for name in font.getGlyphOrder():
             pen = TTGlyphPen(glyphs)
-            glyphs[name].draw(TransformPen(pen, (1, 0, .212556, 1, 0, 0)))
+            glyphs[name].draw(TransformPen(pen, (1, 0, .25, 1, 0, 0)))
             transformed[name] = pen.glyph()
         for name, glyph in transformed.items():
             font["glyf"][name] = glyph
-        font["post"].italicAngle = -12
+        font["post"].italicAngle = -14
     font.flavor = None
     key = re.sub(r"[^a-zA-Z0-9]+", "-", f"{spec['family']}-{spec['weight']}-{spec['style']}")
     font.save(destination / f"{key}.ttf")
-    manifest.append({**spec, "key": key, "url": f"/prototype-pdf-fonts/{key}.ttf"})
+    manifest.append({**spec, "key": key, "url": f"/prototype-pdf-fonts/{key}.ttf", "source": source.as_posix(), "sourceStyle": "italic" if "-italic" in source.name else "normal"})
 (destination / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf8")
 print(f"Derived {len(manifest)} PDF faces from the installed site fonts.")

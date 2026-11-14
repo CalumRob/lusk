@@ -24,10 +24,12 @@ try {
       const spec = { family: style.fontFamily.split(',')[0].replaceAll(/["']/g, '').trim(), weight: Number(style.fontWeight), style: style.fontStyle, size: style.fontSize }
       return [JSON.stringify([spec.family, spec.weight, spec.style]), spec]
     })).values()]
-    return { fonts, width: document.querySelector('#figure-lecture .page-main').getBoundingClientRect().width,
+    const loadedFaces = [...document.fonts].filter(face => face.status === 'loaded').map(face => ({ family: face.family.replaceAll(/["']/g, '').trim(), style: face.style, weight: face.weight }))
+    return { fonts, loadedFaces, width: document.querySelector('#figure-lecture .page-main').getBoundingClientRect().width,
       sections: [...document.querySelectorAll('#figure-lecture .concept-group')].map(element => ({ key: element.dataset.section, height: element.getBoundingClientRect().height })) }
   })
   await writeFile(`${out}/inventory.json`, JSON.stringify(inventory, null, 2))
+  await page.locator('.en-tete .lusk-marque').screenshot({ path: `${out}/site-brand.png` })
   console.log(inventory)
   if (!process.argv.includes('--inventory')) {
     execFileSync('python', ['scripts/prototype-pdf-fonts.py', `${out}/inventory.json`], { stdio: 'inherit' })

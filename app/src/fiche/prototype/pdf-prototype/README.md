@@ -159,3 +159,27 @@ need adapter work. Vue dev internals are still used only for readiness/context.
 New site design features must be verified; automatic perfect fidelity for every
 future CSS change is not promised. The untouched live site is not modified by
 capture: pruning occurs in an off-screen DOM clone, removed in `finally`.
+
+### Legend/brand/footer corrections
+
+The legend defect was in the adapter: it parsed the first radius of a CSS
+four-corner value as a uniform radius, creating gaps between swatches, and drew
+CSS dashed borders as solid lines. `paintGeometry.js` now preserves all four
+elliptical corner radii and border dash patterns. Regressions run offline with
+`node --test scripts/prototype-desktop-paint.test.mjs`.
+
+The wordmark defect was font selection, not the brand component: the helper
+chose the package's true italic Newsreader face, but the site imports only its
+normal face and synthesizes italics. Font generation now consults the actual
+loaded browser faces before selecting its source. The manifest records source
+provenance so this can be checked without guessing from a family name.
+
+The cloned brand links home. A clickable superscript `¹` beside both legend and
+scalar comparison labels jumps to the matching context on that sheet's footer.
+The footer also contains a small linked invitation to visit the site. URLs derive
+from the existing public-page URL, not duplicated territory identities.
+
+After generating the PDF, run `python scripts/verify-prototype-desktop-pdf.py`
+from `app/` (local PyMuPDF needed). It checks the real artifact's font provenance,
+header/homepage/CTA URLs, internal footnote destinations, dashed legend paths,
+page dimensions and retained text/vector output.
