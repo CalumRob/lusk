@@ -2049,7 +2049,7 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
       dataset: `${RACCORDEMENT_GTFS_FIXTURE_SOURCE} (issue #728)`,
       publisher: 'Lusk',
       url: 'https://github.com/CalumRob/lusk',
-      licence: 'ODbL — © OpenStreetMap contributors (GTFS SNCF/Korrigo) et licences des sources ouvertes',
+      licence: 'ODbL – © OpenStreetMap contributors (GTFS SNCF/Korrigo)',
       vintage: RACCORDEMENT_GTFS_FIXTURE_VINTAGE.version,
       freshness: RACCORDEMENT_GTFS_FIXTURE_VINTAGE.datePublication,
       vintages: [{ ...RACCORDEMENT_GTFS_FIXTURE_VINTAGE }],
