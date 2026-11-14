@@ -132,23 +132,33 @@ describe('Mobilité page 3 — Couverture du territoire + Visiter la Bretagne', 
     const publishedLabel = publicMetadata.indicator_labels!.offre_tc!
     expect(shareSection.get('figcaption.cahier-figure-title').text()).toBe(publishedLabel)
     expect(publishedLabel).toContain('500 m')
-    const share = shareSection.get('.mobilite-share-track__graphic')
+    const share = shareSection.get('[data-row="territory"] .mobilite-share-track__track')
     expect(share.attributes('role')).toBe('img')
     const shareAria = share.attributes('aria-label')!
     expect(shareAria).toContain(publishedLabel)
-    expect(shareAria).toContain('Groupe comparé')
-    const shareFill = share.get('.mobilite-share-track__fill')
-    expect(Number(shareFill.attributes('data-value'))).toBeCloseTo(offre.value!, 12)
-    expect(share.get('.mobilite-share-track__value').text()).toContain(' %')
-    expect(shareAria).toContain(`${Math.round(offre.value! * 100)} %`)
+    expect(shareAria).toContain(facts.territory.name)
+    const shareValue = shareSection.get('[data-row="territory"] .mobilite-share-track__value')
+    expect(Number(shareValue.attributes('data-value'))).toBeCloseTo(offre.value!, 12)
+    expect(shareValue.text()).toContain(' %')
+    // One decimal, and the served 0,9957… never reads as a synthetic 100 %.
+    expect(shareValue.text()).toContain(`${new Intl.NumberFormat('fr-FR', {
+      minimumFractionDigits: 1, maximumFractionDigits: 1,
+    }).format(offre.value! * 100)} %`)
+    expect(shareAria).toContain(`${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 4 })
+      .format(offre.value! * 100)} %`)
     const reference = offre.comparison!.reference!
-    const referenceTick = share.get('.mobilite-share-track__reference')
-    expect(Number(referenceTick.attributes('data-value'))).toBeCloseTo(reference.value, 12)
-    expect(share.get('.mobilite-share-track__reference-value').text()).toContain(`${Math.round(reference.value * 100)}`)
-    expect(shareAria).toContain(`${Math.round(reference.value * 100)} %`)
-    expect(shareAria).toContain(comparisonContext.scope.label)
-    expect(shareSection.text()).toContain('Groupe comparé')
+    const comparisonRow = shareSection.get('[data-row="comparison"]')
+    expect(comparisonRow.get('.mobilite-share-track__label').text()).toBe('Groupe comparé')
+    expect(Number(comparisonRow.get('.mobilite-share-track__value').attributes('data-value')))
+      .toBeCloseTo(reference.value, 12)
+    expect(comparisonRow.get('.mobilite-share-track__track').attributes('aria-label'))
+      .toContain(comparisonContext.scope.label)
+    // The shared served rank is centred below the compared bar.
+    expect(comparisonRow.get('.cahier-rank--comparison').text()).toBeTruthy()
     expect(shareSection.text()).not.toContain('nb_buildings')
+    // No category legend and no 0 %/100 % endpoint labels on the coverage figure.
+    expect(shareSection.find('.cahier-figure-legend').exists()).toBe(false)
+    expect(shareSection.find('.mobilite-share-track__scale').exists()).toBe(false)
 
     // Curve: full native grid, named marker and brand territory line.
     const curve = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe')
@@ -157,7 +167,8 @@ describe('Mobilité page 3 — Couverture du territoire + Visiter la Bretagne', 
     const figure = curveSection.get('.mobilite-raccordement-curve')
     const svg = figure.get('svg[role="img"]')
     const curveAria = svg.attributes('aria-label')!
-    expect(curveAria).toContain(trajectory.trajectory.axisLabels!.x)
+    expect(curveAria).toContain('Population bretonne joignable selon le temps de trajet')
+    expect(curveAria).toContain('Axe horizontal : Temps de trajet.')
     expect(curveAria).toContain(trajectory.trajectory.axisLabels!.y)
     expect(curveAria).toContain(trajectory.trajectory.marker!.label)
     expect(curveAria).toContain('Groupe comparé')
@@ -165,16 +176,23 @@ describe('Mobilité page 3 — Couverture du territoire + Visiter la Bretagne', 
     expect(curveAria).toContain(comparisonContext.scope.label)
     expect(curveAria).toContain('Rang')
     expect(curveAria).toContain('%')
-    expect(figure.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(curve.length)
+    // One straight-segment path through every published point, no point chain.
+    const curvePath = figure.get('.mobilite-raccordement-curve__territory').attributes('d')!
+    expect((curvePath.match(/L/gu) ?? [])).toHaveLength(curve.length - 1)
+    expect(figure.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(0)
+    expect(figure.findAll('circle')).toHaveLength(0)
     expect(figure.findAll('.cahier-figure-tick-label--x')).toHaveLength(
       trajectory.trajectory.ticks!.length,
     )
     expect(figure.text()).toContain('1 h 30')
     const marker = figure.get('.mobilite-raccordement-curve__marker')
     expect(marker.attributes('data-detail')).toBe(trajectory.trajectory.marker!.detail)
-    expect(figure.get('.mobilite-raccordement-curve__marker-label').text()).toBe(
-      trajectory.trajectory.marker!.label,
-    )
+    expect(marker.find('.mobilite-raccordement-curve__marker-line').exists()).toBe(true)
+    // The 90-minute dot and its on-plot label are retired; only the dashed
+    // reference line remains at the published coordinate.
+    expect(figure.find('.mobilite-raccordement-curve__marker-point').exists()).toBe(false)
+    expect(figure.find('.mobilite-raccordement-curve__marker-label').exists()).toBe(false)
+    expect(figure.find('text').exists()).toBe(false)
     const comparisonPath = figure.get('.mobilite-raccordement-curve__comparison')
     expect(comparisonPath.attributes('d')).toContain('M')
     expect(comparisonPath.attributes('class')).toContain('mobilite-raccordement-curve__comparison')
@@ -188,16 +206,22 @@ describe('Mobilité page 3 — Couverture du territoire + Visiter la Bretagne', 
     await figure.get('.mobilite-raccordement-curve__hit-surface').trigger('focus')
     const tooltip = figure.get('.mobilite-raccordement-curve__tooltip')
     expect(tooltip.text()).not.toContain('%')
-    const comparisonRow = tooltip.findAll('.cahier-figure-tooltip-row')
+    const tooltipComparisonRow = tooltip.findAll('.cahier-figure-tooltip-row')
       .find((row) => (row.attributes('aria-label') ?? '').includes('Groupe comparé'))!
-    expect(comparisonRow.attributes('aria-label')).toContain('%')
-    expect(comparisonRow.attributes('aria-label')).toContain('Moyenne')
-    expect(comparisonRow.attributes('aria-label')).toContain(comparisonContext.scope.label)
+    expect(tooltipComparisonRow.attributes('aria-label')).toContain('%')
+    expect(tooltipComparisonRow.attributes('aria-label')).toContain('Moyenne')
+    expect(tooltipComparisonRow.attributes('aria-label')).toContain(comparisonContext.scope.label)
 
     // Source stamps name the actual producers and keep their published URL.
     expect(shareSection.get('.cahier-evidence-source a').text()).toBe('Bretagne Mobilité')
     expect(curveSection.get('.cahier-evidence-source a').text()).toBe('Lusk')
     expect(curveSection.get('.cahier-evidence-source a').attributes('href')).toContain('github.com/CalumRob/lusk')
+    // The compact stamp states the source month (from its served clock) and the
+    // owner-approved licence; no vague catch-all and no fabricated attribution.
+    const curveStamp = curveSection.get('.cahier-evidence-source').text()
+    expect(curveStamp).toContain('Lusk 2026-10')
+    expect(curveStamp).toContain('ODbL – © OpenStreetMap contributors (GTFS SNCF/Korrigo)')
+    expect(curveStamp).not.toContain('et licences des sources ouvertes')
     expect(shareSection.text()).not.toContain('Marelle')
     expect(curveSection.text()).not.toContain('Marelle')
   })

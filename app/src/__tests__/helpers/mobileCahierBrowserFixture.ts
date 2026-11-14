@@ -166,6 +166,7 @@ export async function mountCahierMobiliteRaccordementCurve(container: Element) {
   const evidence: MobiliteRaccordementEvidence = {
     kind: 'mobilite-raccordement',
     figureTitle: page.label ?? 'Courbe de population bretonne jointe selon le temps de trajet',
+    xAxisTitle: 'Temps de trajet',
     territoryName: 'Rennes',
     level: 'commune',
     points,

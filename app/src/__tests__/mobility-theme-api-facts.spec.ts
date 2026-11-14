@@ -309,10 +309,12 @@ describe('SQL Mobilité response to Variant E facts', () => {
     } })
     expect(rendered.find('[data-series="territory"]').exists()).toBe(true)
     expect(rendered.find('[data-series="reference"]').exists()).toBe(false)
-    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(axes.length)
+    // Every published point flows into the single plotted path; no dot chain.
+    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(0)
+    expect((((rendered.find('[data-series="territory"]').attributes('d') ?? '').match(/L/g)) ?? []))
+      .toHaveLength(axes.length - 1)
+    expect(section.evidence.points.map((point) => String(point.fact.value))).toEqual(values.map(String))
     expect(rendered.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
-    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory').map((point)=>point.attributes('data-value')))
-      .toEqual(values.map(String))
   })
   it('renders the producer-derived synthetic mean curve separately from the focal curve and named reference', () => {
     const synthetic = nativeRaccordementReads()
@@ -326,7 +328,8 @@ describe('SQL Mobilité response to Variant E facts', () => {
     const rendered = mount(CahierMobiliteRaccordementCurve, { props: {
       figure: section.evidence, comparison: { status: 'ready' },
     } })
-    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(axes.length)
+    // Every published point is drawn by the single path; no permanent dot chain.
+    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(0)
     expect(rendered.find('.mobilite-raccordement-curve__comparison').exists()).toBe(true)
     expect(((rendered.find('[data-series="territory"]').attributes('d') ?? '').match(/L/g) ?? [])).toHaveLength(axes.length - 1)
     expect(((rendered.find('.mobilite-raccordement-curve__comparison').attributes('d') ?? '').match(/L/g) ?? [])).toHaveLength(axes.length - 1)
@@ -571,8 +574,8 @@ describe('SQL Mobilité response to Variant E facts', () => {
     const rendered = mount(CahierMobiliteRaccordementCurve, { props: {
       figure: section.evidence, comparison: { status: 'idle' },
     } })
-    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(contract.axisValues.length)
-    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory')[0]?.attributes('data-value')).toBe('0')
+    expect(rendered.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(0)
+    expect(rendered.find('[data-series="territory"]').exists()).toBe(true)
     expect(((rendered.find('[data-series="territory"]').attributes('d') ?? '').match(/L/g) ?? [])
       .length).toBe(contract.axisValues.length - 1)
     expect(rendered.text()).not.toContain('sans transport')

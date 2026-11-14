@@ -45,6 +45,14 @@ const props = defineProps<{
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 
+/**
+ * #1006 — an explicit « Aucune comparaison » (the header control's empty
+ * selection) is not an unavailable comparison: the compared row disappears
+ * instead of showing a failure. The state comes from the selection the control
+ * already provides; the delegate never widens its props to carry it.
+ */
+const comparisonNone = computed(() => control.value?.selection.etat === 'vide')
+
 const effectiveComparison = computed(() => {
   if (props.comparison.status !== 'ready') return props.comparison
   const selection = control.value?.selection
@@ -71,7 +79,9 @@ const curve = computed<MobiliteRaccordementEvidence | null>(() =>
 function stampSource(source: ContentSource): AedarEvidenceSource {
   return {
     label: source.source,
-    version: source.version,
+    // The compact stamp uses the app-owned display precision when the served
+    // version is an opaque token; the factual version stays in the carnet.
+    version: source.displayVersion ?? source.version,
     url: source.url ?? '',
     credit: source.licence ?? null,
   }
@@ -261,21 +271,25 @@ function ratioAriaLabel(
       </section>
     </div>
 
-    <div v-else-if="share" class="mobilite-section-spread">
+    <div v-else-if="share" class="mobilite-section-spread mobilite-section-spread--centred">
       <div class="mobilite-section-copy">
         <CahierProse class="argument-copy" :blocks="share.prose" />
         <div v-if="share.sources.length" class="mobilite-section-sources">
           <template v-for="source in share.sources" :key="`share-${source.id}-${source.version}`">
             <CahierEvidenceSource v-if="source.url" :source="stampSource(source)" />
             <p v-else class="cahier-evidence-source mobilite-source-stamp" data-source-url-missing>
-              {{ source.source }} {{ source.version }}<span v-if="source.licence"> · {{ source.licence }}</span>
+              {{ source.source }} {{ source.displayVersion ?? source.version }}<span v-if="source.licence"> · {{ source.licence }}</span>
             </p>
           </template>
         </div>
       </div>
       <figure class="mobilite-section-figure">
         <figcaption class="cahier-figure-title">{{ share.figureTitle }}</figcaption>
-        <CahierMobiliteShareTrack :figure="share" :comparison="effectiveComparison" />
+        <CahierMobiliteShareTrack
+          :figure="share"
+          :comparison="effectiveComparison"
+          :comparison-none="comparisonNone"
+        />
       </figure>
     </div>
 
@@ -303,6 +317,9 @@ function ratioAriaLabel(
 .mobilite-section { display: grid; gap: var(--space-6); min-width: 0; }
 .mobilite-networks-maps { min-width: 0; }
 .mobilite-section-spread { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: clamp(var(--space-4), 3vw, var(--space-8)); align-items: start; }
+/* #1006 — the coverage prose column is vertically centred against its figure
+ * on desktop; the mobile stack keeps natural sequential reading. */
+.mobilite-section-spread--centred { align-items: center; }
 .mobilite-section-stack { display: grid; gap: var(--space-4); min-width: 0; }
 .mobilite-section-copy { display: grid; gap: var(--space-3); align-content: start; min-width: 0; }
 .mobilite-section-copy .argument-copy { margin: 0; }
@@ -340,6 +357,9 @@ function ratioAriaLabel(
 @media (max-width: 760px) {
   .mobilite-section-spread,
   .mobilite-paired { grid-template-columns: minmax(0, 1fr); }
+  /* Single column: centring the cross axis would shrink the stacked boxes, so
+   * the coverage spread returns to the natural reading alignment. */
+  .mobilite-section-spread--centred { align-items: stretch; }
   .mobilite-paired { grid-template-rows: none; }
   .mobilite-paired-column { grid-row: auto; grid-template-rows: none; display: grid; gap: var(--space-4); }
 }

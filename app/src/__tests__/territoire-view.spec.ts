@@ -1520,11 +1520,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const reads = () => requests.flat()
 
     expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
-    const territoryPoints = wrapper.findAll('.mobilite-raccordement-curve__point--territory')
+    const territoryPath = wrapper.get('[data-series="territory"]').attributes('d') ?? ''
     expect(declaredAxisCount).toBe(73)
-    expect(territoryPoints).toHaveLength(declaredAxisCount)
-    expect(territoryPoints[0]?.attributes('data-value')).toBe('0')
-    expect(territoryPoints.at(-1)?.attributes('data-value')).toBe('0.5')
+    // One straight-segment path through every declared axis point, no dot chain.
+    expect((territoryPath.match(/L/g) ?? [])).toHaveLength(declaredAxisCount - 1)
+    expect(wrapper.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(0)
+    expect(territoryPath).not.toContain('NaN')
     expect(wrapper.text()).toContain(fixturePoint.provenance[0].source_name)
     expect(reads().some((item) => item.resource === curve.resource_id && item.intent.kind === 'facts')).toBe(true)
     expect(reads().some((item) => item.resource === reference.resource_id &&
@@ -1541,7 +1542,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const epciRead = reads().find((item) => item.resource === curve.resource_id &&
       item.intent.kind === 'selected_comparison')
     expect(epciRead?.intent.members).toEqual(epciMembers)
-    expect(wrapper.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(declaredAxisCount)
+    // The comparison switch never drops the focal curve's published points.
+    expect((((wrapper.get('[data-series="territory"]').attributes('d') ?? '').match(/L/g)) ?? []))
+      .toHaveLength(declaredAxisCount - 1)
+    expect(wrapper.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(0)
 
     const bretagneMembers = cohort.filter((territory: any) => territory.type === 'commune')
       .map((territory: any) => ({ type: territory.type, id: territory.territoire }))
@@ -2265,14 +2269,14 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     const { router, wrapper } = await monter(
       '/territoire/commune/22001?theme=mobilite&comparaison=#figure-offre-transports-commun', chargerReferenceReelle)
     await flushPromises()
-    expect(wrapper.find('.mobilite-raccordement-curve__point--territory').exists()).toBe(true)
+    expect(wrapper.find('[data-series="territory"]').exists()).toBe(true)
     refuser = true
     await router.push('/territoire/commune/22001?theme=mobilite&comparaison=commune:22001,commune:22002#figure-offre-transports-commun')
     await flushPromises()
     const comparisonWarning = wrapper.get('.mobilite-raccordement-curve__legend .cahier-figure-legend-comparison-error')
     await comparisonWarning.trigger('focus')
     expect(wrapper.find('[role="tooltip"]').text()).toContain(cibleReference('22002').nom)
-    expect(wrapper.find('.mobilite-raccordement-curve__point--territory').exists()).toBe(true)
+    expect(wrapper.find('[data-series="territory"]').exists()).toBe(true)
     expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
     refuser = false
     await wrapper.get('.mobilite-raccordement-curve__retry').trigger('click')

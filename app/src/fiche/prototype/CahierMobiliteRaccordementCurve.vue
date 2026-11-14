@@ -1,9 +1,20 @@
 <script setup lang="ts">
 /**
- * « Visiter la Bretagne » — the cumulative raccordement curve of Mobilité
- * page 3 (#955). Built on the shared Cahier figure grammar, never on the
- * protected AEDAR ramp. The reference is the active header comparison mean;
- * there is no named-Brittany fallback and no second graph for the scalar.
+ * « Visiter la Bretagne » — the approved travel-time curve of Mobilité page 3
+ * (#1006).
+ *
+ * Same 73 published points at five-minute thresholds, same source, same axis
+ * domain and same straight segments as before: nothing is smoothed, resampled
+ * or recomputed. What changes is the figure grammar: it takes the compact AEDAR
+ * ramp proportions and stroke/typography grammar without touching any protected
+ * AEDAR component, drops the chain of permanent point circles and the permanent
+ * 90-minute dot, and keeps the published marker as its dashed vertical line
+ * only. Hover, focus and touch still show the actual point evidence.
+ *
+ * The figure title and the x-axis title are app-owned presentation carried by
+ * the content layer; the numeric axis, tick labels and marker stay producer
+ * facts. Tick labels name their unit for sub-hour values from the numeric axis
+ * evidence, never by parsing detail ids.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
@@ -21,7 +32,6 @@ import type { NumericFact } from '@/fiche/content/territoryFacts'
 import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import ComparisonUnavailableCue from '@/components/fiche/ComparisonUnavailableCue.vue'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
-import CahierFigureAxes from './CahierFigureAxes.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
@@ -38,10 +48,11 @@ const props = defineProps<{
   comparison: ComparisonState
 }>()
 
+/** Same compact proportions as the shared AEDAR ramps (no protected geometry touched). */
 const BASE_FIGURE_GEOMETRY = {
   width: 640,
-  height: 330,
-  margin: { top: 30, right: 24, bottom: 84, left: 68 },
+  height: 300,
+  margin: { top: 22, right: 68, bottom: 62, left: 64 },
 } as const satisfies CahierFigureGeometry
 
 const Y_TICKS = [0, 0.25, 0.5, 0.75, 1] as const
@@ -104,6 +115,7 @@ function yFor(value: number): number {
   return geometry.value.margin.top + (1 - Math.max(0, Math.min(1, value))) * plotHeight.value
 }
 
+/** Straight segments only: every published point, no smoothing, no resampling. */
 function seriesPath(points: readonly { fact: NumericFact }[]): string {
   let started = false
   return points.map((point) => {
@@ -132,9 +144,25 @@ const drawablePoints = computed(() => props.figure.points.flatMap((point) => {
 const hasDrawablePoints = computed(() => drawablePoints.value.length > 0)
 
 const declaredTicks = computed(() => props.figure.trajectory?.ticks ?? [])
+
+/**
+ * Tick labels read the published numeric axis value (minutes), never the
+ * `tXXXX` key: 0 stays « 0 », the sub-hour ticks name their unit, and the
+ * published hour labels are kept verbatim. No duplicate « min » is appended
+ * when the declared label already carries a unit.
+ */
+function tickLabel(tick: { label: string }, axisValue: number): string {
+  if (axisValue > 0 && axisValue < 60 && !/min/iu.test(tick.label)) {
+    return `${formatNumber(axisValue, 0)} min`
+  }
+  return tick.label
+}
+
 const xTicks = computed<readonly CahierFigureAxisTick[]>(() => declaredTicks.value.flatMap((tick) => {
   const axisValue = axisForDetail(tick.detail)
-  return axisValue === null ? [] : [{ key: tick.detail, label: tick.label, position: xForAxis(axisValue) }]
+  return axisValue === null
+    ? []
+    : [{ key: tick.detail, label: tickLabel(tick, axisValue), position: xForAxis(axisValue) }]
 }))
 const yTicks = computed<readonly CahierFigureAxisTick[]>(() => Y_TICKS.map((value) => ({
   key: value,
@@ -187,14 +215,7 @@ const visibleXTicks = computed<readonly CahierFigureAxisTick[]>(() => {
 
 const marker = computed(() => props.figure.trajectory?.marker ?? null)
 const markerAxisValue = computed(() => marker.value ? axisForDetail(marker.value.detail) : null)
-const markerPoint = computed(() => {
-  if (!marker.value) return null
-  return props.figure.points.find((point) => point.fact.detail === marker.value!.detail) ?? null
-})
 const markerX = computed(() => markerAxisValue.value === null ? null : xForAxis(markerAxisValue.value))
-const markerY = computed(() => markerPoint.value?.fact.value === null || markerPoint.value?.fact.value === undefined
-  ? null
-  : yFor(markerPoint.value.fact.value))
 
 const comparisonAvailable = computed(() =>
   props.comparison.status === 'ready' && props.figure.comparison !== null,
@@ -247,7 +268,6 @@ function comparisonRankForTick(detail: string) {
   return props.figure.markerValue?.fact.comparison?.rank ?? null
 }
 
-
 const comparisonStateText = computed(() => {
   if (props.comparison.status === 'loading') return 'Comparaison en cours de chargement.'
   if (props.comparison.status === 'error') {
@@ -280,13 +300,30 @@ const accessibleLabel = computed(() => {
     : ''
   const notes = [...publicationNotes.value, comparisonStateText.value].filter(Boolean).join(' ')
   return `${props.figure.figureTitle}. Courbe cumulative de la population bretonne joignable selon le temps de trajet. ` +
-    `Axe horizontal : ${props.figure.trajectory?.axisLabels?.x ?? 'temps de trajet'}. ` +
+    `Axe horizontal : ${props.figure.xAxisTitle}. ` +
     `Axe vertical : ${props.figure.trajectory?.axisLabels?.y ?? 'population joignable (%)'}. ` +
     `Territoire : ${readings}.${comparisonReading}${coincidence}${markerReading}${notes ? ` ${notes}` : ''}`
 })
 
 const selectedTick = computed(() => xTicks.value.find((tick) => String(tick.key) === selectedTickKey.value) ?? null)
 const selectedTickTitle = computed(() => selectedTick.value?.label ?? '')
+
+function pointPosition(detail: string, points: readonly { fact: NumericFact }[]): { x: number; y: number } | null {
+  const fact = pointAt(detail, points)
+  const axis = fact ? axisForFact(fact) : null
+  if (!fact || fact.value === null || !Number.isFinite(fact.value) || axis === null) return null
+  return { x: xForAxis(axis), y: yFor(fact.value) }
+}
+
+/** Current-point emphasis: hover/focus/touch only, never a pastille at every published point. */
+const cursorTerritory = computed(() => {
+  if (!selectedTick.value) return null
+  return pointPosition(String(selectedTick.value.key), props.figure.points)
+})
+const cursorComparison = computed(() => {
+  if (!selectedTick.value || !showComparison.value || !props.figure.comparison) return null
+  return pointPosition(String(selectedTick.value.key), props.figure.comparison.points)
+})
 
 function tooltipRows(detail: string): readonly CahierTooltipRow[] {
   const unit = curveUnit.value
@@ -420,13 +457,14 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
   const canToggle = props.comparison.status === 'loading' || props.comparison.status === 'error' || comparisonAvailable.value
   const comparisonAria = `${GROUPE_COMPARE_LABEL} : ${props.figure.comparisonLabel ?? UNAVAILABLE_LABEL}`
     + (curvesCoincide.value && showComparison.value ? ' (superposé au territoire)' : '')
+  const focalName = props.figure.territoryName
   return [
     {
       key: 'territory',
-      label: 'Territoire',
+      label: focalName,
       marker: 'line',
       tone: 'theme',
-      ariaLabel: `Territoire : ${props.figure.territoryName}`,
+      ariaLabel: `Territoire : ${focalName}`,
     },
     {
       key: 'comparison',
@@ -440,7 +478,7 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
 })
 const legendColors = {
   territory: 'var(--brand-500)',
-  comparison: 'var(--color-figure-reference, var(--cahier-default, var(--editorial-muted)))',
+  comparison: 'var(--brand-200)',
 }
 const legendSelected = computed(() => showComparison.value ? ['comparison'] : [])
 
@@ -478,7 +516,7 @@ const unavailableState = computed(() => {
       <CahierFigureFrame
         size="compact"
         :geometry="geometry"
-        :x-title="figure.trajectory.axisLabels?.x"
+        :x-title="figure.xAxisTitle"
         :y-title="figure.trajectory.axisLabels?.y"
       >
         <template #plot>
@@ -490,25 +528,42 @@ const unavailableState = computed(() => {
               role="img"
               :aria-label="accessibleLabel"
             >
-              <CahierFigureAxes :geometry="geometry" :x-ticks="xTicks" :y-ticks="yTicks" :show-labels="false" />
+              <g class="mobilite-raccordement-curve__grid" aria-hidden="true">
+                <line
+                  v-for="tick in yTicks"
+                  :key="`grid-y-${tick.key}`"
+                  :x1="geometry.margin.left"
+                  :x2="geometry.width - geometry.margin.right"
+                  :y1="tick.position"
+                  :y2="tick.position"
+                />
+                <line
+                  v-for="tick in xTicks"
+                  :key="`grid-x-${tick.key}`"
+                  :x1="tick.position"
+                  :x2="tick.position"
+                  :y1="geometry.margin.top"
+                  :y2="plotBottom"
+                />
+                <line
+                  class="mobilite-raccordement-curve__axis"
+                  :x1="geometry.margin.left"
+                  :x2="geometry.width - geometry.margin.right"
+                  :y1="plotBottom"
+                  :y2="plotBottom"
+                />
+              </g>
+
               <path class="mobilite-raccordement-curve__territory" data-series="territory" :d="territoryPath" />
-              <circle
-                v-for="entry in drawablePoints"
-                :key="`territory-${entry.point.fact.detail}`"
-                class="mobilite-raccordement-curve__point mobilite-raccordement-curve__point--territory"
-                data-series="territory"
-                :data-detail="entry.point.fact.detail"
-                :data-value="entry.point.fact.value"
-                :cx="entry.x"
-                :cy="entry.y"
-                r="2.6"
-              />
               <path
                 v-if="showComparison && comparisonPath"
                 class="mobilite-raccordement-curve__comparison"
                 data-series="comparison"
                 :d="comparisonPath"
               />
+
+              <!-- The published marker stays a dashed vertical reference line:
+                   no permanent dot and no on-plot label. -->
               <g v-if="marker && markerX !== null" class="mobilite-raccordement-curve__marker" :data-detail="marker.detail">
                 <line
                   class="mobilite-raccordement-curve__marker-line"
@@ -517,22 +572,34 @@ const unavailableState = computed(() => {
                   :y1="geometry.margin.top"
                   :y2="plotBottom"
                 />
-                <circle
-                  v-if="markerPoint && markerY !== null"
-                  class="mobilite-raccordement-curve__marker-point"
-                  :cx="markerX"
-                  :cy="markerY"
-                  :data-value="markerPoint.fact.value"
-                  r="4.5"
+              </g>
+
+              <!-- Current-point evidence: hover, focus and touch only. -->
+              <g v-if="selectedTick" class="mobilite-raccordement-curve__cursor" aria-hidden="true">
+                <line
+                  class="mobilite-raccordement-curve__cursor-line"
+                  :x1="selectedTick.position"
+                  :x2="selectedTick.position"
+                  :y1="geometry.margin.top"
+                  :y2="plotBottom"
                 />
-                <text
-                  class="mobilite-raccordement-curve__marker-label"
-                  :x="markerX + 7"
-                  :y="geometry.margin.top + 4"
-                >{{ marker.label }}</text>
+                <circle
+                  v-if="cursorComparison"
+                  class="mobilite-raccordement-curve__cursor-point mobilite-raccordement-curve__cursor-point--comparison"
+                  :cx="cursorComparison.x"
+                  :cy="cursorComparison.y"
+                  r="3"
+                />
+                <circle
+                  v-if="cursorTerritory"
+                  class="mobilite-raccordement-curve__cursor-point mobilite-raccordement-curve__cursor-point--territory"
+                  :cx="cursorTerritory.x"
+                  :cy="cursorTerritory.y"
+                  r="4.2"
+                />
               </g>
             </svg>
-            <CahierFigureAxisLabels :geometry="geometry" :x-ticks="visibleXTicks" :y-ticks="yTicks" />
+            <CahierFigureAxisLabels :geometry="geometry" :x-ticks="visibleXTicks" :y-ticks="yTicks" :x-label-offset="8" />
             <button
               type="button"
               class="mobilite-raccordement-curve__hit-surface"
@@ -596,32 +663,48 @@ const unavailableState = computed(() => {
 .mobilite-raccordement-curve { display: grid; gap: var(--space-3); min-width: 0; }
 .mobilite-raccordement-curve__plot { position: relative; width: 100%; }
 .mobilite-raccordement-curve__svg { display: block; width: 100%; height: auto; overflow: visible; }
+.mobilite-raccordement-curve__grid line {
+  stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent);
+  stroke-width: 1;
+}
+.mobilite-raccordement-curve__grid .mobilite-raccordement-curve__axis {
+  stroke: var(--cahier-theme-strong);
+  stroke-width: 1.5;
+}
 .mobilite-raccordement-curve__territory {
   fill: none;
   stroke: var(--brand-500);
-  stroke-width: 3;
+  stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.mobilite-raccordement-curve__point--territory { fill: var(--paper); stroke: var(--brand-500); stroke-width: 2; }
 .mobilite-raccordement-curve__comparison {
   fill: none;
-  stroke: var(--color-figure-reference, var(--cahier-default, var(--editorial-muted)));
-  stroke-width: 2;
-  stroke-dasharray: 6 4;
+  stroke: var(--brand-200);
+  stroke-width: 2.5;
+  stroke-dasharray: 10 6;
   stroke-linecap: round;
   stroke-linejoin: round;
+  opacity: 0.68;
 }
 .mobilite-raccordement-curve__marker-line {
   stroke: var(--cahier-default, var(--editorial-muted));
   stroke-width: 1.5;
   stroke-dasharray: 3 3;
 }
-.mobilite-raccordement-curve__marker-point { fill: var(--paper); stroke: var(--brand-600, var(--brand-500)); stroke-width: 2.5; }
-.mobilite-raccordement-curve__marker-label {
-  fill: var(--cahier-default, var(--editorial-muted));
-  font: var(--text-caption);
-  font-weight: 700;
+.mobilite-raccordement-curve__cursor-line {
+  stroke: color-mix(in srgb, var(--cahier-theme) 38%, transparent);
+  stroke-width: 1;
+}
+.mobilite-raccordement-curve__cursor-point--territory {
+  fill: var(--paper);
+  stroke: var(--brand-500);
+  stroke-width: 2.5;
+}
+.mobilite-raccordement-curve__cursor-point--comparison {
+  fill: var(--paper);
+  stroke: var(--brand-200);
+  stroke-width: 2;
 }
 .mobilite-raccordement-curve__hit-surface {
   position: absolute;
@@ -636,14 +719,32 @@ const unavailableState = computed(() => {
   outline: var(--focus-ring);
   outline-offset: -2px;
 }
-.mobilite-raccordement-curve__tooltip { width: min(320px, calc(100vw - 32px)); max-width: calc(100% - 16px); pointer-events: none; }
+.mobilite-raccordement-curve__tooltip {
+  width: min(320px, calc(100vw - 32px));
+  max-width: calc(100% - 16px);
+  pointer-events: none;
+}
 .mobilite-raccordement-curve__legend { flex-wrap: wrap; }
-.mobilite-raccordement-curve__state { margin: 0; display: flex; align-items: center; gap: var(--space-2); color: var(--cahier-default, var(--editorial-muted)); font: var(--text-body-sm); }
+.mobilite-raccordement-curve__state {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--cahier-default, var(--editorial-muted));
+  font: var(--text-body-sm);
+}
 .mobilite-raccordement-curve__unavailable { margin: 0; color: var(--cahier-default, var(--editorial-muted)); }
 .mobilite-raccordement-curve__retry {
-  justify-self: start; min-height: 2.75rem; padding: 0 var(--space-3);
-  border: 0; border-radius: var(--radius-md); background: transparent;
-  color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer;
+  justify-self: start;
+  min-height: 2.75rem;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--text-body-sm);
+  text-decoration: underline;
+  cursor: pointer;
 }
 .mobilite-raccordement-curve__retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
 .mobilite-raccordement-curve__retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }

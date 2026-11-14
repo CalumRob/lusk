@@ -74,7 +74,10 @@ describe('Mobilité page 3 — captured live curve envelope', () => {
     await flushPromises()
     const curveSection = wrapper.get('[data-section="visiter-la-bretagne"]')
     expect(curveSection.find('svg[role="img"]').exists()).toBe(true)
-    expect(curveSection.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(73)
+    // One straight-segment path through all 73 published points, no point chain.
+    const path = curveSection.get('.mobilite-raccordement-curve__territory').attributes('d')!
+    expect((path.match(/L/gu) ?? [])).toHaveLength(72)
+    expect(curveSection.findAll('.mobilite-raccordement-curve__point--territory')).toHaveLength(0)
     expect(curveSection.findAll('.cahier-figure-tick-label--x').length).toBeGreaterThan(0)
     expect(curveSection.find('.mobilite-raccordement-curve__marker').attributes('data-detail')).toBe('t0090')
     expect(curveSection.get('svg[role="img"]').attributes('aria-label')).toContain('1 h 30 (90 min)')

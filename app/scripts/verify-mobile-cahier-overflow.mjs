@@ -1283,12 +1283,14 @@ try {
             frameSelector: '.cahier-figure-frame',
             plotSelector: '.mobilite-raccordement-curve__plot',
             svgSelector: '.mobilite-raccordement-curve__svg',
-            axisSelector: '.cahier-figure-axes > line.cahier-figure-axis:nth-of-type(2)',
+            // #1006 — the compact grammar draws its own grid and baseline; the
+            // plotted curve is one path, so the first command is the mark rail.
+            axisSelector: '.mobilite-raccordement-curve__axis',
             labelRail: (label, width) => label.getAttribute('x') === null
               ? Number.parseFloat(label.style.left) * width / 100
               : Number(label.getAttribute('x')),
-            markX: (mark) => Number(mark.getAttribute('cx')),
-            markSelector: '.mobilite-raccordement-curve__point--territory',
+            markX: (mark) => Number(/^M([0-9.]+),/u.exec(mark.getAttribute('d') ?? '')?.[1]),
+            markSelector: '.mobilite-raccordement-curve__territory',
             tooltipSelector: '.mobilite-raccordement-curve__tooltip',
           },
         ]
@@ -1484,11 +1486,14 @@ try {
 
       await gauge.scrollIntoViewIfNeeded()
       const gaugeGeometry = await gauge.evaluate((section) => {
-        const fill = section.querySelector('.mobilite-share-track__fill')
-        const rail = section.querySelector('.mobilite-share-track__rail')
-        const value = section.querySelector('.mobilite-share-track__value')
-        const reference = section.querySelector('.mobilite-share-track__reference')
-        const referenceValue = section.querySelector('.mobilite-share-track__reference-value')
+        // #1006 — two named rows: the territory's published share and the
+        // header group's, each with its quiet remainder. The visible value sits
+        // in the row head, above its track.
+        const fill = section.querySelector('[data-row="territory"] [data-segment="share"]')
+        const rail = section.querySelector('[data-row="territory"] .mobilite-share-track__track')
+        const value = section.querySelector('[data-row="territory"] .mobilite-share-track__value')
+        const reference = section.querySelector('[data-row="comparison"] [data-segment="share"]')
+        const referenceValue = section.querySelector('[data-row="comparison"] .mobilite-share-track__value')
         const box = (node) => node?.getBoundingClientRect() ?? null
         const railBox = box(rail)
         const insideRail = (target) => target && railBox
@@ -1511,7 +1516,7 @@ try {
           return { red, green, blue, alpha }
         }
         return {
-          visibleFill: Boolean(fill && fill.getAttribute('data-value') !== null),
+          visibleFill: Boolean(fill && Number.parseFloat(fill.style.width) > 0),
           valueText: value?.textContent?.trim() ?? '',
           referenceText: referenceValue?.textContent?.trim() ?? '',
           hasReference: Boolean(reference && referenceValue),
