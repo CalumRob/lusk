@@ -58,6 +58,7 @@ import type {
   TerritoryComparisonContext,
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
+import { isUserScrollKey } from '@/fiche/navigationIntent'
 import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, MeanComparisonContractError, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
 import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, comparisonDemandState,
   producerCatalogue, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
@@ -162,6 +163,10 @@ const chapitreNumerique = computed(() =>
  */
 const chapitreVisible = ref<{ key: string; generation: string } | null>(null)
 const chapitreIntent = ref<{ chapter: string; landed: boolean; epoch: number } | null>(null)
+/** The typed owner of a valid rendered inner-section fragment, if any. */
+const sectionAnchorOwner = ref<string | null>(null)
+/** The content hierarchy has resolved, so an unknown fragment may fall back. */
+const sectionAnchorReady = ref(false)
 const chapitresStatut = ref<Record<string, ChapitreDemandStatus>>({})
 let chapitreIntentEpoch = 0
 let chapitreIntentTimer: ReturnType<typeof setTimeout> | null = null
@@ -215,10 +220,7 @@ function interrompreChapitreIntent(): void {
 }
 
 function onUserScrollIntent(event: Event): void {
-  if (event.type === 'keydown') {
-    const key = (event as KeyboardEvent).key
-    if (!['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(key)) return
-  }
+  if (event.type === 'keydown' && !isUserScrollKey(event as KeyboardEvent)) return
   interrompreChapitreIntent()
 }
 
@@ -958,6 +960,42 @@ const mobilityComparisonFacts = ref<TerritoryFacts | null>(null)
 const mobilityCurveComparison = ref<SelectedTrajectoryComparison | null>(null)
 const mobilityComparisonStatus = ref<'loading' | 'ready' | 'error' | 'unavailable'>('loading')
 /**
+ * #1010 — the typed content hierarchy can resolve a rendered inner-section
+ * fragment before any facts arrive. Keep this computed above the focal watcher
+ * so a cold `#section-<key>` link claims its owner page instead of the numeric
+ * page-2 fallback.
+ */
+const contenuMobilite = computed<ThemeContent | null>(() => {
+  if (
+    !productionMobilite.value ||
+    chargementFiche.value ||
+    !payloadPourRendu.value ||
+    !typeValide.value
+  ) return null
+  const baseFacts = mobilityFocal.value
+    ? mobilityComparisonFacts.value ?? clearThemeComparisonApiFacts(mobilityFocal.value)
+    : mobilityFactsFromThemeApi(
+      toRaw(payloadPourRendu.value), idRoute.value, null, resolutionSelection.value?.contexte ?? undefined,
+    )
+  if (!baseFacts) return null
+  const facts = { ...baseFacts, mobility: { ...baseFacts.mobility, selectedTrajectoryComparison: mobilityCurveComparison.value } }
+  return resolveMobiliteThemeContent(facts, payloadPourRendu.value.themeMetadata?.mobilite)
+})
+
+/**
+ * #1010 — the Cahier owns the assembled unit/section hierarchy (including the
+ * pending/ready AEDAR sections), so it reports the fragment's owner before the
+ * focal watcher may choose the unknown-hash numeric fallback. This is a
+ * navigation intent: the visible chapter takes over once the target lands and
+ * a user scroll cancels the pending claim.
+ */
+function onChapitreSectionResolved(owner: string | null): void {
+  sectionAnchorReady.value = true
+  if (sectionAnchorOwner.value === owner) return
+  sectionAnchorOwner.value = owner
+  if (owner) armChapitreIntent(owner)
+}
+/**
  * #627 correction — retained Mobilité semantic facts keep their own scoped
  * status/retry, independent of AEDAR (which has its own status/retry) and of
  * the retired accessibility body. The cahier's retained units read these
@@ -1067,12 +1105,23 @@ function chapitreDemandeMobilite(): string | undefined {
   const chapter = chapitreAffiche.value
   const resolved = chapitresMobilite.value.find((candidate) => candidate.key === chapter)
   if (resolved && resolved.indicators.length > 0) return resolved.key
+  // #1010 — a valid inner-section fragment already names its owning page. The
+  // page-1 owner has no numeric indicators, so do not queue the unrelated
+  // page-2 default before the fragment is admitted.
+  if (chapter && sectionAnchorOwner.value === chapter) return chapter
   return chapitreNumerique.value ?? undefined
 }
 
 watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
-  () => referenceTerritoire.reference.value], (_values, _oldValues, onCleanup) => {
+  () => referenceTerritoire.reference.value, sectionAnchorReady, sectionAnchorOwner],
+  (_values, _oldValues, onCleanup) => {
   if (!productionMobilite.value) return
+  const hash = route.hash.replace(/^#/, '')
+  if (hash && !chapitreDemandeDepuisAncre('mobilite', route.hash) && !sectionAnchorReady.value) {
+    // The fragment may be a rendered section: wait for the typed content
+    // hierarchy before choosing the unknown-hash numeric fallback.
+    return
+  }
   const reference = referenceTerritoire.reference.value
   const key = `${typeRoute.value}/${idRoute.value}/${retryFaitsMobilite.value}`
   if (reference && lastFocalKey === key && lastFocalModel === reference) return
@@ -1223,22 +1272,6 @@ function rechargerFaitsMobilite(): void {
   retryAcquisition.value += 1
 }
 
-const contenuMobilite = computed<ThemeContent | null>(() => {
-  if (
-    !productionMobilite.value ||
-    chargementFiche.value ||
-    !payloadPourRendu.value ||
-    !typeValide.value
-  ) return null
-  const baseFacts = mobilityFocal.value
-    ? mobilityComparisonFacts.value ?? clearThemeComparisonApiFacts(mobilityFocal.value)
-    : mobilityFactsFromThemeApi(
-      toRaw(payloadPourRendu.value), idRoute.value, null, resolutionSelection.value?.contexte ?? undefined,
-    )
-  if (!baseFacts) return null
-  const facts = { ...baseFacts, mobility: { ...baseFacts.mobility, selectedTrajectoryComparison: mobilityCurveComparison.value } }
-  return resolveMobiliteThemeContent(facts, payloadPourRendu.value.themeMetadata?.mobilite)
-})
 const paginationCahier = computed(() =>
   payloadPourRendu.value && contenuMobilite.value
     ? cahierPaginationFor(payloadPourRendu.value, contenuMobilite.value, mobiliteEditorialeActive.value)
@@ -1428,7 +1461,8 @@ watch(
               :retry-native-comparison="retryThemeComparison"
               :aedar-active="demandeAedar"
               :chapitres-statut="chapitresStatut"
-              @chapitre-visible="onChapitreVisible" />
+              @chapitre-visible="onChapitreVisible"
+              @chapitre-section-resolved="onChapitreSectionResolved" />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation
                  pliée) lit SA paire hermétique ; les autres thèmes passent

@@ -32,6 +32,7 @@ import {
   routePourSectionExploration,
 } from '@/fiche/explorationHandoff'
 import { chapterForSectionAnchor } from '@/fiche/content/themeContent'
+import { isUserScrollKey } from '@/fiche/navigationIntent'
 import type { TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
 import {
   AEDAR_DEFAULT_VISIBLE_RAMP_MODES,
@@ -81,7 +82,10 @@ const props = withDefaults(defineProps<{
   /** #1008 — the visible chapter's admission state, owned by the demand planner. */
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
 }>(), { aedarChapterActive: true })
-const emit = defineEmits<{ 'chapitre-visible': [anchor: string] }>()
+const emit = defineEmits<{
+  'chapitre-visible': [anchor: string]
+  'chapitre-section-resolved': [owner: string | null]
+}>()
 const route = useRoute()
 
 /** #860 (ruling 2026-11-03) — le contrôle de comparaison fourni par la fiche
@@ -113,7 +117,12 @@ let revealTarget: HTMLElement | null = null
 let revealCancelled = false
 let pendingRevealHash: string | null = null
 let revealedHash: string | null = null
+let revealedOwner: string | null = null
 let revealUserStopped = false
+let revealObserver: ResizeObserver | null = null
+let revealSettleFrame: number | null = null
+let revealSettleTimer: ReturnType<typeof setTimeout> | null = null
+let revealScrollUntil = 0
 
 const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
 const unit = computed(() => units.value[0] ?? null)
@@ -343,12 +352,14 @@ function removeRevealListeners(): void {
   window.removeEventListener('wheel', onRevealInterrupt)
   window.removeEventListener('touchmove', onRevealInterrupt)
   window.removeEventListener('keydown', onRevealInterrupt)
+  window.removeEventListener('scroll', onRevealNativeScroll)
 }
 
 function armRevealInterrupt(): void {
   window.addEventListener('wheel', onRevealInterrupt, { passive: true })
   window.addEventListener('touchmove', onRevealInterrupt, { passive: true })
   window.addEventListener('keydown', onRevealInterrupt)
+  window.addEventListener('scroll', onRevealNativeScroll, { passive: true })
 }
 
 function clearRevealSchedule(): void {
@@ -357,39 +368,137 @@ function clearRevealSchedule(): void {
     cancelAnimationFrame(revealFrame)
     revealFrame = null
   }
+  if (revealSettleFrame !== null) {
+    cancelAnimationFrame(revealSettleFrame)
+    revealSettleFrame = null
+  }
+  revealObserver?.disconnect()
+  revealObserver = null
+  if (revealSettleTimer !== null) {
+    clearTimeout(revealSettleTimer)
+    revealSettleTimer = null
+  }
   revealTarget = null
   removeRevealListeners()
 }
 
-function cancelReveal(): void {
-  revealUserStopped = true
+function completeReveal(): void {
   pendingRevealHash = null
   revealedHash = null
+  revealedOwner = null
   clearRevealSchedule()
 }
 
+function cancelReveal(): void {
+  revealUserStopped = true
+  completeReveal()
+}
+
 function onRevealInterrupt(event: Event): void {
-  if (event.type === 'keydown') {
-    const key = (event as KeyboardEvent).key
-    if (!['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(key)) return
-  }
+  if (event.type === 'keydown' && !isUserScrollKey(event as KeyboardEvent)) return
   cancelReveal()
 }
 
-/** A rendered inner section's owning page anchor, from the typed hierarchy. */
-function sectionOwnerAnchor(hash: string): string | null {
-  const owner = chapterForSectionAnchor(props.content, hash)
-  return owner ? pageAnchorFor(owner) : null
+function onRevealNativeScroll(): void {
+  if (revealCancelled || revealUserStopped || !revealedHash) return
+  if (Date.now() > revealScrollUntil) return
+  if (revealSettleFrame !== null) return
+  revealSettleFrame = requestAnimationFrame(() => {
+    revealSettleFrame = null
+    if (!revealCancelled && !revealUserStopped && revealTarget) alignReveal(revealTarget)
+  })
 }
 
-function scheduleReveal(target: HTMLElement): void {
+/** The real sticky page-heading bottom, including wrap, fonts and header. */
+function revealHeadingBottom(target: HTMLElement): number {
+  const page = target.closest<HTMLElement>('.cahier-page, .sources-page')
+  const heading = page?.querySelector<HTMLElement>('.page-heading')
+  return heading ? heading.getBoundingClientRect().bottom : 0
+}
+
+function alignReveal(target: HTMLElement): void {
+  const bottom = revealHeadingBottom(target)
+  if (bottom <= 0) return
+  const delta = target.getBoundingClientRect().top - bottom
+  if (Math.abs(delta) > 1) window.scrollBy(0, Math.round(delta))
+}
+
+/** A rendered inner section's owning unit, from the typed hierarchy. */
+function sectionOwnerKey(hash: string): string | null {
+  return chapterForSectionAnchor(props.content, hash) ?? null
+}
+
+function ownerSettled(owner: string | null): boolean {
+  if (!owner) return true
+  if (owner === 'acces-aux-services') return props.aedarStatus !== 'loading'
+  const status = props.chapitresStatut?.[owner]
+  return status === undefined || status === 'ready' || status === 'error'
+}
+
+function startRevealObserver(target: HTMLElement): void {
+  const page = target.closest<HTMLElement>('.cahier-page, .sources-page')
+  if (!page || typeof ResizeObserver === 'undefined') return
+  revealObserver = new ResizeObserver(() => {
+    if (revealCancelled || revealUserStopped || !revealedHash) return
+    if (revealSettleFrame !== null) return
+    revealSettleFrame = requestAnimationFrame(() => {
+      revealSettleFrame = null
+      if (!revealCancelled && !revealUserStopped) alignReveal(target)
+    })
+  })
+  revealObserver.observe(page)
+  // The observer is a finite post-render settle, not a standing viewport
+  // framework: it stops after the data/loading layout has had time to settle.
+  revealSettleTimer = setTimeout(() => {
+    if (revealedOwner && ownerSettled(revealedOwner)) completeReveal()
+  }, 8000)
+}
+
+function scheduleReveal(target: HTMLElement, alignToHeading: boolean): void {
   revealCancelled = false
   revealTarget = target
   armRevealInterrupt()
   const scroll = (): void => {
     revealFrame = null
-    if (revealCancelled || !revealTarget) return
-    revealTarget.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+    if (revealCancelled || revealUserStopped || !revealTarget) return
+    const current = revealTarget
+    // A short scroll window catches the browser's own late fragment landing;
+    // wheel/touch/key still cancels immediately, and after the window the user
+    // owns the scroll without any reveal measurement.
+    revealScrollUntil = Date.now() + 1200
+    current.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+    if (!alignToHeading) {
+      if (revealedOwner && ownerSettled(revealedOwner)) completeReveal()
+      return
+    }
+    // A finite render-settle: align on each frame until the target has held
+    // its post-heading position for three consecutive frames (or 30 frames).
+    // This is not a polling timer; a later data render starts a fresh settle
+    // through the content/status watcher.
+    startRevealObserver(current)
+    let frames = 0
+    let stable = 0
+    let lastTop: number | null = null
+    const settle = (): void => {
+      if (revealCancelled || revealUserStopped) return
+      alignReveal(current)
+      const top = Math.round(current.getBoundingClientRect().top)
+      if (lastTop === top) stable += 1
+      else { stable = 0; lastTop = top }
+      frames += 1
+      if (frames < 30 && stable < 3) {
+        requestAnimationFrame(settle)
+        return
+      }
+      if (document.fonts?.ready) {
+        void document.fonts.ready.then(() => {
+          if (!revealCancelled && !revealUserStopped && revealedHash) alignReveal(current)
+        })
+      }
+      if (typeof ResizeObserver === 'undefined' && revealedOwner &&
+          ownerSettled(revealedOwner)) completeReveal()
+    }
+    requestAnimationFrame(settle)
   }
   if (typeof requestAnimationFrame === 'function') revealFrame = requestAnimationFrame(scroll)
   else scroll()
@@ -409,17 +518,22 @@ function revealHashTarget({ resetUser = false } = {}): void {
     revealUserStopped = false
     pendingRevealHash = null
     revealedHash = null
+    revealedOwner = null
   }
   if (revealUserStopped || !rootRef.value) return
   const hash = route.hash.replace(/^#/, '')
   if (!hash) {
     pendingRevealHash = null
     revealedHash = null
+    revealedOwner = null
     clearRevealSchedule()
     return
   }
   clearRevealSchedule()
-  const owner = sectionOwnerAnchor(route.hash)
+  const ownerKey = sectionOwnerKey(route.hash)
+  emit('chapitre-section-resolved', ownerKey)
+  const pageEntry = props.pagination.entries.find((entry) => entry.anchor === hash) ?? null
+  const owner = ownerKey ? pageAnchorFor(ownerKey) : null
   if (owner && chapterAnchors.value.has(owner)) {
     activeFigure.value = owner
     emit('chapitre-visible', owner)
@@ -428,18 +542,21 @@ function revealHashTarget({ resetUser = false } = {}): void {
   if (target && rootRef.value.contains(target)) {
     pendingRevealHash = null
     revealedHash = hash
-    scheduleReveal(target)
+    revealedOwner = ownerKey ?? pageEntry?.key ?? null
+    scheduleReveal(target, Boolean(ownerKey))
     return
   }
-  if (!owner) {
+  if (!ownerKey) {
     pendingRevealHash = null
     revealedHash = null
+    revealedOwner = null
     return
   }
   // The owning chapter is valid but its section is rendered after the data:
   // keep the reveal pending for the next content render, not a polling loop.
   pendingRevealHash = hash
   revealedHash = null
+  revealedOwner = null
   armRevealInterrupt()
 }
 
@@ -481,6 +598,9 @@ onMounted(() => {
 watch(() => route.hash, () => { revealHashTarget({ resetUser: true }) })
 watch(() => props.content, () => {
   if (!revealUserStopped && (pendingRevealHash || revealedHash)) revealHashTarget()
+}, { flush: 'post' })
+watch([() => props.aedarStatus, () => props.chapitresStatut], () => {
+  if (!revealUserStopped && revealedHash) revealHashTarget()
 }, { flush: 'post' })
 
 onBeforeUnmount(() => {
@@ -965,7 +1085,6 @@ onBeforeUnmount(() => {
 .cahier-page, .sources-page { container: cahier-page / inline-size; position: relative; min-width: 0; --page-left-inset: var(--cahier-page-left-inset, 148px); --page-right-inset: var(--cahier-page-right-inset, 64px); padding: 48px var(--page-right-inset) 56px var(--page-left-inset); border: 1px solid rgb(35 42 42 / 15%); box-shadow: 0 14px 30px rgb(67 57 42 / 11%); scroll-margin-top: 28px; }
 .cahier--sans-grille .cahier-page,
 .cahier--sans-grille .sources-page { scroll-margin-top: var(--cahier-sticky-top); }
-.cahier-page [data-figure^="section-"] { scroll-margin-top: var(--cahier-sticky-top); }
 .page-margin { position: absolute; top: 48px; left: 18px; display: grid; width: 72px; gap: 30px; align-content: start; text-align: center; }
 .cahier--sans-grille .page-margin { right: 18px; left: auto; }
 @media (min-width: 761px) {

@@ -131,8 +131,8 @@ try {
       declaration.shapes.includes('aedar_territory_summary') ? 'aedar' : 'scalar') : undefined
   }
 
-  const makePage = async () => {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+  const makePage = async ({ viewport = { width: 1440, height: 900 }, aedarDelayMs = RESPONSE_DELAY_MS } = {}) => {
+    const page = await browser.newPage({ viewport, deviceScaleFactor: 1 })
     page.on('pageerror', (error) => console.error('[browser pageerror]', error))
     const readCalls = { retiredThemeFactsRoutes: 0, themeBatches: 0, aedarBatches: 0,
       aedarSummaryBatches: 0, aedarSummaryTargets: [], aedarComparisonBatches: 0, aedarItems: [] }
@@ -171,7 +171,7 @@ try {
       aedarBatch: ({ items }) => {
         record(items)
         return { json: async () => {
-          await delay()
+          await new Promise((resolve) => setTimeout(resolve, aedarDelayMs))
           return { results: items.map((item) => ({ id: item.id, resource: item.resource,
             status: 'available', data: aedarData(item) })) }
         } }
@@ -209,7 +209,9 @@ try {
       const position = await page.locator(selector).evaluate((element) => {
         const rect = element.getBoundingClientRect()
         if (rect.bottom < window.innerHeight * 0.15) return -1
-        if (rect.top > window.innerHeight * 0.55) return 1
+        // The page must enter the same 14%-34% reading band the Cahier uses,
+        // not merely the lower half of the viewport.
+        if (rect.top > window.innerHeight * 0.30) return 1
         return 0
       }).catch(() => 0)
       if (position === 0) return true
@@ -529,28 +531,59 @@ try {
     }
     return core
   }
+  const measureCore = (startIndex) => new Set(batches.slice(startIndex)
+    .flatMap((batch) => batch.items)
+    .filter((item) => classify(item) === 'core')
+    .flatMap((item) => item.coordinates?.typequ ?? [])).size
   const sectionGeometry = (page, targetId) => page.evaluate((id) => {
     const target = document.getElementById(id)
     const active = document.querySelector('aside.cahier-spine a[aria-current="location"]')
-    const sticky = parseFloat(getComputedStyle(document.documentElement)
-      .getPropertyValue('--header-height')) || 0
+    const pageElement = target?.closest('.cahier-page, .sources-page')
+    const heading = pageElement?.querySelector('.page-heading')
+    const title = target?.querySelector('h3, h4') ?? target
+    const titleRect = title?.getBoundingClientRect()
+    const hit = titleRect ? document.elementFromPoint(
+      titleRect.left + Math.min(10, titleRect.width / 2),
+      titleRect.top + Math.min(10, titleRect.height / 2),
+    ) : null
     return {
       hash: location.hash,
+      historyLength: history.length,
       scrollY: Math.round(window.scrollY),
       targetTop: target ? Math.round(target.getBoundingClientRect().top) : null,
-      sticky,
+      headingBottom: heading ? Math.round(heading.getBoundingClientRect().bottom) : null,
+      titleTop: titleRect ? Math.round(titleRect.top) : null,
+      hitInside: Boolean(target && hit && (target === hit || target.contains(hit))),
       active: active?.getAttribute('href') ?? null,
     }
   }, targetId)
+  const waitSectionAligned = (page, id) => page.waitForFunction((targetId) => {
+    const element = document.getElementById(targetId)
+    if (!element) return false
+    const pageElement = element.closest('.cahier-page, .sources-page')
+    const heading = pageElement?.querySelector('.page-heading')
+    if (!heading) return false
+    const bottom = heading.getBoundingClientRect().bottom
+    const top = element.getBoundingClientRect().top
+    if (top < bottom - 1 || top > bottom + 4) return false
+    const title = element.querySelector('h3, h4') ?? element
+    const rect = title.getBoundingClientRect()
+    const hit = document.elementFromPoint(
+      rect.left + Math.min(10, rect.width / 2),
+      rect.top + Math.min(10, rect.height / 2),
+    )
+    return Boolean(hit && (element.contains(hit) || hit === element))
+  }, id, { timeout: 15000 })
   const sectionAnchors = []
-  const readColdSection = async (id, { aedar = true, query = '' } = {}) => {
+  const readColdSection = async (id, { aedar = true, query = '', viewport } = {}) => {
     const startIndex = batches.length
-    const page = await makePage()
+    const page = viewport ? await makePage({ viewport }) : await makePage()
     await page.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}${query}#${id}`,
       { waitUntil: 'domcontentloaded' })
+    const historyAfterNavigation = await page.evaluate(() => history.length)
     const coreTypequ = aedar
       ? await waitAedarCore(page, startIndex)
-      : 0
+      : measureCore(startIndex)
     if (!aedar) {
       await page.locator('.mobilite-raccordement-curve__territory')
         .waitFor({ state: 'visible', timeout: 30000 })
@@ -558,26 +591,38 @@ try {
     await page.waitForFunction((targetId) => Boolean(document.getElementById(targetId)),
       id, { timeout: 30000 })
     try {
-      await page.waitForFunction((targetId) => {
-        const element = document.getElementById(targetId)
-        if (!element) return false
-        const top = element.getBoundingClientRect().top
-        return top >= 0 && top <= 120
-      }, id, { timeout: 15000 })
+      await waitSectionAligned(page, id)
     } catch (error) {
-      console.error('SECTION-TOP-DEBUG', id, await page.evaluate((targetId) => {
+      console.error('ALIGN-DEBUG', id, await page.evaluate((targetId) => {
         const element = document.getElementById(targetId)
-        return { top: element?.getBoundingClientRect().top ?? null, scrollY: window.scrollY,
-          active: document.querySelector('aside.cahier-spine a[aria-current="location"]')?.getAttribute('href') }
+        const pageElement = element?.closest('.cahier-page, .sources-page')
+        const heading = pageElement?.querySelector('.page-heading')
+        const title = element?.querySelector('h3, h4') ?? element
+        const rect = title?.getBoundingClientRect()
+        const hit = rect ? document.elementFromPoint(
+          rect.left + Math.min(10, rect.width / 2), rect.top + Math.min(10, rect.height / 2)) : null
+        return { scrollY: window.scrollY, heading: heading?.getBoundingClientRect().toJSON(),
+          target: element?.getBoundingClientRect().toJSON(), title: rect?.toJSON(),
+          hitInside: Boolean(element && hit && (element === hit || element.contains(hit))),
+          hitClass: hit?.className }
       }, id))
       throw error
     }
     const geometry = await sectionGeometry(page, id)
+    const historyAfterReveal = await page.evaluate(() => history.length)
+    assert.equal(historyAfterReveal, historyAfterNavigation,
+      `${id}: automatic reveal wrote browser history`)
     const items = batches.slice(startIndex).flatMap((batch) => batch.items)
     const entry = {
       id,
       ...geometry,
+      viewport: page.viewportSize(),
+      historyAfterNavigation,
+      historyAfterReveal,
       coreTypequ,
+      aedarItems: items.filter((item) => String(item.resource).startsWith('aedar_')).length,
+      page2Posts: batches.slice(startIndex)
+        .filter((batch) => batch.items.some((item) => PAGE_TWO.includes(item.resource))).length,
       page2Items: items.filter((item) => PAGE_TWO.includes(item.resource)).length,
       page3Items: items.filter((item) => PAGE_THREE.includes(item.resource)).length,
       page3Posts: batches.slice(startIndex)
@@ -596,9 +641,17 @@ try {
     const entry = await readColdSection(id)
     assert.equal(entry.coreTypequ, AEDAR_TYPEQU_REGISTRY.length,
       `${id}: AEDAR core TYPEQU ${entry.coreTypequ}`)
+    assert.ok(entry.aedarItems > 0, `${id}: no AEDAR request was measured`)
+    assert.equal(entry.page2Posts, 0, `${id}: page-2 POSTs ${entry.page2Posts}`)
+    assert.equal(entry.page2Items, 0, `${id}: page-2 items ${entry.page2Items}`)
     assert.ok(entry.scrollY > 0, `${id}: target did not scroll (scrollY ${entry.scrollY})`)
-    assert.ok(entry.targetTop !== null && entry.targetTop >= 0 && entry.targetTop <= 180,
-      `${id}: target top ${entry.targetTop} outside sticky clearance`)
+    assert.ok(entry.targetTop !== null && entry.headingBottom !== null &&
+      entry.targetTop >= entry.headingBottom - 1 && entry.targetTop <= entry.headingBottom + 4,
+    `${id}: target top ${entry.targetTop} vs sticky heading bottom ${entry.headingBottom}`)
+    assert.ok(entry.titleTop !== null && entry.headingBottom !== null &&
+      entry.titleTop >= entry.headingBottom - 1,
+    `${id}: title top ${entry.titleTop} under sticky heading bottom ${entry.headingBottom}`)
+    assert.equal(entry.hitInside, true, `${id}: title hit-test not inside target`)
     assert.equal(entry.active, '#figure-lecture', `${id}: active chapter ${entry.active}`)
   }
 
@@ -606,15 +659,86 @@ try {
     { aedar: false, query: '&comparaison=commune:35238,commune:35240' })
   assert.ok(nonAedarSection.scrollY > 0,
     `non-AEDAR section did not scroll (scrollY ${nonAedarSection.scrollY})`)
-  assert.ok(nonAedarSection.targetTop !== null && nonAedarSection.targetTop >= 0 &&
-    nonAedarSection.targetTop <= 180,
-  `non-AEDAR target top ${nonAedarSection.targetTop} outside sticky clearance`)
+  assert.ok(nonAedarSection.targetTop !== null && nonAedarSection.headingBottom !== null &&
+    nonAedarSection.targetTop >= nonAedarSection.headingBottom - 1 &&
+    nonAedarSection.targetTop <= nonAedarSection.headingBottom + 4,
+  `non-AEDAR target top ${nonAedarSection.targetTop} vs sticky heading bottom ${nonAedarSection.headingBottom}`)
+  assert.ok(nonAedarSection.titleTop !== null && nonAedarSection.headingBottom !== null &&
+    nonAedarSection.titleTop >= nonAedarSection.headingBottom - 1,
+  `non-AEDAR title top ${nonAedarSection.titleTop} under ${nonAedarSection.headingBottom}`)
+  assert.equal(nonAedarSection.hitInside, true, 'non-AEDAR title hit-test not inside target')
   assert.equal(nonAedarSection.active, '#figure-offre-transports-commun',
     `non-AEDAR active chapter ${nonAedarSection.active}`)
+  assert.equal(nonAedarSection.aedarItems, 0,
+    `non-AEDAR section issued ${nonAedarSection.aedarItems} AEDAR items`)
+  assert.equal(nonAedarSection.page2Posts, 0,
+    `non-AEDAR section issued ${nonAedarSection.page2Posts} page-2 POSTs`)
+  assert.equal(nonAedarSection.page2Items, 0,
+    `non-AEDAR section issued ${nonAedarSection.page2Items} page-2 items`)
   assert.equal(nonAedarSection.page3Posts, 1, `non-AEDAR page-3 posts ${nonAedarSection.page3Posts}`)
   assert.equal(nonAedarSection.page3Items, 7, `non-AEDAR page-3 items ${nonAedarSection.page3Items}`)
   assert.ok(nonAedarSection.selectedPage3 > 0,
     'the non-AEDAR section must keep the typed custom comparison group')
+
+  const responsiveSectionAnchors = []
+  for (const [id, viewport] of [
+    ['section-aedar-access', { width: 390, height: 844 }],
+    ['section-aedar-equipment-explorer', { width: 1024, height: 768 }],
+  ]) {
+    const entry = await readColdSection(id, { viewport })
+    assert.equal(entry.coreTypequ, AEDAR_TYPEQU_REGISTRY.length,
+      `${id} @${viewport.width}: AEDAR core ${entry.coreTypequ}`)
+    assert.equal(entry.page2Posts, 0, `${id} @${viewport.width}: page-2 POSTs ${entry.page2Posts}`)
+    assert.equal(entry.page2Items, 0, `${id} @${viewport.width}: page-2 items ${entry.page2Items}`)
+    assert.ok(entry.targetTop !== null && entry.headingBottom !== null &&
+      entry.targetTop >= entry.headingBottom - 1 && entry.targetTop <= entry.headingBottom + 4,
+    `${id} @${viewport.width}: target ${entry.targetTop} vs heading bottom ${entry.headingBottom}`)
+    assert.ok(entry.titleTop !== null && entry.headingBottom !== null &&
+      entry.titleTop >= entry.headingBottom - 1,
+    `${id} @${viewport.width}: title ${entry.titleTop} under heading ${entry.headingBottom}`)
+    assert.equal(entry.hitInside, true, `${id} @${viewport.width}: title hit-test failed`)
+    responsiveSectionAnchors.push(entry)
+  }
+
+  // Real comparison search input: Space/Arrow/composition must not cancel a
+  // pending cold-section arrival. Non-editable wheel/touch/nav keys still do.
+  {
+    const startIndex = batches.length
+    const page = await makePage({ aedarDelayMs: 6000 })
+    await page.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#section-aedar-equipment-profile`,
+      { waitUntil: 'domcontentloaded' })
+    const historyBefore = await page.evaluate(() => history.length)
+    await page.locator('.page-heading-builder-trigger').first().click({ timeout: 10000 })
+    const input = page.locator('input[type="search"]').first()
+    await input.waitFor({ state: 'visible', timeout: 10000 })
+    await input.focus()
+    await page.keyboard.press('Space')
+    await page.keyboard.press('ArrowDown')
+    await page.evaluate(() => {
+      const element = document.querySelector('input[type="search"]')
+      if (!element) return
+      element.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      const composing = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+      Object.defineProperty(composing, 'isComposing', { value: true })
+      element.dispatchEvent(composing)
+      element.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    })
+    // Close the builder before hit-testing the page target it overlays.
+    await page.keyboard.press('Escape')
+    await page.locator('input[type="search"]').first().waitFor({ state: 'hidden', timeout: 5000 })
+      .catch(() => undefined)
+    const coreTypequ = await waitAedarCore(page, startIndex)
+    const geometry = await sectionGeometry(page, 'section-aedar-equipment-profile')
+    const historyAfter = await page.evaluate(() => history.length)
+    assert.equal(coreTypequ, AEDAR_TYPEQU_REGISTRY.length,
+      `comparison input cancelled AEDAR: ${coreTypequ}`)
+    assert.ok(geometry.targetTop !== null && geometry.headingBottom !== null &&
+      geometry.targetTop >= geometry.headingBottom - 1,
+    `comparison input target ${geometry.targetTop} vs heading ${geometry.headingBottom}`)
+    assert.equal(historyAfter, historyBefore, 'comparison input wrote browser history')
+    receipt.comparisonInputComposition = { coreTypequ, ...geometry, historyBefore, historyAfter }
+    await page.close()
+  }
 
   // In-session page 3 -> inner AEDAR section.
   {
@@ -624,21 +748,28 @@ try {
       { waitUntil: 'domcontentloaded' })
     await page.locator('.mobilite-raccordement-curve__territory')
       .waitFor({ state: 'visible', timeout: 30000 })
+    const historyBeforeHash = await page.evaluate(() => history.length)
     await page.evaluate(() => { location.hash = '#section-aedar-access' })
     const coreTypequ = await waitAedarCore(page, startIndex)
-    await page.waitForFunction(() => {
-      const element = document.getElementById('section-aedar-access')
-      if (!element) return false
-      const top = element.getBoundingClientRect().top
-      return top >= 0 && top <= 120
-    }, null, { timeout: 15000 })
+    await waitSectionAligned(page, 'section-aedar-access')
     const geometry = await sectionGeometry(page, 'section-aedar-access')
+    const historyAfterHash = await page.evaluate(() => history.length)
+    assert.equal(historyAfterHash, historyBeforeHash + 1,
+      `in-session hash navigation history ${historyBeforeHash} -> ${historyAfterHash}`)
     assert.equal(coreTypequ, AEDAR_TYPEQU_REGISTRY.length,
       `in-session section core TYPEQU ${coreTypequ}`)
     assert.ok(geometry.scrollY > 0, `in-session section scrollY ${geometry.scrollY}`)
+    assert.ok(geometry.targetTop !== null && geometry.headingBottom !== null &&
+      geometry.targetTop >= geometry.headingBottom - 1 &&
+      geometry.targetTop <= geometry.headingBottom + 4,
+    `in-session target top ${geometry.targetTop} vs heading ${geometry.headingBottom}`)
+    assert.ok(geometry.titleTop !== null && geometry.headingBottom !== null &&
+      geometry.titleTop >= geometry.headingBottom - 1,
+    `in-session title top ${geometry.titleTop} under ${geometry.headingBottom}`)
+    assert.equal(geometry.hitInside, true, 'in-session title hit-test failed')
     assert.equal(geometry.active, '#figure-lecture',
       `in-session section active chapter ${geometry.active}`)
-    receipt.inSessionSection = { ...geometry, coreTypequ }
+    receipt.inSessionSection = { ...geometry, coreTypequ, historyBeforeHash, historyAfterHash }
     await page.close()
   }
 
@@ -650,9 +781,12 @@ try {
     page.on('pageerror', (error) => pageErrors.push(error.message))
     await page.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#section-does-not-exist`,
       { waitUntil: 'domcontentloaded' })
+    const historyBefore = await page.evaluate(() => history.length)
     await page.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first()
       .waitFor({ state: 'visible', timeout: 30000 })
     await page.waitForTimeout(500)
+    const historyAfter = await page.evaluate(() => history.length)
+    assert.equal(historyAfter, historyBefore, 'unknown fragment wrote browser history')
     const items = batches.slice(startIndex).flatMap((batch) => batch.items)
     const coreTypequ = new Set(items.filter((item) => classify(item) === 'core')
       .flatMap((item) => item.coordinates?.typequ ?? [])).size
@@ -660,7 +794,7 @@ try {
     assert.equal(items.filter((item) => PAGE_TWO.includes(item.resource)).length, 33,
       'unknown fragment must keep the page-2 numeric fallback')
     assert.deepEqual(pageErrors, [], `unknown fragment page errors: ${JSON.stringify(pageErrors)}`)
-    receipt.unknownFragment = { coreTypequ, page2Items: 33, errors: pageErrors }
+    receipt.unknownFragment = { coreTypequ, page2Items: 33, errors: pageErrors, historyBefore, historyAfter }
     await page.close()
   }
 
@@ -671,11 +805,13 @@ try {
     await page.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#section-aedar-access`,
       { waitUntil: 'domcontentloaded' })
     await waitAedarCore(page, startIndex)
+    const historyBeforeScroll = await page.evaluate(() => history.length)
     await wheelToPage(page, '#figure-partage-de-lespace-public')
     await page.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first()
       .waitFor({ state: 'visible', timeout: 30000 })
     const readState = () => page.evaluate(() => ({
       hash: location.hash,
+      historyLength: history.length,
       scrollY: Math.round(window.scrollY),
       targetTop: Math.round(document.getElementById('section-aedar-access')
         ?.getBoundingClientRect().top ?? 0),
@@ -685,9 +821,11 @@ try {
     await page.waitForTimeout(600)
     const settled = await readState()
     assert.equal(settled.hash, '#section-aedar-access', 'the section hash changed on scroll')
+    assert.equal(settled.historyLength, historyBeforeScroll,
+      'section scroll wrote browser history')
     assert.ok(settled.targetTop < -500,
       `section reveal yanked the reader back: ${JSON.stringify(settled)}`)
-    receipt.sectionScrollAway = { afterScroll, settled }
+    receipt.sectionScrollAway = { afterScroll, settled, historyBeforeScroll }
     await page.close()
   }
 
@@ -700,16 +838,19 @@ try {
     await page.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#section-aedar-access`,
       { waitUntil: 'domcontentloaded' })
     await page.waitForFunction(() => Boolean(document.getElementById('section-aedar-access')))
+    const historyBefore = await page.evaluate(() => history.length)
     const reached = await wheelToPage(page, '#figure-partage-de-lespace-public')
     await page.waitForTimeout(700)
     const state = await page.evaluate(() => ({
       hash: location.hash,
+      historyLength: history.length,
       scrollY: Math.round(window.scrollY),
       targetTop: Math.round(document.getElementById('section-aedar-access')
         ?.getBoundingClientRect().top ?? 0),
     }))
     assert.ok(reached, 'the user scroll did not reach page 2')
     assert.equal(state.hash, '#section-aedar-access', 'the section hash changed on user scroll')
+    assert.equal(state.historyLength, historyBefore, 'user scroll wrote browser history')
     assert.ok(state.scrollY > 3000, `the user scroll did not move: ${state.scrollY}`)
     assert.ok(state.targetTop < -500,
       `the pending section reveal yanked the user back: ${JSON.stringify(state)}`)
@@ -718,6 +859,7 @@ try {
   }
 
   receipt.sectionAnchors = sectionAnchors
+  receipt.responsiveSectionAnchors = responsiveSectionAnchors
 
   console.log(JSON.stringify(receipt, null, 2))
 
