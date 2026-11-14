@@ -65,3 +65,6 @@
 # PRs #451/#452/#455/#491.
 # Prototypes are local exploration artifacts, not repository documentation.
 /docs/prototypes/
+
+# Derived TTF instances for the throwaway browser PDF experiment.
+/app/public/prototype-pdf-fonts/
