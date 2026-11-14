@@ -88,6 +88,23 @@ function prepare(publicPageUrl) {
   right.append(territory, link)
   right.href = publicPageUrl
   header.append(home, title, right)
+  chapter.querySelectorAll('.concept-group').forEach(section => {
+    const sectionHeading = section.querySelector('.concept-group-heading')
+    const sectionTitle = sectionHeading?.querySelector('h3')
+    if (!sectionHeading || !sectionTitle) return
+    const identity = right.cloneNode(true)
+    identity.classList.add('pdf-section-territory')
+    identity.style.cssText += ';grid-column:3;justify-self:end;white-space:nowrap;'
+    const name = identity.querySelector('.page-heading-territory')
+    copyProperties(sectionTitle, name, ['font-family', 'font-size', 'font-style', 'line-height', 'letter-spacing'])
+    name.style.fontWeight = '600'
+    const sectionUrl = new URL(publicPageUrl)
+    sectionUrl.hash = `section-${section.dataset.section}`
+    identity.href = sectionUrl.href
+    sectionHeading.style.cssText += ';display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto) minmax(0,1fr);align-items:center;column-gap:var(--space-4);'
+    ;(sectionTitle.closest('.concept-group-heading-copy') ?? sectionTitle).style.gridColumn = '2'
+    sectionHeading.appendChild(identity)
+  })
   const main = chapter.querySelector('.page-main')
   header.style.width = `${main.getBoundingClientRect().width}px`
   header.style.borderBottom = getComputedStyle(originalChapter.querySelector('.page-heading')).borderBottom
@@ -98,7 +115,7 @@ function prepare(publicPageUrl) {
 function appendTimeRampTables(ui, territoryName) {
   const section = [...ui.chapter.querySelectorAll('.concept-group')].find(block => block.dataset.section === 'aedar-access')
   const heading = document.createElement('p')
-  heading.textContent = 'Valeurs des infobulles'
+  heading.textContent = 'Valeurs'
   heading.style.cssText = 'font:var(--type-figure-title);color:var(--ink);margin:24px 0 12px;text-align:center;'
   const panel = document.createElement('div')
   panel.style.cssText = 'display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;'

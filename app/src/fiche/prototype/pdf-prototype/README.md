@@ -228,3 +228,10 @@ remaining on the time-ramp/table export. The invitation and website links remain
 on all exports. More selected modes can make the tables denser; this experiment
 does not establish that every possible selection stays readable on one A4 sheet.
 The sandbox/decile distribution has not yet received a table adapter.
+
+Latest presentation variation: the table heading is simply « Valeurs ». Each
+section heading also carries the current territory name and external-link icon
+at the top right, with a slightly larger title-derived type role than the global
+PDF header. Symmetric grid tracks keep the section title centred. The name is
+cloned from the current territory identity, and its link targets that section;
+neither a territory name nor a factual identifier is duplicated in the template.
