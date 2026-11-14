@@ -1,17 +1,31 @@
 <script setup lang="ts">
 /**
- * « Couverture du territoire » — the 0–100 % share track of Mobilité page 3
- * (#955). A compact focal fill with an explicit « Groupe comparé » tick, never
- * a second bar chart and never the `nb_buildings` denominator.
+ * « Couverture du territoire » — the approved two-row share figure of Mobilité
+ * page 3 (#1006).
+ *
+ * Two thin, crisp horizontal bars at the full 0–100 % extent: the validated
+ * territory name first, then the header's « Groupe comparé ». Each row draws
+ * the published share and leaves its remainder as a quiet, unlabelled neutral
+ * ground — a visual reading of the complement, never a newly published metric
+ * and never a rank computed here. There is no category legend and no 0 %/100 %
+ * endpoint label: the bar frame carries the scale.
+ *
+ * The visible percentage keeps one decimal; the geometry keeps the served
+ * value, so Rennes' published 0,9957355… reads 99,6 % without the bar being
+ * filled to 100 %. The accessible name keeps the served precision.
+ *
+ * An explicit « Aucune comparaison » (the header control's empty selection) is
+ * not an unavailable comparison: the whole compared row, its bar and its rank
+ * disappear. A requested comparison that is loading, failed or unpublished
+ * stays an honest state with its retry.
  */
 import { computed } from 'vue'
 
-import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import type { MobiliteShareEvidence } from '@/fiche/content/themeContent'
 import { formatServedRankAria } from '@/fiche/figureGrammaire'
 import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
-import CahierFigureLegend from './CahierFigureLegend.vue'
+import CahierRank from './CahierRank.vue'
 
 type ComparisonState = {
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
@@ -22,15 +36,34 @@ type ComparisonState = {
 const props = defineProps<{
   figure: MobiliteShareEvidence
   comparison: ComparisonState
+  /** Explicit « Aucune comparaison »: the whole compared row is absent. */
+  comparisonNone?: boolean
 }>()
 
-function formatNumber(value: number, maximumFractionDigits = 0): string {
+function formatNumber(value: number, maximumFractionDigits: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
 }
 
-function displayed(value: number, unit: string): string {
-  const scaled = unit.trim() === '%' ? value * 100 : value
-  return formatNumber(scaled)
+function scaledValue(value: number): number {
+  return props.figure.unit.trim() === '%' ? value * 100 : value
+}
+
+/** The served unit, never an invented percentage. */
+function displayUnit(): string {
+  return props.figure.unit.trim() || '%'
+}
+
+/** Visible label: one decimal, the same precision for both rows. */
+function visibleLabel(value: number | null): string {
+  return value === null
+    ? 'Indisponible'
+    : `${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+      .format(scaledValue(value))} ${displayUnit()}`
+}
+
+/** Accessible reading keeps the served value's actual precision. */
+function preciseLabel(value: number | null): string {
+  return value === null ? 'Indisponible' : `${formatNumber(scaledValue(value), 4)} ${displayUnit()}`
 }
 
 const value = computed(() => {
@@ -38,6 +71,7 @@ const value = computed(() => {
   return fact.availability === 'complete' && fact.value !== null && Number.isFinite(fact.value)
     ? fact.value : null
 })
+
 const reference = computed(() => {
   if (props.comparison.status !== 'ready') return null
   const fact = props.figure.value.fact.comparison
@@ -45,13 +79,12 @@ const reference = computed(() => {
   return fact.reference.value
 })
 
-const valueLabel = computed(() => value.value === null
-  ? 'Indisponible'
-  : `${displayed(value.value, props.figure.unit)} %`)
-const referenceLabel = computed(() => reference.value === null
-  ? 'Indisponible'
-  : `${displayed(reference.value, props.figure.unit)} %`)
+const valueLabel = computed(() => visibleLabel(value.value))
+const referenceLabel = computed(() => visibleLabel(reference.value))
+const valueAriaLabel = computed(() => preciseLabel(value.value))
+const referenceAriaLabel = computed(() => preciseLabel(reference.value))
 
+/** The published share's position, clamped to the bar frame, never re-based. */
 function percentPosition(candidate: number | null): number {
   if (candidate === null) return 0
   return Math.max(0, Math.min(100, candidate * 100))
@@ -59,25 +92,16 @@ function percentPosition(candidate: number | null): number {
 
 const fillPercent = computed(() => percentPosition(value.value))
 const referencePercent = computed(() => percentPosition(reference.value))
-const valueOnFill = computed(() => value.value !== null && fillPercent.value >= 92)
-const valueStyle = computed(() => ({
-  left: `${fillPercent.value}%`,
-  transform: valueOnFill.value ? 'translateX(-100%)' : 'translateX(0.35rem)',
-}))
-const referenceStyle = computed(() => {
-  const percent = referencePercent.value
-  if (percent <= 4) return { left: '0%' }
-  if (percent >= 96) return { left: '100%', transform: 'translateX(-100%)' }
-  return { left: `${percent}%`, transform: 'translateX(-50%)' }
-})
+/** The remainder is only the rest of the published share, never a stored fact. */
+const complementPercent = computed(() => (value.value === null ? 0 : Math.max(0, 100 - fillPercent.value)))
+const referenceComplementPercent = computed(() =>
+  reference.value === null ? 0 : Math.max(0, 100 - referencePercent.value))
 
 const comparisonDetail = computed(() => {
   const comparison = props.figure.value.fact.comparison
   if (!comparison) return null
-  const statistic = comparison.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane'
   return {
-    statistic,
-    label: props.figure.comparisonLabel ?? `${statistic} du groupe comparé`,
+    statistic: comparison.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane',
     rank: formatServedRankAria(comparison.rank),
     direction: LIBELLES_DIRECTION[comparison.direction] ?? null,
   }
@@ -85,54 +109,47 @@ const comparisonDetail = computed(() => {
 
 const publicationNotes = computed(() => [
   ...(props.figure.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
-  ...(props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`),
+  ...(props.comparisonNone
+    ? []
+    : (props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`)),
 ])
 
-const accessibleLabel = computed(() => {
-  const parts = [props.figure.figureTitle, 'Jauge de 0 à 100 %.',
-    `Territoire : ${valueLabel.value}`]
+const remainderReading = 'Barre de 0 à 100 % ; le reste de la barre est le complément de la part publiée.'
+
+const territoryAria = computed(() => [
+  props.figure.figureTitle,
+  `${props.figure.territoryName} : ${valueAriaLabel.value}`,
+  remainderReading,
+  ...(props.figure.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
+].join('. '))
+
+const comparisonAria = computed(() => {
   if (props.comparison.status === 'loading') {
-    parts.push('Groupe comparé en cours de chargement')
-  } else if (props.comparison.status === 'error') {
-    parts.push(props.figure.unavailableComparisons?.length
-      ? `Comparaison indisponible : ${props.figure.unavailableComparisons.join(', ')}`
-      : `Groupe comparé indisponible : ${props.comparison.error ?? 'échec du chargement'}`)
-  } else if (props.comparison.status === 'unavailable') {
-    parts.push('Groupe comparé indisponible')
-  } else if (reference.value !== null && comparisonDetail.value) {
-    parts.push(`Groupe comparé : ${referenceLabel.value} (${comparisonDetail.value.label})`)
-    if (comparisonDetail.value.rank) parts.push(`Rang ${comparisonDetail.value.rank}`)
-    else if (comparisonDetail.value.direction) parts.push(comparisonDetail.value.direction)
-  } else {
-    parts.push('Groupe comparé indisponible')
+    return `${props.figure.figureTitle}. ${GROUPE_COMPARE_LABEL} : chargement en cours.`
   }
-  parts.push(...publicationNotes.value)
-  return parts.join('. ')
+  if (reference.value === null || !comparisonDetail.value) {
+    return [
+      props.figure.figureTitle,
+      `${GROUPE_COMPARE_LABEL} : indisponible`,
+      ...(props.comparisonNone
+        ? []
+        : (props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`)),
+    ].join('. ')
+  }
+  return [
+    props.figure.figureTitle,
+    `${GROUPE_COMPARE_LABEL} : ${referenceAriaLabel.value}`,
+    props.figure.comparisonLabel ?? `${comparisonDetail.value.statistic} du groupe comparé`,
+    comparisonDetail.value.rank ? `Rang ${comparisonDetail.value.rank}` : comparisonDetail.value.direction,
+    remainderReading,
+    ...(props.comparisonNone
+      ? []
+      : (props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`)),
+  ].filter(Boolean).join('. ')
 })
 
-const legendEntries = computed<readonly FigureLegendEntry[]>(() => [
-  {
-    key: 'territory',
-    label: 'Territoire',
-    marker: 'line',
-    tone: 'theme',
-    ariaLabel: `Territoire : ${valueLabel.value}`,
-  },
-  {
-    key: 'comparison',
-    label: GROUPE_COMPARE_LABEL,
-    marker: 'tick',
-    tone: 'peer',
-    ariaLabel: `${GROUPE_COMPARE_LABEL} : ${comparisonDetail.value?.label ?? 'Indisponible'}`,
-  },
-])
-
-const legendColors = {
-  territory: 'var(--cahier-theme-strong, var(--brand-600))',
-  comparison: 'var(--cahier-default, var(--editorial-muted))',
-}
-
 const stateMessage = computed(() => {
+  if (props.comparisonNone) return null
   if (props.comparison.status === 'loading') return 'Chargement du groupe comparé…'
   if (props.comparison.status === 'error') {
     return props.figure.unavailableComparisons?.length ? null : props.comparison.error ?? 'Groupe comparé indisponible.'
@@ -148,55 +165,87 @@ const stateMessage = computed(() => {
 
 <template>
   <div class="mobilite-share-track">
-    <div
-      class="mobilite-share-track__graphic"
-      role="img"
-      :aria-label="accessibleLabel"
-    >
-      <div class="mobilite-share-track__scale" aria-hidden="true">
-        <span>0 %</span>
-        <span>100 %</span>
+    <div class="mobilite-share-track__row" data-row="territory">
+      <div class="mobilite-share-track__head">
+        <span class="mobilite-share-track__label">{{ figure.territoryName }}</span>
+        <span class="mobilite-share-track__value" :data-value="value ?? 'absent'">{{ valueLabel }}</span>
       </div>
-      <div v-if="value !== null" class="mobilite-share-track__rail">
-        <div
-          class="mobilite-share-track__fill"
-          :data-value="value"
+      <div
+        v-if="value !== null"
+        class="mobilite-share-track__track"
+        role="img"
+        :aria-label="territoryAria"
+      >
+        <span
+          class="mobilite-share-track__segment mobilite-share-track__segment--share"
           :style="{ width: `${fillPercent}%` }"
+          data-segment="share"
         />
         <span
-          class="mobilite-share-track__value"
-          :class="{ 'mobilite-share-track__value--on-fill': valueOnFill }"
-          :style="valueStyle"
-        >{{ valueLabel }}</span>
-        <template v-if="reference !== null">
-          <span
-            class="mobilite-share-track__reference"
-            :data-value="reference"
-            :style="{ left: `${referencePercent}%` }"
-            aria-hidden="true"
-          />
-          <span
-            class="mobilite-share-track__reference-value"
-            :style="referenceStyle"
-          >{{ referenceLabel }}</span>
-        </template>
+          v-if="complementPercent > 0"
+          class="mobilite-share-track__segment mobilite-share-track__segment--complement"
+          :style="{ width: `${complementPercent}%` }"
+          data-segment="complement"
+        />
       </div>
-      <p v-else class="mobilite-share-track__unavailable">Indisponible</p>
+      <div
+        v-else
+        class="mobilite-share-track__track mobilite-share-track__track--empty"
+        data-state="empty"
+        role="img"
+        :aria-label="territoryAria"
+      >
+        <span class="mobilite-share-track__empty">Indisponible</span>
+      </div>
     </div>
 
-    <CahierFigureLegend
-      class="mobilite-share-track__legend"
-      :entries="legendEntries"
-      :mark-colors="legendColors"
-      :comparison-status="comparison.status"
-      :comparison-error="comparison.error"
-      label="Territoire et groupe comparé"
-    />
+    <div v-if="!comparisonNone" class="mobilite-share-track__row" data-row="comparison">
+      <div class="mobilite-share-track__head">
+        <span class="mobilite-share-track__label">{{ GROUPE_COMPARE_LABEL }}</span>
+        <span class="mobilite-share-track__value mobilite-share-track__value--comparison" :data-value="reference ?? 'absent'">{{ referenceLabel }}</span>
+      </div>
+      <div
+        v-if="reference !== null"
+        class="mobilite-share-track__track mobilite-share-track__track--comparison"
+        role="img"
+        :aria-label="comparisonAria"
+      >
+        <span
+          class="mobilite-share-track__segment mobilite-share-track__segment--share-comparison"
+          :style="{ width: `${referencePercent}%` }"
+          data-segment="share"
+        />
+        <span
+          v-if="referenceComplementPercent > 0"
+          class="mobilite-share-track__segment mobilite-share-track__segment--complement"
+          :style="{ width: `${referenceComplementPercent}%` }"
+          data-segment="complement"
+        />
+      </div>
+      <div
+        v-else
+        class="mobilite-share-track__track mobilite-share-track__track--empty mobilite-share-track__track--comparison"
+        data-state="empty"
+        role="img"
+        :aria-label="comparisonAria"
+      >
+        <span class="mobilite-share-track__empty">
+          {{ comparison.status === 'loading' ? 'Chargement…' : 'Indisponible' }}
+        </span>
+      </div>
+      <!-- The shared rank primitive: served rank, usual ties, extreme outline,
+           singleton suppression. The figure never computes a rank locally. -->
+      <CahierRank
+        v-if="reference !== null"
+        :fact="figure.value.fact"
+        placement="comparison"
+      />
+    </div>
 
     <p v-for="note in publicationNotes" :key="note" class="mobilite-share-track__state" role="note">{{ note }}</p>
     <p v-if="stateMessage" class="mobilite-share-track__state" role="status">{{ stateMessage }}</p>
     <button
-      v-if="comparison.status === 'error' && comparison.retry"
+      v-if="!comparisonNone && comparison.status === 'error' && comparison.retry"
       type="button"
       class="mobilite-share-track__retry"
       @click="comparison.retry()"
@@ -205,74 +254,83 @@ const stateMessage = computed(() => {
 </template>
 
 <style scoped>
-.mobilite-share-track { display: grid; gap: var(--space-3); min-width: 0; }
-.mobilite-share-track__graphic { display: grid; gap: var(--space-2); min-width: 0; }
-.mobilite-share-track__scale {
-  display: flex; justify-content: space-between;
-  color: var(--cahier-default, var(--editorial-muted));
-  font: var(--text-caption); font-variant-numeric: tabular-nums;
-}
-.mobilite-share-track__rail {
-  position: relative;
-  min-height: 4.5rem;
-  padding-top: 1.9rem;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--cahier-theme) 12%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cahier-theme) 22%, transparent);
-}
-.mobilite-share-track__fill {
-  position: absolute;
-  inset-block: 1.9rem 0.35rem;
-  inset-inline-start: 0;
+.mobilite-share-track {
+  --mobilite-share-complement: color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 18%, var(--paper));
+  display: grid;
+  gap: var(--space-3);
   min-width: 0;
-  border-radius: var(--radius-sm) 2px 2px var(--radius-sm);
-  background-color: var(--cahier-theme-strong, var(--brand-600));
-  background-image: none;
+}
+.mobilite-share-track__row { display: grid; gap: var(--space-1); min-width: 0; }
+.mobilite-share-track__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  min-width: 0;
+}
+/* The axis-label typography of the shared Cahier figures. */
+.mobilite-share-track__label {
+  color: var(--cahier-default, var(--editorial-muted));
+  font: var(--type-figure-label);
+  letter-spacing: var(--type-figure-label-tracking);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
 }
 .mobilite-share-track__value {
-  position: absolute;
-  bottom: 0.55rem;
-  color: var(--text-primary);
-  font: var(--text-body-sm);
-  font-weight: 700;
+  color: var(--ink, var(--editorial-ink));
+  font: var(--type-figure-value);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.mobilite-share-track__value--on-fill { color: var(--paper); }
-.mobilite-share-track__reference {
-  position: absolute;
-  top: 1.35rem;
-  bottom: 0;
-  width: 0;
-  border-inline-start: 2px solid currentColor;
+.mobilite-share-track__value--comparison {
   color: var(--cahier-default, var(--editorial-muted));
-  transform: translateX(-1px);
+  font: var(--type-figure-legend);
+  font-weight: 600;
 }
-.mobilite-share-track__reference::before {
-  content: '';
-  position: absolute;
-  top: -0.45rem;
-  left: -0.32rem;
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
-  background: currentColor;
+.mobilite-share-track__track {
+  display: flex;
+  min-width: 0;
+  height: 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 22%, transparent);
+  background: var(--mobilite-share-complement);
 }
-.mobilite-share-track__reference-value {
-  position: absolute;
-  top: 0;
+.mobilite-share-track__segment {
+  display: block;
+  height: 100%;
+  flex: 0 0 auto;
+}
+.mobilite-share-track__segment--share { background: var(--brand-500); }
+.mobilite-share-track__segment--share-comparison { background: var(--brand-200); }
+.mobilite-share-track__segment--complement { background: transparent; }
+.mobilite-share-track__track--empty {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 40%, transparent);
+  background: transparent;
+}
+.mobilite-share-track__empty {
   color: var(--cahier-default, var(--editorial-muted));
   font: var(--text-caption);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
-.mobilite-share-track__unavailable { margin: 0; color: var(--cahier-default, var(--editorial-muted)); font: var(--text-body-sm); }
-.mobilite-share-track__legend { flex-wrap: wrap; }
-.mobilite-share-track__state { margin: 0; color: var(--cahier-default, var(--editorial-muted)); font: var(--text-body-sm); }
+.mobilite-share-track__state {
+  margin: 0;
+  color: var(--cahier-default, var(--editorial-muted));
+  font: var(--text-body-sm);
+}
 .mobilite-share-track__retry {
-  justify-self: start; min-height: 2.75rem; padding: 0 var(--space-3);
-  border: 0; border-radius: var(--radius-md); background: transparent;
-  color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer;
+  justify-self: start;
+  min-height: 2.75rem;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--text-body-sm);
+  text-decoration: underline;
+  cursor: pointer;
 }
 .mobilite-share-track__retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
 .mobilite-share-track__retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }

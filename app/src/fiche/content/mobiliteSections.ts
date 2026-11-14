@@ -160,15 +160,35 @@ function contentIndicatorFact(
 function sourceFrom(provenance: FactProvenance | null, metadata?: ThemeMetadata): ContentSource | null {
   if (!provenance?.sourceId) return null
   const record = metadata?.source_records?.[provenance.sourceId]
+  const displayVersion = compactStampVersion(provenance.version, provenance.referenceDate)
   return {
     id: provenance.sourceId,
     source: record?.publisher ?? provenance.source,
     version: provenance.version,
     referenceDate: provenance.referenceDate,
     publicationDate: provenance.publicationDate,
+    ...(displayVersion === provenance.version ? {} : { displayVersion }),
     url: record?.url ?? null,
     licence: record?.licence ?? null,
   }
+}
+
+const ISO_PERIOD = /^\d{4}-\d{2}(?:-\d{2})?$/u
+const ISO_DAY = /^(\d{4}-\d{2})-\d{2}$/u
+
+/**
+ * #1006 — compact source-stamp precision. A period-shaped served version is
+ * already the published millésime and is shown verbatim (a month, a year, a
+ * multi-year window). An opaque dataset token says nothing to a reader, so the
+ * compact stamp states the month of the source's actual reference clock
+ * instead. The factual version and both dates are never rewritten: only this
+ * display precision is derived, and it is derived from the served clock.
+ */
+export function compactStampVersion(version: string, referenceDate: string | null): string {
+  if (ISO_PERIOD.test(version)) return version.slice(0, 7)
+  if (/\d{4}/u.test(version)) return version
+  const month = referenceDate ? ISO_DAY.exec(referenceDate)?.[1] : null
+  return month ?? version
 }
 
 function sourcesFor(values: readonly ContentFact[], metadata?: ThemeMetadata): ContentSource[] {
@@ -767,7 +787,14 @@ export function buildMobiliteStationnementRavitaillementSection(
   }
 }
 
-/** §7.5 — proximity is not service frequency, timetable amplitude or destinations. */
+/** App-owned page-3 editorial presentation (#1006): stable wording, not producer facts. */
+export const MOBILITE_RACCORDEMENT_FIGURE_TITLE =
+  'Population bretonne joignable selon le temps de trajet'
+export const MOBILITE_TRAVEL_TIME_AXIS_TITLE = 'Temps de trajet'
+
+/**
+ * §7.5 — proximity is not service frequency, timetable amplitude or destinations.
+ */
 function shareProse(): readonly TextBlock[] {
   return [[text('Une proximité à vol d’oiseau, pas une mesure de la fréquence, des horaires ni des destinations desservies. Seuls les arrêts référencés par Korrigo entrent dans le calcul ; un réseau absent de cette base reste invisible.')]]
 }
@@ -867,6 +894,7 @@ export function buildMobiliteShareSection(
     : {
       kind: 'mobilite-share',
       figureTitle: value.label,
+      territoryName: facts.territory.name,
       value,
       unit: value.fact.unit,
       comparisonLabel: comparisonLabelFor(allFacts, facts.territory),
@@ -921,8 +949,10 @@ export function buildMobiliteRaccordementSection(
   const evidence: MobiliteRaccordementEvidence | null = hasAny
     ? {
       kind: 'mobilite-raccordement',
-      figureTitle: metadata?.indicator_labels?.raccordement_courbe
-        ?? 'Courbe de population bretonne jointe selon le temps de trajet',
+      // Owner-approved figure title and axis label: stable app presentation,
+      // never a renderer literal and never a rewritten producer descriptor.
+      figureTitle: MOBILITE_RACCORDEMENT_FIGURE_TITLE,
+      xAxisTitle: MOBILITE_TRAVEL_TIME_AXIS_TITLE,
       territoryName: facts.territory.name,
       level: facts.territory.type,
       points,

@@ -24,6 +24,12 @@ export interface ContentSource {
   version: string
   referenceDate: string | null
   publicationDate: string | null
+  /**
+   * App-owned compact-stamp precision (#1006). Set when the served version is
+   * an opaque dataset token and the stamp states the month of the actual
+   * source clock instead; `version` and both dates stay the producer's facts.
+   */
+  displayVersion?: string
   /** Producer-owned public URL of the source record, when published. */
   url?: string | null
   /** Producer-owned licence wording of the source record, when published. */
@@ -324,6 +330,8 @@ export interface MobiliteShareEvidence {
   kind: 'mobilite-share'
   /** The full published indicator label, including its proximity threshold. */
   figureTitle: string
+  /** The validated territory display identity, used as the focal row's name. */
+  territoryName: string
   value: ContentFact
   unit: string
   /** Resolved statistic + scope of the active header comparison (ARIA only). */
@@ -345,6 +353,8 @@ export interface MobiliteTrajectoryAxis {
 export interface MobiliteRaccordementEvidence {
   kind: 'mobilite-raccordement'
   figureTitle: string
+  /** App-owned x-axis title; the tick labels carry the minute unit themselves. */
+  xAxisTitle: string
   territoryName: string
   level: TerritoryIdentity['type']
   /** Focal cumulative curve, one fact per published duration grid point. */
