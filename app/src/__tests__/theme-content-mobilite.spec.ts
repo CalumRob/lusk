@@ -10,7 +10,7 @@ import type {
   NumericFact,
   TerritoryFacts,
 } from '@/fiche/content/territoryFacts'
-import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
+import { chapterForSectionAnchor, resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { buildPartageSubtitle, buildMobiliteRaccordementSection, buildMobiliteShareSection } from '@/fiche/content/mobiliteSections'
 import type { ThemeMetadata } from '@/payload/types'
 import liveNetworks from './fixtures/rennes-network-live.json'
@@ -649,5 +649,19 @@ describe('compared protected/shared means — #997', () => {
     const category = bike(indicators)
     expect(category.comparisonSplit).toBeUndefined()
     expect(category.comparisonSplitNote).toContain('ne partagent pas la même unité')
+  })
+})
+
+describe('chapterForSectionAnchor - #1010 typed section hierarchy', () => {
+  it('resolves every rendered section id through its owning unit, including non-AEDAR', () => {
+    const content = resolveMobiliteThemeContent(factsWith(sharingFacts()), metadata)
+    for (const unit of content.units) {
+      for (const section of unit.sections) {
+        expect(chapterForSectionAnchor(content, `#section-${section.key}`)).toBe(unit.key)
+      }
+    }
+    expect(chapterForSectionAnchor(content, '#section-does-not-exist')).toBeUndefined()
+    expect(chapterForSectionAnchor(content, '#figure-lecture')).toBeUndefined()
+    expect(chapterForSectionAnchor(null, '#section-aedar-car-overview')).toBeUndefined()
   })
 })

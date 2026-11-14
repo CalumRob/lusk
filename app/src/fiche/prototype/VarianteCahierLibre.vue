@@ -8,7 +8,7 @@
  * only lays those two inputs out as the existing Cahier exploration.
  */
 import { CarFront, SlidersHorizontal } from 'lucide-vue-next'
-import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import BoutonComparaison from '@/components/fiche/BoutonComparaison.vue'
@@ -31,6 +31,8 @@ import {
   routePourCibleExploration,
   routePourSectionExploration,
 } from '@/fiche/explorationHandoff'
+import { chapterForSectionAnchor } from '@/fiche/content/themeContent'
+import { isUserScrollKey } from '@/fiche/navigationIntent'
 import type { TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
 import {
   AEDAR_DEFAULT_VISIBLE_RAMP_MODES,
@@ -80,7 +82,10 @@ const props = withDefaults(defineProps<{
   /** #1008 — the visible chapter's admission state, owned by the demand planner. */
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
 }>(), { aedarChapterActive: true })
-const emit = defineEmits<{ 'chapitre-visible': [anchor: string] }>()
+const emit = defineEmits<{
+  'chapitre-visible': [anchor: string]
+  'chapitre-section-resolved': [owner: string | null]
+}>()
 const route = useRoute()
 
 /** #860 (ruling 2026-11-03) — le contrôle de comparaison fourni par la fiche
@@ -106,9 +111,18 @@ const pageAnchors = computed(() => new Set(props.pagination.entries.map((entry) 
 const chapterAnchors = computed(() => new Set(props.pagination.entries
   .filter((entry) => entry.page !== null)
   .map((entry) => entry.anchor)))
-const pageElements = new Map<string, HTMLElement>()
-const pageVisibility = new Map<string, boolean>()
 let emittedChapitre: string | null = null
+let revealFrame: number | null = null
+let revealTarget: HTMLElement | null = null
+let revealCancelled = false
+let pendingRevealHash: string | null = null
+let revealedHash: string | null = null
+let revealedOwner: string | null = null
+let revealUserStopped = false
+let revealObserver: ResizeObserver | null = null
+let revealSettleFrame: number | null = null
+let revealSettleTimer: ReturnType<typeof setTimeout> | null = null
+let revealScrollUntil = 0
 
 const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
 const unit = computed(() => units.value[0] ?? null)
@@ -334,33 +348,241 @@ function sourceLabel(source: { source: string; version: string }): string {
 
 const sourceLabels = computed(() => props.content.sourceRegister.map(sourceLabel))
 
+function removeRevealListeners(): void {
+  window.removeEventListener('wheel', onRevealInterrupt)
+  window.removeEventListener('touchmove', onRevealInterrupt)
+  window.removeEventListener('keydown', onRevealInterrupt)
+  window.removeEventListener('scroll', onRevealNativeScroll)
+}
+
+function armRevealInterrupt(): void {
+  window.addEventListener('wheel', onRevealInterrupt, { passive: true })
+  window.addEventListener('touchmove', onRevealInterrupt, { passive: true })
+  window.addEventListener('keydown', onRevealInterrupt)
+  window.addEventListener('scroll', onRevealNativeScroll, { passive: true })
+}
+
+function clearRevealSchedule(): void {
+  revealCancelled = true
+  if (revealFrame !== null) {
+    cancelAnimationFrame(revealFrame)
+    revealFrame = null
+  }
+  if (revealSettleFrame !== null) {
+    cancelAnimationFrame(revealSettleFrame)
+    revealSettleFrame = null
+  }
+  revealObserver?.disconnect()
+  revealObserver = null
+  if (revealSettleTimer !== null) {
+    clearTimeout(revealSettleTimer)
+    revealSettleTimer = null
+  }
+  revealTarget = null
+  removeRevealListeners()
+}
+
+function completeReveal(): void {
+  pendingRevealHash = null
+  revealedHash = null
+  revealedOwner = null
+  clearRevealSchedule()
+}
+
+function cancelReveal(): void {
+  revealUserStopped = true
+  completeReveal()
+}
+
+function onRevealInterrupt(event: Event): void {
+  if (event.type === 'keydown' && !isUserScrollKey(event as KeyboardEvent)) return
+  cancelReveal()
+}
+
+function onRevealNativeScroll(): void {
+  if (revealCancelled || revealUserStopped || !revealedHash) return
+  if (Date.now() > revealScrollUntil) return
+  if (revealSettleFrame !== null) return
+  revealSettleFrame = requestAnimationFrame(() => {
+    revealSettleFrame = null
+    if (!revealCancelled && !revealUserStopped && revealTarget) alignReveal(revealTarget)
+  })
+}
+
+/** The real sticky page-heading bottom, including wrap, fonts and header. */
+function revealHeadingBottom(target: HTMLElement): number {
+  const page = target.closest<HTMLElement>('.cahier-page, .sources-page')
+  const heading = page?.querySelector<HTMLElement>('.page-heading')
+  return heading ? heading.getBoundingClientRect().bottom : 0
+}
+
+function alignReveal(target: HTMLElement): void {
+  const bottom = revealHeadingBottom(target)
+  if (bottom <= 0) return
+  const delta = target.getBoundingClientRect().top - bottom
+  if (Math.abs(delta) > 1) window.scrollBy(0, Math.round(delta))
+}
+
+/** A rendered inner section's owning unit, from the typed hierarchy. */
+function sectionOwnerKey(hash: string): string | null {
+  return chapterForSectionAnchor(props.content, hash) ?? null
+}
+
+function ownerSettled(owner: string | null): boolean {
+  if (!owner) return true
+  if (owner === 'acces-aux-services') return props.aedarStatus !== 'loading'
+  const status = props.chapitresStatut?.[owner]
+  return status === undefined || status === 'ready' || status === 'error'
+}
+
+function startRevealObserver(target: HTMLElement): void {
+  const page = target.closest<HTMLElement>('.cahier-page, .sources-page')
+  if (!page || typeof ResizeObserver === 'undefined') return
+  revealObserver = new ResizeObserver(() => {
+    if (revealCancelled || revealUserStopped || !revealedHash) return
+    if (revealSettleFrame !== null) return
+    revealSettleFrame = requestAnimationFrame(() => {
+      revealSettleFrame = null
+      if (!revealCancelled && !revealUserStopped) alignReveal(target)
+    })
+  })
+  revealObserver.observe(page)
+  // The observer is a finite post-render settle, not a standing viewport
+  // framework: it stops after the data/loading layout has had time to settle.
+  revealSettleTimer = setTimeout(() => {
+    if (revealedOwner && ownerSettled(revealedOwner)) completeReveal()
+  }, 8000)
+}
+
+function scheduleReveal(target: HTMLElement, alignToHeading: boolean): void {
+  revealCancelled = false
+  revealTarget = target
+  armRevealInterrupt()
+  const scroll = (): void => {
+    revealFrame = null
+    if (revealCancelled || revealUserStopped || !revealTarget) return
+    const current = revealTarget
+    // A short scroll window catches the browser's own late fragment landing;
+    // wheel/touch/key still cancels immediately, and after the window the user
+    // owns the scroll without any reveal measurement.
+    revealScrollUntil = Date.now() + 1200
+    current.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+    if (!alignToHeading) {
+      if (revealedOwner && ownerSettled(revealedOwner)) completeReveal()
+      return
+    }
+    // A finite render-settle: align on each frame until the target has held
+    // its post-heading position for three consecutive frames (or 30 frames).
+    // This is not a polling timer; a later data render starts a fresh settle
+    // through the content/status watcher.
+    startRevealObserver(current)
+    let frames = 0
+    let stable = 0
+    let lastTop: number | null = null
+    const settle = (): void => {
+      if (revealCancelled || revealUserStopped) return
+      alignReveal(current)
+      const top = Math.round(current.getBoundingClientRect().top)
+      if (lastTop === top) stable += 1
+      else { stable = 0; lastTop = top }
+      frames += 1
+      if (frames < 30 && stable < 3) {
+        requestAnimationFrame(settle)
+        return
+      }
+      if (document.fonts?.ready) {
+        void document.fonts.ready.then(() => {
+          if (!revealCancelled && !revealUserStopped && revealedHash) alignReveal(current)
+        })
+      }
+      if (typeof ResizeObserver === 'undefined' && revealedOwner &&
+          ownerSettled(revealedOwner)) completeReveal()
+    }
+    requestAnimationFrame(settle)
+  }
+  if (typeof requestAnimationFrame === 'function') revealFrame = requestAnimationFrame(scroll)
+  else scroll()
+}
+
+/**
+ * #1010 — the browser resolves a fragment before the SPA content exists, so a
+ * cold `#section-…` link never reaches its target and the reading-band observer
+ * never sees the owning page. Once the Cahier has rendered, resolve the target
+ * through the typed unit/section hierarchy, report its owning chapter and give
+ * the fragment one navigation frame to land. A user wheel/touch/key scroll
+ * cancels every pending or later content-driven reveal; the hash/history is
+ * untouched.
+ */
+function revealHashTarget({ resetUser = false } = {}): void {
+  if (resetUser) {
+    revealUserStopped = false
+    pendingRevealHash = null
+    revealedHash = null
+    revealedOwner = null
+  }
+  if (revealUserStopped || !rootRef.value) return
+  const hash = route.hash.replace(/^#/, '')
+  if (!hash) {
+    pendingRevealHash = null
+    revealedHash = null
+    revealedOwner = null
+    clearRevealSchedule()
+    return
+  }
+  clearRevealSchedule()
+  const ownerKey = sectionOwnerKey(route.hash)
+  emit('chapitre-section-resolved', ownerKey)
+  const pageEntry = props.pagination.entries.find((entry) => entry.anchor === hash) ?? null
+  const owner = ownerKey ? pageAnchorFor(ownerKey) : null
+  if (owner && chapterAnchors.value.has(owner)) {
+    activeFigure.value = owner
+    emit('chapitre-visible', owner)
+  }
+  const target = document.getElementById(hash)
+  if (target && rootRef.value.contains(target)) {
+    pendingRevealHash = null
+    revealedHash = hash
+    revealedOwner = ownerKey ?? pageEntry?.key ?? null
+    scheduleReveal(target, Boolean(ownerKey))
+    return
+  }
+  if (!ownerKey) {
+    pendingRevealHash = null
+    revealedHash = null
+    revealedOwner = null
+    return
+  }
+  // The owning chapter is valid but its section is rendered after the data:
+  // keep the reveal pending for the next content render, not a polling loop.
+  pendingRevealHash = hash
+  revealedHash = null
+  revealedOwner = null
+  armRevealInterrupt()
+}
+
 useCahierBaselineGrid(rootRef, () => props.presentation !== 'plain')
 
 onMounted(() => {
   activeFigure.value = pageEntry.value?.anchor ?? anchorForEntry('acces-aux-services')
+  revealHashTarget({ resetUser: true })
   if (!rootRef.value || !('IntersectionObserver' in window)) return
   const figures = [...rootRef.value.querySelectorAll<HTMLElement>('[data-figure]')]
-  for (const figure of figures) {
-    const key = figure.getAttribute('data-figure')
-    if (key && pageAnchors.value.has(key)) pageElements.set(key, figure)
-  }
   observer = new IntersectionObserver(
-    (entries) => {
-      // Keep the page-level visibility of every observed page, not only the
-      // entries that changed in this callback: an intermediate page can leave
-      // while the next page enters, and the reader's page is the first one
-      // actually in the existing reading band.
-      for (const entry of entries) {
-        const key = entry.target.getAttribute('data-figure')
-        if (key && pageAnchors.value.has(key)) pageVisibility.set(key, entry.isIntersecting)
-      }
-      const active = [...pageVisibility.entries()]
-        .filter(([, visible]) => visible)
-        .map(([anchor]) => ({
-          anchor,
-          top: pageElements.get(anchor)?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
-        }))
-        .sort((left, right) => left.top - right.top)[0]?.anchor
+    () => {
+      // Read the actual page rects inside the same reading band as the
+      // observer's rootMargin. A previous callback's stale boolean must never
+      // keep an off-screen page active after a fast user scroll.
+      const bandTop = window.innerHeight * 0.14
+      const bandBottom = window.innerHeight * 0.34
+      const pages = rootRef.value
+        ? [...rootRef.value.querySelectorAll<HTMLElement>('.cahier-page[data-figure], .sources-page[data-figure]')]
+          .map((element) => ({ anchor: element.getAttribute('data-figure') ?? '', element }))
+          .filter(({ anchor }) => pageAnchors.value.has(anchor))
+        : []
+      const active = pages
+        .map(({ anchor, element }) => ({ anchor, rect: element.getBoundingClientRect() }))
+        .filter(({ rect }) => rect.bottom > bandTop && rect.top < bandBottom)
+        .sort((left, right) => left.rect.top - right.rect.top)[0]?.anchor
       if (!active) return
       activeFigure.value = active
       if (chapterAnchors.value.has(active) && active !== emittedChapitre) {
@@ -373,7 +595,16 @@ onMounted(() => {
   figures.forEach((figure) => observer?.observe(figure))
 })
 
+watch(() => route.hash, () => { revealHashTarget({ resetUser: true }) })
+watch(() => props.content, () => {
+  if (!revealUserStopped && (pendingRevealHash || revealedHash)) revealHashTarget()
+}, { flush: 'post' })
+watch([() => props.aedarStatus, () => props.chapitresStatut], () => {
+  if (!revealUserStopped && revealedHash) revealHashTarget()
+}, { flush: 'post' })
+
 onBeforeUnmount(() => {
+  cancelReveal()
   observer?.disconnect()
 })
 </script>

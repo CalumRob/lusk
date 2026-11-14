@@ -1,4 +1,4 @@
-﻿import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { CONTROLE_COMPARAISON_KEY } from '@/fiche/comparisonContext'
 import type { ControleComparaison } from '@/fiche/comparisonContext'
@@ -13,7 +13,7 @@ import ProductionMobiliteAedar from '@/fiche/mobilite/ProductionMobiliteAedar.vu
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { aedarAccessSection } from '@/fiche/content/aedarAccessSection'
 import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
-import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
+import { chapterForSectionAnchor, resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import type { AedarAccessSection, ContentSection, ThemeContent } from '@/fiche/content/themeContent'
 import type { AedarFetchResult, AedarSummaryFetchResult, AedarTerritorySummary, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
@@ -1117,6 +1117,58 @@ describe('ProductionMobiliteAedar', () => {
     expect(recovered.findAll('.cahier-comparison-value__warning')).toHaveLength(0)
     expect(recovered.findAll('.cahier-rank')).toHaveLength(2)
     wrapper.unmount()
+  })
+
+  it('resolves the five assembled AEDAR section ids through the typed hierarchy in pending and ready states', async () => {
+    const content = baseContent()
+    const pendingRouter = createRouter({ history: createMemoryHistory(), routes })
+    const pending = mount(ProductionMobiliteAedar, {
+      props: {
+        content,
+        pagination: cahierPaginationFor(payload, content),
+        aedarData: null,
+        aedarStatus: 'loading',
+        retryAedar: () => {},
+        aedarSummaryData: null,
+        aedarSummaryStatus: 'loading',
+        retryAedarSummary: () => {},
+      },
+      global: { plugins: [pendingRouter] },
+    })
+    await pendingRouter.isReady()
+    await flushPromises()
+
+    const readyRouter = createRouter({ history: createMemoryHistory(), routes })
+    const ready = mount(ProductionMobiliteAedar, {
+      props: {
+        content,
+        pagination: cahierPaginationFor(payload, content),
+        aedarData: aedarReady,
+        aedarStatus: 'ready',
+        retryAedar: () => {},
+        aedarSummaryData: aedarSummaryReady,
+        aedarSummaryStatus: 'ready',
+        retryAedarSummary: () => {},
+      },
+      global: { plugins: [readyRouter] },
+    })
+    await readyRouter.isReady()
+    await flushPromises()
+
+    const ids = ['aedar-car-overview', 'aedar-diversity-loss', 'aedar-access',
+      'aedar-equipment-profile', 'aedar-equipment-explorer']
+    for (const wrapper of [pending, ready]) {
+      const assembled = wrapper.findComponent(VarianteCahierLibre).props('content') as ThemeContent
+      const pageOne = assembled.units[0]
+      expect(pageOne.sections.length).toBeGreaterThan(0)
+      expect(pageOne.sections.map((section) => section.key)).toEqual(expect.arrayContaining(ids))
+      for (const id of ids) {
+        expect(chapterForSectionAnchor(assembled, `#section-${id}`)).toBe('acces-aux-services')
+      }
+      expect(chapterForSectionAnchor(assembled, '#section-visiter-la-bretagne'))
+        .toBe('offre-transports-commun')
+      wrapper.unmount()
+    }
   })
 
   it('keeps the cahier stable without a loading banner while AEDAR data loads', async () => {

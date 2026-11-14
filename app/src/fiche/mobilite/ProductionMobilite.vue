@@ -24,7 +24,10 @@ withDefaults(defineProps<{
   /** #1008 — the visible chapter's admission state, owned by the demand planner. */
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
 }>(), { aedarActive: true })
-const emit = defineEmits<{ 'chapitre-visible': [anchor: string] }>()
+const emit = defineEmits<{
+  'chapitre-visible': [anchor: string]
+  'chapitre-section-resolved': [owner: string | null]
+}>()
 </script>
 <template>
   <ProductionMobiliteAedar
@@ -45,5 +48,6 @@ const emit = defineEmits<{ 'chapitre-visible': [anchor: string] }>()
     :aedar-active="aedarActive"
     :chapitres-statut="chapitresStatut"
     @chapitre-visible="emit('chapitre-visible', $event)"
+    @chapitre-section-resolved="emit('chapitre-section-resolved', $event)"
   />
 </template>

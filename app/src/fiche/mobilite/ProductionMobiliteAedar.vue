@@ -35,7 +35,10 @@ const props = withDefaults(defineProps<{
   /** #1008 — the visible chapter's admission state, owned by the demand planner. */
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
 }>(), { aedarActive: true })
-const emit = defineEmits<{ 'chapitre-visible': [anchor: string] }>()
+const emit = defineEmits<{
+  'chapitre-visible': [anchor: string]
+  'chapitre-section-resolved': [owner: string | null]
+}>()
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
@@ -261,6 +264,7 @@ const transformed = computed(() => {
     :aedar-chapter-active="props.aedarActive !== false"
     :chapitres-statut="props.chapitresStatut"
     @chapitre-visible="emit('chapitre-visible', $event)"
+    @chapitre-section-resolved="emit('chapitre-section-resolved', $event)"
   />
 </template>
 

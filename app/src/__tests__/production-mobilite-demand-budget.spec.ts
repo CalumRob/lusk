@@ -469,6 +469,65 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     wrapper.unmount()
   }, 60000)
 
+  it('admits the owning AEDAR chapter for all five cold section anchors', async () => {
+    const ids = ['section-aedar-car-overview', 'section-aedar-diversity-loss',
+      'section-aedar-access', 'section-aedar-equipment-profile', 'section-aedar-equipment-explorer']
+    for (const id of ids) {
+      const { transport, calls } = createTransport()
+      vi.stubGlobal('fetch', transport)
+      const { wrapper } = await monterFiche(
+        `/territoire/commune/35238?theme=mobilite#${id}`)
+      await settleOwner(calls, isAedar)
+      await flushPromises()
+
+      const core = new Set(items(calls)
+        .filter((item) => item.resource === 'aedar_territorial_aggregate' && item.intent.kind === 'facts')
+        .flatMap((item) => item.coordinates?.typequ ?? []))
+      expect(core.size, id).toBe(AEDAR_TYPEQU_REGISTRY.length)
+      expect(items(calls).filter(isAedar).length, id).toBeGreaterThan(0)
+      // A valid inner section already names its owner: the unrelated page-2
+      // numeric fallback must never be queued before admission.
+      expect(postsTouching(calls, PAGE_TWO), id).toHaveLength(0)
+      const overview = wrapper.get('[data-section="aedar-car-overview"]')
+      expect(overview.findAll('.cahier-figure-scalar').length, id).toBeGreaterThan(0)
+      expect(wrapper.find(`#${id}`).exists(), id).toBe(true)
+      wrapper.unmount()
+    }
+  }, 120000)
+
+  it('admits the owning page for a cold non-AEDAR section anchor, with its custom group', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche(
+      '/territoire/commune/35238?theme=mobilite&comparaison=commune:35238,commune:35240#section-visiter-la-bretagne')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-raccordement-curve__territory')
+
+    const pageThree = postsTouching(calls, PAGE_THREE)
+    expect(pageThree).toHaveLength(1)
+    expect(pageThree[0]!.items).toHaveLength(7)
+    expect(postsTouching(calls, PAGE_TWO)).toHaveLength(0)
+    expect(items(calls).filter(isAedar)).toEqual([])
+    expect(wrapper.find('#section-visiter-la-bretagne').exists()).toBe(true)
+    const selected = items(calls).filter((item) => item.resource === 'raccordement_courbe' &&
+      item.intent.kind === 'selected_comparison')
+    expect(selected.some((item) => item.intent.members?.some(
+      (member: { id: string }) => member.id === '35240'))).toBe(true)
+    wrapper.unmount()
+  }, 60000)
+
+  it('keeps the unknown-fragment numeric fallback without activating AEDAR', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite#section-unknown')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+
+    expect(postsTouching(calls, PAGE_TWO)).toHaveLength(3)
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(0)
+    expect(items(calls).filter(isAedar)).toEqual([])
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    wrapper.unmount()
+  }, 60000)
+
   it('keeps the page-1 landing AEDAR critical and reads its aggregate projections without overlap', async () => {
     const { transport, calls } = createTransport()
     vi.stubGlobal('fetch', transport)
