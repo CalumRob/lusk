@@ -5,11 +5,11 @@ import { createServer } from 'vite'
 import { installApiRoutes, makeApiHandlers } from './overflow-api-routes.mjs'
 
 /**
- * #1002 â€” quiet, repeatable browser receipt for AEDAR page-1 demand.
+ * #1002 — quiet, repeatable browser receipt for AEDAR page-1 demand.
  *
  * One scenario, one fixture set, one response delay, one environment:
  *   1. landing: `/territoire/commune/35238?theme=mobilite` (AEDAR is the
- *      requested chapter) â€” records every semantic read-batch POST with its FULL
+ *      requested chapter) — records every semantic read-batch POST with its FULL
  *      semantic identity (resource, target, intent incl. statistic, coordinates
  *      incl. TYPEQU, projected fields) and its issue time, then clicks the REAL
  *      Sommaire link to page 2 and keeps recording.
@@ -148,7 +148,7 @@ try {
           await delay()
           return nativeBatchResponse(items, (item, resource) => {
             const data = nativeReadFixture(item, resource, { syntheticProfileComparisons: true })
-            // #1008 â€” the live page-3 coverage fact and its displayed median:
+            // #1008 — the live page-3 coverage fact and its displayed median:
             // the fixture shape is unchanged, only the published value is pinned
             // so the browser proof asserts the real reading (99,6 %).
             if (item.resource === 'offre_tc' && item.intent?.kind === 'facts') {
@@ -198,7 +198,7 @@ try {
   }, null, { timeout: 30000 })
 
   /**
-   * #1008 â€” natural scroll only: real wheel events over the content, no
+   * #1008 — natural scroll only: real wheel events over the content, no
    * scrollIntoView, no hash change. The wheel direction is corrected from the
    * target's actual position, so a long page cannot overshoot and then run away
    * from the chapter; the app's own IntersectionObserver owns admission.
@@ -233,7 +233,7 @@ try {
   browser = await chromium.launch({ headless: true,
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) })
 
-  // Pass 1 â€” navigation while page-1 work is in flight (the audit scenario).
+  // Pass 1 — navigation while page-1 work is in flight (the audit scenario).
   const page = await makePage()
   const startedAt = Date.now()
   await page.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}`, { waitUntil: 'domcontentloaded' })
@@ -261,8 +261,8 @@ try {
   await page.locator('[data-section="mobilite-reseaux"], .mobilite-comparison-bars').first()
     .waitFor({ state: 'visible', timeout: 30000 }).catch(() => undefined)
   // The requested page-2 chapter's own demand (13 facts + 20 displayed
-  // comparisons). It may legitimately have been acquired on page-1 entry â€” the
-  // audit's "numeric planner" â€” so it is counted over the whole run.
+  // comparisons). It may legitimately have been acquired on page-1 entry — the
+  // audit's "numeric planner" — so it is counted over the whole run.
   const pageTwoBatches = batches.filter((batch) => batch.items.some((item) =>
     PAGE_TWO.includes(item.resource) && item.intent?.kind !== 'facts'))
   const pageTwoVisible = await page.locator('.mobilite-comparison-bars').first()
@@ -304,7 +304,7 @@ try {
   }
   await page.close()
 
-  // Pass 2 â€” quiet landing: first-useful and comparison-ready, measured apart.
+  // Pass 2 — quiet landing: first-useful and comparison-ready, measured apart.
   const quietStartIndex = batches.length
   const quiet = await makePage()
   const quietStart = Date.now()
@@ -335,7 +335,7 @@ try {
     cellMeasures: new Set(quietCells.flatMap((item) => item.coordinates?.measure ?? [])).size }
   await quiet.close()
 
-  // Pass 3 â€” #1008 the actual reader path: no hash, natural wheel down to page
+  // Pass 3 — #1008 the actual reader path: no hash, natural wheel down to page
   // 3, one real Sommaire click, then natural wheel back to page 2 and page 1
   // while the URL keeps the page-3 hash. The app's own IntersectionObserver
   // must admit the visible chapter; no scrollIntoView and no hash is written by
@@ -433,7 +433,7 @@ try {
   }
   await natural.close()
 
-  // Pass 4 â€” cold page-3 deep link, then the reader scrolls back up. The hash
+  // Pass 4 — cold page-3 deep link, then the reader scrolls back up. The hash
   // remains page 3; page 2 and page 1 become the visible demand and resume only
   // their genuinely missing reads, without erasing the settled page-3 entry.
   const coldStartIndex = batches.length
