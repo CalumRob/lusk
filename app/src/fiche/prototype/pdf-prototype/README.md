@@ -203,3 +203,28 @@ The waffle's short desktop composition leaves substantial whitespace on portrait
 A4 when centred at the existing width-derived scale. Per-section export exposes
 that layout choice; it does not by itself make the figure bigger or justify
 stretching it. A content-sized or landscape variant would be a separate decision.
+
+## Tooltip-data table experiment
+
+Run `npm run prototype:tooltip-pdf` from `app/`. The real Rennes/EPCI time-ramp
+section is exported to `E:/Temp/opencode/cahier-tooltip-pdf/rennes-aedar-access.pdf`
+with two tables under its original charts. The currently selected modes and all
+published time cuts are included: focal value, displayed comparison value and
+producer-served rank. No curve interpolation, new numeric read or rank calculation
+is involved. Current three-mode output fits one A4 sheet, about 70 KB.
+
+The table and interactive tooltip now consume the same pure
+`aedarTimeRampTooltip.ts` presentation model. This is extracted from the existing
+component without changing its behavior; all 16 existing time-ramp component
+tests pass. Missing values stay `Indisponible`, zero stays zero, ranks use the
+existing served-rank formatter, and time labels come from the actual points.
+The exporter reads `visibleTimeSeries` and effective comparison visibility; it
+does not temporarily hover points or mutate the live reader's selected cut.
+Resolved table records are retained in the artifact receipt for comparison.
+
+The comparison footer is now conditional on an actually displayed comparison
+reference. It is omitted from the standalone map-loss and waffle exports, while
+remaining on the time-ramp/table export. The invitation and website links remain
+on all exports. More selected modes can make the tables denser; this experiment
+does not establish that every possible selection stays readable on one A4 sheet.
+The sandbox/decile distribution has not yet received a table adapter.

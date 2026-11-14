@@ -6,9 +6,19 @@ import 'svg2pdf.js'
 import { instances, ready } from './rennes'
 import { cornerRadii, borderPattern, boxPath } from './paintGeometry'
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
+import { timeRampTooltipRows } from '../aedarTimeRampTooltip'
 
 const COMPARISON_MARK = '¹'
 const FOOTER_INVITATION = 'Retrouvez les cartes et explorez les données sur'
+
+function comparisonReference() {
+  const reference = document.createElement('a')
+  reference.href = '#pdf-comparison-context'
+  reference.dataset.pdfFooterReference = ''
+  reference.style.cssText = 'font:inherit;color:inherit;text-decoration:none;'
+  reference.textContent = COMPARISON_MARK
+  return reference
+}
 
 const rgbCanvas = document.createElement('canvas')
 rgbCanvas.width = rgbCanvas.height = 1
@@ -54,13 +64,8 @@ function prepare(publicPageUrl) {
   }
   comparisonLabels.forEach(node => {
     const tail = node.splitText(node.data.indexOf(GROUPE_COMPARE_LABEL) + GROUPE_COMPARE_LABEL.length)
-    const reference = document.createElement('a')
-    reference.href = '#pdf-comparison-context'
-    reference.dataset.pdfFooterReference = ''
-    reference.style.cssText = 'font:inherit;color:inherit;text-decoration:none;'
-    reference.textContent = COMPARISON_MARK
     node.parentNode.insertBefore(document.createTextNode(' '), tail)
-    node.parentNode.insertBefore(reference, tail)
+    node.parentNode.insertBefore(comparisonReference(), tail)
   })
   clone.querySelectorAll('.page-heading').forEach(element => { element.style.position = 'static' })
 
@@ -88,6 +93,65 @@ function prepare(publicPageUrl) {
   header.style.borderBottom = getComputedStyle(originalChapter.querySelector('.page-heading')).borderBottom
   main.appendChild(header)
   return { source, clone, chapter, main, header, removed }
+}
+
+function appendTimeRampTables(ui, territoryName) {
+  const section = [...ui.chapter.querySelectorAll('.concept-group')].find(block => block.dataset.section === 'aedar-access')
+  const heading = document.createElement('p')
+  heading.textContent = 'Valeurs des infobulles'
+  heading.style.cssText = 'font:var(--type-figure-title);color:var(--ink);margin:24px 0 12px;text-align:center;'
+  const panel = document.createElement('div')
+  panel.style.cssText = 'display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;'
+  const models = []
+  const ramps = instances().filter(instance => instance.type.__name === 'AccessRampFigureCahier'
+    && instance.vnode.el?.closest?.('.concept-group')?.dataset.section === 'aedar-access')
+  for (const instance of ramps) {
+    const data = instance.props.timeRamp
+    const series = instance.setupState.visibleTimeSeries
+    const hasComparison = Boolean(instance.setupState.comparisonLayerSupported && instance.setupState.comparisonVisible)
+    const cuts = instance.setupState.timePoints
+    const rows = cuts.flatMap(cut => timeRampTooltipRows(data, series, cut, territoryName, hasComparison)
+      .map(row => ({ cut: cut.xLabel, ...row })))
+    const sourceCaption = instance.vnode.el.closest('figure').querySelector('figcaption')
+    const group = document.createElement('div')
+    const caption = sourceCaption.cloneNode(true)
+    copyProperties(sourceCaption, caption, ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'color'])
+    caption.style.cssText += ';margin:0 0 8px;text-align:center;'
+    const table = document.createElement('table')
+    table.style.cssText = 'width:100%;table-layout:fixed;border-collapse:collapse;font:var(--type-figure-mode);color:var(--ink);'
+    const columns = hasComparison ? ['14%', '32%', '18%', '18%', '18%'] : ['18%', '46%', '36%']
+    const colgroup = document.createElement('colgroup')
+    columns.forEach(width => { const col = document.createElement('col'); col.style.width = width; colgroup.appendChild(col) })
+    table.appendChild(colgroup)
+    const thead = table.createTHead(), headerRow = thead.insertRow()
+    const headers = ['Temps', 'Mode', territoryName, ...(hasComparison ? [GROUPE_COMPARE_LABEL, 'Rang'] : [])]
+    headers.forEach(label => {
+      const th = document.createElement('th')
+      th.textContent = label
+      th.style.cssText = 'font-weight:600;text-align:left;vertical-align:bottom;padding:6px 4px;border-bottom:1px solid var(--editorial-margin-soft);overflow-wrap:anywhere;'
+      if (label === GROUPE_COMPARE_LABEL) th.append(' ', comparisonReference())
+      headerRow.appendChild(th)
+    })
+    const tbody = table.createTBody()
+    rows.forEach(row => {
+      const tr = tbody.insertRow()
+      const values = [row.cut, row.label, row.value, ...(hasComparison ? [row.comparison.value, row.comparison.rank ?? '—'] : [])]
+      values.forEach((value, index) => {
+        const td = tr.insertCell()
+        td.textContent = value
+        td.style.cssText = 'padding:5px 4px;border-bottom:1px solid var(--border-default);vertical-align:top;'
+        if (index >= 2) td.style.font = 'var(--type-figure-legend)'
+        if (index === 1) td.style.color = row.markerColor
+      })
+    })
+    group.append(caption, table); panel.appendChild(group)
+    models.push({ title: sourceCaption.textContent.trim(), unit: data.yAxis.unit, hasComparison,
+      selectedModes: series.map(series => series.key), cutCount: cuts.length,
+      rows: rows.map(({ cut, label, value, comparison }) => ({ cut, label, value, comparison })) })
+  }
+  if (!models.length) throw new Error('No rendered time ramps to export')
+  section.append(heading, panel)
+  return models
 }
 function freezeSvg(element) {
   const clone = element.cloneNode(true)
@@ -235,7 +299,7 @@ async function paint(pdf, element, placement, fontFor, stats) {
   await visit(element)
 }
 
-export async function exportDesktop({ sectionKey } = {}) {
+export async function exportDesktop({ sectionKey, includeTooltipTables = false } = {}) {
   if (!ready()) throw new Error('Cahier not ready')
   await document.fonts.ready
   const start = performance.now()
@@ -243,10 +307,12 @@ export async function exportDesktop({ sectionKey } = {}) {
   const content = root.props.content.units[0]
   const selectedSection = sectionKey ? content.sections.find(section => section.key === sectionKey) : null
   if (sectionKey && !selectedSection) throw new Error(`Unknown section: ${sectionKey}`)
+  if (includeTooltipTables && sectionKey !== 'aedar-access') throw new Error('Tooltip-table prototype currently supports the time-ramp section only')
   const publicPageUrl = new URL(window.desktopPublicPageUrl)
   if (sectionKey) publicPageUrl.hash = `section-${sectionKey}`
   const ui = prepare(publicPageUrl.href)
   try {
+    const tooltipTables = includeTooltipTables ? appendTimeRampTables(ui, root.props.content.territory.name) : []
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     const overview = root.props.content.units[0].sections[0].evidence
     const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true, putOnlyUsedFonts: true })
@@ -285,7 +351,9 @@ export async function exportDesktop({ sectionKey } = {}) {
       const footerStyle = getComputedStyle(ui.chapter.querySelector('.cahier-evidence-source') ?? ui.chapter.querySelector('p'))
       pdf.setFont(fontFor(footerStyle), 'normal'); pdf.setFontSize(7)
       pdf.setTextColor(...rgba(p.getPropertyValue('--muted')).slice(0, 3))
-      pdf.text(`${COMPARISON_MARK} ${GROUPE_COMPARE_LABEL} : ${overview.comparisonLabel}`, left, H - 35)
+      const showsComparisonContext = pages[index].items.some(item => [...item.block.querySelectorAll('[data-pdf-footer-reference]')].some(visible))
+      pages[index].showsComparisonContext = showsComparisonContext
+      if (showsComparisonContext) pdf.text(`${COMPARISON_MARK} ${GROUPE_COMPARE_LABEL} : ${overview.comparisonLabel}`, left, H - 35)
       const invitation = `${FOOTER_INVITATION} ${publicPageUrl.hostname}`
       pdf.text(invitation, left, H - 23)
       pdf.link(left, H - 31, pdf.getTextWidth(invitation), 11, { url: new URL('/', publicPageUrl).href })
@@ -298,7 +366,7 @@ export async function exportDesktop({ sectionKey } = {}) {
     setTimeout(() => URL.revokeObjectURL(url), 30000)
     return { bytes: blob.size, totalMs: performance.now() - start, ...stats, scale,
       desktopWidth, pageContentHeight: capacity, removedInactiveControls: ui.removed,
-      pages: pages.map(page => ({ occupiedHeight: page.used, centeringInset: (capacity - page.used) / 2, sections: page.items.map(item => item.key) })),
-      sectionSizes: sizes, url: publicPageUrl.href, sectionKey: sectionKey ?? null, sectionLabel: selectedSection?.label ?? null }
+      pages: pages.map(page => ({ occupiedHeight: page.used, centeringInset: (capacity - page.used) / 2, sections: page.items.map(item => item.key), showsComparisonContext: page.showsComparisonContext })),
+      sectionSizes: sizes, url: publicPageUrl.href, sectionKey: sectionKey ?? null, sectionLabel: selectedSection?.label ?? null, tooltipTables }
   } finally { ui.clone.remove() }
 }

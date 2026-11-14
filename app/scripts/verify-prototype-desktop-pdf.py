@@ -21,7 +21,8 @@ for index, page in enumerate(document):
     text = page.get_text()
     links = page.get_links()
     assert "Retrouvez les cartes et explorez les données sur" in text
-    assert "¹ Groupe comparé :" in text
+    expected_context = receipt["pages"][index].get("showsComparisonContext", True)
+    assert ("¹ Groupe comparé :" in text) == expected_context
     assert any(link.get("uri") == home and link["from"].y0 < 90 for link in links), "Wordmark homepage link missing"
     assert any(link.get("uri") == home and link["from"].y0 > page.rect.height - 80 for link in links), "Footer invitation link missing"
     assert any(link.get("uri") == receipt["url"] for link in links), "Territory page link missing"

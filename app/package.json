@@ -20,6 +20,7 @@
     "prototype:rennes-pdf": "node scripts/prototype-rennes-pdf.mjs",
     "prototype:desktop-pdf": "node scripts/prototype-desktop-pdf.mjs",
     "prototype:section-pdf": "node scripts/prototype-desktop-pdf.mjs --sections",
+    "prototype:tooltip-pdf": "node scripts/prototype-desktop-pdf.mjs --tooltips",
     "test": "vitest run"
   },
   "dependencies": {

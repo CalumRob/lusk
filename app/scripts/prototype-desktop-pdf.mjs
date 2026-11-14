@@ -3,8 +3,9 @@ import { createServer } from 'vite'
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
-const sectionsOnly = process.argv.includes('--sections')
-const out = sectionsOnly ? 'E:/Temp/opencode/cahier-section-pdf' : 'E:/Temp/opencode/cahier-desktop-pdf'
+const tooltipTables = process.argv.includes('--tooltips')
+const sectionsOnly = process.argv.includes('--sections') || tooltipTables
+const out = tooltipTables ? 'E:/Temp/opencode/cahier-tooltip-pdf' : sectionsOnly ? 'E:/Temp/opencode/cahier-section-pdf' : 'E:/Temp/opencode/cahier-desktop-pdf'
 await mkdir(out, { recursive: true })
 const server = await createServer({ optimizeDeps: { include: ['jspdf', 'svg2pdf.js'] }, server: { host: '127.0.0.1', port: 5198, strictPort: true } })
 await server.listen()
@@ -40,10 +41,10 @@ try {
     publicUrl.port = new URL(server.config.server.proxy['/api'].target).port
     publicUrl.protocol = new URL(server.config.server.proxy['/api'].target).protocol
     await page.evaluate(url => { window.desktopPublicPageUrl = url }, publicUrl.href)
-    const scopes = sectionsOnly ? ['aedar-diversity-loss', 'aedar-equipment-profile'] : [null]
+    const scopes = tooltipTables ? ['aedar-access'] : sectionsOnly ? ['aedar-diversity-loss', 'aedar-equipment-profile'] : [null]
     for (const sectionKey of scopes) {
       const pending = page.waitForEvent('download', { timeout: 120000 })
-      const receipt = await page.evaluate(sectionKey => window.desktopPdf.exportDesktop({ sectionKey }), sectionKey)
+      const receipt = await page.evaluate(options => window.desktopPdf.exportDesktop(options), { sectionKey, includeTooltipTables: tooltipTables })
       const stem = sectionKey ? `rennes-${sectionKey}` : 'rennes-desktop-epci'
       await (await pending).saveAs(`${out}/${stem}.pdf`)
       await writeFile(`${out}/${sectionKey ? `${stem}-receipt` : 'receipt'}.json`, JSON.stringify(receipt, null, 2))
