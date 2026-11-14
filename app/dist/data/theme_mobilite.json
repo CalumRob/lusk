@@ -1562,7 +1562,7 @@
       "dataset": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
       "publisher": "Lusk",
       "url": "https://github.com/CalumRob/lusk",
-      "licence": "ODbL – © OpenStreetMap contributors (GTFS SNCF/Korrigo) et licences des sources ouvertes",
+      "licence": "ODbL – © OpenStreetMap contributors (GTFS SNCF/Korrigo)",
       "vintage": "Mesure du 2026-10-21 ; flux acquis le 2026-10-10",
       "freshness": "10 octobre 2026",
       "vintages": [
