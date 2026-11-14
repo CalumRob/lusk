@@ -469,6 +469,55 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     wrapper.unmount()
   }, 60000)
 
+  it('admits the owning AEDAR chapter for a cold section anchor', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche(
+      '/territoire/commune/35238?theme=mobilite#section-aedar-equipment-explorer')
+    await settleOwner(calls, isAedar)
+    await flushPromises()
+
+    const core = new Set(items(calls)
+      .filter((item) => item.resource === 'aedar_territorial_aggregate' && item.intent.kind === 'facts')
+      .flatMap((item) => item.coordinates?.typequ ?? []))
+    expect(core.size).toBe(AEDAR_TYPEQU_REGISTRY.length)
+    const overview = wrapper.get('[data-section="aedar-car-overview"]')
+    expect(overview.findAll('.cahier-figure-scalar').length).toBeGreaterThan(0)
+    expect(wrapper.find('#section-aedar-equipment-explorer').exists()).toBe(true)
+    wrapper.unmount()
+  }, 60000)
+
+  it('admits the owning page for a cold non-AEDAR section anchor, with its custom group', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche(
+      '/territoire/commune/35238?theme=mobilite&comparaison=commune:35238,commune:35240#section-visiter-la-bretagne')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-raccordement-curve__territory')
+
+    const pageThree = postsTouching(calls, PAGE_THREE)
+    expect(pageThree).toHaveLength(1)
+    expect(pageThree[0]!.items).toHaveLength(7)
+    expect(wrapper.find('#section-visiter-la-bretagne').exists()).toBe(true)
+    const selected = items(calls).filter((item) => item.resource === 'raccordement_courbe' &&
+      item.intent.kind === 'selected_comparison')
+    expect(selected.some((item) => item.intent.members?.some(
+      (member: { id: string }) => member.id === '35240'))).toBe(true)
+    wrapper.unmount()
+  }, 60000)
+
+  it('keeps the unknown-fragment numeric fallback without activating AEDAR', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite#section-unknown')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+
+    expect(postsTouching(calls, PAGE_TWO)).toHaveLength(3)
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(0)
+    expect(items(calls).filter(isAedar)).toEqual([])
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    wrapper.unmount()
+  }, 60000)
+
   it('keeps the page-1 landing AEDAR critical and reads its aggregate projections without overlap', async () => {
     const { transport, calls } = createTransport()
     vi.stubGlobal('fetch', transport)

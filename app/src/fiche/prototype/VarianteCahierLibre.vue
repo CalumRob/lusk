@@ -8,7 +8,7 @@
  * only lays those two inputs out as the existing Cahier exploration.
  */
 import { CarFront, SlidersHorizontal } from 'lucide-vue-next'
-import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import BoutonComparaison from '@/components/fiche/BoutonComparaison.vue'
@@ -31,6 +31,7 @@ import {
   routePourCibleExploration,
   routePourSectionExploration,
 } from '@/fiche/explorationHandoff'
+import { chapterForSectionAnchor } from '@/fiche/content/themeContent'
 import type { TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
 import {
   AEDAR_DEFAULT_VISIBLE_RAMP_MODES,
@@ -106,9 +107,13 @@ const pageAnchors = computed(() => new Set(props.pagination.entries.map((entry) 
 const chapterAnchors = computed(() => new Set(props.pagination.entries
   .filter((entry) => entry.page !== null)
   .map((entry) => entry.anchor)))
-const pageElements = new Map<string, HTMLElement>()
-const pageVisibility = new Map<string, boolean>()
 let emittedChapitre: string | null = null
+let revealFrame: number | null = null
+let revealTarget: HTMLElement | null = null
+let revealCancelled = false
+let pendingRevealHash: string | null = null
+let revealedHash: string | null = null
+let revealUserStopped = false
 
 const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
 const unit = computed(() => units.value[0] ?? null)
@@ -334,33 +339,133 @@ function sourceLabel(source: { source: string; version: string }): string {
 
 const sourceLabels = computed(() => props.content.sourceRegister.map(sourceLabel))
 
+function removeRevealListeners(): void {
+  window.removeEventListener('wheel', onRevealInterrupt)
+  window.removeEventListener('touchmove', onRevealInterrupt)
+  window.removeEventListener('keydown', onRevealInterrupt)
+}
+
+function armRevealInterrupt(): void {
+  window.addEventListener('wheel', onRevealInterrupt, { passive: true })
+  window.addEventListener('touchmove', onRevealInterrupt, { passive: true })
+  window.addEventListener('keydown', onRevealInterrupt)
+}
+
+function clearRevealSchedule(): void {
+  revealCancelled = true
+  if (revealFrame !== null) {
+    cancelAnimationFrame(revealFrame)
+    revealFrame = null
+  }
+  revealTarget = null
+  removeRevealListeners()
+}
+
+function cancelReveal(): void {
+  revealUserStopped = true
+  pendingRevealHash = null
+  revealedHash = null
+  clearRevealSchedule()
+}
+
+function onRevealInterrupt(event: Event): void {
+  if (event.type === 'keydown') {
+    const key = (event as KeyboardEvent).key
+    if (!['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(key)) return
+  }
+  cancelReveal()
+}
+
+/** A rendered inner section's owning page anchor, from the typed hierarchy. */
+function sectionOwnerAnchor(hash: string): string | null {
+  const owner = chapterForSectionAnchor(props.content, hash)
+  return owner ? pageAnchorFor(owner) : null
+}
+
+function scheduleReveal(target: HTMLElement): void {
+  revealCancelled = false
+  revealTarget = target
+  armRevealInterrupt()
+  const scroll = (): void => {
+    revealFrame = null
+    if (revealCancelled || !revealTarget) return
+    revealTarget.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+  }
+  if (typeof requestAnimationFrame === 'function') revealFrame = requestAnimationFrame(scroll)
+  else scroll()
+}
+
+/**
+ * #1010 — the browser resolves a fragment before the SPA content exists, so a
+ * cold `#section-…` link never reaches its target and the reading-band observer
+ * never sees the owning page. Once the Cahier has rendered, resolve the target
+ * through the typed unit/section hierarchy, report its owning chapter and give
+ * the fragment one navigation frame to land. A user wheel/touch/key scroll
+ * cancels every pending or later content-driven reveal; the hash/history is
+ * untouched.
+ */
+function revealHashTarget({ resetUser = false } = {}): void {
+  if (resetUser) {
+    revealUserStopped = false
+    pendingRevealHash = null
+    revealedHash = null
+  }
+  if (revealUserStopped || !rootRef.value) return
+  const hash = route.hash.replace(/^#/, '')
+  if (!hash) {
+    pendingRevealHash = null
+    revealedHash = null
+    clearRevealSchedule()
+    return
+  }
+  clearRevealSchedule()
+  const owner = sectionOwnerAnchor(route.hash)
+  if (owner && chapterAnchors.value.has(owner)) {
+    activeFigure.value = owner
+    emit('chapitre-visible', owner)
+  }
+  const target = document.getElementById(hash)
+  if (target && rootRef.value.contains(target)) {
+    pendingRevealHash = null
+    revealedHash = hash
+    scheduleReveal(target)
+    return
+  }
+  if (!owner) {
+    pendingRevealHash = null
+    revealedHash = null
+    return
+  }
+  // The owning chapter is valid but its section is rendered after the data:
+  // keep the reveal pending for the next content render, not a polling loop.
+  pendingRevealHash = hash
+  revealedHash = null
+  armRevealInterrupt()
+}
+
 useCahierBaselineGrid(rootRef, () => props.presentation !== 'plain')
 
 onMounted(() => {
   activeFigure.value = pageEntry.value?.anchor ?? anchorForEntry('acces-aux-services')
+  revealHashTarget({ resetUser: true })
   if (!rootRef.value || !('IntersectionObserver' in window)) return
   const figures = [...rootRef.value.querySelectorAll<HTMLElement>('[data-figure]')]
-  for (const figure of figures) {
-    const key = figure.getAttribute('data-figure')
-    if (key && pageAnchors.value.has(key)) pageElements.set(key, figure)
-  }
   observer = new IntersectionObserver(
-    (entries) => {
-      // Keep the page-level visibility of every observed page, not only the
-      // entries that changed in this callback: an intermediate page can leave
-      // while the next page enters, and the reader's page is the first one
-      // actually in the existing reading band.
-      for (const entry of entries) {
-        const key = entry.target.getAttribute('data-figure')
-        if (key && pageAnchors.value.has(key)) pageVisibility.set(key, entry.isIntersecting)
-      }
-      const active = [...pageVisibility.entries()]
-        .filter(([, visible]) => visible)
-        .map(([anchor]) => ({
-          anchor,
-          top: pageElements.get(anchor)?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY,
-        }))
-        .sort((left, right) => left.top - right.top)[0]?.anchor
+    () => {
+      // Read the actual page rects inside the same reading band as the
+      // observer's rootMargin. A previous callback's stale boolean must never
+      // keep an off-screen page active after a fast user scroll.
+      const bandTop = window.innerHeight * 0.14
+      const bandBottom = window.innerHeight * 0.34
+      const pages = rootRef.value
+        ? [...rootRef.value.querySelectorAll<HTMLElement>('.cahier-page[data-figure], .sources-page[data-figure]')]
+          .map((element) => ({ anchor: element.getAttribute('data-figure') ?? '', element }))
+          .filter(({ anchor }) => pageAnchors.value.has(anchor))
+        : []
+      const active = pages
+        .map(({ anchor, element }) => ({ anchor, rect: element.getBoundingClientRect() }))
+        .filter(({ rect }) => rect.bottom > bandTop && rect.top < bandBottom)
+        .sort((left, right) => left.rect.top - right.rect.top)[0]?.anchor
       if (!active) return
       activeFigure.value = active
       if (chapterAnchors.value.has(active) && active !== emittedChapitre) {
@@ -373,7 +478,13 @@ onMounted(() => {
   figures.forEach((figure) => observer?.observe(figure))
 })
 
+watch(() => route.hash, () => { revealHashTarget({ resetUser: true }) })
+watch(() => props.content, () => {
+  if (!revealUserStopped && (pendingRevealHash || revealedHash)) revealHashTarget()
+}, { flush: 'post' })
+
 onBeforeUnmount(() => {
+  cancelReveal()
   observer?.disconnect()
 })
 </script>
@@ -854,6 +965,7 @@ onBeforeUnmount(() => {
 .cahier-page, .sources-page { container: cahier-page / inline-size; position: relative; min-width: 0; --page-left-inset: var(--cahier-page-left-inset, 148px); --page-right-inset: var(--cahier-page-right-inset, 64px); padding: 48px var(--page-right-inset) 56px var(--page-left-inset); border: 1px solid rgb(35 42 42 / 15%); box-shadow: 0 14px 30px rgb(67 57 42 / 11%); scroll-margin-top: 28px; }
 .cahier--sans-grille .cahier-page,
 .cahier--sans-grille .sources-page { scroll-margin-top: var(--cahier-sticky-top); }
+.cahier-page [data-figure^="section-"] { scroll-margin-top: var(--cahier-sticky-top); }
 .page-margin { position: absolute; top: 48px; left: 18px; display: grid; width: 72px; gap: 30px; align-content: start; text-align: center; }
 .cahier--sans-grille .page-margin { right: 18px; left: auto; }
 @media (min-width: 761px) {

@@ -220,14 +220,21 @@ try {
   }
 
   /** The page is in the band; wheel a little more until its content is visible. */
-  const wheelUntilVisible = async (page, selector, maxSteps = 30) => {
+  const wheelUntilVisible = async (page, selector, maxSteps = 60) => {
     await page.mouse.move(720, 450)
+    const viewportHeight = page.viewportSize()?.height ?? 900
     for (let step = 0; step < maxSteps; step += 1) {
-      if (await page.locator(selector).first().isVisible().catch(() => false)) return true
-      await page.mouse.wheel(0, 300)
+      const box = await page.locator(selector).first().boundingBox().catch(() => null)
+      if (box) {
+        if (box.y < viewportHeight * 0.55 && box.y + box.height > viewportHeight * 0.15) return true
+        await page.mouse.wheel(0, box.y < viewportHeight * 0.15 ? -300 : 300)
+      } else {
+        // Not rendered yet (data-backed figure): keep moving down to it.
+        await page.mouse.wheel(0, 300)
+      }
       await page.waitForTimeout(100)
     }
-    return page.locator(selector).first().isVisible().catch(() => false)
+    return Boolean(await page.locator(selector).first().boundingBox().catch(() => null))
   }
 
   browser = await chromium.launch({ headless: true,
@@ -504,6 +511,213 @@ try {
     coreTypequ: coldCoreTypequ,
   }
   await cold.close()
+
+  // Pass 5 - #1010 cold direct inner-section anchors. The fragment is resolved
+  // before the SPA content exists, so the Cahier must report the typed owner and
+  // land the target after render. All five rendered AEDAR section ids are
+  // exercised, plus a non-AEDAR page-3 section, an in-session jump, an unknown
+  // fragment and a scroll away while the section hash remains.
+  const waitAedarCore = async (page, startIndex) => {
+    const deadline = Date.now() + 30000
+    let core = 0
+    while (Date.now() < deadline) {
+      core = new Set(batches.slice(startIndex).flatMap((batch) => batch.items)
+        .filter((item) => classify(item) === 'core')
+        .flatMap((item) => item.coordinates?.typequ ?? [])).size
+      if (core >= AEDAR_TYPEQU_REGISTRY.length) break
+      await page.waitForTimeout(40)
+    }
+    return core
+  }
+  const sectionGeometry = (page, targetId) => page.evaluate((id) => {
+    const target = document.getElementById(id)
+    const active = document.querySelector('aside.cahier-spine a[aria-current="location"]')
+    const sticky = parseFloat(getComputedStyle(document.documentElement)
+      .getPropertyValue('--header-height')) || 0
+    return {
+      hash: location.hash,
+      scrollY: Math.round(window.scrollY),
+      targetTop: target ? Math.round(target.getBoundingClientRect().top) : null,
+      sticky,
+      active: active?.getAttribute('href') ?? null,
+    }
+  }, targetId)
+  const sectionAnchors = []
+  const readColdSection = async (id, { aedar = true, query = '' } = {}) => {
+    const startIndex = batches.length
+    const page = await makePage()
+    await page.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}${query}#${id}`,
+      { waitUntil: 'domcontentloaded' })
+    const coreTypequ = aedar
+      ? await waitAedarCore(page, startIndex)
+      : 0
+    if (!aedar) {
+      await page.locator('.mobilite-raccordement-curve__territory')
+        .waitFor({ state: 'visible', timeout: 30000 })
+    }
+    await page.waitForFunction((targetId) => Boolean(document.getElementById(targetId)),
+      id, { timeout: 30000 })
+    try {
+      await page.waitForFunction((targetId) => {
+        const element = document.getElementById(targetId)
+        if (!element) return false
+        const top = element.getBoundingClientRect().top
+        return top >= 0 && top <= 120
+      }, id, { timeout: 15000 })
+    } catch (error) {
+      console.error('SECTION-TOP-DEBUG', id, await page.evaluate((targetId) => {
+        const element = document.getElementById(targetId)
+        return { top: element?.getBoundingClientRect().top ?? null, scrollY: window.scrollY,
+          active: document.querySelector('aside.cahier-spine a[aria-current="location"]')?.getAttribute('href') }
+      }, id))
+      throw error
+    }
+    const geometry = await sectionGeometry(page, id)
+    const items = batches.slice(startIndex).flatMap((batch) => batch.items)
+    const entry = {
+      id,
+      ...geometry,
+      coreTypequ,
+      page2Items: items.filter((item) => PAGE_TWO.includes(item.resource)).length,
+      page3Items: items.filter((item) => PAGE_THREE.includes(item.resource)).length,
+      page3Posts: batches.slice(startIndex)
+        .filter((batch) => batch.items.some((item) => PAGE_THREE.includes(item.resource))).length,
+      selectedPage3: items.filter((item) => item.resource === 'raccordement_courbe' &&
+        item.intent?.kind === 'selected_comparison').length,
+    }
+    sectionAnchors.push(entry)
+    await page.close()
+    return entry
+  }
+
+  const aedarSectionIds = ['section-aedar-car-overview', 'section-aedar-diversity-loss',
+    'section-aedar-access', 'section-aedar-equipment-profile', 'section-aedar-equipment-explorer']
+  for (const id of aedarSectionIds) {
+    const entry = await readColdSection(id)
+    assert.equal(entry.coreTypequ, AEDAR_TYPEQU_REGISTRY.length,
+      `${id}: AEDAR core TYPEQU ${entry.coreTypequ}`)
+    assert.ok(entry.scrollY > 0, `${id}: target did not scroll (scrollY ${entry.scrollY})`)
+    assert.ok(entry.targetTop !== null && entry.targetTop >= 0 && entry.targetTop <= 180,
+      `${id}: target top ${entry.targetTop} outside sticky clearance`)
+    assert.equal(entry.active, '#figure-lecture', `${id}: active chapter ${entry.active}`)
+  }
+
+  const nonAedarSection = await readColdSection('section-visiter-la-bretagne',
+    { aedar: false, query: '&comparaison=commune:35238,commune:35240' })
+  assert.ok(nonAedarSection.scrollY > 0,
+    `non-AEDAR section did not scroll (scrollY ${nonAedarSection.scrollY})`)
+  assert.ok(nonAedarSection.targetTop !== null && nonAedarSection.targetTop >= 0 &&
+    nonAedarSection.targetTop <= 180,
+  `non-AEDAR target top ${nonAedarSection.targetTop} outside sticky clearance`)
+  assert.equal(nonAedarSection.active, '#figure-offre-transports-commun',
+    `non-AEDAR active chapter ${nonAedarSection.active}`)
+  assert.equal(nonAedarSection.page3Posts, 1, `non-AEDAR page-3 posts ${nonAedarSection.page3Posts}`)
+  assert.equal(nonAedarSection.page3Items, 7, `non-AEDAR page-3 items ${nonAedarSection.page3Items}`)
+  assert.ok(nonAedarSection.selectedPage3 > 0,
+    'the non-AEDAR section must keep the typed custom comparison group')
+
+  // In-session page 3 -> inner AEDAR section.
+  {
+    const startIndex = batches.length
+    const page = await makePage()
+    await page.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#figure-offre-transports-commun`,
+      { waitUntil: 'domcontentloaded' })
+    await page.locator('.mobilite-raccordement-curve__territory')
+      .waitFor({ state: 'visible', timeout: 30000 })
+    await page.evaluate(() => { location.hash = '#section-aedar-access' })
+    const coreTypequ = await waitAedarCore(page, startIndex)
+    await page.waitForFunction(() => {
+      const element = document.getElementById('section-aedar-access')
+      if (!element) return false
+      const top = element.getBoundingClientRect().top
+      return top >= 0 && top <= 120
+    }, null, { timeout: 15000 })
+    const geometry = await sectionGeometry(page, 'section-aedar-access')
+    assert.equal(coreTypequ, AEDAR_TYPEQU_REGISTRY.length,
+      `in-session section core TYPEQU ${coreTypequ}`)
+    assert.ok(geometry.scrollY > 0, `in-session section scrollY ${geometry.scrollY}`)
+    assert.equal(geometry.active, '#figure-lecture',
+      `in-session section active chapter ${geometry.active}`)
+    receipt.inSessionSection = { ...geometry, coreTypequ }
+    await page.close()
+  }
+
+  // Unknown fragment keeps the safe numeric fallback and does not activate AEDAR.
+  {
+    const startIndex = batches.length
+    const page = await makePage()
+    const pageErrors = []
+    page.on('pageerror', (error) => pageErrors.push(error.message))
+    await page.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#section-does-not-exist`,
+      { waitUntil: 'domcontentloaded' })
+    await page.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first()
+      .waitFor({ state: 'visible', timeout: 30000 })
+    await page.waitForTimeout(500)
+    const items = batches.slice(startIndex).flatMap((batch) => batch.items)
+    const coreTypequ = new Set(items.filter((item) => classify(item) === 'core')
+      .flatMap((item) => item.coordinates?.typequ ?? [])).size
+    assert.equal(coreTypequ, 0, `unknown fragment activated ${coreTypequ} AEDAR TYPEQU`)
+    assert.equal(items.filter((item) => PAGE_TWO.includes(item.resource)).length, 33,
+      'unknown fragment must keep the page-2 numeric fallback')
+    assert.deepEqual(pageErrors, [], `unknown fragment page errors: ${JSON.stringify(pageErrors)}`)
+    receipt.unknownFragment = { coreTypequ, page2Items: 33, errors: pageErrors }
+    await page.close()
+  }
+
+  // Scrolling away from the section must not be undone by the initial reveal.
+  {
+    const startIndex = batches.length
+    const page = await makePage()
+    await page.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#section-aedar-access`,
+      { waitUntil: 'domcontentloaded' })
+    await waitAedarCore(page, startIndex)
+    await wheelToPage(page, '#figure-partage-de-lespace-public')
+    await page.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first()
+      .waitFor({ state: 'visible', timeout: 30000 })
+    const readState = () => page.evaluate(() => ({
+      hash: location.hash,
+      scrollY: Math.round(window.scrollY),
+      targetTop: Math.round(document.getElementById('section-aedar-access')
+        ?.getBoundingClientRect().top ?? 0),
+      active: document.querySelector('aside.cahier-spine a[aria-current="location"]')?.getAttribute('href'),
+    }))
+    const afterScroll = await readState()
+    await page.waitForTimeout(600)
+    const settled = await readState()
+    assert.equal(settled.hash, '#section-aedar-access', 'the section hash changed on scroll')
+    assert.ok(settled.targetTop < -500,
+      `section reveal yanked the reader back: ${JSON.stringify(settled)}`)
+    receipt.sectionScrollAway = { afterScroll, settled }
+    await page.close()
+  }
+
+  // A user wheel before/while the late reveal settles must win: the pending
+  // target scroll and its resize settle are cancelled, and the page the reader
+  // actually scrolled to owns the chapter.
+  {
+    const startIndex = batches.length
+    const page = await makePage()
+    await page.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#section-aedar-access`,
+      { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => Boolean(document.getElementById('section-aedar-access')))
+    const reached = await wheelToPage(page, '#figure-partage-de-lespace-public')
+    await page.waitForTimeout(700)
+    const state = await page.evaluate(() => ({
+      hash: location.hash,
+      scrollY: Math.round(window.scrollY),
+      targetTop: Math.round(document.getElementById('section-aedar-access')
+        ?.getBoundingClientRect().top ?? 0),
+    }))
+    assert.ok(reached, 'the user scroll did not reach page 2')
+    assert.equal(state.hash, '#section-aedar-access', 'the section hash changed on user scroll')
+    assert.ok(state.scrollY > 3000, `the user scroll did not move: ${state.scrollY}`)
+    assert.ok(state.targetTop < -500,
+      `the pending section reveal yanked the user back: ${JSON.stringify(state)}`)
+    receipt.sectionInterrupt = state
+    await page.close()
+  }
+
+  receipt.sectionAnchors = sectionAnchors
 
   console.log(JSON.stringify(receipt, null, 2))
 

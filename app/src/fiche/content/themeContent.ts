@@ -470,6 +470,30 @@ export interface ThemeContent {
 export type SingleUnitThemeContent = Omit<ThemeContent, 'units'> & {
   units: readonly [ContentUnit]
 }
+
+/** The typed unit/section hierarchy a rendered section fragment can address. */
+export interface SectionAnchorHierarchy {
+  units: readonly { key: string; sections: readonly { key: string }[] }[]
+}
+
+/**
+ * #1010 — the owning unit of a rendered `section-<section.key>` fragment.
+ *
+ * The id is the same one the Cahier renders (`section-${section.key}`); the
+ * owner is found by walking the existing ThemeContent unit/section hierarchy,
+ * never by a theme-specific id list or an arbitrary hash prefix.
+ */
+export function chapterForSectionAnchor(
+  content: SectionAnchorHierarchy | null | undefined,
+  hash: string | undefined,
+): string | undefined {
+  const anchor = (hash ?? '').replace(/^#/, '')
+  if (!anchor || !content) return undefined
+  for (const unit of content.units) {
+    if (unit.sections.some((section) => `section-${section.key}` === anchor)) return unit.key
+  }
+  return undefined
+}
 /** Public labels for this grammar's published indicators and content metrics. */
 function sourceFrom(provenance: FactProvenance | null, metadata?: ThemeMetadata): ContentSource | null {
   if (!provenance?.sourceId) return null
