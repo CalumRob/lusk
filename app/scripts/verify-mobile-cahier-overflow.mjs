@@ -1722,8 +1722,18 @@ try {
         hasExpectedReading: cahier.innerText.includes('Base permanente des équipements') &&
           cahier.innerText.includes('TYPES D’ÉQUIPEMENTS ACCESSIBLES'),
         hasFixtureProvenance: cahier.innerText.includes('Synthetic browser fixture; not published AEDAR facts'),
+        pendingChapterShells: [...cahier.querySelectorAll('.cahier-section-state[role="status"]')]
+          .filter((el) => { const rect = el.getBoundingClientRect(); return rect.width > 0 && rect.height > 0 })
+          .filter((el) => el.innerText.trim() === 'Chargement des données…')
+          .map((el) => ({ text: el.innerText.slice(0, 120), className: el.className })),
         errorOrLoadingShells: [...cahier.querySelectorAll('[role="alert"], [role="status"]:not(.aedar-equipment-explorer-selected), .aedar-state')]
           .filter((el) => { const rect = el.getBoundingClientRect(); return rect.width > 0 && rect.height > 0 })
+          // #1008 — an off-screen chapter at rest is pending, not a loading or
+          // error failure of the populated AEDAR chapter. Only this exact
+          // pending placeholder is exempted; alerts, AEDAR loading and any
+          // other status shell still fail the gate.
+          .filter((el) => !(el.classList.contains('cahier-section-state') &&
+            el.getAttribute('role') === 'status' && el.innerText.trim() === 'Chargement des données…'))
           .map((el) => ({ role: el.getAttribute('role'), text: el.innerText.slice(0, 120), className: el.className })),
         overflowing,
       }

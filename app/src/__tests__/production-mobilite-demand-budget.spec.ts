@@ -7,6 +7,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import TerritoireView from '@/views/TerritoireView.vue'
+import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import { chargerMetadonneesTheme, THEME_METADATA_CHARGER_KEY } from '@/payload/themeCatalogue'
 import { semanticReadState } from '@/payload/semanticResourceClient'
 import type { SemanticReadItem } from '@/payload/semanticResourceClient'
@@ -352,6 +353,119 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
       .filter((item) => item.intent.kind === 'facts' && PAGE_TWO.includes(item.resource)).length
     expect(pageTwoFactsAfter).toBe(pageTwoFactsBefore)
     expectNoDuplicateOrOverlappingItem(items(calls))
+    wrapper.unmount()
+  }, 60000)
+
+  it('admits the visible page-3 chapter without a hash or Sommaire click', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+    await flushPromises()
+
+    const pageThree = () => wrapper.get('[data-figure="figure-offre-transports-commun"]')
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(0)
+    // Visible but not yet demanded is pending, never a factual absence.
+    expect(pageThree().text()).not.toContain('Contenu indisponible pour ce territoire.')
+    const pageTwoFacts = () => items(calls)
+      .filter((item) => item.intent.kind === 'facts' && PAGE_TWO.includes(item.resource)).length
+    const pageTwoFactsBefore = pageTwoFacts()
+
+    // The existing visibility owner reports the page the reader actually sees.
+    wrapper.findComponent(VarianteCahierLibre).vm.$emit('chapitre-visible', 'figure-offre-transports-commun')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-raccordement-curve__territory')
+    await flushPromises()
+
+    const pageThreeBatches = postsTouching(calls, PAGE_THREE)
+    expect(pageThreeBatches).toHaveLength(1)
+    expect(pageThreeBatches[0]!.items).toHaveLength(7)
+    expect(new Set(pageThreeBatches[0]!.items.map((item) => item.resource))).toEqual(new Set(PAGE_THREE))
+    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
+    expect(pageThree().text()).not.toContain('Contenu indisponible pour ce territoire.')
+    expect(pageTwoFacts()).toBe(pageTwoFactsBefore)
+    expectNoDuplicateOrOverlappingItem(items(calls))
+    wrapper.unmount()
+  }, 60000)
+
+  it('keeps page-2 and page-1 data when scrolling back under a page-3 hash', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { router, wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+    await flushPromises()
+    const cahier = wrapper.findComponent(VarianteCahierLibre)
+
+    // Explicit page-3 navigation; its target becomes visible.
+    await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
+      hash: '#figure-offre-transports-commun' })
+    cahier.vm.$emit('chapitre-visible', 'figure-offre-transports-commun')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-raccordement-curve__territory')
+    const pageThreeBatches = postsTouching(calls, PAGE_THREE).length
+    expect(pageThreeBatches).toBe(1)
+    const pageTwoFacts = () => items(calls)
+      .filter((item) => item.intent.kind === 'facts' && PAGE_TWO.includes(item.resource)).length
+    const pageTwoFactsBefore = pageTwoFacts()
+
+    // The reader scrolls back to page 2 while the URL still says page 3.
+    cahier.vm.$emit('chapitre-visible', 'figure-partage-de-lespace-public')
+    await flushPromises()
+    await flushPromises()
+    expect(router.currentRoute.value.hash).toBe('#figure-offre-transports-commun')
+    expect(wrapper.find('.mobilite-section--reseaux .mobilite-comparison-bars').exists()).toBe(true)
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(pageThreeBatches)
+    expect(pageTwoFacts()).toBe(pageTwoFactsBefore)
+    // The settled page-3 facts are retained by the page-2 entry.
+    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
+
+    // Back on page 1, AEDAR is the active chapter again; the hash is unchanged.
+    cahier.vm.$emit('chapitre-visible', 'figure-lecture')
+    await flushPromises()
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    expect(router.currentRoute.value.hash).toBe('#figure-offre-transports-commun')
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(pageThreeBatches)
+    // The chapter crossing must not duplicate the Mobility chapter identities;
+    // AEDAR's own retry/comparison fixture path is covered by its dedicated test.
+    expectNoDuplicateOrOverlappingItem(items(calls).filter((item) =>
+      PAGE_TWO.includes(item.resource) || PAGE_THREE.includes(item.resource)))
+    wrapper.unmount()
+  }, 60000)
+
+  it('does not let an intermediate page steal an explicit page-3 intent before it lands', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche(
+      '/territoire/commune/35238?theme=mobilite#figure-offre-transports-commun')
+    await attendreChapitreUtile(wrapper, calls, '[data-figure="figure-offre-transports-commun"]')
+    const cahier = wrapper.findComponent(VarianteCahierLibre)
+
+    // Mid-scroll page 2 becomes visible before the explicit target does.
+    cahier.vm.$emit('chapitre-visible', 'figure-partage-de-lespace-public')
+    await flushPromises()
+    expect(postsTouching(calls, PAGE_TWO)).toHaveLength(0)
+
+    cahier.vm.$emit('chapitre-visible', 'figure-offre-transports-commun')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-raccordement-curve__territory')
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(1)
+    expect(postsTouching(calls, PAGE_TWO)).toHaveLength(0)
+    wrapper.unmount()
+  }, 60000)
+
+  it('honours a user scroll back before an explicit page-3 target lands', async () => {
+    const { transport, calls } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche(
+      '/territoire/commune/35238?theme=mobilite#figure-offre-transports-commun')
+    await attendreChapitreUtile(wrapper, calls, '[data-figure="figure-offre-transports-commun"]')
+    const cahier = wrapper.findComponent(VarianteCahierLibre)
+
+    // The user interrupts the explicit navigation before its target is read.
+    cahier.vm.$emit('chapitre-visible', 'figure-partage-de-lespace-public')
+    window.dispatchEvent(new Event('wheel'))
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+
+    expect(postsTouching(calls, PAGE_TWO)).toHaveLength(3)
+    expect(postsTouching(calls, PAGE_THREE).length).toBeLessThanOrEqual(1)
+    expect(wrapper.find('.mobilite-section--reseaux .mobilite-comparison-bars').exists()).toBe(true)
     wrapper.unmount()
   }, 60000)
 
