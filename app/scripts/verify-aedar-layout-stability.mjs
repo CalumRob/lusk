@@ -290,6 +290,10 @@ try {
       })(),
       scalarCount: firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-figure-scalar').length,
       references: [...firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-figure-scalar-reference')].map(rectOf),
+      comparisonLabels: [...firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-comparison-value__reference')].map((el) => ({
+        text: el.textContent.trim(), height: el.getBoundingClientRect().height,
+        lineHeight: parseFloat(getComputedStyle(el).lineHeight),
+      })),
     }
   })
 
@@ -360,6 +364,10 @@ try {
   if (scenario === 'wrapped-source') {
     check(final.source.height > interim.source.height, 'long served source/dated credit must actually wrap, never be clipped')
   }
+  if (width === 760 && scenario === 'standard') {
+    check(final.comparisonLabels.some(({ height, lineHeight }) => height > lineHeight),
+      'the native comparison label must exercise actual wrapping at the responsive paired-scalar width')
+  }
 
   console.log(JSON.stringify({
     pass: !MEASURE_ONLY,
@@ -388,6 +396,7 @@ try {
     readCalls,
     roles: { interim: interim.roles, final: final.roles },
     loss: { interim: interim.loss, final: final.loss },
+    comparisonLabels: final.comparisonLabels,
   }, null, 2))
   if (process.env.LUSK_LAYOUT_SCREENSHOTS && scenario === 'standard' && (width === 1440 || width === 390)) {
     await page.screenshot({ path: resolve(process.env.LUSK_LAYOUT_SCREENSHOTS, `lusk-994-final-${width}.png`), fullPage: true })
