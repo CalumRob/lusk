@@ -401,3 +401,77 @@ the historical v1 campaign):
 `python scripts/audit-prototype-pdf-stress.py E:/Temp/opencode/cahier-pdf-stress-v2/cases.json`.
 Before remote capture, the full app suite passed 186 files / 2,511 tests with one
 skip, and `vue-tsc` passed. This is source validation, not deployed acceptance.
+
+## Comparison-subtitle mockup (owner briefing after #1014)
+
+**Owner visual approval received:** the headings, including the fixed 18 CSS px
+comparison-name size, are approved and recorded in PRD #1014. This remains a
+**throwaway visual proof**, not production implementation. The mode-choice UI is
+still unvalidated. Existing exports/options remain unchanged unless the
+development-only `headingMockup` option is supplied.
+
+From `app/`, generate with `node scripts/prototype-comparison-heading.mjs`.
+Inspect with `python scripts/verify-comparison-heading-mockup.py`.
+Artifacts: `E:/Temp/opencode/cahier-comparison-subtitle-mockup/`:
+
+- `01-real-epci.pdf`: resolved Rennes / Rennes Métropole, with actual figures,
+  source annotations, selected three modes, comparison references and ranks.
+- `04-real-bretagne-communes.pdf`: actual Bretagne selection and its evidence,
+  headed « COMMUNES BRETONNES », not a renamed EPCI report.
+- `02-real-no-comparative-evidence.pdf` and `03-real-comparison-off.pdf`: no
+  comparison subtitle or comparison footer where no comparison is displayed.
+- `synthetic-*.pdf`: isolated browser/development **typographic specimens** for
+  short/long custom selections at all three levels, Bretagne at EPCI/département
+  level, complete-name prefixes and total-count fallbacks. Reference names are
+  resolved from the existing comparison control; membership is fabricated, not
+  acquired. Artificially oversized names and the département-prefix names are
+  explicitly fictitious. Each sheet says SYNTHÉTIQUE, replaces all live figures
+  and tables with a labelled simulated-evidence placeholder, and carries no live
+  numeric observation. Empty/unavailable specimens display no comparison heading.
+- `comparison-heading-examples.pdf`: sample book of the 21 independent one-sheet
+  exports, **not** an example of a section requiring 21 continuation sheets.
+- Full-page PNGs, `*-heading.png` PDF crops, `all-headings.png`, `receipts.json`,
+  `resolved-control.json`, font inventory and `verification.json`.
+- `intermediate/` preserves three earlier layout trials; not part of the final
+  21-case verification. Previous sandbox/stress artifact directories are untouched.
+
+The territory-first uppercase heading stays. The small custom section title is
+removed; subject remains in figure captions, metadata and real section links.
+« Groupe comparé : » uses regular legend text, followed by the group name in the
+focal heading's family/weight/colour/tracking, at a fixed **18 CSS px** (about
+9.7 pt at this adapter's existing A4 width scale). This specimen size is now
+visually approved, not a new global typography token. Measured line boxes are
+26/52 px for one/two lines. It never shrinks type to fit a list.
+
+Custom members sort by exact public name using French collation. The browser
+measures the full label including the intro. If all names fail, every complete
+sorted prefix is measured with its own omitted-member suffix; the largest fit
+wins. If none fits, the label names the **total selection membership**, never
+per-measure contributors. Singular grammar reads « ET 1 AUTRE EPCI » etc.
+The 24-member commune specimen fits **11** complete names plus « ET 13 AUTRES
+COMMUNES »; the EPCI specimen fits **2** plus « ET 22 AUTRES EPCI ». There is no
+7/8 threshold or fixed-five prefix. All four real Breton département names fit;
+the artificial département names deliberately exercise its otherwise unreachable
+prefix/fallback shapes without claiming new real départements.
+
+Verification: 21/21 artifact checks passed, each one A4 at unchanged width-fit
+scale; live DOM unchanged. The existing auditor's **unmodified** grouped-grid
+checks matched 360 cells (315 value/reference/rank cells plus 45 axis-label
+cells): 135 numeric cells for each real compared export and 45 focal cells for
+the comparison-off export. Bounds, overlap, source presence, links, page numbers,
+conditional footer, selectable heading text, fixed type, maximal prefix and
+synthetic notices are checked. The old auditor's section-title-presence assertion
+is intentionally not applied: removing that displayed title is this experiment;
+its factual/grid checks were not relaxed. Visual inspection used rendered PDFs,
+including real EPCI/Bretagne, off, multi-line prefixes and the complete heading
+contact sheet. `vue-tsc` and `git diff --check` passed. Impeccable's regex scan
+reports the same 11 documented findings in untouched files, not a clean gate.
+
+Limits: custom/EPCI/departement specimens are typography evidence, not live
+custom-comparison validation. No new numerical reads for those custom fixtures,
+no automatic-overflow implementation, no mobile/tagged-PDF/accessibility claim,
+no full stress rerun and no mode-chooser approval. Statistic/reference context
+remains separately in the real reports' existing footnotes; group names do not
+redefine it. The visual size and headings have owner approval; production
+integration and automatic overflow remain separate. The PRD records the approved
+heading rules, while production UI and main are untouched.

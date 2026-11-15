@@ -10,7 +10,9 @@ seule création de cette spécification.
 
 **Validé :** la présentation sur une feuille, les tableaux de valeurs, la limite
 fonctionnelle de trois modes sélectionnables par PDF, les noms de territoire
-compacts dans les tableaux et les règles de sources ci-dessous.
+compacts dans les tableaux, les règles de sources et les en-têtes de comparaison
+ci-dessous. Le propriétaire a également approuvé les maquettes de ces en-têtes,
+y compris la taille fixe de 18 px CSS du nom de comparaison.
 
 **Non validé :** l’emplacement et la présentation des commandes d’export, ainsi que
 l’interface de choix des modes. La modale du prototype est un instrument de test,
@@ -58,11 +60,45 @@ Le bac à sable exporte l’équipement courant, pas l’univers des 235 TYPEQU.
   factuelle dans un template PDF figé.
 - En-tête : marque/hermine Lusk liée à l’accueil, titre de page centré, territoire
   et icône de lien externe vers la page/section vivante ; filet rouge du Cahier.
-- Dans la section : territoire en premier, visible et centré, titre de section
-  plus discret comme contexte. Le nom complet reste dans l’identité de page et
-  le titre/métadonnées du PDF, même lorsque le tableau l’abrège.
+- Dans la section : territoire en premier, visible et centré. Supprimer le petit
+  titre de section personnalisé sous ce nom ; les titres des figures, les
+  métadonnées du PDF et les liens de section conservent le sujet. Le nom complet
+  reste dans l’identité de page et le titre/métadonnées du PDF, même lorsque le
+  tableau l’abrège.
 - Centrer verticalement le contenu dans l’espace utile de chaque page et
   conserver une numérotation claire ainsi que le lien de retour vers le site.
+
+### Sous-titre de comparaison — maquette approuvée
+
+- Sous le territoire focal, afficher « Groupe comparé : » en petit texte normal,
+  puis le nom du groupe en majuscules, avec la même famille, graisse, couleur et
+  approche que le nom focal, mais à une taille fixe approuvée de **18 px CSS**.
+- Nommer le groupe uniquement lorsque la section affiche effectivement une preuve
+  comparative. Comparaison masquée, sélection vide, comparaison indisponible ou
+  section sans preuve comparative : pas de sous-titre laissant croire le contraire.
+- Préréglage EPCI : nom public exact de l’EPCI. Préréglage Bretagne : « COMMUNES
+  BRETONNES », « EPCI BRETONS » ou « DÉPARTEMENTS BRETONS », selon le niveau réel.
+- Une sélection personnalisée peut être composée de communes, d’EPCI ou de
+  départements selon le niveau courant. Trier les noms publics avec la collation
+  française, puis mesurer la largeur réellement rendue à la taille fixe.
+- Si tous les noms complets, séparés par des virgules, tiennent dans **deux lignes
+  maximum**, les afficher tous. Inclure le préfixe « Groupe comparé : » dans la
+  mesure de l’espace disponible.
+- Sinon, conserver le plus grand préfixe de noms **complets** dans cet ordre qui
+  tient sur deux lignes avec « ET N AUTRES COMMUNES / EPCI / DÉPARTEMENTS ».
+  **N = nombre total de membres sélectionnés − nombre de membres nommés**.
+  Accorder le singulier lorsqu’un seul membre est omis.
+- Si aucun nom complet accompagné de son suffixe ne tient, afficher « SÉLECTION
+  DE N COMMUNES / EPCI / DÉPARTEMENTS », avec N égal au nombre **total** de membres
+  sélectionnés et l’accord approprié. Ce nombre n’est pas celui des contributeurs
+  éligibles d’une mesure particulière.
+- Ne pas réduire la police pour faire tenir davantage de noms, tronquer un nom
+  de membre, appliquer un nombre fixe de caractères, un seuil de 7/8 membres ou
+  un préfixe arbitraire de cinq noms. Ces premières idées sont remplacées par la
+  règle de largeur mesurée.
+- Le nom du groupe ne remplace pas l’explication distincte de la statistique,
+  de la pondération et des rangs. L’approbation de ces en-têtes ne vaut pas
+  validation de l’interface de choix des modes ni mise en production du prototype.
 
 ### Une feuille par défaut, continuation seulement si nécessaire
 
@@ -150,6 +186,9 @@ Le bac à sable exporte l’équipement courant, pas l’univers des 235 TYPEQU.
   partagés ; des assertions de non-chevauchement complètent une revue visuelle.
 - [ ] Les sources sont en bas à droite, avec le préfixe approuvé, sans perte de
   provenance ni de liens. Le pied de comparaison est conditionnel par page.
+- [ ] Les en-têtes de comparaison suivent la maquette approuvée : préréglages
+  résolus, tri français, noms complets sur deux lignes, préfixe maximal avec le
+  bon nombre de membres omis ou repli sur le nombre total, sans police réduite.
 - [ ] L’interface produit d’export et de choix des modes est revue avec le
   propriétaire ; le comportement limite à trois, sans suppression silencieuse,
   est testé. La modale expérimentale ne vaut pas validation de cette interface.
@@ -182,6 +221,13 @@ et ne remplacent pas la validation de plusieurs sections réelles.
 - La dernière variation de sources a été régénérée et vérifiée sur le bac à sable
   (135 cellules, une feuille A4, sans réduction supplémentaire). Cela ne remplace
   pas une nouvelle campagne de toutes les sections sur cette variation.
+- Maquette des sous-titres de comparaison : 21 exemples visuellement approuvés,
+  avec 21/21 contrôles ciblés rapportés par la session Sol, dont 315 cellules
+  valeur/référence/rang. Les spécimens personnalisés sont explicitement
+  synthétiques : ils prouvent la typographie et les règles de liste, pas la
+  validité numérique de nouvelles comparaisons réelles. La taille de 18 px CSS
+  est approuvée ; les contrôles ciblés ne constituent pas un audit complet de
+  stress, d’accessibilité ou de mobile.
 - La continuation de tableaux existe comme option manuelle expérimentale avec
   répétition d’identité. La détection et le traitement automatiques du débordement
   sont encore du travail produit, non une capacité validée du prototype.

@@ -10,6 +10,7 @@ import { timeRampTooltipRows } from '../aedarTimeRampTooltip'
 import { groupedBarTooltipRows } from '../groupedBarTooltip'
 import { nextTick } from 'vue'
 import { choosePdfModes } from './modeChoice'
+import { comparisonHeadingMockup } from './comparisonHeadingMockup'
 
 const COMPARISON_MARK = '¹'
 const FOOTER_INVITATION = 'Retrouvez les cartes et explorez les données sur'
@@ -491,7 +492,8 @@ async function paint(pdf, element, placement, fontFor, stats) {
   await visit(element)
 }
 
-export async function exportDesktop({ sectionKey, includeTooltipTables = false, territoryFirst = false, pdfModes, tablesOnSecondPage = false } = {}) {
+export async function exportDesktop({ sectionKey, includeTooltipTables = false, territoryFirst = false, pdfModes, tablesOnSecondPage = false, headingMockup } = {}) {
+  if (headingMockup && !import.meta.env.DEV) throw new Error('Heading mockups are development-only')
   if (!ready()) throw new Error('Cahier not ready')
   await document.fonts.ready
   const start = performance.now()
@@ -533,6 +535,16 @@ export async function exportDesktop({ sectionKey, includeTooltipTables = false, 
     }
   }
   try {
+    if (headingMockup?.specimen) {
+      ui.header.querySelector('h2').textContent = 'Épreuve typographique'
+      const identity = ui.header.lastElementChild
+      identity.querySelector('.page-heading-territory').textContent = headingMockup.focal.nom
+      identity.querySelector('svg')?.remove()
+      identity.removeAttribute('href')
+    }
+    const comparisonHeadings = headingMockup ? [...ui.chapter.querySelectorAll('.concept-group')]
+      .filter(section => !sectionKey || section.dataset.section === sectionKey)
+      .map(section => ({ sectionKey: section.dataset.section, ...comparisonHeadingMockup(section, headingMockup) })) : []
     if (tablesOnSecondPage) {
       ui.chapter.querySelectorAll('[data-pdf-tables]').forEach(tables => {
         const section = tables.closest('.concept-group')
@@ -604,7 +616,7 @@ export async function exportDesktop({ sectionKey, includeTooltipTables = false, 
       pdf.link(left, H - 31, pdf.getTextWidth(invitation), 11, { url: new URL('/', publicPageUrl).href })
       pdf.text(`${index + 1} / ${pages.length}`, W - left, H - 24, { align: 'right' })
     }
-    pdf.setProperties({ title: `${root.props.content.territory.name} — ${content.label}${selectedSection ? ` — ${selectedSection.label}` : ''}`, subject: overview.comparisonLabel, author: 'Lusk · desktop PDF prototype' })
+    pdf.setProperties({ title: `${headingMockup?.specimen ? 'SYNTHÉTIQUE — ' + headingMockup.focal.nom : root.props.content.territory.name} — ${content.label}${selectedSection ? ` — ${selectedSection.label}` : ''}`, subject: headingMockup?.specimen ? 'Épreuve typographique synthétique, aucune donnée comparative réelle' : overview.comparisonLabel, author: 'Lusk · desktop PDF prototype' })
     const blob = pdf.output('blob')
     const link = document.createElement('a'); const url = URL.createObjectURL(blob)
     link.href = url; link.download = sectionKey ? `cahier-${root.props.content.territory.code}-${sectionKey}.pdf` : 'rennes-desktop-epci.pdf'; link.click()
@@ -613,6 +625,6 @@ export async function exportDesktop({ sectionKey, includeTooltipTables = false, 
       desktopWidth, pageContentHeight: capacity, removedInactiveControls: ui.removed,
       pages: pages.map(page => ({ occupiedHeight: page.used, centeringInset: Math.max(0, (capacity - page.used) / 2), sections: page.items.map(item => item.key), showsComparisonContext: page.showsComparisonContext })),
       sectionSizes: sizes, url: publicPageUrl.href, sectionKey: sectionKey ?? null, sectionLabel: selectedSection?.label ?? null, tooltipTables, territoryFirst,
-      exportModes, screenModes, compactLabels, tablesOnSecondPage }
+      exportModes, screenModes, compactLabels, tablesOnSecondPage, comparisonHeadings }
   } finally { ui.clone.remove() }
 }
