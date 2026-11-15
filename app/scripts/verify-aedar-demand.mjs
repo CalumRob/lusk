@@ -346,10 +346,20 @@ try {
   await waitUseful(natural)
   await natural.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first()
     .waitFor({ state: 'visible', timeout: 30000 })
+  const pageTwoUsefulAt = Date.now()
   await natural.waitForTimeout(500)
-  const beforeNaturalPage3 = batches.slice(naturalStartIndex).flatMap((batch) => batch.items)
-    .filter((item) => PAGE_THREE.includes(item.resource))
-  assert.equal(beforeNaturalPage3.length, 0, 'page 3 must not be read while it is off-screen')
+  const naturalSoFar = batches.slice(naturalStartIndex)
+  const pageTwoDemand = naturalSoFar
+    .filter((batch) => batch.items.some((item) => PAGE_TWO.includes(item.resource)))
+  assert.equal(pageTwoDemand.length, 3, `page-2 POSTs on landing: ${pageTwoDemand.length}`)
+  const pageTwoSettledAt = Math.max(...pageTwoDemand.map((batch) => batch.at))
+  // #1012 — page 1 is the reader's chapter, so its next page (2) is the numeric
+  // planner's own demand and page 3 is NOT warmed yet: the warm starts when
+  // page 2 becomes the reader's chapter, not merely because it rendered.
+  const pageThreeBeforeScroll = naturalSoFar
+    .filter((batch) => batch.items.some((item) => PAGE_THREE.includes(item.resource)))
+  assert.equal(pageThreeBeforeScroll.length, 0,
+    `page 3 must not warm while page 1 is the reader's chapter: ${pageThreeBeforeScroll.length}`)
 
   const page3Reached = await wheelToPage(natural, '#figure-offre-transports-commun')
   assert.ok(page3Reached, 'page 3 did not become visible by natural wheel')
@@ -372,6 +382,16 @@ try {
   assert.equal(page3Batches.length, 1, `page-3 POSTs after natural admission: ${page3Batches.length}`)
   assert.equal(page3Batches[0].items.length, 7,
     `page-3 items after natural admission: ${page3Batches[0].items.length}`)
+  // #1012 — that one page-3 read is the bounded next-chapter warm, started only
+  // after page 2 (its predecessor) was useful, and the reader's arrival reuses
+  // it: never a second read, never a recursive chain through the spine.
+  assert.ok(page3Batches[0].at >= pageTwoSettledAt,
+    'the next chapter must warm only after the requested page-2 demand settled')
+  // The warm carries the next chapter's ordinary demand only: no AEDAR item,
+  // no second chapter and no repeated identity (the shared client and the
+  // duplicate assertion below own the rest; page 1 keeps its own landing reads).
+  assert.equal(page3Batches[0].items.some((item) => String(item.resource).startsWith('aedar_')), false,
+    'the next-chapter warm must never carry AEDAR tail work')
 
   // Explicit navigation: click page 3, then naturally scroll back up while the
   // hash still says page 3. Page 2 and page 1 must come back with their retained
@@ -422,6 +442,10 @@ try {
     page3CurvePoints: page3Reading.curvePoints,
     page3Posts: page3Batches.length,
     page3Items: page3Batches[0]?.items.length ?? 0,
+    page3WarmAt: page3Batches[0]?.at ?? null,
+    pageThreeBeforeScroll: pageThreeBeforeScroll.length,
+    pageTwoSettledAt,
+    pageTwoUsefulAt,
     page2Posts: naturalPageTwo.length,
     page2Items: naturalPageTwo.flatMap((batch) => batch.items)
       .filter((item) => PAGE_TWO.includes(item.resource)).length,
@@ -504,6 +528,82 @@ try {
     coreTypequ: coldCoreTypequ,
   }
   await cold.close()
+
+  // Pass 5 — #1012 an obsolete inner-section fragment is ordinary PAGE ENTRY.
+  // The visible page 1 must load without any section-owner resolution, reveal
+  // or scroll; the URL/history stays untouched.
+  const obsoleteStartIndex = batches.length
+  const obsolete = await makePage()
+  await obsolete.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#section-aedar-access`,
+    { waitUntil: 'domcontentloaded' })
+  await waitUseful(obsolete)
+  await obsolete.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first()
+    .waitFor({ state: 'visible', timeout: 30000 })
+  const obsoleteHash = await obsolete.evaluate(() => location.hash)
+  const obsoleteScrollY = await obsolete.evaluate(() => window.scrollY)
+  const obsoleteBatches = batches.slice(obsoleteStartIndex)
+  const obsoleteAedar = obsoleteBatches.filter((batch) => batch.items.some((item) =>
+    String(item.resource).startsWith('aedar_')))
+  assert.ok(obsoleteAedar.length > 0,
+    'the initially visible page 1 must be admitted despite an obsolete fragment')
+  assert.equal(obsoleteHash, '#section-aedar-access',
+    `the fragment must be ignored for loading, not rewritten: ${obsoleteHash}`)
+  assert.ok(obsoleteScrollY <= 2,
+    `an obsolete fragment must not auto-reveal or scroll the page: ${obsoleteScrollY}`)
+  const obsoletePageTwo = obsoleteBatches
+    .filter((batch) => batch.items.some((item) => PAGE_TWO.includes(item.resource)))
+  assert.equal(obsoletePageTwo.length, 3,
+    `the numeric planner chapter still loads once: ${obsoletePageTwo.length}`)
+  assert.equal(await obsolete.locator('.etat-erreur').count(), 0,
+    'an obsolete fragment must not surface a page-level data error')
+  const obsoleteIdentities = obsoleteBatches.flatMap((batch) => batch.items).map(fullIdentity)
+  assert.equal([...new Set(obsoleteIdentities)].length, obsoleteIdentities.length,
+    'obsolete-fragment entry must not duplicate a semantic item')
+  receipt.obsoleteFragmentEntry = {
+    hash: obsoleteHash,
+    scrollY: obsoleteScrollY,
+    aedarBatches: obsoleteAedar.length,
+    pageTwoPosts: obsoletePageTwo.length,
+    duplicates: obsoleteIdentities.length - new Set(obsoleteIdentities).size,
+  }
+  await obsolete.close()
+
+  // Pass 6 — #1012 a hung network ends as an honest retryable error (the shared
+  // dispatch deadline), and the explicit retry recovers the chapter.
+  const hang = await makePage()
+  const stalled = []
+  let hangChapter = true
+  await hang.route('**/api/resources/read-batch', async (route) => {
+    const request = route.request().postDataJSON()
+    if (hangChapter && request.items.some((item) => PAGE_THREE.includes(item.resource))) {
+      await new Promise((resolve) => { stalled.push(resolve) })
+      try { await route.abort() } catch { /* the client aborted at its deadline */ }
+      return
+    }
+    await route.fallback()
+  })
+  const hangStart = Date.now()
+  await hang.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#figure-offre-transports-commun`,
+    { waitUntil: 'domcontentloaded' })
+  await hang.locator('.etat-erreur').waitFor({ state: 'visible', timeout: 90000 })
+  const hungForMs = Date.now() - hangStart
+  const hangErrorText = (await hang.locator('.etat-erreur').innerText()).replace(/\s+/gu, ' ')
+  assert.ok(hangErrorText.includes('Les indicateurs de ce thème ne sont pas disponibles.'),
+    `a hung read must reach the explicit retryable error: ${hangErrorText}`)
+  assert.equal(await hang.locator('.mobilite-raccordement-curve__territory').count(), 0,
+    'a hung read must never render a fabricated figure')
+  assert.ok(hungForMs >= 44_000 && hungForMs < 60_000,
+    `the honest error must come from the app's bounded deadline, not a gateway timeout: ${hungForMs} ms`)
+  for (const release of stalled) release()
+
+  hangChapter = false
+  await hang.locator('.etat-erreur button').click()
+  await hang.locator('.mobilite-raccordement-curve__territory')
+    .waitFor({ state: 'visible', timeout: 30000 })
+  assert.equal(await hang.locator('.etat-erreur').count(), 0,
+    'the explicit retry must clear the honest error state')
+  receipt.hungNetwork = { hungForMs, errorText: hangErrorText, recoveredOnRetry: true }
+  await hang.close()
 
   console.log(JSON.stringify(receipt, null, 2))
 

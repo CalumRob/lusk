@@ -250,10 +250,13 @@ const chapitreAffiche = computed(() => {
   if (visible && visible.generation === chapitreGeneration.value) return visible.key
   const anchored = chapitreDemandeDepuisAncre('mobilite', route.hash)
   if (anchored) return anchored
-  // No anchor is the spine's first chapter (AEDAR); an UNKNOWN anchor falls back
-  // to the SAME chapter the numeric planner uses, so AEDAR is not launched for a
-  // page it will never show.
-  return route.hash ? chapitreNumerique.value : chapitreAedar.value
+  // #1012 — no SUPPORTED chapter anchor is an ordinary page entry for LOADING:
+  // the spine's first chapter is admitted even when the URL carries an obsolete
+  // inner-section fragment (`#section-aedar-access`, `#figure-sources`). That
+  // fragment is ignored for admission only — the URL/history is never rewritten,
+  // nothing is revealed and no section owner is resolved. The reader's actual
+  // chapter still takes over from the existing visibility owner once it lands.
+  return chapitreAedar.value
 })
 const demandeAedar = computed(() => productionMobilite.value && chapitreAedar.value !== null &&
   chapitreAffiche.value === chapitreAedar.value)
@@ -408,6 +411,40 @@ async function demandeChapitreNiveau(type: string, theme: ThemeKey, chapterKey: 
  */
 function demandeThemeActif(): ThemeFactsDemand {
   return { selection: null }
+}
+
+/**
+ * #1012 — bounded next-chapter prefetch. Once the REQUESTED Mobility chapter is
+ * useful, at most the IMMEDIATE next chapter's ordinary demand (its facts and
+ * the comparison the page displays) is read once, as the app's deferred
+ * background unit: after the reader's own demand, before unrelated theme
+ * warming. It never starts from a warm (no chain down the spine), never applies
+ * its result to the displayed chapter, and is skipped if the reader has moved
+ * on, so a later demand reads critically instead of inheriting an automatic
+ * retry. The shared semantic client still owns item identity, caching, the
+ * two-read bound and the transport deadline; this plans one unit only.
+ */
+function planifierChapitreSuivant(type: string, code: string, requested: string | undefined): void {
+  if (!productionMobilite.value || requested === undefined) return
+  const index = chapitresMobilite.value.findIndex((chapter) => chapter.key === requested)
+  const suivant = index < 0 ? undefined : chapitresMobilite.value[index + 1]
+  if (!suivant || suivant.indicators.length === 0) return
+  const generation = demandeScheduler.generation
+  const chapitre = chapitreGeneration.value
+  demandeScheduler.enqueue({
+    key: `chapter:${suivant.key}`,
+    priority: 'deferred',
+    run: async () => {
+      if (generation !== demandeScheduler.generation || chapitre !== chapitreGeneration.value ||
+          chapitreAffiche.value !== requested) return
+      const demand = await demandeChapitreNiveau(type, 'mobilite', suivant.key, membresAcquisition.value)
+      if (!demand?.indicators?.length) return
+      // The read is the same shared transaction a user request would join: its
+      // low priority is this deferred queue (never a second/critical demand).
+      await cacheAcquisition.get(type, code, 'mobilite',
+        { ...demand, priority: 'background' }).catch(() => undefined)
+    },
+  })
 }
 
 /**
@@ -1052,6 +1089,7 @@ watch(() => chapitreDemandeMobilite(), async (critique, _old, onCleanup) => {
     appliquerAcquisitionMobilite(acquired, membresAcquisition.value, demand)
     setChapitreStatut(critique, 'ready')
     demandeScheduler.unlockIdle()
+    if (chapitreAffiche.value === critique) planifierChapitreSuivant(type, code, critique)
   } catch {
     if (!cancelled) setChapitreStatut(critique, 'error')
   }
@@ -1119,9 +1157,10 @@ watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
     appliquerAcquisitionMobilite(acquired, membresAcquisition.value, demand)
     setChapitreStatut(critique, 'ready')
     settled = true
-    // The requested chapter is useful: only now may unrelated themes warm, and
-    // never before it. A sibling chapter is read only when it is requested.
+    // The requested chapter is useful: only now may a sibling/next chapter or an
+    // unrelated theme warm — never before it.
     demandeScheduler.unlockIdle()
+    if (chapitreAffiche.value === critique) planifierChapitreSuivant(type, code, critique)
     planifierRechauffementThemes(type, code, 'mobilite')
   }).catch(() => {
     settled = true

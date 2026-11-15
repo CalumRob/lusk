@@ -226,10 +226,7 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     vi.stubGlobal('fetch', transport)
     const { wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite#figure-partage-de-lespace-public')
 
-    const useful = await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
-    const beforeUsefulCalls = calls.slice(0, useful.callsAtUseful)
-    expectOnlyRequestedChapter(beforeUsefulCalls.filter(isPost).flatMap((call) => call.items))
-
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
     await flushPromises()
 
     // The requested chapter: 13 focal facts + the 20 displayed comparison
@@ -244,9 +241,12 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     // The producer's nested default is never fetched then discarded.
     expect(pageTwoItems.some((item) => item.intent.kind === 'fixed_comparison')).toBe(false)
 
-    // No page-3 chapter and no AEDAR read is speculatively acquired on this
-    // navigation: both belong to chapters the reader did not request.
-    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(0)
+    // Until the requested chapter's own demand has settled, NOTHING else is
+    // issued: no AEDAR, no unrelated theme and no sibling chapter. This is
+    // ordered by the batch that actually completed the demand, not by paint.
+    const requestedSettledAt = pageTwo[2]!.index
+    expectOnlyRequestedChapter(calls.filter((call) => call.index < requestedSettledAt)
+      .filter(isPost).flatMap((call) => call.items))
     expect(posts(calls).flatMap((call) => call.items).filter(isAedar)).toEqual([])
     // The pending page-1 car map must not download its image either (a fetch
     // stub cannot observe <img>, so the DOM is asserted directly).
@@ -254,13 +254,29 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     // The page-1 asset reads are gated with the page-1 chapter too.
     expect(calls.filter((call) => call.url.startsWith('https://images.'))).toEqual([])
 
+    // #1012 — once page 2 IS useful, exactly its immediate next chapter warms:
+    // one background batch of its ordinary demand (4 facts + 3 displayed
+    // comparisons), never AEDAR and never a chain further down the spine.
+    await settleOwner(calls, (item) => PAGE_THREE.includes(item.resource))
+    const pageThreeWarm = postsTouching(calls, PAGE_THREE)
+    expect(pageThreeWarm).toHaveLength(1)
+    expect(pageThreeWarm[0]!.items).toHaveLength(7)
+    expect(new Set(pageThreeWarm[0]!.items.map((item) => item.resource))).toEqual(new Set(PAGE_THREE))
+    expect(pageThreeWarm[0]!.index).toBeGreaterThan(requestedSettledAt)
+    // Warming is not admission: the chapter's data is cached but not applied to
+    // the displayed page until the reader actually requests it, and page-1 AEDAR
+    // is never pulled by the warm.
+    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(false)
+    expect(items(calls).filter(isAedar)).toEqual([])
+
     // Unrelated themes are IDLE: zero before the requested chapter is useful,
-    // then at most five coalesced batches, facts only.
+    // then at most five coalesced batches, facts only — the next-chapter warm is
+    // not an unrelated-theme batch and does not spend that budget.
     const idleThemes = posts(calls).filter((call) => call.items.every((item) =>
-      !PAGE_TWO.includes(item.resource)))
+      !PAGE_TWO.includes(item.resource) && !PAGE_THREE.includes(item.resource)))
     expect(idleThemes.length).toBeLessThanOrEqual(5)
     for (const call of idleThemes) {
-      expect(call.index).toBeGreaterThan(pageTwo[2]!.index)
+      expect(call.index).toBeGreaterThan(requestedSettledAt)
       expect(call.items.length).toBeLessThanOrEqual(12)
       expect(call.items.every((item) => item.intent.kind === 'facts')).toBe(true)
     }
@@ -330,16 +346,22 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     wrapper.unmount()
   }, 60000)
 
-  it('reads the page-3 chapter only when it is requested: one batch, 7 items, no page-2 re-read', async () => {
+  it('warms the next chapter once after page 2 is useful; the page-3 request coalesces with it', async () => {
     const { transport, calls } = createTransport()
     vi.stubGlobal('fetch', transport)
     const { router, wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite#figure-partage-de-lespace-public')
     await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
     await flushPromises()
-    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(0)
+    // #1012 — the immediate next chapter is warmed, once, as background work
+    // after the requested one is useful.
+    await settleOwner(calls, (item) => PAGE_THREE.includes(item.resource))
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(1)
     const pageTwoFactsBefore = items(calls)
       .filter((item) => item.intent.kind === 'facts' && PAGE_TWO.includes(item.resource)).length
 
+    // The reader requests exactly that warmed chapter: the same shared
+    // transaction settles, so it is not read a second time and its facts are
+    // applied to the displayed chapter.
     await router.push({ path: '/territoire/commune/35238', query: { theme: 'mobilite' },
       hash: '#figure-offre-transports-commun' })
     await flushPromises()
@@ -349,6 +371,7 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     expect(pageThree).toHaveLength(1)
     expect(pageThree[0]!.items).toHaveLength(7)
     expect(new Set(pageThree[0]!.items.map((item) => item.resource))).toEqual(new Set(PAGE_THREE))
+    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
     const pageTwoFactsAfter = items(calls)
       .filter((item) => item.intent.kind === 'facts' && PAGE_TWO.includes(item.resource)).length
     expect(pageTwoFactsAfter).toBe(pageTwoFactsBefore)
@@ -364,6 +387,9 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     await flushPromises()
 
     const pageThree = () => wrapper.get('[data-figure="figure-offre-transports-commun"]')
+    // Page 1 is the requested chapter and page 2 was never the requested page in
+    // this run, so no next-chapter warm was planned: the reader jumps straight to
+    // page 3 and its own demand is the first read.
     expect(postsTouching(calls, PAGE_THREE)).toHaveLength(0)
     // Visible but not yet demanded is pending, never a factual absence.
     expect(pageThree().text()).not.toContain('Contenu indisponible pour ce territoire.')
@@ -681,18 +707,64 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     wrapper.unmount()
   }, 60000)
 
-  it('falls back to the planner chapter for an unknown anchor, without launching AEDAR', async () => {
+  it('treats an obsolete inner-section fragment as ordinary page entry, without rewriting the URL', async () => {
     const { transport, calls } = createTransport()
     vi.stubGlobal('fetch', transport)
-    const { wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite#figure-sources')
+    const { router, wrapper } = await monterFiche(
+      '/territoire/commune/35238?theme=mobilite#section-aedar-access')
+    // #1012 — the initially VISIBLE page 1 is admitted for LOADING even though
+    // the URL carries an obsolete inner-section fragment. No section owner is
+    // resolved, no reveal runs and no scroll is required.
+    await attendreChapitreUtile(wrapper, calls, '[data-section="aedar-car-overview"]')
+    await settleOwner(calls, isAedar)
+    await flushPromises()
+    expect(items(calls).filter(isAedar).length).toBeGreaterThan(0)
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+
+    // The numeric planner still reads its first numeric chapter (page 2), and
+    // the unsupported fragment never becomes a page-1 factual absence.
+    expect(postsTouching(calls, PAGE_TWO)).toHaveLength(3)
+    expect(wrapper.text()).not.toContain('Contenu indisponible pour ce territoire.')
+    // The fragment is ignored for admission only: URL/history is untouched.
+    expect(router.currentRoute.value.hash).toBe('#section-aedar-access')
+    expect(aedarImageSources(wrapper).every((src) => src.includes('/35238-'))).toBe(true)
+    wrapper.unmount()
+  }, 60000)
+
+  it('reaches an explicit retryable error when the requested read fails, then recovers on retry', async () => {
+    let reseauCoupe = true
+    const { transport, calls } = createTransport({
+      hold: () => (reseauCoupe ? Promise.reject(new Error('réseau interrompu')) : undefined),
+    })
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche(
+      '/territoire/commune/35238?theme=mobilite#figure-partage-de-lespace-public')
+    for (let tick = 0; tick < 200 && !wrapper.find('.etat-erreur').exists(); tick += 1) {
+      await flushPromises()
+    }
+
+    // The requested read ends as an HONEST, explicit failure — never a pending
+    // chapter and never a fabricated value.
+    const erreur = wrapper.get('.etat-erreur')
+    expect(erreur.text()).toContain('Les indicateurs de ce thème ne sont pas disponibles.')
+    expect(wrapper.find('.mobilite-comparison-bars').exists()).toBe(false)
+    // One fused demand + its existing bounded facts-only recovery: every failed
+    // batch belongs to the requested chapter, and nothing retries after that.
+    const tentatives = posts(calls).length
+    expect(tentatives).toBeGreaterThan(0)
+    expect(posts(calls).flatMap((call) => call.items)
+      .filter((item) => !PAGE_TWO.includes(item.resource))).toEqual([])
+    for (let tick = 0; tick < 20; tick += 1) await flushPromises()
+    expect(posts(calls).length).toBe(tentatives)
+
+    // The explicit retry re-reads over HTTP and recovers the chapter.
+    reseauCoupe = false
+    await erreur.get('button').trigger('click')
     await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
     await flushPromises()
-
-    expect(items(calls).filter(isAedar)).toEqual([])
-    expect(calls.filter((call) => call.url.startsWith('https://images.'))).toEqual([])
-    expect(aedarImageSources(wrapper)).toEqual([])
-    // The fallback chapter is the one the numeric planner actually reads.
-    expect(postsTouching(calls, PAGE_TWO)).toHaveLength(3)
+    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
+    expect(wrapper.find('.mobilite-section--reseaux .mobilite-comparison-bars').exists()).toBe(true)
+    expect(posts(calls).length).toBeGreaterThan(tentatives)
     wrapper.unmount()
   }, 60000)
 
