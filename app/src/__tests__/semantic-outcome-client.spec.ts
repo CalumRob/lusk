@@ -8,8 +8,10 @@ import {
   readSemanticOutcomes,
   semanticItemKey,
   semanticReadState,
+  SEMANTIC_READ_DEADLINE_MS,
   SemanticMemberError,
   SemanticPublicationUnavailableError,
+  SemanticReadDeadlineError,
   SemanticReadSupersededError,
 } from '../payload/semanticResourceClient'
 import type { SemanticReadItem } from '../payload/semanticResourceClient'
@@ -600,5 +602,150 @@ describe('compatibility payload adapter', () => {
     expect(failure).toBeInstanceOf(SemanticPublicationUnavailableError)
     expect(failure).toMatchObject({ outcome: { resource: 'prix_m2', family: 'ordered_series',
       reason: 'publication_absent' } })
+  })
+})
+
+/**
+ * #1012 — a transport that never answers used to leave a requested read pending
+ * forever. The shared client now owns one bounded dispatch deadline: every
+ * coalesced waiter observes the same honest failure, an explicit retry re-reads
+ * over HTTP, and the deadline starts when the batch is DISPATCHED, never while it
+ * waits for one of the two shared slots.
+ */
+describe('bounded transport deadline', () => {
+  /** A socket that stays open until the client aborts it, like a stalled API. */
+  const stalledUntilAbort = () => vi.fn((_url: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort',
+        () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+    }))
+
+  it('ends a hung dispatch as an honest retryable failure for every coalesced waiter', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetcher = stalledUntilAbort()
+      const first = readSemanticOutcomes([item('densite')], { fetcher })
+      const second = readSemanticOutcomes([item('densite')], { fetcher })
+      const settled = Promise.allSettled([first, second])
+      // Both callers share ONE dispatch; nothing settles before the deadline.
+      expect(fetcher).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(SEMANTIC_READ_DEADLINE_MS - 1)
+      let settledEarly = false
+      void settled.then(() => { settledEarly = true })
+      await Promise.resolve()
+      expect(settledEarly).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1)
+      const results = await settled
+      expect(results.map((result) => result.status)).toEqual(['rejected', 'rejected'])
+      for (const result of results) {
+        expect(result.status === 'rejected' ? result.reason : null)
+          .toBeInstanceOf(SemanticReadDeadlineError)
+      }
+      expect(fetcher).toHaveBeenCalledTimes(1)
+      // A timed-out item is a failed request, not a settled absence: its state
+      // is explicit and a later demand reads it again.
+      expect(semanticReadState(item('densite'), { fetcher })).toBe('error')
+    } finally { vi.useRealTimers() }
+  })
+
+  it('recovers on an explicit retry after the deadline released the hung read', async () => {
+    vi.useFakeTimers()
+    try {
+      let hung = true
+      const fetcher = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => hung
+        ? new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort',
+            () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+        })
+        : Promise.resolve(new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+          results: (JSON.parse(String(init?.body)) as { items: WireItem[] }).items
+            .map((entry) => availableWire(entry, 'apres-retry')) }))))
+      const timedOut = readSemanticOutcomes([item('densite')], { fetcher })
+        .catch((error: unknown) => error)
+      await vi.advanceTimersByTimeAsync(SEMANTIC_READ_DEADLINE_MS)
+      expect(await timedOut).toBeInstanceOf(SemanticReadDeadlineError)
+
+      hung = false
+      const [outcome] = await readSemanticOutcomes([item('densite')], { fetcher })
+      if (outcome!.status !== 'available') throw new Error('expected available')
+      expect(outcome.data.content_version).toBe('apres-retry')
+      expect(fetcher).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('starts the deadline when the HTTP batch is dispatched, not while it queues', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetcher = stalledUntilAbort()
+      const first = readSemanticOutcomes([item('a')], { fetcher }).catch((error: unknown) => error)
+      const second = readSemanticOutcomes([item('b')], { fetcher }).catch((error: unknown) => error)
+      const queued = readSemanticOutcomes([item('c')], { fetcher }).catch((error: unknown) => error)
+      let queuedSettled = false
+      void queued.then(() => { queuedSettled = true })
+      // Both shared slots are taken; the third read waits without a deadline.
+      await vi.advanceTimersByTimeAsync(SEMANTIC_READ_DEADLINE_MS - 1)
+      expect(fetcher).toHaveBeenCalledTimes(2)
+      expect(queuedSettled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await first).toBeInstanceOf(SemanticReadDeadlineError)
+      expect(await second).toBeInstanceOf(SemanticReadDeadlineError)
+      // The queued batch dispatches only now, with a fresh full deadline.
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fetcher).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(SEMANTIC_READ_DEADLINE_MS - 1)
+      expect(queuedSettled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await queued).toBeInstanceOf(SemanticReadDeadlineError)
+    } finally { vi.useRealTimers() }
+  })
+})
+
+/**
+ * #1012 — the next-page prefetch reads at BACKGROUND priority, so a reader who
+ * requests that same chapter must not join a batch still queued behind unrelated
+ * warming. A critical caller promotes its identical pending batch; an already
+ * running read still settles into the cache (nothing is aborted).
+ */
+describe('critical caller promotion of an identical background batch', () => {
+  it('dispatches the joined background batch before later warmers', async () => {
+    const order: string[] = []
+    const releases: Array<() => void> = []
+    const fetcher = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { items: WireItem[] }
+      order.push(body.items.map((entry) => entry.resource).join(','))
+      return new Promise<Response>((resolve) => {
+        releases.push(() => resolve(new Response(JSON.stringify({
+          contract: 'semantic-read-batch-v2',
+          results: body.items.map((entry) => availableWire(entry)),
+        }))))
+      })
+    })
+    const background = (resource: string) =>
+      readSemanticOutcomes([item(resource)], { fetcher, priority: 'background' })
+    const first = background('a')
+    const second = background('b')
+    // The unrelated warmer is queued BEFORE the prefetch, so only promotion can
+    // keep the reader's joined batch ahead of it.
+    const later = background('d')
+    const prefetched = background('c')
+    await Promise.resolve()
+    expect(order).toEqual(['a', 'b'])
+
+    // The reader requests chapter 'c' while its warm batch is still queued.
+    const requested = readSemanticOutcomes([item('c')], { fetcher })
+    releases[0]!()
+    await vi.waitFor(() => expect(order).toEqual(['a', 'b', 'c']))
+    releases[1]!()
+    await vi.waitFor(() => expect(order).toEqual(['a', 'b', 'c', 'd']))
+    releases[2]!()
+    releases[3]!()
+    const [warm, requestedOutcome] = await Promise.all([prefetched, requested])
+    expect(warm).toEqual(requestedOutcome)
+    await Promise.all([first, second, later])
+    // The promoted batch is one shared dispatch: neither the warm nor the
+    // reader issued a second read for the same item.
+    expect(order).toEqual(['a', 'b', 'c', 'd'])
   })
 })

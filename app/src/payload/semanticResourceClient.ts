@@ -80,6 +80,17 @@ export const SEMANTIC_MAX_BATCH_ITEMS = 12
 export const SEMANTIC_MAX_ACTIVE_READS = 2
 
 /**
+ * #1012 — one bounded transport deadline per DISPATCHED read batch. It starts
+ * when the batch takes a shared slot (never while it waits for one), so a queued
+ * read is not charged for time it could not use. 45 s stays below the 60 s
+ * read timeout of the API proxy (`api/deploy/nginx-api.conf`, `proxy_read_timeout`),
+ * so a stalled response surfaces as this app's honest retryable failure rather
+ * than a gateway timeout. Every coalesced waiter shares the one failure; a
+ * caller leaving the chapter still never aborts a shared read.
+ */
+export const SEMANTIC_READ_DEADLINE_MS = 45_000
+
+/**
  * Closed outcome vocabulary (#984). The family always comes from the producer
  * declaration; a client never derives it from the failed lookup.
  */
@@ -256,6 +267,19 @@ export class SemanticReadSupersededError extends Error {
 }
 
 /**
+ * #1012 — the bounded transport deadline expired with no response. It is a
+ * FAILED request (retryable, never a settled publication absence), shared by
+ * every waiter coalesced on that dispatch.
+ */
+export class SemanticReadDeadlineError extends PayloadError {
+  constructor(readonly deadlineMs = SEMANTIC_READ_DEADLINE_MS) {
+    super('fetch', SEMANTIC_BATCH_PATH,
+      `Lecture sémantique interrompue : aucune réponse après ${Math.round(deadlineMs / 1000)} s.`)
+    this.name = 'SemanticReadDeadlineError'
+  }
+}
+
+/**
  * #1002 — an unstarted batch was deliberately NOT read: its consumer left the
  * requested chapter before the scheduler reached it. This is an intentional
  * defer, never a failure, a publication absence or a fabricated value; the
@@ -377,11 +401,17 @@ export function groupSemanticItems(items: readonly SemanticReadItem[]): Semantic
 
 class SemanticReadScheduler {
   private active = 0
-  private readonly waiting: Array<{ priority: 'critical' | 'background'; start: () => void }> = []
+  private readonly waiting: Array<{
+    priority: 'critical' | 'background'
+    /** The queued batch this waiter will dispatch, for a later promotion. */
+    batch?: string
+    start: () => void
+  }> = []
 
   constructor(private readonly limit: number) {}
 
-  run<T>(read: () => Promise<T>, priority: 'critical' | 'background' = 'critical'): Promise<T> {
+  run<T>(read: () => Promise<T>, priority: 'critical' | 'background' = 'critical',
+    batch?: string): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const execute = () => {
         read().then(resolve, reject).finally(() => {
@@ -398,9 +428,25 @@ class SemanticReadScheduler {
         // A critical read queues ahead of every background read, without
         // reordering critical reads among themselves.
         const at = this.waiting.findIndex((waiter) => waiter.priority === 'background')
-        this.waiting.splice(at < 0 ? this.waiting.length : at, 0, { priority, start: execute })
-      } else this.waiting.push({ priority, start: execute })
+        this.waiting.splice(at < 0 ? this.waiting.length : at, 0, { priority, batch, start: execute })
+      } else this.waiting.push({ priority, batch, start: execute })
     })
+  }
+
+  /**
+   * #1012 — a reader requested a chapter whose identical warm batch is still
+   * queued: move that one batch ahead of every still-unstarted background read,
+   * without reordering other critical work or aborting anything running.
+   */
+  promote(batch: string): boolean {
+    const at = this.waiting.findIndex((waiter) => waiter.batch === batch)
+    if (at < 0) return false
+    const waiter = this.waiting[at]!
+    if (waiter.priority === 'critical') return false
+    this.waiting.splice(at, 1)
+    const backgroundAt = this.waiting.findIndex((candidate) => candidate.priority === 'background')
+    this.waiting.splice(backgroundAt < 0 ? this.waiting.length : backgroundAt, 0, waiter)
+    return true
   }
 }
 
@@ -421,6 +467,12 @@ interface PendingRead {
    * waits, so one off-screen consumer never cancels another active reader.
    */
   waiters: number
+  /**
+   * #1012 — identity of the HTTP batch carrying this item. A critical caller
+   * joining while that batch is still queued promotes it ahead of unrelated
+   * (background) warming instead of inheriting its place in the queue.
+   */
+  batch?: string
 }
 
 interface ItemState {
@@ -544,10 +596,34 @@ async function postBatch(fetcher: typeof fetch, batch: readonly SemanticReadItem
     contract: SEMANTIC_BATCH_CONTRACT,
     items: batch.map((item, index) => ({ ...item, id: semanticRequestId(item, index) })),
   }
-  // No AbortSignal is forwarded: one caller cancelling never invalidates data
-  // another caller is coalesced on.
-  const raw = await poster(SEMANTIC_BATCH_PATH, body, { fetcher })
-  return parseSemanticBatchOutcomes(raw, batch, options.expectedFamilies)
+  // No CALLER AbortSignal is forwarded: one caller cancelling never invalidates
+  // data another caller is coalesced on. This controller belongs to the shared
+  // dispatch only, and aborts a stalled socket when the deadline expires.
+  const controller = new AbortController()
+  let timedOut = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true
+      reject(new SemanticReadDeadlineError())
+    }, SEMANTIC_READ_DEADLINE_MS)
+  })
+  const request = poster(SEMANTIC_BATCH_PATH, body, { fetcher, signal: controller.signal })
+  // The losing side of the race is never an unhandled rejection.
+  request.catch(() => undefined)
+  try {
+    const raw = await Promise.race([request, deadline])
+    return parseSemanticBatchOutcomes(raw, batch, options.expectedFamilies)
+  } catch (error) {
+    // A timeout is the app's own failure even when the transport reports its
+    // abort first; it is never rendered as a publication absence.
+    if (timedOut) throw error instanceof SemanticReadDeadlineError ? error : new SemanticReadDeadlineError()
+    throw error
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+    // Release the stalled socket; a late reply is never applied.
+    if (timedOut) controller.abort()
+  }
 }
 
 function abortedError(): PayloadError {
@@ -616,6 +692,17 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
   // caller that leaves releases exactly its own share of the demand.
   const held: PendingRead[] = []
   let callerGone = false
+  const effectivePriority = options.priority ?? 'critical'
+  /**
+   * #1012 — a critical caller joins the shared transaction of the chapter it
+   * requests; if that batch is still queued behind unrelated warming, the
+   * scheduler moves it ahead of the background work. A running read is never
+   * aborted: it is the same transaction and is allowed to settle.
+   */
+  const promoteJoined = (entry: PendingRead): void => {
+    if (effectivePriority !== 'critical' || entry.batch === undefined) return
+    state.scheduler.promote(entry.batch)
+  }
 
   for (let index = 0; index < items.length; index += 1) {
     const key = keys[index]!
@@ -637,6 +724,7 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
       pending.waiters += 1
       held.push(pending)
       waiting.push({ index, promise: pending.promise })
+      promoteJoined(pending)
       continue
     }
     const primary = primaryByKey.get(key)
@@ -656,6 +744,7 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
       existing.waiters += 1
       held.push(existing)
       waiting.push({ index, promise: existing.promise })
+      promoteJoined(existing)
       continue
     }
     let resolve!: (outcome: SemanticReadOutcome) => void
@@ -719,11 +808,16 @@ async function acquireSemanticOutcomes(items: readonly SemanticReadItem[],
         const batches = groupSemanticItems(freshItems)
         await Promise.all(batches.map(async (batch) => {
           const indexes = batch.map((item) => indexOfItem.get(item)!)
+          const batchKey = batch.map(semanticItemKey).join('\u0001')
+          for (const index of indexes) {
+            const pending = state.pending.get(keys[index]!)
+            if (pending) pending.batch = batchKey
+          }
           try {
             const outcomes = await state.scheduler.run(async () => {
               if (abandoned(indexes)) { defer(indexes); return null }
               return postBatch(fetcher, batch, options)
-            }, options.priority ?? 'critical')
+            }, options.priority ?? 'critical', batchKey)
             if (outcomes === null) return
             outcomes.forEach((outcome, position) => {
               const index = indexes[position]!
