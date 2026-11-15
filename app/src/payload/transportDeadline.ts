@@ -39,9 +39,9 @@ export async function withTransportDeadline<T>(
       reject(errorAtDeadline)
     }, deadlineMs)
   })
-  const request = run(controller.signal)
-  request.catch(() => undefined)
   try {
+    const request = run(controller.signal)
+    request.catch(() => undefined)
     return await Promise.race([request, deadline])
   } catch (error) {
     // A timeout is the owner's own failure even when the transport reports its
