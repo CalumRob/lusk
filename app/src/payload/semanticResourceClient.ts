@@ -1,5 +1,6 @@
 import type { TerritoireType } from './types'
 import { PayloadError } from './validate'
+import { TRANSPORT_DEADLINE_MS, withTransportDeadline } from './transportDeadline'
 
 export interface SemanticResourceDeclaration {
   resource_id: string
@@ -82,13 +83,12 @@ export const SEMANTIC_MAX_ACTIVE_READS = 2
 /**
  * #1012 — one bounded transport deadline per DISPATCHED read batch. It starts
  * when the batch takes a shared slot (never while it waits for one), so a queued
- * read is not charged for time it could not use. 45 s stays below the 60 s
- * read timeout of the API proxy (`api/deploy/nginx-api.conf`, `proxy_read_timeout`),
- * so a stalled response surfaces as this app's honest retryable failure rather
- * than a gateway timeout. Every coalesced waiter shares the one failure; a
- * caller leaving the chapter still never aborts a shared read.
+ * read is not charged for time it could not use. The same policy covers the
+ * bootstrap GETs that every theme acquisition awaits (`transportDeadline`).
+ * Every coalesced waiter shares the one failure; a caller leaving the chapter
+ * still never aborts a shared read.
  */
-export const SEMANTIC_READ_DEADLINE_MS = 45_000
+export const SEMANTIC_READ_DEADLINE_MS = TRANSPORT_DEADLINE_MS
 
 /**
  * Closed outcome vocabulary (#984). The family always comes from the producer
@@ -198,14 +198,26 @@ async function readJson(response: Response, path: string): Promise<unknown> {
   catch { throw new PayloadError('validation', path, 'Réponse illisible de l’API sémantique.') }
 }
 
+/** One bounded catalogue dispatch: headers and body are under the shared deadline. */
+async function lireCatalogue(path: string, signal: AbortSignal): Promise<unknown> {
+  let response: Response
+  try { response = await fetch(path, { signal }) }
+  catch (cause) { throw new PayloadError('fetch', path, `Catalogue sémantique indisponible : ${cause instanceof Error ? cause.message : String(cause)}`) }
+  if (!response.ok) throw new PayloadError('fetch', path, `Catalogue sémantique indisponible (HTTP ${response.status}).`)
+  return readJson(response, path)
+}
+
 /** Producer-derived discovery. Deliberately validates only the shared public descriptor seam. */
 export async function chargerCatalogueRessources(): Promise<SemanticResourceDeclaration[]> {
   const path = SEMANTIC_CATALOGUE_PATH
-  let response: Response
-  try { response = await fetch(path) }
-  catch (cause) { throw new PayloadError('fetch', path, `Catalogue sémantique indisponible : ${cause instanceof Error ? cause.message : String(cause)}`) }
-  if (!response.ok) throw new PayloadError('fetch', path, `Catalogue sémantique indisponible (HTTP ${response.status}).`)
-  const raw = await readJson(response, path)
+  // #1012 — every theme acquisition awaits this critical GET: a stalled
+  // discovery ends as a typed, retryable failure instead of holding the
+  // requested chapter in loading forever.
+  const raw = await withTransportDeadline(
+    (signal) => lireCatalogue(path, signal),
+    () => new PayloadError('fetch', path,
+      `Catalogue sémantique interrompu : aucune réponse après ${Math.round(TRANSPORT_DEADLINE_MS / 1000)} s.`),
+  )
   if (!isRecord(raw) || raw.contract !== 'semantic-resource-catalogue-v1' || !Array.isArray(raw.resources)) {
     throw new PayloadError('validation', path, 'Catalogue des ressources sémantiques incompatible.')
   }
@@ -597,33 +609,13 @@ async function postBatch(fetcher: typeof fetch, batch: readonly SemanticReadItem
     items: batch.map((item, index) => ({ ...item, id: semanticRequestId(item, index) })),
   }
   // No CALLER AbortSignal is forwarded: one caller cancelling never invalidates
-  // data another caller is coalesced on. This controller belongs to the shared
-  // dispatch only, and aborts a stalled socket when the deadline expires.
-  const controller = new AbortController()
-  let timedOut = false
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const deadline = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      timedOut = true
-      reject(new SemanticReadDeadlineError())
-    }, SEMANTIC_READ_DEADLINE_MS)
-  })
-  const request = poster(SEMANTIC_BATCH_PATH, body, { fetcher, signal: controller.signal })
-  // The losing side of the race is never an unhandled rejection.
-  request.catch(() => undefined)
-  try {
-    const raw = await Promise.race([request, deadline])
-    return parseSemanticBatchOutcomes(raw, batch, options.expectedFamilies)
-  } catch (error) {
-    // A timeout is the app's own failure even when the transport reports its
-    // abort first; it is never rendered as a publication absence.
-    if (timedOut) throw error instanceof SemanticReadDeadlineError ? error : new SemanticReadDeadlineError()
-    throw error
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
-    // Release the stalled socket; a late reply is never applied.
-    if (timedOut) controller.abort()
-  }
+  // data another caller is coalesced on. The deadline controller belongs to the
+  // shared dispatch only and aborts a stalled socket when the deadline expires.
+  const raw = await withTransportDeadline(
+    (signal) => poster(SEMANTIC_BATCH_PATH, body, { fetcher, signal }),
+    () => new SemanticReadDeadlineError(),
+  )
+  return parseSemanticBatchOutcomes(raw, batch, options.expectedFamilies)
 }
 
 function abortedError(): PayloadError {

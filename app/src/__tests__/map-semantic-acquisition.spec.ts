@@ -50,7 +50,8 @@ describe('map cohort adapter', () => {
     const result = await acquireMapThemeFacts('demographie', 'commune', territories, ['densite'])
     expect(result.declarations).toEqual([])
     expect(result.facts).toEqual([])
-    expect(fetcher).toHaveBeenCalledExactlyOnceWith('/api/resources')
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith('/api/resources',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('fails before requesting map facts when discovery omits indicator map policy', async () => {
@@ -63,7 +64,8 @@ describe('map cohort adapter', () => {
 
     await expect(acquireMapThemeFacts('demographie', 'commune', territories, ['densite']))
       .rejects.toMatchObject({ kind: 'validation', file: '/api/resources' })
-    expect(fetcher).toHaveBeenCalledExactlyOnceWith('/api/resources')
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith('/api/resources',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('sends thirteen resources in bounded batches and admits each response by request position', async () => {

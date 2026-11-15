@@ -17,6 +17,7 @@ import { nativeBatchResponse, nativeCatalogueResponse, nativePublicationFamily,
 import { carInlineLegend } from './fixtures/aedar-car-inline-legend'
 import { AEDAR_AGGREGATE_READING_KEYS, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS } from '@/fiche/content/aedarTimeRampFacts'
 import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
+import { TRANSPORT_DEADLINE_MS } from '@/payload/transportDeadline'
 
 /**
  * #986 — one cold navigation, every request counted, no owner exempt.
@@ -379,6 +380,55 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     wrapper.unmount()
   }, 60000)
 
+  it('warms page 3 after a natural page-1 landing scrolls onto page 2, once, before page 3 is visible', async () => {
+    const { transport, calls, maxActive } = createTransport()
+    vi.stubGlobal('fetch', transport)
+    const { wrapper } = await monterFiche('/territoire/commune/35238?theme=mobilite')
+    // The ordinary landing: page 1 is the reader's chapter, while the numeric
+    // planner's page-2 demand settles underneath it.
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+    await settleOwner(calls, (item) => PAGE_TWO.includes(item.resource))
+    await flushPromises()
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(0)
+    const pageTwoFacts = () => items(calls)
+      .filter((item) => item.intent.kind === 'facts' && PAGE_TWO.includes(item.resource)).length
+    const pageTwoFactsBefore = pageTwoFacts()
+
+    // Natural scroll: the existing visibility owner reports page 2. The chapter
+    // was already settled, so the demand itself does not change — this is the
+    // event the old owner never observed.
+    const cahier = wrapper.findComponent(VarianteCahierLibre)
+    cahier.vm.$emit('chapitre-visible', 'figure-partage-de-lespace-public')
+    await flushPromises()
+    // Page 3 is NOT visible: its only read is the bounded warm, never a demand.
+    await settleOwner(calls, (item) => PAGE_THREE.includes(item.resource))
+    const pageThreeWarm = postsTouching(calls, PAGE_THREE)
+    expect(pageThreeWarm).toHaveLength(1)
+    expect(pageThreeWarm[0]!.items).toHaveLength(7)
+    expect(new Set(pageThreeWarm[0]!.items.map((item) => item.resource))).toEqual(new Set(PAGE_THREE))
+    // Foreground first: page 2 is not re-read, no AEDAR tail is pulled, the warm
+    // is cache-only while page 2 is displayed, and the shared bound holds.
+    expect(postsTouching(calls, PAGE_TWO)).toHaveLength(3)
+    expect(pageTwoFacts()).toBe(pageTwoFactsBefore)
+    expect(pageThreeWarm[0]!.items.some((item) => String(item.resource).startsWith('aedar_'))).toBe(false)
+    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(false)
+    expect(maxActive()).toBeLessThanOrEqual(2)
+
+    // Arriving on page 3 coalesces with the warm; returning to page 2 and back
+    // does not re-read it either.
+    cahier.vm.$emit('chapitre-visible', 'figure-offre-transports-commun')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-raccordement-curve__territory')
+    await flushPromises()
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(1)
+    cahier.vm.$emit('chapitre-visible', 'figure-partage-de-lespace-public')
+    await flushPromises()
+    cahier.vm.$emit('chapitre-visible', 'figure-offre-transports-commun')
+    await flushPromises()
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(1)
+    expectNoDuplicateOrOverlappingItem(items(calls))
+    wrapper.unmount()
+  }, 60000)
+
   it('admits the visible page-3 chapter without a hash or Sommaire click', async () => {
     const { transport, calls } = createTransport()
     vi.stubGlobal('fetch', transport)
@@ -705,6 +755,52 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
       .some((item) => PAGE_THREE.includes(item.resource) && item.target?.id === '35238')).toBe(false)
     expect(wrapper.find('h1').text()).toBe('Allineuc')
     wrapper.unmount()
+  }, 60000)
+
+  it('reaches an honest retryable error when producer discovery hangs, then retries with a fresh read', async () => {
+    vi.useFakeTimers()
+    try {
+      const { transport, calls } = createTransport()
+      let catalogueSuspendu = true
+      const fetchAvecCatalogue = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === '/api/resources' && catalogueSuspendu) {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort',
+              () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+          })
+        }
+        return transport(input, init)
+      })
+      vi.stubGlobal('fetch', fetchAvecCatalogue)
+      const { wrapper } = await monterFiche(
+        '/territoire/commune/35238?theme=mobilite#figure-partage-de-lespace-public')
+
+      await vi.advanceTimersByTimeAsync(TRANSPORT_DEADLINE_MS)
+      await wrapper.vm.$nextTick()
+      // The critical producer discovery is bounded too: the requested chapter is
+      // not left pending — its own explicit, retryable error is rendered.
+      expect(wrapper.find('.etat-erreur').exists()).toBe(true)
+      expect(wrapper.get('.etat-erreur').text())
+        .toContain('Les indicateurs de ce thème ne sont pas disponibles.')
+      expect(wrapper.find('.mobilite-comparison-bars').exists()).toBe(false)
+      const lecturesCatalogue = () => fetchAvecCatalogue.mock.calls
+        .filter(([input]) => String(input) === '/api/resources').length
+      const avantRelance = lecturesCatalogue()
+
+      catalogueSuspendu = false
+      await wrapper.get('.etat-erreur button').trigger('click')
+      for (let turn = 0; turn < 40; turn += 1) await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(0)
+      await wrapper.vm.$nextTick()
+
+      // The explicit retry re-reads producer discovery (the failed promise was
+      // released, never replayed) and recovers the requested chapter.
+      expect(lecturesCatalogue()).toBe(avantRelance + 1)
+      expect(wrapper.find('.etat-erreur').exists()).toBe(false)
+      expect(wrapper.find('.mobilite-section--reseaux .mobilite-comparison-bars').exists()).toBe(true)
+      expect(postsTouching(calls, PAGE_TWO).length).toBeGreaterThan(0)
+      wrapper.unmount()
+    } finally { vi.useRealTimers() }
   }, 60000)
 
   it('treats an obsolete inner-section fragment as ordinary page entry, without rewriting the URL', async () => {

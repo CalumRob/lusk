@@ -19,6 +19,7 @@ import { computed, inject, ref, watch } from 'vue'
 import type { InjectionKey, Ref } from 'vue'
 
 import type { Territoire, TerritoireType } from './types'
+import { TRANSPORT_DEADLINE_MS, withTransportDeadline } from './transportDeadline'
 import { PayloadError, validerTerritoires } from './validate'
 
 export const TYPES_TERRITOIRE: readonly TerritoireType[] = [
@@ -38,8 +39,8 @@ export interface ReponseFetchReference {
 export interface OptionsReference {
   /** Base of the /data/ hosting — defaults to '/data/' (nginx alias, self-hosting.md). */
   baseUrl?: string
-  /** Injected for tests; defaults to the real fetch. */
-  fetchImpl?: (url: string) => Promise<ReponseFetchReference>
+  /** Injected for tests; defaults to the real fetch. The signal is the bounded transport deadline. */
+  fetchImpl?: (url: string, init?: { signal?: AbortSignal }) => Promise<ReponseFetchReference>
 }
 
 export type ChargerReferenceTerritoires = (options?: OptionsReference) => Promise<Territoire[]>
@@ -50,7 +51,37 @@ export const TERRITORY_REFERENCE_CHARGER_KEY: InjectionKey<ChargerReferenceTerri
 export const FICHIER_REFERENCE = 'territoires.json'
 
 let referenceEnCours: Promise<Territoire[]> | null = null
-let referenceFetcher: ((url: string) => Promise<ReponseFetchReference>) | null = null
+let referenceFetcher: ((url: string, init?: { signal?: AbortSignal }) => Promise<ReponseFetchReference>) | null = null
+
+/**
+ * One bounded read of the reference file: headers AND body are under the shared
+ * deadline, so a stalled download can never keep `chargement` true forever. The
+ * existing typed error is kept for fetch/HTTP/JSON failures.
+ */
+async function lireReference(
+  fetchImpl: (url: string, init?: { signal?: AbortSignal }) => Promise<ReponseFetchReference>,
+  url: string,
+  signal: AbortSignal,
+): Promise<unknown> {
+  let reponse: ReponseFetchReference
+  try {
+    reponse = await fetchImpl(url, { signal })
+  } catch (cause) {
+    throw new PayloadError(
+      'fetch',
+      FICHIER_REFERENCE,
+      `Impossible de charger ${url} : ${cause instanceof Error ? cause.message : String(cause)}`,
+    )
+  }
+  if (!reponse.ok) {
+    throw new PayloadError('fetch', FICHIER_REFERENCE, `Réponse HTTP ${reponse.status} pour ${url}`)
+  }
+  try {
+    return await reponse.json()
+  } catch {
+    throw new PayloadError('fetch', FICHIER_REFERENCE, `JSON illisible dans ${url}`)
+  }
+}
 
 /**
  * Fetch + validate the compact generated territory reference. One fetch per
@@ -70,31 +101,18 @@ export const chargerReferenceTerritoires: ChargerReferenceTerritoires = (options
   }
   if (!referenceEnCours) {
     const url = `${baseUrl}${FICHIER_REFERENCE}`
-    referenceEnCours = (async () => {
-      let reponse: ReponseFetchReference
-      try {
-        reponse = await fetchImpl(url)
-      } catch (cause) {
-        throw new PayloadError(
-          'fetch',
-          FICHIER_REFERENCE,
-          `Impossible de charger ${url} : ${cause instanceof Error ? cause.message : String(cause)}`,
-        )
-      }
-      if (!reponse.ok) {
-        throw new PayloadError('fetch', FICHIER_REFERENCE, `Réponse HTTP ${reponse.status} pour ${url}`)
-      }
-      let brut: unknown
-      try {
-        brut = await reponse.json()
-      } catch {
-        throw new PayloadError('fetch', FICHIER_REFERENCE, `JSON illisible dans ${url}`)
-      }
-      return validerTerritoires(brut, FICHIER_REFERENCE)
-    })().catch((error: unknown) => {
-      referenceEnCours = null
-      throw error
-    })
+    // #1012 — the identity bootstrap is a critical GET: a stalled response ends
+    // as the existing typed page error (and `recharger` reads it again) instead
+    // of freezing the fiche's loading state.
+    referenceEnCours = withTransportDeadline(
+      (signal) => lireReference(fetchImpl, url, signal),
+      () => new PayloadError('fetch', FICHIER_REFERENCE,
+        `Impossible de charger ${url} : aucune réponse après ${Math.round(TRANSPORT_DEADLINE_MS / 1000)} s.`),
+    ).then((brut) => validerTerritoires(brut, FICHIER_REFERENCE))
+      .catch((error: unknown) => {
+        referenceEnCours = null
+        throw error
+      })
   }
   return referenceEnCours
 }

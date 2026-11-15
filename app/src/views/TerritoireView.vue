@@ -393,7 +393,14 @@ async function declarationsPourNiveau(type: string): Promise<SemanticResourceDec
     catalogueParNiveauFetcher = fetch
     catalogueParNiveau = null
   }
-  if (!catalogueParNiveau) catalogueParNiveau = producerCatalogue()
+  if (!catalogueParNiveau) {
+    const request = producerCatalogue()
+    catalogueParNiveau = request
+    // #1012 — a bounded discovery failure is retryable: the failed promise is
+    // released, so the next explicit demand dispatches a fresh read instead of
+    // replaying the same rejection forever.
+    request.catch(() => { if (catalogueParNiveau === request) catalogueParNiveau = null })
+  }
   return (await catalogueParNiveau).filter((declaration) =>
     (declaration.allowed_levels as string[]).includes(type))
 }
@@ -1107,6 +1114,25 @@ function chapitreDemandeMobilite(): string | undefined {
   if (resolved && resolved.indicators.length > 0) return resolved.key
   return chapitreNumerique.value ?? undefined
 }
+
+/**
+ * #1012 — the chapter-demand watcher above only reacts when the DEMAND changes.
+ * A natural scroll can make an already settled numeric chapter the reader's
+ * chapter without changing that demand, so page 3 stayed cold. The displayed
+ * chapter is the existing trigger: once it is the requested numeric chapter and
+ * its own data is useful, the bounded next-chapter warm may be planned. The
+ * planner is coalesced, cache-only, fenced and never starts from a warm, so this
+ * cannot refetch page 2 or pull AEDAR; it stays idle while page 1 is displayed.
+ */
+watch([chapitreAffiche, chapitresStatut], () => {
+  if (!productionMobilite.value || !payloadPourRendu.value) return
+  const affiche = chapitreAffiche.value
+  if (affiche === undefined) return
+  const chapter = chapitresMobilite.value.find((candidate) => candidate.key === affiche)
+  if (!chapter || chapter.indicators.length === 0) return
+  if (chapitresStatut.value[affiche] !== 'ready') return
+  planifierChapitreSuivant(typeRoute.value, idRoute.value, affiche)
+})
 
 watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
   () => referenceTerritoire.reference.value], (_values, _oldValues, onCleanup) => {

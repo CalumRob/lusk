@@ -361,6 +361,59 @@ try {
   assert.equal(pageThreeBeforeScroll.length, 0,
     `page 3 must not warm while page 1 is the reader's chapter: ${pageThreeBeforeScroll.length}`)
 
+  // #1012 — reach page 2 by natural wheel only and STAY there. Page 3 is still
+  // outside the reading band, so any page-3 read observed now is the bounded
+  // warm, not the reader's arrival.
+  const page2Reached = await wheelToPage(natural, '#figure-partage-de-lespace-public')
+  assert.ok(page2Reached, 'page 2 did not become the reader\'s chapter by natural wheel')
+  assert.ok(await wheelUntilVisible(natural, '.mobilite-section--reseaux .mobilite-comparison-bars'),
+    'the page-2 bars did not become visible when the reader reached page 2')
+  await natural.waitForFunction(() => document.querySelector(
+    'aside.cahier-spine a[aria-current="location"]')?.getAttribute('href') === '#figure-partage-de-lespace-public',
+  null, { timeout: 10000 })
+  const pageTwoObservedAt = Date.now()
+  const activeOnPageTwo = await natural.locator('aside.cahier-spine a[aria-current="location"]')
+    .getAttribute('href')
+  assert.equal(activeOnPageTwo, '#figure-partage-de-lespace-public',
+    `the app must consider page 2 the reader's chapter, got ${activeOnPageTwo}`)
+  const pageThreeGeometry = async () => natural.evaluate(() => {
+    const element = document.querySelector('#figure-offre-transports-commun')
+    const rect = element.getBoundingClientRect()
+    return { top: rect.top, bottom: rect.bottom, viewportHeight: window.innerHeight,
+      inReadingBand: rect.top < window.innerHeight * 0.34 && rect.bottom > window.innerHeight * 0.14 }
+  })
+  const geometryBeforeWarm = await pageThreeGeometry()
+  assert.equal(geometryBeforeWarm.inReadingBand, false,
+    `page 3 must still be outside the reading band while warming: ${JSON.stringify(geometryBeforeWarm)}`)
+
+  // Wait for the actual next-chapter warm BEFORE any scroll towards page 3.
+  let pageThreeWarm = []
+  const warmDeadline = Date.now() + 15000
+  while (Date.now() < warmDeadline) {
+    pageThreeWarm = batches.slice(naturalStartIndex)
+      .filter((batch) => batch.items.some((item) => PAGE_THREE.includes(item.resource)))
+    if (pageThreeWarm.length) break
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  assert.equal(pageThreeWarm.length, 1,
+    `page-3 warm POSTs while the reader stays on page 2: ${pageThreeWarm.length}`)
+  assert.equal(pageThreeWarm[0].items.length, 7,
+    `page-3 warm items while the reader stays on page 2: ${pageThreeWarm[0].items.length}`)
+  assert.equal(new Set(pageThreeWarm[0].items.map((item) => item.resource)).size, 4,
+    'the page-3 warm must carry the four ordinary chapter resources')
+  assert.ok(pageThreeWarm[0].at >= pageTwoSettledAt,
+    'the next chapter must warm only after the requested page-2 demand settled')
+  assert.equal(pageThreeWarm[0].items.some((item) => String(item.resource).startsWith('aedar_')), false,
+    'the next-chapter warm must never carry AEDAR tail work')
+  // The reader never moved: at the moment the warm exists, the app still names
+  // page 2 its chapter and page 3 is still outside the reading band.
+  const activeAtWarm = await natural.locator('aside.cahier-spine a[aria-current="location"]')
+    .getAttribute('href')
+  assert.equal(activeAtWarm, '#figure-partage-de-lespace-public',
+    `page 2 must still be the reader's chapter when page 3 warms, got ${activeAtWarm}`)
+  const geometryAtWarm = await pageThreeGeometry()
+  assert.equal(geometryAtWarm.inReadingBand, false,
+    `page 3 must not be visible when its warm starts: ${JSON.stringify(geometryAtWarm)}`)
   const page3Reached = await wheelToPage(natural, '#figure-offre-transports-commun')
   assert.ok(page3Reached, 'page 3 did not become visible by natural wheel')
   assert.ok(await wheelUntilVisible(natural, '.mobilite-raccordement-curve__territory'),
@@ -379,19 +432,12 @@ try {
   assert.equal(page3Reading.curvePoints, 73, `page-3 curve points: ${page3Reading.curvePoints}`)
   const page3Batches = batches.slice(naturalStartIndex)
     .filter((batch) => batch.items.some((item) => PAGE_THREE.includes(item.resource)))
+  // The reader's arrival reuses the warm: never a second read.
   assert.equal(page3Batches.length, 1, `page-3 POSTs after natural admission: ${page3Batches.length}`)
+  assert.equal(page3Batches[0].at, pageThreeWarm[0].at,
+    'page 3 was re-read when the reader arrived instead of reusing the warm')
   assert.equal(page3Batches[0].items.length, 7,
     `page-3 items after natural admission: ${page3Batches[0].items.length}`)
-  // #1012 — that one page-3 read is the bounded next-chapter warm, started only
-  // after page 2 (its predecessor) was useful, and the reader's arrival reuses
-  // it: never a second read, never a recursive chain through the spine.
-  assert.ok(page3Batches[0].at >= pageTwoSettledAt,
-    'the next chapter must warm only after the requested page-2 demand settled')
-  // The warm carries the next chapter's ordinary demand only: no AEDAR item,
-  // no second chapter and no repeated identity (the shared client and the
-  // duplicate assertion below own the rest; page 1 keeps its own landing reads).
-  assert.equal(page3Batches[0].items.some((item) => String(item.resource).startsWith('aedar_')), false,
-    'the next-chapter warm must never carry AEDAR tail work')
 
   // Explicit navigation: click page 3, then naturally scroll back up while the
   // hash still says page 3. Page 2 and page 1 must come back with their retained
@@ -399,8 +445,8 @@ try {
   await natural.locator(PAGE_THREE_LINK).first().click()
   await natural.waitForFunction(() => location.hash === '#figure-offre-transports-commun',
     null, { timeout: 5000 })
-  const page2Reached = await wheelToPage(natural, '#figure-partage-de-lespace-public')
-  assert.ok(page2Reached, 'page 2 did not become visible after scrolling back')
+  const page2ReachedAfterBack = await wheelToPage(natural, '#figure-partage-de-lespace-public')
+  assert.ok(page2ReachedAfterBack, 'page 2 did not become visible after scrolling back')
   assert.ok(await wheelUntilVisible(natural, '.mobilite-section--reseaux .mobilite-comparison-bars'),
     'the page-2 bars did not come back after scrolling back')
   const page1Reached = await wheelToPage(natural, '#figure-lecture')
@@ -442,10 +488,16 @@ try {
     page3CurvePoints: page3Reading.curvePoints,
     page3Posts: page3Batches.length,
     page3Items: page3Batches[0]?.items.length ?? 0,
-    page3WarmAt: page3Batches[0]?.at ?? null,
+    page3WarmAt: pageThreeWarm[0]?.at ?? null,
+    page3WarmItems: pageThreeWarm[0]?.items.length ?? 0,
     pageThreeBeforeScroll: pageThreeBeforeScroll.length,
+    pageTwoObservedAt,
     pageTwoSettledAt,
     pageTwoUsefulAt,
+    activeOnPageTwo,
+    activeAtWarm,
+    geometryBeforeWarm,
+    geometryAtWarm,
     page2Posts: naturalPageTwo.length,
     page2Items: naturalPageTwo.flatMap((batch) => batch.items)
       .filter((item) => PAGE_TWO.includes(item.resource)).length,
