@@ -1010,6 +1010,13 @@ const mobilityComparisonStatus = ref<'loading' | 'ready' | 'error' | 'unavailabl
  */
 const statutFaitsMobilite = ref<'loading' | 'ready' | 'error'>('loading')
 const retryFaitsMobilite = ref(0)
+/**
+ * #1012 — the reader's explicit retry of a FAILED later chapter. It re-runs the
+ * one chapter-demand owner below for the current requested chapter; the shared
+ * cache acquisition then reads only that chapter's missing items (page 2 and
+ * AEDAR stay settled). No whole-theme invalidation, no automatic retry.
+ */
+const relanceChapitreMobilite = ref(0)
 let focalRequestSequence = 0
 let comparisonRequestSequence = 0
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -1074,7 +1081,8 @@ function appliquerAcquisitionMobilite(acquired: AcquiredTheme<ThemeResponse>,
  * chapter's demand into the settled entry without blanking the rendered page.
  * Only the requested chapter is ever read; no sibling is acquired speculatively.
  */
-watch(() => chapitreDemandeMobilite(), async (critique, _old, onCleanup) => {
+watch([() => chapitreDemandeMobilite(), () => relanceChapitreMobilite.value],
+  async ([critique], _old, onCleanup) => {
   if (!productionMobilite.value || !payloadPourRendu.value || !typeValide.value) return
   let cancelled = false
   onCleanup(() => { cancelled = true })
@@ -1101,6 +1109,20 @@ watch(() => chapitreDemandeMobilite(), async (critique, _old, onCleanup) => {
     if (!cancelled) setChapitreStatut(critique, 'error')
   }
 })
+
+/**
+ * #1012 — explicit retry of the failed REQUESTED chapter. Only the chapter the
+ * reader is currently asking for, and only when its own read failed, can be
+ * retried; the handler bumps the owner above, which re-reads through the shared
+ * per-chapter cache. The reader never has to scroll away and back, and no other
+ * chapter or theme is invalidated.
+ */
+function reessayerChapitreMobilite(chapter: string): void {
+  if (!productionMobilite.value || !typeValide.value) return
+  if (chapitreAffiche.value !== chapter || chapitreDemandeMobilite() !== chapter) return
+  if (chapitresStatut.value[chapter] !== 'error') return
+  relanceChapitreMobilite.value += 1
+}
 
 /**
  * The numeric chapter the reader asked for, resolved by the ONE chapter
@@ -1493,7 +1515,8 @@ watch(
               :retry-native-comparison="retryThemeComparison"
               :aedar-active="demandeAedar"
               :chapitres-statut="chapitresStatut"
-              @chapitre-visible="onChapitreVisible" />
+              @chapitre-visible="onChapitreVisible"
+              @chapitre-reessayer="reessayerChapitreMobilite" />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation
                  pliée) lit SA paire hermétique ; les autres thèmes passent

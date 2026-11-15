@@ -865,6 +865,65 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     wrapper.unmount()
   }, 60000)
 
+  it('offers an explicit retry when a later requested chapter fails, and recovers only that chapter', async () => {
+    let pageThreeFailing = true
+    const { transport, calls, maxActive } = createTransport({
+      hold: (call) => (pageThreeFailing && call.items.some((item) => PAGE_THREE.includes(item.resource))
+        ? Promise.reject(new Error('réseau interrompu')) : undefined),
+    })
+    vi.stubGlobal('fetch', transport)
+    // The reader is on a settled page 2 and scrolls to page 3: the failure is a
+    // LATER chapter's read, not the initial deep link.
+    const { wrapper } = await monterFiche(
+      '/territoire/commune/35238?theme=mobilite#figure-partage-de-lespace-public')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-section--reseaux .mobilite-comparison-bars')
+    await flushPromises()
+    const pageTwoBefore = items(calls).filter((item) => PAGE_TWO.includes(item.resource)).length
+    expect(pageTwoBefore).toBe(33)
+
+    wrapper.findComponent(VarianteCahierLibre).vm.$emit('chapitre-visible', 'figure-partage-de-lespace-public')
+    await flushPromises()
+    wrapper.findComponent(VarianteCahierLibre).vm.$emit('chapitre-visible', 'figure-offre-transports-commun')
+    for (let tick = 0; tick < 120 && !wrapper.find('.cahier-chapitre-erreur').exists(); tick += 1) {
+      await flushPromises()
+    }
+
+    // The failed later chapter has its OWN explicit retry. The global mobility
+    // block is untouched (page 2 stays usable), and nothing retries by itself.
+    const erreur = wrapper.get('.cahier-chapitre-erreur')
+    expect(erreur.text()).toContain('Cette page n’a pas pu être chargée.')
+    expect(erreur.get('button').text()).toContain('Réessayer')
+    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
+    expect(wrapper.find('.mobilite-section--reseaux .mobilite-comparison-bars').exists()).toBe(true)
+    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(false)
+    const failedAttempts = postsTouching(calls, PAGE_THREE).length
+    expect(failedAttempts).toBeGreaterThan(0)
+    for (let tick = 0; tick < 25; tick += 1) await flushPromises()
+    expect(postsTouching(calls, PAGE_THREE)).toHaveLength(failedAttempts)
+
+    // The reader's explicit retry re-reads the demanded chapter over HTTP.
+    pageThreeFailing = false
+    await erreur.get('button').trigger('click')
+    await attendreChapitreUtile(wrapper, calls, '.mobilite-raccordement-curve__territory')
+    await flushPromises()
+    expect(wrapper.find('.cahier-chapitre-erreur').exists()).toBe(false)
+    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
+    const retried = postsTouching(calls, PAGE_THREE).slice(failedAttempts)
+    expect(retried).toHaveLength(1)
+    expect(retried[0]!.items).toHaveLength(7)
+    expect(new Set(retried[0]!.items.map((item) => item.resource))).toEqual(new Set(PAGE_THREE))
+    // Only the failed chapter re-read: page 2 keeps its 33-item demand, and no
+    // whole-theme reset or automatic fan-out happened.
+    expect(items(calls).filter((item) => PAGE_TWO.includes(item.resource))).toHaveLength(pageTwoBefore)
+    expect(postsTouching(calls, PAGE_TWO)).toHaveLength(3)
+    expect(items(calls).filter(isAedar)).toEqual([])
+    // The failed attempt legitimately re-read its own items on the explicit
+    // retry; the already settled page-2 demand is never duplicated.
+    expectNoDuplicateOrOverlappingItem(items(calls).filter((item) => PAGE_TWO.includes(item.resource)))
+    expect(maxActive()).toBeLessThanOrEqual(2)
+    wrapper.unmount()
+  }, 60000)
+
   it('reuses settled AEDAR reads when returning to page 1, and keeps the 235 universe', async () => {
     const { transport, calls } = createTransport()
     const legendRequests: string[] = []

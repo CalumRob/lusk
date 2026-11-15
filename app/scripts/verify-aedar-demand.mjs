@@ -681,6 +681,82 @@ try {
   receipt.hungNetwork = { hungForMs, errorText: hangErrorText, recoveredOnRetry: true }
   await hang.close()
 
+  // Pass 7 — #1012 a LATER requested chapter read fails (page 2 settled, reader
+  // scrolls on to page 3). The failed chapter keeps its own explicit retry; the
+  // settled page 2 is not reset, nothing retries by itself, and the retry
+  // performs one fresh 7-item HTTP read of that chapter only.
+  const laterStartIndex = batches.length
+  const later = await makePage()
+  const laterAttempts = []
+  let laterChapterFailing = true
+  await later.route('**/api/resources/read-batch', async (route) => {
+    const request = route.request().postDataJSON()
+    const touchesChapter = request.items.some((item) => PAGE_THREE.includes(item.resource))
+    if (touchesChapter) laterAttempts.push({ items: request.items })
+    if (laterChapterFailing && touchesChapter) {
+      await route.fulfill({ status: 503, contentType: 'text/plain', body: 'read interrupted' })
+      return
+    }
+    await route.fallback()
+  })
+  await later.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#figure-partage-de-lespace-public`,
+    { waitUntil: 'domcontentloaded' })
+  await later.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first()
+    .waitFor({ state: 'visible', timeout: 30000 })
+  const laterPageThreeReads = () => laterAttempts
+  // The reader scrolls on; page 3 becomes the requested chapter and its read is
+  // the one that fails (the page-2 warm may already have failed silently).
+  assert.ok(await wheelUntilChapterActive(later, '#figure-offre-transports-commun'),
+    'page 3 did not become the reader\'s chapter by natural wheel')
+  await later.locator('.cahier-chapitre-erreur').waitFor({ state: 'visible', timeout: 30000 })
+  const laterChapterError = (await later.locator('.cahier-chapitre-erreur').innerText())
+    .replace(/\s+/gu, ' ')
+  assert.ok(laterChapterError.includes('Cette page n’a pas pu être chargée.'),
+    `the failed chapter must render its own explicit retry: ${laterChapterError}`)
+  assert.equal(await later.locator('.etat-erreur').count(), 0,
+    'a later chapter failure must not replace the settled page-level data state')
+  assert.ok(await later.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first().isVisible(),
+    'the settled page-2 content must stay visible after a later chapter failure')
+  assert.equal(await later.locator('.mobilite-raccordement-curve__territory').count(), 0,
+    'a failed chapter must never render a fabricated figure')
+  const failedLaterReads = laterPageThreeReads().length
+  assert.ok(failedLaterReads > 0, 'the later chapter read must actually be attempted')
+  await later.waitForTimeout(1500)
+  assert.equal(laterPageThreeReads().length, failedLaterReads,
+    'a failed chapter read must not retry by itself')
+
+  laterChapterFailing = false
+  await later.locator('.cahier-chapitre-erreur__action').click()
+  await later.locator('.mobilite-raccordement-curve__territory')
+    .waitFor({ state: 'visible', timeout: 30000 })
+  assert.equal(await later.locator('.cahier-chapitre-erreur').count(), 0,
+    'the explicit retry must clear the failed chapter state')
+  const retriedLater = laterPageThreeReads().slice(failedLaterReads)
+  assert.equal(retriedLater.length, 1, `later-chapter retry POSTs: ${retriedLater.length}`)
+  assert.equal(retriedLater[0].items.length, 7, `later-chapter retry items: ${retriedLater[0].items.length}`)
+  const laterPageTwo = batches.slice(laterStartIndex)
+    .filter((batch) => batch.items.some((item) => PAGE_TWO.includes(item.resource)))
+  assert.equal(laterPageTwo.length, 3, `page-2 POSTs after the later-chapter retry: ${laterPageTwo.length}`)
+  assert.equal(laterPageTwo.flatMap((batch) => batch.items)
+    .filter((item) => PAGE_TWO.includes(item.resource)).length, 33,
+  'the settled page-2 demand changed after the later-chapter retry')
+  const laterPageTwoIdentities = laterPageTwo.flatMap((batch) => batch.items).map(fullIdentity)
+  assert.equal(new Set(laterPageTwoIdentities).size, laterPageTwoIdentities.length,
+    'the settled page-2 demand was duplicated by the later-chapter retry')
+  assert.equal(await later.evaluate(() => location.hash), '#figure-partage-de-lespace-public',
+    'the explicit retry must not rewrite the URL')
+  receipt.laterChapterRetry = {
+    failedReads: failedLaterReads,
+    chapterError: laterChapterError,
+    retryPosts: retriedLater.length,
+    retryItems: retriedLater[0].items.length,
+    pageTwoPosts: laterPageTwo.length,
+    pageTwoItems: laterPageTwo.flatMap((batch) => batch.items)
+      .filter((item) => PAGE_TWO.includes(item.resource)).length,
+    hash: await later.evaluate(() => location.hash),
+  }
+  await later.close()
+
   console.log(JSON.stringify(receipt, null, 2))
 
   assert.equal(receipt.navigation.aedarBatchesStartedAfterClick, 0,
