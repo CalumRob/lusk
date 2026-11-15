@@ -65,7 +65,7 @@ import type { AcquiredTheme, ThemeFactsDemand, ThemeKey, ThemeResponse, ThemeSel
 import { meanComparisonResources } from '@/payload/comparisonResources'
 import { AcquisitionDemandScheduler } from '@/payload/acquisitionDemand'
 import { chapitreDemande, chapitreDemandeDepuisAncre } from '@/fiche/content/demandInventory'
-import type { ChapitreDemandStatus } from '@/fiche/content/demandInventory'
+import { useCahierLoading } from '@/fiche/useCahierLoading'
 import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
@@ -147,10 +147,8 @@ const productionMobilite = computed(() => selection.value === 'mobilite')
  * work. The page-1 surface keeps its existing pending placeholder meanwhile.
  */
 const chapitresMobilite = computed(() => sousGroupesFiche('mobilite'))
-const chapitreAedar = computed(() => chapitresMobilite.value[0]?.key ?? null)
-/** The first chapter that actually serves numerics (the planner's fallback). */
-const chapitreNumerique = computed(() =>
-  chapitresMobilite.value.find((chapter) => chapter.indicators.length > 0)?.key ?? null)
+const chapitreAedar = computed(() => chapitresMobilite.value.find((chapter) =>
+  chapter.key === 'acces-aux-services')?.key ?? null)
 /**
  * #1008 — the visible chapter is the reader's actual chapter. The explicit
  * anchor is a NAVIGATION INTENT, not a permanent lock: it wins until its target
@@ -162,7 +160,6 @@ const chapitreNumerique = computed(() =>
  */
 const chapitreVisible = ref<{ key: string; generation: string } | null>(null)
 const chapitreIntent = ref<{ chapter: string; landed: boolean; epoch: number } | null>(null)
-const chapitresStatut = ref<Record<string, ChapitreDemandStatus>>({})
 let chapitreIntentEpoch = 0
 let chapitreIntentTimer: ReturnType<typeof setTimeout> | null = null
 const chapitreGeneration = computed(() => `${selection.value}|${typeRoute.value}|${idRoute.value}`)
@@ -173,13 +170,6 @@ function clearChapitreIntentTimer(): void {
     chapitreIntentTimer = null
   }
 }
-
-function setChapitreStatut(chapter: string | undefined, statut: ChapitreDemandStatus): void {
-  if (!chapter) return
-  chapitresStatut.value = { ...chapitresStatut.value, [chapter]: statut }
-}
-
-function resetChapitresStatut(): void { chapitresStatut.value = {} }
 
 /** The existing IntersectionObserver owner reports the page it actually reads. */
 function onChapitreVisible(anchor: string): void {
@@ -256,7 +246,7 @@ const chapitreAffiche = computed(() => {
   // fragment is ignored for admission only — the URL/history is never rewritten,
   // nothing is revealed and no section owner is resolved. The reader's actual
   // chapter still takes over from the existing visibility owner once it lands.
-  return chapitreAedar.value
+  return chapitresMobilite.value[0]?.key
 })
 const demandeAedar = computed(() => productionMobilite.value && chapitreAedar.value !== null &&
   chapitreAffiche.value === chapitreAedar.value)
@@ -418,40 +408,6 @@ async function demandeChapitreNiveau(type: string, theme: ThemeKey, chapterKey: 
  */
 function demandeThemeActif(): ThemeFactsDemand {
   return { selection: null }
-}
-
-/**
- * #1012 — bounded next-chapter prefetch. Once the REQUESTED Mobility chapter is
- * useful, at most the IMMEDIATE next chapter's ordinary demand (its facts and
- * the comparison the page displays) is read once, as the app's deferred
- * background unit: after the reader's own demand, before unrelated theme
- * warming. It never starts from a warm (no chain down the spine), never applies
- * its result to the displayed chapter, and is skipped if the reader has moved
- * on, so a later demand reads critically instead of inheriting an automatic
- * retry. The shared semantic client still owns item identity, caching, the
- * two-read bound and the transport deadline; this plans one unit only.
- */
-function planifierChapitreSuivant(type: string, code: string, requested: string | undefined): void {
-  if (!productionMobilite.value || requested === undefined) return
-  const index = chapitresMobilite.value.findIndex((chapter) => chapter.key === requested)
-  const suivant = index < 0 ? undefined : chapitresMobilite.value[index + 1]
-  if (!suivant || suivant.indicators.length === 0) return
-  const generation = demandeScheduler.generation
-  const chapitre = chapitreGeneration.value
-  demandeScheduler.enqueue({
-    key: `chapter:${suivant.key}`,
-    priority: 'deferred',
-    run: async () => {
-      if (generation !== demandeScheduler.generation || chapitre !== chapitreGeneration.value ||
-          chapitreAffiche.value !== requested) return
-      const demand = await demandeChapitreNiveau(type, 'mobilite', suivant.key, membresAcquisition.value)
-      if (!demand?.indicators?.length) return
-      // The read is the same shared transaction a user request would join: its
-      // low priority is this deferred queue (never a second/critical demand).
-      await cacheAcquisition.get(type, code, 'mobilite',
-        { ...demand, priority: 'background' }).catch(() => undefined)
-    },
-  })
 }
 
 /**
@@ -1008,21 +964,10 @@ const mobilityComparisonStatus = ref<'loading' | 'ready' | 'error' | 'unavailabl
  * facts through the production focal acquisition below; an initial failure
  * must stay visibly retryable even while AEDAR renders normally.
  */
-const statutFaitsMobilite = ref<'loading' | 'ready' | 'error'>('loading')
 const retryFaitsMobilite = ref(0)
-/**
- * #1012 — the reader's explicit retry of a FAILED later chapter. It re-runs the
- * one chapter-demand owner below for the current requested chapter; the shared
- * cache acquisition then reads only that chapter's missing items (page 2 and
- * AEDAR stay settled). No whole-theme invalidation, no automatic retry.
- */
-const relanceChapitreMobilite = ref(0)
-let focalRequestSequence = 0
 let comparisonRequestSequence = 0
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-let lastFocalKey: string | null = null
-let lastFocalModel: object | null = null
 let lastComparisonKey: string | null = null
 let lastComparisonModel: object | null = null
 
@@ -1073,152 +1018,49 @@ function appliquerAcquisitionMobilite(acquired: AcquiredTheme<ThemeResponse>,
     : demandState
       ? (demandState.status === 'error' ? 'error' : 'ready')
       : (data.comparison_error ? 'error' : 'ready')
-  statutFaitsMobilite.value = 'ready'
 }
 
-/**
- * #986 — navigating to another chapter of the same Mobilite cahier reads that
- * chapter's demand into the settled entry without blanking the rendered page.
- * Only the requested chapter is ever read; no sibling is acquired speculatively.
- */
-watch([() => chapitreDemandeMobilite(), () => relanceChapitreMobilite.value],
-  async ([critique], _old, onCleanup) => {
-  if (!productionMobilite.value || !payloadPourRendu.value || !typeValide.value) return
-  let cancelled = false
-  onCleanup(() => { cancelled = true })
-  const type = typeRoute.value
-  const code = idRoute.value
-  const request = focalRequestSequence
-  demandeScheduler.critical()
-  setChapitreStatut(critique, 'loading')
-  try {
-    const demand = critique
-      ? await demandeChapitreNiveau(type, 'mobilite', critique, membresAcquisition.value)
-      : undefined
-    if (!demand || cancelled) return
-    const acquired = await cacheAcquisition.get(type, code, 'mobilite', demand)
-    // A chapter jump while this read was in flight must not commit the previous
-    // chapter's result: the newer watcher owns the current request.
-    if (cancelled || request !== focalRequestSequence || !payloadPourRendu.value ||
-        chapitreDemandeMobilite() !== critique) return
-    appliquerAcquisitionMobilite(acquired, membresAcquisition.value, demand)
-    setChapitreStatut(critique, 'ready')
-    demandeScheduler.unlockIdle()
-    if (chapitreAffiche.value === critique) planifierChapitreSuivant(type, code, critique)
-  } catch {
-    if (!cancelled) setChapitreStatut(critique, 'error')
-  }
-})
-
-/**
- * #1012 — explicit retry of the failed REQUESTED chapter. Only the chapter the
- * reader is currently asking for, and only when its own read failed, can be
- * retried; the handler bumps the owner above, which re-reads through the shared
- * per-chapter cache. The reader never has to scroll away and back, and no other
- * chapter or theme is invalidated.
- */
-function reessayerChapitreMobilite(chapter: string): void {
-  if (!productionMobilite.value || !typeValide.value) return
-  if (chapitreAffiche.value !== chapter || chapitreDemandeMobilite() !== chapter) return
-  if (chapitresStatut.value[chapter] !== 'error') return
-  relanceChapitreMobilite.value += 1
-}
-
-/**
- * The numeric chapter the reader asked for, resolved by the ONE chapter
- * resolution (`chapitreAffiche`): a recognised numeric chapter is used as is,
- * everything else falls back to the theme's default numeric chapter — exactly
- * the chapter the AEDAR gate reasons about.
- */
+/** Mobilité projects registered demands; navigation remains independently owned. */
 function chapitreDemandeMobilite(): string | undefined {
-  const chapter = chapitreAffiche.value
-  const resolved = chapitresMobilite.value.find((candidate) => candidate.key === chapter)
-  if (resolved && resolved.indicators.length > 0) return resolved.key
-  return chapitreNumerique.value ?? undefined
+  return chargementCahier.requested.value
 }
-
-/**
- * #1012 — the chapter-demand watcher above only reacts when the DEMAND changes.
- * A natural scroll can make an already settled numeric chapter the reader's
- * chapter without changing that demand, so page 3 stayed cold. The displayed
- * chapter is the existing trigger: once it is the requested numeric chapter and
- * its own data is useful, the bounded next-chapter warm may be planned. The
- * planner is coalesced, cache-only, fenced and never starts from a warm, so this
- * cannot refetch page 2 or pull AEDAR; it stays idle while page 1 is displayed.
- */
-watch([chapitreAffiche, chapitresStatut], () => {
-  if (!productionMobilite.value || !payloadPourRendu.value) return
-  const affiche = chapitreAffiche.value
-  if (affiche === undefined) return
-  const chapter = chapitresMobilite.value.find((candidate) => candidate.key === affiche)
-  if (!chapter || chapter.indicators.length === 0) return
-  if (chapitresStatut.value[affiche] !== 'ready') return
-  planifierChapitreSuivant(typeRoute.value, idRoute.value, affiche)
-})
-
-watch([productionMobilite, typeRoute, idRoute, retryFaitsMobilite,
-  () => referenceTerritoire.reference.value], (_values, _oldValues, onCleanup) => {
-  if (!productionMobilite.value) return
+const perimetreCahier = computed(() => {
+  // Reference object + exact selection are part of the fence, not just route text.
   const reference = referenceTerritoire.reference.value
-  const key = `${typeRoute.value}/${idRoute.value}/${retryFaitsMobilite.value}`
-  if (reference && lastFocalKey === key && lastFocalModel === reference) return
-  const request = ++focalRequestSequence
-  resetChapitresStatut()
-  statutFaitsMobilite.value = 'loading'
-  mobilityFocal.value = null
-  mobilityComparisonFacts.value = null
-  mobilityCurveComparison.value = null
-  mobilityComparisonStatus.value = 'loading'
-  if (!typeValide.value || !reference || !payloadPourRendu.value) {
-    lastFocalKey = null
-    lastFocalModel = null
-    lastComparisonKey = null
-    lastComparisonModel = null
-    return
-  }
-  lastFocalKey = key
-  lastFocalModel = reference
-  const controller = new AbortController()
-  let settled = false
-  onCleanup(() => {
-    controller.abort()
-    if (!settled) { lastFocalKey = null; lastFocalModel = null }
-  })
-  const code = idRoute.value
-  const type = typeRoute.value
-  const critique = chapitreDemandeMobilite()
-  setChapitreStatut(critique, 'loading')
-  demandeScheduler.reset()
-  demandeScheduler.critical()
-  void (async () => {
-    const selectionActive = membresAcquisition.value
-    const demand = critique
-      ? await demandeChapitreNiveau(type, 'mobilite', critique, selectionActive)
-      : undefined
-    const acquired = await cacheAcquisition.get(type, code, 'mobilite', demand)
+  const retry = retryFaitsMobilite.value
+  if (!productionMobilite.value || !typeValide.value || !reference) return null
+  return { type: typeRoute.value, code: idRoute.value, reference,
+    selection: membresAcquisition.value, retry }
+})
+const chargementCahier = useCahierLoading({
+  chapters: computed(() => chapitresMobilite.value.map((chapter) => ({ key: chapter.key, ...chapter.cahier }))),
+  current: chapitreAffiche,
+  scope: perimetreCahier,
+  scheduler: demandeScheduler,
+  read: async (scope, chapter, priority) => {
+    const demand = await demandeChapitreNiveau(scope.type, 'mobilite', chapter, scope.selection)
+    if (!demand) throw new Error(`Chapitre non enregistré : ${chapter}`)
+    const acquired = await cacheAcquisition.get(scope.type, scope.code, 'mobilite', { ...demand, priority })
     return { acquired, demand }
-  })().then(({ acquired, demand }) => {
-    if (request !== focalRequestSequence || controller.signal.aborted || !payloadPourRendu.value) return
-    // The reader may have scrolled to another chapter while this full read was
-    // in flight: the chapter watcher owns the current demand and its entry.
-    if (chapitreDemandeMobilite() !== critique) { settled = true; return }
-    appliquerAcquisitionMobilite(acquired, membresAcquisition.value, demand)
-    setChapitreStatut(critique, 'ready')
-    settled = true
-    // The requested chapter is useful: only now may a sibling/next chapter or an
-    // unrelated theme warm — never before it.
-    demandeScheduler.unlockIdle()
-    if (chapitreAffiche.value === critique) planifierChapitreSuivant(type, code, critique)
-    planifierRechauffementThemes(type, code, 'mobilite')
-  }).catch(() => {
-    settled = true
-    if (request === focalRequestSequence && chapitreDemandeMobilite() === critique) {
-      setChapitreStatut(critique, 'error')
-      statutFaitsMobilite.value = 'error'
-      mobilityComparisonStatus.value = 'error'
+  },
+  apply: ({ acquired, demand }, scope) => appliquerAcquisitionMobilite(acquired, scope.selection, demand),
+  reset: (scope, previous) => {
+    // A comparison change retains valid focal facts; never retain wrong-territory facts.
+    if (!scope || scope.type !== previous?.type || scope.code !== previous?.code ||
+        scope.reference !== previous?.reference || scope.retry !== previous?.retry) {
+      mobilityFocal.value = null
+      mobilityComparisonFacts.value = null
+      mobilityCurveComparison.value = null
+      mobilityComparisonStatus.value = 'loading'
+      lastComparisonKey = null
+      lastComparisonModel = null
     }
-  })
-}, { immediate: true })
+  },
+  useful: (scope) => planifierRechauffementThemes(scope.type, scope.code, 'mobilite'),
+})
+const chapitresStatut = chargementCahier.statuses
+const statutFaitsMobilite = chargementCahier.status
+const reessayerChapitreMobilite = chargementCahier.retry
 
 watch([productionMobilite, typeRoute, idRoute, () => membresAcquisition.value,
   mobilityFocal, () => referenceTerritoire.reference.value, retryThemeComparaison],
