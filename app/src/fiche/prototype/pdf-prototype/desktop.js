@@ -7,9 +7,78 @@ import { instances, ready } from './rennes'
 import { cornerRadii, borderPattern, boxPath } from './paintGeometry'
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import { timeRampTooltipRows } from '../aedarTimeRampTooltip'
+import { groupedBarTooltipRows } from '../groupedBarTooltip'
+import { nextTick } from 'vue'
+import { choosePdfModes } from './modeChoice'
 
 const COMPARISON_MARK = '¹'
 const FOOTER_INVITATION = 'Retrouvez les cartes et explorez les données sur'
+const valuesHeading = count => count === 1 ? 'Valeurs du graphique' : 'Valeurs des graphiques'
+
+function compactTerritoryHeader(cell, name) {
+  cell.textContent = ''
+  const label = document.createElement('span')
+  label.dataset.pdfCompactTerritory = name
+  label.title = name
+  label.textContent = name
+  label.style.cssText = 'display:block;white-space:normal;overflow-wrap:anywhere;line-height:1.2;'
+  cell.append(label)
+}
+function fitTableLabels(chapter) {
+  const compactLabels = []
+  chapter.querySelectorAll('[data-pdf-compact-territory]').forEach(label => {
+    const full = label.dataset.pdfCompactTerritory
+    const range = document.createRange()
+    const fits = text => {
+      label.textContent = text; range.selectNodeContents(label)
+      const lines = new Set([...range.getClientRects()].map(rect => Math.round(rect.top)))
+      return lines.size <= 2 && [...range.getClientRects()].every(rect => rect.width <= label.clientWidth + .5)
+    }
+    if (!fits(full)) {
+      const letters = Array.from(full)
+      let low = 0, high = letters.length
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2)
+        if (fits(`${letters.slice(0, middle).join('').trimEnd()}…`)) low = middle
+        else high = middle - 1
+      }
+      label.textContent = `${letters.slice(0, low).join('').trimEnd()}…`
+    }
+    compactLabels.push({ full, displayed: label.textContent })
+  })
+  chapter.querySelectorAll('[data-pdf-value]').forEach(cell => {
+    if (cell.textContent !== 'Indisponible') return
+    const range = document.createRange(); range.selectNodeContents(cell)
+    if (range.getBoundingClientRect().width > cell.clientWidth - 4) {
+      cell.textContent = 'Indisp.'
+      cell.closest('.concept-group').dataset.pdfAbbreviatedUnavailable = 'true'
+    }
+  })
+  chapter.querySelectorAll('[data-pdf-abbreviated-unavailable]').forEach(section => {
+    const note = document.createElement('p'); note.textContent = 'Indisp. : valeur indisponible.'
+    note.style.cssText = 'font:var(--type-figure-legend);color:var(--muted);margin:8px 0 0;'
+    ;(section.querySelector('[data-pdf-tables]') ?? section).append(note)
+  })
+  return compactLabels
+}
+function placeSectionSources(chapter) {
+  chapter.querySelectorAll('.concept-group').forEach(section => {
+    const sources = [...section.querySelectorAll('.cahier-evidence-source')]
+    if (!sources.length) return
+    const stamp = document.createElement('div')
+    stamp.dataset.pdfSectionSources = ''
+    copyProperties(sources[0], stamp, ['font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing', 'color'])
+    stamp.style.cssText += ';display:flex;justify-content:flex-end;align-items:baseline;flex-wrap:wrap;gap:4px;text-align:right;margin-top:16px;'
+    const prefix = document.createElement('span'); prefix.textContent = 'Source(s) : '
+    stamp.append(prefix)
+    sources.forEach((source, index) => {
+      if (index) stamp.append(document.createTextNode(' · '))
+      source.style.cssText += ';display:inline;margin:0;text-align:right;'
+      stamp.append(source)
+    })
+    section.append(stamp)
+  })
+}
 
 function comparisonReference() {
   const reference = document.createElement('a')
@@ -42,7 +111,7 @@ function copyProperties(from, to, properties) {
   const style = getComputedStyle(from)
   for (const property of properties) to.style.setProperty(property, style.getPropertyValue(property))
 }
-function prepare(publicPageUrl) {
+function prepare(publicPageUrl, { territoryFirst = false } = {}) {
   const source = document.querySelector('.cahier')
   const clone = source.cloneNode(true)
   const width = source.getBoundingClientRect().width
@@ -107,7 +176,10 @@ function prepare(publicPageUrl) {
     sectionUrl.hash = `section-${section.dataset.section}`
     identity.href = sectionUrl.href
     sectionHeading.style.cssText += ';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-3);'
-    sectionHeading.appendChild(identity)
+    if (territoryFirst) {
+      sectionTitle.style.cssText += ';font:var(--type-figure-title);color:var(--muted);'
+      sectionHeading.prepend(identity)
+    } else sectionHeading.appendChild(identity)
   })
   const main = chapter.querySelector('.page-main')
   header.style.width = `${main.getBoundingClientRect().width}px`
@@ -149,6 +221,7 @@ function appendTimeRampTables(ui, territoryName) {
       const th = document.createElement('th')
       th.textContent = label
       th.style.cssText = 'font-weight:600;text-align:left;vertical-align:bottom;padding:6px 4px;border-bottom:1px solid var(--editorial-margin-soft);overflow-wrap:anywhere;'
+      if (label === territoryName) compactTerritoryHeader(th, territoryName)
       if (label === GROUPE_COMPARE_LABEL) th.append(' ', comparisonReference())
       headerRow.appendChild(th)
     })
@@ -159,6 +232,7 @@ function appendTimeRampTables(ui, territoryName) {
       values.forEach((value, index) => {
         const td = tr.insertCell()
         td.textContent = value
+        if (index >= 2) td.dataset.pdfValue = ''
         td.style.cssText = 'padding:5px 4px;border-bottom:1px solid var(--border-default);vertical-align:top;'
         if (index >= 2) td.style.font = 'var(--type-figure-legend)'
         if (index === 1) td.style.color = row.markerColor
@@ -170,9 +244,106 @@ function appendTimeRampTables(ui, territoryName) {
       rows: rows.map(({ cut, label, value, comparison }) => ({ cut, label, value, comparison })) })
   }
   if (!models.length) throw new Error('No rendered time ramps to export')
-  heading.textContent = models.length === 1 ? 'Valeurs du graphique' : 'Valeurs des graphiques'
-  section.append(heading, panel)
+  heading.textContent = valuesHeading(models.length)
+  const tables = document.createElement('div'); tables.dataset.pdfTables = ''
+  tables.append(heading, panel); section.append(tables)
   return models
+}
+
+function appendSandboxTables(ui, territoryName) {
+  const key = 'aedar-equipment-explorer'
+  const section = [...ui.chapter.querySelectorAll('.concept-group')].find(block => block.dataset.section === key)
+  const components = instances().filter(instance => instance.vnode.el?.closest?.('.concept-group')?.dataset.section === key)
+  const ramp = components.find(instance => instance.type.__name === 'AccessRampFigureCahier')
+  const bars = components.find(instance => instance.type.__name === 'CahierGroupedVerticalBarChart')
+  const explorer = components.find(instance => instance.type.__name === 'AedarEquipmentExplorerCahier')
+  if (!ramp || !bars || !explorer) throw new Error('Sandbox figures are not rendered')
+  const sourceCaption = instance => instance.vnode.el.closest('figure').querySelector('figcaption')
+  const rampData = ramp.props.timeRamp
+  const rampSeries = ramp.setupState.visibleTimeSeries
+  const rampComparison = Boolean(ramp.setupState.comparisonLayerSupported && ramp.setupState.comparisonVisible)
+  const barFigure = { ...bars.props.figure, series: bars.setupState.visibleSeries }
+  const primaryBars = barFigure.series.filter(series => !series.comparisonFor)
+  const orderedBars = [
+    ...rampSeries.flatMap(series => primaryBars.filter(bar => bar.key === series.key)),
+    ...primaryBars.filter(bar => !rampSeries.some(series => series.key === bar.key)),
+  ]
+  const models = [
+    {
+      caption: sourceCaption(ramp), axisLabel: 'Temps', hasComparison: rampComparison,
+      columns: rampSeries.map(series => ({ key: series.key, label: series.label, color: ramp.setupState.timeLegendMarkColors[series.key] })),
+      records: ramp.setupState.timePoints.map(cut => ({ label: cut.xLabel,
+        cells: timeRampTooltipRows(rampData, rampSeries, cut, territoryName, rampComparison) })),
+    },
+    {
+      caption: sourceCaption(bars), axisLabel: 'Statistique', hasComparison: barFigure.series.some(series => series.comparisonFor),
+      columns: orderedBars.map(series => ({ key: series.key, label: series.label, color: series.color })),
+      records: barFigure.categories.map((category, index) => ({ label: category.label, cells: groupedBarTooltipRows(barFigure, index) })),
+    },
+  ]
+  const heading = document.createElement('p')
+  heading.textContent = valuesHeading(models.length)
+  heading.style.cssText = 'font:var(--type-figure-title);color:var(--ink);margin:24px 0 12px;text-align:center;'
+  const tables = document.createElement('div'); tables.dataset.pdfTables = ''
+  tables.append(heading); section.append(tables)
+  for (const model of models) {
+    const caption = model.caption.cloneNode(true)
+    copyProperties(model.caption, caption, ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'color'])
+    caption.style.cssText += ';margin:0 0 8px;text-align:center;'
+    const table = document.createElement('table')
+    table.style.cssText = 'width:100%;table-layout:fixed;border-collapse:collapse;font:var(--type-figure-mode);color:var(--ink);margin-bottom:20px;'
+    const count = model.hasComparison ? 3 : 1
+    const colgroup = document.createElement('colgroup')
+    const axisCol = document.createElement('col'); axisCol.style.width = '14%'; colgroup.appendChild(axisCol)
+    model.columns.forEach(() => {
+      for (let index = 0; index < count; index++) {
+        const col = document.createElement('col'); col.style.width = `${86 / (model.columns.length * count)}%`; colgroup.appendChild(col)
+      }
+    })
+    table.appendChild(colgroup)
+    const head = table.createTHead(), modeRow = head.insertRow(), labelRow = head.insertRow()
+    const th = (row, label) => {
+      const cell = document.createElement('th'); cell.textContent = label
+      cell.style.cssText = 'padding:4px;font-weight:600;text-align:left;vertical-align:bottom;border-bottom:1px solid var(--editorial-margin-soft);overflow-wrap:anywhere;'
+      row.appendChild(cell); return cell
+    }
+    th(modeRow, model.axisLabel).rowSpan = 2
+    model.columns.forEach((column, columnIndex) => {
+      const cell = th(modeRow, column.label); cell.colSpan = count; cell.style.color = column.color
+      if (columnIndex > 0) cell.style.borderLeft = '1px solid var(--editorial-muted)'
+      for (const [labelIndex, label] of [territoryName, ...(model.hasComparison ? [GROUPE_COMPARE_LABEL, 'Rang'] : [])].entries()) {
+        const cell = th(labelRow, label === GROUPE_COMPARE_LABEL ? 'Groupe' : label)
+        cell.style.cssText += ';font:var(--type-figure-legend);font-weight:600;white-space:nowrap;overflow-wrap:normal;padding:4px 2px;'
+        if (labelIndex === 0) compactTerritoryHeader(cell, territoryName)
+        if (columnIndex > 0 && labelIndex === 0) cell.style.borderLeft = '1px solid var(--editorial-muted)'
+        if (label === GROUPE_COMPARE_LABEL) { cell.title = GROUPE_COMPARE_LABEL; cell.append(comparisonReference()) }
+      }
+    })
+    const body = table.createTBody()
+    model.records.forEach(record => {
+      const row = body.insertRow()
+      const cell = value => {
+        const td = row.insertCell(); td.textContent = value
+        if (row.cells.length > 1) td.dataset.pdfValue = ''
+        td.style.cssText = 'padding:4px 2px;border-bottom:1px solid var(--border-default);vertical-align:top;'
+        if (row.cells.length > 1) td.style.font = 'var(--type-figure-legend)'
+      }
+      cell(record.label)
+      model.columns.forEach((column, columnIndex) => {
+        const value = record.cells.find(value => value.seriesKey === column.key)
+        cell(value?.value ?? '—')
+        if (columnIndex > 0) row.cells[row.cells.length - 1].style.borderLeft = '1px solid var(--editorial-muted)'
+        if (model.hasComparison) { cell(value?.comparison?.value ?? '—'); cell(value?.comparison?.rank ?? '—') }
+      })
+    })
+    tables.append(caption, table)
+  }
+  return models.map(model => ({
+    title: model.caption.innerText.trim(), tableLayout: 'grouped-modes', hasComparison: model.hasComparison,
+    selectedModes: model.columns.map(column => column.key), cutCount: model.records.length,
+    rows: model.records.flatMap(record => record.cells.map(({ seriesKey, label, value, comparison }) => ({ cut: record.label, seriesKey, label, value, comparison }))),
+    equipment: { typequ: explorer.setupState.selectedTypequ, label: explorer.setupState.selectedTypeFigureLabel, horizonMinutes: explorer.setupState.horizonMinutes },
+  }))
 }
 function freezeSvg(element) {
   const clone = element.cloneNode(true)
@@ -320,26 +491,79 @@ async function paint(pdf, element, placement, fontFor, stats) {
   await visit(element)
 }
 
-export async function exportDesktop({ sectionKey, includeTooltipTables = false } = {}) {
+export async function exportDesktop({ sectionKey, includeTooltipTables = false, territoryFirst = false, pdfModes, tablesOnSecondPage = false } = {}) {
   if (!ready()) throw new Error('Cahier not ready')
   await document.fonts.ready
   const start = performance.now()
   const root = instances()[0]
+  const modeCandidates = [...new Map(instances().filter(instance => instance.type.__name === 'AccessRampFigureCahier'
+    && (!sectionKey || instance.vnode.el?.closest?.('.concept-group')?.dataset.section === sectionKey))
+    .flatMap(instance => instance.setupState.visibleTimeSeries).map(series => [series.key, { key: series.key, label: series.label }])).values()]
+  let exportModes = pdfModes
+  if (!exportModes && modeCandidates.length > 3) {
+    exportModes = await choosePdfModes(modeCandidates)
+    if (!exportModes) return { cancelled: true }
+  }
+  exportModes ??= modeCandidates.map(mode => mode.key)
+  if (modeCandidates.length && (!exportModes.length || exportModes.length > 3 || new Set(exportModes).size !== exportModes.length
+    || exportModes.some(key => !modeCandidates.some(mode => mode.key === key)))) throw new Error('Choose one to three currently selected modes for the PDF')
   const content = root.props.content.units[0]
   const selectedSection = sectionKey ? content.sections.find(section => section.key === sectionKey) : null
   if (sectionKey && !selectedSection) throw new Error(`Unknown section: ${sectionKey}`)
-  if (includeTooltipTables && sectionKey !== 'aedar-access') throw new Error('Tooltip-table prototype currently supports the time-ramp section only')
+  if (includeTooltipTables && !['aedar-access', 'aedar-equipment-explorer'].includes(sectionKey)) throw new Error('Unsupported section for tooltip tables')
   const publicPageUrl = new URL(window.desktopPublicPageUrl)
   if (sectionKey) publicPageUrl.hash = `section-${sectionKey}`
-  const ui = prepare(publicPageUrl.href)
+  // Vue flushes are microtasks. Clone the chosen figure state and restore the
+  // reader's state before the next paint; no clicks, persistence or API reads.
+  const screenModes = [...root.setupState.aedarAccessSelectedModes]
+  const changedModes = modeCandidates.length && (exportModes.length !== screenModes.length || !exportModes.every(mode => screenModes.includes(mode)))
+  let ui, tooltipTables
   try {
-    const tooltipTables = includeTooltipTables ? appendTimeRampTables(ui, root.props.content.territory.name) : []
+    if (changedModes) root.setupState.aedarAccessSelectedModes = [...exportModes]
+    await nextTick()
+    ui = prepare(publicPageUrl.href, { territoryFirst })
+    tooltipTables = includeTooltipTables ? (sectionKey === 'aedar-access'
+      ? appendTimeRampTables(ui, root.props.content.territory.name)
+      : appendSandboxTables(ui, root.props.content.territory.name)) : []
+  } catch (error) { ui?.clone.remove(); throw error }
+  finally {
+    if (changedModes) {
+      root.setupState.aedarAccessSelectedModes = screenModes
+      await nextTick()
+    }
+  }
+  try {
+    if (tablesOnSecondPage) {
+      ui.chapter.querySelectorAll('[data-pdf-tables]').forEach(tables => {
+        const section = tables.closest('.concept-group')
+        const continuation = document.createElement('section')
+        continuation.className = section.className
+        continuation.dataset.section = `${section.dataset.section}-values`
+        continuation.dataset.pdfPageBreakBefore = 'true'
+        const heading = section.querySelector('.concept-group-heading').cloneNode(true)
+        const subtitle = heading.querySelector('h3'); subtitle.textContent += ' — Valeurs'
+        continuation.append(heading)
+        const identity = section.querySelector('.aedar-equipment-explorer-type-selection')
+        if (identity) {
+          const copy = identity.cloneNode(true); copy.querySelectorAll('button').forEach(button => button.remove()); continuation.append(copy)
+        }
+        section.querySelectorAll('.cahier-evidence-source').forEach(source => continuation.append(source.cloneNode(true)))
+        tables.querySelectorAll('td, th').forEach(cell => {
+          cell.style.padding = '8px 4px'
+          cell.style.font = 'var(--type-figure-mode)'
+          if (cell.tagName === 'TH') cell.style.fontWeight = '600'
+        })
+        continuation.append(tables); section.after(continuation)
+      })
+    }
+    const compactLabels = fitTableLabels(ui.chapter)
+    placeSectionSources(ui.chapter)
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     const overview = root.props.content.units[0].sections[0].evidence
     const pdf = new jsPDF({ unit: 'pt', format: 'a4', compress: true, putOnlyUsedFonts: true })
     const fontFor = await loadFonts(pdf)
     const sectionBlocks = [...ui.chapter.querySelectorAll('.concept-group')]
-    const blocks = sectionKey ? sectionBlocks.filter(block => block.dataset.section === sectionKey)
+    const blocks = sectionKey ? sectionBlocks.filter(block => block.dataset.section === sectionKey || block.dataset.section === `${sectionKey}-values`)
       : [ui.chapter.querySelector('.page-copy'), ...sectionBlocks]
     if (!blocks.length) throw new Error('Requested section has no rendered content')
     const bounds = blocks.map(block => block.getBoundingClientRect())
@@ -354,7 +578,7 @@ export async function exportDesktop({ sectionKey, includeTooltipTables = false }
       const height = sizes[index].height * scale
       const gap = sizes[index].precedingGap * scale
       let page = pages.at(-1)
-      if (!page || page.used + height + gap > capacity) { page = { used: 0, items: [] }; pages.push(page) }
+      if (!page || block.dataset.pdfPageBreakBefore || page.used + height + gap > capacity) { page = { used: 0, items: [] }; pages.push(page) }
       if (page.items.length) page.used += gap
       page.items.push({ block, height, offset: page.used, key: sizes[index].key })
       page.used += height
@@ -367,7 +591,7 @@ export async function exportDesktop({ sectionKey, includeTooltipTables = false }
       const [r, g, b] = rgba(paper); pdf.setFillColor(r, g, b); pdf.rect(0, 0, W, H, 'F')
       const x = (W - desktopWidth * scale) / 2
       await paint(pdf, ui.header, { x, y: 24, scale }, fontFor, stats)
-      const y = top + (capacity - pages[index].used) / 2
+      const y = top + Math.max(0, (capacity - pages[index].used) / 2)
       for (const item of pages[index].items) await paint(pdf, item.block, { x, y: y + item.offset, scale }, fontFor, stats)
       const footerStyle = getComputedStyle(ui.chapter.querySelector('.cahier-evidence-source') ?? ui.chapter.querySelector('p'))
       pdf.setFont(fontFor(footerStyle), 'normal'); pdf.setFontSize(7)
@@ -387,7 +611,8 @@ export async function exportDesktop({ sectionKey, includeTooltipTables = false }
     setTimeout(() => URL.revokeObjectURL(url), 30000)
     return { bytes: blob.size, totalMs: performance.now() - start, ...stats, scale,
       desktopWidth, pageContentHeight: capacity, removedInactiveControls: ui.removed,
-      pages: pages.map(page => ({ occupiedHeight: page.used, centeringInset: (capacity - page.used) / 2, sections: page.items.map(item => item.key), showsComparisonContext: page.showsComparisonContext })),
-      sectionSizes: sizes, url: publicPageUrl.href, sectionKey: sectionKey ?? null, sectionLabel: selectedSection?.label ?? null, tooltipTables }
+      pages: pages.map(page => ({ occupiedHeight: page.used, centeringInset: Math.max(0, (capacity - page.used) / 2), sections: page.items.map(item => item.key), showsComparisonContext: page.showsComparisonContext })),
+      sectionSizes: sizes, url: publicPageUrl.href, sectionKey: sectionKey ?? null, sectionLabel: selectedSection?.label ?? null, tooltipTables, territoryFirst,
+      exportModes, screenModes, compactLabels, tablesOnSecondPage }
   } finally { ui.clone.remove() }
 }

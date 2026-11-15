@@ -21,6 +21,8 @@
     "prototype:desktop-pdf": "node scripts/prototype-desktop-pdf.mjs",
     "prototype:section-pdf": "node scripts/prototype-desktop-pdf.mjs --sections",
     "prototype:tooltip-pdf": "node scripts/prototype-desktop-pdf.mjs --tooltips",
+    "prototype:sandbox-pdf": "node scripts/prototype-desktop-pdf.mjs --sandbox",
+    "prototype:stress-pdf": "node scripts/prototype-pdf-stress.mjs",
     "test": "vitest run"
   },
   "dependencies": {

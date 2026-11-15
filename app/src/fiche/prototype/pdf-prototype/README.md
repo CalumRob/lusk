@@ -227,7 +227,8 @@ reference. It is omitted from the standalone map-loss and waffle exports, while
 remaining on the time-ramp/table export. The invitation and website links remain
 on all exports. More selected modes can make the tables denser; this experiment
 does not establish that every possible selection stays readable on one A4 sheet.
-The sandbox/decile distribution has not yet received a table adapter.
+The initial table experiment covered time ramps; the sandbox extension below
+adds the selected-equipment distribution.
 
 Latest presentation variation (time-ramp v3): table headings use « Valeurs du
 graphique » or « Valeurs des graphiques », counted from the actual exported
@@ -238,3 +239,165 @@ before the sources/figures. Its text stays linked to the section; the former
 top-right duplicate/icon is removed. The global PDF header is unchanged. Neither
 a territory name nor a factual identifier is duplicated in the template. The map
 and waffle files were not regenerated for this typography/prose variation.
+
+## Historical maximum-mode sandbox stress test (v1)
+
+The initial harness selected every inactive mode through the actual sandbox
+controls and checked the result against the canonical mode list. The later
+cross-section v1 campaign preserves that five-mode case at
+`E:/Temp/opencode/cahier-pdf-stress/all-aedar-equipment-explorer.pdf`.
+The current `npm run prototype:sandbox-pdf` instead exercises the export-time
+three-mode choice described below; it no longer reproduces an unrestricted
+five-mode export.
+
+The tested selection is the current B207 bakery example, distribution horizon
+15 minutes, Rennes/EPCI comparison and all five modes. It is **not** an export of
+all 235 equipment types. Both charts are retained, followed by full-width tables:
+four time cuts and eleven distribution statistics, each covering all five modes
+with focal value, group reference and served rank. This accounts for 75 tooltip
+rows / 225 value-reference-rank cells without interpolating any statistic.
+
+The grouped-bar tooltip and PDF now share `groupedBarTooltip.ts`, like the earlier
+time-ramp seam. Both live chart components retain their behavior: all 26 targeted
+component tests and the app type check pass. Series identities are preserved in
+the shared row models, so pivoting joins by key rather than label or array index.
+Table mode columns use a consistent order; category/time axes retain their
+declared source order. The grouped tables use vertical boundaries **between mode
+groups**, and light horizontal row rules. Compact « Groupe¹ » headers refer to
+the explicit comparison context in the footer.
+
+For this case the tables fit on one A4 sheet at the existing width-derived scale
+(no additional whole-sheet downscaling). Numeric table text remains roughly
+6.8 pt: this is a dense print layout, not a low-vision/readability guarantee. A
+first maximum-mode pass split headers into awkward fragments; compact labels and
+padding fixed that rather than shrinking the entire document further. Larger
+values, long territory names, unavailable cells and different equipment choices
+still warrant testing.
+
+This file also tries an alternative heading hierarchy: **territory first**, with
+the section title retained as a smaller contextual subtitle. It is selected by
+the prototype's `territoryFirst` option, not a settled site-wide design decision.
+The time-ramp v3 file remains available as the previous name-placement variation.
+
+## Cross-section stress campaign
+
+`npm run prototype:stress-pdf` writes independent cases to
+`E:/Temp/opencode/cahier-pdf-stress/` (no changes to the export adapter). It covers
+all five sections individually, the complete chapter, one/all travel modes,
+comparison hidden, the longest equipment label in the actual picker, a short
+distribution horizon, and two consecutive exports of the same state. Each export
+records whether the live Cahier DOM and clone count remained unchanged.
+
+Cases prefixed `long-identity`, `large-values`, `missing-values`, or `oversized`
+are explicitly **synthetic**, confined to a fresh browser-page context. They
+exercise long identity strings, wide numeric/unavailable table cells and an
+over-height waffle section. They are not alternative factual publications. The
+numeric mutations target resolved presentation models to stress the export seam;
+they do not validate the producer or recomputation of chart axis contracts.
+
+`python scripts/audit-prototype-pdf-stress.py` audits the resulting PDFs and writes
+receipts, previews and a findings report in that directory. This is a diagnostic
+campaign, not a claim that the current prototype passes every case. In particular,
+an indivisible section taller than A4 currently participates in whole-export
+scale calculation: test for unreadable shrinking rather than treating mere
+absence of clipping as success. Layout fixes require a separate decision after
+reviewing the findings.
+
+2026-11-15 campaign: the corrected harness completed 24 exports without an
+exception, including the five-minute horizon and repeated sandbox export. Live
+Cahier DOM and clone count stayed unchanged for every exported case. This does
+**not** mean 24 layout passes. Visual review found overlapping sandbox cells for
+large numbers and « Indisponible », and long territory names overflowing compact
+table headers. The synthetic over-height waffle also confirms the adapter's
+whole-export shrinking behavior. These are retained failures, not silently fixed
+by the harness. One-mode and comparison-hidden sandbox outputs look coherent;
+the full chapter occupies four pages but does not include tooltip tables (that
+adapter option currently applies to individual ramp/sandbox sections only).
+The automated artifact report is separate from this visual review.
+
+Independent artifact-audit rerun: **21 pass / 3 fail**, native exit 1 (expected
+for the retained failures), matching the three sandbox overflow cases above.
+The oversized waffle passes basic integrity but is flagged at 83% of normal
+width-fit scale; this is not a readability pass. The audit checks page bounds,
+sources, links, conditional footers, grouped table cells and text-box collisions.
+It does not prove raster content/clip correctness, minimum readable type, or exact
+time-ramp-table cells. No production layout/source changes were made to fix these
+findings during the campaign.
+
+## Three-mode / compact-header variation
+
+**Latest owner decisions / formal specification:**
+[PRD #1014](https://github.com/CalumRob/lusk/issues/1014), with the local mirror at
+`docs/prd/cahier-section-pdf.md`. Keep a single sheet by default; use a separate
+values page **only for actual overflow**, not as the default presentation. The
+six-times-repeated waffle is not a product-design priority. The three-mode limit
+is a functional constraint, but the mode-choice UI is **not validated here** and
+belongs to future UI implementation/review. The modal below remains an experiment.
+
+The final source-placement variation moves existing source annotations to the
+bottom right of each exported section with « Source(s) : ». Text, attribution
+and links are retained. The sandbox was regenerated: one A4 at the unchanged
+width-fit scale, all 135 value/reference/rank cells verified, source prefix below
+the tables and above the global footer. This final placement has not yet had the
+entire cross-section campaign rerun; earlier stress receipts predate that change.
+
+The next variation limits **PDF** selections to three travel modes, without
+changing the reader's lasting screen selection. When more than three are active,
+the adapter opens a native modal choice with no preselected modes; export is
+disabled for zero or more than three choices. Cancel produces no download.
+Map panels and waffle buckets are not capped: those are fixed figure content,
+not the optional ramp/sandbox travel-mode selection.
+
+The adapter briefly flushes the chosen Vue selection into the rendered figures,
+clones the state, then restores the original selection within microtasks before
+the next browser paint. It does not click the live controls or persist changes.
+The DOM-unchanged checks are retained to catch lasting effects. This is still a
+throwaway Vue-dev-runtime seam, not the intended production export API.
+
+Compact territory headers use actual DOM width to fit natural wrapping within
+two lines, then replace the tail with an ellipsis when necessary. The full name
+remains in the page identity and PDF title. Narrow unavailable-value cells use
+« Indisp. », with a note explaining the abbreviation. Numeric values are never
+abbreviated or truncated.
+
+`tablesOnSecondPage: true` additionally tests figures on page one and tables on
+a continuation page with the territory, section, equipment and sources repeated.
+That variation uses larger table type and more row spacing. It is an optional
+comparison, not a mandatory second page for every short export.
+
+`npm run prototype:stress-pdf` now writes the new campaign to
+`E:/Temp/opencode/cahier-pdf-stress-v2/`, preserving the earlier failing artifacts.
+The five-mode screen cases exercise the actual modal and explicitly choose three
+PDF modes. They verify disabled export with zero/four choices and enabled export
+with three choices. The sandbox harness also exercises this choice rather than
+silently exporting a five-mode sheet.
+
+The clean v2 run completed **25 exports**. Every live DOM/clone-count comparison
+and frame-sampled screen-selection check passed. Cancelling with Escape produced
+no download and left the DOM unchanged; an explicit four-mode override was
+rejected. The standalone sandbox verifier independently checked all 135
+value/reference/rank cells for the chosen three modes on one A4 sheet. The
+five-mode choice screenshot uses Playwright's `caret: 'initial'`: default caret
+hiding otherwise leaves empty style attributes on unrelated live inputs and
+pollutes the DOM-unchanged comparison.
+
+Synthetic numeric cases now select their three screen modes before injecting
+fixture values. This avoids invalidating raw presentation-model fixtures by
+recomputing their source figure during an export selection change. Real-data
+five-mode cases separately prove that the modal caps only the PDF and restores
+the reader's five-mode screen state before paint.
+
+The independent v2 artifact audit was completed and rerun by the orchestrator:
+**25 pass / 0 fail**, native exit 0, with only the accepted synthetic oversized
+waffle downscaling observation. It checks the declared compact-label prefixes,
+retention of full identity, exact numeric cells, conditional unavailable-word
+abbreviation, selection cap and table-page location. The full unavailable word
+fits at three modes in this campaign, so it does not exercise the « Indisp. »
+rendering path end to end. These receipts predate the final source relocation,
+whose separate 135-cell sandbox check is described above.
+
+Run the current audit with an explicit cases path (the auditor's default remains
+the historical v1 campaign):
+`python scripts/audit-prototype-pdf-stress.py E:/Temp/opencode/cahier-pdf-stress-v2/cases.json`.
+Before remote capture, the full app suite passed 186 files / 2,511 tests with one
+skip, and `vue-tsc` passed. This is source validation, not deployed acceptance.

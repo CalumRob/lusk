@@ -24,13 +24,14 @@ export function timeRampTooltipRows(
   cut: Pick<TimeRampPoint, 'xValue'> | null,
   territoryName: string,
   comparisonLayerSupported: boolean,
-): readonly CahierTooltipRow[] {
+): readonly (CahierTooltipRow & { seriesKey: string })[] {
   if (!cut || !timeRamp) return []
   return series.flatMap((series) => {
     const point = series.points.find((candidate) => candidate.xValue === cut.xValue)
     if (!point) return []
     const value = tooltipValue(point.value, timeRamp.yAxis.unit)
-    const row: CahierTooltipRow = {
+    const row: CahierTooltipRow & { seriesKey: string } = {
+      seriesKey: series.key,
       label: series.label, value: value.visible, tone: tones[series.key] ?? 'neutral',
       icon: AEDAR_TIME_MODE_ICONS[series.key],
       markerColor: AEDAR_TIME_MODE_COLORS[series.key] ?? 'var(--cahier-theme-strong)',

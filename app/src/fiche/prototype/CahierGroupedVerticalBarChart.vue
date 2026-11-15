@@ -5,10 +5,9 @@ import type {
   CahierFigureAxisTick,
   CahierFigureTooltipAnchor,
   CahierGroupedVerticalBarFigureData,
-  CahierTooltipRow,
 } from '@/fiche/cahierFigureGrammaire'
 import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
-import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
+import { formatGroupedBarValue, groupedBarTooltipRows } from './groupedBarTooltip'
 import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -30,8 +29,7 @@ const UNAVAILABLE_LABEL = 'Indisponible'
 const plotElement = ref<HTMLElement | null>(null)
 
 function formatValue(value: number): string {
-  return props.figure.formatValue?.(value)
-    ?? new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
+  return formatGroupedBarValue(props.figure, value)
 }
 
 /** Accessible reading of the same value: the unit lives here, never in the visible row. */
@@ -118,37 +116,7 @@ function categoryLabel(index: number): string {
   return `${category.label} : ${values.length ? values.join(' ; ') : 'Aucune série'}`
 }
 
-const tooltipRows = computed<readonly CahierTooltipRow[]>(() => {
-  const categoryIndex = selectedCategoryIndex.value
-  if (categoryIndex === null) return []
-  const comparedSeries = new Map(
-    props.figure.series
-      .filter((series) => series.comparisonFor)
-      .map((series) => [series.comparisonFor!, series]),
-  )
-  return props.figure.series.filter((series) => !series.comparisonFor).map((series) => {
-    const value = series.values[categoryIndex]
-    const compared = comparedSeries.get(series.key)
-    const comparedValue = compared?.values[categoryIndex]
-    return {
-      label: series.label,
-      value: value === null || value === undefined ? UNAVAILABLE_LABEL : formatValue(value),
-      icon: series.icon,
-      markerColor: series.color,
-      ...(compared
-        ? {
-            comparison: {
-              value: comparedValue === null || comparedValue === undefined
-                ? UNAVAILABLE_LABEL
-                : formatValue(comparedValue),
-              rank: formatServedRank(compared.ranks?.[categoryIndex]),
-              rankAria: formatServedRankAria(compared.ranks?.[categoryIndex]),
-            },
-          }
-        : {}),
-    }
-  })
-})
+const tooltipRows = computed(() => groupedBarTooltipRows(props.figure, selectedCategoryIndex.value))
 
 const selectedCategoryTitle = computed(() => selectedCategoryIndex.value === null
   ? ''

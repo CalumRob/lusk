@@ -3,9 +3,10 @@ import { createServer } from 'vite'
 import { chromium } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
-const tooltipTables = process.argv.includes('--tooltips')
+const sandbox = process.argv.includes('--sandbox')
+const tooltipTables = process.argv.includes('--tooltips') || sandbox
 const sectionsOnly = process.argv.includes('--sections') || tooltipTables
-const out = tooltipTables ? 'E:/Temp/opencode/cahier-tooltip-pdf' : sectionsOnly ? 'E:/Temp/opencode/cahier-section-pdf' : 'E:/Temp/opencode/cahier-desktop-pdf'
+const out = sandbox ? 'E:/Temp/opencode/cahier-sandbox-pdf' : tooltipTables ? 'E:/Temp/opencode/cahier-tooltip-pdf' : sectionsOnly ? 'E:/Temp/opencode/cahier-section-pdf' : 'E:/Temp/opencode/cahier-desktop-pdf'
 await mkdir(out, { recursive: true })
 const server = await createServer({ optimizeDeps: { include: ['jspdf', 'svg2pdf.js'] }, server: { host: '127.0.0.1', port: 5198, strictPort: true } })
 await server.listen()
@@ -18,6 +19,16 @@ try {
   await page.goto('http://127.0.0.1:5198/territoire/commune/35238?theme=mobilite&comparaison=epci', { waitUntil: 'domcontentloaded' })
   await page.evaluate(async () => { window.rennesPrototype = await import('/src/fiche/prototype/pdf-prototype/rennes.js') })
   await page.waitForFunction(() => window.rennesPrototype.ready(), null, { timeout: 60000 })
+  if (sandbox) {
+    // Stress the maximum supported selection through the real controls.
+    const inactiveModes = page.locator('.aedar-equipment-explorer-modes button[aria-pressed="false"]')
+    while (await inactiveModes.count()) await inactiveModes.first().click()
+    await page.waitForFunction(async () => {
+      const { AEDAR_RAMP_MODES } = await import('/src/fiche/content/aedarTimeRampFacts.ts')
+      const explorer = window.rennesPrototype.instances().find(instance => instance.type.__name === 'AedarEquipmentExplorerCahier')
+      return AEDAR_RAMP_MODES.every(mode => explorer.setupState.selectedModes.includes(mode))
+    })
+  }
   const inventory = await page.evaluate(async () => {
     await document.fonts.ready
     const elements = [...document.querySelectorAll('#figure-lecture *, .en-tete .lusk-marque, .en-tete .lusk-marque *')]
@@ -41,10 +52,17 @@ try {
     publicUrl.port = new URL(server.config.server.proxy['/api'].target).port
     publicUrl.protocol = new URL(server.config.server.proxy['/api'].target).protocol
     await page.evaluate(url => { window.desktopPublicPageUrl = url }, publicUrl.href)
-    const scopes = tooltipTables ? ['aedar-access'] : sectionsOnly ? ['aedar-diversity-loss', 'aedar-equipment-profile'] : [null]
+    const scopes = sandbox ? ['aedar-equipment-explorer'] : tooltipTables ? ['aedar-access'] : sectionsOnly ? ['aedar-diversity-loss', 'aedar-equipment-profile'] : [null]
     for (const sectionKey of scopes) {
       const pending = page.waitForEvent('download', { timeout: 120000 })
-      const receipt = await page.evaluate(options => window.desktopPdf.exportDesktop(options), { sectionKey, includeTooltipTables: tooltipTables })
+      const exporting = page.evaluate(options => window.desktopPdf.exportDesktop(options), { sectionKey, includeTooltipTables: tooltipTables, territoryFirst: sandbox })
+      if (sandbox) {
+        const dialog = page.locator('[data-pdf-mode-choice]')
+        await dialog.waitFor({ state: 'visible' })
+        for (let index = 0; index < 3; index++) await dialog.locator('input[type="checkbox"]').nth(index).check()
+        await dialog.locator('[data-pdf-confirm-modes]').click()
+      }
+      const receipt = await exporting
       const stem = sectionKey ? `rennes-${sectionKey}` : 'rennes-desktop-epci'
       await (await pending).saveAs(`${out}/${stem}.pdf`)
       await writeFile(`${out}/${sectionKey ? `${stem}-receipt` : 'receipt'}.json`, JSON.stringify(receipt, null, 2))
