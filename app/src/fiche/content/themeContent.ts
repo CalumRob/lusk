@@ -99,6 +99,7 @@ export interface AedarAccessEvidence {
 }
 
 export interface AedarCarAccessOverviewScalar {
+  comparisonPending?: boolean
   key: 'meanDiversity' | 'meanVolume'
   label: string
   value: number | null
@@ -115,6 +116,7 @@ export interface AedarCarAccessOverviewScalar {
 }
 
 export interface AedarCarAccessOverviewEvidence {
+  sourcePending?: boolean
   kind: 'aedar-car-overview'
   territory: Pick<TerritoryIdentity, 'type' | 'code' | 'name'>
   horizonMinutes: number

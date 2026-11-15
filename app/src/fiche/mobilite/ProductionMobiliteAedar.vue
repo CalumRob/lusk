@@ -178,7 +178,12 @@ const transformed = computed(() => {
     // current position and jumping « Et sans voiture alors ? » down.
     const first = props.content.units[0]
     if (!first || !props.content.territory) return props.content
-    const pending = aedarPendingPrototypeSections(props.content.territory, { lossMapMetadata: lossMapMetadata.value })
+    const pending = aedarPendingPrototypeSections(props.content.territory, {
+      lossMapMetadata: lossMapMetadata.value,
+      sourcePending: props.aedarSummaryStatus === 'loading',
+      comparisonPending: props.aedarSummaryStatus !== 'error' && Boolean(comparisonRequest.value ||
+        (props.aedarReferenceTerritoire && (!control.value || control.value.selection.etat === 'defaut'))),
+    })
     const carOverview = pending[0]
     const introduction = carOverview.evidence?.kind === 'aedar-car-overview'
       ? carOverview.evidence.unitIntroduction

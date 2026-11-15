@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
+import CahierComparisonValue from './CahierComparisonValue.vue'
 
 withDefaults(
   defineProps<{
@@ -16,6 +17,8 @@ withDefaults(
     /** The same scalar brick can sit beside its label in a narrative row. */
     layout?: 'stacked' | 'inline'
     ariaLabel?: string
+    /** Only a requested, unresolved reference owns a pending comparison row. */
+    referencePending?: boolean
   }>(),
   {
     tone: 'neutral',
@@ -65,8 +68,8 @@ withDefaults(
       />
       {{ label }}
     </span>
-    <span v-if="$slots.reference" class="cahier-figure-scalar-reference">
-      <slot name="reference" />
+    <span v-if="$slots.reference || referencePending" class="cahier-figure-scalar-reference" :aria-busy="referencePending || undefined">
+      <slot name="reference"><CahierComparisonValue v-if="referencePending" comparison-status="loading" /></slot>
     </span>
   </div>
 </template>

@@ -368,10 +368,12 @@ export function aedarCarAccessOverviewSection(
 
 /**
  * #769 pending counterpart of the car overview: same label, prose and blank
- * map slot (fixed geometry), but every numeric reading stays null and no source
- * line renders until the aggregate read resolves. Never a fabricated number.
+ * map slot (fixed geometry). Pending roles reserve their own presentation, but
+ * every numeric reading and provenance stays unknown. Never a fabricated fact.
  */
-export function aedarPendingCarAccessOverviewSection(territory: TerritoryIdentity): AedarCarAccessOverviewSection {
+export function aedarPendingCarAccessOverviewSection(territory: TerritoryIdentity,
+  options: { sourcePending?: boolean; comparisonPending?: boolean } = {},
+): AedarCarAccessOverviewSection {
   const horizonMinutes = AEDAR_PROTOTYPE_HORIZON_MINUTES
   return {
     key: 'aedar-car-overview', label: AEDAR_CAR_OVERVIEW_SECTION_LABEL, availability: 'incomplete',
@@ -382,7 +384,9 @@ export function aedarPendingCarAccessOverviewSection(territory: TerritoryIdentit
       horizonMinutes, mapModes: ['car'],
       mapFigureTitle: carOverviewMapFigureTitle(horizonMinutes),
       meanDiversity: null, meanVolume: null, nAddresses: null,
-      scalars: AEDAR_CAR_OVERVIEW_SCALAR_READINGS.map((reading) => ({ ...reading, value: null, reference: null })),
+      sourcePending: options.sourcePending,
+      scalars: AEDAR_CAR_OVERVIEW_SCALAR_READINGS.map((reading) => ({ ...reading, value: null, reference: null,
+        comparisonPending: options.comparisonPending })),
       scalarFigureTitle: carOverviewScalarFigureTitle(horizonMinutes),
       comparisonLabel: null,
       unitIntroduction: carOverviewUnitIntroduction(territory, null, null),
@@ -530,10 +534,10 @@ export function aedarPrototypeSections(
  */
 export function aedarPendingPrototypeSections(
   territory: TerritoryIdentity,
-  options: { lossMapMetadata: AedarDiversityLossMapMetadata },
+  options: { lossMapMetadata: AedarDiversityLossMapMetadata; sourcePending?: boolean; comparisonPending?: boolean },
 ): AedarPrototypeSectionsWithLoss {
   return [
-    aedarPendingCarAccessOverviewSection(territory),
+    aedarPendingCarAccessOverviewSection(territory, options),
     aedarDiversityLossSection(options.lossMapMetadata, territory),
     {
       key: 'aedar-access', label: AEDAR_ACCESS_SECTION_LABEL, availability: 'incomplete',
