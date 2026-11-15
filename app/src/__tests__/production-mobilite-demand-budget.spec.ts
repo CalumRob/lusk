@@ -242,11 +242,12 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     // The producer's nested default is never fetched then discarded.
     expect(pageTwoItems.some((item) => item.intent.kind === 'fixed_comparison')).toBe(false)
 
-    // Until the requested chapter's own demand has settled, NOTHING else is
-    // issued: no AEDAR, no unrelated theme and no sibling chapter. This is
-    // ordered by the batch that actually completed the demand, not by paint.
-    const requestedSettledAt = pageTwo[2]!.index
-    expectOnlyRequestedChapter(calls.filter((call) => call.index < requestedSettledAt)
+    // Until the requested chapter's own three batches have been ISSUED, NOTHING
+    // else is: no AEDAR, no unrelated theme and no sibling chapter. This is
+    // ordered by the batch that completed the demand (its request index), not by
+    // paint or by response timing.
+    const requestedDemandLastBatch = pageTwo[2]!.index
+    expectOnlyRequestedChapter(calls.filter((call) => call.index < requestedDemandLastBatch)
       .filter(isPost).flatMap((call) => call.items))
     expect(posts(calls).flatMap((call) => call.items).filter(isAedar)).toEqual([])
     // The pending page-1 car map must not download its image either (a fetch
@@ -263,7 +264,7 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     expect(pageThreeWarm).toHaveLength(1)
     expect(pageThreeWarm[0]!.items).toHaveLength(7)
     expect(new Set(pageThreeWarm[0]!.items.map((item) => item.resource))).toEqual(new Set(PAGE_THREE))
-    expect(pageThreeWarm[0]!.index).toBeGreaterThan(requestedSettledAt)
+    expect(pageThreeWarm[0]!.index).toBeGreaterThan(requestedDemandLastBatch)
     // Warming is not admission: the chapter's data is cached but not applied to
     // the displayed page until the reader actually requests it, and page-1 AEDAR
     // is never pulled by the warm.
@@ -277,7 +278,7 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
       !PAGE_TWO.includes(item.resource) && !PAGE_THREE.includes(item.resource)))
     expect(idleThemes.length).toBeLessThanOrEqual(5)
     for (const call of idleThemes) {
-      expect(call.index).toBeGreaterThan(requestedSettledAt)
+      expect(call.index).toBeGreaterThan(requestedDemandLastBatch)
       expect(call.items.length).toBeLessThanOrEqual(12)
       expect(call.items.every((item) => item.intent.kind === 'facts')).toBe(true)
     }

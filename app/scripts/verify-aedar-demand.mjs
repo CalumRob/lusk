@@ -230,6 +230,26 @@ try {
     return page.locator(selector).first().isVisible().catch(() => false)
   }
 
+  /**
+   * #1012 — drive the reader's own wheel until the APP names the chapter (the
+   * spine's aria-current). `wheelToPage` only parks a page inside [0.15H,0.55H];
+   * the visibility owner needs the previous page to leave the reading band
+   * (rootMargin -14%/-66%, i.e. [0.14H,0.34H]), which is one natural step
+   * further. No scrollIntoView, no click, no hash and no forced attribute: this
+   * is the ordinary reader path, and the app must flip on its own.
+   */
+  const wheelUntilChapterActive = async (page, href, maxSteps = 30) => {
+    await page.mouse.move(720, 450)
+    const activeHref = () => page.locator('aside.cahier-spine a[aria-current="location"]')
+      .getAttribute('href').catch(() => null)
+    for (let step = 0; step < maxSteps; step += 1) {
+      if (await activeHref() === href) return true
+      await page.mouse.wheel(0, 300)
+      await page.waitForTimeout(120)
+    }
+    return await activeHref() === href
+  }
+
   browser = await chromium.launch({ headless: true,
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) })
 
@@ -352,7 +372,9 @@ try {
   const pageTwoDemand = naturalSoFar
     .filter((batch) => batch.items.some((item) => PAGE_TWO.includes(item.resource)))
   assert.equal(pageTwoDemand.length, 3, `page-2 POSTs on landing: ${pageTwoDemand.length}`)
-  const pageTwoSettledAt = Math.max(...pageTwoDemand.map((batch) => batch.at))
+  // The demand was fully ISSUED here (`at` is the POST time, before its
+  // response): the warm must come after these three batches, not before them.
+  const pageTwoRequestedAt = Math.max(...pageTwoDemand.map((batch) => batch.at))
   // #1012 — page 1 is the reader's chapter, so its next page (2) is the numeric
   // planner's own demand and page 3 is NOT warmed yet: the warm starts when
   // page 2 becomes the reader's chapter, not merely because it rendered.
@@ -365,12 +387,13 @@ try {
   // outside the reading band, so any page-3 read observed now is the bounded
   // warm, not the reader's arrival.
   const page2Reached = await wheelToPage(natural, '#figure-partage-de-lespace-public')
-  assert.ok(page2Reached, 'page 2 did not become the reader\'s chapter by natural wheel')
+  assert.ok(page2Reached, 'page 2 did not come into view by natural wheel')
+  // `wheelToPage` can park page 2 before the observer band; keep wheeling with
+  // the reader's own wheel until the app names page 2, then hold position.
+  assert.ok(await wheelUntilChapterActive(natural, '#figure-partage-de-lespace-public'),
+    'page 2 did not become the app\'s active chapter by natural wheel')
   assert.ok(await wheelUntilVisible(natural, '.mobilite-section--reseaux .mobilite-comparison-bars'),
     'the page-2 bars did not become visible when the reader reached page 2')
-  await natural.waitForFunction(() => document.querySelector(
-    'aside.cahier-spine a[aria-current="location"]')?.getAttribute('href') === '#figure-partage-de-lespace-public',
-  null, { timeout: 10000 })
   const pageTwoObservedAt = Date.now()
   const activeOnPageTwo = await natural.locator('aside.cahier-spine a[aria-current="location"]')
     .getAttribute('href')
@@ -401,8 +424,8 @@ try {
     `page-3 warm items while the reader stays on page 2: ${pageThreeWarm[0].items.length}`)
   assert.equal(new Set(pageThreeWarm[0].items.map((item) => item.resource)).size, 4,
     'the page-3 warm must carry the four ordinary chapter resources')
-  assert.ok(pageThreeWarm[0].at >= pageTwoSettledAt,
-    'the next chapter must warm only after the requested page-2 demand settled')
+  assert.ok(pageThreeWarm[0].at >= pageTwoRequestedAt,
+    'the next chapter must warm only after the requested page-2 demand was issued')
   assert.equal(pageThreeWarm[0].items.some((item) => String(item.resource).startsWith('aedar_')), false,
     'the next-chapter warm must never carry AEDAR tail work')
   // The reader never moved: at the moment the warm exists, the app still names
@@ -492,8 +515,9 @@ try {
     page3WarmItems: pageThreeWarm[0]?.items.length ?? 0,
     pageThreeBeforeScroll: pageThreeBeforeScroll.length,
     pageTwoObservedAt,
-    pageTwoSettledAt,
+    pageTwoRequestedAt,
     pageTwoUsefulAt,
+    warmAfterUsefulMs: pageThreeWarm[0]?.at !== undefined ? pageThreeWarm[0].at - pageTwoUsefulAt : null,
     activeOnPageTwo,
     activeAtWarm,
     geometryBeforeWarm,
