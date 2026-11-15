@@ -23,6 +23,8 @@ withDefaults(defineProps<{
   aedarActive?: boolean
   /** #1008 — the visible chapter's admission state, owned by the demand planner. */
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
+  /** The page-level data state already owns this failure and renders its retry. */
+  erreurPage?: boolean
 }>(), { aedarActive: true })
 const emit = defineEmits<{ 'chapitre-visible': [anchor: string]; 'chapitre-reessayer': [chapter: string] }>()
 </script>
@@ -44,6 +46,7 @@ const emit = defineEmits<{ 'chapitre-visible': [anchor: string]; 'chapitre-reess
     :retry-native-comparison="retryNativeComparison"
     :aedar-active="aedarActive"
     :chapitres-statut="chapitresStatut"
+    :erreur-page="erreurPage"
     @chapitre-visible="emit('chapitre-visible', $event)"
     @chapitre-reessayer="emit('chapitre-reessayer', $event)"
   />

@@ -79,6 +79,8 @@ const props = withDefaults(defineProps<{
   retryNativeComparison?: () => void
   /** #1008 — the visible chapter's admission state, owned by the demand planner. */
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
+  /** The page-level data state already owns this failure and renders its retry. */
+  erreurPage?: boolean
 }>(), { aedarChapterActive: true })
 const emit = defineEmits<{ 'chapitre-visible': [anchor: string]; 'chapitre-reessayer': [chapter: string] }>()
 const route = useRoute()
@@ -216,9 +218,12 @@ function sectionIsPending(unitKey: string): boolean {
 /**
  * #1012 — only a chapter whose own demand read actually failed (never a settled
  * publication absence, a pending chapter or an unrequested one) exposes its
- * retry action. AEDAR owns its own retry, so page 1 is excluded here.
+ * retry action. AEDAR owns its own retry, so page 1 is excluded here, and while
+ * the page-level state owns the same failure its single retry is authoritative:
+ * no second alert repeats it.
  */
 function chapitreEnEchec(unitKey: string): boolean {
+  if (props.erreurPage === true) return false
   return unitKey !== 'acces-aux-services' && props.chapitresStatut?.[unitKey] === 'error'
 }
 

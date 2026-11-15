@@ -841,10 +841,16 @@ describe('Mobilite page 2 — critical demand and request budget', () => {
     }
 
     // The requested read ends as an HONEST, explicit failure — never a pending
-    // chapter and never a fabricated value.
+    // chapter and never a fabricated value. The page-level state is the ONE
+    // authoritative error owner here: a single alert with a single retry, and
+    // no second chapter-level alert repeating the same failure.
     const erreur = wrapper.get('.etat-erreur')
     expect(erreur.text()).toContain('Les indicateurs de ce thème ne sont pas disponibles.')
     expect(wrapper.find('.mobilite-comparison-bars').exists()).toBe(false)
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
+    expect(wrapper.findAll('.cahier-chapitre-erreur')).toHaveLength(0)
+    expect(wrapper.findAll('.etat-erreur button')).toHaveLength(1)
+    expect(erreur.get('button').text()).toContain('Réessayer')
     // One fused demand + its existing bounded facts-only recovery: every failed
     // batch belongs to the requested chapter, and nothing retries after that.
     const tentatives = posts(calls).length

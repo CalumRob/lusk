@@ -1515,6 +1515,7 @@ watch(
               :retry-native-comparison="retryThemeComparison"
               :aedar-active="demandeAedar"
               :chapitres-statut="chapitresStatut"
+              :erreur-page="statutFaitsMobilite === 'error'"
               @chapitre-visible="onChapitreVisible"
               @chapitre-reessayer="reessayerChapitreMobilite" />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
