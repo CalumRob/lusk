@@ -33,15 +33,15 @@ const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
 const FOCAL_ID = '35238'
-// Residual vertical drift allowed when the held facts resolve: the unit
-// introduction gains the published address-count clause and the scalar cells
-// '—' -> number; both are one text line at most. The reported bug moves the
-// section by several hundred px (whole prose block + map section inserted).
+// Keep the original guard: unknown address-count prose/provenance may wrap
+// when served. Pending source/comparison roles have additional, stricter
+// assertions below; this tolerance is not a substitute for reserving them.
 const GEOMETRY_TOLERANCE_PX = 72
 
 const server = await createServer({
   configFile: resolve(appRoot, 'vite.config.ts'),
-  server: { host: '127.0.0.1', port: 0, strictPort: false },
+  server: { host: '127.0.0.1', port: 0, strictPort: false, hmr: false, watch: null },
+  logLevel: 'error',
 })
 let browser
 
@@ -70,7 +70,7 @@ try {
   const aedarContentVersion = 'fixture-985-aedar-v1'
   const aedarReferenceVersion = 'fixture-985-territories-v1'
   const aedarSummaryVersion = 'fixture-985-aedar-summary-v1'
-  const fixtureAttribution = 'Synthetic browser fixture; not published AEDAR facts'
+  let fixtureAttribution = 'Synthetic browser fixture; not published AEDAR facts'
   const summaryReading = (measure) => ({
     measure, value: 0.5, status: 'available', n_typequ: 235, n_addresses: 100,
     n_observed: 100, coverage_status: 'covered', statistic: 'direct',
@@ -182,6 +182,12 @@ try {
   // Gate ONLY the focal territory's AEDAR reads; everything else (theme facts,
   // reference-territory AEDAR, retired routes) flows immediately so the interim
   // state is exactly "focal aggregates pending".
+  const cases = [1440, 390, 320, 760].flatMap((width) =>
+    ['standard', 'wrapped-source', 'no-comparison'].map((scenario) => ({ width, scenario })))
+  for (const { width, scenario } of cases) {
+  fixtureAttribution = scenario === 'wrapped-source'
+    ? 'AEDAR; © Synthetic browser fixture source with a long attribution and dated credit 2026-10, not published facts'
+    : 'Synthetic browser fixture; not published AEDAR facts'
   let releaseFocalAedar
   const focalGate = new Promise((resolvePromise) => { releaseFocalAedar = resolvePromise })
   let gateOpen = false
@@ -197,8 +203,8 @@ try {
     }) }
   }
 
-  browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) })
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+  browser ??= await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) })
+  const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: 1 })
   const pageErrors = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
@@ -249,7 +255,7 @@ try {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(v2Envelope(focalItems, aedarFixture(focalItems).results)) })
   })
 
-  await page.goto(`${baseUrl}territoire/commune/${FOCAL_ID}?theme=mobilite`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${baseUrl}territoire/commune/${FOCAL_ID}?theme=mobilite${scenario === 'no-comparison' ? '&comparaison=' : ''}`, { waitUntil: 'domcontentloaded' })
 
   // Interim state: the cahier is mounted, the loss map section is on the first
   // page, and the focal AEDAR batch has been requested and is being held.
@@ -277,10 +283,19 @@ try {
       proseBox: prose ? rectOf(prose) : null,
       sections,
       loss,
+      roles: [...firstPage.querySelectorAll('.page-copy, .aedar-car-overview-copy, .aedar-car-overview-scalars, .aedar-car-overview-reading .cahier-evidence-source, .aedar-car-overview-scalars .cahier-figure-scalar-reference')].map((el) => ({ role: el.className, text: el.textContent.trim(), ...rectOf(el) })),
+      source: (() => {
+        const source = firstPage.querySelector('.aedar-car-overview-reading .cahier-evidence-source')
+        return source ? { ...rectOf(source), text: source.textContent.trim(), href: source.querySelector('a')?.getAttribute('href') ?? null } : null
+      })(),
+      scalarCount: firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-figure-scalar').length,
+      references: [...firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-figure-scalar-reference')].map(rectOf),
     }
   })
 
   const interim = await measure()
+  await page.waitForTimeout(150)
+  assert.equal((await measure()).loss.docTop, interim.loss.docTop, 'held facts: settled fonts/maps must not move the loss section')
 
   // Release the held focal AEDAR reads and wait for the hydrated cahier.
   gateOpen = true
@@ -327,9 +342,29 @@ try {
     `« Et sans voiture alors ? » moved ${viewportTopDelta}px in the viewport when AEDAR resolved`)
   check(final.scrollY === interim.scrollY, 'scroll anchor (scrollY) must not move during hydration')
   check(pageErrors.length === 0, `browser page errors: ${pageErrors.join(' | ')}`)
+  check(interim.source !== null && interim.source.text === '' && interim.source.href === null,
+    'pending source reserves its own line without fabricated provenance or link')
+  check(final.source !== null && final.source.href === 'https://example.test/aedar-fixture',
+    'ready source uses the served provenance URL')
+  check(interim.references.length === (scenario === 'no-comparison' ? 0 : interim.scalarCount),
+    'only requested comparisons reserve scalar reference rows')
+  check(final.references.length === (scenario === 'no-comparison' ? 0 : final.scalarCount),
+    'an absent comparison must not leave blank reference rows after hydration')
+  if (scenario !== 'wrapped-source') {
+    check(Math.abs(final.source.height - interim.source.height) < 1,
+      'the pending source line must match the ready source typography')
+    const scalarHeight = (state) => state.roles.find(({ role }) => role === 'aedar-car-overview-scalars').height
+    check(Math.abs(scalarHeight(final) - scalarHeight(interim)) < 1,
+      'pending scalar geometry must match ready, including when no comparison exists')
+  }
+  if (scenario === 'wrapped-source') {
+    check(final.source.height > interim.source.height, 'long served source/dated credit must actually wrap, never be clipped')
+  }
 
   console.log(JSON.stringify({
     pass: !MEASURE_ONLY,
+    width,
+    scenario,
     route: `/territoire/commune/${FOCAL_ID}?theme=mobilite`,
     gate: 'focal AEDAR read-batch held until release; reference/theme/map traffic ungated',
     geometryTolerancePx: GEOMETRY_TOLERANCE_PX,
@@ -346,12 +381,19 @@ try {
       lossViewportTop: Math.round(final.loss.viewportTop),
     },
     deltas: {
-      lossDocTop: Math.round(final.loss.docTop - interim.loss.docTop),
-      lossViewportTop: Math.round(final.loss.viewportTop - interim.loss.viewportTop),
+      lossDocTop: final.loss.docTop - interim.loss.docTop,
+      lossViewportTop: final.loss.viewportTop - interim.loss.viewportTop,
       scrollY: final.scrollY - interim.scrollY,
     },
     readCalls,
+    roles: { interim: interim.roles, final: final.roles },
+    loss: { interim: interim.loss, final: final.loss },
   }, null, 2))
+  if (process.env.LUSK_LAYOUT_SCREENSHOTS && scenario === 'standard' && (width === 1440 || width === 390)) {
+    await page.screenshot({ path: resolve(process.env.LUSK_LAYOUT_SCREENSHOTS, `lusk-994-final-${width}.png`), fullPage: true })
+  }
+  await page.close()
+  }
 } finally {
   await browser?.close()
   await server.close()

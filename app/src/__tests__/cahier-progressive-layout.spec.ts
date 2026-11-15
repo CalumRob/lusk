@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { ref } from 'vue'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -44,7 +44,7 @@ it('keeps honest source and requested comparison roles mounted before focal fact
   expect(source.text()).toBe('') // no invented source clock/credit
   const comparisons = overview.findAllComponents(CahierComparisonValue)
   expect(comparisons).toHaveLength(2)
-  expect(comparisons.every((comparison) => comparison.props('comparisonStatus') === 'loading')).toBe(true)
+  expect(comparisons.every((comparison: VueWrapper<InstanceType<typeof CahierComparisonValue>>) => comparison.props('comparisonStatus') === 'loading')).toBe(true)
   expect(overview.findAll('.cahier-figure-scalar-value strong').map((value) => value.text())).toEqual(['—', '—'])
   // An explicitly empty selection has no future reference row to reserve.
   control.value = { ...control.value, selection: { etat: 'vide' }, libelleActif: null }
