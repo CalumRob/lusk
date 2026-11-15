@@ -229,9 +229,12 @@ on all exports. More selected modes can make the tables denser; this experiment
 does not establish that every possible selection stays readable on one A4 sheet.
 The sandbox/decile distribution has not yet received a table adapter.
 
-Latest presentation variation: the table heading is simply « Valeurs ». Each
-section heading also carries the current territory name and external-link icon
-at the top right, with a slightly larger title-derived type role than the global
-PDF header. Symmetric grid tracks keep the section title centred. The name is
-cloned from the current territory identity, and its link targets that section;
-neither a territory name nor a factual identifier is duplicated in the template.
+Latest presentation variation (time-ramp v3): table headings use « Valeurs du
+graphique » or « Valeurs des graphiques », counted from the actual exported
+charts. Explanatory section prose is omitted while source annotations and figure
+labels/legend notes remain. The territory sits centrally below the section title,
+uppercase in the shared page-heading type role and editorial-muted colour,
+before the sources/figures. Its text stays linked to the section; the former
+top-right duplicate/icon is removed. The global PDF header is unchanged. Neither
+a territory name nor a factual identifier is duplicated in the template. The map
+and waffle files were not regenerated for this typography/prose variation.

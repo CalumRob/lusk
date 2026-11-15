@@ -56,6 +56,11 @@ function prepare(publicPageUrl) {
     ;(button.closest('.cahier-figure-legend-item') ?? button).remove()
   })
   chapter.querySelectorAll('[role="tooltip"], .cahier-figure-tooltip, .aedar-waffle-explore, .aedar-equipment-explorer-change, .cahier-section-footer, .aedar-comparison-retry-slot, .aedar-waffle-tile-tooltip').forEach(element => element.remove())
+  chapter.querySelectorAll('.argument-copy').forEach(copy => {
+    if (copy.matches('.cahier-evidence-source')) return
+    copy.querySelectorAll('.cahier-evidence-source').forEach(source => copy.before(source))
+    copy.remove()
+  })
   const textWalker = document.createTreeWalker(chapter, NodeFilter.SHOW_TEXT)
   const comparisonLabels = []
   while (textWalker.nextNode()) {
@@ -94,15 +99,14 @@ function prepare(publicPageUrl) {
     if (!sectionHeading || !sectionTitle) return
     const identity = right.cloneNode(true)
     identity.classList.add('pdf-section-territory')
-    identity.style.cssText += ';grid-column:3;justify-self:end;white-space:nowrap;'
+    identity.style.cssText = 'display:flex;align-items:center;justify-content:center;max-width:100%;text-decoration:none;margin:0;'
+    identity.querySelector('svg')?.remove()
     const name = identity.querySelector('.page-heading-territory')
-    copyProperties(sectionTitle, name, ['font-family', 'font-size', 'font-style', 'line-height', 'letter-spacing'])
-    name.style.fontWeight = '600'
+    name.style.cssText = 'font:var(--text-page-heading);color:var(--editorial-muted);letter-spacing:var(--text-overline-tracking);text-transform:uppercase;text-align:center;white-space:normal;overflow:visible;text-overflow:clip;'
     const sectionUrl = new URL(publicPageUrl)
     sectionUrl.hash = `section-${section.dataset.section}`
     identity.href = sectionUrl.href
-    sectionHeading.style.cssText += ';display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto) minmax(0,1fr);align-items:center;column-gap:var(--space-4);'
-    ;(sectionTitle.closest('.concept-group-heading-copy') ?? sectionTitle).style.gridColumn = '2'
+    sectionHeading.style.cssText += ';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-3);'
     sectionHeading.appendChild(identity)
   })
   const main = chapter.querySelector('.page-main')
@@ -115,7 +119,6 @@ function prepare(publicPageUrl) {
 function appendTimeRampTables(ui, territoryName) {
   const section = [...ui.chapter.querySelectorAll('.concept-group')].find(block => block.dataset.section === 'aedar-access')
   const heading = document.createElement('p')
-  heading.textContent = 'Valeurs'
   heading.style.cssText = 'font:var(--type-figure-title);color:var(--ink);margin:24px 0 12px;text-align:center;'
   const panel = document.createElement('div')
   panel.style.cssText = 'display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;'
@@ -167,6 +170,7 @@ function appendTimeRampTables(ui, territoryName) {
       rows: rows.map(({ cut, label, value, comparison }) => ({ cut, label, value, comparison })) })
   }
   if (!models.length) throw new Error('No rendered time ramps to export')
+  heading.textContent = models.length === 1 ? 'Valeurs du graphique' : 'Valeurs des graphiques'
   section.append(heading, panel)
   return models
 }
