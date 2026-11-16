@@ -222,6 +222,12 @@ export interface CahierCaptureComparison {
   /** Resolved group identity metadata; never proof that a comparison is displayed. */
   readonly group: CahierCaptureComparisonGroup | null
   readonly absent: CahierCaptureComparisonAbsence | null
+  /**
+   * The mobilite section owner's exact comparisonNone predicate when it
+   * publishes one; null for families whose owner does not publish this state.
+   * Consumers must not reconstruct it from `absent`.
+   */
+  readonly none: boolean | null
   /** Owner-observed effective presentation of comparative evidence. */
   readonly display: CahierCaptureComparisonDisplay
   /** Distinct served statistic/scope labels carried by the section figures, in order. */
@@ -306,6 +312,12 @@ export interface CahierMapAvailabilityCaptureState {
 export interface CahierMobiliteSectionCaptureState {
   readonly comparisonStatus: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   readonly comparisonError: string | null
+  /**
+   * The section's own comparisonNone predicate: no injected control (including
+   * an ineligible territory) or an explicit empty selection. This is the exact
+   * value its figures receive, never an inferred capture absence.
+   */
+  readonly comparisonNone: boolean
   /** A served ratio reference exists for at least one paired column. */
   readonly ratioReferenceAvailable: boolean
   /** At least one paired ratio reference is actually drawn (not comparisonNone). */
@@ -602,6 +614,7 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
   })
   const comparisonStatus = captureComparisonStatus(family, input, publications)
   const comparisonError = captureComparisonError(family, input, publications)
+  const comparisonNone = captureComparisonNone(family, publications)
   const referenceStatus = cahierCaptureConsumesReference(family)
     ? (input.referenceStatus ?? 'unobserved')
     : null
@@ -638,6 +651,7 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
       selection,
       group,
       absent,
+      none: comparisonNone,
       display: captureComparisonDisplay({
         family,
         evidence,
@@ -773,6 +787,22 @@ function captureComparisonError(
   }
   if (family === 'aedar-equipment-profile' || family === 'aedar-diversity-loss') return null
   return input.comparisonError
+}
+
+/**
+ * The mobilite section's own comparisonNone predicate, read from its public
+ * publication. No other family publishes this state; null keeps that absence
+ * honest instead of turning a missing observation into false.
+ */
+function captureComparisonNone(
+  family: CahierCaptureFamily | null,
+  publications: readonly CahierExportPublication[],
+): boolean | null {
+  if (family === 'mobilite-bars' || family === 'mobilite-share' || family === 'mobilite-curve') {
+    const delegate = mobiliteSectionPublication(publications)
+    if (delegate?.state.owner === 'mobilite-section') return delegate.state.state.comparisonNone
+  }
+  return null
 }
 
 function captureComparisonSelection(input: CahierSectionCaptureInput): CahierCaptureComparisonSelection {

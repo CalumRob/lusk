@@ -37,6 +37,7 @@ import {
   mobiliteCurveGrid,
   mobiliteCurveReadings,
   mobiliteCurveTooltipRows,
+  mobiliteCurveUnavailableNotes,
 } from './cahierMobiliteReadings'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -214,10 +215,10 @@ const curveReadings = computed(() => mobiliteCurveReadings({
 
 const curvesCoincide = computed(() => mobiliteCurveCurvesCoincide(props.figure))
 
-const publicationNotes = computed(() => [
-  ...(props.figure.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
-  ...(props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`),
-])
+const publicationNotes = computed(() => mobiliteCurveUnavailableNotes({
+  figure: props.figure,
+  comparisonNone: props.comparisonNone === true,
+}).map((note) => note.message))
 
 function pointAt(detail: string, points: readonly { fact: NumericFact }[]): NumericFact | null {
   return points.find((point) => point.fact.detail === detail)?.fact ?? null
@@ -480,7 +481,12 @@ const unavailableState = computed(() => {
 
               <!-- The published marker stays a dashed vertical reference line:
                    no permanent dot and no on-plot label. -->
-              <g v-if="marker && markerX !== null" class="mobilite-raccordement-curve__marker" :data-detail="marker.detail">
+              <g
+                v-if="marker && markerX !== null"
+                class="mobilite-raccordement-curve__marker"
+                :data-detail="marker.detail"
+                :data-axis-value="markerAxisValue"
+              >
                 <line
                   class="mobilite-raccordement-curve__marker-line"
                   :x1="markerX"

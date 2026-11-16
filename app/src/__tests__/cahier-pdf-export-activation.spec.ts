@@ -233,6 +233,7 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
           owner: 'mobilite-section',
           state: {
             comparisonStatus: 'ready', comparisonError: null,
+            comparisonNone: false,
             ratioReferenceAvailable: false, ratioReferenceDisplayed: false,
           },
         } },

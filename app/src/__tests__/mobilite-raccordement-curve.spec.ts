@@ -366,6 +366,43 @@ describe('CahierMobiliteRaccordementCurve — approved travel-time figure (#1006
     wrapper.unmount()
   })
 
+  it('draws a marker declared only by metadata and the native axis, with no fabricated point', () => {
+    const figure = curveFigure({
+      points: [point('t0000', 0, 0), point('t0360', 360, 0.8)],
+      comparison: null,
+      trajectory: {
+        ...trajectory,
+        ticks: [
+          { detail: 't0000', label: '0' },
+          { detail: 't0360', label: '6 h' },
+        ],
+        marker: { detail: 't0090', label: '1 h 30 (90 min)' },
+      },
+      axis: {
+        values: [
+          { detail: 't0000', numericValue: 0 },
+          { detail: 't0090', numericValue: 90 },
+          { detail: 't0360', numericValue: 360 },
+        ],
+        minimum: 0,
+        maximum: 360,
+      },
+      markerValue: null,
+    })
+    const wrapper = mount(CahierMobiliteRaccordementCurve, {
+      props: { figure, comparison: { status: 'unavailable' } },
+    })
+    const marker = wrapper.get('.mobilite-raccordement-curve__marker')
+    expect(marker.attributes('data-detail')).toBe('t0090')
+    expect(marker.attributes('data-axis-value')).toBe('90')
+    const line = marker.get('.mobilite-raccordement-curve__marker-line')
+    expect(Number(line.attributes('x1'))).toBeGreaterThan(0)
+    expect(Number(line.attributes('x1'))).toBeLessThan(640)
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).toContain('1 h 30 (90 min)')
+    expect(wrapper.findAll('circle')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
   it('uses the brand territory line and the brand-200 dashed reference from the shared tokens', () => {
     const source = readFileSync(join(
       process.cwd(), 'src', 'fiche', 'prototype', 'CahierMobiliteRaccordementCurve.vue',

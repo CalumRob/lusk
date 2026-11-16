@@ -98,6 +98,7 @@ useCahierExportPublication(() => ({
   state: {
     comparisonStatus: effectiveComparison.value.status,
     comparisonError: effectiveComparison.value.error ?? null,
+    comparisonNone: comparisonNone.value,
     ratioReferenceAvailable: ratioReference.value.available,
     ratioReferenceDisplayed: ratioReference.value.displayed,
   },

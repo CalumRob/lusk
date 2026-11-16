@@ -289,6 +289,8 @@ describe('Mobilité coverage-share and raccordement readings (#1022)', () => {
     }
 
     const readings = mobiliteCurveReadings({ figure, showComparison: true })
+    expect(readings.map((reading) => reading.label))
+      .toEqual(['30 min', '0', '90 min', '15'])
     expect(readings.map((reading) => [reading.detail, reading.display, reading.comparisonDisplay]))
       .toEqual([
         ['t0030', '25', '40'],
@@ -374,6 +376,21 @@ describe('Mobilité coverage-share and raccordement readings (#1022)', () => {
     expect(mobiliteCurveReadings({ figure: subsetTicks, showComparison: true })).toHaveLength(4)
     expect(mobiliteCurveCoordinateForDetail(subsetTicks, 't0015')).toBe(15)
     expect(mobiliteCurveCoordinateForDetail(subsetTicks, 't0090')).toBe(90)
+
+    // No source human label: the raw detail identity never becomes a label.
+    const anonymous = {
+      ...figure,
+      points: [{
+        ...figure.points[0]!,
+        label: 't0030',
+        fact: { ...figure.points[0]!.fact, detailLabel: null },
+      }],
+      trajectory: null,
+      axis: { values: [{ detail: 't0030', numericValue: 30 }], minimum: 0, maximum: 90 },
+    }
+    const anonymousReading = mobiliteCurveReadings({ figure: anonymous, showComparison: false })[0]!
+    expect(anonymousReading.label).toBe('Indisponible')
+    expect(anonymousReading.aria).not.toContain('t0030')
   })
 })
 

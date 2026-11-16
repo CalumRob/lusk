@@ -220,8 +220,10 @@ async function mountCahier(options: {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/')
   const global: Record<string, unknown> = { plugins: [router] }
-  if (options.control) {
-    global.provide = { [CONTROLE_COMPARAISON_KEY as symbol]: ref(options.control) }
+  // A provided null is the real ineligible/no-control seam; omitting the key
+  // keeps standalone section fixtures without a provider.
+  if ('control' in options) {
+    global.provide = { [CONTROLE_COMPARAISON_KEY as symbol]: ref(options.control ?? null) }
   }
   const wrapper = mount(VarianteCahierLibre, {
     props: {
@@ -1092,6 +1094,209 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
       expect(reference.text()).toBe(projection.ratio.comparisonDisplay)
     }
     wrapper.unmount()
+  })
+
+  it('keeps the actual owner comparisonNone equal on screen and in the projection', async () => {
+    const fixture = cahierExportFixture()
+    const withNotes = (content: typeof fixture.content) => {
+      const clone = JSON.parse(JSON.stringify(content)) as any
+      const networks = clone.units.flatMap((unit: any) => unit.sections)
+        .find((section: any) => section.key === 'reseaux')
+      networks.evidence.figure.unavailableResources = ['Ressource test']
+      networks.evidence.figure.unavailableComparisons = ['Comparaison test']
+      return clone as typeof fixture.content
+    }
+    const cases = [
+      {
+        name: 'no control',
+        content: withNotes(fixture.content),
+        control: null,
+        none: true,
+        absent: 'no-selection-control',
+      },
+      {
+        name: 'explicit empty',
+        content: withNotes(fixture.content),
+        control: { ...fixture.control, selection: { etat: 'vide' as const } },
+        none: true,
+        absent: 'empty-selection',
+      },
+      {
+        name: 'ineligible territory',
+        content: withNotes(regionMobiliteContent()),
+        control: null,
+        none: true,
+        absent: 'not-eligible',
+      },
+      {
+        name: 'normal selection',
+        content: withNotes(fixture.content),
+        control: fixture.control,
+        none: false,
+        absent: null,
+      },
+    ] as const
+
+    for (const entry of cases) {
+      const wrapper = await mountCahier({ content: entry.content, control: entry.control })
+      const capture = captureOf(wrapper, 'reseaux')
+      expect(capture.comparison.absent, entry.name).toBe(entry.absent)
+      expect(capture.comparison.none, entry.name).toBe(entry.none)
+      const projected = projeterRequeteExport(capture, [])
+      expect(projected.status, entry.name).toBe('ready')
+      if (projected.status !== 'ready') { wrapper.unmount(); continue }
+      const projection = projeterRequeteExportFigures(projected.request)[0]!
+      if (projection.family !== 'mobilite-bars') throw new Error('bars expected')
+      const sectionText = wrapper.get('[data-section="reseaux"]').text()
+      expect(projection.comparisonDisplayed, entry.name).toBe(!entry.none)
+      expect(projection.comparisonLabel === null, entry.name).toBe(entry.none)
+      expect(sectionText.includes('Comparaison indisponible : Comparaison test'), entry.name)
+        .toBe(!entry.none)
+      expect(sectionText.includes('Groupe comparé'), entry.name).toBe(!entry.none)
+      expect(projection.unavailable.map((item) => item.kind), entry.name)
+        .toEqual(entry.none ? ['resource'] : ['resource', 'comparison'])
+      wrapper.unmount()
+    }
+  })
+
+  it('keeps a selected group with no served ratio reference as observed unavailable, never hidden proof', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as any
+    const paired = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'stationnement-ravitaillement')
+    paired.evidence.columns[0].ratio.value.fact.value = 1.2
+    paired.evidence.columns[0].ratio.value.fact.comparison = null
+
+    const wrapper = await mountCahier({ content, control: fixture.control })
+    await flushPromises()
+    const capture = captureOf(wrapper, 'stationnement-ravitaillement')
+    expect(capture.comparison.none).toBe(false)
+    const projected = projeterRequeteExport(capture, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'mobilite-bars' || !projection.ratio) throw new Error('ratio expected')
+    const section = wrapper.get('[data-section="stationnement-ravitaillement"] [data-column="stationnement"]')
+    const scalar = section.get('.mobilite-ratio-scalar .cahier-figure-scalar')
+    expect(scalar.attributes('aria-label')).toBe(projection.ratio.ariaLabel)
+    expect(projection.ratio.ariaLabel).toContain('Comparaison indisponible')
+    expect(projection.ratio.ariaLabel).not.toContain('Référence')
+    expect(projection.ratio.comparisonDisplayed).toBe(true)
+    expect(projection.ratio.comparisonValue).toBeNull()
+    expect(section.text()).toContain('Groupe comparé : Indisponible')
+    const ratioRow = projection.tables[0]?.rows.find((row) => row.key.endsWith(':ratio'))
+    expect(ratioRow?.cells[1]).toMatchObject({
+      columnKey: 'comparison',
+      value: null,
+      display: 'Indisponible',
+    })
+    wrapper.unmount()
+  })
+
+  it('keeps every native curve point with its declared human label on screen and in the projection', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as any
+    const curve = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'visiter-la-bretagne')
+    curve.evidence.trajectory.ticks = [
+      { detail: 't0000', label: '0' },
+      { detail: 't0090', label: '1 h 30' },
+    ]
+    const wrapper = await mountCahier({ content, control: fixture.control })
+    await flushPromises()
+    const capture = captureOf(wrapper, 'visiter-la-bretagne')
+    const projected = projeterRequeteExport(capture, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(projection.points).toHaveLength(11)
+    expect(projection.points.find((reading) => reading.detail === 't0015')?.label).toBe('15')
+    expect(projection.points.find((reading) => reading.detail === 't0090')?.label).toBe('1 h 30')
+    expect(projection.tables[0]?.rows.map((row) => row.label))
+      .toEqual(projection.points.map((reading) => reading.label))
+    const aria = wrapper.get('[data-section="visiter-la-bretagne"] .mobilite-raccordement-curve__svg')
+      .attributes('aria-label')!
+    expect(aria).toContain('15 :')
+    expect(aria).toContain('1 h 30 :')
+    expect(aria).not.toContain('t0015 :')
+    expect(aria).not.toContain('t0090 :')
+    wrapper.unmount()
+  })
+
+  it.each([null, 0] as const)(
+    'keeps the mounted ratio scalar ARIA and projected value for %s',
+    async (value) => {
+      const fixture = cahierExportFixture()
+      const content = JSON.parse(JSON.stringify(fixture.content)) as any
+      const paired = content.units.flatMap((unit: any) => unit.sections)
+        .find((section: any) => section.key === 'stationnement-ravitaillement')
+      paired.evidence.columns[0].ratio.value.fact.value = value
+      paired.evidence.columns[0].ratio.value.fact.comparison = null
+
+      const wrapper = await mountCahier({ content, control: fixture.control })
+      await flushPromises()
+      const capture = captureOf(wrapper, 'stationnement-ravitaillement')
+      const projected = projeterRequeteExport(capture, [])
+      expect(projected.status).toBe('ready')
+      if (projected.status !== 'ready') { wrapper.unmount(); return }
+      const projection = projeterRequeteExportFigures(projected.request)[0]!
+      if (projection.family !== 'mobilite-bars' || !projection.ratio) throw new Error('ratio expected')
+      const scalar = wrapper.get(
+        '[data-section="stationnement-ravitaillement"] [data-column="stationnement"] .mobilite-ratio-scalar .cahier-figure-scalar',
+      )
+      expect(projection.ratio.value).toBe(value)
+      expect(projection.ratio.display).toBe(value === null ? '—' : '0')
+      expect(scalar.attributes('aria-label')).toBe(projection.ratio.ariaLabel)
+      expect(projection.ratio.ariaLabel).not.toContain('Référence')
+      expect(projection.ratio.comparisonDisplayed).toBe(true)
+      if (value !== null) expect(projection.ratio.ariaLabel).toContain('Comparaison indisponible')
+      wrapper.unmount()
+    },
+  )
+
+  it('keeps curve comparison diagnostics equal to its actual owner state', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as any
+    const curve = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'visiter-la-bretagne')
+    curve.evidence.unavailableResources = ['Ressource test']
+    curve.evidence.unavailableComparisons = ['Comparaison test']
+
+    const hidden = await mountCahier({
+      content,
+      control: { ...fixture.control, selection: { etat: 'vide' as const } },
+    })
+    await flushPromises()
+    const hiddenCapture = captureOf(hidden, 'visiter-la-bretagne')
+    expect(hiddenCapture.comparison.none).toBe(true)
+    const hiddenProjected = projeterRequeteExport(hiddenCapture, [])
+    expect(hiddenProjected.status).toBe('ready')
+    if (hiddenProjected.status !== 'ready') { hidden.unmount(); return }
+    const hiddenProjection = projeterRequeteExportFigures(hiddenProjected.request)[0]!
+    if (hiddenProjection.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(hiddenProjection.unavailable.map((item) => item.kind)).toEqual(['resource'])
+    expect(hiddenProjection.accessibleLabel).toContain('Publication indisponible : Ressource test')
+    expect(hiddenProjection.accessibleLabel).not.toContain('Comparaison indisponible : Comparaison test')
+    const hiddenText = hidden.get('[data-section="visiter-la-bretagne"]').text()
+    expect(hiddenText).toContain('Publication indisponible : Ressource test')
+    expect(hiddenText).not.toContain('Comparaison indisponible : Comparaison test')
+    hidden.unmount()
+
+    const normal = await mountCahier({ content, control: fixture.control })
+    await flushPromises()
+    const normalCapture = captureOf(normal, 'visiter-la-bretagne')
+    expect(normalCapture.comparison.none).toBe(false)
+    const normalProjected = projeterRequeteExport(normalCapture, [])
+    expect(normalProjected.status).toBe('ready')
+    if (normalProjected.status !== 'ready') { normal.unmount(); return }
+    const normalProjection = projeterRequeteExportFigures(normalProjected.request)[0]!
+    if (normalProjection.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(normalProjection.unavailable.map((item) => item.kind)).toEqual(['resource', 'comparison'])
+    expect(normalProjection.accessibleLabel).toContain('Comparaison indisponible : Comparaison test')
+    expect(normal.get('[data-section="visiter-la-bretagne"]').text())
+      .toContain('Comparaison indisponible : Comparaison test')
+    normal.unmount()
   })
 
   it('keeps the mounted overview scalar value and accessible name on the exported reading', async () => {

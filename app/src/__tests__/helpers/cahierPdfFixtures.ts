@@ -115,6 +115,7 @@ function readyMobiliteSection(slot = ''): CahierExportPublication {
       state: {
         comparisonStatus: 'ready',
         comparisonError: null,
+        comparisonNone: false,
         ratioReferenceAvailable: false,
         ratioReferenceDisplayed: false,
       },

@@ -38,8 +38,10 @@ import {
   mobiliteComparisonAria,
   mobiliteCurveAccessibleLabel,
   mobiliteCurveComparisonStateText,
+  mobiliteCurveCoordinateForDetail,
   mobiliteCurveMarkerRankAria,
   mobiliteCurveReadings,
+  mobiliteCurveUnavailableNotes,
   mobiliteCurveVisiblePercent,
   mobiliteRatioAriaLabel,
   mobiliteRatioDisplayValue,
@@ -268,6 +270,8 @@ export interface CahierBarsProjection extends CahierFigureProjectionBase {
     readonly value: number | null
     readonly unit: string
     readonly display: string
+    /** The owner's own unavailable-ratio explanation, when it carries one. */
+    readonly note: string | null
     readonly ariaLabel: string
     readonly comparisonDisplayed: boolean
     readonly comparisonValue: number | null
@@ -357,10 +361,9 @@ function displayNumber(value: number | null): string {
 }
 
 function layerDisplayed(capture: CahierExportCapture, slot: string): boolean {
-  const layer = capture.comparison.display.layers.find((candidate) => candidate.slot === slot)
-  if (!layer?.displayed) return false
-  if (capture.comparison.absent === 'empty-selection' || capture.comparison.absent === 'not-eligible') return false
-  return true
+  // The owner's published observation is the only proof it actually draws the
+  // layer; the capture absence enum is never a second renderer predicate.
+  return capture.comparison.display.layers.some((layer) => layer.slot === slot && layer.displayed)
 }
 
 function requestedModes(
@@ -915,8 +918,9 @@ export function projectBars(
   figure: Extract<CahierCaptureFigure, { family: 'mobilite-bars' }>,
 ): CahierBarsProjection {
   const evidence = figure.model.figure
-  const comparisonNone = capture.comparison.absent === 'empty-selection'
-    || capture.comparison.absent === 'not-eligible'
+  // The section owner's exact predicate, never an inference from the
+  // capture absence enum: no control and explicit empty are distinct facts.
+  const comparisonNone = capture.comparison.none === true
   const showComparison = !comparisonNone && layerDisplayed(capture, figure.slot)
   const rows: CahierTableRow[] = []
   const notes: string[] = [...mobiliteBarResourceNotes({
@@ -956,8 +960,22 @@ export function projectBars(
       })
     }
   }
-  const ratioDisplayed = layerDisplayed(capture, 'ratios')
-  const ratioRankCandidate = ratioDisplayed
+  const ratioReference = figure.model.ratio?.value.fact.comparison?.reference ?? null
+  const ratioStatus = capture.comparison.status
+  // The scalar always renders a reference slot unless comparisonNone; a ready
+  // selected group with no served reference visibly says "Indisponible". That
+  // observed absence is not the same fact as an intentionally hidden proof.
+  // Without any owner observation there is no presented surface to project.
+  const ratioOwnerObserved = capture.comparison.none !== null
+    || capture.comparison.display.layers.some((layer) => layer.slot === 'ratios')
+  const ratioPresented = Boolean(figure.model.ratio)
+    && ratioOwnerObserved
+    && !comparisonNone
+    && (ratioReference !== null
+      || ratioStatus === 'ready'
+      || ratioStatus === 'loading'
+      || ratioStatus === 'error')
+  const ratioRankCandidate = ratioPresented && ratioReference
     ? figure.model.ratio?.value.fact.comparison?.rank ?? null
     : null
   const ratioRank = formatServedRank(ratioRankCandidate) ? ratioRankCandidate : null
@@ -965,10 +983,9 @@ export function projectBars(
     ? mobiliteRatioAriaLabel({
       ratio: figure.model.ratio,
       scope: evidence.comparisonLabel,
-      status: capture.comparison.status,
+      status: ratioStatus,
       error: capture.comparison.error ?? undefined,
-      // A reference the owner does not draw is not proof to announce in ARIA.
-      comparisonNone: comparisonNone || !ratioDisplayed,
+      comparisonNone,
     })
     : null
   const ratio = figure.model.ratio
@@ -977,19 +994,16 @@ export function projectBars(
       value: figure.model.ratio.value.fact.value,
       unit: figure.model.ratio.value.fact.unit,
       display: mobiliteRatioDisplayValue(figure.model.ratio),
+      note: figure.model.ratio.note,
       ariaLabel: ratioAria ?? '',
-      comparisonDisplayed: ratioDisplayed && Boolean(figure.model.ratio.value.fact.comparison?.reference),
-      comparisonValue: ratioDisplayed
-        ? figure.model.ratio.value.fact.comparison?.reference?.value ?? null
-        : null,
-      comparisonDisplay: ratioDisplayed
-        ? (figure.model.ratio.value.fact.comparison?.reference
-          ? mobiliteRatioNumber(figure.model.ratio.value.fact.comparison.reference.value)
-          : null)
+      comparisonDisplayed: ratioPresented,
+      comparisonValue: ratioPresented ? ratioReference?.value ?? null : null,
+      comparisonDisplay: ratioPresented && ratioReference
+        ? mobiliteRatioNumber(ratioReference.value)
         : null,
       comparisonRank: ratioRank,
       comparisonRankDisplay: formatServedRank(ratioRank),
-      comparisonAria: ratioDisplayed
+      comparisonAria: ratioPresented
         ? mobiliteComparisonAria(
           figure.model.ratio.value,
           evidence.comparisonLabel,
@@ -998,6 +1012,7 @@ export function projectBars(
         : null,
     }
     : null
+  if (ratio?.note) notes.push(ratio.note)
   if (ratio) {
     rows.push({
       key: `${figure.slot}:ratio`,
@@ -1076,8 +1091,7 @@ export function projectShare(
 ): CahierShareProjection {
   const evidence = figure.model
   const status = capture.comparison.status
-  const comparisonNone = capture.comparison.absent === 'empty-selection'
-    || capture.comparison.absent === 'not-eligible'
+  const comparisonNone = capture.comparison.none === true
   const displayed = layerDisplayed(capture, 'share') && status === 'ready' && !comparisonNone
   const value = mobiliteShareValue(evidence)
   const reference = mobiliteShareReference({ figure: evidence, status, comparisonNone })
@@ -1174,20 +1188,13 @@ export function projectCurve(
 ): CahierCurveProjection {
   const evidence = figure.model
   const displayed = layerDisplayed(capture, 'curve')
-  const comparisonNone = capture.comparison.absent === 'empty-selection'
-    || capture.comparison.absent === 'not-eligible'
+  const comparisonNone = capture.comparison.none === true
   const readings = mobiliteCurveReadings({ figure: evidence, showComparison: displayed })
   const unit = evidence.points[0]?.fact.unit ?? '%'
-  const unavailable: readonly CahierUnavailableItem[] = [
-    ...(evidence.unavailableResources ?? []).map((label) => ({
-      kind: 'resource' as const,
-      message: `Publication indisponible : ${label}`,
-    })),
-    ...(evidence.unavailableComparisons ?? []).map((label) => ({
-      kind: 'comparison' as const,
-      message: `Comparaison indisponible : ${label}`,
-    })),
-  ]
+  const unavailable: readonly CahierUnavailableItem[] = mobiliteCurveUnavailableNotes({
+    figure: evidence,
+    comparisonNone,
+  })
   const comparisonStateText = mobiliteCurveComparisonStateText({
     figure: evidence,
     status: capture.comparison.status,
@@ -1245,7 +1252,7 @@ export function projectCurve(
         }] : []),
       ],
       rows,
-      notes: [],
+      notes: unavailable.map((item) => item.message),
       unit,
     }],
     comparisonDisplayed: displayed,
@@ -1259,7 +1266,7 @@ export function projectCurve(
     marker: marker ? {
       detail: marker.detail,
       label: marker.label,
-      axisValue: markerReading?.axisValue ?? null,
+      axisValue: mobiliteCurveCoordinateForDetail(evidence, marker.detail),
       value: markerValue?.fact.detail === marker.detail
         ? markerValue.fact.value
         : markerReading?.value ?? null,

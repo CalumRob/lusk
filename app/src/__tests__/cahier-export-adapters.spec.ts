@@ -87,6 +87,30 @@ function layer(
   }
 }
 
+/** One owner publication from the mobilite section's public state seam. */
+function mobileSectionState(overrides: Partial<{
+  comparisonStatus: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  comparisonError: string | null
+  comparisonNone: boolean
+  ratioReferenceAvailable: boolean
+  ratioReferenceDisplayed: boolean
+}> = {}): CahierExportPublication {
+  return {
+    slot: 'mobilite-section-state',
+    state: {
+      owner: 'mobilite-section',
+      state: {
+        comparisonStatus: 'ready',
+        comparisonError: null,
+        comparisonNone: false,
+        ratioReferenceAvailable: false,
+        ratioReferenceDisplayed: false,
+        ...overrides,
+      },
+    },
+  }
+}
+
 function cloneSection(
   fixture: CahierExportFixture,
   key: ContentSection['key'],
@@ -611,6 +635,7 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     })
     const empty = captureCahierSection(inputFor(fixture, sparse, [
       layer('bars', {}, 'mobilite-comparison-bars'),
+      mobileSectionState({ comparisonNone: true }),
     ], { control: { ...fixture.control, selection: { etat: 'vide' } } }))
     const emptyProjection = projeterRequeteExportFigures(requestFor(empty))[0]!
     if (emptyProjection.family !== 'mobilite-bars') throw new Error('bars expected')
@@ -640,7 +665,7 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
         state: {
           owner: 'mobilite-section',
           state: {
-            comparisonStatus: 'ready', comparisonError: null,
+            comparisonStatus: 'ready', comparisonError: null, comparisonNone: false,
             ratioReferenceAvailable: true, ratioReferenceDisplayed: true,
           },
         },
@@ -662,6 +687,11 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     const hiddenRatioCapture = captureCahierSection(inputFor(fixture, section, [
       layer('stationnement', { displayed: false, toggle: false }, 'mobilite-comparison-bars'),
       layer('ravitaillement', { displayed: false, toggle: false }, 'mobilite-comparison-bars'),
+      mobileSectionState({
+        comparisonNone: true,
+        ratioReferenceAvailable: true,
+        ratioReferenceDisplayed: false,
+      }),
     ]))
     const hiddenRatio = projeterRequeteExportFigures(requestFor(hiddenRatioCapture))[0]!
     if (hiddenRatio.family !== 'mobilite-bars' || !hiddenRatio.ratio) throw new Error('ratio expected')
@@ -703,6 +733,7 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
 
     const empty = captureCahierSection(inputFor(fixture, section, [
       layer('share', {}, 'mobilite-share-track'),
+      mobileSectionState({ comparisonNone: true }),
     ], { control: { ...fixture.control, selection: { etat: 'vide' } } }))
     expect(empty.comparison.absent).toBe('empty-selection')
     const emptyProjection = projeterRequeteExportFigures(requestFor(empty))[0]!
@@ -730,7 +761,8 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
 
     const ineligible = captureCahierSection(inputFor(fixture, section, [
       layer('share', {}, 'mobilite-share-track'),
-    ], { comparisonEligible: false }))
+      mobileSectionState({ comparisonNone: true }),
+    ], { comparisonEligible: false, control: null }))
     expect(ineligible.comparison.absent).toBe('not-eligible')
     const ineligibleProjection = projeterRequeteExportFigures(requestFor(ineligible))[0]!
     if (ineligibleProjection.family !== 'mobilite-share') throw new Error('share expected')
@@ -741,11 +773,18 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
 
   it('projects the declared raccordement grid, marker and served marker rank', () => {
     const fixture = cahierExportFixture()
-    const point = (detail: string, axisValue: number, value: number | null): { label: string; fact: NumericFact } => ({
-      label: detail,
+    const point = (
+      detail: string,
+      axisValue: number,
+      value: number | null,
+      label = detail,
+      detailLabel: string | null = label,
+    ): { label: string; fact: NumericFact } => ({
+      label,
       fact: {
         key: 'raccordement_courbe', detail, axisValue, value, unit: '%',
         availability: 'complete', provenance: null, comparison: null,
+        ...(detailLabel === null ? {} : { detailLabel }),
         comparisonBasis: 'territory-median', reason: null,
       },
     })
@@ -757,14 +796,22 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
       level: 'commune',
       comparisonLabel: 'Moyenne des communes bretonnes',
       prose: [], sources: [],
-      points: [point('t0000', 0, 0), point('t0015', 15, null), point('t0090', 90, 0.9)],
+      points: [
+        point('t0000', 0, 0, '0'),
+        point('t0015', 15, null, '15'),
+        point('t0090', 90, 0.9, '1 h 30'),
+      ],
       comparison: {
         statistic: 'mean',
         scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
         selectedMemberCount: 3,
         eligibleCount: 2,
         modelZeroReasonCounts: {},
-        points: [point('t0000', 0, 0.1), point('t0015', 15, 0.3), point('t0090', 90, 0.8)],
+        points: [
+          point('t0000', 0, 0.1, '0'),
+          point('t0015', 15, 0.3, '15'),
+          point('t0090', 90, 0.8, '1 h 30'),
+        ],
       },
       trajectory: {
         endpoints: ['t0000', 't0090'],
@@ -809,10 +856,12 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     if (projection.family !== 'mobilite-curve') throw new Error('curve expected')
     expect(projection.points.map((reading) => [reading.detail, reading.label, reading.display, reading.comparisonDisplay]))
       .toEqual([
-        ['t0000', 't0000', '0', '10'],
-        ['t0015', 't0015', 'Indisponible', '30'],
-        ['t0090', 't0090', '90', '80'],
+        ['t0000', '0', '0', '10'],
+        ['t0015', '15', 'Indisponible', '30'],
+        ['t0090', '90 min', '90', '80'],
       ])
+    expect(projection.tables[0]?.rows.map((row) => row.label))
+      .toEqual(['0', '15', '90 min'])
     expect(projection.marker).toMatchObject({
       detail: 't0090',
       label: '90 minutes',
@@ -851,6 +900,8 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     if (withoutTicksProjection.family !== 'mobilite-curve') throw new Error('curve expected')
     expect(withoutTicksProjection.points.map((reading) => [reading.detail, reading.axisValue]))
       .toEqual([['t0000', 0], ['t0015', 15], ['t0090', 90]])
+    expect(withoutTicksProjection.points.map((reading) => reading.label))
+      .toEqual(['0', '15', '1 h 30'])
     expect(withoutTicksProjection.tables[0]?.rows).toHaveLength(3)
 
     // Two declared tick labels do not truncate the three native points; a
@@ -879,8 +930,12 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
       ])),
     ))[0]!
     if (sparseTicksProjection.family !== 'mobilite-curve') throw new Error('curve expected')
-    expect(sparseTicksProjection.points.map((reading) => reading.detail))
-      .toEqual(['t0000', 't0015', 't0090'])
+    expect(sparseTicksProjection.points.map((reading) => [reading.detail, reading.label]))
+      .toEqual([
+        ['t0000', '0'],
+        ['t0015', '15'],
+        ['t0090', '90 min'],
+      ])
     expect(sparseTicksProjection.tables[0]?.rows).toHaveLength(3)
     expect(sparseTicksProjection.marker).toMatchObject({
       detail: 't0015',
@@ -888,5 +943,263 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
       value: 0.3,
       display: '30',
     })
+
+    // A marker declared by metadata and the native axis but absent from the
+    // point rows still exports the same coordinate the mounted curve draws.
+    const axisOnlyEvidence: MobiliteRaccordementEvidence = {
+      ...evidence,
+      points: [
+        point('t0000', 0, 0, '0'),
+        point('t0090', 90, 0.9, '1 h 30'),
+      ],
+      comparison: evidence.comparison
+        ? {
+          ...evidence.comparison,
+          points: [point('t0000', 0, 0.1, '0'), point('t0090', 90, 0.8, '1 h 30')],
+        }
+        : null,
+      trajectory: {
+        ...evidence.trajectory!,
+        ticks: [
+          { detail: 't0000', label: '0' },
+          { detail: 't0090', label: '90 min' },
+        ],
+        marker: { detail: 't0045', label: '45 minutes' },
+      },
+      axis: {
+        values: [
+          { detail: 't0000', numericValue: 0 },
+          { detail: 't0045', numericValue: 45 },
+          { detail: 't0090', numericValue: 90 },
+        ],
+        minimum: 0,
+        maximum: 90,
+      },
+      markerValue: null,
+    }
+    const axisOnlyProjection = projeterRequeteExportFigures(requestFor(
+      captureCahierSection(inputFor(fixture, cloneSection(fixture, 'visiter-la-bretagne', (entry) => {
+        entry.evidence = axisOnlyEvidence
+      }), [
+        layer('curve', {}, 'mobilite-raccordement-curve'),
+      ])),
+    ))[0]!
+    if (axisOnlyProjection.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(axisOnlyProjection.points.map((reading) => reading.detail))
+      .toEqual(['t0000', 't0090'])
+    expect(axisOnlyProjection.marker).toMatchObject({
+      detail: 't0045',
+      axisValue: 45,
+      value: null,
+      display: 'Indisponible',
+      rank: null,
+      rankDisplay: null,
+      rankAria: null,
+    })
+
+    // A point with no human source label must never expose the raw detail key.
+    const rawLabelEvidence: MobiliteRaccordementEvidence = {
+      ...evidence,
+      points: [point('t0000', 0, 0, '0'), point('t0045', 45, 0.4, 't0045', null)],
+      comparison: null,
+      trajectory: {
+        ...evidence.trajectory!,
+        ticks: [
+          { detail: 't0000', label: '0' },
+          { detail: 't0090', label: '90 min' },
+        ],
+      },
+      axis: {
+        values: [
+          { detail: 't0000', numericValue: 0 },
+          { detail: 't0045', numericValue: 45 },
+          { detail: 't0090', numericValue: 90 },
+        ],
+        minimum: 0,
+        maximum: 90,
+      },
+      markerValue: null,
+    }
+    const rawLabelProjection = projeterRequeteExportFigures(requestFor(
+      captureCahierSection(inputFor(fixture, cloneSection(fixture, 'visiter-la-bretagne', (entry) => {
+        entry.evidence = rawLabelEvidence
+      }), [
+        layer('curve', {}, 'mobilite-raccordement-curve'),
+      ])),
+    ))[0]!
+    if (rawLabelProjection.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(rawLabelProjection.points.find((reading) => reading.detail === 't0045')?.label)
+      .toBe('Indisponible')
+    expect(rawLabelProjection.accessibleLabel).not.toContain('t0045')
+    expect(rawLabelProjection.tables[0]?.rows.map((row) => row.label))
+      .not.toContain('t0045')
+  })
+})
+
+describe('Cahier export adapters — owner comparison absence and ratio proof (#1022)', () => {
+  it('consumes the mobilite owner comparisonNone instead of inferring it from capture absence', () => {
+    const fixture = cahierExportFixture()
+    const section = cloneSection(fixture, 'reseaux', (entry) => {
+      entry.evidence.figure.unavailableResources = ['Ressource test']
+      entry.evidence.figure.unavailableComparisons = ['Comparaison test']
+    })
+    const barsLayer = layer('bars', {}, 'mobilite-comparison-bars')
+    const cases = [
+      {
+        name: 'no control',
+        options: { control: null },
+        none: true,
+        absent: 'no-selection-control',
+      },
+      {
+        name: 'explicit empty',
+        options: { control: { ...fixture.control, selection: { etat: 'vide' } } },
+        none: true,
+        absent: 'empty-selection',
+      },
+      {
+        name: 'ineligible territory',
+        options: { control: null, comparisonEligible: false },
+        none: true,
+        absent: 'not-eligible',
+      },
+      {
+        name: 'normal selection',
+        options: {},
+        none: false,
+        absent: null,
+      },
+    ] as const
+
+    for (const entry of cases) {
+      const capture = captureCahierSection(inputFor(
+        fixture,
+        section,
+        [barsLayer, mobileSectionState({ comparisonNone: entry.none })],
+        entry.options as Partial<CahierSectionCaptureInput>,
+      ))
+      expect(capture.comparison.absent, entry.name).toBe(entry.absent)
+      expect(capture.comparison.none, entry.name).toBe(entry.none)
+      const projection = projeterRequeteExportFigures(requestFor(capture))[0]!
+      if (projection.family !== 'mobilite-bars') throw new Error('bars expected')
+      expect(projection.comparisonDisplayed, entry.name).toBe(!entry.none)
+      expect(projection.comparisonLabel === null, entry.name).toBe(entry.none)
+      if (!entry.none) expect(projection.comparisonLabel, entry.name).toBeTruthy()
+      expect(projection.tables[0]?.notes, entry.name)
+        .toContain('Publication indisponible : Ressource test')
+      expect(
+        projection.tables[0]?.notes.includes('Comparaison indisponible : Comparaison test'),
+        entry.name,
+      ).toBe(!entry.none)
+      expect(projection.unavailable.map((item) => item.kind), entry.name)
+        .toEqual(entry.none ? ['resource'] : ['resource', 'comparison'])
+      expect(
+        projection.accessibleLabel.includes('Comparaison indisponible : Comparaison test'),
+        entry.name,
+      ).toBe(!entry.none)
+    }
+  })
+
+  it('keeps an observed unavailable ratio reference distinct from an intentionally hidden comparison', () => {
+    const fixture = cahierExportFixture()
+    const section = cloneSection(fixture, 'stationnement-ravitaillement', (entry) => {
+      entry.evidence.columns[0].ratio.value.fact.value = 1.2
+      entry.evidence.columns[0].ratio.value.fact.comparison = null
+    })
+    const barsHidden = [
+      layer('stationnement', { displayed: false, toggle: false }, 'mobilite-comparison-bars'),
+      layer('ravitaillement', { displayed: false, toggle: false }, 'mobilite-comparison-bars'),
+    ]
+
+    // The group is selected but the owner serves no reference: the scalar
+    // visibly says "Groupe comparé : Indisponible", so the export must keep
+    // that observed absence instead of treating it as hidden proof.
+    const observedCapture = captureCahierSection(inputFor(fixture, section, [
+      ...barsHidden,
+      mobileSectionState({ comparisonNone: false }),
+    ]))
+    const observed = projeterRequeteExportFigures(requestFor(observedCapture))[0]!
+    if (observed.family !== 'mobilite-bars' || !observed.ratio) throw new Error('ratio expected')
+    expect(observed.ratio).toMatchObject({
+      comparisonDisplayed: true,
+      comparisonValue: null,
+      comparisonDisplay: null,
+    })
+    expect(observed.ratio.ariaLabel).toContain('Comparaison indisponible')
+    expect(observed.ratio.ariaLabel).not.toContain('Référence')
+    expect(observed.tables[0]?.columns.map((column) => column.key))
+      .toEqual(['focal', 'comparison'])
+    const observedRatioRow = observed.tables[0]?.rows.find((row) => row.key.endsWith(':ratio'))
+    expect(observedRatioRow?.cells[1]).toMatchObject({
+      columnKey: 'comparison',
+      value: null,
+      display: 'Indisponible',
+    })
+
+    const hiddenCapture = captureCahierSection(inputFor(fixture, section, [
+      ...barsHidden,
+      mobileSectionState({
+        comparisonNone: true,
+        ratioReferenceAvailable: true,
+        ratioReferenceDisplayed: false,
+      }),
+    ]))
+    const hidden = projeterRequeteExportFigures(requestFor(hiddenCapture))[0]!
+    if (hidden.family !== 'mobilite-bars' || !hidden.ratio) throw new Error('ratio expected')
+    expect(hidden.ratio.comparisonDisplayed).toBe(false)
+    expect(hidden.ratio.ariaLabel).not.toContain('Référence')
+    expect(hidden.ratio.ariaLabel).not.toContain('Comparaison indisponible')
+    expect(hidden.tables[0]?.columns.map((column) => column.key)).toEqual(['focal'])
+  })
+
+  it('suppresses irrelevant curve comparison diagnostics from the same owner state', () => {
+    const fixture = cahierExportFixture()
+    const section = cloneSection(fixture, 'visiter-la-bretagne', (entry) => {
+      entry.evidence.unavailableResources = ['Ressource test']
+      entry.evidence.unavailableComparisons = ['Comparaison test']
+    })
+    const curveLayer = layer('curve', {}, 'mobilite-raccordement-curve')
+
+    for (const entry of [
+      {
+        name: 'explicit empty',
+        options: { control: { ...fixture.control, selection: { etat: 'vide' } } },
+        none: true,
+      },
+      {
+        name: 'no control',
+        options: { control: null },
+        none: true,
+      },
+    ] as const) {
+      const capture = captureCahierSection(inputFor(
+        fixture,
+        section,
+        [curveLayer, mobileSectionState({ comparisonNone: entry.none })],
+        entry.options as Partial<CahierSectionCaptureInput>,
+      ))
+      const projection = projeterRequeteExportFigures(requestFor(capture))[0]!
+      if (projection.family !== 'mobilite-curve') throw new Error('curve expected')
+      expect(projection.unavailable.map((item) => item.kind), entry.name).toEqual(['resource'])
+      expect(projection.tables[0]?.notes, entry.name)
+        .toEqual(['Publication indisponible : Ressource test'])
+      expect(projection.accessibleLabel, entry.name)
+        .toContain('Publication indisponible : Ressource test')
+      expect(projection.accessibleLabel, entry.name)
+        .not.toContain('Comparaison indisponible : Comparaison test')
+    }
+
+    const normalCapture = captureCahierSection(inputFor(fixture, section, [
+      curveLayer,
+      mobileSectionState({ comparisonNone: false }),
+    ]))
+    const normal = projeterRequeteExportFigures(requestFor(normalCapture))[0]!
+    if (normal.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(normal.unavailable.map((item) => item.kind)).toEqual(['resource', 'comparison'])
+    expect(normal.tables[0]?.notes).toEqual([
+      'Publication indisponible : Ressource test',
+      'Comparaison indisponible : Comparaison test',
+    ])
+    expect(normal.accessibleLabel).toContain('Comparaison indisponible : Comparaison test')
   })
 })

@@ -683,9 +683,17 @@ export interface CahierCurveGridPoint {
   readonly mobile: boolean
 }
 
+/** A source human label only; the raw detail identity never becomes a label. */
+function humanCurveLabel(candidate: string | null | undefined, detail: string): string | null {
+  const label = candidate?.trim()
+  return label && label !== detail ? label : null
+}
+
 function curvePointLabel(figure: CahierMobiliteCurveInput, detail: string): string {
   const point = figure.points.find((candidate) => candidate.fact.detail === detail)
-  return point?.fact.detailLabel ?? point?.label ?? detail
+  return humanCurveLabel(point?.fact.detailLabel, detail)
+    ?? humanCurveLabel(point?.label, detail)
+    ?? MOBILITE_UNAVAILABLE_LABEL
 }
 
 /**
@@ -816,8 +824,15 @@ export function mobiliteCurveReadings(options: {
     const rank = showComparison && figure.markerValue?.fact.detail === detail
       ? figure.markerValue.fact.comparison?.rank ?? null
       : null
-    const label = pair.focal?.fact.detailLabel ?? pair.focal?.label
-      ?? pair.comparison?.fact.detailLabel ?? pair.comparison?.label ?? detail
+    // The declared tick owns its human label; an unlabelled point keeps its
+    // own source human label, never the raw detail key.
+    const tickLabel = figure.trajectory?.ticks?.find((tick) => tick.detail === detail)?.label
+    const label = humanCurveLabel(tickLabel, detail)
+      ?? humanCurveLabel(pair.focal?.fact.detailLabel, detail)
+      ?? humanCurveLabel(pair.focal?.label, detail)
+      ?? humanCurveLabel(pair.comparison?.fact.detailLabel, detail)
+      ?? humanCurveLabel(pair.comparison?.label, detail)
+      ?? MOBILITE_UNAVAILABLE_LABEL
     return [{
       detail,
       axisValue,
@@ -871,6 +886,35 @@ export function mobiliteCurveComparisonStateText(options: {
   if (status === 'unavailable') return 'Aucun groupe comparé actif.'
   if (figure.comparison === null) return 'Aucune courbe de référence disponible pour cette sélection.'
   return null
+}
+
+export interface MobiliteUnavailableNote {
+  readonly kind: 'resource' | 'comparison'
+  readonly message: string
+}
+
+/**
+ * The curve's actual owner explanations. A comparison the section owner has
+ * deliberately suppressed is not a diagnostic to repeat; resource failures
+ * remain visible and a requested comparison error is carried elsewhere.
+ */
+export function mobiliteCurveUnavailableNotes(options: {
+  figure: CahierMobiliteCurveInput
+  comparisonNone: boolean
+}): readonly MobiliteUnavailableNote[] {
+  const { figure, comparisonNone } = options
+  return [
+    ...(figure.unavailableResources ?? []).map((label) => ({
+      kind: 'resource' as const,
+      message: `Publication indisponible : ${label}`,
+    })),
+    ...(comparisonNone
+      ? []
+      : (figure.unavailableComparisons ?? []).map((label) => ({
+        kind: 'comparison' as const,
+        message: `Comparaison indisponible : ${label}`,
+      }))),
+  ]
 }
 
 export function mobiliteCurveMarkerRankAria(options: {
