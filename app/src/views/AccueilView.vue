@@ -177,9 +177,6 @@ function naviguerOnglets(event: KeyboardEvent) {
   min-width: 0;
 }
 .accueil-territoires {
-  /* Both panels reserve the three 48px browse targets, not just the input.
-     Search states and tab changes therefore leave following content in place. */
-  --accueil-hauteur-panneau: calc(3 * var(--space-12));
   width: 100%;
   max-width: 560px;
   min-width: 0;
@@ -208,7 +205,8 @@ function naviguerOnglets(event: KeyboardEvent) {
 }
 .accueil-onglets button:hover { background: var(--surface-tertiary); }
 .accueil-onglets button:active { background: var(--surface-primary); }
-.accueil-panneau { min-height: var(--accueil-hauteur-panneau); }
+/* #1027 owner revision: natural panel heights; browsing intentionally expands
+   the page. The search dropdown remains out of flow in every search state. */
 .accueil-panneau[hidden] { display: none; }
 .accueil-listes {
   display: flex;

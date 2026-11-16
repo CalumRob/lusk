@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core'
 // #1027: public rendered seam against a running preview. No invented article or
 // territory content: long labels come from the served committed reference.
 const base = process.env.LUSK_PREVIEW_URL || 'http://127.0.0.1:5177'
-const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r3'
+const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r4'
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
@@ -57,7 +57,14 @@ try {
     assert.equal(await browseTab.getAttribute('aria-selected'), 'true')
     assert(await browseTab.evaluate((el) => el === document.activeElement))
     assert.equal(await input.isVisible(), false)
-    assert.deepEqual(await geometry(), initial, 'tab switching keeps the shared area and following content stable')
+    const browseGeometry = await geometry()
+    assert.equal(browseGeometry.search.width, initial.search.width, 'tab entry width stays fixed')
+    assert.equal(browseGeometry.search.x, initial.search.x, 'tab entry does not move horizontally')
+    assert(browseGeometry.search.height > initial.search.height, 'browse panel intentionally uses more natural height')
+    assert(browseGeometry.link.y > initial.link.y, 'browse intentionally pushes the indicator link down')
+    assert(browseGeometry.editorial.y > initial.editorial.y, 'browse intentionally pushes subsequent content down')
+    assert.equal(browseGeometry.link.x, initial.link.x)
+    assert.equal(browseGeometry.editorial.width, initial.editorial.width)
     const rowGeometry = await page.locator('#accueil-panneau-parcourir a').evaluateAll((els) => els.map((el) => {
       const r = el.getBoundingClientRect()
       const panel = el.parentElement.getBoundingClientRect()
@@ -96,6 +103,7 @@ try {
     await searchTab.press('End')
     assert(await browseTab.evaluate((el) => el === document.activeElement))
     await browseTab.press('Home')
+    assert.deepEqual(await geometry(), initial, 'returning to search contracts to the original natural height')
     await searchTab.press('ArrowLeft')
     assert(await browseTab.evaluate((el) => el === document.activeElement))
     await page.screenshot({ path: `${output}/homepage-${width}-browse.png`, fullPage: true, animations: 'disabled' })
@@ -178,7 +186,7 @@ try {
     assert.deepEqual(await geometry(), loading, 'successful retry must keep geometry')
     assert.equal(errors.length, 0, errors.join('\n'))
     assert.equal(assetFailures.length, 0, assetFailures.join('\n'))
-    report.push({ width, tabWidths: [searchTabBox.width, browseTabBox.width], rowGeometry,
+    report.push({ width, tabWidths: [searchTabBox.width, browseTabBox.width], rowGeometry, browseGeometry,
       longest: longest.nom, initial, loading, slots, pageErrors: errors, assetFailures })
     await page.close()
   }

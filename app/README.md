@@ -33,7 +33,7 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 
 | Route | Name | Status |
 |---|---|---|
-| `/` | `accueil` | **Revised for third owner preview, not visually approved** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
+| `/` | `accueil` | **Revised for fourth owner preview, awaiting inspection** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
 | `/carte` | `carte` | **Built** — map (#39) ; épargnée par ruling PO (2026-08-26, #410) : routée et fonctionnelle mais SANS aucun lien face-utilisateur |
 | `/communes` | `communes` | **Built** — link directory (#40) |
 | `/epcis` | `epcis` | **Built** — link directory (#40) |
@@ -58,23 +58,25 @@ retains the personal-site link only: Sources and À propos remain in the header,
 not repeated in the footer. It no longer acquires payload data or repeats
 biography/freshness promotion. Data-surface provenance contracts are unchanged.
 
-The owner inspected the first two previews and requested tabs/footer revisions,
+The owner inspected the first previews and requested tabs/footer revisions,
 then the shorter “Parcourir” label, equal tab widths and more structured list
 links (issue #1027 comments 6918606917 and 6918859554). The three separated
-full-width arrow rows are an implementation proposal awaiting inspection, not
-an approved final appearance. Both panels reserve space for the three row
-targets so switching tabs does not shift the page. Owner inspection of this
-third preview is **pending**, before reviewer dispatch; approval of requirements
-is not visual acceptance of the implementation.
+full-width arrow rows were proposed in the third preview. The owner accepted the
+visual direction but explicitly rejected reserved common panel height (comment
+6919092689). Each panel now takes its natural height: browsing intentionally
+pushes the indicator link and following content down; returning to search
+contracts the page. Stable widths and search-state geometry remain required.
+Owner inspection of this fourth preview is **pending**, before reviewer dispatch.
 This is not a site-wide design adoption or publication claim.
 
 With the dev server running, `node scripts/verify-homepage.mjs` checks real
 committed territory assets, long labels, fixed geometry, empty/loading/error and
-retry states, equal tab widths, row targets/separators/hover/focus/active states,
+retry states, intentional cross-tab expansion/contraction, equal tab widths,
+row targets/separators/hover/focus/active states,
 tab keyboard/focus behavior, actual list navigation, preserved
 header/mobile links, keyboard suggestions and inert placeholders at 1440/375/320px.
 `LUSK_PREVIEW_URL` selects the server; `LUSK_SCREENSHOT_DIR` selects an external
-evidence folder (default `E:/Temp/opencode/homepage-1027-r3`). It simulates one failed
+evidence folder (default `E:/Temp/opencode/homepage-1027-r4`). It simulates one failed
 territory request per viewport, then retries the real file; it does not publish
 or invent data. This browser proof complements the homepage/footer/app and shared
 search unit tests, not owner visual acceptance.
