@@ -25,6 +25,7 @@ import {
 } from '@/fiche/prototype/cahierExportAdapters'
 import {
   cahierExportFixture,
+  readyLossMetadata,
   sectionOf,
 } from './helpers/cahierExportFixtures'
 import type { CahierExportFixture } from './helpers/cahierExportFixtures'
@@ -305,6 +306,52 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
       ])
   })
 
+  it('projects the diversity maps and legend from their owner observations, never from pixels', () => {
+    const fixture = cahierExportFixture({ lossMetadata: readyLossMetadata() })
+    const section = sectionOf(fixture.content, 'aedar-diversity-loss')
+    const unknown = captureCahierSection(inputFor(fixture, section))
+    const unknownProjection = projeterRequeteExportFigures(requestFor(unknown))[0]!
+    if (unknownProjection.family !== 'aedar-diversity-loss') throw new Error('maps expected')
+    expect(unknownProjection.maps).toMatchObject({
+      status: 'unknown',
+      legend: 'unknown',
+      items: [],
+      legendDetail: {
+        title: 'Types d’équipements perdus par rapport à la voiture',
+        tickLabels: ['0', '1', '2+'],
+      },
+    })
+    expect(unknownProjection.tables).toEqual([])
+
+    const observed = captureCahierSection(inputFor(fixture, section, [{
+      slot: 'maps',
+      state: {
+        owner: 'map-availability',
+        state: {
+          legend: 'available',
+          maps: [
+            { id: 'walk', label: 'À pied', declared: true, loaded: true, unavailable: false },
+            { id: 'transit', label: 'Transports en commun', declared: true, loaded: false, unavailable: true },
+            { id: 'bike_lts2', label: 'Vélo (LTS2)', declared: false, loaded: false, unavailable: true },
+          ],
+        },
+      },
+    }]))
+    const projection = projeterRequeteExportFigures(requestFor(observed))[0]!
+    if (projection.family !== 'aedar-diversity-loss') throw new Error('maps expected')
+    expect(projection.maps.status).toBe('partial')
+    expect(projection.maps.legend).toBe('available')
+    expect(projection.maps.items.map((item) => [item.id, item.loaded, item.unavailable]))
+      .toEqual([['walk', true, false], ['transit', false, true], ['bike_lts2', false, true]])
+    expect(projection.maps.items[0]?.inlineUrl).toBe(
+      'https://images.calumrobertson.fr/maps/aedar/v1/22001-walk-inline.webp',
+    )
+    expect(projection.maps.items[0]?.inspectionUrl).toBe(
+      'https://images.calumrobertson.fr/maps/aedar/v1/22001-walk-inspection.webp',
+    )
+    expect(projection.maps.items[1]?.inlineUrl).toContain('22001-transit-inline.webp')
+  })
+
   it('projects the current waffle horizon with every declared mode share', () => {
     const fixture = cahierExportFixture()
     const section = cloneSection(fixture, 'aedar-equipment-profile', (entry) => {
@@ -314,6 +361,8 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
           measures: {
             count_15_walk_share: 0.5, count_15_transit_share: 0.1,
             count_15_bike_lts2_share: 0.1, count_15_bike_lts4_share: 0.1, count_15_car_share: 0.1,
+            count_20_walk_share: 0.6, count_20_transit_share: 0.1,
+            count_20_bike_lts2_share: 0.1, count_20_bike_lts4_share: 0.1, count_20_car_share: 0.1,
           },
         },
         {
@@ -321,20 +370,22 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
           measures: {
             count_15_walk_share: 0.1, count_15_transit_share: 0.1,
             count_15_bike_lts2_share: 0.3, count_15_bike_lts4_share: 0.1, count_15_car_share: 0.1,
+            count_20_walk_share: 0.05, count_20_transit_share: 0.05,
+            count_20_bike_lts2_share: 0.05, count_20_bike_lts4_share: 0.05, count_20_car_share: 0.4,
           },
         },
       ]
     })
     const capture = captureCahierSection(inputFor(fixture, section, [], {
-      aedar: { ...aedarState, horizonMinutes: 15 },
+      aedar: { ...aedarState, horizonMinutes: 20 },
     }))
     const projections = projeterRequeteExportFigures(requestFor(capture))
     const projection = projections[0]!
     if (projection.family !== 'aedar-equipment-profile') throw new Error('profile expected')
-    expect(projection.horizonMinutes).toBe(15)
-    expect(projection.summary).toBe('Répartition des 2 types d’équipements à 15 minutes. À pied : 1. Transports en commun : 0. Vélo (LTS2) : 1. Vélo (LTS4) : 0. Voiture : 0. Inaccessible : 0.')
+    expect(projection.horizonMinutes).toBe(20)
+    expect(projection.summary).toBe('Répartition des 2 types d’équipements à 20 minutes. À pied : 1. Transports en commun : 0. Vélo (LTS2) : 0. Vélo (LTS4) : 0. Voiture : 1. Inaccessible : 0.')
     expect(projection.types.map((type) => [type.typequ, type.shares[0]?.value, type.shares[0]?.display]))
-      .toEqual([['B207', 0.5, '50\u00a0%'], ['B202', 0.1, '10\u00a0%']])
+      .toEqual([['B207', 0.6, '60\u00a0%'], ['B202', 0.05, '5\u00a0%']])
     expect(projection.tables[0]?.columns.map((column) => column.key))
       .toEqual(['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'])
     expect(projection.tables[0]?.rows.map((row) => row.key)).toEqual(['B207', 'B202'])
@@ -539,6 +590,15 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     expect(emptyProjection.comparisonDisplayed).toBe(false)
     expect(emptyProjection.tables[0]?.rows[0]?.cells).toHaveLength(1)
     expect(emptyProjection.accessibleLabel).not.toContain('Groupe comparé')
+
+    const ineligible = captureCahierSection(inputFor(fixture, section, [
+      layer('share', {}, 'mobilite-share-track'),
+    ], { comparisonEligible: false }))
+    expect(ineligible.comparison.absent).toBe('not-eligible')
+    const ineligibleProjection = projeterRequeteExportFigures(requestFor(ineligible))[0]!
+    if (ineligibleProjection.family !== 'mobilite-share') throw new Error('share expected')
+    expect(ineligibleProjection.comparisonDisplayed).toBe(false)
+    expect(ineligibleProjection.tables[0]?.rows[0]?.cells).toHaveLength(1)
   })
 
   it('projects the declared raccordement grid, marker and served marker rank', () => {
