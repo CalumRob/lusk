@@ -10,9 +10,13 @@ import type {
   CahierGroupedVerticalBarFigureData,
   CahierGroupedVerticalBarSeries,
   CahierTooltipRow,
+  CahierTooltipTone,
 } from '@/fiche/cahierFigureGrammaire'
-import type { ComparisonRank } from '@/fiche/content/territoryFacts'
+import type { ComparisonRank, TimeRampFigureData, TimeRampPoint, TimeRampSeries } from '@/fiche/content/territoryFacts'
+import { groupeCompareAria } from '@/fiche/content/comparisonWording'
 import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
+import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { AEDAR_TIME_MODE_ICONS } from './aedarTimeModeIcons'
 
 export const CAHIER_UNAVAILABLE_LABEL = 'Indisponible'
 
@@ -130,4 +134,103 @@ export function groupedBarAccessibleLabel(
         : groupedBarAriaValue(figure, value)).join(', ')}`)
     .join(' ; ')
   return `${figure.description} Axe horizontal : ${figure.xAxisTitle}. Axe vertical : ${figure.yAxisTitle}. ${seriesReadings}`
+}
+
+/** The ramp-tooltip tone is a presentation family, not a per-section choice. */
+const TIME_MODE_TONES: Readonly<Record<string, CahierTooltipTone>> = {
+  car: 'c',
+  bike_lts4: 'b',
+  bike_lts2: 'b',
+  transit: 't',
+  walk: 't',
+}
+
+/** The one numeric formatter of the AEDAR time-ramp family. */
+export function formatTimeRampNumber(value: number): string {
+  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
+}
+
+export interface CahierTimeRampReading extends CahierTooltipRow {
+  readonly seriesKey: string
+  readonly cutKey: number
+  readonly numericValue: number | null
+  readonly referenceValue: number | null
+  readonly referenceRank: ComparisonRank | null
+}
+
+function timeRampTooltipValue(value: number | null, unit: string): { visible: string; aria: string } {
+  if (value === null) return { visible: CAHIER_UNAVAILABLE_LABEL, aria: CAHIER_UNAVAILABLE_LABEL }
+  const number = formatTimeRampNumber(value)
+  return { visible: number, aria: unit ? `${number} ${unit}` : number }
+}
+
+/**
+ * One resolved cut, shared by the live tooltip and the PDF table. Reference
+ * values/ranks are attached only when the owner actually draws the layer.
+ */
+export function timeRampTooltipRows(options: {
+  timeRamp: TimeRampFigureData
+  series: readonly TimeRampSeries[]
+  cut: Pick<TimeRampPoint, 'xValue'> | null
+  territoryName: string
+  comparisonLayerSupported: boolean
+}): readonly CahierTimeRampReading[] {
+  const { timeRamp, series, cut, territoryName, comparisonLayerSupported } = options
+  if (!cut) return []
+  const unit = timeRamp.yAxis.unit
+  return series.flatMap((entry) => {
+    const point = entry.points.find((candidate) => candidate.xValue === cut.xValue)
+    if (!point) return []
+    const value = timeRampTooltipValue(point.value, unit)
+    const row: CahierTimeRampReading = {
+      seriesKey: entry.key,
+      cutKey: cut.xValue,
+      label: entry.label,
+      value: value.visible,
+      tone: TIME_MODE_TONES[entry.key] ?? 'neutral',
+      icon: AEDAR_TIME_MODE_ICONS[entry.key],
+      markerColor: AEDAR_TIME_MODE_COLORS[entry.key] ?? 'var(--cahier-theme-strong)',
+      ariaLabel: `${territoryName} : ${entry.label} : ${value.aria}`,
+      numericValue: point.value,
+      referenceValue: point.referenceValue,
+      referenceRank: point.referenceRank ?? null,
+    }
+    if (comparisonLayerSupported) {
+      const compared = timeRampTooltipValue(point.referenceValue, unit)
+      row.comparison = {
+        value: compared.visible,
+        rank: formatServedRank(point.referenceRank),
+        rankEvidence: point.referenceRank,
+        ariaLabel: groupeCompareAria(
+          compared.aria,
+          formatServedRankAria(point.referenceRank),
+          timeRamp.comparisonLabel ?? CAHIER_UNAVAILABLE_LABEL,
+        ),
+      }
+    }
+    return [row]
+  })
+}
+
+/** The same visible cut list, read as one accessible sentence. */
+export function timeRampAccessibleReading(options: {
+  timeRamp: TimeRampFigureData
+  series: readonly TimeRampSeries[]
+  territoryName: string
+  comparisonLayerSupported: boolean
+}): string {
+  const { timeRamp, series, territoryName, comparisonLayerSupported } = options
+  const unit = timeRamp.yAxis.unit
+  const seriesText = series
+    .map((entry) => `${entry.label} : ${entry.points.map((point) =>
+      `${point.xLabel} ${point.value === null ? 'indisponible' : formatTimeRampNumber(point.value)}`).join(', ')}`)
+    .join(' ; ')
+  const referenceText = comparisonLayerSupported
+    ? ` Référence ${timeRamp.comparisonLabel ?? CAHIER_UNAVAILABLE_LABEL} : ${series.map((entry) =>
+      `${entry.label} ${entry.points.map((point) => {
+        const rank = formatServedRankAria(point.referenceRank)
+        return `${point.xLabel} ${point.referenceValue === null ? 'indisponible' : formatTimeRampNumber(point.referenceValue)}${rank ? `, rang ${rank}` : ''}`
+      }).join(', ')}`).join(' ; ')}`
+    : ''
+  return `${territoryName}. ${timeRamp.yAxis.label ?? ''}${unit ? ` (${unit})` : ''} selon ${timeRamp.xAxis.label ?? ''}, par mode de déplacement. ${seriesText}.${referenceText}`
 }
