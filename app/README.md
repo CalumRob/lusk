@@ -33,7 +33,7 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 
 | Route | Name | Status |
 |---|---|---|
-| `/` | `accueil` | **Revised for eighth owner preview, awaiting inspection** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
+| `/` | `accueil` | **Owner-reviewed preview: spacing and shared palette accepted; review pending** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
 | `/carte` | `carte` | **Built** — map (#39) ; épargnée par ruling PO (2026-08-26, #410) : routée et fonctionnelle mais SANS aucun lien face-utilisateur |
 | `/communes` | `communes` | **Built** — link directory (#40) |
 | `/epcis` | `epcis` | **Built** — link directory (#40) |
@@ -48,8 +48,9 @@ La route `/methodologie` est **retirée** par la bascule atomique #410 : Méthod
 
 ### Homepage preview (#1027)
 
-The [approved direction](../docs/design/accueil.md) is preserved verbatim as the
-owner's pre-implementation brief. The implementation now provides the compact
+The [approved direction](../docs/design/accueil.md) is copied as the owner's
+pre-implementation brief, with a short owner-approved shared-palette status note
+added on 16 November 2026. The implementation now provides the compact
 introduction, stable-width equal-width territory tabs (“Rechercher” by default and
 “Parcourir” linking to existing lists) and separate catalogue link, plus three
 equal-width, noninteractive “À venir” slots (one column on mobile). No texts,
@@ -96,31 +97,33 @@ and a homepage-scoped 36px footer margin (other routes keep the shared 64px).
 Measured at 1440×900: 48px above / 50px below in « Rechercher », 48/36 in
 « Parcourir »; 1440×800 overflows honestly by 86px; mobile is 36px above /
 36px below and stacks the pages. The mini-page look, anchored brand, equal tabs
-and natural browse expansion are unchanged. Owner inspection of this eighth
-preview is **pending**, before reviewer dispatch; this is not final visual
-approval or site-wide adoption.
+and natural browse expansion are unchanged. The owner accepted this spacing for
+now and separately approved the shared palette; reviewer dispatch, content review
+and merge remain pending, and this is not site-wide adoption.
 
-#### Shared Cahier paper-colour trial (#1027, provisional)
+#### Shared Cahier paper-colour approval (#1027, owner-approved)
 
-Owner-selected warmer pair applied **only** in the shared token layer
-(`src/styles/tokens.css`), not as homepage overrides:
+The owner approved the warmer shared pair on 16 November 2026 (“Yes, these are
+nice”). The values live **only** in the shared token layer
+(`src/styles/tokens.css`) and are recorded in human-owned `DESIGN.md`; there is
+no homepage override:
 
-| Token | Before | Trial |
+| Token | Previous | Owner-approved |
 |---|---|---|
 | `--editorial-paper` | `#f1f2ec` | `#f5f2eb` |
 | `--editorial-paper-deep` | `#dfe5df` | `#e6e1d7` |
 
 Ink (`#232a2a`), muted (`#62706c`), margin (`#a44f51`), brand and theme colours
 are unchanged. Homepage mini-pages and the existing Cahier/Mobilité surfaces
-consume the same new values (measured: homepage page/figure `rgb(245,242,235)` /
+consume the same values (measured: homepage page/figure `rgb(245,242,235)` /
 `rgb(230,225,215)`; Rennes Mobilité page and its dialog `rgb(245,242,235)`, with
 no visible element left on the old paper values). Contrast: ink/paper 13.08:1
-(was 12.99), muted/paper 4.63:1 (was 4.60), margin/paper 4.92:1. The provisional
-figure placeholder uses muted on deep: 3.98:1 (was 4.05:1), already below AA
-before this trial and unchanged in role; the documented brand-200 comparison
-exception (2.49:1 on white) is also untouched. This is a live trial pending the
-owner's colour comparison, **not** a `DESIGN.md` change or final identity
-approval; `DESIGN.md` remains human-owned and unedited.
+(previously 12.99), muted/paper 4.63:1 (previously 4.60), margin/paper 4.92:1.
+This approves the **colours only**: implementation and code review are not
+claimed complete, and adoption across every surface is not validated. The
+provisional “Figure à venir” text (muted on paper-deep, approximately 3.98:1,
+previously 4.05:1) remains below AA and is an explicit before-shipping fix; the
+documented brand-200 comparison exception (2.49:1 on white) is untouched.
 
 With the dev server running, `node scripts/verify-homepage.mjs` checks real
 committed territory assets, long labels, fixed geometry, empty/loading/error and

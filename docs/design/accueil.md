@@ -2,6 +2,8 @@
 
 Statut : direction approuvée avec le propriétaire le 16 novembre 2026 ; mise en œuvre et validation visuelle à venir. Ce document décrit la cible, pas l'état actuel de l'application.
 
+Palette partagée (approbation propriétaire, 16 novembre 2026) : `--editorial-paper: #f5f2eb` et `--editorial-paper-deep: #e6e1d7` sont consignées dans `DESIGN.md` comme valeurs partagées du Cahier ; elles s'appliquent aux surfaces Cahier existantes comme à l'accueil, pas comme une variante locale de l'accueil. Le contraste du texte provisoire « Figure à venir » reste un point à corriger avant mise en ligne.
+
 ## Rôle
 
 Une entrée utile dans l'observatoire, accompagnée de quelques portes d'entrée éditoriales. L'introduction explique l'intérêt de Lusk ; les contrôles rendent son utilisation évidente. Ni argumentaire promotionnel, ni tutoriel, ni fil de publication.
