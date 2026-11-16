@@ -1004,7 +1004,8 @@ calculer_stationnement_velo_communes <- function(velo) {
 # agreger_ravitaillement_territoires --------------------------------------------
 # Le bloc de ravitaillement (issue #953) ISOLÉ de l'agrégation d'offre : le
 # compte des bornes IRVE et son taux / 1 000 hab, le compte B316 des
-# stations-service et son taux. C'est le seam PARTAGÉ entre la génération
+# stations-service et son taux, et leur ratio bornes / station. C'est le seam
+# PARTAGÉ entre la génération
 # complète du thème Mobilité (agreger_offre_territoires) et la matérialisation
 # scalaire ciblée (#989) : les deux chemins exécutent CE code — une seule
 # arithmétique, jamais une seconde implémentation à maintenir en parallèle.
@@ -1067,6 +1068,7 @@ agreger_ravitaillement_territoires <- function(bornes_communes, velo_communes,
     dplyr::mutate(key = "bornes_recharge_1000", detail = NA_character_)
 
   stations <- NULL
+  ratio <- NULL
   if (!is.null(fuel_communes)) {
     ctx_r <- ctx_b %>%
       dplyr::left_join(
@@ -1101,10 +1103,21 @@ agreger_ravitaillement_territoires <- function(bornes_communes, velo_communes,
       stations_ctx %>%
         dplyr::transmute(code, key = "stations_service_1000",
                          detail = NA_character_,
-                         value = stations / population * 1000)
+                          value = stations / population * 1000)
     )
+    # Same owner rule as the complete offer: divide aggregated counts, never
+    # average commune ratios; absent BPE and a zero denominator stay unavailable.
+    ratio <- calculer_ratios_mobilite(
+      bornes %>% dplyr::transmute(code, bornes = value),
+      stations_ctx %>% dplyr::transmute(code, fuel = stations),
+      tibble::tibble(code = bornes$code, places_velo = NA_real_),
+      tibble::tibble(code = bornes$code, places_voiture = NA_real_)) %>%
+      dplyr::transmute(code, key = "bornes_ev_par_station_service",
+                       detail = NA_character_,
+                       value = bornes_ev_par_station_service, rider)
   }
-  list(bornes = bornes, bornes_1000 = bornes_1000, stations = stations)
+  list(bornes = bornes, bornes_1000 = bornes_1000, stations = stations,
+       ratio = ratio)
 }
 
 # agreger_offre_territoires -----------------------------------------------------
@@ -1268,33 +1281,9 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
   }
   ratios <- NULL
   if (!is.null(fuel_communes)) {
-    # Aggregate the two counts first, then divide; absent fuel remains NA.
-    ctx_r <- tibble::tibble(commune = sort(unique(as.character(ref$CODGEO)))) %>%
-      dplyr::left_join(bornes_communes %>% dplyr::rename(bornes = nb_bornes), by = "commune") %>%
-      dplyr::mutate(bornes = dplyr::coalesce(bornes, 0)) %>%
-      dplyr::left_join(fuel_communes %>% dplyr::rename(fuel_value = fuel), by = c("commune" = "code")) %>%
-      dplyr::left_join(velo_communes[c("commune", "population")], by = "commune") %>%
-      dplyr::left_join(ref, by = c("commune" = "CODGEO"))
-    agg <- function(g) ctx_r %>% dplyr::filter(!is.na(.data[[g]])) %>%
-      dplyr::group_by(code = .data[[g]]) %>% dplyr::summarise(
-        bornes = sum(bornes),
-        population = sum(population),
-        # A missing BPE observation means unavailable, not zero.  A group is
-        # unavailable when any of its members is unavailable.
-        fuel = if (anyNA(fuel_value)) NA_real_ else sum(fuel_value), .groups = "drop")
-    rr <- dplyr::bind_rows(ctx_r %>% dplyr::transmute(code = commune, bornes, fuel = fuel_value),
-                           agg("EPCI") %>% dplyr::select(code, bornes, fuel),
-                           agg("DEP") %>% dplyr::select(code, bornes, fuel),
-                            ctx_r %>% dplyr::summarise(code = "53", bornes = sum(bornes), fuel = if (anyNA(fuel_value)) NA_real_ else sum(fuel_value)))
-     ratios <- calculer_ratios_mobilite(rr %>% dplyr::select(code, bornes),
-       rr %>% dplyr::select(code, fuel),
-      tibble::tibble(code = rr$code, places_velo = NA_real_),
-      tibble::tibble(code = rr$code, places_voiture = NA_real_)) %>%
-       dplyr::transmute(code, key = "bornes_ev_par_station_service", detail = NA_character_,
-                        value = bornes_ev_par_station_service, rider)
     # Le compte de stations-service B316 et son taux / 1 000 hab sont produits
     # par le bloc ravitaillement partagé (#953/#989) — jamais recomposés ici.
-    ratios <- dplyr::bind_rows(ratios, ravitaillement$stations)
+    ratios <- dplyr::bind_rows(ravitaillement$ratio, ravitaillement$stations)
   }
   dplyr::bind_rows(offre_tc, bornes, bornes_1000, velo, cyclable, voiture, ratios) %>%
     dplyr::select(code, key, detail, value, dplyr::any_of("rider")) %>%

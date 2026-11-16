@@ -28,7 +28,7 @@ scalar_scope_registry <- function() {
   list(
     mobilite = list(
       indicators = c("stations_service", "stations_service_1000",
-                     "bornes_recharge_1000"),
+                     "bornes_recharge_1000", "bornes_ev_par_station_service"),
       sources = c("mobilite_snapshot", "bpe_b316", "bornes-recharges",
                   "stationnement-velo"),
       produce = produire_ravitaillement_mobilite
@@ -293,13 +293,13 @@ verifier_snapshot_retention_scalaire <- function(sortie, reference = NULL) {
 }
 
 # produire_ravitaillement_mobilite ----------------------------------------------
-# Le producteur ENREGISTRÉ du périmètre : les trois scalaires
+# Le producteur ENREGISTRÉ du périmètre : les quatre scalaires
 # d'approvisionnement légers de Mobilité, à partir de LEURS sources et des
 # fonctions propriétaires du thème (BPE B316, IRVE, population du hub vélo).
 # Aucune lecture OSM / OCS-GE / GTFS : les agrégations passent par le seam
 # partagé agreger_ravitaillement_territoires, et l'assemblage par le seam
 # partagé assembler_indicateurs_mobilite — exactement le code du producteur
-# complet, avec des entrées réduites à ce que ces trois faits exigent.
+# complet, avec des entrées réduites à ce que ces quatre faits exigent.
 produire_ravitaillement_mobilite <- function(cache, indicator_ids, metadata,
                                              vintages) {
   fichier <- function(id) {
@@ -325,12 +325,13 @@ produire_ravitaillement_mobilite <- function(cache, indicator_ids, metadata,
     bornes, velo, fuel, base_epci[c("CODGEO", "EPCI", "DEP")])
   long <- dplyr::bind_rows(ravitaillement$bornes,
                            ravitaillement$bornes_1000,
-                           ravitaillement$stations)
+                           ravitaillement$stations, ravitaillement$ratio)
   territoires <- construire_territoires_mobilite(
     base_epci, list(mobilite_communes = mobilite_communes))
   units <- c(stations_service = "stations",
              stations_service_1000 = "stations / 1 000 hab",
-             bornes_recharge_1000 = "bornes / 1 000 hab")
+             bornes_recharge_1000 = "bornes / 1 000 hab",
+             bornes_ev_par_station_service = "bornes / station")
   missing <- setdiff(indicator_ids, names(units))
   if (length(missing))
     stop("Registered ravitaillement producer does not cover: ",
