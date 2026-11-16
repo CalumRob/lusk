@@ -30,6 +30,39 @@ native-resource statuses/retries remain attributed to the evidence each figure
 actually consumes. The split is current acquisition plumbing, not two product
 groups or an architecture future acquisition work must preserve.
 
+## Export capture seam (#1021)
+
+`cahierExportCapture.ts` owns the public, immutable capture of one resolved
+section: identity, generation tokens, sources and their provenance identity, the
+real comparison selection and its public names, the native figure models and the
+effective local selections. `cahierExportVenue.ts` is the public read seam
+provided by `VarianteCahierLibre` and exposed as
+`captureSection`/`captureAll`; the PDF controller consumes the same venue.
+`CahierExportScope.vue` is a renderless section (and figure) scope: it registers
+the section and names a figure slot without adding a DOM element.
+
+Owners publish the state they already hold, never the reverse:
+
+| Publisher | Published state |
+| --- | --- |
+| `aedarSectionContext` (read by the shell) | selected modes, horizon, comparison visibility/eligibility, chapter activity |
+| `AedarEquipmentExplorerCahier` | effective TYPEQU, acquired detail, comparison evidence and status |
+| `CahierMobiliteComparisonBars` / `CahierMobiliteRaccordementCurve` | their own comparison visibility |
+| `CahierMobiliteSection` | the effective comparison state it presents |
+| `CahierBlankMapSlots`, `AedarDiversityLossMapsCahier`, `CartographicBreakoutPrototype` | map and legend availability |
+
+`projeterRequeteExport` projects one to three offered series (or none when the
+section offers no choice) into a frozen request. Capturing and projecting read
+state synchronously: no acquisition, no screen mutation, no DOM parsing and no
+private Vue introspection. Placeholder sections are not capturable, and the
+selected members stay distinct from producer-served eligible contributors.
+
+`cahier-export-capture.spec.ts` covers the closed nine-kind admission, the
+cross-family capture, sources/provenance and the projection; the mounted
+`cahier-export-capture-mounted.spec.ts` drives the real owners (horizon, modes,
+TYPEQU acquisition, independent comparison layers, late group/territory
+changes and screen stability).
+
 ## Preserved boundaries
 
 - Content builders own prose, labels, evidence, availability and provenance;

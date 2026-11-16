@@ -192,6 +192,17 @@ describe('Cahier export capture — comparison identity (#1021)', () => {
     expect(capture.comparison.absent).toBe('not-eligible')
   })
 
+  it('reports an unresolvable default preset as unresolved, not as an empty selection', () => {
+    const { content, control } = cahierExportFixture()
+    const focal = { ...control.focal, epci: null }
+    const capture = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), {
+      control: { ...control, focal, presetDefaut: 'epci' },
+    }))
+    expect(capture.comparison.selection.state).toBe('defaut')
+    expect(capture.comparison.group).toBeNull()
+    expect(capture.comparison.absent).toBe('unresolved-selection')
+  })
+
   it('keeps the neutral cross-border EPCI wording from the source contract', () => {
     const { content } = cahierExportFixture({ focal: epciControl().focal })
     const control = epciControl()

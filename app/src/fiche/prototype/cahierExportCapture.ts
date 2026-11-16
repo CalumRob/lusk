@@ -141,6 +141,7 @@ export type CahierCaptureComparisonAbsence =
   | 'not-eligible'
   | 'no-selection-control'
   | 'empty-selection'
+  | 'unresolved-selection'
   | 'no-comparative-evidence'
 
 export interface CahierCaptureComparisonGroup {
@@ -779,9 +780,9 @@ function captureComparisonGroup(options: {
     }
   }
   const preset = selection.preset
-  if (!preset) return { group: null, absent: 'empty-selection' }
+  if (!preset) return { group: null, absent: 'unresolved-selection' }
   const contexte = contextes[preset] ?? null
-  if (!contexte) return { group: null, absent: 'empty-selection' }
+  if (!contexte) return { group: null, absent: 'unresolved-selection' }
   const names = preset === 'epci'
     ? [epciNameFor(control)]
       .filter((name): name is string => name !== null)
