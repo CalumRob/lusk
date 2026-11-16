@@ -33,15 +33,15 @@ const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
 const FOCAL_ID = '35238'
-// Residual vertical drift allowed when the held facts resolve: the unit
-// introduction gains the published address-count clause and the scalar cells
-// '—' -> number; both are one text line at most. The reported bug moves the
-// section by several hundred px (whole prose block + map section inserted).
+// Keep the original guard: unknown address-count prose/provenance may wrap
+// when served. Pending source/comparison roles have additional, stricter
+// assertions below; this tolerance is not a substitute for reserving them.
 const GEOMETRY_TOLERANCE_PX = 72
 
 const server = await createServer({
   configFile: resolve(appRoot, 'vite.config.ts'),
-  server: { host: '127.0.0.1', port: 0, strictPort: false },
+  server: { host: '127.0.0.1', port: 0, strictPort: false, hmr: false, watch: null },
+  logLevel: 'error',
 })
 let browser
 
@@ -70,7 +70,7 @@ try {
   const aedarContentVersion = 'fixture-985-aedar-v1'
   const aedarReferenceVersion = 'fixture-985-territories-v1'
   const aedarSummaryVersion = 'fixture-985-aedar-summary-v1'
-  const fixtureAttribution = 'Synthetic browser fixture; not published AEDAR facts'
+  let fixtureAttribution = 'Synthetic browser fixture; not published AEDAR facts'
   const summaryReading = (measure) => ({
     measure, value: 0.5, status: 'available', n_typequ: 235, n_addresses: 100,
     n_observed: 100, coverage_status: 'covered', statistic: 'direct',
@@ -182,9 +182,26 @@ try {
   // Gate ONLY the focal territory's AEDAR reads; everything else (theme facts,
   // reference-territory AEDAR, retired routes) flows immediately so the interim
   // state is exactly "focal aggregates pending".
+  const cases = [1440, 390, 320, 760].flatMap((width) =>
+    ['standard', 'wrapped-source', 'no-comparison'].map((scenario) => ({ width, scenario })))
+  for (const { width, scenario } of cases) {
+  fixtureAttribution = scenario === 'wrapped-source'
+    ? 'AEDAR; © Synthetic browser fixture source with a long attribution and dated credit 2026-10, not published facts'
+    : 'Synthetic browser fixture; not published AEDAR facts'
   let releaseFocalAedar
   const focalGate = new Promise((resolvePromise) => { releaseFocalAedar = resolvePromise })
   let gateOpen = false
+  // The direct reference may already be displayed while its requested group
+  // comparison loads. Hold that read separately so wrapping beside the native
+  // spinner is tested intentionally, never sampled by a 250ms timing accident.
+  let releaseComparison
+  const comparisonGate = new Promise((resolvePromise) => { releaseComparison = resolvePromise })
+  let comparisonGateOpen = false
+  const waitForFocal = async (items) => {
+    if (!gateOpen) await focalGate
+    if (!comparisonGateOpen && items.some((item) => item.resource === 'aedar_territorial_aggregate'
+      && item.intent.kind !== 'facts' && (item.coordinates.typequ?.length ?? 0) === 0)) await comparisonGate
+  }
   const readCalls = { focalAedarBatches: 0, referenceAedarBatches: 0, themeBatches: 0, otherApi: 0 }
   const v2Envelope = (items, results) => {
     const byId = new Map(results.map((result) => [result.id, result]))
@@ -197,8 +214,8 @@ try {
     }) }
   }
 
-  browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) })
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+  browser ??= await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) })
+  const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: 1 })
   const pageErrors = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
@@ -233,7 +250,7 @@ try {
       }
       if (focalItems.length) {
         readCalls.focalAedarBatches += 1
-        if (!gateOpen) await focalGate // hold the focal hydration until released
+        await waitForFocal(focalItems)
         results.push(...aedarFixture(focalItems).results)
       }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(v2Envelope(request.items, results)) })
@@ -245,11 +262,11 @@ try {
       return
     }
     readCalls.focalAedarBatches += 1
-    if (!gateOpen) await focalGate
+    await waitForFocal(focalItems)
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(v2Envelope(focalItems, aedarFixture(focalItems).results)) })
   })
 
-  await page.goto(`${baseUrl}territoire/commune/${FOCAL_ID}?theme=mobilite`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${baseUrl}territoire/commune/${FOCAL_ID}?theme=mobilite${scenario === 'no-comparison' ? '&comparaison=' : ''}`, { waitUntil: 'domcontentloaded' })
 
   // Interim state: the cahier is mounted, the loss map section is on the first
   // page, and the focal AEDAR batch has been requested and is being held.
@@ -277,10 +294,41 @@ try {
       proseBox: prose ? rectOf(prose) : null,
       sections,
       loss,
+      roles: [...firstPage.querySelectorAll('.page-copy, .aedar-car-overview-copy, .aedar-car-overview-scalars, .aedar-car-overview-reading .cahier-evidence-source, .aedar-car-overview-scalars .cahier-figure-scalar-reference')].map((el) => ({ role: el.className, text: el.textContent.trim(), ...rectOf(el) })),
+      source: (() => {
+        const source = firstPage.querySelector('.aedar-car-overview-reading .cahier-evidence-source')
+        return source ? { ...rectOf(source), text: source.textContent.trim(), href: source.querySelector('a')?.getAttribute('href') ?? null } : null
+      })(),
+      scalarCount: firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-figure-scalar').length,
+      references: [...firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-figure-scalar-reference')].map(rectOf),
+      comparisonLabels: [...firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-comparison-value__reference')].map((label) => {
+        const comparison = label.closest('.cahier-comparison-value')
+        const style = getComputedStyle(label)
+        const range = document.createRange()
+        range.selectNodeContents(label)
+        const bounds = comparison.getBoundingClientRect()
+        const textRects = [...range.getClientRects()].map(({ left, right, top, bottom }) => ({ left, right, top, bottom }))
+        return { text: label.textContent.trim(), ...rectOf(label), lineHeight: parseFloat(style.lineHeight),
+          font: style.font, fontLoaded: document.fonts.check(style.font, label.textContent),
+          comparisonWidth: bounds.width, spinnerCount: comparison.querySelectorAll('.cahier-comparison-value__spinner').length,
+          textRects, lineCount: new Set(textRects.map(({ top }) => top)).size,
+          textWithinComparison: textRects.every(({ left, right, top, bottom }) =>
+            left >= bounds.left && right <= bounds.right && top >= bounds.top && bottom <= bounds.bottom) }
+      }),
+      overview: [...firstPage.querySelectorAll('#section-aedar-car-overview, #section-aedar-car-overview *')].map((el) => {
+        const style = getComputedStyle(el)
+        return { tag: el.localName,
+          attributes: Object.fromEntries([...el.attributes].filter(({ name }) => !name.startsWith('data-v-')).map(({ name, value }) => [name, value])),
+          text: el.textContent, ...rectOf(el),
+          presentation: { font: style.font, color: style.color, display: style.display, gap: style.gap,
+            gridTemplateColumns: style.gridTemplateColumns, overflow: style.overflow, whiteSpace: style.whiteSpace } }
+      }),
     }
   })
 
   const interim = await measure()
+  await page.waitForTimeout(150)
+  assert.equal((await measure()).loss.docTop, interim.loss.docTop, 'held facts: settled fonts/maps must not move the loss section')
 
   // Release the held focal AEDAR reads and wait for the hydrated cahier.
   gateOpen = true
@@ -289,6 +337,25 @@ try {
     const scalar = document.querySelector('#section-aedar-car-overview .cahier-figure-scalar-value')
     return document.querySelector('#section-aedar-equipment-explorer') !== null && scalar !== null && scalar.textContent.trim() !== '—'
   }, null, { timeout: 20000 })
+  if (scenario !== 'no-comparison') {
+    await page.waitForFunction(() => {
+      const overview = document.querySelector('#section-aedar-car-overview')
+      const scalars = overview.querySelectorAll('.cahier-figure-scalar').length
+      return scalars > 0 && overview.querySelectorAll('.cahier-comparison-value__reference').length === scalars
+        && overview.querySelectorAll('.cahier-comparison-value__spinner').length === scalars
+    }, null, { timeout: 20000 })
+  }
+  await page.evaluate(() => document.fonts.ready)
+  const comparisonPending = await measure()
+  comparisonGateOpen = true
+  releaseComparison()
+  if (scenario !== 'no-comparison') {
+    await page.waitForFunction(() => {
+      const overview = document.querySelector('#section-aedar-car-overview')
+      return overview.querySelectorAll('.cahier-comparison-value__spinner').length === 0
+        && overview.querySelectorAll('.cahier-comparison-value__reference').length === overview.querySelectorAll('.cahier-figure-scalar').length
+    }, null, { timeout: 20000 })
+  }
   await page.evaluate(() => document.fonts.ready)
   await page.waitForTimeout(250)
   const final = await measure()
@@ -327,9 +394,49 @@ try {
     `« Et sans voiture alors ? » moved ${viewportTopDelta}px in the viewport when AEDAR resolved`)
   check(final.scrollY === interim.scrollY, 'scroll anchor (scrollY) must not move during hydration')
   check(pageErrors.length === 0, `browser page errors: ${pageErrors.join(' | ')}`)
+  check(interim.source !== null && interim.source.text === '' && interim.source.href === null,
+    'pending source reserves its own line without fabricated provenance or link')
+  check(final.source !== null && final.source.href === 'https://example.test/aedar-fixture',
+    'ready source uses the served provenance URL')
+  check(interim.references.length === (scenario === 'no-comparison' ? 0 : interim.scalarCount),
+    'only requested comparisons reserve scalar reference rows')
+  check(final.references.length === (scenario === 'no-comparison' ? 0 : final.scalarCount),
+    'an absent comparison must not leave blank reference rows after hydration')
+  check(Math.abs(comparisonPending.loss.docTop - interim.loss.docTop) <= GEOMETRY_TOLERANCE_PX,
+    'the intermediate comparison-loading state must also respect the unchanged document geometry guard')
+  check(Math.abs(comparisonPending.loss.viewportTop - interim.loss.viewportTop) <= GEOMETRY_TOLERANCE_PX,
+    'the intermediate comparison-loading state must also respect the unchanged viewport geometry guard')
+  check(comparisonPending.scrollY === interim.scrollY, 'comparison-loading must not move the scroll anchor')
+  for (const state of [comparisonPending, final]) {
+    check(state.comparisonLabels.length === (scenario === 'no-comparison' ? 0 : state.scalarCount),
+      'observe the actual served reference text in both comparison states')
+    check(state.comparisonLabels.every(({ fontLoaded, textWithinComparison }) => fontLoaded && textWithinComparison),
+      'loaded native comparison text must stay within its real role bounds, including when it wraps')
+  }
+  if (scenario !== 'wrapped-source') {
+    check(final.source !== null && interim.source !== null && Math.abs(final.source.height - interim.source.height) < 1,
+      'the pending source line must match the ready source typography')
+    const scalarHeight = (state) => state.roles.find(({ role }) => role === 'aedar-car-overview-scalars').height
+    check(Math.abs(scalarHeight(final) - scalarHeight(interim)) < 1,
+      'pending scalar geometry must match ready, including when no comparison exists')
+  }
+  if (scenario === 'wrapped-source') {
+    check(final.source !== null && interim.source !== null && final.source.height > interim.source.height,
+      'long served source/dated credit must actually wrap, never be clipped')
+  }
+  if (width === 760 && scenario === 'standard') {
+    check(comparisonPending.comparisonLabels.every(({ lineCount, spinnerCount }) => lineCount > 1 && spinnerCount === 1),
+      'the native comparison label must actually wrap beside its held loading spinner at the paired-scalar width')
+    check(final.comparisonLabels.every(({ lineCount, spinnerCount }) => lineCount === 1 && spinnerCount === 0),
+      'the same native label legitimately fits one line once the comparison settles')
+    check(JSON.stringify(comparisonPending.comparisonLabels.map(({ text }) => text)) === JSON.stringify(final.comparisonLabels.map(({ text }) => text)),
+      'wrapping coverage must use the same native text, never fabricated long labels or values')
+  }
 
   console.log(JSON.stringify({
     pass: !MEASURE_ONLY,
+    width,
+    scenario,
     route: `/territoire/commune/${FOCAL_ID}?theme=mobilite`,
     gate: 'focal AEDAR read-batch held until release; reference/theme/map traffic ungated',
     geometryTolerancePx: GEOMETRY_TOLERANCE_PX,
@@ -346,12 +453,22 @@ try {
       lossViewportTop: Math.round(final.loss.viewportTop),
     },
     deltas: {
-      lossDocTop: Math.round(final.loss.docTop - interim.loss.docTop),
-      lossViewportTop: Math.round(final.loss.viewportTop - interim.loss.viewportTop),
+      lossDocTop: final.loss.docTop - interim.loss.docTop,
+      lossViewportTop: final.loss.viewportTop - interim.loss.viewportTop,
       scrollY: final.scrollY - interim.scrollY,
     },
     readCalls,
+    roles: { interim: interim.roles, final: final.roles },
+    loss: { interim: interim.loss, final: final.loss },
+    comparisonLabels: { pending: comparisonPending.comparisonLabels, final: final.comparisonLabels },
+    comparisonPendingLoss: comparisonPending.loss,
+    readyOverview: final.overview,
   }, null, 2))
+  if (process.env.LUSK_LAYOUT_SCREENSHOTS && scenario === 'standard' && (width === 1440 || width === 390)) {
+    await page.screenshot({ path: resolve(process.env.LUSK_LAYOUT_SCREENSHOTS, `lusk-994-final-${width}.png`), fullPage: true })
+  }
+  await page.close()
+  }
 } finally {
   await browser?.close()
   await server.close()

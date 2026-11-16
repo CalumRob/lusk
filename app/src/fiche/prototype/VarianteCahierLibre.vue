@@ -554,7 +554,7 @@ onBeforeUnmount(() => {
                 <aside class="argument-side aedar-car-overview-reading">
                   <div class="aedar-car-overview-copy">
                     <CahierProse class="argument-copy" :blocks="aedarCarAccessOverviewEvidenceFor(section)!.prose" />
-                    <CahierEvidenceSource v-if="aedarCarAccessOverviewEvidenceFor(section)!.source" :source="aedarCarAccessOverviewEvidenceFor(section)!.source!" />
+                    <CahierEvidenceSource v-if="aedarCarAccessOverviewEvidenceFor(section)!.source || aedarCarAccessOverviewEvidenceFor(section)!.sourcePending" :source="aedarCarAccessOverviewEvidenceFor(section)!.source" :pending="aedarCarAccessOverviewEvidenceFor(section)!.sourcePending" />
                   </div>
                   <figure class="aedar-car-overview-scalars">
                     <figcaption class="cahier-figure-title">{{ aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle }}</figcaption>
@@ -565,6 +565,7 @@ onBeforeUnmount(() => {
                         :value="scalar.value === null ? '—' : formatNumber(scalar.value)"
                         :label="scalar.label"
                         label-role="metric"
+                        :reference-pending="scalar.comparisonPending"
                         :icon="CarFront"
                         tone="c"
                         color-value
