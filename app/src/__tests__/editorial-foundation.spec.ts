@@ -78,8 +78,10 @@ describe('shared E editorial foundation', () => {
 
   it('ships the Mobilité map plate in the production cahier without prototype query switches', () => {
     const cahier = read('src/fiche/prototype/VarianteCahierLibre.vue')
+    const renderers = read('src/fiche/prototype/cahierSectionRenderers.ts')
     const delegate = read('src/fiche/prototype/CahierMobiliteSection.vue')
-    expect(cahier).toContain("import CahierMobiliteSection from './CahierMobiliteSection.vue'")
+    expect(cahier).toContain("import { CahierSectionBody, cahierSectionRendererFor } from './cahierSectionRenderers'")
+    expect(renderers).toContain("import CahierMobiliteSection from './CahierMobiliteSection.vue'")
     expect(delegate).toContain("import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'")
     expect(cahier).not.toContain('import.meta.env.DEV')
     const plate = read('src/fiche/prototype/CartographicBreakoutPrototype.vue')

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { createServer } from 'vite'
+import { execFileSync } from 'node:child_process'
 import { installApiRoutes, makeApiHandlers } from './overflow-api-routes.mjs'
 
 // Real-browser, populated contract check for Cahier mobile overflow and the
@@ -23,6 +24,9 @@ const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
 const evidenceDir = resolve(process.env.CAHIER_EVIDENCE_DIR ?? join(tmpdir(), 'lusk-mobile-cahier-evidence'))
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+// Optional review baseline: load only the historical shell, in memory. No
+// checkout/reset, dependency links, live writes or second worktree are needed.
+const receiptBaseline = process.env.CAHIER_RECEIPT_BASELINE_REF
 
 function rgbChannels(color) {
   let channels = color.match(/[\d.]+/gu)?.slice(0, 3).map(Number)
@@ -288,6 +292,15 @@ async function verifyWaffleLegendInteraction(page) {
 
 const server = await createServer({
   configFile: resolve(appRoot, 'vite.config.ts'),
+  plugins: receiptBaseline ? [{
+    name: 'cahier-extraction-review-baseline', enforce: 'pre',
+    load(id) {
+      if (id.replaceAll('\\', '/').endsWith('/src/fiche/prototype/VarianteCahierLibre.vue')) {
+        return execFileSync('git', ['show', `${receiptBaseline}:app/src/fiche/prototype/VarianteCahierLibre.vue`],
+          { cwd: repoRoot, encoding: 'utf8' })
+      }
+    },
+  }] : [],
   // Let Vite select an available ephemeral port; the owner's live server may
   // already be using its usual development port.
   server: { host: '127.0.0.1', port: 0, strictPort: false },
@@ -564,6 +577,55 @@ try {
       throw error
     }
     await page.locator('#section-aedar-equipment-explorer').waitFor({ state: 'visible' })
+
+    // Optional extraction receipt: the same populated, synthetic read-only
+    // fixtures at both review widths, before later checks change the controls.
+    if (process.env.CAHIER_SECTION_RECEIPTS === '1' && (width === 390 || width === 1440)) {
+      for (const key of ['aedar-car-overview', 'aedar-diversity-loss', 'aedar-access',
+        'aedar-equipment-profile', 'aedar-equipment-explorer']) {
+        const section = page.locator(`[data-section="${key}"]`)
+        await section.scrollIntoViewIfNeeded()
+        await section.screenshot({ path: resolve(evidenceDir, `section-${key}-${width}.png`) })
+      }
+      const profile = page.locator('#section-aedar-equipment-profile')
+      const explorer = page.locator('#section-aedar-equipment-explorer')
+      const ramps = page.locator('#section-aedar-access')
+      await profile.getByRole('button', { name: '10 minutes', exact: true }).click()
+      assert.equal(await explorer.getByRole('button', { name: '10 minutes', exact: true }).getAttribute('aria-pressed'), 'true')
+      await explorer.getByRole('button', { name: '20 minutes', exact: true }).click()
+      assert.equal(await profile.getByRole('button', { name: '20 minutes', exact: true }).getAttribute('aria-pressed'), 'true')
+      await explorer.getByRole('button', { name: '15 minutes', exact: true }).click()
+      const rampWalk = ramps.locator('.cahier-figure-legend-toggle').filter({ hasText: 'À pied' })
+      const explorerWalk = explorer.locator('.cahier-figure-legend-toggle').filter({ hasText: 'À pied' })
+      await rampWalk.click()
+      assert.equal(await explorerWalk.getAttribute('aria-pressed'), 'true')
+      await explorerWalk.click()
+      assert.equal(await rampWalk.getAttribute('aria-pressed'), 'false')
+      const reference = ramps.locator('.cahier-figure-legend-toggle').filter({ hasText: 'Groupe comparé' })
+      const comparedLines = await ramps.locator('.access-ramp-line--comparison').count()
+      await reference.click()
+      assert.equal(await reference.getAttribute('aria-pressed'), 'false')
+      assert.equal(await ramps.locator('.access-ramp-line--comparison').count(), 0)
+      // An error key is an explanation, not a toggle. Preserve that honest
+      // resource-specific state rather than claiming it has a pressed value.
+      assert.equal(await explorer.locator('.cahier-figure-legend-comparison-error').count(), 1)
+      await reference.click()
+      assert.equal(await ramps.locator('.access-ramp-line--comparison').count(), comparedLines)
+      // This fixture deliberately has unavailable explorer comparisons. A real
+      // explicit retry re-probes; it must not remove the focal figures.
+      const retry = explorer.getByRole('button', { name: 'Réessayer les comparaisons', exact: true })
+      await retry.waitFor({ state: 'visible' })
+      const callsBeforeRetry = readCalls.aedarComparisonBatches
+      await retry.click()
+      await retry.waitFor({ state: 'visible' })
+      assert(readCalls.aedarComparisonBatches > callsBeforeRetry, 'Explicit explorer retry must re-probe its comparison')
+      await explorer.screenshot({ path: resolve(evidenceDir, `controls-retry-${width}.png`) })
+      console.log(JSON.stringify({ sectionReceipt: { width, baseline: receiptBaseline ?? 'working-tree',
+        horizonBothDirections: true, modesBothDirections: true,
+        comparisonVisibility: 'ramp toggle preserved; explorer keeps its own comparison error',
+        retryComparisonPosts: readCalls.aedarComparisonBatches - callsBeforeRetry } }))
+      await page.locator('.cahier-page').first().scrollIntoViewIfNeeded()
+    }
 
     // #860 : chemin Mobilité de production, pas un montage du contrôle isolé.
     const trigger = page.locator('.page-heading .bouton-comparaison__declencheur').first()
