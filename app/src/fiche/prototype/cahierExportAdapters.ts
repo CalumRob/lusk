@@ -409,25 +409,29 @@ function rampTable(options: {
     return {
       key: `${key}:cut:${cut.xValue}`,
       label: cut.xLabel,
-      cells: series.flatMap((entry) => {
-        const reading = bySeries.get(entry.key)
-        const focal = cell({
-          columnKey: entry.key,
-          value: reading?.numericValue ?? null,
-          display: reading?.value ?? CAHIER_UNAVAILABLE_LABEL,
-          unit: timeRamp.yAxis.unit || null,
-        })
-        if (!comparisonDisplayed) return [focal]
-        return [focal, cell({
-          columnKey: `${entry.key}:comparison`,
-          value: reading?.referenceValue ?? null,
-          display: reading?.comparison?.value ?? CAHIER_UNAVAILABLE_LABEL,
-          unit: timeRamp.yAxis.unit || null,
-          rank: reading?.referenceRank ?? null,
-          rankDisplay: reading?.comparison?.rank ?? null,
-          rankAria: reading?.comparison?.rankAria ?? null,
-        })]
-      }),
+      cells: [
+        ...series.map((entry) => {
+          const reading = bySeries.get(entry.key)
+          return cell({
+            columnKey: entry.key,
+            value: reading?.numericValue ?? null,
+            display: reading?.value ?? CAHIER_UNAVAILABLE_LABEL,
+            unit: timeRamp.yAxis.unit || null,
+          })
+        }),
+        ...(comparisonDisplayed ? series.map((entry) => {
+          const reading = bySeries.get(entry.key)
+          return cell({
+            columnKey: `${entry.key}:comparison`,
+            value: reading?.referenceValue ?? null,
+            display: reading?.comparison?.value ?? CAHIER_UNAVAILABLE_LABEL,
+            unit: timeRamp.yAxis.unit || null,
+            rank: reading?.referenceRank ?? null,
+            rankDisplay: reading?.comparison?.rank ?? null,
+            rankAria: reading?.comparison?.rankAria ?? null,
+          })
+        }) : []),
+      ],
     }
   })
   return { key, title, columns, rows, notes: [], unit: timeRamp.yAxis.unit || null }
@@ -537,7 +541,7 @@ function projectOverview(
           display: `${formatTimeRampNumber(scalar.reference.value)} ${scalar.reference.unit}`,
         }
         : null,
-      rank: rank
+      rank: comparisonDisplayed && rank
         ? {
           position: rank.position,
           size: rank.size,

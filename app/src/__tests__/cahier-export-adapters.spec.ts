@@ -223,6 +223,12 @@ describe('Cahier export adapters — nine-section admission and request immutabi
         expect(projection.slot).toBeTruthy()
         expect(projection.title).toBeTruthy()
         expect(projection.accessibleLabel).toBeTruthy()
+        for (const table of projection.tables) {
+          for (const row of table.rows) {
+            expect(row.cells.map((cell) => cell.columnKey))
+              .toEqual(table.columns.map((column) => column.key))
+          }
+        }
         families.add(projection.family)
       }
     }
