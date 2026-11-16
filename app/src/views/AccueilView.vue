@@ -65,7 +65,7 @@ function naviguerOnglets(event: KeyboardEvent) {
                   :tabindex="ongletActif === 'parcourir' ? 0 : -1"
                   aria-controls="accueil-panneau-parcourir"
                   @click="ongletActif = 'parcourir'"
-                >Parcourir les territoires</button>
+                >Parcourir</button>
               </div>
               <div
                 :hidden="ongletActif !== 'rechercher'"
@@ -84,9 +84,15 @@ function naviguerOnglets(event: KeyboardEvent) {
                 id="accueil-panneau-parcourir" class="accueil-panneau accueil-listes"
                 role="tabpanel" aria-labelledby="accueil-onglet-parcourir"
               >
-                <RouterLink to="/communes">Communes</RouterLink>
-                <RouterLink to="/epcis">EPCI</RouterLink>
-                <RouterLink to="/departements">Départements</RouterLink>
+                <RouterLink to="/communes">
+                  Communes <AppIcon :icone="ArrowRight" :taille="16" aria-hidden="true" />
+                </RouterLink>
+                <RouterLink to="/epcis">
+                  EPCI <AppIcon :icone="ArrowRight" :taille="16" aria-hidden="true" />
+                </RouterLink>
+                <RouterLink to="/departements">
+                  Départements <AppIcon :icone="ArrowRight" :taille="16" aria-hidden="true" />
+                </RouterLink>
               </div>
             </div>
             <RouterLink to="/indicateurs" class="accueil-indicateurs">
@@ -171,13 +177,16 @@ function naviguerOnglets(event: KeyboardEvent) {
   min-width: 0;
 }
 .accueil-territoires {
+  /* Both panels reserve the three 48px browse targets, not just the input.
+     Search states and tab changes therefore leave following content in place. */
+  --accueil-hauteur-panneau: calc(3 * var(--space-12));
   width: 100%;
   max-width: 560px;
   min-width: 0;
 }
 .accueil-onglets {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: var(--space-4);
   border-bottom: 1px solid var(--border-default);
 }
@@ -199,14 +208,33 @@ function naviguerOnglets(event: KeyboardEvent) {
 }
 .accueil-onglets button:hover { background: var(--surface-tertiary); }
 .accueil-onglets button:active { background: var(--surface-primary); }
-.accueil-panneau { min-height: var(--space-12); }
+.accueil-panneau { min-height: var(--accueil-hauteur-panneau); }
 .accueil-panneau[hidden] { display: none; }
 .accueil-listes {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  font: var(--text-body);
+}
+.accueil-listes a {
+  display: flex;
   align-items: center;
-  gap: var(--space-2) var(--space-4);
-  font: var(--text-body-sm);
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: var(--space-12);
+  padding: var(--space-2) var(--space-3);
+  text-decoration: none;
+}
+.accueil-listes a:not(:last-child) {
+  border-bottom: 1px solid var(--border-default);
+}
+.accueil-listes a:hover {
+  background: var(--surface-tertiary);
+  color: var(--accent-hover);
+}
+.accueil-listes a:active { background: var(--surface-primary); }
+.accueil-listes a:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
 }
 .accueil-indicateurs {
   display: inline-flex;

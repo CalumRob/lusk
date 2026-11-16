@@ -58,7 +58,7 @@ describe('Accueil — direction approuvée #1027', () => {
   it('propose deux onglets reliés à leurs panneaux, recherche par défaut et listes navigables', async () => {
     const { wrapper, router } = await monter()
     const tabs = wrapper.findAll('[role="tab"]')
-    expect(tabs.map((tab) => tab.text())).toEqual(['Rechercher', 'Parcourir les territoires'])
+    expect(tabs.map((tab) => tab.text())).toEqual(['Rechercher', 'Parcourir'])
     expect(wrapper.get('[role="tablist"]').attributes('aria-label')).toBe('Accéder aux territoires')
     expect(tabs[0].attributes('aria-selected')).toBe('true')
     expect(tabs[0].attributes('tabindex')).toBe('0')
@@ -73,6 +73,11 @@ describe('Accueil — direction approuvée #1027', () => {
     expect(wrapper.get('#accueil-panneau-rechercher').attributes('hidden')).toBeDefined()
     const panel = wrapper.get(`#${tabs[1].attributes('aria-controls')}`)
     expect(panel.findAll('a').map((a) => a.attributes('href'))).toEqual(['/communes', '/epcis', '/departements'])
+    expect(panel.findAll('a').map((a) => a.text())).toEqual(['Communes', 'EPCI', 'Départements'])
+    for (const lien of panel.findAll('a')) {
+      expect(lien.get('svg').attributes('aria-hidden')).toBe('true')
+      expect(lien.findAll('button, [role="button"]')).toHaveLength(0)
+    }
     expect(panel.find('a[href="/indicateurs"]').exists()).toBe(false)
     expect(wrapper.get('a[href="/indicateurs"]').isVisible()).toBe(true)
     await panel.get('a[href="/communes"]').trigger('click')

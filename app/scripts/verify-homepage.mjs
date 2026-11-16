@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core'
 // #1027: public rendered seam against a running preview. No invented article or
 // territory content: long labels come from the served committed reference.
 const base = process.env.LUSK_PREVIEW_URL || 'http://127.0.0.1:5177'
-const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r2'
+const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r3'
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
@@ -42,7 +42,10 @@ try {
     const initial = await geometry()
     assert(initial.pageWidth <= width, 'no horizontal page overflow')
     const searchTab = page.getByRole('tab', { name: 'Rechercher', exact: true })
-    const browseTab = page.getByRole('tab', { name: 'Parcourir les territoires', exact: true })
+    const browseTab = page.getByRole('tab', { name: 'Parcourir', exact: true })
+    const searchTabBox = await searchTab.boundingBox()
+    const browseTabBox = await browseTab.boundingBox()
+    assert(Math.abs(searchTabBox.width - browseTabBox.width) < 1, 'tabs have equal widths')
     assert.equal(await searchTab.getAttribute('aria-selected'), 'true')
     for (const tab of [searchTab, browseTab]) {
       const panel = page.locator(`#${await tab.getAttribute('aria-controls')}`)
@@ -55,9 +58,37 @@ try {
     assert(await browseTab.evaluate((el) => el === document.activeElement))
     assert.equal(await input.isVisible(), false)
     assert.deepEqual(await geometry(), initial, 'tab switching keeps the shared area and following content stable')
+    const rowGeometry = await page.locator('#accueil-panneau-parcourir a').evaluateAll((els) => els.map((el) => {
+      const r = el.getBoundingClientRect()
+      const panel = el.parentElement.getBoundingClientRect()
+      const style = getComputedStyle(el)
+      return { x: r.x, y: r.y, width: r.width, height: r.height, panelWidth: panel.width,
+        border: style.borderBottomStyle, borderWidth: parseFloat(style.borderBottomWidth),
+        decorativeArrow: el.querySelector('svg')?.getAttribute('aria-hidden') }
+    }))
+    assert.equal(rowGeometry.length, 3)
+    for (const row of rowGeometry) {
+      assert.equal(row.width, row.panelWidth, 'full-width navigational row')
+      assert(row.height >= 48, 'generous click target')
+      assert.equal(row.decorativeArrow, 'true')
+    }
+    assert(rowGeometry[1].y >= rowGeometry[0].y + rowGeometry[0].height)
+    assert(rowGeometry[2].y >= rowGeometry[1].y + rowGeometry[1].height)
+    assert(rowGeometry.slice(0, 2).every((row) => row.border === 'solid' && row.borderWidth >= 1), 'subtle row separators')
+    const firstRow = page.locator('#accueil-panneau-parcourir a').first()
+    const background = () => firstRow.evaluate((el) => getComputedStyle(el).backgroundColor)
+    const restBackground = await background()
+    await firstRow.hover()
+    const hoverBackground = await background()
+    assert.notEqual(hoverBackground, restBackground, 'visible row hover state')
+    await page.mouse.down()
+    assert.notEqual(await background(), hoverBackground, 'visible row active state')
+    await browseTab.hover()
+    await page.mouse.up()
     assert.equal(await page.locator('[role="tabpanel"] a[href="/indicateurs"]').count(), 0)
     await browseTab.press('Tab')
     assert(await page.locator('#accueil-panneau-parcourir a[href="/communes"]').evaluate((el) => el === document.activeElement))
+    assert(await firstRow.evaluate((el) => getComputedStyle(el).outlineStyle !== 'none' && parseFloat(getComputedStyle(el).outlineWidth) >= 2), 'visible keyboard row focus')
     await page.keyboard.press('Shift+Tab')
     assert(await browseTab.evaluate((el) => el === document.activeElement))
     await browseTab.press('ArrowRight')
@@ -147,7 +178,8 @@ try {
     assert.deepEqual(await geometry(), loading, 'successful retry must keep geometry')
     assert.equal(errors.length, 0, errors.join('\n'))
     assert.equal(assetFailures.length, 0, assetFailures.join('\n'))
-    report.push({ width, longest: longest.nom, initial, loading, slots, pageErrors: errors, assetFailures })
+    report.push({ width, tabWidths: [searchTabBox.width, browseTabBox.width], rowGeometry,
+      longest: longest.nom, initial, loading, slots, pageErrors: errors, assetFailures })
     await page.close()
   }
   await writeFile(`${output}/verification.json`, JSON.stringify(report, null, 2))
