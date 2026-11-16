@@ -65,6 +65,13 @@ function secondSectionEvidence(): AedarEquipmentProfileEvidence {
 }
 
 describe('AedarEquipmentWaffleCahier', () => {
+  it('keeps the closed equipment dialog table mounted for its mount-time resize observer', () => {
+    const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
+
+    expect(wrapper.find('dialog').attributes('open')).toBeUndefined()
+    expect(wrapper.find('.aedar-waffle-table-scroll').exists()).toBe(true)
+  })
+
   it('omits the Waffle color-limitation note', () => {
     const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
 

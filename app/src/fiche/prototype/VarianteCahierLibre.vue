@@ -567,6 +567,12 @@ onBeforeUnmount(() => {
                   class="concept-group-pdf-action"
                   :section-key="section.key"
                   :section-label="section.label"
+                  :identite="{
+                    territoryType: props.content.territory.type,
+                    territoryCode: props.content.territory.code,
+                    unitKey: currentUnit.key,
+                    sectionKey: section.key,
+                  }"
                   :capture="() => exportVenue.captureSection(section.key)"
                   :generator="props.pdfGenerator ?? null"
                 />
@@ -863,11 +869,11 @@ onBeforeUnmount(() => {
 .concept-group-heading h3 { grid-column: 2; min-width: 0; margin: 0; justify-self: center; color: var(--ink); text-align: center; font: var(--text-cahier-section); }
 .concept-group-pdf-action { grid-column: 3; justify-self: end; align-self: center; }
 @media (max-width: 760px) {
-  .concept-group-heading { grid-template-columns: minmax(0, 1fr) auto; }
-  .concept-group-heading > span { display: none; }
-  .concept-group-heading-copy,
-  .concept-group-heading > h3 { grid-column: 1; justify-self: start; text-align: left; }
-  .concept-group-pdf-action { grid-column: 2; justify-self: end; }
+  /* Keep the original centred heading and visible section number; only reserve
+     equal side columns wide enough for the labelled 44px action. */
+  .concept-group-heading {
+    grid-template-columns: minmax(96px, 1fr) minmax(0, 1.7fr) minmax(96px, 1fr);
+  }
 }
 .cahier--sans-grille .concept-group-narrative { font-size: clamp(1.05rem, 1.4vw, 1.35rem); font-style: italic; font-weight: 400; line-height: 1.15; text-wrap: balance; }
 .figure-spread { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(420px, 1.2fr); column-gap: clamp(40px, 5vw, 76px); row-gap: var(--cahier-spread-gap, 34px); align-items: start; padding: var(--cahier-spread-padding, 22px) 0; }

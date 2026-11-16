@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
 import CahierPdfAction from '@/fiche/prototype/CahierPdfAction.vue'
-import type { CahierPdfGenerator } from '@/fiche/prototype/cahierPdfExportController'
+import {
+  identitePorteeDeCapture,
+  type CahierPdfGenerator,
+  type CahierPdfScopeIdentity,
+} from '@/fiche/prototype/cahierPdfExportController'
 import { capturePdfFixture, withAedarModes } from './helpers/cahierPdfFixtures'
 
 const actionStyles = readFileSync(
@@ -48,12 +52,14 @@ function mountAction(options: {
   generator?: CahierPdfGenerator | null
   sectionKey?: string
   sectionLabel?: string
+  identite?: CahierPdfScopeIdentity
 } = {}) {
   const capture = options.capture ?? capturePdfFixture('aedar-equipment-profile')
   return mount(CahierPdfAction, {
     props: {
       sectionKey: options.sectionKey ?? capture.identity.sectionKey,
       sectionLabel: options.sectionLabel ?? capture.identity.sectionLabel,
+      identite: options.identite ?? identitePorteeDeCapture(capture),
       capture: () => capture,
       generator: options.generator === undefined
         ? vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
@@ -96,20 +102,24 @@ describe('shared PDF section action (#1023)', () => {
     const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact('cahier.pdf'))
     const wrapper = mountAction({ generator: generate })
     const button = wrapper.get('.cahier-pdf-action__button')
+    ;(button.element as HTMLElement).focus()
 
     await button.trigger('click')
     expect(button.text()).toBe('Préparation…')
-    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('aria-disabled')).toBe('true')
     expect(button.attributes('aria-busy')).toBe('true')
+    expect(button.attributes('disabled')).toBeUndefined()
+    expect(document.activeElement).toBe(button.element)
     expect(button.attributes('aria-live')).toBe('polite')
     expect(button.attributes('aria-atomic')).toBe('true')
     expect(clickSpy).not.toHaveBeenCalled()
 
     await flushPromises()
     expect(wrapper.get('.cahier-pdf-action__button').text()).toBe('PDF généré')
+    expect(wrapper.get('.cahier-pdf-action__button').attributes('aria-disabled')).toBeUndefined()
+    expect(document.activeElement).toBe(button.element)
     expect(clickedAnchor?.download).toBe('cahier.pdf')
     expect(createObjectURL).toHaveBeenCalledOnce()
-    expect(revokeObjectURL).toHaveBeenCalledOnce()
     expect(wrapper.element.querySelectorAll(':scope > p')).toHaveLength(0)
     wrapper.unmount()
   })
@@ -122,17 +132,97 @@ describe('shared PDF section action (#1023)', () => {
       aedar: withAedarModes(['car', 'transit', 'bike_lts2']),
     })
     const wrapper = mountAction({ capture, generator: generate })
+    const button = wrapper.get('.cahier-pdf-action__button')
+    ;(button.element as HTMLElement).focus()
 
-    await wrapper.get('.cahier-pdf-action__button').trigger('click')
+    await button.trigger('click')
     await flushPromises()
     expect(wrapper.get('.cahier-pdf-action__button').text()).toBe('Réessayer')
+    expect(document.activeElement).toBe(button.element)
     const failedRequest = generate.mock.calls[0]![0]
 
     await wrapper.get('.cahier-pdf-action__button').trigger('click')
     expect(wrapper.get('.cahier-pdf-action__button').text()).toBe('Préparation…')
+    expect(document.activeElement).toBe(button.element)
     await flushPromises()
     expect(generate.mock.calls[1]![0]).toBe(failedRequest)
     expect(wrapper.get('.cahier-pdf-action__button').text()).toBe('PDF généré')
+    expect(document.activeElement).toBe(button.element)
+    wrapper.unmount()
+  })
+
+  it('keeps focus on the trigger through modal confirm, preparing, error, retry and success', async () => {
+    const capture = capturePdfFixture('aedar-access', {
+      aedar: withAedarModes(['car', 'transit', 'bike_lts2', 'walk']),
+    })
+    const generate = vi.fn<CahierPdfGenerator>()
+      .mockRejectedValueOnce(new Error('échec'))
+      .mockResolvedValueOnce(artefact())
+    const wrapper = mountAction({ capture, generator: generate })
+    const trigger = wrapper.get('.cahier-pdf-action__button')
+    ;(trigger.element as HTMLElement).focus()
+
+    await trigger.trigger('click')
+    await nextTick()
+    await nextTick()
+    const boxes = wrapper.findAll('input[type="checkbox"]')
+    await boxes[0]!.setValue(true)
+    await boxes[1]!.setValue(true)
+    await boxes[2]!.setValue(true)
+    await wrapper.get('[data-pdf-confirm]').trigger('click')
+    await nextTick()
+    expect(trigger.text()).toBe('Préparation…')
+    expect(document.activeElement).toBe(trigger.element)
+
+    await flushPromises()
+    expect(trigger.text()).toBe('Réessayer')
+    expect(document.activeElement).toBe(trigger.element)
+
+    ;(trigger.element as HTMLElement).focus()
+    await trigger.trigger('click')
+    expect(trigger.text()).toBe('Préparation…')
+    expect(document.activeElement).toBe(trigger.element)
+    await flushPromises()
+    expect(trigger.text()).toBe('PDF généré')
+    expect(document.activeElement).toBe(trigger.element)
+    wrapper.unmount()
+  })
+
+  it('accepts a real generator at the public prop seam without remounting', async () => {
+    const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
+    const wrapper = mountAction({ generator: null })
+    const button = wrapper.get('.cahier-pdf-action__button')
+    expect(button.attributes('aria-disabled')).toBe('true')
+    expect(button.attributes('title')).toBeUndefined()
+
+    await wrapper.setProps({ generator: generate })
+    await nextTick()
+    expect(wrapper.get('.cahier-pdf-action__button').attributes('aria-disabled')).toBeUndefined()
+
+    await wrapper.get('.cahier-pdf-action__button').trigger('click')
+    await flushPromises()
+    expect(generate).toHaveBeenCalledOnce()
+    expect(wrapper.get('.cahier-pdf-action__button').text()).toBe('PDF généré')
+    wrapper.unmount()
+  })
+
+  it('discards the old download when the scope identity changes in place', async () => {
+    let resolve!: (value: ReturnType<typeof artefact>) => void
+    const generate = vi.fn<CahierPdfGenerator>().mockReturnValue(new Promise((yes) => { resolve = yes }))
+    const capture = capturePdfFixture('aedar-equipment-profile')
+    const identite = identitePorteeDeCapture(capture)
+    const wrapper = mountAction({ capture, generator: generate, identite })
+
+    await wrapper.get('.cahier-pdf-action__button').trigger('click')
+    await Promise.resolve()
+    expect(wrapper.get('.cahier-pdf-action__button').text()).toBe('Préparation…')
+
+    await wrapper.setProps({ identite: { ...identite, territoryCode: '22002' } })
+    resolve(artefact('ancien-territoire.pdf'))
+    await flushPromises()
+
+    expect(clickSpy).not.toHaveBeenCalled()
+    expect(wrapper.get('.cahier-pdf-action__button').text()).toBe('PDF')
     wrapper.unmount()
   })
 
@@ -169,7 +259,7 @@ describe('shared PDF section action (#1023)', () => {
     expect(generate).toHaveBeenCalledOnce()
     expect(generate.mock.calls[0]![0].modeIds).toEqual(['car', 'bike_lts2', 'bike_lts4'])
     expect(wrapper.get('.cahier-pdf-action__button').text()).toBe('PDF généré')
-    expect(dialog.attributes('open')).toBeUndefined()
+    expect(wrapper.find('.cahier-pdf-dialog').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -245,6 +335,7 @@ describe('shared PDF section action (#1023)', () => {
       props: {
         sectionKey: 'aedar-equipment-profile',
         sectionLabel: 'Profil',
+        identite: identitePorteeDeCapture(pending),
         capture: () => (ready.value ? settled : pending),
         generator: generate,
       },

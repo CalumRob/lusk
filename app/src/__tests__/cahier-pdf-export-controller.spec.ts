@@ -3,9 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   CahierPdfExportController,
+  identitePorteeDeCapture,
   type CahierPdfGenerator,
+  type CahierPdfScopeIdentity,
 } from '@/fiche/prototype/cahierPdfExportController'
 import { capturePdfFixture, withAedarModes } from './helpers/cahierPdfFixtures'
+
+const ID_A: CahierPdfScopeIdentity = identitePorteeDeCapture(capturePdfFixture('aedar-equipment-profile'))
+const ID_B: CahierPdfScopeIdentity = { ...ID_A, territoryCode: '22002' }
+const ID_ACCESS: CahierPdfScopeIdentity = identitePorteeDeCapture(capturePdfFixture('aedar-access'))
+
+async function flushMicrotasks(times = 8) {
+  for (let index = 0; index < times; index += 1) await Promise.resolve()
+}
 
 const originalCreateObjectUrl = (URL as unknown as { createObjectURL?: unknown }).createObjectURL
 const originalRevokeObjectUrl = (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL
@@ -74,6 +84,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     expect(controller.etat.value).toBe('done')
     expect(clickedAnchor?.download).toBe('section.pdf')
     expect(createObjectURL).toHaveBeenCalledOnce()
+    await new Promise((resolve) => setTimeout(resolve, 5))
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:pdf-test')
   })
 
@@ -176,6 +187,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     const controller = new CahierPdfExportController({
       capture: () => { captures += 1; return current },
       generator: generate,
+      identite: () => ID_ACCESS,
     })
 
     controller.activer()
@@ -275,5 +287,173 @@ describe('shared PDF export controller machine (#1023)', () => {
     controller.activer()
     expect(controller.etat.value).toBe('idle')
     expect(clickSpy).not.toHaveBeenCalled()
+  })
+
+  it('discards an in-place identity change even when the generator ignores abort', async () => {
+    const pending = deferred<ReturnType<typeof artefact>>()
+    let identity = ID_A
+    const generate = vi.fn<CahierPdfGenerator>().mockReturnValue(pending.promise)
+    const controller = new CahierPdfExportController({
+      capture: () => capturePdfFixture('aedar-equipment-profile'),
+      generator: generate,
+      identite: () => identity,
+    })
+
+    controller.activer()
+    await flushMicrotasks()
+    expect(controller.etat.value).toBe('preparing')
+
+    identity = ID_B
+    pending.resolve(artefact('territoire-a.pdf'))
+    await flushMicrotasks()
+
+    expect(clickSpy).not.toHaveBeenCalled()
+    expect(createObjectURL).not.toHaveBeenCalled()
+    expect(controller.etat.value).toBe('idle')
+    expect(controller.requete.value).toBeNull()
+  })
+
+  it('resets preparing, done and error state on an explicit identity lifecycle change', async () => {
+    const pending = deferred<ReturnType<typeof artefact>>()
+    const generate = vi.fn<CahierPdfGenerator>()
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValue(artefact())
+    let identity = ID_A
+    const controller = new CahierPdfExportController({
+      capture: () => capturePdfFixture('aedar-equipment-profile'),
+      generator: generate,
+      identite: () => identity,
+    })
+
+    controller.activer()
+    await flushMicrotasks()
+    const signal = generate.mock.calls[0]![1].signal
+    identity = ID_B
+    controller.changerIdentite()
+    expect(signal.aborted).toBe(true)
+    expect(controller.etat.value).toBe('idle')
+    expect(controller.requete.value).toBeNull()
+
+    identity = ID_A
+    controller.activer()
+    await flushMicrotasks()
+    expect(controller.etat.value).toBe('done')
+    identity = ID_B
+    controller.changerIdentite()
+    expect(controller.etat.value).toBe('idle')
+    expect(controller.requete.value).toBeNull()
+
+    const failing = vi.fn<CahierPdfGenerator>().mockRejectedValue(new Error('échec'))
+    identity = ID_A
+    const errorController = new CahierPdfExportController({
+      capture: () => capturePdfFixture('aedar-equipment-profile'),
+      generator: failing,
+      identite: () => identity,
+    })
+    errorController.activer()
+    await flushMicrotasks()
+    expect(errorController.etat.value).toBe('error')
+    identity = { ...ID_B, territoryCode: '22003' }
+    errorController.changerIdentite()
+    expect(errorController.etat.value).toBe('idle')
+    errorController.reessayer()
+    expect(failing).toHaveBeenCalledOnce()
+  })
+
+  it('does not retry a failed request under a different identity', async () => {
+    const generate = vi.fn<CahierPdfGenerator>().mockRejectedValue(new Error('échec'))
+    let identity = ID_A
+    const controller = new CahierPdfExportController({
+      capture: () => capturePdfFixture('aedar-equipment-profile'),
+      generator: generate,
+      identite: () => identity,
+    })
+
+    controller.activer()
+    await flushMicrotasks()
+    expect(controller.etat.value).toBe('error')
+    identity = ID_B
+    controller.reessayer()
+    expect(generate).toHaveBeenCalledOnce()
+    expect(controller.etat.value).toBe('idle')
+  })
+
+  it('keeps the exact failed request retryable while the identity is unchanged', async () => {
+    const first = capturePdfFixture('aedar-access', {
+      aedar: withAedarModes(['car', 'transit', 'bike_lts2']),
+    })
+    const edited = capturePdfFixture('aedar-access', {
+      aedar: withAedarModes(['walk', 'bike_lts4']),
+    })
+    let current = first
+    const generate = vi.fn<CahierPdfGenerator>()
+      .mockRejectedValueOnce(new Error('échec'))
+      .mockResolvedValueOnce(artefact())
+    const controller = new CahierPdfExportController({
+      capture: () => current,
+      generator: generate,
+      identite: () => ID_ACCESS,
+    })
+
+    controller.activer()
+    await flushMicrotasks()
+    const failed = generate.mock.calls[0]![0]
+    current = edited
+    controller.reessayer()
+    await flushMicrotasks()
+
+    expect(generate.mock.calls[1]![0]).toBe(failed)
+    expect(controller.etat.value).toBe('done')
+  })
+
+  it('updates the generator at the public seam without remounting', async () => {
+    const capture = capturePdfFixture('aedar-equipment-profile')
+    const controller = new CahierPdfExportController({
+      capture: () => capture,
+      generator: null,
+    })
+    expect(controller.peutActiver.value).toBe(false)
+
+    const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
+    controller.definirGenerateur(generate)
+    expect(controller.disponibilite.value).toEqual({ ready: true })
+    expect(controller.peutActiver.value).toBe(true)
+
+    controller.activer()
+    await flushMicrotasks()
+    expect(generate).toHaveBeenCalledOnce()
+    expect(controller.etat.value).toBe('done')
+  })
+
+  it('hands the object URL to the browser before scheduling its release', async () => {
+    const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
+    const controller = new CahierPdfExportController({
+      capture: () => capturePdfFixture('aedar-equipment-profile'),
+      generator: generate,
+    })
+
+    controller.activer()
+    await flushMicrotasks()
+    expect(createObjectURL).toHaveBeenCalledOnce()
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:pdf-test')
+  })
+
+  it('releases a pending handoff URL immediately on disposal', async () => {
+    const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
+    const controller = new CahierPdfExportController({
+      capture: () => capturePdfFixture('aedar-equipment-profile'),
+      generator: generate,
+    })
+
+    controller.activer()
+    await flushMicrotasks()
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+    controller.dispose()
+    expect(revokeObjectURL).toHaveBeenCalledOnce()
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(revokeObjectURL).toHaveBeenCalledOnce()
   })
 })

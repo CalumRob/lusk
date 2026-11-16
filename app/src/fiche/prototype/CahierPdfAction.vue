@@ -16,12 +16,13 @@ import type { CahierExportCapture } from './cahierExportCapture'
 import { CAHIER_EXPORT_MAX_MODES } from './cahierExportCapture'
 import CahierActionButton from './CahierActionButton.vue'
 import CahierDialog from './CahierDialog.vue'
-import { CahierPdfExportController } from './cahierPdfExportController'
-import type { CahierPdfGenerator } from './cahierPdfExportController'
+import { CahierPdfExportController, cleIdentite } from './cahierPdfExportController'
+import type { CahierPdfGenerator, CahierPdfScopeIdentity } from './cahierPdfExportController'
 
 const props = withDefaults(defineProps<{
   sectionKey: string
   sectionLabel: string
+  identite: CahierPdfScopeIdentity
   capture: () => CahierExportCapture | null
   generator?: CahierPdfGenerator | null
 }>(), { generator: null })
@@ -29,6 +30,7 @@ const props = withDefaults(defineProps<{
 const controller = new CahierPdfExportController({
   capture: () => props.capture(),
   generator: props.generator,
+  identite: () => props.identite,
 })
 const {
   etat,
@@ -77,6 +79,10 @@ const disabled = computed(() => etat.value === 'preparing')
 const blocked = computed(() => etat.value !== 'preparing'
   && etat.value !== 'error'
   && !peutActiver.value)
+const identityKey = computed(() => cleIdentite(props.identite))
+
+watch(identityKey, () => controller.changerIdentite())
+watch(() => props.generator, (next) => controller.definirGenerateur(next ?? null))
 
 const blockedReason = computed(() => {
   if (etat.value === 'preparing' || etat.value === 'error') return ''
@@ -119,8 +125,7 @@ watch(modaleOuverte, async (open) => {
       ref="trigger"
       type="button"
       class="cahier-pdf-action__button"
-      :disabled="disabled"
-      :aria-disabled="blocked ? 'true' : undefined"
+      :aria-disabled="disabled || blocked ? 'true' : undefined"
       :aria-label="ariaLabel"
       :aria-busy="etat === 'preparing' ? 'true' : undefined"
       :aria-describedby="blockedReason ? reasonId : undefined"
@@ -143,7 +148,8 @@ watch(modaleOuverte, async (open) => {
     >{{ blockedReason }}</span>
 
     <CahierDialog
-      :open="modaleOuverte"
+      v-if="modaleOuverte"
+      :open="true"
       title="Exporter en PDF"
       :labelled-by="titleId"
       class="cahier-pdf-dialog"
@@ -208,14 +214,13 @@ watch(modaleOuverte, async (open) => {
   white-space: nowrap;
   cursor: pointer;
 }
-.cahier-pdf-action__button:hover:not(:disabled) {
+.cahier-pdf-action__button:hover:not([aria-disabled='true']) {
   background: color-mix(in srgb, currentColor 8%, transparent);
 }
 .cahier-pdf-action__button:focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
 }
-.cahier-pdf-action__button:disabled,
 .cahier-pdf-action__button[aria-disabled='true'] {
   cursor: not-allowed;
   opacity: .55;
@@ -302,6 +307,8 @@ watch(modaleOuverte, async (open) => {
 @media (max-width: 760px) {
   .cahier-pdf-action__button {
     min-height: 44px;
+    padding-inline: 0;
+    gap: 2px;
   }
 }
 </style>

@@ -37,11 +37,54 @@ export type CahierPdfGenerator = (
 
 export type CahierPdfExportState = 'idle' | 'preparing' | 'done' | 'error'
 
+/**
+ * The stable identity a mounted action exports. It fences an in-place route
+ * change (same route record, same section key, new territory) without
+ * invalidating a frozen request on ordinary mode/horizon/equipment/group edits.
+ */
+export interface CahierPdfScopeIdentity {
+  readonly territoryType: string
+  readonly territoryCode: string
+  readonly unitKey: string
+  readonly sectionKey: string
+}
+
+export function identitePorteeDeCapture(capture: CahierExportCapture): CahierPdfScopeIdentity {
+  return {
+    territoryType: capture.identity.territory.type,
+    territoryCode: capture.identity.territory.code,
+    unitKey: capture.identity.unit.key,
+    sectionKey: capture.identity.sectionKey,
+  }
+}
+
+export function memesIdentites(
+  left: CahierPdfScopeIdentity | null,
+  right: CahierPdfScopeIdentity | null,
+): boolean {
+  return left !== null
+    && right !== null
+    && left.territoryType === right.territoryType
+    && left.territoryCode === right.territoryCode
+    && left.unitKey === right.unitKey
+    && left.sectionKey === right.sectionKey
+}
+
+export function cleIdentite(identity: CahierPdfScopeIdentity): string {
+  return [identity.territoryType, identity.territoryCode, identity.unitKey, identity.sectionKey].join('\u0000')
+}
+
 export interface CahierPdfExportControllerOptions {
   /** Synchronous immutable capture of the mounted section, or null when absent. */
   readonly capture: () => CahierExportCapture | null
   /** Null until the real browser composer is wired by integration lot E. */
   readonly generator: CahierPdfGenerator | null
+  /**
+   * The shell's current section/unit/territory identity. When provided, an
+   * in-place change resets the controller and fences late completions; ordinary
+   * within-section edits keep the frozen request retryable.
+   */
+  readonly identite?: () => CahierPdfScopeIdentity | null
 }
 
 export class CahierPdfExportController {
@@ -58,12 +101,16 @@ export class CahierPdfExportController {
     this.nombreChoix.value > 0 && this.nombreChoix.value <= CAHIER_EXPORT_MAX_MODES)
 
   private readonly captureSource: () => CahierExportCapture | null
-  private readonly generator: CahierPdfGenerator | null
+  private readonly identiteSource: (() => CahierPdfScopeIdentity | null) | null
+  private generator: CahierPdfGenerator | null
+  private generateurEnAttente: CahierPdfGenerator | null = null
+  private generateurEnAttenteDefini = false
   private captureEnAttente: CahierExportCapture | null = null
   private abort: AbortController | null = null
   private generation = 0
   private disposed = false
   private readonly objectUrls = new Set<string>()
+  private readonly revocationTimers = new Map<string, ReturnType<typeof setTimeout>>()
   /** A registration/data change invalidates the reactive availability read. */
   private readonly rafraichissement = ref(0)
 
@@ -72,6 +119,7 @@ export class CahierPdfExportController {
 
   constructor(options: CahierPdfExportControllerOptions) {
     this.captureSource = options.capture
+    this.identiteSource = options.identite ?? null
     this.generator = options.generator
     this.disponibilite = computed(() => {
       this.rafraichissement.value
@@ -92,14 +140,52 @@ export class CahierPdfExportController {
       }
       return evaluerDisponibiliteExportPdf(capture)
     })
-    this.peutActiver = computed(() => this.generator !== null
-      && this.etat.value !== 'preparing'
-      && (this.etat.value === 'error' || this.disponibilite.value.ready))
+    this.peutActiver = computed(() => {
+      const disponibilite = this.disponibilite.value
+      return this.generator !== null
+        && this.etat.value !== 'preparing'
+        && (this.etat.value === 'error' || disponibilite.ready)
+    })
   }
 
   /** Re-read the registration and reactive owner observations after mount. */
   rafraichir(): void {
     this.rafraichissement.value += 1
+  }
+
+  /**
+   * Integrate lot E may supply the real composer after mount. A change while a
+   * generation is in flight is queued until that generation settles, so the
+   * active request is never silently swapped mid-retry.
+   */
+  definirGenerateur(generator: CahierPdfGenerator | null): void {
+    if (this.disposed || this.generator === generator) return
+    if (this.etat.value === 'preparing') {
+      this.generateurEnAttente = generator
+      this.generateurEnAttenteDefini = true
+      return
+    }
+    this.generator = generator
+    this.generateurEnAttente = null
+    this.generateurEnAttenteDefini = false
+    this.rafraichir()
+  }
+
+  /**
+   * The shell observed a different section/unit/territory identity on the same
+   * mounted action. Abort the old generation and clear every old visible state;
+   * ordinary screen edits never call this.
+   */
+  changerIdentite(): void {
+    if (this.disposed) return
+    this.abort?.abort()
+    this.abort = null
+    this.generation += 1
+    this.etat.value = 'idle'
+    this.requete.value = null
+    this.fermerChoix()
+    this.annonce.value = ''
+    this.appliquerGenerateurEnAttente()
   }
 
   activer(): void {
@@ -115,6 +201,14 @@ export class CahierPdfExportController {
     const capture = this.lireCapture()
     if (!capture) {
       this.annoncer(messageActivationPdf('capture-unavailable'))
+      return
+    }
+    const identite = this.identiteSource
+      ? this.lireIdentite()
+      : identitePorteeDeCapture(capture)
+    if (!identite || !memesIdentites(identite, identitePorteeDeCapture(capture))) {
+      this.changerIdentite()
+      this.annoncer('Le territoire ou la section a changé. Relancez l’export.')
       return
     }
     const activation = evaluerDisponibiliteExportPdf(capture)
@@ -159,6 +253,11 @@ export class CahierPdfExportController {
     if (this.disposed || this.etat.value !== 'error') return
     const request = this.requete.value
     if (!request) return
+    const identite = this.identiteCourante()
+    if (!identite || !memesIdentites(identite, identitePorteeDeCapture(request.capture))) {
+      this.changerIdentite()
+      return
+    }
     // Retry reuses the exact frozen request and its capture, even when the
     // screen moved on after the failure.
     this.demarrerRequete(request)
@@ -169,9 +268,38 @@ export class CahierPdfExportController {
     this.disposed = true
     this.abort?.abort()
     this.abort = null
+    for (const [url, timer] of this.revocationTimers) {
+      clearTimeout(timer)
+      this.objectUrls.delete(url)
+      URL.revokeObjectURL(url)
+    }
+    this.revocationTimers.clear()
     for (const url of this.objectUrls) URL.revokeObjectURL(url)
     this.objectUrls.clear()
     this.fermerChoix()
+  }
+
+  private lireIdentite(): CahierPdfScopeIdentity | null {
+    if (!this.identiteSource) return null
+    try {
+      return this.identiteSource()
+    } catch {
+      return null
+    }
+  }
+
+  private identiteCourante(): CahierPdfScopeIdentity | null {
+    if (this.identiteSource) return this.lireIdentite()
+    const capture = this.lireCapture()
+    return capture ? identitePorteeDeCapture(capture) : null
+  }
+
+  private appliquerGenerateurEnAttente(): void {
+    if (!this.generateurEnAttenteDefini) return
+    this.generator = this.generateurEnAttente
+    this.generateurEnAttente = null
+    this.generateurEnAttenteDefini = false
+    this.rafraichir()
   }
 
   private lireCapture(): CahierExportCapture | null {
@@ -211,6 +339,11 @@ export class CahierPdfExportController {
 
   private demarrerRequete(request: CahierExportRequest): void {
     if (this.disposed || !this.generator) return
+    const identite = this.identiteCourante()
+    if (identite && !memesIdentites(identite, identitePorteeDeCapture(request.capture))) {
+      this.changerIdentite()
+      return
+    }
     this.abort?.abort()
     const abort = new AbortController()
     this.abort = abort
@@ -226,6 +359,10 @@ export class CahierPdfExportController {
       .then(() => generator(request, { signal: abort.signal }))
       .then((artifact) => {
         if (!this.estCourante(generation, abort)) return
+        if (!this.identiteToujoursCourante(request)) {
+          this.annulerGenerationPerimee(generation, abort)
+          return
+        }
         try {
           this.telecharger(artifact)
         } catch {
@@ -235,9 +372,24 @@ export class CahierPdfExportController {
         if (!this.estCourante(generation, abort)) return
         this.etat.value = 'done'
         this.annoncer('PDF généré.')
+        this.appliquerGenerateurEnAttente()
       }, () => {
         this.echouer(generation, abort)
       })
+  }
+
+  private identiteToujoursCourante(request: CahierExportRequest): boolean {
+    const identite = this.identiteCourante()
+    return identite !== null && memesIdentites(identite, identitePorteeDeCapture(request.capture))
+  }
+
+  private annulerGenerationPerimee(generation: number, abort: AbortController): void {
+    if (!this.estCourante(generation, abort)) return
+    abort.abort()
+    this.etat.value = 'idle'
+    this.requete.value = null
+    this.annonce.value = ''
+    this.appliquerGenerateurEnAttente()
   }
 
   private estCourante(generation: number, abort: AbortController): boolean {
@@ -251,6 +403,7 @@ export class CahierPdfExportController {
     if (!this.estCourante(generation, abort)) return
     this.etat.value = 'error'
     this.annoncer('La génération du PDF a échoué. Vous pouvez réessayer.')
+    this.appliquerGenerateurEnAttente()
   }
 
   private telecharger(artifact: CahierPdfArtifact): void {
@@ -261,19 +414,44 @@ export class CahierPdfExportController {
     }
     const url = URL.createObjectURL(artifact.blob)
     this.objectUrls.add(url)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = artifact.fileName
-    anchor.rel = 'noopener'
-    anchor.style.display = 'none'
-    document.body.appendChild(anchor)
     try {
-      anchor.click()
-    } finally {
-      anchor.remove()
-      URL.revokeObjectURL(url)
-      this.objectUrls.delete(url)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = artifact.fileName
+      anchor.rel = 'noopener'
+      anchor.style.display = 'none'
+      document.body.appendChild(anchor)
+      try {
+        anchor.click()
+      } finally {
+        anchor.remove()
+      }
+      // The click has handed the blob URL to the browser's download machinery.
+      // Release it on the next task, never before the handoff; disposal cancels
+      // the pending release and revokes immediately.
+      this.planifierRevocation(url)
+    } catch (error) {
+      this.revoquerMaintenant(url)
+      throw error
     }
+  }
+
+  private planifierRevocation(url: string): void {
+    const timer = setTimeout(() => {
+      this.revocationTimers.delete(url)
+      this.objectUrls.delete(url)
+      URL.revokeObjectURL(url)
+    }, 0)
+    this.revocationTimers.set(url, timer)
+  }
+
+  private revoquerMaintenant(url: string): void {
+    const timer = this.revocationTimers.get(url)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      this.revocationTimers.delete(url)
+    }
+    if (this.objectUrls.delete(url)) URL.revokeObjectURL(url)
   }
 
   private annoncer(message: string): void {

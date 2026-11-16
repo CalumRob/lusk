@@ -135,14 +135,42 @@ served `no-served-reference`, and explicit unavailable cells remain exportable.
 unobserved/loading/error/unavailable direct reference is never treated as
 `no-served-reference`.
 
+The action keeps its visible focus while blocked or preparing: it is not natively
+`disabled`, it exposes `aria-disabled`/`aria-busy`, the controller refuses a
+duplicate activation, and the blocked reason is associated through
+`aria-describedby` to a visually hidden text. The trigger therefore remains the
+focus destination after direct activation and after the chooser closes, through
+preparing, success and error. The PDF chooser is the only dialog lazily created
+by this seam; the shared `CahierDialog` keeps closed slot content mounted so
+existing owners (notably the waffle table's mount-time `ResizeObserver`) retain
+their refs and lifecycle.
+
 Until integration lot E wires the real composer, `VarianteCahierLibre`'s
 `pdfGenerator` prop is null. Every action remains mounted but inert, visibly
-labelled `PDF` and disabled with an accessible reason; it does not simulate a
-download or a success. `cahier-pdf-export-activation.spec.ts`,
+labelled `PDF`, focusable with `aria-disabled` and an accessible reason; it does
+not simulate a download or a success. The action also accepts a later
+`definirGenerateur` update at the same public seam (queued while a generation is
+in flight) so E may supply the composer asynchronously without remounting; no
+production stub is shipped. `cahier-pdf-export-activation.spec.ts`,
 `cahier-pdf-export-controller.spec.ts`, `cahier-pdf-action.spec.ts` and the
 mounted `cahier-pdf-shell.spec.ts` exercise the policy matrix, controller
 machine, desktop/mobile/keyboard action and the real nine-section mount with an
 injected generator. Production generation remains E's acceptance work.
+
+### Identity and delivery fences
+
+Each action receives the shell's `{ territoryType, territoryCode, unitKey,
+sectionKey }`. The controller fences that scope, not the selected modes,
+horizon, equipment or comparison group: a same-route territory change resets
+`idle`/`done`/`error`/preparing state, aborts the old generation and rejects a
+late completion even when the injected generator ignored the abort. Ordinary
+edits under the same identity keep the exact failed request retryable.
+
+Browser delivery hands the generated Blob URL to an anchor click, then releases
+it on the next task; disposal clears any pending release and revokes
+immediately. The success state means the browser download handoff occurred, not
+that a file was written to disk; the cleanup task is not a generation timer and
+never fabricates success.
 
 ## Preserved boundaries
 

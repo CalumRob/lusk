@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { lockPageScroll } from './pageScrollLock'
 
 const props = defineProps<{
@@ -14,7 +14,7 @@ const dialog = ref<HTMLDialogElement | null>(null)
 let suppressCloseEvent = false
 let releasePageScrollLock: (() => void) | null = null
 
-watch(() => props.open, (open) => {
+function applyOpen(open: boolean) {
   const element = dialog.value
   if (!element) return
   if (open && !element.open) {
@@ -30,7 +30,14 @@ watch(() => props.open, (open) => {
     else element.removeAttribute('open')
     restorePageScroll()
   }
-}, { flush: 'post' })
+}
+
+watch(() => props.open, applyOpen, { flush: 'post' })
+// A dialog may be created lazily already open (the shared PDF action mounts it
+// only while its chooser is open). The watch needs the mounted template ref.
+onMounted(() => {
+  if (props.open) applyOpen(true)
+})
 
 function restorePageScroll() {
   releasePageScrollLock?.()
@@ -67,7 +74,7 @@ function onNativeClose() {
     @close="onNativeClose"
     @click="(event) => { if (event.target === event.currentTarget) close() }"
   >
-    <div v-if="props.open" class="cahier-dialog__content">
+    <div class="cahier-dialog__content">
       <h2 class="cahier-dialog__title" :id="props.labelledBy">{{ props.title }}</h2>
       <header class="cahier-dialog__header">
         <slot name="toolbar" />

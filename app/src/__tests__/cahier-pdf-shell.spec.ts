@@ -218,12 +218,65 @@ describe('shared PDF action on the mounted Cahier shell (#1023)', () => {
     wrapper.unmount()
   })
 
+  it('discards an in-place territory change even when the old generator ignores abort', async () => {
+    let resolve!: (value: ReturnType<typeof artefact>) => void
+    const generate = vi.fn<CahierPdfGenerator>().mockReturnValue(new Promise((yes) => { resolve = yes }))
+    const { wrapper, content } = await mountShell(generate)
+
+    await wrapper.get('[data-section="aedar-equipment-profile"] .cahier-pdf-action__button').trigger('click')
+    await Promise.resolve()
+    expect(
+      wrapper.get('[data-section="aedar-equipment-profile"] .cahier-pdf-action__button').text(),
+    ).toBe('Préparation…')
+
+    await wrapper.setProps({
+      content: {
+        ...content,
+        territory: { ...content.territory, code: '22002', name: 'Commune B' },
+      },
+    })
+    resolve(artefact('commune-a.pdf'))
+    await flushPromises()
+
+    expect(clickSpy).not.toHaveBeenCalled()
+    expect(
+      wrapper.get('[data-section="aedar-equipment-profile"] .cahier-pdf-action__button').text(),
+    ).toBe('PDF')
+    wrapper.unmount()
+  })
+
+  it('clears a settled PDF généré state when the same mounted shell changes territory', async () => {
+    const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
+    const { wrapper, content } = await mountShell(generate)
+
+    await wrapper.get('[data-section="aedar-equipment-profile"] .cahier-pdf-action__button').trigger('click')
+    await flushPromises()
+    expect(
+      wrapper.get('[data-section="aedar-equipment-profile"] .cahier-pdf-action__button').text(),
+    ).toBe('PDF généré')
+
+    await wrapper.setProps({
+      content: {
+        ...content,
+        territory: { ...content.territory, code: '22002', name: 'Commune B' },
+      },
+    })
+    await nextTick()
+    expect(
+      wrapper.get('[data-section="aedar-equipment-profile"] .cahier-pdf-action__button').text(),
+    ).toBe('PDF')
+    wrapper.unmount()
+  })
+
   it('places the action at the heading edge, vertically centered, with a mobile label target', () => {
     expect(shellSource).toContain('.concept-group-pdf-action')
     expect(shellSource).toMatch(/\.concept-group-heading\s*\{[^}]*grid-template-columns:/s)
     expect(shellSource).toMatch(/\.concept-group-heading\s*\{[^}]*align-items:\s*center;/s)
     expect(shellSource).toMatch(/\.concept-group-pdf-action\s*\{[^}]*grid-column:\s*3;/s)
     expect(shellSource).toMatch(/\.concept-group-pdf-action\s*\{[^}]*justify-self:\s*end;/s)
-    expect(shellSource).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.concept-group-pdf-action\s*\{[^}]*grid-column:\s*2;/s)
+    expect(shellSource).toMatch(/\.concept-group-heading > span\s*\{[^}]*grid-column:\s*1;/s)
+    expect(shellSource).toMatch(/@media \(max-width: 760px\)[\s\S]*?grid-template-columns:\s*minmax\(96px, 1fr\)/s)
+    expect(shellSource).not.toMatch(/@media \(max-width: 760px\)[\s\S]*?\.concept-group-heading > span\s*\{[^}]*display:\s*none/s)
+    expect(shellSource).not.toMatch(/@media \(max-width: 760px\)[\s\S]*?\.concept-group-heading > h3\s*\{[^}]*text-align:\s*left/s)
   })
 })
