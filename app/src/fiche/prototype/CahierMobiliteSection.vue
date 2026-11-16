@@ -47,10 +47,12 @@ const control = inject(CONTROLE_COMPARAISON_KEY, undefined)
 
 /**
  * A provided null control means the territory is comparison-ineligible (#768).
- * Like explicit « Aucune comparaison », it removes the peer layer, not the
- * factual figure. An absent provider keeps standalone figure fixtures usable.
+ * It removes peer grammar, not the factual figure. Explicit « Aucune
+ * comparaison » keeps the existing inactive legend, while its coverage row is
+ * absent. An absent provider keeps standalone figure fixtures usable.
  */
-const comparisonNone = computed(() => control?.value === null || control?.value?.selection.etat === 'vide')
+const comparisonIneligible = computed(() => control?.value === null)
+const comparisonNone = computed(() => comparisonIneligible.value || control?.value?.selection.etat === 'vide')
 
 const effectiveComparison = computed(() => {
   if (props.comparison.status !== 'ready') return props.comparison
@@ -136,7 +138,7 @@ function ratioAriaLabel(
 ): string {
   const fact = ratio.value.fact
   const parts = [`${ratio.label} : ${ratioValueLabel(ratio)}`]
-  if (comparisonNone.value) return parts.join('. ')
+  if (comparisonIneligible.value) return parts.join('. ')
   if (fact.value === null) {
     parts.push(ratio.note ?? 'Valeur indisponible')
     return parts.join('. ')
@@ -203,7 +205,7 @@ function ratioAriaLabel(
           <CahierMobiliteComparisonBars
             :figure="networks.figure"
             :comparison="effectiveComparison"
-            :comparison-none="comparisonNone"
+            :comparison-none="comparisonIneligible"
           />
         </figure>
       </div>
@@ -232,7 +234,7 @@ function ratioAriaLabel(
           <CahierMobiliteComparisonBars
             :figure="column.bars"
             :comparison="effectiveComparison"
-            :comparison-none="comparisonNone"
+            :comparison-none="comparisonIneligible"
           />
         </figure>
         <figure class="mobilite-ratio-scalar">
@@ -309,7 +311,7 @@ function ratioAriaLabel(
       </div>
       <figure class="mobilite-section-figure mobilite-section-figure--wide">
         <figcaption class="cahier-figure-title">{{ curve.figureTitle }}</figcaption>
-        <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" :comparison-none="comparisonNone" />
+        <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" :comparison-none="comparisonIneligible" />
       </figure>
     </div>
   </div>
