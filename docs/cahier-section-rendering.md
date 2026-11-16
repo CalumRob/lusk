@@ -8,8 +8,9 @@ extraction does not migrate other theme tabs or add hypothetical theme APIs.
 
 | Owner | Responsibility |
 | --- | --- |
-| `VarianteCahierLibre` | Page/spine/navigation, headings and comparison controls, section wrappers and anchors, lecture/fallback presentation, chapter visibility, baseline measurement, exploration footers and source register. |
+| `VarianteCahierLibre` | Page/spine/navigation, headings and comparison controls, the shared section PDF action, section wrappers and anchors, lecture/fallback presentation, chapter visibility, baseline measurement, exploration footers and source register. |
 | `cahierSectionRenderers` | Closed, exhaustive `ContentEvidence['kind']` lookup; focused typed bindings to existing compositions. Null evidence and disabled AEDAR explicitly select the placeholder without mounting a body. |
+| `CahierPdfAction` / `cahierPdfExportController` | Shared PDF interaction state and dialog: capture, mode choice projection, generation, delivery, retry and cleanup. `cahierPdfExport` owns only the completeness/activation policy over the #1021 capture. |
 | `CahierAedarOverviewSection` | Car map + prose/source + scalar composition, including its acquired comparison status/retry. |
 | `CahierAedarDiversityLossSection` | Existing loss-map composition, with explicit chapter activity. |
 | `CahierAedarAccessSection` | Two ramps, their prose/source and shared legend; mechanical evidence-to-ramp adapter. |
@@ -105,6 +106,43 @@ the projection; the mounted `cahier-export-capture-mounted.spec.ts` drives the
 real owners (horizon, modes, TYPEQU acquisition, independent comparison layers,
 real map/legend pending/loaded/failure transitions, late group/territory changes
 and screen stability).
+
+## Shared PDF controls (#1023)
+
+`CahierPdfAction.vue` is the one action/dialog mounted by
+`VarianteCahierLibre` inside each `.concept-group-heading` whose renderer has a
+body. It is not copied into an AEDAR composition or the Mobilité delegate, and
+there is no section-key list: the nine native sections receive the same action
+because they share the heading loop.
+
+The action owns only interaction state through `cahierPdfExportController`:
+capture at activation, the direct route for zero/one-to-three offered series,
+the PDF-only chooser above three, an immutable `CahierExportRequest`, real
+browser delivery, retry of the same failed request, new capture after success,
+double-click suppression, late-result fencing and clone/object-URL cleanup.
+Capture and generation are injected at the public seam; the controller owns no
+factual value or PDF template.
+
+`cahierPdfExport.ts` is the activation policy over #1021's capture. The owner's
+2026-11-16 decision is **wait for completeness**: a pending/failed section,
+source clock, required map or legend, acquired equipment detail, requested
+comparison, direct reference, or declared resource failure blocks the export.
+The policy reads the closed owner states rather than a broad `status !== ready`:
+a source-contract map that is not declared, an explicitly empty or ineligible
+comparison, a comparison hidden by the reader or by the selected series, a
+served `no-served-reference`, and explicit unavailable cells remain exportable.
+`referenceStatus` stays distinct from the aggregate comparison status, so an
+unobserved/loading/error/unavailable direct reference is never treated as
+`no-served-reference`.
+
+Until integration lot E wires the real composer, `VarianteCahierLibre`'s
+`pdfGenerator` prop is null. Every action remains mounted but inert, visibly
+labelled `PDF` and disabled with an accessible reason; it does not simulate a
+download or a success. `cahier-pdf-export-activation.spec.ts`,
+`cahier-pdf-export-controller.spec.ts`, `cahier-pdf-action.spec.ts` and the
+mounted `cahier-pdf-shell.spec.ts` exercise the policy matrix, controller
+machine, desktop/mobile/keyboard action and the real nine-section mount with an
+injected generator. Production generation remains E's acceptance work.
 
 ## Preserved boundaries
 
