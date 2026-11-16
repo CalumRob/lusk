@@ -33,7 +33,7 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 
 | Route | Name | Status |
 |---|---|---|
-| `/` | `accueil` | **Revised for seventh owner preview, awaiting inspection** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
+| `/` | `accueil` | **Revised for eighth owner preview, awaiting inspection** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
 | `/carte` | `carte` | **Built** — map (#39) ; épargnée par ruling PO (2026-08-26, #410) : routée et fonctionnelle mais SANS aucun lien face-utilisateur |
 | `/communes` | `communes` | **Built** — link directory (#40) |
 | `/epcis` | `epcis` | **Built** — link directory (#40) |
@@ -84,28 +84,34 @@ same em ratio, overlap and colours.
 
 The seventh preview is an explicit experiment (comment 6920100491): the
 permanent empty 80px recovery reservation is gone (a real error now grows the
-document), the link→editorial gap is 20px at ≥768px, and the hero/section rule
-is removed. The three provisional slots are small Cahier-like paper pages using
-the existing `--editorial-paper`/`--editorial-margin` roles, page border, faint
-margin rule and the shared type roles — no new tokens, pagination, metadata or
-fake content. Measured normal-search view: 1440×900 fits without scrolling
-(886px content in a 900px viewport); 1440×800 honestly overflows by 86px (the
-footer), without clipping, fixed heights or overflow hiding. Browse expansion
-still grows the page. Owner inspection of this seventh preview is **pending**,
-before reviewer dispatch; this is not final visual approval or site-wide
-adoption.
+document), the hero/section rule is removed, and the three provisional slots are
+small Cahier-like paper pages using the existing `--editorial-paper`/
+`--editorial-margin` roles, page border, faint margin rule and shared type
+roles — no new content, pagination or tokens.
+
+The eighth preview balances the remaining whitespace (comment 6920444304). The
+app shell pins the footer to the viewport bottom when content is short, so slack
+pools below the pages; the homepage now uses a 48px separation above the pages
+and a homepage-scoped 36px footer margin (other routes keep the shared 64px).
+Measured at 1440×900: 48px above / 50px below in « Rechercher », 48/36 in
+« Parcourir »; 1440×800 overflows honestly by 86px; mobile is 36px above /
+36px below and stacks the pages. The mini-page look, anchored brand, equal tabs
+and natural browse expansion are unchanged. Owner inspection of this eighth
+preview is **pending**, before reviewer dispatch; this is not final visual
+approval or site-wide adoption.
 
 With the dev server running, `node scripts/verify-homepage.mjs` checks real
 committed territory assets, long labels, fixed geometry, empty/loading/error and
 retry states, intentional cross-tab expansion/contraction, brand area/size,
-bounded intro spacing, absent divider, the mini-page paper treatment, compact
-1440×900 fit and honest 1440×800 overflow at 1440/900/375/320, equal tab widths,
+bounded intro spacing, balanced above/below gaps in both tabs, absent divider,
+the mini-page paper treatment, compact 1440×900 fit and honest 1440×800
+overflow at 1440/900/375/320, equal tab widths,
 exact and prefix administrative-code search,
 row targets/separators/hover/focus/active states,
 tab keyboard/focus behavior, actual list navigation, preserved
 header/mobile links, keyboard suggestions and inert placeholders.
 `LUSK_PREVIEW_URL` selects the server; `LUSK_SCREENSHOT_DIR` selects an external
-evidence folder (default `E:/Temp/opencode/homepage-1027-r7`). It simulates one failed
+evidence folder (default `E:/Temp/opencode/homepage-1027-r8`). It simulates one failed
 territory request per viewport, then retries the real file; it does not publish
 or invent data. This browser proof complements the homepage/footer/app and shared
 search unit tests, not owner visual acceptance.

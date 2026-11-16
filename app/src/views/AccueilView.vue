@@ -307,7 +307,7 @@ function naviguerOnglets(event: KeyboardEvent) {
   margin-inline: auto;
   /* #1027 experiment: the hero/editorial rule is gone; keep a compact,
      deliberate breath between the access area and the mini-pages. */
-  padding: var(--space-3) var(--grid-margin-mobile) 0;
+  padding: var(--space-10) var(--grid-margin-mobile) 0;
 }
 .accueil-editorial {
   display: grid;
@@ -361,6 +361,7 @@ function naviguerOnglets(event: KeyboardEvent) {
     padding-bottom: var(--space-6);
   }
   .accueil-hero-marque { padding-top: 0; }
+  .accueil-interieur { padding-top: var(--space-3); }
   .accueil-editorial { grid-template-columns: minmax(0, 1fr); }
   .accueil-feuillet {
     padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8);

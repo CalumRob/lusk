@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core'
 // #1027: public rendered seam against a running preview. No invented article or
 // territory content: long labels come from the served committed reference.
 const base = process.env.LUSK_PREVIEW_URL || 'http://127.0.0.1:5177'
-const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r7'
+const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r8'
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
@@ -40,10 +40,15 @@ try {
       const intro = box('.accueil-sous-titre')
       const tabs = box('.accueil-onglets')
       const brand = box('.accueil-hero-marque')
+      const footer = box('.pied')
       return { search: box('.accueil-territoires'), brand, intro, tabs,
         editorial: box('.accueil-editorial'),
         link: box('.accueil-indicateurs'), pageWidth: document.documentElement.scrollWidth,
         docHeight: document.documentElement.scrollHeight,
+        footerTop: footer.y,
+        gapAbovePages: box('.accueil-editorial').y - box('.accueil-indicateurs').bottom,
+        gapBelowPages: footer.y - box('.accueil-editorial').bottom,
+        homepageFooter: document.querySelector('.pied').classList.contains('pied--accueil'),
         heroBorder: getComputedStyle(document.querySelector('.accueil-hero')).borderBottomWidth,
         gapIntroTabs: tabs.y - intro.bottom,
         gapIntroBrand: brand.y - intro.bottom,
@@ -350,16 +355,17 @@ try {
     await page.close()
   }
 
-  // Owner experiment: compact normal-search view at representative desktop
-  // heights. Fit is measured, never forced (no clipping, fixed height or
-  // overflow:hidden), and a real 800px viewport is allowed to scroll.
+  // Owner spacing revision: balance the gap above the mini-pages against the
+  // gap below them. Fit is measured, never forced (no clipping, fixed height
+  // or overflow:hidden); the footer separation is homepage-scoped so other
+  // surfaces keep their shared 64px margin.
   const desktopHeights = []
   for (const height of [900, 800]) {
     const page = await browser.newPage({ viewport: { width: 1440, height } })
     await page.goto(base)
     await page.locator('.accueil[aria-busy="false"]').waitFor()
     await page.evaluate(() => document.fonts.ready)
-    const mesure = await page.evaluate(() => {
+    const mesure = () => page.evaluate(() => {
       const rect = (selector) => document.querySelector(selector).getBoundingClientRect()
       return {
         viewport: window.innerHeight,
@@ -368,23 +374,43 @@ try {
           .some((el) => ['hidden', 'clip'].includes(getComputedStyle(el).overflowY)),
         reservation: document.querySelector('.accueil-recuperation')?.getBoundingClientRect().height ?? 0,
         errorPresent: Boolean(document.querySelector('.accueil-erreur')),
+        gapAbove: rect('.accueil-editorial').top - rect('.accueil-indicateurs').bottom,
+        gapBelow: rect('.pied').top - rect('.accueil-editorial').bottom,
+        homepageFooter: document.querySelector('.pied').classList.contains('pied--accueil'),
         editorialBottom: rect('.accueil-editorial').bottom + window.scrollY,
         footerTop: rect('.pied').top + window.scrollY,
       }
     })
-    assert.equal(mesure.hiddenOverflow, false, 'fit is never obtained by clipping overflow')
-    assert.equal(mesure.reservation, 0, 'no permanent empty recovery reservation')
-    assert.equal(mesure.errorPresent, false)
-    assert(mesure.editorialBottom <= mesure.footerTop, 'editorial precedes the footer')
+    const search = await mesure()
+    assert.equal(search.hiddenOverflow, false, 'fit is never obtained by clipping overflow')
+    assert.equal(search.reservation, 0, 'no permanent empty recovery reservation')
+    assert.equal(search.errorPresent, false)
+    assert.equal(search.homepageFooter, true, 'the homepage-scoped footer separation applies')
+    assert(search.editorialBottom <= search.footerTop, 'editorial precedes the footer')
+    assert(search.gapAbove >= 40 && search.gapAbove <= 56,
+      `gap above pages ${search.gapAbove}px out of bounds`)
     if (height === 900) {
-      assert(mesure.scrollHeight <= mesure.viewport,
-        `1440x900 must fit without scrolling (${mesure.scrollHeight} > ${mesure.viewport})`)
+      assert(search.scrollHeight <= search.viewport,
+        `1440x900 must fit without scrolling (${search.scrollHeight} > ${search.viewport})`)
+      assert(search.gapBelow >= 40 && search.gapBelow <= 62,
+        `gap below pages ${search.gapBelow}px out of bounds`)
+      assert(Math.abs(search.gapAbove - search.gapBelow) <= 16,
+        `search gaps unbalanced: ${search.gapAbove}/${search.gapBelow}`)
     } else {
-      assert(mesure.scrollHeight > mesure.viewport,
+      assert(search.scrollHeight > search.viewport,
         '1440x800 is recorded as an honest overflow, not force-fitted')
+      assert(search.gapBelow >= 24 && search.gapBelow <= 56,
+        `gap below pages ${search.gapBelow}px out of bounds at 800`)
     }
     await page.screenshot({ path: `${output}/homepage-1440x${height}.png`, fullPage: true, animations: 'disabled' })
-    desktopHeights.push({ height, ...mesure })
+    await page.getByRole('tab', { name: 'Parcourir', exact: true }).click()
+    const browse = await mesure()
+    assert(Math.abs(browse.gapAbove - search.gapAbove) < 0.5,
+      'the balanced gap above the pages is independent of the active tab')
+    assert(browse.gapBelow >= 24, 'browse keeps a separation before the footer')
+    assert(browse.scrollHeight >= browse.viewport, 'browse expands naturally instead of reserving height')
+    await page.screenshot({ path: `${output}/homepage-1440x${height}-browse.png`, fullPage: true, animations: 'disabled' })
+    desktopHeights.push({ height, search, browse })
     await page.close()
   }
   await writeFile(`${output}/verification.json`, JSON.stringify({ previewWidths: report, desktopHeights }, null, 2))

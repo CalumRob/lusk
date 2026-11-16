@@ -22,5 +22,7 @@ describe('AppFooter — navigation sobre partagée (#1027)', () => {
     expect(charger).not.toHaveBeenCalled()
     const externe = wrapper.get('a[href="https://calumrobertson.fr"]')
     expect(externe.attributes('rel')).toBe('noopener noreferrer')
+    // #1027 spacing: only the homepage may tighten the footer separation.
+    expect(wrapper.get('.pied').classes('pied--accueil')).toBe(path === '/')
   })
 })
