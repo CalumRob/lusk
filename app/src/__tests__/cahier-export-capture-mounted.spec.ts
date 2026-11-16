@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
+import type { AedarSummaryFetchResult } from '@/fiche/content/aedarApiClient'
 import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
 import { CONTROLE_COMPARAISON_KEY } from '@/fiche/comparisonContext'
 import type { ControleComparaison } from '@/fiche/comparisonContext'
@@ -46,7 +47,17 @@ const aedarSourceFields = {
   publication_date: '2026-09-30',
 }
 
-function aggregatesFor(typequ: string) {
+function aggregatesFor(
+  typequ: string,
+  overrides: {
+    source_id?: string
+    vintage_id?: string
+    reference_date?: string | null
+    publication_date?: string | null
+    coverage_status?: string
+    measures?: Record<string, number | null>
+  } = {},
+) {
   return {
     status: 'ready' as const,
     contentVersion: 'facts',
@@ -63,6 +74,7 @@ function aggregatesFor(typequ: string) {
       coverage_status: 'covered',
       measures: { count_15_car_mean: 4, count_20_car_mean: 6 },
       ...aedarSourceFields,
+      ...overrides,
     }],
   }
 }
@@ -167,11 +179,13 @@ async function render(extra: Record<string, unknown> = {}, options: {
   lossMetadata?: ReturnType<typeof readyLossMetadata>
   aedarReference?: 'sparse-car'
   explorerComparison?: boolean
+  curveReference?: 'null'
 } = {}) {
   const { content, control } = cahierExportFixture({
     lossMetadata: options.lossMetadata,
     aedarReference: options.aedarReference,
     explorerComparison: options.explorerComparison,
+    curveReference: options.curveReference,
   })
   const themed = shapeBarReferences(content, options.barReferences ?? 'served')
   const controlRef = ref<ControleComparaison>(control)
@@ -223,6 +237,49 @@ function toggleByText(wrapper: VueWrapper, scope: string, label: string) {
 function mapPanels(wrapper: VueWrapper, sectionKey: string) {
   return wrapper.findAllComponents(CahierMapPanel)
     .filter((panel) => panel.element.closest(`[data-section="${sectionKey}"]`))
+}
+
+async function mountProductionShell(options: {
+  libelleActif?: string | null
+  referenceStatus?: 'unavailable' | 'loading' | 'ready' | 'error'
+  referenceData?: AedarSummaryFetchResult | null
+} = {}): Promise<VueWrapper> {
+  const { content } = cahierExportFixture()
+  const { summary, detail } = aedarReadyFixtures()
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  await router.push('/')
+  const control = ref<ControleComparaison>({
+    focal: territoiresFixture[0]!,
+    territoires: territoiresFixture,
+    selection: { etat: 'defaut' },
+    libelleActif: options.libelleActif ?? null,
+    presetDefaut: 'epci',
+    presets: [],
+    choisir: () => {},
+  })
+  const wrapper = mount(ProductionMobiliteAedar, {
+    props: {
+      content,
+      pagination: cahierPaginationFor({} as Payload, content, true),
+      aedarData: detail,
+      aedarStatus: 'ready',
+      retryAedar: () => {},
+      aedarSummaryData: { status: 'ready', summary },
+      aedarSummaryStatus: 'ready',
+      retryAedarSummary: () => {},
+      aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI test' },
+      aedarReferenceData: options.referenceData ?? null,
+      aedarReferenceStatus: options.referenceStatus ?? 'unavailable',
+      aedarActive: false,
+      nativeComparisonStatus: 'ready',
+    },
+    global: {
+      plugins: [router],
+      provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control },
+    },
+  })
+  await flushPromises()
+  return wrapper
 }
 
 async function emitMap(panel: ReturnType<typeof mapPanels>[number], event: 'loaded' | 'unavailable') {
@@ -430,44 +487,148 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     expect(capture.comparison.display.reason).toBe('error')
     direct.wrapper.unmount()
 
-    const { content } = cahierExportFixture()
-    const { summary, detail } = aedarReadyFixtures()
-    const router = createRouter({ history: createMemoryHistory(), routes })
-    await router.push('/')
-    const control = ref<ControleComparaison>({
-      focal: territoiresFixture[0]!,
-      territoires: territoiresFixture,
-      selection: { etat: 'defaut' },
-      libelleActif: null,
-      presetDefaut: 'epci',
-      presets: [],
-      choisir: () => {},
-    })
-    const wrapper = mount(ProductionMobiliteAedar, {
-      props: {
-        content,
-        pagination: cahierPaginationFor({} as Payload, content, true),
-        aedarData: detail,
-        aedarStatus: 'ready',
-        retryAedar: () => {},
-        aedarSummaryData: { status: 'ready', summary },
-        aedarSummaryStatus: 'ready',
-        retryAedarSummary: () => {},
-        aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI test' },
-        aedarReferenceData: null,
-        aedarReferenceStatus: 'error',
-        aedarActive: false,
-        nativeComparisonStatus: 'ready',
-      },
-      global: {
-        plugins: [router],
-        provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control },
-      },
-    })
-    await flushPromises()
+    const wrapper = await mountProductionShell({ referenceStatus: 'error' })
     expect(wrapper.text()).toContain('Groupe comparé indisponible')
     const shell = wrapper.getComponent(VarianteCahierLibre)
     expect(shell.props('aedarReferenceStatus')).toBe('error')
+    wrapper.unmount()
+  })
+
+  it('reports a ready direct reference and matches the displayed overview scalars', async () => {
+    const { summary } = aedarReadyFixtures()
+    const production = await mountProductionShell({
+      referenceStatus: 'ready',
+      referenceData: { status: 'ready', summary },
+    })
+    const productionShell = production.getComponent(VarianteCahierLibre)
+    expect(productionShell.props('comparisonStatus')).toBe('idle')
+    expect(productionShell.props('aedarReferenceStatus')).toBe('ready')
+    expect(production.find('[data-section="aedar-car-overview"] .cahier-comparison-value').exists()).toBe(true)
+    production.unmount()
+
+    // The same shared state captured from the shell: comparison idle, reference
+    // ready, and the overview scalar reference is actually drawn.
+    const { wrapper } = await render({ comparisonStatus: 'idle' }, { aedarReference: 'sparse-car' })
+    expect(wrapper.find('[data-section="aedar-car-overview"] .cahier-comparison-value').exists()).toBe(true)
+    const overview = captureOf(wrapper, 'aedar-car-overview')
+    expect(overview.comparison.status).toBe('idle')
+    expect(overview.comparison.referenceStatus).toBe('unobserved')
+    expect(overview.comparison.display.state).toBe('displayed')
+    expect(overview.comparison.display.reason).toBe('shown')
+    expect(overview.comparison.display.layers[0]).toMatchObject({
+      referenceAvailable: true,
+      visibleReferenceAvailable: true,
+      displayed: true,
+    })
+    wrapper.unmount()
+  })
+
+  it('keeps overview pending, error, empty and ineligible states honest', async () => {
+    const error = await render({ aedarReferenceStatus: 'error', comparisonStatus: 'idle' })
+    const errorCapture = captureOf(error.wrapper, 'aedar-car-overview')
+    expect(errorCapture.comparison.referenceStatus).toBe('error')
+    expect(errorCapture.comparison.display.reason).toBe('error')
+    expect(error.wrapper.find('[data-section="aedar-car-overview"] .cahier-comparison-value').exists()).toBe(false)
+    error.wrapper.unmount()
+
+    const loading = await render({ aedarReferenceStatus: 'loading', comparisonStatus: 'idle' })
+    expect(captureOf(loading.wrapper, 'aedar-car-overview').comparison.display.reason).toBe('loading')
+    loading.wrapper.unmount()
+
+    const emptyFixture = cahierExportFixture({
+      selection: { etat: 'vide' },
+      aedarReference: 'sparse-car',
+    })
+    const empty = await mountCahier({
+      content: emptyFixture.content,
+      control: emptyFixture.control,
+      props: { comparisonStatus: 'idle' },
+    })
+    const emptyCapture = captureOf(empty, 'aedar-car-overview')
+    expect(emptyCapture.comparison.selection.state).toBe('vide')
+    expect(emptyCapture.comparison.display.state).toBe('not-displayed')
+    expect(emptyCapture.comparison.display.reason).toBe('empty-selection')
+    empty.unmount()
+
+    const profileFixture = await render()
+    expect(captureOf(profileFixture.wrapper, 'aedar-equipment-profile').comparison.referenceStatus).toBeNull()
+    profileFixture.wrapper.unmount()
+  })
+
+  it('keeps explorer rendered references and captured display in parity', async () => {
+    const cases: readonly {
+      label: string
+      overrides: Parameters<typeof aggregatesFor>[1]
+      displayed: boolean
+    }[] = [
+      { label: 'valid direct reference', overrides: {}, displayed: true },
+      { label: 'source id mismatch', overrides: { source_id: 'other' }, displayed: false },
+      { label: 'vintage mismatch', overrides: { vintage_id: 'other' }, displayed: false },
+      { label: 'reference date mismatch', overrides: { reference_date: '2026-02-01' }, displayed: false },
+      { label: 'publication date mismatch', overrides: { publication_date: '2026-10-01' }, displayed: false },
+      { label: 'uncovered reference', overrides: { coverage_status: 'uncovered' }, displayed: false },
+      { label: 'null reference measures', overrides: { measures: {} }, displayed: false },
+    ]
+    for (const scenario of cases) {
+      vi.mocked(fetchAedarAggregates).mockImplementation(async (_type, _id, options) =>
+        aggregatesFor(String(options?.typequ?.[0] ?? 'B207'), scenario.overrides) as never)
+      const { wrapper } = await render({ aedarChapterActive: true }, { aedarReference: 'sparse-car' })
+      await flushPromises()
+      const rendered = wrapper.findAll(
+        '[data-section="aedar-equipment-explorer"] .access-ramp-line--comparison',
+      ).length > 0
+      const explorer = captureOf(wrapper, 'aedar-equipment-explorer')
+      expect({ scenario: scenario.label, rendered }).toEqual({
+        scenario: scenario.label,
+        rendered: scenario.displayed,
+      })
+      expect({ scenario: scenario.label, captured: explorer.comparison.display.state }).toEqual({
+        scenario: scenario.label,
+        captured: scenario.displayed ? 'displayed' : 'not-displayed',
+      })
+      expect(explorer.comparison.display.layers[0]).toMatchObject({
+        referenceAvailable: scenario.displayed,
+        visibleReferenceAvailable: scenario.displayed,
+        displayed: scenario.displayed,
+      })
+      wrapper.unmount()
+    }
+  })
+
+  it('matches a ready group reference rendered and captured for the explorer', async () => {
+    vi.mocked(fetchAedarComparison).mockResolvedValue({
+      status: 'ready',
+      evidence: {
+        label: 'Moyenne — groupe test',
+        contentVersion: 'facts',
+        referenceContentVersion: 'reference',
+        summaryContentVersion: 'summary',
+        aedarContentVersion: 'facts',
+        cells: [{
+          typequ: 'B207',
+          measure: 'count_15_car_mean',
+          group_value: 4,
+          group_coverage_status: 'covered',
+          group_n_addresses: 100,
+          group_n_observed: 100,
+          statistic: 'pooled',
+          ...aedarSourceFields,
+        }],
+      },
+    })
+    const { wrapper } = await render({ aedarChapterActive: true }, { explorerComparison: true })
+    await flushPromises()
+    const rendered = wrapper.findAll(
+      '[data-section="aedar-equipment-explorer"] .access-ramp-line--comparison',
+    ).length > 0
+    expect(rendered).toBe(true)
+    const explorer = captureOf(wrapper, 'aedar-equipment-explorer')
+    expect(explorer.comparison.display.state).toBe('displayed')
+    expect(explorer.comparison.display.layers[0]).toMatchObject({
+      referenceAvailable: true,
+      visibleReferenceAvailable: true,
+      displayed: true,
+    })
     wrapper.unmount()
   })
 
@@ -507,6 +668,30 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     await flushPromises()
     expect(captureOf(wrapper, 'aedar-access').comparison.display.state).toBe('displayed')
     expect(captureOf(wrapper, 'aedar-equipment-explorer').comparison.display.state).toBe('displayed')
+    wrapper.unmount()
+  })
+
+  it('matches an empty served curve reference rendered and captured', async () => {
+    const valid = await render()
+    const validCurve = captureOf(valid.wrapper, 'visiter-la-bretagne')
+    expect(validCurve.comparison.display.state).toBe('displayed')
+    expect(valid.wrapper.find(
+      '[data-section="visiter-la-bretagne"] .mobilite-raccordement-curve__comparison',
+    ).exists()).toBe(true)
+    valid.wrapper.unmount()
+
+    const { wrapper } = await render({}, { curveReference: 'null' })
+    const empty = captureOf(wrapper, 'visiter-la-bretagne')
+    expect(wrapper.find(
+      '[data-section="visiter-la-bretagne"] .mobilite-raccordement-curve__comparison',
+    ).exists()).toBe(false)
+    expect(empty.comparison.display.state).toBe('not-displayed')
+    expect(empty.comparison.display.reason).toBe('no-served-reference')
+    expect(empty.comparison.display.layers[0]).toMatchObject({
+      referenceAvailable: false,
+      visibleReferenceAvailable: false,
+      displayed: false,
+    })
     wrapper.unmount()
   })
 

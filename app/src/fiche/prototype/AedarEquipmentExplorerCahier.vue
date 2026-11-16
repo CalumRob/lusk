@@ -210,15 +210,9 @@ useCahierExportPublication(() => ({
 
 /** A served reference exists for at least one drawn measure of the given modes. */
 function servedReferenceFor(modes: readonly AedarRampMode[]): boolean {
-  const comparison = activeComparison.value
-  if (comparison) {
-    return HORIZONS.some((horizon) => modes.some((mode) =>
-      aedarGroupValue(comparison, selectedBaseFact.value, `count_${horizon}_${mode}_mean`) !== null))
-  }
-  const reference = referenceDetail.value
-  if (!reference) return false
-  return HORIZONS.some((horizon) => modes.some((mode) =>
-    readAedarCountMeasure(reference, horizon, mode, 'mean') !== null))
+  // The same resolver the volume ramp draws with: coverage and source-clock
+  // guards, and the comparisonRequest-vs-direct-reference choice, are reused.
+  return HORIZONS.some((horizon) => modes.some((mode) => groupValue(horizon, mode, 'mean') !== null))
 }
 const referenceAvailable = computed(() => servedReferenceFor(AEDAR_RAMP_MODES))
 const visibleReferenceAvailable = computed(() => servedReferenceFor(selectedModes.value))

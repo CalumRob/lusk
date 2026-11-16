@@ -268,6 +268,22 @@ describe('Cahier export capture — comparison identity and effective presentati
     expect(capture.comparison.display.reason).toBe('error')
   })
 
+  it('keeps a ready direct reference distinct from a section that consumes none', () => {
+    const { content } = cahierExportFixture()
+    const ready = captureCahierSection(inputFor(sectionOf(content, 'aedar-access'), {
+      referenceStatus: 'ready',
+    }))
+    expect(ready.comparison.referenceStatus).toBe('ready')
+
+    const unobserved = captureCahierSection(inputFor(sectionOf(content, 'aedar-access')))
+    expect(unobserved.comparison.referenceStatus).toBe('unobserved')
+
+    const networks = captureCahierSection(inputFor(sectionOf(content, 'reseaux')))
+    expect(networks.comparison.referenceStatus).toBeNull()
+    const profile = captureCahierSection(inputFor(sectionOf(content, 'aedar-equipment-profile')))
+    expect(profile.comparison.referenceStatus).toBeNull()
+  })
+
   it('separates available acquired references from the effective hidden subset', () => {
     const { content } = cahierExportFixture()
     const capture = captureCahierSection(inputFor(sectionOf(content, 'aedar-access'), {

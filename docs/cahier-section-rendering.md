@@ -62,8 +62,12 @@ selected modes/horizon) and from `displayed` (what the owner actually draws).
 `display.reason` preserves owner loading/error/unavailable separately from a
 legitimate `no-served-reference` and from a reference hidden by the selected
 series (`hidden-by-selection`). The direct-reference read status remains a
-separate `comparison.referenceStatus`, so a failed AEDAR reference read is never
-reported as a legitimate absence. Per-figure labels are preserved in
+separate `comparison.referenceStatus`: `null` means the section does not consume
+a direct reference, `unobserved` means it does but no owner status was supplied,
+and the owner statuses (`ready`, `loading`, `error`, `unavailable`, `idle`) are
+passed through, so a failed AEDAR reference read is never reported as a
+legitimate absence. A ready direct reference can therefore be displayed while
+the aggregate comparison status is idle. Per-figure labels are preserved in
 `statisticLabels`; no first column label becomes section-wide truth. Map/legend
 state is `unknown` until a map owner publishes, and a declared map is never a
 loaded one. AEDAR sources carry the native source-record identity, licence and

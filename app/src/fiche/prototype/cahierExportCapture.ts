@@ -197,6 +197,7 @@ export interface CahierCaptureComparisonDisplay {
 }
 
 export type CahierCaptureReferenceStatus =
+  | 'unobserved'
   | 'idle'
   | 'loading'
   | 'ready'
@@ -576,7 +577,9 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
   })
   const comparisonStatus = captureComparisonStatus(family, input, publications)
   const comparisonError = captureComparisonError(family, input, publications)
-  const referenceStatus = input.referenceStatus ?? null
+  const referenceStatus = cahierCaptureConsumesReference(family)
+    ? (input.referenceStatus ?? 'unobserved')
+    : null
   const capture: CahierExportCapture = {
     identity: {
       sectionKey: section.key,
@@ -971,6 +974,7 @@ function captureComparisonDisplay(options: {
       return { state: 'not-displayed', reason: 'error', layers }
     case 'unavailable':
       return { state: 'not-displayed', reason: 'unavailable', layers }
+    case 'unobserved':
     case 'idle':
     case 'ready':
     case null:

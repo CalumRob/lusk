@@ -64,9 +64,10 @@ const props = withDefaults(defineProps<{
   /**
    * #1021 — the direct AEDAR reference read status, conditioned by its existing
    * owner to the states where that reference is the displayed source. Null
-   * when the section does not consume one.
+   * means the section does not consume a direct reference; `unobserved` means
+   * it consumes one but no owner status was supplied.
    */
-  aedarReferenceStatus?: 'loading' | 'error' | 'unavailable' | null
+  aedarReferenceStatus?: 'unobserved' | 'loading' | 'ready' | 'error' | 'unavailable' | null
   /** #1008 — the visible chapter's admission state, owned by the demand planner. */
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
   /** The page-level data state already owns this failure and renders its retry. */
@@ -195,7 +196,7 @@ function buildExportCapture(
     territory: props.content.territory,
     readiness: captureReadiness(record.section, record.unitKey),
     referenceStatus: cahierCaptureConsumesReference(family)
-      ? (props.aedarReferenceStatus ?? null) : null,
+      ? (props.aedarReferenceStatus ?? 'unobserved') : null,
     comparisonEligible: comparisonEligible.value,
     comparisonStatus: aedarEvidence
       ? (props.comparisonStatus ?? 'idle')

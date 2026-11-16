@@ -197,6 +197,7 @@ export function cahierExportFixture(options: {
   lossMetadata?: AedarDiversityLossMapMetadata
   aedarReference?: 'sparse-car'
   explorerComparison?: boolean
+  curveReference?: 'null'
 } = {}): CahierExportFixture {
   const facts = territoryFactsFor(basePayload, '22001')
   if (!facts) throw new Error('Mobilité fixture facts missing')
@@ -212,7 +213,9 @@ export function cahierExportFixture(options: {
     eligibleCount: 2,
     modelZeroReasonCounts: {},
     sourceLineage: [],
-    points: page3Facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe'),
+    points: options.curveReference === 'null'
+      ? []
+      : page3Facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe'),
   }
   // Producer-declared numeric axis of the published 11-point grid (fixture data).
   const curveAxis = [

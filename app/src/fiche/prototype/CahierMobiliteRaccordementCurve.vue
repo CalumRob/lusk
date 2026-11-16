@@ -67,9 +67,9 @@ useCahierExportPublication(() => ({
   owner: 'mobilite-raccordement-curve',
   state: {
     toggle: comparisonVisible.value,
-    referenceAvailable: props.figure.comparison !== null,
-    visibleReferenceAvailable: props.figure.comparison !== null,
-    displayed: showComparison.value,
+    referenceAvailable: comparisonPath.value !== '',
+    visibleReferenceAvailable: comparisonPath.value !== '',
+    displayed: showComparison.value && comparisonPath.value !== '',
   },
 }))
 const plotElement = ref<HTMLElement | null>(null)

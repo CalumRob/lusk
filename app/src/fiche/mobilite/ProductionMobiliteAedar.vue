@@ -56,13 +56,14 @@ const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
  * the same states where this owner presents it. The conditioned status is an
  * additive fact for the export capture; it triggers no acquisition.
  */
-const directReferenceStatus = computed<'loading' | 'error' | 'unavailable' | null>(() => {
-  const status = props.aedarReferenceStatus
-  if (status !== 'loading' && status !== 'error' && status !== 'unavailable') return null
+const directReferenceStatus = computed<
+  'unobserved' | 'loading' | 'ready' | 'error' | 'unavailable' | null
+>(() => {
   if (comparisonRequest.value) return null
   const selection = control.value?.selection
   if (selection?.etat === 'vide' || selection?.etat === 'membres') return null
-  return status
+  if (!props.aedarReferenceTerritoire) return null
+  return props.aedarReferenceStatus ?? 'unobserved'
 })
 const comparison = ref<AedarComparisonEvidence | null>(null)
 const comparisonState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -259,7 +260,7 @@ const transformed = computed(() => {
     <p>{{ AEDAR_SUMMARY_UNAVAILABLE_MESSAGE }}</p>
     <button type="button" @click="props.retryAedarSummary?.()">Réessayer</button>
   </div>
-  <p v-else-if="aedarReferenceStatus === 'error' && !comparisonRequest && control?.selection.etat !== 'vide' && control?.selection.etat !== 'membres'" class="aedar-comparison-state" role="status">Groupe comparé indisponible.</p>
+  <p v-else-if="directReferenceStatus === 'error'" class="aedar-comparison-state" role="status">Groupe comparé indisponible.</p>
   <div v-if="props.aedarStatus === 'error'" class="aedar-state" role="alert">
     <p>{{ AEDAR_DETAIL_UNAVAILABLE_MESSAGE }}</p>
     <button type="button" @click="props.retryAedar">Réessayer</button>
