@@ -191,6 +191,17 @@ try {
   let releaseFocalAedar
   const focalGate = new Promise((resolvePromise) => { releaseFocalAedar = resolvePromise })
   let gateOpen = false
+  // The direct reference may already be displayed while its requested group
+  // comparison loads. Hold that read separately so wrapping beside the native
+  // spinner is tested intentionally, never sampled by a 250ms timing accident.
+  let releaseComparison
+  const comparisonGate = new Promise((resolvePromise) => { releaseComparison = resolvePromise })
+  let comparisonGateOpen = false
+  const waitForFocal = async (items) => {
+    if (!gateOpen) await focalGate
+    if (!comparisonGateOpen && items.some((item) => item.resource === 'aedar_territorial_aggregate'
+      && item.intent.kind !== 'facts' && (item.coordinates.typequ?.length ?? 0) === 0)) await comparisonGate
+  }
   const readCalls = { focalAedarBatches: 0, referenceAedarBatches: 0, themeBatches: 0, otherApi: 0 }
   const v2Envelope = (items, results) => {
     const byId = new Map(results.map((result) => [result.id, result]))
@@ -239,7 +250,7 @@ try {
       }
       if (focalItems.length) {
         readCalls.focalAedarBatches += 1
-        if (!gateOpen) await focalGate // hold the focal hydration until released
+        await waitForFocal(focalItems)
         results.push(...aedarFixture(focalItems).results)
       }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(v2Envelope(request.items, results)) })
@@ -251,7 +262,7 @@ try {
       return
     }
     readCalls.focalAedarBatches += 1
-    if (!gateOpen) await focalGate
+    await waitForFocal(focalItems)
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(v2Envelope(focalItems, aedarFixture(focalItems).results)) })
   })
 
@@ -290,10 +301,28 @@ try {
       })(),
       scalarCount: firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-figure-scalar').length,
       references: [...firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-figure-scalar-reference')].map(rectOf),
-      comparisonLabels: [...firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-comparison-value__reference')].map((el) => ({
-        text: el.textContent.trim(), height: el.getBoundingClientRect().height,
-        lineHeight: parseFloat(getComputedStyle(el).lineHeight),
-      })),
+      comparisonLabels: [...firstPage.querySelectorAll('.aedar-car-overview-scalars .cahier-comparison-value__reference')].map((label) => {
+        const comparison = label.closest('.cahier-comparison-value')
+        const style = getComputedStyle(label)
+        const range = document.createRange()
+        range.selectNodeContents(label)
+        const bounds = comparison.getBoundingClientRect()
+        const textRects = [...range.getClientRects()].map(({ left, right, top, bottom }) => ({ left, right, top, bottom }))
+        return { text: label.textContent.trim(), ...rectOf(label), lineHeight: parseFloat(style.lineHeight),
+          font: style.font, fontLoaded: document.fonts.check(style.font, label.textContent),
+          comparisonWidth: bounds.width, spinnerCount: comparison.querySelectorAll('.cahier-comparison-value__spinner').length,
+          textRects, lineCount: new Set(textRects.map(({ top }) => top)).size,
+          textWithinComparison: textRects.every(({ left, right, top, bottom }) =>
+            left >= bounds.left && right <= bounds.right && top >= bounds.top && bottom <= bounds.bottom) }
+      }),
+      overview: [...firstPage.querySelectorAll('#section-aedar-car-overview, #section-aedar-car-overview *')].map((el) => {
+        const style = getComputedStyle(el)
+        return { tag: el.localName,
+          attributes: Object.fromEntries([...el.attributes].filter(({ name }) => !name.startsWith('data-v-')).map(({ name, value }) => [name, value])),
+          text: el.textContent, ...rectOf(el),
+          presentation: { font: style.font, color: style.color, display: style.display, gap: style.gap,
+            gridTemplateColumns: style.gridTemplateColumns, overflow: style.overflow, whiteSpace: style.whiteSpace } }
+      }),
     }
   })
 
@@ -308,6 +337,25 @@ try {
     const scalar = document.querySelector('#section-aedar-car-overview .cahier-figure-scalar-value')
     return document.querySelector('#section-aedar-equipment-explorer') !== null && scalar !== null && scalar.textContent.trim() !== '—'
   }, null, { timeout: 20000 })
+  if (scenario !== 'no-comparison') {
+    await page.waitForFunction(() => {
+      const overview = document.querySelector('#section-aedar-car-overview')
+      const scalars = overview.querySelectorAll('.cahier-figure-scalar').length
+      return scalars > 0 && overview.querySelectorAll('.cahier-comparison-value__reference').length === scalars
+        && overview.querySelectorAll('.cahier-comparison-value__spinner').length === scalars
+    }, null, { timeout: 20000 })
+  }
+  await page.evaluate(() => document.fonts.ready)
+  const comparisonPending = await measure()
+  comparisonGateOpen = true
+  releaseComparison()
+  if (scenario !== 'no-comparison') {
+    await page.waitForFunction(() => {
+      const overview = document.querySelector('#section-aedar-car-overview')
+      return overview.querySelectorAll('.cahier-comparison-value__spinner').length === 0
+        && overview.querySelectorAll('.cahier-comparison-value__reference').length === overview.querySelectorAll('.cahier-figure-scalar').length
+    }, null, { timeout: 20000 })
+  }
   await page.evaluate(() => document.fonts.ready)
   await page.waitForTimeout(250)
   const final = await measure()
@@ -354,19 +402,35 @@ try {
     'only requested comparisons reserve scalar reference rows')
   check(final.references.length === (scenario === 'no-comparison' ? 0 : final.scalarCount),
     'an absent comparison must not leave blank reference rows after hydration')
+  check(Math.abs(comparisonPending.loss.docTop - interim.loss.docTop) <= GEOMETRY_TOLERANCE_PX,
+    'the intermediate comparison-loading state must also respect the unchanged document geometry guard')
+  check(Math.abs(comparisonPending.loss.viewportTop - interim.loss.viewportTop) <= GEOMETRY_TOLERANCE_PX,
+    'the intermediate comparison-loading state must also respect the unchanged viewport geometry guard')
+  check(comparisonPending.scrollY === interim.scrollY, 'comparison-loading must not move the scroll anchor')
+  for (const state of [comparisonPending, final]) {
+    check(state.comparisonLabels.length === (scenario === 'no-comparison' ? 0 : state.scalarCount),
+      'observe the actual served reference text in both comparison states')
+    check(state.comparisonLabels.every(({ fontLoaded, textWithinComparison }) => fontLoaded && textWithinComparison),
+      'loaded native comparison text must stay within its real role bounds, including when it wraps')
+  }
   if (scenario !== 'wrapped-source') {
-    check(Math.abs(final.source.height - interim.source.height) < 1,
+    check(final.source !== null && interim.source !== null && Math.abs(final.source.height - interim.source.height) < 1,
       'the pending source line must match the ready source typography')
     const scalarHeight = (state) => state.roles.find(({ role }) => role === 'aedar-car-overview-scalars').height
     check(Math.abs(scalarHeight(final) - scalarHeight(interim)) < 1,
       'pending scalar geometry must match ready, including when no comparison exists')
   }
   if (scenario === 'wrapped-source') {
-    check(final.source.height > interim.source.height, 'long served source/dated credit must actually wrap, never be clipped')
+    check(final.source !== null && interim.source !== null && final.source.height > interim.source.height,
+      'long served source/dated credit must actually wrap, never be clipped')
   }
   if (width === 760 && scenario === 'standard') {
-    check(final.comparisonLabels.some(({ height, lineHeight }) => height > lineHeight),
-      'the native comparison label must exercise actual wrapping at the responsive paired-scalar width')
+    check(comparisonPending.comparisonLabels.every(({ lineCount, spinnerCount }) => lineCount > 1 && spinnerCount === 1),
+      'the native comparison label must actually wrap beside its held loading spinner at the paired-scalar width')
+    check(final.comparisonLabels.every(({ lineCount, spinnerCount }) => lineCount === 1 && spinnerCount === 0),
+      'the same native label legitimately fits one line once the comparison settles')
+    check(JSON.stringify(comparisonPending.comparisonLabels.map(({ text }) => text)) === JSON.stringify(final.comparisonLabels.map(({ text }) => text)),
+      'wrapping coverage must use the same native text, never fabricated long labels or values')
   }
 
   console.log(JSON.stringify({
@@ -396,7 +460,9 @@ try {
     readCalls,
     roles: { interim: interim.roles, final: final.roles },
     loss: { interim: interim.loss, final: final.loss },
-    comparisonLabels: final.comparisonLabels,
+    comparisonLabels: { pending: comparisonPending.comparisonLabels, final: final.comparisonLabels },
+    comparisonPendingLoss: comparisonPending.loss,
+    readyOverview: final.overview,
   }, null, 2))
   if (process.env.LUSK_LAYOUT_SCREENSHOTS && scenario === 'standard' && (width === 1440 || width === 390)) {
     await page.screenshot({ path: resolve(process.env.LUSK_LAYOUT_SCREENSHOTS, `lusk-994-final-${width}.png`), fullPage: true })
