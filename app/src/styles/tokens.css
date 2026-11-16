@@ -23,6 +23,10 @@
   --editorial-margin: #a44f51;
   --editorial-margin-soft: rgb(164 79 81 / 58%);
   --editorial-margin-offset: 104px;
+  /* Shared page chrome colours (ink-derived); each surface keeps its own
+   * border width, shadow offsets, blur and spread. */
+  --editorial-page-border-color: color-mix(in srgb, var(--editorial-ink) 15%, transparent);
+  --editorial-page-shadow-color: color-mix(in srgb, var(--editorial-ink) 10%, transparent);
   /* ------------------------------------------------------------------------
    * §2 Color — Palette
    * ---------------------------------------------------------------------- */

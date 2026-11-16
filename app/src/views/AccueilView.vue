@@ -322,7 +322,7 @@ function naviguerOnglets(event: KeyboardEvent) {
    paper/ink/margin roles (no new tokens, no miniature pagination). */
 .accueil-feuillet {
   padding: var(--space-5) var(--space-5) var(--space-5) var(--space-10);
-  border: 1px solid rgb(35 42 42 / 15%);
+  border: 1px solid var(--editorial-page-border-color);
   background-color: var(--editorial-paper);
   background-image: linear-gradient(
     to right,
@@ -332,7 +332,7 @@ function naviguerOnglets(event: KeyboardEvent) {
     var(--editorial-margin-soft) 21px,
     transparent 21px
   );
-  box-shadow: 0 10px 22px rgb(67 57 42 / 8%);
+  box-shadow: 0 10px 22px var(--editorial-page-shadow-color);
   color: var(--editorial-ink);
 }
 .accueil-image-provisoire {

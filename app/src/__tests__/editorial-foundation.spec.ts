@@ -35,6 +35,25 @@ describe('shared E editorial foundation', () => {
     }
   })
 
+  it('records the owner-approved paper palette and shared ink-derived page chrome roles', () => {
+    const tokens = read('src/styles/tokens.css')
+    expect(tokens).toContain('--editorial-paper: #f5f2eb;')
+    expect(tokens).toContain('--editorial-paper-deep: #e6e1d7;')
+    expect(tokens).toContain('--editorial-page-border-color: color-mix(in srgb, var(--editorial-ink) 15%, transparent);')
+    expect(tokens).toContain('--editorial-page-shadow-color: color-mix(in srgb, var(--editorial-ink) 10%, transparent);')
+    const accueil = read('src/views/AccueilView.vue')
+    const cahier = read('src/fiche/prototype/VarianteCahierLibre.vue')
+    for (const source of [accueil, cahier]) {
+      expect(source).toContain('var(--editorial-page-border-color)')
+      expect(source).toContain('var(--editorial-page-shadow-color)')
+      expect(source).not.toContain('rgb(67 57 42')
+      expect(source).not.toContain('rgb(35 42 42 / 15%)')
+    }
+    // Geometry stays local to each composition.
+    expect(accueil).toContain('box-shadow: 0 10px 22px var(--editorial-page-shadow-color)')
+    expect(cahier).toContain('box-shadow: 0 14px 30px var(--editorial-page-shadow-color)')
+  })
+
   it('keeps surface roots on the site ground; paper stays on the notebook pages', () => {
     const css = read('src/styles/editorial.css')
     const sharedSurface = css.match(/\.presentation-editorial\s*\{([^}]*)\}/)?.[1] ?? ''
