@@ -231,6 +231,69 @@ never retained indefinitely. The success state means the browser download handof
 occurred, not that a file was written to disk; the cleanup task is not a
 generation timer and never fabricates success.
 
+## Shared PDF composition (#1024)
+
+`cahierPdfComposer.ts` is the narrow public generation seam:
+`(request: CahierExportRequest, { signal }) => Promise<{ blob, fileName }>`.
+It lazy-imports jsPDF and svg2pdf only when a file is requested and knows no
+action, dialog, route or section key. It consumes the frozen #1021 request and
+the #1022 projections; it never remounts a screen component, reads the live DOM
+or starts an acquisition.
+
+- `cahierPdfComparaison.ts` owns the approved comparison subtitle: exact EPCI
+  name, the three Bretagne presets, French sort, measured two-line complete
+  names, largest complete prefix + `ET N AUTRES …`, total-count fallback, and
+  singular/plural agreement. It appears only when the page contains served
+  comparative proof.
+- `cahierPdfTableau.ts` builds tables only from the B models. Columns are
+  measured with the embedded face; focal/comparison pairs stay together; a
+  too-wide table is split into coherent column groups and a too-tall table into
+  row groups with repeated title/header. Numbers are never truncated
+  (`CahierPdfTableLayoutError` rejects an impossible cell). Only a narrow
+  territory table header may wrap twice then ellipsize; group names never are.
+  `Indisponible` becomes `Indisp.` only when measured width requires it, and the
+  explanation is emitted once under the tables. A comparison column is an
+  explicit owner-published slot: when it carries no served value/rank it stays
+  visible as unavailable, but no subtitle, footer, legend entry or `¹` marker
+  claims comparative proof.
+- `cahierPdfFigures.ts` redraws the eight native families as vector primitives
+  from the frozen projections/native models (ramps, overview scalars + maps,
+  loss maps, waffle, explorer volume + distribution, compared Mobiliteit bars,
+  share tracks, raccordement curve). Text and links are jsPDF text; SVG marks
+  are painted through svg2pdf. Raster maps are decoded from the owner's inline
+  asset and fail explicitly if absent.
+- `cahierPdfComposer.ts` owns the A4 document: paper/ground, brand home link,
+  centered page title, focal territory link, red rule, comparison subtitle,
+  figures, value tables, notes, `Source(s) :` bottom-right, page-local
+  comparison footer, page numbers and metadata. It reserves sources/footer
+  space, measures real block heights, keeps the value heading with its first
+  table and starts a continuation only at a measured overflow. No global
+  document shrink is applied.
+- `cahierPdfFonts.ts` embeds the app's actual families. The binaries are
+  derived from the installed `@fontsource-variable` packages by
+  `scripts/derive-pdf-fonts.py`; `src/assets/fonts/pdf/manifest.json` records the
+  source package/file, byte size and SHA-256, and each face has its OFL licence
+  copy. A missing/truncated face rejects generation. There is no system-font
+  substitution, runtime font download or reader-side Python.
+
+`cahier-pdf-composer.spec.ts` drives real blobs and parses them with pdfjs/pdf-lib:
+the nine-section admission matrix, A4/page/formats/metadata/font embedding,
+literal table cells and ranks, French accents, `Indisp.` with one explanation,
+comparison subtitle cases, one-page and measured multi-page continuation,
+repeated identity/headers/sources, page-local comparison proof, explicit asset/
+font/abort/unsupported-family failures, a corrupted-input fidelity case and an
+independent negative audit that fails on a corrupted number/column/group.
+Fonts and map images are test-only injected loaders; no fixture script ships in
+production.
+
+Visual evidence is generated outside tracked assets via
+`CAHIER_PDF_EVIDENCE_DIR` and `CAHIER_PDF_REPORT=1` while running the spec.
+Documented limits: no tagged-PDF claim, no Pi/mobile performance promise, and
+the measured transfer/generation numbers are development-machine observations,
+not a new SLA.
+
+
+
 ## Preserved boundaries
 
 - Content builders own prose, labels, evidence, availability and provenance;
