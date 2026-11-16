@@ -301,7 +301,7 @@ export function aedarOverviewScalarServedRank(scalar: AedarCarAccessOverviewScal
 }
 
 export function aedarOverviewScalarAria(
-  evidence: AedarCarAccessOverviewEvidence,
+  evidence: Pick<AedarCarAccessOverviewEvidence, 'scalarFigureTitle'>,
   scalar: AedarCarAccessOverviewScalar,
   comparisonEligible: boolean,
 ): string {

@@ -467,6 +467,8 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     if (hidden.family !== 'aedar-ramps') throw new Error('ramps expected')
     expect(hidden.comparisonDisplayed).toBe(false)
     expect(hidden.tables[0]?.columns.every((column) => column.kind === 'focal')).toBe(true)
+    expect(hidden.ramps[0]?.series.every((series) =>
+      series.points.every((point) => point.referenceValue === null && point.referenceRank === null))).toBe(true)
     await cut.trigger('focus')
     expect(firstRamp.find('.cahier-figure-tooltip-row-comparison').exists()).toBe(false)
     wrapper.unmount()

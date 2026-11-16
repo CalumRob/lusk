@@ -243,6 +243,8 @@ export interface CahierBarsProjection extends CahierFigureProjectionBase {
   readonly xAxisTitle: string
   readonly yAxisTitle: string
   readonly comparisonLabel: string | null
+  /** Present for the networks plate; its owner observation is the only proof. */
+  readonly maps: CahierMapsProjection | null
   readonly ratio: {
     readonly label: string
     readonly value: number | null
@@ -465,9 +467,9 @@ function projectRamps(
             value: point.value,
             display: reading?.value ?? displayNumber(point.value),
             aria: reading?.ariaLabel ?? '',
-            referenceValue: point.referenceValue,
+            referenceValue: comparisonDisplayed ? point.referenceValue : null,
             referenceDisplay: reading?.comparison?.value ?? null,
-            referenceRank: point.referenceRank ?? null,
+            referenceRank: comparisonDisplayed ? point.referenceRank ?? null : null,
             referenceRankDisplay: reading?.comparison?.rank ?? null,
             referenceRankAria: reading?.comparison?.rankAria ?? null,
           }
@@ -523,10 +525,7 @@ function projectOverview(
       unit: scalar.unit,
       display: displayNumber(scalar.value),
       ariaLabel: aedarOverviewScalarAria(
-        {
-          scalarFigureTitle: figure.model.scalarFigureTitle,
-          scalars: figure.model.scalars,
-        } as never,
+        { scalarFigureTitle: figure.model.scalarFigureTitle },
         scalar,
         comparisonDisplayed,
       ),
@@ -629,7 +628,8 @@ function mapProjection(
     status: capture.capabilities.maps.status,
     legend: capture.capabilities.maps.legend,
     items,
-    legendDetail,
+    // Declared legend copy is exported only once its owner reports it drawn.
+    legendDetail: capture.capabilities.maps.legend === 'available' ? legendDetail : null,
     groups,
   }
 }
@@ -755,9 +755,9 @@ function projectExplorer(
           value: point.value,
           display: reading?.value ?? displayNumber(point.value),
           aria: reading?.ariaLabel ?? '',
-          referenceValue: point.referenceValue,
+          referenceValue: volumeDisplayed ? point.referenceValue : null,
           referenceDisplay: reading?.comparison?.value ?? null,
-          referenceRank: point.referenceRank ?? null,
+          referenceRank: volumeDisplayed ? point.referenceRank ?? null : null,
           referenceRankDisplay: reading?.comparison?.rank ?? null,
           referenceRankAria: reading?.comparison?.rankAria ?? null,
         }
@@ -783,12 +783,14 @@ function projectExplorer(
       label: category.label,
       axisLabel: category.axisLabel,
     })),
-    series: distFigure.series.map((series) => ({
-      key: series.key,
-      label: series.label,
-      comparisonFor: series.comparisonFor ?? null,
-      values: [...series.values],
-    })),
+    series: distFigure.series
+      .filter((series) => !quantile.hiddenSeriesKeys.includes(series.key))
+      .map((series) => ({
+        key: series.key,
+        label: series.label,
+        comparisonFor: series.comparisonFor ?? null,
+        values: [...series.values],
+      })),
     hiddenSeriesKeys: quantile.hiddenSeriesKeys,
     description: distFigure.description,
   }
@@ -929,6 +931,10 @@ function projectBars(
     }
   }
   const ratioDisplayed = layerDisplayed(capture, 'ratios')
+  const ratioRankCandidate = ratioDisplayed
+    ? figure.model.ratio?.value.fact.comparison?.rank ?? null
+    : null
+  const ratioRank = formatServedRank(ratioRankCandidate) ? ratioRankCandidate : null
   const ratio = figure.model.ratio
     ? {
       label: figure.model.ratio.label,
@@ -944,12 +950,8 @@ function projectBars(
           ? formatTimeRampNumber(figure.model.ratio.value.fact.comparison.reference.value)
           : null)
         : null,
-      comparisonRank: ratioDisplayed
-        ? figure.model.ratio.value.fact.comparison?.rank ?? null
-        : null,
-      comparisonRankDisplay: ratioDisplayed
-        ? formatServedRankAria(figure.model.ratio.value.fact.comparison?.rank)
-        : null,
+      comparisonRank: ratioRank,
+      comparisonRankDisplay: formatServedRank(ratioRank),
       comparisonAria: ratioDisplayed
         ? mobiliteComparisonAria(
           figure.model.ratio.value,
@@ -973,7 +975,7 @@ function projectBars(
             unit: ratio.unit,
             rank: ratio.comparisonRank,
             rankDisplay: ratio.comparisonRankDisplay,
-            rankAria: ratio.comparisonRankDisplay,
+            rankAria: formatServedRankAria(ratio.comparisonRank),
           })]
           : []),
       ],
@@ -1008,6 +1010,9 @@ function projectBars(
     xAxisTitle: evidence.xAxisTitle,
     yAxisTitle: evidence.yAxisTitle,
     comparisonLabel: evidence.comparisonLabel,
+    maps: capture.capabilities.maps.status === 'none'
+      ? null
+      : mapProjection(capture, 'mobilite-bars', null, []),
     ratio,
   }
 }
@@ -1102,7 +1107,8 @@ function projectCurve(
   const markerRank = displayed && markerValue?.fact.detail === marker?.detail
     ? markerValue?.fact.comparison?.rank ?? null
     : null
-  const markerRankDisplay = formatServedRankAria(markerRank)
+  const markerRankDisplay = formatServedRank(markerRank)
+  const markerRankAria = formatServedRankAria(markerRank)
   const rows = readings.map((reading) => ({
     key: reading.detail,
     label: reading.label,
@@ -1133,7 +1139,7 @@ function projectCurve(
       displayed && detail
         ? `Groupe comparé — ${detail.statistic} des ${detail.label} : ${readings.map((reading) => `${reading.label} ${reading.comparisonAria ?? CAHIER_UNAVAILABLE_LABEL}`).join(' ; ')}.`
         : '',
-      marker ? `Repère : ${marker.label}.${markerRankDisplay ? ` Rang ${markerRankDisplay}.` : ''}` : '',
+      marker ? `Repère : ${marker.label}.${markerRankAria ? ` Rang ${markerRankAria}.` : ''}` : '',
     ].filter(Boolean).join(' '),
     tables: [{
       key: 'curve',
@@ -1167,7 +1173,7 @@ function projectCurve(
       display: markerReading?.display ?? CAHIER_UNAVAILABLE_LABEL,
       rank: markerRank,
       rankDisplay: markerRankDisplay,
-      rankAria: markerRankDisplay,
+      rankAria: markerRankAria,
     } : null,
     comparisonLabel: evidence.comparisonLabel,
   }

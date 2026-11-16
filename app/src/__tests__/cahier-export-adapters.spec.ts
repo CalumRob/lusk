@@ -316,10 +316,7 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
       status: 'unknown',
       legend: 'unknown',
       items: [],
-      legendDetail: {
-        title: 'Types d’équipements perdus par rapport à la voiture',
-        tickLabels: ['0', '1', '2+'],
-      },
+      legendDetail: null,
     })
     expect(unknownProjection.tables).toEqual([])
 
@@ -341,6 +338,10 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
     if (projection.family !== 'aedar-diversity-loss') throw new Error('maps expected')
     expect(projection.maps.status).toBe('partial')
     expect(projection.maps.legend).toBe('available')
+    expect(projection.maps.legendDetail).toMatchObject({
+      title: 'Types d’équipements perdus par rapport à la voiture',
+      tickLabels: ['0', '1', '2+'],
+    })
     expect(projection.maps.items.map((item) => [item.id, item.loaded, item.unavailable]))
       .toEqual([['walk', true, false], ['transit', false, true], ['bike_lts2', false, true]])
     expect(projection.maps.items[0]?.inlineUrl).toBe(
@@ -449,6 +450,7 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
     expect(hiddenTable.columns).toHaveLength(11)
     expect(hiddenTable.columns.every((column) => column.kind === 'focal')).toBe(true)
     expect(hiddenTable.rows[0]?.cells).toHaveLength(11)
+    expect(hiddenProjection.distribution.series.map((series) => series.key)).toEqual(['car'])
     expect(hiddenProjection.accessibleLabel).not.toContain('Groupe comparé')
   })
 })
