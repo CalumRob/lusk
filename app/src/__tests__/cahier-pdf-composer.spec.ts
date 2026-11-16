@@ -441,6 +441,19 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
     ])
   })
 
+  it('décode une vraie image bornée pour la carte, sans données ni API', async () => {
+    const bytes = readFileSync(resolve(process.cwd(), '../docs/prototypes/2026-08-26-fiche-prototype/captures/C-fil-desktop-commune-mobilite.png'))
+    const dataUrl = `data:image/png;base64,${bytes.toString('base64')}`
+    const artifact = await composerCahierPdf(requetePour('aedar-car-overview'), {
+      ...options(),
+      chargerImage: async () => ({ dataUrl, width: 1280, height: 900 }),
+    })
+    const lecture = await lirePdf(artifact.blob)
+    expect(lecture.pages).toBe(1)
+    expect(artifact.blob.size).toBeGreaterThan(40_000)
+    verifierDansPage(lecture)
+  })
+
   it('mesure une sélection personnalisée triée en français dans un vrai PDF', async () => {
     const capture = capturePdfFixture('visiter-la-bretagne', {
       selection: { etat: 'membres', membres: communeMembers() },
