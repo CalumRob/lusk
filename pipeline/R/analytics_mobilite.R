@@ -1004,7 +1004,8 @@ calculer_stationnement_velo_communes <- function(velo) {
 # agreger_ravitaillement_territoires --------------------------------------------
 # Le bloc de ravitaillement (issue #953) ISOLÉ de l'agrégation d'offre : le
 # compte des bornes IRVE et son taux / 1 000 hab, le compte B316 des
-# stations-service et son taux. C'est le seam PARTAGÉ entre la génération
+# stations-service et son taux, et leur ratio bornes / station. C'est le seam
+# PARTAGÉ entre la génération
 # complète du thème Mobilité (agreger_offre_territoires) et la matérialisation
 # scalaire ciblée (#989) : les deux chemins exécutent CE code — une seule
 # arithmétique, jamais une seconde implémentation à maintenir en parallèle.

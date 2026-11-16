@@ -161,6 +161,62 @@ test_that("l'assemblage partagé rend la forme complète des lignes ciblées (#9
   expect_true(all(lignes$vintage_version == bpe$version))
 })
 
+test_that("registered refuelling calculations project regional facts and original source clocks (#1032)", {
+  base <- base_scalar_scope_fixture()
+  velo <- population_scalar_scope_fixture()
+  bornes <- tibble::tibble(commune = c("22001", "22002", "29001"),
+                           nb_bornes = c(4L, 2L, 1L))
+  fuel <- tibble::tibble(code = base$CODGEO, fuel = c(0, 2, 1, 3))
+  metadata <- lire_theme_metadata("mobilite")
+  ids <- scalar_scope_contract("mobilite")$indicators
+  build <- function(fuel) {
+    computed <- agreger_ravitaillement_territoires(bornes, velo, fuel, base)
+    long <- dplyr::bind_rows(computed$stations, computed$bornes_1000, computed$ratio)
+    territoires <- construire_territoires_mobilite(
+      base %>% dplyr::mutate(LIBGEO = CODGEO, LIBEPCI = EPCI),
+      list(mobilite_communes = tibble::tibble(commune = base$CODGEO,
+                                             nb_buildings = 1L)))
+    units <- c(stations_service = "stations", stations_service_1000 = "stations / 1 000 hab",
+               bornes_recharge_1000 = "bornes / 1 000 hab",
+               bornes_ev_par_station_service = "bornes / station")
+    tables <- stats::setNames(lapply(ids, function(id)
+      aligner_indicateur_mobilite(territoires,
+        long[long$key == id, c("code", "value")], id, units[[id]])), ids)
+    ranks <- compute_ranks(territoires, tables, scalaires = list(),
+                            directions = DIRECTIONS_MOBILITE)
+    rows <- assembler_indicateurs_mobilite(dplyr::bind_rows(tables),
+      dplyr::bind_rows(lapply(ranks, function(rank)
+        dplyr::mutate(rank, detail = NA_character_))), territoires, vintages_mobilite())
+    canonical <- data.frame(territory_id = rows$territoire, territory_type = rows$type,
+      indicator_id = rows$key, value = rows$value, unit = rows$unit,
+      source_name = rows$vintage_source, source_version = rows$vintage_version,
+      reference_date = rows$vintage_date_reference,
+      publication_date = rows$vintage_date_publication)
+    eligible <- unique(canonical[c("territory_id", "territory_type")])
+    project_scalar_canonical_rows(canonical, metadata, ids, eligible,
+                                   source_vintages = vintages_mobilite())
+  }
+  projection <- build(fuel)
+  regional <- projection$facts[projection$facts$territory_id == "53", ]
+  expected <- c(stations_service = 6, stations_service_1000 = 0.6,
+                bornes_recharge_1000 = 0.7, bornes_ev_par_station_service = 7 / 6)
+  expect_setequal(regional$indicator_id, ids)
+  expect_equal(regional$value, unname(expected[regional$indicator_id]))
+  expect_true(all(regional$status == "measured"))
+  expect_setequal(projection$facts$territory_type,
+                   c("commune", "epci", "departement", "region"))
+  ratio_sources <- projection$provenance[projection$provenance$territory_id == "53" &
+    projection$provenance$indicator_id == "bornes_ev_par_station_service", ]
+  expect_setequal(ratio_sources$source_id, c("bpe_b316", "bornes-recharges"))
+  vintages <- vintages_mobilite()
+  expect_true(all(projection$vintages$version %in% vintages$version))
+  absent <- build(fuel[fuel$code != "29002", ])
+  missing <- absent$facts[absent$facts$territory_id == "53" &
+    absent$facts$indicator_id != "bornes_recharge_1000", ]
+  expect_true(all(is.na(missing$value)))
+  expect_true(all(missing$status == "not_available"))
+})
+
 # --- matérialiseur ------------------------------------------------------------
 
 scope_materializer_fixture <- function() {

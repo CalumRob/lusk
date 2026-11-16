@@ -258,11 +258,20 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.text().toLowerCase()).not.toContain('groupe comparé')
     expect(wrapper.text()).not.toContain('Réessayer les comparaisons')
     expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
-    expect(reads.some(item => item.resource === 'offre_tc')).toBe(false)
-    expect(wrapper.find('.mobilite-share-track').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Contenu indisponible pour ce territoire.')
+    // #1032: the real producer-derived catalogue now admits scalar-serving
+    // levels independently of dedicated indicator-page display admission.
+    // These are native regional fixture facts, not relabelled commune reads.
+    for (const resource of ['offre_tc', 'places_stationnement_velo_1000',
+      'places_stationnement_voiture_1000', 'bornes_recharge', 'bornes_recharge_1000',
+      'stations_service', 'stations_service_1000', 'bornes_ev_par_station_service']) {
+      expect(reads.some(item => item.resource === resource && item.target.type === 'region' &&
+        item.target.id === '53' && item.intent.kind === 'facts'), resource).toBe(true)
+    }
+    expect(wrapper.find('.mobilite-share-track').exists()).toBe(true)
     const parking = wrapper.get('[data-column="stationnement"] .mobilite-comparison-bars svg')
-    expect(parking.attributes('aria-label')).toContain('Indisponible')
+    expect(parking.attributes('aria-label')).not.toContain('Indisponible')
+    expect(wrapper.findAll('.mobilite-comparison-bars [data-comparison]')).toHaveLength(0)
+    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
     if (failNetworkFacts) expect(wrapper.get('.mobilite-section--reseaux').text()).toContain('Publication indisponible')
     if (!failNetworkFacts) {
       // The extracted per-Cahier context survives route changes: eligibility
