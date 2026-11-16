@@ -38,7 +38,7 @@ describe('Cahier time-ramp readings (#1022)', () => {
     const rows = timeRampTooltipRows({
       timeRamp,
       series: timeRamp.series,
-      cut: { xValue: 5, xLabel: '5 min' },
+      cut: { xValue: 5 },
       territoryName: 'Rennes',
       comparisonLayerSupported: true,
     })
@@ -89,7 +89,7 @@ describe('Cahier time-ramp readings (#1022)', () => {
     const rows = timeRampTooltipRows({
       timeRamp,
       series: timeRamp.series,
-      cut: { xValue: 5, xLabel: '5 min' },
+      cut: { xValue: 5 },
       territoryName: 'Rennes',
       comparisonLayerSupported: true,
     })
@@ -99,7 +99,7 @@ describe('Cahier time-ramp readings (#1022)', () => {
     const absent = timeRampTooltipRows({
       timeRamp,
       series: timeRamp.series,
-      cut: { xValue: 10, xLabel: '10 min' },
+      cut: { xValue: 10 },
       territoryName: 'Rennes',
       comparisonLayerSupported: true,
     })
@@ -113,7 +113,7 @@ describe('Cahier time-ramp readings (#1022)', () => {
     const rows = timeRampTooltipRows({
       timeRamp,
       series: timeRamp.series,
-      cut: { xValue: 5, xLabel: '5 min' },
+      cut: { xValue: 5 },
       territoryName: 'Rennes',
       comparisonLayerSupported: false,
     })
@@ -137,7 +137,7 @@ describe('Cahier time-ramp readings (#1022)', () => {
     const rows = timeRampTooltipRows({
       timeRamp,
       series,
-      cut: { xValue: 5, xLabel: '5 min' },
+      cut: { xValue: 5 },
       territoryName: 'Rennes',
       comparisonLayerSupported: true,
     })

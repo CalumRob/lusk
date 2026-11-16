@@ -19,7 +19,8 @@ describe('Quantiles AEDAR du Bac à sable', () => {
     const evidence = aedarEquipmentExplorerSection({ status: 'ready', facts: [fact], contentVersion: 'a', referenceContentVersion: 'b',
       provenance: { contentVersion: 'a', sources: [] } }).evidence!
     const wrapper = mount(AedarEquipmentQuantileFigureCahier, { props: { fact, comparison,
-      comparisonLabel: comparison.label, horizonMinutes: 5, selectedModes: ['walk'], evidence } })
+      comparisonLabel: comparison.label, comparisonVisible: true,
+      horizonMinutes: 5, selectedModes: ['walk'], evidence } })
     const figure = wrapper.findComponent(CahierGroupedVerticalBarChart).props('figure')
     expect(figure.series[0]!.values[1]).toBe(1)
     expect(figure.series[1]!.values[1]).toBe(2.2)

@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { CarFront } from 'lucide-vue-next'
 import { computed } from 'vue'
-import type { AedarCarAccessOverviewEvidence, AedarCarAccessOverviewScalar } from '@/fiche/content/themeContent'
+import type { AedarCarAccessOverviewEvidence } from '@/fiche/content/themeContent'
 import {
   aedarOverviewScalarAria,
-  aedarOverviewScalarRankAria,
   aedarOverviewScalarServedRank,
 } from './aedarFigureReadings'
 import CahierBlankMapSlots from './CahierBlankMapSlots.vue'
@@ -34,7 +33,6 @@ useCahierExportPublication(() => ({
 function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
 }
-const scalarRankAria = aedarOverviewScalarRankAria
 const scalarServedRank = aedarOverviewScalarServedRank
 </script>
 

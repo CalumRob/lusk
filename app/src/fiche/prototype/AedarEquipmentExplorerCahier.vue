@@ -12,7 +12,6 @@ import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { AedarEquipmentExplorerEvidence } from '@/fiche/content/themeContent'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import {
-  aedarExplorerGroupValue,
   aedarExplorerServedReference,
   aedarExplorerVolumeRamp,
 } from './aedarFigureReadings'
@@ -133,9 +132,7 @@ const explorerReading = computed(() => ({
   volumeYAxisTitle: props.evidence.volumeYAxisTitle,
 }))
 
-function groupValue(horizon: AedarEquipmentHorizon, mode: AedarRampMode, statistic: string): number | null {
-  return aedarExplorerGroupValue(explorerReading.value, horizon, mode, statistic)
-}
+
 const detailIdentity = computed(() => {
   const fact = selectedBaseFact.value
   return JSON.stringify([fact?.territory_type, fact?.territory_id, selectedTypequ.value,

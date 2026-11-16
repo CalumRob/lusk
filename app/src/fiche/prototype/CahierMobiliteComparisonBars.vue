@@ -14,6 +14,7 @@ import type {
   CahierFigureAxisTick,
   CahierFigureGeometry,
   CahierFigureTooltipAnchor,
+  CahierTooltipRow,
   FigureLegendEntry,
 } from '@/fiche/cahierFigureGrammaire'
 import { valeursGraduationPourDomaine } from '@/fiche/cahierFigureGrammaire'
@@ -24,7 +25,6 @@ import type {
   MobiliteRatioEvidence,
 } from '@/fiche/content/themeContent'
 import {
-  formatMobiliteBarValue,
   mobiliteBarCategoryAria,
   mobiliteBarReadings,
   mobiliteBarReferenceValue,
@@ -65,7 +65,6 @@ const BASE_FIGURE_GEOMETRY = {
 const BAR_GAP = 3
 const MAX_BAR_WIDTH = 20
 const UNAVAILABLE_LABEL = 'Indisponible'
-const formatValue = formatMobiliteBarValue
 const finiteValue = mobiliteFiniteValue
 const toneColor = mobiliteBarToneColor
 const segmentColor = mobiliteBarSegmentColor

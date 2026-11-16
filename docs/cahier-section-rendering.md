@@ -106,6 +106,38 @@ real owners (horizon, modes, TYPEQU acquisition, independent comparison layers,
 real map/legend pending/loaded/failure transitions, late group/territory changes
 and screen stability).
 
+## Export family adapters (#1022)
+
+`cahierExportAdapters.ts` projects one frozen `CahierExportRequest` into the
+numeric tables and figure projections required by the PDF composer. Dispatch is
+on the eight **figure families**, never on a section key: `aedar-ramps`,
+`aedar-car-overview`, `aedar-diversity-loss` (maps/legend), the
+`aedar-equipment-profile` waffle, `aedar-equipment-explorer` (volume ramp +
+min/deciles/max distribution), `mobilite-bars` (compared bars with segments and
+raw numerators), `mobilite-share` (current two-line coverage) and
+`mobilite-curve` (declared raccordement grid, marker and reference path).
+
+The adapters reuse the owners' own resolvers and the pure readings that
+mount the figures: `cahierFigureReadings.ts` (time ramps and grouped AEDAR
+bars), `cahierMobiliteReadings.ts` (compared bars, coverage share and curve)
+and `aedarFigureReadings.ts` (quantile/volume/waffle/scalar builders).
+`aedarRampToTimeRampFigureData` is the one evidence-to-ramp conversion used by
+both `CahierAedarAccessSection` and the export. A table cell keeps the exact
+native value next to the native visible formatting, so zero, absent values,
+small non-zero values and served ties are not recomputed.
+
+Comparison columns come only from an owner-published layer for the figure's
+slot; `comparison.capable` is never evidence. A hidden reference (including the
+`hiddenSeriesKeys` of the grouped AEDAR bars) is removed from tables, tooltips
+and accessible labels. The paired ratio layer stays independent from the bars'
+toggle. The distribution capture carries the native explanatory copy additively
+(`distributionDescription`, `distributionUnavailableDescription`) so the
+projection can preserve the figure's own reading.
+
+`cahier-export-adapters.spec.ts` covers the nine-section admission and literal
+family expectations; `cahier-export-capture-mounted.spec.ts` projects every
+mounted capture and checks a real ramp tooltip against its exported readings.
+
 ## Preserved boundaries
 
 - Content builders own prose, labels, evidence, availability and provenance;

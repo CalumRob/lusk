@@ -195,12 +195,12 @@ describe('Cercle du rang dans les tooltips', () => {
 })
 
 describe('Évidence structurée du rang des tooltips', () => {
+  // #1022 moved the tooltip builders to shared reading modules; the structured
+  // rank evidence stays with the actual tooltip owner.
   const callers = [
-    'AccessRampFigureCahier.vue',
+    'cahierFigureReadings.ts',
+    'cahierMobiliteReadings.ts',
     'CartographicBreakoutPrototype.vue',
-    'CahierGroupedVerticalBarChart.vue',
-    'CahierMobiliteComparisonBars.vue',
-    'CahierMobiliteRaccordementCurve.vue',
   ] as const
 
   it.each(callers)('%s joint l’évidence structurée au rang formaté du tooltip', (file) => {
