@@ -92,7 +92,9 @@ describe('sortie native du peintre PDF', () => {
     expect(car2).toMatch(/ 2\.00$/)
     expect(lecture.texteComplet).toContain('40')
     const title = lecture.textes.find((item) => item.str === 'Volume de l’offre (établissements)')!
-    expect(title.x).toBeCloseTo(316.9134, 2) // second-panel axis, not the first panel's title
+    expect(title.x).toBeCloseTo(312.0945, 2) // panel starts at 108mm, title baseline at 110.1mm
+    const tickNumbers = lecture.textes.filter((item) => /^(0|20|40)$/.test(item.str))
+    expect(Math.min(...tickNumbers.map((item) => item.x))).toBeGreaterThan(title.x + 3.5)
     const ticks = lecture.textes.filter((item) => item.str === 'établissements')
     expect(ticks).toHaveLength(3)
     const middle = (Math.min(...ticks.map((tick) => tick.y)) + Math.max(...ticks.map((tick) => tick.y))) / 2

@@ -424,14 +424,15 @@ function dessinerAxes(
     align: 'center',
   })
   doc.saveGraphicsState()
-  doc.setFont(POLICE_PDF.body, 'normal')
-  doc.setFontSize(TAILLE.axe)
-  doc.setTextColor(...rgb(PALETTE_PDF.muted))
   // jsPDF's center alignment subtracts half the unrotated width from x before
   // rotation. Center along the rotated baseline instead, keeping the label in
   // its own panel and clear of the neighbouring panel's title.
   const titleWidth = mesure.largeur(yTitle, POLICE_PDF.body, TAILLE.axe)
-  doc.text(yTitle, x + plotLeft - 5.2, y + height / 2 + titleWidth / 2, { angle: 90 })
+  const tickWidth = Math.max(0, ...yTicks.map((tick) => mesure.largeur(tick.label ?? '', POLICE_PDF.meta, TAILLE.tick)))
+  doc.setFont(POLICE_PDF.body, 'normal')
+  doc.setFontSize(TAILLE.axe)
+  doc.setTextColor(...rgb(PALETTE_PDF.muted))
+  doc.text(yTitle, x + plotLeft - tickWidth - 3.2, y + height / 2 + titleWidth / 2, { angle: 90 })
   doc.restoreGraphicsState()
 }
 
@@ -491,14 +492,19 @@ async function dessinerRampes(
       })
       py += mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18
     }
-    const nativeGeometry = {
+    const panelScale = cahierIntegerYAxisScale(ramp.series.flatMap((serie) =>
+      serie.points.flatMap((point) => [point.value, point.referenceValue])))
+    const firstSeries = ramp.series[0]!
+    const initialGeometry = {
       width: panelWidth,
       height: plotHeight,
       margin: { top: 2, right: 2, bottom: 2, left: 9 },
     } as const
-    const firstSeries = ramp.series[0]!
-    const panelScale = cahierIntegerYAxisScale(ramp.series.flatMap((serie) =>
-      serie.points.flatMap((point) => [point.value, point.referenceValue])))
+    const initialTicks = rampGeometry(rampPoints(firstSeries), panelScale, initialGeometry, ramp.yAxis.unit).yTicks
+    const tickWidth = Math.max(0, ...initialTicks.map((tick) => mesure.largeur(tick.label ?? '', POLICE_PDF.meta, TAILLE.tick)))
+    const nativeGeometry = { ...initialGeometry, margin: {
+      ...initialGeometry.margin, left: Math.max(initialGeometry.margin.left, tickWidth + 5.3),
+    } }
     const geom = rampGeometry(rampPoints(firstSeries), panelScale, nativeGeometry, ramp.yAxis.unit)
     const svg = svgCanvas(panelWidth, plotHeight)
     for (const tick of geom.yTicks) {
