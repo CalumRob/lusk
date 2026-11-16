@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chargerCatalogueRessources, lireRessourcesBatch, SemanticMemberError } from '../payload/semanticResourceClient'
 import type { SemanticReadItem } from '../payload/semanticResourceClient'
+import { TRANSPORT_DEADLINE_MS } from '../payload/transportDeadline'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -93,7 +94,8 @@ describe('semantic read batches', () => {
     vi.stubGlobal('fetch', fetcher)
 
     await expect(chargerCatalogueRessources()).resolves.toEqual(catalogue.resources)
-    expect(fetcher).toHaveBeenCalledWith('/api/resources')
+    expect(fetcher).toHaveBeenCalledWith('/api/resources',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it.each([
@@ -126,6 +128,54 @@ describe('semantic read batches', () => {
     const malformed = { ...resource, measure_facets: { meanDiversity: { facet: 'diversity', direction: 'up', ranked: true } } }
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [malformed] }))))
     await expect(chargerCatalogueRessources()).rejects.toThrow('mal formée')
+  })
+
+  it('borne un catalogue suspendu, libère son minuteur puis relit sur demande explicite', async () => {
+    vi.useFakeTimers()
+    try {
+      let suspendu = true
+      const catalogue = { contract: 'semantic-resource-catalogue-v1', resources: [] }
+      const fetcher = vi.fn((_url: string, init?: { signal?: AbortSignal }) => suspendu
+        ? new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort',
+            () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+        })
+        : Promise.resolve(new Response(JSON.stringify(catalogue))))
+      vi.stubGlobal('fetch', fetcher)
+
+      const enAttente = chargerCatalogueRessources().catch((cause: unknown) => cause)
+      await vi.advanceTimersByTimeAsync(TRANSPORT_DEADLINE_MS)
+      const echec = await enAttente
+      expect(echec).toMatchObject({ kind: 'fetch', file: '/api/resources' })
+      expect(String((echec as Error).message)).toMatch(/aucune réponse/i)
+      expect(vi.getTimerCount()).toBe(0)
+      expect((fetcher.mock.calls[0]![1] as { signal?: AbortSignal }).signal?.aborted).toBe(true)
+
+      suspendu = false
+      await expect(chargerCatalogueRessources()).resolves.toEqual([])
+      expect(fetcher).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('borne aussi la lecture du corps du catalogue quand les en-têtes sont arrivés', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetcher = vi.fn((_url: string, init?: { signal?: AbortSignal }) => Promise.resolve({
+        ok: true, status: 200,
+        json: () => new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort',
+            () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+        }),
+      }))
+      vi.stubGlobal('fetch', fetcher)
+
+      const enAttente = chargerCatalogueRessources().catch((cause: unknown) => cause)
+      await vi.advanceTimersByTimeAsync(TRANSPORT_DEADLINE_MS)
+      const echec = await enAttente
+      expect(echec).toMatchObject({ kind: 'fetch', file: '/api/resources' })
+      expect(String((echec as Error).message)).toMatch(/aucune réponse/i)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
   })
 
   it('keeps repeated resources correlated by their unique ordered item identity', async () => {

@@ -34,8 +34,10 @@ const props = withDefaults(defineProps<{
   aedarActive?: boolean
   /** #1008 — the visible chapter's admission state, owned by the demand planner. */
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
+  /** The page-level data state already owns this failure and renders its retry. */
+  erreurPage?: boolean
 }>(), { aedarActive: true })
-const emit = defineEmits<{ 'chapitre-visible': [anchor: string] }>()
+const emit = defineEmits<{ 'chapitre-visible': [anchor: string]; 'chapitre-reessayer': [chapter: string] }>()
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
@@ -260,7 +262,9 @@ const transformed = computed(() => {
     aedar-access-enabled
     :aedar-chapter-active="props.aedarActive !== false"
     :chapitres-statut="props.chapitresStatut"
+    :erreur-page="props.erreurPage"
     @chapitre-visible="emit('chapitre-visible', $event)"
+    @chapitre-reessayer="emit('chapitre-reessayer', $event)"
   />
 </template>
 

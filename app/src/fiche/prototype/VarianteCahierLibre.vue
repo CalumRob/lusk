@@ -79,8 +79,10 @@ const props = withDefaults(defineProps<{
   retryNativeComparison?: () => void
   /** #1008 — the visible chapter's admission state, owned by the demand planner. */
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
+  /** The page-level data state already owns this failure and renders its retry. */
+  erreurPage?: boolean
 }>(), { aedarChapterActive: true })
-const emit = defineEmits<{ 'chapitre-visible': [anchor: string] }>()
+const emit = defineEmits<{ 'chapitre-visible': [anchor: string]; 'chapitre-reessayer': [chapter: string] }>()
 const route = useRoute()
 
 /** #860 (ruling 2026-11-03) — le contrôle de comparaison fourni par la fiche
@@ -211,6 +213,18 @@ function sectionIsPending(unitKey: string): boolean {
   if (props.chapitresStatut === undefined) return false
   const statut = props.chapitresStatut[unitKey]
   return statut === undefined || statut === 'idle' || statut === 'loading'
+}
+
+/**
+ * #1012 — only a chapter whose own demand read actually failed (never a settled
+ * publication absence, a pending chapter or an unrequested one) exposes its
+ * retry action. AEDAR owns its own retry, so page 1 is excluded here, and while
+ * the page-level state owns the same failure its single retry is authoritative:
+ * no second alert repeats it.
+ */
+function chapitreEnEchec(unitKey: string): boolean {
+  if (props.erreurPage === true) return false
+  return unitKey !== 'acces-aux-services' && props.chapitresStatut?.[unitKey] === 'error'
 }
 
 function sectionState(section: ContentSection, unitKey: string): string {
@@ -486,6 +500,22 @@ onBeforeUnmount(() => {
                 <CahierProse class="page-subtitle" :blocks="currentUnit.introduction" />
                 <CahierProse v-if="currentUnit.rundown" class="page-subtitle page-rundown" :blocks="currentUnit.rundown" />
               </div>
+
+              <!-- #1012 — the failed requested chapter keeps its own explicit
+                   retry: the reader does not have to scroll away and back, and
+                   the other settled chapters are never reset. -->
+              <p
+                v-if="chapitreEnEchec(currentUnit.key)"
+                class="cahier-chapitre-erreur"
+                role="alert"
+              >
+                <span>Cette page n’a pas pu être chargée.</span>
+                <button
+                  type="button"
+                  class="cahier-chapitre-erreur__action"
+                  @click="emit('chapitre-reessayer', currentUnit.key)"
+                >Réessayer</button>
+              </p>
 
               <div class="figure-stack">
                 <section
@@ -982,6 +1012,34 @@ onBeforeUnmount(() => {
 .argument-side h4 { margin: 0; color: var(--cahier-theme-emphasis); font-family: 'Marelle', var(--font-section-title); font-size: clamp(calc(1rem + 2px), calc(1.35vw + 2px), calc(1.25rem + 2px)); font-weight: 500; line-height: var(--cahier-grid-jump); }
 .cahier-section-state, .evidence-placeholder { color: var(--cahier-default); font-size: 14px; line-height: 1.5; }
 .cahier-section-state { margin: 0; padding: 20px 0; }
+.cahier-chapitre-erreur {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px var(--space-3, 12px);
+  margin: 0 0 10px;
+  padding: 8px 0;
+  border-top: 1px solid color-mix(in srgb, var(--cahier-theme) 30%, transparent);
+  color: var(--cahier-default);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.cahier-chapitre-erreur__action {
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--cahier-theme) 55%, transparent);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cahier-default);
+  font: inherit;
+  cursor: pointer;
+}
+.cahier-chapitre-erreur__action:hover {
+  background: color-mix(in srgb, var(--cahier-theme) 10%, transparent);
+}
+.cahier-chapitre-erreur__action:focus-visible {
+  outline: 2px solid var(--cahier-theme);
+  outline-offset: 2px;
+}
 .evidence-placeholder { display: grid; place-items: center; min-height: 180px; border: 1px dashed color-mix(in srgb, var(--cahier-theme) 35%, transparent); text-align: center; }
 .evidence-figure { margin: 0; padding: 12px 0 0; }
 .cahier--sans-grille .evidence-figure { padding-top: 0; }

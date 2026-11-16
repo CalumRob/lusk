@@ -3,7 +3,8 @@ import type { TerritoireType, Theme } from './types'
 import { validerReponseComparaisonTheme } from './themeFactsAdapter'
 import { DECLARED_DETAIL_COMPARISON_RESOURCES, meanComparisonResources } from './comparisonResources'
 import { chargerCatalogueRessources, invalidateSemanticItems, invalidateSemanticReads,
-  invalidateSemanticReadsForTarget, publicationFamilyForResource, readSemanticOutcomes } from './semanticResourceClient'
+  invalidateSemanticReadsForTarget, publicationFamilyForResource, readSemanticOutcomes,
+  SemanticReadDeadlineError } from './semanticResourceClient'
 import type { SemanticPublicationFamily, SemanticPublicationReason, SemanticReadItem,
   SemanticReadOutcome, SemanticResourceDeclaration, SemanticTerritoryTarget } from './semanticResourceClient'
 import { PayloadError } from './validate'
@@ -1405,7 +1406,11 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
       ({ reads, failures } = await readThemeOutcomes(items, resources, undefined, demand.priority))
     } catch (error) {
       const hasComparisonItems = items.some((item) => item.intent.kind !== 'facts')
-      if (!fused || !hasComparisonItems) throw error
+      // #1012 — a bounded transport deadline is a failed request, not a
+      // comparison-publication failure: re-reading facts-only would start a
+      // second automatic attempt against a stalled API. The caller's explicit
+      // retry is the one recovery.
+      if (!fused || !hasComparisonItems || error instanceof SemanticReadDeadlineError) throw error
       const factOnly = items.filter((item) => item.intent.kind === 'facts')
       const recovered = await readThemeOutcomes(factOnly, resources, undefined, demand.priority)
       reads = items.map((item) => item.intent.kind === 'facts'
