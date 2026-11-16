@@ -208,23 +208,31 @@ useCahierExportPublication(() => ({
   },
 }), 'equipment')
 
-/** A served reference value exists for at least one drawn explorer measure. */
-const servedReferenceAvailable = computed(() => {
-  if (activeComparison.value) {
-    return activeComparison.value.cells.some((cell) => cell.group_value !== null)
+/** A served reference exists for at least one drawn measure of the given modes. */
+function servedReferenceFor(modes: readonly AedarRampMode[]): boolean {
+  const comparison = activeComparison.value
+  if (comparison) {
+    return HORIZONS.some((horizon) => modes.some((mode) =>
+      aedarGroupValue(comparison, selectedBaseFact.value, `count_${horizon}_${mode}_mean`) !== null))
   }
   const reference = referenceDetail.value
   if (!reference) return false
-  return HORIZONS.some((horizon) => AEDAR_RAMP_MODES.some((mode) =>
+  return HORIZONS.some((horizon) => modes.some((mode) =>
     readAedarCountMeasure(reference, horizon, mode, 'mean') !== null))
-})
-// #1021 — the explorer publishes whether its own comparative layer is drawn.
+}
+const referenceAvailable = computed(() => servedReferenceFor(AEDAR_RAMP_MODES))
+const visibleReferenceAvailable = computed(() => servedReferenceFor(selectedModes.value))
+// #1021 — the explorer publishes whether its drawn reference survives the
+// effective selected modes; acquired reference availability stays separate.
 useCahierExportPublication(() => ({
   owner: 'aedar-comparison-layer',
   state: {
     toggle: comparisonVisible.value,
-    referenceAvailable: servedReferenceAvailable.value,
-    displayed: props.comparisonLayerSupported && comparisonVisible.value && servedReferenceAvailable.value,
+    referenceAvailable: referenceAvailable.value,
+    visibleReferenceAvailable: visibleReferenceAvailable.value,
+    displayed: props.comparisonLayerSupported
+      && comparisonVisible.value
+      && visibleReferenceAvailable.value,
   },
 }), 'comparison')
 const modeEntries = computed<FigureLegendEntry[]>(() => [...AEDAR_RAMP_MODES.map((mode) => ({

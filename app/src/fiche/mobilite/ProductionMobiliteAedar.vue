@@ -50,6 +50,20 @@ const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
     ? 'Moyenne de la sélection' : `Moyenne — ${control.value.libelleActif}`
   return { intent, label }
 })
+
+/**
+ * #1021 — the direct reference read is the displayed reference source only in
+ * the same states where this owner presents it. The conditioned status is an
+ * additive fact for the export capture; it triggers no acquisition.
+ */
+const directReferenceStatus = computed<'loading' | 'error' | 'unavailable' | null>(() => {
+  const status = props.aedarReferenceStatus
+  if (status !== 'loading' && status !== 'error' && status !== 'unavailable') return null
+  if (comparisonRequest.value) return null
+  const selection = control.value?.selection
+  if (selection?.etat === 'vide' || selection?.etat === 'membres') return null
+  return status
+})
 const comparison = ref<AedarComparisonEvidence | null>(null)
 const comparisonState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const comparisonError = ref('')
@@ -260,6 +274,7 @@ const transformed = computed(() => {
     :native-comparison-status="props.nativeComparisonStatus"
     :native-comparison-error="props.nativeComparisonError"
     :retry-native-comparison="props.retryNativeComparison"
+    :aedar-reference-status="directReferenceStatus"
     show-all-units
     presentation="plain"
     layout-variant="indexed-sections"

@@ -7,6 +7,8 @@
  */
 import type { ControleComparaison, SelectionComparaison } from '@/fiche/comparisonContext'
 import { aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
+import type { AedarReferenceEvidence } from '@/fiche/content/aedarAccessSection'
+import type { AedarComparisonRequest } from '@/fiche/content/aedarComparisonClient'
 import type { AedarTerritorySummary } from '@/fiche/content/aedarApiClient'
 import type { AedarDiversityLossMapMetadata } from '@/fiche/content/aedarDiversityLossMaps'
 import { AEDAR_AGGREGATE_READING_MEASURES } from '@/fiche/content/aedarTimeRampFacts'
@@ -134,10 +136,40 @@ function aedarSections(
   territory: ThemeContent['territory'],
   lossMetadata: AedarDiversityLossMapMetadata,
   source: AedarSourceFixture = aedarProvenanceFixture,
+  options: { reference?: AedarReferenceEvidence | null; comparisonRequest?: AedarComparisonRequest | null } = {},
 ): ContentSection[] {
   return aedarPrototypeSections(aedarSummary(source), aedarDetail(source), territory, {
     lossMapMetadata: lossMetadata,
+    ...(options.reference ? { reference: options.reference } : {}),
+    ...(options.comparisonRequest ? { comparisonRequest: options.comparisonRequest } : {}),
   }) as ContentSection[]
+}
+
+/** Ready AEDAR publication fixtures for the production shell (no acquisition). */
+export function aedarReadyFixtures(): {
+  summary: AedarTerritorySummary
+  detail: ReturnType<typeof aedarDetail>
+} {
+  return { summary: aedarSummary(), detail: aedarDetail() }
+}
+
+/** A served reference whose only non-null readings are the car mode. */
+function sparseCarReference(): AedarReferenceEvidence {
+  const summary = aedarSummary()
+  return {
+    data: {
+      ...summary,
+      readings: summary.readings.map((reading) => ({
+        ...reading,
+        value: reading.measure.startsWith('car')
+          || reading.measure === 'meanDiversity'
+          || reading.measure === 'meanVolume'
+          ? 5 : null,
+      })),
+    },
+    territory: { type: 'epci', id: '200000001' },
+    label: 'EPCI test',
+  }
 }
 
 /** One native AEDAR access section carrying the given producer provenance record. */
@@ -163,6 +195,8 @@ export function cahierExportFixture(options: {
   selection?: SelectionComparaison
   focal?: ControleComparaison['focal']
   lossMetadata?: AedarDiversityLossMapMetadata
+  aedarReference?: 'sparse-car'
+  explorerComparison?: boolean
 } = {}): CahierExportFixture {
   const facts = territoryFactsFor(basePayload, '22001')
   if (!facts) throw new Error('Mobilité fixture facts missing')
@@ -201,7 +235,16 @@ export function cahierExportFixture(options: {
     {
       ...content.units[0]!,
       introduction: [],
-      sections: aedarSections(content.territory, options.lossMetadata ?? { status: 'loading', legend: null }),
+      sections: aedarSections(content.territory, options.lossMetadata ?? { status: 'loading', legend: null },
+        aedarProvenanceFixture, {
+          reference: options.aedarReference === 'sparse-car' ? sparseCarReference() : null,
+          comparisonRequest: options.explorerComparison
+            ? {
+              intent: { kind: 'fixed_comparison', context: 'same_level' },
+              label: 'Moyenne — groupe test',
+            } as AedarComparisonRequest
+            : null,
+        }),
     },
     content.units[1]!,
     { ...content.units[2]!, sections: page3 },

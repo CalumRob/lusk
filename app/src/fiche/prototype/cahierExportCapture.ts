@@ -162,8 +162,10 @@ export interface CahierCaptureComparisonLayer {
   readonly slot: string
   /** The reader's raw toggle where the figure exposes one; null when it has none. */
   readonly toggle: boolean | null
-  /** The figure has a served reference value for at least one drawn category/point/cell. */
+  /** The acquired evidence carries a served reference for at least one category/point/cell. */
   readonly referenceAvailable: boolean
+  /** The effective visible subset (selected modes/horizon) carries a served reference. */
+  readonly visibleReferenceAvailable: boolean
   /** The owner actually draws/reads the comparison layer now. */
   readonly displayed: boolean
 }
@@ -181,6 +183,7 @@ export type CahierComparisonDisplayReason =
   | 'not-eligible'
   | 'empty-selection'
   | 'hidden-by-user'
+  | 'hidden-by-selection'
   | 'no-served-reference'
   | 'loading'
   | 'error'
@@ -193,9 +196,24 @@ export interface CahierCaptureComparisonDisplay {
   readonly layers: readonly CahierCaptureComparisonLayer[]
 }
 
+export type CahierCaptureReferenceStatus =
+  | 'idle'
+  | 'loading'
+  | 'ready'
+  | 'error'
+  | 'unavailable'
+  | null
+
 export interface CahierCaptureComparison {
+  /** Status of the comparison evidence read the section's figures consume. */
   readonly status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   readonly error: string | null
+  /**
+   * Status of the direct reference read the section would display (AEDAR);
+   * null when the section does not consume one. Kept distinct from `status`
+   * so a failed reference read is never reported as a legitimate absence.
+   */
+  readonly referenceStatus: CahierCaptureReferenceStatus
   readonly eligible: boolean
   /** The section family can carry a comparative layer at all (not proof it is drawn). */
   readonly capable: boolean
@@ -258,6 +276,7 @@ export interface CahierEquipmentCaptureState {
 export interface CahierComparisonLayerCaptureState {
   readonly toggle: boolean | null
   readonly referenceAvailable: boolean
+  readonly visibleReferenceAvailable: boolean
   readonly displayed: boolean
 }
 
@@ -462,6 +481,8 @@ export interface CahierSectionCaptureInput {
   readonly territory: TerritoryIdentity
   /** The shell's honest chapter/evidence state, already computed for display. */
   readonly readiness: CahierCaptureReadiness
+  /** Conditioned direct-reference read status from its existing production owner. */
+  readonly referenceStatus?: CahierCaptureReferenceStatus
   /** Territory-level comparison capability (#768), from its existing owner. */
   readonly comparisonEligible: boolean
   /** Acquired comparison state consumed by this section's own figures. */
@@ -553,6 +574,9 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
     family,
     selection,
   })
+  const comparisonStatus = captureComparisonStatus(family, input, publications)
+  const comparisonError = captureComparisonError(family, input, publications)
+  const referenceStatus = input.referenceStatus ?? null
   const capture: CahierExportCapture = {
     identity: {
       sectionKey: section.key,
@@ -578,14 +602,22 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
       maps: captureMaps({ family, evidence, publications }),
     },
     comparison: {
-      status: captureComparisonStatus(family, input, publications),
-      error: captureComparisonError(family, input, publications),
+      status: comparisonStatus,
+      error: comparisonError,
+      referenceStatus,
       eligible: input.comparisonEligible,
       capable: family ? FAMILY_HAS_COMPARISON_EVIDENCE[family] : false,
       selection,
       group,
       absent,
-      display: captureComparisonDisplay({ family, input, selection, publications }),
+      display: captureComparisonDisplay({
+        family,
+        input,
+        selection,
+        publications,
+        status: comparisonStatus,
+        referenceStatus,
+      }),
       statisticLabels: comparisonStatisticLabels(evidence, publications),
     },
     sources: captureSources(evidence),
@@ -619,6 +651,16 @@ const MODE_SELECTING_FAMILIES: ReadonlySet<CahierCaptureFamily> = new Set([
   'aedar-ramps',
   'aedar-equipment-explorer',
 ])
+
+const DIRECT_REFERENCE_FAMILIES: ReadonlySet<CahierCaptureFamily> = new Set([
+  'aedar-car-overview',
+  'aedar-ramps',
+  'aedar-equipment-explorer',
+])
+
+export function cahierCaptureConsumesReference(family: CahierCaptureFamily | null): boolean {
+  return family !== null && DIRECT_REFERENCE_FAMILIES.has(family)
+}
 
 function captureSelectableSeries(
   family: CahierCaptureFamily | null,
@@ -874,6 +916,7 @@ function comparisonLayerFrom(publication: CahierExportPublication): CahierCaptur
         slot: publication.slot || 'comparison',
         toggle: publication.state.state.toggle,
         referenceAvailable: publication.state.state.referenceAvailable,
+        visibleReferenceAvailable: publication.state.state.visibleReferenceAvailable,
         displayed: publication.state.state.displayed,
       }
     default:
@@ -890,8 +933,10 @@ function captureComparisonDisplay(options: {
   input: CahierSectionCaptureInput
   selection: CahierCaptureComparisonSelection
   publications: readonly CahierExportPublication[]
+  status: CahierCaptureComparison['status']
+  referenceStatus: CahierCaptureReferenceStatus
 }): CahierCaptureComparisonDisplay {
-  const { family, input, selection, publications } = options
+  const { family, input, selection, publications, status, referenceStatus } = options
   const capable = family ? FAMILY_HAS_COMPARISON_EVIDENCE[family] : false
   if (!capable) {
     return { state: 'not-applicable', reason: 'capability-absent', layers: [] }
@@ -908,7 +953,7 @@ function captureComparisonDisplay(options: {
   if (layers.every((layer) => layer.toggle === false)) {
     return { state: 'not-displayed', reason: 'hidden-by-user', layers }
   }
-  switch (input.comparisonStatus) {
+  switch (status) {
     case 'loading':
       return { state: 'not-displayed', reason: 'loading', layers }
     case 'error':
@@ -919,8 +964,23 @@ function captureComparisonDisplay(options: {
     case 'ready':
       break
   }
+  switch (referenceStatus) {
+    case 'loading':
+      return { state: 'not-displayed', reason: 'loading', layers }
+    case 'error':
+      return { state: 'not-displayed', reason: 'error', layers }
+    case 'unavailable':
+      return { state: 'not-displayed', reason: 'unavailable', layers }
+    case 'idle':
+    case 'ready':
+    case null:
+      break
+  }
   if (layers.every((layer) => !layer.referenceAvailable)) {
     return { state: 'not-displayed', reason: 'no-served-reference', layers }
+  }
+  if (layers.every((layer) => !layer.visibleReferenceAvailable)) {
+    return { state: 'not-displayed', reason: 'hidden-by-selection', layers }
   }
   return { state: 'not-displayed', reason: 'unavailable', layers }
 }

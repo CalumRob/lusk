@@ -21,6 +21,7 @@ useCahierExportPublication(() => ({
   state: {
     toggle: null,
     referenceAvailable: referenceAvailable.value,
+    visibleReferenceAvailable: referenceAvailable.value,
     displayed: comparisonEligible.value
       && comparison.value.status === 'ready'
       && referenceAvailable.value,

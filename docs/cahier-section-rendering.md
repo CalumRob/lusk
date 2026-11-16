@@ -56,7 +56,14 @@ Owners publish the state they already hold, never the reverse:
 Comparison capture keeps two separate things: **selection identity** (`group`
 metadata, which never implies drawn proof) and **owner-observed presentation**
 (`display.state`/`reason`/`layers`). Without a publication the display is
-`unobserved`, not a default-visible layer. Per-figure labels are preserved in
+`unobserved`, not a default-visible layer. Each layer keeps the acquired
+`referenceAvailable` distinct from `visibleReferenceAvailable` (the effective
+selected modes/horizon) and from `displayed` (what the owner actually draws).
+`display.reason` preserves owner loading/error/unavailable separately from a
+legitimate `no-served-reference` and from a reference hidden by the selected
+series (`hidden-by-selection`). The direct-reference read status remains a
+separate `comparison.referenceStatus`, so a failed AEDAR reference read is never
+reported as a legitimate absence. Per-figure labels are preserved in
 `statisticLabels`; no first column label becomes section-wide truth. Map/legend
 state is `unknown` until a map owner publishes, and a declared map is never a
 loaded one. AEDAR sources carry the native source-record identity, licence and

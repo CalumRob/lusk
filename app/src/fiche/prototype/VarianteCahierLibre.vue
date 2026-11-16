@@ -33,7 +33,7 @@ import CahierProse from './CahierProse.vue'
 import CahierExportScope from './CahierExportScope.vue'
 import { CahierSectionBody, cahierSectionRendererFor } from './cahierSectionRenderers'
 import { provideAedarSectionContext } from './aedarSectionContext'
-import { cahierCaptureFamily, captureCahierSection } from './cahierExportCapture'
+import { cahierCaptureConsumesReference, cahierCaptureFamily, captureCahierSection } from './cahierExportCapture'
 import type {
   CahierAedarCaptureState,
   CahierCaptureReadiness,
@@ -61,6 +61,12 @@ const props = withDefaults(defineProps<{
   nativeComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   nativeComparisonError?: string
   retryNativeComparison?: () => void
+  /**
+   * #1021 — the direct AEDAR reference read status, conditioned by its existing
+   * owner to the states where that reference is the displayed source. Null
+   * when the section does not consume one.
+   */
+  aedarReferenceStatus?: 'loading' | 'error' | 'unavailable' | null
   /** #1008 — the visible chapter's admission state, owned by the demand planner. */
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
   /** The page-level data state already owns this failure and renders its retry. */
@@ -188,6 +194,8 @@ function buildExportCapture(
     unit: { key: record.unitKey, label: record.unitLabel },
     territory: props.content.territory,
     readiness: captureReadiness(record.section, record.unitKey),
+    referenceStatus: cahierCaptureConsumesReference(family)
+      ? (props.aedarReferenceStatus ?? null) : null,
     comparisonEligible: comparisonEligible.value,
     comparisonStatus: aedarEvidence
       ? (props.comparisonStatus ?? 'idle')

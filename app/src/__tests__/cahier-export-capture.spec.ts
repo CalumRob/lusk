@@ -72,7 +72,7 @@ function layer(
     slot,
     state: {
       owner: 'mobilite-comparison-bars',
-      state: { toggle: true, referenceAvailable: true, displayed: true, ...state },
+      state: { toggle: true, referenceAvailable: true, visibleReferenceAvailable: true, displayed: true, ...state },
     },
   }
 }
@@ -193,7 +193,7 @@ describe('Cahier export capture — comparison identity and effective presentati
     expect(displayed.comparison.display).toEqual({
       state: 'displayed',
       reason: 'shown',
-      layers: [{ slot: 'bars', toggle: true, referenceAvailable: true, displayed: true }],
+      layers: [{ slot: 'bars', toggle: true, referenceAvailable: true, visibleReferenceAvailable: true, displayed: true }],
     })
 
     const hidden = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), {
@@ -203,21 +203,85 @@ describe('Cahier export capture — comparison identity and effective presentati
     expect(hidden.comparison.display.reason).toBe('hidden-by-user')
 
     const missingReference = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), {
-      publications: [layer('bars', { referenceAvailable: false, displayed: false })],
+      publications: [layer('bars', {
+        referenceAvailable: false, visibleReferenceAvailable: false, displayed: false,
+      })],
     }))
     expect(missingReference.comparison.display.reason).toBe('no-served-reference')
 
     const loading = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), {
       comparisonStatus: 'loading',
-      publications: [layer('bars', { referenceAvailable: false, displayed: false })],
+      publications: [layer('bars', {
+        referenceAvailable: false, visibleReferenceAvailable: false, displayed: false,
+      })],
     }))
     expect(loading.comparison.display.reason).toBe('loading')
 
     const unavailable = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), {
       comparisonStatus: 'unavailable',
-      publications: [layer('bars', { referenceAvailable: false, displayed: false })],
+      publications: [layer('bars', {
+        referenceAvailable: false, visibleReferenceAvailable: false, displayed: false,
+      })],
     }))
     expect(unavailable.comparison.display.reason).toBe('unavailable')
+  })
+
+  it('preserves an owner comparison failure instead of calling it a legitimate absence', () => {
+    const { content } = cahierExportFixture()
+    const capture = captureCahierSection(inputFor(sectionOf(content, 'aedar-equipment-explorer'), {
+      comparisonStatus: 'ready',
+      publications: [{
+        slot: 'equipment',
+        state: {
+          owner: 'aedar-equipment-explorer',
+          state: {
+            typequ: 'B207',
+            typequLabel: null,
+            selectedDetail: null,
+            detailStatus: 'idle',
+            comparisonStatus: 'error',
+            comparisonError: 'Lecture du groupe impossible',
+            comparison: null,
+            referenceDetail: null,
+          },
+        },
+      }, layer('comparison', {
+        referenceAvailable: false, visibleReferenceAvailable: false, displayed: false,
+      })],
+    }))
+    expect(capture.comparison.status).toBe('error')
+    expect(capture.comparison.error).toBe('Lecture du groupe impossible')
+    expect(capture.comparison.display.reason).toBe('error')
+  })
+
+  it('keeps a failed direct reference read distinct from a legitimate absence', () => {
+    const { content } = cahierExportFixture()
+    const capture = captureCahierSection(inputFor(sectionOf(content, 'aedar-access'), {
+      comparisonStatus: 'ready',
+      referenceStatus: 'error',
+      publications: [layer('comparison', {
+        referenceAvailable: false, visibleReferenceAvailable: false, displayed: false,
+      })],
+    }))
+    expect(capture.comparison.status).toBe('ready')
+    expect(capture.comparison.referenceStatus).toBe('error')
+    expect(capture.comparison.display.reason).toBe('error')
+  })
+
+  it('separates available acquired references from the effective hidden subset', () => {
+    const { content } = cahierExportFixture()
+    const capture = captureCahierSection(inputFor(sectionOf(content, 'aedar-access'), {
+      publications: [layer('comparison', {
+        referenceAvailable: true, visibleReferenceAvailable: false, displayed: false,
+      })],
+    }))
+    expect(capture.comparison.display.state).toBe('not-displayed')
+    expect(capture.comparison.display.reason).toBe('hidden-by-selection')
+    expect(capture.comparison.display.layers[0]).toMatchObject({
+      referenceAvailable: true,
+      visibleReferenceAvailable: false,
+      displayed: false,
+    })
   })
 
   it('never advertises displayed comparison for a region or an explicit empty selection', () => {

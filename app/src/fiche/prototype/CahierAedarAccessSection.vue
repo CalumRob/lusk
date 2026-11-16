@@ -15,17 +15,22 @@ const props = defineProps<{ evidence: AedarAccessEvidence }>()
 const { selectedModes, comparisonVisible, comparisonEligible } = useAedarSectionContext()
 const modeColors = Object.fromEntries(AEDAR_RAMP_MODES.map((mode) => [mode, AEDAR_TIME_MODE_COLORS[mode]]))
 
-/** A served reference value exists on at least one of the two ramps. */
-const referenceAvailable = computed(() => props.evidence.ramps.some((ramp) =>
-  ramp.reference !== null
-  && AEDAR_RAMP_MODES.some((mode) => ramp.reference![mode].some((value) => value !== null))))
-// #1021 — the shared AEDAR reference layer is displayed only when it can be drawn.
+/** A served reference exists for at least one of the modes the reader can see. */
+function referencesFor(modes: readonly AedarRampMode[]): boolean {
+  return props.evidence.ramps.some((ramp) => ramp.reference !== null
+    && modes.some((mode) => ramp.reference![mode].some((value) => value !== null)))
+}
+const referenceAvailable = computed(() => referencesFor(AEDAR_RAMP_MODES))
+const visibleReferenceAvailable = computed(() => referencesFor(selectedModes.value))
+// #1021 — the shared AEDAR reference layer is displayed only when the visible
+// selected modes actually carry a served reference.
 useCahierExportPublication(() => ({
   owner: 'aedar-comparison-layer',
   state: {
     toggle: comparisonVisible.value,
     referenceAvailable: referenceAvailable.value,
-    displayed: comparisonEligible.value && comparisonVisible.value && referenceAvailable.value,
+    visibleReferenceAvailable: visibleReferenceAvailable.value,
+    displayed: comparisonEligible.value && comparisonVisible.value && visibleReferenceAvailable.value,
   },
 }), 'comparison')
 

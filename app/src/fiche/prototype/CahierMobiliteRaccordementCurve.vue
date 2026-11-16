@@ -68,6 +68,7 @@ useCahierExportPublication(() => ({
   state: {
     toggle: comparisonVisible.value,
     referenceAvailable: props.figure.comparison !== null,
+    visibleReferenceAvailable: props.figure.comparison !== null,
     displayed: showComparison.value,
   },
 }))

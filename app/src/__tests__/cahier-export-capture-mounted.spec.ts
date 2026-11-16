@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
+import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
 import { CONTROLE_COMPARAISON_KEY } from '@/fiche/comparisonContext'
 import type { ControleComparaison } from '@/fiche/comparisonContext'
 import type { ContentEvidence } from '@/fiche/content/themeContent'
@@ -14,9 +15,12 @@ import { CAHIER_SECTION_RENDERERS } from '@/fiche/prototype/cahierSectionRendere
 import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import CahierMapPanel from '@/fiche/prototype/CahierMapPanel.vue'
+import ProductionMobiliteAedar from '@/fiche/mobilite/ProductionMobiliteAedar.vue'
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
+import { territoiresFixture } from '@/payload/fixtures'
 import { routes } from '@/router'
 import {
+  aedarReadyFixtures,
   cahierExportFixture,
   readyLossMetadata,
   regionMobiliteContent,
@@ -25,6 +29,11 @@ import {
 vi.mock('@/fiche/content/aedarApiClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/fiche/content/aedarApiClient')>()
   return { ...actual, fetchAedarAggregates: vi.fn() }
+})
+
+vi.mock('@/fiche/content/aedarComparisonClient', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/fiche/content/aedarComparisonClient')>()
+  return { ...actual, fetchAedarComparison: vi.fn() }
 })
 
 const aedarSourceFields = {
@@ -156,8 +165,14 @@ async function mountCahier(options: {
 async function render(extra: Record<string, unknown> = {}, options: {
   barReferences?: 'served' | 'none'
   lossMetadata?: ReturnType<typeof readyLossMetadata>
+  aedarReference?: 'sparse-car'
+  explorerComparison?: boolean
 } = {}) {
-  const { content, control } = cahierExportFixture({ lossMetadata: options.lossMetadata })
+  const { content, control } = cahierExportFixture({
+    lossMetadata: options.lossMetadata,
+    aedarReference: options.aedarReference,
+    explorerComparison: options.explorerComparison,
+  })
   const themed = shapeBarReferences(content, options.barReferences ?? 'served')
   const controlRef = ref<ControleComparaison>(control)
   const router = createRouter({ history: createMemoryHistory(), routes })
@@ -220,6 +235,8 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     vi.mocked(fetchAedarAggregates).mockReset()
     vi.mocked(fetchAedarAggregates).mockImplementation(async (_type, _id, options) =>
       aggregatesFor(String(options?.typequ?.[0] ?? 'B207')) as never)
+    vi.mocked(fetchAedarComparison).mockReset()
+    vi.mocked(fetchAedarComparison).mockResolvedValue({ status: 'error', message: 'Lecture du groupe impossible' })
   })
 
   it('captures every mounted section through the same public venue', async () => {
@@ -379,6 +396,117 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
       reason: 'hidden-by-user',
     })
     expect(captureOf(wrapper, 'aedar-equipment-explorer').comparison.display.reason).toBe('hidden-by-user')
+    wrapper.unmount()
+  })
+
+  it('preserves an explorer comparison error and its loading state', async () => {
+    const { wrapper } = await render({ aedarChapterActive: true }, { explorerComparison: true })
+    await flushPromises()
+    const error = captureOf(wrapper, 'aedar-equipment-explorer')
+    expect(error.comparison.status).toBe('error')
+    expect(error.comparison.display.state).toBe('not-displayed')
+    expect(error.comparison.display.reason).toBe('error')
+    wrapper.unmount()
+
+    let resolveComparison: (value: unknown) => void = () => {}
+    vi.mocked(fetchAedarComparison).mockReturnValue(new Promise((resolve) => {
+      resolveComparison = resolve
+    }) as never)
+    const loading = await render({ aedarChapterActive: true }, { explorerComparison: true })
+    const pending = captureOf(loading.wrapper, 'aedar-equipment-explorer')
+    expect(pending.comparison.status).toBe('loading')
+    expect(pending.comparison.display.reason).toBe('loading')
+    resolveComparison({ status: 'error', message: 'fin' })
+    await flushPromises()
+    loading.wrapper.unmount()
+  })
+
+  it('keeps a direct-reference read failure distinct from a legitimate absence', async () => {
+    const direct = await render({ aedarReferenceStatus: 'error', comparisonStatus: 'idle' })
+    const capture = captureOf(direct.wrapper, 'aedar-access')
+    expect(capture.comparison.status).toBe('idle')
+    expect(capture.comparison.referenceStatus).toBe('error')
+    expect(capture.comparison.display.state).toBe('not-displayed')
+    expect(capture.comparison.display.reason).toBe('error')
+    direct.wrapper.unmount()
+
+    const { content } = cahierExportFixture()
+    const { summary, detail } = aedarReadyFixtures()
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/')
+    const control = ref<ControleComparaison>({
+      focal: territoiresFixture[0]!,
+      territoires: territoiresFixture,
+      selection: { etat: 'defaut' },
+      libelleActif: null,
+      presetDefaut: 'epci',
+      presets: [],
+      choisir: () => {},
+    })
+    const wrapper = mount(ProductionMobiliteAedar, {
+      props: {
+        content,
+        pagination: cahierPaginationFor({} as Payload, content, true),
+        aedarData: detail,
+        aedarStatus: 'ready',
+        retryAedar: () => {},
+        aedarSummaryData: { status: 'ready', summary },
+        aedarSummaryStatus: 'ready',
+        retryAedarSummary: () => {},
+        aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI test' },
+        aedarReferenceData: null,
+        aedarReferenceStatus: 'error',
+        aedarActive: false,
+        nativeComparisonStatus: 'ready',
+      },
+      global: {
+        plugins: [router],
+        provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Groupe comparé indisponible')
+    const shell = wrapper.getComponent(VarianteCahierLibre)
+    expect(shell.props('aedarReferenceStatus')).toBe('error')
+    wrapper.unmount()
+  })
+
+  it('does not report a displayed reference when the selected modes hide it', async () => {
+    const { wrapper } = await render({ aedarChapterActive: true }, { aedarReference: 'sparse-car' })
+    await flushPromises()
+    const before = captureOf(wrapper, 'aedar-access')
+    expect(before.comparison.display.state).toBe('displayed')
+    expect(before.comparison.display.layers[0]).toMatchObject({
+      referenceAvailable: true,
+      visibleReferenceAvailable: true,
+      displayed: true,
+    })
+    expect(captureOf(wrapper, 'aedar-equipment-explorer').comparison.display.state).toBe('displayed')
+    const projected = projeterRequeteExport(before, ['car'])
+    if (projected.status !== 'ready') throw new Error('projection expected')
+    const projectedSnapshot = JSON.stringify(projected.request)
+    const beforeSnapshot = JSON.stringify(before)
+
+    toggleByText(wrapper, '[data-section="aedar-access"] .aedar-access-mode-selector', 'Voiture').trigger('click')
+    await flushPromises()
+    const hidden = captureOf(wrapper, 'aedar-access')
+    expect(hidden.comparison.display.state).toBe('not-displayed')
+    expect(hidden.comparison.display.reason).toBe('hidden-by-selection')
+    expect(hidden.comparison.display.layers[0]).toMatchObject({
+      referenceAvailable: true,
+      visibleReferenceAvailable: false,
+      displayed: false,
+    })
+    const explorerHidden = captureOf(wrapper, 'aedar-equipment-explorer')
+    expect(explorerHidden.comparison.display.state).toBe('not-displayed')
+    expect(explorerHidden.comparison.display.reason).toBe('hidden-by-selection')
+    expect(JSON.stringify(projected.request)).toBe(projectedSnapshot)
+    expect(JSON.stringify(before)).toBe(beforeSnapshot)
+
+    toggleByText(wrapper, '[data-section="aedar-access"] .aedar-access-mode-selector', 'Voiture').trigger('click')
+    await flushPromises()
+    expect(captureOf(wrapper, 'aedar-access').comparison.display.state).toBe('displayed')
+    expect(captureOf(wrapper, 'aedar-equipment-explorer').comparison.display.state).toBe('displayed')
     wrapper.unmount()
   })
 

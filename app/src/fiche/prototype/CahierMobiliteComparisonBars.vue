@@ -66,6 +66,7 @@ useCahierExportPublication(() => ({
   state: {
     toggle: comparisonVisible.value,
     referenceAvailable: hasComparisonReference.value,
+    visibleReferenceAvailable: hasComparisonReference.value,
     displayed: comparisonAligned.value,
   },
 }))
