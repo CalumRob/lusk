@@ -62,6 +62,69 @@ describe('normaliserTexte — accent-insensitive, separator-tolerant normalizati
 })
 
 describe('rechercherTerritoires — search over the territoires reference table', () => {
+  it.each([
+    ['35238', 'Rennes'], ['200043990', 'Rennes Métropole'], ['35', 'Ille-et-Vilaine'],
+  ])('place le code administratif %s en tête de ses préfixes (#1028)', (code, nom) => {
+    expect(rechercherTerritoires(territoiresBretons, code)[0]?.nom).toBe(nom)
+  })
+
+  it('trouve par préfixe de code, zéros initiaux compris, sans expansion de membres (#1028)', () => {
+    // Identités synthétiques : aucune prétention de publication hors Bretagne.
+    const lignes: Territoire[] = [
+      { territoire: '01001', type: 'commune', nom: 'Commune test', departement: '01', epci: '000000123' },
+      { territoire: '000000123', type: 'epci', nom: 'EPCI test', departement: '01', epci: null },
+      { territoire: '01', type: 'departement', nom: 'Département test', departement: '01', epci: null },
+    ]
+    for (const code of ['01001', '000000123', '01']) {
+      expect(rechercherTerritoires(lignes, ` \t${code}\n`)[0]?.territoire).toBe(code)
+    }
+    // Préfixes réels, espaces compris ; « 01 » exact reste le département.
+    expect(rechercherTerritoires(lignes, '010').map((t) => t.territoire)).toEqual(['01001'])
+    expect(rechercherTerritoires(lignes, ' 00000 ').map((t) => t.territoire)).toEqual(['000000123'])
+    expect(rechercherTerritoires(lignes, '01').map((t) => t.territoire)).toEqual(['01', '01001'])
+    // Aucune correspondance arbitraire au milieu du code, ni code postal/membre.
+    for (const requete of ['1001', '123', '1', '99999', '35000']) {
+      expect(rechercherTerritoires(lignes, requete)).toEqual([])
+    }
+    expect(rechercherTerritoires(lignes, '   ')).toEqual([])
+  })
+
+  it('garde un code exact de département devant les préfixes de communes (#1028)', () => {
+    const lignes: Territoire[] = [
+      { territoire: '22001', type: 'commune', nom: 'Commune A1', departement: '22', epci: null },
+      { territoire: '22002', type: 'commune', nom: 'Commune D', departement: '22', epci: null },
+      { territoire: '22', type: 'departement', nom: 'Côtes-d’Armor', departement: '22', epci: null },
+    ]
+    expect(rechercherTerritoires(lignes, '22').map((t) => t.territoire)).toEqual(['22', '22001', '22002'])
+    expect(rechercherTerritoires(lignes, '2200').map((t) => t.territoire)).toEqual(['22001', '22002'])
+  })
+
+  it('classe les préfixes de code avant les correspondances de nom moins fortes (#1028)', () => {
+    const lignes: Territoire[] = [
+      { territoire: '200000001', type: 'epci', nom: 'EPCI X', departement: '22', epci: null },
+      { territoire: '99999', type: 'commune', nom: '20000 commune', departement: null, epci: null },
+      { territoire: '88888', type: 'commune', nom: 'Agglo 2000', departement: null, epci: null },
+    ]
+    const trouves = rechercherTerritoires(lignes, '2000')
+    expect(trouves.map((t) => t.territoire)).toEqual(['200000001', '99999', '88888'])
+  })
+
+  it('priorise un code exact sous le plafond sans doubler la correspondance nom/code (#1028)', () => {
+    const noms: Territoire[] = Array.from({ length: 10 }, (_, i) => ({
+      territoire: `fixture-${i}`, type: 'commune', nom: `01 ${i}`, departement: null, epci: null,
+    }))
+    const code: Territoire = { territoire: '01', type: 'departement', nom: '01', departement: '01', epci: null }
+    const lignes = [...noms, code]
+    const trouves = rechercherTerritoires(lignes, '01')
+    expect(trouves).toHaveLength(8)
+    expect(trouves.map((t) => t.territoire)).toEqual(['01', 'fixture-0', 'fixture-1', 'fixture-2', 'fixture-3', 'fixture-4', 'fixture-5', 'fixture-6'])
+    expect(trouves.filter((t) => t.territoire === '01')).toHaveLength(1)
+    expect(rechercherTerritoires(lignes, '01', 1)).toEqual([code])
+    expect(rechercherTerritoires(lignes, '01', 0)).toEqual([])
+    // Exact code also outranks a different row whose NAME is an exact match.
+    expect(rechercherTerritoires([{ ...noms[0]!, nom: '01' }, { ...code, nom: 'Zed' }], '01', 1).map((t) => t.territoire)).toEqual(['01'])
+  })
+
   it('returns no results for an empty or whitespace-only query', () => {
     expect(rechercherTerritoires(territoiresBretons, '')).toEqual([])
     expect(rechercherTerritoires(territoiresBretons, '   ')).toEqual([])

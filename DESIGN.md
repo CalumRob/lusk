@@ -12,6 +12,19 @@ The human-owned source of visual decisions for Lusk. Read it when changing prese
 - **Provisional/specialized:** exact spread widths and pagination, future readings, hand-drawn extreme-rank outlines, and map-specific experimental treatments remain composition-specific observations, not universal requirements.
 - **Seams:** the site-wide header is independently tunable; its typography role is not interchangeable with generic UI or theme-tab roles. Shared editorial styles do not merge territory content semantics with indicator exploration semantics.
 
+### Shared editorial paper (owner-approved 2026-11-16)
+
+The shared Cahier/editorial paper roles in `app/src/styles/tokens.css` use the owner-approved warm pair:
+
+| Token | Approved value |
+|---|---|
+| `--editorial-paper` | `#f5f2eb` |
+| `--editorial-paper-deep` | `#e6e1d7` |
+
+These are site-wide shared values: the existing Cahier/Mobilité surfaces and the homepage mini-pages consume the same tokens. Ink, red margin/index, brand and theme colours are unchanged. This records colour approval only; surface adoption and review status above remain unchanged. The owner accepts the provisional homepage “Figure à venir” text at approximately 3.98:1 (muted on paper-deep) while those entries remain placeholders. This is a narrow acceptance for provisional placeholder text, not a site-wide accessibility waiver: real content must meet the normal contrast rules.
+
+Shared page chrome uses ink-derived roles rather than copied literals: `--editorial-page-border-color` (`color-mix` of `--editorial-ink` at 15%) and `--editorial-page-shadow-color` (ink at 10%). Cahier pages and the homepage mini-pages consume both; each composition keeps its own border width, shadow offsets, blur and spread.
+
 The detailed identity is a rollout foundation, not a claim that every listed value or prototype detail is already applied everywhere. Content, figure meaning, metadata, comparisons, URLs, interactions, and provenance remain governed by their product/data contracts.
 
 ## 1. Atmosphere & Identity

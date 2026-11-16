@@ -100,12 +100,14 @@ const chargementVisuel = computed(() => enAttente.value || props.chargement)
 const ouvert = computed(
   () => focusDansChamp.value && (debouncee.value.trim() !== '' || props.erreur !== null),
 )
+// #1028: the territory hint names both supported keys. The grouped hint stays
+// territory-or-indicator; it never claims the territory half is name-only.
 const libelleRecherche = computed(() => groupee.value
   ? 'Rechercher un territoire ou un indicateur'
-  : 'Rechercher un territoire par son nom')
+  : 'Rechercher un territoire par son nom ou son code administratif')
 const placeholderRecherche = computed(() => groupee.value
   ? 'Rechercher un territoire ou un indicateur…'
-  : 'Rechercher un territoire…')
+  : 'Nom ou code du territoire…')
 
 watch(
   () => [props.etatIndicateurs, props.reessaiIndicateursEnCours] as const,

@@ -42,4 +42,29 @@ describe('CahierDialog scroll lock', () => {
     expect(wrapper.emitted('close')).toHaveLength(2)
     wrapper.unmount()
   })
+
+  it('keeps closed slot content mounted for owners that attach observers at mount', async () => {
+    const wrapper = mount(CahierDialog, {
+      props: { open: false, title: 'Détail', labelledBy: 'dialog-title' },
+      slots: { default: '<div class="dialog-owned-content">Contenu possédé</div>' },
+    })
+
+    expect(wrapper.find('.dialog-owned-content').exists()).toBe(true)
+    await wrapper.setProps({ open: true })
+    await nextTick()
+    expect(wrapper.find('.dialog-owned-content').exists()).toBe(true)
+    await wrapper.setProps({ open: false })
+    await nextTick()
+    expect(wrapper.find('.dialog-owned-content').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('opens a lazily created dialog that mounts already open', async () => {
+    const wrapper = mount(CahierDialog, {
+      props: { open: true, title: 'Détail', labelledBy: 'dialog-title' },
+    })
+    await nextTick()
+    expect(wrapper.get('dialog').attributes('open')).toBeDefined()
+    wrapper.unmount()
+  })
 })

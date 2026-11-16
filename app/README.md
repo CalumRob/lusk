@@ -33,7 +33,7 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 
 | Route | Name | Status |
 |---|---|---|
-| `/` | `accueil` | **Built** — landing (#41, deux portes Territoires · Indicateurs #410) |
+| `/` | `accueil` | **Owner-reviewed preview: spacing and shared palette accepted; review pending** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
 | `/carte` | `carte` | **Built** — map (#39) ; épargnée par ruling PO (2026-08-26, #410) : routée et fonctionnelle mais SANS aucun lien face-utilisateur |
 | `/communes` | `communes` | **Built** — link directory (#40) |
 | `/epcis` | `epcis` | **Built** — link directory (#40) |
@@ -45,6 +45,103 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 | `/indicateurs/:theme/:indicator` | `indicateur` | **Built** — une Page d'indicateur (#409 et suites) |
 
 La route `/methodologie` est **retirée** par la bascule atomique #410 : Méthodes n'est plus une destination — l'explication par indicateur vit sur « L'indicateur » de chaque Page d'indicateur, la provenance des jeux de données sur Sources (#406), le propos du projet sur À propos. Aucun alias ne subsiste.
+
+### Homepage preview (#1027)
+
+The [approved direction](../docs/design/accueil.md) is copied as the owner's
+pre-implementation brief, with a short owner-approved shared-palette status note
+added on 16 November 2026. The implementation now provides the compact
+introduction, stable-width equal-width territory tabs (“Rechercher” by default and
+“Parcourir” linking to existing lists) and separate catalogue link, plus three
+equal-width, noninteractive “À venir” slots (one column on mobile). No texts,
+figures, article routes or publishing infrastructure exist. The shared footer
+retains the personal-site link only: Sources and À propos remain in the header,
+not repeated in the footer. It no longer acquires payload data or repeats
+biography/freshness promotion. Data-surface provenance contracts are unchanged.
+
+The owner inspected the first previews and requested tabs/footer revisions,
+then the shorter “Parcourir” label, equal tab widths and more structured list
+links (issue #1027 comments 6918606917 and 6918859554). The three separated
+full-width arrow rows were proposed in the third preview. The owner accepted the
+visual direction but explicitly rejected reserved common panel height (comment
+6919092689). Each panel now takes its natural height: browsing intentionally
+pushes the indicator link and following content down; returning to search
+contracts the page. Stable widths and search-state geometry remain required.
+
+After the fourth preview (comment 6919452040) the hero brand block is anchored
+inside the composition: a tab change grows the access area downward while the
+logo/ermine keeps its position — no viewport fixed/sticky. On the single-column
+layout the brand is ordered before the access area for the same reason. The
+translation/pronunciation caption is removed for this preview; the brand keeps
+its accessible name.
+
+The fifth preview exposed a layout defect: `.accueil-hero-marque` never declared
+`grid-area: marque`, so the brand was auto-placed in the first row only and
+stretched the intro row (127px intro→tabs at 1440px). The owner also asked for
+more brand presence after a density complaint (comment 6919838590). The brand
+now occupies its named area, the intro→tabs gap is 28px at ≥768px, and the
+wordmark/ermine scale together from 120px to 144px at 1440px (+20%) with the
+same em ratio, overlap and colours.
+
+The seventh preview is an explicit experiment (comment 6920100491): the
+permanent empty 80px recovery reservation is gone (a real error now grows the
+document), the hero/section rule is removed, and the three provisional slots are
+small Cahier-like paper pages using the existing `--editorial-paper`/
+`--editorial-margin` roles, page border, faint margin rule and shared type
+roles — no new content, pagination or tokens.
+
+The eighth preview balances the remaining whitespace (comment 6920444304). The
+app shell pins the footer to the viewport bottom when content is short, so slack
+pools below the pages; the homepage now uses a 48px separation above the pages
+and a homepage-scoped 36px footer margin (other routes keep the shared 64px).
+Measured at 1440×900: 48px above / 50px below in « Rechercher », 48/36 in
+« Parcourir »; 1440×800 overflows honestly by 86px; mobile is 36px above /
+36px below and stacks the pages. The mini-page look, anchored brand, equal tabs
+and natural browse expansion are unchanged. The owner accepted this spacing for
+now and separately approved the shared palette; reviewer dispatch, content review
+and merge remain pending, and this is not site-wide adoption.
+
+#### Shared Cahier paper-colour approval (#1027, owner-approved)
+
+The owner approved the warmer shared pair on 16 November 2026 (“Yes, these are
+nice”). The values live **only** in the shared token layer
+(`src/styles/tokens.css`) and are recorded in human-owned `DESIGN.md`; there is
+no homepage override:
+
+| Token | Previous | Owner-approved |
+|---|---|---|
+| `--editorial-paper` | `#f1f2ec` | `#f5f2eb` |
+| `--editorial-paper-deep` | `#dfe5df` | `#e6e1d7` |
+
+Ink (`#232a2a`), muted (`#62706c`), margin (`#a44f51`), brand and theme colours
+are unchanged. Homepage mini-pages and the existing Cahier/Mobilité surfaces
+consume the same values (measured: homepage page/figure `rgb(245,242,235)` /
+`rgb(230,225,215)`; Rennes Mobilité page and its dialog `rgb(245,242,235)`, with
+no visible element left on the old paper values). Contrast: ink/paper 13.08:1
+(previously 12.99), muted/paper 4.63:1 (previously 4.60), margin/paper 4.92:1.
+This approves the **colours only**: implementation and code review are not
+claimed complete, and adoption across every surface is not validated. The
+provisional “Figure à venir” text (muted on paper-deep, approximately 3.98:1) is
+accepted by the owner **while it remains provisional placeholder text**; this is
+not a site-wide accessibility waiver and real content still needs to meet normal
+contrast rules. The documented brand-200 comparison exception (2.49:1 on white)
+is untouched.
+
+With the dev server running, `node scripts/verify-homepage.mjs` checks real
+committed territory assets, long labels, fixed geometry, empty/loading/error and
+retry states, intentional cross-tab expansion/contraction, brand area/size,
+bounded intro spacing, balanced above/below gaps in both tabs, absent divider,
+the mini-page paper treatment, compact 1440×900 fit and honest 1440×800
+overflow at 1440/900/375/320, equal tab widths,
+exact and prefix administrative-code search,
+row targets/separators/hover/focus/active states,
+tab keyboard/focus behavior, actual list navigation, preserved
+header/mobile links, keyboard suggestions and inert placeholders.
+`LUSK_PREVIEW_URL` selects the server; `LUSK_SCREENSHOT_DIR` selects an external
+evidence folder (default `E:/Temp/opencode/homepage-1027-r8`). It simulates one failed
+territory request per viewport, then retries the real file; it does not publish
+or invent data. This browser proof complements the homepage/footer/app and shared
+search unit tests, not owner visual acceptance.
 
 ## Deploy path
 
