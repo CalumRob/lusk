@@ -7,7 +7,7 @@
  * targets. CahierPagination owns the presentation sequence. This component
  * only lays those two inputs out as the existing Cahier exploration.
  */
-import { CarFront, SlidersHorizontal } from 'lucide-vue-next'
+import { SlidersHorizontal } from 'lucide-vue-next'
 import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -18,12 +18,8 @@ import {
   CONTROLE_COMPARAISON_KEY,
 } from '@/fiche/comparisonContext'
 import type {
-  AedarAccessEvidence,
-  AedarCarAccessOverviewScalar,
-  AedarEquipmentExplorerEvidence,
   ContentSection,
   ExplorationTarget,
-  MobiliteContentSection,
   SingleUnitThemeContent,
   ThemeContent,
 } from '@/fiche/content/themeContent'
@@ -31,33 +27,12 @@ import {
   routePourCibleExploration,
   routePourSectionExploration,
 } from '@/fiche/explorationHandoff'
-import type { TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
-import {
-  AEDAR_DEFAULT_VISIBLE_RAMP_MODES,
-  AEDAR_RAMP_MODE_LABELS,
-  AEDAR_RAMP_MODES,
-  toggleAedarRampModeSelection,
-} from '@/fiche/content/aedarTimeRampFacts'
-import type { AedarRampMode, AedarTimeRampEvidence } from '@/fiche/content/themeContent'
-import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type { ChapitreDemandStatus } from '@/fiche/content/demandInventory'
-import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 import type { CahierPagination } from './cahierPagination'
 import CahierProse from './CahierProse.vue'
-import CahierFigureLegend from './CahierFigureLegend.vue'
-import CahierFigureScalar from './CahierFigureScalar.vue'
-import CahierComparisonValue from './CahierComparisonValue.vue'
-import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
-import CahierMobiliteSection from './CahierMobiliteSection.vue'
-import CahierBlankMapSlots from './CahierBlankMapSlots.vue'
-import AedarEquipmentWaffleCahier from './AedarEquipmentWaffleCahier.vue'
-import AedarEquipmentExplorerCahier from './AedarEquipmentExplorerCahier.vue'
-import CahierEvidenceSource from './CahierEvidenceSource.vue'
-import AedarDiversityLossMapsCahier from './AedarDiversityLossMapsCahier.vue'
-import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { CahierSectionBody, cahierSectionRendererFor } from './cahierSectionRenderers'
+import { provideAedarSectionContext } from './aedarSectionContext'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
-import type { AedarDiversityLossEvidence } from '@/fiche/content/themeContent'
-import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 
 const props = withDefaults(defineProps<{
   content: ThemeContent | SingleUnitThemeContent
@@ -114,31 +89,12 @@ let emittedChapitre: string | null = null
 
 const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
 const unit = computed(() => units.value[0] ?? null)
-const aedarAccessSelectedModes = ref<AedarRampMode[]>([...AEDAR_DEFAULT_VISIBLE_RAMP_MODES])
-const aedarAccessComparisonVisible = ref(true)
-function initialAedarEquipmentHorizon(): AedarEquipmentHorizon | null {
-  for (const currentUnit of props.content.units) {
-    for (const section of currentUnit.sections as readonly ContentSection[]) {
-      const evidence = section.evidence
-      if (evidence?.kind === 'aedar-equipment-profile' || evidence?.kind === 'aedar-equipment-explorer') {
-        return evidence.initialHorizonMinutes
-      }
-    }
-  }
-  return null
-}
-const aedarSelectedHorizon = ref<AedarEquipmentHorizon | null>(initialAedarEquipmentHorizon())
-const aedarAccessModeColors = Object.fromEntries(
-  AEDAR_RAMP_MODES.map((mode) => [mode, AEDAR_TIME_MODE_COLORS[mode]]),
+provideAedarSectionContext(props.content,
+  computed(() => props.aedarChapterActive !== false),
+  computed(() => ({ status: props.comparisonStatus ?? 'idle', error: props.comparisonError, retry: props.retryComparison })),
 )
-
-function isMobiliteSection(section: ContentSection): section is MobiliteContentSection & {
-  evidence: NonNullable<MobiliteContentSection['evidence']>
-} {
-  return section.evidence?.kind === 'mobilite-networks' ||
-    section.evidence?.kind === 'mobilite-stationnement-ravitaillement' ||
-    section.evidence?.kind === 'mobilite-share' ||
-    section.evidence?.kind === 'mobilite-raccordement'
+function rendererFor(section: ContentSection) {
+  return cahierSectionRendererFor(section.evidence, props.aedarAccessEnabled === true)
 }
 
 const pageEntry = computed(
@@ -154,10 +110,6 @@ function pageEntryFor(key: string) {
 
 function pageAnchorFor(key: string): string {
   return pageEntryFor(key)?.anchor ?? `figure-${key}`
-}
-
-function formatNumber(value: number, maximumFractionDigits = 1): string {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
 }
 
 function formatDate(value: string | null): string | null {
@@ -239,7 +191,7 @@ function sectionState(section: ContentSection, unitKey: string): string {
 }
 
 /** Return AedarAccessEvidence when the section carries it and the prototype opt-in is enabled. */
-function aedarAccessEvidenceFor(section: ContentSection): AedarAccessEvidence | null {
+function aedarAccessEvidenceFor(section: ContentSection) {
   if (!props.aedarAccessEnabled) return null
   if (section.evidence?.kind !== 'aedar-access') return null
   return section.evidence
@@ -250,34 +202,7 @@ function aedarEquipmentProfileEvidenceFor(section: ContentSection) {
   return section.evidence
 }
 
-function aedarAccessModeLegendEntries(evidence: AedarAccessEvidence): readonly FigureLegendEntry[] {
-  const referenceLabel = evidence.comparisonLabel ?? evidence.ramps.find((ramp) => ramp.referenceLabel)?.referenceLabel ?? null
-  return [
-    ...AEDAR_RAMP_MODES.map((mode) => ({
-      key: mode,
-      label: AEDAR_RAMP_MODE_LABELS[mode],
-      marker: 'line' as const,
-    })),
-    {
-      key: 'reference',
-      label: 'Groupe comparé',
-      ariaLabel: `Groupe comparé : ${referenceLabel ?? 'Indisponible'}`,
-      marker: 'dash' as const,
-      tone: 'peer',
-      persistentToggle: true,
-    },
-  ]
-}
-
-function toggleAedarAccessMode(key: string): void {
-  if (key === 'reference') {
-    aedarAccessComparisonVisible.value = !aedarAccessComparisonVisible.value
-    return
-  }
-  aedarAccessSelectedModes.value = toggleAedarRampModeSelection(aedarAccessSelectedModes.value, key as AedarRampMode)
-}
-
-function aedarEquipmentExplorerEvidenceFor(section: ContentSection): AedarEquipmentExplorerEvidence | null {
+function aedarEquipmentExplorerEvidenceFor(section: ContentSection) {
   if (!props.aedarAccessEnabled || section.evidence?.kind !== 'aedar-equipment-explorer') return null
   return section.evidence
 }
@@ -287,59 +212,10 @@ function aedarCarAccessOverviewEvidenceFor(section: ContentSection) {
   return section.evidence
 }
 
-/** The overview scalar's served rank, only when the shared grammar renders it. */
-function scalarRank(scalar: AedarCarAccessOverviewScalar) {
-  if (typeof scalar.rank !== 'number' || typeof scalar.rankSize !== 'number') return null
-  const rank = { position: scalar.rank, size: scalar.rankSize, ties: scalar.rankTies ?? null }
-  return formatServedRank(rank) ? rank : null
-}
-
-/** The same rank for the scalar's accessible name: a shared position says « ex æquo ». */
-function scalarRankAria(scalar: AedarCarAccessOverviewScalar): string | null {
-  const rank = scalarRank(scalar)
-  return rank ? formatServedRankAria(rank) : null
-}
-
-function scalarServedRank(scalar: AedarCarAccessOverviewScalar) {
-  const rank = scalarRank(scalar)
-  if (!rank || !scalar.rankDirection) return null
-  return { ...rank,
-    direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' as const : 'moins-est-mieux' as const,
-    key: scalar.key }
-}
-
-function aedarDiversityLossEvidenceFor(section: ContentSection): AedarDiversityLossEvidence | null {
-  if (!props.aedarAccessEnabled || section.evidence?.kind !== 'aedar-diversity-loss') return null
-  return section.evidence
-}
-
 function isAedarAccessSection(section: ContentSection): boolean {
   return section.evidence?.kind === 'aedar-access'
 }
 
-/** Convert AedarTimeRampEvidence to the generic TimeRampFigureData expected by AccessRampFigureCahier. */
-function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureData {
-  const series: readonly TimeRampSeries[] = AEDAR_RAMP_MODES.map((mode) => ({
-    key: mode,
-    label: AEDAR_RAMP_MODE_LABELS[mode],
-    points: ramp.xAxis.values.map((xValue, index) => ({
-      xValue,
-      xLabel: ramp.xAxis.labels[index] ?? `${xValue}`,
-      value: ramp.territory[mode][index] ?? null,
-      referenceValue: ramp.reference?.[mode][index] ?? null,
-      referenceRank: ramp.referenceRanks?.[mode][index] ?? null,
-    })),
-  }))
-  return {
-    availability: ramp.availability,
-    xAxis: { label: ramp.xAxis.label, unit: ramp.xAxis.unit },
-    yAxis: { label: ramp.yAxis.label, unit: ramp.yAxis.unit },
-    series,
-    provenance: ramp.provenance,
-    comparisonLabel: ramp.referenceLabel,
-    comparisonLayerSupported: true,
-  }
-}
 function sourceLabel(source: { source: string; version: string }): string {
   const separator = source.source.indexOf(' — ')
   const shortSource = separator < 0 ? source.source : source.source.slice(0, separator)
@@ -538,100 +414,12 @@ onBeforeUnmount(() => {
               </div>
 
               <section
-                v-if="aedarCarAccessOverviewEvidenceFor(section)"
-                class="figure-spread figure-spread--paired"
-                :id="`section-${section.key}`"
-                :data-figure="`section-${section.key}`"
-              >
-                <CahierBlankMapSlots
-                  class="evidence-side evidence-figure"
-                  :territory="aedarCarAccessOverviewEvidenceFor(section)!.territory"
-                  :horizon-minutes="aedarCarAccessOverviewEvidenceFor(section)!.horizonMinutes"
-                  :title="aedarCarAccessOverviewEvidenceFor(section)!.mapFigureTitle"
-                  :mode-keys="aedarCarAccessOverviewEvidenceFor(section)!.mapModes"
-                  :active="props.aedarChapterActive !== false"
-                />
-                <aside class="argument-side aedar-car-overview-reading">
-                  <div class="aedar-car-overview-copy">
-                    <CahierProse class="argument-copy" :blocks="aedarCarAccessOverviewEvidenceFor(section)!.prose" />
-                    <CahierEvidenceSource v-if="aedarCarAccessOverviewEvidenceFor(section)!.source || aedarCarAccessOverviewEvidenceFor(section)!.sourcePending" :source="aedarCarAccessOverviewEvidenceFor(section)!.source" :pending="aedarCarAccessOverviewEvidenceFor(section)!.sourcePending" />
-                  </div>
-                  <figure class="aedar-car-overview-scalars">
-                    <figcaption class="cahier-figure-title">{{ aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle }}</figcaption>
-                    <div class="summary-metrics summary-metrics--paired">
-                      <CahierFigureScalar
-                        v-for="scalar in aedarCarAccessOverviewEvidenceFor(section)!.scalars"
-                        :key="scalar.key"
-                        :value="scalar.value === null ? '—' : formatNumber(scalar.value)"
-                        :label="scalar.label"
-                        label-role="metric"
-                        :reference-pending="scalar.comparisonPending"
-                        :icon="CarFront"
-                        tone="c"
-                        color-value
-                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : scalar.comparisonUnavailableLabel ? ` ${scalar.comparisonAccessibleLabel ?? 'Moyenne du groupe comparé'} indisponible.` : ''}${scalarRankAria(scalar) ? ` Rang ${scalarRankAria(scalar)}.` : ''}`"
-                      >
-                        <template v-if="scalar.reference || scalar.comparisonUnavailableLabel" #reference>
-                          <CahierComparisonValue
-                            v-if="scalar.reference"
-                            :named-reference="scalar.reference"
-                            :served-rank="scalarServedRank(scalar)"
-                            :comparison-status="comparisonStatus"
-                            :comparison-error="comparisonError"
-                          />
-                          <CahierComparisonValue v-else-if="comparisonStatus === 'loading' || comparisonStatus === 'error'" :comparison-status="comparisonStatus" :comparison-error="comparisonError" />
-                          <span v-else class="cahier-figure-comparison">{{ scalar.comparisonUnavailableLabel }}</span>
-                          <span v-if="scalar.rankUnavailableLabel" class="cahier-figure-comparison">{{ scalar.rankUnavailableLabel }}</span>
-                        </template>
-                      </CahierFigureScalar>
-                    </div>
-                    <div class="aedar-comparison-retry-slot"><button v-if="props.comparisonStatus === 'error'" class="aedar-comparison-retry" type="button" @click="props.retryComparison?.()">Réessayer les comparaisons</button></div>
-                  </figure>
-                </aside>
-              </section>
-
-              <section
-                v-else-if="aedarDiversityLossEvidenceFor(section)"
-                class="figure-spread figure-spread--aedar-diversity-loss"
-                :id="`section-${section.key}`"
-                :data-figure="`section-${section.key}`"
-              >
-                <AedarDiversityLossMapsCahier
-                  :evidence="aedarDiversityLossEvidenceFor(section)!"
-                  :active="props.aedarChapterActive !== false"
-                />
-              </section>
-
-              <section
-                v-else-if="isMobiliteSection(section)"
-                class="mobilite-delegate"
-                :id="`section-${section.key}`"
-                :data-figure="`section-${section.key}`"
-              >
-                <CahierMobiliteSection
-                  :section="section"
-                  :unit="{ key: currentUnit.key, label: currentUnit.label }"
-                  :comparison="{
-                    status: props.nativeComparisonStatus ?? 'idle',
-                    error: props.nativeComparisonError,
-                    retry: props.retryNativeComparison,
-                  }"
-                />
-              </section>
-
-                <section
-                  v-else
-                  class="figure-spread"
-                  :class="{
-                    'figure-spread--flip': sectionIndex % 2 === 1,
-                    'figure-spread--aedar-equipment-profile': aedarEquipmentProfileEvidenceFor(section) !== null,
-                    'figure-spread--aedar-equipment-explorer': aedarEquipmentExplorerEvidenceFor(section) !== null,
-                  }"
+                :class="[rendererFor(section).classes, { 'figure-spread--flip': rendererFor(section).flip && sectionIndex % 2 === 1 }]"
                 :id="`section-${section.key}`"
                 :data-figure="`section-${section.key}`"
               >
                 <div
-                  v-if="!aedarEquipmentProfileEvidenceFor(section) && !aedarEquipmentExplorerEvidenceFor(section) && (props.presentation !== 'plain' || section.lecture?.prose.length || (!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'))"
+                  v-if="rendererFor(section).argument && (props.presentation !== 'plain' || section.lecture?.prose.length || (!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'))"
                   class="argument-side"
                 >
                   <template v-if="section.lecture">
@@ -657,79 +445,14 @@ onBeforeUnmount(() => {
 
                 </div>
 
-                  <div
-                    v-if="aedarAccessEvidenceFor(section)"
-                    class="evidence-side evidence-figure aedar-access-evidence"
-                  >
-                    <aside class="aedar-reading">
-                      <CahierProse class="argument-copy" :blocks="aedarAccessEvidenceFor(section)!.sectionProse" />
-                      <CahierEvidenceSource v-if="aedarAccessEvidenceFor(section)!.source" :source="aedarAccessEvidenceFor(section)!.source!" />
-                    </aside>
-                    <div class="aedar-analysis">
-                      <figure
-                        v-for="ramp in aedarAccessEvidenceFor(section)!.ramps"
-                        :key="ramp.rampKey"
-                        class="aedar-ramp"
-                      >
-                        <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ ramp.figureTitle }}</figcaption>
-                        <AccessRampFigureCahier
-                          :time-ramp="rampToTimeRampFigureData(ramp)"
-                          :territory-name="aedarAccessEvidenceFor(section)!.territory.name"
-                          v-model:selected-modes="aedarAccessSelectedModes"
-                          :show-mode-legend="false"
-                          :comparison-visible="aedarAccessComparisonVisible"
-                        />
-                      </figure>
-                    </div>
-                     <!-- The shared legend controls modes and the comparison curve on both ramps. -->
-                     <CahierFigureLegend
-                      class="aedar-access-mode-selector"
-                      :entries="aedarAccessModeLegendEntries(aedarAccessEvidenceFor(section)!)"
-                      :mark-colors="aedarAccessModeColors"
-                       :selected-keys="[...aedarAccessSelectedModes, ...(aedarAccessComparisonVisible ? ['reference'] : [])]"
-                       :toggle-keys="AEDAR_RAMP_MODES"
-                       label="Modes de déplacement et groupe comparé pour les deux rampes"
-                      @toggle="toggleAedarAccessMode"
-                    />
-                  </div>
-
-                  <div
-                    v-if="aedarEquipmentProfileEvidenceFor(section)"
-                    class="evidence-side evidence-figure aedar-equipment-profile-evidence"
-                  >
-                    <AedarEquipmentWaffleCahier
-                      :evidence="aedarEquipmentProfileEvidenceFor(section)!"
-                      :title="section.label"
-                      v-model:selected-horizon="aedarSelectedHorizon"
-                    />
-                  </div>
-
-                  <CahierProse
-                    v-if="aedarEquipmentProfileEvidenceFor(section)"
-                    class="argument-copy"
-                    data-aedar-profile-explanation
-                    :blocks="aedarEquipmentProfileEvidenceFor(section)!.prose"
-                  />
-                  <CahierEvidenceSource
-                    v-if="aedarEquipmentProfileEvidenceFor(section)?.source"
-                    :source="aedarEquipmentProfileEvidenceFor(section)!.source!"
-                  />
-
-                  <div
-                    v-if="aedarEquipmentExplorerEvidenceFor(section)"
-                    class="evidence-side evidence-figure aedar-equipment-explorer-evidence"
-                  >
-                    <AedarEquipmentExplorerCahier
-                      :evidence="aedarEquipmentExplorerEvidenceFor(section)!"
-                      :chapter-active="props.aedarChapterActive !== false"
-                      v-model:selected-modes="aedarAccessSelectedModes"
-                      v-model:selected-horizon="aedarSelectedHorizon"
-                      v-model:comparison-visible="aedarAccessComparisonVisible"
-                    />
-                  </div>
-
-
-                  <div v-else-if="!aedarAccessEvidenceFor(section) && !aedarEquipmentProfileEvidenceFor(section) && !aedarEquipmentExplorerEvidenceFor(section)" class="evidence-side evidence-placeholder" :role="sectionIsLoading(currentUnit.key) ? 'status' : 'note'">
+                <CahierSectionBody
+                  v-if="rendererFor(section).body"
+                  :section="section"
+                  :unit="{ key: currentUnit.key, label: currentUnit.label }"
+                  :comparison="{ status: props.nativeComparisonStatus ?? 'idle', error: props.nativeComparisonError, retry: props.retryNativeComparison }"
+                  :enabled="props.aedarAccessEnabled === true"
+                />
+                <div v-else class="evidence-side evidence-placeholder" :role="sectionIsLoading(currentUnit.key) ? 'status' : 'note'">
                   <span>{{ sectionState(section, currentUnit.key) }}</span>
                 </div>
               </section>
@@ -960,24 +683,7 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.aedar-access-evidence { display: grid; grid-column: 1 / -1; width: 100%; gap: var(--space-6); }
-.aedar-analysis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; justify-content: center; gap: var(--space-8); }
-.aedar-access-mode-selector { justify-content: center; margin: 0; }
-.aedar-access-mode-selector :deep(.cahier-figure-legend-toggle) { min-height: 36px; }
-.aedar-ramp { width: min(100%, var(--cahier-figure-width-compact, 560px)); justify-self: center; margin: 0; display: grid; gap: var(--space-3); }
-.aedar-reading { display: grid; align-content: center; gap: var(--space-4); min-width: 0; }
-.aedar-reading .argument-copy { margin: 0; }
-.aedar-car-overview-reading { display: grid; align-self: center; gap: var(--space-8); }
-.aedar-car-overview-copy { display: grid; gap: var(--space-3); }
-.aedar-car-overview-copy .argument-copy { margin: 0; }
-.aedar-car-overview-scalars { --cahier-figure-title-gap: var(--space-6); width: 100%; margin: 0; }
 .comparison-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-.aedar-comparison-retry-slot { min-height: 3.25rem; display: flex; justify-content: flex-end; align-items: center; }
-.aedar-comparison-retry { min-height: 2.75rem; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: var(--text-body-sm); text-decoration: underline; cursor: pointer; }
-.aedar-comparison-retry:hover { background: var(--surface-tertiary); color: var(--text-primary); }
-.aedar-comparison-retry:active { background: var(--border-subtle); }
-.aedar-comparison-retry:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
-@media (max-width: 760px) { .aedar-analysis { grid-template-columns: minmax(0, 1fr); } }
 .concept-group {
   container: subgroup / inline-size;
   margin: 0 0 var(--cahier-group-gap, var(--space-8));
@@ -997,19 +703,17 @@ onBeforeUnmount(() => {
 .concept-group-heading h3 { margin: 0; color: var(--ink); font: var(--text-cahier-section); }
 .cahier--sans-grille .concept-group-narrative { font-size: clamp(1.05rem, 1.4vw, 1.35rem); font-style: italic; font-weight: 400; line-height: 1.15; text-wrap: balance; }
 .figure-spread { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(420px, 1.2fr); column-gap: clamp(40px, 5vw, 76px); row-gap: var(--cahier-spread-gap, 34px); align-items: start; padding: var(--cahier-spread-padding, 22px) 0; }
-.figure-spread--aedar-equipment-profile { grid-template-columns: minmax(0, 1fr); }
-.figure-spread--aedar-equipment-explorer { grid-template-columns: minmax(0, 1fr); }
-.figure-spread--aedar-diversity-loss { grid-template-columns: minmax(0, 1fr); }
+.figure-spread--stack { grid-template-columns: minmax(0, 1fr); }
 .cahier--sans-grille .figure-spread { grid-template-columns: 1fr; column-gap: 0; }
 .cahier--sans-grille .figure-spread--paired {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: clamp(24px, 4vw, 56px);
 }
-.cahier--sans-grille .figure-spread--paired .evidence-figure { width: min(100%, 560px); margin-inline: auto; }
-.figure-spread--flip .argument-side { order: 2; }
-.figure-spread--flip .evidence-side { order: 1; }
-.argument-side, .evidence-side { min-width: 0; }
-.argument-side { --mode-scalar-width: 160px; }
+.cahier--sans-grille .figure-spread--paired :deep(.evidence-figure) { width: min(100%, 560px); margin-inline: auto; }
+.figure-spread--flip :deep(.argument-side) { order: 2; }
+.figure-spread--flip :deep(.evidence-side) { order: 1; }
+:deep(.argument-side), :deep(.evidence-side) { min-width: 0; }
+:deep(.argument-side) { --mode-scalar-width: 160px; }
 .argument-side h4 { margin: 0; color: var(--cahier-theme-emphasis); font-family: 'Marelle', var(--font-section-title); font-size: clamp(calc(1rem + 2px), calc(1.35vw + 2px), calc(1.25rem + 2px)); font-weight: 500; line-height: var(--cahier-grid-jump); }
 .cahier-section-state, .evidence-placeholder { color: var(--cahier-default); font-size: 14px; line-height: 1.5; }
 .cahier-section-state { margin: 0; padding: 20px 0; }
@@ -1042,16 +746,10 @@ onBeforeUnmount(() => {
   outline-offset: 2px;
 }
 .evidence-placeholder { display: grid; place-items: center; min-height: 180px; border: 1px dashed color-mix(in srgb, var(--cahier-theme) 35%, transparent); text-align: center; }
-.evidence-figure { margin: 0; padding: 12px 0 0; }
-.cahier--sans-grille .evidence-figure { padding-top: 0; }
+:deep(.evidence-figure) { margin: 0; padding: 12px 0 0; }
+.cahier--sans-grille :deep(.evidence-figure) { padding-top: 0; }
 .summary-evidence { display: grid; gap: 10px; }
 .summary-evidence .cahier-figure-title { margin-bottom: 0; }
-.cahier--sans-grille .summary-metrics--paired {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 10%;
-  width: min(100%, var(--cahier-figure-width-standard, 760px));
-  margin-inline: auto;
-}
 .cahier--sans-grille .summary-bar-metrics {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
@@ -1070,7 +768,6 @@ onBeforeUnmount(() => {
  .summary-mode-key { --cahier-figure-legend-margin: var(--space-4) 0 0; }
 .summary-bar-metrics { gap: var(--space-3); }
 .summary-loss-metrics { margin-top: var(--space-3); }
-.summary-metrics { display: grid; gap: 42px; }
 .summary-metric { min-width: 0; }
 .summary-metric-title { margin: 0; color: var(--brand-700); font: var(--type-figure-title); }
 .summary-metric-title span { color: var(--cahier-default); font: var(--text-caption); white-space: nowrap; }
@@ -1131,17 +828,15 @@ onBeforeUnmount(() => {
    sides without overflow. */
 @container subgroup (max-width: 760px) {
   .figure-spread { grid-template-columns: 1fr; column-gap: 0; row-gap: var(--cahier-spread-gap, 24px); }
-  .figure-spread--flip .argument-side, .figure-spread--flip .evidence-side { order: initial; }
+  .figure-spread--flip :deep(.argument-side), .figure-spread--flip :deep(.evidence-side) { order: initial; }
 }
 
 @container cahier-page (max-width: 900px) {
   .figure-spread { grid-template-columns: 1fr; gap: var(--cahier-spread-gap, 32px); }
-  .figure-spread--flip .argument-side, .figure-spread--flip .evidence-side { order: initial; }
-  .summary-metrics { gap: 32px; }
+  .figure-spread--flip :deep(.argument-side), .figure-spread--flip :deep(.evidence-side) { order: initial; }
 }
 @container cahier-page (max-width: 620px) {
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .cahier--sans-grille .summary-metrics--paired { grid-template-columns: 1fr; gap: var(--space-6); }
   .cahier--sans-grille .figure-spread--paired { grid-template-columns: 1fr; row-gap: var(--cahier-spread-gap, 24px); }
 }
 @container cahier-page (max-width: 480px) {
