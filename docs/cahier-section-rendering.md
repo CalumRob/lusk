@@ -280,18 +280,40 @@ or starts an acquisition.
   source package/file, byte size and SHA-256, and each face has its OFL licence
   copy. A missing/truncated face rejects generation. There is no system-font
   substitution, runtime font download or reader-side Python.
+- `cahierColorRoles.ts` owns the Cahier-scoped colour aliases used by the real
+  shell and the document painter. `cahierPdfPalette.ts` resolves the bundled
+  `styles/tokens.css?raw` source (including editorial paper/deep, ink, muted,
+  margin, brand, theme and mode roles); it contains no copied palette hexes.
+  The existing app OKLab mix primitive is reused. Supported aliases, sRGB/OKLab
+  mixes and the owner's alpha RGB are resolved explicitly; unsupported colours
+  reject rather than silently become ink. Transparency is composited onto the
+  actual editorial paper. No live screen or computed-style introspection is used
+  by production generation.
 
 `cahier-pdf-composer.spec.ts` drives real blobs and parses them with pdfjs/pdf-lib:
 the nine-section admission matrix, A4/page/formats/metadata/font embedding,
 literal table cells and ranks, French accents, `Indisp.` with one explanation,
-comparison subtitle cases, one-page and measured multi-page continuation,
+  comparison subtitle cases, one-page and measured multi-page continuation,
 repeated identity/headers/sources, page-local comparison proof, explicit asset/
 font/abort/unsupported-family failures, a corrupted-input fidelity case and an
 independent negative audit that fails on a corrupted number/column/group.
 Populated native scenes cover a 73-point curve, a 0,9957355 share, a 1,4 ramp,
 split compared bars and a twelve-type waffle. A rendered-collision guard checks
-the actual text boxes, not only page edges. Fonts and map images are test-only
-injected loaders; no fixture script ships in production.
+the actual text boxes, not only page edges; a PDF operator-state guard proves
+body/table/source text is emitted at full opacity. Node probes inject fonts and
+map images; the browser harness serves a bounded same-origin raster fixture and
+exercises the default fetch/createImageBitmap/canvas path, including typed asset
+failure (missing and undecodable bytes) and abort. No fixture script ships in
+production.
+
+`cahier-pdf-native-paint.spec.ts` checks the emitted SVG at the public native
+painter/serialization seam: literal null-gap subpath counts on both curves,
+hidden bar-slot centering, unequal ramp-panel maxima, transitive `comparisonFor`
+visibility, measured/mobile-anchor tick labels, marker metrics and explicit
+unknown-colour rejection. It uses real embedded font metrics and selectable PDF
+text, not an alternative geometry calculation. `cahier-pdf-source-colours.spec.ts`
+changes the actual CSS-source input and asserts changed colours in a generated
+PDF. Node and browser dense scenes use the same fixture builders.
 
 `scripts/verify-cahier-pdf-browser.mjs` builds only
 `scripts/cahier-pdf-browser-probe.html` into an external directory, serves it on
@@ -299,6 +321,14 @@ a private strict port, uses the local Playwright Chromium to generate real
 desktop and mobile-host PDFs with the production font/asset loader, and closes
 the server. It is evidence tooling, not an application build and not the
 stopped preview/prototype server. Its output is outside the repository.
+The browser's independent CSS engine is compared with the PDF colour resolver;
+PDF operator streams verify full text alpha on every page and decoded raster
+dimensions. The bounded raster is a synthetic 2×2 PNG, not live map/data parity.
+Missing URL/invalid bytes return typed `asset` errors; pre-abort and abort after
+decode return `AbortError`, with every created bitmap closed. Desktop/mobile-host
+PDFs prove document grammar is host-width independent, not product integration.
+Actual PDF examples still require the owner's visual approval before merge;
+these fixture receipts do not grant it or unblock integration lot E.
 
 Visual evidence is generated outside tracked assets via
 `CAHIER_PDF_EVIDENCE_DIR` and `CAHIER_PDF_REPORT=1` while running the spec.

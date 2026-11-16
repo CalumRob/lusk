@@ -1,30 +1,43 @@
 /**
  * Resolved palette for the shared Cahier PDF (#1024).
  *
- * The PDF cannot read CSS custom properties, so this module resolves the
- * existing token values — never new colours. The values mirror
- * `app/src/styles/tokens.css` and the Cahier's own mode aliases; the file
- * keeps them in one place so a renderer literal cannot drift on its own.
- * `cahier-pdf-composer.spec.ts` checks the token file still declares each
- * source value.
+ * PDF paints cannot evaluate CSS. Resolve the actual bundled tokens.css and
+ * the same scoped aliases as the screen, never a snapshot of today's hexes.
+ * Only the colour expressions used by these owners are supported; unknown
+ * expressions fail explicitly. The existing app OKLab primitive is reused.
  */
+import tokensCss from '@/styles/tokens.css?raw'
+import { melangerOklab } from '@/carte/couleurs'
+import { CAHIER_COLOR_ROLES } from './cahierColorRoles'
+import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+
+// No live screen/style introspection: these are immutable bundled owner inputs.
+const TOKENS_PDF: Readonly<Record<string, string>> = {
+  ...Object.fromEntries([...tokensCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(--[\w-]+)\s*:\s*([^;{}]+);/g)]
+    .map((match) => [match[1]!, match[2]!.trim()])),
+  ...CAHIER_COLOR_ROLES,
+}
+
 export const PALETTE_PDF = {
-  paper: '#f5f2eb',
-  paperDeep: '#e6e1d7',
-  ink: '#232a2a',
-  muted: '#62706c',
-  margin: '#a44f51',
-  marginSoft: '#c69392',
-  border: '#d6d4ce',
-  borderLight: '#e2e8f0',
-  textTertiary: '#a0aec0',
-  brand200: '#83aca7',
-  modeFoot: '#448fa6',
-  modeBike: '#2e6171',
-  modeCar: '#a94562',
-  modeWalk: '#94bcc5',
-  modeBikeLts2: '#88a2a8',
-  white: '#ffffff',
+  paper: couleurPdf('--paper'),
+  paperDeep: couleurPdf('--paper-deep'),
+  ink: couleurPdf('--ink'),
+  muted: couleurPdf('--muted'),
+  margin: couleurPdf('--red'),
+  marginSoft: couleurPdf('--red-soft'),
+  border: couleurPdf('--editorial-page-border-color'),
+  borderLight: couleurPdf('--border-default'),
+  textTertiary: couleurPdf('--text-tertiary'),
+  brand200: couleurPdf('--brand-200'),
+  brand500: couleurPdf('--brand-500'),
+  themeMobiliteStrong: couleurPdf('--cahier-theme-strong'),
+  themeMobilite: couleurPdf('--cahier-theme'),
+  modeFoot: couleurPdf('--cahier-mode-foot'),
+  modeBike: couleurPdf('--cahier-mode-bike'),
+  modeCar: couleurPdf('--cahier-mode-car'),
+  modeWalk: couleurPdf(AEDAR_TIME_MODE_COLORS.walk),
+  modeBikeLts2: couleurPdf(AEDAR_TIME_MODE_COLORS.bike_lts2),
+  white: couleurPdf('--surface-primary'),
 } as const
 
 export type PdfPaletteKey = keyof typeof PALETTE_PDF
@@ -44,34 +57,7 @@ export const COULEURS_TONS_PDF: Readonly<Record<string, string>> = {
   b: PALETTE_PDF.modeBike,
   c: PALETTE_PDF.modeCar,
   neutral: PALETTE_PDF.muted,
-  brand: PALETTE_PDF.brand200,
-}
-
-const TOKENS_PDF: Readonly<Record<string, string>> = {
-  '--editorial-paper': PALETTE_PDF.paper,
-  '--paper': PALETTE_PDF.paper,
-  '--paper-deep': PALETTE_PDF.paperDeep,
-  '--editorial-paper-deep': PALETTE_PDF.paperDeep,
-  '--editorial-ink': PALETTE_PDF.ink,
-  '--ink': PALETTE_PDF.ink,
-  '--editorial-muted': PALETTE_PDF.muted,
-  '--muted': PALETTE_PDF.muted,
-  '--editorial-margin': PALETTE_PDF.margin,
-  '--red': PALETTE_PDF.margin,
-  '--red-soft': PALETTE_PDF.marginSoft,
-  '--editorial-margin-soft': PALETTE_PDF.marginSoft,
-  '--border-default': PALETTE_PDF.borderLight,
-  '--text-tertiary': PALETTE_PDF.textTertiary,
-  '--brand-200': PALETTE_PDF.brand200,
-  '--cahier-mode-foot': PALETTE_PDF.modeFoot,
-  '--cahier-mode-bike': PALETTE_PDF.modeBike,
-  '--cahier-mode-car': PALETTE_PDF.modeCar,
-  '--cahier-cycle-protected': PALETTE_PDF.modeBike,
-  '--cahier-cycle-shared': '#8c4c9e',
-  '--mode-transit': PALETTE_PDF.modeFoot,
-  '--mode-bike': PALETTE_PDF.modeBike,
-  '--mode-car': PALETTE_PDF.modeCar,
-  '--cahier-theme-strong': PALETTE_PDF.ink,
+  brand: PALETTE_PDF.brand500,
 }
 
 function melange(percent: number, a: string, b: string): string {
@@ -88,23 +74,45 @@ function melange(percent: number, a: string, b: string): string {
  * visual lie, not a graceful fallback.
  */
 export function couleurPdf(value: string, depth = 0): string {
-  if (depth > 4) throw new Error(`Couleur PDF récursive : ${value}`)
+  if (depth > 16) throw new Error(`Couleur PDF récursive : ${value}`)
   const trimmed = value.trim()
   if (/^#[0-9a-f]{6}$/i.test(trimmed)) return trimmed.toLowerCase()
   const token = TOKENS_PDF[trimmed]
-  if (token) return token
+  if (token) return couleurPdf(token, depth + 1)
   const variable = /^var\(\s*(--[\w-]+)\s*(?:,\s*(.+))?\)$/.exec(trimmed)
   if (variable) {
     const resolved = TOKENS_PDF[variable[1]!]
-    if (resolved) return resolved
+    if (resolved) return couleurPdf(resolved, depth + 1)
     if (variable[2]) return couleurPdf(variable[2], depth + 1)
     throw new Error(`Jeton de couleur PDF inconnu : ${variable[1]}`)
   }
-  const mix = /^color-mix\(\s*in\s+srgb\s*,\s*(.+?)\s+(\d+(?:\.\d+)?)%\s*,\s*(.+?)\s*\)$/.exec(trimmed)
+  const alphaRgb = /^rgb\(\s*(\d+)\s+(\d+)\s+(\d+)\s*\/\s*(\d+(?:\.\d+)?)%\s*\)$/.exec(trimmed)
+  if (alphaRgb) {
+    const hex = `#${alphaRgb.slice(1, 4).map((v) => Number(v).toString(16).padStart(2, '0')).join('')}`
+    return melange(Number(alphaRgb[4]), hex, couleurPdf('--paper', depth + 1))
+  }
+  const mix = /^color-mix\(\s*in\s+(srgb|oklab)\s*,\s*(.+)\)$/.exec(trimmed)
   if (mix) {
-    const premier = couleurPdf(mix[1]!, depth + 1)
-    const second = couleurPdf(mix[3]!, depth + 1)
-    return melange(Number(mix[2]), premier, second)
+    // A native light-mode comparison nests two mixes. Split only the outer
+    // argument separator, not the commas inside var()/color-mix().
+    let parentheses = 0
+    let separator = -1
+    for (let index = 0; index < mix[2]!.length; index += 1) {
+      const character = mix[2]![index]
+      if (character === '(') parentheses += 1
+      if (character === ')') parentheses -= 1
+      if (character === ',' && parentheses === 0) { separator = index; break }
+    }
+    const first = /^(.+)\s+(\d+(?:\.\d+)?)%$/.exec(mix[2]!.slice(0, separator).trim())
+    if (separator < 0 || !first) throw new Error(`Mélange PDF non résolu : ${value}`)
+    const premier = couleurPdf(first[1]!, depth + 1)
+    const secondExpression = mix[2]!.slice(separator + 1).trim()
+    // Raster/vector marks lie on the same opaque editorial paper. Resolve
+    // transparency onto that paper, never onto a copied white/background.
+    const second = couleurPdf(secondExpression === 'transparent' ? '--paper' : secondExpression, depth + 1)
+    return mix[1] === 'oklab'
+      ? melangerOklab(premier, second, Number(first[2]) / 100)
+      : melange(Number(first[2]), premier, second)
   }
   throw new Error(`Couleur PDF non résolue : ${value}`)
 }

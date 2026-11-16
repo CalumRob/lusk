@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Native-family PDF primitives for the shared Cahier composer (#1024).
  *
  * The correction after independent review: this file no longer owns axis
@@ -13,6 +13,7 @@ import type { jsPDF } from 'jspdf'
 import {
   CURVE_Y_TICKS,
   curveGeometry,
+  curveSeriesPath,
   mobiliteBarComparisonSegments,
   mobiliteBarGeometry,
   mobiliteBarScale,
@@ -48,6 +49,7 @@ import type { MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
 import type { TimeRampPoint } from '@/fiche/content/territoryFacts'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import { mobiliteBarSegmentColor } from './cahierMobiliteReadings'
+import { visibleGroupedBarSeries } from './cahierFigureReadings'
 import type { MesureTexte } from './cahierPdfMesure'
 import { plierTexte } from './cahierPdfMesure'
 import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
@@ -57,6 +59,13 @@ export interface ImagePdf {
   readonly dataUrl: string
   readonly width: number
   readonly height: number
+}
+
+export class CahierPdfAssetError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CahierPdfAssetError'
+  }
 }
 
 export type ChargeurImagePdf = (
@@ -100,21 +109,20 @@ function rgb(value: string): [number, number, number] {
 
 function setFill(doc: jsPDF, value: string, opacity = 1): void {
   doc.setFillColor(...rgb(value))
-  if (opacity < 1) appliquerOpacite(doc, opacity)
+  appliquerOpacite(doc, opacity)
 }
 
 function setStroke(doc: jsPDF, value: string, opacity = 1): void {
   doc.setDrawColor(...rgb(value))
-  if (opacity < 1) appliquerOpacite(doc, opacity)
+  doc.setGState(doc.GState({ 'stroke-opacity': opacity }))
 }
 
 function appliquerOpacite(doc: jsPDF, opacity: number): void {
-  const withGState = doc as jsPDF & { GState: new (options: { opacity: number }) => unknown }
-  doc.setGState(new withGState.GState({ opacity }) as never)
+  doc.setGState(doc.GState({ opacity }))
 }
 
 function resetOpacity(doc: jsPDF): void {
-  appliquerOpacite(doc, 1)
+  doc.setGState(doc.GState({ opacity: 1, 'stroke-opacity': 1 }))
 }
 
 interface OptionsTexte {
@@ -133,6 +141,7 @@ export function textePdf(
   y: number,
   options: OptionsTexte,
 ): void {
+  appliquerOpacite(doc, 1)
   doc.setFont(options.police, 'normal')
   doc.setFontSize(options.taille)
   doc.setTextColor(...rgb(options.couleur))
@@ -248,12 +257,8 @@ async function poserSvg(
   await paint.svg(svg, { x, y, width, height })
 }
 
-function couleurSerie(value: string, fallback: string = PALETTE_PDF.ink): string {
-  try {
-    return couleurPdf(value)
-  } catch {
-    return fallback
-  }
+function couleurSerie(value: string): string {
+  return couleurPdf(value)
 }
 
 function titreLignes(projection: CahierFigureProjection, width: number, mesure: MesureTexte): string[] {
@@ -444,7 +449,7 @@ function rampLegend(projection: CahierRampsProjection, comparisonProof: boolean)
   return [
     ...projection.ramps[0]!.series.map((serie) => ({
       label: serie.label,
-      color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key] ?? PALETTE_PDF.ink),
+      color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!),
     })),
     ...(comparisonProof
       ? [{ label: 'Groupe comparé', color: PALETTE_PDF.muted, dash: true }]
@@ -469,9 +474,6 @@ async function dessinerRampes(
   }).map((ligne) => ligne.texte))
   const titleHeight = Math.max(...panelTitles.map((lines) => lines.length))
     * mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18
-  const values = projection.ramps.flatMap((ramp) => ramp.series.flatMap((serie) =>
-    serie.points.flatMap((point) => [point.value, point.referenceValue])))
-  const scale = cahierIntegerYAxisScale(values)
   let bas = y + titleHeight
   for (let index = 0; index < projection.ramps.length; index += 1) {
     const ramp = projection.ramps[index]!
@@ -492,7 +494,9 @@ async function dessinerRampes(
       margin: { top: 2, right: 2, bottom: 2, left: 9 },
     } as const
     const firstSeries = ramp.series[0]!
-    const geom = rampGeometry(rampPoints(firstSeries), scale, nativeGeometry, ramp.yAxis.unit)
+    const panelScale = cahierIntegerYAxisScale(ramp.series.flatMap((serie) =>
+      serie.points.flatMap((point) => [point.value, point.referenceValue])))
+    const geom = rampGeometry(rampPoints(firstSeries), panelScale, nativeGeometry, ramp.yAxis.unit)
     const svg = svgCanvas(panelWidth, plotHeight)
     for (const tick of geom.yTicks) {
       svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
@@ -507,7 +511,7 @@ async function dessinerRampes(
       0.35,
     )
     for (const serie of ramp.series) {
-      const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key] ?? PALETTE_PDF.ink)
+      const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!)
       const points = rampPoints(serie)
       for (const path of rampPaths(points, (point) => point.value, geom.x, geom.y)) {
         const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
@@ -559,6 +563,7 @@ async function dessinerCourbe(
   options: OptionsFigurePdf,
   projection: CahierCurveProjection,
 ): Promise<number> {
+  if (!options.modeleCourbe) throw new Error('Modèle natif de courbe manquant pour le PDF.')
   const { doc, x, y, width, mesure } = options
   let cy = y
   cy += dessinerTitre(doc, mesure, projection, x, width, cy)
@@ -584,10 +589,13 @@ async function dessinerCourbe(
   }))
   const ticks = visibleCurveTicks(
     allTicks,
-    plotWidth * 3,
+    plotWidth * 96 / 25.4,
     plotWidth,
     projection.marker?.detail ?? null,
-    (label) => Math.max(18, (label?.length ?? 2) * 3.2),
+    (label) => mesure.largeur(label ?? '', POLICE_PDF.body, TAILLE.tick) * 96 / 25.4,
+    new Set((options.modeleCourbe?.trajectory?.ticks ?? [])
+      .filter((tick) => tick.mobile === true)
+      .map((tick) => tick.detail)),
   )
   const yTicks = native?.yTicks ?? CURVE_Y_TICKS.map((value) => ({
     key: value,
@@ -599,19 +607,37 @@ async function dessinerCourbe(
     svgLine(svg, nativeGeometry.margin.left, tick.position, plotWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
   }
   svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, plotWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.ink, 0.35)
-  const focal = projection.points.filter((point) => point.value !== null)
-  for (let index = 1; index < focal.length; index += 1) {
-    svgLine(svg, xFor(focal[index - 1]!.axisValue), yFor(focal[index - 1]!.value!), xFor(focal[index]!.axisValue), yFor(focal[index]!.value!), PALETTE_PDF.modeFoot, 0.55)
+  if (options.modeleCourbe && native) {
+    const focalPath = curveSeriesPath(options.modeleCourbe.points, options.modeleCourbe, native)
+    if (focalPath) {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      node.setAttribute('d', focalPath)
+      node.setAttribute('fill', 'none')
+      node.setAttribute('stroke', PALETTE_PDF.brand500)
+      node.setAttribute('stroke-width', '0.55')
+      node.setAttribute('stroke-linecap', 'round')
+      node.setAttribute('stroke-linejoin', 'round')
+      svg.append(node)
+    }
+    if (options.comparisonProof && options.modeleCourbe.comparison) {
+      const referencePath = curveSeriesPath(options.modeleCourbe.comparison.points, options.modeleCourbe, native)
+      if (referencePath) {
+        const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+        node.setAttribute('d', referencePath)
+        node.setAttribute('fill', 'none')
+        node.setAttribute('stroke', PALETTE_PDF.brand200)
+        node.setAttribute('stroke-width', '0.5')
+        node.setAttribute('stroke-opacity', '0.68')
+        node.setAttribute('stroke-dasharray', '2 1.2')
+        node.setAttribute('stroke-linecap', 'round')
+        svg.append(node)
+      }
+    }
   }
-  for (const point of focal) svgCircle(svg, xFor(point.axisValue), yFor(point.value!), 0.8, PALETTE_PDF.modeFoot)
-  const reference = projection.points.filter((point) => point.comparisonValue !== null)
-  for (let index = 1; index < reference.length; index += 1) {
-    svgLine(svg, xFor(reference[index - 1]!.axisValue), yFor(reference[index - 1]!.comparisonValue!), xFor(reference[index]!.axisValue), yFor(reference[index]!.comparisonValue!), PALETTE_PDF.brand200, 0.5, '2 1.2', 0.7)
-  }
-  if (projection.marker && projection.marker.axisValue !== null && projection.marker.value !== null) {
+  if (projection.marker && projection.marker.axisValue !== null) {
     const mx = xFor(projection.marker.axisValue)
-    svgLine(svg, mx, 0, mx, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.margin, 0.4, '2 1.2')
-    svgCircle(svg, mx, yFor(projection.marker.value), 1.2, PALETTE_PDF.margin)
+    const cssPixel = 25.4 / 96
+    svgLine(svg, mx, nativeGeometry.margin.top, mx, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.muted, 1.5 * cssPixel, `${3 * cssPixel} ${3 * cssPixel}`)
   }
   await poserSvg(doc, svg, plotX, plotY, plotWidth, plotHeight)
   dessinerAxes(doc, mesure, {
@@ -629,7 +655,7 @@ async function dessinerCourbe(
     plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
   })
   const legend = [
-    { label: 'Valeur du territoire', color: PALETTE_PDF.modeFoot },
+    { label: 'Valeur du territoire', color: PALETTE_PDF.brand500 },
     ...(options.comparisonProof ? [{ label: 'Groupe comparé', color: PALETTE_PDF.brand200, dash: true }] : []),
   ]
   return plotY + plotHeight + 8 + legendeLigne(doc, mesure, legend, x, plotY + plotHeight + 8, width) - y
@@ -644,7 +670,8 @@ async function dessinerBarres(
   let cy = y
   cy += dessinerTitre(doc, mesure, projection, x, width, cy)
   const comparisonAligned = modele.categories.some((category) => category.value.fact.comparison?.reference?.value != null)
-  const scale = mobiliteBarScale(modele, comparisonAligned && Boolean(options.comparisonProof))
+    && Boolean(options.comparisonProof)
+  const scale = mobiliteBarScale(modele, comparisonAligned)
   const nativeGeometry = { width, height: 48, margin: { top: 2, right: 2, bottom: 2, left: 10 } } as const
   const bar = mobiliteBarGeometry(nativeGeometry, modele.categories.length, scale, comparisonAligned ? 2 : 1)
   const plotBottom = nativeGeometry.height - nativeGeometry.margin.bottom
@@ -666,7 +693,7 @@ async function dessinerBarres(
         svgRect(svg, segment.x, segment.y, segment.width, segment.height, couleurSerie(segment.fill))
       }
     }
-    if (comparisonAligned && options.comparisonProof) {
+    if (comparisonAligned) {
       const reference = category.value.fact.comparison?.reference?.value
       const segments = mobiliteBarComparisonSegments(category, categoryIndex, nativeGeometry, bar)
       if (segments.length) {
@@ -700,8 +727,8 @@ async function dessinerBarres(
       color: couleurSerie(mobiliteBarSegmentColor(segment)),
       square: true,
     }))),
-    ...(comparisonAligned && options.comparisonProof
-      ? [{ label: 'Groupe comparé', color: couleurSerie(`color-mix(in srgb, ${PALETTE_PDF.ink} 45%, var(--paper))`), square: true }]
+    ...(comparisonAligned
+      ? [{ label: 'Groupe comparé', color: couleurSerie('color-mix(in srgb, var(--cahier-theme-strong) 45%, var(--paper))'), square: true }]
       : []),
   ]
   const legendHeight = legendeLigne(doc, mesure, legend, x, cy + 2 + nativeGeometry.height + 8, width)
@@ -742,7 +769,7 @@ async function dessinerBarresGroupees(
       })
       cy += mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18
     }
-    const visible = figure.series.filter((series) => !hidden.includes(series.key))
+    const visible = visibleGroupedBarSeries(figure, hidden)
     const scale = groupedBarScaleFromFigure(visible)
     const nativeGeometry = { width: panelWidth, height: plotHeight, margin: { top: 2, right: 2, bottom: 2, left: 9 } } as const
     const bar = groupedBarGeometryFromFigure(nativeGeometry, figure.categories.length, visible.length, scale)
@@ -801,7 +828,7 @@ async function dessinerBarresGroupees(
     }
     svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.ink, 0.35)
     for (const serie of projection.volume.series) {
-      const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key] ?? PALETTE_PDF.ink)
+      const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!)
       const seriePoints = rampPoints(serie)
       for (const path of rampPaths(seriePoints, (point) => point.value, geom.x, geom.y)) {
         const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
@@ -833,7 +860,7 @@ async function dessinerBarresGroupees(
     })
     const legend = projection.volume.series.map((serie) => ({
       label: serie.label,
-      color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key] ?? PALETTE_PDF.ink),
+      color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!),
     }))
     return cy + 2 + plotHeight + 8 + legendeLigne(doc, mesure, legend, x, cy + 2 + plotHeight + 8, panelWidth)
   })()
@@ -912,7 +939,7 @@ async function dessinerPart(
     }
     resetOpacity(doc)
   }
-  drawTrack(projection.territoryName, projection.value, PALETTE_PDF.modeFoot, cy)
+  drawTrack(projection.territoryName, projection.value, PALETTE_PDF.brand500, cy)
   cy += 9
   if (options.comparisonProof) {
     drawTrack('Groupe comparé', projection.comparisonValue, PALETTE_PDF.brand200, cy, true)
@@ -984,7 +1011,7 @@ async function dessinerCartes(
     const item = items[index]!
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
     if (!item.loaded || item.unavailable || !item.inlineUrl) {
-      throw new Error(`Carte indisponible pour le PDF : ${item.label}`)
+      throw new CahierPdfAssetError(`Carte indisponible pour le PDF : ${item.label}`)
     }
     const image = await chargerImage(item.inlineUrl, { signal })
     const col = index % columns
@@ -1015,7 +1042,7 @@ async function dessinerCartes(
     }
     const swatchW = legendW / Math.max(1, detail.colors.length)
     detail.colors.forEach((color, index) => {
-      setFill(doc, couleurSerie(color, PALETTE_PDF.muted))
+      setFill(doc, couleurSerie(color))
       doc.rect(x0 + index * swatchW, cy, swatchW, 3, 'F')
     })
     resetOpacity(doc)

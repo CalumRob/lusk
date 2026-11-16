@@ -12,15 +12,19 @@ import type { SousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaiso
 import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
 import { PALETTE_PDF } from '@/fiche/prototype/cahierPdfPalette'
 import { couleurPdf } from '@/fiche/prototype/cahierPdfPalette'
+import { ANCRAGES_THEMES, rolesRampesTheme } from '@/carte/couleurs'
 import { construireTableauxPdf } from '@/fiche/prototype/cahierPdfTableau'
 import {
   curveGeometry,
+  curveSeriesPath,
+  mobiliteBarGeometry,
   mobiliteBarScale,
   rampScale,
   shareFillPercent,
   visibleCurveTicks,
   waffleGridPosition,
 } from '@/fiche/prototype/cahierFigureNativeGeometry'
+import { visibleGroupedBarSeries } from '@/fiche/prototype/cahierFigureReadings'
 import type { CahierTableColumn, CahierTableRow } from '@/fiche/prototype/cahierExportAdapters'
 import type { CahierCaptureComparison } from '@/fiche/prototype/cahierExportCapture'
 import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
@@ -38,9 +42,14 @@ import {
   toutesLesRequetes,
   verifierDansPage,
   verifierCollisions,
+  verifierAlphaTexte,
+  couleursRemplissage,
 } from './helpers/cahierPdfRuntime'
 import { cahierExportFixture, communeMembers, sectionOf } from './helpers/cahierExportFixtures'
-import { capturePdfFixture } from './helpers/cahierPdfFixtures'
+import {
+  capturePdfFixture, captureCourbeTrous, captureCourbeDense, capturePartDense,
+  captureRampeDense, captureBarresDense, captureWaffleDense,
+} from './helpers/cahierPdfFixtures'
 import type { LecturePdf } from './helpers/cahierPdfRuntime'
 
 const signal = () => new AbortController().signal
@@ -66,160 +75,6 @@ function requeteAvecModes(capture: CahierExportRequest['capture']): CahierExport
   const projection = projeterRequeteExport(capture, modes)
   if (projection.status !== 'ready') throw new Error(projection.reason)
   return projection.request
-}
-
-/** Test-only dense native curve: 73 published points, declared tick labels. */
-function captureCourbeDense() {
-  const capture: any = structuredClone(capturePdfFixture('visiter-la-bretagne'))
-  const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-curve')
-  const base = figure.model.points[0]
-  const points = Array.from({ length: 73 }, (_, index) => ({
-    ...base,
-    fact: {
-      ...base.fact,
-      detail: `t${String(index * 5).padStart(4, '0')}`,
-      value: index / 72,
-      unit: '%',
-    },
-  }))
-  const ticks = points.map((point, index) => ({
-    detail: point.fact.detail,
-    label: `${index * 5} min`,
-    mobile: index % 6 === 0,
-  }))
-  figure.model.points = points
-  figure.model.trajectory = { ...figure.model.trajectory, ticks }
-  figure.model.axis = {
-    values: points.map((point, index) => ({ detail: point.fact.detail, numericValue: index * 5 })),
-    minimum: 0,
-    maximum: 360,
-  }
-  figure.model.markerValue = {
-    fact: {
-      ...points[18]!.fact,
-      comparison: {
-        direction: 'neutral',
-        scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-        rank: { position: 1, size: 43, ties: null },
-        reference: { value: 0.8, unit: '%' },
-      },
-    },
-    label: '1 h 30',
-  }
-  figure.model.comparison = {
-    statistic: 'mean',
-    scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-    selectedMemberCount: 3,
-    eligibleCount: 2,
-    modelZeroReasonCounts: {},
-    points: points.map((point) => ({
-      ...point,
-      fact: { ...point.fact, value: point.fact.value * 0.9 },
-    })),
-  }
-  return capture
-}
-
-/** Test-only native share at the served 0,9957355 fraction. */
-function capturePartDense() {
-  const capture: any = structuredClone(capturePdfFixture('couverture-du-territoire'))
-  const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-share')
-  figure.model.value.fact.value = 0.9957355
-  figure.model.value.fact.unit = '%'
-  figure.model.value.fact.comparison = {
-    direction: 'neutral',
-    scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-    rank: null,
-    reference: { value: 0.8, unit: '%' },
-  }
-  figure.model.unit = '%'
-  return capture
-}
-
-/** Test-only native ramp whose real maximum is 1.4 (integer axis 0/1/2). */
-function captureRampeDense() {
-  const capture: any = structuredClone(capturePdfFixture('aedar-access'))
-  const figure = capture.figures.find((candidate: any) => candidate.family === 'aedar-ramps')
-  for (const ramp of figure.model.ramps) {
-    ramp.territory = {
-      ...ramp.territory,
-      car: [0.2, 0.7, 1.1, 1.4],
-      bike_lts2: [0.1, 0.5, 0.9, 1.2],
-    }
-    ramp.reference = {
-      car: [0.1, 0.4, 0.8, 1.0],
-      bike_lts2: [0.05, 0.3, 0.6, 0.9],
-      bike_lts4: [null, null, null, null],
-      transit: [null, null, null, null],
-      walk: [null, null, null, null],
-    } as typeof ramp.reference
-    ramp.yAxis.unit = 'types'
-  }
-  return capture
-}
-
-/** Test-only native compared bars with real split segments and 3.4 maximum. */
-function captureBarresDense() {
-  const capture: any = structuredClone(capturePdfFixture('reseaux'))
-  const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-bars')
-  const model = figure.model.figure
-  model.yAxisTitle = 'Places'
-  model.unit = 'places / 1 000 hab.'
-  model.xAxisTitle = 'Type de stationnement'
-  const category = model.categories[0]
-  category.value.fact.value = 3.4
-  category.value.fact.unit = 'places / 1 000 hab.'
-  category.value.fact.comparison = {
-    direction: 'neutral',
-    scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-    rank: null,
-    reference: { value: 2.2, unit: 'places / 1 000 hab.' },
-  }
-  const segment = (key: string, label: string, value: number, reference: number) => ({
-    key,
-    label,
-    value: {
-      fact: {
-        ...category.value.fact,
-        value,
-        comparison: {
-          direction: 'neutral',
-          scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-          rank: null,
-          reference: { value: reference, unit: 'places / 1 000 hab.' },
-        },
-      },
-      label,
-    },
-    rawValue: null,
-  })
-  category.segments = [
-    segment('protege_km_1000', 'Protégé', 2.0, 1.3),
-    segment('partage_km_1000', 'Partagé', 1.4, 0.9),
-  ]
-  category.comparisonSplit = true
-  return capture
-}
-
-/** Test-only native waffle with twelve classified equipment types. */
-function captureWaffleDense() {
-  const base = sectionOf(cahierExportFixture().content, 'aedar-equipment-profile')
-  const evidence = base.evidence as unknown as { facts: readonly Record<string, unknown>[] }
-  const buckets = ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car']
-  const facts = Array.from({ length: 12 }, (_, index) => ({
-    ...evidence.facts[index % evidence.facts.length],
-    typequ: `T${String(index + 1).padStart(3, '0')}`,
-    typequ_label: `Équipement ${index + 1}`,
-    measures: {
-      count_15_walk_share: index % 5 === 0 ? 0.8 : 0.05,
-      count_15_transit_share: index % 5 === 1 ? 0.8 : 0.05,
-      count_15_bike_lts2_share: index % 5 === 2 ? 0.8 : 0.05,
-      count_15_bike_lts4_share: index % 5 === 3 ? 0.8 : 0.05,
-      count_15_car_share: index % 5 === 4 ? 0.8 : 0.05,
-    },
-    bucketHint: buckets[index % 5],
-  }))
-  return capturePdfFixture('aedar-equipment-profile', { evidencePatch: { facts } })
 }
 
 async function generer(request: CahierExportRequest, nom: string) {
@@ -260,6 +115,7 @@ describe('compositeur PDF Cahier — matrice des neuf sections', () => {
       expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(6)
       verifierDansPage(lecture)
       verifierCollisions(lecture)
+      await verifierAlphaTexte(lecture.octets)
       expect(lecture.metadonnees.author).toBe('Lusk')
       expect(lecture.metadonnees.title).toContain('Commune A1')
       expect(lecture.liens).toContain('https://lusk.test/')
@@ -523,6 +379,7 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
     expect(rowLabels.size).toBe(73)
     verifierDansPage(lecture)
     verifierCollisions(lecture)
+    await verifierAlphaTexte(lecture.octets)
   })
 
   it('garde la part native 99,6 % et son unité au lieu de forcer 100 %', async () => {
@@ -531,6 +388,8 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
     expect(lecture.texteComplet).not.toContain('100,0 %')
     expect(shareFillPercent(0.9957355, '%')).toBeCloseTo(99.57355, 4)
     expect(shareFillPercent(0.5, 'parts / 1 000')).toBe(0.5)
+    const couleurs = await couleursRemplissage(lecture.octets)
+    expect(couleurs).toContain('#577370')
     verifierCollisions(lecture)
   })
 
@@ -561,6 +420,120 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
     ])
     // Native rounded headroom for 3,4 must not become a raw 0/.85/1.7 axis.
     expect(lecture.texteComplet).not.toContain('0,85')
+    const rowLabel = lecture.textes.find((item) => item.str.startsWith('Réseau piéton') && item.page === 1)
+    const comparisonHeader = lecture.textes
+      .filter((item) => item.str === 'Groupe comparé' && item.page === 1)
+      .sort((a, b) => b.x - a.x)[0]
+    expect(rowLabel).toBeTruthy()
+    expect(comparisonHeader).toBeTruthy()
+    expect(comparisonHeader!.x).toBeGreaterThan(rowLabel!.x + 20)
+    const comparisonValue = lecture.textes.find((item) => item.str === '2,2' && item.page === 1)
+    expect(comparisonValue).toBeTruthy()
+    const alignedHeader = lecture.textes
+      .filter((item) => item.str === 'Groupe comparé' && item.page === 1)
+      .sort((a, b) => Math.abs(a.x - comparisonValue!.x) - Math.abs(b.x - comparisonValue!.x))[0]
+    expect(Math.abs(alignedHeader!.x - comparisonValue!.x)).toBeLessThan(6)
+    const couleurs = await couleursRemplissage(lecture.octets)
+    expect(couleurs).toContain('#577370')
+    verifierCollisions(lecture)
+    await verifierAlphaTexte(lecture.octets)
+  })
+
+  it('ne relie pas les points nuls de la courbe et suit le path natif', async () => {
+    const capture: any = captureCourbeTrous()
+    const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-curve').model
+    const geometry = curveGeometry(figure, {
+      width: 640,
+      height: 300,
+      margin: { top: 22, right: 68, bottom: 62, left: 64 },
+    })
+    const path = curveSeriesPath(figure.points, figure, geometry)
+    expect((path.match(/M/g) ?? []).length).toBeGreaterThanOrEqual(2)
+    const { lecture } = await generer(requeteAvecModes(capture), 'dense-curve-gaps.pdf')
+    contientTout(lecture, ['0 %', '100 %', 'Valeurs du graphique'])
+    verifierCollisions(lecture)
+  })
+
+  it('respecte la propagation comparisonFor quand le focal est masqué', () => {
+    const figure: any = {
+      categories: [{ key: 'c', label: 'C', axisLabel: 'C' }],
+      series: [
+        { key: 'car', label: 'Voiture', color: '#a94562', values: [1] },
+        { key: 'car:comparison', label: 'Voiture comparée', color: '#bbb', values: [2], comparisonFor: 'car' },
+      ],
+      xAxisTitle: 'X',
+      yAxisTitle: 'Y',
+      description: '',
+    }
+    const visible = visibleGroupedBarSeries(figure, ['car'])
+    expect(visible).toEqual([])
+  })
+
+  it('centre une barre focale unique quand la comparaison est masquée', () => {
+    const scale = { maximum: 4, ticks: [0, 1, 2, 3, 4] }
+    const geometry = { width: 640, height: 300, margin: { top: 22, right: 24, bottom: 62, left: 68 } }
+    const one = mobiliteBarGeometry(geometry, 1, scale, 1)
+    const two = mobiliteBarGeometry(geometry, 1, scale, 2)
+    const centreUn = one.x(0, 0) + one.barWidth / 2
+    const centreDeux = two.x(0, 0) + two.barWidth / 2
+    const groupCentre = geometry.margin.left + one.groupWidth / 2
+    expect(centreUn).toBeCloseTo(groupCentre, 2)
+    expect(centreDeux).toBeLessThan(groupCentre)
+    expect(one.barWidth).toBeGreaterThanOrEqual(two.barWidth)
+  })
+
+  it('rend chaque panneau de rampe à son échelle native indépendante', async () => {
+    const capture: any = captureRampeDense()
+    const first = rampScale([{ key: 'car', label: 'Voiture', points: [
+      { xValue: 5, xLabel: '5 min', value: 0.2, referenceValue: null },
+      { xValue: 10, xLabel: '10 min', value: 1.4, referenceValue: null },
+    ] }], false)
+    const second = rampScale([{ key: 'car', label: 'Voiture', points: [
+      { xValue: 5, xLabel: '5 min', value: 10, referenceValue: null },
+      { xValue: 10, xLabel: '10 min', value: 40, referenceValue: null },
+    ] }], false)
+    expect(first.ticks).toEqual([0, 1, 2])
+    expect(second.ticks.at(-1)).toBeGreaterThan(30)
+    const { lecture } = await generer(requeteAvecModes(capture), 'dense-ramp-panels.pdf')
+    contientTout(lecture, ['Diversité de l’offre accessible', 'Établissements accessibles'])
+    verifierCollisions(lecture)
+  })
+
+  it('résout les rôles brand/theme réels sans retomber sur l’encre', () => {
+    expect(PALETTE_PDF.themeMobiliteStrong).toBe(rolesRampesTheme(ANCRAGES_THEMES.mobilite).strong)
+    expect(couleurPdf('var(--brand-500)')).toBe('#57726f')
+    expect(couleurPdf('var(--cahier-theme-strong)')).toBe('#446b74')
+    expect(couleurPdf('color-mix(in srgb, var(--cahier-theme-strong) 45%, var(--paper))')).toBe('#a5b5b5')
+    expect(couleurPdf('var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike)))')).toBe('#2e6171')
+  })
+
+  it('passe les ticks de courbe par la mesure réelle de la police', async () => {
+    const { lecture } = await generer(requeteAvecModes(captureCourbeDense()), 'dense-curve-ticks.pdf')
+    const line = lecture.lignes.find((candidate) => candidate.page === 1
+      && /^(\d+ min\s*){2,}$/.test(candidate.texte))
+    expect(line).toBeTruthy()
+    expect(line!.items.length).toBeGreaterThan(2)
+    expect(line!.items.length).toBeLessThan(73)
+    verifierCollisions(lecture)
+  })
+
+  it('ne réserve pas de seconde barre quand la comparaison est masquée', async () => {
+    const capture: any = captureBarresDense()
+    const avant = JSON.stringify(capture)
+    const hidden = {
+      ...capture,
+      comparison: {
+        ...capture.comparison,
+        display: {
+          state: 'not-displayed',
+          reason: 'hidden-by-user',
+          layers: capture.comparison.display.layers.map((layer: any) => ({ ...layer, displayed: false })),
+        },
+      },
+    }
+    const { lecture } = await generer(requeteAvecModes(hidden), 'bars-hidden-comparison.pdf')
+    expect(JSON.stringify(capture)).toBe(avant)
+    expect(lecture.lignes.some((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))).toBe(false)
     verifierCollisions(lecture)
   })
 
@@ -602,6 +575,13 @@ describe('compositeur PDF Cahier — refus explicites', () => {
     } as unknown as CahierExportRequest['capture']
     await expect(composerCahierPdf({ ...request, capture }, options()))
       .rejects.toMatchObject({ code: 'unsupported-family' })
+  })
+
+  it('refuse une carte déclarée non observée comme erreur d’actif', async () => {
+    const capture: any = structuredClone(capturePdfFixture('aedar-car-overview'))
+    capture.capabilities.maps.items[0].loaded = false
+    await expect(composerCahierPdf({ ...requetePour('aedar-car-overview'), capture }, options()))
+      .rejects.toMatchObject({ code: 'asset' })
   })
 
   it('refuse une carte requise dont le chargement échoue', async () => {
@@ -692,7 +672,7 @@ describe('compositeur PDF Cahier — refus explicites', () => {
 
   it('rejette une colonne réellement corrompue dans le PDF produit', async () => {
     const bon = await generer(requeteAvecModes(captureBarresDense()), 'negatif-colonne-bon.pdf')
-    const capture = captureBarresDense()
+    const capture: any = captureBarresDense()
     const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-bars')
     figure.model.figure.categories[0].axisLabel = 'COLONNE CORROMPUE'
     const corrompu = await generer(requeteAvecModes(capture), 'negatif-colonne-reelle.pdf')
@@ -706,7 +686,7 @@ describe('compositeur PDF Cahier — refus explicites', () => {
 
   it('rejette un groupe réellement corrompu dans le PDF produit', async () => {
     const bon = await generer(requeteAvecModes(captureBarresDense()), 'negatif-groupe-bon.pdf')
-    const capture = captureBarresDense()
+    const capture: any = captureBarresDense()
     capture.comparison.group = {
       ...capture.comparison.group,
       names: ['GROUPE CORROMPU'],

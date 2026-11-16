@@ -107,6 +107,9 @@ export default defineConfig({
   },
   test: {
     environment: 'happy-dom',
+    // PDF colour resolution consumes the real CSS owner as text. Vitest's
+    // default CSS stub would otherwise turn even its ?raw import into ''.
+    css: { include: [/tokens\.css/] },
     include: ['src/**/*.spec.ts'],
     setupFiles: ['src/__tests__/setup.ts'],
     // #868 : l'acquisition par thème est le seul mode — il n'y a plus de

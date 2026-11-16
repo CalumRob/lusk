@@ -289,6 +289,16 @@ export function captureCourbeDense(): CahierExportCapture {
   return capture as CahierExportCapture
 }
 
+export function captureCourbeTrous(): CahierExportCapture {
+  const capture: any = captureCourbeDense()
+  const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-curve')
+  for (const index of [12, 13, 14]) {
+    figure.model.points[index].fact.value = null
+    figure.model.comparison.points[index].fact.value = null
+  }
+  return capture
+}
+
 export function capturePartDense(): CahierExportCapture {
   const capture: any = structuredClone(capturePdfFixture('couverture-du-territoire'))
   const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-share')
@@ -307,16 +317,23 @@ export function capturePartDense(): CahierExportCapture {
 export function captureRampeDense(): CahierExportCapture {
   const capture: any = structuredClone(capturePdfFixture('aedar-access'))
   const figure = capture.figures.find((candidate: any) => candidate.family === 'aedar-ramps')
-  for (const ramp of figure.model.ramps) {
-    ramp.territory = { ...ramp.territory, car: [0.2, 0.7, 1.1, 1.4], bike_lts2: [0.1, 0.5, 0.9, 1.2] }
+  for (const [index, ramp] of figure.model.ramps.entries()) {
+    ramp.territory = {
+      ...ramp.territory,
+      car: index === 0 ? [0.2, 0.7, 1.1, 1.4] : [10, 20, 30, 40],
+      bike_lts2: index === 0 ? [0.1, 0.5, 0.9, 1.2] : [5, 10, 20, 30],
+      transit: [null, null, null, null],
+      bike_lts4: [null, null, null, null],
+      walk: [null, null, null, null],
+    }
     ramp.reference = {
-      car: [0.1, 0.4, 0.8, 1.0],
-      bike_lts2: [0.05, 0.3, 0.6, 0.9],
+      car: index === 0 ? [0.1, 0.4, 0.8, 1.0] : [5, 10, 20, 30],
+      bike_lts2: index === 0 ? [0.05, 0.3, 0.6, 0.9] : [2, 5, 10, 15],
       bike_lts4: [null, null, null, null],
       transit: [null, null, null, null],
       walk: [null, null, null, null],
     } as typeof ramp.reference
-    ramp.yAxis.unit = 'types'
+    ramp.yAxis.unit = index === 0 ? 'types' : 'établissements'
   }
   return capture as CahierExportCapture
 }
@@ -329,6 +346,7 @@ export function captureBarresDense(): CahierExportCapture {
   model.unit = 'places / 1 000 hab.'
   model.xAxisTitle = 'Type de stationnement'
   const category = model.categories[0]
+  category.tone = 'brand'
   category.value.fact.value = 3.4
   category.value.fact.unit = 'places / 1 000 hab.'
   category.value.fact.comparison = {

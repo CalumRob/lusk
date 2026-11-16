@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { CAHIER_COLOR_ROLES } from './cahierColorRoles'
 /**
  * [PROTOTYPE #511 — JETABLE] Variante D — « Cahier libre ».
  *
@@ -427,18 +428,7 @@ onBeforeUnmount(() => {
       'cahier--sans-grille': props.presentation === 'plain',
       'cahier--indexed-sections': props.layoutVariant === 'indexed-sections',
     }"
-    :style="{
-      '--cahier-theme': 'var(--theme-mobilite-line)',
-      '--cahier-theme-strong': 'var(--theme-mobilite-strong)',
-      '--cahier-ground': 'var(--theme-mobilite-soft)',
-      '--cahier-theme-emphasis': 'var(--theme-mobilite)',
-      '--cahier-region-emphasis': 'var(--brand-200)',
-      '--cahier-mode-foot': 'var(--mode-transit)',
-      '--cahier-mode-bike': 'var(--mode-bike)',
-      '--cahier-mode-car': 'var(--mode-car)',
-      '--cahier-cycle-protected': 'var(--cahier-mode-bike)',
-      '--cahier-cycle-shared': '#8c4c9e',
-    }"
+    :style="CAHIER_COLOR_ROLES"
   >
       <div class="cahier-reader">
       <aside class="cahier-spine" aria-label="Sommaire du cahier">
@@ -709,13 +699,6 @@ onBeforeUnmount(() => {
   --z-page-header: calc(var(--z-sticky) - 1);
   /* ThemeTabs is bounded to .fiche-en-tete-surface; only AppHeader stays pinned over the reading surface. */
   --cahier-sticky-top: var(--header-height);
-  --paper: var(--editorial-paper);
-  --paper-deep: var(--editorial-paper-deep);
-  --ink: var(--editorial-ink);
-  --muted: var(--editorial-muted);
-  --red: var(--editorial-margin);
-  --red-soft: var(--editorial-margin-soft);
-  --cahier-default: var(--muted);
   --cahier-profile-inaccessible: color-mix(in srgb, var(--cahier-default) 42%, var(--paper));
   --margin-line: var(--editorial-margin-offset);
   --rule: color-mix(in srgb, var(--cahier-theme) 19%, transparent);

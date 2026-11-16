@@ -27,6 +27,7 @@ import {
   sousTitreComparaison,
   type SousTitreComparaison,
 } from './cahierPdfComparaison'
+import { visibleGroupedBarSeries } from './cahierFigureReadings'
 import {
   POLICES_PDF,
   POLICE_PDF,
@@ -36,6 +37,7 @@ import {
 import {
   dessinerFigurePdf,
   hauteurFigurePdf,
+  CahierPdfAssetError,
   type ChargeurImagePdf,
 } from './cahierPdfFigures'
 import type { MesureTexte } from './cahierPdfMesure'
@@ -122,18 +124,12 @@ function rgb(hex: string): [number, number, number] {
 
 function setFill(doc: jsPDF, hex: string, opacity = 1): void {
   doc.setFillColor(...rgb(hex))
-  if (opacity < 1) {
-    const withGState = doc as jsPDF & { GState: new (options: { opacity: number }) => unknown }
-    doc.setGState(new withGState.GState({ opacity }) as never)
-  }
+  doc.setGState(doc.GState({ opacity }))
 }
 
 function setStroke(doc: jsPDF, hex: string, opacity = 1): void {
   doc.setDrawColor(...rgb(hex))
-  if (opacity < 1) {
-    const withGState = doc as jsPDF & { GState: new (options: { opacity: number }) => unknown }
-    doc.setGState(new withGState.GState({ opacity }) as never)
-  }
+  doc.setGState(doc.GState({ 'stroke-opacity': opacity }))
 }
 
 function texte(
@@ -150,6 +146,7 @@ function texte(
     espacement?: number
   },
 ): void {
+  doc.setGState(doc.GState({ opacity: 1 }))
   doc.setFont(options.police, 'normal')
   doc.setFontSize(options.taille)
   doc.setTextColor(...rgb(options.couleur))
@@ -420,12 +417,15 @@ function preuveFigureComparative(projection: CahierFigureProjection, capture: Ca
     case 'aedar-car-overview':
       return preuveProprietaire(capture, ['comparison'])
         && projection.scalars.some((scalar) => scalar.reference !== null || scalar.rank !== null)
-    case 'aedar-equipment-explorer':
+    case 'aedar-equipment-explorer': {
+      const distribution = visibleGroupedBarSeries(
+        projection.distribution.figure,
+        projection.distribution.hiddenSeriesKeys,
+      )
       return preuveProprietaire(capture, ['comparison', 'distribution'])
         && (projection.volume.series.some((serie) => serie.points.some((point) => point.referenceValue !== null))
-          || projection.distribution.figure.series.some((serie) => (
-            Boolean(serie.comparisonFor) && serie.values.some((value) => value !== null)
-          )))
+          || distribution.some((serie) => Boolean(serie.comparisonFor) && serie.values.some((value) => value !== null)))
+    }
     case 'aedar-diversity-loss':
     case 'aedar-equipment-profile':
       return false
@@ -817,8 +817,9 @@ function dessinerTableau(
     cy += 2.4
   }
   const enteteTop = cy
-  // Header row.
-  let cx = x
+  // Header row: the row-label column is distinct; data headers start over
+  // their actual data cells, not over the row-label column.
+  let cx = x + part.rowLabelWidth
   for (const colonne of part.columns) {
     const align = colonne.column.kind === 'comparison' ? 'left' : 'left'
     let hy = cy
@@ -982,14 +983,18 @@ async function creerChargeurImageParDefaut(): Promise<ChargeurImagePdf> {
     const blob = await response.blob()
     if (typeof createImageBitmap === 'function') {
       const bitmap = await createImageBitmap(blob)
-      const canvas = document.createElement('canvas')
-      canvas.width = bitmap.width
-      canvas.height = bitmap.height
-      const context = canvas.getContext('2d')
-      if (!context) throw new CahierPdfCompositionError('asset', `Décodage de la carte impossible : ${url}.`)
-      context.drawImage(bitmap, 0, 0)
-      bitmap.close()
-      return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
+      try {
+        verifierAbandon(signal)
+        const canvas = document.createElement('canvas')
+        canvas.width = bitmap.width
+        canvas.height = bitmap.height
+        const context = canvas.getContext('2d')
+        if (!context) throw new CahierPdfCompositionError('asset', `Décodage de la carte impossible : ${url}.`)
+        context.drawImage(bitmap, 0, 0)
+        return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
+      } finally {
+        bitmap.close()
+      }
     }
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
@@ -1124,22 +1129,29 @@ export async function composerCahierPdf(
         const modele = modelesBars.get(bloc.projection.slot)
         const modeleCourbe = modelesCourbes.get(bloc.projection.slot)
         const distributionTitle = titresDistribution.get(bloc.projection.slot)
-        cy += await dessinerFigurePdf({
-          doc,
-          mesure,
-          x: PAGE.margeGauche,
-          y: cy,
-          width: PAGE.largeurUtile,
-          signal,
-          chargerImage,
-          comparisonProof: preuveFigureComparative(bloc.projection, capture),
-          ...(modele ? { modeleBars: modele } : {}),
-          ...(modeleCourbe ? { modeleCourbe: modeleCourbe as never } : {}),
-          ...(distributionTitle ? { distributionTitle } : {}),
-          ...(unitesDistribution.get(bloc.projection.slot)
-            ? { distributionUnit: unitesDistribution.get(bloc.projection.slot) }
-            : {}),
-        }, bloc.projection)
+        try {
+          cy += await dessinerFigurePdf({
+            doc,
+            mesure,
+            x: PAGE.margeGauche,
+            y: cy,
+            width: PAGE.largeurUtile,
+            signal,
+            chargerImage,
+            comparisonProof: preuveFigureComparative(bloc.projection, capture),
+            ...(modele ? { modeleBars: modele } : {}),
+            ...(modeleCourbe ? { modeleCourbe: modeleCourbe as never } : {}),
+            ...(distributionTitle ? { distributionTitle } : {}),
+            ...(unitesDistribution.get(bloc.projection.slot)
+              ? { distributionUnit: unitesDistribution.get(bloc.projection.slot) }
+              : {}),
+          }, bloc.projection)
+        } catch (error) {
+          if (error instanceof CahierPdfAssetError) {
+            throw new CahierPdfCompositionError('asset', error.message, error)
+          }
+          throw error
+        }
       } else if (bloc.kind === 'table') {
         const start = cy
         dessinerTableau(doc, mesure, bloc.part, bloc.rows, PAGE.margeGauche, cy, PAGE.largeurUtile, bloc.continued)

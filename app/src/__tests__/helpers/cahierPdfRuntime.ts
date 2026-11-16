@@ -8,7 +8,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 
 import type { ChargeurPolicePdf, PdfFontFace } from '@/fiche/prototype/cahierPdfFonts'
@@ -235,6 +235,51 @@ export function verifierDansPage(lecture: LecturePdf, tolerance = 1.5): void {
       )
     }
   }
+}
+
+/** Every text run must be emitted at full opacity; catches PDF state leaks. */
+export async function verifierAlphaTexte(octets: Uint8Array): Promise<void> {
+  const pdf = await getDocument({ data: Uint8Array.from(octets) }).promise
+  const findings: { page: number; alpha: number; text: string }[] = []
+  for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
+    const page = await pdf.getPage(pageIndex)
+    const list = await page.getOperatorList()
+    let alpha = 1
+    const stack: number[] = []
+    for (let index = 0; index < list.fnArray.length; index += 1) {
+      const op = list.fnArray[index]
+      const args = list.argsArray[index] as unknown[]
+      if (op === OPS.save) stack.push(alpha)
+      if (op === OPS.restore) alpha = stack.pop() ?? 1
+      if (op === OPS.setGState) {
+        const entries = args[0] as [string, number][]
+        for (const [key, value] of entries) if (key === 'ca') alpha = value
+      }
+      if (op === OPS.showText && alpha < 0.99) {
+        const text = (args[0] as { unicode?: string }[]).map((glyph) => glyph.unicode ?? '').join('')
+        if (text.trim()) findings.push({ page: pageIndex, alpha, text })
+      }
+    }
+  }
+  if (findings.length) {
+    throw new Error(`Texte translucide dans le PDF : ${JSON.stringify(findings.slice(0, 8))}`)
+  }
+}
+
+/** Fill RGB operators actually emitted by the PDF renderer. */
+export async function couleursRemplissage(octets: Uint8Array): Promise<string[]> {
+  const pdf = await getDocument({ data: Uint8Array.from(octets) }).promise
+  const couleurs: string[] = []
+  for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
+    const list = await (await pdf.getPage(pageIndex)).getOperatorList()
+    for (let index = 0; index < list.fnArray.length; index += 1) {
+      if (list.fnArray[index] === OPS.setFillRGBColor) {
+        const value = (list.argsArray[index] as unknown[])[0]
+        if (typeof value === 'string') couleurs.push(value.toLowerCase())
+      }
+    }
+  }
+  return couleurs
 }
 
 /** Real rendered-text overlap guard; catches cells/headers colliding. */
