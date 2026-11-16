@@ -331,8 +331,9 @@ findings during the campaign.
 `docs/prd/cahier-section-pdf.md`. Keep a single sheet by default; use a separate
 values page **only for actual overflow**, not as the default presentation. The
 six-times-repeated waffle is not a product-design priority. The three-mode limit
-is a functional constraint, but the mode-choice UI is **not validated here** and
-belongs to future UI implementation/review. The modal below remains an experiment.
+is a functional constraint. The original adapter's technical modal was **not
+validated**; the later revised section-action UI is approved in the final section
+below. The original adapter modal remains an experiment, not the product design.
 
 The final source-placement variation moves existing source annotations to the
 bottom right of each exported section with « Source(s) : ». Text, attribution
@@ -407,7 +408,8 @@ skip, and `vue-tsc` passed. This is source validation, not deployed acceptance.
 **Owner visual approval received:** the headings, including the fixed 18 CSS px
 comparison-name size, are approved and recorded in PRD #1014. This remains a
 **throwaway visual proof**, not production implementation. The mode-choice UI is
-still unvalidated. Existing exports/options remain unchanged unless the
+separate from these heading specimens (the revised controls are approved in the
+final section below). Existing exports/options remain unchanged unless the
 development-only `headingMockup` option is supplied.
 
 From `app/`, generate with `node scripts/prototype-comparison-heading.mjs`.
@@ -475,3 +477,54 @@ remains separately in the real reports' existing footnotes; group names do not
 redefine it. The visual size and headings have owner approval; production
 integration and automatic overflow remain separate. The PRD records the approved
 heading rules, while production UI and main are untouched.
+
+## Section PDF action — UI mockup approved 2026-11-16
+
+The revised controls are visually approved and belong to **every section's shared
+contract**, not a sandbox-specific action. PRD #1014 records the borderless,
+title-aligned action, revised modal copy and in-button preparing/success/retry
+states. This approval does not turn the timer-based simulation into production
+generation; actual capture, error recovery and automatic overflow remain to build.
+
+Run `npm run prototype:pdf-ui` from `app/`, then open the printed localhost URL
+(port 5200). This dedicated Vite host injects the mockup only when
+`pdf-ui-mockup=1` is present. Normal dev/build servers and the production page do
+not import it. It uses the existing territory route and real resolved content,
+not an isolated invented page. No PDF is generated or downloaded.
+
+The current placement is a compact, **borderless** « PDF » + file/download icon
+at the top right of each section, vertically centred with its title. Keyboard
+focus indication is retained. The mockup reuses `CahierActionButton`,
+`CahierDialog`, `AppIcon` and app typography/colour tokens. Desktop headings retain their central axis;
+mobile headings share a row with the same labelled action. Sparse waffle and
+busy sandbox sections were inspected with loaded data, not loading placeholders.
+
+State specimens are shareable with `pdf-ui-state=ready|preparing|done|error` and can
+be switched from the clearly labelled bottom simulation bar or left/right arrows
+outside dialogs/inputs. The existing Cahier already owns `variant`, so this
+mockup deliberately does not reuse that query key.
+
+At one to three screen modes, the action simulates preparation directly. At more
+than three it opens an export-only choice of up to three, with no preselected
+checkboxes. The modal now reads « Exporter en PDF », followed by the margin-red
+instruction « Choisissez jusqu’à trois modes pour garder les tableaux lisibles. »
+and then « Modes à inclure ». Its action reads « Générer le PDF ».
+Preparing disables repeated clicks; success (« PDF généré » + check) and retry
+(« Réessayer » + retry icon) are states of the **same section button**, with no
+extra status paragraph appearing below it. Retry directly simulates the same
+failed request. The simulation bar/modal disclaimer makes clear that no actual
+file is produced. Choosing or cancelling never changes the screen selection.
+
+`npm run prototype:pdf-ui -- --capture` uses a separate temporary server on 5201,
+writes screenshots and `verification.json` to
+`E:/Temp/opencode/cahier-pdf-ui-mockup/`, then stops that server. Verified: direct
+preparation with the three actual default modes; disabled confirmation at zero
+and four choices, enabled at three; Escape/cancel restores focus and preserves
+five screen modes; confirming three also preserves those five; borderless action
+and vertical centre alignment; success/retry inside the button and direct retry;
+mobile has no horizontal page overflow; no download or browser errors. Typecheck
+passes. The earlier scoped regex detector pass predates the copy/state revision;
+its latest rerun could not start because `npx --no-install` lacked the requested
+cached package version. No new clean detector or full accessibility audit is claimed.
+The native/shared dialog supplies the modal behavior. The revised interface now
+has owner approval; production PDF capture/pagination is not implemented by it.

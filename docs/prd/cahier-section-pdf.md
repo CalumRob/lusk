@@ -3,7 +3,7 @@
 ## Statut et portée
 
 Décisions issues du prototype `prototype/cahier-pdf`, validées avec le propriétaire
-le 15 novembre 2026. Ce document formalise un futur export produit ; il ne déclare
+les 15 et 16 novembre 2026. Ce document formalise un futur export produit ; il ne déclare
 pas le prototype prêt à fusionner ou à déployer. Aucune implémentation produit,
 publication de données, opération sur le Pi ou livraison n’est autorisée par la
 seule création de cette spécification.
@@ -14,10 +14,12 @@ compacts dans les tableaux, les règles de sources et les en-têtes de comparais
 ci-dessous. Le propriétaire a également approuvé les maquettes de ces en-têtes,
 y compris la taille fixe de 18 px CSS du nom de comparaison.
 
-**Non validé :** l’emplacement et la présentation des commandes d’export, ainsi que
-l’interface de choix des modes. La modale du prototype est un instrument de test,
-pas une maquette produit approuvée. Ces choix appartiennent à l’implémentation UI
-et doivent être revus avec le propriétaire avant intégration.
+**Interface approuvée le 16 novembre :** action « PDF » avec icône, sans bordure
+décorative, en haut à droite et centrée verticalement avec le titre de section ;
+modale « Exporter en PDF » ; états de préparation, succès et réessai dans le
+bouton lui-même. Ces règles font partie du contrat commun de **toutes les
+sections**, pas d’un composant propre au bac à sable. La maquette interactive
+reste une simulation, non une implémentation de génération réelle.
 
 ## Problème et résultat attendu
 
@@ -48,6 +50,39 @@ prise en charge.
 La limite concerne les séries sélectionnables des figures et tableaux concernés,
 pas la suppression de panneaux de cartes fixes ou de catégories d’un waffle.
 Le bac à sable exporte l’équipement courant, pas l’univers des 235 TYPEQU.
+
+## Contrat commun d’interface de chaque section — approuvé
+
+- Chaque section du Cahier, existante ou future, porte l’action d’export et les
+  règles d’état via une frontière partagée. Pas d’exception par identifiant, de
+  copie de bouton/modal dans chaque renderer ou de contrat limité aux cinq
+  sections pilotes. L’adoption doit vérifier chaque famille réelle de figures ;
+  ne pas présenter une génération comme réussie en omettant du contenu non pris
+  en charge ou des données encore indisponibles.
+- Action compacte **« PDF » + icône fichier/téléchargement** en haut à droite,
+  alignée verticalement avec le titre. Pas de cadre/bordure décorative autour du
+  bouton ; conserver une indication de focus clavier. Sur mobile, garder le
+  libellé et une cible tactile accessible.
+- Sans choix supplémentaire requis, le clic prépare directement l’export. La
+  limite de trois s’applique seulement aux séries sélectionnables concernées.
+  Au-delà, ouvrir la modale sans modifier la sélection affichée sur le site.
+- Modale : titre **« Exporter en PDF »**, puis, en rouge de marge, **« Choisissez
+  jusqu’à trois modes pour garder les tableaux lisibles. »**, puis directement
+  **« Modes à inclure »**. Ne pas insérer le titre personnalisé de section ou un
+  autre paragraphe entre ces éléments.
+- Cases de choix, compteur et validation explicite : zéro ou plus de trois
+  choix désactive la confirmation. Actions **« Annuler »** et **« Générer le PDF »**.
+  Annuler/Échap ne génère rien, restaure le focus et conserve la sélection écran.
+- Le bouton de section porte ses états : **« PDF »**, **« Préparation… »** avec
+  indicateur et clic désactivé, **« PDF généré »** avec coche, ou **« Réessayer »**
+  avec icône de réessai. Aucun paragraphe de succès/échec n’apparaît sous le bouton.
+  Les changements doivent être annoncés de manière accessible.
+- Le réessai reprend la demande échouée et sa capture de sélection, sans forcer
+  un nouveau choix de modes. Un nouvel export après succès peut capturer l’état
+  courant. La vraie réussite ne doit être annoncée qu’après production effective
+  du fichier, jamais à partir du minuteur utilisé par la maquette.
+- Les contrôles de démonstration, le minuteur, les états forcés via URL et la
+  mention « simulation » ne font pas partie de l’interface produit.
 
 ## Contrat de présentation
 
@@ -97,8 +132,8 @@ Le bac à sable exporte l’équipement courant, pas l’univers des 235 TYPEQU.
   un préfixe arbitraire de cinq noms. Ces premières idées sont remplacées par la
   règle de largeur mesurée.
 - Le nom du groupe ne remplace pas l’explication distincte de la statistique,
-  de la pondération et des rangs. L’approbation de ces en-têtes ne vaut pas
-  validation de l’interface de choix des modes ni mise en production du prototype.
+  de la pondération et des rangs. Les en-têtes et l’interface d’export ont des
+  validations visuelles distinctes ; aucune ne vaut mise en production du prototype.
 
 ### Une feuille par défaut, continuation seulement si nécessaire
 
@@ -189,9 +224,10 @@ Le bac à sable exporte l’équipement courant, pas l’univers des 235 TYPEQU.
 - [ ] Les en-têtes de comparaison suivent la maquette approuvée : préréglages
   résolus, tri français, noms complets sur deux lignes, préfixe maximal avec le
   bon nombre de membres omis ou repli sur le nombre total, sans police réduite.
-- [ ] L’interface produit d’export et de choix des modes est revue avec le
-  propriétaire ; le comportement limite à trois, sans suppression silencieuse,
-  est testé. La modale expérimentale ne vaut pas validation de cette interface.
+- [ ] L’interface produit de chaque section respecte la maquette approuvée :
+  action sans cadre, alignement, textes de modale et états dans le bouton. La
+  limite à trois sans suppression silencieuse et le réessai de la même demande
+  sont testés avec la vraie génération, pas seulement avec la simulation.
 - [ ] Annulation, répétition, erreurs de génération et capture de sélection ne
   laissent ni changement de sélection, ni état visuel transitoire, ni clone/orphelin.
 - [ ] Tests des composants, typecheck, vérification des figures, contrôle de design
@@ -228,6 +264,15 @@ et ne remplacent pas la validation de plusieurs sections réelles.
   validité numérique de nouvelles comparaisons réelles. La taille de 18 px CSS
   est approuvée ; les contrôles ciblés ne constituent pas un audit complet de
   stress, d’accessibilité ou de mobile.
+- Maquette des contrôles de section approuvée après révision : captures desktop
+  waffle/bac à sable, choix de modes et mobile. Le harnais vérifie l’action sans
+  bordure et son alignement, les états succès/réessai dans le bouton, les libellés
+  de modale, la limite à trois, l’annulation/focus, la sélection écran inchangée,
+  l’absence de débordement horizontal mobile et de téléchargement réel. Le
+  typecheck passe ; ce n’est pas une validation de génération réelle ou un audit
+  complet d’accessibilité. Le dernier scan design n’a pas démarré, faute de
+  paquet demandé dans le cache `npx --no-install` ; pas de nouveau scan propre
+  revendiqué. Reproduction : `npm run prototype:pdf-ui -- --capture` depuis `app/`.
 - La continuation de tableaux existe comme option manuelle expérimentale avec
   répétition d’identité. La détection et le traitement automatiques du débordement
   sont encore du travail produit, non une capacité validée du prototype.
@@ -249,5 +294,6 @@ Commandes depuis `app/` : `npm run prototype:sandbox-pdf`,
 - Infobulles PDF, export de tous les équipements, export automatique de tous les
   thèmes/chapitres, changements de faits ou d’acquisition, nouvelles publications
   R/DB/API, service headless sur le Pi, déploiement et fusion du prototype en main.
-- La mise en page de la modale expérimentale, une deuxième page systématique et
-  l’optimisation autour du waffle répété six fois ne sont pas des décisions produit.
+- Les anciennes modales techniques du prototype ne remplacent pas l’interface
+  révisée approuvée. Une deuxième page systématique et l’optimisation autour du
+  waffle répété six fois ne sont pas des décisions produit.

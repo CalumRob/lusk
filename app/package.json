@@ -23,6 +23,7 @@
     "prototype:tooltip-pdf": "node scripts/prototype-desktop-pdf.mjs --tooltips",
     "prototype:sandbox-pdf": "node scripts/prototype-desktop-pdf.mjs --sandbox",
     "prototype:stress-pdf": "node scripts/prototype-pdf-stress.mjs",
+    "prototype:pdf-ui": "node scripts/prototype-pdf-ui.mjs",
     "test": "vitest run"
   },
   "dependencies": {
