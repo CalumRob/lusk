@@ -11,3 +11,9 @@
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
+
+/* Keep the source stamp's own line while its provenance is unknown. No fake
+   label/date/link, and no fixed height that could clip a wrapped ready stamp. */
+.cahier-evidence-source--pending {
+  min-block-size: 1lh;
+}

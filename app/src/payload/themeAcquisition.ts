@@ -3,7 +3,8 @@ import type { TerritoireType, Theme } from './types'
 import { validerReponseComparaisonTheme } from './themeFactsAdapter'
 import { DECLARED_DETAIL_COMPARISON_RESOURCES, meanComparisonResources } from './comparisonResources'
 import { chargerCatalogueRessources, invalidateSemanticItems, invalidateSemanticReads,
-  invalidateSemanticReadsForTarget, publicationFamilyForResource, readSemanticOutcomes } from './semanticResourceClient'
+  invalidateSemanticReadsForTarget, publicationFamilyForResource, readSemanticOutcomes,
+  SemanticReadDeadlineError } from './semanticResourceClient'
 import type { SemanticPublicationFamily, SemanticPublicationReason, SemanticReadItem,
   SemanticReadOutcome, SemanticResourceDeclaration, SemanticTerritoryTarget } from './semanticResourceClient'
 import { PayloadError } from './validate'
@@ -450,18 +451,26 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
       failures.set(`${failure.resource}\u0000${failure.stage}`, failure)
     }
     const comparisons = new Map(latest.comparisons)
-    const chapterFailure = extra.demand_comparison?.comparison_error
-      ? (typeof extra.demand_comparison.comparison_failure === 'string'
-        ? extra.demand_comparison.comparison_failure : 'Publication de comparaison indisponible')
+    // Native defaults (EPCI/département) own the omitted slot just as an
+    // explicit selection owns its typed slot. A chapter extension must retain
+    // both; dropping only the default made the rendered result depend on which
+    // chapter happened to settle first.
+    const chapterComparison = extra.demand_comparison ?? (extra.default_comparison
+      ? { ...extra.default_comparison, selection: undefined,
+          comparison_error: extra.comparison_error, comparison_failure: extra.comparison_failure }
+      : undefined)
+    const chapterFailure = chapterComparison?.comparison_error
+      ? (typeof chapterComparison.comparison_failure === 'string'
+        ? chapterComparison.comparison_failure : 'Publication de comparaison indisponible')
       : undefined
-    if (extra.demand_comparison) {
-      const selectionKey = cleSelectionComparaison(extra.demand_comparison.selection)
+    if (chapterComparison) {
+      const selectionKey = cleSelectionComparaison(chapterComparison.selection)
       const prior = comparisons.get(selectionKey)
       const chapterFailures = (extra.resource_failures ?? []).filter((failure) => failure.stage === 'comparison')
       const priorFailures = (prior?.resource_failures ?? []) as ThemeResourceFailure[]
       comparisons.set(selectionKey, withComparisonOutcome({
-        ...(prior ?? { theme_id: key.theme, selection: extra.demand_comparison.selection }),
-        comparison_reads: mergeReads(prior?.comparison_reads, extra.demand_comparison.comparison_reads),
+        ...(prior ?? { theme_id: key.theme, selection: chapterComparison.selection }),
+        comparison_reads: mergeReads(prior?.comparison_reads, chapterComparison.comparison_reads),
         ...(chapterFailures.length || priorFailures.length
           ? { resource_failures: [...priorFailures, ...chapterFailures] } : {}),
       } as ThemeResponse, chapterFailure))
@@ -480,8 +489,8 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     // The REQUESTED chapter's own comparison demand decides its ready/error
     // state, even when an earlier chapter's reads for the same selection are
     // already cached. A settled prior chapter stays reusable.
-    const settled = extra.demand_comparison
-      ? withDemandState(result, extra.demand_comparison.selection, demand.indicators ?? [],
+    const settled = chapterComparison
+      ? withDemandState(result, chapterComparison.selection, demand.indicators ?? [],
         chapterFailure === undefined ? 'ready' : 'error', chapterFailure)
       : result
     this.entries.set(cacheKey, settled)
@@ -1405,7 +1414,11 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
       ({ reads, failures } = await readThemeOutcomes(items, resources, undefined, demand.priority))
     } catch (error) {
       const hasComparisonItems = items.some((item) => item.intent.kind !== 'facts')
-      if (!fused || !hasComparisonItems) throw error
+      // #1012 — a bounded transport deadline is a failed request, not a
+      // comparison-publication failure: re-reading facts-only would start a
+      // second automatic attempt against a stalled API. The caller's explicit
+      // retry is the one recovery.
+      if (!fused || !hasComparisonItems || error instanceof SemanticReadDeadlineError) throw error
       const factOnly = items.filter((item) => item.intent.kind === 'facts')
       const recovered = await readThemeOutcomes(factOnly, resources, undefined, demand.priority)
       reads = items.map((item) => item.intent.kind === 'facts'

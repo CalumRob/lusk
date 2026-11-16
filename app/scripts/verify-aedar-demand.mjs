@@ -230,6 +230,26 @@ try {
     return page.locator(selector).first().isVisible().catch(() => false)
   }
 
+  /**
+   * #1012 — drive the reader's own wheel until the APP names the chapter (the
+   * spine's aria-current). `wheelToPage` only parks a page inside [0.15H,0.55H];
+   * the visibility owner needs the previous page to leave the reading band
+   * (rootMargin -14%/-66%, i.e. [0.14H,0.34H]), which is one natural step
+   * further. No scrollIntoView, no click, no hash and no forced attribute: this
+   * is the ordinary reader path, and the app must flip on its own.
+   */
+  const wheelUntilChapterActive = async (page, href, maxSteps = 30) => {
+    await page.mouse.move(720, 450)
+    const activeHref = () => page.locator('aside.cahier-spine a[aria-current="location"]')
+      .getAttribute('href').catch(() => null)
+    for (let step = 0; step < maxSteps; step += 1) {
+      if (await activeHref() === href) return true
+      await page.mouse.wheel(0, 300)
+      await page.waitForTimeout(120)
+    }
+    return await activeHref() === href
+  }
+
   browser = await chromium.launch({ headless: true,
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) })
 
@@ -346,11 +366,77 @@ try {
   await waitUseful(natural)
   await natural.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first()
     .waitFor({ state: 'visible', timeout: 30000 })
+  const pageTwoUsefulAt = Date.now()
   await natural.waitForTimeout(500)
-  const beforeNaturalPage3 = batches.slice(naturalStartIndex).flatMap((batch) => batch.items)
-    .filter((item) => PAGE_THREE.includes(item.resource))
-  assert.equal(beforeNaturalPage3.length, 0, 'page 3 must not be read while it is off-screen')
+  const naturalSoFar = batches.slice(naturalStartIndex)
+  const pageTwoDemand = naturalSoFar
+    .filter((batch) => batch.items.some((item) => PAGE_TWO.includes(item.resource)))
+  assert.equal(pageTwoDemand.length, 3, `page-2 POSTs on landing: ${pageTwoDemand.length}`)
+  // The demand was fully ISSUED here (`at` is the POST time, before its
+  // response): the warm must come after these three batches, not before them.
+  const pageTwoRequestedAt = Math.max(...pageTwoDemand.map((batch) => batch.at))
+  // #1012 — page 1 is the reader's chapter, so its next page (2) is the numeric
+  // planner's own demand and page 3 is NOT warmed yet: the warm starts when
+  // page 2 becomes the reader's chapter, not merely because it rendered.
+  const pageThreeBeforeScroll = naturalSoFar
+    .filter((batch) => batch.items.some((item) => PAGE_THREE.includes(item.resource)))
+  assert.equal(pageThreeBeforeScroll.length, 0,
+    `page 3 must not warm while page 1 is the reader's chapter: ${pageThreeBeforeScroll.length}`)
 
+  // #1012 — reach page 2 by natural wheel only and STAY there. Page 3 is still
+  // outside the reading band, so any page-3 read observed now is the bounded
+  // warm, not the reader's arrival.
+  const page2Reached = await wheelToPage(natural, '#figure-partage-de-lespace-public')
+  assert.ok(page2Reached, 'page 2 did not come into view by natural wheel')
+  // `wheelToPage` can park page 2 before the observer band; keep wheeling with
+  // the reader's own wheel until the app names page 2, then hold position.
+  assert.ok(await wheelUntilChapterActive(natural, '#figure-partage-de-lespace-public'),
+    'page 2 did not become the app\'s active chapter by natural wheel')
+  assert.ok(await wheelUntilVisible(natural, '.mobilite-section--reseaux .mobilite-comparison-bars'),
+    'the page-2 bars did not become visible when the reader reached page 2')
+  const pageTwoObservedAt = Date.now()
+  const activeOnPageTwo = await natural.locator('aside.cahier-spine a[aria-current="location"]')
+    .getAttribute('href')
+  assert.equal(activeOnPageTwo, '#figure-partage-de-lespace-public',
+    `the app must consider page 2 the reader's chapter, got ${activeOnPageTwo}`)
+  const pageThreeGeometry = async () => natural.evaluate(() => {
+    const element = document.querySelector('#figure-offre-transports-commun')
+    const rect = element.getBoundingClientRect()
+    return { top: rect.top, bottom: rect.bottom, viewportHeight: window.innerHeight,
+      inReadingBand: rect.top < window.innerHeight * 0.34 && rect.bottom > window.innerHeight * 0.14 }
+  })
+  const geometryBeforeWarm = await pageThreeGeometry()
+  assert.equal(geometryBeforeWarm.inReadingBand, false,
+    `page 3 must still be outside the reading band while warming: ${JSON.stringify(geometryBeforeWarm)}`)
+
+  // Wait for the actual next-chapter warm BEFORE any scroll towards page 3.
+  let pageThreeWarm = []
+  const warmDeadline = Date.now() + 15000
+  while (Date.now() < warmDeadline) {
+    pageThreeWarm = batches.slice(naturalStartIndex)
+      .filter((batch) => batch.items.some((item) => PAGE_THREE.includes(item.resource)))
+    if (pageThreeWarm.length) break
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  assert.equal(pageThreeWarm.length, 1,
+    `page-3 warm POSTs while the reader stays on page 2: ${pageThreeWarm.length}`)
+  assert.equal(pageThreeWarm[0].items.length, 7,
+    `page-3 warm items while the reader stays on page 2: ${pageThreeWarm[0].items.length}`)
+  assert.equal(new Set(pageThreeWarm[0].items.map((item) => item.resource)).size, 4,
+    'the page-3 warm must carry the four ordinary chapter resources')
+  assert.ok(pageThreeWarm[0].at >= pageTwoRequestedAt,
+    'the next chapter must warm only after the requested page-2 demand was issued')
+  assert.equal(pageThreeWarm[0].items.some((item) => String(item.resource).startsWith('aedar_')), false,
+    'the next-chapter warm must never carry AEDAR tail work')
+  // The reader never moved: at the moment the warm exists, the app still names
+  // page 2 its chapter and page 3 is still outside the reading band.
+  const activeAtWarm = await natural.locator('aside.cahier-spine a[aria-current="location"]')
+    .getAttribute('href')
+  assert.equal(activeAtWarm, '#figure-partage-de-lespace-public',
+    `page 2 must still be the reader's chapter when page 3 warms, got ${activeAtWarm}`)
+  const geometryAtWarm = await pageThreeGeometry()
+  assert.equal(geometryAtWarm.inReadingBand, false,
+    `page 3 must not be visible when its warm starts: ${JSON.stringify(geometryAtWarm)}`)
   const page3Reached = await wheelToPage(natural, '#figure-offre-transports-commun')
   assert.ok(page3Reached, 'page 3 did not become visible by natural wheel')
   assert.ok(await wheelUntilVisible(natural, '.mobilite-raccordement-curve__territory'),
@@ -369,7 +455,10 @@ try {
   assert.equal(page3Reading.curvePoints, 73, `page-3 curve points: ${page3Reading.curvePoints}`)
   const page3Batches = batches.slice(naturalStartIndex)
     .filter((batch) => batch.items.some((item) => PAGE_THREE.includes(item.resource)))
+  // The reader's arrival reuses the warm: never a second read.
   assert.equal(page3Batches.length, 1, `page-3 POSTs after natural admission: ${page3Batches.length}`)
+  assert.equal(page3Batches[0].at, pageThreeWarm[0].at,
+    'page 3 was re-read when the reader arrived instead of reusing the warm')
   assert.equal(page3Batches[0].items.length, 7,
     `page-3 items after natural admission: ${page3Batches[0].items.length}`)
 
@@ -379,8 +468,8 @@ try {
   await natural.locator(PAGE_THREE_LINK).first().click()
   await natural.waitForFunction(() => location.hash === '#figure-offre-transports-commun',
     null, { timeout: 5000 })
-  const page2Reached = await wheelToPage(natural, '#figure-partage-de-lespace-public')
-  assert.ok(page2Reached, 'page 2 did not become visible after scrolling back')
+  const page2ReachedAfterBack = await wheelToPage(natural, '#figure-partage-de-lespace-public')
+  assert.ok(page2ReachedAfterBack, 'page 2 did not become visible after scrolling back')
   assert.ok(await wheelUntilVisible(natural, '.mobilite-section--reseaux .mobilite-comparison-bars'),
     'the page-2 bars did not come back after scrolling back')
   const page1Reached = await wheelToPage(natural, '#figure-lecture')
@@ -422,6 +511,17 @@ try {
     page3CurvePoints: page3Reading.curvePoints,
     page3Posts: page3Batches.length,
     page3Items: page3Batches[0]?.items.length ?? 0,
+    page3WarmAt: pageThreeWarm[0]?.at ?? null,
+    page3WarmItems: pageThreeWarm[0]?.items.length ?? 0,
+    pageThreeBeforeScroll: pageThreeBeforeScroll.length,
+    pageTwoObservedAt,
+    pageTwoRequestedAt,
+    pageTwoUsefulAt,
+    warmAfterUsefulMs: pageThreeWarm[0]?.at !== undefined ? pageThreeWarm[0].at - pageTwoUsefulAt : null,
+    activeOnPageTwo,
+    activeAtWarm,
+    geometryBeforeWarm,
+    geometryAtWarm,
     page2Posts: naturalPageTwo.length,
     page2Items: naturalPageTwo.flatMap((batch) => batch.items)
       .filter((item) => PAGE_TWO.includes(item.resource)).length,
@@ -504,6 +604,158 @@ try {
     coreTypequ: coldCoreTypequ,
   }
   await cold.close()
+
+  // Pass 5 — #1012 an obsolete inner-section fragment is ordinary PAGE ENTRY.
+  // The visible page 1 must load without any section-owner resolution, reveal
+  // or scroll; the URL/history stays untouched.
+  const obsoleteStartIndex = batches.length
+  const obsolete = await makePage()
+  await obsolete.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#section-aedar-access`,
+    { waitUntil: 'domcontentloaded' })
+  await waitUseful(obsolete)
+  await obsolete.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first()
+    .waitFor({ state: 'visible', timeout: 30000 })
+  const obsoleteHash = await obsolete.evaluate(() => location.hash)
+  const obsoleteScrollY = await obsolete.evaluate(() => window.scrollY)
+  const obsoleteBatches = batches.slice(obsoleteStartIndex)
+  const obsoleteAedar = obsoleteBatches.filter((batch) => batch.items.some((item) =>
+    String(item.resource).startsWith('aedar_')))
+  assert.ok(obsoleteAedar.length > 0,
+    'the initially visible page 1 must be admitted despite an obsolete fragment')
+  assert.equal(obsoleteHash, '#section-aedar-access',
+    `the fragment must be ignored for loading, not rewritten: ${obsoleteHash}`)
+  assert.ok(obsoleteScrollY <= 2,
+    `an obsolete fragment must not auto-reveal or scroll the page: ${obsoleteScrollY}`)
+  const obsoletePageTwo = obsoleteBatches
+    .filter((batch) => batch.items.some((item) => PAGE_TWO.includes(item.resource)))
+  assert.equal(obsoletePageTwo.length, 3,
+    `the numeric planner chapter still loads once: ${obsoletePageTwo.length}`)
+  assert.equal(await obsolete.locator('.etat-erreur').count(), 0,
+    'an obsolete fragment must not surface a page-level data error')
+  const obsoleteIdentities = obsoleteBatches.flatMap((batch) => batch.items).map(fullIdentity)
+  assert.equal([...new Set(obsoleteIdentities)].length, obsoleteIdentities.length,
+    'obsolete-fragment entry must not duplicate a semantic item')
+  receipt.obsoleteFragmentEntry = {
+    hash: obsoleteHash,
+    scrollY: obsoleteScrollY,
+    aedarBatches: obsoleteAedar.length,
+    pageTwoPosts: obsoletePageTwo.length,
+    duplicates: obsoleteIdentities.length - new Set(obsoleteIdentities).size,
+  }
+  await obsolete.close()
+
+  // Pass 6 — #1012 a hung network ends as an honest retryable error (the shared
+  // dispatch deadline), and the explicit retry recovers the chapter.
+  const hang = await makePage()
+  const stalled = []
+  let hangChapter = true
+  await hang.route('**/api/resources/read-batch', async (route) => {
+    const request = route.request().postDataJSON()
+    if (hangChapter && request.items.some((item) => PAGE_THREE.includes(item.resource))) {
+      await new Promise((resolve) => { stalled.push(resolve) })
+      try { await route.abort() } catch { /* the client aborted at its deadline */ }
+      return
+    }
+    await route.fallback()
+  })
+  const hangStart = Date.now()
+  await hang.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#figure-offre-transports-commun`,
+    { waitUntil: 'domcontentloaded' })
+  await hang.locator('.etat-erreur').waitFor({ state: 'visible', timeout: 90000 })
+  const hungForMs = Date.now() - hangStart
+  const hangErrorText = (await hang.locator('.etat-erreur').innerText()).replace(/\s+/gu, ' ')
+  assert.ok(hangErrorText.includes('Les indicateurs de ce thème ne sont pas disponibles.'),
+    `a hung read must reach the explicit retryable error: ${hangErrorText}`)
+  assert.equal(await hang.locator('.mobilite-raccordement-curve__territory').count(), 0,
+    'a hung read must never render a fabricated figure')
+  assert.ok(hungForMs >= 44_000 && hungForMs < 60_000,
+    `the honest error must come from the app's bounded deadline, not a gateway timeout: ${hungForMs} ms`)
+  for (const release of stalled) release()
+
+  hangChapter = false
+  await hang.locator('.etat-erreur button').click()
+  await hang.locator('.mobilite-raccordement-curve__territory')
+    .waitFor({ state: 'visible', timeout: 30000 })
+  assert.equal(await hang.locator('.etat-erreur').count(), 0,
+    'the explicit retry must clear the honest error state')
+  receipt.hungNetwork = { hungForMs, errorText: hangErrorText, recoveredOnRetry: true }
+  await hang.close()
+
+  // Pass 7 — #1012 a LATER requested chapter read fails (page 2 settled, reader
+  // scrolls on to page 3). The failed chapter keeps its own explicit retry; the
+  // settled page 2 is not reset, nothing retries by itself, and the retry
+  // performs one fresh 7-item HTTP read of that chapter only.
+  const laterStartIndex = batches.length
+  const later = await makePage()
+  const laterAttempts = []
+  let laterChapterFailing = true
+  await later.route('**/api/resources/read-batch', async (route) => {
+    const request = route.request().postDataJSON()
+    const touchesChapter = request.items.some((item) => PAGE_THREE.includes(item.resource))
+    if (touchesChapter) laterAttempts.push({ items: request.items })
+    if (laterChapterFailing && touchesChapter) {
+      await route.fulfill({ status: 503, contentType: 'text/plain', body: 'read interrupted' })
+      return
+    }
+    await route.fallback()
+  })
+  await later.goto(`${baseUrl.replace(/\/$/, '')}${COMMUNAUTE}#figure-partage-de-lespace-public`,
+    { waitUntil: 'domcontentloaded' })
+  await later.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first()
+    .waitFor({ state: 'visible', timeout: 30000 })
+  const laterPageThreeReads = () => laterAttempts
+  // The reader scrolls on; page 3 becomes the requested chapter and its read is
+  // the one that fails (the page-2 warm may already have failed silently).
+  assert.ok(await wheelUntilChapterActive(later, '#figure-offre-transports-commun'),
+    'page 3 did not become the reader\'s chapter by natural wheel')
+  await later.locator('.cahier-chapitre-erreur').waitFor({ state: 'visible', timeout: 30000 })
+  const laterChapterError = (await later.locator('.cahier-chapitre-erreur').innerText())
+    .replace(/\s+/gu, ' ')
+  assert.ok(laterChapterError.includes('Cette page n’a pas pu être chargée.'),
+    `the failed chapter must render its own explicit retry: ${laterChapterError}`)
+  assert.equal(await later.locator('.etat-erreur').count(), 0,
+    'a later chapter failure must not replace the settled page-level data state')
+  assert.ok(await later.locator('.mobilite-section--reseaux .mobilite-comparison-bars').first().isVisible(),
+    'the settled page-2 content must stay visible after a later chapter failure')
+  assert.equal(await later.locator('.mobilite-raccordement-curve__territory').count(), 0,
+    'a failed chapter must never render a fabricated figure')
+  const failedLaterReads = laterPageThreeReads().length
+  assert.ok(failedLaterReads > 0, 'the later chapter read must actually be attempted')
+  await later.waitForTimeout(1500)
+  assert.equal(laterPageThreeReads().length, failedLaterReads,
+    'a failed chapter read must not retry by itself')
+
+  laterChapterFailing = false
+  await later.locator('.cahier-chapitre-erreur__action').click()
+  await later.locator('.mobilite-raccordement-curve__territory')
+    .waitFor({ state: 'visible', timeout: 30000 })
+  assert.equal(await later.locator('.cahier-chapitre-erreur').count(), 0,
+    'the explicit retry must clear the failed chapter state')
+  const retriedLater = laterPageThreeReads().slice(failedLaterReads)
+  assert.equal(retriedLater.length, 1, `later-chapter retry POSTs: ${retriedLater.length}`)
+  assert.equal(retriedLater[0].items.length, 7, `later-chapter retry items: ${retriedLater[0].items.length}`)
+  const laterPageTwo = batches.slice(laterStartIndex)
+    .filter((batch) => batch.items.some((item) => PAGE_TWO.includes(item.resource)))
+  assert.equal(laterPageTwo.length, 3, `page-2 POSTs after the later-chapter retry: ${laterPageTwo.length}`)
+  assert.equal(laterPageTwo.flatMap((batch) => batch.items)
+    .filter((item) => PAGE_TWO.includes(item.resource)).length, 33,
+  'the settled page-2 demand changed after the later-chapter retry')
+  const laterPageTwoIdentities = laterPageTwo.flatMap((batch) => batch.items).map(fullIdentity)
+  assert.equal(new Set(laterPageTwoIdentities).size, laterPageTwoIdentities.length,
+    'the settled page-2 demand was duplicated by the later-chapter retry')
+  assert.equal(await later.evaluate(() => location.hash), '#figure-partage-de-lespace-public',
+    'the explicit retry must not rewrite the URL')
+  receipt.laterChapterRetry = {
+    failedReads: failedLaterReads,
+    chapterError: laterChapterError,
+    retryPosts: retriedLater.length,
+    retryItems: retriedLater[0].items.length,
+    pageTwoPosts: laterPageTwo.length,
+    pageTwoItems: laterPageTwo.flatMap((batch) => batch.items)
+      .filter((item) => PAGE_TWO.includes(item.resource)).length,
+    hash: await later.evaluate(() => location.hash),
+  }
+  await later.close()
 
   console.log(JSON.stringify(receipt, null, 2))
 

@@ -26,6 +26,7 @@ import type { MobiliteShareEvidence } from '@/fiche/content/themeContent'
 import { formatServedRankAria } from '@/fiche/figureGrammaire'
 import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
 import CahierRank from './CahierRank.vue'
+import { useCahierExportPublication } from './cahierExportVenue'
 
 type ComparisonState = {
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
@@ -78,6 +79,18 @@ const reference = computed(() => {
   if (!fact?.reference || !Number.isFinite(fact.reference.value)) return null
   return fact.reference.value
 })
+
+// #1021 — the share track has no toggle; it publishes the served reference it
+// actually draws, including its absence.
+useCahierExportPublication(() => ({
+  owner: 'mobilite-share-track',
+  state: {
+    toggle: null,
+    referenceAvailable: props.figure.value.fact.comparison?.reference != null,
+    visibleReferenceAvailable: props.figure.value.fact.comparison?.reference != null,
+    displayed: !props.comparisonNone && reference.value !== null,
+  },
+}), 'share')
 
 const valueLabel = computed(() => visibleLabel(value.value))
 const referenceLabel = computed(() => visibleLabel(reference.value))

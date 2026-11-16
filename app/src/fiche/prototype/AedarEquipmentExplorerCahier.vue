@@ -21,19 +21,21 @@ import AedarTravelTimeSelector from './AedarTravelTimeSelector.vue'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import AedarEquipmentQuantileFigureCahier from './AedarEquipmentQuantileFigureCahier.vue'
 import CahierActionButton from './CahierActionButton.vue'
+import { useCahierExportPublication } from './cahierExportVenue'
 
 const props = withDefaults(defineProps<{
   evidence: AedarEquipmentExplorerEvidence
   selectedModes?: readonly AedarRampMode[]
   selectedHorizon?: AedarEquipmentHorizon | null
   comparisonVisible?: boolean
+  comparisonLayerSupported?: boolean
   /**
    * #1002 — the reader is on the AEDAR (page-1) chapter. Its cell comparisons and
    * detail values are page-1 evidence: nothing starts while the chapter is not
    * the requested one, and returning resumes only what is genuinely missing.
    */
   chapterActive?: boolean
-}>(), { chapterActive: true })
+}>(), { chapterActive: true, comparisonLayerSupported: true })
 const emit = defineEmits<{
   'update:selectedModes': [modes: readonly AedarRampMode[]]
   'update:selectedHorizon': [horizon: AedarEquipmentHorizon]
@@ -59,7 +61,7 @@ const comparisonIdentity = computed(() => JSON.stringify([selectedTypequ.value, 
   props.evidence.referenceContentVersion, props.evidence.comparisonRequest, props.evidence.reference?.territory]))
 let comparisonIdentitySeen: string | null = null
 let comparisonRetrySeen = 0
-watch([comparisonIdentity, comparisonRetry, () => props.chapterActive !== false], async (_value, _old, cleanup) => {
+watch([comparisonIdentity, comparisonRetry, () => props.chapterActive !== false, () => props.comparisonLayerSupported], async (_value, _old, cleanup) => {
   const request = props.evidence.comparisonRequest
   const reference = props.evidence.reference
   const fact = selectedBaseFact.value
@@ -72,7 +74,7 @@ watch([comparisonIdentity, comparisonRetry, () => props.chapterActive !== false]
     comparisonStatus.value = 'idle'
     comparisonError.value = ''
   }
-  if (!fact || (!request && !reference)) return
+  if (!props.comparisonLayerSupported || !fact || (!request && !reference)) return
   // #1002 — the reader is not on the AEDAR chapter: no cell comparison starts
   // (a running one keeps settling into the shared cache), and the settled
   // evidence stays for the return.
@@ -177,7 +179,7 @@ const horizonMinutes = computed(() => props.selectedHorizon ?? localHorizonMinut
 const localSelectedModes = ref<AedarRampMode[]>([...AEDAR_DEFAULT_VISIBLE_RAMP_MODES])
 const selectedModes = computed(() => props.selectedModes ?? localSelectedModes.value)
 const localComparisonVisible = ref(true)
-const comparisonVisible = computed(() => props.comparisonVisible ?? localComparisonVisible.value)
+const comparisonVisible = computed(() => props.comparisonLayerSupported && (props.comparisonVisible ?? localComparisonVisible.value))
 const pickerOpen = ref(false)
 const search = ref('')
 
@@ -190,12 +192,49 @@ const selectedTypeLabel = computed(() => selectedFact.value
   ? `${selectedFact.value.typequ_label} (${selectedFact.value.typequ})`
   : 'Type d’équipement indisponible')
 const selectedTypeFigureLabel = computed(() => selectedFact.value?.typequ_label ?? 'Type indisponible')
+// #1021 — equipment identity stays with its only consumer; the capture reads
+// the effective TYPEQU, its acquired detail and the real comparison evidence.
+useCahierExportPublication(() => ({
+  owner: 'aedar-equipment-explorer',
+  state: {
+    typequ: selectedTypequ.value,
+    typequLabel: selectedFact.value?.typequ_label ?? null,
+    selectedDetail: selectedDetail.value,
+    detailStatus: detailStatus.value,
+    comparisonStatus: comparisonStatus.value,
+    comparisonError: comparisonError.value || null,
+    comparison: activeComparison.value,
+    referenceDetail: referenceDetail.value,
+  },
+}), 'equipment')
+
+/** A served reference exists for at least one drawn measure of the given modes. */
+function servedReferenceFor(modes: readonly AedarRampMode[]): boolean {
+  // The same resolver the volume ramp draws with: coverage and source-clock
+  // guards, and the comparisonRequest-vs-direct-reference choice, are reused.
+  return HORIZONS.some((horizon) => modes.some((mode) => groupValue(horizon, mode, 'mean') !== null))
+}
+const referenceAvailable = computed(() => servedReferenceFor(AEDAR_RAMP_MODES))
+const visibleReferenceAvailable = computed(() => servedReferenceFor(selectedModes.value))
+// #1021 — the explorer publishes whether its drawn reference survives the
+// effective selected modes; acquired reference availability stays separate.
+useCahierExportPublication(() => ({
+  owner: 'aedar-comparison-layer',
+  state: {
+    toggle: comparisonVisible.value,
+    referenceAvailable: referenceAvailable.value,
+    visibleReferenceAvailable: visibleReferenceAvailable.value,
+    displayed: props.comparisonLayerSupported
+      && comparisonVisible.value
+      && visibleReferenceAvailable.value,
+  },
+}), 'comparison')
 const modeEntries = computed<FigureLegendEntry[]>(() => [...AEDAR_RAMP_MODES.map((mode) => ({
   key: mode,
   label: AEDAR_RAMP_MODE_LABELS[mode],
   marker: 'line',
-} as const)), { key: 'comparison', label: 'Groupe comparé',
-  ariaLabel: `Groupe comparé : ${comparisonLabel.value ?? 'Indisponible'}`, marker: 'dash', tone: 'peer', persistentToggle: true } as const])
+} as const)), ...(props.comparisonLayerSupported ? [{ key: 'comparison', label: 'Groupe comparé',
+  ariaLabel: `Groupe comparé : ${comparisonLabel.value ?? 'Indisponible'}`, marker: 'dash', tone: 'peer', persistentToggle: true } as const] : [])])
 const modeColors = Object.fromEntries(AEDAR_RAMP_MODES.map((mode) => [mode, AEDAR_TIME_MODE_COLORS[mode]]))
 
 const filteredFacts = computed(() => {
@@ -230,7 +269,7 @@ const volumeRamp = computed<TimeRampFigureData>(() => {
     series,
     provenance: null,
     comparisonLabel: comparisonLabel.value,
-    comparisonLayerSupported: true,
+    comparisonLayerSupported: props.comparisonLayerSupported,
   }
 })
 
@@ -315,7 +354,7 @@ function chooseType(fact: AedarFact): void {
           :reference-fact="referenceDetail"
           :comparison-label="comparisonLabel"
           :comparison-visible="comparisonVisible"
-          :comparison-layer-supported="true"
+          :comparison-layer-supported="comparisonLayerSupported"
         />
       </figure>
     </div>
@@ -328,10 +367,10 @@ function chooseType(fact: AedarFact): void {
       :toggle-keys="AEDAR_RAMP_MODES"
       :comparison-status="comparisonStatus"
       :comparison-error="comparisonError"
-      label="Modes de déplacement et groupe comparé"
+      :label="comparisonLayerSupported ? 'Modes de déplacement et groupe comparé' : 'Modes de déplacement'"
       @toggle="toggleMode"
     />
-    <button v-if="comparisonStatus === 'error'" class="aedar-equipment-explorer-retry" type="button" @click="retryComparison">Réessayer les comparaisons</button>
+    <button v-if="comparisonLayerSupported && comparisonStatus === 'error'" class="aedar-equipment-explorer-retry" type="button" @click="retryComparison">Réessayer les comparaisons</button>
 
     <CahierDialog
       :open="pickerOpen"

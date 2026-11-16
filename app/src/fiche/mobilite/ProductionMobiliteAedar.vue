@@ -34,8 +34,10 @@ const props = withDefaults(defineProps<{
   aedarActive?: boolean
   /** #1008 — the visible chapter's admission state, owned by the demand planner. */
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
+  /** The page-level data state already owns this failure and renders its retry. */
+  erreurPage?: boolean
 }>(), { aedarActive: true })
-const emit = defineEmits<{ 'chapitre-visible': [anchor: string] }>()
+const emit = defineEmits<{ 'chapitre-visible': [anchor: string]; 'chapitre-reessayer': [chapter: string] }>()
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
@@ -47,6 +49,21 @@ const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
   const label = intent.kind === 'selected_comparison'
     ? 'Moyenne de la sélection' : `Moyenne — ${control.value.libelleActif}`
   return { intent, label }
+})
+
+/**
+ * #1021 — the direct reference read is the displayed reference source only in
+ * the same states where this owner presents it. The conditioned status is an
+ * additive fact for the export capture; it triggers no acquisition.
+ */
+const directReferenceStatus = computed<
+  'unobserved' | 'loading' | 'ready' | 'error' | 'unavailable' | null
+>(() => {
+  if (comparisonRequest.value) return null
+  const selection = control.value?.selection
+  if (selection?.etat === 'vide' || selection?.etat === 'membres') return null
+  if (!props.aedarReferenceTerritoire) return null
+  return props.aedarReferenceStatus ?? 'unobserved'
 })
 const comparison = ref<AedarComparisonEvidence | null>(null)
 const comparisonState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -176,7 +193,12 @@ const transformed = computed(() => {
     // current position and jumping « Et sans voiture alors ? » down.
     const first = props.content.units[0]
     if (!first || !props.content.territory) return props.content
-    const pending = aedarPendingPrototypeSections(props.content.territory, { lossMapMetadata: lossMapMetadata.value })
+    const pending = aedarPendingPrototypeSections(props.content.territory, {
+      lossMapMetadata: lossMapMetadata.value,
+      sourcePending: props.aedarSummaryStatus === 'loading',
+      comparisonPending: props.aedarSummaryStatus !== 'error' && Boolean(comparisonRequest.value ||
+        (props.aedarReferenceTerritoire && (!control.value || control.value.selection.etat === 'defaut'))),
+    })
     const carOverview = pending[0]
     const introduction = carOverview.evidence?.kind === 'aedar-car-overview'
       ? carOverview.evidence.unitIntroduction
@@ -238,7 +260,7 @@ const transformed = computed(() => {
     <p>{{ AEDAR_SUMMARY_UNAVAILABLE_MESSAGE }}</p>
     <button type="button" @click="props.retryAedarSummary?.()">Réessayer</button>
   </div>
-  <p v-else-if="aedarReferenceStatus === 'error' && !comparisonRequest && control?.selection.etat !== 'vide' && control?.selection.etat !== 'membres'" class="aedar-comparison-state" role="status">Groupe comparé indisponible.</p>
+  <p v-else-if="directReferenceStatus === 'error'" class="aedar-comparison-state" role="status">Groupe comparé indisponible.</p>
   <div v-if="props.aedarStatus === 'error'" class="aedar-state" role="alert">
     <p>{{ AEDAR_DETAIL_UNAVAILABLE_MESSAGE }}</p>
     <button type="button" @click="props.retryAedar">Réessayer</button>
@@ -253,6 +275,7 @@ const transformed = computed(() => {
     :native-comparison-status="props.nativeComparisonStatus"
     :native-comparison-error="props.nativeComparisonError"
     :retry-native-comparison="props.retryNativeComparison"
+    :aedar-reference-status="directReferenceStatus"
     show-all-units
     presentation="plain"
     layout-variant="indexed-sections"
@@ -260,7 +283,9 @@ const transformed = computed(() => {
     aedar-access-enabled
     :aedar-chapter-active="props.aedarActive !== false"
     :chapitres-statut="props.chapitresStatut"
+    :erreur-page="props.erreurPage"
     @chapitre-visible="emit('chapitre-visible', $event)"
+    @chapitre-reessayer="emit('chapitre-reessayer', $event)"
   />
 </template>
 

@@ -8,6 +8,7 @@ import { defineComponent, h, ref } from 'vue'
 
 import TerritoireView from '../views/TerritoireView.vue'
 import { chargerMetadonneesTheme, THEME_METADATA_CHARGER_KEY } from '../payload/themeCatalogue'
+import { TRANSPORT_DEADLINE_MS } from '../payload/transportDeadline'
 import {
   chargerReferenceTerritoires,
   territoireDemande,
@@ -37,7 +38,8 @@ describe('chargeur de la référence territoire compacte (#868)', () => {
     const seconde = await chargerReferenceTerritoires()
     expect(premiere).toBe(seconde)
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledWith('/data/territoires.json')
+    expect(fetchMock).toHaveBeenCalledWith('/data/territoires.json',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(premiere.find((t) => t.territoire === '22001')?.nom).toBe('Allineuc')
   })
 
@@ -52,6 +54,57 @@ describe('chargeur de la référence territoire compacte (#868)', () => {
     const ok = await chargerReferenceTerritoires()
     expect(ok.length).toBeGreaterThan(1000)
     expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('borne une réponse de référence suspendue, libère son minuteur puis relit sur demande explicite', async () => {
+    vi.useFakeTimers()
+    try {
+      let suspendu = true
+      const fetchMock = vi.fn((_url: string, init?: { signal?: AbortSignal }) => suspendu
+        ? new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort',
+            () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+        })
+        : Promise.resolve(reponseReference()))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const enAttente = chargerReferenceTerritoires().catch((cause: unknown) => cause)
+      await vi.advanceTimersByTimeAsync(TRANSPORT_DEADLINE_MS)
+      const echec = await enAttente
+      expect(echec).toBeInstanceOf(PayloadError)
+      expect(echec).toMatchObject({ kind: 'fetch', file: 'territoires.json' })
+      expect(String((echec as Error).message)).toMatch(/aucune réponse/i)
+      // The deadline timer is cleared on every path, and the stalled socket is
+      // aborted rather than left open.
+      expect(vi.getTimerCount()).toBe(0)
+      expect((fetchMock.mock.calls[0]![1] as { signal?: AbortSignal }).signal?.aborted).toBe(true)
+
+      suspendu = false
+      const reference = await chargerReferenceTerritoires()
+      expect(reference.find((territoire) => territoire.territoire === '22001')?.nom).toBe('Allineuc')
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('borne aussi la lecture du corps quand les en-têtes sont arrivés', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi.fn((_url: string, init?: { signal?: AbortSignal }) => Promise.resolve({
+        ok: true, status: 200,
+        json: () => new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort',
+            () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+        }),
+      }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const enAttente = chargerReferenceTerritoires().catch((cause: unknown) => cause)
+      await vi.advanceTimersByTimeAsync(TRANSPORT_DEADLINE_MS)
+      const echec = await enAttente
+      expect(echec).toBeInstanceOf(PayloadError)
+      expect(String((echec as Error).message)).toMatch(/aucune réponse/i)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
   })
 
   it('résout l’identité demandée et refuse type inconnu, cible absente ou type divergent', () => {
@@ -120,6 +173,49 @@ describe('useTerritoryReference — identité de route, relecture, réponses tar
     expect(wrapper.text()).toBe('pret|ok|Andel')
   })
 
+  it('n’est jamais figée en chargement quand la référence est suspendue, et récupère sur recharger', async () => {
+    vi.useFakeTimers()
+    try {
+      let suspendu = true
+      const fetchMock = vi.fn((_url: string, init?: { signal?: AbortSignal }) => suspendu
+        ? new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort',
+            () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+        })
+        : Promise.resolve(reponseReference()))
+      vi.stubGlobal('fetch', fetchMock)
+      const typeRef = ref('commune')
+      const idRef = ref('22001')
+      const actif = ref(true)
+      const Probe = defineComponent({
+        setup() {
+          const etat = useTerritoryReference(typeRef, idRef, actif)
+          return { etat, chargement: etat.chargement, erreur: etat.erreur, territory: etat.territory }
+        },
+        render() {
+          const self = this as any
+          return h('div', `${self.chargement ? 'chargement' : 'pret'}|${self.erreur ? self.erreur.kind : 'ok'}|${self.territory?.nom ?? '-'}`)
+        },
+      })
+      const wrapper = mount(Probe)
+      expect(wrapper.text()).toContain('chargement')
+
+      await vi.advanceTimersByTimeAsync(TRANSPORT_DEADLINE_MS)
+      await wrapper.vm.$nextTick()
+      // The bounded failure is the existing typed page error: chargement is
+      // settled false, so the identity skeleton can never stay frozen.
+      expect(wrapper.text()).toBe('pret|fetch|-')
+
+      suspendu = false
+      ;(wrapper.vm as any).etat.recharger()
+      for (let turn = 0; turn < 10; turn += 1) await Promise.resolve()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.text()).toBe('pret|ok|Allineuc')
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      wrapper.unmount()
+    } finally { vi.useRealTimers() }
+  })
+
   it('reste inerte quand la route n’est pas active', async () => {
     const charger = vi.fn<ChargerReferenceTerritoires>(async () => referenceValidee)
     const { wrapper } = sonde(charger, 'commune', '22001', false)
@@ -131,6 +227,60 @@ describe('useTerritoryReference — identité de route, relecture, réponses tar
 
 describe('fiche montée — bootstrap référence sur la route (#868)', () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
+
+  it('rend un échec de référence borné, jamais un chargement figé, puis réessaie la même requête', async () => {
+    vi.useFakeTimers()
+    try {
+      let referenceSuspendue = true
+      const fetchApi = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url !== '/data/territoires.json') {
+          if (url === '/api/resources') return Promise.resolve(nativeCatalogueResponse())
+          if (url === '/api/resources/read-batch') {
+            const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+            return Promise.resolve(nativeBatchResponse(items, (item, resource) =>
+              nativeReadFixture(item, resource, { syntheticProfileComparisons: true })))
+          }
+          if (url.startsWith('/data/theme_') && url.endsWith('.json')) {
+            return Promise.resolve(new Response(readFileSync(
+              resolve(process.cwd(), '../public/data', url.slice('/data/'.length)), 'utf8'), { status: 200 }))
+          }
+          return Promise.reject(new Error(`Requête interdite: ${url}`))
+        }
+        if (!referenceSuspendue) return Promise.resolve(reponseReference())
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort',
+            () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+        })
+      })
+      vi.stubGlobal('fetch', fetchApi)
+
+      const router = createRouter({ history: createMemoryHistory(), routes })
+      await router.push('/territoire/commune/22001?theme=programmes')
+      await router.isReady()
+      const wrapper = mount(TerritoireView, {
+        global: {
+          plugins: [router],
+          provide: { [THEME_METADATA_CHARGER_KEY]: chargerMetadonneesTheme },
+        },
+      })
+
+      await vi.advanceTimersByTimeAsync(TRANSPORT_DEADLINE_MS)
+      await wrapper.vm.$nextTick()
+      // The critical identity read is bounded: the existing typed page error is
+      // shown, so `chargementFiche` can never stay true forever.
+      expect(wrapper.get('.etat-erreur').text()).toContain('Impossible de charger les données de la fiche.')
+
+      referenceSuspendue = false
+      await wrapper.get('.etat-erreur button').trigger('click')
+      for (let turn = 0; turn < 40; turn += 1) await Promise.resolve()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.etat-erreur').exists()).toBe(false)
+      expect(wrapper.find('h1').text()).toBe('Allineuc')
+      expect(fetchApi.mock.calls.filter(([input]) => String(input) === '/data/territoires.json')).toHaveLength(2)
+      wrapper.unmount()
+    } finally { vi.useRealTimers() }
+  }, 60000)
 
   it('une seule charge de référence pendant la navigation, aucun modèle ni table globale, portée scopée à la commune courante', async () => {
     const requetes: string[] = []

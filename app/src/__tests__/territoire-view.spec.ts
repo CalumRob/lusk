@@ -33,6 +33,7 @@ import {
 } from '../payload/themeFactsAdapter'
 import { PayloadError, validerTerritoires, validerCatalogueNavigateur } from '../payload/validate'
 import { routes } from '../router'
+import mobilityCrossLevelCapture from './fixtures/mobility-cross-level-served.json'
 import {
   nativeBatchResponse,
   nativeCatalogueResponse,
@@ -226,6 +227,103 @@ async function monter(
 }
 
 describe('TerritoireView — modèle atomique par territoire', () => {
+  it.each([false, true])('keeps Bretagne facts independent with publication failure=%s and no comparison requests or UI', async (failNetworkFacts) => {
+    const requests: Array<Array<Record<string, any>>> = []
+    const nativeFetch = nativeSemanticFetch(requests)
+    vi.stubGlobal('fetch', vi.fn(async (input, init) => {
+      const response = await nativeFetch(input, init)
+      if (!failNetworkFacts || String(input) !== '/api/resources/read-batch') return response
+      const body = await response.json()
+      body.results = body.results.map((result: any) => result.resource === 'reseaux_par_habitant'
+        ? { id: result.id, resource: result.resource, status: 'publication_unavailable',
+            reason: 'publication_absent', family: nativePublicationFamily(result.resource) } : result)
+      return new Response(JSON.stringify(body))
+    }))
+    const region = referenceReelle.find(territory => territory.type === 'region')!
+    expect(region.territoire).toBe('53')
+    const { router, wrapper } = await monter(`/territoire/region/${region.territoire}?theme=mobilite`, chargerReferenceReelle)
+    await flushPromises()
+    await flushPromises()
+    for (const hash of ['#figure-partage-de-lespace-public', '#figure-offre-transports-commun', '#figure-lecture']) {
+      await router.replace({ query: { theme: 'mobilite' }, hash })
+      await flushPromises()
+      await flushPromises()
+    }
+    const reads = requests.flat()
+    expect(reads.filter(item => item.intent.kind !== 'facts')).toEqual([])
+    for (const resource of ['reseaux_par_habitant', 'raccordement_courbe', 'aedar_territory_summary']) {
+      expect(reads.some(item => item.resource === resource && item.intent.kind === 'facts' &&
+        item.target.type === 'region' && item.target.id === '53'), resource).toBe(true)
+    }
+    expect(wrapper.text().toLowerCase()).not.toContain('groupe comparé')
+    expect(wrapper.text()).not.toContain('Réessayer les comparaisons')
+    expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
+    expect(reads.some(item => item.resource === 'offre_tc')).toBe(false)
+    expect(wrapper.find('.mobilite-share-track').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Contenu indisponible pour ce territoire.')
+    const parking = wrapper.get('[data-column="stationnement"] .mobilite-comparison-bars svg')
+    expect(parking.attributes('aria-label')).toContain('Indisponible')
+    if (failNetworkFacts) expect(wrapper.get('.mobilite-section--reseaux').text()).toContain('Publication indisponible')
+    if (!failNetworkFacts) {
+      // The extracted per-Cahier context survives route changes: eligibility
+      // must follow the new native identity, not its initial content object.
+      await router.replace('/territoire/commune/22001?theme=mobilite')
+      await flushPromises()
+      await flushPromises()
+      expect(wrapper.get('.aedar-access-mode-selector').text()).toContain('Groupe comparé')
+      await router.replace('/territoire/region/53?theme=mobilite')
+      await flushPromises()
+      await flushPromises()
+      expect(wrapper.text().toLowerCase()).not.toContain('groupe comparé')
+      expect(requests.flat().filter(item => item.target.type === 'region' && item.intent.kind !== 'facts')).toEqual([])
+    }
+    wrapper.unmount()
+  })
+
+  it.each([['commune', '35238'], ['epci', '243500725'], ['departement', '35']])(
+    'renders the served %s page-3 default after extending page 2, then retains both on revisit', async (type, id) => {
+      const fallback = nativeSemanticFetch()
+      vi.stubGlobal('fetch', vi.fn(async (input, init) => {
+        if (String(input) !== '/api/resources/read-batch') return fallback(input, init)
+        const { items } = JSON.parse(String(init?.body))
+        const captured = items.map((item: any) => mobilityCrossLevelCapture.entries.find(({ item: saved }) =>
+          saved.resource === item.resource && JSON.stringify(saved.target) === JSON.stringify(item.target) &&
+          JSON.stringify(saved.intent) === JSON.stringify(item.intent) &&
+          JSON.stringify(saved.coordinates) === JSON.stringify(item.coordinates)))
+        if (!captured.every(Boolean)) {
+          const mobility = new Set(nativeResources('mobilite').map(resource => resource.resource_id))
+          if (items.some((item: any) => mobility.has(item.resource))) {
+            throw new Error(`Uncaptured Mobility read: ${JSON.stringify(items)}`)
+          }
+          return fallback(input, init)
+        }
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results: items.map((item: any, index: number) =>
+          ({ id: item.id, resource: item.resource, status: 'available', data: captured[index]!.data })) }))
+      }))
+      const { router, wrapper } = await monter(
+        `/territoire/${type}/${id}?theme=mobilite#figure-partage-de-lespace-public`, chargerReferenceReelle)
+      await flushPromises()
+      await flushPromises()
+      await router.replace({ hash: '#figure-offre-transports-commun', query: { theme: 'mobilite' } })
+      await flushPromises()
+      await flushPromises()
+      const coverage = wrapper.get('.mobilite-share-track')
+      const expectedCoverage = type === 'commune' ? '84,2' : type === 'epci' ? '44,5' : '56,5'
+      expect(coverage.text()).toContain(expectedCoverage)
+      expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(true)
+      await router.replace({ hash: '#figure-partage-de-lespace-public', query: { theme: 'mobilite' } })
+      await flushPromises()
+      expect(wrapper.findAll('.mobilite-comparison-bars [data-comparison]').length).toBeGreaterThan(0)
+      expect(wrapper.get('.mobilite-share-track').text()).toContain(expectedCoverage)
+      await router.replace({ hash: '#figure-offre-transports-commun', query: { theme: 'mobilite', comparaison: '' } })
+      await flushPromises()
+      await flushPromises()
+      expect(wrapper.findAll('.mobilite-comparison-bars [data-comparison]')).toHaveLength(0)
+      expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
+      expect(wrapper.get('.mobilite-share-track').text().toLowerCase()).not.toContain('groupe comparé')
+      wrapper.unmount()
+    })
+
   it('renders native Programmes facts while the active catalogue is held, then retries it metadata-only', async () => {
     let notifyMetadataStarted!: () => void
     const metadataStarted = new Promise<void>((resolve) => { notifyMetadataStarted = resolve })

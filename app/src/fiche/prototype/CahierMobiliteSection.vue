@@ -26,12 +26,15 @@ import type {
 } from '@/fiche/content/themeContent'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import CahierEvidenceSource from './CahierEvidenceSource.vue'
+import CahierExportScope from './CahierExportScope.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierMobiliteComparisonBars from './CahierMobiliteComparisonBars.vue'
 import CahierMobiliteRaccordementCurve from './CahierMobiliteRaccordementCurve.vue'
 import CahierMobiliteShareTrack from './CahierMobiliteShareTrack.vue'
 import CahierProse from './CahierProse.vue'
 import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
+import { useCahierExportPublication } from './cahierExportVenue'
+import { CAHIER_EXPORT_SLOTS } from './cahierExportCapture'
 
 const props = defineProps<{
   section: MobiliteContentSection
@@ -43,19 +46,20 @@ const props = defineProps<{
   }
 }>()
 
-const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
+const control = inject(CONTROLE_COMPARAISON_KEY, undefined)
 
 /**
- * #1006 — an explicit « Aucune comparaison » (the header control's empty
- * selection) is not an unavailable comparison: the compared row disappears
- * instead of showing a failure. The state comes from the selection the control
- * already provides; the delegate never widens its props to carry it.
+ * A provided null control means the territory is comparison-ineligible (#768).
+ * It removes peer grammar, not the factual figure. Explicit « Aucune
+ * comparaison » keeps the existing inactive legend, while its coverage row is
+ * absent. An absent provider keeps standalone figure fixtures usable.
  */
-const comparisonNone = computed(() => control.value?.selection.etat === 'vide')
+const comparisonIneligible = computed(() => control?.value === null)
+const comparisonNone = computed(() => comparisonIneligible.value || control?.value?.selection.etat === 'vide')
 
 const effectiveComparison = computed(() => {
   if (props.comparison.status !== 'ready') return props.comparison
-  const selection = control.value?.selection
+  const selection = control?.value?.selection
   if (!selection) return props.comparison
   if (selection.etat === 'vide' || (selection.etat === 'membres' && selection.membres.length === 0)) {
     return { status: 'unavailable' as const, retry: props.comparison.retry }
@@ -75,6 +79,28 @@ const share = computed<MobiliteShareEvidence | null>(() =>
 const curve = computed<MobiliteRaccordementEvidence | null>(() =>
   props.section.evidence?.kind === 'mobilite-raccordement' ? props.section.evidence : null,
 )
+
+/** The paired ratio scalars own a served reference independent of the bars toggle. */
+const ratioReference = computed(() => {
+  const available = paired.value?.columns.some(
+    (column) => column.ratio.value.fact.comparison?.reference != null,
+  ) ?? false
+  return { available, displayed: !comparisonNone.value && available }
+})
+
+/**
+ * #1021 — expose the comparison state this delegate actually presents, without
+ * widening its props or moving the shared AEDAR state into it.
+ */
+useCahierExportPublication(() => ({
+  owner: 'mobilite-section',
+  state: {
+    comparisonStatus: effectiveComparison.value.status,
+    comparisonError: effectiveComparison.value.error ?? null,
+    ratioReferenceAvailable: ratioReference.value.available,
+    ratioReferenceDisplayed: ratioReference.value.displayed,
+  },
+}))
 
 function stampSource(source: ContentSource): AedarEvidenceSource {
   return {
@@ -137,6 +163,7 @@ function ratioAriaLabel(
 ): string {
   const fact = ratio.value.fact
   const parts = [`${ratio.label} : ${ratioValueLabel(ratio)}`]
+  if (comparisonIneligible.value) return parts.join('. ')
   if (fact.value === null) {
     parts.push(ratio.note ?? 'Valeur indisponible')
     return parts.join('. ')
@@ -180,12 +207,14 @@ function ratioAriaLabel(
     :data-unit-key="unit.key"
   >
     <template v-if="networks">
-      <div class="mobilite-networks-maps">
-        <CartographicBreakoutPrototype
-          :territory="networks.territory"
-          :evidence="networks"
-        />
-      </div>
+      <CahierExportScope :capture-slot="CAHIER_EXPORT_SLOTS.mobiliteNetworksMaps">
+        <div class="mobilite-networks-maps">
+          <CartographicBreakoutPrototype
+            :territory="networks.territory"
+            :evidence="networks"
+          />
+        </div>
+      </CahierExportScope>
       <div class="mobilite-section-spread">
         <div class="mobilite-section-copy">
           <CahierProse class="argument-copy" :blocks="networks.prose" />
@@ -200,10 +229,13 @@ function ratioAriaLabel(
         </div>
         <figure class="mobilite-section-figure">
           <figcaption class="cahier-figure-title">{{ networks.figure.figureTitle }}</figcaption>
-          <CahierMobiliteComparisonBars
-            :figure="networks.figure"
-            :comparison="effectiveComparison"
-          />
+          <CahierExportScope :capture-slot="CAHIER_EXPORT_SLOTS.mobiliteNetworksBars">
+            <CahierMobiliteComparisonBars
+              :figure="networks.figure"
+              :comparison="effectiveComparison"
+              :comparison-none="comparisonIneligible"
+            />
+          </CahierExportScope>
         </figure>
       </div>
     </template>
@@ -228,10 +260,13 @@ function ratioAriaLabel(
         </div>
         <figure class="mobilite-section-figure">
           <figcaption class="cahier-figure-title">{{ column.bars.figureTitle }}</figcaption>
-          <CahierMobiliteComparisonBars
-            :figure="column.bars"
-            :comparison="effectiveComparison"
-          />
+          <CahierExportScope :capture-slot="column.key">
+            <CahierMobiliteComparisonBars
+              :figure="column.bars"
+              :comparison="effectiveComparison"
+              :comparison-none="comparisonIneligible"
+            />
+          </CahierExportScope>
         </figure>
         <figure class="mobilite-ratio-scalar">
           <CahierFigureScalar
@@ -254,7 +289,7 @@ function ratioAriaLabel(
                 aria-hidden="true"
               />
             </template>
-            <template #reference>
+            <template v-if="!comparisonNone" #reference>
               <CahierComparisonValue
                 v-if="column.ratio.value.fact.comparison?.reference || effectiveComparison.status === 'loading' || effectiveComparison.status === 'error'"
                 :fact="column.ratio.value.fact"
@@ -307,7 +342,9 @@ function ratioAriaLabel(
       </div>
       <figure class="mobilite-section-figure mobilite-section-figure--wide">
         <figcaption class="cahier-figure-title">{{ curve.figureTitle }}</figcaption>
-        <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" />
+        <CahierExportScope :capture-slot="CAHIER_EXPORT_SLOTS.mobiliteCurve">
+          <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" :comparison-none="comparisonIneligible" />
+        </CahierExportScope>
       </figure>
     </div>
   </div>

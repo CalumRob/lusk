@@ -14,6 +14,10 @@ const varianteCahierLibreSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'VarianteCahierLibre.vue'),
   'utf8',
 )
+const aedarAccessSectionSource = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierAedarAccessSection.vue'),
+  'utf8',
+)
 const cahierEvidenceSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'cahierEvidenceSource.css'),
   'utf8',
@@ -253,7 +257,7 @@ describe('Cahier typography roles', () => {
   })
 
   it('lets the section 03 reading and plots use the full section draw area', () => {
-    const accessEvidenceRule = varianteCahierLibreSource.match(/\.aedar-access-evidence\s*\{([^}]*)\}/)?.[1] ?? ''
+    const accessEvidenceRule = aedarAccessSectionSource.match(/\.aedar-access-evidence\s*\{([^}]*)\}/)?.[1] ?? ''
     expect(accessEvidenceRule).toContain('grid-column: 1 / -1')
     expect(accessEvidenceRule).toContain('width: 100%')
     expect(accessEvidenceRule).not.toMatch(/width:\s*min\(|max-width/)
