@@ -1,0 +1,732 @@
+import { createHash } from 'node:crypto'
+import { readFileSync, readdirSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
+
+import {
+  MARQUE_ERMINE_PATHS,
+  composerCahierPdf,
+} from '@/fiche/prototype/cahierPdfComposer'
+import { sousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaison'
+import type { SousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaison'
+import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
+import { PALETTE_PDF } from '@/fiche/prototype/cahierPdfPalette'
+import { construireTableauxPdf } from '@/fiche/prototype/cahierPdfTableau'
+import type { CahierTableColumn, CahierTableRow } from '@/fiche/prototype/cahierExportAdapters'
+import type { CahierCaptureComparison } from '@/fiche/prototype/cahierExportCapture'
+import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
+import type { CahierExportRequest } from '@/fiche/prototype/cahierExportCapture'
+import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
+import {
+  chargeurImageTest,
+  chargeurPoliceTest,
+  contientTout,
+  enregistrerArtefact,
+  lirePdf,
+  occurrences,
+  policesEmbarquees,
+  requetePour,
+  toutesLesRequetes,
+  verifierDansPage,
+} from './helpers/cahierPdfRuntime'
+import { cahierExportFixture, communeMembers, sectionOf } from './helpers/cahierExportFixtures'
+import { capturePdfFixture } from './helpers/cahierPdfFixtures'
+import type { LecturePdf } from './helpers/cahierPdfRuntime'
+
+const signal = () => new AbortController().signal
+
+function options() {
+  return {
+    signal: signal(),
+    chargerPolice: chargeurPoliceTest,
+    chargerImage: chargeurImageTest,
+    urlPublique: 'https://lusk.test/territoire/commune/22001?theme=mobilite#section-aedar-access',
+    urlAccueil: 'https://lusk.test/',
+  }
+}
+
+function requeteSansMode(capture: CahierExportRequest['capture']): CahierExportRequest {
+  const projection = projeterRequeteExport(capture, [])
+  if (projection.status !== 'ready') throw new Error(projection.reason)
+  return projection.request
+}
+
+async function generer(request: CahierExportRequest, nom: string) {
+  const avant = process.memoryUsage().heapUsed
+  const debut = performance.now()
+  const artifact = await composerCahierPdf(request, options())
+  const duree = performance.now() - debut
+  const lecture = await lirePdf(artifact.blob)
+  enregistrerArtefact(nom, lecture.octets)
+  if (process.env.CAHIER_PDF_REPORT) {
+    const delta = process.memoryUsage().heapUsed - avant
+    console.log(nom, 'pages', lecture.pages, 'bytes', artifact.blob.size, 'ms', Math.round(duree), 'heapDelta', delta)
+  }
+  return { artifact, lecture, duree }
+}
+
+/** Independent literal audit. A wrong number/column/group throws. */
+function auditerTexte(lecture: LecturePdf, attendu: readonly string[]): void {
+  for (const valeur of attendu) {
+    if (!lecture.texteComplet.includes(valeur)) {
+      throw new Error(`Audit PDF : « ${valeur} » absent.`)
+    }
+  }
+}
+
+describe('compositeur PDF Cahier — matrice des neuf sections', () => {
+  it('génère un vrai fichier A4 pour chaque section et famille', async () => {
+    const resultats: { key: string; lecture: LecturePdf; taille: number }[] = []
+    for (const { key, request } of toutesLesRequetes()) {
+      const { artifact, lecture } = await generer(request, `${key}.pdf`)
+      expect(artifact.fileName).toBe(`lusk-cahier-${key}-22001.pdf`)
+      expect(artifact.blob.size).toBeGreaterThan(20_000)
+      expect(lecture.pages).toBeGreaterThanOrEqual(1)
+      for (const format of lecture.pagesFormat) {
+        expect(format.width).toBeCloseTo(595.28, 1)
+        expect(format.height).toBeCloseTo(841.89, 1)
+      }
+      expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(6)
+      verifierDansPage(lecture)
+      expect(lecture.metadonnees.author).toBe('Lusk')
+      expect(lecture.metadonnees.title).toContain('Commune A1')
+      expect(lecture.liens).toContain('https://lusk.test/')
+      resultats.push({ key, lecture, taille: artifact.blob.size })
+    }
+    expect(resultats.map((resultat) => resultat.key)).toEqual([
+      'aedar-car-overview',
+      'aedar-diversity-loss',
+      'aedar-access',
+      'aedar-equipment-profile',
+      'aedar-equipment-explorer',
+      'reseaux',
+      'stationnement-ravitaillement',
+      'couverture-du-territoire',
+      'visiter-la-bretagne',
+    ])
+  })
+})
+
+describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
+  it('audite les rampes d’accès avec des attentes littérales indépendantes', async () => {
+    const { lecture } = await generer(requetePour('aedar-access'), 'audit-aedar-access.pdf')
+    expect(lecture.pages).toBe(1)
+    contientTout(lecture, [
+      'L’accès aux services',
+      'COMMUNE A1',
+      'Diversité de l’offre accessible (moyenne par adresse)',
+      'Établissements accessibles (moyenne par adresse)',
+      'Valeurs des graphiques',
+      'Temps d’accès',
+      'Volume de l’offre',
+      'Voiture',
+      'Vélo (LTS2)',
+      'Vélo (LTS4)',
+      'Source(s) : AEDAR',
+      'test',
+    ])
+    // The fixture comparison layer has no served reference value; the group
+    // subtitle/footer must therefore be absent (no comparative proof).
+    expect(lecture.lignes.some((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))).toBe(false)
+    // Row/cell relationship: every cell stays under its mode column in order.
+    const ligne = lecture.lignes.find((candidate) => candidate.page === 1
+      && candidate.texte === '5 min 5 5 5 Indisponible Indisponible Indisponible')
+    expect(ligne?.texte).toBe('5 min 5 5 5 Indisponible Indisponible Indisponible')
+    const autre = lecture.lignes.find((candidate) => candidate.page === 1
+      && candidate.texte === '20 min 5 5 5 Indisponible Indisponible Indisponible')
+    expect(autre?.texte).toBe('20 min 5 5 5 Indisponible Indisponible Indisponible')
+    // Numbers are never truncated: the native display is intact.
+    expect(lecture.texteComplet).not.toContain('Indisp. :')
+    // Brand, live identity and source links are real annotations.
+    expect(lecture.liens).toContain('https://lusk.test/')
+    expect(lecture.liens).toContain('https://lusk.test/territoire/commune/22001?theme=mobilite#section-aedar-access')
+    expect(lecture.liens).toContain('https://example.test/aedar')
+    expect(lecture.metadonnees.subject).toBe('La ville du 1/12, du 1/6, du 1/4 et du 1/3 d’heure')
+    expect(lecture.texteComplet).toContain('1 / 1')
+  })
+
+  it('audite les barres comparées et rangs de réseaux, page par page', async () => {
+    const { lecture } = await generer(requetePour('reseaux'), 'audit-reseaux.pdf')
+    expect(lecture.pages).toBe(2)
+    contientTout(lecture, [
+      'Le partage de l’espace public',
+      'Longueur du réseau par habitant',
+      '10,93',
+      '11,54',
+      '2e/2',
+      '0,01',
+      '1er/2',
+      '134,8',
+      '84,58',
+      'Réseau piéton',
+      'Réseau cyclable',
+      'Réseau automobile',
+      'Valeur du territoire',
+      'Groupe comparé',
+      '¹ Groupe comparé : communes de EPCI X',
+      'Source(s) : OpenStreetMap',
+    ])
+    // Rank text is a second line under its value; the row stays one table row.
+    expect(lecture.lignes.some((candidate) => candidate.texte.includes('2e/2'))).toBe(true)
+    // Continuation repeats the section identity, column header and sources.
+    contientTout({ ...lecture, texteComplet: lecture.lignes.filter((l) => l.page === 2).map((l) => l.texte).join(' ') } as LecturePdf, [
+      'COMMUNE A1',
+      'Longueur du réseau par habitant',
+      'Groupe comparé',
+      'Source(s) : OpenStreetMap',
+      '2 / 2',
+    ])
+    // Both pages carry comparative proof, so both carry the footer.
+    expect(occurrences(lecture, '¹ Groupe comparé : communes de EPCI X')).toBe(2)
+    // No row is cut: the six native rows appear once across the two pages.
+    for (const label of [
+      'Réseau piéton — Réseau piéton',
+      'Réseau piéton — Longueur brute — à pied (valeur brute)',
+      'Réseau cyclable — Total vélo',
+      'Réseau cyclable — Longueur brute — à vélo (valeur brute)',
+      'Réseau automobile — Réseau automobile',
+      'Réseau automobile — Longueur brute — en voiture (valeur brute)',
+    ]) {
+      expect(occurrences(lecture, label)).toBe(1)
+    }
+    // Cell font size is identical on both pages: no global document shrink.
+    const tailles = new Set(
+      lecture.textes
+        .filter((item) => ['10,93', '0,01', '134,8'].includes(item.str))
+        .map((item) => item.taille.toFixed(2)),
+    )
+    expect(tailles.size).toBe(1)
+  })
+
+  it('exerce « Indisp. » avec une explication unique et tous les déciles', async () => {
+    const { lecture } = await generer(requetePour('aedar-equipment-explorer'), 'audit-explorer.pdf')
+    contientTout(lecture, ['Indisp.', 'Indisp. : valeur indisponible.'])
+    expect(occurrences(lecture, 'Indisp. : valeur indisponible.')).toBe(1)
+    for (const label of ['Min', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'Max']) {
+      expect(lecture.texteComplet).toContain(label)
+    }
+    // The full unavailable word remains in the volume table; only the narrow
+    // decile cells use the approved abbreviation.
+    expect(lecture.texteComplet).toContain('Indisponible')
+  })
+
+  it('garde le groupe comparé conditionnel à la preuve réellement servie', async () => {
+    const { lecture } = await generer(requetePour('couverture-du-territoire'), 'audit-share.pdf')
+    // The fixture's comparison value is explicitly unavailable; the group
+    // footer must not claim comparative proof.
+    expect(lecture.lignes.some((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))).toBe(false)
+    contientTout(lecture, [
+      'Part des bâtiments près d’un arrêt (à 500 m)',
+      'Valeurs du graphique',
+      '0,0 %',
+      'Indisponible',
+      'Aucun repère de groupe comparé disponible pour cette sélection.',
+    ])
+  })
+
+  it('conserve les accents français et les glyphes embarqués', async () => {
+    const { lecture } = await generer(requetePour('aedar-access'), 'glyphes.pdf')
+    for (const valeur of ['Établissements', 'Vélo', 'd’accès', 'Diversité', 'Indisponible']) {
+      expect(lecture.texteComplet).toContain(valeur)
+    }
+    expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(7)
+  })
+
+  it('rend les cartes et leur légende native sans lecture de pixels', async () => {
+    const capture = capturePdfFixture('aedar-diversity-loss', {
+      publications: [{
+        slot: 'maps',
+        state: {
+          owner: 'map-availability',
+          state: {
+            maps: [
+              { id: 'walk', label: 'À pied', declared: true, loaded: true, unavailable: false, inlineUrl: 'https://example.test/walk-inline.webp' },
+              { id: 'transit', label: 'Transports', declared: true, loaded: true, unavailable: false, inlineUrl: 'https://example.test/transit-inline.webp' },
+            ],
+            legend: 'available',
+            legendDetail: {
+              title: 'Perte de diversité',
+              minimum: 0,
+              maximum: 100,
+              colors: ['#f1f2ec', '#9db7ad', '#3f6f63'],
+              tickLabels: ['0', '50', '100'],
+              note: 'Lecture : part des types d’équipements encore accessibles.',
+              ariaLabel: null,
+            },
+          },
+        },
+      }],
+    })
+    const { lecture } = await generer(requeteSansMode(capture), 'cartes-legende.pdf')
+    contientTout(lecture, [
+      'Perte de diversité',
+      'Lecture : part des types d’équipements encore accessibles.',
+      '0', '50', '100',
+      'À pied',
+      'Transports',
+    ])
+  })
+
+  it('mesure une sélection personnalisée triée en français dans un vrai PDF', async () => {
+    const capture = capturePdfFixture('visiter-la-bretagne', {
+      selection: { etat: 'membres', membres: communeMembers() },
+    })
+    const projection = requeteSansMode(capture)
+    const { lecture } = await generer(projection, 'selection-personnalisee.pdf')
+    expect(lecture.texteComplet).toContain('Groupe comparé :')
+    expect(lecture.texteComplet).toContain('COMMUNE A1, COMMUNE B, COMMUNE D')
+    expect(lecture.texteComplet).not.toContain('ET 1 AUTRE')
+    expect(lecture.texteComplet).not.toContain('SÉLECTION DE')
+  })
+
+  it('rend le profil/waffle depuis les mesures classifiées, pas une fixture vide', async () => {
+    const base = sectionOf(cahierExportFixture().content, 'aedar-equipment-profile')
+    const evidence = base.evidence as { facts: readonly { typequ: string; measures: Record<string, number> }[] }
+    const facts = evidence.facts.map((fact, index) => ({
+      ...fact,
+      measures: index === 0
+        ? { count_15_walk_share: 0.8, count_15_transit_share: 0.1, count_15_bike_lts2_share: 0.05, count_15_bike_lts4_share: 0.03, count_15_car_share: 0.02 }
+        : { count_15_walk_share: 0.1, count_15_transit_share: 0.2, count_15_bike_lts2_share: 0.3, count_15_bike_lts4_share: 0.25, count_15_car_share: 0.15 },
+    }))
+    const capture = capturePdfFixture('aedar-equipment-profile', { evidencePatch: { facts } })
+    const { lecture } = await generer(requeteSansMode(capture), 'profil-waffle.pdf')
+    contientTout(lecture, [
+      'Répartition des 2 types d’équipements à 15 minutes',
+      'À pied : 1',
+      'Vélo (LTS2) : 1',
+    ])
+    expect(lecture.pages).toBe(1)
+  })
+
+  it('n’affiche le pied comparatif que sur la page qui porte la preuve', async () => {
+    const base = requetePour('visiter-la-bretagne')
+    const diversity = capturePdfFixture('aedar-diversity-loss')
+    const capture: any = structuredClone(base.capture)
+    // Test-only cross-family page-flow fixture: non-comparative map figures
+    // before the real comparative curve, to force a measured page break.
+    capture.figures = [diversity.figures[0]!, diversity.figures[0]!, diversity.figures[0]!, ...capture.figures]
+    const { lecture } = await generer({ ...base, capture } as CahierExportRequest, 'preuve-page-locale.pdf')
+    expect(lecture.pages).toBeGreaterThanOrEqual(2)
+    const pagesAvecPied = lecture.lignes
+      .filter((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))
+      .map((ligne) => ligne.page)
+    expect(pagesAvecPied.length).toBeGreaterThan(0)
+    expect(pagesAvecPied).not.toContain(1)
+  })
+})
+
+describe('compositeur PDF Cahier — refus explicites', () => {
+  it('refuse une famille non prise en charge', async () => {
+    const request = requetePour('aedar-access')
+    const capture = {
+      ...request.capture,
+      figures: [{ ...request.capture.figures[0]!, family: 'waffle-inconnu' }],
+    } as unknown as CahierExportRequest['capture']
+    await expect(composerCahierPdf({ ...request, capture }, options()))
+      .rejects.toMatchObject({ code: 'unsupported-family' })
+  })
+
+  it('refuse une carte requise dont le chargement échoue', async () => {
+    await expect(composerCahierPdf(requetePour('aedar-car-overview'), {
+      ...options(),
+      chargerImage: async () => { throw new Error('image absente') },
+    })).rejects.toMatchObject({ code: 'asset' })
+  })
+
+  it('refuse une police tronquée au lieu de substituer', async () => {
+    await expect(composerCahierPdf(requetePour('aedar-access'), {
+      ...options(),
+      chargerPolice: async () => new ArrayBuffer(10),
+    })).rejects.toMatchObject({ code: 'font' })
+  })
+
+  it('respecte une annulation avant et pendant le chargement des polices', async () => {
+    const avant = new AbortController()
+    avant.abort()
+    await expect(composerCahierPdf(requetePour('aedar-access'), {
+      ...options(),
+      signal: avant.signal,
+    })).rejects.toMatchObject({ name: 'AbortError' })
+
+    const pendant = new AbortController()
+    let compteur = 0
+    await expect(composerCahierPdf(requetePour('aedar-access'), {
+      ...options(),
+      signal: pendant.signal,
+      chargerPolice: async (face, { signal }) => {
+        compteur += 1
+        if (compteur === 2) pendant.abort()
+        return chargeurPoliceTest(face, { signal })
+      },
+    })).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('charge les polices par le chemin de production (fetch des actifs bundlés)', async () => {
+    const original = globalThis.fetch
+    const dossier = resolve(process.cwd(), 'src/assets/fonts/pdf')
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const nom = url.split('/').pop()
+      if (nom?.endsWith('.ttf')) {
+        const bytes = readFileSync(resolve(dossier, nom))
+        return new Response(bytes, { status: 200 })
+      }
+      return original(input)
+    }) as typeof fetch
+    try {
+      const artifact = await composerCahierPdf(requetePour('aedar-access'), {
+        signal: signal(),
+        urlPublique: 'https://lusk.test/territoire/commune/22001?theme=mobilite#section-aedar-access',
+        urlAccueil: 'https://lusk.test/',
+      })
+      const lecture = await lirePdf(artifact.blob)
+      expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(7)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('ne crée aucune URL objet (le compositeur ne fait pas la livraison)', async () => {
+    const spy = vi.spyOn(URL, 'createObjectURL')
+    await generer(requetePour('aedar-access'), 'sans-url-objet.pdf')
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  it('un nombre corrompu reste fidèlement le nombre corrompu', async () => {
+    const request = requetePour('reseaux')
+    const capture = structuredClone(request.capture)
+    const figure = capture.figures.find((candidate) => candidate.family === 'mobilite-bars')!
+    figure.model.figure.categories[0]!.value.fact.value = 10.94466
+    const corrompu = { ...request, capture } as CahierExportRequest
+    const { lecture } = await generer(corrompu, 'negatif-nombre-corrompu.pdf')
+    expect(lecture.texteComplet).toContain('10,94')
+    expect(lecture.texteComplet).not.toContain('10,93')
+    // The independent literal audit must fail on the original expected number.
+    expect(() => auditerTexte(lecture, ['10,93'])).toThrow(/10,93/)
+  })
+
+  it('l’audit indépendant rejette une colonne ou un groupe corrompu', async () => {
+    const { lecture } = await generer(requetePour('aedar-access'), 'negatif-colonne.pdf')
+    expect(() => auditerTexte(lecture, ['colonne inexistante'])).toThrow(/colonne inexistante/)
+    expect(() => auditerTexte(lecture, ['Groupe comparé : groupe inventé'])).toThrow(/groupe inventé/)
+  })
+})
+
+describe('sous-titre de comparaison — règle mesurée approuvée', () => {
+  const mesure: MesureTexte = {
+    largeur: (texte, _police, taille, espacement = 0) => Array.from(texte).length * taille * 0.17 + espacement * texte.length,
+    hauteurLigne: (_police, taille) => taille * 0.3528 * 1.2,
+    espace: (_police, taille) => taille * 0.17,
+  }
+
+  const optionsSousTitre = (largeur: number) => ({
+    mesure,
+    largeur,
+    police: 'display',
+    taillePt: 13.5,
+    policePrefixe: 'body',
+    taillePrefixePt: 7.5,
+  })
+
+  function comparison(over: Partial<CahierCaptureComparison> = {}): CahierCaptureComparison {
+    const { group: groupOver, ...rest } = over
+    const group = {
+      label: 'communes de EPCI X',
+      names: ['EPCI X'],
+      preset: null,
+      level: 'commune',
+      scopeKind: 'communes-epci',
+      selectedMemberCount: null,
+      eligibleContributorCount: null,
+      ...(groupOver ?? {}),
+    }
+    return {
+      status: 'ready',
+      error: null,
+      referenceStatus: 'ready',
+      eligible: true,
+      capable: true,
+      selection: {
+        known: true,
+        state: 'membres',
+        preset: null,
+        defaultPreset: 'epci',
+        level: 'commune',
+        members: [],
+        memberCount: null,
+      },
+      absent: null,
+      none: false,
+      display: {
+        state: 'displayed',
+        reason: 'shown',
+        layers: [{ slot: 'comparison', toggle: true, referenceAvailable: true, visibleReferenceAvailable: true, displayed: true }],
+      },
+      statisticLabels: ['Moyenne'],
+      ...rest,
+      group,
+    } as CahierCaptureComparison
+  }
+
+  function texte(sousTitre: SousTitreComparaison | null): string {
+    return sousTitre?.lignes.map((ligne) => ligne.map((run) => run.texte).join(' ')).join(' ') ?? ''
+  }
+
+  it('affiche le nom exact d’un EPCI, jamais le libellé de portée', () => {
+    const resultat = sousTitreComparaison(comparison({ group: { ...comparison().group!, preset: 'epci', names: ['Rennes Métropole'] } }), optionsSousTitre(140))
+    expect(resultat?.strategie).toBe('preset-epci')
+    expect(texte(resultat)).toBe('Groupe comparé : RENNES MÉTROPOLE')
+  })
+
+  it('applique les trois noms Bretagne selon le niveau réel', () => {
+    for (const [niveau, attendu] of [
+      ['commune', 'COMMUNES BRETONNES'],
+      ['epci', 'EPCI BRETONS'],
+      ['departement', 'DÉPARTEMENTS BRETONS'],
+    ] as const) {
+      const resultat = sousTitreComparaison(comparison({
+        group: { ...comparison().group!, preset: 'bretagne', level: niveau, names: [] },
+      }), optionsSousTitre(140))
+      expect(texte(resultat)).toBe(`Groupe comparé : ${attendu}`)
+    }
+  })
+
+  it('trie les noms en français et affiche tous les noms complets quand ils tiennent', () => {
+    const resultat = sousTitreComparaison(comparison({
+      group: {
+        ...comparison().group!,
+        preset: null,
+        names: ['Vannes', 'Étel', 'Lorient'],
+        selectedMemberCount: 3,
+      },
+    }), optionsSousTitre(160))
+    expect(resultat?.strategie).toBe('tous')
+    expect(texte(resultat)).toBe('Groupe comparé : ÉTEL, LORIENT, VANNES')
+    expect(resultat?.total).toBe(3)
+  })
+
+  it('garde le plus grand préfixe complet et compte les membres omis', () => {
+    const noms = Array.from({ length: 10 }, (_, index) => `Commune Numéro ${index + 1}`)
+    const resultat = sousTitreComparaison(comparison({
+      group: { ...comparison().group!, preset: null, names: noms, selectedMemberCount: 10 },
+    }), optionsSousTitre(62))
+    expect(resultat?.strategie).toBe('prefixe')
+    expect(resultat!.nommes!).toBeGreaterThan(0)
+    expect(resultat!.nommes!).toBeLessThan(10)
+    expect(texte(resultat)).toContain(`ET ${10 - resultat!.nommes!} AUTRES COMMUNES`)
+    // No member name is cut: each shown name is a full source name.
+    for (const nom of noms.slice(0, resultat!.nommes!)) {
+      expect(texte(resultat).toUpperCase()).toContain(nom.toUpperCase())
+    }
+  })
+
+  it('accorde le singulier quand un seul membre est omis', () => {
+    const noms = [
+      'Saint-Aubin-des-Landes-et-ses-hameaux',
+      'Saint-Jean-des-Marais-et-ses-hameaux',
+      'Saint-Zénon-du-Lac-Humide-et-ses-hameaux',
+    ]
+    const suffixe = 'ET 1 AUTRE COMMUNE'
+    const largeur = mesure.largeur(noms[1]!, 'display', 13.5)
+      + mesure.largeur(` ${suffixe}`, 'display', 13.5) + 2
+    const resultat = sousTitreComparaison(comparison({
+      group: {
+        ...comparison().group!,
+        preset: null,
+        names: noms,
+        selectedMemberCount: 3,
+      },
+    }), optionsSousTitre(largeur))
+    expect(resultat?.strategie).toBe('prefixe')
+    expect(resultat?.nommes).toBe(2)
+    expect(texte(resultat)).toContain('ET 1 AUTRE COMMUNE')
+  })
+
+  it('replie sur le nombre total de membres sélectionnés, pas les contributeurs', () => {
+    const repli = 'Groupe comparé : SÉLECTION DE 8 COMMUNES'
+    const largeurRepli = mesure.largeur(repli, 'display', 13.5) + 4
+    const resultat = sousTitreComparaison(comparison({
+      group: {
+        ...comparison().group!,
+        preset: null,
+        names: [
+          'Commune-de-Saint-Trémeur-sur-Mer-et-ses-hameaux',
+          'Commune-de-Saint-Éloi-du-Bois-et-ses-hameaux',
+          'Commune-de-Saint-Jean-des-Marais-et-ses-hameaux',
+        ],
+        selectedMemberCount: 8,
+        eligibleContributorCount: 2,
+      },
+    }), optionsSousTitre(largeurRepli))
+    expect(resultat?.strategie).toBe('compte')
+    expect(texte(resultat)).toBe(repli)
+    expect(texte(resultat)).not.toContain('2')
+  })
+
+  it('omet le sous-titre quand la comparaison est masquée, vide ou inéligible', () => {
+    for (const display of [
+      { state: 'not-displayed', reason: 'hidden-by-user', layers: [] },
+      { state: 'not-displayed', reason: 'empty-selection', layers: [] },
+      { state: 'not-displayed', reason: 'not-eligible', layers: [] },
+      { state: 'unobserved', reason: 'unpublished', layers: [] },
+    ] as const) {
+      expect(sousTitreComparaison(comparison({ display }), optionsSousTitre(140))).toBeNull()
+    }
+  })
+})
+
+describe('tableaux PDF — colonnes, nombres et en-têtes', () => {
+  const mesure: MesureTexte = {
+    largeur: (texte, _police, taille) => Array.from(texte).length * taille * 0.17,
+    hauteurLigne: (_police, taille) => taille * 0.3528 * 1.2,
+    espace: (_police, taille) => taille * 0.17,
+  }
+
+  it('découpe des groupes de colonnes cohérents et répète les en-têtes', () => {
+    const columns: CahierTableColumn[] = Array.from({ length: 20 }, (_, index) => ({
+      key: `col-${index}`,
+      label: `Colonne ${index + 1}`,
+      unit: 'u',
+      kind: index % 2 === 0 ? 'focal' : 'comparison',
+      seriesKey: `serie-${Math.floor(index / 2)}`,
+    }))
+    const rows: CahierTableRow[] = [{
+      key: 'row',
+      label: 'Ligne',
+      cells: columns.map((column, index) => ({
+        columnKey: column.key,
+        value: index,
+        display: String(index),
+        unit: 'u',
+        raw: false,
+        rank: null,
+        rankDisplay: null,
+        rankAria: null,
+      })),
+    }]
+    const parts = construireTableauxPdf({
+      key: 'large',
+      title: 'Grand tableau',
+      columns,
+      rows,
+      notes: [],
+      unit: 'u',
+    }, { mesure, largeurDisponible: 120, nomTerritoire: null })
+    expect(parts.length).toBeGreaterThan(1)
+    for (const part of parts) {
+      expect(part.width).toBeLessThanOrEqual(120.01)
+      expect(part.rows).toHaveLength(1)
+      expect(part.columns.length).toBeGreaterThan(0)
+      expect(part.headerHeight).toBeGreaterThan(0)
+    }
+  })
+
+  it('refuse explicitement un nombre qui ne peut pas tenir sans être tronqué', () => {
+    const columns: CahierTableColumn[] = [{
+      key: 'value',
+      label: 'Valeur',
+      unit: 'u',
+      kind: 'focal',
+      seriesKey: null,
+    }]
+    const rows: CahierTableRow[] = [{
+      key: 'row',
+      label: 'Ligne',
+      cells: [{
+        columnKey: 'value',
+        value: 123456789.1234,
+        display: '123 456 789,1234',
+        unit: 'u',
+        raw: false,
+        rank: null,
+        rankDisplay: null,
+        rankAria: null,
+      }],
+    }]
+    expect(() => construireTableauxPdf({
+      key: 'number',
+      title: 'Nombre',
+      columns,
+      rows,
+      notes: [],
+      unit: 'u',
+    }, { mesure, largeurDisponible: 40, nomTerritoire: null })).toThrow(/aucun nombre n’est tronqué/i)
+  })
+
+  it('mesure les en-têtes de territoire sur deux lignes avec ellipse seulement là', () => {
+    const territoire = `Commune de ${'Saint-Trémeur-sur-Mer-et-ses-hameaux-'.repeat(5)}écarts`
+    const columns: CahierTableColumn[] = [{
+      key: 'territory',
+      label: territoire,
+      unit: null,
+      kind: 'focal',
+      seriesKey: null,
+    }]
+    const rows: CahierTableRow[] = [{
+      key: 'row',
+      label: 'Ligne',
+      cells: [{
+        columnKey: 'territory',
+        value: 0,
+        display: '0',
+        unit: null,
+        raw: false,
+        rank: null,
+        rankDisplay: null,
+        rankAria: null,
+      }],
+    }]
+    const [part] = construireTableauxPdf({
+      key: 'territory',
+      title: 'Tableau',
+      columns,
+      rows,
+      notes: [],
+      unit: null,
+    }, {
+      mesure,
+      largeurDisponible: 80,
+      nomTerritoire: territoire,
+    })
+    expect(part!.columns[0]!.headerLines.length).toBe(2)
+    expect(part!.columns[0]!.headerLines[1]).toContain('…')
+  })
+})
+
+describe('polices PDF — provenance et marque', () => {
+  it('embarque uniquement des faces dérivées des paquets de l’app, avec licences', () => {
+    expect(POLICES_PDF).toHaveLength(10)
+    const dossier = resolve(process.cwd(), 'src/assets/fonts/pdf')
+    const fichiers = new Set(readdirSync(dossier))
+    for (const face of POLICES_PDF) {
+      expect(face.url).toBeTruthy()
+      expect(fichiers.has(face.file)).toBe(true)
+      expect(fichiers.has(`${face.id}-LICENSE.txt`)).toBe(true)
+      const bytes = readFileSync(resolve(dossier, face.file))
+      expect(bytes.byteLength).toBe(face.bytes)
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(face.sha256)
+      expect(face.sourcePackage.startsWith('@fontsource-variable/')).toBe(true)
+      expect(face.licenseSpdx).toBe('OFL-1.1')
+    }
+  })
+
+  it('garde les tracés exacts de l’hermine verrouillée', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/LuskBrand.vue'), 'utf8')
+    for (const path of MARQUE_ERMINE_PATHS) {
+      expect(source).toContain(path.d)
+    }
+  })
+
+  it('résout les couleurs PDF depuis les jetons approuvés, sans nouvelle palette', () => {
+    const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8').toLowerCase()
+    expect(tokens).toContain(`--editorial-paper: ${PALETTE_PDF.paper};`)
+    expect(tokens).toContain(`--editorial-ink: ${PALETTE_PDF.ink};`)
+    expect(tokens).toContain(`--editorial-muted: ${PALETTE_PDF.muted};`)
+    expect(tokens).toContain(`--editorial-margin: ${PALETTE_PDF.margin};`)
+    expect(tokens).toContain(`--brand-200: ${PALETTE_PDF.brand200};`)
+    expect(tokens).toContain(`--mode-transit: ${PALETTE_PDF.modeFoot};`)
+    expect(tokens).toContain(`--mode-bike: ${PALETTE_PDF.modeBike};`)
+    expect(tokens).toContain(`--mode-car: ${PALETTE_PDF.modeCar};`)
+  })
+})
