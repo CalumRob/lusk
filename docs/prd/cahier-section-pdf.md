@@ -334,9 +334,29 @@ ni neuf générateurs ni neuf tickets d’implémentation.
 
 **Dépendances :** A précède B et C ; D consomme A/B et ne dépend pas de la modale
 C. C et le travail de composition peuvent avancer séparément une fois l’interface
-de requête stabilisée. E attend A/B/C/D. Les futurs tickets doivent nommer leurs
+de requête stabilisée. E attend A/B/C/D. Les tickets nomment leurs
 dépendances réelles et leurs fichiers propriétaires ; pas de parallélisme forcé
 entre auteurs modifiant les mêmes familles/contrats.
+
+### Issues exécutables créées
+
+Les cinq issues sont des **enfants natifs GitHub** de #1014 ; les dépendances
+ci-dessous sont également enregistrées nativement, pas uniquement dans ce texte.
+Un label `ready-for-agent` ne lève pas une dépendance non fusionnée.
+
+| Lot | Issue | Type | Bloqueurs avant démarrage |
+| --- | --- | --- | --- |
+| A — capture/requête communes | #1021 | AFK, `ready-for-agent` | aucun |
+| B — familles/valeurs communes | #1022 | AFK, `ready-for-agent` | #1021 fusionné |
+| C — contrôleur/contrôles communs | #1023 | HITL, `ready-for-human` | #1021 fusionné + politique d’activation sur données/actifs incomplets confirmée |
+| D — compositeur/pagination | #1024 | AFK, `ready-for-agent` | #1021 et #1022 fusionnés |
+| E — intégration/acceptation transversale | #1025 | AFK, `ready-for-agent` | #1021, #1022, #1023 et #1024 fusionnés |
+
+Le point HITL de C n’est pas une nouvelle revue des textes ou de la mise en page
+approuvés : il précise seulement ce que fait l’action lorsque des preuves/actifs
+sont encore en attente ou partiellement indisponibles. A peut fournir les états
+sans choisir cette politique UI. Aucun worker n’est lancé par la création de ces
+issues ; aucun chantier d’extraction AEDAR n’est rouvert.
 
 ### Garde-fous de reprise
 
