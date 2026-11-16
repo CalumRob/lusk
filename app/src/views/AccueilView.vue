@@ -42,11 +42,16 @@ function naviguerOnglets(event: KeyboardEvent) {
   <section class="accueil" :aria-busy="chargement ? 'true' : 'false'">
     <header class="accueil-hero">
       <div class="accueil-hero-interieur">
-        <div class="accueil-hero-contenu">
+        <div class="accueil-hero-tete">
           <h1 class="accueil-accroche">Intelligence territoriale en Bretagne</h1>
           <p class="accueil-sous-titre">
             Accès aux équipements, migrations, occupation des sols, habitat… Lusk propose des données ouvertes et des analyses originales pour comprendre les dynamiques et les tensions des territoires bretons.
           </p>
+        </div>
+        <div class="accueil-hero-marque" aria-label="Lusk — breton, élan, mouvement">
+          <LuskBrand verticale class="accueil-marque" />
+        </div>
+        <div class="accueil-hero-acces">
           <nav class="accueil-acces" aria-label="Explorer Lusk">
             <div class="accueil-territoires">
               <div class="accueil-onglets" role="tablist" aria-label="Accéder aux territoires" @keydown="naviguerOnglets">
@@ -108,10 +113,6 @@ function naviguerOnglets(event: KeyboardEvent) {
             </div>
           </div>
         </div>
-        <div class="accueil-hero-marque" aria-label="Lusk — breton, élan, mouvement">
-          <LuskBrand verticale class="accueil-marque" />
-          <span class="accueil-marque-caption">/'lysk/ · breton · élan, mouvement</span>
-        </div>
       </div>
     </header>
     <div class="accueil-interieur">
@@ -143,14 +144,26 @@ function naviguerOnglets(event: KeyboardEvent) {
   display: grid;
   /* Zero intrinsic minimum: neither the input nor a long result can grow the column. */
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  gap: var(--space-12);
-  align-items: center;
+  grid-template-areas:
+    "tete marque"
+    "acces marque";
+  column-gap: var(--space-12);
+  row-gap: var(--space-5);
+  /* #1027 owner revision: both areas start at the top of the composition. A tab
+     change grows the access area downward; the brand keeps its anchored place
+     instead of re-centring. This is not viewport fixed/sticky. */
+  align-items: start;
 }
-.accueil-hero-contenu {
+.accueil-hero-tete {
+  grid-area: tete;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+}
+.accueil-hero-acces {
+  grid-area: acces;
+  min-width: 0;
 }
 .accueil-accroche {
   margin: 0;
@@ -267,6 +280,8 @@ function naviguerOnglets(event: KeyboardEvent) {
   flex-direction: column;
   align-items: center;
   gap: var(--space-3);
+  /* Constant offset from the anchored grid start — independent of panel height. */
+  padding-top: var(--space-6);
   text-align: center;
   user-select: none;
 }
@@ -281,13 +296,6 @@ function naviguerOnglets(event: KeyboardEvent) {
   width: 1.3em;
   height: 1.3em;
   margin-bottom: -0.467em;
-}
-.accueil-marque-caption {
-  font: var(--text-caption);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
 }
 .accueil-interieur {
   width: 100%;
@@ -321,10 +329,15 @@ function naviguerOnglets(event: KeyboardEvent) {
 @media (max-width: 767.98px) {
   .accueil-hero-interieur {
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-6);
+    /* The brand sits BEFORE the expanding access area, so tab changes can never
+       move it in the single-column flow either. Document order stays readable. */
+    grid-template-areas: "tete" "marque" "acces";
+    column-gap: 0;
+    row-gap: var(--space-6);
     padding-top: var(--space-8);
     padding-bottom: var(--space-8);
   }
+  .accueil-hero-marque { padding-top: 0; }
   .accueil-editorial { grid-template-columns: minmax(0, 1fr); }
 }
 </style>

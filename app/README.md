@@ -33,7 +33,7 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 
 | Route | Name | Status |
 |---|---|---|
-| `/` | `accueil` | **Revised for fourth owner preview, awaiting inspection** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
+| `/` | `accueil` | **Revised for fifth owner preview, awaiting inspection** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
 | `/carte` | `carte` | **Built** — map (#39) ; épargnée par ruling PO (2026-08-26, #410) : routée et fonctionnelle mais SANS aucun lien face-utilisateur |
 | `/communes` | `communes` | **Built** — link directory (#40) |
 | `/epcis` | `epcis` | **Built** — link directory (#40) |
@@ -66,17 +66,25 @@ visual direction but explicitly rejected reserved common panel height (comment
 6919092689). Each panel now takes its natural height: browsing intentionally
 pushes the indicator link and following content down; returning to search
 contracts the page. Stable widths and search-state geometry remain required.
-Owner inspection of this fourth preview is **pending**, before reviewer dispatch.
+
+After the fourth preview (comment 6919452040) the hero brand block is anchored
+inside the composition: a tab change grows the access area downward while the
+logo/ermine keeps its position — no viewport fixed/sticky. On the single-column
+layout the brand is ordered before the access area for the same reason. The
+translation/pronunciation caption is removed for this preview; the brand keeps
+its accessible name. Prior identity tokens and copy are otherwise unchanged.
+Owner inspection of this fifth preview is **pending**, before reviewer dispatch.
 This is not a site-wide design adoption or publication claim.
 
 With the dev server running, `node scripts/verify-homepage.mjs` checks real
 committed territory assets, long labels, fixed geometry, empty/loading/error and
-retry states, intentional cross-tab expansion/contraction, equal tab widths,
+retry states, intentional cross-tab expansion/contraction, brand anchoring at
+1440/900/375/320, equal tab widths, exact and prefix administrative-code search,
 row targets/separators/hover/focus/active states,
 tab keyboard/focus behavior, actual list navigation, preserved
-header/mobile links, keyboard suggestions and inert placeholders at 1440/375/320px.
+header/mobile links, keyboard suggestions and inert placeholders.
 `LUSK_PREVIEW_URL` selects the server; `LUSK_SCREENSHOT_DIR` selects an external
-evidence folder (default `E:/Temp/opencode/homepage-1027-r4`). It simulates one failed
+evidence folder (default `E:/Temp/opencode/homepage-1027-r5`). It simulates one failed
 territory request per viewport, then retries the real file; it does not publish
 or invent data. This browser proof complements the homepage/footer/app and shared
 search unit tests, not owner visual acceptance.

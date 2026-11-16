@@ -85,11 +85,12 @@ describe('Accueil — direction approuvée #1027', () => {
     expect(router.currentRoute.value.path).toBe('/communes')
   })
 
-  it('conserve la signature, l’hermine et la légende', async () => {
+  it('conserve la signature et l’hermine, sans légende de prononciation mais avec un nom accessible', async () => {
     const { wrapper } = await monter()
     expect(wrapper.find('.accueil-hero .lusk-marque__ermine').exists()).toBe(true)
     expect(wrapper.find('.lusk-marque__mot').text()).toBe('lusk')
-    expect(wrapper.find('.accueil-marque-caption').text()).toBe("/'lysk/ · breton · élan, mouvement")
+    expect(wrapper.find('.accueil-marque-caption').exists()).toBe(false)
+    expect(wrapper.get('.accueil-hero-marque').attributes('aria-label')).toBe('Lusk — breton, élan, mouvement')
     expect(wrapper.find('.accueil-accroche').text()).toBe('Intelligence territoriale en Bretagne')
   })
 

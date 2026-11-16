@@ -12,7 +12,7 @@ const browser = await chromium.launch({
 })
 const report = []
 try {
-  for (const width of [1440, 375, 320]) {
+  for (const width of [1440, 900, 375, 320]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
     const errors = []
     const assetFailures = []
@@ -36,7 +36,8 @@ try {
         const r = document.querySelector(selector).getBoundingClientRect()
         return { x: r.x, y: r.y + window.scrollY, width: r.width, height: r.height }
       }
-      return { search: box('.accueil-territoires'), editorial: box('.accueil-editorial'),
+      return { search: box('.accueil-territoires'), brand: box('.accueil-hero-marque'),
+        editorial: box('.accueil-editorial'),
         link: box('.accueil-indicateurs'), pageWidth: document.documentElement.scrollWidth }
     })
     const initial = await geometry()
@@ -65,6 +66,14 @@ try {
     assert(browseGeometry.editorial.y > initial.editorial.y, 'browse intentionally pushes subsequent content down')
     assert.equal(browseGeometry.link.x, initial.link.x)
     assert.equal(browseGeometry.editorial.width, initial.editorial.width)
+    if (width >= 768) {
+      // Owner revision: the right-side brand is anchored in the composition.
+      assert.deepEqual(browseGeometry.brand, initial.brand, 'brand/ermine stays put across tab changes')
+    } else {
+      // Single-column flow: the brand is ordered before the expanding access
+      // area, so it must not move either; only its left edge may reflow.
+      assert.deepEqual(browseGeometry.brand, initial.brand, 'stacked brand stays put across tab changes')
+    }
     const rowGeometry = await page.locator('#accueil-panneau-parcourir a').evaluateAll((els) => els.map((el) => {
       const r = el.getBoundingClientRect()
       const panel = el.parentElement.getBoundingClientRect()
@@ -261,6 +270,9 @@ try {
     await page.locator('.bouton-reessayer').waitFor()
     assert.deepEqual(await geometry(), loading, 'error/retry must not shift search or following content')
     await page.screenshot({ path: `${output}/homepage-${width}-error.png`, fullPage: true, animations: 'disabled' })
+    // The search dropdown is an out-of-flow overlay: dismiss it before using
+    // the page-level retry underneath (the normal keyboard path).
+    await input.press('Escape')
     await page.locator('.bouton-reessayer').click()
     await page.locator('.accueil[aria-busy="false"]').waitFor()
     await input.focus()
@@ -268,10 +280,12 @@ try {
     assert.deepEqual(await geometry(), loading, 'successful retry must keep geometry')
     assert.equal(errors.length, 0, errors.join('\n'))
     assert.equal(assetFailures.length, 0, assetFailures.join('\n'))
+    const brandDeltaY = browseGeometry.brand.y - initial.brand.y
     report.push({ width, tabWidths: [searchTabBox.width, browseTabBox.width], rowGeometry, browseGeometry, codeSearch,
+      brandDeltaY,
       longest: longest.nom, initial, loading, slots, pageErrors: errors, assetFailures })
     await page.close()
   }
   await writeFile(`${output}/verification.json`, JSON.stringify(report, null, 2))
-  console.log(`Homepage tabs/focus/list navigation/header/footer, code exact/prefix search (#1028), geometry, real assets, empty/loading/error/retry, keyboard and inert slots passed at 1440/375/320px. Evidence: ${output}`)
+  console.log(`Homepage tabs/focus/list navigation/header/footer, code exact/prefix search (#1028), geometry, real assets, empty/loading/error/retry, keyboard and inert slots passed at 1440/900/375/320px. Evidence: ${output}`)
 } finally { await browser.close() }
