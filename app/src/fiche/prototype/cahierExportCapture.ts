@@ -1162,4 +1162,3 @@ function invalidProjection(
 ): CahierExportProjection {
   return Object.freeze({ status: 'invalid' as const, reason, message })
 }
-

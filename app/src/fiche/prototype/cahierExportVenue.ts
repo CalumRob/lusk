@@ -3,9 +3,8 @@
  *
  * The shell owns the venue; each mounted section body exposes the local state
  * its own figures already own through a public publication, never through
- * `__vueParentComponent`, `setupState` or private component names. Capturing
- * reads the current thunks synchronously: it starts no acquisition and never
- * mutates a control.
+ * private component internals. Capturing reads the current thunks
+ * synchronously: it starts no acquisition and never mutates a control.
  */
 import { inject, onBeforeUnmount, provide } from 'vue'
 import type { InjectionKey } from 'vue'
