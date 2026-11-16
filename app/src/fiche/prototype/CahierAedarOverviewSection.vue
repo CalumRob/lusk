@@ -2,7 +2,11 @@
 import { CarFront } from 'lucide-vue-next'
 import { computed } from 'vue'
 import type { AedarCarAccessOverviewEvidence, AedarCarAccessOverviewScalar } from '@/fiche/content/themeContent'
-import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
+import {
+  aedarOverviewScalarAria,
+  aedarOverviewScalarRankAria,
+  aedarOverviewScalarServedRank,
+} from './aedarFigureReadings'
 import CahierBlankMapSlots from './CahierBlankMapSlots.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import CahierEvidenceSource from './CahierEvidenceSource.vue'
@@ -30,22 +34,8 @@ useCahierExportPublication(() => ({
 function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
 }
-function scalarRank(scalar: AedarCarAccessOverviewScalar) {
-  if (typeof scalar.rank !== 'number' || typeof scalar.rankSize !== 'number') return null
-  const rank = { position: scalar.rank, size: scalar.rankSize, ties: scalar.rankTies ?? null }
-  return formatServedRank(rank) ? rank : null
-}
-function scalarRankAria(scalar: AedarCarAccessOverviewScalar): string | null {
-  const rank = scalarRank(scalar)
-  return rank ? formatServedRankAria(rank) : null
-}
-function scalarServedRank(scalar: AedarCarAccessOverviewScalar) {
-  const rank = scalarRank(scalar)
-  if (!rank || !scalar.rankDirection) return null
-  return { ...rank,
-    direction: scalar.rankDirection === 'high' ? 'plus-est-mieux' as const : 'moins-est-mieux' as const,
-    key: scalar.key }
-}
+const scalarRankAria = aedarOverviewScalarRankAria
+const scalarServedRank = aedarOverviewScalarServedRank
 </script>
 
 <template>
@@ -75,7 +65,7 @@ function scalarServedRank(scalar: AedarCarAccessOverviewScalar) {
           :icon="CarFront"
           tone="c"
           color-value
-          :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${evidence.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : scalar.comparisonUnavailableLabel ? ` ${scalar.comparisonAccessibleLabel ?? 'Moyenne du groupe comparé'} indisponible.` : ''}${scalarRankAria(scalar) ? ` Rang ${scalarRankAria(scalar)}.` : ''}`"
+          :aria-label="aedarOverviewScalarAria(evidence, scalar, comparisonEligible)"
         >
           <template v-if="comparisonEligible && (scalar.reference || scalar.comparisonUnavailableLabel)" #reference>
             <CahierComparisonValue

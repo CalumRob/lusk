@@ -3,11 +3,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Bike, BusFront, CarFront, ChevronDown, Footprints } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import type { AedarEquipmentProfileEvidence } from '@/fiche/content/themeContent'
-import { AEDAR_EQUIPMENT_BUCKET_HORIZONS, AEDAR_EQUIPMENT_MODES, aedarEquipmentShareMeasureKey, classifyAedarEquipmentTypes } from '@/fiche/content/aedarEquipmentBuckets'
+import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentBucketKey, AedarEquipmentModeKey } from '@/fiche/content/aedarEquipmentBuckets'
 import type { FigureLegendEntry, CahierFigureTooltipAnchor } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS, AEDAR_TIME_MODE_LABEL_INKS } from './aedarTimeModeColors'
+import { aedarWaffleModeRows, aedarWaffleReading, aedarWaffleShareLabel } from './aedarFigureReadings'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierDialog from './CahierDialog.vue'
@@ -45,19 +46,13 @@ const tooltipAnchor = computed(() => hoveredType.value ? hoveredAnchor.value : f
 const tableScroll = ref<HTMLElement | null>(null)
 const canScrollTable = ref(false)
 let tableResizeObserver: ResizeObserver | null = null
-const profile = computed(() => {
-  try {
-    return classifyAedarEquipmentTypes(props.evidence.facts, {
-      horizonMinutes: horizonMinutes.value,
-      threshold: props.evidence.threshold,
-    })
-  } catch {
-    return null
-  }
-})
-const summary = computed(() => profile.value?.status === 'complete'
-  ? `Répartition des ${profile.value.buckets.reduce((total, bucket) => total + bucket.count, 0)} types d’équipements à ${horizonMinutes.value} minutes. ${profile.value.buckets.map((item) => `${item.label} : ${item.count}`).join('. ')}.`
-  : 'Répartition indisponible : les données AEDAR sont incomplètes ou incohérentes.')
+const waffle = computed(() => aedarWaffleReading({
+  facts: props.evidence.facts,
+  threshold: props.evidence.threshold,
+  horizonMinutes: horizonMinutes.value,
+}))
+const profile = computed(() => waffle.value.profile)
+const summary = computed(() => waffle.value.summary)
 const modeIcons: Readonly<Record<string, Component>> = {
   walk: Footprints,
   transit: BusFront,
@@ -93,7 +88,7 @@ const filteredTypes = computed(() => {
       || type.label.toLocaleLowerCase('fr-FR').includes(query)
       || type.typequ.toLocaleLowerCase('fr-FR').includes(query))
 })
-const shareModes = AEDAR_EQUIPMENT_MODES.map(({ key, tableLabel }) => ({ key, label: tableLabel }))
+const shareModes = aedarWaffleModeRows()
 const percent = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 1 })
 
 function updateTableScrollAffordance() {
@@ -117,9 +112,7 @@ watch([filteredTypes, dialogOpen], async () => {
 }, { flush: 'post' })
 
 function shareFor(typequ: string, mode: AedarEquipmentModeKey): string {
-  const fact = props.evidence.facts.find((item) => item.typequ === typequ)
-  const value = fact?.measures[aedarEquipmentShareMeasureKey(horizonMinutes.value, mode)]
-  return typeof value === 'number' && Number.isFinite(value) ? percent.format(value) : '—'
+  return aedarWaffleShareLabel(props.evidence.facts, horizonMinutes.value, typequ, mode)
 }
 
 function setHorizonMinutes(horizon: AedarEquipmentHorizon): void {
