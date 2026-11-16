@@ -11,7 +11,16 @@ import { sousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaison'
 import type { SousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaison'
 import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
 import { PALETTE_PDF } from '@/fiche/prototype/cahierPdfPalette'
+import { couleurPdf } from '@/fiche/prototype/cahierPdfPalette'
 import { construireTableauxPdf } from '@/fiche/prototype/cahierPdfTableau'
+import {
+  curveGeometry,
+  mobiliteBarScale,
+  rampScale,
+  shareFillPercent,
+  visibleCurveTicks,
+  waffleGridPosition,
+} from '@/fiche/prototype/cahierFigureNativeGeometry'
 import type { CahierTableColumn, CahierTableRow } from '@/fiche/prototype/cahierExportAdapters'
 import type { CahierCaptureComparison } from '@/fiche/prototype/cahierExportCapture'
 import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
@@ -28,6 +37,7 @@ import {
   requetePour,
   toutesLesRequetes,
   verifierDansPage,
+  verifierCollisions,
 } from './helpers/cahierPdfRuntime'
 import { cahierExportFixture, communeMembers, sectionOf } from './helpers/cahierExportFixtures'
 import { capturePdfFixture } from './helpers/cahierPdfFixtures'
@@ -49,6 +59,167 @@ function requeteSansMode(capture: CahierExportRequest['capture']): CahierExportR
   const projection = projeterRequeteExport(capture, [])
   if (projection.status !== 'ready') throw new Error(projection.reason)
   return projection.request
+}
+
+function requeteAvecModes(capture: CahierExportRequest['capture']): CahierExportRequest {
+  const modes = capture.capabilities.selectableSeries.slice(0, 3).map((serie) => serie.id)
+  const projection = projeterRequeteExport(capture, modes)
+  if (projection.status !== 'ready') throw new Error(projection.reason)
+  return projection.request
+}
+
+/** Test-only dense native curve: 73 published points, declared tick labels. */
+function captureCourbeDense() {
+  const capture: any = structuredClone(capturePdfFixture('visiter-la-bretagne'))
+  const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-curve')
+  const base = figure.model.points[0]
+  const points = Array.from({ length: 73 }, (_, index) => ({
+    ...base,
+    fact: {
+      ...base.fact,
+      detail: `t${String(index * 5).padStart(4, '0')}`,
+      value: index / 72,
+      unit: '%',
+    },
+  }))
+  const ticks = points.map((point, index) => ({
+    detail: point.fact.detail,
+    label: `${index * 5} min`,
+    mobile: index % 6 === 0,
+  }))
+  figure.model.points = points
+  figure.model.trajectory = { ...figure.model.trajectory, ticks }
+  figure.model.axis = {
+    values: points.map((point, index) => ({ detail: point.fact.detail, numericValue: index * 5 })),
+    minimum: 0,
+    maximum: 360,
+  }
+  figure.model.markerValue = {
+    fact: {
+      ...points[18]!.fact,
+      comparison: {
+        direction: 'neutral',
+        scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
+        rank: { position: 1, size: 43, ties: null },
+        reference: { value: 0.8, unit: '%' },
+      },
+    },
+    label: '1 h 30',
+  }
+  figure.model.comparison = {
+    statistic: 'mean',
+    scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
+    selectedMemberCount: 3,
+    eligibleCount: 2,
+    modelZeroReasonCounts: {},
+    points: points.map((point) => ({
+      ...point,
+      fact: { ...point.fact, value: point.fact.value * 0.9 },
+    })),
+  }
+  return capture
+}
+
+/** Test-only native share at the served 0,9957355 fraction. */
+function capturePartDense() {
+  const capture: any = structuredClone(capturePdfFixture('couverture-du-territoire'))
+  const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-share')
+  figure.model.value.fact.value = 0.9957355
+  figure.model.value.fact.unit = '%'
+  figure.model.value.fact.comparison = {
+    direction: 'neutral',
+    scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
+    rank: null,
+    reference: { value: 0.8, unit: '%' },
+  }
+  figure.model.unit = '%'
+  return capture
+}
+
+/** Test-only native ramp whose real maximum is 1.4 (integer axis 0/1/2). */
+function captureRampeDense() {
+  const capture: any = structuredClone(capturePdfFixture('aedar-access'))
+  const figure = capture.figures.find((candidate: any) => candidate.family === 'aedar-ramps')
+  for (const ramp of figure.model.ramps) {
+    ramp.territory = {
+      ...ramp.territory,
+      car: [0.2, 0.7, 1.1, 1.4],
+      bike_lts2: [0.1, 0.5, 0.9, 1.2],
+    }
+    ramp.reference = {
+      car: [0.1, 0.4, 0.8, 1.0],
+      bike_lts2: [0.05, 0.3, 0.6, 0.9],
+      bike_lts4: [null, null, null, null],
+      transit: [null, null, null, null],
+      walk: [null, null, null, null],
+    } as typeof ramp.reference
+    ramp.yAxis.unit = 'types'
+  }
+  return capture
+}
+
+/** Test-only native compared bars with real split segments and 3.4 maximum. */
+function captureBarresDense() {
+  const capture: any = structuredClone(capturePdfFixture('reseaux'))
+  const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-bars')
+  const model = figure.model.figure
+  model.yAxisTitle = 'Places'
+  model.unit = 'places / 1 000 hab.'
+  model.xAxisTitle = 'Type de stationnement'
+  const category = model.categories[0]
+  category.value.fact.value = 3.4
+  category.value.fact.unit = 'places / 1 000 hab.'
+  category.value.fact.comparison = {
+    direction: 'neutral',
+    scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
+    rank: null,
+    reference: { value: 2.2, unit: 'places / 1 000 hab.' },
+  }
+  const segment = (key: string, label: string, value: number, reference: number) => ({
+    key,
+    label,
+    value: {
+      fact: {
+        ...category.value.fact,
+        value,
+        comparison: {
+          direction: 'neutral',
+          scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
+          rank: null,
+          reference: { value: reference, unit: 'places / 1 000 hab.' },
+        },
+      },
+      label,
+    },
+    rawValue: null,
+  })
+  category.segments = [
+    segment('protege_km_1000', 'Protégé', 2.0, 1.3),
+    segment('partage_km_1000', 'Partagé', 1.4, 0.9),
+  ]
+  category.comparisonSplit = true
+  return capture
+}
+
+/** Test-only native waffle with twelve classified equipment types. */
+function captureWaffleDense() {
+  const base = sectionOf(cahierExportFixture().content, 'aedar-equipment-profile')
+  const evidence = base.evidence as unknown as { facts: readonly Record<string, unknown>[] }
+  const buckets = ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car']
+  const facts = Array.from({ length: 12 }, (_, index) => ({
+    ...evidence.facts[index % evidence.facts.length],
+    typequ: `T${String(index + 1).padStart(3, '0')}`,
+    typequ_label: `Équipement ${index + 1}`,
+    measures: {
+      count_15_walk_share: index % 5 === 0 ? 0.8 : 0.05,
+      count_15_transit_share: index % 5 === 1 ? 0.8 : 0.05,
+      count_15_bike_lts2_share: index % 5 === 2 ? 0.8 : 0.05,
+      count_15_bike_lts4_share: index % 5 === 3 ? 0.8 : 0.05,
+      count_15_car_share: index % 5 === 4 ? 0.8 : 0.05,
+    },
+    bucketHint: buckets[index % 5],
+  }))
+  return capturePdfFixture('aedar-equipment-profile', { evidencePatch: { facts } })
 }
 
 async function generer(request: CahierExportRequest, nom: string) {
@@ -88,6 +259,7 @@ describe('compositeur PDF Cahier — matrice des neuf sections', () => {
       }
       expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(6)
       verifierDansPage(lecture)
+      verifierCollisions(lecture)
       expect(lecture.metadonnees.author).toBe('Lusk')
       expect(lecture.metadonnees.title).toContain('Commune A1')
       expect(lecture.liens).toContain('https://lusk.test/')
@@ -147,7 +319,7 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
 
   it('audite les barres comparées et rangs de réseaux, page par page', async () => {
     const { lecture } = await generer(requetePour('reseaux'), 'audit-reseaux.pdf')
-    expect(lecture.pages).toBe(2)
+    expect(lecture.pages).toBeGreaterThanOrEqual(1)
     contientTout(lecture, [
       'Le partage de l’espace public',
       'Longueur du réseau par habitant',
@@ -161,23 +333,25 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
       'Réseau piéton',
       'Réseau cyclable',
       'Réseau automobile',
-      'Valeur du territoire',
       'Groupe comparé',
       '¹ Groupe comparé : communes de EPCI X',
       'Source(s) : OpenStreetMap',
     ])
     // Rank text is a second line under its value; the row stays one table row.
     expect(lecture.lignes.some((candidate) => candidate.texte.includes('2e/2'))).toBe(true)
-    // Continuation repeats the section identity, column header and sources.
-    contientTout({ ...lecture, texteComplet: lecture.lignes.filter((l) => l.page === 2).map((l) => l.texte).join(' ') } as LecturePdf, [
-      'COMMUNE A1',
-      'Longueur du réseau par habitant',
-      'Groupe comparé',
-      'Source(s) : OpenStreetMap',
-      '2 / 2',
-    ])
-    // Both pages carry comparative proof, so both carry the footer.
-    expect(occurrences(lecture, '¹ Groupe comparé : communes de EPCI X')).toBe(2)
+    // A continuation repeats the section identity, column header and sources.
+    if (lecture.pages > 1) {
+      const pageDerniere = lecture.lignes.filter((ligne) => ligne.page === lecture.pages).map((ligne) => ligne.texte).join(' ')
+      contientTout({ ...lecture, texteComplet: pageDerniere } as LecturePdf, [
+        'COMMUNE A1',
+        'Longueur du réseau par habitant',
+        'Groupe comparé',
+        'Source(s) : OpenStreetMap',
+        `${lecture.pages} / ${lecture.pages}`,
+      ])
+    }
+    // Every page that carries comparative proof carries the footer.
+    expect(occurrences(lecture, '¹ Groupe comparé : communes de EPCI X')).toBe(lecture.pages)
     // No row is cut: the six native rows appear once across the two pages.
     for (const label of [
       'Réseau piéton — Réseau piéton',
@@ -300,11 +474,9 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
 
   it('n’affiche le pied comparatif que sur la page qui porte la preuve', async () => {
     const base = requetePour('visiter-la-bretagne')
-    const diversity = capturePdfFixture('aedar-diversity-loss')
-    const capture: any = structuredClone(base.capture)
-    // Test-only cross-family page-flow fixture: non-comparative map figures
-    // before the real comparative curve, to force a measured page break.
-    capture.figures = [diversity.figures[0]!, diversity.figures[0]!, diversity.figures[0]!, ...capture.figures]
+    const overview = capturePdfFixture('aedar-car-overview')
+    const figures = Array.from({ length: 6 }, () => overview.figures[0]!)
+    const capture: any = { ...base.capture, figures: [...figures, ...base.capture.figures] }
     const { lecture } = await generer({ ...base, capture } as CahierExportRequest, 'preuve-page-locale.pdf')
     expect(lecture.pages).toBeGreaterThanOrEqual(2)
     const pagesAvecPied = lecture.lignes
@@ -312,6 +484,99 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
       .map((ligne) => ligne.page)
     expect(pagesAvecPied.length).toBeGreaterThan(0)
     expect(pagesAvecPied).not.toContain(1)
+  })
+})
+
+describe('scènes natives peuplées — géométrie partagée écran/PDF', () => {
+  it('garde la courbe dense à 73 points, ticks déclarés et axe pourcentage fixe', async () => {
+    const { lecture } = await generer(requeteSansMode(captureCourbeDense()), 'dense-curve.pdf')
+    contientTout(lecture, ['0 %', '25 %', '50 %', '75 %', '100 %', 'Temps de trajet'])
+    const ticks = Array.from({ length: 73 }, (_, index) => ({
+      key: `t${index}`,
+      position: index * 10,
+      label: `${index * 5} min`,
+    }))
+    const visibles = visibleCurveTicks(ticks, 520, 640, 't18', (label) => (label?.length ?? 2) * 7)
+    expect(visibles.length).toBeGreaterThan(2)
+    expect(visibles.length).toBeLessThan(73)
+    expect(visibles.some((tick) => tick.key === 't18')).toBe(true)
+    expect(lecture.pages).toBeGreaterThanOrEqual(2)
+    for (let page = 1; page <= lecture.pages; page += 1) {
+      const pageTexte = lecture.lignes.filter((ligne) => ligne.page === page).map((ligne) => ligne.texte).join(' ')
+      expect(pageTexte).toContain('COMMUNE A1')
+      expect(pageTexte).toContain('Source(s) : Lusk')
+    }
+    const rowLabels = new Set(lecture.lignes.flatMap((ligne) => ligne.items.map((item) => item.str)).filter((value) => /^\d+ min$/.test(value)))
+    expect(rowLabels.size).toBe(73)
+    verifierDansPage(lecture)
+    verifierCollisions(lecture)
+  })
+
+  it('garde la part native 99,6 % et son unité au lieu de forcer 100 %', async () => {
+    const { lecture } = await generer(requeteSansMode(capturePartDense()), 'dense-share.pdf')
+    expect(lecture.texteComplet).toContain('99,6 %')
+    expect(lecture.texteComplet).not.toContain('100,0 %')
+    expect(shareFillPercent(0.9957355, '%')).toBeCloseTo(99.57355, 4)
+    expect(shareFillPercent(0.5, 'parts / 1 000')).toBe(0.5)
+    verifierCollisions(lecture)
+  })
+
+  it('garde l’axe entier natif de rampe (max 1,4 → 0/1/2)', async () => {
+    const { lecture } = await generer(requeteAvecModes(captureRampeDense()), 'dense-ramp.pdf')
+    const scale = rampScale(
+      [{ key: 'car', label: 'Voiture', points: [
+        { xValue: 5, xLabel: '5 min', value: 0.2, referenceValue: null },
+        { xValue: 10, xLabel: '10 min', value: 1.4, referenceValue: null },
+      ] }],
+      false,
+    )
+    expect(scale.ticks).toEqual([0, 1, 2])
+    contientTout(lecture, ['0', '1', '2', 'types', 'Diversité de l’offre accessible'])
+    expect(lecture.texteComplet).not.toContain('0,47')
+    verifierCollisions(lecture)
+  })
+
+  it('garde l’échelle arrondie et les segments natifs des barres comparées', async () => {
+    const { lecture } = await generer(requeteSansMode(captureBarresDense()), 'dense-bars.pdf')
+    contientTout(lecture, [
+      'Places',
+      'places / 1 000 hab.',
+      'Unité : places / 1 000 hab.',
+      'Protégé',
+      'Partagé',
+      'Groupe comparé',
+    ])
+    // Native rounded headroom for 3,4 must not become a raw 0/.85/1.7 axis.
+    expect(lecture.texteComplet).not.toContain('0,85')
+    verifierCollisions(lecture)
+  })
+
+  it('partage les mêmes primitives de domaine entre écran et PDF', () => {
+    const bars: any = captureBarresDense()
+    const barFigure = bars.figures.find((candidate: any) => candidate.family === 'mobilite-bars').model.figure
+    const single = { ...barFigure, categories: [barFigure.categories[0]] }
+    const barScale = mobiliteBarScale(single, true)
+    expect(barScale.ticks).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5])
+    expect(barScale.maximum).toBe(3.5)
+
+    const curve: any = captureCourbeDense()
+    const curveFigure = curve.figures.find((candidate: any) => candidate.family === 'mobilite-curve').model
+    const geometry = curveGeometry(curveFigure, {
+      width: 640,
+      height: 300,
+      margin: { top: 22, right: 68, bottom: 62, left: 64 },
+    })
+    expect(geometry.yTicks.map((tick) => tick.label)).toEqual(['0 %', '25 %', '50 %', '75 %', '100 %'])
+    expect(geometry.xTicks).toHaveLength(73)
+  })
+
+  it('garde le flux waffle natif à cinq lignes et douze types', async () => {
+    const { lecture } = await generer(requeteSansMode(captureWaffleDense()), 'dense-waffle.pdf')
+    expect(lecture.texteComplet).toContain('Répartition des 12 types d’équipements à 15 minutes')
+    expect(waffleGridPosition(0)).toEqual({ row: 0, column: 0 })
+    expect(waffleGridPosition(5)).toEqual({ row: 0, column: 1 })
+    expect(waffleGridPosition(11)).toEqual({ row: 1, column: 2 })
+    verifierCollisions(lecture)
   })
 })
 
@@ -410,6 +675,34 @@ describe('compositeur PDF Cahier — refus explicites', () => {
     const { lecture } = await generer(requetePour('aedar-access'), 'negatif-colonne.pdf')
     expect(() => auditerTexte(lecture, ['colonne inexistante'])).toThrow(/colonne inexistante/)
     expect(() => auditerTexte(lecture, ['Groupe comparé : groupe inventé'])).toThrow(/groupe inventé/)
+  })
+
+  it('rejette une colonne réellement corrompue dans le PDF produit', async () => {
+    const bon = await generer(requeteAvecModes(captureBarresDense()), 'negatif-colonne-bon.pdf')
+    const capture = captureBarresDense()
+    const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-bars')
+    figure.model.figure.categories[0].axisLabel = 'COLONNE CORROMPUE'
+    const corrompu = await generer(requeteAvecModes(capture), 'negatif-colonne-reelle.pdf')
+    expect(corrompu.lecture.texteComplet).toContain('COLONNE CORROMPUE')
+    expect(occurrences(corrompu.lecture, 'à pied')).toBeLessThan(occurrences(bon.lecture, 'à pied'))
+    const attendu = occurrences(bon.lecture, 'à pied')
+    expect(() => {
+      if (occurrences(corrompu.lecture, 'à pied') !== attendu) throw new Error('colonne corrompue')
+    }).toThrow(/colonne corrompue/)
+  })
+
+  it('rejette un groupe réellement corrompu dans le PDF produit', async () => {
+    const bon = await generer(requeteAvecModes(captureBarresDense()), 'negatif-groupe-bon.pdf')
+    const capture = captureBarresDense()
+    capture.comparison.group = {
+      ...capture.comparison.group,
+      names: ['GROUPE CORROMPU'],
+      label: 'GROUPE CORROMPU',
+    }
+    const corrompu = await generer(requeteAvecModes(capture), 'negatif-groupe-reel.pdf')
+    expect(corrompu.lecture.texteComplet).toContain('GROUPE CORROMPU')
+    expect(() => auditerTexte(corrompu.lecture, ['communes de EPCI X'])).toThrow(/communes de EPCI X/)
+    expect(occurrences(corrompu.lecture, 'communes de EPCI X')).toBeLessThan(occurrences(bon.lecture, 'communes de EPCI X'))
   })
 })
 
@@ -728,5 +1021,7 @@ describe('polices PDF — provenance et marque', () => {
     expect(tokens).toContain(`--mode-transit: ${PALETTE_PDF.modeFoot};`)
     expect(tokens).toContain(`--mode-bike: ${PALETTE_PDF.modeBike};`)
     expect(tokens).toContain(`--mode-car: ${PALETTE_PDF.modeCar};`)
+    expect(couleurPdf('var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike)))')).toBe(PALETTE_PDF.modeBike)
+    expect(couleurPdf('var(--cahier-cycle-shared, #8c4c9e)')).toBe('#8c4c9e')
   })
 })

@@ -61,6 +61,7 @@ export interface TextePdf {
   readonly str: string
   readonly taille: number
   readonly largeur: number
+  readonly rotation: number
 }
 
 export interface LignePdf {
@@ -111,6 +112,7 @@ export async function lirePdf(blob: Blob): Promise<LecturePdf> {
         str: item.str,
         taille: Math.hypot(item.transform[0] ?? 0, item.transform[1] ?? 0),
         largeur: item.width,
+        rotation: Math.atan2(item.transform[1] ?? 0, item.transform[0] ?? 0),
       })
     }
     const annotations = await page.getAnnotations()
@@ -231,6 +233,38 @@ export function verifierDansPage(lecture: LecturePdf, tolerance = 1.5): void {
       throw new Error(
         `Texte hors page : « ${texte.str} » (${texte.x.toFixed(1)}, ${texte.y.toFixed(1)}, largeur ${texte.largeur.toFixed(1)})`,
       )
+    }
+  }
+}
+
+/** Real rendered-text overlap guard; catches cells/headers colliding. */
+export function verifierCollisions(lecture: LecturePdf, tolerance = 0.35): void {
+  const parPage = new Map<number, TextePdf[]>()
+  for (const texte of lecture.textes) {
+    if (!texte.str.trim()) continue
+    if (Math.abs(texte.rotation) > 0.01) continue
+    const liste = parPage.get(texte.page) ?? []
+    liste.push(texte)
+    parPage.set(texte.page, liste)
+  }
+  for (const [page, items] of parPage) {
+    for (let index = 0; index < items.length; index += 1) {
+      const a = items[index]!
+      const aTop = a.y
+      const aBottom = a.y + a.taille * 0.75
+      for (let otherIndex = index + 1; otherIndex < items.length; otherIndex += 1) {
+        const b = items[otherIndex]!
+        const bTop = b.y
+        const bBottom = b.y + b.taille * 0.75
+        const vertical = Math.min(aBottom, bBottom) - Math.max(aTop, bTop)
+        if (vertical <= Math.max(0.35, Math.min(a.taille, b.taille) * 0.35)) continue
+        const horizontal = Math.min(a.x + a.largeur, b.x + b.largeur) - Math.max(a.x, b.x)
+        if (horizontal > tolerance) {
+          throw new Error(
+            `Collision PDF page ${page} : « ${a.str} » et « ${b.str} » (x ${a.x.toFixed(1)}/${b.x.toFixed(1)})`,
+          )
+        }
+      }
     }
   }
 }
