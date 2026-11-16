@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core'
 // #1027: public rendered seam against a running preview. No invented article or
 // territory content: long labels come from the served committed reference.
 const base = process.env.LUSK_PREVIEW_URL || 'http://127.0.0.1:5177'
-const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r4'
+const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r5'
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
@@ -202,12 +202,38 @@ try {
     await page.locator('.accueil [role="option"]').first().waitFor()
     assert((await page.locator('.accueil [role="option"]').first().innerText()).includes("Côtes-d'Armor"))
     assert.equal(await page.locator('.accueil [role="option"]').first().locator('.global-search__chip').innerText(), 'Département')
-    await input.fill('99999')
-    await page.getByText('Aucun résultat trouvé.', { exact: true }).waitFor()
+    assert((await page.locator('.accueil [role="option"]').count()) > 1, 'exact department also exposes its code prefixes')
+    // Owner revision: code prefixes work while typing, not only complete codes.
     await input.fill('2200')
+    await page.waitForFunction(() => {
+      const rows = [...document.querySelectorAll('.accueil [role="option"]')]
+      return rows.length > 1 && rows.every((row) => row.textContent.includes('Commune'))
+    })
+    const prefixRows = await page.locator('.accueil [role="option"]').evaluateAll((els) => els.map((el) => el.innerText.trim()))
+    assert(prefixRows.length > 1)
+    assert(prefixRows[0].includes('Allineuc'))
+    assert(prefixRows.every((text) => text.includes('Commune')))
+    assert.deepEqual(await geometry(), initial, 'prefix results cannot change geometry')
+    await input.press('ArrowDown')
+    assert.equal(await input.getAttribute('aria-activedescendant'), 'gsb-option-0')
+    await input.press('Enter')
+    await page.waitForURL(`${base}/territoire/commune/22001`)
+    await page.goBack()
+    await page.locator('.accueil[aria-busy="false"]').waitFor()
+    await input.focus()
+    await input.fill('200027')
+    await page.waitForFunction(() => {
+      const first = document.querySelector('.accueil [role="option"]')
+      return first?.textContent.includes('CC Arc Sud Bretagne') && first.textContent.includes('EPCI')
+    })
+    const epciPrefix = await page.locator('.accueil [role="option"]').first().innerText()
+    assert(epciPrefix.includes('CC Arc Sud Bretagne'))
+    assert(epciPrefix.includes('EPCI'))
+    await input.fill('99999')
     await page.getByText('Aucun résultat trouvé.', { exact: true }).waitFor()
     await input.press('Escape')
     await input.fill('')
+    const codeSearch = { prefix2200: prefixRows, prefix200027: epciPrefix }
     const slots = await page.locator('.accueil-emplacement').evaluateAll((els) => els.map((el) => {
       const r = el.getBoundingClientRect()
       return { x: r.x, y: r.y, width: r.width }
@@ -242,10 +268,10 @@ try {
     assert.deepEqual(await geometry(), loading, 'successful retry must keep geometry')
     assert.equal(errors.length, 0, errors.join('\n'))
     assert.equal(assetFailures.length, 0, assetFailures.join('\n'))
-    report.push({ width, tabWidths: [searchTabBox.width, browseTabBox.width], rowGeometry, browseGeometry,
+    report.push({ width, tabWidths: [searchTabBox.width, browseTabBox.width], rowGeometry, browseGeometry, codeSearch,
       longest: longest.nom, initial, loading, slots, pageErrors: errors, assetFailures })
     await page.close()
   }
   await writeFile(`${output}/verification.json`, JSON.stringify(report, null, 2))
-  console.log(`Homepage tabs/focus/list navigation/header/footer, exact-code search (#1028), geometry, real assets, empty/loading/error/retry, keyboard and inert slots passed at 1440/375/320px. Evidence: ${output}`)
+  console.log(`Homepage tabs/focus/list navigation/header/footer, code exact/prefix search (#1028), geometry, real assets, empty/loading/error/retry, keyboard and inert slots passed at 1440/375/320px. Evidence: ${output}`)
 } finally { await browser.close() }

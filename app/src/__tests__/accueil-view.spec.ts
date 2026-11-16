@@ -141,6 +141,24 @@ describe('Accueil — direction approuvée #1027', () => {
       expect(router.currentRoute.value.path).toBe('/territoire/epci/200000001')
     } finally { vi.useRealTimers() }
   })
+
+  it('trouve aussi les territoires par préfixe de code depuis l’accueil (#1028)', async () => {
+    const { wrapper, router } = await monter()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const input = wrapper.get('input[role="combobox"]')
+      await input.trigger('focus')
+      await input.setValue('2200')
+      await vi.advanceTimersByTimeAsync(300)
+      expect(wrapper.findAll('[role="option"]').map((o) => o.attributes('href')))
+        .toEqual(['/territoire/commune/22001', '/territoire/commune/22002'])
+      await input.trigger('keydown', { key: 'ArrowDown' })
+      await input.trigger('keydown', { key: 'Enter' })
+      vi.useRealTimers()
+      await flushPromises()
+      expect(router.currentRoute.value.path).toBe('/territoire/commune/22001')
+    } finally { vi.useRealTimers() }
+  })
 })
 
 describe('Accueil — récupération préservée', () => {

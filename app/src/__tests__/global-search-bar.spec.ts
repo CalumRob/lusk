@@ -152,6 +152,31 @@ describe('GlobalSearchBar — debounced search and states', () => {
     expect(wrapper.emitted('select')?.[0][0]).toMatchObject({ territoire: '200000001', nom: 'EPCI X' })
   })
 
+  it('lists code-prefix matches while typing, in code order (#1028)', async () => {
+    const { wrapper, router } = monterRecherche()
+    const input = wrapper.find(INPUT)
+    await taper(wrapper, '2200')
+
+    const options = wrapper.findAll('[role="option"]')
+    expect(options.map((o) => o.attributes('href'))).toEqual([
+      '/territoire/commune/22001', '/territoire/commune/22002',
+    ])
+    await input.trigger('keydown', { key: 'ArrowDown' })
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/territoire/commune/22001')
+  })
+
+  it('keeps an exact département code ahead of commune code prefixes (#1028)', async () => {
+    const { wrapper } = monterRecherche()
+    await taper(wrapper, '22')
+
+    const options = wrapper.findAll('[role="option"]')
+    expect(options[0].find('.global-search__chip').text()).toBe('Département')
+    expect(options[0].text()).toContain('Département 22')
+    expect(options.map((o) => o.attributes('href'))).toContain('/territoire/commune/22001')
+  })
+
   it('shows the empty state when nothing matches', async () => {
     const { wrapper } = monterRecherche()
     await taper(wrapper, 'zzzz')
