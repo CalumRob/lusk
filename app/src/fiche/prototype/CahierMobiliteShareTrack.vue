@@ -87,7 +87,7 @@ useCahierExportPublication(() => ({
   state: {
     toggle: null,
     referenceAvailable: props.figure.value.fact.comparison?.reference != null,
-    displayed: reference.value !== null,
+    displayed: !props.comparisonNone && reference.value !== null,
   },
 }), 'share')
 
