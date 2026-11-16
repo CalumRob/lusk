@@ -1,15 +1,34 @@
 /**
- * Native-family figure primitives for the shared Cahier PDF (#1024).
+ * Native-family PDF primitives for the shared Cahier composer (#1024).
  *
- * Each drawing consumes the frozen #1022 projection (and, for the bars, the
- * frozen native `MobiliteBarsFigureEvidence` it projects) — never a screen
- * component, the DOM, an acquisition or a recomputed fact. Geometry and text
- * are redrawn in the same desktop grammar: mode colours, axes, ticks, legends,
- * ranks and the figure's own titles. SVG carries vector marks; jsPDF carries
- * selectable text and links.
+ * The correction after independent review: this file no longer owns axis
+ * domains, tick selection, series geometry, bar geometry, stacked comparison
+ * segments or waffle flow. Those live in `cahierFigureNativeGeometry.ts` and
+ * are consumed by the mounted figure components too. This file only paints the
+ * resulting native primitives (SVG/rect/line/path + selectable jsPDF text) and
+ * keeps native titles, axis labels, units, legends, ranks and colours.
  */
 import type { jsPDF } from 'jspdf'
 
+import {
+  CURVE_Y_TICKS,
+  curveGeometry,
+  mobiliteBarComparisonSegments,
+  mobiliteBarGeometry,
+  mobiliteBarScale,
+  mobiliteBarStackedSegments,
+  mobiliteBarTone,
+  mobiliteBarXticks,
+  mobiliteBarYTicks,
+  groupedBarGeometry,
+  groupedBarScale,
+  groupedBarTicks,
+  rampGeometry,
+  rampPaths,
+  shareFillPercent,
+  visibleCurveTicks,
+  waffleGridPosition,
+} from './cahierFigureNativeGeometry'
 import type { CahierFigureProjection } from './cahierExportAdapters'
 import type {
   CahierBarsProjection,
@@ -23,9 +42,15 @@ import type {
   CahierShareProjection,
 } from './cahierExportAdapters'
 import type { CahierCaptureFigure } from './cahierExportCapture'
+import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
+import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
+import type { MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
+import type { TimeRampPoint } from '@/fiche/content/territoryFacts'
+import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { mobiliteBarSegmentColor } from './cahierMobiliteReadings'
 import type { MesureTexte } from './cahierPdfMesure'
 import { plierTexte } from './cahierPdfMesure'
-import { COULEURS_MODES_PDF, COULEURS_TONS_PDF, PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
+import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
 import { POLICE_PDF } from './cahierPdfFonts'
 
 export interface ImagePdf {
@@ -49,10 +74,14 @@ export interface OptionsFigurePdf {
   readonly chargerImage: ChargeurImagePdf
   /** Native bars model for a `mobilite-bars` projection, from the same capture. */
   readonly modeleBars?: Extract<CahierCaptureFigure, { family: 'mobilite-bars' }>['model']['figure']
-  /** Owner-observed served comparative proof for this figure (not mere capability). */
+  /** Native explorer title, never parsed from the combined projection title. */
+  readonly distributionTitle?: string
+  /** Native distribution value unit for the y-axis title. */
+  readonly distributionUnit?: string
+  /** Native curve model, for the declared grid ticks/axis. */
+  readonly modeleCourbe?: MobiliteRaccordementEvidence
+  /** Owner-observed served comparative proof for this figure (not capability). */
   readonly comparisonProof?: boolean
-  /** Used by tests/offline SSR; production loads the actual inline asset. */
-  readonly carteFallback?: ImagePdf | null
 }
 
 const TAILLE = {
@@ -62,7 +91,6 @@ const TAILLE = {
   tick: 5.6,
   legende: 6.4,
   valeur: 14,
-  valeurPetite: 11,
   note: 6.2,
 } as const
 
@@ -71,14 +99,12 @@ function rgb(value: string): [number, number, number] {
 }
 
 function setFill(doc: jsPDF, value: string, opacity = 1): void {
-  const [r, g, b] = rgb(value)
-  doc.setFillColor(r, g, b)
+  doc.setFillColor(...rgb(value))
   if (opacity < 1) appliquerOpacite(doc, opacity)
 }
 
 function setStroke(doc: jsPDF, value: string, opacity = 1): void {
-  const [r, g, b] = rgb(value)
-  doc.setDrawColor(r, g, b)
+  doc.setDrawColor(...rgb(value))
   if (opacity < 1) appliquerOpacite(doc, opacity)
 }
 
@@ -98,7 +124,6 @@ interface OptionsTexte {
   readonly align?: 'left' | 'center' | 'right'
   readonly baseline?: 'top' | 'middle' | 'alphabetic'
   readonly espacement?: number
-  readonly opacite?: number
 }
 
 export function textePdf(
@@ -110,28 +135,13 @@ export function textePdf(
 ): void {
   doc.setFont(options.police, 'normal')
   doc.setFontSize(options.taille)
-  const [r, g, b] = rgb(options.couleur)
-  doc.setTextColor(r, g, b)
+  doc.setTextColor(...rgb(options.couleur))
   doc.setCharSpace(options.espacement ?? 0)
-  if (options.opacite !== undefined) doc.setGState(doc.GState({ opacity: options.opacite }))
   doc.text(texte, x, y, {
     align: options.align ?? 'left',
     baseline: options.baseline ?? 'top',
   })
   doc.setCharSpace(0)
-  if (options.opacite !== undefined) resetOpacity(doc)
-}
-
-export function hauteurTexte(
-  texte: string,
-  mesure: MesureTexte,
-  police: string,
-  taille: number,
-  largeur: number,
-  espacement = 0,
-): number {
-  const lignes = plierTexte(texte, mesure, { police, taillePt: taille, largeurMax: largeur, espacementPt: espacement })
-  return lignes.length * mesure.hauteurLigne(police, taille) * 1.18
 }
 
 function dessinerTextePlie(
@@ -143,11 +153,12 @@ function dessinerTextePlie(
   largeur: number,
   options: OptionsTexte,
 ): number {
-  const reelles = plierTexte(texte, mesure, {
+  const lignes = plierTexte(texte, mesure, {
     police: options.police,
     taillePt: options.taille,
     largeurMax: largeur,
     espacementPt: options.espacement,
+    casserMotsLongs: true,
   })
   let cy = y
   const hauteur = mesure.hauteurLigne(options.police, options.taille) * 1.18
@@ -156,7 +167,7 @@ function dessinerTextePlie(
     : options.align === 'right'
       ? x + largeur
       : x
-  for (const ligne of reelles) {
+  for (const ligne of lignes) {
     textePdf(doc, ligne.texte, xLigne, cy, options)
     cy += hauteur
   }
@@ -214,13 +225,7 @@ function svgLine(
   svg.append(node)
 }
 
-function svgCircle(
-  svg: SVGSVGElement,
-  cx: number,
-  cy: number,
-  r: number,
-  fill: string,
-): void {
+function svgCircle(svg: SVGSVGElement, cx: number, cy: number, r: number, fill: string): void {
   const node = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
   node.setAttribute('cx', String(cx))
   node.setAttribute('cy', String(cy))
@@ -238,27 +243,31 @@ async function poserSvg(
   height: number,
 ): Promise<void> {
   const paint = doc as jsPDF & {
-    svg: (element: Element, options: {
-      x: number
-      y: number
-      width: number
-      height: number
-    }) => Promise<unknown>
+    svg: (element: Element, options: { x: number; y: number; width: number; height: number }) => Promise<unknown>
   }
   await paint.svg(svg, { x, y, width, height })
 }
 
-function formatsTitre(
-  projection: CahierFigureProjection,
-  width: number,
-  mesure: MesureTexte,
-): readonly string[] {
-  const lignes = plierTexte(projection.title, mesure, {
+function couleurSerie(value: string, fallback: string = PALETTE_PDF.ink): string {
+  try {
+    return couleurPdf(value)
+  } catch {
+    return fallback
+  }
+}
+
+function titreLignes(projection: CahierFigureProjection, width: number, mesure: MesureTexte): string[] {
+  return plierTexte(projection.title, mesure, {
     police: POLICE_PDF.bodyStrong,
     taillePt: TAILLE.titre,
     largeurMax: width,
-  })
-  return lignes.map((ligne) => ligne.texte)
+    casserMotsLongs: true,
+  }).map((ligne) => ligne.texte)
+}
+
+function hauteurTitre(projection: CahierFigureProjection, width: number, mesure: MesureTexte): number {
+  return titreLignes(projection, width, mesure).length
+    * mesure.hauteurLigne(POLICE_PDF.bodyStrong, TAILLE.titre) * 1.18
 }
 
 function dessinerTitre(
@@ -269,17 +278,15 @@ function dessinerTitre(
   width: number,
   y: number,
 ): number {
-  const lignes = formatsTitre(projection, width, mesure)
-  const hauteur = mesure.hauteurLigne(POLICE_PDF.bodyStrong, TAILLE.titre) * 1.18
   let cy = y
-  for (const ligne of lignes) {
+  for (const ligne of titreLignes(projection, width, mesure)) {
     textePdf(doc, ligne, x + width / 2, cy, {
       police: POLICE_PDF.bodyStrong,
       taille: TAILLE.titre,
       couleur: PALETTE_PDF.ink,
       align: 'center',
     })
-    cy += hauteur
+    cy += mesure.hauteurLigne(POLICE_PDF.bodyStrong, TAILLE.titre) * 1.18
   }
   return cy - y
 }
@@ -287,7 +294,7 @@ function dessinerTitre(
 function legendeLigne(
   doc: jsPDF,
   mesure: MesureTexte,
-  elements: readonly { label: string; color: string; dash?: boolean }[],
+  elements: readonly { label: string; color: string; dash?: boolean; square?: boolean }[],
   x: number,
   y: number,
   width: number,
@@ -309,7 +316,7 @@ function legendeLigne(
       doc.setLineDashPattern([], 0)
     } else {
       setFill(doc, element.color)
-      doc.rect(cx, cy + hauteur * 0.28, 4.5, 1.4, 'F')
+      doc.rect(cx, cy + hauteur * 0.28, 4.5, element.square ? 3.2 : 1.4, 'F')
     }
     textePdf(doc, element.label, cx + 5.6, cy + hauteur * 0.04, {
       police: POLICE_PDF.body,
@@ -322,372 +329,228 @@ function legendeLigne(
   return cy + hauteur - y
 }
 
-function bornesValeurs(values: readonly (number | null)[]): { min: number; max: number } {
-  const finis = values.filter((value): value is number => value !== null && Number.isFinite(value))
-  if (!finis.length) return { min: 0, max: 1 }
-  const max = Math.max(...finis)
-  const min = Math.min(0, ...finis)
-  return { min, max: max === min ? min + 1 : max }
-}
-
-function graduation(values: readonly (number | null)[], count = 4): number[] {
-  const { min, max } = bornesValeurs(values)
-  const ticks: number[] = []
-  for (let index = 0; index <= count; index += 1) {
-    ticks.push(min + ((max - min) * index) / count)
+function hauteurLegende(
+  mesure: MesureTexte,
+  elements: readonly { label: string }[],
+  width: number,
+): number {
+  if (!elements.length) return 0
+  let largeur = 0
+  let lignes = 1
+  for (const element of elements) {
+    const labelWidth = mesure.largeur(element.label, POLICE_PDF.body, TAILLE.legende) + 7
+    if (largeur > 0 && largeur + labelWidth > width) {
+      lignes += 1
+      largeur = 0
+    }
+    largeur += labelWidth
   }
-  return ticks
+  return lignes * mesure.hauteurLigne(POLICE_PDF.body, TAILLE.legende) * 1.3
 }
 
-function formatTick(value: number): string {
-  const absolu = Math.abs(value)
-  if (absolu >= 1000) return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value)
-  if (absolu >= 10) return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value)
-  if (absolu >= 1) return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value)
+function hauteurCartesPdf(maps: CahierMapsProjection | null | undefined, width: number): number {
+  if (!maps) return 0
+  const items = maps.items.filter((item) => item.declared)
+  if (!items.length) return 0
+  const columns = items.length <= 3 ? items.length : 2
+  const rows = Math.ceil(items.length / columns)
+  const gap = 4
+  const tileW = (width - gap * (columns - 1)) / columns
+  const tileH = Math.max(26, Math.min(39, tileW * 0.62))
+  let height = rows * (tileH + 8)
+  if (maps.legendDetail) {
+    height += 4
+    if (maps.legendDetail.title) height += 4
+    height += 7
+    if (maps.legendDetail.note) height += 4
+  }
+  return height
+}
+
+function titreAvecUnite(titre: string, unite: string): string {
+  const value = unite.trim()
+  if (!value) return titre
+  return titre.includes(value) ? titre : `${titre} (${value})`
+}
+
+function dessinerAxes(
+  doc: jsPDF,
+  mesure: MesureTexte,
+  options: {
+    x: number
+    y: number
+    width: number
+    height: number
+    xTicks: readonly { key: string | number; position: number; label: string | null }[]
+    yTicks: readonly { key: string | number; position: number; label: string | null }[]
+    xTitle: string
+    yTitle: string
+    plotLeft: number
+    plotBottom: number
+    plotWidth: number
+    plotHeight: number
+    tickRotation?: number
+  },
+): void {
+  const { x, y, height, xTicks, yTicks, xTitle, yTitle, plotLeft, plotBottom, plotWidth, plotHeight } = options
+  void plotHeight
+  for (const tick of yTicks) {
+    if (tick.label === null) continue
+    textePdf(doc, tick.label, x + plotLeft - 1.4, y + tick.position - 2, {
+      police: POLICE_PDF.meta,
+      taille: TAILLE.tick,
+      couleur: PALETTE_PDF.muted,
+      align: 'right',
+    })
+  }
+  for (const tick of xTicks) {
+    if (tick.label === null) continue
+    textePdf(doc, tick.label, x + tick.position, y + plotBottom + 1, {
+      police: POLICE_PDF.body,
+      taille: TAILLE.tick,
+      couleur: PALETTE_PDF.muted,
+      align: 'center',
+    })
+  }
+  textePdf(doc, xTitle, x + plotLeft + plotWidth / 2, y + plotBottom + 5.2, {
+    police: POLICE_PDF.body,
+    taille: TAILLE.axe,
+    couleur: PALETTE_PDF.muted,
+    align: 'center',
+  })
+  doc.saveGraphicsState()
+  doc.setFont(POLICE_PDF.body, 'normal')
+  doc.setFontSize(TAILLE.axe)
+  doc.setTextColor(...rgb(PALETTE_PDF.muted))
+  doc.text(yTitle, x + plotLeft - 5.2, y + height / 2, { angle: 90, align: 'center' })
+  doc.restoreGraphicsState()
+  void mesure
+}
+
+/* ------------------------------------------------------------------ *
+ * Native projection adapters (no factual recomputation)
+ * ------------------------------------------------------------------ */
+
+function rampPoints(series: CahierRampsProjection['ramps'][number]['series'][number]): TimeRampPoint[] {
+  return series.points.map((point) => ({
+    xValue: point.cutKey,
+    xLabel: point.cutLabel,
+    value: point.value,
+    referenceValue: point.referenceValue,
+  }))
+}
+
+function rampLegend(projection: CahierRampsProjection, comparisonProof: boolean) {
+  return [
+    ...projection.ramps[0]!.series.map((serie) => ({
+      label: serie.label,
+      color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key] ?? PALETTE_PDF.ink),
+    })),
+    ...(comparisonProof
+      ? [{ label: 'Groupe comparé', color: PALETTE_PDF.muted, dash: true }]
+      : []),
+  ]
 }
 
 async function dessinerRampes(
   options: OptionsFigurePdf,
   projection: CahierRampsProjection,
 ): Promise<number> {
-  const { doc, x, y, width } = options
-  let cy = y
+  const { doc, x, y, width, mesure } = options
   const nombre = Math.max(1, projection.ramps.length)
   const gap = 6
   const panelWidth = (width - gap * (nombre - 1)) / nombre
-  const plotHeight = 43
-  const tousPoints = projection.ramps.flatMap((ramp) => ramp.series.flatMap((serie) =>
+  const plotHeight = 42
+  const panelTitles = projection.ramps.map((ramp) => plierTexte(ramp.title, mesure, {
+    police: POLICE_PDF.bodyMedium,
+    taillePt: TAILLE.sousTitre,
+    largeurMax: panelWidth,
+    casserMotsLongs: true,
+  }).map((ligne) => ligne.texte))
+  const titleHeight = Math.max(...panelTitles.map((lines) => lines.length))
+    * mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18
+  const values = projection.ramps.flatMap((ramp) => ramp.series.flatMap((serie) =>
     serie.points.flatMap((point) => [point.value, point.referenceValue])))
-  const ticks = graduation(tousPoints, 3)
-  const yMin = Math.min(...ticks)
-  const yMax = Math.max(...ticks)
-  const panelTop = cy
-  let basPanneau = cy
+  const scale = cahierIntegerYAxisScale(values)
+  let bas = y + titleHeight
   for (let index = 0; index < projection.ramps.length; index += 1) {
     const ramp = projection.ramps[index]!
     const px = x + index * (panelWidth + gap)
-    // Panel title (native ramp title), wrapping without shrinking.
-    let py = panelTop
-    py += dessinerTextePlie(doc, options.mesure, ramp.title, px, py, panelWidth, {
-      police: POLICE_PDF.bodyMedium,
-      taille: TAILLE.sousTitre,
-      couleur: PALETTE_PDF.ink,
-      align: 'center',
-    })
-    const plotX = px + 9
-    const plotW = panelWidth - 10
-    const plotY = py + 3
-    const svg = svgCanvas(plotW, plotHeight)
-    // Grid + axes.
-    for (const tick of ticks) {
-      const gy = plotHeight - ((tick - yMin) / (yMax - yMin)) * (plotHeight - 4)
-      svgLine(svg, 0, gy, plotW, gy, PALETTE_PDF.border, 0.2)
-      textePdf(doc, formatTick(tick), plotX - 1.5, plotY + gy - 2, {
-        police: POLICE_PDF.meta,
-        taille: TAILLE.tick,
-        couleur: PALETTE_PDF.muted,
-        align: 'right',
+    let py = y
+    for (const ligne of panelTitles[index]!) {
+      textePdf(doc, ligne, px + panelWidth / 2, py, {
+        police: POLICE_PDF.bodyMedium,
+        taille: TAILLE.sousTitre,
+        couleur: PALETTE_PDF.ink,
+        align: 'center',
       })
+      py += mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18
     }
-    svgLine(svg, 0, plotHeight - 4, plotW, plotHeight - 4, PALETTE_PDF.ink, 0.35)
-    const xValues = ramp.series[0]?.points.map((point) => point.cutKey) ?? []
-    const xMin = Math.min(...xValues)
-    const xMax = Math.max(...xValues)
-    const toX = (value: number) => xMax === xMin ? plotW / 2 : ((value - xMin) / (xMax - xMin)) * (plotW - 2)
-    const toY = (value: number) => plotHeight - 4 - ((value - yMin) / (yMax - yMin)) * (plotHeight - 4)
+    const nativeGeometry = {
+      width: panelWidth,
+      height: plotHeight,
+      margin: { top: 2, right: 2, bottom: 2, left: 9 },
+    } as const
+    const firstSeries = ramp.series[0]!
+    const geom = rampGeometry(rampPoints(firstSeries), scale, nativeGeometry, ramp.yAxis.unit)
+    const svg = svgCanvas(panelWidth, plotHeight)
+    for (const tick of geom.yTicks) {
+      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
+    }
+    svgLine(
+      svg,
+      nativeGeometry.margin.left,
+      plotHeight - nativeGeometry.margin.bottom,
+      panelWidth - nativeGeometry.margin.right,
+      plotHeight - nativeGeometry.margin.bottom,
+      PALETTE_PDF.ink,
+      0.35,
+    )
     for (const serie of ramp.series) {
-      const color = couleurPdf(COULEURS_MODES_PDF[serie.key] ?? PALETTE_PDF.ink)
-      const focal = serie.points.filter((point) => point.value !== null)
-      for (let i = 1; i < focal.length; i += 1) {
-        svgLine(svg, toX(focal[i - 1]!.cutKey), toY(focal[i - 1]!.value!), toX(focal[i]!.cutKey), toY(focal[i]!.value!), color, 0.55)
+      const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key] ?? PALETTE_PDF.ink)
+      const points = rampPoints(serie)
+      for (const path of rampPaths(points, (point) => point.value, geom.x, geom.y)) {
+        const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+        node.setAttribute('d', path)
+        node.setAttribute('fill', 'none')
+        node.setAttribute('stroke', color)
+        node.setAttribute('stroke-width', '0.55')
+        node.setAttribute('stroke-linecap', 'round')
+        node.setAttribute('stroke-linejoin', 'round')
+        svg.append(node)
       }
-      for (const point of focal) svgCircle(svg, toX(point.cutKey), toY(point.value!), 0.9, color)
-      const reference = serie.points.filter((point) => point.referenceValue !== null)
-      if (reference.length) {
-        for (let i = 1; i < reference.length; i += 1) {
-          svgLine(svg, toX(reference[i - 1]!.cutKey), toY(reference[i - 1]!.referenceValue!), toX(reference[i]!.cutKey), toY(reference[i]!.referenceValue!), color, 0.5, '2 1.2', 0.55)
-        }
+      for (const path of rampPaths(points, (point) => point.referenceValue, geom.x, geom.y)) {
+        const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+        node.setAttribute('d', path)
+        node.setAttribute('fill', 'none')
+        node.setAttribute('stroke', color)
+        node.setAttribute('stroke-width', '0.5')
+        node.setAttribute('stroke-opacity', '0.55')
+        node.setAttribute('stroke-dasharray', '2 1.2')
+        node.setAttribute('stroke-linecap', 'round')
+        svg.append(node)
       }
-    }
-    await poserSvg(doc, svg, plotX, plotY, plotW, plotHeight)
-    // X tick labels, all cuts.
-    const labels = ramp.series[0]?.points.map((point) => point.cutLabel) ?? []
-    const pas = Math.max(1, Math.ceil((labels.length * 1) / Math.max(1, Math.floor(plotW / 9))))
-    for (let i = 0; i < labels.length; i += pas) {
-      const point = ramp.series[0]!.points[i]!
-      textePdf(doc, labels[i]!, plotX + toX(point.cutKey), plotY + plotHeight + 1, {
-        police: POLICE_PDF.body,
-        taille: TAILLE.tick,
-        couleur: PALETTE_PDF.muted,
-        align: 'center',
-      })
-    }
-    textePdf(doc, ramp.xAxis.label, plotX + plotW / 2, plotY + plotHeight + 5.5, {
-      police: POLICE_PDF.body,
-      taille: TAILLE.axe,
-      couleur: PALETTE_PDF.muted,
-      align: 'center',
-    })
-    doc.saveGraphicsState()
-    doc.setFont(POLICE_PDF.body, 'normal')
-    doc.setFontSize(TAILLE.axe)
-    doc.setTextColor(...rgb(PALETTE_PDF.muted))
-    doc.text(ramp.yAxis.label, plotX - 5.5, plotY + plotHeight / 2, { angle: 90, align: 'center' })
-    doc.restoreGraphicsState()
-    const legend = [
-      ...ramp.series.map((serie) => ({
-        label: serie.label,
-        color: couleurPdf(COULEURS_MODES_PDF[serie.key] ?? PALETTE_PDF.ink),
-      })),
-      ...(options.comparisonProof
-        ? [{ label: 'Groupe comparé', color: PALETTE_PDF.muted, dash: true }]
-        : []),
-    ]
-    const bas = plotY + plotHeight + 8 + legendeLigne(doc, options.mesure, legend, px, plotY + plotHeight + 8, panelWidth)
-    basPanneau = Math.max(basPanneau, bas)
-  }
-  return basPanneau - y
-}
-
-function couleurSerie(color: string, fallback: string = PALETTE_PDF.ink): string {
-  try {
-    return couleurPdf(color)
-  } catch {
-    return fallback
-  }
-}
-
-async function dessinerBarresGroupees(
-  options: OptionsFigurePdf,
-  projection: CahierExplorerProjection,
-): Promise<number> {
-  const { doc, x, y, width } = options
-  let cy = y
-  const gap = 6
-  const panelWidth = (width - gap) / 2
-  const plotHeight = 42
-  // Volume ramp
-  let leftY = cy
-  leftY += dessinerTextePlie(doc, options.mesure, projection.volume.title, x, leftY, panelWidth, {
-    police: POLICE_PDF.bodyMedium,
-    taille: TAILLE.sousTitre,
-    couleur: PALETTE_PDF.ink,
-    align: 'center',
-  })
-  const rampX = x + 8
-  const rampW = panelWidth - 8
-  const rampY = leftY + 2
-  const toutesRampes = projection.volume.series.flatMap((serie) =>
-    serie.points.flatMap((point) => [point.value, point.referenceValue]))
-  const rampTicks = graduation(toutesRampes, 3)
-  const rampMin = Math.min(...rampTicks)
-  const rampMax = Math.max(...rampTicks)
-  const rampeSvg = svgCanvas(rampW, plotHeight)
-  for (const tick of rampTicks) {
-    const gy = plotHeight - 4 - ((tick - rampMin) / (rampMax - rampMin)) * (plotHeight - 4)
-    svgLine(rampeSvg, 0, gy, rampW, gy, PALETTE_PDF.border, 0.2)
-    textePdf(doc, formatTick(tick), rampX - 1.5, rampY + gy - 2, {
-      police: POLICE_PDF.meta,
-      taille: TAILLE.tick,
-      couleur: PALETTE_PDF.muted,
-      align: 'right',
-    })
-  }
-  svgLine(rampeSvg, 0, plotHeight - 4, rampW, plotHeight - 4, PALETTE_PDF.ink, 0.35)
-  const cuts = projection.volume.series[0]?.points ?? []
-  const xMin = Math.min(...cuts.map((point) => point.cutKey))
-  const xMax = Math.max(...cuts.map((point) => point.cutKey))
-  const toX = (value: number) => xMax === xMin ? rampW / 2 : ((value - xMin) / (xMax - xMin)) * (rampW - 2)
-  const toY = (value: number) => plotHeight - 4 - ((value - rampMin) / (rampMax - rampMin)) * (plotHeight - 4)
-  for (const serie of projection.volume.series) {
-    const color = couleurPdf(COULEURS_MODES_PDF[serie.key] ?? PALETTE_PDF.ink)
-    const focal = serie.points.filter((point) => point.value !== null)
-    for (let i = 1; i < focal.length; i += 1) {
-      svgLine(rampeSvg, toX(focal[i - 1]!.cutKey), toY(focal[i - 1]!.value!), toX(focal[i]!.cutKey), toY(focal[i]!.value!), color, 0.55)
-    }
-    for (const point of focal) svgCircle(rampeSvg, toX(point.cutKey), toY(point.value!), 0.9, color)
-    const reference = serie.points.filter((point) => point.referenceValue !== null)
-    for (let i = 1; i < reference.length; i += 1) {
-      svgLine(rampeSvg, toX(reference[i - 1]!.cutKey), toY(reference[i - 1]!.referenceValue!), toX(reference[i]!.cutKey), toY(reference[i]!.referenceValue!), color, 0.5, '2 1.2', 0.55)
-    }
-  }
-  await poserSvg(doc, rampeSvg, rampX, rampY, rampW, plotHeight)
-  for (const point of cuts) {
-    textePdf(doc, point.cutLabel, rampX + toX(point.cutKey), rampY + plotHeight + 1, {
-      police: POLICE_PDF.body,
-      taille: TAILLE.tick,
-      couleur: PALETTE_PDF.muted,
-      align: 'center',
-    })
-  }
-  textePdf(doc, projection.volume.xAxis.label, rampX + rampW / 2, rampY + plotHeight + 5.5, {
-    police: POLICE_PDF.body,
-    taille: TAILLE.axe,
-    couleur: PALETTE_PDF.muted,
-    align: 'center',
-  })
-
-  // Distribution grouped bars
-  const rightX = x + panelWidth + gap
-  let rightY = cy
-  const distributionTitle = projection.title.split(' / ')[1] ?? projection.distribution.figure.xAxisTitle
-  rightY += dessinerTextePlie(doc, options.mesure, distributionTitle, rightX, rightY, panelWidth, {
-    police: POLICE_PDF.bodyMedium,
-    taille: TAILLE.sousTitre,
-    couleur: PALETTE_PDF.ink,
-    align: 'center',
-  })
-  const distX = rightX + 8
-  const distW = panelWidth - 8
-  const distY = rightY + 2
-  const visibleSeries = projection.distribution.figure.series.filter(
-    (serie) => !projection.distribution.hiddenSeriesKeys.includes(serie.key),
-  )
-  const valeurs = visibleSeries.flatMap((serie) => serie.values)
-  const distTicks = graduation(valeurs, 3)
-  const distMin = Math.min(...distTicks)
-  const distMax = Math.max(...distTicks)
-  const distSvg = svgCanvas(distW, plotHeight)
-  for (const tick of distTicks) {
-    const gy = plotHeight - 4 - ((tick - distMin) / (distMax - distMin)) * (plotHeight - 4)
-    svgLine(distSvg, 0, gy, distW, gy, PALETTE_PDF.border, 0.2)
-    textePdf(doc, formatTick(tick), distX - 1.5, distY + gy - 2, {
-      police: POLICE_PDF.meta,
-      taille: TAILLE.tick,
-      couleur: PALETTE_PDF.muted,
-      align: 'right',
-    })
-  }
-  svgLine(distSvg, 0, plotHeight - 4, distW, plotHeight - 4, PALETTE_PDF.ink, 0.35)
-  const categories = projection.distribution.figure.categories
-  const bande = distW / Math.max(1, categories.length)
-  const barWidth = Math.max(1.2, (bande * 0.7) / Math.max(1, visibleSeries.length))
-  for (let catIndex = 0; catIndex < categories.length; catIndex += 1) {
-    const catX = catIndex * bande + (bande - barWidth * visibleSeries.length) / 2
-    visibleSeries.forEach((serie, serieIndex) => {
-      const value = serie.values[catIndex]
-      if (value === null || !Number.isFinite(value)) return
-      const height = ((value - distMin) / (distMax - distMin)) * (plotHeight - 4)
-      svgRect(distSvg, catX + serieIndex * barWidth, plotHeight - 4 - height, barWidth * 0.85, height, couleurSerie(serie.color))
-    })
-    textePdf(doc, categories[catIndex]!.axisLabel, distX + catIndex * bande + bande / 2, distY + plotHeight + 1, {
-      police: POLICE_PDF.body,
-      taille: TAILLE.tick,
-      couleur: PALETTE_PDF.muted,
-      align: 'center',
-    })
-  }
-  await poserSvg(doc, distSvg, distX, distY, distW, plotHeight)
-  textePdf(doc, projection.distribution.figure.xAxisTitle, distX + distW / 2, distY + plotHeight + 5.5, {
-    police: POLICE_PDF.body,
-    taille: TAILLE.axe,
-    couleur: PALETTE_PDF.muted,
-    align: 'center',
-  })
-  const legend = visibleSeries.map((serie) => ({ label: serie.label, color: couleurSerie(serie.color) }))
-  const distLegendHeight = legendeLigne(doc, options.mesure, legend, rightX, distY + plotHeight + 8, panelWidth)
-  const leftLegend = legendeLigne(doc, options.mesure, projection.volume.series.map((serie) => ({
-    label: serie.label,
-    color: couleurPdf(COULEURS_MODES_PDF[serie.key] ?? PALETTE_PDF.ink),
-  })), x, rampY + plotHeight + 8, panelWidth)
-  return Math.max(rampY + plotHeight + 8 + leftLegend, distY + plotHeight + 8 + distLegendHeight) - y
-}
-
-async function dessinerBarres(
-  options: OptionsFigurePdf,
-  projection: CahierBarsProjection,
-  modele: Extract<CahierCaptureFigure, { family: 'mobilite-bars' }>['model']['figure'],
-): Promise<number> {
-  const { doc, x, y, width } = options
-  let cy = y
-  cy += dessinerTitre(doc, options.mesure, projection, x, width, cy)
-  const plotHeight = 46
-  const plotX = x + 10
-  const plotW = width - 11
-  const plotY = cy + 2
-  const valeurs = modele.categories.flatMap((categorie) => [
-    categorie.value.fact.value,
-    categorie.value.fact.comparison?.reference?.value ?? null,
-  ])
-  const ticks = graduation(valeurs, 3)
-  const min = Math.min(...ticks)
-  const max = Math.max(...ticks)
-  const svg = svgCanvas(plotW, plotHeight)
-  for (const tick of ticks) {
-    const gy = plotHeight - 6 - ((tick - min) / (max - min)) * (plotHeight - 6)
-    svgLine(svg, 0, gy, plotW, gy, PALETTE_PDF.border, 0.2)
-    textePdf(doc, formatTick(tick), plotX - 1.5, plotY + gy - 2, {
-      police: POLICE_PDF.meta,
-      taille: TAILLE.tick,
-      couleur: PALETTE_PDF.muted,
-      align: 'right',
-    })
-  }
-  svgLine(svg, 0, plotHeight - 6, plotW, plotHeight - 6, PALETTE_PDF.ink, 0.35)
-  const bande = plotW / Math.max(1, modele.categories.length)
-  const largeurBarre = Math.min(10, bande * 0.28)
-  modele.categories.forEach((categorie, index) => {
-    const value = categorie.value.fact.value
-    const comparison = categorie.value.fact.comparison?.reference?.value ?? null
-    const baseX = index * bande + bande / 2
-    const tone = couleurSerie(COULEURS_TONS_PDF[categorie.tone] ?? PALETTE_PDF.ink)
-    if (value !== null && Number.isFinite(value)) {
-      const height = ((value - min) / (max - min)) * (plotHeight - 6)
-      svgRect(svg, baseX - largeurBarre - 0.6, plotHeight - 6 - height, largeurBarre, height, tone)
-      // Declared partition, when the producer says it sums to the total.
-      if (categorie.segments.length > 1) {
-        let cumul = 0
-        categorie.segments.forEach((segment, segmentIndex) => {
-          const part = segment.value.fact.value
-          if (part === null || !Number.isFinite(part)) return
-          const segmentHeight = (part / value) * height
-          svgRect(svg, baseX - largeurBarre - 0.6, plotHeight - 6 - cumul - segmentHeight, largeurBarre, segmentHeight, tone, 0.85 - segmentIndex * 0.18)
-          cumul += segmentHeight
-        })
+      for (const point of points) {
+        if (point.value !== null) svgCircle(svg, geom.x(point.xValue), geom.y(point.value), 0.8, color)
       }
     }
-    if (options.comparisonProof && comparison !== null && Number.isFinite(comparison)) {
-      const height = ((comparison - min) / (max - min)) * (plotHeight - 6)
-      svgRect(svg, baseX + 0.6, plotHeight - 6 - height, largeurBarre, height, PALETTE_PDF.brand200, 0.55)
-    }
-    const label = categorie.axisLabel
-    const lignes = plierTexte(label, options.mesure, {
-      police: POLICE_PDF.body,
-      taillePt: TAILLE.tick,
-      largeurMax: bande - 0.5,
-      casserMotsLongs: true,
+    await poserSvg(doc, svg, px, py + 2, panelWidth, plotHeight)
+    dessinerAxes(doc, mesure, {
+      x: px,
+      y: py + 2,
+      height: plotHeight,
+      width: panelWidth,
+      xTicks: geom.xTicks,
+      yTicks: geom.yTicks,
+      xTitle: ramp.xAxis.label,
+      yTitle: titreAvecUnite(ramp.yAxis.label, ramp.yAxis.unit),
+      plotLeft: nativeGeometry.margin.left,
+      plotBottom: plotHeight - nativeGeometry.margin.bottom,
+      plotWidth: panelWidth - nativeGeometry.margin.left - nativeGeometry.margin.right,
+      plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
     })
-    lignes.forEach((ligne, ligneIndex) => {
-      textePdf(doc, ligne.texte, baseX, plotY + plotHeight + 1 + ligneIndex * 2.4, {
-        police: POLICE_PDF.body,
-        taille: TAILLE.tick,
-        couleur: PALETTE_PDF.muted,
-        align: 'center',
-      })
-    })
-  })
-  await poserSvg(doc, svg, plotX, plotY, plotW, plotHeight)
-  const maxLabelLines = Math.max(1, ...modele.categories.map((categorie) => plierTexte(categorie.axisLabel, options.mesure, {
-    police: POLICE_PDF.body,
-    taillePt: TAILLE.tick,
-    largeurMax: bande - 0.5,
-    casserMotsLongs: true,
-  }).length))
-  textePdf(doc, modele.xAxisTitle, plotX + plotW / 2, plotY + plotHeight + 3 + maxLabelLines * 2.4, {
-    police: POLICE_PDF.body,
-    taille: TAILLE.axe,
-    couleur: PALETTE_PDF.muted,
-    align: 'center',
-  })
-  const legend = [
-    { label: 'Valeur du territoire', color: PALETTE_PDF.ink },
-    ...(options.comparisonProof ? [{ label: 'Groupe comparé', color: PALETTE_PDF.brand200, dash: true }] : []),
-  ]
-  const legendHeight = legendeLigne(doc, options.mesure, legend, x, plotY + plotHeight + 8 + maxLabelLines * 2.4, width)
-  let bas = plotY + plotHeight + 8 + maxLabelLines * 2.4 + legendHeight
-  if (projection.maps && projection.maps.status !== 'none') {
-    bas += await dessinerCartes(options, projection.maps, projection.title, bas + 2)
+    const legend = legendeLigne(doc, mesure, rampLegend(projection, Boolean(options.comparisonProof)), px, py + plotHeight + 8, panelWidth)
+    bas = Math.max(bas, py + plotHeight + 8 + legend)
   }
   return bas - y
 }
@@ -696,78 +559,323 @@ async function dessinerCourbe(
   options: OptionsFigurePdf,
   projection: CahierCurveProjection,
 ): Promise<number> {
-  const { doc, x, y, width } = options
+  const { doc, x, y, width, mesure } = options
   let cy = y
-  cy += dessinerTitre(doc, options.mesure, projection, x, width, cy)
-  const plotHeight = 48
-  const plotX = x + 10
-  const plotW = width - 11
+  cy += dessinerTitre(doc, mesure, projection, x, width, cy)
+  const plotHeight = 45
+  const plotWidth = width - 11
+  const plotX = x + 9
   const plotY = cy + 2
-  const valeurs = projection.points.flatMap((point) => [point.value, point.comparisonValue])
-  const ticks = graduation(valeurs, 3)
-  const min = Math.min(...ticks)
-  const max = Math.max(...ticks)
-  const svg = svgCanvas(plotW, plotHeight)
-  for (const tick of ticks) {
-    const gy = plotHeight - 7 - ((tick - min) / (max - min)) * (plotHeight - 7)
-    svgLine(svg, 0, gy, plotW, gy, PALETTE_PDF.border, 0.2)
-    textePdf(doc, formatTick(tick), plotX - 1.5, plotY + gy - 2, {
-      police: POLICE_PDF.meta,
-      taille: TAILLE.tick,
-      couleur: PALETTE_PDF.muted,
-      align: 'right',
-    })
+  const nativeGeometry = { width: plotWidth, height: plotHeight, margin: { top: 2, right: 2, bottom: 2, left: 9 } } as const
+  const native = options.modeleCourbe
+    ? curveGeometry(options.modeleCourbe, nativeGeometry)
+    : null
+  const scale = native?.scale ?? (projection.axis
+    ? { minimum: projection.axis.minimum, maximum: projection.axis.maximum, ticks: [...CURVE_Y_TICKS] }
+    : { minimum: 0, maximum: 1, ticks: [...CURVE_Y_TICKS] })
+  const xFor = (value: number) => nativeGeometry.margin.left
+    + ((value - scale.minimum) / (scale.maximum - scale.minimum)) * (plotWidth - nativeGeometry.margin.left - nativeGeometry.margin.right)
+  const yFor = (value: number) => nativeGeometry.margin.top
+    + (1 - Math.max(0, Math.min(1, value))) * (plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom)
+  const allTicks = native?.xTicks ?? projection.points.map((point) => ({
+    key: point.detail,
+    position: xFor(point.axisValue),
+    label: point.label,
+  }))
+  const ticks = visibleCurveTicks(
+    allTicks,
+    plotWidth * 3,
+    plotWidth,
+    projection.marker?.detail ?? null,
+    (label) => Math.max(18, (label?.length ?? 2) * 3.2),
+  )
+  const yTicks = native?.yTicks ?? CURVE_Y_TICKS.map((value) => ({
+    key: value,
+    position: yFor(value),
+    label: `${value * 100} %`,
+  }))
+  const svg = svgCanvas(plotWidth, plotHeight)
+  for (const tick of yTicks) {
+    svgLine(svg, nativeGeometry.margin.left, tick.position, plotWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
   }
-  svgLine(svg, 0, plotHeight - 7, plotW, plotHeight - 7, PALETTE_PDF.ink, 0.35)
-  const axisValues = projection.points.map((point) => point.axisValue)
-  const xMin = Math.min(...axisValues)
-  const xMax = Math.max(...axisValues)
-  const toX = (value: number) => xMax === xMin ? plotW / 2 : ((value - xMin) / (xMax - xMin)) * (plotW - 2)
-  const toY = (value: number) => plotHeight - 7 - ((value - min) / (max - min)) * (plotHeight - 7)
-  const points = projection.points.filter((point) => point.value !== null)
-  for (let i = 1; i < points.length; i += 1) {
-    svgLine(svg, toX(points[i - 1]!.axisValue), toY(points[i - 1]!.value!), toX(points[i]!.axisValue), toY(points[i]!.value!), PALETTE_PDF.modeFoot, 0.55)
+  svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, plotWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.ink, 0.35)
+  const focal = projection.points.filter((point) => point.value !== null)
+  for (let index = 1; index < focal.length; index += 1) {
+    svgLine(svg, xFor(focal[index - 1]!.axisValue), yFor(focal[index - 1]!.value!), xFor(focal[index]!.axisValue), yFor(focal[index]!.value!), PALETTE_PDF.modeFoot, 0.55)
   }
-  for (const point of points) svgCircle(svg, toX(point.axisValue), toY(point.value!), 0.8, PALETTE_PDF.modeFoot)
+  for (const point of focal) svgCircle(svg, xFor(point.axisValue), yFor(point.value!), 0.8, PALETTE_PDF.modeFoot)
   const reference = projection.points.filter((point) => point.comparisonValue !== null)
-  for (let i = 1; i < reference.length; i += 1) {
-    svgLine(svg, toX(reference[i - 1]!.axisValue), toY(reference[i - 1]!.comparisonValue!), toX(reference[i]!.axisValue), toY(reference[i]!.comparisonValue!), PALETTE_PDF.brand200, 0.5, '2 1.2', 0.7)
+  for (let index = 1; index < reference.length; index += 1) {
+    svgLine(svg, xFor(reference[index - 1]!.axisValue), yFor(reference[index - 1]!.comparisonValue!), xFor(reference[index]!.axisValue), yFor(reference[index]!.comparisonValue!), PALETTE_PDF.brand200, 0.5, '2 1.2', 0.7)
   }
   if (projection.marker && projection.marker.axisValue !== null && projection.marker.value !== null) {
-    const mx = toX(projection.marker.axisValue)
-    svgLine(svg, mx, 0, mx, plotHeight - 7, PALETTE_PDF.margin, 0.4, '2 1.2')
-    svgCircle(svg, mx, toY(projection.marker.value), 1.3, PALETTE_PDF.margin)
+    const mx = xFor(projection.marker.axisValue)
+    svgLine(svg, mx, 0, mx, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.margin, 0.4, '2 1.2')
+    svgCircle(svg, mx, yFor(projection.marker.value), 1.2, PALETTE_PDF.margin)
   }
-  await poserSvg(doc, svg, plotX, plotY, plotW, plotHeight)
-  for (const point of projection.points) {
-    textePdf(doc, point.label, plotX + toX(point.axisValue), plotY + plotHeight + 1, {
-      police: POLICE_PDF.body,
-      taille: TAILLE.tick,
-      couleur: PALETTE_PDF.muted,
-      align: 'center',
-    })
-  }
-  textePdf(doc, projection.xAxisTitle, plotX + plotW / 2, plotY + plotHeight + 5.5, {
-    police: POLICE_PDF.body,
-    taille: TAILLE.axe,
-    couleur: PALETTE_PDF.muted,
-    align: 'center',
+  await poserSvg(doc, svg, plotX, plotY, plotWidth, plotHeight)
+  dessinerAxes(doc, mesure, {
+    x: plotX,
+    y: plotY,
+    height: plotHeight,
+    width: plotWidth,
+    xTicks: ticks,
+    yTicks,
+    xTitle: projection.xAxisTitle,
+    yTitle: titreAvecUnite(projection.yAxisTitle, projection.unit),
+    plotLeft: nativeGeometry.margin.left,
+    plotBottom: plotHeight - nativeGeometry.margin.bottom,
+    plotWidth: plotWidth - nativeGeometry.margin.left - nativeGeometry.margin.right,
+    plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
   })
   const legend = [
     { label: 'Valeur du territoire', color: PALETTE_PDF.modeFoot },
     ...(options.comparisonProof ? [{ label: 'Groupe comparé', color: PALETTE_PDF.brand200, dash: true }] : []),
   ]
-  const legendHeight = legendeLigne(doc, options.mesure, legend, x, plotY + plotHeight + 8, width)
-  return plotY + plotHeight + 8 + legendHeight - y
+  return plotY + plotHeight + 8 + legendeLigne(doc, mesure, legend, x, plotY + plotHeight + 8, width) - y
+}
+
+async function dessinerBarres(
+  options: OptionsFigurePdf,
+  projection: CahierBarsProjection,
+  modele: NonNullable<OptionsFigurePdf['modeleBars']>,
+): Promise<number> {
+  const { doc, x, y, width, mesure } = options
+  let cy = y
+  cy += dessinerTitre(doc, mesure, projection, x, width, cy)
+  const comparisonAligned = modele.categories.some((category) => category.value.fact.comparison?.reference?.value != null)
+  const scale = mobiliteBarScale(modele, comparisonAligned && Boolean(options.comparisonProof))
+  const nativeGeometry = { width, height: 48, margin: { top: 2, right: 2, bottom: 2, left: 10 } } as const
+  const bar = mobiliteBarGeometry(nativeGeometry, modele.categories.length, scale, comparisonAligned ? 2 : 1)
+  const plotBottom = nativeGeometry.height - nativeGeometry.margin.bottom
+  const svg = svgCanvas(width, nativeGeometry.height)
+  const yTicks = mobiliteBarYTicks(scale, nativeGeometry)
+  for (const tick of yTicks) {
+    svgLine(svg, nativeGeometry.margin.left, tick.position, width - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
+  }
+  svgLine(svg, nativeGeometry.margin.left, plotBottom, width - nativeGeometry.margin.right, plotBottom, PALETTE_PDF.ink, 0.35)
+  modele.categories.forEach((category, categoryIndex) => {
+    const focalColor = couleurSerie(mobiliteBarTone(category))
+    if (!category.segments.length) {
+      const value = category.value.fact.value
+      if (value !== null && Number.isFinite(value)) {
+        svgRect(svg, bar.x(categoryIndex, 0), plotBottom - bar.height(value), bar.barWidth, bar.height(value), focalColor)
+      }
+    } else {
+      for (const segment of mobiliteBarStackedSegments(category, categoryIndex, nativeGeometry, bar)) {
+        svgRect(svg, segment.x, segment.y, segment.width, segment.height, couleurSerie(segment.fill))
+      }
+    }
+    if (comparisonAligned && options.comparisonProof) {
+      const reference = category.value.fact.comparison?.reference?.value
+      const segments = mobiliteBarComparisonSegments(category, categoryIndex, nativeGeometry, bar)
+      if (segments.length) {
+        for (const segment of segments) {
+          svgRect(svg, segment.x, segment.y, segment.width, segment.height, couleurSerie(segment.fill))
+        }
+      } else if (reference !== null && reference !== undefined && Number.isFinite(reference)) {
+        svgRect(svg, bar.x(categoryIndex, 1), plotBottom - bar.height(reference), bar.barWidth, bar.height(reference), couleurSerie(`color-mix(in srgb, ${mobiliteBarTone(category)} 45%, var(--paper))`))
+      }
+    }
+  })
+  await poserSvg(doc, svg, x, cy + 2, width, nativeGeometry.height)
+  const xTicks = mobiliteBarXticks(modele, nativeGeometry, bar)
+  dessinerAxes(doc, mesure, {
+    x,
+    y: cy + 2,
+    height: nativeGeometry.height,
+    width,
+    xTicks,
+    yTicks,
+    xTitle: modele.xAxisTitle,
+    yTitle: titreAvecUnite(modele.yAxisTitle, modele.unit),
+    plotLeft: nativeGeometry.margin.left,
+    plotBottom: plotBottom,
+    plotWidth: width - nativeGeometry.margin.left - nativeGeometry.margin.right,
+    plotHeight: nativeGeometry.height - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
+  })
+  const legend = [
+    ...modele.categories.flatMap((category) => category.segments.map((segment) => ({
+      label: segment.legendLabel ?? segment.label,
+      color: couleurSerie(mobiliteBarSegmentColor(segment)),
+      square: true,
+    }))),
+    ...(comparisonAligned && options.comparisonProof
+      ? [{ label: 'Groupe comparé', color: couleurSerie(`color-mix(in srgb, ${PALETTE_PDF.ink} 45%, var(--paper))`), square: true }]
+      : []),
+  ]
+  const legendHeight = legendeLigne(doc, mesure, legend, x, cy + 2 + nativeGeometry.height + 8, width)
+  let bas = cy + 2 + nativeGeometry.height + 8 + legendHeight
+  if (projection.maps && projection.maps.status !== 'none') {
+    bas += await dessinerCartes(options, projection.maps, bas + 2)
+  }
+  return bas - y
+}
+
+async function dessinerBarresGroupees(
+  options: OptionsFigurePdf,
+  projection: CahierExplorerProjection,
+): Promise<number> {
+  const { doc, x, y, width, mesure } = options
+  const gap = 6
+  const panelWidth = (width - gap) / 2
+  const plotHeight = 42
+  const leftTitle = plierTexte(projection.volume.title, mesure, {
+    police: POLICE_PDF.bodyMedium,
+    taillePt: TAILLE.sousTitre,
+    largeurMax: panelWidth,
+    casserMotsLongs: true,
+  }).map((ligne) => ligne.texte)
+  const rightTitle = plierTexte(
+    options.distributionTitle ?? projection.distribution.figure.xAxisTitle,
+    mesure,
+    { police: POLICE_PDF.bodyMedium, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true },
+  ).map((ligne) => ligne.texte)
+  const drawGrouped = async (originX: number, figure: CahierGroupedVerticalBarFigureData, hidden: readonly string[], titleLines: string[], unit: string) => {
+    let cy = y
+    for (const line of titleLines) {
+      textePdf(doc, line, originX + panelWidth / 2, cy, {
+        police: POLICE_PDF.bodyMedium,
+        taille: TAILLE.sousTitre,
+        couleur: PALETTE_PDF.ink,
+        align: 'center',
+      })
+      cy += mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18
+    }
+    const visible = figure.series.filter((series) => !hidden.includes(series.key))
+    const scale = groupedBarScaleFromFigure(visible)
+    const nativeGeometry = { width: panelWidth, height: plotHeight, margin: { top: 2, right: 2, bottom: 2, left: 9 } } as const
+    const bar = groupedBarGeometryFromFigure(nativeGeometry, figure.categories.length, visible.length, scale)
+    const svg = svgCanvas(panelWidth, plotHeight)
+    const ticks = groupedBarTicksFromFigure(figure, nativeGeometry, bar, scale)
+    for (const tick of ticks.y) {
+      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
+    }
+    svgLine(svg, nativeGeometry.margin.left, nativeGeometry.height - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, nativeGeometry.height - nativeGeometry.margin.bottom, PALETTE_PDF.ink, 0.35)
+    visible.forEach((series, seriesIndex) => {
+      figure.categories.forEach((_category, categoryIndex) => {
+        const value = series.values[categoryIndex]
+        if (value === null || value === undefined || !Number.isFinite(value)) return
+        svgRect(svg, bar.x(categoryIndex, seriesIndex), Math.min(nativeGeometry.height - nativeGeometry.margin.bottom - bar.height(value), nativeGeometry.height - nativeGeometry.margin.bottom - bar.height(value)), bar.barWidth, bar.height(value), couleurSerie(series.color))
+      })
+    })
+    await poserSvg(doc, svg, originX, cy + 2, panelWidth, plotHeight)
+    dessinerAxes(doc, mesure, {
+      x: originX,
+      y: cy + 2,
+      height: plotHeight,
+      width: panelWidth,
+      xTicks: ticks.x,
+      yTicks: ticks.y,
+      xTitle: figure.xAxisTitle,
+      yTitle: titreAvecUnite(figure.yAxisTitle, unit),
+      plotLeft: nativeGeometry.margin.left,
+      plotBottom: nativeGeometry.height - nativeGeometry.margin.bottom,
+      plotWidth: panelWidth - nativeGeometry.margin.left - nativeGeometry.margin.right,
+      plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
+    })
+    const legend = visible.map((series) => ({ label: series.label, color: couleurSerie(series.color) }))
+    return cy + 2 + plotHeight + 8 + legendeLigne(doc, mesure, legend, originX, cy + 2 + plotHeight + 8, panelWidth)
+  }
+  const leftBottom = await (async () => {
+    let cy = y
+    for (const line of leftTitle) {
+      textePdf(doc, line, x + panelWidth / 2, cy, {
+        police: POLICE_PDF.bodyMedium,
+        taille: TAILLE.sousTitre,
+        couleur: PALETTE_PDF.ink,
+        align: 'center',
+      })
+      cy += mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18
+    }
+    const values = projection.volume.series.flatMap((serie) =>
+      serie.points.flatMap((point) => [point.value, point.referenceValue]))
+    const scale = cahierIntegerYAxisScale(values)
+    const nativeGeometry = { width: panelWidth, height: plotHeight, margin: { top: 2, right: 2, bottom: 2, left: 9 } } as const
+    const first = projection.volume.series[0]!
+    const points = rampPoints(first)
+    const geom = rampGeometry(points, scale, nativeGeometry, projection.volume.yAxis.unit)
+    const svg = svgCanvas(panelWidth, plotHeight)
+    for (const tick of geom.yTicks) {
+      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
+    }
+    svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.ink, 0.35)
+    for (const serie of projection.volume.series) {
+      const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key] ?? PALETTE_PDF.ink)
+      const seriePoints = rampPoints(serie)
+      for (const path of rampPaths(seriePoints, (point) => point.value, geom.x, geom.y)) {
+        const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+        node.setAttribute('d', path)
+        node.setAttribute('fill', 'none')
+        node.setAttribute('stroke', color)
+        node.setAttribute('stroke-width', '0.55')
+        node.setAttribute('stroke-linecap', 'round')
+        svg.append(node)
+      }
+      for (const point of seriePoints) {
+        if (point.value !== null) svgCircle(svg, geom.x(point.xValue), geom.y(point.value), 0.8, color)
+      }
+    }
+    await poserSvg(doc, svg, x, cy + 2, panelWidth, plotHeight)
+    dessinerAxes(doc, mesure, {
+      x,
+      y: cy + 2,
+      height: plotHeight,
+      width: panelWidth,
+      xTicks: geom.xTicks,
+      yTicks: geom.yTicks,
+      xTitle: projection.volume.xAxis.label,
+      yTitle: titreAvecUnite(projection.volume.yAxis.label, projection.volume.yAxis.unit),
+      plotLeft: nativeGeometry.margin.left,
+      plotBottom: plotHeight - nativeGeometry.margin.bottom,
+      plotWidth: panelWidth - nativeGeometry.margin.left - nativeGeometry.margin.right,
+      plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
+    })
+    const legend = projection.volume.series.map((serie) => ({
+      label: serie.label,
+      color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key] ?? PALETTE_PDF.ink),
+    }))
+    return cy + 2 + plotHeight + 8 + legendeLigne(doc, mesure, legend, x, cy + 2 + plotHeight + 8, panelWidth)
+  })()
+  const rightBottom = await drawGrouped(x + panelWidth + gap, projection.distribution.figure, projection.distribution.hiddenSeriesKeys, rightTitle, options.distributionUnit ?? '')
+  return Math.max(leftBottom, rightBottom) - y
+}
+
+/* The following thin adapters keep the shared native geometry calls typed
+ * without duplicating their rules. */
+function groupedBarScaleFromFigure(
+  visible: readonly { values: readonly (number | null)[] }[],
+) {
+  return groupedBarScale(visible)
+}
+
+function groupedBarGeometryFromFigure(
+  geometry: Parameters<typeof groupedBarGeometry>[0],
+  categories: number,
+  series: number,
+  scale: ReturnType<typeof groupedBarScale>,
+) {
+  return groupedBarGeometry(geometry, categories, series, scale)
+}
+
+function groupedBarTicksFromFigure(
+  figure: CahierGroupedVerticalBarFigureData,
+  geometry: Parameters<typeof groupedBarTicks>[1],
+  bar: ReturnType<typeof groupedBarGeometry>,
+  scale: ReturnType<typeof groupedBarScale>,
+) {
+  return groupedBarTicks(figure, geometry, bar, scale, (value) =>
+    figure.formatAxisTick?.(value)
+    ?? new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value))
 }
 
 async function dessinerPart(
   options: OptionsFigurePdf,
   projection: CahierShareProjection,
 ): Promise<number> {
-  const { doc, x, y, width } = options
+  const { doc, x, y, width, mesure } = options
   let cy = y
-  cy += dessinerTitre(doc, options.mesure, projection, x, width, cy)
+  cy += dessinerTitre(doc, mesure, projection, x, width, cy)
   const trackHeight = 5
   const trackX = x + 32
   const trackW = width - 40
@@ -779,11 +887,11 @@ async function dessinerPart(
     })
     setFill(doc, PALETTE_PDF.paperDeep)
     doc.rect(trackX, yy, trackW, trackHeight, 'F')
-    if (value !== null && Number.isFinite(value)) {
-      const pct = Math.max(0, Math.min(1, value))
+    const pct = shareFillPercent(value, projection.unit)
+    if (value !== null) {
       setFill(doc, color)
-      doc.rect(trackX, yy, trackW * pct, trackHeight, 'F')
-      textePdf(doc, `${formatTick(value * 100)} %`, trackX + trackW + 1.5, yy + 0.6, {
+      doc.rect(trackX, yy, trackW * (pct / 100), trackHeight, 'F')
+      textePdf(doc, label === 'Groupe comparé' ? (projection.comparisonDisplay ?? 'Indisponible') : projection.display, trackX + trackW + 1.5, yy + 0.6, {
         police: POLICE_PDF.metaMedium,
         taille: TAILLE.legende,
         couleur: PALETTE_PDF.ink,
@@ -811,20 +919,18 @@ async function dessinerPart(
     cy += 9
   }
   if (projection.stateMessage) {
-    cy += dessinerTextePlie(doc, options.mesure, projection.stateMessage, x, cy, width, {
+    cy += dessinerTextePlie(doc, mesure, projection.stateMessage, x, cy, width, {
       police: POLICE_PDF.body,
       taille: TAILLE.note,
       couleur: PALETTE_PDF.muted,
     })
   }
-  if (projection.notes.length) {
-    for (const note of projection.notes) {
-      cy += dessinerTextePlie(doc, options.mesure, note, x, cy + 1, width, {
-        police: POLICE_PDF.body,
-        taille: TAILLE.note,
-        couleur: PALETTE_PDF.muted,
-      })
-    }
+  for (const note of projection.notes) {
+    cy += dessinerTextePlie(doc, mesure, note, x, cy + 1, width, {
+      police: POLICE_PDF.body,
+      taille: TAILLE.note,
+      couleur: PALETTE_PDF.muted,
+    })
   }
   return cy - y
 }
@@ -833,40 +939,36 @@ async function dessinerProfil(
   options: OptionsFigurePdf,
   projection: CahierProfileProjection,
 ): Promise<number> {
-  const { doc, x, y, width } = options
+  const { doc, x, y, width, mesure } = options
   let cy = y
-  cy += dessinerTitre(doc, options.mesure, projection, x, width, cy)
-  if (!projection.types.length) {
-    return cy - y
-  }
+  cy += dessinerTitre(doc, mesure, projection, x, width, cy)
+  if (!projection.types.length) return cy - y
   const count = projection.types.length
-  const colonnes = Math.min(12, Math.ceil(Math.sqrt(count * 2)))
-  const lignes = Math.ceil(count / colonnes)
-  const tile = Math.min((width - 4) / colonnes, 7)
+  const colonnes = Math.ceil(count / 5)
+  const tile = Math.min((width - 4) / colonnes, 6)
   const gridW = tile * colonnes
-  const gridH = tile * lignes
+  const gridH = tile * 5
   const gridX = x + (width - gridW) / 2
   const svg = svgCanvas(gridW, gridH)
   projection.types.forEach((type, index) => {
-    const col = index % colonnes
-    const row = Math.floor(index / colonnes)
-    const color = COULEURS_MODES_PDF[type.bucket] ?? (type.bucket === 'inaccessible' ? PALETTE_PDF.textTertiary : PALETTE_PDF.muted)
-    svgRect(svg, col * tile + 0.4, row * tile + 0.4, tile - 0.8, tile - 0.8, color)
+    const position = waffleGridPosition(index)
+    const color = couleurSerie(AEDAR_TIME_MODE_COLORS[type.bucket] ?? (type.bucket === 'inaccessible' ? PALETTE_PDF.textTertiary : PALETTE_PDF.muted))
+    svgRect(svg, position.column * tile + 0.4, position.row * tile + 0.4, tile - 0.8, tile - 0.8, color)
   })
   await poserSvg(doc, svg, gridX, cy, gridW, gridH)
   cy += gridH + 2
   const elements = projection.buckets.map((bucket) => ({
     label: `${bucket.label} (${bucket.count})`,
-    color: COULEURS_MODES_PDF[bucket.key] ?? (bucket.key === 'inaccessible' ? PALETTE_PDF.textTertiary : PALETTE_PDF.muted),
+    color: couleurSerie(AEDAR_TIME_MODE_COLORS[bucket.key] ?? (bucket.key === 'inaccessible' ? PALETTE_PDF.textTertiary : PALETTE_PDF.muted)),
+    square: true,
   }))
-  cy += legendeLigne(doc, options.mesure, elements, x, cy, width)
+  cy += legendeLigne(doc, mesure, elements, x, cy, width)
   return cy - y
 }
 
 async function dessinerCartes(
   options: OptionsFigurePdf,
   projection: CahierMapsProjection,
-  title: string,
   y: number,
 ): Promise<number> {
   const { doc, x, width, signal, chargerImage } = options
@@ -935,7 +1037,6 @@ async function dessinerCartes(
       })
     }
   }
-  void title
   return cy - y
 }
 
@@ -943,9 +1044,9 @@ async function dessinerApercu(
   options: OptionsFigurePdf,
   projection: CahierOverviewProjection,
 ): Promise<number> {
-  const { doc, x, y, width } = options
+  const { doc, x, y, width, mesure } = options
   let cy = y
-  cy += dessinerTitre(doc, options.mesure, projection, x, width, cy)
+  cy += dessinerTitre(doc, mesure, projection, x, width, cy)
   const columns = Math.min(2, Math.max(1, projection.scalars.length))
   const gap = 8
   const cardW = (width - gap * (columns - 1)) / columns
@@ -996,9 +1097,7 @@ async function dessinerApercu(
     }
   }
   cy += Math.ceil(projection.scalars.length / columns) * cardH + 3
-  if (projection.maps.status !== 'none') {
-    cy += await dessinerCartes(options, projection.maps, projection.title, cy)
-  }
+  if (projection.maps.status !== 'none') cy += await dessinerCartes(options, projection.maps, cy)
   return cy - y
 }
 
@@ -1006,43 +1105,60 @@ async function dessinerPerteDiversite(
   options: OptionsFigurePdf,
   projection: CahierMapsFigureProjection,
 ): Promise<number> {
-  const { doc, x, y, width } = options
+  const { doc, x, y, width, mesure } = options
   let cy = y
-  cy += dessinerTitre(doc, options.mesure, projection, x, width, cy)
-  cy += await dessinerCartes(options, projection.maps, projection.title, cy)
+  cy += dessinerTitre(doc, mesure, projection, x, width, cy)
+  cy += await dessinerCartes(options, projection.maps, cy)
   return cy - y
 }
 
-async function dessinerExplorateur(
-  options: OptionsFigurePdf,
-  projection: CahierExplorerProjection,
-): Promise<number> {
-  return dessinerBarresGroupees(options, projection)
-}
-
-/** Deterministic height used by page flow; drawing returns the same height. */
 export function hauteurFigurePdf(
   projection: CahierFigureProjection,
   width: number,
   mesure: MesureTexte,
+  options?: Pick<OptionsFigurePdf, 'comparisonProof' | 'distributionTitle'>,
 ): number {
-  const titre = formatsTitre(projection, width, mesure).length * 3.6
+  const titre = hauteurTitre(projection, width, mesure)
   switch (projection.family) {
-    case 'aedar-ramps': return 78
-    case 'aedar-equipment-explorer': return 78
+    case 'aedar-ramps': {
+      const panelWidth = width / Math.max(1, projection.ramps.length)
+      const titles = Math.max(...projection.ramps.map((ramp) => plierTexte(ramp.title, mesure, {
+        police: POLICE_PDF.bodyMedium, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true,
+      }).length))
+      const legend = hauteurLegende(mesure, rampLegend(projection, Boolean(options?.comparisonProof)), panelWidth)
+      return titles * mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18 + 2 + 42 + 8 + legend
+    }
+    case 'aedar-equipment-explorer': {
+      const panelWidth = width / 2
+      const rightTitle = options?.distributionTitle ?? projection.distribution.figure.xAxisTitle
+      const titles = Math.max(
+        plierTexte(projection.volume.title, mesure, { police: POLICE_PDF.bodyMedium, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
+        plierTexte(rightTitle, mesure, { police: POLICE_PDF.bodyMedium, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
+      )
+      return titles * mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18 + 2 + 42 + 8 + 8
+    }
     case 'aedar-car-overview': {
       const scalars = Math.ceil(Math.max(1, projection.scalars.length) / 2) * 22
-      const maps = projection.maps.status !== 'none' ? 82 : 0
+      const maps = hauteurCartesPdf(projection.maps, width)
       return titre + scalars + maps + 8
     }
-    case 'aedar-diversity-loss': return titre + 96
-    case 'aedar-equipment-profile': return projection.types.length ? titre + 66 : titre + 18
-    case 'mobilite-bars': {
-      const maps = projection.maps?.items.some((item) => item.declared) ? 62 : 0
-      return titre + 76 + maps
+    case 'aedar-diversity-loss': return titre + hauteurCartesPdf(projection.maps, width) + 8
+    case 'aedar-equipment-profile': {
+      if (!projection.types.length) return titre + 4
+      const colonnes = Math.ceil(projection.types.length / 5)
+      const tile = Math.min((width - 4) / colonnes, 6)
+      const legend = hauteurLegende(mesure, projection.buckets.map((bucket) => ({ label: `${bucket.label} (${bucket.count})` })), width)
+      return titre + tile * 5 + 8 + legend
     }
-    case 'mobilite-share': return titre + 40
-    case 'mobilite-curve': return titre + 74
+    case 'mobilite-bars': {
+      const maps = hauteurCartesPdf(projection.maps, width)
+      return titre + 2 + 48 + 8 + 8 + maps
+    }
+    case 'mobilite-share': {
+      const lines = projection.notes.length + (projection.stateMessage ? 1 : 0)
+      return titre + 40 + lines * 3
+    }
+    case 'mobilite-curve': return titre + 2 + 45 + 8 + 8
   }
 }
 
@@ -1051,24 +1167,16 @@ export async function dessinerFigurePdf(
   projection: CahierFigureProjection,
 ): Promise<number> {
   switch (projection.family) {
-    case 'aedar-ramps':
-      return dessinerRampes(options, projection)
-    case 'aedar-car-overview':
-      return dessinerApercu(options, projection)
-    case 'aedar-diversity-loss':
-      return dessinerPerteDiversite(options, projection)
-    case 'aedar-equipment-profile':
-      return dessinerProfil(options, projection)
-    case 'aedar-equipment-explorer':
-      return dessinerExplorateur(options, projection)
+    case 'aedar-ramps': return dessinerRampes(options, projection)
+    case 'aedar-car-overview': return dessinerApercu(options, projection)
+    case 'aedar-diversity-loss': return dessinerPerteDiversite(options, projection)
+    case 'aedar-equipment-profile': return dessinerProfil(options, projection)
+    case 'aedar-equipment-explorer': return dessinerBarresGroupees(options, projection)
     case 'mobilite-bars': {
-      const modele = options.modeleBars
-      if (!modele) throw new Error('Modèle natif des barres manquant pour le PDF.')
-      return dessinerBarres(options, projection, modele)
+      if (!options.modeleBars) throw new Error('Modèle natif des barres manquant pour le PDF.')
+      return dessinerBarres(options, projection, options.modeleBars)
     }
-    case 'mobilite-share':
-      return dessinerPart(options, projection)
-    case 'mobilite-curve':
-      return dessinerCourbe(options, projection)
+    case 'mobilite-share': return dessinerPart(options, projection)
+    case 'mobilite-curve': return dessinerCourbe(options, projection)
   }
 }

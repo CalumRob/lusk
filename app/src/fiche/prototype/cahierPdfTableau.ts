@@ -72,6 +72,8 @@ export interface OptionsTableauPdf {
   readonly largeurDisponible: number
   /** The focal territory's exact public name; only that header may ellipsize. */
   readonly nomTerritoire: string | null
+  /** Owner-observed comparison layer for this figure; never inferred from data. */
+  readonly ownerDisplayed?: boolean
 }
 
 function largeurCellule(
@@ -285,7 +287,7 @@ export function construireTableauxPdf(
           police: POLICE_PDF.value,
           taillePt: TAILLE_TABLEAU.cellule,
           largeurMax: colonneLargeur(colonnes, cellule.cell.columnKey) - 2,
-          casserMotsLongs: false,
+          casserMotsLongs: cellule.cell.value === null,
         }).length + (cellule.rankDisplay ? 1 : 0)
         return Math.max(max, lignes)
       }, labelLines.length)
@@ -301,7 +303,7 @@ export function construireTableauxPdf(
       }
     })
     const headerHeight = Math.max(...colonnes.map((colonne) => colonne.headerHeight), 4)
-    const hasComparison = comparatifProuve
+    const hasComparison = comparatifProuve && options.ownerDisplayed !== false
     parts.push({
       key: `${table.key}${groupIndex ? `:colonnes-${groupIndex + 1}` : ''}`,
       sourceKey: table.key,
@@ -351,7 +353,8 @@ export function separateurVertical(
 export function hauteurTableauPdf(part: TableauPdfPart): number {
   const hauteurTitre = part.titleLines.length
     * (TAILLE_TABLEAU.titre * 0.3528 * 1.18)
-  return hauteurTitre + 2 + part.headerHeight + part.rows.reduce((sum, row) => sum + row.height, 0) + 6
+  const hauteurUnite = part.unit ? 2.4 : 0
+  return hauteurTitre + 2 + hauteurUnite + part.headerHeight + part.rows.reduce((sum, row) => sum + row.height, 0) + 6
 }
 
 export const COULEURS_TABLEAU_PDF = {

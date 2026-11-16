@@ -66,6 +66,8 @@ const TOKENS_PDF: Readonly<Record<string, string>> = {
   '--cahier-mode-foot': PALETTE_PDF.modeFoot,
   '--cahier-mode-bike': PALETTE_PDF.modeBike,
   '--cahier-mode-car': PALETTE_PDF.modeCar,
+  '--cahier-cycle-protected': PALETTE_PDF.modeBike,
+  '--cahier-cycle-shared': '#8c4c9e',
   '--mode-transit': PALETTE_PDF.modeFoot,
   '--mode-bike': PALETTE_PDF.modeBike,
   '--mode-car': PALETTE_PDF.modeCar,
@@ -91,11 +93,12 @@ export function couleurPdf(value: string, depth = 0): string {
   if (/^#[0-9a-f]{6}$/i.test(trimmed)) return trimmed.toLowerCase()
   const token = TOKENS_PDF[trimmed]
   if (token) return token
-  const variable = /^var\(\s*(--[\w-]+)\s*\)$/.exec(trimmed)
+  const variable = /^var\(\s*(--[\w-]+)\s*(?:,\s*(.+))?\)$/.exec(trimmed)
   if (variable) {
     const resolved = TOKENS_PDF[variable[1]!]
-    if (!resolved) throw new Error(`Jeton de couleur PDF inconnu : ${variable[1]}`)
-    return resolved
+    if (resolved) return resolved
+    if (variable[2]) return couleurPdf(variable[2], depth + 1)
+    throw new Error(`Jeton de couleur PDF inconnu : ${variable[1]}`)
   }
   const mix = /^color-mix\(\s*in\s+srgb\s*,\s*(.+?)\s+(\d+(?:\.\d+)?)%\s*,\s*(.+?)\s*\)$/.exec(trimmed)
   if (mix) {

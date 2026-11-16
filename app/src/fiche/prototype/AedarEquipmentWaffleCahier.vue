@@ -8,6 +8,7 @@ import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBucket
 import type { AedarEquipmentBucketKey, AedarEquipmentModeKey } from '@/fiche/content/aedarEquipmentBuckets'
 import type { FigureLegendEntry, CahierFigureTooltipAnchor } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS, AEDAR_TIME_MODE_LABEL_INKS } from './aedarTimeModeColors'
+import { waffleGridPosition } from './cahierFigureNativeGeometry'
 import { aedarWaffleModeRows, aedarWaffleReading, aedarWaffleShareLabel } from './aedarFigureReadings'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
@@ -221,6 +222,8 @@ watch(horizonMinutes, (horizon) => {
           class="aedar-waffle-tile"
           :data-bucket="type.bucket"
           :data-typequ="type.typequ"
+          :data-waffle-row="waffleGridPosition(index).row"
+          :data-waffle-column="waffleGridPosition(index).column"
           :style="{ order: index, '--aedar-bucket-color': bucketColors[type.bucket] }"
           :aria-label="`${type.label}, ${type.typequ}, ${type.bucketLabel}. Afficher le détail.`"
           type="button"

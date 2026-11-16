@@ -392,33 +392,57 @@ function sourcesTexte(source: CahierCaptureSource): string {
   return morceaux.join(' · ')
 }
 
-function preuveFigureComparative(projection: CahierFigureProjection): boolean {
+function preuveProprietaire(capture: CahierExportCapture, slots: readonly string[]): boolean {
+  return capture.comparison.display.state === 'displayed'
+    && capture.comparison.display.layers.some((layer) => slots.includes(layer.slot) && layer.displayed)
+}
+
+function familySlots(projection: CahierFigureProjection): readonly string[] {
+  switch (projection.family) {
+    case 'aedar-ramps': return ['comparison']
+    case 'aedar-car-overview': return ['comparison']
+    case 'aedar-equipment-explorer': return ['comparison', 'distribution']
+    case 'aedar-diversity-loss':
+    case 'aedar-equipment-profile': return []
+    case 'mobilite-bars': return [projection.slot]
+    case 'mobilite-share': return ['share']
+    case 'mobilite-curve': return ['curve']
+  }
+}
+
+function preuveFigureComparative(projection: CahierFigureProjection, capture: CahierExportCapture): boolean {
   switch (projection.family) {
     case 'aedar-ramps':
-      return projection.ramps.some((ramp) => ramp.series.some((serie) => serie.points.some(
-        (point) => point.referenceValue !== null || point.referenceRank !== null,
-      )))
+      return preuveProprietaire(capture, ['comparison'])
+        && projection.ramps.some((ramp) => ramp.series.some((serie) => serie.points.some(
+          (point) => point.referenceValue !== null || point.referenceRank !== null,
+        )))
     case 'aedar-car-overview':
-      return projection.scalars.some((scalar) => scalar.reference !== null || scalar.rank !== null)
+      return preuveProprietaire(capture, ['comparison'])
+        && projection.scalars.some((scalar) => scalar.reference !== null || scalar.rank !== null)
     case 'aedar-equipment-explorer':
-      return projection.volume.series.some((serie) => serie.points.some((point) => point.referenceValue !== null))
-        || projection.distribution.figure.series.some((serie) => (
-          Boolean(serie.comparisonFor) && serie.values.some((value) => value !== null)
-        ))
+      return preuveProprietaire(capture, ['comparison', 'distribution'])
+        && (projection.volume.series.some((serie) => serie.points.some((point) => point.referenceValue !== null))
+          || projection.distribution.figure.series.some((serie) => (
+            Boolean(serie.comparisonFor) && serie.values.some((value) => value !== null)
+          )))
     case 'aedar-diversity-loss':
     case 'aedar-equipment-profile':
       return false
     case 'mobilite-bars': {
       const comparisonKeys = new Set(tableColumnsComparison(projection))
-      return projection.tables.some((table) => table.rows.some((row) => row.cells.some((cell) => (
-        comparisonKeys.has(cell.columnKey) && (cell.value !== null || cell.rankDisplay !== null)
-      ))))
+      return preuveProprietaire(capture, [projection.slot])
+        && projection.tables.some((table) => table.rows.some((row) => row.cells.some((cell) => (
+          comparisonKeys.has(cell.columnKey) && (cell.value !== null || cell.rankDisplay !== null)
+        ))))
     }
     case 'mobilite-share':
-      return projection.comparisonValue !== null || projection.comparisonRank !== null
+      return preuveProprietaire(capture, ['share'])
+        && (projection.comparisonValue !== null || projection.comparisonRank !== null)
     case 'mobilite-curve':
-      return projection.points.some((point) => point.comparisonValue !== null || point.comparisonRank !== null)
-        || (projection.marker?.rank ?? null) !== null
+      return preuveProprietaire(capture, ['curve'])
+        && (projection.points.some((point) => point.comparisonValue !== null || point.comparisonRank !== null)
+          || (projection.marker?.rank ?? null) !== null)
   }
 }
 
@@ -435,6 +459,11 @@ function construirePages(
   const capture = request.capture
   const projections = projeterRequeteExportFigures(request)
   const sousTitre = construireSousTitre(capture, mesure)
+  const titresDistribution = new Map(
+    capture.figures
+      .filter((figure) => figure.family === 'aedar-equipment-explorer')
+      .map((figure) => [figure.slot, figure.model.distributionFigureTitle]),
+  )
   const headerHeight = 25
   const identityHeight = hauteurIdentite(capture, sousTitre, mesure)
   const sourcesLines = capture.sources.map((source) => plierTexte(
@@ -462,7 +491,12 @@ function construirePages(
     blocks.push({
       kind: 'figure',
       projection,
-      height: hauteurFigurePdf(projection, PAGE.largeurUtile, mesure),
+      height: hauteurFigurePdf(projection, PAGE.largeurUtile, mesure, {
+        comparisonProof: preuveFigureComparative(projection, capture),
+        ...(titresDistribution.has(projection.slot)
+          ? { distributionTitle: titresDistribution.get(projection.slot) }
+          : {}),
+      }),
     })
     for (const item of projection.unavailable) {
       if (messagesVus.has(item.message)) continue
@@ -481,6 +515,7 @@ function construirePages(
       mesure,
       largeurDisponible: PAGE.largeurUtile,
       nomTerritoire: capture.identity.territory.name,
+      ownerDisplayed: preuveProprietaire(capture, familySlots(projection)),
     })
   ))).filter((part) => part.rows.length > 0)
   if (tableParts.length) {
@@ -545,7 +580,7 @@ function construirePages(
       while (rows.length) {
         const suite = !first || bloc.continued ? 2.8 : 0
         const hauteurEntete = bloc.part.titleLines.length * 6.4 * 0.3528 * 1.2
-          + bloc.part.headerHeight + 2 + suite
+          + bloc.part.headerHeight + 2 + suite + (bloc.part.unit ? 2.4 : 0)
         if (page.remaining < hauteurEntete + (rows[0]?.height ?? 0)) {
           if (!page.blocks.length) {
             throw new CahierPdfCompositionError('layout', 'Un tableau ne peut pas commencer sur la page.')
@@ -602,7 +637,7 @@ function construirePages(
   const pages: PagePdf[] = pagesBrutes.map((candidate) => ({
     ...candidate,
     hasComparisonProof: candidate.blocks.some((bloc) => {
-      if (bloc.kind === 'figure') return preuveFigureComparative(bloc.projection)
+      if (bloc.kind === 'figure') return preuveFigureComparative(bloc.projection, capture)
       if (bloc.kind === 'table') return bloc.part.hasComparison
       return false
     }),
@@ -723,7 +758,7 @@ function dessinerIdentite(
         run.texte,
         run.kind === 'prefix' ? POLICE_PDF.body : POLICE_PDF.displayStrong,
         run.kind === 'prefix' ? TAILLE.prefixeComparaison : TAILLE.comparaison,
-      ), 0)
+      ) + (run.kind === 'prefix' ? 1.2 : 0), 0)
       cx -= largeurLigne / 2
       for (const run of ligne) {
         const police = run.kind === 'prefix' ? POLICE_PDF.body : POLICE_PDF.displayStrong
@@ -733,7 +768,7 @@ function dessinerIdentite(
           taille: tailleRun,
           couleur: run.kind === 'prefix' ? PALETTE_PDF.muted : PALETTE_PDF.ink,
         })
-        cx += mesure.largeur(run.texte, police, tailleRun)
+        cx += mesure.largeur(run.texte, police, tailleRun) + (run.kind === 'prefix' ? 1.2 : 0)
       }
       cy += lineHeight
     }
@@ -771,6 +806,15 @@ function dessinerTableau(
     cy += 2.8
   } else {
     cy += 1.2
+  }
+  if (part.unit) {
+    texte(doc, `Unité : ${part.unit}`, x + width / 2, cy, {
+      police: POLICE_PDF.body,
+      taille: 6,
+      couleur: PALETTE_PDF.muted,
+      align: 'center',
+    })
+    cy += 2.4
   }
   const enteteTop = cy
   // Header row.
@@ -831,7 +875,7 @@ function dessinerTableau(
         police: POLICE_PDF.value,
         taillePt: 7,
         largeurMax: colonne.width - 2,
-        casserMotsLongs: false,
+        casserMotsLongs: cellule.cell.value === null,
       })
       lignes.forEach((ligne, ligneIndex) => {
         texte(doc, ligne.texte, cellX + 1, cy + 1 + ligneIndex * 2.5, {
@@ -1025,6 +1069,21 @@ export async function composerCahierPdf(
       .filter((figure) => figure.family === 'mobilite-bars')
       .map((figure) => [figure.slot, figure.model.figure]),
   )
+  const modelesCourbes = new Map(
+    capture.figures
+      .filter((figure) => figure.family === 'mobilite-curve')
+      .map((figure) => [figure.slot, figure.model]),
+  )
+  const titresDistribution = new Map(
+    capture.figures
+      .filter((figure) => figure.family === 'aedar-equipment-explorer')
+      .map((figure) => [figure.slot, figure.model.distributionFigureTitle]),
+  )
+  const unitesDistribution = new Map(
+    capture.figures
+      .filter((figure) => figure.family === 'aedar-equipment-explorer')
+      .map((figure) => [figure.slot, figure.model.distributionValueUnit]),
+  )
   const total = documentPdf.pages.length
   try {
   for (let index = 0; index < documentPdf.pages.length; index += 1) {
@@ -1063,6 +1122,8 @@ export async function composerCahierPdf(
       verifierAbandon(signal)
       if (bloc.kind === 'figure') {
         const modele = modelesBars.get(bloc.projection.slot)
+        const modeleCourbe = modelesCourbes.get(bloc.projection.slot)
+        const distributionTitle = titresDistribution.get(bloc.projection.slot)
         cy += await dessinerFigurePdf({
           doc,
           mesure,
@@ -1071,8 +1132,13 @@ export async function composerCahierPdf(
           width: PAGE.largeurUtile,
           signal,
           chargerImage,
-          comparisonProof: preuveFigureComparative(bloc.projection),
+          comparisonProof: preuveFigureComparative(bloc.projection, capture),
           ...(modele ? { modeleBars: modele } : {}),
+          ...(modeleCourbe ? { modeleCourbe: modeleCourbe as never } : {}),
+          ...(distributionTitle ? { distributionTitle } : {}),
+          ...(unitesDistribution.get(bloc.projection.slot)
+            ? { distributionUnit: unitesDistribution.get(bloc.projection.slot) }
+            : {}),
         }, bloc.projection)
       } else if (bloc.kind === 'table') {
         const start = cy

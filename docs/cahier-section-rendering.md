@@ -256,12 +256,17 @@ or starts an acquisition.
   explicit owner-published slot: when it carries no served value/rank it stays
   visible as unavailable, but no subtitle, footer, legend entry or `¹` marker
   claims comparative proof.
-- `cahierPdfFigures.ts` redraws the eight native families as vector primitives
-  from the frozen projections/native models (ramps, overview scalars + maps,
-  loss maps, waffle, explorer volume + distribution, compared Mobiliteit bars,
-  share tracks, raccordement curve). Text and links are jsPDF text; SVG marks
-  are painted through svg2pdf. Raster maps are decoded from the owner's inline
-  asset and fail explicitly if absent.
+- `cahierFigureNativeGeometry.ts` is the shared owner seam: axis domains,
+  integer/rounded graduation, curve fixed percent ticks and viewport tick
+  selection, ramp paths, compared-bar geometry and stacked comparison segments,
+  grouped-bar geometry, waffle five-row column flow and share unit/percent
+  handling. The mounted figure components import the same functions; the PDF
+  only paints the resulting primitives.
+- `cahierPdfFigures.ts` paints those shared primitives (SVG marks + selectable
+  jsPDF text) from the frozen #1022 projections/native models. It does not own
+  a second axis/geometry/colour policy. Native titles, x/y axis titles, units,
+  legends, ranks and owner-observed comparison layers are preserved; no
+  title parsing and no PDF-only significant-figure/rounding policy.
 - `cahierPdfComposer.ts` owns the A4 document: paper/ground, brand home link,
   centered page title, focal territory link, red rule, comparison subtitle,
   figures, value tables, notes, `Source(s) :` bottom-right, page-local
@@ -283,8 +288,17 @@ comparison subtitle cases, one-page and measured multi-page continuation,
 repeated identity/headers/sources, page-local comparison proof, explicit asset/
 font/abort/unsupported-family failures, a corrupted-input fidelity case and an
 independent negative audit that fails on a corrupted number/column/group.
-Fonts and map images are test-only injected loaders; no fixture script ships in
-production.
+Populated native scenes cover a 73-point curve, a 0,9957355 share, a 1,4 ramp,
+split compared bars and a twelve-type waffle. A rendered-collision guard checks
+the actual text boxes, not only page edges. Fonts and map images are test-only
+injected loaders; no fixture script ships in production.
+
+`scripts/verify-cahier-pdf-browser.mjs` builds only
+`scripts/cahier-pdf-browser-probe.html` into an external directory, serves it on
+a private strict port, uses the local Playwright Chromium to generate real
+desktop and mobile-host PDFs with the production font/asset loader, and closes
+the server. It is evidence tooling, not an application build and not the
+stopped preview/prototype server. Its output is outside the repository.
 
 Visual evidence is generated outside tracked assets via
 `CAHIER_PDF_EVIDENCE_DIR` and `CAHIER_PDF_REPORT=1` while running the spec.

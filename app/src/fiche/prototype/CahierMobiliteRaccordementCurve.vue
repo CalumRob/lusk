@@ -39,6 +39,11 @@ import {
   mobiliteCurveTooltipRows,
   mobiliteCurveUnavailableNotes,
 } from './cahierMobiliteReadings'
+import {
+  curveGeometry,
+  curveSeriesPath,
+  visibleCurveTicks,
+} from './cahierFigureNativeGeometry'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
@@ -89,42 +94,24 @@ function axisForFact(fact: NumericFact): number | null {
   return mobiliteCurveCoordinateForDetail(props.figure, fact.detail)
 }
 
-const axisDomain = computed(() => props.figure.axis
-  ? { minimum: props.figure.axis.minimum, maximum: props.figure.axis.maximum }
-  : { minimum: 0, maximum: 1 })
-
 const yTickLabels = computed(() => Y_TICKS.map((value) => `${value * 100} %`))
 const geometry = useMeasuredCahierFigureGeometry(plotElement, yTickLabels, BASE_FIGURE_GEOMETRY)
+const nativeGeometry = computed(() => curveGeometry(props.figure, geometry.value))
 const plotWidth = computed(() => geometry.value.width - geometry.value.margin.left - geometry.value.margin.right)
 const plotHeight = computed(() => geometry.value.height - geometry.value.margin.top - geometry.value.margin.bottom)
 const plotBottom = computed(() => geometry.value.margin.top + plotHeight.value)
 
 function xForAxis(value: number): number {
-  const { minimum, maximum } = axisDomain.value
-  const ratio = (value - minimum) / (maximum - minimum)
-  return geometry.value.margin.left + ratio * plotWidth.value
+  return nativeGeometry.value.x(value)
 }
 
 function yFor(value: number): number {
-  return geometry.value.margin.top + (1 - Math.max(0, Math.min(1, value))) * plotHeight.value
+  return nativeGeometry.value.y(value)
 }
 
 /** Straight segments only: every published point, no smoothing, no resampling. */
 function seriesPath(points: readonly { fact: NumericFact }[]): string {
-  let started = false
-  return points.map((point) => {
-    const value = point.fact.value
-    const axis = axisForFact(point.fact)
-    if (value === null || !Number.isFinite(value) || axis === null) {
-      started = false
-      return ''
-    }
-    const x = xForAxis(axis)
-    const y = yFor(value)
-    const command = `${started ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`
-    started = true
-    return command
-  }).filter(Boolean).join(' ')
+  return curveSeriesPath(points, props.figure, nativeGeometry.value)
 }
 
 const territoryPath = computed(() => seriesPath(props.figure.points))
@@ -138,21 +125,8 @@ const drawablePoints = computed(() => props.figure.points.flatMap((point) => {
 const hasDrawablePoints = computed(() => drawablePoints.value.length > 0)
 
 const curveGrid = computed(() => mobiliteCurveGrid(props.figure))
-
-/**
- * Tick labels and their declared order come from the shared grid builder; only
- * the rendered position is geometry-specific.
- */
-const xTicks = computed<readonly CahierFigureAxisTick[]>(() => curveGrid.value.map((tick) => ({
-  key: tick.detail,
-  label: tick.label,
-  position: xForAxis(tick.axisValue),
-})))
-const yTicks = computed<readonly CahierFigureAxisTick[]>(() => Y_TICKS.map((value) => ({
-  key: value,
-  label: `${value * 100} %`,
-  position: yFor(value),
-})))
+const xTicks = computed(() => nativeGeometry.value.xTicks)
+const yTicks = computed(() => nativeGeometry.value.yTicks)
 
 const renderedPlotWidth = ref(0)
 let plotObserver: ResizeObserver | null = null
@@ -170,32 +144,14 @@ function approximateLabelWidth(label: string | null): number {
  * protected; remaining declared ticks fill the available space in metadata
  * order, with the producer's mobile anchors considered first.
  */
-const visibleXTicks = computed<readonly CahierFigureAxisTick[]>(() => {
-  const ticks = xTicks.value
-  const width = renderedPlotWidth.value
-  if (!width || ticks.length < 2) return ticks
-  const pixelsPerUnit = width / geometry.value.width
-  const selected: CahierFigureAxisTick[] = []
-  const fits = (tick: CahierFigureAxisTick): boolean => {
-    const x = tick.position * pixelsPerUnit
-    const half = approximateLabelWidth(tick.label) / 2
-    return selected.every((other) => {
-      const otherX = other.position * pixelsPerUnit
-      const otherHalf = approximateLabelWidth(other.label) / 2
-      return Math.abs(x - otherX) >= half + otherHalf + 10
-    })
-  }
-  const add = (tick: CahierFigureAxisTick | undefined) => {
-    if (tick && !selected.includes(tick) && fits(tick)) selected.push(tick)
-  }
-  add(ticks[0])
-  add(ticks.find((tick) => marker.value && String(tick.key) === marker.value.detail))
-  add(ticks.at(-1))
-  const mobileKeys = new Set(curveGrid.value.filter((tick) => tick.mobile).map((tick) => tick.detail))
-  for (const tick of ticks.filter((tick) => mobileKeys.has(String(tick.key)))) add(tick)
-  for (const tick of ticks) add(tick)
-  return [...selected].sort((left, right) => left.position - right.position)
-})
+const visibleXTicks = computed<readonly CahierFigureAxisTick[]>(() => visibleCurveTicks(
+  xTicks.value,
+  renderedPlotWidth.value,
+  geometry.value.width,
+  marker.value ? String(marker.value.detail) : null,
+  approximateLabelWidth,
+  new Set(curveGrid.value.filter((tick) => tick.mobile).map((tick) => tick.detail)),
+))
 
 const marker = computed(() => props.figure.trajectory?.marker ?? null)
 const markerAxisValue = computed(() => marker.value

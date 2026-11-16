@@ -11,7 +11,7 @@ import type { TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territor
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
-import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
+import { rampGeometry, rampPaths, rampScale } from './cahierFigureNativeGeometry'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import {
   formatTimeRampNumber,
@@ -76,40 +76,32 @@ function toggleTimeMode(key: string): void {
   if (props.selectedModes) emit('update:selectedModes', [...selected] as AedarRampMode[])
   else selectedTimeModes.value = selected
 }
-const timeYAxis = computed(() => cahierIntegerYAxisScale(visibleTimeSeries.value.flatMap((series) =>
-  series.points.flatMap((point) => comparisonVisible.value ? [point.value, point.referenceValue] : [point.value]),
-)))
-const measuredYTickLabels = computed(() => timeYAxis.value.ticks.map((value) =>
-  `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}`))
-const figureGeometry = useMeasuredCahierFigureGeometry(plotElement, measuredYTickLabels, BASE_FIGURE_GEOMETRY)
+const timeYAxis = computed(() => rampScale(visibleTimeSeries.value, comparisonVisible.value))
+const figureGeometry = useMeasuredCahierFigureGeometry(
+  plotElement,
+  computed(() => timeYAxis.value.ticks.map((value) =>
+    `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}`)),
+  BASE_FIGURE_GEOMETRY,
+)
+const rampGeom = computed(() => rampGeometry(
+  timePoints.value,
+  timeYAxis.value,
+  figureGeometry.value,
+  props.timeRamp?.yAxis.unit ?? '',
+))
 const plotHeight = computed(() => figureGeometry.value.height -
   figureGeometry.value.margin.top - figureGeometry.value.margin.bottom)
-const timeX = (value: number) => {
-  const { width, margin } = figureGeometry.value
-  return margin.left + ((value - (timePoints.value[0]?.xValue ?? 0)) / Math.max(1, (timePoints.value.at(-1)?.xValue ?? 1) - (timePoints.value[0]?.xValue ?? 0))) * (width - margin.left - margin.right)
-}
-const timeY = (value: number) => {
-  const { height, margin } = figureGeometry.value
-  return margin.top + (1 - (value - timeYAxis.value.minimum) / (timeYAxis.value.maximum - timeYAxis.value.minimum)) *
-    (height - margin.top - margin.bottom)
-}
-const timeTicks = computed(() => timePoints.value.map((point) => ({ key: point.xValue, position: timeX(point.xValue), label: point.xLabel })))
-const timeYTicks = computed(() => timeYAxis.value.ticks.map((value) => ({ key: value, position: timeY(value), label: `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}` })))
+const timeX = (value: number) => rampGeom.value.x(value)
+const timeTicks = computed(() => rampGeom.value.xTicks)
+const timeYTicks = computed(() => rampGeom.value.yTicks)
 
 function timePaths(points: readonly TimeRampPoint[], reference = false): string[] {
-  const paths: string[] = []
-  let current: string[] = []
-  for (const point of points) {
-    const value = reference ? point.referenceValue : point.value
-    if (value === null) {
-      if (current.length) paths.push(current.join(' '))
-      current = []
-    } else {
-      current.push(`${current.length ? 'L' : 'M'} ${timeX(point.xValue).toFixed(2)} ${timeY(value).toFixed(2)}`)
-    }
-  }
-  if (current.length) paths.push(current.join(' '))
-  return paths
+  return [...rampPaths(
+    points,
+    (point) => reference ? point.referenceValue : point.value,
+    (value) => rampGeom.value.x(value),
+    (value) => rampGeom.value.y(value),
+  )]
 }
 
 const timeLegend = computed<readonly FigureLegendEntry[]>(() => [
