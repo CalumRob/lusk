@@ -62,12 +62,27 @@ useCahierExportPublication(() => ({
       loaded: loadedModes.value.has(map.mode),
       unavailable: unavailableModes.value.has(map.mode)
         || (!map.inlineAvailable && !map.inspectionAvailable),
+      // Only the inline figure asset is export content; the gallery stays excluded.
+      inlineUrl: map.inlineAvailable
+        ? aedarDiversityLossMapAssetUrl(props.evidence.territory.code, map.mode, 'inline')
+        : null,
     })),
     legend: props.evidence.legend
       ? 'available'
       : props.evidence.metadataState === 'loading'
         ? 'pending'
         : props.evidence.metadataState === 'unavailable' ? 'unavailable' : 'none',
+    legendDetail: props.evidence.legend
+      ? {
+        title: props.evidence.legend.title,
+        minimum: null,
+        maximum: null,
+        colors: props.evidence.legend.colors,
+        tickLabels: props.evidence.legend.tickLabels,
+        note: props.evidence.legend.note,
+        ariaLabel: props.evidence.legend.ariaLabel,
+      }
+      : null,
   },
 }))
 

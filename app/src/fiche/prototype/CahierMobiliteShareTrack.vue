@@ -23,8 +23,15 @@ import { computed } from 'vue'
 
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import type { MobiliteShareEvidence } from '@/fiche/content/themeContent'
-import { formatServedRankAria } from '@/fiche/figureGrammaire'
-import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
+import {
+  mobiliteShareComparisonAria,
+  mobiliteSharePublicationNotes,
+  mobiliteShareReference,
+  mobiliteShareStateMessage,
+  mobiliteShareTerritoryAria,
+  mobiliteShareValue,
+  mobiliteShareVisibleLabel,
+} from './cahierMobiliteReadings'
 import CahierRank from './CahierRank.vue'
 import { useCahierExportPublication } from './cahierExportVenue'
 
@@ -41,44 +48,13 @@ const props = defineProps<{
   comparisonNone?: boolean
 }>()
 
-function formatNumber(value: number, maximumFractionDigits: number): string {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
-}
+const value = computed(() => mobiliteShareValue(props.figure))
 
-function scaledValue(value: number): number {
-  return props.figure.unit.trim() === '%' ? value * 100 : value
-}
-
-/** The served unit, never an invented percentage. */
-function displayUnit(): string {
-  return props.figure.unit.trim() || '%'
-}
-
-/** Visible label: one decimal, the same precision for both rows. */
-function visibleLabel(value: number | null): string {
-  return value === null
-    ? 'Indisponible'
-    : `${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-      .format(scaledValue(value))} ${displayUnit()}`
-}
-
-/** Accessible reading keeps the served value's actual precision. */
-function preciseLabel(value: number | null): string {
-  return value === null ? 'Indisponible' : `${formatNumber(scaledValue(value), 4)} ${displayUnit()}`
-}
-
-const value = computed(() => {
-  const fact = props.figure.value.fact
-  return fact.availability === 'complete' && fact.value !== null && Number.isFinite(fact.value)
-    ? fact.value : null
-})
-
-const reference = computed(() => {
-  if (props.comparison.status !== 'ready') return null
-  const fact = props.figure.value.fact.comparison
-  if (!fact?.reference || !Number.isFinite(fact.reference.value)) return null
-  return fact.reference.value
-})
+const reference = computed(() => mobiliteShareReference({
+  figure: props.figure,
+  status: props.comparison.status,
+  comparisonNone: props.comparisonNone,
+}))
 
 // #1021 — the share track has no toggle; it publishes the served reference it
 // actually draws, including its absence.
@@ -92,10 +68,8 @@ useCahierExportPublication(() => ({
   },
 }), 'share')
 
-const valueLabel = computed(() => visibleLabel(value.value))
-const referenceLabel = computed(() => visibleLabel(reference.value))
-const valueAriaLabel = computed(() => preciseLabel(value.value))
-const referenceAriaLabel = computed(() => preciseLabel(reference.value))
+const valueLabel = computed(() => mobiliteShareVisibleLabel(value.value, props.figure))
+const referenceLabel = computed(() => mobiliteShareVisibleLabel(reference.value, props.figure))
 
 /** The published share's position, clamped to the bar frame, never re-based. */
 function percentPosition(candidate: number | null): number {
@@ -110,71 +84,25 @@ const complementPercent = computed(() => (value.value === null ? 0 : Math.max(0,
 const referenceComplementPercent = computed(() =>
   reference.value === null ? 0 : Math.max(0, 100 - referencePercent.value))
 
-const comparisonDetail = computed(() => {
-  const comparison = props.figure.value.fact.comparison
-  if (!comparison) return null
-  return {
-    statistic: comparison.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane',
-    rank: formatServedRankAria(comparison.rank),
-    direction: LIBELLES_DIRECTION[comparison.direction] ?? null,
-  }
-})
+const publicationNotes = computed(() => mobiliteSharePublicationNotes({
+  figure: props.figure,
+  comparisonNone: props.comparisonNone,
+}))
 
-const publicationNotes = computed(() => [
-  ...(props.figure.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
-  ...(props.comparisonNone
-    ? []
-    : (props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`)),
-])
+const territoryAria = computed(() => mobiliteShareTerritoryAria(props.figure))
 
-const remainderReading = 'Barre de 0 à 100 % ; le reste de la barre est le complément de la part publiée.'
+const comparisonAria = computed(() => mobiliteShareComparisonAria({
+  figure: props.figure,
+  status: props.comparison.status,
+  comparisonNone: props.comparisonNone,
+}))
 
-const territoryAria = computed(() => [
-  props.figure.figureTitle,
-  `${props.figure.territoryName} : ${valueAriaLabel.value}`,
-  remainderReading,
-  ...(props.figure.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
-].join('. '))
-
-const comparisonAria = computed(() => {
-  if (props.comparison.status === 'loading') {
-    return `${props.figure.figureTitle}. ${GROUPE_COMPARE_LABEL} : chargement en cours.`
-  }
-  if (reference.value === null || !comparisonDetail.value) {
-    return [
-      props.figure.figureTitle,
-      `${GROUPE_COMPARE_LABEL} : indisponible`,
-      ...(props.comparisonNone
-        ? []
-        : (props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`)),
-    ].join('. ')
-  }
-  return [
-    props.figure.figureTitle,
-    `${GROUPE_COMPARE_LABEL} : ${referenceAriaLabel.value}`,
-    props.figure.comparisonLabel ?? `${comparisonDetail.value.statistic} du groupe comparé`,
-    comparisonDetail.value.rank ? `Rang ${comparisonDetail.value.rank}` : comparisonDetail.value.direction,
-    remainderReading,
-    ...(props.comparisonNone
-      ? []
-      : (props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`)),
-  ].filter(Boolean).join('. ')
-})
-
-const stateMessage = computed(() => {
-  if (props.comparisonNone) return null
-  if (props.comparison.status === 'loading') return 'Chargement du groupe comparé…'
-  if (props.comparison.status === 'error') {
-    return props.figure.unavailableComparisons?.length ? null : props.comparison.error ?? 'Groupe comparé indisponible.'
-  }
-  if (props.comparison.status === 'unavailable') return 'Groupe comparé indisponible pour cette sélection.'
-  if (props.comparison.status === 'idle') return 'Aucune comparaison active : aucun repère de groupe comparé n’est affiché.'
-  if (reference.value === null && (props.figure.unavailableComparisons?.length ?? 0) === 0) {
-    return 'Aucun repère de groupe comparé disponible pour cette sélection.'
-  }
-  return null
-})
-</script>
+const stateMessage = computed(() => mobiliteShareStateMessage({
+  figure: props.figure,
+  status: props.comparison.status,
+  error: props.comparison.error,
+  comparisonNone: props.comparisonNone,
+}))</script>
 
 <template>
   <div class="mobilite-share-track">

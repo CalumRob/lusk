@@ -192,6 +192,24 @@ describe('CahierMobiliteRaccordementCurve — approved travel-time figure (#1006
     wrapper.unmount()
   })
 
+  it('keeps a marker outside declared ticks on its source axis coordinate', () => {
+    const figure = curveFigure({
+      trajectory: {
+        ...trajectory,
+        ticks: [{ detail: 't0000', label: '0' }, { detail: 't0360', label: '6 h' }],
+        marker: { detail: 't0090', label: '1 h 30 (90 min)' },
+      },
+    })
+    const wrapper = mount(CahierMobiliteRaccordementCurve, { props: { figure, comparison: ready } })
+    const marker = wrapper.get('.mobilite-raccordement-curve__marker')
+    expect(marker.attributes('data-detail')).toBe('t0090')
+    const line = marker.get('.mobilite-raccordement-curve__marker-line')
+    expect(Number(line.attributes('x1'))).toBeGreaterThan(0)
+    expect(Number(line.attributes('x1'))).toBeLessThan(640)
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).toContain('1 h 30 (90 min)')
+    wrapper.unmount()
+  })
+
   it('shows the actual point evidence on focus, keyboard and touch', async () => {
     const wrapper = mount(CahierMobiliteRaccordementCurve, {
       props: { figure: curveFigure(), comparison: ready },
@@ -345,6 +363,74 @@ describe('CahierMobiliteRaccordementCurve — approved travel-time figure (#1006
     }
     const wrapper = mount(CahierMobiliteRaccordementCurve, { props: { figure, comparison: ready } })
     expect(wrapper.get('svg[role="img"]').attributes('aria-label')).not.toContain('Rang')
+    wrapper.unmount()
+  })
+
+  it('draws a marker declared only by metadata and the native axis, with no fabricated point', () => {
+    const figure = curveFigure({
+      points: [point('t0000', 0, 0), point('t0360', 360, 0.8)],
+      comparison: null,
+      trajectory: {
+        ...trajectory,
+        ticks: [
+          { detail: 't0000', label: '0' },
+          { detail: 't0360', label: '6 h' },
+        ],
+        marker: { detail: 't0090', label: '1 h 30 (90 min)' },
+      },
+      axis: {
+        values: [
+          { detail: 't0000', numericValue: 0 },
+          { detail: 't0090', numericValue: 90 },
+          { detail: 't0360', numericValue: 360 },
+        ],
+        minimum: 0,
+        maximum: 360,
+      },
+      markerValue: null,
+    })
+    const wrapper = mount(CahierMobiliteRaccordementCurve, {
+      props: { figure, comparison: { status: 'unavailable' } },
+    })
+    const marker = wrapper.get('.mobilite-raccordement-curve__marker')
+    expect(marker.attributes('data-detail')).toBe('t0090')
+    expect(marker.attributes('data-axis-value')).toBe('90')
+    const line = marker.get('.mobilite-raccordement-curve__marker-line')
+    expect(Number(line.attributes('x1'))).toBeGreaterThan(0)
+    expect(Number(line.attributes('x1'))).toBeLessThan(640)
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).toContain('1 h 30 (90 min)')
+    expect(wrapper.findAll('circle')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('never presents a supported point as unavailable when only its label is missing', () => {
+    const figure = curveFigure({
+      points: [point('t0000', 0, 0), point('t0015', 15, 0.25), point('t0090', 90, 0.9)],
+      comparison: null,
+      trajectory: {
+        ...trajectory,
+        ticks: [
+          { detail: 't0000', label: '0' },
+          { detail: 't0090', label: '1 h 30' },
+        ],
+      },
+      axis: {
+        values: [
+          { detail: 't0000', numericValue: 0 },
+          { detail: 't0015', numericValue: 15 },
+          { detail: 't0090', numericValue: 90 },
+        ],
+        minimum: 0,
+        maximum: 360,
+      },
+    })
+    const wrapper = mount(CahierMobiliteRaccordementCurve, {
+      props: { figure, comparison: { status: 'unavailable' } },
+    })
+    const aria = wrapper.get('svg[role="img"]').attributes('aria-label')!
+    expect(aria).toContain('Libellé indisponible : 25 %')
+    expect(aria).not.toContain('Indisponible : 25 %')
+    expect(aria).not.toContain('t0015 :')
     wrapper.unmount()
   })
 

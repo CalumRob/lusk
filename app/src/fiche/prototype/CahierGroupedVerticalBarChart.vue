@@ -8,8 +8,13 @@ import type {
   CahierTooltipRow,
 } from '@/fiche/cahierFigureGrammaire'
 import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
-import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
+import {
+  groupedBarAccessibleLabel,
+  groupedBarCategoryAria,
+  groupedBarTooltipRows,
+  visibleGroupedBarSeries,
+} from './cahierFigureReadings'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
@@ -26,18 +31,7 @@ const BASE_FIGURE_GEOMETRY = {
 } as const satisfies CahierFigureGeometry
 const BAR_GAP = 2
 const MAX_BAR_WIDTH = 12
-const UNAVAILABLE_LABEL = 'Indisponible'
 const plotElement = ref<HTMLElement | null>(null)
-
-function formatValue(value: number): string {
-  return props.figure.formatValue?.(value)
-    ?? new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
-}
-
-/** Accessible reading of the same value: the unit lives here, never in the visible row. */
-function formatAriaValue(value: number): string {
-  return props.figure.formatAriaValue?.(value) ?? formatValue(value)
-}
 
 function formatAxisTick(value: number): string {
   return props.figure.formatAxisTick?.(value)
@@ -45,7 +39,7 @@ function formatAxisTick(value: number): string {
 }
 
 const categoryCount = computed(() => props.figure.categories.length)
-const visibleSeries = computed(() => props.figure.series.filter((series) => !props.hiddenSeriesKeys.includes(series.key)))
+const visibleSeries = computed(() => visibleGroupedBarSeries(props.figure, props.hiddenSeriesKeys))
 const seriesCount = computed(() => visibleSeries.value.length)
 const finiteValues = computed(() => visibleSeries.value.flatMap((series) =>
   series.values.flatMap((value) => value === null || !Number.isFinite(value) ? [] : [value]),
@@ -110,46 +104,11 @@ function clearCategory(index: number): void {
 }
 
 function categoryLabel(index: number): string {
-  const category = props.figure.categories[index]!
-  const values = props.figure.series.map((series) => {
-    const value = series.values[index]
-    return `${series.label} : ${value === null || value === undefined ? UNAVAILABLE_LABEL : formatAriaValue(value)}`
-  })
-  return `${category.label} : ${values.length ? values.join(' ; ') : 'Aucune série'}`
+  return groupedBarCategoryAria(props.figure, index, props.hiddenSeriesKeys)
 }
 
-const tooltipRows = computed<readonly CahierTooltipRow[]>(() => {
-  const categoryIndex = selectedCategoryIndex.value
-  if (categoryIndex === null) return []
-  const comparedSeries = new Map(
-    props.figure.series
-      .filter((series) => series.comparisonFor)
-      .map((series) => [series.comparisonFor!, series]),
-  )
-  return props.figure.series.filter((series) => !series.comparisonFor).map((series) => {
-    const value = series.values[categoryIndex]
-    const compared = comparedSeries.get(series.key)
-    const comparedValue = compared?.values[categoryIndex]
-    return {
-      label: series.label,
-      value: value === null || value === undefined ? UNAVAILABLE_LABEL : formatValue(value),
-      icon: series.icon,
-      markerColor: series.color,
-      ...(compared
-        ? {
-            comparison: {
-              value: comparedValue === null || comparedValue === undefined
-                ? UNAVAILABLE_LABEL
-                : formatValue(comparedValue),
-              rank: formatServedRank(compared.ranks?.[categoryIndex]),
-              rankEvidence: compared.ranks?.[categoryIndex],
-              rankAria: formatServedRankAria(compared.ranks?.[categoryIndex]),
-            },
-          }
-        : {}),
-    }
-  })
-})
+const tooltipRows = computed<readonly CahierTooltipRow[]>(() =>
+  groupedBarTooltipRows(props.figure, selectedCategoryIndex.value, props.hiddenSeriesKeys))
 
 const selectedCategoryTitle = computed(() => selectedCategoryIndex.value === null
   ? ''
@@ -168,12 +127,8 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
   }
 })
 
-const accessibleLabel = computed(() => {
-  const seriesReadings = props.figure.series.map((series) => `${series.label} : ${series.values.map((value) =>
-    value === null || !Number.isFinite(value) ? UNAVAILABLE_LABEL : formatAriaValue(value),
-  ).join(', ')}`).join(' ; ')
-  return `${props.figure.description} Axe horizontal : ${props.figure.xAxisTitle}. Axe vertical : ${props.figure.yAxisTitle}. ${seriesReadings}`
-})
+const accessibleLabel = computed(() =>
+  groupedBarAccessibleLabel(props.figure, props.hiddenSeriesKeys))
 
 function categoryHitboxStyle(index: number): Record<string, string> {
   return {

@@ -107,6 +107,8 @@ useCahierExportPublication(() => ({
         declared: carMap,
         loaded: carMap && loadedCarMapCodes.value.has(props.territory.code),
         unavailable: carMap && unavailableCarMapCodes.value.has(props.territory.code),
+        // The figure plate renders the inline asset, not the excluded inspection gallery.
+        inlineUrl: carMap ? aedarCarMapAssetUrl(props.territory.code, 'inline') : null,
       }
     }),
     legend: showCarMapLegend.value
@@ -114,6 +116,17 @@ useCahierExportPublication(() => ({
       : needsCarMapLegend.value
         ? (legendStatus.value === 'unavailable' ? 'unavailable' : 'pending')
         : 'none',
+    legendDetail: showCarMapLegend.value && carMapLegend.value
+      ? {
+        title: carMapLegend.value.title,
+        minimum: carMapLegend.value.minimum,
+        maximum: carMapLegend.value.maximum,
+        colors: carMapLegend.value.colors,
+        tickLabels: carMapLegend.value.tickLabels,
+        note: carMapLegend.value.note,
+        ariaLabel: null,
+      }
+      : null,
   },
 }))
 

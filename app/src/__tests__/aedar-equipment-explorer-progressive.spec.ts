@@ -120,8 +120,9 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
     expect(wrapper.find('.access-ramp-line--comparison').exists()).toBe(false)
     expect(wrapper.findComponent(AedarEquipmentQuantileFigureCahier).props('comparisonVisible')).toBe(false)
     expect(wrapper.findAll('.cahier-grouped-vertical-bar-chart__bar')).toHaveLength(groupedBars - base.distributionStatistics.length)
-    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Référence Moyenne de la sélection')
-    expect(wrapper.find('.cahier-grouped-vertical-bar-chart__svg').attributes('aria-label')).toContain('Groupe comparé : Voiture')
+    // #1022 — the disabled comparison disappears from both accessible readings.
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).not.toContain('Référence Moyenne de la sélection')
+    expect(wrapper.find('.cahier-grouped-vertical-bar-chart__svg').attributes('aria-label')).not.toContain('Groupe comparé : Voiture')
     expect(wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!.attributes('aria-pressed')).toBe('false')
     await wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!.trigger('click')
     expect(wrapper.emitted('update:comparisonVisible')?.at(-1)).toEqual([true])
@@ -164,7 +165,7 @@ describe('AEDAR selected TYPEQU hydration identity', () => {
   it('keeps the sandbox comparison toggle and unavailable values when no comparison read exists', async () => {
     vi.mocked(fetchAedarAggregates).mockResolvedValue({ status: 'error', error: { code: 'network', message: 'offline' } })
     const base = evidence('territory-a')
-    const wrapper = mount(AedarEquipmentExplorerCahier, { props: { evidence: base } })
+    const wrapper = mount(AedarEquipmentExplorerCahier, { props: { evidence: base, comparisonVisible: true } })
     await flushPromises()
     const toggle = wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')
     expect(toggle).toBeDefined()

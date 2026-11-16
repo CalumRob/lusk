@@ -151,6 +151,30 @@ describe('AccessRampFigureCahier time ramp', () => {
     wrapper.unmount()
   })
 
+  it('ne réintroduit pas une référence masquée dans l’infobulle ni dans le nom accessible', async () => {
+    const ranked = timeRamp({
+      series: [timeRamp().series[0]!].map((series) => ({
+        ...series,
+        points: series.points.map((point) => ({
+          ...point,
+          referenceRank: point.xValue === 15 ? { position: 2, size: 3 } : null,
+        })),
+      })),
+    })
+    const wrapper = mount(AccessRampFigureCahier, {
+      props: { timeRamp: ranked, territoryName: 'Territoire test', comparisonVisible: false },
+    })
+    await wrapper.find('[aria-label="Temps d\'accès : 15 min"]').trigger('focus')
+
+    const tooltip = wrapper.get('[role="tooltip"]')
+    expect(tooltip.find('.cahier-figure-tooltip-row-comparison').exists()).toBe(false)
+    expect(tooltip.find('.cahier-figure-tooltip-comparison-rank').exists()).toBe(false)
+    const label = wrapper.get('.access-ramp-svg').attributes('aria-label')!
+    expect(label).not.toContain('Référence')
+    expect(label).not.toContain('rang 2e/3')
+    expect(label).not.toContain('Territoires comparables')
+  })
+
   it('préfixe un rang partagé servi par « = » dans le tooltip et dit « ex æquo » en aria', async () => {
     const tied = timeRamp({
       series: [timeRamp().series[0]!].map((series) => ({
@@ -255,13 +279,15 @@ describe('AccessRampFigureCahier time ramp', () => {
     expect(label).toContain('Référence Territoires comparables')
   })
 
-  it('uses the shared legend toggle for the comparison curve without removing its accessible reading', async () => {
+  it('removes the hidden comparison from both the drawn curves and the accessible reading', async () => {
     const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Territoire test' } })
     const comparisonToggle = wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!
     expect(comparisonToggle.attributes('aria-pressed')).toBe('true')
     await comparisonToggle.trigger('click')
     expect(wrapper.findAll('.access-ramp-line--comparison')).toHaveLength(0)
-    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Référence Territoires comparables')
+    // #1022 — a hidden reference is no longer advertised as an accessible reading.
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).not.toContain('Référence Territoires comparables')
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).not.toContain('Territoires comparables')
     expect(wrapper.findAll('.cahier-figure-legend-toggle').find((button) => button.text() === 'Groupe comparé')!.attributes('aria-pressed')).toBe('false')
     wrapper.unmount()
   })

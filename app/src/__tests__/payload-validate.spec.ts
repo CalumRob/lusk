@@ -83,6 +83,27 @@ describe('metadata de trajectoire raccordement', () => {
     malformed.indicator_pages.raccordement_courbe.comparison.details[2] = malformed.indicator_pages.raccordement_courbe.comparison.details[1]
     expect(() => validerThemeMetadata(malformed, 'theme_mobilite.json')).toThrow('comparison.details')
   })
+
+  it('preserves the optional native tick numeric coordinate and rejects a non-finite one', async () => {
+    const fs = await import('node:fs')
+    const metadata = JSON.parse(fs.readFileSync('../pipeline/inst/extdata/theme-metadata/theme_mobilite.json', 'utf8'))
+    const ticks = metadata.indicator_pages.raccordement_courbe.trajectory.ticks
+    ticks[0].numericValue = 0
+    ticks[1].numericValue = 15
+    const parsed = validerThemeMetadata(metadata, 'theme_mobilite.json')
+    const page = parsed.indicator_pages?.raccordement_courbe
+    expect(page?.family).toBe('trajectory')
+    if (page?.family === 'trajectory') {
+      expect(page.trajectory?.ticks?.slice(0, 2)).toEqual([
+        expect.objectContaining({ detail: 't0000', numericValue: 0 }),
+        expect.objectContaining({ detail: 't0015', numericValue: 15 }),
+      ])
+    }
+
+    const invalid = structuredClone(metadata)
+    invalid.indicator_pages.raccordement_courbe.trajectory.ticks[0].numericValue = 'bad'
+    expect(() => validerThemeMetadata(invalid, 'theme_mobilite.json')).toThrow('numericValue')
+  })
 })
 /**
  * The app's half of validate_payload() (docs/architecture.md §The fiche

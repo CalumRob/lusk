@@ -222,10 +222,27 @@ export interface CahierCaptureComparison {
   /** Resolved group identity metadata; never proof that a comparison is displayed. */
   readonly group: CahierCaptureComparisonGroup | null
   readonly absent: CahierCaptureComparisonAbsence | null
+  /**
+   * The mobilite section owner's exact comparisonNone predicate when it
+   * publishes one; null for families whose owner does not publish this state.
+   * Consumers must not reconstruct it from `absent`.
+   */
+  readonly none: boolean | null
   /** Owner-observed effective presentation of comparative evidence. */
   readonly display: CahierCaptureComparisonDisplay
   /** Distinct served statistic/scope labels carried by the section figures, in order. */
   readonly statisticLabels: readonly string[]
+}
+
+/** Native legend content observed by a map owner; never reconstructed from pixels. */
+export interface CahierCaptureMapLegendDetail {
+  readonly title: string
+  readonly minimum: number | null
+  readonly maximum: number | null
+  readonly colors: readonly string[]
+  readonly tickLabels: readonly string[]
+  readonly note: string
+  readonly ariaLabel: string | null
 }
 
 export interface CahierCaptureMapItem {
@@ -233,10 +250,12 @@ export interface CahierCaptureMapItem {
   readonly label: string
   /** The owner declares that a map is expected for this item. */
   readonly declared: boolean
-  /** Owner-observed successful asset load; never derived from `declared`. */
+  /** Owner-observed successful inline asset load; never derived from `declared`. */
   readonly loaded: boolean
-  /** Owner-observed failed asset load. */
+  /** Owner-observed failed inline asset load. */
   readonly unavailable: boolean
+  /** The actual inline figure asset URL from the owner's existing path contract. */
+  readonly inlineUrl: string | null
 }
 
 export interface CahierCaptureMaps {
@@ -244,6 +263,8 @@ export interface CahierCaptureMaps {
   readonly status: 'none' | 'unknown' | 'pending' | 'available' | 'partial' | 'unavailable'
   readonly legend: 'none' | 'unknown' | 'pending' | 'available' | 'unavailable'
   readonly items: readonly CahierCaptureMapItem[]
+  /** Owner-observed legend content; null until the owner reports it drawn. */
+  readonly legendDetail: CahierCaptureMapLegendDetail | null
 }
 
 export interface CahierCaptureCapabilities {
@@ -284,11 +305,19 @@ export interface CahierComparisonLayerCaptureState {
 export interface CahierMapAvailabilityCaptureState {
   readonly maps: readonly CahierCaptureMapItem[]
   readonly legend: 'none' | 'pending' | 'available' | 'unavailable'
+  /** Raw owner legend content; the capture only exposes it with `legend: available`. */
+  readonly legendDetail?: CahierCaptureMapLegendDetail | null
 }
 
 export interface CahierMobiliteSectionCaptureState {
   readonly comparisonStatus: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   readonly comparisonError: string | null
+  /**
+   * The section's own comparisonNone predicate: no injected control (including
+   * an ineligible territory) or an explicit empty selection. This is the exact
+   * value its figures receive, never an inferred capture absence.
+   */
+  readonly comparisonNone: boolean
   /** A served ratio reference exists for at least one paired column. */
   readonly ratioReferenceAvailable: boolean
   /** At least one paired ratio reference is actually drawn (not comparisonNone). */
@@ -390,6 +419,10 @@ export interface CahierExplorerFigureCapture extends CahierCaptureFigureBase {
     readonly distributionAxisTitle: string
     readonly distributionYAxisTitle: string
     readonly distributionValueUnit: string
+    /** Native explanatory copy displayed under the distribution bars (#1022). */
+    readonly distributionDescription: string
+    /** Native copy when the distribution model is unavailable (#1022). */
+    readonly distributionUnavailableDescription: string
     readonly distributionStatistics: readonly {
       readonly key: string
       readonly label: string
@@ -581,6 +614,7 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
   })
   const comparisonStatus = captureComparisonStatus(family, input, publications)
   const comparisonError = captureComparisonError(family, input, publications)
+  const comparisonNone = captureComparisonNone(family, publications)
   const referenceStatus = cahierCaptureConsumesReference(family)
     ? (input.referenceStatus ?? 'unobserved')
     : null
@@ -617,6 +651,7 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
       selection,
       group,
       absent,
+      none: comparisonNone,
       display: captureComparisonDisplay({
         family,
         evidence,
@@ -752,6 +787,22 @@ function captureComparisonError(
   }
   if (family === 'aedar-equipment-profile' || family === 'aedar-diversity-loss') return null
   return input.comparisonError
+}
+
+/**
+ * The mobilite section's own comparisonNone predicate, read from its public
+ * publication. No other family publishes this state; null keeps that absence
+ * honest instead of turning a missing observation into false.
+ */
+function captureComparisonNone(
+  family: CahierCaptureFamily | null,
+  publications: readonly CahierExportPublication[],
+): boolean | null {
+  if (family === 'mobilite-bars' || family === 'mobilite-share' || family === 'mobilite-curve') {
+    const delegate = mobiliteSectionPublication(publications)
+    if (delegate?.state.owner === 'mobilite-section') return delegate.state.state.comparisonNone
+  }
+  return null
 }
 
 function captureComparisonSelection(input: CahierSectionCaptureInput): CahierCaptureComparisonSelection {
@@ -1115,14 +1166,23 @@ function captureMaps(options: {
   const published = publications.filter((publication) => publication.state.owner === 'map-availability')
   if (published.length === 0) {
     return hasMapSurface(family, evidence)
-      ? { status: 'unknown', legend: 'unknown', items: [] }
-      : { status: 'none', legend: 'none', items: [] }
+      ? { status: 'unknown', legend: 'unknown', items: [], legendDetail: null }
+      : { status: 'none', legend: 'none', items: [], legendDetail: null }
   }
   const items = published.flatMap((publication) =>
     publication.state.owner === 'map-availability' ? publication.state.state.maps : [])
   const first = published[0]
   const legend = first?.state.owner === 'map-availability' ? first.state.state.legend : 'unknown'
-  return { status: mapStatus(items), legend, items: deepPlain(items) }
+  const legendDetail = first?.state.owner === 'map-availability'
+    && first.state.state.legend === 'available'
+    ? first.state.state.legendDetail ?? null
+    : null
+  return {
+    status: mapStatus(items),
+    legend,
+    items: deepPlain(items),
+    legendDetail: legendDetail ? deepPlain(legendDetail) : null,
+  }
 }
 
 function mapStatus(items: readonly CahierCaptureMapItem[]): CahierCaptureMaps['status'] {
@@ -1218,6 +1278,8 @@ function captureFigures(options: {
           distributionAxisTitle: evidence.distributionAxisTitle,
           distributionYAxisTitle: evidence.distributionYAxisTitle,
           distributionValueUnit: evidence.distributionValueUnit,
+          distributionDescription: evidence.distributionDescription,
+          distributionUnavailableDescription: evidence.distributionUnavailableDescription,
           distributionStatistics: evidence.distributionStatistics.map((statistic) => ({
             key: statistic.key,
             label: statistic.label,

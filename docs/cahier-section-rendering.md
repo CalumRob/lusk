@@ -107,6 +107,55 @@ real owners (horizon, modes, TYPEQU acquisition, independent comparison layers,
 real map/legend pending/loaded/failure transitions, late group/territory changes
 and screen stability).
 
+## Export family adapters (#1022)
+
+`cahierExportAdapters.ts` projects one frozen `CahierExportRequest` into the
+numeric tables and figure projections required by the PDF composer. Dispatch is
+on the eight **figure families**, never on a section key: `aedar-ramps`,
+`aedar-car-overview`, `aedar-diversity-loss` (maps/legend), the
+`aedar-equipment-profile` waffle, `aedar-equipment-explorer` (volume ramp +
+min/deciles/max distribution), `mobilite-bars` (compared bars with segments and
+raw numerators), `mobilite-share` (current two-line coverage) and
+`mobilite-curve` (declared raccordement grid, marker and reference path).
+
+The adapters reuse the owners' own resolvers and the pure readings that
+mount the figures: `cahierFigureReadings.ts` (time ramps and grouped AEDAR
+bars), `cahierMobiliteReadings.ts` (compared bars, coverage share and curve)
+and `aedarFigureReadings.ts` (quantile/volume/waffle/scalar builders).
+`aedarRampToTimeRampFigureData` is the one evidence-to-ramp conversion used by
+both `CahierAedarAccessSection` and the export. A table cell keeps the exact
+native value next to the native visible formatting, so zero, absent values,
+small non-zero values and served ties are not recomputed.
+
+Comparison columns come only from an owner-published layer for the figure's
+slot; `comparison.capable` is never evidence. A hidden reference (including the
+`hiddenSeriesKeys` of the grouped AEDAR bars) is removed from tables, tooltips
+and accessible labels. The paired ratio layer stays independent from the bars'
+toggle. The distribution capture carries the native explanatory copy additively
+(`distributionDescription`, `distributionUnavailableDescription`) so the
+projection can preserve the figure's own reading.
+
+Map owners publish the actual **inline** figure asset and, when drawn, the real
+legend content (`inlineUrl`, `legendDetail`) through the same availability
+seam; inspection-gallery assets are not export content and no pixel-derived
+numbers are produced. Missing owner observations stay `unknown`/`pending`/
+`unavailable`, never promoted to loaded. The grouped-bar projection returns the
+frozen native `CahierGroupedVerticalBarFigureData` plus `hiddenSeriesKeys`
+(axis titles, formatters, colours, icons and served ranks included), not a
+second reduced drawing shape. Share projections carry typed owner unavailability
+and the native status message instead of parsing display copy. Ratio scalar and
+overview scalar presentation consume the same shared formatters/ARIA owners as
+the mounted scalars (`—` for an absent value, bare number plus separate unit).
+The raccordement projection consumes the same grid, reading, status-copy,
+tooltip and accessible-label builders as the mounted curve. Declared ticks keep
+their producer order and `numericValue`; when ticks are omitted, the declared
+numeric axis (or published point `axisValue`) supplies identity/coordinates
+without an array-index policy.
+
+`cahier-export-adapters.spec.ts` covers the nine-section admission and literal
+family expectations; `cahier-export-capture-mounted.spec.ts` projects every
+mounted capture and checks a real ramp tooltip against its exported readings.
+
 ## Shared PDF controls (#1023)
 
 `CahierPdfAction.vue` is the one action/dialog mounted by

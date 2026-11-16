@@ -2,11 +2,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { VueWrapper } from '@vue/test-utils'
 import { ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
 import type { AedarSummaryFetchResult } from '@/fiche/content/aedarApiClient'
 import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import { AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from '@/fiche/content/aedarTimeRampFacts'
 import { CONTROLE_COMPARAISON_KEY } from '@/fiche/comparisonContext'
 import type { ControleComparaison } from '@/fiche/comparisonContext'
 import type { ContentEvidence } from '@/fiche/content/themeContent'
@@ -15,11 +16,15 @@ import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { CAHIER_SECTION_RENDERERS } from '@/fiche/prototype/cahierSectionRenderers'
 import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
+import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'
+import type { CahierFigureProjection } from '@/fiche/prototype/cahierExportAdapters'
+import CahierGroupedVerticalBarChart from '@/fiche/prototype/CahierGroupedVerticalBarChart.vue'
 import CahierMapPanel from '@/fiche/prototype/CahierMapPanel.vue'
 import ProductionMobiliteAedar from '@/fiche/mobilite/ProductionMobiliteAedar.vue'
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import { territoiresFixture } from '@/payload/fixtures'
 import { routes } from '@/router'
+import { carInlineLegend } from './fixtures/aedar-car-inline-legend'
 import {
   aedarReadyFixtures,
   cahierExportFixture,
@@ -215,8 +220,10 @@ async function mountCahier(options: {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/')
   const global: Record<string, unknown> = { plugins: [router] }
-  if (options.control) {
-    global.provide = { [CONTROLE_COMPARAISON_KEY as symbol]: ref(options.control) }
+  // A provided null is the real ineligible/no-control seam; omitting the key
+  // keeps standalone section fixtures without a provider.
+  if ('control' in options) {
+    global.provide = { [CONTROLE_COMPARAISON_KEY as symbol]: ref(options.control ?? null) }
   }
   const wrapper = mount(VarianteCahierLibre, {
     props: {
@@ -363,6 +370,7 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     vi.mocked(fetchAedarComparison).mockReset()
     vi.mocked(fetchAedarComparison).mockResolvedValue({ status: 'error', message: 'Lecture du groupe impossible' })
   })
+  afterEach(() => vi.unstubAllGlobals())
 
   it('captures every mounted section through the same public venue', async () => {
     const { wrapper, content } = await render()
@@ -383,6 +391,134 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     expect(captureOf(wrapper, 'aedar-access').figures[0]?.family).toBe('aedar-ramps')
     expect(captureOf(wrapper, 'reseaux').figures[0]?.family).toBe('mobilite-bars')
     expect(captureOf(wrapper, 'visiter-la-bretagne').figures[0]?.family).toBe('mobilite-curve')
+    wrapper.unmount()
+  })
+
+  it('projects every mounted capture through the shared family adapters', async () => {
+    const { wrapper } = await render({ aedarChapterActive: true })
+    const captures = seamOf(wrapper).captureAll()
+    const projections = captures.flatMap((capture) => {
+      const projected = projeterRequeteExport(capture, capture.capabilities.selectedSeries)
+      expect(projected.status).toBe('ready')
+      if (projected.status !== 'ready') return []
+      return projeterRequeteExportFigures(projected.request)
+    })
+    expect(projections).toHaveLength(10)
+    expect(new Set(projections.map((projection) => projection.family))).toEqual(new Set([
+      'aedar-car-overview', 'aedar-diversity-loss', 'aedar-ramps', 'aedar-equipment-profile',
+      'aedar-equipment-explorer', 'mobilite-bars', 'mobilite-share', 'mobilite-curve',
+    ]))
+    for (const projection of projections) {
+      expect(projection.title).toBeTruthy()
+      expect(projection.accessibleLabel).toBeTruthy()
+    }
+    const byFamily = <T extends CahierFigureProjection['family']>(family: T) =>
+      projections.filter((projection): projection is Extract<CahierFigureProjection, { family: T }> =>
+        projection.family === family)
+
+    const ramps = byFamily('aedar-ramps')[0]!
+    expect(ramps.ramps).toHaveLength(2)
+    expect(ramps.tables.map((table) => table.key)).toEqual(['diversity', 'volume'])
+    expect(ramps.ramps[0]?.series.find((series) => series.key === 'car')?.points[0])
+      .toMatchObject({ cutKey: 5, value: 5, display: '5' })
+
+    const overview = byFamily('aedar-car-overview')[0]!
+    expect(overview.scalars.map((scalar) => [scalar.key, scalar.value, scalar.display]))
+      .toEqual([['meanDiversity', 5, '5'], ['meanVolume', 5, '5']])
+    expect(overview.tables[0]?.rows).toHaveLength(2)
+    expect(overview.maps.status).toBeTruthy()
+
+    const diversity = byFamily('aedar-diversity-loss')[0]!
+    expect(diversity.tables).toEqual([])
+    expect(diversity.maps.items.length).toBeGreaterThan(0)
+
+    const profile = byFamily('aedar-equipment-profile')[0]!
+    expect(profile.tables[0]?.columns.map((column) => column.key))
+      .toEqual(['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'])
+    expect(profile.summary).toBeTruthy()
+
+    // The paired section contributes one projection per terrain, and the
+    // quantile table carries the declared min/deciles/max categories.
+    const explorer = byFamily('aedar-equipment-explorer')[0]!
+    expect(explorer.distribution.figure.categories.map((category) => category.key)).toEqual(
+      AEDAR_EQUIPMENT_QUANTILE_STATISTICS.map((statistic) => statistic.key),
+    )
+    expect(explorer.distribution.figure.xAxisTitle).toBeTruthy()
+    expect(typeof explorer.distribution.figure.formatValue).toBe('function')
+    expect(typeof explorer.distribution.figure.formatAriaValue).toBe('function')
+    expect(explorer.tables.find((table) => table.key === 'volume')?.rows).toHaveLength(4)
+
+    const bars = byFamily('mobilite-bars')
+    expect(bars).toHaveLength(3)
+    expect(bars.every((projection) => (projection.tables[0]?.rows.length ?? 0) > 0)).toBe(true)
+
+    const share = byFamily('mobilite-share')[0]!
+    expect(share.tables[0]?.rows).toHaveLength(1)
+    expect(share.display).toMatch(/\d/u)
+
+    const curve = byFamily('mobilite-curve')[0]!
+    expect(curve.points).toHaveLength(11)
+    expect(curve.tables[0]?.rows).toHaveLength(11)
+    expect(curve.marker?.detail).toBe('t0090')
+
+    wrapper.unmount()
+  })
+
+  it('keeps the mounted ramp tooltip on the exported readings and drops a hidden reference', async () => {
+    const { wrapper } = await render(
+      { comparisonStatus: 'idle' },
+      { aedarReference: 'sparse-car' },
+    )
+    const capture = captureOf(wrapper, 'aedar-access')
+    const projected = projeterRequeteExport(capture, capture.capabilities.selectedSeries)
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'aedar-ramps') throw new Error('ramps expected')
+    expect(projection.comparisonDisplayed).toBe(true)
+
+    const firstRamp = wrapper.findAll('[data-section="aedar-access"] .aedar-ramp')[0]!
+    const cut = firstRamp.findAll('.access-ramp-cut-hitbox')
+      .find((button) => button.attributes('aria-label')?.includes('15 min'))
+    if (!cut) throw new Error('15 min cut missing')
+    await cut.trigger('focus')
+    const rows = firstRamp.findAll('.cahier-figure-tooltip-row')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      const label = row.get('dt').text()
+      const value = row.get('dd').text()
+      const point = projection.ramps[0]?.series.find((series) => series.label === label)
+        ?.points.find((candidate) => candidate.cutKey === 15)
+      expect(point?.display).toBe(value)
+      const comparison = row.find('.cahier-figure-tooltip-comparison-value')
+      if (comparison.exists()) expect(point?.referenceDisplay).toBe(comparison.text())
+    }
+    // The mounted accessible label and the projection are built from the same
+    // owner readings: both keep every visible mode and its unit.
+    const aria = firstRamp.get('.access-ramp-svg').attributes('aria-label')!
+    for (const series of projection.ramps[0]!.series) {
+      expect(aria).toContain(`${series.label} :`)
+    }
+
+    const referenceToggle = wrapper
+      .findAll('[data-section="aedar-access"] .aedar-access-mode-selector .cahier-figure-legend-toggle')
+      .find((button) => button.attributes('aria-label')?.startsWith('Groupe comparé'))
+    if (!referenceToggle) throw new Error('comparison toggle missing')
+    await referenceToggle.trigger('click')
+    await flushPromises()
+    const hiddenCapture = captureOf(wrapper, 'aedar-access')
+    const hiddenProjected = projeterRequeteExport(hiddenCapture, hiddenCapture.capabilities.selectedSeries)
+    expect(hiddenProjected.status).toBe('ready')
+    if (hiddenProjected.status !== 'ready') { wrapper.unmount(); return }
+    const hidden = projeterRequeteExportFigures(hiddenProjected.request)[0]!
+    if (hidden.family !== 'aedar-ramps') throw new Error('ramps expected')
+    expect(hidden.comparisonDisplayed).toBe(false)
+    expect(hidden.comparisonLabel).toBeNull()
+    expect(hidden.tables[0]?.columns.every((column) => column.kind === 'focal')).toBe(true)
+    expect(hidden.ramps[0]?.series.every((series) =>
+      series.points.every((point) => point.referenceValue === null && point.referenceRank === null))).toBe(true)
+    await cut.trigger('focus')
+    expect(firstRamp.find('.cahier-figure-tooltip-row-comparison').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -921,6 +1057,15 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     expect(networks.comparison.absent).toBe('not-eligible')
     expect(networks.comparison.display.state).toBe('not-displayed')
     expect(networks.comparison.display.reason).toBe('not-eligible')
+    const projected = projeterRequeteExport(networks, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status === 'ready') {
+      const projection = projeterRequeteExportFigures(projected.request)[0]!
+      if (projection.family !== 'mobilite-bars') throw new Error('bars expected')
+      expect(projection.comparisonDisplayed).toBe(false)
+      expect(projection.comparisonLabel).toBeNull()
+      expect(projection.accessibleLabel).not.toContain('Groupe comparé')
+    }
     wrapper.unmount()
 
     const { wrapper: communeWrapper } = await render()
@@ -930,6 +1075,557 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
       layers: [],
     })
     communeWrapper.unmount()
+  })
+
+  it('keeps the mounted ratio scalar and its export projection on the same owner formatter', async () => {
+    const { wrapper } = await render({}, { ratioReferences: true })
+    const capture = captureOf(wrapper, 'stationnement-ravitaillement')
+    const projected = projeterRequeteExport(capture, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'mobilite-bars' || !projection.ratio) throw new Error('ratio expected')
+    const section = wrapper.get('[data-section="stationnement-ravitaillement"] [data-column="stationnement"]')
+    const scalar = section.get('.mobilite-ratio-scalar .cahier-figure-scalar')
+    expect(scalar.get('.cahier-figure-scalar-value strong').text()).toBe(projection.ratio.display)
+    expect(scalar.attributes('aria-label')).toBe(projection.ratio.ariaLabel)
+    const reference = scalar.find('.cahier-comparison-value .region-emphasis')
+    if (projection.ratio.comparisonDisplay && reference.exists()) {
+      expect(reference.text()).toBe(projection.ratio.comparisonDisplay)
+    }
+    wrapper.unmount()
+  })
+
+  it('keeps the actual owner comparisonNone equal on screen and in the projection', async () => {
+    const fixture = cahierExportFixture()
+    const withNotes = (content: typeof fixture.content) => {
+      const clone = JSON.parse(JSON.stringify(content)) as any
+      const networks = clone.units.flatMap((unit: any) => unit.sections)
+        .find((section: any) => section.key === 'reseaux')
+      networks.evidence.figure.unavailableResources = ['Ressource test']
+      networks.evidence.figure.unavailableComparisons = ['Comparaison test']
+      return clone as typeof fixture.content
+    }
+    const cases = [
+      {
+        name: 'no control',
+        content: withNotes(fixture.content),
+        control: null,
+        none: true,
+        absent: 'no-selection-control',
+      },
+      {
+        name: 'explicit empty',
+        content: withNotes(fixture.content),
+        control: { ...fixture.control, selection: { etat: 'vide' as const } },
+        none: true,
+        absent: 'empty-selection',
+      },
+      {
+        name: 'ineligible territory',
+        content: withNotes(regionMobiliteContent()),
+        control: null,
+        none: true,
+        absent: 'not-eligible',
+      },
+      {
+        name: 'normal selection',
+        content: withNotes(fixture.content),
+        control: fixture.control,
+        none: false,
+        absent: null,
+      },
+    ] as const
+
+    for (const entry of cases) {
+      const wrapper = await mountCahier({ content: entry.content, control: entry.control })
+      const capture = captureOf(wrapper, 'reseaux')
+      expect(capture.comparison.absent, entry.name).toBe(entry.absent)
+      expect(capture.comparison.none, entry.name).toBe(entry.none)
+      const projected = projeterRequeteExport(capture, [])
+      expect(projected.status, entry.name).toBe('ready')
+      if (projected.status !== 'ready') { wrapper.unmount(); continue }
+      const projection = projeterRequeteExportFigures(projected.request)[0]!
+      if (projection.family !== 'mobilite-bars') throw new Error('bars expected')
+      const sectionText = wrapper.get('[data-section="reseaux"]').text()
+      expect(projection.comparisonDisplayed, entry.name).toBe(!entry.none)
+      expect(projection.comparisonLabel === null, entry.name).toBe(entry.none)
+      expect(sectionText.includes('Comparaison indisponible : Comparaison test'), entry.name)
+        .toBe(!entry.none)
+      expect(sectionText.includes('Groupe comparé'), entry.name).toBe(!entry.none)
+      expect(projection.tables[0]?.notes.includes('Publication indisponible : Ressource test'), entry.name)
+        .toBe(true)
+      expect(projection.tables[0]?.notes.includes('Comparaison indisponible : Comparaison test'), entry.name)
+        .toBe(!entry.none)
+      expect(projection.unavailable.map((item) => item.kind), entry.name)
+        .toEqual(entry.none ? ['resource'] : ['resource', 'comparison'])
+      wrapper.unmount()
+    }
+  })
+
+  it('keeps a selected group with no served ratio reference as observed unavailable, never hidden proof', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as any
+    const paired = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'stationnement-ravitaillement')
+    paired.evidence.columns[0].ratio.value.fact.value = 1.2
+    paired.evidence.columns[0].ratio.value.fact.comparison = null
+
+    const wrapper = await mountCahier({ content, control: fixture.control })
+    await flushPromises()
+    const capture = captureOf(wrapper, 'stationnement-ravitaillement')
+    expect(capture.comparison.none).toBe(false)
+    const projected = projeterRequeteExport(capture, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'mobilite-bars' || !projection.ratio) throw new Error('ratio expected')
+    const section = wrapper.get('[data-section="stationnement-ravitaillement"] [data-column="stationnement"]')
+    const scalar = section.get('.mobilite-ratio-scalar .cahier-figure-scalar')
+    expect(scalar.attributes('aria-label')).toBe(projection.ratio.ariaLabel)
+    expect(projection.ratio.ariaLabel).toContain('Comparaison indisponible')
+    expect(projection.ratio.ariaLabel).not.toContain('Référence')
+    expect(projection.ratio.comparisonDisplayed).toBe(true)
+    expect(projection.ratio.comparisonValue).toBeNull()
+    expect(section.text()).toContain('Groupe comparé : Indisponible')
+    const ratioRow = projection.tables[0]?.rows.find((row) => row.key.endsWith(':ratio'))
+    expect(ratioRow?.cells[1]).toMatchObject({
+      columnKey: 'comparison',
+      value: null,
+      display: 'Indisponible',
+    })
+    wrapper.unmount()
+  })
+
+  it('keeps the actual bars and curve comparison read state on screen and in the projection', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as any
+    const networks = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'reseaux')
+    networks.evidence.figure.unavailableResources = ['Ressource test']
+    networks.evidence.figure.unavailableComparisons = []
+    for (const category of networks.evidence.figure.categories) {
+      category.splitNote = null
+      delete category.comparisonSplitNote
+      delete category.comparisonSplit
+    }
+    const curve = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'visiter-la-bretagne')
+    curve.evidence.unavailableResources = ['Ressource test']
+    curve.evidence.unavailableComparisons = []
+
+    const cases = [
+      {
+        status: 'loading',
+        error: null,
+        barsText: 'Chargement du groupe comparé…',
+        curveText: 'Comparaison en cours de chargement.',
+      },
+      {
+        status: 'error',
+        error: 'Lecture échouée',
+        barsText: 'Groupe comparé indisponible : Lecture échouée',
+        curveText: 'Comparaison indisponible : Lecture échouée',
+      },
+      {
+        status: 'unavailable',
+        error: null,
+        barsText: 'Groupe comparé indisponible pour cette sélection.',
+        curveText: 'Aucun groupe comparé actif.',
+      },
+    ] as const
+
+    for (const entry of cases) {
+      const wrapper = await mountCahier({
+        content,
+        control: fixture.control,
+        props: {
+          nativeComparisonStatus: entry.status,
+          nativeComparisonError: entry.error,
+        },
+      })
+      const barsProjection = projeterRequeteExportFigures(
+        (() => {
+          const projected = projeterRequeteExport(captureOf(wrapper, 'reseaux'), [])
+          if (projected.status !== 'ready') throw new Error('projection expected')
+          return projected.request
+        })(),
+      )[0]!
+      if (barsProjection.family !== 'mobilite-bars') throw new Error('bars expected')
+      expect(barsProjection.comparisonStatus, entry.status).toBe(entry.status)
+      expect(barsProjection.comparisonStateText, entry.status).toBe(entry.barsText)
+      expect(barsProjection.tables[0]?.notes, entry.status).toEqual([
+        'Publication indisponible : Ressource test',
+        entry.barsText,
+      ])
+      expect(wrapper.get('[data-section="reseaux"]').text(), entry.status).toContain(entry.barsText)
+
+      const curveProjection = projeterRequeteExportFigures(
+        (() => {
+          const projected = projeterRequeteExport(captureOf(wrapper, 'visiter-la-bretagne'), [])
+          if (projected.status !== 'ready') throw new Error('projection expected')
+          return projected.request
+        })(),
+      )[0]!
+      if (curveProjection.family !== 'mobilite-curve') throw new Error('curve expected')
+      expect(curveProjection.comparisonStatus, entry.status).toBe(entry.status)
+      expect(curveProjection.comparisonStateText, entry.status).toBe(entry.curveText)
+      expect(curveProjection.tables[0]?.notes, entry.status).toEqual([
+        'Publication indisponible : Ressource test',
+        entry.curveText,
+      ])
+      expect(wrapper.get('[data-section="visiter-la-bretagne"]').text(), entry.status)
+        .toContain(entry.curveText)
+      wrapper.unmount()
+    }
+
+    const hidden = await mountCahier({
+      content,
+      control: null,
+      props: {
+        nativeComparisonStatus: 'error',
+        nativeComparisonError: 'Lecture échouée',
+      },
+    })
+    const hiddenBars = projeterRequeteExportFigures(
+      (() => {
+        const projected = projeterRequeteExport(captureOf(hidden, 'reseaux'), [])
+        if (projected.status !== 'ready') throw new Error('projection expected')
+        return projected.request
+      })(),
+    )[0]!
+    if (hiddenBars.family !== 'mobilite-bars') throw new Error('bars expected')
+    expect(hiddenBars.comparisonStatus).toBe('error')
+    expect(hiddenBars.comparisonStateText).toBeNull()
+    expect(hiddenBars.tables[0]?.notes).toEqual(['Publication indisponible : Ressource test'])
+    expect(hidden.get('[data-section="reseaux"]').text()).not.toContain('Groupe comparé indisponible')
+
+    const hiddenCurve = projeterRequeteExportFigures(
+      (() => {
+        const projected = projeterRequeteExport(captureOf(hidden, 'visiter-la-bretagne'), [])
+        if (projected.status !== 'ready') throw new Error('projection expected')
+        return projected.request
+      })(),
+    )[0]!
+    if (hiddenCurve.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(hiddenCurve.comparisonStatus).toBe('error')
+    expect(hiddenCurve.comparisonStateText).toBeNull()
+    expect(hiddenCurve.tables[0]?.notes).toEqual(['Publication indisponible : Ressource test'])
+    expect(hidden.get('[data-section="visiter-la-bretagne"]').text())
+      .not.toContain('Comparaison indisponible : Lecture échouée')
+    hidden.unmount()
+  })
+
+  it('keeps every native curve point with its declared human label on screen and in the projection', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as any
+    const curve = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'visiter-la-bretagne')
+    curve.evidence.trajectory.ticks = [
+      { detail: 't0000', label: '0' },
+      { detail: 't0090', label: '1 h 30' },
+    ]
+    const wrapper = await mountCahier({ content, control: fixture.control })
+    await flushPromises()
+    const capture = captureOf(wrapper, 'visiter-la-bretagne')
+    const projected = projeterRequeteExport(capture, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(projection.points).toHaveLength(11)
+    expect(projection.points.find((reading) => reading.detail === 't0015')?.label).toBe('15')
+    expect(projection.points.find((reading) => reading.detail === 't0090')?.label).toBe('1 h 30')
+    expect(projection.tables[0]?.rows.map((row) => row.label))
+      .toEqual(projection.points.map((reading) => reading.label))
+    const aria = wrapper.get('[data-section="visiter-la-bretagne"] .mobilite-raccordement-curve__svg')
+      .attributes('aria-label')!
+    expect(aria).toContain('15 :')
+    expect(aria).toContain('1 h 30 :')
+    expect(aria).not.toContain('t0015 :')
+    expect(aria).not.toContain('t0090 :')
+    wrapper.unmount()
+  })
+
+  it.each([null, 0] as const)(
+    'keeps the mounted ratio scalar ARIA and projected value for %s',
+    async (value) => {
+      const fixture = cahierExportFixture()
+      const content = JSON.parse(JSON.stringify(fixture.content)) as any
+      const paired = content.units.flatMap((unit: any) => unit.sections)
+        .find((section: any) => section.key === 'stationnement-ravitaillement')
+      paired.evidence.columns[0].ratio.value.fact.value = value
+      paired.evidence.columns[0].ratio.value.fact.comparison = null
+
+      const wrapper = await mountCahier({ content, control: fixture.control })
+      await flushPromises()
+      const capture = captureOf(wrapper, 'stationnement-ravitaillement')
+      const projected = projeterRequeteExport(capture, [])
+      expect(projected.status).toBe('ready')
+      if (projected.status !== 'ready') { wrapper.unmount(); return }
+      const projection = projeterRequeteExportFigures(projected.request)[0]!
+      if (projection.family !== 'mobilite-bars' || !projection.ratio) throw new Error('ratio expected')
+      const scalar = wrapper.get(
+        '[data-section="stationnement-ravitaillement"] [data-column="stationnement"] .mobilite-ratio-scalar .cahier-figure-scalar',
+      )
+      expect(projection.ratio.value).toBe(value)
+      expect(projection.ratio.display).toBe(value === null ? '—' : '0')
+      expect(scalar.attributes('aria-label')).toBe(projection.ratio.ariaLabel)
+      expect(projection.ratio.ariaLabel).not.toContain('Référence')
+      expect(projection.ratio.comparisonDisplayed).toBe(true)
+      if (value !== null) expect(projection.ratio.ariaLabel).toContain('Comparaison indisponible')
+      if (projection.ratio.note) {
+        expect(projection.tables[0]?.notes).toContain(projection.ratio.note)
+      }
+      wrapper.unmount()
+    },
+  )
+
+  it('keeps curve comparison diagnostics equal to its actual owner state', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as any
+    const curve = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'visiter-la-bretagne')
+    curve.evidence.unavailableResources = ['Ressource test']
+    curve.evidence.unavailableComparisons = ['Comparaison test']
+
+    const hidden = await mountCahier({
+      content,
+      control: { ...fixture.control, selection: { etat: 'vide' as const } },
+    })
+    await flushPromises()
+    const hiddenCapture = captureOf(hidden, 'visiter-la-bretagne')
+    expect(hiddenCapture.comparison.none).toBe(true)
+    const hiddenProjected = projeterRequeteExport(hiddenCapture, [])
+    expect(hiddenProjected.status).toBe('ready')
+    if (hiddenProjected.status !== 'ready') { hidden.unmount(); return }
+    const hiddenProjection = projeterRequeteExportFigures(hiddenProjected.request)[0]!
+    if (hiddenProjection.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(hiddenProjection.unavailable.map((item) => item.kind)).toEqual(['resource'])
+    expect(hiddenProjection.tables[0]?.notes).toEqual(['Publication indisponible : Ressource test'])
+    expect(hiddenProjection.accessibleLabel).toContain('Publication indisponible : Ressource test')
+    expect(hiddenProjection.accessibleLabel).not.toContain('Comparaison indisponible : Comparaison test')
+    const hiddenText = hidden.get('[data-section="visiter-la-bretagne"]').text()
+    expect(hiddenText).toContain('Publication indisponible : Ressource test')
+    expect(hiddenText).not.toContain('Comparaison indisponible : Comparaison test')
+    hidden.unmount()
+
+    const normal = await mountCahier({ content, control: fixture.control })
+    await flushPromises()
+    const normalCapture = captureOf(normal, 'visiter-la-bretagne')
+    expect(normalCapture.comparison.none).toBe(false)
+    const normalProjected = projeterRequeteExport(normalCapture, [])
+    expect(normalProjected.status).toBe('ready')
+    if (normalProjected.status !== 'ready') { normal.unmount(); return }
+    const normalProjection = projeterRequeteExportFigures(normalProjected.request)[0]!
+    if (normalProjection.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(normalProjection.unavailable.map((item) => item.kind)).toEqual(['resource', 'comparison'])
+    expect(normalProjection.tables[0]?.notes).toEqual([
+      'Publication indisponible : Ressource test',
+      'Comparaison indisponible : Comparaison test',
+    ])
+    expect(normalProjection.accessibleLabel).toContain('Comparaison indisponible : Comparaison test')
+    expect(normal.get('[data-section="visiter-la-bretagne"]').text())
+      .toContain('Comparaison indisponible : Comparaison test')
+    normal.unmount()
+  })
+
+  it('keeps the mounted overview scalar value and accessible name on the exported reading', async () => {
+    const { wrapper } = await render({ comparisonStatus: 'idle' }, { aedarReference: 'sparse-car' })
+    const capture = captureOf(wrapper, 'aedar-car-overview')
+    const projected = projeterRequeteExport(capture, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'aedar-car-overview') throw new Error('overview expected')
+    const scalar = wrapper.get('[data-section="aedar-car-overview"] .aedar-car-overview-scalars .cahier-figure-scalar')
+    expect(scalar.get('.cahier-figure-scalar-value strong').text())
+      .toBe(projection.scalars[0]?.display)
+    expect(scalar.attributes('aria-label')).toBe(projection.scalars[0]?.ariaLabel)
+    wrapper.unmount()
+  })
+
+  it('feeds grouped AEDAR bars from the same frozen native renderer model and table builder', async () => {
+    const { wrapper } = await render({ aedarChapterActive: true })
+    await flushPromises()
+    const capture = captureOf(wrapper, 'aedar-equipment-explorer')
+    const projected = projeterRequeteExport(capture, capture.capabilities.selectedSeries)
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'aedar-equipment-explorer') throw new Error('explorer expected')
+    const chart = wrapper.findAllComponents(CahierGroupedVerticalBarChart)
+      .find((candidate) => candidate.element.closest('[data-section="aedar-equipment-explorer"]'))!
+    const native = chart.props('figure')
+    expect(native.xAxisTitle).toBe(projection.distribution.figure.xAxisTitle)
+    expect(native.yAxisTitle).toBe(projection.distribution.figure.yAxisTitle)
+    expect(native.categories.map((category: { key: string }) => category.key))
+      .toEqual(projection.distribution.figure.categories.map((category) => category.key))
+    expect(native.series.map((series: { key: string }) => series.key))
+      .toEqual(projection.distribution.figure.series.map((series) => series.key))
+    expect(native.formatValue?.(12.34)).toBe(projection.distribution.figure.formatValue?.(12.34))
+    expect(native.formatAriaValue?.(12.34)).toBe(projection.distribution.figure.formatAriaValue?.(12.34))
+    for (const series of native.series as readonly { key: string; color: string; ranks?: unknown }[]) {
+      const projected = projection.distribution.figure.series.find((candidate) => candidate.key === series.key)!
+      expect(series.color).toBe(projected.color)
+      expect(series.ranks).toEqual(projected.ranks)
+    }
+
+    const hitbox = chart.get('button.cahier-grouped-vertical-bar-chart__category-hitbox')
+    await hitbox.trigger('focus')
+    const tooltip = chart.get('.cahier-grouped-vertical-bar-chart__tooltip')
+    const table = projection.tables.find((candidate) => candidate.key === 'distribution')!
+    const categoryKey = projection.distribution.figure.categories[0]!.key
+    const columnIndex = table.columns.findIndex((column) => column.key === categoryKey)
+    for (const row of tooltip.findAll('.cahier-figure-tooltip-row')) {
+      const label = row.get('dt').text()
+      const series = projection.distribution.figure.series.find((candidate) => candidate.label === label)!
+      const tableRow = table.rows.find((candidate) => candidate.key === series.key)!
+      expect(row.get('dd').text()).toBe(tableRow.cells[columnIndex]?.display)
+    }
+    wrapper.unmount()
+  })
+
+  it('keeps the mounted coverage tracks and their accessible rows on the exported share state', async () => {
+    const { wrapper } = await render()
+    const capture = captureOf(wrapper, 'couverture-du-territoire')
+    const projected = projeterRequeteExport(capture, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'mobilite-share') throw new Error('share expected')
+    const section = wrapper.get('[data-section="couverture-du-territoire"]')
+    const territory = section.get('[data-row="territory"]')
+    expect(territory.get('.mobilite-share-track__value').text()).toBe(projection.display)
+    expect(territory.get('.mobilite-share-track__track').attributes('aria-label'))
+      .toBe(projection.territoryAria)
+    const compared = section.find('[data-row="comparison"]')
+    if (projection.comparisonDisplayed && compared.exists()) {
+      expect(compared.get('.mobilite-share-track__value').text()).toBe(projection.comparisonDisplay)
+      expect(compared.get('.mobilite-share-track__track').attributes('aria-label'))
+        .toBe(projection.comparisonAria)
+    }
+    if (projection.stateMessage) expect(section.text()).toContain(projection.stateMessage)
+    wrapper.unmount()
+
+    const unavailable = await render({ nativeComparisonStatus: 'unavailable' })
+    const unavailableProjection = projeterRequeteExportFigures(
+      (() => {
+        const state = projeterRequeteExport(captureOf(unavailable.wrapper, 'couverture-du-territoire'), [])
+        if (state.status !== 'ready') throw new Error('projection expected')
+        return state.request
+      })(),
+    )[0]!
+    if (unavailableProjection.family !== 'mobilite-share') throw new Error('share expected')
+    if (unavailableProjection.stateMessage) {
+      expect(unavailable.wrapper.get('[data-section="couverture-du-territoire"]').text())
+        .toContain(unavailableProjection.stateMessage)
+    }
+    unavailable.wrapper.unmount()
+  })
+
+  it('keeps the mounted curve accessible sentence and tooltip on the exported readings', async () => {
+    const { wrapper } = await render()
+    const capture = captureOf(wrapper, 'visiter-la-bretagne')
+    const projected = projeterRequeteExport(capture, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'mobilite-curve') throw new Error('curve expected')
+    const section = wrapper.get('[data-section="visiter-la-bretagne"]')
+    const svg = section.get('.mobilite-raccordement-curve__svg')
+    expect(svg.attributes('aria-label')).toBe(projection.accessibleLabel)
+    await section.get('.mobilite-raccordement-curve__hit-surface').trigger('focus')
+    const point = projection.points.find((reading) => reading.detail === projection.marker?.detail)!
+    const tooltip = section.get('.mobilite-raccordement-curve__tooltip')
+    expect(tooltip.get('.cahier-figure-tooltip-row dd').text()).toBe(point.display)
+    const comparison = tooltip.find('.cahier-figure-tooltip-comparison-value')
+    if (point.comparisonDisplay && comparison.exists()) {
+      expect(comparison.text()).toBe(point.comparisonDisplay)
+    }
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['loading', 'Comparaison en cours de chargement.'],
+    ['unavailable', 'Aucun groupe comparé actif.'],
+    ['error', 'Comparaison indisponible'],
+  ] as const)('keeps the mounted curve accessible state in the projection (%s)', async (status, expected) => {
+    const { wrapper } = await render({
+      nativeComparisonStatus: status,
+      nativeComparisonError: 'Lecture échouée',
+    })
+    const capture = captureOf(wrapper, 'visiter-la-bretagne')
+    const projected = projeterRequeteExport(capture, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'mobilite-curve') throw new Error('curve expected')
+    const aria = wrapper.get('[data-section="visiter-la-bretagne"] .mobilite-raccordement-curve__svg')
+      .attributes('aria-label')!
+    expect(aria).toBe(projection.accessibleLabel)
+    expect(aria).toContain(expected)
+    wrapper.unmount()
+  })
+
+  it('projects the actual car inline asset and owner legend content, never the inspection gallery', async () => {
+    const territory = { type: 'commune' as const, code: '22001', name: 'Rennes' }
+    const rawLegend = carInlineLegend(territory)
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('-car-inline.json')) {
+        return new Response(JSON.stringify(rawLegend), { status: 200 })
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { wrapper } = await render({ aedarChapterActive: true })
+    await flushPromises()
+    const capture = captureOf(wrapper, 'aedar-car-overview')
+    expect(capture.capabilities.maps).toMatchObject({
+      status: 'pending',
+      legend: 'available',
+      items: [{
+        id: 'car',
+        declared: true,
+        loaded: false,
+        unavailable: false,
+        inlineUrl: 'https://images.calumrobertson.fr/maps/aedar/v1/22001-car-inline.webp',
+      }],
+      legendDetail: {
+        title: 'Types d’équipements accessibles en 15 minutes*',
+        minimum: 0,
+        maximum: 218,
+        colors: ['#716ca2', '#8f85b1', '#ad9ebf', '#b186a3', '#ac5b78'],
+        tickLabels: ['0', '44', '87', '131', '174', '218'],
+        note: '* Sur 235 catégories d’équipements BPE',
+        ariaLabel: null,
+      },
+    })
+    expect('inspectionUrl' in capture.capabilities.maps.items[0]!).toBe(false)
+
+    await emitMap(mapPanels(wrapper, 'aedar-car-overview')[0]!, 'loaded')
+    const projected = projeterRequeteExport(captureOf(wrapper, 'aedar-car-overview'), [])
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'aedar-car-overview') throw new Error('overview expected')
+    expect(projection.maps).toMatchObject({
+      status: 'available',
+      legend: 'available',
+      items: [{
+        loaded: true,
+        inlineUrl: 'https://images.calumrobertson.fr/maps/aedar/v1/22001-car-inline.webp',
+      }],
+      legendDetail: {
+        title: 'Types d’équipements accessibles en 15 minutes*',
+        minimum: 0,
+        maximum: 218,
+        tickLabels: ['0', '44', '87', '131', '174', '218'],
+      },
+    })
+    wrapper.unmount()
   })
 
   it('captures real car map and legend owner transitions', async () => {
@@ -980,6 +1676,14 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     expect(initial.legend).toBe('available')
     expect(initial.status).toBe('pending')
     expect(initial.items).toHaveLength(4)
+    expect(initial.items.map((item) => item.inlineUrl)).toEqual(expect.arrayContaining([
+      'https://images.calumrobertson.fr/maps/aedar/v1/22001-walk-inline.webp',
+      'https://images.calumrobertson.fr/maps/aedar/v1/22001-transit-inline.webp',
+    ]))
+    expect(initial.legendDetail).toMatchObject({
+      title: 'Types d’équipements perdus par rapport à la voiture',
+      tickLabels: ['0', '1', '2+'],
+    })
 
     const panels = mapPanels(wrapper, 'aedar-diversity-loss')
     expect(panels).toHaveLength(4)
@@ -1005,12 +1709,92 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     loading.wrapper.unmount()
   })
 
+  it('keeps explicit empty-selection notes and ratio ARIA aligned with shared comparisonNone', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as any
+    const networks = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'reseaux')
+    networks.evidence.figure.unavailableResources = ['Ressource test']
+    networks.evidence.figure.unavailableComparisons = ['Comparaison test']
+    const paired = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'stationnement-ravitaillement')
+    // A drawn ratio with a served reference: it would be announced if the
+    // shared empty-selection state did not suppress the comparative proof.
+    paired.evidence.columns[0].ratio.value.fact.value = 1.2
+    paired.evidence.columns[0].ratio.value.fact.comparison = {
+      direction: 'plus-est-mieux',
+      scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+      reference: { kind: 'median', value: 0.3 },
+      rank: { position: 2, size: 3 },
+    }
+    const control = { ...fixture.control, selection: { etat: 'vide' as const } }
+    const wrapper = await mountCahier({ content, control })
+    await flushPromises()
+
+    const networksCapture = seamOf(wrapper).captureSection('reseaux')!
+    const networksRequest = projeterRequeteExport(networksCapture, [])
+    expect(networksRequest.status).toBe('ready')
+    if (networksRequest.status !== 'ready') { wrapper.unmount(); return }
+    const networksProjection = projeterRequeteExportFigures(networksRequest.request)[0]!
+    if (networksProjection.family !== 'mobilite-bars') throw new Error('bars expected')
+    expect(networksProjection.tables[0]?.notes).toEqual([
+      'Publication indisponible : Ressource test',
+      'Répartition Protégé/Partagé indisponible : les deux parties publiées ne recomposent pas le total.',
+    ])
+    expect(networksProjection.unavailable.map((item) => item.kind)).toEqual(['resource'])
+    const networksDom = wrapper.get('[data-section="reseaux"]').text()
+    expect(networksDom).toContain('Publication indisponible : Ressource test')
+    expect(networksDom).not.toContain('Comparaison indisponible')
+
+    const pairedCapture = seamOf(wrapper).captureSection('stationnement-ravitaillement')!
+    const pairedRequest = projeterRequeteExport(pairedCapture, [])
+    expect(pairedRequest.status).toBe('ready')
+    if (pairedRequest.status !== 'ready') { wrapper.unmount(); return }
+    const pairedProjection = projeterRequeteExportFigures(pairedRequest.request)[0]!
+    if (pairedProjection.family !== 'mobilite-bars' || !pairedProjection.ratio) {
+      throw new Error('ratio expected')
+    }
+    const scalar = wrapper.get(
+      '[data-section="stationnement-ravitaillement"] [data-column="stationnement"] .mobilite-ratio-scalar .cahier-figure-scalar',
+    )
+    expect(scalar.attributes('aria-label')).toBe(pairedProjection.ratio.ariaLabel)
+    expect(pairedProjection.ratio.ariaLabel).not.toContain('Référence')
+    expect(pairedProjection.ratio.comparisonDisplayed).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps all three drawn network maps declared when one numeric bar category is absent', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as typeof fixture.content
+    const networks = content.units
+      .flatMap((unit) => unit.sections)
+      .find((section) => section.key === 'reseaux')!
+    if (networks.evidence?.kind !== 'mobilite-networks') throw new Error('networks fixture expected')
+    networks.evidence.figure.categories = networks.evidence.figure.categories
+      .filter((category) => category.key !== 'car')
+    const wrapper = await mountCahier({ content, control: fixture.control })
+    await flushPromises()
+    const maps = seamOf(wrapper).captureSection('reseaux')!.capabilities.maps
+    expect(maps.status).toBe('pending')
+    expect(maps.items.map((item) => [item.id, item.declared, item.inlineUrl])).toEqual([
+      ['car', true, 'https://images.calumrobertson.fr/maps/v1/22001-car-inline.webp'],
+      ['walk', true, 'https://images.calumrobertson.fr/maps/v1/22001-walk-inline.webp'],
+      ['bike', true, 'https://images.calumrobertson.fr/maps/v1/22001-bike-inline.webp'],
+    ])
+    wrapper.unmount()
+  })
+
   it('captures real network map owner transitions with no invented legend', async () => {
     const { wrapper } = await render()
     const initial = captureOf(wrapper, 'reseaux').capabilities.maps
     expect(initial.status).toBe('pending')
     expect(initial.legend).toBe('none')
     expect(initial.items.map((item) => item.declared)).toEqual([true, true, true])
+    expect(initial.items.map((item) => [item.id, item.inlineUrl])).toEqual([
+      ['car', 'https://images.calumrobertson.fr/maps/v1/22001-car-inline.webp'],
+      ['walk', 'https://images.calumrobertson.fr/maps/v1/22001-walk-inline.webp'],
+      ['bike', 'https://images.calumrobertson.fr/maps/v1/22001-bike-inline.webp'],
+    ])
 
     for (const panel of mapPanels(wrapper, 'reseaux')) await emitMap(panel, 'loaded')
     expect(captureOf(wrapper, 'reseaux').capabilities.maps.status).toBe('available')

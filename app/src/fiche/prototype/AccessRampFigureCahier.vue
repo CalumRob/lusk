@@ -10,12 +10,14 @@ import { computed, ref } from 'vue'
 import type { TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territoryFacts'
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
-import type { CahierFigureTooltipAnchor, CahierTooltipRow, CahierTooltipTone, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import type { CahierFigureTooltipAnchor, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
-import { groupeCompareAria } from '@/fiche/content/comparisonWording'
-import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
-import { AEDAR_TIME_MODE_ICONS } from './aedarTimeModeIcons'
+import {
+  formatTimeRampNumber,
+  timeRampAccessibleReading,
+  timeRampTooltipRows,
+} from './cahierFigureReadings'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
@@ -42,18 +44,7 @@ const BASE_FIGURE_GEOMETRY = {
 } as const
 const plotElement = ref<HTMLElement | null>(null)
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
-}
-/** AEDAR ramp modes: icon, tooltip tone and line color per mode (narrower modes take a lightened family tone). */
-const TIME_MODE_ICONS = AEDAR_TIME_MODE_ICONS
-const TIME_MODE_TONES: Readonly<Record<string, CahierTooltipTone>> = {
-  car: 'c',
-  bike_lts4: 'b',
-  bike_lts2: 'b',
-  transit: 't',
-  walk: 't',
-}
+const formatNumber = formatTimeRampNumber
 const TIME_MODE_LINE_CLASS: Readonly<Record<string, string>> = {
   car: 'access-ramp-line--car',
   bike_lts2: 'access-ramp-line--bike-light',
@@ -141,54 +132,26 @@ const timeLegendMarkColors = computed<Readonly<Record<string, string>>>(() => Ob
 ))
 const selectedTimeCut = ref<{ xValue: number; xLabel: string } | null>(null)
 const timeTooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => selectedTimeCut.value ? { x: `${Math.max(0.18, Math.min(0.82, timeX(selectedTimeCut.value.xValue) / figureGeometry.value.width)) * 100}%`, y: '12%' } : undefined)
-/** Visible tooltip values are bare; the accessible reading keeps the unit. */
-function tooltipValue(value: number | null, unit: string): { visible: string; aria: string } {
-  if (value === null) return { visible: 'Indisponible', aria: 'Indisponible' }
-  const number = formatNumber(value)
-  return { visible: number, aria: unit ? `${number} ${unit}` : number }
-}
+/** A reference hidden by the reader's toggle is not evidence the tooltip may show. */
+const comparisonDisplayed = computed(() => comparisonLayerSupported.value && comparisonVisible.value)
 const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
-  const cut = selectedTimeCut.value
-  const timeRamp = props.timeRamp
-  if (!cut || !timeRamp) return []
-  const unit = timeRamp.yAxis.unit
-  return visibleTimeSeries.value.flatMap((series) => {
-    const point = series.points.find((candidate) => candidate.xValue === cut.xValue)
-    if (!point) return []
-    const value = tooltipValue(point.value, unit)
-    const row: CahierTooltipRow = {
-      label: series.label,
-      value: value.visible,
-      tone: TIME_MODE_TONES[series.key] ?? 'neutral',
-      icon: TIME_MODE_ICONS[series.key],
-      markerColor: timeSeriesColor(series.key),
-      ariaLabel: `${props.territoryName} : ${series.label} : ${value.aria}`,
-    }
-    if (comparisonLayerSupported.value) {
-      const compared = tooltipValue(point.referenceValue, unit)
-      row.comparison = {
-        value: compared.visible,
-        rank: formatServedRank(point.referenceRank),
-        rankEvidence: point.referenceRank,
-        ariaLabel: groupeCompareAria(compared.aria, formatServedRankAria(point.referenceRank), timeRamp.comparisonLabel ?? 'Indisponible'),
-      }
-    }
-    return [row]
+  if (!props.timeRamp) return []
+  return timeRampTooltipRows({
+    timeRamp: props.timeRamp,
+    series: visibleTimeSeries.value,
+    cut: selectedTimeCut.value,
+    territoryName: props.territoryName,
+    comparisonLayerSupported: comparisonDisplayed.value,
   })
 })
 const timeAccessibleLabel = computed(() => {
   if (!props.timeRamp) return ''
-  const unit = props.timeRamp.yAxis.unit
-  const seriesText = visibleTimeSeries.value
-    .map((series) => `${series.label} : ${series.points.map((point) => `${point.xLabel} ${point.value === null ? 'indisponible' : formatNumber(point.value)}`).join(', ')}`)
-    .join(' ; ')
-  const referenceText = comparisonLayerSupported.value
-    ? ` Référence ${props.timeRamp.comparisonLabel ?? 'Indisponible'} : ${visibleTimeSeries.value.map((series) => `${series.label} ${series.points.map((point) => {
-      const rank = formatServedRankAria(point.referenceRank)
-      return `${point.xLabel} ${point.referenceValue === null ? 'indisponible' : formatNumber(point.referenceValue)}${rank ? `, rang ${rank}` : ''}`
-    }).join(', ')}`).join(' ; ')}`
-    : ''
-  return `${props.territoryName}. ${props.timeRamp.yAxis.label ?? ''}${unit ? ` (${unit})` : ''} selon ${props.timeRamp.xAxis.label ?? ''}, par mode de déplacement. ${seriesText}.${referenceText}`
+  return timeRampAccessibleReading({
+    timeRamp: props.timeRamp,
+    series: visibleTimeSeries.value,
+    territoryName: props.territoryName,
+    comparisonLayerSupported: comparisonDisplayed.value,
+  })
 })
 function timeHitboxStyle(index: number): Record<string, string> {
   const point = timePoints.value[index]

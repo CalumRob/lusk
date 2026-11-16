@@ -3,15 +3,18 @@ import { computed, ref, watch } from 'vue'
 
 import type { AedarFact } from '@/fiche/content/aedarApiClient'
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
-import { aedarComparisonCell, aedarComparisonRank, aedarGroupValue, fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
 import type { AedarComparisonEvidence } from '@/fiche/content/aedarComparisonClient'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
-import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, AEDAR_RAMP_MODE_LABELS, AEDAR_RAMP_MODES, readAedarCountMeasure, toggleAedarRampModeSelection } from '@/fiche/content/aedarTimeRampFacts'
+import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, AEDAR_RAMP_MODE_LABELS, AEDAR_RAMP_MODES, toggleAedarRampModeSelection } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { AedarEquipmentExplorerEvidence } from '@/fiche/content/themeContent'
-import type { FactAvailability, TimeRampFigureData } from '@/fiche/content/territoryFacts'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import {
+  aedarExplorerServedReference,
+  aedarExplorerVolumeRamp,
+} from './aedarFigureReadings'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import CahierDialog from './CahierDialog.vue'
 import CahierEvidenceSource from './CahierEvidenceSource.vue'
@@ -118,14 +121,18 @@ watch([comparisonIdentity, comparisonRetry, () => props.chapterActive !== false,
 const activeComparison = computed(() => detailComparison.value ?? props.evidence.comparison ?? null)
 const comparisonLabel = computed(() => props.evidence.comparisonRequest?.label
   ?? (props.evidence.reference ? `Moyenne de ${props.evidence.reference.label}` : null))
-function groupValue(horizon: AedarEquipmentHorizon, mode: AedarRampMode, statistic: string): number | null {
-  if (props.evidence.comparisonRequest) return aedarGroupValue(activeComparison.value, selectedBaseFact.value, `count_${horizon}_${mode}_${statistic}`)
-  const reference = referenceDetail.value
-  const focal = selectedBaseFact.value
-  return reference && focal && reference.coverage_status === 'covered'
-    && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const).every((key) => reference[key] === focal[key])
-    ? readAedarCountMeasure(reference, horizon, mode, statistic) : null
-}
+const explorerReading = computed(() => ({
+  fact: selectedFact.value,
+  baseFact: selectedBaseFact.value,
+  comparison: activeComparison.value,
+  referenceDetail: referenceDetail.value,
+  comparisonRequestPresent: Boolean(props.evidence.comparisonRequest),
+  comparisonLabel: comparisonLabel.value,
+  comparisonLayerSupported: props.comparisonLayerSupported,
+  volumeYAxisTitle: props.evidence.volumeYAxisTitle,
+}))
+
+
 const detailIdentity = computed(() => {
   const fact = selectedBaseFact.value
   return JSON.stringify([fact?.territory_type, fact?.territory_id, selectedTypequ.value,
@@ -212,7 +219,7 @@ useCahierExportPublication(() => ({
 function servedReferenceFor(modes: readonly AedarRampMode[]): boolean {
   // The same resolver the volume ramp draws with: coverage and source-clock
   // guards, and the comparisonRequest-vs-direct-reference choice, are reused.
-  return HORIZONS.some((horizon) => modes.some((mode) => groupValue(horizon, mode, 'mean') !== null))
+  return aedarExplorerServedReference(explorerReading.value, modes)
 }
 const referenceAvailable = computed(() => servedReferenceFor(AEDAR_RAMP_MODES))
 const visibleReferenceAvailable = computed(() => servedReferenceFor(selectedModes.value))
@@ -244,34 +251,7 @@ const filteredFacts = computed(() => {
     || fact.typequ_label.toLocaleLowerCase('fr-FR').includes(query))
 })
 
-const volumeRamp = computed<TimeRampFigureData>(() => {
-  const series = AEDAR_RAMP_MODES.map((mode) => ({
-    key: mode,
-    label: AEDAR_RAMP_MODE_LABELS[mode],
-    points: HORIZONS.map((horizon) => ({
-      xValue: horizon,
-      xLabel: `${horizon} min`,
-      value: readAedarCountMeasure(selectedFact.value, horizon, mode, 'mean'),
-      referenceValue: groupValue(horizon, mode, 'mean'),
-      referenceRank: groupValue(horizon, mode, 'mean') === null
-        ? null
-        : aedarComparisonRank(aedarComparisonCell(activeComparison.value, selectedBaseFact.value?.typequ, `count_${horizon}_${mode}_mean`)),
-    })),
-  }))
-  const values = series.flatMap((item) => item.points.map((point) => point.value))
-  const availability: FactAvailability = values.every((value) => value !== null)
-    ? 'complete'
-    : values.some((value) => value !== null) ? 'incomplete' : 'absent'
-  return {
-    availability,
-    xAxis: { label: 'Temps de trajet', unit: 'minutes' },
-    yAxis: { label: props.evidence.volumeYAxisTitle, unit: '' },
-    series,
-    provenance: null,
-    comparisonLabel: comparisonLabel.value,
-    comparisonLayerSupported: props.comparisonLayerSupported,
-  }
-})
+const volumeRamp = computed(() => aedarExplorerVolumeRamp(explorerReading.value))
 
 function toggleMode(key: string): void {
   if (key === 'comparison') {

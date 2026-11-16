@@ -97,7 +97,14 @@ export function mapAvailability(
 }
 
 export function loadedMaps(ids: readonly string[]): CahierMapAvailabilityCaptureState['maps'] {
-  return ids.map((id) => ({ id, label: id, declared: true, loaded: true, unavailable: false }))
+  return ids.map((id) => ({
+    id,
+    label: id,
+    declared: true,
+    loaded: true,
+    unavailable: false,
+    inlineUrl: `https://example.test/${id}-inline.webp`,
+  }))
 }
 
 function readyMobiliteSection(slot = ''): CahierExportPublication {
@@ -108,6 +115,7 @@ function readyMobiliteSection(slot = ''): CahierExportPublication {
       state: {
         comparisonStatus: 'ready',
         comparisonError: null,
+        comparisonNone: false,
         ratioReferenceAvailable: false,
         ratioReferenceDisplayed: false,
       },

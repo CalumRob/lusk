@@ -54,9 +54,9 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
     expect(blockReason(capturePdfFixture('reseaux', {
       publications: [
         mapAvailability([
-          { id: 'walkTransit', label: 'À pied', declared: true, loaded: false, unavailable: false },
-          { id: 'bike', label: 'Vélo', declared: true, loaded: false, unavailable: false },
-          { id: 'car', label: 'Voiture', declared: true, loaded: false, unavailable: false },
+          { id: 'walkTransit', label: 'À pied', declared: true, loaded: false, unavailable: false, inlineUrl: 'https://example.test/map-inline.webp' },
+          { id: 'bike', label: 'Vélo', declared: true, loaded: false, unavailable: false, inlineUrl: 'https://example.test/map-inline.webp' },
+          { id: 'car', label: 'Voiture', declared: true, loaded: false, unavailable: false, inlineUrl: 'https://example.test/map-inline.webp' },
         ], 'none'),
         displayedLayer('mobilite-comparison-bars', 'bars'),
       ],
@@ -64,9 +64,9 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
     expect(blockReason(capturePdfFixture('reseaux', {
       publications: [
         mapAvailability([
-          { id: 'walkTransit', label: 'À pied', declared: true, loaded: true, unavailable: false },
-          { id: 'bike', label: 'Vélo', declared: true, loaded: false, unavailable: false },
-          { id: 'car', label: 'Voiture', declared: true, loaded: false, unavailable: false },
+          { id: 'walkTransit', label: 'À pied', declared: true, loaded: true, unavailable: false, inlineUrl: 'https://example.test/map-inline.webp' },
+          { id: 'bike', label: 'Vélo', declared: true, loaded: false, unavailable: false, inlineUrl: 'https://example.test/map-inline.webp' },
+          { id: 'car', label: 'Voiture', declared: true, loaded: false, unavailable: false, inlineUrl: 'https://example.test/map-inline.webp' },
         ], 'none'),
         displayedLayer('mobilite-comparison-bars', 'bars'),
       ],
@@ -74,9 +74,9 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
     expect(blockReason(capturePdfFixture('reseaux', {
       publications: [
         mapAvailability([
-          { id: 'walkTransit', label: 'À pied', declared: true, loaded: true, unavailable: false },
-          { id: 'bike', label: 'Vélo', declared: true, loaded: false, unavailable: true },
-          { id: 'car', label: 'Voiture', declared: true, loaded: true, unavailable: false },
+          { id: 'walkTransit', label: 'À pied', declared: true, loaded: true, unavailable: false, inlineUrl: 'https://example.test/map-inline.webp' },
+          { id: 'bike', label: 'Vélo', declared: true, loaded: false, unavailable: true, inlineUrl: 'https://example.test/map-inline.webp' },
+          { id: 'car', label: 'Voiture', declared: true, loaded: true, unavailable: false, inlineUrl: 'https://example.test/map-inline.webp' },
         ], 'none'),
         displayedLayer('mobilite-comparison-bars', 'bars'),
       ],
@@ -84,9 +84,9 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
     expect(blockReason(capturePdfFixture('reseaux', {
       publications: [
         mapAvailability([
-          { id: 'walkTransit', label: 'À pied', declared: true, loaded: false, unavailable: true },
-          { id: 'bike', label: 'Vélo', declared: true, loaded: false, unavailable: true },
-          { id: 'car', label: 'Voiture', declared: true, loaded: false, unavailable: true },
+          { id: 'walkTransit', label: 'À pied', declared: true, loaded: false, unavailable: true, inlineUrl: 'https://example.test/map-inline.webp' },
+          { id: 'bike', label: 'Vélo', declared: true, loaded: false, unavailable: true, inlineUrl: 'https://example.test/map-inline.webp' },
+          { id: 'car', label: 'Voiture', declared: true, loaded: false, unavailable: true, inlineUrl: 'https://example.test/map-inline.webp' },
         ], 'none'),
         displayedLayer('mobilite-comparison-bars', 'bars'),
       ],
@@ -96,7 +96,7 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
   it('allows a map the source contract does not declare, without inventing a loaded one', () => {
     const capture = capturePdfFixture('aedar-car-overview', {
       publications: [
-        mapAvailability([{ id: 'car', label: 'Voiture', declared: false, loaded: false, unavailable: true }], 'none'),
+        mapAvailability([{ id: 'car', label: 'Voiture', declared: false, loaded: false, unavailable: true, inlineUrl: null }], 'none'),
         displayedLayer('aedar-comparison-layer'),
       ],
     })
@@ -233,6 +233,7 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
           owner: 'mobilite-section',
           state: {
             comparisonStatus: 'ready', comparisonError: null,
+            comparisonNone: false,
             ratioReferenceAvailable: false, ratioReferenceDisplayed: false,
           },
         } },
