@@ -479,8 +479,13 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 label=page_descriptor.get("label", metadata.get("indicator_labels", {}).get(indicator_id, indicator_id)),
                 unit=page_descriptor.get("unit", ""),
                 direction=page_descriptor.get("direction", "none"),
-                allowed_levels=tuple(page_descriptor.get(
-                    "levels", page_descriptor.get("serving_levels", collection.get("levels", ())))),
+                # Scalar facts have their own producer-serving eligibility.
+                # Dedicated indicator-page admission is presentation, not a
+                # restriction on factual territory reads (including a dual
+                # scalar/series resource such as prix_m2).
+                allowed_levels=(tuple(scalar_contracts[indicator_id]["allowed_levels"])
+                    if "scalar" in shapes else tuple(page_descriptor.get(
+                        "levels", page_descriptor.get("serving_levels", collection.get("levels", ()))))),
                 sources=_declared_source_identities(page_descriptor, source_records, source_id),
                 shapes=shapes,
                 axes=axes,

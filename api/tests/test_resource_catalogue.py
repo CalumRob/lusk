@@ -17,6 +17,42 @@ METADATA = Path(__file__).parents[2] / "pipeline/inst/extdata/theme-metadata"
 SNAPSHOT = Path(__file__).parents[2] / "docs/design/serving-resource-catalogue-snapshot.md"
 
 
+@pytest.mark.parametrize("indicator_id", [
+    "densite", "taille_menages", "effectifs_salaries", "chomage", "eco_activites",
+    "prix_m2", "part_passoires", "surface_reseaux_routiers", "offre_tc",
+    "bornes_recharge", "places_stationnement_velo_1000",
+    "places_stationnement_voiture_1000", "stations_service",
+    "stations_service_1000", "bornes_recharge_1000", "bornes_ev_par_station_service",
+])
+def test_regional_scalar_facts_follow_serving_contract_not_indicator_page(indicator_id):
+    catalogue = discover_indicator_resources(METADATA)
+    resource = catalogue.resources_by_id[indicator_id]
+    metadata = json.loads((METADATA / f"theme_{resource.theme_id}.json").read_text(encoding="utf-8"))
+    assert "region" not in metadata["indicator_pages"][indicator_id]["levels"]
+    assert resource.allowed_levels == tuple(metadata["scalar_contracts"][indicator_id]["allowed_levels"])
+    item = ResourceReadItem.model_validate({
+        "resource": indicator_id,
+        "target": {"kind": "territory", "type": "region", "id": "53"},
+        "intent": {"kind": "facts"},
+    })
+    validate_resource_item(item, catalogue)
+
+
+def test_only_scalar_serving_levels_replace_page_admission_and_other_capabilities_stay_strict():
+    catalogue = discover_indicator_resources(METADATA)
+    for resource in catalogue.resources:
+        metadata = json.loads((METADATA / f"theme_{resource.theme_id}.json").read_text(encoding="utf-8"))
+        page = metadata["indicator_pages"].get(resource.indicator_id)
+        if not page:
+            continue
+        if "scalar" in resource.shapes:
+            assert resource.allowed_levels == tuple(metadata["scalar_contracts"][resource.indicator_id]["allowed_levels"])
+        else:
+            assert resource.allowed_levels == tuple(page.get("levels", page.get("serving_levels", ())))
+        assert resource.unit == page.get("unit", "")
+        assert resource.direction == page.get("direction", "none")
+
+
 def _snapshot_indicator_ids():
     retained = set()
     excluded = set()
