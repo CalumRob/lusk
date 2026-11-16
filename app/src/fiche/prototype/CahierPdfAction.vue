@@ -121,7 +121,6 @@ watch(modaleOuverte, async (open) => {
       class="cahier-pdf-action__button"
       :disabled="disabled"
       :aria-disabled="blocked ? 'true' : undefined"
-      :title="blockedReason || undefined"
       :aria-label="ariaLabel"
       :aria-busy="etat === 'preparing' ? 'true' : undefined"
       :aria-describedby="blockedReason ? reasonId : undefined"
