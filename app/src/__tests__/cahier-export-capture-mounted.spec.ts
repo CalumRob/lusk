@@ -1153,6 +1153,10 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
       expect(sectionText.includes('Comparaison indisponible : Comparaison test'), entry.name)
         .toBe(!entry.none)
       expect(sectionText.includes('Groupe comparé'), entry.name).toBe(!entry.none)
+      expect(projection.tables[0]?.notes.includes('Publication indisponible : Ressource test'), entry.name)
+        .toBe(true)
+      expect(projection.tables[0]?.notes.includes('Comparaison indisponible : Comparaison test'), entry.name)
+        .toBe(!entry.none)
       expect(projection.unavailable.map((item) => item.kind), entry.name)
         .toEqual(entry.none ? ['resource'] : ['resource', 'comparison'])
       wrapper.unmount()
@@ -1251,6 +1255,9 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
       expect(projection.ratio.ariaLabel).not.toContain('Référence')
       expect(projection.ratio.comparisonDisplayed).toBe(true)
       if (value !== null) expect(projection.ratio.ariaLabel).toContain('Comparaison indisponible')
+      if (projection.ratio.note) {
+        expect(projection.tables[0]?.notes).toContain(projection.ratio.note)
+      }
       wrapper.unmount()
     },
   )
@@ -1276,6 +1283,7 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     const hiddenProjection = projeterRequeteExportFigures(hiddenProjected.request)[0]!
     if (hiddenProjection.family !== 'mobilite-curve') throw new Error('curve expected')
     expect(hiddenProjection.unavailable.map((item) => item.kind)).toEqual(['resource'])
+    expect(hiddenProjection.tables[0]?.notes).toEqual(['Publication indisponible : Ressource test'])
     expect(hiddenProjection.accessibleLabel).toContain('Publication indisponible : Ressource test')
     expect(hiddenProjection.accessibleLabel).not.toContain('Comparaison indisponible : Comparaison test')
     const hiddenText = hidden.get('[data-section="visiter-la-bretagne"]').text()
@@ -1293,6 +1301,10 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     const normalProjection = projeterRequeteExportFigures(normalProjected.request)[0]!
     if (normalProjection.family !== 'mobilite-curve') throw new Error('curve expected')
     expect(normalProjection.unavailable.map((item) => item.kind)).toEqual(['resource', 'comparison'])
+    expect(normalProjection.tables[0]?.notes).toEqual([
+      'Publication indisponible : Ressource test',
+      'Comparaison indisponible : Comparaison test',
+    ])
     expect(normalProjection.accessibleLabel).toContain('Comparaison indisponible : Comparaison test')
     expect(normal.get('[data-section="visiter-la-bretagne"]').text())
       .toContain('Comparaison indisponible : Comparaison test')
