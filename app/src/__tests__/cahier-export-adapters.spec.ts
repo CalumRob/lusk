@@ -295,6 +295,16 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
     const fixture = cahierExportFixture({ aedarReference: 'sparse-car' })
     const capture = captureCahierSection(inputFor(fixture, sectionOf(fixture.content, 'aedar-car-overview'), [
       layer('comparison'),
+      {
+        slot: 'maps',
+        state: {
+          owner: 'map-availability',
+          state: {
+            legend: 'none',
+            maps: [{ id: 'car', label: 'Voiture', declared: true, loaded: true, unavailable: false }],
+          },
+        },
+      },
     ]))
     const projections = projeterRequeteExportFigures(requestFor(capture))
     const projection = projections[0]!
@@ -310,6 +320,10 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
         ['meanDiversity', '5 types / adresse', '5 types / adresse'],
         ['meanVolume', '5 établissements / adresse', '5 établissements / adresse'],
       ])
+    expect(projection.maps.status).toBe('available')
+    expect(projection.maps.items[0]?.inspectionUrl).toBe(
+      'https://images.calumrobertson.fr/maps/aedar/v1/22001-car-inspection.webp',
+    )
   })
 
   it('projects the diversity maps and legend from their owner observations, never from pixels', () => {
@@ -494,6 +508,16 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     })
     const capture = captureCahierSection(inputFor(fixture, section, [
       layer('bars', {}, 'mobilite-comparison-bars'),
+      {
+        slot: 'maps',
+        state: {
+          owner: 'map-availability',
+          state: {
+            legend: 'none',
+            maps: [{ id: 'car', label: 'Voiture', declared: true, loaded: true, unavailable: false }],
+          },
+        },
+      },
     ]))
     const projection = projeterRequeteExportFigures(requestFor(capture))[0]!
     if (projection.family !== 'mobilite-bars') throw new Error('bars expected')
@@ -514,6 +538,8 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     })
     expect(table.rows[2]?.cells[1]).toMatchObject({ value: null, display: 'Indisponible', raw: true })
     expect(table.rows[4]?.cells[1]).toMatchObject({ value: null, display: 'Indisponible', raw: true })
+    expect(projection.maps?.status).toBe('available')
+    expect(projection.maps?.items[0]?.inspectionUrl).toBeNull()
 
     const hidden = captureCahierSection(inputFor(fixture, section, [
       layer('bars', { displayed: false, toggle: false }, 'mobilite-comparison-bars'),
