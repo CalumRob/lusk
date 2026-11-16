@@ -193,14 +193,18 @@ actual inventory, backups, input availability and planned owner closure first.
   seeded fixture makes all sixteen native reads fail with the reproduced 422;
   restoring the serving-contract rule makes all sixteen pass again. This
   isolates admission from data presence and is not a live-activation claim.
-- Full ordinary API suite: **393 passed, 181 skipped, 1 failed**. The failure is
-  the unchanged `test_snapshot_derived_mobility_reading_has_no_pipeline_publisher_or_artifact_owner`:
-  its substring assertion prohibits `"mobilite"` anywhere in
-  `publish_retained_scalar_snapshot.R`, including the already-existing retained
-  profile owner registration. The test and inspected publisher are unchanged
-  from the pinned baseline; executing the same assertion against the baseline
-  Git blob fails too. No assertion was weakened and no full-green API claim is
-  made. This unrelated baseline test needs separate maintenance.
+- Full ordinary API suite: **397 passed, 181 skipped, 0 failed**. The previous
+  baseline failure was a whole-word assertion that also rejected the legitimate
+  retained declared-profile owner
+  `profile_serving_owners(lire_theme_metadata("mobilite"))`. The corrected test
+  now reads the actual typed-reading owner seams (registration calls, artifact
+  contracts and switch arms), keeps the retired publisher symbol checks, and
+  leaves that profile owner admitted. Three added regressions prove the retired
+  Mobility artifact contract, multiline publisher registration, legacy registry
+  call and switch arm are still rejected, including when appended to the current
+  sources; the mixed legitimate-profile case remains accepted. No production
+  source changed and no test was skipped or guard disabled. This narrow test
+  correction does not change the missing-only publication blocker below.
 - Python compilation and generated endpoint/OpenAPI inventory check passed;
   there is no configured Python static type-check command in the API README.
 - Focused R projection/scoped suites: 8,066 assertions passed; the broader
