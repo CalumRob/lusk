@@ -425,6 +425,29 @@ describe('shared PDF export controller machine (#1023)', () => {
     expect(controller.etat.value).toBe('done')
   })
 
+  it('queues a generator update until the active generation settles', async () => {
+    const pending = deferred<ReturnType<typeof artefact>>()
+    const first = vi.fn<CahierPdfGenerator>().mockReturnValue(pending.promise)
+    const second = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact('second.pdf'))
+    const controller = new CahierPdfExportController({
+      capture: () => capturePdfFixture('aedar-equipment-profile'),
+      generator: first,
+    })
+
+    controller.activer()
+    await flushMicrotasks()
+    controller.definirGenerateur(second)
+    expect(second).not.toHaveBeenCalled()
+
+    pending.reject(new Error('échec'))
+    await flushMicrotasks()
+    expect(controller.etat.value).toBe('error')
+    controller.reessayer()
+    await flushMicrotasks()
+    expect(second).toHaveBeenCalledOnce()
+    expect(controller.etat.value).toBe('done')
+  })
+
   it('hands the object URL to the browser before scheduling its release', async () => {
     const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
     const controller = new CahierPdfExportController({
