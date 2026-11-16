@@ -76,6 +76,77 @@ describe('CahierGroupedVerticalBarChart', () => {
     expect(wrapper.find('.cahier-figure-tooltip-comparison-rank').exists()).toBe(false)
   })
 
+  it('suppresses a hidden comparison series from the tooltip and both accessible readings', async () => {
+    const comparedFigure: CahierGroupedVerticalBarFigureData = {
+      ...figure,
+      series: [
+        { ...figure.series[0]! },
+        {
+          key: 'north-reference',
+          label: 'Groupe comparé : North group',
+          color: '#8aa6b5',
+          values: [3, 6],
+          comparisonFor: 'north',
+          ranks: [{ position: 2, size: 3 }, null],
+        },
+      ],
+    }
+    const wrapper = mount(CahierGroupedVerticalBarChart, {
+      props: { figure: comparedFigure, hiddenSeriesKeys: ['north-reference'] },
+    })
+
+    // The hidden comparison contributes neither its values nor its rank to the
+    // chart's accessible reading.
+    const label = wrapper.get('svg[role="img"]').attributes('aria-label')!
+    expect(label).toContain('North group : 2, 5')
+    expect(label).not.toContain('Groupe comparé : North group : 3, 6')
+    expect(label).not.toContain('2e/3')
+
+    const category = wrapper.get('button[aria-label^="Early period"]')
+    expect(category.attributes('aria-label')).toContain('North group : 2')
+    expect(category.attributes('aria-label')).not.toContain('Groupe comparé')
+    expect(category.attributes('aria-label')).not.toContain('2e/3')
+
+    await category.trigger('focus')
+    const tooltip = wrapper.get('.cahier-grouped-vertical-bar-chart__tooltip')
+    expect(tooltip.findAll('.cahier-figure-tooltip-row')).toHaveLength(1)
+    expect(tooltip.find('.cahier-figure-tooltip-row-comparison').exists()).toBe(false)
+    expect(tooltip.get('.cahier-figure-tooltip-row').attributes('aria-label')).not.toContain('Groupe comparé')
+  })
+
+  it('also suppresses a hidden focal series and the comparison attached to it', async () => {
+    const comparedFigure: CahierGroupedVerticalBarFigureData = {
+      ...figure,
+      series: [
+        { ...figure.series[0]! },
+        {
+          key: 'north-reference',
+          label: 'Groupe comparé : North group',
+          color: '#8aa6b5',
+          values: [3, 6],
+          comparisonFor: 'north',
+          ranks: [{ position: 2, size: 3 }, null],
+        },
+        { ...figure.series[1]! },
+      ],
+    }
+    const wrapper = mount(CahierGroupedVerticalBarChart, {
+      props: { figure: comparedFigure, hiddenSeriesKeys: ['north'] },
+    })
+
+    const label = wrapper.get('svg[role="img"]').attributes('aria-label')!
+    expect(label).toContain('South group : 3, 4')
+    expect(label).not.toContain('North group : 2, 5')
+    expect(label).not.toContain('Groupe comparé : North group')
+    expect(label).not.toContain('2e/3')
+
+    await wrapper.get('button[aria-label^="Early period"]').trigger('focus')
+    const tooltip = wrapper.get('.cahier-grouped-vertical-bar-chart__tooltip')
+    expect(tooltip.findAll('.cahier-figure-tooltip-row')).toHaveLength(1)
+    expect(tooltip.get('dt').text()).toBe('South group')
+    expect(tooltip.find('.cahier-figure-tooltip-row-comparison').exists()).toBe(false)
+  })
+
   it('omits unavailable values while keeping them explicit in the category description', () => {
     const incompleteFigure: CahierGroupedVerticalBarFigureData = {
       ...figure,

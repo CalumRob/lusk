@@ -56,6 +56,9 @@ function referenceValueFor(mode: AedarRampMode, statisticKey: string): number | 
 const comparisonEnabled = computed(() => props.comparisonLayerSupported === true
   || Boolean(props.comparisonLabel) || Boolean(props.comparison))
 
+/** A hidden comparison is not advertised in the figure's accessible description. */
+const comparisonAdvertised = computed(() => comparisonEnabled.value && props.comparisonVisible !== false)
+
 /** Reference availability for every acquired mode, at this figure's horizon/stats. */
 const referenceAvailable = computed(() => AEDAR_RAMP_MODES.some((mode) =>
   props.evidence.distributionStatistics.some((statistic) => referenceValueFor(mode, statistic.key) !== null)))
@@ -104,7 +107,7 @@ const figure = computed<CahierGroupedVerticalBarFigureData>(() => ({
   xAxisTitle: props.evidence.distributionAxisTitle,
   yAxisTitle: props.evidence.distributionYAxisTitle,
   description: props.fact
-    ? `${props.fact.typequ_label} (${props.fact.typequ}). ${props.evidence.distributionFigureTitle} à ${props.horizonMinutes} minutes. ${props.evidence.distributionDescription}${props.comparisonLayerSupported === true || Boolean(props.comparisonLabel) || Boolean(props.comparison) ? ` Groupe comparé : ${props.comparisonLabel ?? 'Indisponible'}.` : ''}`
+    ? `${props.fact.typequ_label} (${props.fact.typequ}). ${props.evidence.distributionFigureTitle} à ${props.horizonMinutes} minutes. ${props.evidence.distributionDescription}${comparisonAdvertised.value ? ` Groupe comparé : ${props.comparisonLabel ?? 'Indisponible'}.` : ''}`
     : props.evidence.distributionUnavailableDescription,
   formatValue: formatNumber,
   formatAriaValue: formatEstablishmentCount,

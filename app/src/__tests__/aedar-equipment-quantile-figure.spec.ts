@@ -127,6 +127,7 @@ describe('AEDAR equipment decile distribution figure', () => {
         evidence: explorerEvidence(),
         referenceFact: fact(),
         comparisonLabel: 'Moyenne de test',
+        comparisonVisible: true,
       },
     })
 
@@ -157,7 +158,7 @@ describe('AEDAR equipment decile distribution figure', () => {
           label: 'Classe de densité', contentVersion: 'test-content-v1', referenceContentVersion: 'test-reference-v1',
           cells: [comparisonCell('count_15_car_min', 1, 2), comparisonCell('count_15_car_max', 2)],
         },
-        comparisonLabel: 'Classe de densité' },
+        comparisonLabel: 'Classe de densité', comparisonVisible: true },
     })
     const categories = wrapper.findAll('button.cahier-grouped-vertical-bar-chart__category-hitbox')
     await categories[0]!.trigger('focus')
@@ -170,6 +171,40 @@ describe('AEDAR equipment decile distribution figure', () => {
     // A decile the producer does not rank renders no badge at all.
     await categories[1]!.trigger('focus')
     expect(wrapper.find('.cahier-figure-tooltip-comparison-rank').exists()).toBe(false)
+  })
+
+  it('ne réintroduit pas une comparaison masquée dans l’infobulle ni dans les noms accessibles', async () => {
+    const wrapper = mount(AedarEquipmentQuantileFigureCahier, {
+      props: {
+        fact: fact(), horizonMinutes: 15, selectedModes: ['car'], evidence: explorerEvidence(),
+        comparison: {
+          label: 'Classe de densité', contentVersion: 'test-content-v1', referenceContentVersion: 'test-reference-v1',
+          cells: [{
+            typequ: 'B207', measure: 'count_15_car_min', group_value: 7.4,
+            group_coverage_status: 'covered', group_n_addresses: 50, group_n_observed: 42,
+            statistic: 'pooled', source_id: 'aedar_bretagne', vintage_id: '2026-v1',
+            reference_date: null, publication_date: null, rank: 1, rank_size: 2, rank_ties: 1,
+          }] as AedarComparisonCell[],
+        },
+        comparisonLabel: 'Classe de densité',
+        comparisonVisible: false,
+      },
+    })
+
+    expect(wrapper.findAll('rect.cahier-grouped-vertical-bar-chart__bar')).toHaveLength(11)
+    const chartLabel = wrapper.get('svg[role="img"]').attributes('aria-label')!
+    expect(chartLabel).not.toContain('Groupe comparé')
+    expect(chartLabel).not.toContain('7,4')
+    expect(chartLabel).not.toContain('1er/2')
+    const category = wrapper.findAll('button.cahier-grouped-vertical-bar-chart__category-hitbox')[0]!
+    expect(category.attributes('aria-label')).not.toContain('Groupe comparé')
+    expect(category.attributes('aria-label')).not.toContain('1er/2')
+
+    await category.trigger('focus')
+    const tooltip = wrapper.get('.cahier-grouped-vertical-bar-chart__tooltip')
+    expect(tooltip.find('.cahier-figure-tooltip-row-comparison').exists()).toBe(false)
+    expect(tooltip.find('.cahier-figure-tooltip-comparison-rank').exists()).toBe(false)
+    expect(tooltip.text()).not.toContain('7,4')
   })
 
   it('keeps repeated cutpoints as equal-height bars and groups one bar per selected mode', () => {
