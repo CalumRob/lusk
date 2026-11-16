@@ -190,7 +190,7 @@ const inspectionImages = computed(() => inspectionModes.value.map((mode) => ({
   alt: `${categoryLabel(mode.key)} — ${props.territory.name}`,
 })))
 
-// #1021 � the three network map panels expose the asset availability they track.
+// #1021 — the three network map panels expose the asset availability they track.
 useCahierExportPublication(() => ({
   owner: 'map-availability',
   state: {

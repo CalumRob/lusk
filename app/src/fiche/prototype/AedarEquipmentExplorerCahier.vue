@@ -192,7 +192,7 @@ const selectedTypeLabel = computed(() => selectedFact.value
   ? `${selectedFact.value.typequ_label} (${selectedFact.value.typequ})`
   : 'Type d’équipement indisponible')
 const selectedTypeFigureLabel = computed(() => selectedFact.value?.typequ_label ?? 'Type indisponible')
-// #1021 � equipment identity stays with its only consumer; the capture reads
+// #1021 — equipment identity stays with its only consumer; the capture reads
 // the effective TYPEQU, its acquired detail and the real comparison evidence.
 useCahierExportPublication(() => ({
   owner: 'aedar-equipment-explorer',

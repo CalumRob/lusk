@@ -51,7 +51,7 @@ function inlineMapUrl(map: AedarDiversityLossMapEvidence): string | null {
   return aedarDiversityLossMapAssetUrl(props.evidence.territory.code, map.mode, 'inline')
 }
 
-// #1021 — the published map/legend availability is exposed as it is drawn.
+// #1021 â€” the published map/legend availability is exposed as it is drawn.
 useCahierExportPublication(() => ({
   owner: 'map-availability',
   state: {

@@ -61,7 +61,7 @@ const Y_TICKS = [0, 0.25, 0.5, 0.75, 1] as const
 const UNAVAILABLE_LABEL = 'Indisponible'
 
 const comparisonVisible = ref(true)
-// #1021 — this curve owns its independent comparison visibility.
+// #1021 â€” this curve owns its independent comparison visibility.
 useCahierExportPublication(() => ({
   owner: 'mobilite-raccordement-curve',
   state: { comparisonVisible: comparisonVisible.value },

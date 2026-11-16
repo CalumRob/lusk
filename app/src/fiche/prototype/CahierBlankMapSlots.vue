@@ -95,7 +95,7 @@ function slotStateLabel(slotKey: 'car' | 'bike-lts2' | 'transit'): string {
   return 'Carte disponible'
 }
 
-// #1021 — the car map plate publishes the availability it already tracks.
+// #1021 â€” the car map plate publishes the availability it already tracks.
 useCahierExportPublication(() => ({
   owner: 'map-availability',
   state: {
