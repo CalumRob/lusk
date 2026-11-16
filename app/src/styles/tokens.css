@@ -16,8 +16,8 @@
 :root {
   /* Adopted E editorial foundation. Identity approved; exact values observed
    * in the E Cahier prototype and intentionally centralized for consumers. */
-  --editorial-paper: #f1f2ec;
-  --editorial-paper-deep: #dfe5df;
+  --editorial-paper: #f5f2eb;
+  --editorial-paper-deep: #e6e1d7;
   --editorial-ink: #232a2a;
   --editorial-muted: #62706c;
   --editorial-margin: #a44f51;

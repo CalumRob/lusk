@@ -100,6 +100,28 @@ and natural browse expansion are unchanged. Owner inspection of this eighth
 preview is **pending**, before reviewer dispatch; this is not final visual
 approval or site-wide adoption.
 
+#### Shared Cahier paper-colour trial (#1027, provisional)
+
+Owner-selected warmer pair applied **only** in the shared token layer
+(`src/styles/tokens.css`), not as homepage overrides:
+
+| Token | Before | Trial |
+|---|---|---|
+| `--editorial-paper` | `#f1f2ec` | `#f5f2eb` |
+| `--editorial-paper-deep` | `#dfe5df` | `#e6e1d7` |
+
+Ink (`#232a2a`), muted (`#62706c`), margin (`#a44f51`), brand and theme colours
+are unchanged. Homepage mini-pages and the existing Cahier/Mobilité surfaces
+consume the same new values (measured: homepage page/figure `rgb(245,242,235)` /
+`rgb(230,225,215)`; Rennes Mobilité page and its dialog `rgb(245,242,235)`, with
+no visible element left on the old paper values). Contrast: ink/paper 13.08:1
+(was 12.99), muted/paper 4.63:1 (was 4.60), margin/paper 4.92:1. The provisional
+figure placeholder uses muted on deep: 3.98:1 (was 4.05:1), already below AA
+before this trial and unchanged in role; the documented brand-200 comparison
+exception (2.49:1 on white) is also untouched. This is a live trial pending the
+owner's colour comparison, **not** a `DESIGN.md` change or final identity
+approval; `DESIGN.md` remains human-owned and unedited.
+
 With the dev server running, `node scripts/verify-homepage.mjs` checks real
 committed territory assets, long labels, fixed geometry, empty/loading/error and
 retry states, intentional cross-tab expansion/contraction, brand area/size,
