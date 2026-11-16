@@ -441,7 +441,7 @@ function rampTable(options: {
  * Family adapters
  * ------------------------------------------------------------------ */
 
-function projectRamps(
+export function projectRamps(
   capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'aedar-ramps' }>,
   request: CahierExportRequest,
@@ -515,7 +515,7 @@ function projectRamps(
   }
 }
 
-function projectOverview(
+export function projectOverview(
   capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'aedar-car-overview' }>,
 ): CahierOverviewProjection {
@@ -638,7 +638,7 @@ function mapProjection(
   }
 }
 
-function projectProfile(
+export function projectProfile(
   _capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'aedar-equipment-profile' }>,
 ): CahierProfileProjection {
@@ -709,7 +709,7 @@ function projectProfile(
   }
 }
 
-function projectExplorer(
+export function projectExplorer(
   capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'aedar-equipment-explorer' }>,
   request: CahierExportRequest,
@@ -890,7 +890,7 @@ function projectExplorer(
   }
 }
 
-function projectBars(
+export function projectBars(
   capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'mobilite-bars' }>,
 ): CahierBarsProjection {
@@ -1021,7 +1021,7 @@ function projectBars(
   }
 }
 
-function projectShare(
+export function projectShare(
   capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'mobilite-share' }>,
 ): CahierShareProjection {
@@ -1094,7 +1094,7 @@ function projectShare(
   }
 }
 
-function projectCurve(
+export function projectCurve(
   capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'mobilite-curve' }>,
 ): CahierCurveProjection {
@@ -1183,7 +1183,7 @@ function projectCurve(
   }
 }
 
-function projectMaps(
+export function projectMaps(
   capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'aedar-diversity-loss' }>,
 ): CahierMapsFigureProjection {
