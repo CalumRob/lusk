@@ -289,6 +289,10 @@ export interface CahierMapAvailabilityCaptureState {
 export interface CahierMobiliteSectionCaptureState {
   readonly comparisonStatus: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   readonly comparisonError: string | null
+  /** A served ratio reference exists for at least one paired column. */
+  readonly ratioReferenceAvailable: boolean
+  /** At least one paired ratio reference is actually drawn (not comparisonNone). */
+  readonly ratioReferenceDisplayed: boolean
 }
 
 /** What each native owner publicly publishes; the venue only reads these thunks. */
@@ -615,6 +619,7 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
       absent,
       display: captureComparisonDisplay({
         family,
+        evidence,
         input,
         selection,
         publications,
@@ -933,13 +938,14 @@ function comparisonLayerFrom(publication: CahierExportPublication): CahierCaptur
  */
 function captureComparisonDisplay(options: {
   family: CahierCaptureFamily | null
+  evidence: ContentEvidence | null
   input: CahierSectionCaptureInput
   selection: CahierCaptureComparisonSelection
   publications: readonly CahierExportPublication[]
   status: CahierCaptureComparison['status']
   referenceStatus: CahierCaptureReferenceStatus
 }): CahierCaptureComparisonDisplay {
-  const { family, input, selection, publications, status, referenceStatus } = options
+  const { family, evidence, input, selection, publications, status, referenceStatus } = options
   const capable = family ? FAMILY_HAS_COMPARISON_EVIDENCE[family] : false
   if (!capable) {
     return { state: 'not-applicable', reason: 'capability-absent', layers: [] }
@@ -947,6 +953,20 @@ function captureComparisonDisplay(options: {
   const layers = comparisonLayerPublications(publications)
     .map((publication) => comparisonLayerFrom(publication))
     .filter((layer): layer is CahierCaptureComparisonLayer => layer !== null)
+  // The paired delegate owns a ratio reference surface independent of the bars'
+  // own toggle. It is an observed layer only for the paired section kind.
+  if (evidence?.kind === 'mobilite-stationnement-ravitaillement') {
+    const delegate = mobiliteSectionPublication(publications)
+    if (delegate?.state.owner === 'mobilite-section') {
+      layers.push({
+        slot: 'ratios',
+        toggle: null,
+        referenceAvailable: delegate.state.state.ratioReferenceAvailable,
+        visibleReferenceAvailable: delegate.state.state.ratioReferenceAvailable,
+        displayed: delegate.state.state.ratioReferenceDisplayed,
+      })
+    }
+  }
   if (layers.length === 0) return { state: 'unobserved', reason: 'unpublished', layers: [] }
   if (!input.comparisonEligible) return { state: 'not-displayed', reason: 'not-eligible', layers }
   if (selection.state === 'vide' || (selection.state === 'membres' && selection.memberCount === 0)) {

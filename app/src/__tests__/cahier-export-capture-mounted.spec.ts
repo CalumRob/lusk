@@ -141,6 +141,72 @@ function shapeBarReferences(
   return { ...content, units } as unknown as ReturnType<typeof cahierExportFixture>['content']
 }
 
+/**
+ * Fixture shaping: served ratio references on the paired scalars, independent
+ * of the bars' own reference availability/toggle.
+ */
+function withServedRatioReferences(content: ReturnType<typeof cahierExportFixture>['content']) {
+  const reference = {
+    direction: 'plus-est-mieux' as const,
+    scope: { kind: 'communes-bretagne' as const, label: 'communes bretonnes' },
+    rank: null,
+    reference: { kind: 'median' as const, value: 5 },
+  }
+  const units = content.units.map((unit) => ({
+    ...unit,
+    sections: unit.sections.map((section: any) => {
+      if (section.evidence?.kind !== 'mobilite-stationnement-ravitaillement') return section
+      return {
+        ...section,
+        evidence: {
+          ...section.evidence,
+          columns: section.evidence.columns.map((column: any) => ({
+            ...column,
+            ratio: {
+              ...column.ratio,
+              value: {
+                ...column.ratio.value,
+                fact: { ...column.ratio.value.fact, comparison: reference },
+              },
+            },
+          })),
+        },
+      }
+    }),
+  }))
+  return { ...content, units } as unknown as ReturnType<typeof cahierExportFixture>['content']
+}
+
+function comparisonEvidenceFor(
+  measures: readonly string[],
+  values: Readonly<Record<string, number>>,
+) {
+  return {
+    label: 'Moyenne ? groupe test',
+    contentVersion: 'facts',
+    referenceContentVersion: 'reference',
+    summaryContentVersion: 'summary',
+    aedarContentVersion: 'facts',
+    cells: measures.map((measure) => ({
+      typequ: 'B207',
+      measure,
+      group_value: values[measure] ?? null,
+      group_coverage_status: 'covered',
+      group_n_addresses: 100,
+      group_n_observed: 100,
+      statistic: 'pooled' as const,
+      ...aedarSourceFields,
+    })),
+  }
+}
+
+function mockGroupValues(values: Readonly<Record<string, number>>) {
+  vi.mocked(fetchAedarComparison).mockImplementation(async (_type, _id, options) => ({
+    status: 'ready',
+    evidence: comparisonEvidenceFor(options?.measures ?? [], values),
+  }) as never)
+}
+
 async function mountCahier(options: {
   content: ReturnType<typeof cahierExportFixture>['content']
   control?: ControleComparaison | null
@@ -180,6 +246,7 @@ async function render(extra: Record<string, unknown> = {}, options: {
   aedarReference?: 'sparse-car'
   explorerComparison?: boolean
   curveReference?: 'null'
+  ratioReferences?: boolean
 } = {}) {
   const { content, control } = cahierExportFixture({
     lossMetadata: options.lossMetadata,
@@ -187,7 +254,8 @@ async function render(extra: Record<string, unknown> = {}, options: {
     explorerComparison: options.explorerComparison,
     curveReference: options.curveReference,
   })
-  const themed = shapeBarReferences(content, options.barReferences ?? 'served')
+  const barsShaped = shapeBarReferences(content, options.barReferences ?? 'served')
+  const themed = options.ratioReferences ? withServedRatioReferences(barsShaped) : barsShaped
   const controlRef = ref<ControleComparaison>(control)
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/')
@@ -692,6 +760,154 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
       visibleReferenceAvailable: false,
       displayed: false,
     })
+    wrapper.unmount()
+  })
+
+  it('keeps explorer ramp and distribution reference evidence in parity', async () => {
+    const scenarios: readonly {
+      label: string
+      values: Readonly<Record<string, number>>
+      ramp: boolean
+      distribution: boolean
+      displayed: boolean
+    }[] = [
+      {
+        label: 'mean only',
+        values: { count_15_car_mean: 4 },
+        ramp: true,
+        distribution: false,
+        displayed: true,
+      },
+      {
+        label: 'distribution only',
+        values: { count_15_car_decile5: 3 },
+        ramp: false,
+        distribution: true,
+        displayed: true,
+      },
+      {
+        label: 'both surfaces',
+        values: { count_15_car_mean: 4, count_15_car_decile5: 3 },
+        ramp: true,
+        distribution: true,
+        displayed: true,
+      },
+      {
+        label: 'neither surface',
+        values: {},
+        ramp: false,
+        distribution: false,
+        displayed: false,
+      },
+    ]
+    for (const scenario of scenarios) {
+      mockGroupValues(scenario.values)
+      const { wrapper } = await render({ aedarChapterActive: true }, { explorerComparison: true })
+      await flushPromises()
+      const rampRendered = wrapper.findAll(
+        '[data-section="aedar-equipment-explorer"] .access-ramp-line--comparison',
+      ).length > 0
+      const distributionRendered = wrapper.findAll(
+        '[data-section="aedar-equipment-explorer"] .cahier-grouped-vertical-bar-chart__bar[fill*="45%"]',
+      ).length > 0
+      const explorer = captureOf(wrapper, 'aedar-equipment-explorer')
+      expect({ scenario: scenario.label, ramp: rampRendered, distribution: distributionRendered }).toEqual({
+        scenario: scenario.label,
+        ramp: scenario.ramp,
+        distribution: scenario.distribution,
+      })
+      expect({ scenario: scenario.label, captured: explorer.comparison.display.state }).toEqual({
+        scenario: scenario.label,
+        captured: scenario.displayed ? 'displayed' : 'not-displayed',
+      })
+      wrapper.unmount()
+    }
+  })
+
+  it('honours the distribution reference horizon, selected modes and toggle', async () => {
+    mockGroupValues({ count_15_car_decile5: 3 })
+    const { wrapper } = await render({ aedarChapterActive: true }, { explorerComparison: true })
+    await flushPromises()
+    const distributionBars = () => wrapper.findAll(
+      '[data-section="aedar-equipment-explorer"] .cahier-grouped-vertical-bar-chart__bar[fill*="45%"]',
+    ).length
+    expect(distributionBars()).toBeGreaterThan(0)
+    expect(captureOf(wrapper, 'aedar-equipment-explorer').comparison.display.state).toBe('displayed')
+    const projected = projeterRequeteExport(captureOf(wrapper, 'aedar-equipment-explorer'), ['car'])
+    if (projected.status !== 'ready') throw new Error('projection expected')
+    const snapshot = JSON.stringify(projected.request)
+
+    await wrapper
+      .get('[data-section="aedar-equipment-profile"] .aedar-waffle-horizon button[aria-label="20 minutes"]')
+      .trigger('click')
+    await flushPromises()
+    expect(distributionBars()).toBe(0)
+    const offHorizon = captureOf(wrapper, 'aedar-equipment-explorer')
+    expect(offHorizon.comparison.display.state).toBe('not-displayed')
+    expect(offHorizon.comparison.display.reason).toBe('no-served-reference')
+    expect(JSON.stringify(projected.request)).toBe(snapshot)
+
+    await wrapper
+      .get('[data-section="aedar-equipment-profile"] .aedar-waffle-horizon button[aria-label="15 minutes"]')
+      .trigger('click')
+    await flushPromises()
+    expect(distributionBars()).toBeGreaterThan(0)
+
+    toggleByText(wrapper, '[data-section="aedar-access"] .aedar-access-mode-selector', 'Voiture').trigger('click')
+    await flushPromises()
+    expect(distributionBars()).toBe(0)
+    const hiddenMode = captureOf(wrapper, 'aedar-equipment-explorer')
+    expect(hiddenMode.comparison.display.state).toBe('not-displayed')
+    expect(hiddenMode.comparison.display.reason).toBe('hidden-by-selection')
+
+    toggleByText(wrapper, '[data-section="aedar-access"] .aedar-access-mode-selector', 'Voiture').trigger('click')
+    await flushPromises()
+    const reference = wrapper
+      .findAll('[data-section="aedar-equipment-explorer"] .cahier-figure-legend-toggle')
+      .find((button) => button.attributes('aria-label')?.startsWith('Groupe comparé'))
+    if (!reference) throw new Error('Explorer comparison toggle missing')
+    await reference.trigger('click')
+    await flushPromises()
+    expect(distributionBars()).toBe(0)
+    expect(captureOf(wrapper, 'aedar-equipment-explorer').comparison.display.reason).toBe('hidden-by-user')
+    wrapper.unmount()
+  })
+
+  it('keeps a ratio-only served reference displayed when the bars layer is hidden', async () => {
+    const ratioOnly = await render({}, { barReferences: 'none', ratioReferences: true })
+    const ratioOnlyValues = () => ratioOnly.wrapper.findAll(
+      '[data-section="stationnement-ravitaillement"] .mobilite-ratio-scalar .cahier-comparison-value',
+    ).length
+    expect(ratioOnlyValues()).toBeGreaterThan(0)
+    const pair = captureOf(ratioOnly.wrapper, 'stationnement-ravitaillement')
+    expect(pair.comparison.display.state).toBe('displayed')
+    expect(pair.comparison.display.layers.find((entry) => entry.slot === 'ratios')).toMatchObject({
+      toggle: null,
+      referenceAvailable: true,
+      visibleReferenceAvailable: true,
+      displayed: true,
+    })
+    expect(pair.comparison.display.layers
+      .filter((entry) => entry.slot === 'stationnement' || entry.slot === 'ravitaillement')
+      .every((entry) => !entry.referenceAvailable && !entry.displayed)).toBe(true)
+    ratioOnly.wrapper.unmount()
+
+    const { wrapper } = await render({}, { barReferences: 'served', ratioReferences: true })
+    toggleByText(
+      wrapper,
+      '[data-section="stationnement-ravitaillement"] [data-column="stationnement"]',
+      'Groupe comparé',
+    ).trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll(
+      '[data-section="stationnement-ravitaillement"] .mobilite-ratio-scalar .cahier-comparison-value',
+    ).length).toBeGreaterThan(0)
+    const toggled = captureOf(wrapper, 'stationnement-ravitaillement')
+    expect(toggled.comparison.display.state).toBe('displayed')
+    expect(toggled.comparison.display.layers.find((entry) => entry.slot === 'stationnement'))
+      .toMatchObject({ toggle: false, displayed: false })
+    expect(toggled.comparison.display.layers.find((entry) => entry.slot === 'ratios'))
+      .toMatchObject({ displayed: true })
     wrapper.unmount()
   })
 

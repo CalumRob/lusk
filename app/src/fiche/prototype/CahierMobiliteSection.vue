@@ -80,6 +80,14 @@ const curve = computed<MobiliteRaccordementEvidence | null>(() =>
   props.section.evidence?.kind === 'mobilite-raccordement' ? props.section.evidence : null,
 )
 
+/** The paired ratio scalars own a served reference independent of the bars toggle. */
+const ratioReference = computed(() => {
+  const available = paired.value?.columns.some(
+    (column) => column.ratio.value.fact.comparison?.reference != null,
+  ) ?? false
+  return { available, displayed: !comparisonNone.value && available }
+})
+
 /**
  * #1021 — expose the comparison state this delegate actually presents, without
  * widening its props or moving the shared AEDAR state into it.
@@ -89,6 +97,8 @@ useCahierExportPublication(() => ({
   state: {
     comparisonStatus: effectiveComparison.value.status,
     comparisonError: effectiveComparison.value.error ?? null,
+    ratioReferenceAvailable: ratioReference.value.available,
+    ratioReferenceDisplayed: ratioReference.value.displayed,
   },
 }))
 

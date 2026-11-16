@@ -53,6 +53,25 @@ Owners publish the state they already hold, never the reverse:
 | `CahierMobiliteSection` | the effective comparison state it presents |
 | `CahierBlankMapSlots`, `AedarDiversityLossMapsCahier`, `CartographicBreakoutPrototype` | map and legend availability (load/failure, never a declaration) |
 
+### Reference-surface inventory (existing owners)
+
+Each comparison publication represents these actual reference surfaces; it is
+documentation of the owners above, not another renderer registry.
+
+| Publication | Section / figure | Reference surface actually drawn |
+| --- | --- | --- |
+| `aedar-comparison-layer` (`comparison`) | `CahierAedarAccessSection` | both access ramps, selected modes, all horizons |
+| `aedar-comparison-layer` (`comparison`) | `CahierAedarOverviewSection` | scalar reference values |
+| `aedar-comparison-layer` (`comparison`) | `AedarEquipmentExplorerCahier` | volume ramp means, selected modes |
+| `aedar-comparison-layer` (`distribution`) | `AedarEquipmentQuantileFigureCahier` | distribution reference bars, selected modes, current horizon |
+| `mobilite-comparison-bars` | `CahierMobiliteComparisonBars` | compared category bars per column |
+| `mobilite-raccordement-curve` | `CahierMobiliteRaccordementCurve` | comparison curve |
+| `mobilite-share-track` | `CahierMobiliteShareTrack` | comparison share row |
+| `mobilite-section` ratio fields | `CahierMobiliteSection` (`ratios` layer) | paired ratio scalar references, independent of the bars toggle |
+
+A section's `display` aggregates these layers; no single ramp or bar speaks for
+the whole explorer or paired column.
+
 Comparison capture keeps two separate things: **selection identity** (`group`
 metadata, which never implies drawn proof) and **owner-observed presentation**
 (`display.state`/`reason`/`layers`). Without a publication the display is
