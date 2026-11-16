@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { MARQUE_LUSK_ERMINE } from './luskBrandMark'
+import { MARQUE_LUSK_ERMINE, REMPLISSAGES_MARQUE_LUSK } from './luskBrandMark'
 /**
  * LuskBrand — the locked brand lockup (mock/brand/final.html, état
  * verrouillé): the ermine in course + "lusk" in italic Newsreader, ink only.
- * The locked paths and their fills live in `luskBrandMark.ts` - single
- * owner shared by this lockup and the document painter. The wordmark text
- * follows the host link's color (--text-primary).
+ * The locked paths and their roles live in `luskBrandMark.ts` - the single
+ * runtime owner shared by this lockup, the fiche watermark and the document
+ * painter. The wordmark text follows the host link's color (--text-primary).
  *
  * `verticale` (mock/brand/iterations/v8.html - the hero lock-up): the ermine
  * stacks ABOVE the word, the mark reads as a column (hero right column), not
@@ -22,7 +22,7 @@ defineProps<{
     :class="{ 'lusk-marque--verticale': verticale }"
   >
     <svg class="lusk-marque__ermine" :viewBox="MARQUE_LUSK_ERMINE.viewBox" aria-hidden="true" focusable="false">
-      <path v-for="chemin in MARQUE_LUSK_ERMINE.chemins" :key="chemin.d" :d="chemin.d" :fill="chemin.fill" />
+      <path v-for="chemin in MARQUE_LUSK_ERMINE.chemins" :key="chemin.d" :d="chemin.d" :fill="REMPLISSAGES_MARQUE_LUSK[chemin.role]" />
     </svg>
     <span class="lusk-marque__mot">lusk</span>
   </span>

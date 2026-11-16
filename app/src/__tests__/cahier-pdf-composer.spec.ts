@@ -6,7 +6,8 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   composerCahierPdf,
 } from '@/fiche/prototype/cahierPdfComposer'
-import { MARQUE_LUSK_ERMINE } from '@/components/luskBrandMark'
+import { MARQUE_LUSK_ERMINE, REMPLISSAGES_MARQUE_LUSK } from '@/components/luskBrandMark'
+import { COULEUR_CYCLE_PARTAGE } from '@/fiche/prototype/cahierColorRoles'
 import { sousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaison'
 import type { SousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaison'
 import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
@@ -997,17 +998,31 @@ describe('polices PDF — provenance et marque', () => {
     }
   })
 
-  it('garde un seul propriétaire pour les tracés et remplissages de l’hermine', () => {
-    const composerSource = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/cahierPdfComposer.ts'), 'utf8')
-    const brandSource = readFileSync(resolve(process.cwd(), 'src/components/LuskBrand.vue'), 'utf8')
-    expect(composerSource).toContain('MARQUE_LUSK_ERMINE')
-    expect(brandSource).toContain('MARQUE_LUSK_ERMINE')
-    for (const source of [composerSource, brandSource]) {
-      expect(source.toLowerCase()).not.toContain('#57726f')
-      expect(source.toLowerCase()).not.toContain('#1b1b19')
-      for (const chemin of MARQUE_LUSK_ERMINE.chemins) expect(source).not.toContain(chemin.d)
+  it('garde un seul propriétaire runtime pour les tracés et remplissages de l’hermine', () => {
+    const consommateurs = [
+      'src/fiche/prototype/cahierPdfComposer.ts',
+      'src/components/LuskBrand.vue',
+      'src/components/fiche/FiligraneFiche.vue',
+    ].map((chemin) => [chemin, readFileSync(resolve(process.cwd(), chemin), 'utf8')] as const)
+    for (const [chemin, source] of consommateurs) {
+      expect(source, chemin).toContain('MARQUE_LUSK_ERMINE')
+      expect(source.toLowerCase(), chemin).not.toContain('#57726f')
+      expect(source.toLowerCase(), chemin).not.toContain('#1b1b19')
+      for (const cheminMarque of MARQUE_LUSK_ERMINE.chemins) {
+        expect(source, chemin).not.toContain(cheminMarque.d)
+      }
     }
-    expect(MARQUE_LUSK_ERMINE.chemins.length).toBe(5)
+    // Every path declares a role the fills owner can resolve; a cosmetic path
+    // split does not need a test edit.
+    const roles = new Set(MARQUE_LUSK_ERMINE.chemins.map((chemin) => chemin.role))
+    expect(roles).toEqual(new Set(['ink', 'accent']))
+    expect(Object.keys(REMPLISSAGES_MARQUE_LUSK).sort()).toEqual(['accent', 'ink'])
+    expect(REMPLISSAGES_MARQUE_LUSK.accent.toLowerCase()).toBe('#57726f')
+    expect(REMPLISSAGES_MARQUE_LUSK.ink.toLowerCase()).toBe('#1b1b19')
+    // The canonical accent is the design-token anchor, not an invented hue.
+    const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')
+    const canonicalBrand = /--brand-500:\s*(#[0-9a-f]{6})/i.exec(tokens)![1]!.toLowerCase()
+    expect(REMPLISSAGES_MARQUE_LUSK.accent.toLowerCase()).toBe(canonicalBrand)
   })
 
   it('peint les remplissages de l’hermine depuis ce propriétaire, pas depuis une copie', async () => {
@@ -1018,10 +1033,11 @@ describe('polices PDF — provenance et marque', () => {
       MARQUE_LUSK_ERMINE: {
         viewBox: '15 95.7 86.4 47',
         chemins: [
-          { d: 'M20 100 L40 100 L30 110 Z', fill: '#ff0000' },
-          { d: 'M50 100 L70 100 L60 110 Z', fill: '#00ff00' },
+          { d: 'M20 100 L40 100 L30 110 Z', role: 'accent' },
+          { d: 'M50 100 L70 100 L60 110 Z', role: 'ink' },
         ],
       },
+      REMPLISSAGES_MARQUE_LUSK: { ink: '#00ff00', accent: '#ff0000' },
     }))
     try {
       const { composerCahierPdf: composer } = await import('@/fiche/prototype/cahierPdfComposer')
@@ -1047,6 +1063,7 @@ describe('polices PDF — provenance et marque', () => {
     expect(tokens).toContain(`--mode-bike: ${PALETTE_PDF.modeBike};`)
     expect(tokens).toContain(`--mode-car: ${PALETTE_PDF.modeCar};`)
     expect(couleurPdf('var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike)))')).toBe(PALETTE_PDF.modeBike)
-    expect(couleurPdf('var(--cahier-cycle-shared, #8c4c9e)')).toBe('#8c4c9e')
+    expect(couleurPdf(`var(--cahier-cycle-shared, ${COULEUR_CYCLE_PARTAGE})`))
+      .toBe(COULEUR_CYCLE_PARTAGE)
   })
 })

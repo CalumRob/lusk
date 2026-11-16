@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import FiligraneFiche from '../components/fiche/FiligraneFiche.vue'
+import { MARQUE_LUSK_ERMINE, REMPLISSAGES_MARQUE_LUSK } from '../components/luskBrandMark'
 import { FILIGRANE_ALEA_KEY, RAPPORT_ERMINE } from '../fiche/filigrane'
 
 /**
@@ -41,7 +42,7 @@ afterEach(() => {
 })
 
 describe('FiligraneFiche — rendu', () => {
-  it('renders the locked ermine (5 paths) as a decorative background mark', async () => {
+  it('renders the locked ermine from the shared brand owner as a decorative background mark', async () => {
     boite({ largeur: 1000, hauteur: 800 })
     const wrapper = mount(FiligraneFiche, {
       props: { theme: null },
@@ -52,7 +53,9 @@ describe('FiligraneFiche — rendu', () => {
     expect(wrapper.attributes('aria-hidden')).toBe('true')
     expect(wrapper.classes()).toContain('filigrane-fiche')
     expect(wrapper.find('svg').attributes('focusable')).toBe('false')
-    expect(wrapper.findAll('svg path')).toHaveLength(5)
+    expect(wrapper.find('svg').attributes('viewBox')).toBe(MARQUE_LUSK_ERMINE.viewBox)
+    expect(wrapper.findAll('svg path').map((path) => path.attributes('d')))
+      .toEqual(MARQUE_LUSK_ERMINE.chemins.map((chemin) => chemin.d))
     expect(valeurStyle(wrapper.attributes('style'), 'opacity')).toBe(
       'var(--filigrane-opacity)',
     )
@@ -69,8 +72,10 @@ describe('FiligraneFiche — rendu', () => {
     const remplissages = wrapper
       .findAll('svg path')
       .map((p) => p.attributes('fill'))
-    expect(remplissages.filter((f) => f === '#1B1B19')).toHaveLength(2)
-    expect(remplissages.filter((f) => f === 'var(--filigrane-accent)')).toHaveLength(3)
+    const accents = MARQUE_LUSK_ERMINE.chemins.filter((chemin) => chemin.role === 'accent').length
+    expect(remplissages.filter((f) => f === REMPLISSAGES_MARQUE_LUSK.ink))
+      .toHaveLength(MARQUE_LUSK_ERMINE.chemins.length - accents)
+    expect(remplissages.filter((f) => f === 'var(--filigrane-accent)')).toHaveLength(accents)
   })
 })
 

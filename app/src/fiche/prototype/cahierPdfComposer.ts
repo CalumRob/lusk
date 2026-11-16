@@ -14,7 +14,7 @@
  */
 import type { jsPDF } from 'jspdf'
 
-import { MARQUE_LUSK_ERMINE } from '@/components/luskBrandMark'
+import { MARQUE_LUSK_ERMINE, REMPLISSAGES_MARQUE_LUSK } from '@/components/luskBrandMark'
 
 import type { CahierPdfArtifact, CahierPdfGenerator } from './cahierPdfExportController'
 import type { CahierFigureProjection } from './cahierExportAdapters'
@@ -653,7 +653,7 @@ async function dessinerMarque(doc: jsPDF, x: number, y: number): Promise<void> {
   for (const path of MARQUE_LUSK_ERMINE.chemins) {
     const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
     node.setAttribute('d', path.d)
-    node.setAttribute('fill', path.fill)
+    node.setAttribute('fill', REMPLISSAGES_MARQUE_LUSK[path.role])
     svg.append(node)
   }
   const painter = doc as jsPDF & { svg: (element: Element, options: { x: number; y: number; width: number; height: number }) => Promise<unknown> }
