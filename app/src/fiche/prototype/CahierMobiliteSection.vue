@@ -152,7 +152,7 @@ function ratioAriaLabel(
     scope,
     status,
     error,
-    comparisonIneligible: comparisonIneligible.value,
+    comparisonNone: comparisonNone.value,
   })
 }
 </script>
@@ -190,7 +190,7 @@ function ratioAriaLabel(
             <CahierMobiliteComparisonBars
               :figure="networks.figure"
               :comparison="effectiveComparison"
-              :comparison-none="comparisonIneligible"
+              :comparison-none="comparisonNone"
             />
           </CahierExportScope>
         </figure>
@@ -221,7 +221,7 @@ function ratioAriaLabel(
             <CahierMobiliteComparisonBars
               :figure="column.bars"
               :comparison="effectiveComparison"
-              :comparison-none="comparisonIneligible"
+              :comparison-none="comparisonNone"
             />
           </CahierExportScope>
         </figure>
@@ -300,7 +300,7 @@ function ratioAriaLabel(
       <figure class="mobilite-section-figure mobilite-section-figure--wide">
         <figcaption class="cahier-figure-title">{{ curve.figureTitle }}</figcaption>
         <CahierExportScope :capture-slot="CAHIER_EXPORT_SLOTS.mobiliteCurve">
-          <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" :comparison-none="comparisonIneligible" />
+          <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" :comparison-none="comparisonNone" />
         </CahierExportScope>
       </figure>
     </div>

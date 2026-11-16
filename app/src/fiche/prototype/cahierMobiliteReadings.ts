@@ -21,7 +21,7 @@ import type {
   MobiliteRaccordementEvidence,
   MobiliteShareEvidence,
 } from '@/fiche/content/themeContent'
-import type { ComparisonRank, NumericFact } from '@/fiche/content/territoryFacts'
+import type { ComparisonRank } from '@/fiche/content/territoryFacts'
 import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
 
@@ -161,12 +161,12 @@ export function mobiliteRatioAriaLabel(options: {
   scope: string | null
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   error?: string
-  comparisonIneligible: boolean
+  comparisonNone: boolean
 }): string {
-  const { ratio, scope, status, error, comparisonIneligible } = options
+  const { ratio, scope, status, error, comparisonNone } = options
   const fact = ratio.value.fact
   const parts = [`${ratio.label} : ${mobiliteRatioValueLabel(ratio)}`]
-  if (comparisonIneligible) return parts.join('. ')
+  if (comparisonNone) return parts.join('. ')
   if (fact.value === null) {
     parts.push(ratio.note ?? 'Valeur indisponible')
     return parts.join('. ')
@@ -689,22 +689,42 @@ function curvePointLabel(figure: CahierMobiliteCurveInput, detail: string): stri
 }
 
 /**
- * The native trajectory contract:
- * 1. declared ticks keep their metadata order; tick.numericValue is the native
- *    coordinate, then the declared numeric axis, then the point's axisValue;
+ * The one source-coordinate resolver for a tick, a drawn point and a marker
+ * whose detail is not labelled by any tick: the producer's tick numericValue
+ * first, then the point's own axisValue (focal, then served comparison), then
+ * the declared numeric axis. Identity is always the detail; no array index
+ * becomes a coordinate.
+ */
+export function mobiliteCurveCoordinateForDetail(
+  figure: CahierMobiliteCurveInput,
+  detail: string | null,
+): number | null {
+  if (!detail) return null
+  const tick = figure.trajectory?.ticks?.find((candidate) => candidate.detail === detail)
+  if (tick && typeof tick.numericValue === 'number' && Number.isFinite(tick.numericValue)) {
+    return tick.numericValue
+  }
+  const focal = figure.points.find((point) => point.fact.detail === detail)?.fact.axisValue
+  if (typeof focal === 'number' && Number.isFinite(focal)) return focal
+  const comparison = figure.comparison?.points
+    .find((point) => point.fact.detail === detail)?.fact.axisValue
+  if (typeof comparison === 'number' && Number.isFinite(comparison)) return comparison
+  return mobiliteCurveAxisForDetail(figure, detail)
+}
+
+/**
+ * The declared visual tick labels only (never the complete point set):
+ * 1. declared ticks keep their metadata order;
  * 2. without ticks, the declared numeric axis supplies the labels/order;
  * 3. without axis values, published points with a finite axisValue supply the
  *    coordinates in their published order.
- * Identity is always the detail; no array index becomes a coordinate.
+ * `mobiliteCurveReadings` owns the complete drawn point set.
  */
 export function mobiliteCurveGrid(figure: CahierMobiliteCurveInput): readonly CahierCurveGridPoint[] {
   const ticks = figure.trajectory?.ticks ?? []
   if (ticks.length) {
     return ticks.flatMap((tick) => {
-      const axisValue = typeof tick.numericValue === 'number' && Number.isFinite(tick.numericValue)
-        ? tick.numericValue
-        : figure.points.find((point) => point.fact.detail === tick.detail)?.fact.axisValue
-          ?? mobiliteCurveAxisForDetail(figure, tick.detail)
+      const axisValue = mobiliteCurveCoordinateForDetail(figure, tick.detail)
       return axisValue === null || axisValue === undefined || !Number.isFinite(axisValue)
         ? []
         : [{
@@ -742,13 +762,6 @@ export function mobiliteCurveCurvesCoincide(figure: CahierMobiliteCurveInput): b
   return figure.points.every((point) => values.get(point.fact.detail) === point.fact.value)
 }
 
-function mobiliteCurvePointAt(
-  points: readonly { fact: NumericFact }[],
-  detail: string,
-): NumericFact | null {
-  return points.find((point) => point.fact.detail === detail)?.fact ?? null
-}
-
 export interface CahierCurveReading {
   readonly detail: string
   readonly axisValue: number
@@ -766,8 +779,9 @@ export interface CahierCurveReading {
 }
 
 /**
- * Every declared grid point, joined by its detail identity. Values are the
- * producer's shares; nothing is smoothed, resampled or re-based.
+ * Every native point with a finite source coordinate, in the order the curve
+ * draws them (focal publication order, then comparison-only identities). Ticks
+ * only label the visual grid; they never truncate the tabular/ARIA readings.
  */
 export function mobiliteCurveReadings(options: {
   figure: CahierMobiliteCurveInput
@@ -775,32 +789,49 @@ export function mobiliteCurveReadings(options: {
 }): readonly CahierCurveReading[] {
   const { figure, showComparison } = options
   const unit = figure.points[0]?.fact.unit ?? '%'
-  return mobiliteCurveGrid(figure).map((row) => {
-    const value = mobiliteCurvePointAt(figure.points, row.detail)?.value ?? null
-    const comparison = showComparison && figure.comparison
-      ? mobiliteCurvePointAt(figure.comparison.points, row.detail)
-      : null
+  const points = new Map<string, {
+    focal: (typeof figure.points)[number] | null
+    comparison: ((typeof figure.points)[number]) | null
+  }>()
+  for (const point of figure.points) {
+    const detail = point.fact.detail
+    if (!detail) continue
+    points.set(detail, { focal: point, comparison: null })
+  }
+  if (showComparison && figure.comparison) {
+    for (const point of figure.comparison.points) {
+      const detail = point.fact.detail
+      if (!detail) continue
+      const existing = points.get(detail)
+      if (existing) existing.comparison = point
+      else points.set(detail, { focal: null, comparison: point })
+    }
+  }
+  return [...points.entries()].flatMap(([detail, pair]) => {
+    const axisValue = mobiliteCurveCoordinateForDetail(figure, detail)
+    if (axisValue === null) return []
+    const focal = pair.focal?.fact ?? null
+    const comparison = pair.comparison?.fact ?? null
     // A rank is comparison evidence: it disappears with the hidden layer.
-    const rank = showComparison && figure.markerValue?.fact.detail === row.detail
+    const rank = showComparison && figure.markerValue?.fact.detail === detail
       ? figure.markerValue.fact.comparison?.rank ?? null
       : null
-    const comparisonDisplay = comparison ? mobiliteCurveVisiblePercent(comparison.value) : null
-    return {
-      detail: row.detail,
-      axisValue: row.axisValue,
-      label: row.label,
-      value,
-      display: mobiliteCurveVisiblePercent(value),
-      aria: mobiliteCurveAriaPercent(value, unit),
+    const label = pair.focal?.fact.detailLabel ?? pair.focal?.label
+      ?? pair.comparison?.fact.detailLabel ?? pair.comparison?.label ?? detail
+    return [{
+      detail,
+      axisValue,
+      label,
+      value: focal?.value ?? null,
+      display: mobiliteCurveVisiblePercent(focal?.value ?? null),
+      aria: mobiliteCurveAriaPercent(focal?.value ?? null, unit),
       comparisonValue: comparison?.value ?? null,
-      comparisonDisplay,
-      comparisonAria: comparison
-        ? mobiliteCurveAriaPercent(comparison.value, unit)
-        : null,
+      comparisonDisplay: comparison ? mobiliteCurveVisiblePercent(comparison.value) : null,
+      comparisonAria: comparison ? mobiliteCurveAriaPercent(comparison.value, unit) : null,
       comparisonRank: rank,
       comparisonRankDisplay: formatServedRank(rank),
       comparisonRankAria: formatServedRankAria(rank),
-    }
+    }]
   })
 }
 

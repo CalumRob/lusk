@@ -31,8 +31,8 @@ import type { NumericFact } from '@/fiche/content/territoryFacts'
 import ComparisonUnavailableCue from '@/components/fiche/ComparisonUnavailableCue.vue'
 import {
   mobiliteCurveAccessibleLabel,
-  mobiliteCurveAxisForDetail,
   mobiliteCurveComparisonStateText,
+  mobiliteCurveCoordinateForDetail,
   mobiliteCurveCurvesCoincide,
   mobiliteCurveGrid,
   mobiliteCurveReadings,
@@ -85,10 +85,7 @@ const pinnedTickKey = ref<string | null>(null)
 const selectedTickKey = computed(() => pinnedTickKey.value ?? hoveredTickKey.value)
 
 function axisForFact(fact: NumericFact): number | null {
-  const declared = curveGrid.value.find((tick) => tick.detail === fact.detail)
-  if (declared) return declared.axisValue
-  if (typeof fact.axisValue === 'number' && Number.isFinite(fact.axisValue)) return fact.axisValue
-  return mobiliteCurveAxisForDetail(props.figure, fact.detail)
+  return mobiliteCurveCoordinateForDetail(props.figure, fact.detail)
 }
 
 const axisDomain = computed(() => props.figure.axis
@@ -201,7 +198,7 @@ const visibleXTicks = computed<readonly CahierFigureAxisTick[]>(() => {
 
 const marker = computed(() => props.figure.trajectory?.marker ?? null)
 const markerAxisValue = computed(() => marker.value
-  ? curveGrid.value.find((tick) => tick.detail === marker.value!.detail)?.axisValue ?? null
+  ? mobiliteCurveCoordinateForDetail(props.figure, marker.value.detail)
   : null)
 const markerX = computed(() => markerAxisValue.value === null ? null : xForAxis(markerAxisValue.value))
 

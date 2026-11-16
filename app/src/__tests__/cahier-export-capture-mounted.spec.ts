@@ -1055,6 +1055,15 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     expect(networks.comparison.absent).toBe('not-eligible')
     expect(networks.comparison.display.state).toBe('not-displayed')
     expect(networks.comparison.display.reason).toBe('not-eligible')
+    const projected = projeterRequeteExport(networks, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status === 'ready') {
+      const projection = projeterRequeteExportFigures(projected.request)[0]!
+      if (projection.family !== 'mobilite-bars') throw new Error('bars expected')
+      expect(projection.comparisonDisplayed).toBe(false)
+      expect(projection.comparisonLabel).toBeNull()
+      expect(projection.accessibleLabel).not.toContain('Groupe comparé')
+    }
     wrapper.unmount()
 
     const { wrapper: communeWrapper } = await render()
@@ -1362,6 +1371,60 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     const loading = await render()
     expect(captureOf(loading.wrapper, 'aedar-diversity-loss').capabilities.maps.legend).toBe('pending')
     loading.wrapper.unmount()
+  })
+
+  it('keeps explicit empty-selection notes and ratio ARIA aligned with shared comparisonNone', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as any
+    const networks = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'reseaux')
+    networks.evidence.figure.unavailableResources = ['Ressource test']
+    networks.evidence.figure.unavailableComparisons = ['Comparaison test']
+    const paired = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'stationnement-ravitaillement')
+    // A drawn ratio with a served reference: it would be announced if the
+    // shared empty-selection state did not suppress the comparative proof.
+    paired.evidence.columns[0].ratio.value.fact.value = 1.2
+    paired.evidence.columns[0].ratio.value.fact.comparison = {
+      direction: 'plus-est-mieux',
+      scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+      reference: { kind: 'median', value: 0.3 },
+      rank: { position: 2, size: 3 },
+    }
+    const control = { ...fixture.control, selection: { etat: 'vide' as const } }
+    const wrapper = await mountCahier({ content, control })
+    await flushPromises()
+
+    const networksCapture = seamOf(wrapper).captureSection('reseaux')!
+    const networksRequest = projeterRequeteExport(networksCapture, [])
+    expect(networksRequest.status).toBe('ready')
+    if (networksRequest.status !== 'ready') { wrapper.unmount(); return }
+    const networksProjection = projeterRequeteExportFigures(networksRequest.request)[0]!
+    if (networksProjection.family !== 'mobilite-bars') throw new Error('bars expected')
+    expect(networksProjection.tables[0]?.notes).toEqual([
+      'Publication indisponible : Ressource test',
+      'Répartition Protégé/Partagé indisponible : les deux parties publiées ne recomposent pas le total.',
+    ])
+    expect(networksProjection.unavailable.map((item) => item.kind)).toEqual(['resource'])
+    const networksDom = wrapper.get('[data-section="reseaux"]').text()
+    expect(networksDom).toContain('Publication indisponible : Ressource test')
+    expect(networksDom).not.toContain('Comparaison indisponible')
+
+    const pairedCapture = seamOf(wrapper).captureSection('stationnement-ravitaillement')!
+    const pairedRequest = projeterRequeteExport(pairedCapture, [])
+    expect(pairedRequest.status).toBe('ready')
+    if (pairedRequest.status !== 'ready') { wrapper.unmount(); return }
+    const pairedProjection = projeterRequeteExportFigures(pairedRequest.request)[0]!
+    if (pairedProjection.family !== 'mobilite-bars' || !pairedProjection.ratio) {
+      throw new Error('ratio expected')
+    }
+    const scalar = wrapper.get(
+      '[data-section="stationnement-ravitaillement"] [data-column="stationnement"] .mobilite-ratio-scalar .cahier-figure-scalar',
+    )
+    expect(scalar.attributes('aria-label')).toBe(pairedProjection.ratio.ariaLabel)
+    expect(pairedProjection.ratio.ariaLabel).not.toContain('Référence')
+    expect(pairedProjection.ratio.comparisonDisplayed).toBe(false)
+    wrapper.unmount()
   })
 
   it('keeps all three drawn network maps declared when one numeric bar category is absent', async () => {

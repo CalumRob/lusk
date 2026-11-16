@@ -452,10 +452,13 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
       global: { provide: { [CONTROLE_COMPARAISON_KEY as symbol]: control } },
     })
     expect(wrapper.findAll('.mobilite-comparison-bars__comparison')).toHaveLength(0)
-    expect(wrapper.text()).toContain('Groupe comparé indisponible pour cette sélection.')
+    // An explicit empty selection is not an unavailable comparison proof: the
+    // shared effective comparisonNone suppresses the comparative state.
+    expect(wrapper.text()).not.toContain('Groupe comparé indisponible pour cette sélection.')
+    expect(wrapper.text()).not.toContain('Groupe comparé')
     const legend = wrapper.get('.mobilite-comparison-bars__legend')
     expect(legend.findAll('.cahier-figure-legend-toggle')).toHaveLength(0)
-    expect(legend.text()).toContain('Groupe comparé')
+    expect(legend.text()).not.toContain('Groupe comparé')
   })
 
   it('never silently drops a contributor whose source record has no published URL', () => {

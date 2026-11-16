@@ -40,6 +40,7 @@ import {
   mobiliteCurveComparisonStateText,
   mobiliteCurveMarkerRankAria,
   mobiliteCurveReadings,
+  mobiliteCurveVisiblePercent,
   mobiliteRatioAriaLabel,
   mobiliteRatioDisplayValue,
   mobiliteRatioNumber,
@@ -966,7 +967,8 @@ export function projectBars(
       scope: evidence.comparisonLabel,
       status: capture.comparison.status,
       error: capture.comparison.error ?? undefined,
-      comparisonIneligible: capture.comparison.absent === 'not-eligible',
+      // A reference the owner does not draw is not proof to announce in ARIA.
+      comparisonNone: comparisonNone || !ratioDisplayed,
     })
     : null
   const ratio = figure.model.ratio
@@ -1258,8 +1260,12 @@ export function projectCurve(
       detail: marker.detail,
       label: marker.label,
       axisValue: markerReading?.axisValue ?? null,
-      value: markerReading?.value ?? null,
-      display: markerReading?.display ?? CAHIER_UNAVAILABLE_LABEL,
+      value: markerValue?.fact.detail === marker.detail
+        ? markerValue.fact.value
+        : markerReading?.value ?? null,
+      display: markerValue?.fact.detail === marker.detail
+        ? mobiliteCurveVisiblePercent(markerValue.fact.value)
+        : markerReading?.display ?? CAHIER_UNAVAILABLE_LABEL,
       rank: markerRank,
       rankDisplay: markerRankDisplay,
       rankAria: markerRankAria,

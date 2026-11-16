@@ -13,6 +13,7 @@ import {
   mobiliteBarTooltipRows,
   mobiliteBarsAccessibleLabel,
   mobiliteCurveAccessibleLabel,
+  mobiliteCurveCoordinateForDetail,
   mobiliteCurveGrid,
   mobiliteCurveReadings,
   mobiliteCurveTooltipRows,
@@ -288,18 +289,19 @@ describe('Mobilité coverage-share and raccordement readings (#1022)', () => {
     }
 
     const readings = mobiliteCurveReadings({ figure, showComparison: true })
-    expect(readings.map((reading) => [reading.detail, reading.label, reading.display, reading.comparisonDisplay]))
+    expect(readings.map((reading) => [reading.detail, reading.display, reading.comparisonDisplay]))
       .toEqual([
-        ['t0000', '0', '0', '10'],
-        ['t0090', '90 min', '90', '80'],
-        ['t0015', '15 min', 'Indisponible', '30'],
-        ['t0030', '30 min', '25', '40'],
+        ['t0030', '25', '40'],
+        ['t0000', '0', '10'],
+        ['t0090', '90', '80'],
+        ['t0015', 'Indisponible', '30'],
       ])
-    expect(readings[1]?.comparisonRankDisplay).toBe('2e/5')
-    expect(readings[0]?.comparisonRankDisplay).toBeNull()
+    const markerReading = readings.find((reading) => reading.detail === 't0090')!
+    expect(markerReading.comparisonRankDisplay).toBe('2e/5')
+    expect(readings.find((reading) => reading.detail === 't0000')?.comparisonRankDisplay).toBeNull()
     const rows = mobiliteCurveTooltipRows({
       figure,
-      reading: readings[1]!,
+      reading: markerReading,
       showComparison: true,
     })
     expect(rows[0]).toMatchObject({
@@ -311,7 +313,11 @@ describe('Mobilité coverage-share and raccordement readings (#1022)', () => {
 
     const hidden = mobiliteCurveReadings({ figure, showComparison: false })
     expect(hidden.every((reading) => reading.comparisonDisplay === null && reading.comparisonRank === null)).toBe(true)
-    const hiddenRows = mobiliteCurveTooltipRows({ figure, reading: hidden[1]!, showComparison: false })
+    const hiddenRows = mobiliteCurveTooltipRows({
+      figure,
+      reading: hidden.find((reading) => reading.detail === 't0090')!,
+      showComparison: false,
+    })
     expect(hiddenRows[0]?.comparison).toBeUndefined()
 
     // Declared ticks are omitted but the producer numeric axis still owns the
@@ -355,6 +361,19 @@ describe('Mobilité coverage-share and raccordement readings (#1022)', () => {
     }
     expect(mobiliteCurveGrid(nativeTickCoordinate).map((tick) => [tick.detail, tick.axisValue]))
       .toEqual([['t0000', 1000], ['t0090', 2000]])
+
+    const subsetTicks = {
+      ...figure,
+      trajectory: {
+        ...figure.trajectory!,
+        ticks: [{ detail: 't0000', label: '0' }, { detail: 't0090', label: '90 min' }],
+        marker: { detail: 't0015', label: '15 minutes' },
+      },
+    }
+    expect(mobiliteCurveGrid(subsetTicks)).toHaveLength(2)
+    expect(mobiliteCurveReadings({ figure: subsetTicks, showComparison: true })).toHaveLength(4)
+    expect(mobiliteCurveCoordinateForDetail(subsetTicks, 't0015')).toBe(15)
+    expect(mobiliteCurveCoordinateForDetail(subsetTicks, 't0090')).toBe(90)
   })
 })
 
@@ -387,13 +406,13 @@ describe('Mobilité ratio scalar owner formatter (#1022)', () => {
     expect(mobiliteRatioDisplayValue(ratio(null))).toBe('—')
     expect(mobiliteRatioValueLabel(ratio(null))).toBe('Indisponible')
     const aria = mobiliteRatioAriaLabel({
-      ratio: ratio(1.234), scope: 'communes de EPCI X', status: 'ready', comparisonIneligible: false,
+      ratio: ratio(1.234), scope: 'communes de EPCI X', status: 'ready', comparisonNone: false,
     })
     expect(aria).toContain('Places de stationnement vélo pour 1 place voiture : 1,2 places vélo / place voiture')
     expect(aria).toContain('Référence 0,3 places vélo / place voiture (communes de EPCI X)')
     expect(aria).toContain('Rang 2e/3')
     expect(mobiliteRatioAriaLabel({
-      ratio: ratio(1.234), scope: null, status: 'ready', comparisonIneligible: true,
+      ratio: ratio(1.234), scope: null, status: 'ready', comparisonNone: true,
     })).toBe('Places de stationnement vélo pour 1 place voiture : 1,2 places vélo / place voiture')
   })
 

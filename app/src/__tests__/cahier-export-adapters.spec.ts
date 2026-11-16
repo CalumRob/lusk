@@ -623,6 +623,8 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
   it('keeps the paired ratio reference independent from the hidden bars layer', () => {
     const fixture = cahierExportFixture()
     const section = cloneSection(fixture, 'stationnement-ravitaillement', (entry) => {
+      // A drawn ratio, whose reference is served by the comparison owner.
+      entry.evidence.columns[0].ratio.value.fact.value = 1.2
       entry.evidence.columns[0].ratio.value.fact.comparison = {
         direction: 'plus-est-mieux',
         scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
@@ -652,9 +654,19 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
       comparisonValue: 0.3,
       comparisonRankDisplay: '2e/3',
     })
+    expect(projection.ratio?.ariaLabel).toContain('Référence')
     const ratioRow = projection.tables[0]?.rows.find((row) => row.key.endsWith(':ratio'))
     expect(ratioRow?.cells[1]).toMatchObject({ value: 0.3, display: '0,3' })
     expect(projection.tables[0]?.columns.map((column) => column.key)).toEqual(['focal', 'comparison'])
+
+    const hiddenRatioCapture = captureCahierSection(inputFor(fixture, section, [
+      layer('stationnement', { displayed: false, toggle: false }, 'mobilite-comparison-bars'),
+      layer('ravitaillement', { displayed: false, toggle: false }, 'mobilite-comparison-bars'),
+    ]))
+    const hiddenRatio = projeterRequeteExportFigures(requestFor(hiddenRatioCapture))[0]!
+    if (hiddenRatio.family !== 'mobilite-bars' || !hiddenRatio.ratio) throw new Error('ratio expected')
+    expect(hiddenRatio.ratio.comparisonDisplayed).toBe(false)
+    expect(hiddenRatio.ratio.ariaLabel).not.toContain('Référence')
   })
 
   it('projects the two-line coverage figure and suppresses an empty comparison', () => {
@@ -797,9 +809,9 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     if (projection.family !== 'mobilite-curve') throw new Error('curve expected')
     expect(projection.points.map((reading) => [reading.detail, reading.label, reading.display, reading.comparisonDisplay]))
       .toEqual([
-        ['t0000', '0', '0', '10'],
-        ['t0090', '90 min', '90', '80'],
-        ['t0015', '15 min', 'Indisponible', '30'],
+        ['t0000', 't0000', '0', '10'],
+        ['t0015', 't0015', 'Indisponible', '30'],
+        ['t0090', 't0090', '90', '80'],
       ])
     expect(projection.marker).toMatchObject({
       detail: 't0090',
@@ -814,7 +826,7 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     expect(projection.marker?.rankAria).toContain('communes bretonnes')
     expect(projection.marker?.rankAria).toContain('plus = mieux')
     expect(projection.tables[0]?.columns.map((column) => column.kind)).toEqual(['focal', 'comparison'])
-    expect(projection.tables[0]?.rows.map((row) => row.key)).toEqual(['t0000', 't0090', 't0015'])
+    expect(projection.tables[0]?.rows.map((row) => row.key)).toEqual(['t0000', 't0015', 't0090'])
 
     const hidden = captureCahierSection(inputFor(fixture, section, [
       layer('curve', { displayed: false, toggle: false }, 'mobilite-raccordement-curve'),
@@ -838,7 +850,43 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     const withoutTicksProjection = projeterRequeteExportFigures(requestFor(withoutTicksCapture))[0]!
     if (withoutTicksProjection.family !== 'mobilite-curve') throw new Error('curve expected')
     expect(withoutTicksProjection.points.map((reading) => [reading.detail, reading.axisValue]))
-      .toEqual([['t0015', 15], ['t0000', 0], ['t0090', 90]])
+      .toEqual([['t0000', 0], ['t0015', 15], ['t0090', 90]])
     expect(withoutTicksProjection.tables[0]?.rows).toHaveLength(3)
+
+    // Two declared tick labels do not truncate the three native points; a
+    // marker detail outside the ticks still resolves through its source axis.
+    const sparseTicksEvidence: MobiliteRaccordementEvidence = {
+      ...evidence,
+      trajectory: {
+        ...evidence.trajectory!,
+        ticks: [
+          { detail: 't0000', label: '0' },
+          { detail: 't0090', label: '90 min' },
+        ],
+        marker: { detail: 't0015', label: '15 minutes' },
+      },
+      markerValue: {
+        ...evidence.markerValue!,
+        fact: { ...evidence.markerValue!.fact, detail: 't0015', axisValue: 15, value: 0.3 },
+      },
+    }
+    const sparseTicksSection = cloneSection(fixture, 'visiter-la-bretagne', (entry) => {
+      entry.evidence = sparseTicksEvidence
+    })
+    const sparseTicksProjection = projeterRequeteExportFigures(requestFor(
+      captureCahierSection(inputFor(fixture, sparseTicksSection, [
+        layer('curve', {}, 'mobilite-raccordement-curve'),
+      ])),
+    ))[0]!
+    if (sparseTicksProjection.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(sparseTicksProjection.points.map((reading) => reading.detail))
+      .toEqual(['t0000', 't0015', 't0090'])
+    expect(sparseTicksProjection.tables[0]?.rows).toHaveLength(3)
+    expect(sparseTicksProjection.marker).toMatchObject({
+      detail: 't0015',
+      axisValue: 15,
+      value: 0.3,
+      display: '30',
+    })
   })
 })

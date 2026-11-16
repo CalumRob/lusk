@@ -2202,7 +2202,13 @@ export function validerThemeMetadata(
                 seen.add(raw['detail'] as string)
                 exiger(estChaineNonVide(raw['label']), fichier, 0, `« indicator_pages.${key}.trajectory.ticks[${index}].label » doit être renseigné`)
                 exiger(raw['mobile'] === undefined || typeof raw['mobile'] === 'boolean', fichier, 0, `« indicator_pages.${key}.trajectory.ticks[${index}].mobile » doit être un booléen`)
-                return { detail: raw['detail'] as string, label: raw['label'] as string, ...(raw['mobile'] === undefined ? {} : { mobile: raw['mobile'] as boolean }) }
+                exiger(raw['numericValue'] === undefined || (typeof raw['numericValue'] === 'number' && Number.isFinite(raw['numericValue'])), fichier, 0, `« indicator_pages.${key}.trajectory.ticks[${index}].numericValue » doit être un nombre fini`)
+                return {
+                  detail: raw['detail'] as string,
+                  label: raw['label'] as string,
+                  ...(raw['mobile'] === undefined ? {} : { mobile: raw['mobile'] as boolean }),
+                  ...(raw['numericValue'] === undefined ? {} : { numericValue: raw['numericValue'] as number }),
+                }
               })
             }
             if (key === 'raccordement_courbe') {

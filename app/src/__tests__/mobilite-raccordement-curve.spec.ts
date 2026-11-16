@@ -192,6 +192,24 @@ describe('CahierMobiliteRaccordementCurve — approved travel-time figure (#1006
     wrapper.unmount()
   })
 
+  it('keeps a marker outside declared ticks on its source axis coordinate', () => {
+    const figure = curveFigure({
+      trajectory: {
+        ...trajectory,
+        ticks: [{ detail: 't0000', label: '0' }, { detail: 't0360', label: '6 h' }],
+        marker: { detail: 't0090', label: '1 h 30 (90 min)' },
+      },
+    })
+    const wrapper = mount(CahierMobiliteRaccordementCurve, { props: { figure, comparison: ready } })
+    const marker = wrapper.get('.mobilite-raccordement-curve__marker')
+    expect(marker.attributes('data-detail')).toBe('t0090')
+    const line = marker.get('.mobilite-raccordement-curve__marker-line')
+    expect(Number(line.attributes('x1'))).toBeGreaterThan(0)
+    expect(Number(line.attributes('x1'))).toBeLessThan(640)
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).toContain('1 h 30 (90 min)')
+    wrapper.unmount()
+  })
+
   it('shows the actual point evidence on focus, keyboard and touch', async () => {
     const wrapper = mount(CahierMobiliteRaccordementCurve, {
       props: { figure: curveFigure(), comparison: ready },
