@@ -1,4 +1,12 @@
 /** Cahier-scoped colour aliases, shared by the screen and document painter. */
+
+/**
+ * Native shared-cycle hue (Mobilité « partagé » segments). DESIGN.md's mode
+ * scale owns transit/bike/car only, so this figure hue has no global token:
+ * this module is its single owner for the screen shell and the PDF painter.
+ */
+export const COULEUR_CYCLE_PARTAGE = '#8c4c9e'
+
 export const CAHIER_COLOR_ROLES = {
   '--paper': 'var(--editorial-paper)',
   '--paper-deep': 'var(--editorial-paper-deep)',
@@ -16,5 +24,5 @@ export const CAHIER_COLOR_ROLES = {
   '--cahier-mode-bike': 'var(--mode-bike)',
   '--cahier-mode-car': 'var(--mode-car)',
   '--cahier-cycle-protected': 'var(--cahier-mode-bike)',
-  '--cahier-cycle-shared': '#8c4c9e',
+  '--cahier-cycle-shared': COULEUR_CYCLE_PARTAGE,
 } as const

@@ -21,6 +21,7 @@ import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
+import { COULEUR_CYCLE_PARTAGE } from './cahierColorRoles'
 import { useCahierExportPublication } from './cahierExportVenue'
 
 type ModeKey = 'walk' | 'bike' | 'car'
@@ -141,7 +142,7 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
       marker: 'dot',
       markerColor: segment.key === 'protege_km_1000'
         ? 'var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike)))'
-        : 'var(--cahier-cycle-shared, #8c4c9e)',
+        : `var(--cahier-cycle-shared, ${COULEUR_CYCLE_PARTAGE})`,
       comparison: comparisonForFact(segment.value, props.evidence?.figure.comparisonLabel ?? null, unit),
     })
     if (segment.rawValue) {
@@ -323,8 +324,9 @@ async function inspect(mode: ModeKey): Promise<void> {
 
 <style scoped>
 .map-breakout {
+  /* Cycle alias ownership (including the shared hue) lives in
+     cahierColorRoles.ts and is applied at the Cahier root. */
   --cahier-cycle-protected: var(--cahier-mode-bike);
-  --cahier-cycle-shared: #8c4c9e;
   margin: 0;
   padding: 0 0 var(--space-3);
 }

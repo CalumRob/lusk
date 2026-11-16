@@ -24,6 +24,7 @@ import type {
 import type { ComparisonRank } from '@/fiche/content/territoryFacts'
 import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
+import { COULEUR_CYCLE_PARTAGE } from './cahierColorRoles'
 
 /**
  * Narrow native inputs: the readings consume exactly the fields the screen
@@ -78,7 +79,7 @@ export function mobiliteBarToneColor(tone: MobiliteBarCategoryEvidence['tone']):
 
 const SEGMENT_COLORS: Readonly<Record<string, string>> = {
   protege_km_1000: 'var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike)))',
-  partage_km_1000: 'var(--cahier-cycle-shared, #8c4c9e)',
+  partage_km_1000: `var(--cahier-cycle-shared, ${COULEUR_CYCLE_PARTAGE})`,
 }
 
 export function mobiliteBarSegmentColor(segment: { key: string }): string {

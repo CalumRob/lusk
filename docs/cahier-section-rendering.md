@@ -281,19 +281,25 @@ or starts an acquisition.
   copy. A missing/truncated face rejects generation. There is no system-font
   substitution, runtime font download or reader-side Python.
 - `cahierColorRoles.ts` owns the Cahier-scoped colour aliases used by the real
-  shell and the document painter. `cahierPdfPalette.ts` resolves the bundled
-  `styles/tokens.css?raw` source (including editorial paper/deep, ink, muted,
-  margin, brand, theme and mode roles); it contains no copied palette hexes.
+  shell and the document painter, including the cycle-shared hue that DESIGN.md's
+  mode scale does not tokenise. `cahierPdfPalette.ts` resolves the canonical
+  `:root` block of the bundled `styles/tokens.css?raw` source (including
+  editorial paper/deep, ink, muted, margin, brand, theme and mode roles); it
+  contains no copied palette hexes. Media/theme-scoped overrides are not part of
+  the print document and are never consumed silently.
   The existing app OKLab mix primitive is reused. Supported aliases, sRGB/OKLab
   mixes and the owner's alpha RGB are resolved explicitly; unsupported colours
   reject rather than silently become ink. Transparency is composited onto the
   actual editorial paper. No live screen or computed-style introspection is used
   by production generation.
+- `components/luskBrandMark.ts` is the single owner of the locked ermine paths
+  and fills. `LuskBrand.vue` and the PDF painter both consume it, so a brand-owner
+  fill edit reaches the generated document instead of diverging from a copy.
 
 `cahier-pdf-composer.spec.ts` drives real blobs and parses them with pdfjs/pdf-lib:
 the nine-section admission matrix, A4/page/formats/metadata/font embedding,
 literal table cells and ranks, French accents, `Indisp.` with one explanation,
-  comparison subtitle cases, one-page and measured multi-page continuation,
+comparison subtitle cases, one-page and measured multi-page continuation,
 repeated identity/headers/sources, page-local comparison proof, explicit asset/
 font/abort/unsupported-family failures, a corrupted-input fidelity case and an
 independent negative audit that fails on a corrupted number/column/group.
@@ -309,11 +315,15 @@ production.
 `cahier-pdf-native-paint.spec.ts` checks the emitted SVG at the public native
 painter/serialization seam: literal null-gap subpath counts on both curves,
 hidden bar-slot centering, unequal ramp-panel maxima, transitive `comparisonFor`
-visibility, measured/mobile-anchor tick labels, marker metrics and explicit
-unknown-colour rejection. It uses real embedded font metrics and selectable PDF
+visibility, measured/mobile-anchor tick labels, the shared series stroke
+grammar (width/dash/opacity declared by the native SFCs and converted to mm,
+marker metrics) and explicit unknown-colour rejection. The curve axis, ticks
+and marker come from the native curve projection; there is no parallel scale
+fallback. It uses real embedded font metrics and selectable PDF
 text, not an alternative geometry calculation. `cahier-pdf-source-colours.spec.ts`
 changes the actual CSS-source input and asserts changed colours in a generated
-PDF. Node and browser dense scenes use the same fixture builders.
+PDF; `cahier-pdf-composer.spec.ts` does the same mutation for the brand owner's
+fills. Node and browser dense scenes use the same fixture builders.
 
 `scripts/verify-cahier-pdf-browser.mjs` builds only
 `scripts/cahier-pdf-browser-probe.html` into an external directory, serves it on

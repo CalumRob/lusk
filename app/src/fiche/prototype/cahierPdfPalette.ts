@@ -12,8 +12,13 @@ import { CAHIER_COLOR_ROLES } from './cahierColorRoles'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 
 // No live screen/style introspection: these are immutable bundled owner inputs.
+// Only the canonical `:root` block is read. Media/theme-scoped overrides are not
+// part of the print document, so a later declaration must never win silently.
+const tokensSource = tokensCss.replace(/\/\*[\s\S]*?\*\//g, '')
+const rootBlock = /:root\s*\{([^}]*)\}/.exec(tokensSource)
+if (!rootBlock) throw new Error('Bloc :root des jetons introuvable pour le PDF.')
 const TOKENS_PDF: Readonly<Record<string, string>> = {
-  ...Object.fromEntries([...tokensCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(--[\w-]+)\s*:\s*([^;{}]+);/g)]
+  ...Object.fromEntries([...rootBlock[1]!.matchAll(/(--[\w-]+)\s*:\s*([^;{}]+);/g)]
     .map((match) => [match[1]!, match[2]!.trim()])),
   ...CAHIER_COLOR_ROLES,
 }
@@ -37,7 +42,6 @@ export const PALETTE_PDF = {
   modeCar: couleurPdf('--cahier-mode-car'),
   modeWalk: couleurPdf(AEDAR_TIME_MODE_COLORS.walk),
   modeBikeLts2: couleurPdf(AEDAR_TIME_MODE_COLORS.bike_lts2),
-  white: couleurPdf('--surface-primary'),
 } as const
 
 export type PdfPaletteKey = keyof typeof PALETTE_PDF
