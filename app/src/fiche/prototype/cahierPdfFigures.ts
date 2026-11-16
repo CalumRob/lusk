@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Native-family PDF primitives for the shared Cahier composer (#1024).
  *
  * The correction after independent review: this file no longer owns axis
@@ -11,9 +11,12 @@
 import type { jsPDF } from 'jspdf'
 
 import {
-  CURVE_Y_TICKS,
+  CAHIER_FIGURE_STROKE,
+  CSS_PX_EN_MM,
   curveGeometry,
   curveSeriesPath,
+  cssPxToMm,
+  dashArrayMm,
   mobiliteBarComparisonSegments,
   mobiliteBarGeometry,
   mobiliteBarScale,
@@ -527,7 +530,7 @@ async function dessinerRampes(
         node.setAttribute('d', path)
         node.setAttribute('fill', 'none')
         node.setAttribute('stroke', color)
-        node.setAttribute('stroke-width', '0.55')
+        node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.widthPx)))
         node.setAttribute('stroke-linecap', 'round')
         node.setAttribute('stroke-linejoin', 'round')
         svg.append(node)
@@ -537,9 +540,9 @@ async function dessinerRampes(
         node.setAttribute('d', path)
         node.setAttribute('fill', 'none')
         node.setAttribute('stroke', color)
-        node.setAttribute('stroke-width', '0.5')
-        node.setAttribute('stroke-opacity', '0.55')
-        node.setAttribute('stroke-dasharray', '2 1.2')
+        node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.comparisonWidthPx)))
+        node.setAttribute('stroke-opacity', String(CAHIER_FIGURE_STROKE.comparisonOpacity))
+        node.setAttribute('stroke-dasharray', dashArrayMm(CAHIER_FIGURE_STROKE.comparisonDashPx))
         node.setAttribute('stroke-linecap', 'round')
         svg.append(node)
       }
@@ -573,6 +576,7 @@ async function dessinerCourbe(
   projection: CahierCurveProjection,
 ): Promise<number> {
   if (!options.modeleCourbe) throw new Error('Modèle natif de courbe manquant pour le PDF.')
+  const modeleCourbe = options.modeleCourbe
   const { doc, x, y, width, mesure } = options
   let cy = y
   cy += dessinerTitre(doc, mesure, projection, x, width, cy)
@@ -581,72 +585,64 @@ async function dessinerCourbe(
   const plotX = x + 9
   const plotY = cy + 2
   const nativeGeometry = { width: plotWidth, height: plotHeight, margin: { top: 2, right: 2, bottom: 2, left: 9 } } as const
-  const native = options.modeleCourbe
-    ? curveGeometry(options.modeleCourbe, nativeGeometry)
-    : null
-  const scale = native?.scale ?? (projection.axis
-    ? { minimum: projection.axis.minimum, maximum: projection.axis.maximum, ticks: [...CURVE_Y_TICKS] }
-    : { minimum: 0, maximum: 1, ticks: [...CURVE_Y_TICKS] })
-  const xFor = (value: number) => nativeGeometry.margin.left
-    + ((value - scale.minimum) / (scale.maximum - scale.minimum)) * (plotWidth - nativeGeometry.margin.left - nativeGeometry.margin.right)
-  const yFor = (value: number) => nativeGeometry.margin.top
-    + (1 - Math.max(0, Math.min(1, value))) * (plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom)
-  const allTicks = native?.xTicks ?? projection.points.map((point) => ({
-    key: point.detail,
-    position: xFor(point.axisValue),
-    label: point.label,
-  }))
+  // After the guard the native curve model is the only axis owner: no parallel
+  // scale, tick or projection fallback may exist in the painter.
+  const native = curveGeometry(modeleCourbe, nativeGeometry)
   const ticks = visibleCurveTicks(
-    allTicks,
-    plotWidth * 96 / 25.4,
+    native.xTicks,
+    plotWidth / CSS_PX_EN_MM,
     plotWidth,
     projection.marker?.detail ?? null,
-    (label) => mesure.largeur(label ?? '', POLICE_PDF.body, TAILLE.tick) * 96 / 25.4,
-    new Set((options.modeleCourbe?.trajectory?.ticks ?? [])
+    (label) => mesure.largeur(label ?? '', POLICE_PDF.body, TAILLE.tick) / CSS_PX_EN_MM,
+    new Set((modeleCourbe.trajectory?.ticks ?? [])
       .filter((tick) => tick.mobile === true)
       .map((tick) => tick.detail)),
   )
-  const yTicks = native?.yTicks ?? CURVE_Y_TICKS.map((value) => ({
-    key: value,
-    position: yFor(value),
-    label: `${value * 100} %`,
-  }))
+  const yTicks = native.yTicks
   const svg = svgCanvas(plotWidth, plotHeight)
   for (const tick of yTicks) {
     svgLine(svg, nativeGeometry.margin.left, tick.position, plotWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
   }
   svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, plotWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.ink, 0.35)
-  if (options.modeleCourbe && native) {
-    const focalPath = curveSeriesPath(options.modeleCourbe.points, options.modeleCourbe, native)
-    if (focalPath) {
+  const focalPath = curveSeriesPath(modeleCourbe.points, modeleCourbe, native)
+  if (focalPath) {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    node.setAttribute('d', focalPath)
+    node.setAttribute('fill', 'none')
+    node.setAttribute('stroke', PALETTE_PDF.brand500)
+    node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.widthPx)))
+    node.setAttribute('stroke-linecap', 'round')
+    node.setAttribute('stroke-linejoin', 'round')
+    svg.append(node)
+  }
+  if (options.comparisonProof && modeleCourbe.comparison) {
+    const referencePath = curveSeriesPath(modeleCourbe.comparison.points, modeleCourbe, native)
+    if (referencePath) {
       const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-      node.setAttribute('d', focalPath)
+      node.setAttribute('d', referencePath)
       node.setAttribute('fill', 'none')
-      node.setAttribute('stroke', PALETTE_PDF.brand500)
-      node.setAttribute('stroke-width', '0.55')
+      node.setAttribute('stroke', PALETTE_PDF.brand200)
+      node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.comparisonWidthPx)))
+      node.setAttribute('stroke-opacity', String(CAHIER_FIGURE_STROKE.comparisonOpacity))
+      node.setAttribute('stroke-dasharray', dashArrayMm(CAHIER_FIGURE_STROKE.comparisonDashPx))
       node.setAttribute('stroke-linecap', 'round')
-      node.setAttribute('stroke-linejoin', 'round')
       svg.append(node)
-    }
-    if (options.comparisonProof && options.modeleCourbe.comparison) {
-      const referencePath = curveSeriesPath(options.modeleCourbe.comparison.points, options.modeleCourbe, native)
-      if (referencePath) {
-        const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-        node.setAttribute('d', referencePath)
-        node.setAttribute('fill', 'none')
-        node.setAttribute('stroke', PALETTE_PDF.brand200)
-        node.setAttribute('stroke-width', '0.5')
-        node.setAttribute('stroke-opacity', '0.68')
-        node.setAttribute('stroke-dasharray', '2 1.2')
-        node.setAttribute('stroke-linecap', 'round')
-        svg.append(node)
-      }
     }
   }
   if (projection.marker && projection.marker.axisValue !== null) {
-    const mx = xFor(projection.marker.axisValue)
-    const cssPixel = 25.4 / 96
-    svgLine(svg, mx, nativeGeometry.margin.top, mx, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.muted, 1.5 * cssPixel, `${3 * cssPixel} ${3 * cssPixel}`)
+    // The declared marker is placed by the same native curve projection as the
+    // series and grid, never by a second recomputed axis mapping.
+    const mx = native.x(projection.marker.axisValue)
+    svgLine(
+      svg,
+      mx,
+      nativeGeometry.margin.top,
+      mx,
+      plotHeight - nativeGeometry.margin.bottom,
+      PALETTE_PDF.muted,
+      cssPxToMm(CAHIER_FIGURE_STROKE.markerWidthPx),
+      dashArrayMm(CAHIER_FIGURE_STROKE.markerDashPx),
+    )
   }
   await poserSvg(doc, svg, plotX, plotY, plotWidth, plotHeight)
   dessinerAxes(doc, mesure, {
@@ -844,7 +840,7 @@ async function dessinerBarresGroupees(
         node.setAttribute('d', path)
         node.setAttribute('fill', 'none')
         node.setAttribute('stroke', color)
-        node.setAttribute('stroke-width', '0.55')
+        node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.widthPx)))
         node.setAttribute('stroke-linecap', 'round')
         svg.append(node)
       }

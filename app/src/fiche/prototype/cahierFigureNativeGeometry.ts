@@ -147,6 +147,32 @@ export function rampPaths(
   return paths
 }
 
+/** One CSS pixel in millimetres, for print reproduction of the screen metrics. */
+export const CSS_PX_EN_MM = 25.4 / 96
+
+/**
+ * Native series stroke grammar, in screen CSS pixels. The mounted figure
+ * stylesheets declare these values; the PDF painter converts them instead of
+ * carrying parallel millimetre literals. A contract test binds both owners.
+ */
+export const CAHIER_FIGURE_STROKE = {
+  widthPx: 2.5,
+  comparisonWidthPx: 2.5,
+  comparisonDashPx: [10, 6] as const,
+  comparisonOpacity: 0.68,
+  markerWidthPx: 1.5,
+  markerDashPx: [3, 3] as const,
+} as const
+
+/** CSS pixels to millimetres, rounded to a stable six-decimal value. */
+export function cssPxToMm(px: number): number {
+  return Number((px * CSS_PX_EN_MM).toFixed(6))
+}
+
+export function dashArrayMm(values: readonly number[]): string {
+  return values.map(cssPxToMm).join(' ')
+}
+
 /** Native curve fixed percent axis, shared by screen and PDF. */
 export const CURVE_Y_TICKS = [0, 0.25, 0.5, 0.75, 1] as const
 
