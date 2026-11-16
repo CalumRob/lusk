@@ -13,15 +13,10 @@ import {
 import type {
   AedarRampMode,
   MobiliteRaccordementEvidence,
-  MobiliteShareEvidence,
 } from '@/fiche/content/themeContent'
 import type { ComparisonRank, TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
+import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
 import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
-import {
-  AEDAR_CAR_MAP_HORIZON_MINUTES,
-  aedarCarMapAssetUrl,
-  aedarDiversityLossMapAssetUrl,
-} from '@/fiche/mapAssetUrl'
 import type {
   CahierExportCapture,
   CahierExportRequest,
@@ -40,13 +35,17 @@ import {
   mobiliteBarResourceNotes,
   mobiliteBarsAccessibleLabel,
   mobiliteComparisonAria,
-  mobiliteCurveComparisonDetail,
+  mobiliteCurveAccessibleLabel,
   mobiliteCurveReadings,
-  mobiliteRatioValueLabel,
+  mobiliteRatioAriaLabel,
+  mobiliteRatioDisplayValue,
+  mobiliteRatioNumber,
   mobiliteShareComparisonAria,
   mobiliteShareDisplayUnit,
   mobiliteSharePreciseLabel,
+  mobiliteSharePublicationNotes,
   mobiliteShareReference,
+  mobiliteShareStateMessage,
   mobiliteShareTerritoryAria,
   mobiliteShareValue,
   mobiliteShareVisibleLabel,
@@ -54,6 +53,7 @@ import {
 import {
   aedarExplorerVolumeRamp,
   aedarOverviewScalarAria,
+  aedarOverviewScalarDisplayValue,
   aedarRampToTimeRampFigureData,
   aedarOverviewScalarRank,
   aedarQuantileReading,
@@ -98,6 +98,20 @@ export interface CahierFigureTable {
   readonly unit: string | null
 }
 
+export type CahierUnavailableKind =
+  | 'resource'
+  | 'comparison'
+  | 'map'
+  | 'legend'
+  | 'values'
+  | 'state'
+
+/** Typed owner explanation; never inferred by parsing a French display string. */
+export interface CahierUnavailableItem {
+  readonly kind: CahierUnavailableKind
+  readonly message: string
+}
+
 export interface CahierFigureProjectionBase {
   readonly family: CahierCaptureFamily
   readonly slot: string
@@ -106,7 +120,7 @@ export interface CahierFigureProjectionBase {
   /** All numeric tables of the figure, in the screen's reading order. */
   readonly tables: readonly CahierFigureTable[]
   readonly comparisonDisplayed: boolean
-  readonly unavailable: readonly string[]
+  readonly unavailable: readonly CahierUnavailableItem[]
 }
 
 export interface CahierMapItemProjection {
@@ -115,20 +129,23 @@ export interface CahierMapItemProjection {
   readonly declared: boolean
   readonly loaded: boolean
   readonly unavailable: boolean
+  /** The actual inline figure asset; null when the owner declared no inline image. */
   readonly inlineUrl: string | null
-  readonly inspectionUrl: string | null
 }
 
 export interface CahierMapsProjection {
   readonly status: 'none' | 'unknown' | 'pending' | 'available' | 'partial' | 'unavailable'
   readonly legend: 'none' | 'unknown' | 'pending' | 'available' | 'unavailable'
   readonly items: readonly CahierMapItemProjection[]
+  /** Owner-observed native legend content; null until the legend is actually drawn. */
   readonly legendDetail: {
     readonly title: string
+    readonly minimum: number | null
+    readonly maximum: number | null
     readonly colors: readonly string[]
     readonly tickLabels: readonly string[]
     readonly note: string
-    readonly ariaLabel: string
+    readonly ariaLabel: string | null
   } | null
   readonly groups: readonly { readonly key: string; readonly label: string }[]
 }
@@ -213,17 +230,14 @@ export interface CahierProfileProjection extends CahierFigureProjectionBase {
   }[]
 }
 
+/**
+ * The native renderer model plus its visibility props. D consumes this object
+ * directly; titles, formatters, colours, icons and ranks are not restated in a
+ * second drawing shape.
+ */
 export interface CahierGroupedBarsProjection {
-  readonly title: string
-  readonly categories: readonly { readonly key: string; readonly label: string; readonly axisLabel: string }[]
-  readonly series: readonly {
-    readonly key: string
-    readonly label: string
-    readonly comparisonFor: string | null
-    readonly values: readonly (number | null)[]
-  }[]
+  readonly figure: CahierGroupedVerticalBarFigureData
   readonly hiddenSeriesKeys: readonly string[]
-  readonly description: string
 }
 
 export interface CahierExplorerProjection extends CahierFigureProjectionBase {
@@ -250,6 +264,7 @@ export interface CahierBarsProjection extends CahierFigureProjectionBase {
     readonly value: number | null
     readonly unit: string
     readonly display: string
+    readonly ariaLabel: string
     readonly comparisonDisplayed: boolean
     readonly comparisonValue: number | null
     readonly comparisonDisplay: string | null
@@ -275,6 +290,13 @@ export interface CahierShareProjection extends CahierFigureProjectionBase {
   readonly comparisonRankDisplay: string | null
   readonly comparisonRankAria: string | null
   readonly comparisonLabel: string | null
+  /** The same accessible readings the two mounted tracks render. */
+  readonly territoryAria: string
+  readonly comparisonAria: string | null
+  /** Owner publication explanations, in display order. */
+  readonly notes: readonly string[]
+  /** Native status message; null when the figure is fully readable. */
+  readonly stateMessage: string | null
 }
 
 export interface CahierCurveProjection extends CahierFigureProjectionBase {
@@ -509,9 +531,11 @@ export function projectRamps(
     accessibleLabel,
     tables,
     comparisonDisplayed,
-    unavailable: capture.comparison.display.reason === 'error' ? ['Comparaison indisponible'] : [],
+    unavailable: capture.comparison.display.reason === 'error'
+      ? [{ kind: 'comparison', message: 'Comparaison indisponible' }]
+      : [],
     ramps,
-    comparisonLabel: figure.model.comparisonLabel,
+    comparisonLabel: comparisonDisplayed ? figure.model.comparisonLabel : null,
   }
 }
 
@@ -527,7 +551,7 @@ export function projectOverview(
       label: scalar.label,
       value: scalar.value,
       unit: scalar.unit,
-      display: displayNumber(scalar.value),
+      display: aedarOverviewScalarDisplayValue(scalar),
       ariaLabel: aedarOverviewScalarAria(
         { scalarFigureTitle: figure.model.scalarFigureTitle },
         scalar,
@@ -562,12 +586,14 @@ export function projectOverview(
     key: scalar.key,
     label: scalar.label,
     cells: [
-      cell({ columnKey: 'value', value: scalar.value, display: `${scalar.display} ${scalar.unit}`, unit: scalar.unit }),
+      cell({ columnKey: 'value', value: scalar.value, display: scalar.display, unit: scalar.unit }),
       ...(comparisonDisplayed
         ? [cell({
           columnKey: 'comparison',
           value: scalar.reference?.value ?? null,
-          display: scalar.reference?.display ?? CAHIER_UNAVAILABLE_LABEL,
+          display: scalar.reference
+            ? formatTimeRampNumber(scalar.reference.value)
+            : CAHIER_UNAVAILABLE_LABEL,
           unit: scalar.reference?.unit ?? scalar.unit,
           rank: scalar.rank
             ? { position: scalar.rank.position, size: scalar.rank.size, ties: scalar.rank.ties }
@@ -595,45 +621,28 @@ export function projectOverview(
     comparisonDisplayed,
     unavailable: [],
     scalars,
-    maps: mapProjection(capture, 'aedar-car-overview', figure.model.horizonMinutes, figure.model.mapModes),
-    comparisonLabel: figure.model.comparisonLabel,
+    maps: mapProjection(capture),
+    comparisonLabel: comparisonDisplayed ? figure.model.comparisonLabel : null,
   }
 }
 
 function mapProjection(
   capture: CahierExportCapture,
-  family: 'aedar-car-overview' | 'aedar-diversity-loss' | 'mobilite-bars',
-  horizonMinutes: number | null,
-  mapModes: readonly string[],
-  legendDetail: CahierMapsProjection['legendDetail'] = null,
   groups: readonly { key: string; label: string }[] = [],
 ): CahierMapsProjection {
-  const code = capture.identity.territory.code
-  const items = capture.capabilities.maps.items.map((item) => {
-    const mode = item.id as Parameters<typeof aedarDiversityLossMapAssetUrl>[1]
-    return {
+  return {
+    status: capture.capabilities.maps.status,
+    legend: capture.capabilities.maps.legend,
+    items: capture.capabilities.maps.items.map((item) => ({
       id: item.id,
       label: item.label,
       declared: item.declared,
       loaded: item.loaded,
       unavailable: item.unavailable,
-      inlineUrl: family === 'aedar-diversity-loss' && item.declared
-        ? aedarDiversityLossMapAssetUrl(code, mode, 'inline')
-        : null,
-      inspectionUrl: family === 'aedar-diversity-loss' && item.declared
-        ? aedarDiversityLossMapAssetUrl(code, mode, 'inspection')
-        : family === 'aedar-car-overview' && item.id === 'car'
-          && horizonMinutes === AEDAR_CAR_MAP_HORIZON_MINUTES && mapModes.includes('car')
-          ? aedarCarMapAssetUrl(code, 'inspection')
-          : null,
-    }
-  })
-  return {
-    status: capture.capabilities.maps.status,
-    legend: capture.capabilities.maps.legend,
-    items,
-    // Declared legend copy is exported only once its owner reports it drawn.
-    legendDetail: capture.capabilities.maps.legend === 'available' ? legendDetail : null,
+      // Asset URL and loaded state stay distinct; the owner supplies the actual URL.
+      inlineUrl: item.inlineUrl,
+    })),
+    legendDetail: capture.capabilities.maps.legendDetail,
     groups,
   }
 }
@@ -699,7 +708,9 @@ export function projectProfile(
       unit: '%',
     }],
     comparisonDisplayed: false,
-    unavailable: reading.profile?.status === 'complete' ? [] : [reading.summary],
+    unavailable: reading.profile?.status === 'complete'
+      ? []
+      : [{ kind: 'values', message: reading.summary }],
     horizonMinutes,
     threshold: figure.model.threshold,
     summary: reading.summary,
@@ -707,6 +718,22 @@ export function projectProfile(
     modes,
     types,
   }
+}
+
+function freezeGroupedBarsProjection(
+  figure: CahierGroupedVerticalBarFigureData,
+  hiddenSeriesKeys: readonly string[],
+): CahierGroupedBarsProjection {
+  const categories = Object.freeze(figure.categories.map((category) => Object.freeze({ ...category })))
+  const series = Object.freeze(figure.series.map((entry) => Object.freeze({
+    ...entry,
+    values: Object.freeze([...entry.values]),
+    ...(entry.ranks ? { ranks: Object.freeze([...entry.ranks]) } : {}),
+  })))
+  return Object.freeze({
+    figure: Object.freeze({ ...figure, categories, series }),
+    hiddenSeriesKeys: Object.freeze([...hiddenSeriesKeys]),
+  })
 }
 
 export function projectExplorer(
@@ -732,7 +759,8 @@ export function projectExplorer(
     referenceDetail: figure.effective.referenceDetail,
     comparisonRequestPresent: model.comparisonRequestLabel !== null,
     comparisonLabel: model.comparisonRequestLabel ?? model.referenceLabel,
-    comparisonLayerSupported: volumeDisplayed,
+    // Owner capability (eligibility), not a layer's observed display state.
+    comparisonLayerSupported: capture.comparison.eligible,
     volumeYAxisTitle: figure.model.volumeYAxisTitle,
   }
   const volumeRamp = aedarExplorerVolumeRamp(volumeInput)
@@ -777,27 +805,12 @@ export function projectExplorer(
     referenceFact: figure.effective.referenceDetail,
     comparisonLabel: volumeInput.comparisonLabel,
     comparisonVisible: distributionDisplayed,
-    comparisonLayerSupported: distributionDisplayed,
+    // The native model keeps its supported reference series; only drawing/table
+    // visibility is governed by the owner-observed layer.
+    comparisonLayerSupported: capture.comparison.eligible,
   })
   const distFigure = quantile.figure
-  const distribution: CahierGroupedBarsProjection = {
-    title: figure.model.distributionFigureTitle,
-    categories: distFigure.categories.map((category) => ({
-      key: category.key,
-      label: category.label,
-      axisLabel: category.axisLabel,
-    })),
-    series: distFigure.series
-      .filter((series) => !quantile.hiddenSeriesKeys.includes(series.key))
-      .map((series) => ({
-        key: series.key,
-        label: series.label,
-        comparisonFor: series.comparisonFor ?? null,
-        values: [...series.values],
-      })),
-    hiddenSeriesKeys: quantile.hiddenSeriesKeys,
-    description: distFigure.description,
-  }
+  const distribution = freezeGroupedBarsProjection(distFigure, quantile.hiddenSeriesKeys)
   const comparisonVisible = distributionDisplayed
     && distFigure.series.some((series) => series.comparisonFor)
   const distributionColumns: CahierTableColumn[] = distFigure.categories.flatMap((category) => [
@@ -877,9 +890,12 @@ export function projectExplorer(
     tables: [volumeTable, distributionTable],
     comparisonDisplayed: volumeDisplayed || distributionDisplayed,
     unavailable: [
-      ...(figure.effective.detailStatus === 'error' ? ['Valeurs indisponibles pour ce type d’équipement'] : []),
+      ...(figure.effective.detailStatus === 'error'
+        ? [{ kind: 'values' as const, message: 'Valeurs indisponibles pour ce type d’équipement' }]
+        : []),
       ...((figure.effective.comparisonError && figure.effective.comparisonStatus === 'error')
-        ? [`Comparaison indisponible : ${figure.effective.comparisonError}`] : []),
+        ? [{ kind: 'comparison' as const, message: `Comparaison indisponible : ${figure.effective.comparisonError}` }]
+        : []),
     ],
     typequ,
     typequLabel: figure.effective.typequLabel,
@@ -939,19 +955,29 @@ export function projectBars(
     ? figure.model.ratio?.value.fact.comparison?.rank ?? null
     : null
   const ratioRank = formatServedRank(ratioRankCandidate) ? ratioRankCandidate : null
+  const ratioAria = figure.model.ratio
+    ? mobiliteRatioAriaLabel({
+      ratio: figure.model.ratio,
+      scope: evidence.comparisonLabel,
+      status: capture.comparison.status,
+      error: capture.comparison.error ?? undefined,
+      comparisonIneligible: capture.comparison.absent === 'not-eligible',
+    })
+    : null
   const ratio = figure.model.ratio
     ? {
       label: figure.model.ratio.label,
       value: figure.model.ratio.value.fact.value,
       unit: figure.model.ratio.value.fact.unit,
-      display: mobiliteRatioValueLabel(figure.model.ratio),
+      display: mobiliteRatioDisplayValue(figure.model.ratio),
+      ariaLabel: ratioAria ?? '',
       comparisonDisplayed: ratioDisplayed && Boolean(figure.model.ratio.value.fact.comparison?.reference),
       comparisonValue: ratioDisplayed
         ? figure.model.ratio.value.fact.comparison?.reference?.value ?? null
         : null,
       comparisonDisplay: ratioDisplayed
         ? (figure.model.ratio.value.fact.comparison?.reference
-          ? formatTimeRampNumber(figure.model.ratio.value.fact.comparison.reference.value)
+          ? mobiliteRatioNumber(figure.model.ratio.value.fact.comparison.reference.value)
           : null)
         : null,
       comparisonRank: ratioRank,
@@ -1007,16 +1033,26 @@ export function projectBars(
       unit: evidence.unit,
     }],
     comparisonDisplayed: showComparison || (ratio?.comparisonDisplayed ?? false),
-    unavailable: notes.filter((note) => note.startsWith('Publication indisponible')
-      || note.startsWith('Comparaison indisponible')),
+    unavailable: [
+      ...(evidence.unavailableResources ?? []).map((label) => ({
+        kind: 'resource' as const,
+        message: `Publication indisponible : ${label}`,
+      })),
+      ...(evidence.unavailableComparisons ?? []).map((label) => ({
+        kind: 'comparison' as const,
+        message: `Comparaison indisponible : ${label}`,
+      })),
+    ],
     figureTitle: evidence.figureTitle,
     unit: evidence.unit,
     xAxisTitle: evidence.xAxisTitle,
     yAxisTitle: evidence.yAxisTitle,
-    comparisonLabel: evidence.comparisonLabel,
+    comparisonLabel: showComparison || (ratio?.comparisonDisplayed ?? false)
+      ? evidence.comparisonLabel
+      : null,
     maps: capture.capabilities.maps.status === 'none'
       ? null
-      : mapProjection(capture, 'mobilite-bars', null, []),
+      : mapProjection(capture),
     ratio,
   }
 }
@@ -1025,18 +1061,30 @@ export function projectShare(
   capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'mobilite-share' }>,
 ): CahierShareProjection {
-  const evidence = figure.model as unknown as MobiliteShareEvidence
-  const displayed = layerDisplayed(capture, 'share') && capture.comparison.absent !== 'empty-selection'
+  const evidence = figure.model
+  const status = capture.comparison.status
+  const comparisonNone = capture.comparison.absent === 'empty-selection'
+    || capture.comparison.absent === 'not-eligible'
+  const displayed = layerDisplayed(capture, 'share') && status === 'ready' && !comparisonNone
   const value = mobiliteShareValue(evidence)
-  const reference = displayed
-    ? mobiliteShareReference({ figure: evidence, status: 'ready', comparisonNone: false })
-    : null
+  const reference = mobiliteShareReference({ figure: evidence, status, comparisonNone })
   const comparison = evidence.value.fact.comparison
   // The shared rank contract suppresses a singleton (1/1) in every projection.
   const candidateRank = displayed ? comparison?.rank ?? null : null
   const rank = formatServedRank(candidateRank) ? candidateRank : null
   const rankDisplay = formatServedRank(rank)
   const rankAria = formatServedRankAria(rank)
+  const notes = mobiliteSharePublicationNotes({ figure: evidence, comparisonNone })
+  const stateMessage = mobiliteShareStateMessage({
+    figure: evidence,
+    status,
+    error: capture.comparison.error ?? undefined,
+    comparisonNone,
+  })
+  const territoryAria = mobiliteShareTerritoryAria(evidence)
+  const comparisonAria = displayed
+    ? mobiliteShareComparisonAria({ figure: evidence, status, comparisonNone })
+    : null
   const rows: CahierTableRow[] = [{
     key: 'territory',
     label: evidence.territoryName,
@@ -1059,9 +1107,7 @@ export function projectShare(
     family: 'mobilite-share',
     slot: figure.slot,
     title: evidence.figureTitle,
-    accessibleLabel: displayed
-      ? `${mobiliteShareTerritoryAria(evidence)} ${mobiliteShareComparisonAria({ figure: evidence, status: 'ready' })}`
-      : mobiliteShareTerritoryAria(evidence),
+    accessibleLabel: comparisonAria ? `${territoryAria} ${comparisonAria}` : territoryAria,
     tables: [{
       key: 'share',
       title: evidence.figureTitle,
@@ -1073,11 +1119,22 @@ export function projectShare(
         }] : []),
       ],
       rows,
-      notes: [],
+      notes,
       unit: mobiliteShareDisplayUnit(evidence),
     }],
     comparisonDisplayed: displayed,
-    unavailable: [],
+    unavailable: [
+      ...(evidence.unavailableResources ?? []).map((label) => ({
+        kind: 'resource' as const,
+        message: `Publication indisponible : ${label}`,
+      })),
+      ...(comparisonNone
+        ? []
+        : (evidence.unavailableComparisons ?? []).map((label) => ({
+          kind: 'comparison' as const,
+          message: `Comparaison indisponible : ${label}`,
+        }))),
+    ],
     figureTitle: evidence.figureTitle,
     territoryName: evidence.territoryName,
     unit: mobiliteShareDisplayUnit(evidence),
@@ -1090,7 +1147,11 @@ export function projectShare(
     comparisonRank: rank,
     comparisonRankDisplay: rankDisplay,
     comparisonRankAria: rankAria,
-    comparisonLabel: evidence.comparisonLabel,
+    comparisonLabel: displayed ? evidence.comparisonLabel : null,
+    territoryAria,
+    comparisonAria,
+    notes,
+    stateMessage,
   }
 }
 
@@ -1098,11 +1159,20 @@ export function projectCurve(
   capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'mobilite-curve' }>,
 ): CahierCurveProjection {
-  const evidence = figure.model as unknown as MobiliteRaccordementEvidence
+  const evidence = figure.model
   const displayed = layerDisplayed(capture, 'curve')
   const readings = mobiliteCurveReadings({ figure: evidence, showComparison: displayed })
   const unit = evidence.points[0]?.fact.unit ?? '%'
-  const detail = mobiliteCurveComparisonDetail(evidence)
+  const unavailable: readonly CahierUnavailableItem[] = [
+    ...(evidence.unavailableResources ?? []).map((label) => ({
+      kind: 'resource' as const,
+      message: `Publication indisponible : ${label}`,
+    })),
+    ...(evidence.unavailableComparisons ?? []).map((label) => ({
+      kind: 'comparison' as const,
+      message: `Comparaison indisponible : ${label}`,
+    })),
+  ]
   const marker = evidence.trajectory?.marker
   const markerReading = marker
     ? readings.find((reading) => reading.detail === marker.detail) ?? null
@@ -1135,16 +1205,11 @@ export function projectCurve(
     family: 'mobilite-curve',
     slot: figure.slot,
     title: evidence.figureTitle,
-    accessibleLabel: [
-      evidence.figureTitle,
-      `Axe horizontal : ${evidence.xAxisTitle}.`,
-      `Axe vertical : ${evidence.trajectory?.axisLabels?.y ?? 'population joignable (%)'}.`,
-      `Territoire : ${readings.map((reading) => `${reading.label} ${reading.aria}`).join(' ; ')}.`,
-      displayed && detail
-        ? `Groupe comparé — ${detail.statistic} des ${detail.label} : ${readings.map((reading) => `${reading.label} ${reading.comparisonAria ?? CAHIER_UNAVAILABLE_LABEL}`).join(' ; ')}.`
-        : '',
-      marker ? `Repère : ${marker.label}.${markerRankAria ? ` Rang ${markerRankAria}.` : ''}` : '',
-    ].filter(Boolean).join(' '),
+    accessibleLabel: mobiliteCurveAccessibleLabel({
+      figure: evidence,
+      showComparison: displayed,
+      notes: unavailable.map((item) => item.message),
+    }),
     tables: [{
       key: 'curve',
       title: evidence.figureTitle,
@@ -1159,10 +1224,7 @@ export function projectCurve(
       unit,
     }],
     comparisonDisplayed: displayed,
-    unavailable: [
-      ...(evidence.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
-      ...(evidence.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`),
-    ],
+    unavailable,
     figureTitle: evidence.figureTitle,
     xAxisTitle: evidence.xAxisTitle,
     yAxisTitle: evidence.trajectory?.axisLabels?.y ?? 'population joignable (%)',
@@ -1179,7 +1241,7 @@ export function projectCurve(
       rankDisplay: markerRankDisplay,
       rankAria: markerRankAria,
     } : null,
-    comparisonLabel: evidence.comparisonLabel,
+    comparisonLabel: displayed ? evidence.comparisonLabel : null,
   }
 }
 
@@ -1196,16 +1258,11 @@ export function projectMaps(
     tables: [],
     comparisonDisplayed: false,
     unavailable: figure.model.metadataState === 'unavailable'
-      ? ['Légende indisponible']
-      : figure.model.metadataState === 'loading' ? ['Légende en chargement'] : [],
-    maps: mapProjection(
-      capture,
-      'aedar-diversity-loss',
-      figure.model.horizonMinutes,
-      figure.model.maps.map((map) => map.mode),
-      legend,
-      figure.model.comparisonGroups,
-    ),
+      ? [{ kind: 'legend', message: 'Légende indisponible' }]
+      : figure.model.metadataState === 'loading'
+        ? [{ kind: 'legend', message: 'Légende en chargement' }]
+        : [],
+    maps: mapProjection(capture, figure.model.comparisonGroups),
   }
 }
 

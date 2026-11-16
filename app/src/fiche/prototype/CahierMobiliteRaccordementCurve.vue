@@ -28,13 +28,13 @@ import type {
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import type { MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
 import type { NumericFact } from '@/fiche/content/territoryFacts'
-import { formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import ComparisonUnavailableCue from '@/components/fiche/ComparisonUnavailableCue.vue'
 import {
-  mobiliteCurveAriaPercent,
-  mobiliteCurveComparisonDetail,
+  mobiliteCurveAccessibleLabel,
+  mobiliteCurveAxisForDetail,
+  mobiliteCurveCurvesCoincide,
+  mobiliteCurveGrid,
   mobiliteCurveReadings,
-  mobiliteCurveTickLabel,
   mobiliteCurveTooltipRows,
 } from './cahierMobiliteReadings'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
@@ -83,22 +83,9 @@ const hoveredTickKey = ref<string | null>(null)
 const pinnedTickKey = ref<string | null>(null)
 const selectedTickKey = computed(() => pinnedTickKey.value ?? hoveredTickKey.value)
 
-const ariaPercent = mobiliteCurveAriaPercent
-const tickLabel = mobiliteCurveTickLabel
-
-const axisByDetail = computed(() => new Map(
-  (props.figure.axis?.values ?? []).map((value) => [value.detail, value.numericValue]),
-))
-
-function axisForDetail(detail: string | null): number | null {
-  if (!detail) return null
-  const declared = axisByDetail.value.get(detail)
-  return declared !== undefined && Number.isFinite(declared) ? declared : null
-}
-
 function axisForFact(fact: NumericFact): number | null {
   if (typeof fact.axisValue === 'number' && Number.isFinite(fact.axisValue)) return fact.axisValue
-  return axisForDetail(fact.detail)
+  return mobiliteCurveAxisForDetail(props.figure, fact.detail)
 }
 
 const axisDomain = computed(() => props.figure.axis
@@ -149,20 +136,17 @@ const drawablePoints = computed(() => props.figure.points.flatMap((point) => {
 }))
 const hasDrawablePoints = computed(() => drawablePoints.value.length > 0)
 
-const declaredTicks = computed(() => props.figure.trajectory?.ticks ?? [])
+const curveGrid = computed(() => mobiliteCurveGrid(props.figure))
 
 /**
- * Tick labels read the published numeric axis value (minutes), never the
- * `tXXXX` key: 0 stays « 0 », the sub-hour ticks name their unit, and the
- * published hour labels are kept verbatim. No duplicate « min » is appended
- * when the declared label already carries a unit.
+ * Tick labels and their declared order come from the shared grid builder; only
+ * the rendered position is geometry-specific.
  */
-const xTicks = computed<readonly CahierFigureAxisTick[]>(() => declaredTicks.value.flatMap((tick) => {
-  const axisValue = axisForDetail(tick.detail)
-  return axisValue === null
-    ? []
-    : [{ key: tick.detail, label: tickLabel(tick, axisValue), position: xForAxis(axisValue) }]
-}))
+const xTicks = computed<readonly CahierFigureAxisTick[]>(() => curveGrid.value.map((tick) => ({
+  key: tick.detail,
+  label: tick.label,
+  position: xForAxis(tick.axisValue),
+})))
 const yTicks = computed<readonly CahierFigureAxisTick[]>(() => Y_TICKS.map((value) => ({
   key: value,
   label: `${value * 100} %`,
@@ -206,14 +190,16 @@ const visibleXTicks = computed<readonly CahierFigureAxisTick[]>(() => {
   add(ticks[0])
   add(ticks.find((tick) => marker.value && String(tick.key) === marker.value.detail))
   add(ticks.at(-1))
-  for (const tick of ticks.filter((tick) => declaredTicks.value.find((declared) =>
-    declared.detail === String(tick.key))?.mobile)) add(tick)
+  const mobileKeys = new Set(curveGrid.value.filter((tick) => tick.mobile).map((tick) => tick.detail))
+  for (const tick of ticks.filter((tick) => mobileKeys.has(String(tick.key)))) add(tick)
   for (const tick of ticks) add(tick)
   return [...selected].sort((left, right) => left.position - right.position)
 })
 
 const marker = computed(() => props.figure.trajectory?.marker ?? null)
-const markerAxisValue = computed(() => marker.value ? axisForDetail(marker.value.detail) : null)
+const markerAxisValue = computed(() => marker.value
+  ? mobiliteCurveAxisForDetail(props.figure, marker.value.detail)
+  : null)
 const markerX = computed(() => markerAxisValue.value === null ? null : xForAxis(markerAxisValue.value))
 
 const comparisonAvailable = computed(() =>
@@ -226,37 +212,16 @@ const curveReadings = computed(() => mobiliteCurveReadings({
   showComparison: showComparison.value,
 }))
 
-const comparisonDetail = computed(() => mobiliteCurveComparisonDetail(props.figure))
-
-const curvesCoincide = computed(() => {
-  const comparison = props.figure.comparison
-  if (!comparison || comparison.points.length !== props.figure.points.length) return false
-  const values = new Map(comparison.points.map((point) => [point.fact.detail, point.fact.value]))
-  return props.figure.points.every((point) => values.get(point.fact.detail) === point.fact.value)
-})
+const curvesCoincide = computed(() => mobiliteCurveCurvesCoincide(props.figure))
 
 const publicationNotes = computed(() => [
   ...(props.figure.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
   ...(props.figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`),
 ])
 
-const markerComparison = computed(() => props.figure.markerValue?.fact.comparison ?? null)
-const markerRankAria = computed(() => {
-  const comparison = markerComparison.value
-  if (!showComparison.value || !comparison?.rank) return null
-  return puceRangDirection(comparison.rank, comparison.direction, comparisonDetail.value?.label)?.phraseAria
-    ?? formatServedRankAria(comparison.rank)
-})
-
 function pointAt(detail: string, points: readonly { fact: NumericFact }[]): NumericFact | null {
   return points.find((point) => point.fact.detail === detail)?.fact ?? null
 }
-
-function tickAriaValue(detail: string, points: readonly { fact: NumericFact }[], unit: string): string {
-  return ariaPercent(pointAt(detail, points)?.value ?? null, unit)
-}
-
-const curveUnit = computed(() => props.figure.points[0]?.fact.unit ?? '%')
 
 const comparisonStateText = computed(() => {
   if (props.comparisonNone) return null
@@ -271,30 +236,12 @@ const comparisonStateText = computed(() => {
   return ''
 })
 
-const accessibleLabel = computed(() => {
-  const readings = xTicks.value
-    .map((tick) => `${tick.label} : ${tickAriaValue(String(tick.key), props.figure.points, curveUnit.value)}`)
-    .join(' ; ')
-  const comparisonReadings = showComparison.value && props.figure.comparison
-    ? xTicks.value
-      .map((tick) => `${tick.label} : ${tickAriaValue(String(tick.key), props.figure.comparison!.points, curveUnit.value)}`)
-      .join(' ; ')
-    : ''
-  const markerReading = marker.value
-    ? ` Repère : ${marker.value.label}.${markerRankAria.value ? ` Rang ${markerRankAria.value}.` : ''}`
-    : ''
-  const comparisonReading = comparisonReadings && comparisonDetail.value
-    ? ` ${GROUPE_COMPARE_LABEL} — ${comparisonDetail.value.statistic} des ${comparisonDetail.value.label} : ${comparisonReadings}.`
-    : ''
-  const coincidence = curvesCoincide.value && showComparison.value
-    ? ' Le groupe comparé est superposé au territoire dans cette sélection.'
-    : ''
-  const notes = [...publicationNotes.value, comparisonStateText.value].filter(Boolean).join(' ')
-  return `${props.figure.figureTitle}. Courbe cumulative de la population bretonne joignable selon le temps de trajet. ` +
-    `Axe horizontal : ${props.figure.xAxisTitle}. ` +
-    `Axe vertical : ${props.figure.trajectory?.axisLabels?.y ?? 'population joignable (%)'}. ` +
-    `Territoire : ${readings}.${comparisonReading}${coincidence}${markerReading}${notes ? ` ${notes}` : ''}`
-})
+const accessibleLabel = computed(() => mobiliteCurveAccessibleLabel({
+  figure: props.figure,
+  showComparison: showComparison.value,
+  notes: [...publicationNotes.value, comparisonStateText.value]
+    .filter((note): note is string => Boolean(note)),
+}))
 
 const selectedTick = computed(() => xTicks.value.find((tick) => String(tick.key) === selectedTickKey.value) ?? null)
 const selectedTickTitle = computed(() => selectedTick.value?.label ?? '')

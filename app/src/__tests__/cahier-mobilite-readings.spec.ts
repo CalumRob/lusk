@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type {
   ContentFact,
   MobiliteBarsFigureEvidence,
+  MobiliteRatioEvidence,
   MobiliteRaccordementEvidence,
   MobiliteShareEvidence,
 } from '@/fiche/content/themeContent'
@@ -11,8 +12,12 @@ import {
   mobiliteBarReadings,
   mobiliteBarTooltipRows,
   mobiliteBarsAccessibleLabel,
+  mobiliteCurveAccessibleLabel,
   mobiliteCurveReadings,
   mobiliteCurveTooltipRows,
+  mobiliteRatioAriaLabel,
+  mobiliteRatioDisplayValue,
+  mobiliteRatioValueLabel,
   mobiliteShareComparisonAria,
   mobiliteSharePreciseLabel,
   mobiliteShareReference,
@@ -307,5 +312,58 @@ describe('Mobilité coverage-share and raccordement readings (#1022)', () => {
     expect(hidden.every((reading) => reading.comparisonDisplay === null && reading.comparisonRank === null)).toBe(true)
     const hiddenRows = mobiliteCurveTooltipRows({ figure, reading: hidden[1]!, showComparison: false })
     expect(hiddenRows[0]?.comparison).toBeUndefined()
+
+    const noTicks = { ...figure, trajectory: null }
+    expect(mobiliteCurveReadings({ figure: noTicks, showComparison: true })).toEqual([])
+    const noTicksLabel = mobiliteCurveAccessibleLabel({ figure: noTicks, showComparison: true, notes: [] })
+    expect(noTicksLabel).toContain('Territoire : .')
+    expect(noTicksLabel).not.toContain('15 min')
+    expect(noTicksLabel).not.toContain('90 min')
+  })
+})
+
+describe('Mobilité ratio scalar owner formatter (#1022)', () => {
+  function ratio(value: number | null): MobiliteRatioEvidence {
+    return {
+      label: 'Places de stationnement vélo pour 1 place voiture',
+      note: null,
+      value: {
+        label: 'Places de stationnement vélo pour 1 place voiture',
+        fact: {
+          key: 'stationnement_velo_par_voiture', detail: null, value,
+          unit: 'places vélo / place voiture', availability: 'complete', provenance: null,
+          comparison: {
+            direction: 'plus-est-mieux',
+            scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+            reference: { kind: 'median', value: 0.3 },
+            rank: { position: 2, size: 3 },
+          },
+          comparisonBasis: 'territory-median', reason: null,
+        },
+      },
+    }
+  }
+
+  it('keeps the scalar number bare and the unit/aria separate, matching the mounted scalar', () => {
+    expect(mobiliteRatioDisplayValue(ratio(1.234))).toBe('1,2')
+    expect(mobiliteRatioValueLabel(ratio(1.234))).toBe('1,2 places vélo / place voiture')
+    expect(mobiliteRatioDisplayValue(ratio(0))).toBe('0')
+    expect(mobiliteRatioDisplayValue(ratio(null))).toBe('—')
+    expect(mobiliteRatioValueLabel(ratio(null))).toBe('Indisponible')
+    const aria = mobiliteRatioAriaLabel({
+      ratio: ratio(1.234), scope: 'communes de EPCI X', status: 'ready', comparisonIneligible: false,
+    })
+    expect(aria).toContain('Places de stationnement vélo pour 1 place voiture : 1,2 places vélo / place voiture')
+    expect(aria).toContain('Référence 0,3 places vélo / place voiture (communes de EPCI X)')
+    expect(aria).toContain('Rang 2e/3')
+    expect(mobiliteRatioAriaLabel({
+      ratio: ratio(1.234), scope: null, status: 'ready', comparisonIneligible: true,
+    })).toBe('Places de stationnement vélo pour 1 place voiture : 1,2 places vélo / place voiture')
+  })
+
+  it('keeps zero distinct from absent and preserves a small non-zero numeric in the owner', () => {
+    expect(ratio(0).value.fact.value).toBe(0)
+    expect(ratio(0.04).value.fact.value).toBe(0.04)
+    expect(mobiliteRatioDisplayValue(ratio(0.04))).toBe('0')
   })
 })

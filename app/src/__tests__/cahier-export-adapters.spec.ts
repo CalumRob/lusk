@@ -301,7 +301,10 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
           owner: 'map-availability',
           state: {
             legend: 'none',
-            maps: [{ id: 'car', label: 'Voiture', declared: true, loaded: true, unavailable: false }],
+            maps: [{
+              id: 'car', label: 'Voiture', declared: true, loaded: true, unavailable: false,
+              inlineUrl: 'https://images.calumrobertson.fr/maps/aedar/v1/22001-car-inline.webp',
+            }],
           },
         },
       },
@@ -315,15 +318,29 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
         ['meanDiversity', 5, '5', 5],
         ['meanVolume', 5, '5', 5],
       ])
-    expect(projection.tables[0]?.rows.map((row) => [row.key, row.cells[0]?.display, row.cells[1]?.display]))
+    expect(projection.tables[0]?.rows.map((row) => [
+      row.key, row.cells[0]?.display, row.cells[0]?.unit, row.cells[1]?.display,
+    ]))
       .toEqual([
-        ['meanDiversity', '5 types / adresse', '5 types / adresse'],
-        ['meanVolume', '5 établissements / adresse', '5 établissements / adresse'],
+        ['meanDiversity', '5', 'types / adresse', '5'],
+        ['meanVolume', '5', 'établissements / adresse', '5'],
       ])
     expect(projection.maps.status).toBe('available')
-    expect(projection.maps.items[0]?.inspectionUrl).toBe(
-      'https://images.calumrobertson.fr/maps/aedar/v1/22001-car-inspection.webp',
+    expect(projection.maps.items[0]?.inlineUrl).toBe(
+      'https://images.calumrobertson.fr/maps/aedar/v1/22001-car-inline.webp',
     )
+
+    const hidden = captureCahierSection(inputFor(
+      fixture,
+      sectionOf(fixture.content, 'aedar-car-overview'),
+    ))
+    const hiddenProjection = projeterRequeteExportFigures(requestFor(hidden))[0]!
+    if (hiddenProjection.family !== 'aedar-car-overview') throw new Error('overview expected')
+    expect(hiddenProjection.comparisonDisplayed).toBe(false)
+    expect(hiddenProjection.comparisonLabel).toBeNull()
+    expect(hiddenProjection.scalars.every((scalar) => scalar.reference === null && scalar.rank === null))
+      .toBe(true)
+    expect(hiddenProjection.tables[0]?.columns.map((column) => column.kind)).toEqual(['focal'])
   })
 
   it('projects the diversity maps and legend from their owner observations, never from pixels', () => {
@@ -346,10 +363,28 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
         owner: 'map-availability',
         state: {
           legend: 'available',
+          legendDetail: {
+            title: 'Types d’équipements perdus par rapport à la voiture',
+            minimum: null,
+            maximum: null,
+            colors: ['#f1f2ec', '#9db7ad', '#3f6f63'],
+            tickLabels: ['0', '1', '2+'],
+            note: 'Lecture de la perte de diversité.',
+            ariaLabel: 'Types d’équipements perdus par rapport à la voiture',
+          },
           maps: [
-            { id: 'walk', label: 'À pied', declared: true, loaded: true, unavailable: false },
-            { id: 'transit', label: 'Transports en commun', declared: true, loaded: false, unavailable: true },
-            { id: 'bike_lts2', label: 'Vélo (LTS2)', declared: false, loaded: false, unavailable: true },
+            {
+              id: 'walk', label: 'À pied', declared: true, loaded: true, unavailable: false,
+              inlineUrl: 'https://images.calumrobertson.fr/maps/aedar/v1/22001-walk-inline.webp',
+            },
+            {
+              id: 'transit', label: 'Transports en commun', declared: true, loaded: false, unavailable: true,
+              inlineUrl: 'https://images.calumrobertson.fr/maps/aedar/v1/22001-transit-inline.webp',
+            },
+            {
+              id: 'bike_lts2', label: 'Vélo (LTS2)', declared: false, loaded: false, unavailable: true,
+              inlineUrl: null,
+            },
           ],
         },
       },
@@ -367,10 +402,8 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
     expect(projection.maps.items[0]?.inlineUrl).toBe(
       'https://images.calumrobertson.fr/maps/aedar/v1/22001-walk-inline.webp',
     )
-    expect(projection.maps.items[0]?.inspectionUrl).toBe(
-      'https://images.calumrobertson.fr/maps/aedar/v1/22001-walk-inspection.webp',
-    )
     expect(projection.maps.items[1]?.inlineUrl).toContain('22001-transit-inline.webp')
+    expect(projection.maps.items[2]?.inlineUrl).toBeNull()
   })
 
   it('projects the current waffle horizon with every declared mode share', () => {
@@ -443,10 +476,22 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
     const projections = projeterRequeteExportFigures(requestFor(capture, ['car']))
     const projection = projections[0]!
     if (projection.family !== 'aedar-equipment-explorer') throw new Error('explorer expected')
-    expect(projection.distribution.categories.map((category) => category.key)).toEqual([
+    expect(projection.distribution.figure.categories.map((category) => category.key)).toEqual([
       'min', 'decile1', 'decile2', 'decile3', 'decile4', 'decile5',
       'decile6', 'decile7', 'decile8', 'decile9', 'max',
     ])
+    // The projection carries the native renderer model, not a reduced drawing shape.
+    expect(projection.distribution.figure.xAxisTitle).toBe(model.distributionAxisTitle)
+    expect(projection.distribution.figure.yAxisTitle).toBe(model.distributionYAxisTitle)
+    expect(projection.distribution.figure.formatValue).toBeTypeOf('function')
+    expect(projection.distribution.figure.formatAriaValue).toBeTypeOf('function')
+    expect(projection.distribution.figure.formatAxisTick).toBeTypeOf('function')
+    expect(projection.distribution.figure.series[0]?.color).toBe('var(--cahier-mode-car)')
+    expect(projection.distribution.figure.series[0]?.icon).toBeTruthy()
+    expect(projection.distribution.figure.series[1]?.ranks?.[0]).toEqual({ position: 1, size: 3, ties: 2 })
+    expect(Object.isFrozen(projection.distribution.figure)).toBe(true)
+    expect(Object.isFrozen(projection.distribution.figure.series)).toBe(true)
+    expect(Object.isFrozen(projection.distribution.figure.series[0]?.values)).toBe(true)
     const distributionTable = projection.tables.find((table) => table.key === 'distribution')!
     expect(distributionTable.columns).toHaveLength(22)
     expect(distributionTable.rows.map((row) => row.key)).toEqual(['car'])
@@ -470,7 +515,9 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
     expect(hiddenTable.columns).toHaveLength(11)
     expect(hiddenTable.columns.every((column) => column.kind === 'focal')).toBe(true)
     expect(hiddenTable.rows[0]?.cells).toHaveLength(11)
-    expect(hiddenProjection.distribution.series.map((series) => series.key)).toEqual(['car'])
+    expect(hiddenProjection.distribution.figure.series.map((series) => series.key))
+      .toEqual(['car', 'car-reference'])
+    expect(hiddenProjection.distribution.hiddenSeriesKeys).toEqual(['car-reference'])
     expect(hiddenProjection.accessibleLabel).not.toContain('Groupe comparé')
   })
 })
@@ -514,7 +561,10 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
           owner: 'map-availability',
           state: {
             legend: 'none',
-            maps: [{ id: 'car', label: 'Voiture', declared: true, loaded: true, unavailable: false }],
+            maps: [{
+              id: 'car', label: 'Voiture', declared: true, loaded: true, unavailable: false,
+              inlineUrl: 'https://images.calumrobertson.fr/maps/v1/22001-car-inline.webp',
+            }],
           },
         },
       },
@@ -539,7 +589,7 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     expect(table.rows[2]?.cells[1]).toMatchObject({ value: null, display: 'Indisponible', raw: true })
     expect(table.rows[4]?.cells[1]).toMatchObject({ value: null, display: 'Indisponible', raw: true })
     expect(projection.maps?.status).toBe('available')
-    expect(projection.maps?.items[0]?.inspectionUrl).toBeNull()
+    expect(projection.maps?.items[0]?.inlineUrl).toContain('22001-car-inline.webp')
 
     const hidden = captureCahierSection(inputFor(fixture, section, [
       layer('bars', { displayed: false, toggle: false }, 'mobilite-comparison-bars'),
@@ -548,6 +598,7 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     if (hiddenTable.family !== 'mobilite-bars') throw new Error('bars expected')
     expect(hiddenTable.tables[0]?.columns.map((column) => column.key)).toEqual(['focal'])
     expect(hiddenTable.tables[0]?.rows.every((row) => row.cells.length === 1)).toBe(true)
+    expect(hiddenTable.comparisonLabel).toBeNull()
     expect(hiddenTable.accessibleLabel).not.toContain('Groupe comparé')
   })
 
@@ -614,6 +665,11 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     expect(projection.comparisonRankDisplay).toBeNull()
     expect(projection.tables[0]?.rows).toHaveLength(1)
     expect(projection.tables[0]?.rows[0]?.cells).toHaveLength(2)
+    expect(projection.comparisonLabel).toBeTruthy()
+    expect(projection.territoryAria).toContain(`${projection.territoryName} : 99,5736 %`)
+    expect(projection.comparisonAria).toContain('Groupe comparé : 50 %')
+    expect(projection.stateMessage).toBeNull()
+    expect(projection.notes).toEqual([])
 
     const empty = captureCahierSection(inputFor(fixture, section, [
       layer('share', {}, 'mobilite-share-track'),
@@ -622,8 +678,25 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     const emptyProjection = projeterRequeteExportFigures(requestFor(empty))[0]!
     if (emptyProjection.family !== 'mobilite-share') throw new Error('share expected')
     expect(emptyProjection.comparisonDisplayed).toBe(false)
+    expect(emptyProjection.comparisonLabel).toBeNull()
+    expect(emptyProjection.comparisonAria).toBeNull()
     expect(emptyProjection.tables[0]?.rows[0]?.cells).toHaveLength(1)
     expect(emptyProjection.accessibleLabel).not.toContain('Groupe comparé')
+
+    const unavailableSection = cloneSection(fixture, 'couverture-du-territoire', (entry) => {
+      entry.evidence.unavailableResources = ['Ressource de test']
+      entry.evidence.unavailableComparisons = ['Comparaison de test']
+    })
+    const unavailableCapture = captureCahierSection(inputFor(fixture, unavailableSection, [
+      layer('share', { displayed: false, toggle: false }, 'mobilite-share-track'),
+    ]))
+    const unavailableProjection = projeterRequeteExportFigures(requestFor(unavailableCapture))[0]!
+    if (unavailableProjection.family !== 'mobilite-share') throw new Error('share expected')
+    expect(unavailableProjection.notes).toEqual([
+      'Publication indisponible : Ressource de test',
+      'Comparaison indisponible : Comparaison de test',
+    ])
+    expect(unavailableProjection.unavailable.map((item) => item.kind)).toEqual(['resource', 'comparison'])
 
     const ineligible = captureCahierSection(inputFor(fixture, section, [
       layer('share', {}, 'mobilite-share-track'),
@@ -632,6 +705,7 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     const ineligibleProjection = projeterRequeteExportFigures(requestFor(ineligible))[0]!
     if (ineligibleProjection.family !== 'mobilite-share') throw new Error('share expected')
     expect(ineligibleProjection.comparisonDisplayed).toBe(false)
+    expect(ineligibleProjection.comparisonLabel).toBeNull()
     expect(ineligibleProjection.tables[0]?.rows[0]?.cells).toHaveLength(1)
   })
 
@@ -728,6 +802,7 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     if (hiddenProjection.family !== 'mobilite-curve') throw new Error('curve expected')
     expect(hiddenProjection.points.every((reading) => reading.comparisonDisplay === null)).toBe(true)
     expect(hiddenProjection.marker?.rank).toBeNull()
+    expect(hiddenProjection.comparisonLabel).toBeNull()
     expect(hiddenProjection.tables[0]?.columns.map((column) => column.kind)).toEqual(['focal'])
   })
 })

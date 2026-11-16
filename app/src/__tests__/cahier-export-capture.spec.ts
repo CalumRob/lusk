@@ -582,10 +582,14 @@ describe('Cahier export capture — readiness and map availability (#1021)', () 
     const { content } = cahierExportFixture()
     for (const key of ['aedar-car-overview', 'aedar-diversity-loss', 'reseaux'] as const) {
       const capture = captureCahierSection(inputFor(sectionOf(content, key)))
-      expect(capture.capabilities.maps).toEqual({ status: 'unknown', legend: 'unknown', items: [] })
+      expect(capture.capabilities.maps).toEqual({
+        status: 'unknown', legend: 'unknown', items: [], legendDetail: null,
+      })
     }
     const profile = captureCahierSection(inputFor(sectionOf(content, 'aedar-equipment-profile')))
-    expect(profile.capabilities.maps).toEqual({ status: 'none', legend: 'none', items: [] })
+    expect(profile.capabilities.maps).toEqual({
+      status: 'none', legend: 'none', items: [], legendDetail: null,
+    })
   })
 
   it('derives map status only from owner-observed load state', () => {
@@ -596,7 +600,9 @@ describe('Cahier export capture — readiness and map availability (#1021)', () 
       state: {
         owner: 'map-availability',
         state: {
-          maps: maps.map((state) => ({ id: 'car', label: 'Voiture', ...state })),
+          maps: maps.map((state) => ({
+            id: 'car', label: 'Voiture', inlineUrl: null, ...state,
+          })),
           legend: 'available',
         },
       },

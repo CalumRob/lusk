@@ -10,6 +10,7 @@ import type {
 import {
   aedarExplorerVolumeRamp,
   aedarOverviewScalarAria,
+  aedarOverviewScalarDisplayValue,
   aedarOverviewScalarRank,
   aedarQuantileReading,
   aedarWaffleReading,
@@ -185,5 +186,8 @@ describe('AEDAR figure readings (#1022)', () => {
 
     const tied: AedarCarAccessOverviewScalar = { ...scalar, rank: 2, rankSize: 4, rankTies: 2 }
     expect(aedarOverviewScalarRank(tied)).toEqual({ position: 2, size: 4, ties: 2 })
+    expect(aedarOverviewScalarDisplayValue(scalar)).toBe('1')
+    expect(aedarOverviewScalarDisplayValue({ ...scalar, value: 0 })).toBe('0')
+    expect(aedarOverviewScalarDisplayValue({ ...scalar, value: null })).toBe('—')
   })
 })

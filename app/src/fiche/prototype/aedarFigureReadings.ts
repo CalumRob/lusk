@@ -279,6 +279,11 @@ export function aedarExplorerVolumeRamp(input: AedarExplorerReadingInput): TimeR
  * Car-overview scalars and served ranks
  * ------------------------------------------------------------------ */
 
+/** Scalar screen value: absent is an em dash, zero stays a published zero. */
+export function aedarOverviewScalarDisplayValue(scalar: AedarCarAccessOverviewScalar): string {
+  return scalar.value === null ? '—' : formatNumber(scalar.value)
+}
+
 export function aedarOverviewScalarRank(scalar: AedarCarAccessOverviewScalar): ComparisonRank | null {
   if (typeof scalar.rank !== 'number' || typeof scalar.rankSize !== 'number') return null
   const rank = { position: scalar.rank, size: scalar.rankSize, ties: scalar.rankTies ?? null }

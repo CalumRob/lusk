@@ -228,15 +228,28 @@ export interface CahierCaptureComparison {
   readonly statisticLabels: readonly string[]
 }
 
+/** Native legend content observed by a map owner; never reconstructed from pixels. */
+export interface CahierCaptureMapLegendDetail {
+  readonly title: string
+  readonly minimum: number | null
+  readonly maximum: number | null
+  readonly colors: readonly string[]
+  readonly tickLabels: readonly string[]
+  readonly note: string
+  readonly ariaLabel: string | null
+}
+
 export interface CahierCaptureMapItem {
   readonly id: string
   readonly label: string
   /** The owner declares that a map is expected for this item. */
   readonly declared: boolean
-  /** Owner-observed successful asset load; never derived from `declared`. */
+  /** Owner-observed successful inline asset load; never derived from `declared`. */
   readonly loaded: boolean
-  /** Owner-observed failed asset load. */
+  /** Owner-observed failed inline asset load. */
   readonly unavailable: boolean
+  /** The actual inline figure asset URL from the owner's existing path contract. */
+  readonly inlineUrl: string | null
 }
 
 export interface CahierCaptureMaps {
@@ -244,6 +257,8 @@ export interface CahierCaptureMaps {
   readonly status: 'none' | 'unknown' | 'pending' | 'available' | 'partial' | 'unavailable'
   readonly legend: 'none' | 'unknown' | 'pending' | 'available' | 'unavailable'
   readonly items: readonly CahierCaptureMapItem[]
+  /** Owner-observed legend content; null until the owner reports it drawn. */
+  readonly legendDetail: CahierCaptureMapLegendDetail | null
 }
 
 export interface CahierCaptureCapabilities {
@@ -284,6 +299,8 @@ export interface CahierComparisonLayerCaptureState {
 export interface CahierMapAvailabilityCaptureState {
   readonly maps: readonly CahierCaptureMapItem[]
   readonly legend: 'none' | 'pending' | 'available' | 'unavailable'
+  /** Raw owner legend content; the capture only exposes it with `legend: available`. */
+  readonly legendDetail?: CahierCaptureMapLegendDetail | null
 }
 
 export interface CahierMobiliteSectionCaptureState {
@@ -1119,14 +1136,23 @@ function captureMaps(options: {
   const published = publications.filter((publication) => publication.state.owner === 'map-availability')
   if (published.length === 0) {
     return hasMapSurface(family, evidence)
-      ? { status: 'unknown', legend: 'unknown', items: [] }
-      : { status: 'none', legend: 'none', items: [] }
+      ? { status: 'unknown', legend: 'unknown', items: [], legendDetail: null }
+      : { status: 'none', legend: 'none', items: [], legendDetail: null }
   }
   const items = published.flatMap((publication) =>
     publication.state.owner === 'map-availability' ? publication.state.state.maps : [])
   const first = published[0]
   const legend = first?.state.owner === 'map-availability' ? first.state.state.legend : 'unknown'
-  return { status: mapStatus(items), legend, items: deepPlain(items) }
+  const legendDetail = first?.state.owner === 'map-availability'
+    && first.state.state.legend === 'available'
+    ? first.state.state.legendDetail ?? null
+    : null
+  return {
+    status: mapStatus(items),
+    legend,
+    items: deepPlain(items),
+    legendDetail: legendDetail ? deepPlain(legendDetail) : null,
+  }
 }
 
 function mapStatus(items: readonly CahierCaptureMapItem[]): CahierCaptureMaps['status'] {

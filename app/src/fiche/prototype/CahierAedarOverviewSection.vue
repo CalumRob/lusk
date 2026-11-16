@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import type { AedarCarAccessOverviewEvidence } from '@/fiche/content/themeContent'
 import {
   aedarOverviewScalarAria,
+  aedarOverviewScalarDisplayValue,
   aedarOverviewScalarServedRank,
 } from './aedarFigureReadings'
 import CahierBlankMapSlots from './CahierBlankMapSlots.vue'
@@ -30,9 +31,7 @@ useCahierExportPublication(() => ({
     displayed: comparisonEligible.value && referenceAvailable.value,
   },
 }), 'comparison')
-function formatNumber(value: number, maximumFractionDigits = 1): string {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
-}
+
 const scalarServedRank = aedarOverviewScalarServedRank
 </script>
 
@@ -56,7 +55,7 @@ const scalarServedRank = aedarOverviewScalarServedRank
         <CahierFigureScalar
           v-for="scalar in evidence.scalars"
           :key="scalar.key"
-          :value="scalar.value === null ? '—' : formatNumber(scalar.value)"
+          :value="aedarOverviewScalarDisplayValue(scalar)"
           :label="scalar.label"
           label-role="metric"
           :reference-pending="comparisonEligible && scalar.comparisonPending"

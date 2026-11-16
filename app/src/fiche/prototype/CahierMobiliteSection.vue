@@ -12,18 +12,19 @@ import type { Component } from 'vue'
 import { Bike, CarFront, Divide, Fuel, PlugZap } from 'lucide-vue-next'
 
 import { CONTROLE_COMPARAISON_KEY } from '@/fiche/comparisonContext'
-import { formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
-import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
 import type {
   AedarEvidenceSource,
   ContentSource,
   MobiliteContentSection,
   MobiliteNetworksEvidence,
   MobiliteRaccordementEvidence,
-  MobiliteRatioEvidence,
   MobiliteShareEvidence,
   MobiliteStationnementRavitaillementEvidence,
 } from '@/fiche/content/themeContent'
+import {
+  mobiliteRatioAriaLabel,
+  mobiliteRatioDisplayValue,
+} from './cahierMobiliteReadings'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import CahierEvidenceSource from './CahierEvidenceSource.vue'
 import CahierExportScope from './CahierExportScope.vue'
@@ -138,65 +139,21 @@ function ratioParts(columnKey: 'stationnement' | 'ravitaillement'): readonly Rat
   return RATIO_PARTS[columnKey]
 }
 
-function formatRatioValue(value: number): string {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
-}
-
-/** The producer's own scale, never re-based: the placeholder `%VALUE%` is this number. */
-function ratioDisplayValue(ratio: MobiliteRatioEvidence): string {
-  const value = ratio.value.fact.value
-  return value === null ? '—' : formatRatioValue(value)
-}
-
-function ratioValueLabel(ratio: MobiliteRatioEvidence): string {
-  const value = ratio.value.fact.value
-  return value === null
-    ? 'Indisponible'
-    : `${formatRatioValue(value)} ${ratio.value.fact.unit}`
-}
+const ratioDisplayValue = mobiliteRatioDisplayValue
 
 function ratioAriaLabel(
-  ratio: MobiliteRatioEvidence,
+  ratio: Parameters<typeof mobiliteRatioAriaLabel>[0]['ratio'],
   scope: string | null,
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable',
   error?: string,
 ): string {
-  const fact = ratio.value.fact
-  const parts = [`${ratio.label} : ${ratioValueLabel(ratio)}`]
-  if (comparisonIneligible.value) return parts.join('. ')
-  if (fact.value === null) {
-    parts.push(ratio.note ?? 'Valeur indisponible')
-    return parts.join('. ')
-  }
-  if (status === 'loading') {
-    parts.push('Comparaison en cours de chargement')
-    return parts.join('. ')
-  }
-  if (status === 'error') {
-    parts.push(`Comparaison indisponible : ${error ?? 'échec du chargement'}`)
-    return parts.join('. ')
-  }
-  if (status === 'unavailable') {
-    parts.push('Comparaison indisponible')
-    return parts.join('. ')
-  }
-  const comparison = fact.comparison
-  if (!comparison) {
-    parts.push('Comparaison indisponible')
-    return parts.join('. ')
-  }
-  const reference = comparison.reference
-  const referenceValue = reference
-    ? `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(reference.value)} ${fact.unit}`
-    : 'référence indisponible'
-  const scopeLabel = scope ?? comparison.scope.label ?? 'portée non précisée'
-  parts.push(`Référence ${referenceValue} (${scopeLabel})`)
-  const direction = LIBELLES_DIRECTION[comparison.direction] ?? null
-  const rank = puceRangDirection(comparison.rank, comparison.direction, scope)?.phraseAria
-    ?? formatServedRankAria(comparison.rank)
-  if (rank) parts.push(`Rang ${rank}`)
-  else if (direction) parts.push(direction)
-  return parts.join('. ')
+  return mobiliteRatioAriaLabel({
+    ratio,
+    scope,
+    status,
+    error,
+    comparisonIneligible: comparisonIneligible.value,
+  })
 }
 </script>
 

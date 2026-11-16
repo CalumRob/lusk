@@ -134,6 +134,21 @@ toggle. The distribution capture carries the native explanatory copy additively
 (`distributionDescription`, `distributionUnavailableDescription`) so the
 projection can preserve the figure's own reading.
 
+Map owners publish the actual **inline** figure asset and, when drawn, the real
+legend content (`inlineUrl`, `legendDetail`) through the same availability
+seam; inspection-gallery assets are not export content and no pixel-derived
+numbers are produced. Missing owner observations stay `unknown`/`pending`/
+`unavailable`, never promoted to loaded. The grouped-bar projection returns the
+frozen native `CahierGroupedVerticalBarFigureData` plus `hiddenSeriesKeys`
+(axis titles, formatters, colours, icons and served ranks included), not a
+second reduced drawing shape. Share projections carry typed owner unavailability
+and the native status message instead of parsing display copy. Ratio scalar and
+overview scalar presentation consume the same shared formatters/ARIA owners as
+the mounted scalars (`—` for an absent value, bare number plus separate unit).
+The raccordement projection consumes the same declared-grid, reading, tooltip
+and accessible-label builders as the mounted curve; a figure without declared
+ticks has no fallback labels.
+
 `cahier-export-adapters.spec.ts` covers the nine-section admission and literal
 family expectations; `cahier-export-capture-mounted.spec.ts` projects every
 mounted capture and checks a real ramp tooltip against its exported readings.

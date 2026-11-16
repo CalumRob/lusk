@@ -25,6 +25,32 @@ import type { ComparisonRank, NumericFact } from '@/fiche/content/territoryFacts
 import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
 
+/**
+ * Narrow native inputs: the readings consume exactly the fields the screen
+ * draws, so an incomplete export capture is never cast to a full section model.
+ */
+export type CahierMobiliteShareInput = Pick<MobiliteShareEvidence,
+  | 'figureTitle'
+  | 'territoryName'
+  | 'value'
+  | 'unit'
+  | 'comparisonLabel'
+  | 'unavailableResources'
+  | 'unavailableComparisons'>
+
+export type CahierMobiliteCurveInput = Pick<MobiliteRaccordementEvidence,
+  | 'figureTitle'
+  | 'xAxisTitle'
+  | 'territoryName'
+  | 'points'
+  | 'comparison'
+  | 'trajectory'
+  | 'axis'
+  | 'markerValue'
+  | 'comparisonLabel'
+  | 'unavailableResources'
+  | 'unavailableComparisons'>
+
 export const MOBILITE_UNAVAILABLE_LABEL = 'Indisponible'
 
 export function formatMobiliteBarValue(value: number): string {
@@ -110,11 +136,70 @@ export function mobiliteComparisonAria(
   return `${GROUPE_COMPARE_LABEL} : ${value} (${description})${rank ? `. Rang ${rank}` : direction ? `. ${direction}` : ''}`
 }
 
+/** The scalar's own number formatter; the row label and unit stay separate. */
+export function mobiliteRatioNumber(value: number): string {
+  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
+}
+
+/** The producer's own scale, never re-based: the scalar placeholder `%VALUE%` is this number. */
+export function mobiliteRatioDisplayValue(ratio: MobiliteRatioEvidence): string {
+  const value = mobiliteFiniteValue(ratio.value.fact.value)
+  return value === null ? '—' : mobiliteRatioNumber(value)
+}
+
+/** The same value for assistive technology, with its unit. */
 export function mobiliteRatioValueLabel(ratio: MobiliteRatioEvidence): string {
   const value = mobiliteFiniteValue(ratio.value.fact.value)
   return value === null
     ? MOBILITE_UNAVAILABLE_LABEL
-    : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)} ${ratio.value.fact.unit}`
+    : `${mobiliteRatioNumber(value)} ${ratio.value.fact.unit}`
+}
+
+/** The exact accessible reading the ratio scalar renders on screen. */
+export function mobiliteRatioAriaLabel(options: {
+  ratio: MobiliteRatioEvidence
+  scope: string | null
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  error?: string
+  comparisonIneligible: boolean
+}): string {
+  const { ratio, scope, status, error, comparisonIneligible } = options
+  const fact = ratio.value.fact
+  const parts = [`${ratio.label} : ${mobiliteRatioValueLabel(ratio)}`]
+  if (comparisonIneligible) return parts.join('. ')
+  if (fact.value === null) {
+    parts.push(ratio.note ?? 'Valeur indisponible')
+    return parts.join('. ')
+  }
+  if (status === 'loading') {
+    parts.push('Comparaison en cours de chargement')
+    return parts.join('. ')
+  }
+  if (status === 'error') {
+    parts.push(`Comparaison indisponible : ${error ?? 'échec du chargement'}`)
+    return parts.join('. ')
+  }
+  if (status === 'unavailable') {
+    parts.push('Comparaison indisponible')
+    return parts.join('. ')
+  }
+  const comparison = fact.comparison
+  if (!comparison) {
+    parts.push('Comparaison indisponible')
+    return parts.join('. ')
+  }
+  const reference = comparison.reference
+  const referenceValue = reference
+    ? `${mobiliteRatioNumber(reference.value)} ${fact.unit}`
+    : 'référence indisponible'
+  const scopeLabel = scope ?? comparison.scope.label ?? 'portée non précisée'
+  parts.push(`Référence ${referenceValue} (${scopeLabel})`)
+  const direction = LIBELLES_DIRECTION[comparison.direction] ?? null
+  const rank = puceRangDirection(comparison.rank, comparison.direction, scope)?.phraseAria
+    ?? formatServedRankAria(comparison.rank)
+  if (rank) parts.push(`Rang ${rank}`)
+  else if (direction) parts.push(direction)
+  return parts.join('. ')
 }
 
 export interface CahierMobiliteComparisonReading {
@@ -412,7 +497,7 @@ export function mobiliteBarsAccessibleLabel(options: {
  * ------------------------------------------------------------------ */
 
 /** The published share only when the fact is complete; null stays absent. */
-export function mobiliteShareValue(figure: MobiliteShareEvidence): number | null {
+export function mobiliteShareValue(figure: CahierMobiliteShareInput): number | null {
   const fact = figure.value.fact
   return fact.availability === 'complete' && fact.value !== null && Number.isFinite(fact.value)
     ? fact.value
@@ -421,7 +506,7 @@ export function mobiliteShareValue(figure: MobiliteShareEvidence): number | null
 
 /** A served reference is drawn only for a ready comparison with an explicit row. */
 export function mobiliteShareReference(options: {
-  figure: MobiliteShareEvidence
+  figure: CahierMobiliteShareInput
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   comparisonNone?: boolean
 }): number | null {
@@ -432,17 +517,17 @@ export function mobiliteShareReference(options: {
   return fact.reference.value
 }
 
-function shareScaledValue(figure: MobiliteShareEvidence, value: number): number {
+function shareScaledValue(figure: CahierMobiliteShareInput, value: number): number {
   return figure.unit.trim() === '%' ? value * 100 : value
 }
 
 /** The served unit, never an invented percentage. */
-export function mobiliteShareDisplayUnit(figure: MobiliteShareEvidence): string {
+export function mobiliteShareDisplayUnit(figure: CahierMobiliteShareInput): string {
   return figure.unit.trim() || '%'
 }
 
 /** Visible label: one decimal, the same precision for both rows. */
-export function mobiliteShareVisibleLabel(value: number | null, figure: MobiliteShareEvidence): string {
+export function mobiliteShareVisibleLabel(value: number | null, figure: CahierMobiliteShareInput): string {
   return value === null
     ? MOBILITE_UNAVAILABLE_LABEL
     : `${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
@@ -450,7 +535,7 @@ export function mobiliteShareVisibleLabel(value: number | null, figure: Mobilite
 }
 
 /** Accessible reading keeps the served value's actual precision. */
-export function mobiliteSharePreciseLabel(value: number | null, figure: MobiliteShareEvidence): string {
+export function mobiliteSharePreciseLabel(value: number | null, figure: CahierMobiliteShareInput): string {
   return value === null
     ? MOBILITE_UNAVAILABLE_LABEL
     : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 4 })
@@ -464,7 +549,7 @@ export interface CahierMobiliteShareDetail {
 }
 
 export function mobiliteShareComparisonDetail(
-  figure: MobiliteShareEvidence,
+  figure: CahierMobiliteShareInput,
 ): CahierMobiliteShareDetail | null {
   const comparison = figure.value.fact.comparison
   if (!comparison) return null
@@ -476,7 +561,7 @@ export function mobiliteShareComparisonDetail(
 }
 
 export function mobiliteSharePublicationNotes(options: {
-  figure: MobiliteShareEvidence
+  figure: CahierMobiliteShareInput
   comparisonNone?: boolean
 }): readonly string[] {
   const { figure, comparisonNone = false } = options
@@ -491,7 +576,7 @@ export function mobiliteSharePublicationNotes(options: {
 export const MOBILITE_SHARE_REMAINDER_READING =
   'Barre de 0 à 100 % ; le reste de la barre est le complément de la part publiée.'
 
-export function mobiliteShareTerritoryAria(figure: MobiliteShareEvidence): string {
+export function mobiliteShareTerritoryAria(figure: CahierMobiliteShareInput): string {
   return [
     figure.figureTitle,
     `${figure.territoryName} : ${mobiliteSharePreciseLabel(mobiliteShareValue(figure), figure)}`,
@@ -501,7 +586,7 @@ export function mobiliteShareTerritoryAria(figure: MobiliteShareEvidence): strin
 }
 
 export function mobiliteShareComparisonAria(options: {
-  figure: MobiliteShareEvidence
+  figure: CahierMobiliteShareInput
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   comparisonNone?: boolean
 }): string {
@@ -533,7 +618,7 @@ export function mobiliteShareComparisonAria(options: {
 }
 
 export function mobiliteShareStateMessage(options: {
-  figure: MobiliteShareEvidence
+  figure: CahierMobiliteShareInput
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   error?: string
   comparisonNone?: boolean
@@ -581,7 +666,7 @@ export function mobiliteCurveTickLabel(tick: { label: string }, axisValue: numbe
 }
 
 export function mobiliteCurveAxisForDetail(
-  figure: MobiliteRaccordementEvidence,
+  figure: CahierMobiliteCurveInput,
   detail: string | null,
 ): number | null {
   if (!detail) return null
@@ -589,12 +674,37 @@ export function mobiliteCurveAxisForDetail(
   return declared !== undefined && Number.isFinite(declared) ? declared : null
 }
 
-function mobiliteCurveAxisForFact(
-  figure: MobiliteRaccordementEvidence,
-  fact: NumericFact,
-): number | null {
-  if (typeof fact.axisValue === 'number' && Number.isFinite(fact.axisValue)) return fact.axisValue
-  return mobiliteCurveAxisForDetail(figure, fact.detail)
+export interface CahierCurveGridPoint {
+  readonly detail: string
+  readonly axisValue: number
+  readonly label: string
+  /** Producer anchor kept when dense labels collapse on mobile. */
+  readonly mobile: boolean
+}
+
+/**
+ * The declared producer grid, in metadata order. There is no fallback to the
+ * point list: a figure without declared ticks has no labels, as on screen.
+ */
+export function mobiliteCurveGrid(figure: CahierMobiliteCurveInput): readonly CahierCurveGridPoint[] {
+  return (figure.trajectory?.ticks ?? []).flatMap((tick) => {
+    const axisValue = mobiliteCurveAxisForDetail(figure, tick.detail)
+    return axisValue === null
+      ? []
+      : [{
+        detail: tick.detail,
+        axisValue,
+        label: mobiliteCurveTickLabel(tick, axisValue),
+        mobile: tick.mobile === true,
+      }]
+  })
+}
+
+export function mobiliteCurveCurvesCoincide(figure: CahierMobiliteCurveInput): boolean {
+  const comparison = figure.comparison
+  if (!comparison || comparison.points.length !== figure.points.length) return false
+  const values = new Map(comparison.points.map((point) => [point.fact.detail, point.fact.value]))
+  return figure.points.every((point) => values.get(point.fact.detail) === point.fact.value)
 }
 
 function mobiliteCurvePointAt(
@@ -625,24 +735,12 @@ export interface CahierCurveReading {
  * producer's shares; nothing is smoothed, resampled or re-based.
  */
 export function mobiliteCurveReadings(options: {
-  figure: MobiliteRaccordementEvidence
+  figure: CahierMobiliteCurveInput
   showComparison: boolean
 }): readonly CahierCurveReading[] {
   const { figure, showComparison } = options
   const unit = figure.points[0]?.fact.unit ?? '%'
-  const declared = figure.trajectory?.ticks ?? []
-  const rows = declared.length
-    ? declared.flatMap((tick) => {
-      const axisValue = mobiliteCurveAxisForDetail(figure, tick.detail)
-      return axisValue === null ? [] : [{ detail: tick.detail, axisValue, label: mobiliteCurveTickLabel(tick, axisValue) }]
-    })
-    : figure.points.flatMap((point) => {
-      const axis = mobiliteCurveAxisForFact(figure, point.fact)
-      return axis === null || !point.fact.detail
-        ? []
-        : [{ detail: point.fact.detail, axisValue: axis, label: point.fact.detail }]
-    })
-  return rows.map((row) => {
+  return mobiliteCurveGrid(figure).map((row) => {
     const value = mobiliteCurvePointAt(figure.points, row.detail)?.value ?? null
     const comparison = showComparison && figure.comparison
       ? mobiliteCurvePointAt(figure.comparison.points, row.detail)
@@ -677,7 +775,7 @@ export interface CahierCurveComparisonDetail {
 }
 
 export function mobiliteCurveComparisonDetail(
-  figure: MobiliteRaccordementEvidence,
+  figure: CahierMobiliteCurveInput,
 ): CahierCurveComparisonDetail | null {
   if (!figure.comparison) return null
   const scope = figure.comparison.scope.label
@@ -689,8 +787,53 @@ export function mobiliteCurveComparisonDetail(
   }
 }
 
+export function mobiliteCurveMarkerRankAria(options: {
+  figure: CahierMobiliteCurveInput
+  showComparison: boolean
+}): string | null {
+  const { figure, showComparison } = options
+  const comparison = figure.markerValue?.fact.comparison
+  if (!showComparison || !comparison?.rank) return null
+  return puceRangDirection(
+    comparison.rank,
+    comparison.direction,
+    mobiliteCurveComparisonDetail(figure)?.label,
+  )?.phraseAria ?? formatServedRankAria(comparison.rank)
+}
+
+/** The complete accessible sentence shared by the mounted curve and the export. */
+export function mobiliteCurveAccessibleLabel(options: {
+  figure: CahierMobiliteCurveInput
+  showComparison: boolean
+  notes?: readonly string[]
+}): string {
+  const { figure, showComparison, notes = [] } = options
+  const readings = mobiliteCurveReadings({ figure, showComparison })
+  const territoryReadings = readings.map((reading) => `${reading.label} : ${reading.aria}`).join(' ; ')
+  const comparisonDetail = mobiliteCurveComparisonDetail(figure)
+  const comparisonReadings = showComparison && figure.comparison
+    ? readings.map((reading) => `${reading.label} : ${reading.comparisonAria ?? MOBILITE_UNAVAILABLE_LABEL}`).join(' ; ')
+    : ''
+  const marker = figure.trajectory?.marker
+  const markerRankAria = mobiliteCurveMarkerRankAria({ figure, showComparison })
+  const markerReading = marker
+    ? ` Repère : ${marker.label}.${markerRankAria ? ` Rang ${markerRankAria}.` : ''}`
+    : ''
+  const comparisonReading = comparisonReadings && comparisonDetail
+    ? ` ${GROUPE_COMPARE_LABEL} — ${comparisonDetail.statistic} des ${comparisonDetail.label} : ${comparisonReadings}.`
+    : ''
+  const coincidence = showComparison && mobiliteCurveCurvesCoincide(figure)
+    ? ' Le groupe comparé est superposé au territoire dans cette sélection.'
+    : ''
+  const notesText = notes.filter(Boolean).join(' ')
+  return `${figure.figureTitle}. Courbe cumulative de la population bretonne joignable selon le temps de trajet. ` +
+    `Axe horizontal : ${figure.xAxisTitle}. ` +
+    `Axe vertical : ${figure.trajectory?.axisLabels?.y ?? 'population joignable (%)'}. ` +
+    `Territoire : ${territoryReadings}.${comparisonReading}${coincidence}${markerReading}${notesText ? ` ${notesText}` : ''}`
+}
+
 export function mobiliteCurveComparisonTooltip(options: {
-  figure: MobiliteRaccordementEvidence
+  figure: CahierMobiliteCurveInput
   reading: CahierCurveReading
 }): CahierTooltipComparison | undefined {
   const { figure, reading } = options
@@ -706,7 +849,7 @@ export function mobiliteCurveComparisonTooltip(options: {
 }
 
 export function mobiliteCurveTooltipRows(options: {
-  figure: MobiliteRaccordementEvidence
+  figure: CahierMobiliteCurveInput
   reading: CahierCurveReading
   showComparison: boolean
 }): readonly CahierTooltipRow[] {

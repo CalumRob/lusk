@@ -200,8 +200,11 @@ useCahierExportPublication(() => ({
       declared: categoryFor(mode.key) !== null,
       loaded: loadedInlineModes.value.has(mode.key),
       unavailable: unavailableInlineModes.value.has(mode.key),
+      // The plate draws the inline asset; the inspection gallery is not export content.
+      inlineUrl: categoryFor(mode.key) !== null ? mapUrl(mode.key) : null,
     })),
     legend: 'none',
+    legendDetail: null,
   },
 }))
 
