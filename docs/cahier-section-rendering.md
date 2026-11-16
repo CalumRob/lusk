@@ -292,14 +292,18 @@ or starts an acquisition.
   reject rather than silently become ink. Transparency is composited onto the
   actual editorial paper. No live screen or computed-style introspection is used
   by production generation.
-- `components/luskBrandMark.ts` is the single owner of the locked ermine paths
-  and fills. `LuskBrand.vue` and the PDF painter both consume it, so a brand-owner
-  fill edit reaches the generated document instead of diverging from a copy.
+- `components/luskBrandMark.ts` owns the locked ermine geometry and its two
+  canonical brand fills for every runtime consumer: `LuskBrand.vue`, the fiche
+  watermark (`FiligraneFiche.vue`, which keeps the ink and substitutes the active
+  theme anchor for the `accent` role) and the PDF painter. A path or brand-fill
+  edit therefore reaches all three; no consumer carries a path copy.
+  `app/public/favicon.svg` is a separately tracked head-crop derivative checked
+  by `favicon.spec.ts`, not a runtime consumer and not generated here.
 
 `cahier-pdf-composer.spec.ts` drives real blobs and parses them with pdfjs/pdf-lib:
 the nine-section admission matrix, A4/page/formats/metadata/font embedding,
 literal table cells and ranks, French accents, `Indisp.` with one explanation,
-comparison subtitle cases, one-page and measured multi-page continuation,
+  comparison subtitle cases, one-page and measured multi-page continuation,
 repeated identity/headers/sources, page-local comparison proof, explicit asset/
 font/abort/unsupported-family failures, a corrupted-input fidelity case and an
 independent negative audit that fails on a corrupted number/column/group.
@@ -315,12 +319,13 @@ production.
 `cahier-pdf-native-paint.spec.ts` checks the emitted SVG at the public native
 painter/serialization seam: literal null-gap subpath counts on both curves,
 hidden bar-slot centering, unequal ramp-panel maxima, transitive `comparisonFor`
-visibility, measured/mobile-anchor tick labels, the shared series stroke
-grammar (width/dash/opacity declared by the native SFCs and converted to mm,
-marker metrics) and explicit unknown-colour rejection. The curve axis, ticks
-and marker come from the native curve projection; there is no parallel scale
-fallback. It uses real embedded font metrics and selectable PDF
-text, not an alternative geometry calculation. `cahier-pdf-source-colours.spec.ts`
+visibility, measured/mobile-anchor tick labels, the shared figure stroke
+grammar (the `CAHIER_FIGURE_STROKE` owner injected into the native SFCs as CSS
+custom properties and converted to mm for grid/axis widths, series width, dash,
+opacity, cap/join and marker metrics), and explicit unknown-colour rejection.
+The curve axis, ticks and marker come from the native curve projection; there is
+no parallel scale fallback. It uses real embedded font metrics and selectable
+PDF text, not an alternative geometry calculation. `cahier-pdf-source-colours.spec.ts`
 changes the actual CSS-source input and asserts changed colours in a generated
 PDF; `cahier-pdf-composer.spec.ts` does the same mutation for the brand owner's
 fills. Node and browser dense scenes use the same fixture builders.
