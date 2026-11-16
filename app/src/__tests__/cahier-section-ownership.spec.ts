@@ -21,6 +21,7 @@ import CahierMobiliteSection from '@/fiche/prototype/CahierMobiliteSection.vue'
 import CahierComparisonValue from '@/fiche/prototype/CahierComparisonValue.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { routes } from '@/router'
+import BoutonComparaison from '@/components/fiche/BoutonComparaison.vue'
 
 const payload: Payload = { territoires: territoiresFixture, indicateurs: indicateursMobiliteFixture,
   histoires: histoiresMobiliteFixture, runReport: null, vintages: vintagesFixture, programmes: null,
@@ -101,7 +102,7 @@ describe('Cahier extracted section ownership (#956)', () => {
   it('keeps differing acquired resource status and retry attribution under one header selection', async () => {
     const retryAedar = vi.fn()
     const retryNative = vi.fn()
-    const { wrapper, control } = await render({ comparisonStatus: 'error', comparisonError: 'AEDAR échoué',
+    const { wrapper, control } = await render({ layoutVariant: 'indexed-sections', comparisonStatus: 'error', comparisonError: 'AEDAR échoué',
       retryComparison: retryAedar, nativeComparisonStatus: 'loading', retryNativeComparison: retryNative })
     // The fixture's raccordement has null evidence: it keeps the fallback,
     // independently of the three acquired Mobilité section bodies.
@@ -123,10 +124,15 @@ describe('Cahier extracted section ownership (#956)', () => {
     for (const section of wrapper.findAllComponents(CahierMobiliteSection)) {
       expect(section.props('comparison')).toMatchObject({ status: 'error', error: 'Autre ressource' })
     }
+    await wrapper.get('.mobilite-comparison-retry').trigger('click')
+    expect(retryNative).toHaveBeenCalledTimes(1)
+    expect(retryAedar).toHaveBeenCalledTimes(1)
+    const headerControls = wrapper.findAllComponents(BoutonComparaison)
+    expect(headerControls).toHaveLength(3)
+    for (const header of headerControls) expect(header.props('selection')).toEqual(control.value.selection)
     control.value = { ...control.value, selection: { etat: 'vide' } }
     await flushPromises()
-    expect(wrapper.findAllComponents(AedarEquipmentExplorerCahier)).toHaveLength(1)
-    expect(wrapper.findAll('.page-heading-comparaison-controls')).toHaveLength(0) // non-indexed presentation
+    for (const header of headerControls) expect(header.props('selection')).toEqual({ etat: 'vide' })
     wrapper.unmount()
   })
 
