@@ -43,19 +43,18 @@ const props = defineProps<{
   }
 }>()
 
-const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
+const control = inject(CONTROLE_COMPARAISON_KEY, undefined)
 
 /**
- * #1006 — an explicit « Aucune comparaison » (the header control's empty
- * selection) is not an unavailable comparison: the compared row disappears
- * instead of showing a failure. The state comes from the selection the control
- * already provides; the delegate never widens its props to carry it.
+ * A provided null control means the territory is comparison-ineligible (#768).
+ * Like explicit « Aucune comparaison », it removes the peer layer, not the
+ * factual figure. An absent provider keeps standalone figure fixtures usable.
  */
-const comparisonNone = computed(() => control.value?.selection.etat === 'vide')
+const comparisonNone = computed(() => control?.value === null || control?.value?.selection.etat === 'vide')
 
 const effectiveComparison = computed(() => {
   if (props.comparison.status !== 'ready') return props.comparison
-  const selection = control.value?.selection
+  const selection = control?.value?.selection
   if (!selection) return props.comparison
   if (selection.etat === 'vide' || (selection.etat === 'membres' && selection.membres.length === 0)) {
     return { status: 'unavailable' as const, retry: props.comparison.retry }
@@ -137,6 +136,7 @@ function ratioAriaLabel(
 ): string {
   const fact = ratio.value.fact
   const parts = [`${ratio.label} : ${ratioValueLabel(ratio)}`]
+  if (comparisonNone.value) return parts.join('. ')
   if (fact.value === null) {
     parts.push(ratio.note ?? 'Valeur indisponible')
     return parts.join('. ')
@@ -203,6 +203,7 @@ function ratioAriaLabel(
           <CahierMobiliteComparisonBars
             :figure="networks.figure"
             :comparison="effectiveComparison"
+            :comparison-none="comparisonNone"
           />
         </figure>
       </div>
@@ -231,6 +232,7 @@ function ratioAriaLabel(
           <CahierMobiliteComparisonBars
             :figure="column.bars"
             :comparison="effectiveComparison"
+            :comparison-none="comparisonNone"
           />
         </figure>
         <figure class="mobilite-ratio-scalar">
@@ -254,7 +256,7 @@ function ratioAriaLabel(
                 aria-hidden="true"
               />
             </template>
-            <template #reference>
+            <template v-if="!comparisonNone" #reference>
               <CahierComparisonValue
                 v-if="column.ratio.value.fact.comparison?.reference || effectiveComparison.status === 'loading' || effectiveComparison.status === 'error'"
                 :fact="column.ratio.value.fact"
@@ -307,7 +309,7 @@ function ratioAriaLabel(
       </div>
       <figure class="mobilite-section-figure mobilite-section-figure--wide">
         <figcaption class="cahier-figure-title">{{ curve.figureTitle }}</figcaption>
-        <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" />
+        <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" :comparison-none="comparisonNone" />
       </figure>
     </div>
   </div>

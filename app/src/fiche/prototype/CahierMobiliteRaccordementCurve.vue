@@ -46,6 +46,7 @@ type ComparisonState = {
 const props = defineProps<{
   figure: MobiliteRaccordementEvidence
   comparison: ComparisonState
+  comparisonNone?: boolean
 }>()
 
 /** Same compact proportions as the shared AEDAR ramps (no protected geometry touched). */
@@ -218,7 +219,7 @@ const markerAxisValue = computed(() => marker.value ? axisForDetail(marker.value
 const markerX = computed(() => markerAxisValue.value === null ? null : xForAxis(markerAxisValue.value))
 
 const comparisonAvailable = computed(() =>
-  props.comparison.status === 'ready' && props.figure.comparison !== null,
+  !props.comparisonNone && props.comparison.status === 'ready' && props.figure.comparison !== null,
 )
 const showComparison = computed(() => comparisonAvailable.value && comparisonVisible.value)
 
@@ -269,6 +270,7 @@ function comparisonRankForTick(detail: string) {
 }
 
 const comparisonStateText = computed(() => {
+  if (props.comparisonNone) return null
   if (props.comparison.status === 'loading') return 'Comparaison en cours de chargement.'
   if (props.comparison.status === 'error') {
     return props.figure.unavailableComparisons?.length
@@ -466,14 +468,14 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
       tone: 'theme',
       ariaLabel: `Territoire : ${focalName}`,
     },
-    {
+    ...(!props.comparisonNone ? [{
       key: 'comparison',
       label: GROUPE_COMPARE_LABEL,
       marker: 'dash',
       tone: 'peer',
       persistentToggle: canToggle,
       ariaLabel: comparisonAria,
-    },
+    } as const] : []),
   ]
 })
 const legendColors = {
@@ -487,6 +489,7 @@ function toggleLegend(key: string): void {
 }
 
 const stateMessage = computed(() => {
+  if (props.comparisonNone) return null
   if (props.comparison.status === 'loading') return 'Chargement du groupe comparé…'
   if (props.comparison.status === 'error') {
     if (props.figure.unavailableComparisons?.length) return null
@@ -631,7 +634,7 @@ const unavailableState = computed(() => {
         :selected-keys="legendSelected"
         :comparison-status="comparison.status"
         :comparison-error="comparison.error"
-        label="Séries et groupe comparé de la courbe de raccordement"
+        :label="comparisonNone ? 'Série du territoire' : 'Séries et groupe comparé de la courbe de raccordement'"
         @toggle="toggleLegend"
       />
     </template>
@@ -651,7 +654,7 @@ const unavailableState = computed(() => {
       <span>{{ stateMessage }}</span>
     </p>
     <button
-      v-if="comparison.status === 'error' && comparison.retry"
+      v-if="!comparisonNone && comparison.status === 'error' && comparison.retry"
       type="button"
       class="mobilite-raccordement-curve__retry"
       @click="comparison.retry()"
