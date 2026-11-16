@@ -91,6 +91,12 @@ describe('sortie native du peintre PDF', () => {
     expect(car1).toMatch(/ 13\.40$/)
     expect(car2).toMatch(/ 2\.00$/)
     expect(lecture.texteComplet).toContain('40')
+    const title = lecture.textes.find((item) => item.str === 'Volume de l’offre (établissements)')!
+    expect(title.x).toBeCloseTo(316.9134, 2) // second-panel axis, not the first panel's title
+    const ticks = lecture.textes.filter((item) => item.str === 'établissements')
+    expect(ticks).toHaveLength(3)
+    const middle = (Math.min(...ticks.map((tick) => tick.y)) + Math.max(...ticks.map((tick) => tick.y))) / 2
+    expect(Math.abs(title.y + title.largeur / 2 - middle)).toBeLessThan(8)
   })
 
   it('retire la référence comparisonFor avec son mode focal des marques et légendes', async () => {

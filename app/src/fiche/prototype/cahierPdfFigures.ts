@@ -427,9 +427,12 @@ function dessinerAxes(
   doc.setFont(POLICE_PDF.body, 'normal')
   doc.setFontSize(TAILLE.axe)
   doc.setTextColor(...rgb(PALETTE_PDF.muted))
-  doc.text(yTitle, x + plotLeft - 5.2, y + height / 2, { angle: 90, align: 'center' })
+  // jsPDF's center alignment subtracts half the unrotated width from x before
+  // rotation. Center along the rotated baseline instead, keeping the label in
+  // its own panel and clear of the neighbouring panel's title.
+  const titleWidth = mesure.largeur(yTitle, POLICE_PDF.body, TAILLE.axe)
+  doc.text(yTitle, x + plotLeft - 5.2, y + height / 2 + titleWidth / 2, { angle: 90 })
   doc.restoreGraphicsState()
-  void mesure
 }
 
 /* ------------------------------------------------------------------ *
