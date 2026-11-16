@@ -105,12 +105,11 @@ function naviguerOnglets(event: KeyboardEvent) {
               <AppIcon :icone="ArrowRight" :taille="16" aria-hidden="true" />
             </RouterLink>
           </nav>
-          <!-- Reserve recovery space on every state so retry never shifts the layout. -->
-          <div class="accueil-recuperation">
-            <div v-if="messagesErreur" class="accueil-erreur">
-              <p role="alert">{{ messagesErreur }}</p>
-              <button type="button" class="bouton-reessayer" @click="recharger">Réessayer</button>
-            </div>
+          <!-- #1027 owner experiment: no permanent empty reservation. A real
+               error renders its content and may legitimately grow the page. -->
+          <div v-if="messagesErreur" class="accueil-erreur">
+            <p role="alert">{{ messagesErreur }}</p>
+            <button type="button" class="bouton-reessayer" @click="recharger">Réessayer</button>
           </div>
         </div>
       </div>
@@ -118,8 +117,10 @@ function naviguerOnglets(event: KeyboardEvent) {
     <div class="accueil-interieur">
       <ul class="accueil-editorial" aria-label="Textes à venir">
         <li v-for="emplacement in 3" :key="emplacement" class="accueil-emplacement">
-          <div class="accueil-image-provisoire">Figure à venir</div>
-          <p class="accueil-a-venir">À venir</p>
+          <div class="accueil-feuillet">
+            <div class="accueil-image-provisoire">Figure à venir</div>
+            <p class="accueil-a-venir">À venir</p>
+          </div>
         </li>
       </ul>
     </div>
@@ -134,13 +135,12 @@ function naviguerOnglets(event: KeyboardEvent) {
 }
 .accueil-hero {
   background: var(--surface-hero);
-  border-bottom: 1px solid var(--border-subtle);
 }
 .accueil-hero-interieur {
   width: 100%;
   max-width: var(--content-max-width);
   margin-inline: auto;
-  padding: var(--space-12) var(--grid-margin-mobile) var(--space-6);
+  padding: var(--space-12) var(--grid-margin-mobile) var(--space-2);
   display: grid;
   /* Zero intrinsic minimum: neither the input nor a long result can grow the column. */
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
@@ -164,6 +164,8 @@ function naviguerOnglets(event: KeyboardEvent) {
 .accueil-hero-acces {
   grid-area: acces;
   min-width: 0;
+  display: grid;
+  gap: var(--space-3);
 }
 .accueil-accroche {
   margin: 0;
@@ -253,9 +255,6 @@ function naviguerOnglets(event: KeyboardEvent) {
   gap: var(--space-2);
   font: var(--text-body);
 }
-.accueil-recuperation {
-  min-height: var(--space-20);
-}
 .accueil-erreur {
   display: flex;
   flex-wrap: wrap;
@@ -306,7 +305,9 @@ function naviguerOnglets(event: KeyboardEvent) {
   width: 100%;
   max-width: var(--content-max-width);
   margin-inline: auto;
-  padding: var(--space-10) var(--grid-margin-mobile) var(--space-6);
+  /* #1027 experiment: the hero/editorial rule is gone; keep a compact,
+     deliberate breath between the access area and the mini-pages. */
+  padding: var(--space-3) var(--grid-margin-mobile) 0;
 }
 .accueil-editorial {
   display: grid;
@@ -317,19 +318,36 @@ function naviguerOnglets(event: KeyboardEvent) {
   margin: 0;
 }
 .accueil-emplacement { min-width: 0; }
+/* Scoped experiment: small Cahier-like pages, translated from the adopted
+   paper/ink/margin roles (no new tokens, no miniature pagination). */
+.accueil-feuillet {
+  padding: var(--space-5) var(--space-5) var(--space-5) var(--space-10);
+  border: 1px solid rgb(35 42 42 / 15%);
+  background-color: var(--editorial-paper);
+  background-image: linear-gradient(
+    to right,
+    transparent 0,
+    transparent 20px,
+    var(--editorial-margin-soft) 20px,
+    var(--editorial-margin-soft) 21px,
+    transparent 21px
+  );
+  box-shadow: 0 10px 22px rgb(67 57 42 / 8%);
+  color: var(--editorial-ink);
+}
 .accueil-image-provisoire {
   aspect-ratio: 3 / 2;
   display: grid;
   place-items: center;
-  background: var(--surface-tertiary);
-  border: 1px dashed var(--border-default);
+  background: var(--editorial-paper-deep);
+  border: 1px dashed color-mix(in srgb, var(--editorial-ink) 28%, transparent);
   font: var(--text-body-sm);
-  color: var(--text-secondary);
+  color: var(--editorial-muted);
 }
 .accueil-a-venir {
   margin: var(--space-4) 0 0;
   font: var(--text-h3);
-  color: var(--text-secondary);
+  color: var(--editorial-ink);
 }
 @media (max-width: 767.98px) {
   .accueil-hero-interieur {
@@ -340,9 +358,20 @@ function naviguerOnglets(event: KeyboardEvent) {
     column-gap: 0;
     row-gap: var(--space-6);
     padding-top: var(--space-8);
-    padding-bottom: var(--space-8);
+    padding-bottom: var(--space-6);
   }
   .accueil-hero-marque { padding-top: 0; }
   .accueil-editorial { grid-template-columns: minmax(0, 1fr); }
+  .accueil-feuillet {
+    padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8);
+    background-image: linear-gradient(
+      to right,
+      transparent 0,
+      transparent 12px,
+      var(--editorial-margin-soft) 12px,
+      var(--editorial-margin-soft) 13px,
+      transparent 13px
+    );
+  }
 }
 </style>

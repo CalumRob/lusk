@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core'
 // #1027: public rendered seam against a running preview. No invented article or
 // territory content: long labels come from the served committed reference.
 const base = process.env.LUSK_PREVIEW_URL || 'http://127.0.0.1:5177'
-const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r6'
+const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r7'
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
@@ -43,6 +43,8 @@ try {
       return { search: box('.accueil-territoires'), brand, intro, tabs,
         editorial: box('.accueil-editorial'),
         link: box('.accueil-indicateurs'), pageWidth: document.documentElement.scrollWidth,
+        docHeight: document.documentElement.scrollHeight,
+        heroBorder: getComputedStyle(document.querySelector('.accueil-hero')).borderBottomWidth,
         gapIntroTabs: tabs.y - intro.bottom,
         gapIntroBrand: brand.y - intro.bottom,
         gapBrandTabs: tabs.y - brand.bottom,
@@ -53,6 +55,8 @@ try {
     })
     const initial = await geometry()
     assert(initial.pageWidth <= width, 'no horizontal page overflow')
+    assert.equal(initial.heroBorder, '0px', 'no permanent divider between hero and editorial selection')
+
     assert.equal(initial.brandArea, 'marque', 'brand occupies its named grid area, not auto-placement')
     assert(initial.gapIntroTabs > 0, 'the intro-to-tabs gap is documented, never collapsed')
     if (width >= 768) {
@@ -286,6 +290,20 @@ try {
     assert(slots.every((s) => Math.abs(s.width - slots[0].width) < 1))
     assert(width < 768 ? slots[1].y > slots[0].y : slots[1].y === slots[0].y)
     assert.equal(await page.locator('.accueil-editorial a, .accueil-editorial button, .accueil-editorial [tabindex]').count(), 0)
+    const feuillets = await page.locator('.accueil-feuillet').evaluateAll((els) => els.map((el) => {
+      const style = getComputedStyle(el)
+      const r = el.getBoundingClientRect()
+      return { background: style.backgroundColor, border: style.borderTopWidth,
+        paddingLeft: parseFloat(style.paddingLeft), width: r.width, height: r.height }
+    }))
+    assert.equal(feuillets.length, 3)
+    for (const feuillet of feuillets) {
+      assert.equal(feuillet.background, 'rgb(241, 242, 236)', 'paper comes from the editorial token')
+      assert.equal(feuillet.border, '1px')
+      assert(feuillet.paddingLeft > 0, 'page margin treatment is present')
+    }
+    assert(feuillets.every((f) => Math.abs(f.width - feuillets[0].width) < 1), 'equal-width mini-pages')
+    assert(feuillets.every((f) => Math.abs(f.height - feuillets[0].height) < 1), 'equal provisional page heights')
     await page.screenshot({ path: `${output}/homepage-${width}.png`, fullPage: true, animations: 'disabled' })
     // Hold the real territory read, then fail it once and retry over real HTTP.
     let release
@@ -303,7 +321,17 @@ try {
     await page.getByText('Chargement des territoires…', { exact: true }).waitFor()
     release()
     await page.locator('.bouton-reessayer').waitFor()
-    assert.deepEqual(await geometry(), loading, 'error/retry must not shift search or following content')
+    const errorGeometry = await geometry()
+    // Owner experiment: no permanently reserved recovery height. The real
+    // error legitimately grows the document; only the search/brand/anchor
+    // positions and the entry width must stay put.
+    for (const cle of ['search', 'brand', 'link']) {
+      assert.deepEqual(errorGeometry[cle], loading[cle], `error must not move ${cle}`)
+    }
+    assert(errorGeometry.editorial.y > loading.editorial.y,
+      'the real error expands the document deliberately')
+    const errorHeight = await page.locator('.accueil-erreur').evaluate((el) => el.getBoundingClientRect().height)
+    assert(errorHeight > 0, 'the error occupies real space only when present')
     await page.screenshot({ path: `${output}/homepage-${width}-error.png`, fullPage: true, animations: 'disabled' })
     // The search dropdown is an out-of-flow overlay: dismiss it before using
     // the page-level retry underneath (the normal keyboard path).
@@ -312,15 +340,53 @@ try {
     await page.locator('.accueil[aria-busy="false"]').waitFor()
     await input.focus()
     await page.locator('.accueil [role="option"]').first().waitFor()
-    assert.deepEqual(await geometry(), loading, 'successful retry must keep geometry')
+    assert.deepEqual(await geometry(), loading, 'successful retry returns to the compact geometry')
     assert.equal(errors.length, 0, errors.join('\n'))
     assert.equal(assetFailures.length, 0, assetFailures.join('\n'))
     const brandDeltaY = browseGeometry.brand.y - initial.brand.y
     report.push({ width, tabWidths: [searchTabBox.width, browseTabBox.width], rowGeometry, browseGeometry, codeSearch,
-      brandDeltaY,
+      brandDeltaY, feuillets,
       longest: longest.nom, initial, loading, slots, pageErrors: errors, assetFailures })
     await page.close()
   }
-  await writeFile(`${output}/verification.json`, JSON.stringify(report, null, 2))
-  console.log(`Homepage tabs/focus/list navigation/header/footer, code exact/prefix search (#1028), geometry, real assets, empty/loading/error/retry, keyboard and inert slots passed at 1440/900/375/320px. Evidence: ${output}`)
+
+  // Owner experiment: compact normal-search view at representative desktop
+  // heights. Fit is measured, never forced (no clipping, fixed height or
+  // overflow:hidden), and a real 800px viewport is allowed to scroll.
+  const desktopHeights = []
+  for (const height of [900, 800]) {
+    const page = await browser.newPage({ viewport: { width: 1440, height } })
+    await page.goto(base)
+    await page.locator('.accueil[aria-busy="false"]').waitFor()
+    await page.evaluate(() => document.fonts.ready)
+    const mesure = await page.evaluate(() => {
+      const rect = (selector) => document.querySelector(selector).getBoundingClientRect()
+      return {
+        viewport: window.innerHeight,
+        scrollHeight: document.documentElement.scrollHeight,
+        hiddenOverflow: [document.documentElement, document.body]
+          .some((el) => ['hidden', 'clip'].includes(getComputedStyle(el).overflowY)),
+        reservation: document.querySelector('.accueil-recuperation')?.getBoundingClientRect().height ?? 0,
+        errorPresent: Boolean(document.querySelector('.accueil-erreur')),
+        editorialBottom: rect('.accueil-editorial').bottom + window.scrollY,
+        footerTop: rect('.pied').top + window.scrollY,
+      }
+    })
+    assert.equal(mesure.hiddenOverflow, false, 'fit is never obtained by clipping overflow')
+    assert.equal(mesure.reservation, 0, 'no permanent empty recovery reservation')
+    assert.equal(mesure.errorPresent, false)
+    assert(mesure.editorialBottom <= mesure.footerTop, 'editorial precedes the footer')
+    if (height === 900) {
+      assert(mesure.scrollHeight <= mesure.viewport,
+        `1440x900 must fit without scrolling (${mesure.scrollHeight} > ${mesure.viewport})`)
+    } else {
+      assert(mesure.scrollHeight > mesure.viewport,
+        '1440x800 is recorded as an honest overflow, not force-fitted')
+    }
+    await page.screenshot({ path: `${output}/homepage-1440x${height}.png`, fullPage: true, animations: 'disabled' })
+    desktopHeights.push({ height, ...mesure })
+    await page.close()
+  }
+  await writeFile(`${output}/verification.json`, JSON.stringify({ previewWidths: report, desktopHeights }, null, 2))
+  console.log(`Homepage tabs/focus/list navigation/header/footer, code exact/prefix search (#1028), compact 1440x900 (fit) and 1440x800 (honest overflow), geometry, real assets, empty/loading/error/retry, keyboard and inert mini-pages passed at 1440/900/375/320px. Evidence: ${output}`)
 } finally { await browser.close() }
