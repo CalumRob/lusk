@@ -67,7 +67,7 @@ describe('App shell', () => {
     const { wrapper } = await mountApp('/')
 
     expect(wrapper.find('.accueil').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Lusk transforme les données publiques éparses')
+    expect(wrapper.text()).toContain('Lusk propose des données ouvertes et des analyses originales')
   })
 
   it('navigates to the spared /carte tool (ruling PO 2026-08-26 — routée, sans lien)', async () => {

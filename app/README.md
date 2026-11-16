@@ -33,7 +33,7 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 
 | Route | Name | Status |
 |---|---|---|
-| `/` | `accueil` | **Built** — landing (#41, deux portes Territoires · Indicateurs #410) |
+| `/` | `accueil` | **Implemented for owner preview, not visually approved** — compact introduction, direct territory search, catalogue link and three inert editorial slots (#1027) |
 | `/carte` | `carte` | **Built** — map (#39) ; épargnée par ruling PO (2026-08-26, #410) : routée et fonctionnelle mais SANS aucun lien face-utilisateur |
 | `/communes` | `communes` | **Built** — link directory (#40) |
 | `/epcis` | `epcis` | **Built** — link directory (#40) |
@@ -45,6 +45,28 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 | `/indicateurs/:theme/:indicator` | `indicateur` | **Built** — une Page d'indicateur (#409 et suites) |
 
 La route `/methodologie` est **retirée** par la bascule atomique #410 : Méthodes n'est plus une destination — l'explication par indicateur vit sur « L'indicateur » de chaque Page d'indicateur, la provenance des jeux de données sur Sources (#406), le propos du projet sur À propos. Aucun alias ne subsiste.
+
+### Homepage preview (#1027)
+
+The [approved direction](../docs/design/accueil.md) is preserved verbatim as the
+owner's pre-implementation brief. The implementation now provides the compact
+introduction, stable-width territory search and catalogue link, plus three
+equal-width, noninteractive “À venir” slots (one column on mobile). No texts,
+figures, article routes or publishing infrastructure exist. The shared footer
+retains its navigation links but no longer acquires payload data or repeats
+biography/freshness promotion. Data-surface provenance contracts are unchanged.
+
+Owner inspection of the running page is **pending**, before reviewer dispatch.
+This is not a site-wide design adoption or publication claim.
+
+With the dev server running, `node scripts/verify-homepage.mjs` checks real
+committed territory assets, long labels, fixed geometry, empty/loading/error and
+retry states, keyboard suggestions and inert placeholders at 1440/375/320px.
+`LUSK_PREVIEW_URL` selects the server; `LUSK_SCREENSHOT_DIR` selects an external
+evidence folder (default `E:/Temp/opencode/homepage-1027`). It simulates one failed
+territory request per viewport, then retries the real file; it does not publish
+or invent data. This browser proof complements the homepage/footer/app and shared
+search unit tests, not owner visual acceptance.
 
 ## Deploy path
 
