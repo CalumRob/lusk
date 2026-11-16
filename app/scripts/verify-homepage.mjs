@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core'
 // #1027: public rendered seam against a running preview. No invented article or
 // territory content: long labels come from the served committed reference.
 const base = process.env.LUSK_PREVIEW_URL || 'http://127.0.0.1:5177'
-const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027'
+const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r2'
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
@@ -36,18 +36,72 @@ try {
         const r = document.querySelector(selector).getBoundingClientRect()
         return { x: r.x, y: r.y + window.scrollY, width: r.width, height: r.height }
       }
-      return { search: box('.accueil-recherche'), editorial: box('.accueil-editorial'),
+      return { search: box('.accueil-territoires'), editorial: box('.accueil-editorial'),
         link: box('.accueil-indicateurs'), pageWidth: document.documentElement.scrollWidth }
     })
     const initial = await geometry()
     assert(initial.pageWidth <= width, 'no horizontal page overflow')
+    const searchTab = page.getByRole('tab', { name: 'Rechercher', exact: true })
+    const browseTab = page.getByRole('tab', { name: 'Parcourir les territoires', exact: true })
+    assert.equal(await searchTab.getAttribute('aria-selected'), 'true')
+    for (const tab of [searchTab, browseTab]) {
+      const panel = page.locator(`#${await tab.getAttribute('aria-controls')}`)
+      assert.equal(await panel.getAttribute('role'), 'tabpanel')
+      assert.equal(await panel.getAttribute('aria-labelledby'), await tab.getAttribute('id'))
+    }
+    await searchTab.focus()
+    await searchTab.press('ArrowRight')
+    assert.equal(await browseTab.getAttribute('aria-selected'), 'true')
+    assert(await browseTab.evaluate((el) => el === document.activeElement))
+    assert.equal(await input.isVisible(), false)
+    assert.deepEqual(await geometry(), initial, 'tab switching keeps the shared area and following content stable')
+    assert.equal(await page.locator('[role="tabpanel"] a[href="/indicateurs"]').count(), 0)
+    await browseTab.press('Tab')
+    assert(await page.locator('#accueil-panneau-parcourir a[href="/communes"]').evaluate((el) => el === document.activeElement))
+    await page.keyboard.press('Shift+Tab')
+    assert(await browseTab.evaluate((el) => el === document.activeElement))
+    await browseTab.press('ArrowRight')
+    assert(await searchTab.evaluate((el) => el === document.activeElement))
+    await searchTab.press('End')
+    assert(await browseTab.evaluate((el) => el === document.activeElement))
+    await browseTab.press('Home')
+    await searchTab.press('ArrowLeft')
+    assert(await browseTab.evaluate((el) => el === document.activeElement))
+    await page.screenshot({ path: `${output}/homepage-${width}-browse.png`, fullPage: true, animations: 'disabled' })
+    for (const path of ['/communes', '/epcis', '/departements']) {
+      await browseTab.click()
+      await page.locator(`#accueil-panneau-parcourir a[href="${path}"]`).click()
+      await page.waitForURL(`${base}${path}`)
+      await page.locator('main h1').waitFor()
+      await page.goBack()
+      await page.locator('.accueil[aria-busy="false"]').waitFor()
+      assert.equal(await searchTab.getAttribute('aria-selected'), 'true')
+    }
+    // Header remains the Sources/À propos navigation owner; mobile drawer is accessible.
+    const headerNav = width < 768 ? page.locator('#menu-mobile') : page.locator('.nav-bureau')
+    if (width < 768) {
+      await page.getByRole('button', { name: 'Menu', exact: true }).click()
+      assert.equal(await headerNav.getAttribute('aria-hidden'), 'false')
+    }
+    for (const href of ['/sources', '/a-propos', '/indicateurs']) {
+      assert(await headerNav.locator(`a[href="${href}"]`).isVisible())
+    }
+    if (width < 768) {
+      await page.keyboard.press('Escape')
+      assert.equal(await headerNav.getAttribute('aria-hidden'), 'true')
+      assert(await page.getByRole('button', { name: 'Menu', exact: true }).evaluate((el) => el === document.activeElement))
+    }
+    assert.deepEqual(await page.locator('.pied a').evaluateAll((els) => els.map((el) => el.getAttribute('href'))), ['https://calumrobertson.fr'])
+    await searchTab.focus()
+    await searchTab.press('Tab')
+    assert(await input.evaluate((el) => el === document.activeElement))
     await input.fill(longest.nom)
     await page.locator('.accueil [role="option"]').first().waitFor()
     assert.equal(await page.locator('.accueil [role="option"]').first().innerText().then((t) => t.includes(longest.nom)), true)
     assert.deepEqual(await geometry(), initial, 'long results cannot change page/search geometry')
     const panelFits = await page.locator('.accueil .global-search__dropdown').evaluate((el) => el.scrollWidth <= el.clientWidth)
     assert(panelFits, 'long result fits inside dropdown without horizontal scrolling')
-    await page.screenshot({ path: `${output}/homepage-${width}-long-search.png`, fullPage: true })
+    await page.screenshot({ path: `${output}/homepage-${width}-long-search.png`, fullPage: true, animations: 'disabled' })
     await input.press('ArrowDown')
     assert.equal(await input.getAttribute('aria-activedescendant'), 'gsb-option-0')
     await input.press('Escape')
@@ -67,7 +121,7 @@ try {
     assert(slots.every((s) => Math.abs(s.width - slots[0].width) < 1))
     assert(width < 768 ? slots[1].y > slots[0].y : slots[1].y === slots[0].y)
     assert.equal(await page.locator('.accueil-editorial a, .accueil-editorial button, .accueil-editorial [tabindex]').count(), 0)
-    await page.screenshot({ path: `${output}/homepage-${width}.png`, fullPage: true })
+    await page.screenshot({ path: `${output}/homepage-${width}.png`, fullPage: true, animations: 'disabled' })
     // Hold the real territory read, then fail it once and retry over real HTTP.
     let release
     const held = new Promise((resolve) => { release = resolve })
@@ -85,7 +139,7 @@ try {
     release()
     await page.locator('.bouton-reessayer').waitFor()
     assert.deepEqual(await geometry(), loading, 'error/retry must not shift search or following content')
-    await page.screenshot({ path: `${output}/homepage-${width}-error.png`, fullPage: true })
+    await page.screenshot({ path: `${output}/homepage-${width}-error.png`, fullPage: true, animations: 'disabled' })
     await page.locator('.bouton-reessayer').click()
     await page.locator('.accueil[aria-busy="false"]').waitFor()
     await input.focus()
@@ -97,5 +151,5 @@ try {
     await page.close()
   }
   await writeFile(`${output}/verification.json`, JSON.stringify(report, null, 2))
-  console.log(`Homepage geometry, real assets, empty/loading/error/retry, keyboard and inert slots passed at 1440/375/320px. Evidence: ${output}`)
+  console.log(`Homepage tabs/focus/list navigation/header/footer, geometry, real assets, empty/loading/error/retry, keyboard and inert slots passed at 1440/375/320px. Evidence: ${output}`)
 } finally { await browser.close() }

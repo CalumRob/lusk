@@ -17,6 +17,8 @@ Une entrée utile dans l'observatoire, accompagnée de quelques portes d'entrée
 
 - Une recherche de territoire directement accessible, sans carte-conteneur explicative. Sa largeur ne dépend ni de la saisie, ni des suggestions, ni de leur état ; aucun déplacement du reste de la page lors de la recherche.
 - Un lien explicite « Explorer les indicateurs », sans seconde carte concurrente ni recherche d'indicateur sur l'accueil.
+- Révision après première prévisualisation : regrouper l'entrée territoriale dans un même espace à deux onglets, « Rechercher » (actif par défaut) et « Parcourir les territoires ». Le second présente les liens vers les listes existantes de communes, EPCI et départements. S'inspirer du principe de l'ancien site Mobilité, sans copier son habillage, ses actions contextuelles ou ses actions cartographiques. Aucun mode aléatoire ou « J'ai de la chance ».
+- Les deux onglets partagent une largeur stable et une navigation clavier accessible ; les contenus ne doivent pas déplacer horizontalement les autres éléments. Conserver « Explorer les indicateurs » hors de ces onglets.
 - Conserver la gestion accessible du clavier, du focus et des suggestions, ainsi que des états de chargement, d'erreur, de recherche vide et de nouvelle tentative. La suppression des dates promotionnelles ne supprime pas les informations de provenance nécessaires dans les surfaces de données.
 
 ## Entrées éditoriales
@@ -42,7 +44,7 @@ Les textes et leurs figures n'existent pas encore. Travailler avec quelques empl
 - Le bloc promotionnel « Sources » et « Derrière chaque fiche… la preuve, plutôt que la promesse ».
 - La biographie « Conçu par Calum Robertson — Docteur en économie urbaine » dans le pied de page.
 
-La page Sources et son accès restent disponibles ; supprimer ce discours promotionnel n'est pas supprimer les sources. Les effets éventuels d'un changement de pied de page partagé doivent être vérifiés explicitement, sans étendre la refonte aux autres surfaces.
+La page Sources et son accès restent disponibles dans l'en-tête ; supprimer ce discours promotionnel n'est pas supprimer les sources. Après la première prévisualisation, le propriétaire a également approuvé de retirer les liens « Sources » et « À propos » du pied de page, redondants avec l'en-tête, tout en conservant le lien personnel existant. Les effets éventuels d'un changement de pied de page partagé doivent être vérifiés explicitement, sans étendre la refonte aux autres surfaces.
 
 ## Alignement documentaire et périmètre
 

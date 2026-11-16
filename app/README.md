@@ -33,7 +33,7 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 
 | Route | Name | Status |
 |---|---|---|
-| `/` | `accueil` | **Implemented for owner preview, not visually approved** — compact introduction, direct territory search, catalogue link and three inert editorial slots (#1027) |
+| `/` | `accueil` | **Revised for second owner preview, not visually approved** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
 | `/carte` | `carte` | **Built** — map (#39) ; épargnée par ruling PO (2026-08-26, #410) : routée et fonctionnelle mais SANS aucun lien face-utilisateur |
 | `/communes` | `communes` | **Built** — link directory (#40) |
 | `/epcis` | `epcis` | **Built** — link directory (#40) |
@@ -50,20 +50,26 @@ La route `/methodologie` est **retirée** par la bascule atomique #410 : Méthod
 
 The [approved direction](../docs/design/accueil.md) is preserved verbatim as the
 owner's pre-implementation brief. The implementation now provides the compact
-introduction, stable-width territory search and catalogue link, plus three
+introduction, stable-width territory tabs (“Rechercher” by default and
+“Parcourir les territoires” linking to existing lists) and separate catalogue link, plus three
 equal-width, noninteractive “À venir” slots (one column on mobile). No texts,
 figures, article routes or publishing infrastructure exist. The shared footer
-retains its navigation links but no longer acquires payload data or repeats
+retains the personal-site link only: Sources and À propos remain in the header,
+not repeated in the footer. It no longer acquires payload data or repeats
 biography/freshness promotion. Data-surface provenance contracts are unchanged.
 
-Owner inspection of the running page is **pending**, before reviewer dispatch.
+The owner inspected the first preview and requested these tabs and footer
+revisions (issue #1027 comment 6918606917). Owner inspection of the revised
+running page is **pending**, before reviewer dispatch; approval of the revision
+requirements is not visual acceptance of this second implementation.
 This is not a site-wide design adoption or publication claim.
 
 With the dev server running, `node scripts/verify-homepage.mjs` checks real
 committed territory assets, long labels, fixed geometry, empty/loading/error and
-retry states, keyboard suggestions and inert placeholders at 1440/375/320px.
+retry states, tab keyboard/focus behavior, actual list navigation, preserved
+header/mobile links, keyboard suggestions and inert placeholders at 1440/375/320px.
 `LUSK_PREVIEW_URL` selects the server; `LUSK_SCREENSHOT_DIR` selects an external
-evidence folder (default `E:/Temp/opencode/homepage-1027`). It simulates one failed
+evidence folder (default `E:/Temp/opencode/homepage-1027-r2`). It simulates one failed
 territory request per viewport, then retries the real file; it does not publish
 or invent data. This browser proof complements the homepage/footer/app and shared
 search unit tests, not owner visual acceptance.

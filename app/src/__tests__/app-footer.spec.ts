@@ -6,7 +6,7 @@ import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { routes } from '../router'
 
 describe('AppFooter — navigation sobre partagée (#1027)', () => {
-  it.each(['/', '/indicateurs', '/sources', '/a-propos'])('conserve les liens sur %s sans biographie, fraîcheur ni acquisition de données', async (path) => {
+  it.each(['/', '/indicateurs', '/sources', '/a-propos'])('conserve uniquement le lien personnel sur %s sans biographie, fraîcheur ni acquisition de données', async (path) => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push(path)
     await router.isReady()
@@ -15,7 +15,7 @@ describe('AppFooter — navigation sobre partagée (#1027)', () => {
       global: { plugins: [router], provide: { [PAYLOAD_CHARGER_KEY]: charger } },
     })
     expect(wrapper.findAll('a').map((l) => l.attributes('href'))).toEqual([
-      '/sources', '/a-propos', 'https://calumrobertson.fr',
+      'https://calumrobertson.fr',
     ])
     expect(wrapper.text()).not.toMatch(/Conçu par|Docteur|Données actualisées/)
     expect(wrapper.find('[role="status"]').exists()).toBe(false)

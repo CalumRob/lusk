@@ -1,11 +1,11 @@
 <script setup lang="ts">
-/** #1027: compact introduction, direct territory search and catalogue link.
+/** #1027: compact introduction, tabbed territory entry and catalogue link.
  * The existing shell wait-set preserves scoped loading/error/retry behavior.
  * Editorial slots are deliberately inert until real texts and figures exist.
  * Approved direction: docs/design/accueil.md; visual approval remains human.
  */
 import { ArrowRight } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
 import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
@@ -17,6 +17,25 @@ const { payload, erreur, chargement, recharger } = usePayload({
 })
 const territoires = computed(() => payload.value.territoires)
 const messagesErreur = computed(() => erreur.value ? 'Impossible de charger les données.' : null)
+const ongletActif = ref<'rechercher' | 'parcourir'>('rechercher')
+const ongletRechercher = ref<HTMLButtonElement | null>(null)
+const ongletParcourir = ref<HTMLButtonElement | null>(null)
+
+function naviguerOnglets(event: KeyboardEvent) {
+  let prochain: typeof ongletActif.value
+  switch (event.key) {
+    case 'ArrowLeft':
+    case 'ArrowRight':
+      prochain = ongletActif.value === 'rechercher' ? 'parcourir' : 'rechercher'
+      break
+    case 'Home': prochain = 'rechercher'; break
+    case 'End': prochain = 'parcourir'; break
+    default: return
+  }
+  event.preventDefault()
+  ongletActif.value = prochain
+  ;(prochain === 'rechercher' ? ongletRechercher : ongletParcourir).value?.focus()
+}
 </script>
 
 <template>
@@ -29,12 +48,47 @@ const messagesErreur = computed(() => erreur.value ? 'Impossible de charger les 
             Accès aux équipements, migrations, occupation des sols, habitat… Lusk propose des données ouvertes et des analyses originales pour comprendre les dynamiques et les tensions des territoires bretons.
           </p>
           <nav class="accueil-acces" aria-label="Explorer Lusk">
-            <GlobalSearchBar
-              class="accueil-recherche"
-              :territoires="territoires"
-              :chargement="chargement"
-              :erreur="messagesErreur"
-            />
+            <div class="accueil-territoires">
+              <div class="accueil-onglets" role="tablist" aria-label="Accéder aux territoires" @keydown="naviguerOnglets">
+                <button
+                  ref="ongletRechercher"
+                  id="accueil-onglet-rechercher" type="button" role="tab"
+                  :aria-selected="ongletActif === 'rechercher'"
+                  :tabindex="ongletActif === 'rechercher' ? 0 : -1"
+                  aria-controls="accueil-panneau-rechercher"
+                  @click="ongletActif = 'rechercher'"
+                >Rechercher</button>
+                <button
+                  ref="ongletParcourir"
+                  id="accueil-onglet-parcourir" type="button" role="tab"
+                  :aria-selected="ongletActif === 'parcourir'"
+                  :tabindex="ongletActif === 'parcourir' ? 0 : -1"
+                  aria-controls="accueil-panneau-parcourir"
+                  @click="ongletActif = 'parcourir'"
+                >Parcourir les territoires</button>
+              </div>
+              <div
+                :hidden="ongletActif !== 'rechercher'"
+                id="accueil-panneau-rechercher" class="accueil-panneau"
+                role="tabpanel" aria-labelledby="accueil-onglet-rechercher"
+              >
+                <GlobalSearchBar
+                  class="accueil-recherche"
+                  :territoires="territoires"
+                  :chargement="chargement"
+                  :erreur="messagesErreur"
+                />
+              </div>
+              <div
+                :hidden="ongletActif !== 'parcourir'"
+                id="accueil-panneau-parcourir" class="accueil-panneau accueil-listes"
+                role="tabpanel" aria-labelledby="accueil-onglet-parcourir"
+              >
+                <RouterLink to="/communes">Communes</RouterLink>
+                <RouterLink to="/epcis">EPCI</RouterLink>
+                <RouterLink to="/departements">Départements</RouterLink>
+              </div>
+            </div>
             <RouterLink to="/indicateurs" class="accueil-indicateurs">
               Explorer les indicateurs
               <AppIcon :icone="ArrowRight" :taille="16" aria-hidden="true" />
@@ -115,6 +169,44 @@ const messagesErreur = computed(() => erreur.value ? 'Impossible de charger les 
 .accueil-recherche {
   width: 100%;
   min-width: 0;
+}
+.accueil-territoires {
+  width: 100%;
+  max-width: 560px;
+  min-width: 0;
+}
+.accueil-onglets {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+}
+.accueil-onglets button {
+  min-width: 0;
+  min-height: var(--space-12);
+  padding: var(--space-2);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font: var(--text-body-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.accueil-onglets button[aria-selected="true"] {
+  border-bottom-color: var(--accent-primary);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.accueil-onglets button:hover { background: var(--surface-tertiary); }
+.accueil-onglets button:active { background: var(--surface-primary); }
+.accueil-panneau { min-height: var(--space-12); }
+.accueil-panneau[hidden] { display: none; }
+.accueil-listes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  font: var(--text-body-sm);
 }
 .accueil-indicateurs {
   display: inline-flex;

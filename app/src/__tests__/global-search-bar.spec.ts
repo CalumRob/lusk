@@ -467,7 +467,7 @@ describe('GlobalSearchBar — la recherche groupée Territoires + Indicateurs (#
 })
 
 describe('AccueilView — la recherche du héros (D3 landing)', () => {
-  it('renders the single untitled search in the landing hero — no tabs row', async () => {
+  it('reuses one territory-only search inside the homepage entry tabs (#1027)', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/')
     const wrapper = mount(AccueilView, { global: { plugins: [router] } })
@@ -475,7 +475,8 @@ describe('AccueilView — la recherche du héros (D3 landing)', () => {
     const input = wrapper.find(INPUT)
     expect(input.exists()).toBe(true)
     expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom')
-    expect(wrapper.findAll('[role="tab"]')).toHaveLength(0)
+    expect(wrapper.findAll('[role="tab"]').map((tab) => tab.text())).toEqual(['Rechercher', 'Parcourir les territoires'])
+    expect(wrapper.find('.global-search [role="tab"]').exists()).toBe(false)
     expect(wrapper.findAll('input[type="text"]')).toHaveLength(1)
   })
 

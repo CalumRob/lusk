@@ -3,8 +3,6 @@
   <footer class="pied">
     <div class="pied-interieur">
       <nav class="pied-liens" aria-label="Liens du pied de page">
-        <RouterLink to="/sources">Sources</RouterLink>
-        <RouterLink to="/a-propos">À propos</RouterLink>
         <a
           href="https://calumrobertson.fr"
           target="_blank"

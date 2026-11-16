@@ -19,11 +19,12 @@ const payload: Payload = {
   vintages: vintagesFixture, programmes: null,
 }
 
-async function monter(charger: ChargerFichier = chargerAvec(payload)) {
+async function monter(charger: ChargerFichier = chargerAvec(payload), attacher = false) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/')
   await router.isReady()
   const wrapper = mount(AccueilView, {
+    attachTo: attacher ? document.body : undefined,
     global: { plugins: [router], provide: { [PAYLOAD_CHARGER_KEY]: charger } },
   })
   await flushPromises()
@@ -31,6 +32,54 @@ async function monter(charger: ChargerFichier = chargerAvec(payload)) {
 }
 
 describe('Accueil — direction approuvée #1027', () => {
+  it('déplace le focus et la sélection des onglets au clavier sans perdre la saisie', async () => {
+    const { wrapper } = await monter(chargerAvec(payload), true)
+    try {
+      const tabs = wrapper.findAll('[role="tab"]')
+      await wrapper.get('input[role="combobox"]').setValue('Rennes')
+      ;(tabs[0].element as HTMLButtonElement).focus()
+      await tabs[0].trigger('keydown', { key: 'ArrowRight' })
+      expect(tabs[1].attributes('aria-selected')).toBe('true')
+      expect(document.activeElement).toBe(tabs[1].element)
+      await tabs[1].trigger('keydown', { key: 'ArrowRight' })
+      expect(document.activeElement).toBe(tabs[0].element)
+      await tabs[0].trigger('keydown', { key: 'End' })
+      expect(document.activeElement).toBe(tabs[1].element)
+      await tabs[1].trigger('keydown', { key: 'Home' })
+      expect(document.activeElement).toBe(tabs[0].element)
+      await tabs[0].trigger('keydown', { key: 'ArrowLeft' })
+      expect(document.activeElement).toBe(tabs[1].element)
+      await tabs[1].trigger('keydown', { key: 'ArrowLeft' })
+      expect(document.activeElement).toBe(tabs[0].element)
+      expect((wrapper.get('input[role="combobox"]').element as HTMLInputElement).value).toBe('Rennes')
+    } finally { wrapper.unmount() }
+  })
+
+  it('propose deux onglets reliés à leurs panneaux, recherche par défaut et listes navigables', async () => {
+    const { wrapper, router } = await monter()
+    const tabs = wrapper.findAll('[role="tab"]')
+    expect(tabs.map((tab) => tab.text())).toEqual(['Rechercher', 'Parcourir les territoires'])
+    expect(wrapper.get('[role="tablist"]').attributes('aria-label')).toBe('Accéder aux territoires')
+    expect(tabs[0].attributes('aria-selected')).toBe('true')
+    expect(tabs[0].attributes('tabindex')).toBe('0')
+    expect(tabs[1].attributes('tabindex')).toBe('-1')
+    for (const tab of tabs) {
+      const panel = wrapper.get(`#${tab.attributes('aria-controls')}`)
+      expect(panel.attributes('role')).toBe('tabpanel')
+      expect(panel.attributes('aria-labelledby')).toBe(tab.attributes('id'))
+    }
+    await tabs[1].trigger('click')
+    expect(tabs[1].attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('#accueil-panneau-rechercher').attributes('hidden')).toBeDefined()
+    const panel = wrapper.get(`#${tabs[1].attributes('aria-controls')}`)
+    expect(panel.findAll('a').map((a) => a.attributes('href'))).toEqual(['/communes', '/epcis', '/departements'])
+    expect(panel.find('a[href="/indicateurs"]').exists()).toBe(false)
+    expect(wrapper.get('a[href="/indicateurs"]').isVisible()).toBe(true)
+    await panel.get('a[href="/communes"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/communes')
+  })
+
   it('conserve la signature, l’hermine et la légende', async () => {
     const { wrapper } = await monter()
     expect(wrapper.find('.accueil-hero .lusk-marque__ermine').exists()).toBe(true)
