@@ -133,22 +133,24 @@ const captureSections = computed(() => {
 })
 
 function captureReadiness(section: ContentSection, unitKey: string): CahierCaptureReadiness {
-  if (sectionIsLoading(unitKey)) {
-    return { status: 'pending', reason: 'chapter-loading', availability: section.availability }
-  }
-  if (unitKey !== 'acces-aux-services' && props.chapitresStatut?.[unitKey] === 'error') {
-    return { status: 'error', reason: 'chapter-error', availability: section.availability }
-  }
-  if (sectionIsPending(unitKey)) {
-    return { status: 'pending', reason: 'chapter-pending', availability: section.availability }
-  }
-  if (section.evidence === null || section.availability === 'absent') {
-    return { status: 'unavailable', reason: 'evidence-absent', availability: section.availability }
-  }
-  return {
-    status: 'ready',
-    reason: section.availability === 'complete' ? 'evidence-ready' : 'evidence-incomplete',
-    availability: section.availability,
+  const presentation = sectionPresentation(section, unitKey)
+  switch (presentation.kind) {
+    case 'loading':
+      return { status: 'pending', reason: 'chapter-loading', availability: section.availability }
+    case 'chapter-error':
+      return { status: 'error', reason: 'chapter-error', availability: section.availability }
+    case 'pending':
+      return { status: 'pending', reason: 'chapter-pending', availability: section.availability }
+    case 'absent':
+      return { status: 'unavailable', reason: 'evidence-absent', availability: section.availability }
+    case 'unavailable':
+      return section.evidence === null
+        ? { status: 'unavailable', reason: 'evidence-absent', availability: section.availability }
+        : {
+          status: 'ready',
+          reason: section.availability === 'complete' ? 'evidence-ready' : 'evidence-incomplete',
+          availability: section.availability,
+        }
   }
 }
 
@@ -288,15 +290,39 @@ function chapitreEnEchec(unitKey: string): boolean {
   return unitKey !== 'acces-aux-services' && props.chapitresStatut?.[unitKey] === 'error'
 }
 
-function sectionState(section: ContentSection, unitKey: string): string {
-  if (sectionIsLoading(unitKey)) return 'Chargement des données AEDAR…'
-  if (unitKey !== 'acces-aux-services' && props.chapitresStatut?.[unitKey] === 'error') {
-    return 'Lecture indisponible avec les données disponibles.'
+type CahierSectionPresentationKind = 'loading' | 'chapter-error' | 'pending' | 'absent' | 'unavailable'
+interface CahierSectionPresentation {
+  readonly kind: CahierSectionPresentationKind
+  readonly message: string
+  readonly role: 'status' | 'note'
+}
+
+/**
+ * One shared presentation state for both the rendered placeholder and the
+ * export capture, so readiness can never diverge from what the shell shows.
+ */
+function sectionPresentation(section: ContentSection, unitKey: string): CahierSectionPresentation {
+  if (sectionIsLoading(unitKey)) {
+    return { kind: 'loading', message: 'Chargement des données AEDAR…', role: 'status' }
   }
-  if (sectionIsPending(unitKey)) return 'Chargement des données…'
-  return section.availability === 'absent'
-    ? 'Contenu indisponible pour ce territoire.'
-    : 'Lecture indisponible avec les données disponibles.'
+  if (unitKey !== 'acces-aux-services' && props.chapitresStatut?.[unitKey] === 'error') {
+    return { kind: 'chapter-error', message: 'Lecture indisponible avec les données disponibles.', role: 'note' }
+  }
+  if (sectionIsPending(unitKey)) {
+    return { kind: 'pending', message: 'Chargement des données…', role: 'status' }
+  }
+  if (section.availability === 'absent') {
+    return { kind: 'absent', message: 'Contenu indisponible pour ce territoire.', role: 'note' }
+  }
+  return { kind: 'unavailable', message: 'Lecture indisponible avec les données disponibles.', role: 'note' }
+}
+
+function sectionState(section: ContentSection, unitKey: string): string {
+  return sectionPresentation(section, unitKey).message
+}
+
+function sectionRole(section: ContentSection, unitKey: string): 'status' | 'note' {
+  return sectionPresentation(section, unitKey).role
 }
 
 /** Return AedarAccessEvidence when the section carries it and the prototype opt-in is enabled. */
@@ -550,7 +576,7 @@ onBeforeUnmount(() => {
                       class="cahier-baseline-anchor"
                     />
                   </div>
-                  <p v-if="!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'" class="cahier-section-state" :role="sectionIsPending(currentUnit.key) ? 'status' : 'note'">{{ sectionState(section, currentUnit.key) }}</p>
+                  <p v-if="!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'" class="cahier-section-state" :role="sectionRole(section, currentUnit.key)">{{ sectionState(section, currentUnit.key) }}</p>
 
                 </div>
 

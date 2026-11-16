@@ -47,9 +47,21 @@ Owners publish the state they already hold, never the reverse:
 | --- | --- |
 | `aedarSectionContext` (read by the shell) | selected modes, horizon, comparison visibility/eligibility, chapter activity |
 | `AedarEquipmentExplorerCahier` | effective TYPEQU, acquired detail, comparison evidence and status |
-| `CahierMobiliteComparisonBars` / `CahierMobiliteRaccordementCurve` | their own comparison visibility |
+| `CahierAedarAccessSection`, `CahierAedarOverviewSection`, `AedarEquipmentExplorerCahier` | the AEDAR reference layer actually drawn |
+| `CahierMobiliteComparisonBars` / `CahierMobiliteRaccordementCurve` | their own toggle and drawn reference |
+| `CahierMobiliteShareTrack` | the served share reference it draws |
 | `CahierMobiliteSection` | the effective comparison state it presents |
-| `CahierBlankMapSlots`, `AedarDiversityLossMapsCahier`, `CartographicBreakoutPrototype` | map and legend availability |
+| `CahierBlankMapSlots`, `AedarDiversityLossMapsCahier`, `CartographicBreakoutPrototype` | map and legend availability (load/failure, never a declaration) |
+
+Comparison capture keeps two separate things: **selection identity** (`group`
+metadata, which never implies drawn proof) and **owner-observed presentation**
+(`display.state`/`reason`/`layers`). Without a publication the display is
+`unobserved`, not a default-visible layer. Per-figure labels are preserved in
+`statisticLabels`; no first column label becomes section-wide truth. Map/legend
+state is `unknown` until a map owner publishes, and a declared map is never a
+loaded one. AEDAR sources carry the native source-record identity, licence and
+clocks additively (same display copy); Mobilité generation tokens are explicitly
+absent rather than invented.
 
 `projeterRequeteExport` projects one to three offered series (or none when the
 section offers no choice) into a frozen request. Capturing and projecting read
@@ -58,10 +70,11 @@ private Vue introspection. Placeholder sections are not capturable, and the
 selected members stay distinct from producer-served eligible contributors.
 
 `cahier-export-capture.spec.ts` covers the closed nine-kind admission, the
-cross-family capture, sources/provenance and the projection; the mounted
-`cahier-export-capture-mounted.spec.ts` drives the real owners (horizon, modes,
-TYPEQU acquisition, independent comparison layers, late group/territory
-changes and screen stability).
+cross-family capture, sources/provenance, effective comparison presentation and
+the projection; the mounted `cahier-export-capture-mounted.spec.ts` drives the
+real owners (horizon, modes, TYPEQU acquisition, independent comparison layers,
+real map/legend pending/loaded/failure transitions, late group/territory changes
+and screen stability).
 
 ## Preserved boundaries
 

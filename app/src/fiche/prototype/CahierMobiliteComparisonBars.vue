@@ -59,11 +59,15 @@ const MAX_BAR_WIDTH = 20
 const UNAVAILABLE_LABEL = 'Indisponible'
 
 const comparisonVisible = ref(true)
-// #1021 — this figure owns its comparison visibility; the capture reads the
-// effective value without moving the toggle into a global owner.
+// #1021 — this figure owns its comparison visibility and its drawn reference;
+// the capture reads that effective observation, never a default.
 useCahierExportPublication(() => ({
   owner: 'mobilite-comparison-bars',
-  state: { comparisonVisible: comparisonVisible.value },
+  state: {
+    toggle: comparisonVisible.value,
+    referenceAvailable: hasComparisonReference.value,
+    displayed: comparisonAligned.value,
+  },
 }))
 const plotElement = ref<HTMLElement | null>(null)
 const hoveredCategoryIndex = ref<number | null>(null)

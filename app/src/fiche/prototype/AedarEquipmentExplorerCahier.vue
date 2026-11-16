@@ -206,7 +206,27 @@ useCahierExportPublication(() => ({
     comparison: activeComparison.value,
     referenceDetail: referenceDetail.value,
   },
-}))
+}), 'equipment')
+
+/** A served reference value exists for at least one drawn explorer measure. */
+const servedReferenceAvailable = computed(() => {
+  if (activeComparison.value) {
+    return activeComparison.value.cells.some((cell) => cell.group_value !== null)
+  }
+  const reference = referenceDetail.value
+  if (!reference) return false
+  return HORIZONS.some((horizon) => AEDAR_RAMP_MODES.some((mode) =>
+    readAedarCountMeasure(reference, horizon, mode, 'mean') !== null))
+})
+// #1021 — the explorer publishes whether its own comparative layer is drawn.
+useCahierExportPublication(() => ({
+  owner: 'aedar-comparison-layer',
+  state: {
+    toggle: comparisonVisible.value,
+    referenceAvailable: servedReferenceAvailable.value,
+    displayed: props.comparisonLayerSupported && comparisonVisible.value && servedReferenceAvailable.value,
+  },
+}), 'comparison')
 const modeEntries = computed<FigureLegendEntry[]>(() => [...AEDAR_RAMP_MODES.map((mode) => ({
   key: mode,
   label: AEDAR_RAMP_MODE_LABELS[mode],

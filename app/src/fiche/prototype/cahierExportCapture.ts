@@ -48,8 +48,6 @@ export const CAHIER_EXPORT_MAX_MODES = 3
 export const CAHIER_EXPORT_SLOTS = {
   mobiliteNetworksMaps: 'maps',
   mobiliteNetworksBars: 'bars',
-  mobiliteStationnementBars: 'stationnement',
-  mobiliteRavitaillementBars: 'ravitaillement',
   mobiliteCurve: 'curve',
   aedarEquipment: 'aedar-equipment',
 } as const
@@ -156,35 +154,76 @@ export interface CahierCaptureComparisonGroup {
   readonly selectedMemberCount: number | null
   /** Producer-served eligible contributor count, only when the evidence declares it. */
   readonly eligibleContributorCount: number | null
-  /** Evidence-served statistic + scope label (for example « Médiane des communes bretonnes »). */
-  readonly statisticLabel: string | null
-  /** The source contract keeps a neutral wording for a cross-border EPCI scope. */
-  readonly crossBorderNeutral: boolean
+}
+
+/** One owner-observed comparative layer (figure-level truth, never a default). */
+export interface CahierCaptureComparisonLayer {
+  /** Stable slot inside the section (figure column, plate, composition layer). */
+  readonly slot: string
+  /** The reader's raw toggle where the figure exposes one; null when it has none. */
+  readonly toggle: boolean | null
+  /** The figure has a served reference value for at least one drawn category/point/cell. */
+  readonly referenceAvailable: boolean
+  /** The owner actually draws/reads the comparison layer now. */
+  readonly displayed: boolean
+}
+
+export type CahierComparisonDisplayState =
+  | 'displayed'
+  | 'not-displayed'
+  | 'unobserved'
+  | 'not-applicable'
+
+export type CahierComparisonDisplayReason =
+  | 'shown'
+  | 'capability-absent'
+  | 'unpublished'
+  | 'not-eligible'
+  | 'empty-selection'
+  | 'hidden-by-user'
+  | 'no-served-reference'
+  | 'loading'
+  | 'error'
+  | 'unavailable'
+
+export interface CahierCaptureComparisonDisplay {
+  readonly state: CahierComparisonDisplayState
+  readonly reason: CahierComparisonDisplayReason
+  /** Owner observations, in publication order; empty when nothing was published. */
+  readonly layers: readonly CahierCaptureComparisonLayer[]
 }
 
 export interface CahierCaptureComparison {
   readonly status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   readonly error: string | null
   readonly eligible: boolean
-  /** The section actually renders comparative evidence (hidden references are excluded). */
-  readonly hasEvidence: boolean
+  /** The section family can carry a comparative layer at all (not proof it is drawn). */
+  readonly capable: boolean
   readonly selection: CahierCaptureComparisonSelection
-  /** Resolved group identity; null when none can be honestly named. */
+  /** Resolved group identity metadata; never proof that a comparison is displayed. */
   readonly group: CahierCaptureComparisonGroup | null
   readonly absent: CahierCaptureComparisonAbsence | null
+  /** Owner-observed effective presentation of comparative evidence. */
+  readonly display: CahierCaptureComparisonDisplay
+  /** Distinct served statistic/scope labels carried by the section figures, in order. */
+  readonly statisticLabels: readonly string[]
 }
 
 export interface CahierCaptureMapItem {
   readonly id: string
   readonly label: string
+  /** The owner declares that a map is expected for this item. */
   readonly declared: boolean
+  /** Owner-observed successful asset load; never derived from `declared`. */
   readonly loaded: boolean
+  /** Owner-observed failed asset load. */
   readonly unavailable: boolean
 }
 
 export interface CahierCaptureMaps {
-  readonly status: 'none' | 'pending' | 'available' | 'partial' | 'unavailable'
-  readonly legend: 'none' | 'pending' | 'available' | 'unavailable'
+  /** `unknown` means no map owner has published an observation yet. */
+  readonly status: 'none' | 'unknown' | 'pending' | 'available' | 'partial' | 'unavailable'
+  readonly legend: 'none' | 'unknown' | 'pending' | 'available' | 'unavailable'
   readonly items: readonly CahierCaptureMapItem[]
 }
 
@@ -217,7 +256,9 @@ export interface CahierEquipmentCaptureState {
 }
 
 export interface CahierComparisonLayerCaptureState {
-  readonly comparisonVisible: boolean
+  readonly toggle: boolean | null
+  readonly referenceAvailable: boolean
+  readonly displayed: boolean
 }
 
 export interface CahierMapAvailabilityCaptureState {
@@ -228,15 +269,15 @@ export interface CahierMapAvailabilityCaptureState {
 export interface CahierMobiliteSectionCaptureState {
   readonly comparisonStatus: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   readonly comparisonError: string | null
-  readonly comparisonNone: boolean
-  readonly comparisonIneligible: boolean
 }
 
 /** What each native owner publicly publishes; the venue only reads these thunks. */
 export type CahierExportPublicationState =
   | { readonly owner: 'aedar-equipment-explorer'; readonly state: CahierEquipmentCaptureState }
+  | { readonly owner: 'aedar-comparison-layer'; readonly state: CahierComparisonLayerCaptureState }
   | { readonly owner: 'mobilite-comparison-bars'; readonly state: CahierComparisonLayerCaptureState }
   | { readonly owner: 'mobilite-raccordement-curve'; readonly state: CahierComparisonLayerCaptureState }
+  | { readonly owner: 'mobilite-share-track'; readonly state: CahierComparisonLayerCaptureState }
   | { readonly owner: 'map-availability'; readonly state: CahierMapAvailabilityCaptureState }
   | { readonly owner: 'mobilite-section'; readonly state: CahierMobiliteSectionCaptureState }
 
@@ -296,7 +337,6 @@ export interface CahierRampsFigureCapture extends CahierCaptureFigureBase {
   }
   readonly effective: {
     readonly modes: readonly AedarRampMode[]
-    readonly comparisonVisible: boolean
   }
 }
 
@@ -342,7 +382,6 @@ export interface CahierExplorerFigureCapture extends CahierCaptureFigureBase {
     readonly detailStatus: 'idle' | 'loading' | 'ready' | 'error'
     readonly modes: readonly AedarRampMode[]
     readonly horizonMinutes: AedarEquipmentHorizon | null
-    readonly comparisonVisible: boolean
     readonly comparisonStatus: 'idle' | 'loading' | 'ready' | 'error'
     readonly comparisonError: string | null
     readonly comparison: AedarComparisonEvidence | null
@@ -355,9 +394,6 @@ export interface CahierBarsFigureCapture extends CahierCaptureFigureBase {
   readonly model: {
     readonly figure: MobiliteBarsFigureEvidence
     readonly ratio: MobiliteRatioEvidence | null
-  }
-  readonly effective: {
-    readonly comparisonVisible: boolean
   }
 }
 
@@ -396,9 +432,6 @@ export interface CahierCurveFigureCapture extends CahierCaptureFigureBase {
     readonly comparisonLabel: string | null
     readonly unavailableResources: readonly string[]
     readonly unavailableComparisons: readonly string[]
-  }
-  readonly effective: {
-    readonly comparisonVisible: boolean
   }
 }
 
@@ -548,10 +581,12 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
       status: captureComparisonStatus(family, input, publications),
       error: captureComparisonError(family, input, publications),
       eligible: input.comparisonEligible,
-      hasEvidence: family ? FAMILY_HAS_COMPARISON_EVIDENCE[family] : false,
+      capable: family ? FAMILY_HAS_COMPARISON_EVIDENCE[family] : false,
       selection,
       group,
       absent,
+      display: captureComparisonDisplay({ family, input, selection, publications }),
+      statisticLabels: comparisonStatisticLabels(evidence, publications),
     },
     sources: captureSources(evidence),
     aedar: evidence && family?.startsWith('aedar-') ? deepPlain(input.aedar) : null,
@@ -572,6 +607,13 @@ const FAMILY_HAS_COMPARISON_EVIDENCE: Readonly<Record<CahierCaptureFamily, boole
   'mobilite-share': true,
   'mobilite-curve': true,
 }
+
+const LAYER_OWNERS: ReadonlySet<CahierExportPublicationState['owner']> = new Set([
+  'aedar-comparison-layer',
+  'mobilite-comparison-bars',
+  'mobilite-raccordement-curve',
+  'mobilite-share-track',
+])
 
 const MODE_SELECTING_FAMILIES: ReadonlySet<CahierCaptureFamily> = new Set([
   'aedar-ramps',
@@ -599,6 +641,15 @@ function captureGeneration(evidence: ContentEvidence | null): CahierCaptureGener
     return {
       contentVersion: evidence.contentVersion,
       referenceContentVersion: evidence.referenceContentVersion,
+    }
+  }
+  // Other AEDAR evidence carries the producer publication clock with its
+  // section source; Mobilit? evidence has no content-version token, so its
+  // generation stays explicitly absent rather than invented.
+  if (evidence && 'source' in evidence && evidence.source) {
+    return {
+      contentVersion: evidence.source.contentVersion ?? null,
+      referenceContentVersion: evidence.source.referenceContentVersion ?? null,
     }
   }
   return { contentVersion: null, referenceContentVersion: null }
@@ -710,29 +761,38 @@ function servedComparisonCounts(evidence: ContentEvidence | null): {
   }
 }
 
-function comparisonStatisticLabel(
+/** Distinct served statistic/scope labels the section figures actually carry. */
+function comparisonStatisticLabels(
   evidence: ContentEvidence | null,
   publications: readonly CahierExportPublication[],
-): string | null {
-  if (!evidence) return null
+): readonly string[] {
+  if (!evidence) return []
+  const labels: string[] = []
+  const add = (label: string | null | undefined): void => {
+    if (label && !labels.includes(label)) labels.push(label)
+  }
   switch (evidence.kind) {
     case 'aedar-car-overview':
     case 'aedar-access':
     case 'mobilite-share':
     case 'mobilite-raccordement':
-      return evidence.comparisonLabel
+      add(evidence.comparisonLabel)
+      break
     case 'mobilite-networks':
-      return evidence.figure.comparisonLabel
+      add(evidence.figure.comparisonLabel)
+      break
     case 'mobilite-stationnement-ravitaillement':
-      return evidence.columns
-        .map((column) => column.bars.comparisonLabel)
-        .find((label): label is string => Boolean(label)) ?? null
+      for (const column of evidence.columns) add(column.bars.comparisonLabel)
+      break
     case 'aedar-equipment-explorer':
-      return evidence.comparisonRequest?.label ?? explorerPublication(publications)?.comparison?.label ?? null
+      add(evidence.comparisonRequest?.label)
+      add(explorerPublication(publications)?.comparison?.label)
+      break
     case 'aedar-diversity-loss':
     case 'aedar-equipment-profile':
-      return null
+      break
   }
+  return labels
 }
 
 function captureComparisonGroup(options: {
@@ -757,7 +817,6 @@ function captureComparisonGroup(options: {
   }
   const contextes = contextesDepuisReference(control.focal, control.territoires)
   const served = servedComparisonCounts(evidence)
-  const statisticLabel = comparisonStatisticLabel(evidence, input.publications)
   if (current.etat === 'membres') {
     const scope = contexteMembresSelectionnes(current.membres)?.scope ?? null
     const names = current.membres
@@ -773,8 +832,6 @@ function captureComparisonGroup(options: {
         // The total selected members, never the eligible contributors of a measure.
         selectedMemberCount: current.membres.length,
         eligibleContributorCount: served.eligibleContributorCount,
-        statisticLabel,
-        crossBorderNeutral: false,
       },
       absent: null,
     }
@@ -796,11 +853,76 @@ function captureComparisonGroup(options: {
       scopeKind: contexte.scope.kind,
       selectedMemberCount: served.selectedMemberCount,
       eligibleContributorCount: served.eligibleContributorCount,
-      statisticLabel,
-      crossBorderNeutral: contexte.scope.kind === 'epcis-bretagne',
     },
     absent: null,
   }
+}
+
+function comparisonLayerPublications(
+  publications: readonly CahierExportPublication[],
+): readonly CahierExportPublication[] {
+  return publications.filter((publication) => LAYER_OWNERS.has(publication.state.owner))
+}
+
+function comparisonLayerFrom(publication: CahierExportPublication): CahierCaptureComparisonLayer | null {
+  switch (publication.state.owner) {
+    case 'aedar-comparison-layer':
+    case 'mobilite-comparison-bars':
+    case 'mobilite-raccordement-curve':
+    case 'mobilite-share-track':
+      return {
+        slot: publication.slot || 'comparison',
+        toggle: publication.state.state.toggle,
+        referenceAvailable: publication.state.state.referenceAvailable,
+        displayed: publication.state.state.displayed,
+      }
+    default:
+      return null
+  }
+}
+
+/**
+ * Aggregate only the layers the owners actually published. Nothing is inferred
+ * from a family's capability, a raw toggle default or evidence declarations.
+ */
+function captureComparisonDisplay(options: {
+  family: CahierCaptureFamily | null
+  input: CahierSectionCaptureInput
+  selection: CahierCaptureComparisonSelection
+  publications: readonly CahierExportPublication[]
+}): CahierCaptureComparisonDisplay {
+  const { family, input, selection, publications } = options
+  const capable = family ? FAMILY_HAS_COMPARISON_EVIDENCE[family] : false
+  if (!capable) {
+    return { state: 'not-applicable', reason: 'capability-absent', layers: [] }
+  }
+  const layers = comparisonLayerPublications(publications)
+    .map((publication) => comparisonLayerFrom(publication))
+    .filter((layer): layer is CahierCaptureComparisonLayer => layer !== null)
+  if (layers.length === 0) return { state: 'unobserved', reason: 'unpublished', layers: [] }
+  if (!input.comparisonEligible) return { state: 'not-displayed', reason: 'not-eligible', layers }
+  if (selection.state === 'vide' || (selection.state === 'membres' && selection.memberCount === 0)) {
+    return { state: 'not-displayed', reason: 'empty-selection', layers }
+  }
+  if (layers.some((layer) => layer.displayed)) return { state: 'displayed', reason: 'shown', layers }
+  if (layers.every((layer) => layer.toggle === false)) {
+    return { state: 'not-displayed', reason: 'hidden-by-user', layers }
+  }
+  switch (input.comparisonStatus) {
+    case 'loading':
+      return { state: 'not-displayed', reason: 'loading', layers }
+    case 'error':
+      return { state: 'not-displayed', reason: 'error', layers }
+    case 'unavailable':
+      return { state: 'not-displayed', reason: 'unavailable', layers }
+    case 'idle':
+    case 'ready':
+      break
+  }
+  if (layers.every((layer) => !layer.referenceAvailable)) {
+    return { state: 'not-displayed', reason: 'no-served-reference', layers }
+  }
+  return { state: 'not-displayed', reason: 'unavailable', layers }
 }
 
 function epciNameFor(control: NonNullable<CahierSectionCaptureInput['control']>): string | null {
@@ -819,8 +941,20 @@ function captureSources(evidence: ContentEvidence | null): readonly CahierCaptur
     seen.add(source.identity)
     sources.push(source)
   }
+  const addAedar = (source: AedarEvidenceSource | null): void => {
+    if (source) add(aedarSourceCapture(source))
+  }
   switch (evidence.kind) {
+    case 'aedar-car-overview':
+    case 'aedar-diversity-loss':
+    case 'aedar-access':
+    case 'aedar-equipment-profile':
+    case 'aedar-equipment-explorer':
+      addAedar(evidence.source)
+      break
     case 'mobilite-networks':
+    case 'mobilite-share':
+    case 'mobilite-raccordement':
       for (const source of evidence.sources) add(contentSourceCapture(source))
       break
     case 'mobilite-stationnement-ravitaillement':
@@ -828,14 +962,6 @@ function captureSources(evidence: ContentEvidence | null): readonly CahierCaptur
         for (const source of column.sources) add(contentSourceCapture(source))
       }
       break
-    case 'mobilite-share':
-    case 'mobilite-raccordement':
-      for (const source of evidence.sources) add(contentSourceCapture(source))
-      break
-    default: {
-      const source = evidence.source ? aedarSourceCapture(evidence.source) : null
-      if (source) add(source)
-    }
   }
   return sources
 }
@@ -860,74 +986,71 @@ function contentSourceCapture(source: ContentSource): CahierCaptureSource {
 }
 
 function aedarSourceCapture(source: AedarEvidenceSource): CahierCaptureSource {
+  const url = source.url || null
+  const licence = source.licence ?? null
+  const referenceDate = source.referenceDate ?? null
+  const publicationDate = source.publicationDate ?? null
+  const credit = source.credit ?? null
   return {
-    identity: ['aedar', source.label, source.version, source.url, source.credit ?? ''].join('\u0000'),
-    id: null,
+    // Display fields alone cannot identify a record: two AEDAR sources may show
+    // the same attribution/vintage/URL while carrying different IDs, licences
+    // or publication clocks.
+    identity: ['aedar', source.sourceId ?? '', source.label, source.version, url, licence,
+      referenceDate, publicationDate, credit].join('\u0000'),
+    id: source.sourceId ?? null,
     label: source.label,
     version: source.version,
     displayVersion: null,
-    referenceDate: null,
-    publicationDate: null,
-    url: source.url || null,
-    licence: null,
-    credit: source.credit ?? null,
+    referenceDate,
+    publicationDate,
+    url,
+    licence,
+    credit,
   }
 }
 
+function hasMapSurface(
+  family: CahierCaptureFamily | null,
+  evidence: ContentEvidence | null,
+): boolean {
+  if (family === 'aedar-car-overview' || family === 'aedar-diversity-loss') return true
+  return family === 'mobilite-bars' && evidence?.kind === 'mobilite-networks'
+}
+
+/**
+ * Map/legend state is published by the owning map plate. Before that
+ * observation exists the capture says `unknown`; it never promotes a declared
+ * map or an evidence flag into a loaded asset or a rendered legend.
+ */
 function captureMaps(options: {
   family: CahierCaptureFamily | null
   evidence: ContentEvidence | null
   publications: readonly CahierExportPublication[]
 }): CahierCaptureMaps {
-  const published = options.publications.filter((publication) => publication.state.owner === 'map-availability')
-  if (published.length > 0) {
-    const items = published.flatMap((publication) =>
-      publication.state.owner === 'map-availability' ? publication.state.state.maps : [])
-    const legend = published
-      .map((publication) => publication.state.owner === 'map-availability'
-        ? publication.state.state.legend : 'none' as const)
-      .find((candidate) => candidate !== 'none') ?? 'none'
-    return { status: mapStatus(items), legend, items: deepPlain(items) }
+  const { family, evidence, publications } = options
+  const published = publications.filter((publication) => publication.state.owner === 'map-availability')
+  if (published.length === 0) {
+    return hasMapSurface(family, evidence)
+      ? { status: 'unknown', legend: 'unknown', items: [] }
+      : { status: 'none', legend: 'none', items: [] }
   }
-  const { family, evidence } = options
-  if (family === 'aedar-diversity-loss' && evidence?.kind === 'aedar-diversity-loss') {
-    const items: CahierCaptureMapItem[] = evidence.maps.map((map) => ({
-      id: map.mode,
-      label: map.label,
-      declared: map.inlineAvailable || map.inspectionAvailable,
-      loaded: map.inlineAvailable,
-      unavailable: !map.inlineAvailable && !map.inspectionAvailable,
-    }))
-    const legend = evidence.legend
-      ? 'available' as const
-      : evidence.metadataState === 'loading'
-        ? 'pending' as const
-        : evidence.metadataState === 'unavailable' ? 'unavailable' as const : 'none' as const
-    return { status: mapStatus(items), legend, items }
-  }
-  if (family === 'aedar-car-overview' && evidence?.kind === 'aedar-car-overview') {
-    const items: CahierCaptureMapItem[] = evidence.mapModes.map((mode) => ({
-      id: mode,
-      label: mode,
-      declared: true,
-      loaded: true,
-      unavailable: false,
-    }))
-    return { status: 'available', legend: 'pending', items }
-  }
-  if (family === 'mobilite-bars' && evidence?.kind === 'mobilite-networks') {
-    return { status: 'pending', legend: 'none', items: [] }
-  }
-  return { status: 'none', legend: 'none', items: [] }
+  const items = published.flatMap((publication) =>
+    publication.state.owner === 'map-availability' ? publication.state.state.maps : [])
+  const first = published[0]
+  const legend = first?.state.owner === 'map-availability' ? first.state.state.legend : 'unknown'
+  return { status: mapStatus(items), legend, items: deepPlain(items) }
 }
 
 function mapStatus(items: readonly CahierCaptureMapItem[]): CahierCaptureMaps['status'] {
-  if (items.length === 0) return 'none'
-  if (items.every((item) => !item.declared)) return 'unavailable'
-  if (items.some((item) => !item.loaded && !item.unavailable)) return 'pending'
-  if (items.every((item) => item.declared && item.loaded && !item.unavailable)) return 'available'
-  if (items.every((item) => item.unavailable || !item.declared)) return 'unavailable'
-  return 'partial'
+  if (items.length === 0) return 'unknown'
+  const declared = items.filter((item) => item.declared)
+  if (declared.length === 0) return 'unavailable'
+  if (declared.every((item) => item.loaded && !item.unavailable)) return 'available'
+  if (declared.every((item) => item.unavailable)) return 'unavailable'
+  const loaded = declared.some((item) => item.loaded && !item.unavailable)
+  const failed = declared.some((item) => item.unavailable)
+  if (loaded && failed) return 'partial'
+  return 'pending'
 }
 
 function captureFigures(options: {
@@ -981,7 +1104,6 @@ function captureFigures(options: {
         },
         effective: {
           modes: [...(input.aedar?.modes ?? [])],
-          comparisonVisible: input.aedar?.comparisonVisible ?? true,
         },
       }]
     case 'aedar-equipment-profile':
@@ -1028,7 +1150,6 @@ function captureFigures(options: {
           detailStatus: explorer?.detailStatus ?? 'idle',
           modes: [...(input.aedar?.modes ?? [])],
           horizonMinutes: input.aedar?.horizonMinutes ?? null,
-          comparisonVisible: input.aedar?.comparisonVisible ?? true,
           comparisonStatus: explorer?.comparisonStatus ?? 'idle',
           comparisonError: explorer?.comparisonError ?? null,
           comparison: explorer?.comparison ?? null,
@@ -1041,18 +1162,12 @@ function captureFigures(options: {
         family: 'mobilite-bars',
         slot: 'bars',
         model: { figure: evidence.figure, ratio: null },
-        effective: {
-          comparisonVisible: barsComparisonVisible(publications, 'bars'),
-        },
       }]
     case 'mobilite-stationnement-ravitaillement':
       return evidence.columns.map((column) => ({
         family: 'mobilite-bars',
         slot: column.key,
         model: { figure: column.bars, ratio: column.ratio },
-        effective: {
-          comparisonVisible: barsComparisonVisible(publications, column.key),
-        },
       }))
     case 'mobilite-share':
       return [{
@@ -1095,29 +1210,8 @@ function captureFigures(options: {
           unavailableResources: evidence.unavailableResources ?? [],
           unavailableComparisons: evidence.unavailableComparisons ?? [],
         },
-        effective: {
-          comparisonVisible: curveComparisonVisible(publications),
-        },
       }]
   }
-}
-
-function barsComparisonVisible(
-  publications: readonly CahierExportPublication[],
-  slot: string,
-): boolean {
-  const publication = publications.find((entry) =>
-    entry.slot === slot && entry.state.owner === 'mobilite-comparison-bars')
-  return publication?.state.owner === 'mobilite-comparison-bars'
-    ? publication.state.state.comparisonVisible
-    : true
-}
-
-function curveComparisonVisible(publications: readonly CahierExportPublication[]): boolean {
-  const publication = publications.find((entry) => entry.state.owner === 'mobilite-raccordement-curve')
-  return publication?.state.owner === 'mobilite-raccordement-curve'
-    ? publication.state.state.comparisonVisible
-    : true
 }
 
 export function projeterRequeteExport(

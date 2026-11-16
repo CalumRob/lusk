@@ -61,10 +61,15 @@ const Y_TICKS = [0, 0.25, 0.5, 0.75, 1] as const
 const UNAVAILABLE_LABEL = 'Indisponible'
 
 const comparisonVisible = ref(true)
-// #1021 — this curve owns its independent comparison visibility.
+// #1021 — this curve owns its independent comparison visibility and whether a
+// served reference curve is drawn.
 useCahierExportPublication(() => ({
   owner: 'mobilite-raccordement-curve',
-  state: { comparisonVisible: comparisonVisible.value },
+  state: {
+    toggle: comparisonVisible.value,
+    referenceAvailable: props.figure.comparison !== null,
+    displayed: showComparison.value,
+  },
 }))
 const plotElement = ref<HTMLElement | null>(null)
 const hoveredTickKey = ref<string | null>(null)

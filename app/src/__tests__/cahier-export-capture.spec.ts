@@ -16,6 +16,7 @@ import {
 } from '@/fiche/prototype/cahierExportCapture'
 import type {
   CahierAedarCaptureState,
+  CahierComparisonLayerCaptureState,
   CahierExportPublication,
   CahierSectionCaptureInput,
   CahierCaptureReadiness,
@@ -24,8 +25,10 @@ import { CAHIER_SECTION_RENDERERS } from '@/fiche/prototype/cahierSectionRendere
 import { CAHIER_EXPORT_CAPTURE_KEY } from '@/fiche/prototype/cahierExportVenue'
 import {
   cahierExportFixture,
+  captureAedarAccessForSource,
   communeMembers,
   epciControl,
+  readyLossMetadata,
   sectionOf,
 } from './helpers/cahierExportFixtures'
 
@@ -58,6 +61,19 @@ function inputFor(
     aedar: aedarState,
     publications: [],
     ...options,
+  }
+}
+
+function layer(
+  slot: string,
+  state: Partial<CahierComparisonLayerCaptureState> = {},
+): CahierExportPublication {
+  return {
+    slot,
+    state: {
+      owner: 'mobilite-comparison-bars',
+      state: { toggle: true, referenceAvailable: true, displayed: true, ...state },
+    },
   }
 }
 
@@ -137,7 +153,7 @@ describe('Cahier export capture — closed admission and coherent identity (#102
   })
 })
 
-describe('Cahier export capture — comparison identity (#1021)', () => {
+describe('Cahier export capture — comparison identity and effective presentation (#1021)', () => {
   it('resolves the preset default with the exact EPCI public name, never a parsed label', () => {
     const { content, control } = cahierExportFixture()
     const epci = control.territoires.find((candidate) => candidate.type === 'epci' && candidate.territoire === control.focal.epci)
@@ -155,8 +171,84 @@ describe('Cahier export capture — comparison identity (#1021)', () => {
       level: 'commune',
       names: [epci?.nom],
     })
-    expect(capture.comparison.group?.statisticLabel).toBeTruthy()
-    expect(capture.comparison.hasEvidence).toBe(true)
+    expect(capture.comparison.capable).toBe(true)
+  })
+
+  it('does not advertise a displayed comparison without an owner observation', () => {
+    const { content } = cahierExportFixture()
+    const capture = captureCahierSection(inputFor(sectionOf(content, 'reseaux')))
+    expect(capture.comparison.display).toEqual({
+      state: 'unobserved',
+      reason: 'unpublished',
+      layers: [],
+    })
+    expect(capture.comparison.group).not.toBeNull()
+  })
+
+  it('reports displayed proof only when the owner publishes a drawn layer', () => {
+    const { content } = cahierExportFixture()
+    const displayed = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), {
+      publications: [layer('bars')],
+    }))
+    expect(displayed.comparison.display).toEqual({
+      state: 'displayed',
+      reason: 'shown',
+      layers: [{ slot: 'bars', toggle: true, referenceAvailable: true, displayed: true }],
+    })
+
+    const hidden = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), {
+      publications: [layer('bars', { toggle: false, displayed: false })],
+    }))
+    expect(hidden.comparison.display.state).toBe('not-displayed')
+    expect(hidden.comparison.display.reason).toBe('hidden-by-user')
+
+    const missingReference = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), {
+      publications: [layer('bars', { referenceAvailable: false, displayed: false })],
+    }))
+    expect(missingReference.comparison.display.reason).toBe('no-served-reference')
+
+    const loading = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), {
+      comparisonStatus: 'loading',
+      publications: [layer('bars', { referenceAvailable: false, displayed: false })],
+    }))
+    expect(loading.comparison.display.reason).toBe('loading')
+
+    const unavailable = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), {
+      comparisonStatus: 'unavailable',
+      publications: [layer('bars', { referenceAvailable: false, displayed: false })],
+    }))
+    expect(unavailable.comparison.display.reason).toBe('unavailable')
+  })
+
+  it('never advertises displayed comparison for a region or an explicit empty selection', () => {
+    const { content, control } = cahierExportFixture({ selection: { etat: 'vide' } })
+    const region = captureCahierSection(inputFor(sectionOf(content, 'couverture-du-territoire'), {
+      control: null,
+      comparisonEligible: false,
+      publications: [layer('share')],
+    }))
+    expect(region.comparison.display.state).toBe('not-displayed')
+    expect(region.comparison.display.reason).toBe('not-eligible')
+
+    const empty = captureCahierSection(inputFor(sectionOf(content, 'couverture-du-territoire'), {
+      control,
+      publications: [layer('share')],
+    }))
+    expect(empty.comparison.display.state).toBe('not-displayed')
+    expect(empty.comparison.display.reason).toBe('empty-selection')
+    expect(empty.comparison.group).toBeNull()
+    expect(empty.comparison.absent).toBe('empty-selection')
+  })
+
+  it('marks a family without a comparative layer as not applicable', () => {
+    const { content } = cahierExportFixture()
+    const capture = captureCahierSection(inputFor(sectionOf(content, 'aedar-equipment-profile')))
+    expect(capture.comparison.capable).toBe(false)
+    expect(capture.comparison.display).toEqual({
+      state: 'not-applicable',
+      reason: 'capability-absent',
+      layers: [],
+    })
   })
 
   it('keeps the actually selected members and their exact public names in order', () => {
@@ -172,26 +264,6 @@ describe('Cahier export capture — comparison identity (#1021)', () => {
     expect(capture.comparison.group?.scopeKind).toBe('selection')
   })
 
-  it('captures an explicit empty selection as no group, never a fallback cohort', () => {
-    const { content, control } = cahierExportFixture({ selection: { etat: 'vide' } })
-    const capture = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), { control }))
-    expect(capture.comparison.selection).toMatchObject({ state: 'vide', members: [], memberCount: null })
-    expect(capture.comparison.group).toBeNull()
-    expect(capture.comparison.absent).toBe('empty-selection')
-  })
-
-  it('reports a comparison-ineligible territory without inventing a group', () => {
-    const { content } = cahierExportFixture()
-    const capture = captureCahierSection(inputFor(sectionOf(content, 'couverture-du-territoire'), {
-      control: null,
-      comparisonEligible: false,
-    }))
-    expect(capture.comparison.eligible).toBe(false)
-    expect(capture.comparison.selection.known).toBe(false)
-    expect(capture.comparison.group).toBeNull()
-    expect(capture.comparison.absent).toBe('not-eligible')
-  })
-
   it('reports an unresolvable default preset as unresolved, not as an empty selection', () => {
     const { content, control } = cahierExportFixture()
     const focal = { ...control.focal, epci: null }
@@ -203,7 +275,7 @@ describe('Cahier export capture — comparison identity (#1021)', () => {
     expect(capture.comparison.absent).toBe('unresolved-selection')
   })
 
-  it('keeps the neutral cross-border EPCI wording from the source contract', () => {
+  it('keeps the neutral EPCI/Bretagne wording from the source contract without a transborder flag', () => {
     const { content } = cahierExportFixture({ focal: epciControl().focal })
     const control = epciControl()
     const capture = captureCahierSection(inputFor(sectionOf(content, 'reseaux'), { control }))
@@ -211,8 +283,8 @@ describe('Cahier export capture — comparison identity (#1021)', () => {
       preset: 'bretagne',
       level: 'epci',
       names: ['EPCI du périmètre de comparaison'],
-      crossBorderNeutral: true,
     })
+    expect(capture.comparison.group).not.toHaveProperty('crossBorderNeutral')
     expect(capture.comparison.group?.names.join(' ')).not.toMatch(/EPCI bretons/iu)
   })
 
@@ -239,11 +311,41 @@ describe('Cahier export capture — comparison identity (#1021)', () => {
     expect(capture.comparison.group).toMatchObject({
       selectedMemberCount: 3,
       eligibleContributorCount: 2,
-      statisticLabel: 'Moyenne des communes bretonnes',
     })
+    expect(capture.comparison.statisticLabels).toEqual(['Moyenne des communes bretonnes'])
     const curve = capture.figures.find((figure) => figure.family === 'mobilite-curve')
     if (!curve || curve.family !== 'mobilite-curve') throw new Error('curve figure expected')
     expect(curve.model.comparison?.eligibleCount).toBe(2)
+  })
+
+  it('preserves each paired column statistic instead of claiming the first one for both', () => {
+    const { content } = cahierExportFixture()
+    const section = sectionOf(content, 'stationnement-ravitaillement')
+    if (section.evidence?.kind !== 'mobilite-stationnement-ravitaillement') {
+      throw new Error('paired evidence expected')
+    }
+    const labels = ['Médiane des stationnements', 'Moyenne des ravitaillements'] as const
+    const evidence = section.evidence!
+    const variant = {
+      ...section,
+      evidence: {
+        ...evidence,
+        columns: evidence.columns.map((column, index) => ({
+          ...column,
+          bars: { ...column.bars, comparisonLabel: labels[index]! },
+        })) as unknown as typeof evidence.columns,
+      },
+    } as ContentSection
+    const capture = captureCahierSection(inputFor(variant, { publications: [layer('stationnement'), layer('ravitaillement')] }))
+    expect(capture.comparison.statisticLabels).toEqual([...labels])
+    const stationnement = capture.figures.find((figure) => figure.slot === 'stationnement')
+    const ravitaillement = capture.figures.find((figure) => figure.slot === 'ravitaillement')
+    if (stationnement?.family !== 'mobilite-bars' || ravitaillement?.family !== 'mobilite-bars') {
+      throw new Error('paired bars expected')
+    }
+    expect(stationnement.model.figure.comparisonLabel).toBe(labels[0])
+    expect(ravitaillement.model.figure.comparisonLabel).toBe(labels[1])
+    expect(capture.comparison.display.layers.map((entry) => entry.slot)).toEqual(['stationnement', 'ravitaillement'])
   })
 })
 
@@ -275,18 +377,48 @@ describe('Cahier export capture — sources and provenance (#1021)', () => {
     expect(capture.sources[0]!.identity).not.toBe(capture.sources[1]!.identity)
   })
 
-  it('normalizes the AEDAR source without dropping its identity or credit', () => {
-    const { content } = cahierExportFixture()
-    const section = sectionOf(content, 'aedar-access')
-    if (section.evidence?.kind !== 'aedar-access') throw new Error('access evidence expected')
-    const capture = captureCahierSection(inputFor(section))
+  it('carries the native AEDAR provenance identity, licence and clocks', () => {
+    const capture = captureCahierSection(inputFor(captureAedarAccessForSource()))
     expect(capture.sources).toHaveLength(1)
     expect(capture.sources[0]).toMatchObject({
-      label: section.evidence.source?.label,
-      version: section.evidence.source?.version,
-      url: section.evidence.source?.url,
+      id: 'aedar_bretagne',
+      label: 'AEDAR',
+      version: 'test',
+      url: 'https://example.test/aedar',
+      licence: 'Licence Ouverte',
+      referenceDate: '2026-01-01',
+      publicationDate: '2026-09-30',
     })
-    expect(capture.sources[0]!.identity).toContain(section.evidence.source!.url)
+    expect(capture.generation).toEqual({ contentVersion: 'facts', referenceContentVersion: 'reference' })
+  })
+
+  it('distinguishes native AEDAR records with identical displayed text', () => {
+    const first = captureCahierSection(inputFor(captureAedarAccessForSource({
+      source_id: 'aedar_a',
+      licence: 'Licence A',
+      reference_date: '2026-01-01',
+      publication_date: '2026-01-02',
+    })))
+    const second = captureCahierSection(inputFor(captureAedarAccessForSource({
+      source_id: 'aedar_b',
+      licence: 'Licence B',
+      reference_date: '2026-02-01',
+      publication_date: '2026-02-02',
+    })))
+    expect(first.sources[0]!.label).toBe(second.sources[0]!.label)
+    expect(first.sources[0]!.version).toBe(second.sources[0]!.version)
+    expect(first.sources[0]!.url).toBe(second.sources[0]!.url)
+    expect(first.sources[0]!.id).toBe('aedar_a')
+    expect(second.sources[0]!.id).toBe('aedar_b')
+    expect(first.sources[0]!.licence).not.toBe(second.sources[0]!.licence)
+    expect(first.sources[0]!.referenceDate).not.toBe(second.sources[0]!.referenceDate)
+    expect(first.sources[0]!.identity).not.toBe(second.sources[0]!.identity)
+  })
+
+  it('leaves Mobilité generation tokens explicitly absent rather than inventing one', () => {
+    const { content } = cahierExportFixture()
+    const capture = captureCahierSection(inputFor(sectionOf(content, 'reseaux')))
+    expect(capture.generation).toEqual({ contentVersion: null, referenceContentVersion: null })
   })
 })
 
@@ -366,25 +498,62 @@ describe('Cahier export capture — readiness and map availability (#1021)', () 
     expect(error.readiness).toMatchObject({ status: 'error', reason: 'chapter-error' })
   })
 
-  it('captures the map and legend availability the owners actually publish', () => {
+  it('keeps map and legend state unknown until a map owner publishes an observation', () => {
+    const { content } = cahierExportFixture()
+    for (const key of ['aedar-car-overview', 'aedar-diversity-loss', 'reseaux'] as const) {
+      const capture = captureCahierSection(inputFor(sectionOf(content, key)))
+      expect(capture.capabilities.maps).toEqual({ status: 'unknown', legend: 'unknown', items: [] })
+    }
+    const profile = captureCahierSection(inputFor(sectionOf(content, 'aedar-equipment-profile')))
+    expect(profile.capabilities.maps).toEqual({ status: 'none', legend: 'none', items: [] })
+  })
+
+  it('derives map status only from owner-observed load state', () => {
     const { content } = cahierExportFixture()
     const section = sectionOf(content, 'aedar-car-overview')
-    const publications: CahierExportPublication[] = [{
+    const publication = (maps: { declared: boolean; loaded: boolean; unavailable: boolean }[]): CahierExportPublication => ({
       slot: '',
       state: {
         owner: 'map-availability',
         state: {
-          maps: [{ id: 'car', label: 'Voiture', declared: true, loaded: true, unavailable: false }],
+          maps: maps.map((state) => ({ id: 'car', label: 'Voiture', ...state })),
           legend: 'available',
         },
       },
-    }]
-    const capture = captureCahierSection(inputFor(section, { publications }))
-    expect(capture.capabilities.maps).toMatchObject({
-      status: 'available',
-      legend: 'available',
-      items: [{ id: 'car', label: 'Voiture', declared: true, loaded: true, unavailable: false }],
     })
+    const pending = captureCahierSection(inputFor(section, {
+      publications: [publication([{ declared: true, loaded: false, unavailable: false }])],
+    }))
+    expect(pending.capabilities.maps).toMatchObject({ status: 'pending', legend: 'available' })
+
+    const loaded = captureCahierSection(inputFor(section, {
+      publications: [publication([{ declared: true, loaded: true, unavailable: false }])],
+    }))
+    expect(loaded.capabilities.maps.status).toBe('available')
+
+    const failed = captureCahierSection(inputFor(section, {
+      publications: [publication([{ declared: true, loaded: false, unavailable: true }])],
+    }))
+    expect(failed.capabilities.maps.status).toBe('unavailable')
+
+    const undeclared = captureCahierSection(inputFor(section, {
+      publications: [publication([{ declared: false, loaded: false, unavailable: false }])],
+    }))
+    expect(undeclared.capabilities.maps.status).toBe('unavailable')
+  })
+
+  it('captures the diversity legend the owner actually publishes', () => {
+    const { content } = cahierExportFixture({ lossMetadata: readyLossMetadata() })
+    const capture = captureCahierSection(inputFor(sectionOf(content, 'aedar-diversity-loss'), {
+      publications: [{
+        slot: '',
+        state: {
+          owner: 'map-availability',
+          state: { maps: [], legend: 'available' },
+        },
+      }],
+    }))
+    expect(capture.capabilities.maps.legend).toBe('available')
   })
 
   it('exposes the shared comparison-control key without importing a second registry', () => {

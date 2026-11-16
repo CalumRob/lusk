@@ -8,6 +8,7 @@
 import type { ControleComparaison, SelectionComparaison } from '@/fiche/comparisonContext'
 import { aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
 import type { AedarTerritorySummary } from '@/fiche/content/aedarApiClient'
+import type { AedarDiversityLossMapMetadata } from '@/fiche/content/aedarDiversityLossMaps'
 import { AEDAR_AGGREGATE_READING_MEASURES } from '@/fiche/content/aedarTimeRampFacts'
 import { buildMobiliteRaccordementSection, buildMobiliteShareSection } from '@/fiche/content/mobiliteSections'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
@@ -40,7 +41,17 @@ const page3Payload: Payload = {
   themeMetadata: { mobilite: metadonneesMobiliteRaccordementFixture },
 }
 
-const aedarSource = {
+export interface AedarSourceFixture {
+  source_id: string
+  vintage_id: string
+  source_url: string
+  licence: string
+  attribution: string
+  reference_date: string
+  publication_date: string
+}
+
+export const aedarProvenanceFixture: AedarSourceFixture = {
   source_id: 'aedar_bretagne',
   vintage_id: 'test',
   source_url: 'https://example.test/aedar',
@@ -50,7 +61,7 @@ const aedarSource = {
   publication_date: '2026-09-30',
 }
 
-function aedarSummary(): AedarTerritorySummary {
+function aedarSummary(source: AedarSourceFixture = aedarProvenanceFixture): AedarTerritorySummary {
   return {
     territory: { territory_type: 'commune', territory_id: '22001' },
     summaryContentVersion: 'summary',
@@ -65,18 +76,18 @@ function aedarSummary(): AedarTerritorySummary {
       n_observed: 100,
       coverage_status: 'covered',
       statistic: 'direct',
-      ...aedarSource,
+      ...source,
     })),
-    provenance: { contentVersion: 'facts', sources: [aedarSource] },
+    provenance: { contentVersion: 'facts', sources: [source] },
   }
 }
 
-function aedarDetail() {
+function aedarDetail(source: AedarSourceFixture = aedarProvenanceFixture) {
   return {
     status: 'ready' as const,
     contentVersion: 'facts',
     referenceContentVersion: 'reference',
-    provenance: aedarSummary().provenance,
+    provenance: aedarSummary(source).provenance,
     facts: [{
       territory_id: '22001',
       territory_type: 'commune' as const,
@@ -87,7 +98,7 @@ function aedarDetail() {
       n_observed: 100,
       coverage_status: 'covered',
       measures: {},
-      ...aedarSource,
+      ...source,
     }, {
       territory_id: '22001',
       territory_type: 'commune' as const,
@@ -98,7 +109,7 @@ function aedarDetail() {
       n_observed: 80,
       coverage_status: 'covered',
       measures: {},
-      ...aedarSource,
+      ...source,
     }],
   }
 }
@@ -109,10 +120,39 @@ export interface CahierExportFixture {
   readonly sections: readonly ContentSection[]
 }
 
-function aedarSections(territory: ThemeContent['territory']): ContentSection[] {
-  return aedarPrototypeSections(aedarSummary(), aedarDetail(), territory, {
-    lossMapMetadata: { status: 'loading', legend: null },
+export function readyLossMetadata(): AedarDiversityLossMapMetadata {
+  return {
+    status: 'ready',
+    legend: {
+      colors: ['#f1f2ec', '#9db7ad', '#3f6f63'],
+      tickLabels: ['0', '1', '2+'],
+    },
+  }
+}
+
+function aedarSections(
+  territory: ThemeContent['territory'],
+  lossMetadata: AedarDiversityLossMapMetadata,
+  source: AedarSourceFixture = aedarProvenanceFixture,
+): ContentSection[] {
+  return aedarPrototypeSections(aedarSummary(source), aedarDetail(source), territory, {
+    lossMapMetadata: lossMetadata,
   }) as ContentSection[]
+}
+
+/** One native AEDAR access section carrying the given producer provenance record. */
+export function captureAedarAccessForSource(
+  source: Partial<AedarSourceFixture> = {},
+): ContentSection {
+  const facts = territoryFactsFor(basePayload, '22001')
+  if (!facts) throw new Error('Mobilité fixture facts missing')
+  const sections = aedarSections(facts.territory, { status: 'loading', legend: null }, {
+    ...aedarProvenanceFixture,
+    ...source,
+  })
+  const access = sections.find((section) => section.key === 'aedar-access')
+  if (!access) throw new Error('AEDAR access section missing')
+  return access
 }
 
 /**
@@ -122,6 +162,7 @@ function aedarSections(territory: ThemeContent['territory']): ContentSection[] {
 export function cahierExportFixture(options: {
   selection?: SelectionComparaison
   focal?: ControleComparaison['focal']
+  lossMetadata?: AedarDiversityLossMapMetadata
 } = {}): CahierExportFixture {
   const facts = territoryFactsFor(basePayload, '22001')
   if (!facts) throw new Error('Mobilité fixture facts missing')
@@ -157,7 +198,11 @@ export function cahierExportFixture(options: {
     buildMobiliteRaccordementSection(page3Facts, metadonneesMobiliteRaccordementFixture),
   ] as const
   const units = [
-    { ...content.units[0]!, introduction: [], sections: aedarSections(content.territory) },
+    {
+      ...content.units[0]!,
+      introduction: [],
+      sections: aedarSections(content.territory, options.lossMetadata ?? { status: 'loading', legend: null }),
+    },
     content.units[1]!,
     { ...content.units[2]!, sections: page3 },
   ] as unknown as ThemeContent['units']
@@ -176,6 +221,13 @@ export function cahierExportFixture(options: {
   return { content: themed, control, sections }
 }
 
+/** Région content: facts exist, but no peer comparison is eligible (#768). */
+export function regionMobiliteContent(): ThemeContent {
+  const facts = territoryFactsFor(basePayload, '53')
+  if (!facts) throw new Error('Région fixture facts missing')
+  return resolveMobiliteThemeContent(facts, metadonneesThemesFixtures.mobilite)
+}
+
 export function sectionOf(content: ThemeContent, key: ContentSection['key']): ContentSection {
   const section = content.units
     .flatMap((unit) => unit.sections as readonly ContentSection[])
@@ -184,7 +236,7 @@ export function sectionOf(content: ThemeContent, key: ContentSection['key']): Co
   return section
 }
 
-/** EPCI focal control for the cross-border Bretagne scope check. */
+/** EPCI focal control for the Bretagne scope wording check. */
 export function epciControl(): ControleComparaison {
   const epci = territoiresFixture.find((candidate) => candidate.type === 'epci')
   if (!epci) throw new Error('EPCI fixture missing')

@@ -106,19 +106,27 @@ export function useCahierExportSlot(): CahierExportSlotContext | null {
 /**
  * Publish the state a mounted owner already holds. The thunk is read at capture
  * time, so the snapshot reflects the current effective selection; it never
- * copies a live Vue proxy into the request.
+ * copies a live Vue proxy into the request. An optional `key` lets one owner
+ * publish several observations (its equipment state and its comparison layer,
+ * for example) without inventing a nested scope.
  */
-export function useCahierExportPublication(read: () => CahierExportPublicationState): void {
+export function useCahierExportPublication(
+  read: () => CahierExportPublicationState,
+  key = '',
+): void {
   const registry = inject(CAHIER_EXPORT_REGISTRY_KEY, null)
   const context = useCahierExportSlot()
   if (!registry || !context) return
   const section = registry.sections.get(context.sectionKey)
   if (!section) return
-  if (section.has(context.slotPath)) {
-    throw new Error(`Cahier export capture: duplicate publication slot "${context.slotPath}"`)
+  const slotPath = key
+    ? (context.slotPath ? `${context.slotPath}/${key}` : key)
+    : context.slotPath
+  if (section.has(slotPath)) {
+    throw new Error(`Cahier export capture: duplicate publication slot "${slotPath}"`)
   }
-  section.set(context.slotPath, read)
+  section.set(slotPath, read)
   onBeforeUnmount(() => {
-    if (section.get(context.slotPath) === read) section.delete(context.slotPath)
+    if (section.get(slotPath) === read) section.delete(slotPath)
   })
 }

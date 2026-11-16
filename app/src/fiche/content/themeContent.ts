@@ -220,6 +220,15 @@ export interface AedarEvidenceSource {
   version: string
   url: string
   credit: string | null
+  /** Native producer source-record identity, when the ready provenance carries one (#1021). */
+  sourceId?: string
+  /** Producer-owned licence of the source record. */
+  licence?: string | null
+  referenceDate?: string | null
+  publicationDate?: string | null
+  /** Publication clock carried with this evidence, when the ready payload declares one. */
+  contentVersion?: string
+  referenceContentVersion?: string
 }
 /** The five normal AEDAR access modes rendered as ramp lines (transit_gain is excluded). */
 export type AedarRampMode = 'walk' | 'transit' | 'bike_lts2' | 'bike_lts4' | 'car'

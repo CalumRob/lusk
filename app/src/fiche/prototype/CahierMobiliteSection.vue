@@ -89,8 +89,6 @@ useCahierExportPublication(() => ({
   state: {
     comparisonStatus: effectiveComparison.value.status,
     comparisonError: effectiveComparison.value.error ?? null,
-    comparisonNone: comparisonNone.value,
-    comparisonIneligible: comparisonIneligible.value,
   },
 }))
 

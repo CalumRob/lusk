@@ -13,9 +13,14 @@ import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { CAHIER_SECTION_RENDERERS } from '@/fiche/prototype/cahierSectionRenderers'
 import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
+import CahierMapPanel from '@/fiche/prototype/CahierMapPanel.vue'
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import { routes } from '@/router'
-import { cahierExportFixture } from './helpers/cahierExportFixtures'
+import {
+  cahierExportFixture,
+  readyLossMetadata,
+  regionMobiliteContent,
+} from './helpers/cahierExportFixtures'
 
 vi.mock('@/fiche/content/aedarApiClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/fiche/content/aedarApiClient')>()
@@ -68,17 +73,22 @@ function seamOf(wrapper: VueWrapper): CahierExportSeam {
  * value so the real legend toggle exists (its visibility is the owner state we
  * capture). The reference is fixture data, never a browser-side statistic.
  */
-function withServedBarReferences(content: ReturnType<typeof cahierExportFixture>['content']) {
+function shapeBarReferences(
+  content: ReturnType<typeof cahierExportFixture>['content'],
+  mode: 'served' | 'none',
+) {
   const withReference = <T extends { fact: { value: number | null } }>(value: T): T => ({
     ...value,
     fact: {
       ...value.fact,
-      comparison: {
-        direction: 'plus-est-mieux' as const,
-        scope: { kind: 'communes-bretagne' as const, label: 'communes bretonnes' },
-        rank: null,
-        reference: value.fact.value === null ? null : { kind: 'median' as const, value: value.fact.value },
-      },
+      comparison: mode === 'served'
+        ? {
+          direction: 'plus-est-mieux' as const,
+          scope: { kind: 'communes-bretagne' as const, label: 'communes bretonnes' },
+          rank: null,
+          reference: { kind: 'median' as const, value: value.fact.value ?? 1 },
+        }
+        : null,
     },
   })
   const figure = <T extends { categories: readonly any[] }>(bars: T): T => ({
@@ -110,14 +120,51 @@ function withServedBarReferences(content: ReturnType<typeof cahierExportFixture>
   return { ...content, units } as unknown as ReturnType<typeof cahierExportFixture>['content']
 }
 
-async function render(extra: Record<string, unknown> = {}) {
-  const { content, control } = cahierExportFixture()
+async function mountCahier(options: {
+  content: ReturnType<typeof cahierExportFixture>['content']
+  control?: ControleComparaison | null
+  props?: Record<string, unknown>
+}): Promise<VueWrapper> {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/')
-  const controlRef = ref<ControleComparaison>(control)
+  const global: Record<string, unknown> = { plugins: [router] }
+  if (options.control) {
+    global.provide = { [CONTROLE_COMPARAISON_KEY as symbol]: ref(options.control) }
+  }
   const wrapper = mount(VarianteCahierLibre, {
     props: {
-      content: withServedBarReferences(content),
+      content: options.content,
+      pagination: cahierPaginationFor({} as Payload, options.content, true),
+      showAllUnits: true,
+      presentation: 'plain',
+      layoutVariant: 'indexed-sections',
+      aedarAccessEnabled: true,
+      aedarChapterActive: false,
+      aedarStatus: 'ready',
+      comparisonStatus: 'ready',
+      nativeComparisonStatus: 'ready',
+      retryNativeComparison: () => {},
+      retryComparison: () => {},
+      ...options.props,
+    },
+    global,
+  })
+  await flushPromises()
+  return wrapper
+}
+
+async function render(extra: Record<string, unknown> = {}, options: {
+  barReferences?: 'served' | 'none'
+  lossMetadata?: ReturnType<typeof readyLossMetadata>
+} = {}) {
+  const { content, control } = cahierExportFixture({ lossMetadata: options.lossMetadata })
+  const themed = shapeBarReferences(content, options.barReferences ?? 'served')
+  const controlRef = ref<ControleComparaison>(control)
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  await router.push('/')
+  const wrapper = mount(VarianteCahierLibre, {
+    props: {
+      content: themed,
       pagination: cahierPaginationFor({} as Payload, content, true),
       showAllUnits: true,
       presentation: 'plain',
@@ -156,6 +203,16 @@ function toggleByText(wrapper: VueWrapper, scope: string, label: string) {
     .find((candidate) => candidate.text().includes(label))
   if (!button) throw new Error(`Toggle "${label}" missing inside ${scope}`)
   return button
+}
+
+function mapPanels(wrapper: VueWrapper, sectionKey: string) {
+  return wrapper.findAllComponents(CahierMapPanel)
+    .filter((panel) => panel.element.closest(`[data-section="${sectionKey}"]`))
+}
+
+async function emitMap(panel: ReturnType<typeof mapPanels>[number], event: 'loaded' | 'unavailable') {
+  panel.vm.$emit(event)
+  await flushPromises()
 }
 
 describe('Cahier export capture — mounted shared path (#1021)', () => {
@@ -252,44 +309,188 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     const { wrapper } = await render()
     toggleByText(wrapper, '[data-section="stationnement-ravitaillement"] [data-column="stationnement"]', 'Groupe comparé')
       .trigger('click')
+    await flushPromises()
+
+    const paired = captureOf(wrapper, 'stationnement-ravitaillement')
+    const stationnement = paired.comparison.display.layers.find((entry) => entry.slot === 'stationnement')
+    const ravitaillement = paired.comparison.display.layers.find((entry) => entry.slot === 'ravitaillement')
+    expect(stationnement).toMatchObject({ toggle: false, referenceAvailable: true, displayed: false })
+    expect(ravitaillement).toMatchObject({ toggle: true, referenceAvailable: true, displayed: true })
+    expect(paired.comparison.display.state).toBe('displayed')
+    expect(paired.comparison.display.reason).toBe('shown')
+
     toggleByText(wrapper, '[data-section="reseaux"] .mobilite-comparison-bars__legend', 'Groupe comparé').trigger('click')
     toggleByText(wrapper, '[data-section="visiter-la-bretagne"] .mobilite-raccordement-curve__legend', 'Groupe comparé')
       .trigger('click')
     await flushPromises()
 
-    const figures = captureOf(wrapper, 'stationnement-ravitaillement').figures
-    const stationnement = figures.find((figure) => figure.slot === 'stationnement')
-    const ravitaillement = figures.find((figure) => figure.slot === 'ravitaillement')
-    if (!stationnement || stationnement.family !== 'mobilite-bars'
-      || !ravitaillement || ravitaillement.family !== 'mobilite-bars') throw new Error('bars expected')
-    expect(stationnement.effective.comparisonVisible).toBe(false)
-    expect(ravitaillement.effective.comparisonVisible).toBe(true)
-
-    const networks = captureOf(wrapper, 'reseaux').figures[0]
-    if (!networks || networks.family !== 'mobilite-bars') throw new Error('bars expected')
-    expect(networks.effective.comparisonVisible).toBe(false)
-
-    const curve = captureOf(wrapper, 'visiter-la-bretagne').figures[0]
-    if (!curve || curve.family !== 'mobilite-curve') throw new Error('curve expected')
-    expect(curve.effective.comparisonVisible).toBe(false)
+    const networks = captureOf(wrapper, 'reseaux')
+    expect(networks.comparison.display.layers[0]).toMatchObject({ toggle: false, displayed: false })
+    expect(networks.comparison.display.reason).toBe('hidden-by-user')
+    const curve = captureOf(wrapper, 'visiter-la-bretagne')
+    expect(curve.comparison.display.layers[0]).toMatchObject({ toggle: false, displayed: false })
+    expect(curve.comparison.display.reason).toBe('hidden-by-user')
     wrapper.unmount()
+  })
+
+  it('does not advertise a displayed comparison when no served reference exists', async () => {
+    const { wrapper } = await render({}, { barReferences: 'none' })
+    const networks = captureOf(wrapper, 'reseaux')
+    expect(networks.comparison.status).toBe('ready')
+    expect(networks.comparison.display.state).toBe('not-displayed')
+    expect(networks.comparison.display.reason).toBe('no-served-reference')
+    expect(networks.comparison.display.layers[0]).toMatchObject({
+      toggle: true,
+      referenceAvailable: false,
+      displayed: false,
+    })
+    wrapper.unmount()
+  })
+
+  it('reports pending and unavailable comparison states without inventing proof', async () => {
+    const loading = await render({ nativeComparisonStatus: 'loading' })
+    const pendingCapture = captureOf(loading.wrapper, 'reseaux')
+    expect(pendingCapture.comparison.status).toBe('loading')
+    expect(pendingCapture.comparison.display.state).toBe('not-displayed')
+    expect(pendingCapture.comparison.display.reason).toBe('loading')
+    expect(pendingCapture.comparison.display.layers[0]?.displayed).toBe(false)
+    loading.wrapper.unmount()
+
+    const unavailable = await render({ nativeComparisonStatus: 'unavailable' })
+    const unavailableCapture = captureOf(unavailable.wrapper, 'reseaux')
+    expect(unavailableCapture.comparison.status).toBe('unavailable')
+    expect(unavailableCapture.comparison.display.reason).toBe('unavailable')
+    unavailable.wrapper.unmount()
   })
 
   it('captures the shared AEDAR reference visibility without touching it', async () => {
     const { wrapper } = await render()
+    const before = captureOf(wrapper, 'aedar-access')
+    expect(before.comparison.display.state).toBe('not-displayed')
+    expect(before.comparison.display.reason).toBe('no-served-reference')
     const reference = wrapper
       .findAll('[data-section="aedar-access"] .aedar-access-mode-selector .cahier-figure-legend-toggle')
       .find((button) => button.attributes('aria-label')?.startsWith('Groupe comparé'))
     if (!reference) throw new Error('Reference toggle missing')
     await reference.trigger('click')
     await flushPromises()
-    const ramps = captureOf(wrapper, 'aedar-access').figures[0]
-    const explorer = captureOf(wrapper, 'aedar-equipment-explorer').figures[0]
-    if (!ramps || ramps.family !== 'aedar-ramps'
-      || !explorer || explorer.family !== 'aedar-equipment-explorer') throw new Error('AEDAR figures expected')
-    expect(ramps.effective.comparisonVisible).toBe(false)
-    expect(explorer.effective.comparisonVisible).toBe(false)
+    expect(captureOf(wrapper, 'aedar-access').comparison.display).toMatchObject({
+      state: 'not-displayed',
+      reason: 'hidden-by-user',
+    })
+    expect(captureOf(wrapper, 'aedar-equipment-explorer').comparison.display.reason).toBe('hidden-by-user')
     wrapper.unmount()
+  })
+
+  it('reports region ineligibility and profile capability without inventing groups', async () => {
+    const content = regionMobiliteContent()
+    const wrapper = await mountCahier({ content, control: null })
+    const networks = captureOf(wrapper, 'reseaux')
+    expect(networks.comparison.eligible).toBe(false)
+    expect(networks.comparison.selection.known).toBe(false)
+    expect(networks.comparison.group).toBeNull()
+    expect(networks.comparison.absent).toBe('not-eligible')
+    expect(networks.comparison.display.state).toBe('not-displayed')
+    expect(networks.comparison.display.reason).toBe('not-eligible')
+    wrapper.unmount()
+
+    const { wrapper: communeWrapper } = await render()
+    expect(captureOf(communeWrapper, 'aedar-equipment-profile').comparison.display).toEqual({
+      state: 'not-applicable',
+      reason: 'capability-absent',
+      layers: [],
+    })
+    communeWrapper.unmount()
+  })
+
+  it('captures real car map and legend owner transitions', async () => {
+    const pending = await render()
+    await pending.wrapper
+      .get('[data-section="aedar-equipment-profile"] .aedar-waffle-horizon button[aria-label="10 minutes"]')
+      .trigger('click')
+    await flushPromises()
+    const pendingCapture = captureOf(pending.wrapper, 'aedar-car-overview')
+    expect(pendingCapture.capabilities.maps).toMatchObject({
+      status: 'pending',
+      legend: 'pending',
+      items: [{ id: 'car', declared: true, loaded: false, unavailable: false }],
+    })
+    await emitMap(mapPanels(pending.wrapper, 'aedar-car-overview')[0]!, 'loaded')
+    expect(captureOf(pending.wrapper, 'aedar-car-overview').capabilities.maps).toMatchObject({
+      status: 'available',
+      items: [{ declared: true, loaded: true, unavailable: false }],
+    })
+    pending.wrapper.unmount()
+
+    const failed = await render()
+    await failed.wrapper
+      .get('[data-section="aedar-equipment-profile"] .aedar-waffle-horizon button[aria-label="10 minutes"]')
+      .trigger('click')
+    await flushPromises()
+    await emitMap(mapPanels(failed.wrapper, 'aedar-car-overview')[0]!, 'unavailable')
+    expect(captureOf(failed.wrapper, 'aedar-car-overview').capabilities.maps).toMatchObject({
+      status: 'unavailable',
+      items: [{ unavailable: true }],
+    })
+    failed.wrapper.unmount()
+
+    // The legend is read by the owner; the failing fixture request is an honest
+    // unavailable observation, never an invented ready legend.
+    const legendFailure = await render({ aedarChapterActive: true })
+    await legendFailure.wrapper
+      .get('[data-section="aedar-equipment-profile"] .aedar-waffle-horizon button[aria-label="10 minutes"]')
+      .trigger('click')
+    await flushPromises()
+    expect(captureOf(legendFailure.wrapper, 'aedar-car-overview').capabilities.maps.legend).toBe('unavailable')
+    legendFailure.wrapper.unmount()
+  })
+
+  it('captures real diversity map and legend owner transitions', async () => {
+    const { wrapper } = await render({}, { lossMetadata: readyLossMetadata() })
+    const initial = captureOf(wrapper, 'aedar-diversity-loss').capabilities.maps
+    expect(initial.legend).toBe('available')
+    expect(initial.status).toBe('pending')
+    expect(initial.items).toHaveLength(4)
+
+    const panels = mapPanels(wrapper, 'aedar-diversity-loss')
+    expect(panels).toHaveLength(4)
+    await emitMap(panels[0]!, 'loaded')
+    await emitMap(panels[1]!, 'unavailable')
+    const partial = captureOf(wrapper, 'aedar-diversity-loss').capabilities.maps
+    expect(partial.status).toBe('partial')
+    expect(partial.items.map((item) => [item.loaded, item.unavailable])).toEqual([
+      [true, false], [false, true], [false, false], [false, false],
+    ])
+    wrapper.unmount()
+
+    const failed = await render({}, { lossMetadata: readyLossMetadata() })
+    for (const panel of mapPanels(failed.wrapper, 'aedar-diversity-loss')) {
+      await emitMap(panel, 'unavailable')
+    }
+    expect(captureOf(failed.wrapper, 'aedar-diversity-loss').capabilities.maps.status).toBe('unavailable')
+    failed.wrapper.unmount()
+
+    // Loading metadata keeps the legend pending; it is not made available.
+    const loading = await render()
+    expect(captureOf(loading.wrapper, 'aedar-diversity-loss').capabilities.maps.legend).toBe('pending')
+    loading.wrapper.unmount()
+  })
+
+  it('captures real network map owner transitions with no invented legend', async () => {
+    const { wrapper } = await render()
+    const initial = captureOf(wrapper, 'reseaux').capabilities.maps
+    expect(initial.status).toBe('pending')
+    expect(initial.legend).toBe('none')
+    expect(initial.items.map((item) => item.declared)).toEqual([true, true, true])
+
+    for (const panel of mapPanels(wrapper, 'reseaux')) await emitMap(panel, 'loaded')
+    expect(captureOf(wrapper, 'reseaux').capabilities.maps.status).toBe('available')
+    wrapper.unmount()
+
+    const failed = await render()
+    for (const panel of mapPanels(failed.wrapper, 'reseaux')) await emitMap(panel, 'unavailable')
+    expect(captureOf(failed.wrapper, 'reseaux').capabilities.maps.status).toBe('unavailable')
+    failed.wrapper.unmount()
   })
 
   it('produces requests no later group, territory or status change can relabel', async () => {
@@ -315,9 +516,8 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     expect(fresh.comparison.selection.state).toBe('vide')
     expect(fresh.comparison.group).toBeNull()
     expect(fresh.comparison.absent).toBe('empty-selection')
-    // The delegate's honest effective state: an empty selection is unavailable,
-    // never a silent fallback cohort.
-    expect(fresh.comparison.status).toBe('unavailable')
+    expect(fresh.comparison.display.state).toBe('not-displayed')
+    expect(fresh.comparison.display.reason).toBe('empty-selection')
     wrapper.unmount()
   })
 
@@ -348,6 +548,7 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     const capture = captureOf(wrapper, 'reseaux')
     expect(capture.comparison.status).toBe('error')
     expect(capture.comparison.error).toBe('Lecture échouée')
+    expect(capture.comparison.display.reason).toBe('error')
     expect(capture.sources.length).toBeGreaterThan(0)
     expect(wrapper.find('[data-section="reseaux"] .mobilite-comparison-retry').exists()).toBe(true)
     wrapper.unmount()

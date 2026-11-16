@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { CarFront } from 'lucide-vue-next'
+import { computed } from 'vue'
 import type { AedarCarAccessOverviewEvidence, AedarCarAccessOverviewScalar } from '@/fiche/content/themeContent'
 import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 import CahierBlankMapSlots from './CahierBlankMapSlots.vue'
@@ -8,8 +9,23 @@ import CahierEvidenceSource from './CahierEvidenceSource.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierProse from './CahierProse.vue'
 import { useAedarSectionContext } from './aedarSectionContext'
-defineProps<{ evidence: AedarCarAccessOverviewEvidence }>()
+import { useCahierExportPublication } from './cahierExportVenue'
+const props = defineProps<{ evidence: AedarCarAccessOverviewEvidence }>()
 const { chapterActive, comparison, comparisonEligible } = useAedarSectionContext()
+/** At least one served scalar reference is actually displayed. */
+const referenceAvailable = computed(() =>
+  props.evidence.scalars.some((scalar) => scalar.reference !== null))
+// #1021 — the overview has no toggle; it publishes the reference layer it draws.
+useCahierExportPublication(() => ({
+  owner: 'aedar-comparison-layer',
+  state: {
+    toggle: null,
+    referenceAvailable: referenceAvailable.value,
+    displayed: comparisonEligible.value
+      && comparison.value.status === 'ready'
+      && referenceAvailable.value,
+  },
+}), 'comparison')
 function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
 }
