@@ -1,5 +1,6 @@
-import { inject, provide, ref } from 'vue'
-import type { InjectionKey, Ref } from 'vue'
+import { computed, inject, provide, ref, unref } from 'vue'
+import type { InjectionKey, MaybeRef, Ref } from 'vue'
+import { comparaisonTerritorialeEligible } from '@/fiche/comparisonContext'
 import type { AedarRampMode, ContentSection, ThemeContent, SingleUnitThemeContent } from '@/fiche/content/themeContent'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
@@ -12,6 +13,7 @@ import type { CahierComparisonState } from './cahierSectionRenderers'
 export interface AedarSectionContext {
   selectedModes: Ref<AedarRampMode[]>
   comparisonVisible: Ref<boolean>
+  comparisonEligible: Readonly<Ref<boolean>>
   selectedHorizon: Ref<AedarEquipmentHorizon | null>
   chapterActive: Readonly<Ref<boolean>>
   comparison: Readonly<Ref<CahierComparisonState>>
@@ -19,16 +21,17 @@ export interface AedarSectionContext {
 const AEDAR_SECTION_CONTEXT: InjectionKey<AedarSectionContext> = Symbol('Cahier AEDAR sections')
 
 export function provideAedarSectionContext(
-  content: ThemeContent | SingleUnitThemeContent,
+  content: MaybeRef<ThemeContent | SingleUnitThemeContent>,
   chapterActive: Readonly<Ref<boolean>>,
   comparison: Readonly<Ref<CahierComparisonState>>,
 ): AedarSectionContext {
-  const sections = content.units.flatMap((unit) => unit.sections as readonly ContentSection[])
+  const sections = unref(content).units.flatMap((unit) => unit.sections as readonly ContentSection[])
   const initial = sections.map(({ evidence }) => evidence).find((evidence) =>
     evidence?.kind === 'aedar-equipment-profile' || evidence?.kind === 'aedar-equipment-explorer')
   const context: AedarSectionContext = {
     selectedModes: ref([...AEDAR_DEFAULT_VISIBLE_RAMP_MODES]),
     comparisonVisible: ref(true),
+    comparisonEligible: computed(() => comparaisonTerritorialeEligible(unref(content).territory)),
     selectedHorizon: ref(initial?.initialHorizonMinutes ?? null),
     chapterActive,
     comparison,

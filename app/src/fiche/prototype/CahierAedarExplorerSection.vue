@@ -3,13 +3,14 @@ import type { AedarEquipmentExplorerEvidence } from '@/fiche/content/themeConten
 import AedarEquipmentExplorerCahier from './AedarEquipmentExplorerCahier.vue'
 import { useAedarSectionContext } from './aedarSectionContext'
 defineProps<{ evidence: AedarEquipmentExplorerEvidence }>()
-const { selectedModes, selectedHorizon, comparisonVisible, chapterActive } = useAedarSectionContext()
+const { selectedModes, selectedHorizon, comparisonVisible, chapterActive, comparisonEligible } = useAedarSectionContext()
 </script>
 
 <template>
   <div class="evidence-side evidence-figure aedar-equipment-explorer-evidence">
     <AedarEquipmentExplorerCahier
       :evidence="evidence"
+      :comparison-layer-supported="comparisonEligible"
       :chapter-active="chapterActive"
       v-model:selected-modes="selectedModes"
       v-model:selected-horizon="selectedHorizon"

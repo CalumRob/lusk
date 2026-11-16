@@ -15,7 +15,7 @@ extraction does not migrate other theme tabs or add hypothetical theme APIs.
 | `CahierAedarAccessSection` | Two ramps, their prose/source and shared legend; mechanical evidence-to-ramp adapter. |
 | `CahierAedarProfileSection` | Equipment waffle, explanation and source. |
 | `CahierAedarExplorerSection` | Existing explorer composition and explicit activity gate. |
-| `aedarSectionContext` | One presentation owner per Cahier mount for selected modes, horizon and comparison visibility; reactive chapter activity and acquired overview comparison status are explicit inputs. Equipment identity stays in the existing explorer, its only consumer. |
+| `aedarSectionContext` | One presentation owner per Cahier mount for selected modes, horizon and comparison visibility; reactive chapter activity and acquired overview comparison status are explicit inputs. The current territory's shared fiche comparison eligibility gates peer presentation independently of factual availability. Equipment identity stays in the existing explorer, its only consumer. |
 | `CahierMobiliteSection` | Existing `{ section, unit, comparison }` delegate for the four non-AEDAR kinds, unchanged. It does not consume AEDAR context. |
 
 The renderer interface contains the actual section, unit identity and comparison

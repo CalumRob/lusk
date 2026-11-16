@@ -10,15 +10,15 @@ import CahierEvidenceSource from './CahierEvidenceSource.vue'
 import CahierProse from './CahierProse.vue'
 import { useAedarSectionContext } from './aedarSectionContext'
 defineProps<{ evidence: AedarAccessEvidence }>()
-const { selectedModes, comparisonVisible } = useAedarSectionContext()
+const { selectedModes, comparisonVisible, comparisonEligible } = useAedarSectionContext()
 const modeColors = Object.fromEntries(AEDAR_RAMP_MODES.map((mode) => [mode, AEDAR_TIME_MODE_COLORS[mode]]))
 
 function modeLegendEntries(evidence: AedarAccessEvidence): readonly FigureLegendEntry[] {
   const referenceLabel = evidence.comparisonLabel ?? evidence.ramps.find((ramp) => ramp.referenceLabel)?.referenceLabel ?? null
   return [
     ...AEDAR_RAMP_MODES.map((mode) => ({ key: mode, label: AEDAR_RAMP_MODE_LABELS[mode], marker: 'line' as const })),
-    { key: 'reference', label: 'Groupe comparé', ariaLabel: `Groupe comparé : ${referenceLabel ?? 'Indisponible'}`,
-      marker: 'dash', tone: 'peer', persistentToggle: true },
+    ...(comparisonEligible.value ? [{ key: 'reference', label: 'Groupe comparé', ariaLabel: `Groupe comparé : ${referenceLabel ?? 'Indisponible'}`,
+      marker: 'dash', tone: 'peer', persistentToggle: true } as const] : []),
   ]
 }
 function toggleMode(key: string): void {
@@ -40,7 +40,7 @@ function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureDa
   return { availability: ramp.availability,
     xAxis: { label: ramp.xAxis.label, unit: ramp.xAxis.unit },
     yAxis: { label: ramp.yAxis.label, unit: ramp.yAxis.unit },
-    series, provenance: ramp.provenance, comparisonLabel: ramp.referenceLabel, comparisonLayerSupported: true }
+    series, provenance: ramp.provenance, comparisonLabel: ramp.referenceLabel, comparisonLayerSupported: comparisonEligible.value }
 }
 </script>
 
@@ -68,7 +68,7 @@ function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureDa
       :mark-colors="modeColors"
       :selected-keys="[...selectedModes, ...(comparisonVisible ? ['reference'] : [])]"
       :toggle-keys="AEDAR_RAMP_MODES"
-      label="Modes de déplacement et groupe comparé pour les deux rampes"
+      :label="comparisonEligible ? 'Modes de déplacement et groupe comparé pour les deux rampes' : 'Modes de déplacement pour les deux rampes'"
       @toggle="toggleMode"
     />
   </div>

@@ -89,7 +89,7 @@ let emittedChapitre: string | null = null
 
 const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
 const unit = computed(() => units.value[0] ?? null)
-provideAedarSectionContext(props.content,
+const { comparisonEligible } = provideAedarSectionContext(computed(() => props.content),
   computed(() => props.aedarChapterActive !== false),
   computed(() => ({ status: props.comparisonStatus ?? 'idle', error: props.comparisonError, retry: props.retryComparison })),
 )
@@ -526,8 +526,8 @@ onBeforeUnmount(() => {
         @choisir="controleComparaison.choisir"
       />
     </div>
-    <p v-if="props.comparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons AEDAR.</p>
-    <p v-if="props.nativeComparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons de mobilité.</p>
+    <p v-if="comparisonEligible && props.comparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons AEDAR.</p>
+    <p v-if="comparisonEligible && props.nativeComparisonStatus === 'loading'" class="comparison-sr-only" role="status">Chargement des comparaisons de mobilité.</p>
   </article>
 </template>
 

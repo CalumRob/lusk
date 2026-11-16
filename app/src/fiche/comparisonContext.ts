@@ -11,6 +11,12 @@ import { comparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 // model remains.
 export type TerritoryComparisonMode = 'densite' | 'epci' | 'bretagne'
 
+/** Fiche selection contract (#768): Région has facts, but no peer comparison.
+ * Keep this capability separate from a resource's factual allowed levels. */
+export function comparaisonTerritorialeEligible(territoire: { type: string } | null | undefined): boolean {
+  return territoire?.type === 'commune' || territoire?.type === 'epci' || territoire?.type === 'departement'
+}
+
 /**
  * #981 — le mode d'un contexte de comparaison : les trois presets historiques,
  * ou `custom` pour un groupe de membres tapés. Un groupe tapé n'est PAS un
@@ -250,9 +256,10 @@ export interface ResolutionSelectionComparaison {
   selection: SelectionComparaison
   /**
    * Membres tapés de la passe de comparaison : `undefined` = le défaut déclaré
-   * du producteur (servi niché dans la réponse de faits), `null` = sélection
-   * nommée mais non résoluble (échec fermé, réessayable), `[]` = aucune
-   * comparaison, sinon la liste explicite envoyée en `selected_comparison`.
+   * du producteur (servi niché dans la réponse de faits), `null` = aucune
+   * admission (niveau inéligible, ou sélection nommée non résoluble).
+   * Seul le second cas est réessayable ; la capacité du niveau reste distincte.
+   * `[]` = sélection explicitement vide, sinon les membres `selected_comparison`.
    */
   membres: readonly MembreSelection[] | null | undefined
   /**
@@ -358,10 +365,10 @@ export function resoudreSelectionComparaison(options: {
   const { territoire, demande, contextes, territoires } = options
   const lu = lireSelectionBrute(demande)
 
-  if (!territoire || territoire.type === 'region') {
+  if (!territoire || !comparaisonTerritorialeEligible(territoire)) {
     return {
       selection: { etat: 'defaut' },
-      membres: undefined,
+      membres: territoire ? null : undefined,
       contexte: null,
       preset: null,
       canonicaliser: demande !== undefined,
@@ -448,7 +455,7 @@ export function presetsDisponibles(options: {
   territoires: readonly Territoire[]
 }): readonly PresetComparaisonOption[] {
   const { territoire, contextes, territoires } = options
-  if (!territoire || territoire.type === 'region') return []
+  if (!territoire || !comparaisonTerritorialeEligible(territoire)) return []
   const candidats: PresetComparaison[] = territoire.type === 'commune'
     ? ['epci', 'bretagne', 'densite']
     : ['bretagne']

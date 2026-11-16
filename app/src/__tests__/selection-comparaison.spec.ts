@@ -179,7 +179,8 @@ describe('résolution de la sélection — défaut niveau-natif (ADR-0021, #860)
     for (const demande of [undefined, 'bretagne', 'densite', '']) {
       const resolution = resoudre({ territoire: region, demande })
       expect(resolution.selection).toEqual({ etat: 'defaut' })
-      expect(resolution.membres).toBeUndefined()
+      // null admits facts only; undefined would request the producer default.
+      expect(resolution.membres).toBeNull()
       expect(resolution.contexte).toBeNull()
       expect(resolution.preset).toBeNull()
       expect(resolution.canonicaliser).toBe(demande !== undefined)

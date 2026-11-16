@@ -44,6 +44,7 @@ type ComparisonState = {
 const props = defineProps<{
   figure: MobiliteBarsFigureEvidence
   comparison: ComparisonState
+  comparisonNone?: boolean
   ratio?: MobiliteRatioEvidence | null
 }>()
 
@@ -121,7 +122,7 @@ function referenceValue(category: MobiliteBarCategoryEvidence): number | null {
 }
 
 const showComparison = computed(() =>
-  props.comparison.status === 'ready' && comparisonVisible.value,
+  !props.comparisonNone && props.comparison.status === 'ready' && comparisonVisible.value,
 )
 
 const hasComparisonReference = computed(() =>
@@ -483,7 +484,7 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
   const comparisonCanToggle = props.comparison.status === 'loading' ||
     props.comparison.status === 'error' ||
     (props.comparison.status === 'ready' && hasComparisonReference.value)
-  entries.push({
+  if (!props.comparisonNone) entries.push({
     key: 'comparison',
     label: GROUPE_COMPARE_LABEL,
     // A compared BAR, never a line/dash: the square carries the 45 % mix fill.
@@ -648,7 +649,7 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
       :selected-keys="legendSelected"
       :comparison-status="comparison.status"
       :comparison-error="comparison.error"
-      label="Séries du territoire et groupe comparé"
+      :label="comparisonNone ? 'Séries du territoire' : 'Séries du territoire et groupe comparé'"
       @toggle="toggleLegend"
     />
 
@@ -673,12 +674,12 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
       role="note"
     >{{ note }}</p>
 
-    <p v-if="comparison.status === 'loading'" class="mobilite-comparison-state" role="status">Chargement du groupe comparé…</p>
-    <div v-else-if="comparison.status === 'error'" class="mobilite-comparison-error" role="status">
+    <p v-if="!comparisonNone && comparison.status === 'loading'" class="mobilite-comparison-state" role="status">Chargement du groupe comparé…</p>
+    <div v-else-if="!comparisonNone && comparison.status === 'error'" class="mobilite-comparison-error" role="status">
       <p>Groupe comparé indisponible.</p>
       <button v-if="comparison.retry" type="button" class="mobilite-comparison-retry" @click="comparison.retry()">Réessayer les comparaisons</button>
     </div>
-    <p v-else-if="comparison.status === 'unavailable'" class="mobilite-comparison-state" role="status">Groupe comparé indisponible pour cette sélection.</p>
+    <p v-else-if="!comparisonNone && comparison.status === 'unavailable'" class="mobilite-comparison-state" role="status">Groupe comparé indisponible pour cette sélection.</p>
 
     <div v-if="ratio" class="mobilite-ratio">
       <p class="mobilite-ratio__value">

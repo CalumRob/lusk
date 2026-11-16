@@ -9,7 +9,7 @@ import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierProse from './CahierProse.vue'
 import { useAedarSectionContext } from './aedarSectionContext'
 defineProps<{ evidence: AedarCarAccessOverviewEvidence }>()
-const { chapterActive, comparison } = useAedarSectionContext()
+const { chapterActive, comparison, comparisonEligible } = useAedarSectionContext()
 function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
 }
@@ -54,13 +54,13 @@ function scalarServedRank(scalar: AedarCarAccessOverviewScalar) {
           :value="scalar.value === null ? '—' : formatNumber(scalar.value)"
           :label="scalar.label"
           label-role="metric"
-          :reference-pending="scalar.comparisonPending"
+          :reference-pending="comparisonEligible && scalar.comparisonPending"
           :icon="CarFront"
           tone="c"
           color-value
           :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${evidence.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : scalar.comparisonUnavailableLabel ? ` ${scalar.comparisonAccessibleLabel ?? 'Moyenne du groupe comparé'} indisponible.` : ''}${scalarRankAria(scalar) ? ` Rang ${scalarRankAria(scalar)}.` : ''}`"
         >
-          <template v-if="scalar.reference || scalar.comparisonUnavailableLabel" #reference>
+          <template v-if="comparisonEligible && (scalar.reference || scalar.comparisonUnavailableLabel)" #reference>
             <CahierComparisonValue
               v-if="scalar.reference"
               :named-reference="scalar.reference"
@@ -74,7 +74,7 @@ function scalarServedRank(scalar: AedarCarAccessOverviewScalar) {
           </template>
         </CahierFigureScalar>
       </div>
-      <div class="aedar-comparison-retry-slot"><button v-if="comparison.status === 'error'" class="aedar-comparison-retry" type="button" @click="comparison.retry?.()">Réessayer les comparaisons</button></div>
+      <div class="aedar-comparison-retry-slot"><button v-if="comparisonEligible && comparison.status === 'error'" class="aedar-comparison-retry" type="button" @click="comparison.retry?.()">Réessayer les comparaisons</button></div>
     </figure>
   </aside>
 </template>

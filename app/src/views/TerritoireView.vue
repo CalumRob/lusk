@@ -45,6 +45,7 @@ import {
   CONTROLE_COMPARAISON_KEY,
   PARAM_COMPARAISON,
   contextesDepuisReference,
+  comparaisonTerritorialeEligible,
   developperMembresCommunes,
   libelleSelectionComparaison,
   presetsDisponibles,
@@ -608,7 +609,7 @@ const libelleActifSelection = computed(() => {
 })
 /** La Région n'a pas de contrôle de comparaison (#768). */
 const controleSelectionVisible = computed(() =>
-  Boolean(territoire.value && territoire.value.type !== 'region' && referenceTerritoire.reference.value))
+  Boolean(comparaisonTerritorialeEligible(territoire.value) && referenceTerritoire.reference.value))
 
 /**
  * #860 (ruling 2026-11-03) — le contrôle de comparaison est fourni au Cahier
