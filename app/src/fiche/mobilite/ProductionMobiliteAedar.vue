@@ -50,6 +50,21 @@ const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
     ? 'Moyenne de la sélection' : `Moyenne — ${control.value.libelleActif}`
   return { intent, label }
 })
+
+/**
+ * #1021 — the direct reference read is the displayed reference source only in
+ * the same states where this owner presents it. The conditioned status is an
+ * additive fact for the export capture; it triggers no acquisition.
+ */
+const directReferenceStatus = computed<
+  'unobserved' | 'loading' | 'ready' | 'error' | 'unavailable' | null
+>(() => {
+  if (comparisonRequest.value) return null
+  const selection = control.value?.selection
+  if (selection?.etat === 'vide' || selection?.etat === 'membres') return null
+  if (!props.aedarReferenceTerritoire) return null
+  return props.aedarReferenceStatus ?? 'unobserved'
+})
 const comparison = ref<AedarComparisonEvidence | null>(null)
 const comparisonState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const comparisonError = ref('')
@@ -245,7 +260,7 @@ const transformed = computed(() => {
     <p>{{ AEDAR_SUMMARY_UNAVAILABLE_MESSAGE }}</p>
     <button type="button" @click="props.retryAedarSummary?.()">Réessayer</button>
   </div>
-  <p v-else-if="aedarReferenceStatus === 'error' && !comparisonRequest && control?.selection.etat !== 'vide' && control?.selection.etat !== 'membres'" class="aedar-comparison-state" role="status">Groupe comparé indisponible.</p>
+  <p v-else-if="directReferenceStatus === 'error'" class="aedar-comparison-state" role="status">Groupe comparé indisponible.</p>
   <div v-if="props.aedarStatus === 'error'" class="aedar-state" role="alert">
     <p>{{ AEDAR_DETAIL_UNAVAILABLE_MESSAGE }}</p>
     <button type="button" @click="props.retryAedar">Réessayer</button>
@@ -260,6 +275,7 @@ const transformed = computed(() => {
     :native-comparison-status="props.nativeComparisonStatus"
     :native-comparison-error="props.nativeComparisonError"
     :retry-native-comparison="props.retryNativeComparison"
+    :aedar-reference-status="directReferenceStatus"
     show-all-units
     presentation="plain"
     layout-variant="indexed-sections"

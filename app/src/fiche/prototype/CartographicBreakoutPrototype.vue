@@ -21,6 +21,7 @@ import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
+import { useCahierExportPublication } from './cahierExportVenue'
 
 type ModeKey = 'walk' | 'bike' | 'car'
 
@@ -188,6 +189,21 @@ const inspectionImages = computed(() => inspectionModes.value.map((mode) => ({
   src: inspectionUrl(mode.key),
   alt: `${categoryLabel(mode.key)} — ${props.territory.name}`,
 })))
+
+// #1021 — the three network map panels expose the asset availability they track.
+useCahierExportPublication(() => ({
+  owner: 'map-availability',
+  state: {
+    maps: modes.map((mode) => ({
+      id: mode.key,
+      label: categoryLabel(mode.key),
+      declared: categoryFor(mode.key) !== null,
+      loaded: loadedInlineModes.value.has(mode.key),
+      unavailable: unavailableInlineModes.value.has(mode.key),
+    })),
+    legend: 'none',
+  },
+}))
 
 function isModeKey(value: string): value is ModeKey {
   return value === 'car' || value === 'walk' || value === 'bike'

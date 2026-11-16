@@ -218,6 +218,14 @@ function aedarEvidenceSource(data: AedarReady | AedarTerritorySummary): AedarEvi
     version: source.vintage_id,
     url: source.source_url,
     credit: source.attribution.match(/©\s*[^;—]+/u)?.[0]?.trim() ?? null,
+    // #1021 — the native source-record identity, licence and clocks are carried
+    // additively; display copy above stays untouched.
+    sourceId: source.source_id,
+    licence: source.licence,
+    referenceDate: source.reference_date,
+    publicationDate: source.publication_date,
+    contentVersion: 'facts' in data ? data.contentVersion : data.aedarContentVersion,
+    referenceContentVersion: data.referenceContentVersion,
   }
 }
 

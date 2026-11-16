@@ -36,6 +36,7 @@ import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
+import { useCahierExportPublication } from './cahierExportVenue'
 
 type ComparisonState = {
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
@@ -60,6 +61,17 @@ const Y_TICKS = [0, 0.25, 0.5, 0.75, 1] as const
 const UNAVAILABLE_LABEL = 'Indisponible'
 
 const comparisonVisible = ref(true)
+// #1021 — this curve owns its independent comparison visibility and whether a
+// served reference curve is drawn.
+useCahierExportPublication(() => ({
+  owner: 'mobilite-raccordement-curve',
+  state: {
+    toggle: comparisonVisible.value,
+    referenceAvailable: comparisonPath.value !== '',
+    visibleReferenceAvailable: comparisonPath.value !== '',
+    displayed: showComparison.value && comparisonPath.value !== '',
+  },
+}))
 const plotElement = ref<HTMLElement | null>(null)
 const hoveredTickKey = ref<string | null>(null)
 const pinnedTickKey = ref<string | null>(null)

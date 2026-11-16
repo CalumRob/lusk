@@ -12,6 +12,7 @@ import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
 import CahierProse from './CahierProse.vue'
 import CahierEvidenceSource from './CahierEvidenceSource.vue'
+import { useCahierExportPublication } from './cahierExportVenue'
 
 const props = withDefaults(defineProps<{
   evidence: AedarDiversityLossEvidence
@@ -49,6 +50,26 @@ function inlineMapUrl(map: AedarDiversityLossMapEvidence): string | null {
   if (!map.inlineAvailable) return null
   return aedarDiversityLossMapAssetUrl(props.evidence.territory.code, map.mode, 'inline')
 }
+
+// #1021 — the published map/legend availability is exposed as it is drawn.
+useCahierExportPublication(() => ({
+  owner: 'map-availability',
+  state: {
+    maps: props.evidence.maps.map((map) => ({
+      id: map.mode,
+      label: map.label,
+      declared: map.inlineAvailable || map.inspectionAvailable,
+      loaded: loadedModes.value.has(map.mode),
+      unavailable: unavailableModes.value.has(map.mode)
+        || (!map.inlineAvailable && !map.inspectionAvailable),
+    })),
+    legend: props.evidence.legend
+      ? 'available'
+      : props.evidence.metadataState === 'loading'
+        ? 'pending'
+        : props.evidence.metadataState === 'unavailable' ? 'unavailable' : 'none',
+  },
+}))
 
 function markLoaded(mode: string): void {
   loadedModes.value = new Set(loadedModes.value).add(mode)

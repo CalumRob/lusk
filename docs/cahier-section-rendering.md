@@ -30,6 +30,82 @@ native-resource statuses/retries remain attributed to the evidence each figure
 actually consumes. The split is current acquisition plumbing, not two product
 groups or an architecture future acquisition work must preserve.
 
+## Export capture seam (#1021)
+
+`cahierExportCapture.ts` owns the public, immutable capture of one resolved
+section: identity, generation tokens, sources and their provenance identity, the
+real comparison selection and its public names, the native figure models and the
+effective local selections. `cahierExportVenue.ts` is the public read seam
+provided by `VarianteCahierLibre` and exposed as
+`captureSection`/`captureAll`; the PDF controller consumes the same venue.
+`CahierExportScope.vue` is a renderless section (and figure) scope: it registers
+the section and names a figure slot without adding a DOM element.
+
+Owners publish the state they already hold, never the reverse:
+
+| Publisher | Published state |
+| --- | --- |
+| `aedarSectionContext` (read by the shell) | selected modes, horizon, comparison visibility/eligibility, chapter activity |
+| `AedarEquipmentExplorerCahier` | effective TYPEQU, acquired detail, comparison evidence and status |
+| `CahierAedarAccessSection`, `CahierAedarOverviewSection`, `AedarEquipmentExplorerCahier` | the AEDAR reference layer actually drawn |
+| `CahierMobiliteComparisonBars` / `CahierMobiliteRaccordementCurve` | their own toggle and drawn reference |
+| `CahierMobiliteShareTrack` | the served share reference it draws |
+| `CahierMobiliteSection` | the effective comparison state it presents |
+| `CahierBlankMapSlots`, `AedarDiversityLossMapsCahier`, `CartographicBreakoutPrototype` | map and legend availability (load/failure, never a declaration) |
+
+### Reference-surface inventory (existing owners)
+
+Each comparison publication represents these actual reference surfaces; it is
+documentation of the owners above, not another renderer registry.
+
+| Publication | Section / figure | Reference surface actually drawn |
+| --- | --- | --- |
+| `aedar-comparison-layer` (`comparison`) | `CahierAedarAccessSection` | both access ramps, selected modes, all horizons |
+| `aedar-comparison-layer` (`comparison`) | `CahierAedarOverviewSection` | scalar reference values |
+| `aedar-comparison-layer` (`comparison`) | `AedarEquipmentExplorerCahier` | volume ramp means, selected modes |
+| `aedar-comparison-layer` (`distribution`) | `AedarEquipmentQuantileFigureCahier` | distribution reference bars, selected modes, current horizon |
+| `mobilite-comparison-bars` | `CahierMobiliteComparisonBars` | compared category bars per column |
+| `mobilite-raccordement-curve` | `CahierMobiliteRaccordementCurve` | comparison curve |
+| `mobilite-share-track` | `CahierMobiliteShareTrack` | comparison share row |
+| `mobilite-section` ratio fields | `CahierMobiliteSection` (`ratios` layer) | paired ratio scalar references, independent of the bars toggle |
+
+A section's `display` aggregates these layers; no single ramp or bar speaks for
+the whole explorer or paired column.
+
+Comparison capture keeps two separate things: **selection identity** (`group`
+metadata, which never implies drawn proof) and **owner-observed presentation**
+(`display.state`/`reason`/`layers`). Without a publication the display is
+`unobserved`, not a default-visible layer. Each layer keeps the acquired
+`referenceAvailable` distinct from `visibleReferenceAvailable` (the effective
+selected modes/horizon) and from `displayed` (what the owner actually draws).
+`display.reason` preserves owner loading/error/unavailable separately from a
+legitimate `no-served-reference` and from a reference hidden by the selected
+series (`hidden-by-selection`). The direct-reference read status remains a
+separate `comparison.referenceStatus`: `null` means the section does not consume
+a direct reference, `unobserved` means it does but no owner status was supplied,
+and the owner statuses (`ready`, `loading`, `error`, `unavailable`, `idle`) are
+passed through, so a failed AEDAR reference read is never reported as a
+legitimate absence. A ready direct reference can therefore be displayed while
+the aggregate comparison status is idle. Per-figure labels are preserved in
+`statisticLabels`; no first column label becomes section-wide truth. Map/legend
+state is `unknown` until a map owner publishes, and a declared map is never a
+loaded one. AEDAR sources carry the native source-record identity, licence and
+clocks additively (same display copy); Mobilité generation tokens are explicitly
+absent rather than invented.
+
+`projeterRequeteExport` projects one to three offered series (or none when the
+section offers no choice) into a frozen request. Capturing and projecting read
+state synchronously: no acquisition, no screen mutation, no DOM parsing and no
+private Vue introspection. Placeholder sections are not capturable, and the
+selected members stay distinct from producer-served eligible contributors.
+
+`cahier-export-capture.spec.ts` covers the closed nine-kind admission, the
+cross-family capture, sources/provenance, effective comparison presentation and
+the projection; the mounted `cahier-export-capture-mounted.spec.ts` drives the
+real owners (horizon, modes, TYPEQU acquisition, independent comparison layers,
+real map/legend pending/loaded/failure transitions, late group/territory changes
+and screen stability).
+
 ## Preserved boundaries
 
 - Content builders own prose, labels, evidence, availability and provenance;

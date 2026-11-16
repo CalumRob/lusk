@@ -21,6 +21,7 @@ import AedarTravelTimeSelector from './AedarTravelTimeSelector.vue'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import AedarEquipmentQuantileFigureCahier from './AedarEquipmentQuantileFigureCahier.vue'
 import CahierActionButton from './CahierActionButton.vue'
+import { useCahierExportPublication } from './cahierExportVenue'
 
 const props = withDefaults(defineProps<{
   evidence: AedarEquipmentExplorerEvidence
@@ -191,6 +192,43 @@ const selectedTypeLabel = computed(() => selectedFact.value
   ? `${selectedFact.value.typequ_label} (${selectedFact.value.typequ})`
   : 'Type d’équipement indisponible')
 const selectedTypeFigureLabel = computed(() => selectedFact.value?.typequ_label ?? 'Type indisponible')
+// #1021 — equipment identity stays with its only consumer; the capture reads
+// the effective TYPEQU, its acquired detail and the real comparison evidence.
+useCahierExportPublication(() => ({
+  owner: 'aedar-equipment-explorer',
+  state: {
+    typequ: selectedTypequ.value,
+    typequLabel: selectedFact.value?.typequ_label ?? null,
+    selectedDetail: selectedDetail.value,
+    detailStatus: detailStatus.value,
+    comparisonStatus: comparisonStatus.value,
+    comparisonError: comparisonError.value || null,
+    comparison: activeComparison.value,
+    referenceDetail: referenceDetail.value,
+  },
+}), 'equipment')
+
+/** A served reference exists for at least one drawn measure of the given modes. */
+function servedReferenceFor(modes: readonly AedarRampMode[]): boolean {
+  // The same resolver the volume ramp draws with: coverage and source-clock
+  // guards, and the comparisonRequest-vs-direct-reference choice, are reused.
+  return HORIZONS.some((horizon) => modes.some((mode) => groupValue(horizon, mode, 'mean') !== null))
+}
+const referenceAvailable = computed(() => servedReferenceFor(AEDAR_RAMP_MODES))
+const visibleReferenceAvailable = computed(() => servedReferenceFor(selectedModes.value))
+// #1021 — the explorer publishes whether its drawn reference survives the
+// effective selected modes; acquired reference availability stays separate.
+useCahierExportPublication(() => ({
+  owner: 'aedar-comparison-layer',
+  state: {
+    toggle: comparisonVisible.value,
+    referenceAvailable: referenceAvailable.value,
+    visibleReferenceAvailable: visibleReferenceAvailable.value,
+    displayed: props.comparisonLayerSupported
+      && comparisonVisible.value
+      && visibleReferenceAvailable.value,
+  },
+}), 'comparison')
 const modeEntries = computed<FigureLegendEntry[]>(() => [...AEDAR_RAMP_MODES.map((mode) => ({
   key: mode,
   label: AEDAR_RAMP_MODE_LABELS[mode],

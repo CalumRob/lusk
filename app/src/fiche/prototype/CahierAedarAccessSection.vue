@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { AedarAccessEvidence, AedarRampMode, AedarTimeRampEvidence } from '@/fiche/content/themeContent'
 import type { TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
@@ -9,9 +10,29 @@ import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierEvidenceSource from './CahierEvidenceSource.vue'
 import CahierProse from './CahierProse.vue'
 import { useAedarSectionContext } from './aedarSectionContext'
-defineProps<{ evidence: AedarAccessEvidence }>()
+import { useCahierExportPublication } from './cahierExportVenue'
+const props = defineProps<{ evidence: AedarAccessEvidence }>()
 const { selectedModes, comparisonVisible, comparisonEligible } = useAedarSectionContext()
 const modeColors = Object.fromEntries(AEDAR_RAMP_MODES.map((mode) => [mode, AEDAR_TIME_MODE_COLORS[mode]]))
+
+/** A served reference exists for at least one of the modes the reader can see. */
+function referencesFor(modes: readonly AedarRampMode[]): boolean {
+  return props.evidence.ramps.some((ramp) => ramp.reference !== null
+    && modes.some((mode) => ramp.reference![mode].some((value) => value !== null)))
+}
+const referenceAvailable = computed(() => referencesFor(AEDAR_RAMP_MODES))
+const visibleReferenceAvailable = computed(() => referencesFor(selectedModes.value))
+// #1021 — the shared AEDAR reference layer is displayed only when the visible
+// selected modes actually carry a served reference.
+useCahierExportPublication(() => ({
+  owner: 'aedar-comparison-layer',
+  state: {
+    toggle: comparisonVisible.value,
+    referenceAvailable: referenceAvailable.value,
+    visibleReferenceAvailable: visibleReferenceAvailable.value,
+    displayed: comparisonEligible.value && comparisonVisible.value && visibleReferenceAvailable.value,
+  },
+}), 'comparison')
 
 function modeLegendEntries(evidence: AedarAccessEvidence): readonly FigureLegendEntry[] {
   const referenceLabel = evidence.comparisonLabel ?? evidence.ramps.find((ramp) => ramp.referenceLabel)?.referenceLabel ?? null
