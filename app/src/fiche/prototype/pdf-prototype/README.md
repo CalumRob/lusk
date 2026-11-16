@@ -1,5 +1,22 @@
 # THROWAWAY — client-side Cahier PDF feasibility
 
+**Read this as a historical experiment notebook, not a current implementation
+plan.** Early entries below used pdfmake/Roboto, fixture-only reports and a
+PDF-specific significant-figure formatter; those choices were superseded by the
+DOM-based jsPDF/svg2pdf experiment, actual Cahier fonts and shared tooltip values.
+The approved contract and updated plan live in
+[PRD #1014](https://github.com/CalumRob/lusk/issues/1014) and
+`docs/prd/cahier-section-pdf.md`.
+
+Production planning is now pinned to main `7cd0197e` (2026-11-16): AEDAR extraction
+#956 / PR #1019 is **already merged**, as are the subsequent #1020 comparison
+fixes. Reuse the current renderer registry, AEDAR presentation context and common
+section shell; do not redo that extraction or merge this older prototype branch
+wholesale. Remaining work is shared public capture, figure-family adapters,
+common controls, composition/automatic overflow and cross-section acceptance for
+all nine current Cahier sections. No per-section implementation tickets or
+sandbox-first reconstruction. The user-stopped UI mockup server stays stopped.
+
 Question: can an explicit A4 template consume resolved Cahier content and existing vector charts, with matching comparison context, without a PDF browser service on the Pi?
 
 Run from `app/`: `npm run prototype:cahier-pdf`.

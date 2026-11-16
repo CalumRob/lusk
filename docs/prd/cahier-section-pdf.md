@@ -36,6 +36,16 @@ indicateur ou thème ne doit pas être déclaré compatible sans preuve de sa fa
 de figures et de son contrat ; ne jamais omettre silencieusement une figure non
 prise en charge.
 
+**Amendement d’architecture du propriétaire (16 novembre) :** les cinq exemples
+pilotes sont des preuves et des cas de validation, **pas des unités de travail
+ni un découpage de livraison par section**. Le propriétaire refuse explicitement
+un démarrage « bac à sable d’abord » qui reconstruirait ensuite les mêmes
+fonctions pour chaque section. Inventorier les contrats existants, puis organiser
+le travail autour des modules partagés, de leur interface et des adaptateurs de
+familles de figures réellement distinctes. Les sections consomment le même chemin
+d’export ; elles ne possèdent pas chacune leur générateur, contrôleur, modale,
+formateur de valeurs ou pagination.
+
 ## Parcours
 
 1. Le lecteur demande l’export de la section qu’il consulte.
@@ -205,6 +215,150 @@ Le bac à sable exporte l’équipement courant, pas l’univers des 235 TYPEQU.
   le renderer DOM expérimental en moteur HTML-vers-PDF généraliste.
 - Les modules `aedarTimeRampTooltip.ts` et `groupedBarTooltip.ts` montrent le partage
   de formatage écran/PDF. Garder les tests de comportement des composants existants.
+- Le travail d’implémentation doit établir **un contrat partagé de section**, un
+  contrôleur/UI commun, un compositeur PDF commun et des adaptateurs des familles
+  de figures existantes. Les contrôles de comparaison, de sources et de pagination
+  doivent rester locaux à ces modules, pas être copiés dans les sections.
+- Les tests croisent plusieurs sections et familles dès l’établissement de ces
+  interfaces. Une fixture de bac à sable seule ne prouve pas le caractère partagé
+  du chemin. L’intégration finale couvre toutes les sections actuelles du Cahier,
+  sans confondre celles-ci avec une nouvelle refonte des autres interfaces du site.
+- Ne pas transformer ce partage en framework générique de figures/métadonnées.
+  Étendre les contrats natifs et ne créer d’adaptateurs que pour des variations
+  réellement présentes. L’issue existante #956 suit une extraction de renderers
+  distincte : ne pas la dupliquer ou en faire un prérequis caché sans preuve que
+  l’export partagé l’exige. **Mise à jour : cette extraction est maintenant
+  terminée**, voir l’état de départ ci-dessous ; ne pas la redispatcher.
+
+## Plan d’implémentation actualisé — main `7cd0197e`, 16 novembre
+
+### Déjà livré : ne pas refaire
+
+- **#956 est fermé.** L’extraction AEDAR est fusionnée par la PR #1019,
+  commit `a91ebee0` ; ce n’est plus un prérequis à réaliser.
+- `cahierSectionRenderers.ts` possède déjà le registre fermé, exhaustif sur les
+  neuf kinds de `ContentEvidence`, et `CahierSectionBody` conserve l’identité des
+  enfants lors des changements de preuve/statut.
+- Les cinq compositions `CahierAedarOverviewSection`,
+  `CahierAedarDiversityLossSection`, `CahierAedarAccessSection`,
+  `CahierAedarProfileSection` et `CahierAedarExplorerSection` sont extraites.
+  Les quatre autres kinds passent par `CahierMobiliteSection`. Le contrat commun
+  reste `{ section, unit, comparison }`.
+- `aedarSectionContext.ts` est le propriétaire de présentation des modes, de
+  l’horizon et de la visibilité comparative AEDAR ; il n’est pas un propriétaire
+  d’acquisition. Le choix d’équipement reste volontairement dans l’explorateur.
+- `VarianteCahierLibre` garde l’unique boucle/enveloppe de section et son en-tête,
+  la navigation, l’admission des chapitres, les états, les ancres et les pieds.
+  Le bouton commun s’intègre à cet en-tête, pas dans chaque composition.
+- La PR #1020, fusionnée en `7cd0197e`, contient les corrections comparatives
+  post-extraction (cache des chapitres natifs, éligibilité régionale et sélection
+  explicitement vide). Les conserver, ne pas repartir d’un état qui les précède.
+- Carte de propriété actuelle : `docs/cahier-section-rendering.md` sur main.
+  Les tests d’admission/propriété ajoutés par l’extraction sont des protections
+  à conserver, pas des doublons à remplacer par les scripts PDF du prototype.
+
+### Périmètre réel de raccordement
+
+Aujourd’hui seul l’onglet Mobilité utilise le Cahier en production. Il comprend
+**neuf sections sur trois unités**. Toutes doivent consommer le chemin commun :
+
+| Unité | Sections actuelles |
+| --- | --- |
+| Accès aux services | aperçu voiture ; perte de diversité ; rampes d’accès ; profil/waffle ; bac à sable |
+| Partage de l’espace public | réseaux ; stationnement/ravitaillement |
+| Offre de transports en commun | couverture du territoire ; visiter la Bretagne |
+
+Les autres onglets de la fiche ne sont pas des sections Cahier à migrer en cachette.
+Le contrat reste réutilisable par les futurs consommateurs du Cahier. Les cinq
+sections de la preuve PDF initiale ne remplacent pas cette couverture de neuf.
+
+### Ce qui manque encore
+
+Le registre de rendu n’est **pas** un contrat de capture d’export. Il manque une
+interface publique et stable pour lire une section résolue et ses états effectifs,
+sans `__vueParentComponent`, `setupState`, noms privés de composants ou mutation
+temporaire des contrôles écran. Le registre extrait ne rend pas automatiquement
+publics le TYPEQU courant de l’explorateur, les bascules de référence propres aux
+figures de barres/courbe ou la disponibilité des cartes/légendes.
+
+Les deux modules de formatage `aedarTimeRampTooltip.ts` et
+`groupedBarTooltip.ts` mentionnés plus haut existent **sur la branche de preuve**,
+pas sur ce main. Les porter ou les adapter délibérément depuis les composants
+actuels, en préservant les évolutions de rang, de chargement et de visibilité.
+Ne pas prendre leur présence dans la preuve pour une dépendance déjà fusionnée.
+
+### Lots par modules partagés — pas par section
+
+**A — Capture publique et requête d’export commune.** S’appuyer sur le shell, le
+registre et les propriétaires actuels. Capturer une fois l’identité, les sources,
+les preuves, les états/acquisitions pertinents, les sélections et les modèles de
+figures effectifs dans une requête immuable. Offrir un accès public à l’état
+local nécessaire, sans remonter tout l’état dans un énorme propriétaire global
+ni imposer d’état AEDAR au delegate non-AEDAR. Le choix de modes projette cette
+capture pour le PDF ; annuler la jette et réessayer réutilise la demande échouée.
+Étendre le registre/les contrats natifs lorsque nécessaire, ne pas créer un second
+registre d’exporteurs de section ni un schéma de métadonnées global versionné.
+
+**B — Adaptateurs de familles et valeurs partagées.** Produire les figures et
+tableaux depuis les modèles capturés et des formateurs communs avec l’écran.
+Les variations réelles à couvrir sont les cartes et leurs légendes, rampes,
+waffles, scalaires/rangs, barres groupées AEDAR, barres comparées Mobilité,
+couverture et courbe de raccordement. Les deux familles de barres ont des modèles
+distincts : ne pas les fusionner arbitrairement ou additionner des statistiques
+non additives. Les séries réellement masquées ne doivent pas réapparaître dans
+les tableaux/lectures accessibles. Les dialogues fermés et l’univers complet des
+équipements ne deviennent pas du contenu exporté.
+
+**C — Contrôleur et contrôles communs.** Raccorder une seule action/modale aux
+en-têtes communs, selon l’interface approuvée. Les capacités viennent de la capture
+et des familles, pas d’une liste de clés AEDAR ou de sections. Le contrôleur gère
+le choix, la génération, l’annulation, les doubles clics, le vrai succès, le
+réessai et le nettoyage. Il ne possède aucun calcul factuel ou template PDF.
+
+**D — Composition PDF et débordement.** Une seule composition navigateur
+`jsPDF`/`svg2pdf`, fondée sur la lecture desktop et les familles réutilisées,
+consomme la requête figée. Elle possède les en-têtes approuvés, les listes de
+comparaison à largeur mesurée, le placement des sources, les tableaux, la
+pagination et la sérialisation. A4 à l’échelle de lecture retenue ; continuation
+seulement au débordement mesuré, pas d’option manuelle obligatoire ni de réduction
+globale du document pour forcer une feuille. Réutiliser les polices réelles avec
+des actifs embarqués reproductibles : pas de Python requis chez le lecteur,
+pas de service PDF sur le Pi et pas de police de remplacement silencieuse.
+
+**E — Intégration complète et acceptation.** Brancher le générateur réel derrière
+le contrôleur commun et vérifier les neuf sections via la matrice familles ×
+états. Ce lot clôt l’intégration ; il n’introduit pas les premiers tests. Chaque
+lot précédent porte déjà ses tests au même seam public que ses consommateurs,
+avec plusieurs familles/sections représentées dès A. Neuf sections ne signifient
+ni neuf générateurs ni neuf tickets d’implémentation.
+
+**Dépendances :** A précède B et C ; D consomme A/B et ne dépend pas de la modale
+C. C et le travail de composition peuvent avancer séparément une fois l’interface
+de requête stabilisée. E attend A/B/C/D. Les futurs tickets doivent nommer leurs
+dépendances réelles et leurs fichiers propriétaires ; pas de parallélisme forcé
+entre auteurs modifiant les mêmes familles/contrats.
+
+### Garde-fous de reprise
+
+- Partir d’une branche d’implémentation fraîche depuis main courant, intégrant
+  #1019 et #1020. Ne pas fusionner globalement ni rebaser de force la branche
+  `prototype/cahier-pdf` comme implémentation. Ses maquettes, scripts et modèles
+  sont la référence visuelle/comportementale, pas le code de production à adopter
+  en bloc. Ne pas redémarrer le serveur de maquette arrêté par le propriétaire.
+- Conserver l’admission différée, les statuts locaux, l’éligibilité comparative,
+  la sélection vide explicite, les demandes annulées/tardives et la stabilité
+  de mise en page déjà livrés. La capture ne déclenche pas une nouvelle acquisition
+  de toutes les valeurs ou de tous les pairs pour reconstruire l’écran.
+- Distinguer attente de données, absence légitime de preuve, comparaison masquée
+  et erreur de génération réessayable. Ne pas résoudre silencieusement la règle
+  d’activation d’export sur données encore incomplètes : la spécifier dans les
+  tickets d’implémentation avant de rendre un bouton actif ou un PDF partiel.
+- Les noms/comptes de groupes viennent de la sélection réelle et des noms publics,
+  pas de chaînes de portée parsées ni du nombre de contributeurs d’une mesure.
+  Les marqueurs/honnêtetés des EPCI transfrontaliers restent ceux du contrat source.
+- Les anciens scripts et reçus ne prouvent pas la version main refactorée. Refaire
+  les preuves pertinentes sur le futur code partagé ; ne pas compter les captures
+  synthétiques comme validation numérique en production.
 
 ## Acceptation et validation à conserver
 
