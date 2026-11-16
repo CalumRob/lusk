@@ -462,7 +462,7 @@ export interface ThemeContent {
   label: 'Mobilité'
   territory: TerritoryIdentity
   introduction: readonly TextBlock[]
-  units: readonly [AccesAuxServicesContentUnit, PartageEspacePublicContentUnit, OffreTransportsContentUnit]
+  units: readonly ContentUnit[]
   sourceRegister: readonly ContentSource[]
 }
 

@@ -1,4 +1,5 @@
 import type { FamilleFigure, NoeudTexteRiche, Theme, ThemeMetadata } from '@/payload/types'
+import type { CahierChapter } from '@/fiche/useCahierLoading'
 
 /** Stable app labels for producer-declared axis kinds; unknown kinds stay neutral. */
 const LIBELLES_AXE_NATIF: Readonly<Record<string, string>> = {
@@ -80,6 +81,8 @@ export interface FicheReadingGrammar {
 }
 
 export interface FicheSubgroupGrammar {
+  /** Registered cahier loading capability; omitted means demand-only. */
+  readonly cahier?: Omit<CahierChapter, 'key'>
   /** Structural binding to the producer's subgroup identity. */
   readonly key: string
   readonly label: string
@@ -119,12 +122,15 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       // AEDAR unit bind this key; the retired snapshot indicators, figure and
       // reading no longer exist in app grammar.
       key: 'acces-aux-services',
+      // AEDAR owns specialised reads; retain the existing ordinary companion.
+      cahier: { demandChapter: 'partage-de-lespace-public' },
       label: CONTENU_SOUS_GROUPES_FICHE.mobilite['acces-aux-services'],
       framing: CADRAGES_SOUS_GROUPES_FICHE.mobilite['acces-aux-services'],
       indicators: [],
     },
     {
       key: 'partage-de-lespace-public',
+      cahier: { prefetch: 'ordinary' },
       label: CONTENU_SOUS_GROUPES_FICHE.mobilite['partage-de-lespace-public'],
       framing: CADRAGES_SOUS_GROUPES_FICHE.mobilite['partage-de-lespace-public'],
       indicators: [
@@ -137,6 +143,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     },
     {
       key: 'offre-transports-commun',
+      cahier: { prefetch: 'ordinary' },
       label: CONTENU_SOUS_GROUPES_FICHE.mobilite['offre-transports-commun'],
       framing: CADRAGES_SOUS_GROUPES_FICHE.mobilite['offre-transports-commun'],
       indicators: ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference'],
