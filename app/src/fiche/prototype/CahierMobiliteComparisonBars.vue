@@ -14,20 +14,28 @@ import type {
   CahierFigureAxisTick,
   CahierFigureGeometry,
   CahierFigureTooltipAnchor,
-  CahierTooltipComparison,
-  CahierTooltipRow,
   FigureLegendEntry,
 } from '@/fiche/cahierFigureGrammaire'
 import { valeursGraduationPourDomaine } from '@/fiche/cahierFigureGrammaire'
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
-import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
-import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import type {
-  ContentFact,
   MobiliteBarCategoryEvidence,
   MobiliteBarsFigureEvidence,
   MobiliteRatioEvidence,
 } from '@/fiche/content/themeContent'
+import {
+  formatMobiliteBarValue,
+  mobiliteBarCategoryAria,
+  mobiliteBarReadings,
+  mobiliteBarReferenceValue,
+  mobiliteBarResourceNotes,
+  mobiliteBarSegmentColor,
+  mobiliteBarToneColor,
+  mobiliteBarTooltipRows,
+  mobiliteBarsAccessibleLabel,
+  mobiliteFiniteValue,
+  mobiliteRatioValueLabel,
+} from './cahierMobiliteReadings'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -57,6 +65,12 @@ const BASE_FIGURE_GEOMETRY = {
 const BAR_GAP = 3
 const MAX_BAR_WIDTH = 20
 const UNAVAILABLE_LABEL = 'Indisponible'
+const formatValue = formatMobiliteBarValue
+const finiteValue = mobiliteFiniteValue
+const toneColor = mobiliteBarToneColor
+const segmentColor = mobiliteBarSegmentColor
+const referenceValue = mobiliteBarReferenceValue
+const ratioValueLabel = mobiliteRatioValueLabel
 
 const comparisonVisible = ref(true)
 // #1021 — this figure owns its comparison visibility and its drawn reference;
@@ -100,37 +114,12 @@ function dismissOutside(event: Event): void {
 onMounted(() => document.addEventListener('pointerdown', dismissOutside))
 onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissOutside))
 
-function formatValue(value: number): string {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value)
-}
-
 function formatAxisTick(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value)
 }
 
-function finiteValue(value: number | null | undefined): number | null {
-  return value === null || value === undefined || !Number.isFinite(value) ? null : value
-}
-
-function toneColor(tone: MobiliteBarCategoryEvidence['tone']): string {
-  return tone === 'c'
-    ? 'var(--cahier-mode-car)'
-    : tone === 'b'
-      ? 'var(--cahier-mode-bike)'
-      : tone === 't'
-        ? 'var(--cahier-mode-foot)'
-        : tone === 'brand'
-          // The app's own ink, distinct from every mode colour (#976).
-          ? 'var(--brand-500)'
-          : 'var(--cahier-theme-strong)'
-}
-
 function comparisonFill(category: MobiliteBarCategoryEvidence): string {
   return `color-mix(in srgb, ${toneColor(category.tone)} 45%, var(--paper))`
-}
-
-function referenceValue(category: MobiliteBarCategoryEvidence): number | null {
-  return finiteValue(category.value.fact.comparison?.reference?.value)
 }
 
 const showComparison = computed(() =>
@@ -142,65 +131,6 @@ const hasComparisonReference = computed(() =>
 )
 
 const comparisonAligned = computed(() => showComparison.value && hasComparisonReference.value)
-
-const segmentColors: Readonly<Record<string, string>> = {
-  protege_km_1000: 'var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike)))',
-  partage_km_1000: 'var(--cahier-cycle-shared, #8c4c9e)',
-}
-
-function segmentColor(segment: { key: string }): string {
-  return segmentColors[segment.key] ?? segmentColors.partage_km_1000
-}
-
-function comparisonStatistic(comparison: NonNullable<ContentFact['fact']['comparison']> | null | undefined): string {
-  return comparison?.reference?.kind === 'mean' ? 'moyenne' : 'médiane'
-}
-
-function comparisonDirection(comparison: NonNullable<ContentFact['fact']['comparison']> | null | undefined): string | null {
-  return comparison?.direction ? LIBELLES_DIRECTION[comparison.direction] : null
-}
-
-function comparisonScopeOnly(label: string | null): string | null {
-  return label?.replace(/^(?:Médiane|Moyenne) des /u, '') ?? null
-}
-
-function comparisonDescription(
-  comparison: NonNullable<ContentFact['fact']['comparison']> | null | undefined,
-  scope: string | null,
-  unsplitTotal = false,
-): string {
-  const statistic = comparisonStatistic(comparison)
-  if (unsplitTotal) {
-    const scopeOnly = comparisonScopeOnly(scope)
-    return `${statistic} du total non segmenté${scopeOnly ? ` — ${scopeOnly}` : ''}`
-  }
-  return scope ?? statistic
-}
-
-function rankPhrase(
-  comparison: NonNullable<ContentFact['fact']['comparison']> | null | undefined,
-): string | null {
-  if (!comparison) return null
-  return puceRangDirection(comparison.rank, comparison.direction)?.phraseAria
-    ?? formatServedRankAria(comparison.rank)
-}
-
-function comparisonAria(
-  fact: ContentFact,
-  scope: string | null,
-  unit: string,
-  unsplitTotal = false,
-): string {
-  const comparison = fact.fact.comparison
-  const reference = comparison?.reference
-  if (!reference) return `${GROUPE_COMPARE_LABEL} : Indisponible`
-  const value = `${formatValue(reference.value)} ${unit}`
-  const description = comparisonDescription(comparison, scope, unsplitTotal)
-  const direction = comparisonDirection(comparison)
-  const rank = rankPhrase(comparison)
-  return `${GROUPE_COMPARE_LABEL} : ${value} (${description})${rank ? `. Rang ${rank}` : direction ? `. ${direction}` : ''}`
-}
-
 const categoryCount = computed(() => props.figure.categories.length)
 const slotCount = computed(() => comparisonAligned.value ? 2 : 1)
 const finiteValues = computed(() => props.figure.categories.flatMap((category) => {
@@ -326,147 +256,31 @@ function comparisonStackedSegments(category: MobiliteBarCategoryEvidence, catego
   })
 }
 
-function comparisonTooltip(
-  fact: ContentFact,
-  unit: string,
-  unsplitTotal = false,
-): CahierTooltipComparison | undefined {
-  const comparison = fact.fact.comparison
-  const reference = comparison?.reference
-  if (!reference) return undefined
-  return {
-    // Tooltip values are bare; the accessible label keeps the full unit, scope and rank.
-    value: formatValue(reference.value),
-    rank: formatServedRank(comparison.rank),
-    rankEvidence: comparison.rank,
-    ariaLabel: comparisonAria(fact, props.figure.comparisonLabel, unit, unsplitTotal),
-  }
-}
-
-function totalRowLabel(category: MobiliteBarCategoryEvidence): string {
-  return category.key === 'bike' ? 'Total vélo' : category.label
-}
-
 function tooltipRows(category: MobiliteBarCategoryEvidence): readonly CahierTooltipRow[] {
-  const value = finiteValue(category.value.fact.value)
-  const rows: CahierTooltipRow[] = [{
-    label: totalRowLabel(category),
-    value: value === null ? UNAVAILABLE_LABEL : formatValue(value),
-    markerColor: toneColor(category.tone),
-    ariaLabel: `${totalRowLabel(category)} : ${value === null ? UNAVAILABLE_LABEL : `${formatValue(value)} ${props.figure.unit}`}`,
-    comparison: showComparison.value
-      ? comparisonTooltip(category.value, props.figure.unit,
-        category.segments.length > 0 && !category.comparisonSplit)
-      : undefined,
-  }]
-  if (category.splitNote) {
-    rows.push({
-      label: 'Répartition Protégé/Partagé',
-      value: UNAVAILABLE_LABEL,
-      tone: 'neutral',
-      marker: 'slash',
-      ariaLabel: category.splitNote,
-    })
-  }
-  if (showComparison.value && category.comparisonSplitNote) {
-    rows.push({
-      label: 'Répartition comparée Protégé/Partagé',
-      value: UNAVAILABLE_LABEL,
-      tone: 'neutral',
-      marker: 'slash',
-      ariaLabel: category.comparisonSplitNote,
-    })
-  }
-  for (const segment of category.segments) {
-    const segmentValue = finiteValue(segment.value.fact.value)
-    rows.push({
-      label: segment.label,
-      value: segmentValue === null ? UNAVAILABLE_LABEL : formatValue(segmentValue),
-      tone: 'b',
-      marker: 'dot',
-      markerColor: segmentColor(segment),
-      ariaLabel: `${segment.label} : ${segmentValue === null ? UNAVAILABLE_LABEL : `${formatValue(segmentValue)} ${props.figure.unit}`}`,
-      comparison: showComparison.value ? comparisonTooltip(segment.value, props.figure.unit) : undefined,
-    })
-    if (segment.rawValue) {
-      const raw = finiteValue(segment.rawValue.fact.value)
-      rows.push({
-        label: segment.rawValue.label,
-        value: raw === null ? UNAVAILABLE_LABEL : formatValue(raw),
-        tone: 'neutral',
-        marker: 'slash',
-        ariaLabel: `${segment.rawValue.label} : ${raw === null ? UNAVAILABLE_LABEL : `${formatValue(raw)} ${segment.rawValue.fact.unit}`} (valeur brute)`,
-        comparison: showComparison.value ? comparisonTooltip(segment.rawValue, segment.rawValue.fact.unit) : undefined,
-      })
-    }
-  }
-  if (category.rawValue) {
-    const raw = finiteValue(category.rawValue.fact.value)
-    rows.push({
-      label: category.rawValue.label,
-      value: raw === null ? UNAVAILABLE_LABEL : formatValue(raw),
-      tone: 'neutral',
-      marker: 'slash',
-      ariaLabel: `${category.rawValue.label} : ${raw === null ? UNAVAILABLE_LABEL : `${formatValue(raw)} ${category.rawValue.fact.unit}`} (valeur brute)`,
-      comparison: showComparison.value ? comparisonTooltip(category.rawValue, category.rawValue.fact.unit) : undefined,
-    })
-  }
-  return rows
+  return mobiliteBarTooltipRows(mobiliteBarReadings({
+    figure: props.figure,
+    category,
+    showComparison: showComparison.value,
+  }))
 }
 
 function categoryAriaLabel(index: number): string {
-  const category = props.figure.categories[index]!
-  const value = finiteValue(category.value.fact.value)
-  const parts = [`${totalRowLabel(category)} : ${value === null ? UNAVAILABLE_LABEL : `${formatValue(value)} ${props.figure.unit}`}`]
-  if (category.splitNote) parts.push(category.splitNote)
-  for (const segment of category.segments) {
-    const segmentValue = finiteValue(segment.value.fact.value)
-    parts.push(`${segment.label} : ${segmentValue === null ? UNAVAILABLE_LABEL : `${formatValue(segmentValue)} ${props.figure.unit}`}`)
-    if (showComparison.value) {
-      const comparison = segment.value.fact.comparison
-      const reference = comparison?.reference
-      if (reference) {
-        const rank = rankPhrase(comparison)
-        const direction = comparisonDirection(comparison)
-        const description = comparisonDescription(comparison, props.figure.comparisonLabel)
-        parts.push(`${GROUPE_COMPARE_LABEL} ${segment.label} : ${formatValue(reference.value)} ${props.figure.unit} (${description})${rank ? ` — rang ${rank}` : direction ? ` — ${direction}` : ''}`)
-      }
-    }
-  }
-  if (showComparison.value) {
-    const reference = referenceValue(category)
-    if (reference !== null) {
-      const comparison = category.value.fact.comparison!
-      const unsplit = category.segments.length > 0 && !category.comparisonSplit
-      const description = comparisonDescription(comparison, props.figure.comparisonLabel, unsplit)
-      const rank = rankPhrase(comparison)
-      const direction = comparisonDirection(comparison)
-      parts.push(`${GROUPE_COMPARE_LABEL} : ${formatValue(reference)} ${props.figure.unit} (${description})${rank ? ` — rang ${rank}` : direction ? ` — ${direction}` : ''}`)
-    } else {
-      parts.push(`${GROUPE_COMPARE_LABEL} : Indisponible`)
-    }
-    if (category.comparisonSplitNote) parts.push(category.comparisonSplitNote)
-  }
-  return parts.join(' ; ')
+  return mobiliteBarCategoryAria({
+    figure: props.figure,
+    category: props.figure.categories[index]!,
+    showComparison: showComparison.value,
+  })
 }
 
-const resourceNotes = computed(() => {
-  const notes: string[] = []
-  if (props.figure.unavailableResources?.length) {
-    notes.push(`Publication indisponible : ${props.figure.unavailableResources.join(', ')}`)
-  }
-  if (props.figure.unavailableComparisons?.length) {
-    notes.push(`Comparaison indisponible : ${props.figure.unavailableComparisons.join(', ')}`)
-  }
-  return notes
-})
+const resourceNotes = computed(() => mobiliteBarResourceNotes({
+  figure: props.figure,
+  comparisonNone: props.comparisonNone,
+}))
 
-const accessibleLabel = computed(() => {
-  const readings = props.figure.categories.map((_category, index) => categoryAriaLabel(index)).join(' ; ')
-  const notes = resourceNotes.value.length ? ` ${resourceNotes.value.join(' ')}` : ''
-  return `${props.figure.figureTitle}. Barres verticales groupées par ${props.figure.xAxisTitle.toLocaleLowerCase('fr-FR')}, en ${props.figure.unit}. ${readings}. Axe horizontal : ${props.figure.xAxisTitle}. Axe vertical : ${props.figure.yAxisTitle}.${notes}`
-})
-
+const accessibleLabel = computed(() => mobiliteBarsAccessibleLabel({
+  figure: props.figure,
+  showComparison: showComparison.value,
+}))
 const selectedCategoryTitle = computed(() => selectedCategoryIndex.value === null
   ? ''
   : props.figure.categories[selectedCategoryIndex.value]!.label)
@@ -509,8 +323,8 @@ const legendEntries = computed<readonly FigureLegendEntry[]>(() => {
 })
 
 const legendColors = computed<Readonly<Record<string, string>>>(() => ({
-  protege_km_1000: segmentColors.protege_km_1000,
-  partage_km_1000: segmentColors.partage_km_1000,
+  protege_km_1000: segmentColor({ key: 'protege_km_1000' }),
+  partage_km_1000: segmentColor({ key: 'partage_km_1000' }),
   comparison: 'color-mix(in srgb, var(--cahier-theme-strong, var(--brand-500)) 45%, var(--paper))',
 }))
 
@@ -527,11 +341,6 @@ function categoryHitboxStyle(index: number): Record<string, string> {
     width: `${groupWidth.value / figureGeometry.value.width * 100}%`,
     height: `${plotHeight.value / figureGeometry.value.height * 100}%`,
   }
-}
-
-function ratioValueLabel(ratio: MobiliteRatioEvidence): string {
-  const value = finiteValue(ratio.value.fact.value)
-  return value === null ? UNAVAILABLE_LABEL : `${formatValue(value)} ${ratio.value.fact.unit}`
 }
 
 const ratioComparisonStatus = computed(() => props.comparison.status)
