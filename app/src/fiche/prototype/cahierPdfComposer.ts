@@ -14,6 +14,8 @@
  */
 import type { jsPDF } from 'jspdf'
 
+import { MARQUE_LUSK_ERMINE } from '@/components/luskBrandMark'
+
 import type { CahierPdfArtifact, CahierPdfGenerator } from './cahierPdfExportController'
 import type { CahierFigureProjection } from './cahierExportAdapters'
 import { projeterRequeteExportFigures } from './cahierExportAdapters'
@@ -104,15 +106,6 @@ const TAILLE = {
   titreTableaux: 9,
   note: 6.4,
 } as const
-
-/** Exact locked ermine paths from `LuskBrand.vue`; guarded by a contract test. */
-export const MARQUE_ERMINE_PATHS = [
-  { d: 'M47.3 109.7 C 40.82 109.53, 33.51 110.13, 27.49 111.59 L27.38 116.18 C 29.35 115.72, 31.42 115.15, 33.5 114.6 C 40.5 112.9, 45 111.3, 47.3 110.6 Z', fill: '#57726F' },
-  { d: 'M27.49 111.59 C 26.27 111.89, 25.1 112.23, 24 112.6 C 20.8 113.8, 19 115.2, 18 116.8 C 20.29 117.52, 23.65 117.04, 27.38 116.18 L27.49 111.59 Z', fill: '#1B1B19' },
-  { d: 'm96.3 111.1c-1-1.5-1.6-2.5-2.2-3.8-0.7-1.5-2-2.7-2.7-3.2v-0.1c-0.1-1.5-1.4-2.5-2.6-2.2-0.3 0.1-0.7 0.3-1 0.5-1.2-0.6-2.5-1-3.7-0.1-3.3-0.9-6.4-1.9-10.2-2.3-2.3-0.2-5.2-0.4-7.5-0.2-5.2 0.3-9.2 1.5-12.8 3.5-2.7 1.5-5 3.5-6.4 5.4-2 2.7-2.6 4.9-2.9 7.7l-0.2 1.9c-0.5 4-1.8 5.1-2.3 5.6-1.2 1.2-1.3 1.4-1.4 4.9 0 1.6-0.5 5.5 1.8 5.6 2 0 2.9-5.1 4-6.2 0.5-0.5 1.9-0.2 4-0.9 4.3-1.4 6.7-4.9 6.4-9.5-0.1-1.1-0.4-2.6-0.7-3.8 0.9 0.3 2.6 1.3 3.2 3.5 1.6-1.1 4.2-2.5 7.6-3.3 0.2-2.3 1.7-3.6 3.9-3.8-1.1 1.7-2.4 4.7-0.6 6.3 0.9 0.7 4.9 2.6 6.4 3.3 1.1 0.5 2.9 1.4 4 1.1s1.3-1.5 0.5-2.9c-0.5-1-1.7-2.5-2.9-3.7 1.5-1.1 3-1.3 4.9-0.8s3 1.1 5.5 1.5c1.3 0.2 4.2 0.3 5.8-0.2 1.2-0.5 2.9-1.6 2.1-3.8z', fill: '#1B1B19' },
-  { d: 'm84.2 106.8s0.7-1.1 1.7-2c0.5-0.5 1-0.4 2.1-0.3-1.6-1.8-4-1.7-3.8 2.3z', fill: '#57726F' },
-  { d: 'm91.5 109.6c-0.1 0.5-0.6 0.9-1.1 0.8s-0.9-0.6-0.8-1.1 0.6-0.8 1.1-0.7 0.8 0.6 0.8 1z', fill: '#57726F' },
-] as const
 
 function verifierAbandon(signal: AbortSignal): void {
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
@@ -656,8 +649,8 @@ async function dessinerMarque(doc: jsPDF, x: number, y: number): Promise<void> {
   // The lockup is drawn from the locked brand paths; the wordmark uses the
   // Newsreader face actually embedded in the document.
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.setAttribute('viewBox', '15 95.7 86.4 47')
-  for (const path of MARQUE_ERMINE_PATHS) {
+  svg.setAttribute('viewBox', MARQUE_LUSK_ERMINE.viewBox)
+  for (const path of MARQUE_LUSK_ERMINE.chemins) {
     const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
     node.setAttribute('d', path.d)
     node.setAttribute('fill', path.fill)

@@ -4,9 +4,9 @@ import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
-  MARQUE_ERMINE_PATHS,
   composerCahierPdf,
 } from '@/fiche/prototype/cahierPdfComposer'
+import { MARQUE_LUSK_ERMINE } from '@/components/luskBrandMark'
 import { sousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaison'
 import type { SousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaison'
 import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
@@ -997,10 +997,42 @@ describe('polices PDF — provenance et marque', () => {
     }
   })
 
-  it('garde les tracés exacts de l’hermine verrouillée', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/LuskBrand.vue'), 'utf8')
-    for (const path of MARQUE_ERMINE_PATHS) {
-      expect(source).toContain(path.d)
+  it('garde un seul propriétaire pour les tracés et remplissages de l’hermine', () => {
+    const composerSource = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/cahierPdfComposer.ts'), 'utf8')
+    const brandSource = readFileSync(resolve(process.cwd(), 'src/components/LuskBrand.vue'), 'utf8')
+    expect(composerSource).toContain('MARQUE_LUSK_ERMINE')
+    expect(brandSource).toContain('MARQUE_LUSK_ERMINE')
+    for (const source of [composerSource, brandSource]) {
+      expect(source.toLowerCase()).not.toContain('#57726f')
+      expect(source.toLowerCase()).not.toContain('#1b1b19')
+      for (const chemin of MARQUE_LUSK_ERMINE.chemins) expect(source).not.toContain(chemin.d)
+    }
+    expect(MARQUE_LUSK_ERMINE.chemins.length).toBe(5)
+  })
+
+  it('peint les remplissages de l’hermine depuis ce propriétaire, pas depuis une copie', async () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')
+    vi.resetModules()
+    vi.doMock('@/styles/tokens.css?raw', () => ({ default: css }))
+    vi.doMock('@/components/luskBrandMark', () => ({
+      MARQUE_LUSK_ERMINE: {
+        viewBox: '15 95.7 86.4 47',
+        chemins: [
+          { d: 'M20 100 L40 100 L30 110 Z', fill: '#ff0000' },
+          { d: 'M50 100 L70 100 L60 110 Z', fill: '#00ff00' },
+        ],
+      },
+    }))
+    try {
+      const { composerCahierPdf: composer } = await import('@/fiche/prototype/cahierPdfComposer')
+      const artifact = await composer(requetePour('couverture-du-territoire'), options())
+      const couleurs = await couleursRemplissage(new Uint8Array(await artifact.blob.arrayBuffer()))
+      expect(couleurs).toContain('#ff0000')
+      expect(couleurs).toContain('#00ff00')
+    } finally {
+      vi.doUnmock('@/styles/tokens.css?raw')
+      vi.doUnmock('@/components/luskBrandMark')
+      vi.resetModules()
     }
   })
 
