@@ -295,15 +295,33 @@ try {
     assert(slots.every((s) => Math.abs(s.width - slots[0].width) < 1))
     assert(width < 768 ? slots[1].y > slots[0].y : slots[1].y === slots[0].y)
     assert.equal(await page.locator('.accueil-editorial a, .accueil-editorial button, .accueil-editorial [tabindex]').count(), 0)
-    const feuillets = await page.locator('.accueil-feuillet').evaluateAll((els) => els.map((el) => {
-      const style = getComputedStyle(el)
-      const r = el.getBoundingClientRect()
-      return { background: style.backgroundColor, border: style.borderTopWidth,
-        paddingLeft: parseFloat(style.paddingLeft), width: r.width, height: r.height }
-    }))
+    const feuillets = await page.locator('.accueil-feuillet').evaluateAll((els) => {
+      const resolve = (name) => {
+        const probe = document.createElement('span')
+        probe.style.color = `var(${name})`
+        document.body.append(probe)
+        const value = getComputedStyle(probe).color
+        probe.remove()
+        return value
+      }
+      const paper = resolve('--editorial-paper')
+      const deep = resolve('--editorial-paper-deep')
+      return els.map((el) => {
+        const style = getComputedStyle(el)
+        const r = el.getBoundingClientRect()
+        return { background: style.backgroundColor, border: style.borderTopWidth,
+          paddingLeft: parseFloat(style.paddingLeft), width: r.width, height: r.height,
+          figureBackground: getComputedStyle(el.querySelector('.accueil-image-provisoire')).backgroundColor,
+          paperToken: paper, deepToken: deep }
+      })
+    })
     assert.equal(feuillets.length, 3)
     for (const feuillet of feuillets) {
-      assert.equal(feuillet.background, 'rgb(241, 242, 236)', 'paper comes from the editorial token')
+      assert(feuillet.paperToken && feuillet.deepToken, 'shared paper tokens resolve')
+      assert.equal(feuillet.background, feuillet.paperToken,
+        'page background follows the shared --editorial-paper token')
+      assert.equal(feuillet.figureBackground, feuillet.deepToken,
+        'figure placeholder follows the shared --editorial-paper-deep token')
       assert.equal(feuillet.border, '1px')
       assert(feuillet.paddingLeft > 0, 'page margin treatment is present')
     }
