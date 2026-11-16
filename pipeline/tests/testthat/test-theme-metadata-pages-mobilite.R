@@ -135,7 +135,7 @@ test_that("les densités de ravitaillement déclarent leur page, source et contr
     expect_true(nzchar(page$definition), info = cle)
     contract <- meta$scalar_contracts[[cle]]
     expect_identical(unlist(contract$allowed_levels, use.names = FALSE),
-                     c("commune", "epci", "departement"), info = cle)
+                     c("commune", "epci", "departement", "region"), info = cle)
     expect_identical(contract$comparison_facet, cle, info = cle)
     expect_identical(contract$missing_status, "not_available", info = cle)
   }
@@ -143,6 +143,19 @@ test_that("les densités de ravitaillement déclarent leur page, source et contr
   # contre les vintages du thème et directions contre le registre des rangs
   expect_no_error(valider_theme_metadata(meta, vintages = vintages_mobilite(),
                                         directions_module = DIRECTIONS_MOBILITE))
+})
+
+test_that("regional refuelling facts do not admit regional indicator pages (#1032)", {
+  meta <- lire_theme_metadata("mobilite")
+  ids <- c("stations_service", "stations_service_1000", "bornes_recharge_1000",
+           "bornes_ev_par_station_service")
+  for (id in ids) {
+    expect_identical(unlist(meta$scalar_contracts[[id]]$allowed_levels,
+                            use.names = FALSE),
+                     c("commune", "epci", "departement", "region"), info = id)
+    expect_false("region" %in% unlist(meta$indicator_pages[[id]]$levels),
+                 info = id)
+  }
 })
 
 test_that("aucune page scalaire Mobilité ne porte de coordonnée de profil (#953)", {
