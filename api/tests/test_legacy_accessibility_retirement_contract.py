@@ -188,11 +188,16 @@ def test_reintroducing_retired_owner_into_current_sources_is_detected():
 
     artifacts = (PIPELINE / "R/publish_typed_reading_artifact.R").read_text(
         encoding="utf-8").lower()
-    reintroduced_artifacts = artifacts.replace(
-        "  list(\n", '  list(\n    mobilite = list(\n'
-        '      table_fields = c("facts", "stories", "clocks"),\n'
-        '      json_fields = "descriptor"\n    ),\n', 1)
-    assert reintroduced_artifacts != artifacts
+    contract_list = re.search(
+        r"typed_reading_artifact_contracts\s*<-\s*function\s*\([^)]*\)\s*\{\s*list\s*\(",
+        artifacts, re.DOTALL)
+    assert contract_list, "artifact contract declaration is missing"
+    reintroduced_artifacts = (
+        artifacts[:contract_list.end()]
+        + '\n    mobilite = list(\n'
+          '      table_fields = c("facts", "stories", "clocks"),\n'
+          '      json_fields = "descriptor"\n    ),'
+        + artifacts[contract_list.end():])
     assert _mobility_typed_reading_owners(reintroduced_artifacts) == ["mobilite"]
 
 
