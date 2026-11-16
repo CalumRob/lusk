@@ -208,8 +208,11 @@ export function capturePdfFixture(
   const evidence = section.evidence && options.evidencePatch
     ? { ...section.evidence, ...options.evidencePatch } as ContentEvidence
     : section.evidence
+  const targetSection = evidence === section.evidence
+    ? section
+    : { ...section, evidence } as unknown as typeof section
   const capture = captureCahierSection({
-    section: evidence === section.evidence ? section : { ...section, evidence },
+    section: targetSection,
     unit: unitFor(fixture, key),
     territory: fixture.content.territory,
     readiness: options.readiness ?? READY_READINESS,

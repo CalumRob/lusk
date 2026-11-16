@@ -78,7 +78,7 @@ describe('shared PDF export controller machine (#1023)', () => {
   })
 
   it.each([1, 3] as const)('prepares directly with the %i modes active on screen', async (count) => {
-    const modes = withAedarModes(['car', 'transit', 'bike_lts2'].slice(0, count))
+    const modes = withAedarModes(count === 1 ? ['car'] : ['car', 'transit', 'bike_lts2'])
     const capture = capturePdfFixture('aedar-access', { aedar: modes })
     const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
     const { controller } = controllerFor(capture, generate)

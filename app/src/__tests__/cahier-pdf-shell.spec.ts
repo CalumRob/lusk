@@ -108,7 +108,6 @@ describe('shared PDF action on the mounted Cahier shell (#1023)', () => {
     expect(actions).toHaveLength(9)
     for (const section of content.units.flatMap((unit) => unit.sections)) {
       const action = wrapper.get(`[data-section="${section.key}"] .concept-group-heading .cahier-pdf-action`)
-      expect(action.exists()).toBe(true)
       expect(action.get('.cahier-pdf-action__button').text()).toBe('PDF')
     }
     expect(wrapper.findAll('[data-section] > section .cahier-pdf-action')).toHaveLength(0)

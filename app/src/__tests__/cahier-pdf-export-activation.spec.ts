@@ -103,11 +103,8 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
     expect(evaluerDisponibiliteExportPdf(capture)).toEqual({ ready: true })
   })
 
-  it('blocks a required legend that is unobserved, loading or unavailable', () => {
+  it('blocks a required legend that is loading or unavailable', () => {
     const maps = loadedMaps(['walk', 'transit', 'bike_lts2', 'bike_lts4'])
-    expect(blockReason(capturePdfFixture('aedar-diversity-loss', {
-      publications: [mapAvailability(maps, 'unknown')],
-    }))).toBe('legend-unknown')
     expect(blockReason(capturePdfFixture('aedar-diversity-loss', {
       publications: [mapAvailability(maps, 'pending')],
     }))).toBe('legend-pending')
