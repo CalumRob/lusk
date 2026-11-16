@@ -121,9 +121,11 @@ no visible element left on the old paper values). Contrast: ink/paper 13.08:1
 (previously 12.99), muted/paper 4.63:1 (previously 4.60), margin/paper 4.92:1.
 This approves the **colours only**: implementation and code review are not
 claimed complete, and adoption across every surface is not validated. The
-provisional “Figure à venir” text (muted on paper-deep, approximately 3.98:1,
-previously 4.05:1) remains below AA and is an explicit before-shipping fix; the
-documented brand-200 comparison exception (2.49:1 on white) is untouched.
+provisional “Figure à venir” text (muted on paper-deep, approximately 3.98:1) is
+accepted by the owner **while it remains provisional placeholder text**; this is
+not a site-wide accessibility waiver and real content still needs to meet normal
+contrast rules. The documented brand-200 comparison exception (2.49:1 on white)
+is untouched.
 
 With the dev server running, `node scripts/verify-homepage.mjs` checks real
 committed territory assets, long labels, fixed geometry, empty/loading/error and

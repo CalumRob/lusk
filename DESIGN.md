@@ -21,7 +21,7 @@ The shared Cahier/editorial paper roles in `app/src/styles/tokens.css` use the o
 | `--editorial-paper` | `#f5f2eb` |
 | `--editorial-paper-deep` | `#e6e1d7` |
 
-These are site-wide shared values: the existing Cahier/Mobilité surfaces and the homepage mini-pages consume the same tokens. Ink, red margin/index, brand and theme colours are unchanged. This records colour approval only; surface adoption and review status above remain unchanged. The provisional homepage “Figure à venir” text (muted on paper-deep, approximately 3.98:1) is a known below-AA point that must be resolved before shipping.
+These are site-wide shared values: the existing Cahier/Mobilité surfaces and the homepage mini-pages consume the same tokens. Ink, red margin/index, brand and theme colours are unchanged. This records colour approval only; surface adoption and review status above remain unchanged. The owner accepts the provisional homepage “Figure à venir” text at approximately 3.98:1 (muted on paper-deep) while those entries remain placeholders. This is a narrow acceptance for provisional placeholder text, not a site-wide accessibility waiver: real content must meet the normal contrast rules.
 
 The detailed identity is a rollout foundation, not a claim that every listed value or prototype detail is already applied everywhere. Content, figure meaning, metadata, comparisons, URLs, interactions, and provenance remain governed by their product/data contracts.
 
