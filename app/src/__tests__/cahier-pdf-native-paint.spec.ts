@@ -1,8 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
 import { jsPDF } from 'jspdf'
+import AccessRampFigureCahier from '@/fiche/prototype/AccessRampFigureCahier.vue'
+import CahierMobiliteRaccordementCurve from '@/fiche/prototype/CahierMobiliteRaccordementCurve.vue'
 import { dessinerFigurePdf } from '@/fiche/prototype/cahierPdfFigures'
 import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
@@ -14,34 +17,44 @@ import {
   CAHIER_FIGURE_STROKE,
   CSS_PX_EN_MM,
   curveGeometry,
+  cssPxToMm,
 } from '@/fiche/prototype/cahierFigureNativeGeometry'
+import type { TimeRampFigureData } from '@/fiche/content/territoryFacts'
 import { mobiliteCurveCoordinateForDetail } from '@/fiche/prototype/cahierMobiliteReadings'
 import { chargeurPoliceTest, chargeurImageTest, lirePdf } from './helpers/cahierPdfRuntime'
 import { captureBarresDense, captureCourbeTrous, captureRampeDense, capturePdfFixture } from './helpers/cahierPdfFixtures'
 
-/** Reads one native SFC rule body; the selectors below are unique in their file. */
-function regleCss(source: string, selecteur: string): string {
-  const start = source.indexOf(`${selecteur} {`)
-  if (start < 0) throw new Error(`règle CSS introuvable : ${selecteur}`)
-  const open = source.indexOf('{', start)
-  const close = source.indexOf('}', open)
-  return source.slice(open + 1, close)
-}
-
-function nombreCss(body: string, propriete: string): number {
-  const match = new RegExp(`${propriete}:\\s*([\\d.]+)`).exec(body)
-  if (!match) throw new Error(`propriété CSS introuvable : ${propriete}`)
-  return Number(match[1])
+/** Minimal native AEDAR ramp used only to read the injected stroke metrics. */
+function rampeNative(): TimeRampFigureData {
+  return {
+    availability: 'incomplete',
+    xAxis: { label: 'Temps d’accès', unit: 'minutes' },
+    yAxis: { label: 'Diversité accessible', unit: 'types' },
+    series: [{
+      key: 'car',
+      label: 'Voiture',
+      points: [5, 10, 15].map((minute) => ({
+        xValue: minute,
+        xLabel: `${minute} min`,
+        value: minute / 5,
+        referenceValue: minute / 6,
+      })),
+    }],
+    provenance: null,
+    comparisonLabel: 'Territoires comparables',
+  }
 }
 
 // Public native painter -> SVG serialization boundary. Text still uses real
 // embedded font metrics and a real PDF; mark assertions inspect emitted SVG,
-// not a re-run of the geometry functions being tested.
+// not a re-run of the geometry functions being tested. `peintre` is injectable
+// only so an owner-mutation test can pass a freshly imported painter.
 async function peindre(
   capture: CahierExportCapture,
   comparisonProof = true,
   modifier?: (projection: CahierFigureProjection) => CahierFigureProjection,
   sansModeleCourbe = false,
+  peintre: typeof dessinerFigurePdf = dessinerFigurePdf,
 ) {
   const result = projeterRequeteExport(capture, capture.capabilities.selectableSeries.slice(0, 3).map((s) => s.id))
   if (result.status !== 'ready') throw new Error(result.reason)
@@ -57,7 +70,7 @@ async function peindre(
   for (const original of projections) {
     const projection = modifier?.(original) ?? original
     const native = capture.figures.find((f) => f.slot === projection.slot)!
-    await dessinerFigurePdf({
+    await peintre({
       doc, signal, x: 12, y: 25, width: 186, chargerImage: chargeurImageTest, comparisonProof,
       mesure: {
         largeur: (text, font, size) => { doc.setFont(font); doc.setFontSize(size); return doc.getTextWidth(text) },
@@ -86,7 +99,11 @@ describe('sortie native du peintre PDF', () => {
     expect(svgs[0]!.querySelectorAll('circle')).toHaveLength(0)
     const marker = [...svgs[0]!.querySelectorAll('line')].find((line) => line.getAttribute('stroke-dasharray'))!
     expect(marker.getAttribute('stroke')).toBe('#62706c')
-    expect(Number(marker.getAttribute('stroke-width'))).toBeCloseTo(0.396875, 6)
+    expect(Number(marker.getAttribute('stroke-width')))
+      .toBeCloseTo(cssPxToMm(CAHIER_FIGURE_STROKE.markerWidthPx), 6)
+    expect(marker.getAttribute('stroke-dasharray')).toBe(
+      CAHIER_FIGURE_STROKE.markerDashPx.map((value) => String(cssPxToMm(value))).join(' '),
+    )
     expect(lecture.textes.filter((item) => /^\d+ min$/.test(item.str)).map((item) => item.str))
       .toEqual(['0 min', '30 min', '60 min', '90 min', '120 min', '150 min', '180 min', '210 min', '240 min', '270 min', '300 min', '330 min', '360 min'])
   })
@@ -209,24 +226,134 @@ describe('sortie native du peintre PDF', () => {
     }
   })
 
-  it('lie les métriques de trait du PDF aux feuilles de style natives', () => {
+  it('injecte les métriques de trait du propriétaire dans les figures natives', () => {
+    const ramp = mount(AccessRampFigureCahier, {
+      props: { timeRamp: rampeNative(), territoryName: 'Rennes' },
+    })
+    const curveCapture = captureCourbeTrous()
+    const curveModel = (curveCapture.figures.find((figure) => figure.family === 'mobilite-curve') as unknown as {
+      model: MobiliteRaccordementEvidence
+    }).model
+    const curve = mount(CahierMobiliteRaccordementCurve, {
+      props: { figure: curveModel, comparison: { status: 'ready' } },
+    })
+    const attendu: Record<string, string> = {
+      '--cahier-figure-series-width': `${CAHIER_FIGURE_STROKE.widthPx}px`,
+      '--cahier-figure-comparison-width': `${CAHIER_FIGURE_STROKE.comparisonWidthPx}px`,
+      '--cahier-figure-comparison-dash': CAHIER_FIGURE_STROKE.comparisonDashPx.join(' '),
+      '--cahier-figure-comparison-opacity': String(CAHIER_FIGURE_STROKE.comparisonOpacity),
+      '--cahier-figure-marker-width': `${CAHIER_FIGURE_STROKE.markerWidthPx}px`,
+      '--cahier-figure-marker-dash': CAHIER_FIGURE_STROKE.markerDashPx.join(' '),
+      '--cahier-figure-grid-width': `${CAHIER_FIGURE_STROKE.gridWidthPx}px`,
+      '--cahier-figure-axis-width': `${CAHIER_FIGURE_STROKE.axisWidthPx}px`,
+    }
+    for (const [propriete, valeur] of Object.entries(attendu)) {
+      expect(ramp.get('svg').attributes('style'), propriete).toContain(`${propriete}: ${valeur}`)
+      expect(curve.get('svg[role="img"]').attributes('style'), propriete)
+        .toContain(`${propriete}: ${valeur}`)
+    }
+    expect(ramp.get('svg').attributes('style')).toContain(
+      `--cahier-figure-series-cap: ${CAHIER_FIGURE_STROKE.linecap}`,
+    )
+    expect(curve.get('svg[role="img"]').attributes('style')).toContain(
+      `--cahier-figure-series-join: ${CAHIER_FIGURE_STROKE.linejoin}`,
+    )
+  })
+
+  it('consomme ces variables dans les règles de trait des SFC natives', () => {
     const ramp = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/AccessRampFigureCahier.vue'), 'utf8')
     const curve = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/CahierMobiliteRaccordementCurve.vue'), 'utf8')
-    const rampReference = regleCss(ramp, '.access-ramp-line--comparison')
-    const curveReference = regleCss(curve, '.mobilite-raccordement-curve__comparison')
-    for (const body of [
-      regleCss(ramp, '.access-ramp-line'),
-      rampReference,
-      regleCss(curve, '.mobilite-raccordement-curve__territory'),
-      curveReference,
-    ]) {
-      expect(nombreCss(body, 'stroke-width')).toBe(CAHIER_FIGURE_STROKE.widthPx)
+    const regles: [string, string, string][] = [
+      [ramp, '.access-ramp-line', '--cahier-figure-series-width'],
+      [ramp, '.access-ramp-line--comparison', '--cahier-figure-comparison-dash'],
+      [ramp, '.access-ramp-grid line', '--cahier-figure-grid-width'],
+      [ramp, '.access-ramp-grid .access-ramp-axis', '--cahier-figure-axis-width'],
+      [curve, '.mobilite-raccordement-curve__territory', '--cahier-figure-series-width'],
+      [curve, '.mobilite-raccordement-curve__comparison', '--cahier-figure-comparison-width'],
+      [curve, '.mobilite-raccordement-curve__marker-line', '--cahier-figure-marker-width'],
+      [curve, '.mobilite-raccordement-curve__grid line', '--cahier-figure-grid-width'],
+      [curve, '.mobilite-raccordement-curve__grid .mobilite-raccordement-curve__axis', '--cahier-figure-axis-width'],
+    ]
+    for (const [source, selecteur, variable] of regles) {
+      const start = source.indexOf(`${selecteur} {`)
+      expect(start, selecteur).toBeGreaterThanOrEqual(0)
+      const open = source.indexOf('{', start)
+      const close = source.indexOf('}', open)
+      expect(source.slice(open + 1, close), selecteur).toContain(`var(${variable})`)
     }
-    for (const body of [rampReference, curveReference]) {
-      expect(nombreCss(body, 'stroke-width')).toBe(CAHIER_FIGURE_STROKE.comparisonWidthPx)
-      expect(nombreCss(body, 'opacity')).toBe(CAHIER_FIGURE_STROKE.comparisonOpacity)
-      const tirets = /stroke-dasharray:\s*([\d.\s]+);/.exec(body)![1]!.trim().split(/\s+/).map(Number)
-      expect(tirets).toEqual([...CAHIER_FIGURE_STROKE.comparisonDashPx])
+  })
+
+  it('reporte les largeurs natives de grille et d’axe et la jointure comparée', async () => {
+    const { svgs } = await peindre(captureCourbeTrous())
+    const lines = [...svgs[0]!.querySelectorAll('line')]
+    const solides = lines.filter((line) => !line.getAttribute('stroke-dasharray'))
+    const largeurs = solides.map((line) => Number(line.getAttribute('stroke-width')))
+    expect(largeurs).toContainEqual(expect.closeTo(cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx), 6))
+    expect(largeurs).toContainEqual(expect.closeTo(cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx), 6))
+    const reference = [...svgs[0]!.querySelectorAll('path')][1]!
+    expect(reference.getAttribute('stroke-linejoin')).toBe(CAHIER_FIGURE_STROKE.linejoin)
+  })
+
+  it('fait suivre une mutation du propriétaire aux SFC natives et au PDF', async () => {
+    const mute = {
+      ...CAHIER_FIGURE_STROKE,
+      widthPx: 4.25,
+      comparisonWidthPx: 3.75,
+      comparisonDashPx: [12, 7] as const,
+      comparisonOpacity: 0.5,
+      markerWidthPx: 2.25,
+      markerDashPx: [5, 4] as const,
+      gridWidthPx: 2,
+      axisWidthPx: 3,
+    }
+    vi.resetModules()
+    vi.doMock('@/fiche/prototype/cahierFigureNativeGeometry', async () => {
+      const actual = await vi.importActual<typeof import('@/fiche/prototype/cahierFigureNativeGeometry')>(
+        '@/fiche/prototype/cahierFigureNativeGeometry',
+      )
+      return { ...actual, CAHIER_FIGURE_STROKE: mute }
+    })
+    try {
+      const { mount: monter } = await import('@vue/test-utils')
+      const [{ default: Ramp }, { default: Curve }, { dessinerFigurePdf: peintre }] = await Promise.all([
+        import('@/fiche/prototype/AccessRampFigureCahier.vue'),
+        import('@/fiche/prototype/CahierMobiliteRaccordementCurve.vue'),
+        import('@/fiche/prototype/cahierPdfFigures'),
+      ])
+      const rampStyle = monter(Ramp, {
+        props: { timeRamp: rampeNative(), territoryName: 'Rennes' },
+      }).get('svg').attributes('style')!
+      expect(rampStyle).toContain('--cahier-figure-series-width: 4.25px')
+      expect(rampStyle).toContain('--cahier-figure-comparison-dash: 12 7')
+      expect(rampStyle).toContain('--cahier-figure-grid-width: 2px')
+
+      const curveCapture = captureCourbeTrous()
+      const curveModel = (curveCapture.figures.find((figure) => figure.family === 'mobilite-curve') as unknown as {
+        model: MobiliteRaccordementEvidence
+      }).model
+      const curveStyle = monter(Curve, {
+        props: { figure: curveModel, comparison: { status: 'ready' } },
+      }).get('svg[role="img"]').attributes('style')!
+      expect(curveStyle).toContain('--cahier-figure-marker-width: 2.25px')
+      expect(curveStyle).toContain('--cahier-figure-marker-dash: 5 4')
+
+      const { svgs } = await peindre(curveCapture, true, undefined, false, peintre)
+      const [focal, reference] = [...svgs[0]!.querySelectorAll('path')]
+      expect(Number(focal!.getAttribute('stroke-width'))).toBeCloseTo(cssPxToMm(mute.widthPx), 6)
+      expect(Number(reference!.getAttribute('stroke-width')))
+        .toBeCloseTo(cssPxToMm(mute.comparisonWidthPx), 6)
+      expect(Number(reference!.getAttribute('stroke-opacity'))).toBe(mute.comparisonOpacity)
+      const marker = [...svgs[0]!.querySelectorAll('line')]
+        .find((line) => line.getAttribute('stroke-dasharray'))!
+      expect(Number(marker.getAttribute('stroke-width'))).toBeCloseTo(cssPxToMm(mute.markerWidthPx), 6)
+      const solides = [...svgs[0]!.querySelectorAll('line')]
+        .filter((line) => !line.getAttribute('stroke-dasharray'))
+        .map((line) => Number(line.getAttribute('stroke-width')))
+      expect(solides).toContainEqual(expect.closeTo(cssPxToMm(mute.gridWidthPx), 6))
+      expect(solides).toContainEqual(expect.closeTo(cssPxToMm(mute.axisWidthPx), 6))
+    } finally {
+      vi.doUnmock('@/fiche/prototype/cahierFigureNativeGeometry')
+      vi.resetModules()
     }
   })
 
@@ -248,6 +375,18 @@ describe('sortie native du peintre PDF', () => {
     // The protected marker tick is also a native grid position.
     expect(geometry.xTicks.some((tick) =>
       Math.abs(tick.position - Number(marker.getAttribute('x1'))) < 1e-9)).toBe(true)
+  })
+
+  it('ne conserve aucun axe parallèle dans la projection de courbe', () => {
+    const capture = captureCourbeTrous()
+    const result = projeterRequeteExport(
+      capture,
+      capture.capabilities.selectableSeries.slice(0, 3).map((serie) => serie.id),
+    )
+    if (result.status !== 'ready') throw new Error(result.reason)
+    const curve = projeterRequeteExportFigures(result.request)
+      .find((projection) => projection.family === 'mobilite-curve')!
+    expect(Object.hasOwn(curve, 'axis')).toBe(false)
   })
 
   it('refuse une courbe sans modèle natif au lieu d’un axe de repli silencieux', async () => {

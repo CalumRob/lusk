@@ -40,6 +40,8 @@ import {
   mobiliteCurveUnavailableNotes,
 } from './cahierMobiliteReadings'
 import {
+  CAHIER_FIGURE_STROKE,
+  cahierFigureStrokeVars,
   curveGeometry,
   curveSeriesPath,
   visibleCurveTicks,
@@ -86,6 +88,8 @@ useCahierExportPublication(() => ({
   },
 }))
 const plotElement = ref<HTMLElement | null>(null)
+/** The shared stroke owner is injected as CSS custom properties on the plot. */
+const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
 const hoveredTickKey = ref<string | null>(null)
 const pinnedTickKey = ref<string | null>(null)
 const selectedTickKey = computed(() => pinnedTickKey.value ?? hoveredTickKey.value)
@@ -389,6 +393,7 @@ const unavailableState = computed(() => {
           <div ref="plotElement" class="mobilite-raccordement-curve__plot cahier-figure-plot">
             <svg
               class="mobilite-raccordement-curve__svg"
+              :style="figureStrokeStyle"
               :viewBox="`0 0 ${geometry.width} ${geometry.height}`"
               preserveAspectRatio="xMidYMid meet"
               role="img"
@@ -536,32 +541,32 @@ const unavailableState = computed(() => {
 .mobilite-raccordement-curve__svg { display: block; width: 100%; height: auto; overflow: visible; }
 .mobilite-raccordement-curve__grid line {
   stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent);
-  stroke-width: 1;
+  stroke-width: var(--cahier-figure-grid-width);
 }
 .mobilite-raccordement-curve__grid .mobilite-raccordement-curve__axis {
   stroke: var(--cahier-theme-strong);
-  stroke-width: 1.5;
+  stroke-width: var(--cahier-figure-axis-width);
 }
 .mobilite-raccordement-curve__territory {
   fill: none;
   stroke: var(--brand-500);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke-width: var(--cahier-figure-series-width);
+  stroke-linecap: var(--cahier-figure-series-cap);
+  stroke-linejoin: var(--cahier-figure-series-join);
 }
 .mobilite-raccordement-curve__comparison {
   fill: none;
   stroke: var(--brand-200);
-  stroke-width: 2.5;
-  stroke-dasharray: 10 6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  opacity: 0.68;
+  stroke-width: var(--cahier-figure-comparison-width);
+  stroke-dasharray: var(--cahier-figure-comparison-dash);
+  stroke-linecap: var(--cahier-figure-series-cap);
+  stroke-linejoin: var(--cahier-figure-series-join);
+  opacity: var(--cahier-figure-comparison-opacity);
 }
 .mobilite-raccordement-curve__marker-line {
   stroke: var(--cahier-default, var(--editorial-muted));
-  stroke-width: 1.5;
-  stroke-dasharray: 3 3;
+  stroke-width: var(--cahier-figure-marker-width);
+  stroke-dasharray: var(--cahier-figure-marker-dash);
 }
 .mobilite-raccordement-curve__cursor-line {
   stroke: color-mix(in srgb, var(--cahier-theme) 38%, transparent);

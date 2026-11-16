@@ -11,7 +11,13 @@ import type { TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territor
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
-import { rampGeometry, rampPaths, rampScale } from './cahierFigureNativeGeometry'
+import {
+  CAHIER_FIGURE_STROKE,
+  cahierFigureStrokeVars,
+  rampGeometry,
+  rampPaths,
+  rampScale,
+} from './cahierFigureNativeGeometry'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import {
   formatTimeRampNumber,
@@ -43,6 +49,8 @@ const BASE_FIGURE_GEOMETRY = {
   margin: { top: 22, right: 68, bottom: 62, left: 64 },
 } as const
 const plotElement = ref<HTMLElement | null>(null)
+/** The shared stroke owner is injected as CSS custom properties on the plot. */
+const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
 
 const formatNumber = formatTimeRampNumber
 const TIME_MODE_LINE_CLASS: Readonly<Record<string, string>> = {
@@ -167,7 +175,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
   >
     <template #plot>
       <div ref="plotElement" class="access-ramp-plot cahier-figure-plot">
-        <svg class="access-ramp-svg" :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`" preserveAspectRatio="xMidYMid meet" role="img" :aria-label="timeAccessibleLabel">
+        <svg class="access-ramp-svg" :style="figureStrokeStyle" :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`" preserveAspectRatio="xMidYMid meet" role="img" :aria-label="timeAccessibleLabel">
           <g class="access-ramp-grid" aria-hidden="true">
             <line v-for="tick in timeYTicks" :key="`ty-${tick.key}`" :x1="figureGeometry.margin.left" :x2="figureGeometry.width - figureGeometry.margin.right" :y1="tick.position" :y2="tick.position" />
             <line v-for="point in timePoints" :key="`tx-${point.xValue}`" :x1="timeX(point.xValue)" :x2="timeX(point.xValue)" :y1="figureGeometry.margin.top" :y2="figureGeometry.height - figureGeometry.margin.bottom" />
@@ -212,12 +220,12 @@ function timeHitboxStyle(index: number): Record<string, string> {
 
 .access-ramp-grid line {
   stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent);
-  stroke-width: 1;
+  stroke-width: var(--cahier-figure-grid-width);
 }
 
 .access-ramp-grid .access-ramp-axis {
   stroke: var(--cahier-theme-strong);
-  stroke-width: 1.5;
+  stroke-width: var(--cahier-figure-axis-width);
 }
 
 .access-ramp-grid .access-ramp-median {
@@ -237,15 +245,15 @@ function timeHitboxStyle(index: number): Record<string, string> {
 
 .access-ramp-line {
   fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2.5;
+  stroke-linecap: var(--cahier-figure-series-cap);
+  stroke-linejoin: var(--cahier-figure-series-join);
+  stroke-width: var(--cahier-figure-series-width);
 }
 
 .access-ramp-line--comparison {
-  stroke-dasharray: 10 6;
-  opacity: 0.68;
-  stroke-width: 2.5;
+  stroke-dasharray: var(--cahier-figure-comparison-dash);
+  opacity: var(--cahier-figure-comparison-opacity);
+  stroke-width: var(--cahier-figure-comparison-width);
 }
 
 .access-ramp-line--territory {

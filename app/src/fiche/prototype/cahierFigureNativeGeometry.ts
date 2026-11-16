@@ -151,10 +151,24 @@ export function rampPaths(
 export const CSS_PX_EN_MM = 25.4 / 96
 
 /**
- * Native series stroke grammar, in screen CSS pixels. The mounted figure
- * stylesheets declare these values; the PDF painter converts them instead of
- * carrying parallel millimetre literals. A contract test binds both owners.
+ * Native figure stroke grammar, in screen CSS pixels. The mounted figures
+ * receive these values as injected CSS custom properties at runtime (the same
+ * screen-grammar mechanism as `CAHIER_COLOR_ROLES`); the PDF painter converts
+ * the identical object instead of carrying parallel millimetre literals.
  */
+export interface CahierFigureStroke {
+  readonly widthPx: number
+  readonly comparisonWidthPx: number
+  readonly comparisonDashPx: readonly number[]
+  readonly comparisonOpacity: number
+  readonly markerWidthPx: number
+  readonly markerDashPx: readonly number[]
+  readonly gridWidthPx: number
+  readonly axisWidthPx: number
+  readonly linecap: 'butt' | 'round' | 'square'
+  readonly linejoin: 'bevel' | 'miter' | 'round'
+}
+
 export const CAHIER_FIGURE_STROKE = {
   widthPx: 2.5,
   comparisonWidthPx: 2.5,
@@ -162,7 +176,33 @@ export const CAHIER_FIGURE_STROKE = {
   comparisonOpacity: 0.68,
   markerWidthPx: 1.5,
   markerDashPx: [3, 3] as const,
-} as const
+  gridWidthPx: 1,
+  axisWidthPx: 1.5,
+  linecap: 'round',
+  linejoin: 'round',
+} as const satisfies CahierFigureStroke
+
+/**
+ * CSS custom properties carrying the grammar into a mounted native figure.
+ * Callers pass the owner object explicitly so a single owner substitution
+ * reaches both the screen binding and the PDF painter.
+ */
+export function cahierFigureStrokeVars(
+  stroke: CahierFigureStroke = CAHIER_FIGURE_STROKE,
+): Record<string, string> {
+  return {
+    '--cahier-figure-series-width': `${stroke.widthPx}px`,
+    '--cahier-figure-series-cap': stroke.linecap,
+    '--cahier-figure-series-join': stroke.linejoin,
+    '--cahier-figure-comparison-width': `${stroke.comparisonWidthPx}px`,
+    '--cahier-figure-comparison-dash': stroke.comparisonDashPx.join(' '),
+    '--cahier-figure-comparison-opacity': String(stroke.comparisonOpacity),
+    '--cahier-figure-marker-width': `${stroke.markerWidthPx}px`,
+    '--cahier-figure-marker-dash': stroke.markerDashPx.join(' '),
+    '--cahier-figure-grid-width': `${stroke.gridWidthPx}px`,
+    '--cahier-figure-axis-width': `${stroke.axisWidthPx}px`,
+  }
+}
 
 /** CSS pixels to millimetres, rounded to a stable six-decimal value. */
 export function cssPxToMm(px: number): number {

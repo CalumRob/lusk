@@ -231,7 +231,6 @@ function svgLine(
   node.setAttribute('y2', String(y2))
   node.setAttribute('stroke', stroke)
   node.setAttribute('stroke-width', String(width))
-  node.setAttribute('stroke-linecap', 'round')
   if (dash) node.setAttribute('stroke-dasharray', dash)
   if (opacity < 1) node.setAttribute('stroke-opacity', String(opacity))
   svg.append(node)
@@ -511,7 +510,7 @@ async function dessinerRampes(
     const geom = rampGeometry(rampPoints(firstSeries), panelScale, nativeGeometry, ramp.yAxis.unit)
     const svg = svgCanvas(panelWidth, plotHeight)
     for (const tick of geom.yTicks) {
-      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
+      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
     }
     svgLine(
       svg,
@@ -520,7 +519,7 @@ async function dessinerRampes(
       panelWidth - nativeGeometry.margin.right,
       plotHeight - nativeGeometry.margin.bottom,
       PALETTE_PDF.ink,
-      0.35,
+      cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx),
     )
     for (const serie of ramp.series) {
       const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!)
@@ -531,8 +530,8 @@ async function dessinerRampes(
         node.setAttribute('fill', 'none')
         node.setAttribute('stroke', color)
         node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.widthPx)))
-        node.setAttribute('stroke-linecap', 'round')
-        node.setAttribute('stroke-linejoin', 'round')
+        node.setAttribute('stroke-linecap', CAHIER_FIGURE_STROKE.linecap)
+        node.setAttribute('stroke-linejoin', CAHIER_FIGURE_STROKE.linejoin)
         svg.append(node)
       }
       for (const path of rampPaths(points, (point) => point.referenceValue, geom.x, geom.y)) {
@@ -543,7 +542,8 @@ async function dessinerRampes(
         node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.comparisonWidthPx)))
         node.setAttribute('stroke-opacity', String(CAHIER_FIGURE_STROKE.comparisonOpacity))
         node.setAttribute('stroke-dasharray', dashArrayMm(CAHIER_FIGURE_STROKE.comparisonDashPx))
-        node.setAttribute('stroke-linecap', 'round')
+        node.setAttribute('stroke-linecap', CAHIER_FIGURE_STROKE.linecap)
+        node.setAttribute('stroke-linejoin', CAHIER_FIGURE_STROKE.linejoin)
         svg.append(node)
       }
       for (const point of points) {
@@ -601,9 +601,9 @@ async function dessinerCourbe(
   const yTicks = native.yTicks
   const svg = svgCanvas(plotWidth, plotHeight)
   for (const tick of yTicks) {
-    svgLine(svg, nativeGeometry.margin.left, tick.position, plotWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
+    svgLine(svg, nativeGeometry.margin.left, tick.position, plotWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
   }
-  svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, plotWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.ink, 0.35)
+  svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, plotWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.ink, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
   const focalPath = curveSeriesPath(modeleCourbe.points, modeleCourbe, native)
   if (focalPath) {
     const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
@@ -611,8 +611,8 @@ async function dessinerCourbe(
     node.setAttribute('fill', 'none')
     node.setAttribute('stroke', PALETTE_PDF.brand500)
     node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.widthPx)))
-    node.setAttribute('stroke-linecap', 'round')
-    node.setAttribute('stroke-linejoin', 'round')
+    node.setAttribute('stroke-linecap', CAHIER_FIGURE_STROKE.linecap)
+    node.setAttribute('stroke-linejoin', CAHIER_FIGURE_STROKE.linejoin)
     svg.append(node)
   }
   if (options.comparisonProof && modeleCourbe.comparison) {
@@ -625,7 +625,8 @@ async function dessinerCourbe(
       node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.comparisonWidthPx)))
       node.setAttribute('stroke-opacity', String(CAHIER_FIGURE_STROKE.comparisonOpacity))
       node.setAttribute('stroke-dasharray', dashArrayMm(CAHIER_FIGURE_STROKE.comparisonDashPx))
-      node.setAttribute('stroke-linecap', 'round')
+      node.setAttribute('stroke-linecap', CAHIER_FIGURE_STROKE.linecap)
+      node.setAttribute('stroke-linejoin', CAHIER_FIGURE_STROKE.linejoin)
       svg.append(node)
     }
   }
@@ -683,9 +684,9 @@ async function dessinerBarres(
   const svg = svgCanvas(width, nativeGeometry.height)
   const yTicks = mobiliteBarYTicks(scale, nativeGeometry)
   for (const tick of yTicks) {
-    svgLine(svg, nativeGeometry.margin.left, tick.position, width - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
+    svgLine(svg, nativeGeometry.margin.left, tick.position, width - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
   }
-  svgLine(svg, nativeGeometry.margin.left, plotBottom, width - nativeGeometry.margin.right, plotBottom, PALETTE_PDF.ink, 0.35)
+  svgLine(svg, nativeGeometry.margin.left, plotBottom, width - nativeGeometry.margin.right, plotBottom, PALETTE_PDF.ink, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
   modele.categories.forEach((category, categoryIndex) => {
     const focalColor = couleurSerie(mobiliteBarTone(category))
     if (!category.segments.length) {
@@ -781,9 +782,9 @@ async function dessinerBarresGroupees(
     const svg = svgCanvas(panelWidth, plotHeight)
     const ticks = groupedBarTicksFromFigure(figure, nativeGeometry, bar, scale)
     for (const tick of ticks.y) {
-      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
+      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
     }
-    svgLine(svg, nativeGeometry.margin.left, nativeGeometry.height - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, nativeGeometry.height - nativeGeometry.margin.bottom, PALETTE_PDF.ink, 0.35)
+    svgLine(svg, nativeGeometry.margin.left, nativeGeometry.height - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, nativeGeometry.height - nativeGeometry.margin.bottom, PALETTE_PDF.ink, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
     visible.forEach((series, seriesIndex) => {
       figure.categories.forEach((_category, categoryIndex) => {
         const value = series.values[categoryIndex]
@@ -829,9 +830,9 @@ async function dessinerBarresGroupees(
     const geom = rampGeometry(points, scale, nativeGeometry, projection.volume.yAxis.unit)
     const svg = svgCanvas(panelWidth, plotHeight)
     for (const tick of geom.yTicks) {
-      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, 0.2)
+      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
     }
-    svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.ink, 0.35)
+    svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.ink, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
     for (const serie of projection.volume.series) {
       const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!)
       const seriePoints = rampPoints(serie)
@@ -841,7 +842,8 @@ async function dessinerBarresGroupees(
         node.setAttribute('fill', 'none')
         node.setAttribute('stroke', color)
         node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.widthPx)))
-        node.setAttribute('stroke-linecap', 'round')
+        node.setAttribute('stroke-linecap', CAHIER_FIGURE_STROKE.linecap)
+        node.setAttribute('stroke-linejoin', CAHIER_FIGURE_STROKE.linejoin)
         svg.append(node)
       }
       for (const point of seriePoints) {

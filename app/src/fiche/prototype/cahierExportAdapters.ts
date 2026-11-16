@@ -13,7 +13,6 @@ import {
 } from '@/fiche/content/aedarTimeRampFacts'
 import type {
   AedarRampMode,
-  MobiliteRaccordementEvidence,
 } from '@/fiche/content/themeContent'
 import type { ComparisonRank, TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
 import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
@@ -341,7 +340,6 @@ export interface CahierCurveProjection extends CahierFigureProjectionBase {
     readonly comparisonRankDisplay: string | null
     readonly comparisonRankAria: string | null
   }[]
-  readonly axis: MobiliteRaccordementEvidence['axis']
   readonly marker: {
     readonly detail: string
     readonly label: string
@@ -1289,7 +1287,6 @@ export function projectCurve(
     comparisonStateText,
     unit,
     points: readings,
-    axis: evidence.axis,
     marker: marker ? {
       detail: marker.detail,
       label: marker.label,
