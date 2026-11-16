@@ -159,12 +159,15 @@ export class CahierPdfExportController {
    * active request is never silently swapped mid-retry.
    */
   definirGenerateur(generator: CahierPdfGenerator | null): void {
-    if (this.disposed || this.generator === generator) return
+    if (this.disposed) return
     if (this.etat.value === 'preparing') {
+      // Latest prop wins, even when it is the generator already active. A
+      // parent G1 -> G2 -> G1 sequence must leave G1 queued, not the stale G2.
       this.generateurEnAttente = generator
       this.generateurEnAttenteDefini = true
       return
     }
+    if (this.generator === generator) return
     this.generator = generator
     this.generateurEnAttente = null
     this.generateurEnAttenteDefini = false
@@ -268,14 +271,15 @@ export class CahierPdfExportController {
     this.disposed = true
     this.abort?.abort()
     this.abort = null
-    for (const [url, timer] of this.revocationTimers) {
-      clearTimeout(timer)
-      this.objectUrls.delete(url)
-      URL.revokeObjectURL(url)
+    // A URL already handed to the browser keeps its next-task release. Revoking
+    // it in the same task as the click can cancel the download on some engines.
+    // Only an unhanded URL (no queued release) is revoked immediately.
+    for (const url of this.objectUrls) {
+      if (!this.revocationTimers.has(url)) {
+        URL.revokeObjectURL(url)
+        this.objectUrls.delete(url)
+      }
     }
-    this.revocationTimers.clear()
-    for (const url of this.objectUrls) URL.revokeObjectURL(url)
-    this.objectUrls.clear()
     this.fermerChoix()
   }
 

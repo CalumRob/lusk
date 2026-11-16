@@ -62,7 +62,10 @@ function control(): ControleComparaison {
   }
 }
 
-async function mountShell(generator: CahierPdfGenerator | null = null) {
+async function mountShell(
+  generator: CahierPdfGenerator | null = null,
+  layoutVariant: 'indexed-sections' | 'standard' = 'indexed-sections',
+) {
   const { content } = cahierExportFixture()
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/')
@@ -72,7 +75,7 @@ async function mountShell(generator: CahierPdfGenerator | null = null) {
       pagination: cahierPaginationFor({} as Payload, content, true),
       showAllUnits: true,
       presentation: 'plain',
-      layoutVariant: 'indexed-sections',
+      ...(layoutVariant === 'indexed-sections' ? { layoutVariant } : {}),
       aedarAccessEnabled: true,
       aedarChapterActive: false,
       aedarStatus: 'ready',
@@ -111,6 +114,14 @@ describe('shared PDF action on the mounted Cahier shell (#1023)', () => {
       expect(action.get('.cahier-pdf-action__button').text()).toBe('PDF')
     }
     expect(wrapper.findAll('[data-section] > section .cahier-pdf-action')).toHaveLength(0)
+    expect(wrapper.findAll('.concept-group-heading > span')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('keeps the existing numbered heading composition for non-indexed variants', async () => {
+    const { wrapper } = await mountShell(null, 'standard')
+    expect(wrapper.findAll('.cahier-pdf-action')).toHaveLength(9)
+    expect(wrapper.findAll('.concept-group-heading > span')).toHaveLength(9)
     wrapper.unmount()
   })
 
@@ -268,6 +279,39 @@ describe('shared PDF action on the mounted Cahier shell (#1023)', () => {
     wrapper.unmount()
   })
 
+  it('closes an open chooser and clears focus when the identity changes in place', async () => {
+    const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
+    const { wrapper, content } = await mountShell(generate)
+    const access = wrapper.get('[data-section="aedar-access"]')
+    const toggle = access.findAll('.aedar-access-mode-selector .cahier-figure-legend-toggle')
+      .find((candidate) => candidate.text().includes('À pied'))
+    if (!toggle) throw new Error('À pied mode toggle missing')
+    await toggle.trigger('click')
+    await flushPromises()
+
+    const trigger = wrapper.get('[data-section="aedar-access"] .cahier-pdf-action__button')
+    await trigger.trigger('click')
+    await nextTick()
+    await nextTick()
+    expect(wrapper.find('dialog[open]').exists()).toBe(true)
+
+    await wrapper.setProps({
+      content: {
+        ...content,
+        territory: { ...content.territory, code: '22002', name: 'Commune B' },
+      },
+    })
+    await nextTick()
+    await nextTick()
+    await flushPromises()
+
+    expect(wrapper.find('dialog[open]').exists()).toBe(false)
+    const currentTrigger = wrapper.get('[data-section="aedar-access"] .cahier-pdf-action__button')
+    expect(currentTrigger.text()).toBe('PDF')
+    expect(document.querySelector('dialog[open]')).toBeNull()
+    wrapper.unmount()
+  })
+
   it('places the action at the heading edge, vertically centered, with a mobile label target', () => {
     expect(shellSource).toContain('.concept-group-pdf-action')
     expect(shellSource).toMatch(/\.concept-group-heading\s*\{[^}]*grid-template-columns:/s)
@@ -275,8 +319,9 @@ describe('shared PDF action on the mounted Cahier shell (#1023)', () => {
     expect(shellSource).toMatch(/\.concept-group-pdf-action\s*\{[^}]*grid-column:\s*3;/s)
     expect(shellSource).toMatch(/\.concept-group-pdf-action\s*\{[^}]*justify-self:\s*end;/s)
     expect(shellSource).toMatch(/\.concept-group-heading > span\s*\{[^}]*grid-column:\s*1;/s)
-    expect(shellSource).toMatch(/@media \(max-width: 760px\)[\s\S]*?grid-template-columns:\s*minmax\(96px, 1fr\)/s)
+    expect(shellSource).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.cahier--indexed-sections \.concept-group-heading\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/s)
     expect(shellSource).not.toMatch(/@media \(max-width: 760px\)[\s\S]*?\.concept-group-heading > span\s*\{[^}]*display:\s*none/s)
     expect(shellSource).not.toMatch(/@media \(max-width: 760px\)[\s\S]*?\.concept-group-heading > h3\s*\{[^}]*text-align:\s*left/s)
+    expect(shellSource).not.toMatch(/minmax\(96px, 1fr\)/)
   })
 })

@@ -448,6 +448,59 @@ describe('shared PDF export controller machine (#1023)', () => {
     expect(controller.etat.value).toBe('done')
   })
 
+  it('lets the latest generator prop win across G1 -> G2 -> G1 during an active request', async () => {
+    const firstPending = deferred<ReturnType<typeof artefact>>()
+    const first = vi.fn<CahierPdfGenerator>()
+      .mockReturnValueOnce(firstPending.promise)
+      .mockResolvedValueOnce(artefact('first-again.pdf'))
+    const second = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact('second.pdf'))
+    const controller = new CahierPdfExportController({
+      capture: () => capturePdfFixture('aedar-equipment-profile'),
+      generator: first,
+    })
+
+    controller.activer()
+    await flushMicrotasks()
+    controller.definirGenerateur(second)
+    controller.definirGenerateur(first)
+    firstPending.resolve(artefact('first.pdf'))
+    await flushMicrotasks()
+    expect(controller.etat.value).toBe('done')
+
+    controller.activer()
+    await flushMicrotasks()
+    expect(first).toHaveBeenCalledTimes(2)
+    expect(second).not.toHaveBeenCalled()
+    expect(controller.etat.value).toBe('done')
+  })
+
+  it('lets a null round-trip leave the latest real generator installed', async () => {
+    const firstPending = deferred<ReturnType<typeof artefact>>()
+    const first = vi.fn<CahierPdfGenerator>()
+      .mockReturnValueOnce(firstPending.promise)
+      .mockResolvedValueOnce(artefact('first-again.pdf'))
+    const second = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact('second.pdf'))
+    const controller = new CahierPdfExportController({
+      capture: () => capturePdfFixture('aedar-equipment-profile'),
+      generator: first,
+    })
+
+    controller.activer()
+    await flushMicrotasks()
+    controller.definirGenerateur(second)
+    controller.definirGenerateur(null)
+    controller.definirGenerateur(first)
+    firstPending.resolve(artefact('first.pdf'))
+    await flushMicrotasks()
+    expect(controller.etat.value).toBe('done')
+
+    controller.activer()
+    await flushMicrotasks()
+    expect(first).toHaveBeenCalledTimes(2)
+    expect(second).not.toHaveBeenCalled()
+    expect(controller.etat.value).toBe('done')
+  })
+
   it('hands the object URL to the browser before scheduling its release', async () => {
     const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
     const controller = new CahierPdfExportController({
@@ -464,7 +517,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:pdf-test')
   })
 
-  it('releases a pending handoff URL immediately on disposal', async () => {
+  it('releases a handed-off URL after disposal without same-task cancellation', async () => {
     const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
     const controller = new CahierPdfExportController({
       capture: () => capturePdfFixture('aedar-equipment-profile'),
@@ -475,7 +528,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     await flushMicrotasks()
     expect(revokeObjectURL).not.toHaveBeenCalled()
     controller.dispose()
-    expect(revokeObjectURL).toHaveBeenCalledOnce()
+    expect(revokeObjectURL).not.toHaveBeenCalled()
     await new Promise((resolve) => setTimeout(resolve, 5))
     expect(revokeObjectURL).toHaveBeenCalledOnce()
   })

@@ -112,6 +112,7 @@ watch(modaleOuverte, async (open) => {
     return
   }
   await nextTick()
+  await nextTick()
   if (!unmounted && focusReturn?.isConnected) {
     focusReturn.focus()
     focusReturn = null
@@ -217,6 +218,9 @@ watch(modaleOuverte, async (open) => {
 .cahier-pdf-action__button:hover:not([aria-disabled='true']) {
   background: color-mix(in srgb, currentColor 8%, transparent);
 }
+.cahier-pdf-action__button:active:not([aria-disabled='true']) {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
 .cahier-pdf-action__button:focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
@@ -307,8 +311,6 @@ watch(modaleOuverte, async (open) => {
 @media (max-width: 760px) {
   .cahier-pdf-action__button {
     min-height: 44px;
-    padding-inline: 0;
-    gap: 2px;
   }
 }
 </style>

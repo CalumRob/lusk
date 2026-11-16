@@ -869,10 +869,20 @@ onBeforeUnmount(() => {
 .concept-group-heading h3 { grid-column: 2; min-width: 0; margin: 0; justify-self: center; color: var(--ink); text-align: center; font: var(--text-cahier-section); }
 .concept-group-pdf-action { grid-column: 3; justify-self: end; align-self: center; }
 @media (max-width: 760px) {
-  /* Keep the original centred heading and visible section number; only reserve
-     equal side columns wide enough for the labelled 44px action. */
-  .concept-group-heading {
-    grid-template-columns: minmax(96px, 1fr) minmax(0, 1.7fr) minmax(96px, 1fr);
+  /* The production Mobilité path is indexed-sections: no section number exists,
+     so the header keeps the title column and the top-right action only. */
+  .cahier--indexed-sections .concept-group-heading {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .cahier--indexed-sections .concept-group-heading-copy,
+  .cahier--indexed-sections .concept-group-heading > h3 {
+    grid-column: 1;
+    justify-self: center;
+    text-align: center;
+  }
+  .cahier--indexed-sections .concept-group-pdf-action {
+    grid-column: 2;
+    justify-self: end;
   }
 }
 .cahier--sans-grille .concept-group-narrative { font-size: clamp(1.05rem, 1.4vw, 1.35rem); font-style: italic; font-weight: 400; line-height: 1.15; text-wrap: balance; }

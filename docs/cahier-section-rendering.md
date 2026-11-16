@@ -149,13 +149,22 @@ Until integration lot E wires the real composer, `VarianteCahierLibre`'s
 `pdfGenerator` prop is null. Every action remains mounted but inert, visibly
 labelled `PDF`, focusable with `aria-disabled` and an accessible reason; it does
 not simulate a download or a success. The action also accepts a later
-`definirGenerateur` update at the same public seam (queued while a generation is
-in flight) so E may supply the composer asynchronously without remounting; no
-production stub is shipped. `cahier-pdf-export-activation.spec.ts`,
-`cahier-pdf-export-controller.spec.ts`, `cahier-pdf-action.spec.ts` and the
-mounted `cahier-pdf-shell.spec.ts` exercise the policy matrix, controller
-machine, desktop/mobile/keyboard action and the real nine-section mount with an
-injected generator. Production generation remains E's acceptance work.
+`definirGenerateur` update at the same public seam (latest prop wins; a change
+while a generation is in flight is queued) so E may supply the composer
+asynchronously without remounting; no production stub is shipped.
+`cahier-pdf-export-activation.spec.ts`, `cahier-pdf-export-controller.spec.ts`,
+`cahier-pdf-action.spec.ts` and the mounted `cahier-pdf-shell.spec.ts` exercise
+the policy matrix, controller machine, desktop/mobile/keyboard action and the
+real nine-section mount with an injected generator. Production generation
+remains E's acceptance work.
+
+The production Mobilité path is `layoutVariant: 'indexed-sections'`, whose
+common section heading has no section number. Its mobile header keeps the title
+column and the top-right label/44px action; other layout variants retain their
+existing numbered heading composition. On the fixture's long title at 320px the
+action widening to `Préparation…` narrows the title column from two to three
+lines without overlap. That is the reported trade-off; no dedicated action row
+or numbered-heading redesign is introduced.
 
 ### Identity and delivery fences
 
@@ -167,10 +176,11 @@ late completion even when the injected generator ignored the abort. Ordinary
 edits under the same identity keep the exact failed request retryable.
 
 Browser delivery hands the generated Blob URL to an anchor click, then releases
-it on the next task; disposal clears any pending release and revokes
-immediately. The success state means the browser download handoff occurred, not
-that a file was written to disk; the cleanup task is not a generation timer and
-never fabricates success.
+it on the next task. Disposal leaves an already-handed-off URL to that next-task
+release; an unhanded URL (no queued release) is revoked immediately. A URL is
+never retained indefinitely. The success state means the browser download handoff
+occurred, not that a file was written to disk; the cleanup task is not a
+generation timer and never fabricates success.
 
 ## Preserved boundaries
 
