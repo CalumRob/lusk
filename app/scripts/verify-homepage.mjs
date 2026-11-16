@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core'
 // #1027: public rendered seam against a running preview. No invented article or
 // territory content: long labels come from the served committed reference.
 const base = process.env.LUSK_PREVIEW_URL || 'http://127.0.0.1:5177'
-const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r5'
+const output = process.env.LUSK_SCREENSHOT_DIR || 'E:/Temp/opencode/homepage-1027-r6'
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
@@ -34,14 +34,45 @@ try {
     const geometry = () => page.evaluate(() => {
       const box = (selector) => {
         const r = document.querySelector(selector).getBoundingClientRect()
-        return { x: r.x, y: r.y + window.scrollY, width: r.width, height: r.height }
+        return { x: r.x, y: r.y + window.scrollY, width: r.width, height: r.height,
+          bottom: r.bottom + window.scrollY }
       }
-      return { search: box('.accueil-territoires'), brand: box('.accueil-hero-marque'),
+      const intro = box('.accueil-sous-titre')
+      const tabs = box('.accueil-onglets')
+      const brand = box('.accueil-hero-marque')
+      return { search: box('.accueil-territoires'), brand, intro, tabs,
         editorial: box('.accueil-editorial'),
-        link: box('.accueil-indicateurs'), pageWidth: document.documentElement.scrollWidth }
+        link: box('.accueil-indicateurs'), pageWidth: document.documentElement.scrollWidth,
+        gapIntroTabs: tabs.y - intro.bottom,
+        gapIntroBrand: brand.y - intro.bottom,
+        gapBrandTabs: tabs.y - brand.bottom,
+        brandArea: getComputedStyle(document.querySelector('.accueil-hero-marque')).gridArea,
+        brandFont: parseFloat(getComputedStyle(document.querySelector('.accueil-hero-marque .lusk-marque__mot')).fontSize),
+        brandErmine: box('.accueil-hero-marque .lusk-marque__ermine'),
+        columns: getComputedStyle(document.querySelector('.accueil-hero-interieur')).gridTemplateColumns }
     })
     const initial = await geometry()
     assert(initial.pageWidth <= width, 'no horizontal page overflow')
+    assert.equal(initial.brandArea, 'marque', 'brand occupies its named grid area, not auto-placement')
+    assert(initial.gapIntroTabs > 0, 'the intro-to-tabs gap is documented, never collapsed')
+    if (width >= 768) {
+      // Owner density revision: breathing room, but bounded (the old auto-placed
+      // brand stretched this row to ~127px at 1440).
+      assert(initial.gapIntroTabs >= 16 && initial.gapIntroTabs <= 40,
+        `intro→tabs gap ${initial.gapIntroTabs}px out of bounds`)
+      assert(initial.brand.x > initial.search.x + initial.search.width,
+        'the named brand area occupies the right column')
+    } else {
+      // Stacked flow: the brand itself sits between intro and tabs, so the two
+      // visible gaps are asserted rather than the composite one.
+      assert(initial.gapIntroBrand >= 16 && initial.gapIntroBrand <= 40,
+        `intro→brand gap ${initial.gapIntroBrand}px out of bounds`)
+      assert(initial.gapBrandTabs >= 16 && initial.gapBrandTabs <= 40,
+        `brand→tabs gap ${initial.gapBrandTabs}px out of bounds`)
+      assert.equal(initial.brand.x, initial.intro.x)
+      assert.equal(initial.brand.width, initial.intro.width)
+    }
+
     const searchTab = page.getByRole('tab', { name: 'Rechercher', exact: true })
     const browseTab = page.getByRole('tab', { name: 'Parcourir', exact: true })
     const searchTabBox = await searchTab.boundingBox()
@@ -61,6 +92,10 @@ try {
     const browseGeometry = await geometry()
     assert.equal(browseGeometry.search.width, initial.search.width, 'tab entry width stays fixed')
     assert.equal(browseGeometry.search.x, initial.search.x, 'tab entry does not move horizontally')
+    assert.equal(browseGeometry.gapIntroTabs, initial.gapIntroTabs, 'the intro row never stretches with the brand or panel')
+    assert.equal(browseGeometry.gapIntroBrand, initial.gapIntroBrand)
+    assert.equal(browseGeometry.gapBrandTabs, initial.gapBrandTabs)
+
     assert(browseGeometry.search.height > initial.search.height, 'browse panel intentionally uses more natural height')
     assert(browseGeometry.link.y > initial.link.y, 'browse intentionally pushes the indicator link down')
     assert(browseGeometry.editorial.y > initial.editorial.y, 'browse intentionally pushes subsequent content down')

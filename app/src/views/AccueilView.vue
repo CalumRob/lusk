@@ -276,6 +276,10 @@ function naviguerOnglets(event: KeyboardEvent) {
 }
 .bouton-reessayer:hover { color: var(--accent-hover); }
 .accueil-hero-marque {
+  /* Occupy the named brand area explicitly. Auto-placement put this block in
+     the first row only, stretching the intro row and opening the blank gap
+     above the tabs that the owner reported. */
+  grid-area: marque;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -286,7 +290,8 @@ function naviguerOnglets(event: KeyboardEvent) {
   user-select: none;
 }
 .accueil-hero-marque :deep(.lusk-marque) {
-  font: 600 clamp(4.5rem, 9vw, 7.5rem)/0.9 var(--font-wordmark);
+  /* Owner density revision: +20% on every stop; the ermine keeps its em ratio. */
+  font: 600 clamp(5.4rem, 10.8vw, 9rem)/0.9 var(--font-wordmark);
   font-style: italic;
   letter-spacing: -0.02em;
   color: color-mix(in oklab, var(--brand-200) 55%, var(--surface-secondary));

@@ -10,6 +10,7 @@ Une entrée utile dans l'observatoire, accompagnée de quelques portes d'entrée
 
 - Conserver le logo, l'hermine et la palette appréciés sur l'accueil existant. Ne pas transformer ce travail local en refonte de l'identité du site.
 - Révision propriétaire : la position du bloc logo/hermine ne doit pas varier au changement d'onglet territorial, même si le panneau et les contenus qui le suivent changent de hauteur. Il s'agit d'un ancrage dans la composition, pas d'un élément fixé à la fenêtre au défilement. Prévisualiser ce bloc sans sa légende de traduction/prononciation ; ne pas supprimer le nom accessible de la marque.
+- Révision de densité : réduire l'espace excessif entre l'introduction et les onglets, sans supprimer toute respiration. Agrandir ensemble le logo et l'hermine en conservant leurs proportions et leur ancrage ; l'agrandissement ne doit pas recréer un vide au-dessus de la recherche.
 - Conserver « Intelligence territoriale en Bretagne », avec une présence typographique plus discrète que le titre actuel.
 - Texte de travail approuvé : « Accès aux équipements, migrations, occupation des sols, habitat… Lusk propose des données ouvertes et des analyses originales pour comprendre les dynamiques et les tensions des territoires bretons. »
 - Respecter les rôles typographiques et les jetons partagés. `DESIGN.md` reste la source humaine des décisions visuelles globales ; ce brief ne le remplace pas.

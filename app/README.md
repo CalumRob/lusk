@@ -33,7 +33,7 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 
 | Route | Name | Status |
 |---|---|---|
-| `/` | `accueil` | **Revised for fifth owner preview, awaiting inspection** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
+| `/` | `accueil` | **Revised for sixth owner preview, awaiting inspection** — compact introduction, tabbed territory entry, catalogue link and three inert editorial slots (#1027) |
 | `/carte` | `carte` | **Built** — map (#39) ; épargnée par ruling PO (2026-08-26, #410) : routée et fonctionnelle mais SANS aucun lien face-utilisateur |
 | `/communes` | `communes` | **Built** — link directory (#40) |
 | `/epcis` | `epcis` | **Built** — link directory (#40) |
@@ -72,19 +72,29 @@ inside the composition: a tab change grows the access area downward while the
 logo/ermine keeps its position — no viewport fixed/sticky. On the single-column
 layout the brand is ordered before the access area for the same reason. The
 translation/pronunciation caption is removed for this preview; the brand keeps
-its accessible name. Prior identity tokens and copy are otherwise unchanged.
-Owner inspection of this fifth preview is **pending**, before reviewer dispatch.
-This is not a site-wide design adoption or publication claim.
+its accessible name.
+
+The fifth preview exposed a layout defect: `.accueil-hero-marque` never declared
+`grid-area: marque`, so the brand was auto-placed in the first row only and
+stretched the intro row (127px intro→tabs at 1440px). The owner also asked for
+more brand presence after a density complaint (comment 6919838590). The brand
+now occupies its named area, the intro→tabs gap is 28px at ≥768px, and the
+wordmark/ermine scale together from 120px to 144px at 1440px (+20%) with the
+same em ratio, overlap and colours. Bounded gap assertions in the browser proof
+guard against recurrence. Owner inspection of this sixth preview is **pending**,
+before reviewer dispatch. This is not a site-wide design adoption or publication
+claim.
 
 With the dev server running, `node scripts/verify-homepage.mjs` checks real
 committed territory assets, long labels, fixed geometry, empty/loading/error and
-retry states, intentional cross-tab expansion/contraction, brand anchoring at
-1440/900/375/320, equal tab widths, exact and prefix administrative-code search,
+retry states, intentional cross-tab expansion/contraction, brand area/size and
+bounded intro spacing at 1440/900/768/375/320, equal tab widths, exact and
+prefix administrative-code search,
 row targets/separators/hover/focus/active states,
 tab keyboard/focus behavior, actual list navigation, preserved
 header/mobile links, keyboard suggestions and inert placeholders.
 `LUSK_PREVIEW_URL` selects the server; `LUSK_SCREENSHOT_DIR` selects an external
-evidence folder (default `E:/Temp/opencode/homepage-1027-r5`). It simulates one failed
+evidence folder (default `E:/Temp/opencode/homepage-1027-r6`). It simulates one failed
 territory request per viewport, then retries the real file; it does not publish
 or invent data. This browser proof complements the homepage/footer/app and shared
 search unit tests, not owner visual acceptance.
