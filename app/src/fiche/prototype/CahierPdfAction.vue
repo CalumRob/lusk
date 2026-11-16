@@ -73,7 +73,10 @@ const ariaLabel = computed(() => {
   return `${action} : ${props.sectionLabel}`
 })
 
-const disabled = computed(() => etat.value === 'preparing' || !peutActiver.value)
+const disabled = computed(() => etat.value === 'preparing')
+const blocked = computed(() => etat.value !== 'preparing'
+  && etat.value !== 'error'
+  && !peutActiver.value)
 
 const blockedReason = computed(() => {
   if (etat.value === 'preparing' || etat.value === 'error') return ''
@@ -117,6 +120,8 @@ watch(modaleOuverte, async (open) => {
       type="button"
       class="cahier-pdf-action__button"
       :disabled="disabled"
+      :aria-disabled="blocked ? 'true' : undefined"
+      :title="blockedReason || undefined"
       :aria-label="ariaLabel"
       :aria-busy="etat === 'preparing' ? 'true' : undefined"
       :aria-describedby="blockedReason ? reasonId : undefined"
@@ -211,7 +216,8 @@ watch(modaleOuverte, async (open) => {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
 }
-.cahier-pdf-action__button:disabled {
+.cahier-pdf-action__button:disabled,
+.cahier-pdf-action__button[aria-disabled='true'] {
   cursor: not-allowed;
   opacity: .55;
 }

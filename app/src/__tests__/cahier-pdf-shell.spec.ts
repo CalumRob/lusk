@@ -133,7 +133,7 @@ describe('shared PDF action on the mounted Cahier shell (#1023)', () => {
   it('keeps every section inert until the real generator is wired', async () => {
     const { wrapper } = await mountShell(null)
     for (const button of wrapper.findAll('.cahier-pdf-action__button')) {
-      expect(button.attributes('disabled')).toBeDefined()
+      expect(button.attributes('aria-disabled')).toBe('true')
     }
     expect(wrapper.findAll('.cahier-pdf-action__reason')).toHaveLength(9)
     wrapper.unmount()

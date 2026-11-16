@@ -225,33 +225,40 @@ describe('shared PDF section action (#1023)', () => {
     const wrapper = mountAction({ generator: null })
     const button = wrapper.get('.cahier-pdf-action__button')
     expect(button.text()).toBe('PDF')
-    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('aria-disabled')).toBe('true')
+    expect(button.attributes('disabled')).toBeUndefined()
     expect(wrapper.get('.cahier-pdf-action__reason').text()).toContain('génération du PDF')
     expect(button.attributes('aria-describedby')).toBe(wrapper.get('.cahier-pdf-action__reason').attributes('id'))
+    ;(button.element as HTMLElement).focus()
+    expect(document.activeElement).toBe(button.element)
     wrapper.unmount()
   })
 
-  it('is disabled while required data is still pending and re-enables after the owner settles', async () => {
+  it('is blocked while required data is still pending and re-enables after the owner settles', async () => {
     const ready = ref(false)
     const pending = capturePdfFixture('aedar-equipment-profile', {
       readiness: { status: 'pending', reason: 'chapter-pending', availability: 'incomplete' },
     })
     const settled = capturePdfFixture('aedar-equipment-profile')
+    const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
     const wrapper = mount(CahierPdfAction, {
       props: {
         sectionKey: 'aedar-equipment-profile',
         sectionLabel: 'Profil',
         capture: () => (ready.value ? settled : pending),
-        generator: vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact()),
+        generator: generate,
       },
       attachTo: document.body,
     })
     await nextTick()
-    expect(wrapper.get('.cahier-pdf-action__button').attributes('disabled')).toBeDefined()
+    const button = wrapper.get('.cahier-pdf-action__button')
+    expect(button.attributes('aria-disabled')).toBe('true')
+    await button.trigger('click')
+    expect(generate).not.toHaveBeenCalled()
 
     ready.value = true
     await nextTick()
-    expect(wrapper.get('.cahier-pdf-action__button').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('.cahier-pdf-action__button').attributes('aria-disabled')).toBeUndefined()
     wrapper.unmount()
   })
 
