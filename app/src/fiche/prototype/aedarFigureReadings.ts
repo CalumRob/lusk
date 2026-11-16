@@ -35,14 +35,42 @@ import type {
   AedarCarAccessOverviewScalar,
   AedarEquipmentExplorerEvidence,
   AedarRampMode,
+  AedarTimeRampEvidence,
 } from '@/fiche/content/themeContent'
-import type { ComparisonRank, FactAvailability, TimeRampFigureData } from '@/fiche/content/territoryFacts'
+import type { ComparisonRank, FactAvailability, TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
 import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
 import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import { AEDAR_TIME_MODE_ICONS } from './aedarTimeModeIcons'
 
 export const AEDAR_UNAVAILABLE_LABEL = 'Indisponible'
+
+/** The mechanical evidence-to-ramp conversion shared by the screen and the export. */
+export function aedarRampToTimeRampFigureData(
+  ramp: AedarTimeRampEvidence,
+  comparisonLayerSupported: boolean,
+): TimeRampFigureData {
+  const series: readonly TimeRampSeries[] = AEDAR_RAMP_MODES.map((mode) => ({
+    key: mode,
+    label: AEDAR_RAMP_MODE_LABELS[mode],
+    points: ramp.xAxis.values.map((xValue, index) => ({
+      xValue,
+      xLabel: ramp.xAxis.labels[index] ?? `${xValue}`,
+      value: ramp.territory[mode][index] ?? null,
+      referenceValue: ramp.reference?.[mode][index] ?? null,
+      referenceRank: ramp.referenceRanks?.[mode][index] ?? null,
+    })),
+  }))
+  return {
+    availability: ramp.availability,
+    xAxis: { label: ramp.xAxis.label, unit: ramp.xAxis.unit },
+    yAxis: { label: ramp.yAxis.label, unit: ramp.yAxis.unit },
+    series,
+    provenance: ramp.provenance,
+    comparisonLabel: ramp.referenceLabel,
+    comparisonLayerSupported,
+  }
+}
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
@@ -56,7 +84,14 @@ export interface AedarQuantileReadingInput {
   readonly fact: AedarFact | null
   readonly horizonMinutes: AedarEquipmentHorizon
   readonly selectedModes: readonly AedarRampMode[]
-  readonly evidence: AedarEquipmentExplorerEvidence
+  readonly evidence: Pick<AedarEquipmentExplorerEvidence,
+    | 'distributionStatistics'
+    | 'distributionAxisTitle'
+    | 'distributionYAxisTitle'
+    | 'distributionFigureTitle'
+    | 'distributionDescription'
+    | 'distributionUnavailableDescription'
+    | 'distributionValueUnit'>
   readonly comparison?: AedarComparisonEvidence | null
   readonly referenceFact?: AedarFact | null
   readonly comparisonLabel?: string | null
@@ -273,9 +308,9 @@ export function aedarOverviewScalarAria(
   const value = scalar.value === null
     ? 'indisponible'
     : `${formatNumber(scalar.value)} ${scalar.unit}`
-  const reference = scalar.reference
+  const reference = comparisonEligible && scalar.reference
     ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.`
-    : scalar.comparisonUnavailableLabel
+    : comparisonEligible && scalar.comparisonUnavailableLabel
       ? ` ${scalar.comparisonAccessibleLabel ?? 'Moyenne du groupe comparé'} indisponible.`
       : ''
   const rank = aedarOverviewScalarRankAria(scalar)

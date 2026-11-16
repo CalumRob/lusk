@@ -390,6 +390,10 @@ export interface CahierExplorerFigureCapture extends CahierCaptureFigureBase {
     readonly distributionAxisTitle: string
     readonly distributionYAxisTitle: string
     readonly distributionValueUnit: string
+    /** Native explanatory copy displayed under the distribution bars (#1022). */
+    readonly distributionDescription: string
+    /** Native copy when the distribution model is unavailable (#1022). */
+    readonly distributionUnavailableDescription: string
     readonly distributionStatistics: readonly {
       readonly key: string
       readonly label: string
@@ -1218,6 +1222,8 @@ function captureFigures(options: {
           distributionAxisTitle: evidence.distributionAxisTitle,
           distributionYAxisTitle: evidence.distributionYAxisTitle,
           distributionValueUnit: evidence.distributionValueUnit,
+          distributionDescription: evidence.distributionDescription,
+          distributionUnavailableDescription: evidence.distributionUnavailableDescription,
           distributionStatistics: evidence.distributionStatistics.map((statistic) => ({
             key: statistic.key,
             label: statistic.label,

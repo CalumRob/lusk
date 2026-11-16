@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { AedarAccessEvidence, AedarRampMode, AedarTimeRampEvidence } from '@/fiche/content/themeContent'
-import type { TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
+import type { AedarAccessEvidence, AedarRampMode } from '@/fiche/content/themeContent'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_RAMP_MODE_LABELS, AEDAR_RAMP_MODES, toggleAedarRampModeSelection } from '@/fiche/content/aedarTimeRampFacts'
+import { aedarRampToTimeRampFigureData } from './aedarFigureReadings'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
@@ -46,23 +46,6 @@ function toggleMode(key: string): void {
   if (key === 'reference') { comparisonVisible.value = !comparisonVisible.value; return }
   selectedModes.value = toggleAedarRampModeSelection(selectedModes.value, key as AedarRampMode)
 }
-/** Mechanical conversion to the existing reusable ramp figure contract. */
-function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureData {
-  const series: readonly TimeRampSeries[] = AEDAR_RAMP_MODES.map((mode) => ({
-    key: mode,
-    label: AEDAR_RAMP_MODE_LABELS[mode],
-    points: ramp.xAxis.values.map((xValue, index) => ({
-      xValue, xLabel: ramp.xAxis.labels[index] ?? `${xValue}`,
-      value: ramp.territory[mode][index] ?? null,
-      referenceValue: ramp.reference?.[mode][index] ?? null,
-      referenceRank: ramp.referenceRanks?.[mode][index] ?? null,
-    })),
-  }))
-  return { availability: ramp.availability,
-    xAxis: { label: ramp.xAxis.label, unit: ramp.xAxis.unit },
-    yAxis: { label: ramp.yAxis.label, unit: ramp.yAxis.unit },
-    series, provenance: ramp.provenance, comparisonLabel: ramp.referenceLabel, comparisonLayerSupported: comparisonEligible.value }
-}
 </script>
 
 <template>
@@ -75,7 +58,7 @@ function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureDa
       <figure v-for="ramp in evidence.ramps" :key="ramp.rampKey" class="aedar-ramp">
         <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ ramp.figureTitle }}</figcaption>
         <AccessRampFigureCahier
-          :time-ramp="rampToTimeRampFigureData(ramp)"
+          :time-ramp="aedarRampToTimeRampFigureData(ramp, comparisonEligible)"
           :territory-name="evidence.territory.name"
           v-model:selected-modes="selectedModes"
           :show-mode-legend="false"

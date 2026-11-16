@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
 import type { AedarSummaryFetchResult } from '@/fiche/content/aedarApiClient'
 import { fetchAedarComparison } from '@/fiche/content/aedarComparisonClient'
+import { AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from '@/fiche/content/aedarTimeRampFacts'
 import { CONTROLE_COMPARAISON_KEY } from '@/fiche/comparisonContext'
 import type { ControleComparaison } from '@/fiche/comparisonContext'
 import type { ContentEvidence } from '@/fiche/content/themeContent'
@@ -15,6 +16,7 @@ import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { CAHIER_SECTION_RENDERERS } from '@/fiche/prototype/cahierSectionRenderers'
 import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
+import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'
 import CahierMapPanel from '@/fiche/prototype/CahierMapPanel.vue'
 import ProductionMobiliteAedar from '@/fiche/mobilite/ProductionMobiliteAedar.vue'
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
@@ -383,6 +385,90 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     expect(captureOf(wrapper, 'aedar-access').figures[0]?.family).toBe('aedar-ramps')
     expect(captureOf(wrapper, 'reseaux').figures[0]?.family).toBe('mobilite-bars')
     expect(captureOf(wrapper, 'visiter-la-bretagne').figures[0]?.family).toBe('mobilite-curve')
+    wrapper.unmount()
+  })
+
+  it('projects every mounted capture through the shared family adapters', async () => {
+    const { wrapper } = await render({ aedarChapterActive: true })
+    const captures = seamOf(wrapper).captureAll()
+    const projections = captures.flatMap((capture) => {
+      const projected = projeterRequeteExport(capture, capture.capabilities.selectedSeries)
+      expect(projected.status).toBe('ready')
+      if (projected.status !== 'ready') return []
+      return projeterRequeteExportFigures(projected.request)
+    })
+    expect(projections).toHaveLength(10)
+    expect(new Set(projections.map((projection) => projection.family))).toEqual(new Set([
+      'aedar-car-overview', 'aedar-diversity-loss', 'aedar-ramps', 'aedar-equipment-profile',
+      'aedar-equipment-explorer', 'mobilite-bars', 'mobilite-share', 'mobilite-curve',
+    ]))
+    for (const projection of projections) {
+      expect(projection.title).toBeTruthy()
+      expect(projection.accessibleLabel).toBeTruthy()
+      expect(projection.tables.every((table) => table.columns.length === 0 || table.rows.length >= 0)).toBe(true)
+    }
+    // The paired section contributes one projection per terrain, and the
+    // quantile table carries the declared min/deciles/max categories.
+    const explorer = projections.find((projection) => projection.family === 'aedar-equipment-explorer')!
+    if (explorer.family !== 'aedar-equipment-explorer') throw new Error('explorer expected')
+    expect(explorer.distribution.categories.map((category) => category.key)).toEqual(
+      AEDAR_EQUIPMENT_QUANTILE_STATISTICS.map((statistic) => statistic.key),
+    )
+    wrapper.unmount()
+  })
+
+  it('keeps the mounted ramp tooltip on the exported readings and drops a hidden reference', async () => {
+    const { wrapper } = await render(
+      { comparisonStatus: 'idle' },
+      { aedarReference: 'sparse-car' },
+    )
+    const capture = captureOf(wrapper, 'aedar-access')
+    const projected = projeterRequeteExport(capture, capture.capabilities.selectedSeries)
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'aedar-ramps') throw new Error('ramps expected')
+    expect(projection.comparisonDisplayed).toBe(true)
+
+    const firstRamp = wrapper.findAll('[data-section="aedar-access"] .aedar-ramp')[0]!
+    const cut = firstRamp.findAll('.access-ramp-cut-hitbox')
+      .find((button) => button.attributes('aria-label')?.includes('15 min'))
+    if (!cut) throw new Error('15 min cut missing')
+    await cut.trigger('focus')
+    const rows = firstRamp.findAll('.cahier-figure-tooltip-row')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      const label = row.get('dt').text()
+      const value = row.get('dd').text()
+      const point = projection.ramps[0]?.series.find((series) => series.label === label)
+        ?.points.find((candidate) => candidate.cutKey === 15)
+      expect(point?.display).toBe(value)
+      const comparison = row.find('.cahier-figure-tooltip-comparison-value')
+      if (comparison.exists()) expect(point?.referenceDisplay).toBe(comparison.text())
+    }
+    // The mounted accessible label and the projection are built from the same
+    // owner readings: both keep every visible mode and its unit.
+    const aria = firstRamp.get('.access-ramp-svg').attributes('aria-label')!
+    for (const series of projection.ramps[0]!.series) {
+      expect(aria).toContain(`${series.label} :`)
+    }
+
+    const referenceToggle = wrapper
+      .findAll('[data-section="aedar-access"] .aedar-access-mode-selector .cahier-figure-legend-toggle')
+      .find((button) => button.attributes('aria-label')?.startsWith('Groupe comparé'))
+    if (!referenceToggle) throw new Error('comparison toggle missing')
+    await referenceToggle.trigger('click')
+    await flushPromises()
+    const hiddenCapture = captureOf(wrapper, 'aedar-access')
+    const hiddenProjected = projeterRequeteExport(hiddenCapture, hiddenCapture.capabilities.selectedSeries)
+    expect(hiddenProjected.status).toBe('ready')
+    if (hiddenProjected.status !== 'ready') { wrapper.unmount(); return }
+    const hidden = projeterRequeteExportFigures(hiddenProjected.request)[0]!
+    if (hidden.family !== 'aedar-ramps') throw new Error('ramps expected')
+    expect(hidden.comparisonDisplayed).toBe(false)
+    expect(hidden.tables[0]?.columns.every((column) => column.kind === 'focal')).toBe(true)
+    await cut.trigger('focus')
+    expect(firstRamp.find('.cahier-figure-tooltip-row-comparison').exists()).toBe(false)
     wrapper.unmount()
   })
 
