@@ -62,6 +62,44 @@ describe('normaliserTexte — accent-insensitive, separator-tolerant normalizati
 })
 
 describe('rechercherTerritoires — search over the territoires reference table', () => {
+  it.each([
+    ['35238', 'Rennes'], ['200043990', 'Rennes Métropole'], ['35', 'Ille-et-Vilaine'],
+  ])('trouve le code administratif complet %s sans inclure ses membres (#1028)', (code, nom) => {
+    expect(rechercherTerritoires(territoiresBretons, code).map((t) => t.nom)).toEqual([nom])
+  })
+
+  it('conserve les zéros initiaux et ne recherche ni préfixes, ni codes postaux ou membres (#1028)', () => {
+    // Identités synthétiques : aucune prétention de publication hors Bretagne.
+    const lignes: Territoire[] = [
+      { territoire: '01001', type: 'commune', nom: 'Commune test', departement: '01', epci: '000000123' },
+      { territoire: '000000123', type: 'epci', nom: 'EPCI test', departement: '01', epci: null },
+      { territoire: '01', type: 'departement', nom: 'Département test', departement: '01', epci: null },
+    ]
+    for (const code of ['01001', '000000123', '01']) {
+      expect(rechercherTerritoires(lignes, ` \t${code}\n`).map((t) => t.territoire)).toEqual([code])
+    }
+    for (const requete of ['1001', '123', '1', '010', '99999', '35000']) {
+      expect(rechercherTerritoires(lignes, requete)).toEqual([])
+    }
+    expect(rechercherTerritoires(lignes, '   ')).toEqual([])
+  })
+
+  it('priorise un code exact sous le plafond sans doubler la correspondance nom/code (#1028)', () => {
+    const noms: Territoire[] = Array.from({ length: 10 }, (_, i) => ({
+      territoire: `fixture-${i}`, type: 'commune', nom: `01 ${i}`, departement: null, epci: null,
+    }))
+    const code: Territoire = { territoire: '01', type: 'departement', nom: '01', departement: '01', epci: null }
+    const lignes = [...noms, code]
+    const trouves = rechercherTerritoires(lignes, '01')
+    expect(trouves).toHaveLength(8)
+    expect(trouves.map((t) => t.territoire)).toEqual(['01', 'fixture-0', 'fixture-1', 'fixture-2', 'fixture-3', 'fixture-4', 'fixture-5', 'fixture-6'])
+    expect(trouves.filter((t) => t.territoire === '01')).toHaveLength(1)
+    expect(rechercherTerritoires(lignes, '01', 1)).toEqual([code])
+    expect(rechercherTerritoires(lignes, '01', 0)).toEqual([])
+    // Exact code also outranks a different row whose NAME is an exact match.
+    expect(rechercherTerritoires([{ ...noms[0]!, nom: '01' }, { ...code, nom: 'Zed' }], '01', 1).map((t) => t.territoire)).toEqual(['01'])
+  })
+
   it('returns no results for an empty or whitespace-only query', () => {
     expect(rechercherTerritoires(territoiresBretons, '')).toEqual([])
     expect(rechercherTerritoires(territoiresBretons, '   ')).toEqual([])

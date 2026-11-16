@@ -114,7 +114,7 @@ describe('Accueil — direction approuvée #1027', () => {
 
   it('offre directement la recherche et un simple lien vers le catalogue, sans cartes explicatives', async () => {
     const { wrapper, router } = await monter()
-    expect(wrapper.find('input[role="combobox"]').attributes('aria-label')).toBe('Rechercher un territoire par son nom')
+    expect(wrapper.find('input[role="combobox"]').attributes('aria-label')).toBe('Rechercher un territoire par son nom ou son code administratif')
     expect(wrapper.findAll('.porte')).toHaveLength(0)
     const lien = wrapper.find('a[href="/indicateurs"]')
     expect(lien.text()).toBe('Explorer les indicateurs')

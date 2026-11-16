@@ -33,6 +33,7 @@ export function normaliserTexte(texte: string): string {
 }
 
 const SCORE_EXACT = 100
+const SCORE_CODE_EXACT = 120
 const SCORE_PREFIXE = 80
 const SCORE_DEBUT_MOT = 60
 const SCORE_FRAGMENT = 40
@@ -55,20 +56,23 @@ function scoreCorrespondance(nomNormalise: string, requeteNormalisee: string): n
  * Le pipeline partagé des deux moitiés de la recherche (#409) : normalisation,
  * score, filtre des correspondances, tri (score décroissant, départages
  * libellé court puis alphabétique FR), borne. Les deux recherches ne
- * fournissent que LEUR champ scoré — l'ordre de sortie est verrouillé par les
- * specs existantes (recherche.spec.ts).
+ * fournissent leur libellé ; les territoires peuvent aussi fournir leur
+ * identifiant administratif exact (#1028), prioritaire sans doubler une ligne.
  */
 function rechercherScorees<T>(
   entrees: readonly T[],
   requete: string,
   texte: (entree: T) => string,
   limite: number,
+  identifiant?: (entree: T) => string,
 ): T[] {
   const requeteNormalisee = normaliserTexte(requete)
   if (requeteNormalisee === '') return []
 
   return entrees
-    .map((entree) => ({ entree, score: scoreCorrespondance(normaliserTexte(texte(entree)), requeteNormalisee) }))
+    .map((entree) => ({ entree, score: identifiant?.(entree) === requete.trim()
+      ? SCORE_CODE_EXACT
+      : scoreCorrespondance(normaliserTexte(texte(entree)), requeteNormalisee) }))
     .filter((r) => r.score > 0)
     .sort(
       (a, b) =>
@@ -81,8 +85,8 @@ function rechercherScorees<T>(
 }
 
 /**
- * Search the territoires reference table by name — accent-insensitive, exact
- * prefixes first, ties broken by shortest name then alphabetical order.
+ * Search by exact administrative identifier (trimmed string, no coercion),
+ * then by name — accent-insensitive, existing name ranks and tie breaks.
  * Defaults to ~8 results (the search dropdown's size).
  */
 export function rechercherTerritoires(
@@ -90,7 +94,8 @@ export function rechercherTerritoires(
   requete: string,
   limite = 8,
 ): Territoire[] {
-  return rechercherScorees(territoires, requete, (territoire) => territoire.nom, limite)
+  return rechercherScorees(territoires, requete, (territoire) => territoire.nom, limite,
+    (territoire) => territoire.territoire)
 }
 
 export function libelleType(type: TerritoireType): string {

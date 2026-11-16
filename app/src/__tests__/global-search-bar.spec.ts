@@ -57,8 +57,8 @@ describe('GlobalSearchBar — structure', () => {
     const input = wrapper.find(INPUT)
 
     expect(input.exists()).toBe(true)
-    expect(input.attributes('placeholder')).toBe('Rechercher un territoire…')
-    expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom')
+    expect(input.attributes('placeholder')).toBe('Nom ou code du territoire…')
+    expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom ou son code administratif')
     expect(input.attributes('role')).toBe('combobox')
     expect(input.attributes('aria-autocomplete')).toBe('list')
     expect(input.attributes('aria-expanded')).toBe('false')
@@ -125,6 +125,31 @@ describe('GlobalSearchBar — debounced search and states', () => {
     expect(textes.some((t) => t.includes('Département 29'))).toBe(true)
     // the type chip disambiguates the Département rows from the rest
     expect(wrapper.find('.global-search__chip').text()).toBe('Département')
+  })
+
+  it('finds exactly one territory by its full administrative code (#1028)', async () => {
+    const { wrapper } = monterRecherche()
+    await taper(wrapper, ' 22001 ')
+
+    const options = wrapper.findAll('[role="option"]')
+    expect(options).toHaveLength(1)
+    expect(options[0].text()).toContain('Commune A1')
+    expect(options[0].find('.global-search__chip').text()).toBe('Commune')
+    expect(options[0].attributes('href')).toBe('/territoire/commune/22001')
+  })
+
+  it('navigates to the code-matched territory from the keyboard (#1028)', async () => {
+    const { wrapper, router } = monterRecherche()
+    const input = wrapper.find(INPUT)
+    await taper(wrapper, '200000001')
+
+    await input.trigger('keydown', { key: 'ArrowDown' })
+    expect(input.attributes('aria-activedescendant')).toBe('gsb-option-0')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/territoire/epci/200000001')
+    expect(wrapper.emitted('select')?.[0][0]).toMatchObject({ territoire: '200000001', nom: 'EPCI X' })
   })
 
   it('shows the empty state when nothing matches', async () => {
@@ -474,7 +499,7 @@ describe('AccueilView — la recherche du héros (D3 landing)', () => {
 
     const input = wrapper.find(INPUT)
     expect(input.exists()).toBe(true)
-    expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom')
+    expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom ou son code administratif')
     expect(wrapper.findAll('[role="tab"]').map((tab) => tab.text())).toEqual(['Rechercher', 'Parcourir'])
     expect(wrapper.find('.global-search [role="tab"]').exists()).toBe(false)
     expect(wrapper.findAll('input[type="text"]')).toHaveLength(1)
