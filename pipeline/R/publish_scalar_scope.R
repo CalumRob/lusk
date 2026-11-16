@@ -28,7 +28,7 @@ scalar_scope_registry <- function() {
   list(
     mobilite = list(
       indicators = c("stations_service", "stations_service_1000",
-                     "bornes_recharge_1000"),
+                     "bornes_recharge_1000", "bornes_ev_par_station_service"),
       sources = c("mobilite_snapshot", "bpe_b316", "bornes-recharges",
                   "stationnement-velo"),
       produce = produire_ravitaillement_mobilite
@@ -325,12 +325,13 @@ produire_ravitaillement_mobilite <- function(cache, indicator_ids, metadata,
     bornes, velo, fuel, base_epci[c("CODGEO", "EPCI", "DEP")])
   long <- dplyr::bind_rows(ravitaillement$bornes,
                            ravitaillement$bornes_1000,
-                           ravitaillement$stations)
+                           ravitaillement$stations, ravitaillement$ratio)
   territoires <- construire_territoires_mobilite(
     base_epci, list(mobilite_communes = mobilite_communes))
   units <- c(stations_service = "stations",
              stations_service_1000 = "stations / 1 000 hab",
-             bornes_recharge_1000 = "bornes / 1 000 hab")
+             bornes_recharge_1000 = "bornes / 1 000 hab",
+             bornes_ev_par_station_service = "bornes / station")
   missing <- setdiff(indicator_ids, names(units))
   if (length(missing))
     stop("Registered ravitaillement producer does not cover: ",

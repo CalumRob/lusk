@@ -48,7 +48,7 @@ test_that("le périmètre scalaire est enregistré et strictement validé (#989)
   contract <- scalar_scope_contract("mobilite")
   expect_setequal(contract$indicators,
                   c("stations_service", "stations_service_1000",
-                    "bornes_recharge_1000"))
+                    "bornes_recharge_1000", "bornes_ev_par_station_service"))
   expect_setequal(contract$sources,
                   c("mobilite_snapshot", "bpe_b316", "bornes-recharges",
                     "stationnement-velo"))
@@ -92,7 +92,8 @@ test_that("le bloc ravitaillement extrait est identique au producteur complet (#
   extracted <- agreger_ravitaillement_territoires(
     bornes, velo, fuel, base[c("CODGEO", "EPCI", "DEP")])
 
-  for (piece in c("bornes", "bornes_1000", "stations")) {
+  for (piece in c("bornes", "bornes_1000", "stations", "ratio")) {
+    expect_false(is.null(extracted[[piece]]), info = piece)
     expected <- full[full$key %in% extracted[[piece]]$key,
                      c("code", "key", "detail", "value")]
     expected <- expected[order(expected$code, expected$key), ]
@@ -115,6 +116,9 @@ test_that("le bloc ravitaillement extrait est identique au producteur complet (#
   expect_true(is.na(absent$stations$value[
     absent$stations$code == "200000001" &
       absent$stations$key == "stations_service"]))
+  expect_equal(extracted$ratio$value[extracted$ratio$code == "53"], 7 / 6)
+  expect_true(is.na(extracted$ratio$value[extracted$ratio$code == "22001"]))
+  expect_true(is.na(absent$ratio$value[absent$ratio$code == "53"]))
 })
 
 test_that("l'assemblage partagé rend la forme complète des lignes ciblées (#989)", {
