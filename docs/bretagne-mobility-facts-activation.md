@@ -181,3 +181,53 @@ actual inventory, backups, input availability and planned owner closure first.
   native regional fixtures, render coverage/parking/refuelling facts without
   comparisons and retain a genuine injected factual-publication failure. The
   maintained lower-level/default and explicit-none regressions remain in place.
+
+### Verification receipt (2026-11-16)
+
+- API catalogue suite: 36 passed (the sixteen new regional admission cases and
+  the scalar/non-scalar contract guard included).
+- Guarded native HTTP proof: 16 passed; all runs began/ended with zero user
+  schemas and zero public relations. The exact test database and dedicated roles
+  were checked before fixture DDL; only the run's schema was removed.
+  Reinstating only the baseline catalogue admission rule against the **same**
+  seeded fixture makes all sixteen native reads fail with the reproduced 422;
+  restoring the serving-contract rule makes all sixteen pass again. This
+  isolates admission from data presence and is not a live-activation claim.
+- Full ordinary API suite: **393 passed, 181 skipped, 1 failed**. The failure is
+  the unchanged `test_snapshot_derived_mobility_reading_has_no_pipeline_publisher_or_artifact_owner`:
+  its substring assertion prohibits `"mobilite"` anywhere in
+  `publish_retained_scalar_snapshot.R`, including the already-existing retained
+  profile owner registration. The test and inspected publisher are unchanged
+  from the pinned baseline; executing the same assertion against the baseline
+  Git blob fails too. No assertion was weakened and no full-green API claim is
+  made. This unrelated baseline test needs separate maintenance.
+- Python compilation and generated endpoint/OpenAPI inventory check passed;
+  there is no configured Python static type-check command in the API README.
+- Focused R projection/scoped suites: 8,066 assertions passed; the broader
+  Mobility parity/missingness run passed 932 assertions with five existing
+  spatial warnings. Full default R fixtures: **18,942 passed, 6 warnings,
+  5 skips, 0 failures**. Skips identify absent optional Arrow, an explicitly
+  selected Milieux test schema and real routing/cache inputs; this is not
+  real-data parity. No raw-data cache was copied, linked, downloaded or deleted.
+  Initial project startup auto-bootstrapped renv via the tracked `.Rprofile`;
+  no explicit `renv::` operation was invoked. The empty worktree library was
+  populated by copying the existing main hashed library into this worktree's
+  hashed library, then `dplyr`, `testthat` and `pkgload` were verified available.
+- Own `npm ci`: 0 vulnerabilities. Full app suite: **201 files, 2,693 passed,
+  1 skipped**. TypeScript/Vite production build passed (existing chunk-size
+  warning). No production app source or public presentation metadata changed.
+- Maintained `verify:aedar-demand`, `verify:aedar-layout-stability`,
+  `verify:rank-circles`, `verify:network-means` and
+  `verify:mobile-cahier-overflow` passed. Demand remains page 2 **33 items / 3
+  requests**, page 3 **7 / 1**, with zero duplicate identities; existing guards,
+  TYPEQU universe, tolerances and budgets were not changed.
+- Actual regex detector scans of current source and a private extraction of
+  baseline `0a8701ea` both report **11 findings in the same eight byte-unchanged
+  files** (all `[side-tab]`, same lines); zero new findings. **The clean full-scan
+  gate is still unsatisfied**, exit 2. No baseline waiver or rendered
+  accessibility acceptance is implied.
+
+Local raw receipts are under this worktree's `.scratch/bretagne/` (not a
+production artifact or credential store). The missing-only publication-plan
+blocker above and unverified live regional row availability remain explicit
+handoff requirements, not hidden successful gates.
