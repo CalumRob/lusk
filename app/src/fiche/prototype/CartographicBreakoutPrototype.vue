@@ -197,11 +197,13 @@ useCahierExportPublication(() => ({
     maps: modes.map((mode) => ({
       id: mode.key,
       label: categoryLabel(mode.key),
-      declared: categoryFor(mode.key) !== null,
+      // The plate always renders all three inline network maps; a numeric bar
+      // category is unrelated to whether the map asset is required/drawn.
+      declared: true,
       loaded: loadedInlineModes.value.has(mode.key),
       unavailable: unavailableInlineModes.value.has(mode.key),
       // The plate draws the inline asset; the inspection gallery is not export content.
-      inlineUrl: categoryFor(mode.key) !== null ? mapUrl(mode.key) : null,
+      inlineUrl: mapUrl(mode.key),
     })),
     legend: 'none',
     legendDetail: null,

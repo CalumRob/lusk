@@ -483,12 +483,13 @@ export function mobiliteBarResourceNotes(options: {
 export function mobiliteBarsAccessibleLabel(options: {
   figure: MobiliteBarsFigureEvidence
   showComparison: boolean
+  comparisonNone?: boolean
 }): string {
-  const { figure, showComparison } = options
+  const { figure, showComparison, comparisonNone = false } = options
   const readings = figure.categories
     .map((category) => mobiliteBarCategoryAria({ figure, category, showComparison }))
     .join(' ; ')
-  const notes = mobiliteBarResourceNotes({ figure }).join(' ')
+  const notes = mobiliteBarResourceNotes({ figure, comparisonNone }).join(' ')
   return `${figure.figureTitle}. Barres verticales groupées par ${figure.xAxisTitle.toLocaleLowerCase('fr-FR')}, en ${figure.unit}. ${readings}. Axe horizontal : ${figure.xAxisTitle}. Axe vertical : ${figure.yAxisTitle}.${notes ? ` ${notes}` : ''}`
 }
 
@@ -682,22 +683,56 @@ export interface CahierCurveGridPoint {
   readonly mobile: boolean
 }
 
+function curvePointLabel(figure: CahierMobiliteCurveInput, detail: string): string {
+  const point = figure.points.find((candidate) => candidate.fact.detail === detail)
+  return point?.fact.detailLabel ?? point?.label ?? detail
+}
+
 /**
- * The declared producer grid, in metadata order. There is no fallback to the
- * point list: a figure without declared ticks has no labels, as on screen.
+ * The native trajectory contract:
+ * 1. declared ticks keep their metadata order; tick.numericValue is the native
+ *    coordinate, then the declared numeric axis, then the point's axisValue;
+ * 2. without ticks, the declared numeric axis supplies the labels/order;
+ * 3. without axis values, published points with a finite axisValue supply the
+ *    coordinates in their published order.
+ * Identity is always the detail; no array index becomes a coordinate.
  */
 export function mobiliteCurveGrid(figure: CahierMobiliteCurveInput): readonly CahierCurveGridPoint[] {
-  return (figure.trajectory?.ticks ?? []).flatMap((tick) => {
-    const axisValue = mobiliteCurveAxisForDetail(figure, tick.detail)
-    return axisValue === null
-      ? []
-      : [{
-        detail: tick.detail,
-        axisValue,
-        label: mobiliteCurveTickLabel(tick, axisValue),
-        mobile: tick.mobile === true,
-      }]
-  })
+  const ticks = figure.trajectory?.ticks ?? []
+  if (ticks.length) {
+    return ticks.flatMap((tick) => {
+      const axisValue = typeof tick.numericValue === 'number' && Number.isFinite(tick.numericValue)
+        ? tick.numericValue
+        : figure.points.find((point) => point.fact.detail === tick.detail)?.fact.axisValue
+          ?? mobiliteCurveAxisForDetail(figure, tick.detail)
+      return axisValue === null || axisValue === undefined || !Number.isFinite(axisValue)
+        ? []
+        : [{
+          detail: tick.detail,
+          axisValue,
+          label: mobiliteCurveTickLabel(tick, axisValue),
+          mobile: tick.mobile === true,
+        }]
+    })
+  }
+  if (figure.axis?.values.length) {
+    return figure.axis.values.map((value) => ({
+      detail: value.detail,
+      axisValue: value.numericValue,
+      label: mobiliteCurveTickLabel({ label: curvePointLabel(figure, value.detail) }, value.numericValue),
+      mobile: false,
+    }))
+  }
+  return figure.points.flatMap((point) => {
+    const axisValue = point.fact.axisValue
+    if (typeof axisValue !== 'number' || !Number.isFinite(axisValue)) return []
+    return [{
+      detail: point.fact.detail ?? '',
+      axisValue,
+      label: mobiliteCurveTickLabel({ label: curvePointLabel(figure, point.fact.detail ?? '') }, axisValue),
+      mobile: false,
+    }]
+  }).filter((point) => point.detail !== '')
 }
 
 export function mobiliteCurveCurvesCoincide(figure: CahierMobiliteCurveInput): boolean {
@@ -785,6 +820,26 @@ export function mobiliteCurveComparisonDetail(
     statistic: figure.comparison.statistic === 'mean' ? 'Moyenne' : 'Médiane',
     label: scope,
   }
+}
+
+/** The native curve's comparison status copy, shared by screen and export. */
+export function mobiliteCurveComparisonStateText(options: {
+  figure: CahierMobiliteCurveInput
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  error?: string
+  comparisonNone?: boolean
+}): string | null {
+  const { figure, status, error, comparisonNone = false } = options
+  if (comparisonNone) return null
+  if (status === 'loading') return 'Comparaison en cours de chargement.'
+  if (status === 'error') {
+    return figure.unavailableComparisons?.length
+      ? `Comparaison indisponible : ${figure.unavailableComparisons.join(', ')}.`
+      : `Comparaison indisponible : ${error ?? 'la lecture a échoué.'}`
+  }
+  if (status === 'unavailable') return 'Aucun groupe comparé actif.'
+  if (figure.comparison === null) return 'Aucune courbe de référence disponible pour cette sélection.'
+  return null
 }
 
 export function mobiliteCurveMarkerRankAria(options: {

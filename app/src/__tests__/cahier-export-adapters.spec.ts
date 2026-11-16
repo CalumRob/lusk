@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { AedarFact } from '@/fiche/content/aedarApiClient'
 import type { AedarComparisonCell } from '@/fiche/content/aedarComparisonClient'
 import { AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from '@/fiche/content/aedarTimeRampFacts'
+import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import type {
   AedarEquipmentExplorerEvidence,
   ContentSection,
@@ -575,6 +576,8 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     expect(table.columns.map((column) => [column.key, column.kind])).toEqual([
       ['focal', 'focal'], ['comparison', 'comparison'],
     ])
+    expect(table.columns[1]?.label).toBe(GROUPE_COMPARE_LABEL)
+    expect(table.columns[0]?.label).toBe(figure.xAxisTitle)
     expect(table.rows.map((row) => [row.key, row.cells[0]?.display, row.cells[0]?.unit, row.cells[0]?.raw]))
       .toEqual([
         ['bike:total', '8', 'km / 1 000 hab.', false],
@@ -600,6 +603,21 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     expect(hiddenTable.tables[0]?.rows.every((row) => row.cells.length === 1)).toBe(true)
     expect(hiddenTable.comparisonLabel).toBeNull()
     expect(hiddenTable.accessibleLabel).not.toContain('Groupe comparé')
+
+    const sparse = cloneSection(fixture, 'reseaux', (entry) => {
+      entry.evidence.figure = figure
+      entry.evidence.figure.unavailableResources = ['Ressource test']
+      entry.evidence.figure.unavailableComparisons = ['Comparaison test']
+    })
+    const empty = captureCahierSection(inputFor(fixture, sparse, [
+      layer('bars', {}, 'mobilite-comparison-bars'),
+    ], { control: { ...fixture.control, selection: { etat: 'vide' } } }))
+    const emptyProjection = projeterRequeteExportFigures(requestFor(empty))[0]!
+    if (emptyProjection.family !== 'mobilite-bars') throw new Error('bars expected')
+    expect(emptyProjection.tables[0]?.notes).toEqual(['Publication indisponible : Ressource test'])
+    expect(emptyProjection.unavailable.map((item) => item.kind)).toEqual(['resource'])
+    expect(emptyProjection.tables[0]?.columns.map((column) => column.key)).toEqual(['focal'])
+    expect(emptyProjection.accessibleLabel).not.toContain('Comparaison indisponible')
   })
 
   it('keeps the paired ratio reference independent from the hidden bars layer', () => {
@@ -792,6 +810,9 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
       rank: { position: 2, size: 5 },
       rankDisplay: '2e/5',
     })
+    expect(projection.marker?.rankAria).toContain('2e/5')
+    expect(projection.marker?.rankAria).toContain('communes bretonnes')
+    expect(projection.marker?.rankAria).toContain('plus = mieux')
     expect(projection.tables[0]?.columns.map((column) => column.kind)).toEqual(['focal', 'comparison'])
     expect(projection.tables[0]?.rows.map((row) => row.key)).toEqual(['t0000', 't0090', 't0015'])
 
@@ -804,5 +825,20 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     expect(hiddenProjection.marker?.rank).toBeNull()
     expect(hiddenProjection.comparisonLabel).toBeNull()
     expect(hiddenProjection.tables[0]?.columns.map((column) => column.kind)).toEqual(['focal'])
+
+    // Declared metadata ticks are optional when the producer numeric axis is
+    // present: the source-contract axis owns rows/order rather than a fallback
+    // list or an array index.
+    const withoutTicks = cloneSection(fixture, 'visiter-la-bretagne', (entry) => {
+      entry.evidence = { ...evidence, trajectory: null }
+    })
+    const withoutTicksCapture = captureCahierSection(inputFor(fixture, withoutTicks, [
+      layer('curve', {}, 'mobilite-raccordement-curve'),
+    ]))
+    const withoutTicksProjection = projeterRequeteExportFigures(requestFor(withoutTicksCapture))[0]!
+    if (withoutTicksProjection.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(withoutTicksProjection.points.map((reading) => [reading.detail, reading.axisValue]))
+      .toEqual([['t0015', 15], ['t0000', 0], ['t0090', 90]])
+    expect(withoutTicksProjection.tables[0]?.rows).toHaveLength(3)
   })
 })

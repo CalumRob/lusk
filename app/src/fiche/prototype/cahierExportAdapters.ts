@@ -7,6 +7,7 @@
  * so a PDF table cannot tell a different story from the screen.
  */
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
+import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import {
   AEDAR_RAMP_MODES,
 } from '@/fiche/content/aedarTimeRampFacts'
@@ -36,6 +37,8 @@ import {
   mobiliteBarsAccessibleLabel,
   mobiliteComparisonAria,
   mobiliteCurveAccessibleLabel,
+  mobiliteCurveComparisonStateText,
+  mobiliteCurveMarkerRankAria,
   mobiliteCurveReadings,
   mobiliteRatioAriaLabel,
   mobiliteRatioDisplayValue,
@@ -412,7 +415,7 @@ function rampTable(options: {
     ...(comparisonDisplayed
       ? series.map((entry) => ({
         key: `${entry.key}:comparison`,
-        label: `Groupe comparé — ${entry.label}`,
+        label: `${GROUPE_COMPARE_LABEL} — ${entry.label}`,
         unit: timeRamp.yAxis.unit || null,
         kind: 'comparison' as const,
         seriesKey: entry.key,
@@ -579,7 +582,7 @@ export function projectOverview(
   const columns: CahierTableColumn[] = [
     { key: 'value', label: figure.model.scalarFigureTitle, unit: null, kind: 'focal', seriesKey: null },
     ...(comparisonDisplayed ? [{
-      key: 'comparison', label: 'Groupe comparé', unit: null, kind: 'comparison' as const, seriesKey: null,
+      key: 'comparison', label: GROUPE_COMPARE_LABEL, unit: null, kind: 'comparison' as const, seriesKey: null,
     }] : []),
   ]
   const rows = scalars.map((scalar) => ({
@@ -823,7 +826,7 @@ export function projectExplorer(
     },
     ...(comparisonVisible ? [{
       key: `${category.key}:comparison`,
-      label: `Groupe comparé — ${category.axisLabel}`,
+      label: `${GROUPE_COMPARE_LABEL} — ${category.axisLabel}`,
       unit: model.distributionValueUnit,
       kind: 'comparison' as const,
       seriesKey: null,
@@ -911,11 +914,13 @@ export function projectBars(
   figure: Extract<CahierCaptureFigure, { family: 'mobilite-bars' }>,
 ): CahierBarsProjection {
   const evidence = figure.model.figure
-  const showComparison = layerDisplayed(capture, figure.slot)
+  const comparisonNone = capture.comparison.absent === 'empty-selection'
+    || capture.comparison.absent === 'not-eligible'
+  const showComparison = !comparisonNone && layerDisplayed(capture, figure.slot)
   const rows: CahierTableRow[] = []
   const notes: string[] = [...mobiliteBarResourceNotes({
     figure: evidence,
-    comparisonNone: capture.comparison.absent === 'empty-selection',
+    comparisonNone,
   })]
   for (const category of evidence.categories) {
     const readings = mobiliteBarReadings({ figure: evidence, category, showComparison })
@@ -1015,7 +1020,7 @@ export function projectBars(
     { key: 'focal', label: evidence.xAxisTitle, unit: evidence.unit, kind: 'focal', seriesKey: null },
     ...(showComparison || ratio?.comparisonDisplayed
       ? [{
-        key: 'comparison', label: 'Groupe comparé', unit: evidence.unit, kind: 'comparison' as const, seriesKey: null,
+        key: 'comparison', label: GROUPE_COMPARE_LABEL, unit: evidence.unit, kind: 'comparison' as const, seriesKey: null,
       }]
       : []),
   ]
@@ -1023,7 +1028,11 @@ export function projectBars(
     family: 'mobilite-bars',
     slot: figure.slot,
     title: evidence.figureTitle,
-    accessibleLabel: mobiliteBarsAccessibleLabel({ figure: evidence, showComparison }),
+    accessibleLabel: mobiliteBarsAccessibleLabel({
+      figure: evidence,
+      showComparison,
+      comparisonNone,
+    }),
     tables: [{
       key: figure.slot,
       title: evidence.figureTitle,
@@ -1038,10 +1047,12 @@ export function projectBars(
         kind: 'resource' as const,
         message: `Publication indisponible : ${label}`,
       })),
-      ...(evidence.unavailableComparisons ?? []).map((label) => ({
-        kind: 'comparison' as const,
-        message: `Comparaison indisponible : ${label}`,
-      })),
+      ...(comparisonNone
+        ? []
+        : (evidence.unavailableComparisons ?? []).map((label) => ({
+          kind: 'comparison' as const,
+          message: `Comparaison indisponible : ${label}`,
+        }))),
     ],
     figureTitle: evidence.figureTitle,
     unit: evidence.unit,
@@ -1114,7 +1125,7 @@ export function projectShare(
       columns: [
         { key: 'focal', label: evidence.territoryName, unit: mobiliteShareDisplayUnit(evidence), kind: 'focal', seriesKey: null },
         ...(displayed ? [{
-          key: 'comparison', label: 'Groupe comparé', unit: mobiliteShareDisplayUnit(evidence),
+          key: 'comparison', label: GROUPE_COMPARE_LABEL, unit: mobiliteShareDisplayUnit(evidence),
           kind: 'comparison' as const, seriesKey: null,
         }] : []),
       ],
@@ -1161,6 +1172,8 @@ export function projectCurve(
 ): CahierCurveProjection {
   const evidence = figure.model
   const displayed = layerDisplayed(capture, 'curve')
+  const comparisonNone = capture.comparison.absent === 'empty-selection'
+    || capture.comparison.absent === 'not-eligible'
   const readings = mobiliteCurveReadings({ figure: evidence, showComparison: displayed })
   const unit = evidence.points[0]?.fact.unit ?? '%'
   const unavailable: readonly CahierUnavailableItem[] = [
@@ -1173,16 +1186,23 @@ export function projectCurve(
       message: `Comparaison indisponible : ${label}`,
     })),
   ]
+  const comparisonStateText = mobiliteCurveComparisonStateText({
+    figure: evidence,
+    status: capture.comparison.status,
+    error: capture.comparison.error ?? undefined,
+    comparisonNone,
+  })
   const marker = evidence.trajectory?.marker
   const markerReading = marker
     ? readings.find((reading) => reading.detail === marker.detail) ?? null
     : null
   const markerValue = evidence.markerValue
-  const markerRank = displayed && markerValue?.fact.detail === marker?.detail
+  const candidateMarkerRank = displayed && markerValue?.fact.detail === marker?.detail
     ? markerValue?.fact.comparison?.rank ?? null
     : null
+  const markerRank = formatServedRank(candidateMarkerRank) ? candidateMarkerRank : null
   const markerRankDisplay = formatServedRank(markerRank)
-  const markerRankAria = formatServedRankAria(markerRank)
+  const markerRankAria = mobiliteCurveMarkerRankAria({ figure: evidence, showComparison: displayed })
   const rows = readings.map((reading) => ({
     key: reading.detail,
     label: reading.label,
@@ -1208,7 +1228,10 @@ export function projectCurve(
     accessibleLabel: mobiliteCurveAccessibleLabel({
       figure: evidence,
       showComparison: displayed,
-      notes: unavailable.map((item) => item.message),
+      notes: [
+        ...unavailable.map((item) => item.message),
+        ...(comparisonStateText ? [comparisonStateText] : []),
+      ],
     }),
     tables: [{
       key: 'curve',
@@ -1216,7 +1239,7 @@ export function projectCurve(
       columns: [
         { key: 'focal', label: evidence.territoryName, unit, kind: 'focal', seriesKey: null },
         ...(displayed ? [{
-          key: 'comparison', label: 'Groupe comparé', unit, kind: 'comparison' as const, seriesKey: null,
+          key: 'comparison', label: GROUPE_COMPARE_LABEL, unit, kind: 'comparison' as const, seriesKey: null,
         }] : []),
       ],
       rows,

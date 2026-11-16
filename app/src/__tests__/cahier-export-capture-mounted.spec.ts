@@ -1201,6 +1201,28 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    ['loading', 'Comparaison en cours de chargement.'],
+    ['unavailable', 'Aucun groupe comparé actif.'],
+    ['error', 'Comparaison indisponible'],
+  ] as const)('keeps the mounted curve accessible state in the projection (%s)', async (status, expected) => {
+    const { wrapper } = await render({
+      nativeComparisonStatus: status,
+      nativeComparisonError: 'Lecture échouée',
+    })
+    const capture = captureOf(wrapper, 'visiter-la-bretagne')
+    const projected = projeterRequeteExport(capture, [])
+    expect(projected.status).toBe('ready')
+    if (projected.status !== 'ready') { wrapper.unmount(); return }
+    const projection = projeterRequeteExportFigures(projected.request)[0]!
+    if (projection.family !== 'mobilite-curve') throw new Error('curve expected')
+    const aria = wrapper.get('[data-section="visiter-la-bretagne"] .mobilite-raccordement-curve__svg')
+      .attributes('aria-label')!
+    expect(aria).toBe(projection.accessibleLabel)
+    expect(aria).toContain(expected)
+    wrapper.unmount()
+  })
+
   it('projects the actual car inline asset and owner legend content, never the inspection gallery', async () => {
     const territory = { type: 'commune' as const, code: '22001', name: 'Rennes' }
     const rawLegend = carInlineLegend(territory)
@@ -1340,6 +1362,27 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     const loading = await render()
     expect(captureOf(loading.wrapper, 'aedar-diversity-loss').capabilities.maps.legend).toBe('pending')
     loading.wrapper.unmount()
+  })
+
+  it('keeps all three drawn network maps declared when one numeric bar category is absent', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as typeof fixture.content
+    const networks = content.units
+      .flatMap((unit) => unit.sections)
+      .find((section) => section.key === 'reseaux')!
+    if (networks.evidence?.kind !== 'mobilite-networks') throw new Error('networks fixture expected')
+    networks.evidence.figure.categories = networks.evidence.figure.categories
+      .filter((category) => category.key !== 'car')
+    const wrapper = await mountCahier({ content, control: fixture.control })
+    await flushPromises()
+    const maps = seamOf(wrapper).captureSection('reseaux')!.capabilities.maps
+    expect(maps.status).toBe('pending')
+    expect(maps.items.map((item) => [item.id, item.declared, item.inlineUrl])).toEqual([
+      ['car', true, 'https://images.calumrobertson.fr/maps/v1/22001-car-inline.webp'],
+      ['walk', true, 'https://images.calumrobertson.fr/maps/v1/22001-walk-inline.webp'],
+      ['bike', true, 'https://images.calumrobertson.fr/maps/v1/22001-bike-inline.webp'],
+    ])
+    wrapper.unmount()
   })
 
   it('captures real network map owner transitions with no invented legend', async () => {

@@ -13,6 +13,7 @@ import {
   mobiliteBarTooltipRows,
   mobiliteBarsAccessibleLabel,
   mobiliteCurveAccessibleLabel,
+  mobiliteCurveGrid,
   mobiliteCurveReadings,
   mobiliteCurveTooltipRows,
   mobiliteRatioAriaLabel,
@@ -313,12 +314,47 @@ describe('Mobilité coverage-share and raccordement readings (#1022)', () => {
     const hiddenRows = mobiliteCurveTooltipRows({ figure, reading: hidden[1]!, showComparison: false })
     expect(hiddenRows[0]?.comparison).toBeUndefined()
 
-    const noTicks = { ...figure, trajectory: null }
-    expect(mobiliteCurveReadings({ figure: noTicks, showComparison: true })).toEqual([])
+    // Declared ticks are omitted but the producer numeric axis still owns the
+    // coordinates/order; the point list is not used as an index axis.
+    const labels: Record<string, string> = {
+      t0000: '0 min', t0015: '15 min', t0030: '30 min', t0090: '90 min',
+    }
+    const noTicks = {
+      ...figure,
+      trajectory: null,
+      points: figure.points.map((point) => ({
+        ...point,
+        label: labels[point.fact.detail ?? ''] ?? point.label,
+      })),
+    }
+    const noTicksGrid = mobiliteCurveGrid(noTicks)
+    expect(noTicksGrid.map((tick) => [tick.detail, tick.axisValue])).toEqual([
+      ['t0030', 30], ['t0000', 0], ['t0090', 90], ['t0015', 15],
+    ])
+    expect(mobiliteCurveReadings({ figure: noTicks, showComparison: true })).toHaveLength(4)
     const noTicksLabel = mobiliteCurveAccessibleLabel({ figure: noTicks, showComparison: true, notes: [] })
-    expect(noTicksLabel).toContain('Territoire : .')
-    expect(noTicksLabel).not.toContain('15 min')
-    expect(noTicksLabel).not.toContain('90 min')
+    expect(noTicksLabel).toContain('Territoire : 30 min : 25 % ; 0 min : 0 % ; 90 min : 90 % ; 15 min : Indisponible')
+
+    // No ticks and no declared axis: finite point axisValues preserve reference order.
+    const noAxis = { ...figure, trajectory: null, axis: null }
+    expect(mobiliteCurveGrid(noAxis).map((tick) => [tick.detail, tick.axisValue])).toEqual([
+      ['t0030', 30], ['t0000', 0], ['t0090', 90], ['t0015', 15],
+    ])
+
+    // A native tick coordinate wins over the axis lookup; it is never replaced
+    // by the array position or the detail string.
+    const nativeTickCoordinate = {
+      ...figure,
+      trajectory: {
+        ...figure.trajectory!,
+        ticks: [
+          { detail: 't0000', label: '0', numericValue: 1000 },
+          { detail: 't0090', label: '90 min', numericValue: 2000 },
+        ],
+      },
+    }
+    expect(mobiliteCurveGrid(nativeTickCoordinate).map((tick) => [tick.detail, tick.axisValue]))
+      .toEqual([['t0000', 1000], ['t0090', 2000]])
   })
 })
 

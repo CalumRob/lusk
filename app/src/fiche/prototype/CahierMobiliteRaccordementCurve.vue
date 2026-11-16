@@ -32,6 +32,7 @@ import ComparisonUnavailableCue from '@/components/fiche/ComparisonUnavailableCu
 import {
   mobiliteCurveAccessibleLabel,
   mobiliteCurveAxisForDetail,
+  mobiliteCurveComparisonStateText,
   mobiliteCurveCurvesCoincide,
   mobiliteCurveGrid,
   mobiliteCurveReadings,
@@ -84,6 +85,8 @@ const pinnedTickKey = ref<string | null>(null)
 const selectedTickKey = computed(() => pinnedTickKey.value ?? hoveredTickKey.value)
 
 function axisForFact(fact: NumericFact): number | null {
+  const declared = curveGrid.value.find((tick) => tick.detail === fact.detail)
+  if (declared) return declared.axisValue
   if (typeof fact.axisValue === 'number' && Number.isFinite(fact.axisValue)) return fact.axisValue
   return mobiliteCurveAxisForDetail(props.figure, fact.detail)
 }
@@ -198,7 +201,7 @@ const visibleXTicks = computed<readonly CahierFigureAxisTick[]>(() => {
 
 const marker = computed(() => props.figure.trajectory?.marker ?? null)
 const markerAxisValue = computed(() => marker.value
-  ? mobiliteCurveAxisForDetail(props.figure, marker.value.detail)
+  ? curveGrid.value.find((tick) => tick.detail === marker.value!.detail)?.axisValue ?? null
   : null)
 const markerX = computed(() => markerAxisValue.value === null ? null : xForAxis(markerAxisValue.value))
 
@@ -223,18 +226,12 @@ function pointAt(detail: string, points: readonly { fact: NumericFact }[]): Nume
   return points.find((point) => point.fact.detail === detail)?.fact ?? null
 }
 
-const comparisonStateText = computed(() => {
-  if (props.comparisonNone) return null
-  if (props.comparison.status === 'loading') return 'Comparaison en cours de chargement.'
-  if (props.comparison.status === 'error') {
-    return props.figure.unavailableComparisons?.length
-      ? `Comparaison indisponible : ${props.figure.unavailableComparisons.join(', ')}.`
-      : `Comparaison indisponible : ${props.comparison.error ?? 'la lecture a échoué.'}`
-  }
-  if (props.comparison.status === 'unavailable') return 'Aucun groupe comparé actif.'
-  if (props.figure.comparison === null) return 'Aucune courbe de référence disponible pour cette sélection.'
-  return ''
-})
+const comparisonStateText = computed(() => mobiliteCurveComparisonStateText({
+  figure: props.figure,
+  status: props.comparison.status,
+  error: props.comparison.error,
+  comparisonNone: props.comparisonNone,
+}))
 
 const accessibleLabel = computed(() => mobiliteCurveAccessibleLabel({
   figure: props.figure,

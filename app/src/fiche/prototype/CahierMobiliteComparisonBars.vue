@@ -279,6 +279,7 @@ const resourceNotes = computed(() => mobiliteBarResourceNotes({
 const accessibleLabel = computed(() => mobiliteBarsAccessibleLabel({
   figure: props.figure,
   showComparison: showComparison.value,
+  comparisonNone: props.comparisonNone,
 }))
 const selectedCategoryTitle = computed(() => selectedCategoryIndex.value === null
   ? ''

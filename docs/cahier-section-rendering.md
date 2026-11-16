@@ -145,9 +145,11 @@ second reduced drawing shape. Share projections carry typed owner unavailability
 and the native status message instead of parsing display copy. Ratio scalar and
 overview scalar presentation consume the same shared formatters/ARIA owners as
 the mounted scalars (`—` for an absent value, bare number plus separate unit).
-The raccordement projection consumes the same declared-grid, reading, tooltip
-and accessible-label builders as the mounted curve; a figure without declared
-ticks has no fallback labels.
+The raccordement projection consumes the same grid, reading, status-copy,
+tooltip and accessible-label builders as the mounted curve. Declared ticks keep
+their producer order and `numericValue`; when ticks are omitted, the declared
+numeric axis (or published point `axisValue`) supplies identity/coordinates
+without an array-index policy.
 
 `cahier-export-adapters.spec.ts` covers the nine-section admission and literal
 family expectations; `cahier-export-capture-mounted.spec.ts` projects every
