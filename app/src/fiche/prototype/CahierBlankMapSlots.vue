@@ -15,6 +15,7 @@ import CahierContinuousMapLegend from './CahierContinuousMapLegend.vue'
 import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
 import CahierProse from './CahierProse.vue'
+import { useCahierExportPublication } from './cahierExportVenue'
 
 const props = withDefaults(defineProps<{
   territory: Pick<TerritoryIdentity, 'type' | 'code' | 'name'>
@@ -93,6 +94,28 @@ function slotStateLabel(slotKey: 'car' | 'bike-lts2' | 'transit'): string {
   if (unavailableCarMapCodes.value.has(props.territory.code)) return 'Carte indisponible'
   return 'Carte disponible'
 }
+
+// #1021 — the car map plate publishes the availability it already tracks.
+useCahierExportPublication(() => ({
+  owner: 'map-availability',
+  state: {
+    maps: slots.value.map((slot) => {
+      const carMap = usesCarMap(slot.key)
+      return {
+        id: slot.key,
+        label: slot.label,
+        declared: carMap,
+        loaded: carMap && loadedCarMapCodes.value.has(props.territory.code),
+        unavailable: carMap && unavailableCarMapCodes.value.has(props.territory.code),
+      }
+    }),
+    legend: showCarMapLegend.value
+      ? 'available'
+      : needsCarMapLegend.value
+        ? (legendStatus.value === 'unavailable' ? 'unavailable' : 'pending')
+        : 'none',
+  },
+}))
 
 function markCarMapLoaded(code: string): void {
   loadedCarMapCodes.value = new Set(loadedCarMapCodes.value).add(code)

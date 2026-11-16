@@ -21,6 +21,7 @@ import AedarTravelTimeSelector from './AedarTravelTimeSelector.vue'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import AedarEquipmentQuantileFigureCahier from './AedarEquipmentQuantileFigureCahier.vue'
 import CahierActionButton from './CahierActionButton.vue'
+import { useCahierExportPublication } from './cahierExportVenue'
 
 const props = withDefaults(defineProps<{
   evidence: AedarEquipmentExplorerEvidence
@@ -191,6 +192,21 @@ const selectedTypeLabel = computed(() => selectedFact.value
   ? `${selectedFact.value.typequ_label} (${selectedFact.value.typequ})`
   : 'Type d’équipement indisponible')
 const selectedTypeFigureLabel = computed(() => selectedFact.value?.typequ_label ?? 'Type indisponible')
+// #1021 � equipment identity stays with its only consumer; the capture reads
+// the effective TYPEQU, its acquired detail and the real comparison evidence.
+useCahierExportPublication(() => ({
+  owner: 'aedar-equipment-explorer',
+  state: {
+    typequ: selectedTypequ.value,
+    typequLabel: selectedFact.value?.typequ_label ?? null,
+    selectedDetail: selectedDetail.value,
+    detailStatus: detailStatus.value,
+    comparisonStatus: comparisonStatus.value,
+    comparisonError: comparisonError.value || null,
+    comparison: activeComparison.value,
+    referenceDetail: referenceDetail.value,
+  },
+}))
 const modeEntries = computed<FigureLegendEntry[]>(() => [...AEDAR_RAMP_MODES.map((mode) => ({
   key: mode,
   label: AEDAR_RAMP_MODE_LABELS[mode],

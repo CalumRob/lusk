@@ -10,7 +10,6 @@ import type {
 } from '@/fiche/content/themeContent'
 import {
   CAHIER_EXPORT_MAX_MODES,
-  CAHIER_EXPORT_SLOTS,
   cahierCaptureFamily,
   captureCahierSection,
   projeterRequeteExport,
@@ -360,7 +359,7 @@ describe('Cahier export capture — readiness and map availability (#1021)', () 
     const { content } = cahierExportFixture()
     const section = sectionOf(content, 'aedar-car-overview')
     const publications: CahierExportPublication[] = [{
-      slot: CAHIER_EXPORT_SLOTS.aedarCarMapSlots,
+      slot: '',
       state: {
         owner: 'map-availability',
         state: {

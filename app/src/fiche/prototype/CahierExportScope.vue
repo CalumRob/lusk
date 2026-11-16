@@ -9,15 +9,15 @@ import { useCahierExportSlot, provideCahierExportSlot, useCahierExportSectionReg
 
 const props = defineProps<{
   sectionKey?: string
-  slot?: string
+  captureSlot?: string
 }>()
 
 const parent = useCahierExportSlot()
 const sectionKey = props.sectionKey ?? parent?.sectionKey ?? null
 if (props.sectionKey) useCahierExportSectionRegistration(props.sectionKey)
 if (sectionKey) {
-  const slotPath = props.slot
-    ? (parent?.slotPath ? `${parent.slotPath}/${props.slot}` : props.slot)
+  const slotPath = props.captureSlot
+    ? (parent?.slotPath ? `${parent.slotPath}/${props.captureSlot}` : props.captureSlot)
     : parent?.slotPath ?? ''
   provideCahierExportSlot({ sectionKey, slotPath })
 }

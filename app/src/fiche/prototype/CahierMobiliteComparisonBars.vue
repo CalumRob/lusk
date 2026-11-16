@@ -34,6 +34,7 @@ import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
+import { useCahierExportPublication } from './cahierExportVenue'
 
 type ComparisonState = {
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
@@ -58,6 +59,12 @@ const MAX_BAR_WIDTH = 20
 const UNAVAILABLE_LABEL = 'Indisponible'
 
 const comparisonVisible = ref(true)
+// #1021 — this figure owns its comparison visibility; the capture reads the
+// effective value without moving the toggle into a global owner.
+useCahierExportPublication(() => ({
+  owner: 'mobilite-comparison-bars',
+  state: { comparisonVisible: comparisonVisible.value },
+}))
 const plotElement = ref<HTMLElement | null>(null)
 const hoveredCategoryIndex = ref<number | null>(null)
 const pinnedCategoryIndex = ref<number | null>(null)

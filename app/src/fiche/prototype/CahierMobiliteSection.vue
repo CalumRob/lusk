@@ -26,12 +26,15 @@ import type {
 } from '@/fiche/content/themeContent'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import CahierEvidenceSource from './CahierEvidenceSource.vue'
+import CahierExportScope from './CahierExportScope.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierMobiliteComparisonBars from './CahierMobiliteComparisonBars.vue'
 import CahierMobiliteRaccordementCurve from './CahierMobiliteRaccordementCurve.vue'
 import CahierMobiliteShareTrack from './CahierMobiliteShareTrack.vue'
 import CahierProse from './CahierProse.vue'
 import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
+import { useCahierExportPublication } from './cahierExportVenue'
+import { CAHIER_EXPORT_SLOTS } from './cahierExportCapture'
 
 const props = defineProps<{
   section: MobiliteContentSection
@@ -76,6 +79,20 @@ const share = computed<MobiliteShareEvidence | null>(() =>
 const curve = computed<MobiliteRaccordementEvidence | null>(() =>
   props.section.evidence?.kind === 'mobilite-raccordement' ? props.section.evidence : null,
 )
+
+/**
+ * #1021 — expose the comparison state this delegate actually presents, without
+ * widening its props or moving the shared AEDAR state into it.
+ */
+useCahierExportPublication(() => ({
+  owner: 'mobilite-section',
+  state: {
+    comparisonStatus: effectiveComparison.value.status,
+    comparisonError: effectiveComparison.value.error ?? null,
+    comparisonNone: comparisonNone.value,
+    comparisonIneligible: comparisonIneligible.value,
+  },
+}))
 
 function stampSource(source: ContentSource): AedarEvidenceSource {
   return {
@@ -182,12 +199,14 @@ function ratioAriaLabel(
     :data-unit-key="unit.key"
   >
     <template v-if="networks">
-      <div class="mobilite-networks-maps">
-        <CartographicBreakoutPrototype
-          :territory="networks.territory"
-          :evidence="networks"
-        />
-      </div>
+      <CahierExportScope :capture-slot="CAHIER_EXPORT_SLOTS.mobiliteNetworksMaps">
+        <div class="mobilite-networks-maps">
+          <CartographicBreakoutPrototype
+            :territory="networks.territory"
+            :evidence="networks"
+          />
+        </div>
+      </CahierExportScope>
       <div class="mobilite-section-spread">
         <div class="mobilite-section-copy">
           <CahierProse class="argument-copy" :blocks="networks.prose" />
@@ -202,11 +221,13 @@ function ratioAriaLabel(
         </div>
         <figure class="mobilite-section-figure">
           <figcaption class="cahier-figure-title">{{ networks.figure.figureTitle }}</figcaption>
-          <CahierMobiliteComparisonBars
-            :figure="networks.figure"
-            :comparison="effectiveComparison"
-            :comparison-none="comparisonIneligible"
-          />
+          <CahierExportScope :capture-slot="CAHIER_EXPORT_SLOTS.mobiliteNetworksBars">
+            <CahierMobiliteComparisonBars
+              :figure="networks.figure"
+              :comparison="effectiveComparison"
+              :comparison-none="comparisonIneligible"
+            />
+          </CahierExportScope>
         </figure>
       </div>
     </template>
@@ -231,11 +252,13 @@ function ratioAriaLabel(
         </div>
         <figure class="mobilite-section-figure">
           <figcaption class="cahier-figure-title">{{ column.bars.figureTitle }}</figcaption>
-          <CahierMobiliteComparisonBars
-            :figure="column.bars"
-            :comparison="effectiveComparison"
-            :comparison-none="comparisonIneligible"
-          />
+          <CahierExportScope :capture-slot="column.key">
+            <CahierMobiliteComparisonBars
+              :figure="column.bars"
+              :comparison="effectiveComparison"
+              :comparison-none="comparisonIneligible"
+            />
+          </CahierExportScope>
         </figure>
         <figure class="mobilite-ratio-scalar">
           <CahierFigureScalar
@@ -311,7 +334,9 @@ function ratioAriaLabel(
       </div>
       <figure class="mobilite-section-figure mobilite-section-figure--wide">
         <figcaption class="cahier-figure-title">{{ curve.figureTitle }}</figcaption>
-        <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" :comparison-none="comparisonIneligible" />
+        <CahierExportScope :capture-slot="CAHIER_EXPORT_SLOTS.mobiliteCurve">
+          <CahierMobiliteRaccordementCurve :figure="curve" :comparison="effectiveComparison" :comparison-none="comparisonIneligible" />
+        </CahierExportScope>
       </figure>
     </div>
   </div>

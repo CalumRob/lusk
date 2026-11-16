@@ -30,8 +30,17 @@ import {
 import type { ChapitreDemandStatus } from '@/fiche/content/demandInventory'
 import type { CahierPagination } from './cahierPagination'
 import CahierProse from './CahierProse.vue'
+import CahierExportScope from './CahierExportScope.vue'
 import { CahierSectionBody, cahierSectionRendererFor } from './cahierSectionRenderers'
 import { provideAedarSectionContext } from './aedarSectionContext'
+import { cahierCaptureFamily, captureCahierSection } from './cahierExportCapture'
+import type {
+  CahierAedarCaptureState,
+  CahierCaptureReadiness,
+  CahierExportCapture,
+  CahierExportPublication,
+} from './cahierExportCapture'
+import { provideCahierExportVenue } from './cahierExportVenue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
 const props = withDefaults(defineProps<{
@@ -89,13 +98,113 @@ let emittedChapitre: string | null = null
 
 const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
 const unit = computed(() => units.value[0] ?? null)
-const { comparisonEligible } = provideAedarSectionContext(computed(() => props.content),
+const aedarSection = provideAedarSectionContext(computed(() => props.content),
   computed(() => props.aedarChapterActive !== false),
   computed(() => ({ status: props.comparisonStatus ?? 'idle', error: props.comparisonError, retry: props.retryComparison })),
 )
+const { comparisonEligible } = aedarSection
 function rendererFor(section: ContentSection) {
   return cahierSectionRendererFor(section.evidence, props.aedarAccessEnabled === true)
 }
+
+/**
+ * #1021 — the public capture seam for every section on the shared path. The
+ * venue is provided to the shell's consumers (the future PDF controller) and
+ * exposed as `captureSection`/`captureAll` for tests and the same interface.
+ */
+const captureSections = computed(() => {
+  const records = new Map<string, {
+    section: ContentSection
+    unitKey: string
+    unitLabel: string
+    body: boolean
+  }>()
+  for (const currentUnit of units.value) {
+    for (const section of currentUnit.sections) {
+      records.set(section.key, {
+        section,
+        unitKey: currentUnit.key,
+        unitLabel: currentUnit.label,
+        body: Boolean(rendererFor(section).body),
+      })
+    }
+  }
+  return records
+})
+
+function captureReadiness(section: ContentSection, unitKey: string): CahierCaptureReadiness {
+  if (sectionIsLoading(unitKey)) {
+    return { status: 'pending', reason: 'chapter-loading', availability: section.availability }
+  }
+  if (unitKey !== 'acces-aux-services' && props.chapitresStatut?.[unitKey] === 'error') {
+    return { status: 'error', reason: 'chapter-error', availability: section.availability }
+  }
+  if (sectionIsPending(unitKey)) {
+    return { status: 'pending', reason: 'chapter-pending', availability: section.availability }
+  }
+  if (section.evidence === null || section.availability === 'absent') {
+    return { status: 'unavailable', reason: 'evidence-absent', availability: section.availability }
+  }
+  return {
+    status: 'ready',
+    reason: section.availability === 'complete' ? 'evidence-ready' : 'evidence-incomplete',
+    availability: section.availability,
+  }
+}
+
+function captureAedarState(): CahierAedarCaptureState {
+  return {
+    modes: [...aedarSection.selectedModes.value],
+    horizonMinutes: aedarSection.selectedHorizon.value,
+    comparisonVisible: aedarSection.comparisonVisible.value,
+    comparisonEligible: aedarSection.comparisonEligible.value,
+    chapterActive: aedarSection.chapterActive.value,
+  }
+}
+
+function captureComparisonControl() {
+  const control = controleComparaison.value
+  if (!control) return null
+  return {
+    focal: control.focal,
+    territoires: control.territoires,
+    selection: control.selection,
+    presetDefaut: control.presetDefaut,
+  }
+}
+
+function buildExportCapture(
+  sectionKey: string,
+  publications: readonly CahierExportPublication[],
+): CahierExportCapture | null {
+  const record = captureSections.value.get(sectionKey)
+  if (!record || !record.body) return null
+  const family = record.section.evidence ? cahierCaptureFamily(record.section.evidence.kind) : null
+  const aedarEvidence = family?.startsWith('aedar-') ?? false
+  return captureCahierSection({
+    section: record.section,
+    unit: { key: record.unitKey, label: record.unitLabel },
+    territory: props.content.territory,
+    readiness: captureReadiness(record.section, record.unitKey),
+    comparisonEligible: comparisonEligible.value,
+    comparisonStatus: aedarEvidence
+      ? (props.comparisonStatus ?? 'idle')
+      : (props.nativeComparisonStatus ?? 'idle'),
+    comparisonError: aedarEvidence
+      ? (props.comparisonError ?? null)
+      : (props.nativeComparisonError ?? null),
+    control: captureComparisonControl(),
+    aedar: captureAedarState(),
+    publications,
+  })
+}
+
+const exportVenue = provideCahierExportVenue(buildExportCapture)
+defineExpose({
+  captureSection: exportVenue.captureSection,
+  captureAll: exportVenue.captureAll,
+  captureSectionKeys: exportVenue.sectionKeys,
+})
 
 const pageEntry = computed(
   () => props.pagination.entries.find((entry) => entry.key === unit.value?.key) ?? null,
@@ -445,13 +554,14 @@ onBeforeUnmount(() => {
 
                 </div>
 
-                <CahierSectionBody
-                  v-if="rendererFor(section).body"
-                  :section="section"
-                  :unit="{ key: currentUnit.key, label: currentUnit.label }"
-                  :comparison="{ status: props.nativeComparisonStatus ?? 'idle', error: props.nativeComparisonError, retry: props.retryNativeComparison }"
-                  :enabled="props.aedarAccessEnabled === true"
-                />
+                <CahierExportScope v-if="rendererFor(section).body" :section-key="section.key">
+                  <CahierSectionBody
+                    :section="section"
+                    :unit="{ key: currentUnit.key, label: currentUnit.label }"
+                    :comparison="{ status: props.nativeComparisonStatus ?? 'idle', error: props.nativeComparisonError, retry: props.retryNativeComparison }"
+                    :enabled="props.aedarAccessEnabled === true"
+                  />
+                </CahierExportScope>
                 <div v-else class="evidence-side evidence-placeholder" :role="sectionIsLoading(currentUnit.key) ? 'status' : 'note'">
                   <span>{{ sectionState(section, currentUnit.key) }}</span>
                 </div>

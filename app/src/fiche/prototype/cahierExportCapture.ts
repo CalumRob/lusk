@@ -46,15 +46,12 @@ export const CAHIER_EXPORT_MAX_MODES = 3
 
 /** Stable publication slots shared by the owners and the capture. */
 export const CAHIER_EXPORT_SLOTS = {
-  mobiliteSection: 'mobilite-section',
-  mobiliteNetworksMaps: 'mobilite-networks-maps',
-  mobiliteNetworksBars: 'mobilite-networks-bars',
-  mobiliteStationnementBars: 'mobilite-stationnement-bars',
-  mobiliteRavitaillementBars: 'mobilite-ravitaillement-bars',
-  mobiliteCurve: 'mobilite-curve',
+  mobiliteNetworksMaps: 'maps',
+  mobiliteNetworksBars: 'bars',
+  mobiliteStationnementBars: 'stationnement',
+  mobiliteRavitaillementBars: 'ravitaillement',
+  mobiliteCurve: 'curve',
   aedarEquipment: 'aedar-equipment',
-  aedarCarMapSlots: 'aedar-car-map-slots',
-  aedarDiversityLossMaps: 'aedar-diversity-loss-maps',
 } as const
 
 /** The distinct figure families the shared path actually renders. */
@@ -556,7 +553,7 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
       absent,
     },
     sources: captureSources(evidence),
-    aedar: input.aedar ? deepPlain(input.aedar) : null,
+    aedar: evidence && family?.startsWith('aedar-') ? deepPlain(input.aedar) : null,
     figures: evidence && family
       ? captureFigures({ evidence, family, input, publications })
       : [],
@@ -606,11 +603,6 @@ function captureGeneration(evidence: ContentEvidence | null): CahierCaptureGener
   return { contentVersion: null, referenceContentVersion: null }
 }
 
-function comparisonStatusOf(
-  status: CahierMobiliteSectionCaptureState['comparisonStatus'] | CahierEquipmentCaptureState['comparisonStatus'],
-): CahierCaptureComparison['status'] {
-  return status
-}
 
 function mobiliteSectionPublication(publications: readonly CahierExportPublication[]) {
   return publications.find((publication) => publication.state.owner === 'mobilite-section')
@@ -629,18 +621,18 @@ function captureComparisonStatus(
   if (family === null) return 'idle'
   if (family === 'aedar-equipment-explorer') {
     const explorer = explorerPublication(publications)
-    if (explorer) return comparisonStatusOf(explorer.comparisonStatus)
+    if (explorer) return explorer.comparisonStatus
     return 'idle'
   }
   if (family === 'aedar-equipment-profile' || family === 'aedar-diversity-loss') return 'idle'
   if (family === 'mobilite-bars' || family === 'mobilite-share' || family === 'mobilite-curve') {
     const delegate = mobiliteSectionPublication(publications)
     if (delegate?.state.owner === 'mobilite-section') {
-      return comparisonStatusOf(delegate.state.state.comparisonStatus)
+      return delegate.state.state.comparisonStatus
     }
-    return comparisonStatusOf(input.comparisonStatus)
+    return input.comparisonStatus
   }
-  return comparisonStatusOf(input.comparisonStatus)
+  return input.comparisonStatus
 }
 
 function captureComparisonError(

@@ -88,6 +88,17 @@ function aedarDetail() {
       coverage_status: 'covered',
       measures: {},
       ...aedarSource,
+    }, {
+      territory_id: '22001',
+      territory_type: 'commune' as const,
+      typequ: 'B202',
+      typequ_label: 'Équipement bis',
+      identity: {},
+      n_addresses: 80,
+      n_observed: 80,
+      coverage_status: 'covered',
+      measures: {},
+      ...aedarSource,
     }],
   }
 }
@@ -117,6 +128,30 @@ export function cahierExportFixture(options: {
   const content = resolveMobiliteThemeContent(facts, metadonneesThemesFixtures.mobilite)
   const page3Facts = territoryFactsFor(page3Payload, '22001')
   if (!page3Facts) throw new Error('Page 3 fixture facts missing')
+  // Fixture-only served comparison: the producer-owned counts are placed here,
+  // never computed. They let the mounted curve expose its real comparison layer.
+  page3Facts.mobility.selectedTrajectoryComparison = {
+    statistic: 'mean',
+    scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
+    selectedMemberCount: 3,
+    eligibleCount: 2,
+    modelZeroReasonCounts: {},
+    sourceLineage: [],
+    points: page3Facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe'),
+  }
+  // Producer-declared numeric axis of the published 11-point grid (fixture data).
+  const curveAxis = [
+    ['t0000', 0], ['t0015', 15], ['t0030', 30], ['t0045', 45], ['t0060', 60], ['t0090', 90],
+    ['t0120', 120], ['t0180', 180], ['t0240', 240], ['t0300', 300], ['t0360', 360],
+  ] as const
+  page3Facts.mobility.trajectoryContract = {
+    axisKind: 'duration_minute',
+    axisValues: curveAxis.map(([detail]) => detail),
+    axisNumericValues: curveAxis.map(([, minutes]) => minutes),
+    comparisonPoint: 't0090',
+    comparisonStatistic: 'mean',
+    comparisonScope: 'selected_group',
+  }
   const page3 = [
     buildMobiliteShareSection(page3Facts, metadonneesMobiliteRaccordementFixture),
     buildMobiliteRaccordementSection(page3Facts, metadonneesMobiliteRaccordementFixture),
