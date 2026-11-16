@@ -22,15 +22,21 @@ import type {
   CahierFigureAxisTick,
   CahierFigureGeometry,
   CahierFigureTooltipAnchor,
-  CahierTooltipComparison,
   CahierTooltipRow,
   FigureLegendEntry,
 } from '@/fiche/cahierFigureGrammaire'
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import type { MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
 import type { NumericFact } from '@/fiche/content/territoryFacts'
-import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
+import { formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import ComparisonUnavailableCue from '@/components/fiche/ComparisonUnavailableCue.vue'
+import {
+  mobiliteCurveAriaPercent,
+  mobiliteCurveComparisonDetail,
+  mobiliteCurveReadings,
+  mobiliteCurveTickLabel,
+  mobiliteCurveTooltipRows,
+} from './cahierMobiliteReadings'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
@@ -77,21 +83,8 @@ const hoveredTickKey = ref<string | null>(null)
 const pinnedTickKey = ref<string | null>(null)
 const selectedTickKey = computed(() => pinnedTickKey.value ?? hoveredTickKey.value)
 
-function formatNumber(value: number, maximumFractionDigits = 1): string {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
-}
-
-function percentValue(value: number): number {
-  return Math.max(0, Math.min(100, value * 100))
-}
-
-function visiblePercent(value: number | null): string {
-  return value === null ? UNAVAILABLE_LABEL : formatNumber(percentValue(value))
-}
-
-function ariaPercent(value: number | null, unit: string): string {
-  return value === null ? UNAVAILABLE_LABEL : `${formatNumber(percentValue(value))} ${unit}`
-}
+const ariaPercent = mobiliteCurveAriaPercent
+const tickLabel = mobiliteCurveTickLabel
 
 const axisByDetail = computed(() => new Map(
   (props.figure.axis?.values ?? []).map((value) => [value.detail, value.numericValue]),
@@ -164,13 +157,6 @@ const declaredTicks = computed(() => props.figure.trajectory?.ticks ?? [])
  * published hour labels are kept verbatim. No duplicate « min » is appended
  * when the declared label already carries a unit.
  */
-function tickLabel(tick: { label: string }, axisValue: number): string {
-  if (axisValue > 0 && axisValue < 60 && !/min/iu.test(tick.label)) {
-    return `${formatNumber(axisValue, 0)} min`
-  }
-  return tick.label
-}
-
 const xTicks = computed<readonly CahierFigureAxisTick[]>(() => declaredTicks.value.flatMap((tick) => {
   const axisValue = axisForDetail(tick.detail)
   return axisValue === null
@@ -235,16 +221,12 @@ const comparisonAvailable = computed(() =>
 )
 const showComparison = computed(() => comparisonAvailable.value && comparisonVisible.value)
 
-const comparisonDetail = computed(() => {
-  if (!props.figure.comparison) return null
-  const scope = props.figure.comparison.scope.label
-    ?? props.figure.comparisonLabel?.replace(/^(?:Moyenne|Médiane) des /u, '')
-    ?? 'groupe comparé'
-  return {
-    statistic: props.figure.comparison.statistic === 'mean' ? 'Moyenne' : 'Médiane',
-    label: scope,
-  }
-})
+const curveReadings = computed(() => mobiliteCurveReadings({
+  figure: props.figure,
+  showComparison: showComparison.value,
+}))
+
+const comparisonDetail = computed(() => mobiliteCurveComparisonDetail(props.figure))
 
 const curvesCoincide = computed(() => {
   const comparison = props.figure.comparison
@@ -261,7 +243,7 @@ const publicationNotes = computed(() => [
 const markerComparison = computed(() => props.figure.markerValue?.fact.comparison ?? null)
 const markerRankAria = computed(() => {
   const comparison = markerComparison.value
-  if (!comparison?.rank) return null
+  if (!showComparison.value || !comparison?.rank) return null
   return puceRangDirection(comparison.rank, comparison.direction, comparisonDetail.value?.label)?.phraseAria
     ?? formatServedRankAria(comparison.rank)
 })
@@ -275,11 +257,6 @@ function tickAriaValue(detail: string, points: readonly { fact: NumericFact }[],
 }
 
 const curveUnit = computed(() => props.figure.points[0]?.fact.unit ?? '%')
-
-function comparisonRankForTick(detail: string) {
-  if (!marker.value || marker.value.detail !== detail) return null
-  return props.figure.markerValue?.fact.comparison?.rank ?? null
-}
 
 const comparisonStateText = computed(() => {
   if (props.comparisonNone) return null
@@ -340,31 +317,14 @@ const cursorComparison = computed(() => {
 })
 
 function tooltipRows(detail: string): readonly CahierTooltipRow[] {
-  const unit = curveUnit.value
-  const focal = pointAt(detail, props.figure.points)
-  let comparison: CahierTooltipComparison | undefined
-  if (showComparison.value && props.figure.comparison) {
-    const group = pointAt(detail, props.figure.comparison.points)
-    const rank = comparisonRankForTick(detail)
-    const rankText = formatServedRank(rank)
-    const rankAria = formatServedRankAria(rank)
-    comparison = {
-      value: visiblePercent(group?.value ?? null),
-      rank: rankText,
-      rankEvidence: rank,
-      rankAria,
-      ariaLabel: `${GROUPE_COMPARE_LABEL} : ${ariaPercent(group?.value ?? null, unit)} (${comparisonDetail.value?.statistic ?? 'Moyenne'} des ${comparisonDetail.value?.label ?? 'groupe comparé'})${rankAria ? `. Rang ${rankAria}` : ''}`,
-    }
-  }
-  return [{
-    label: 'Territoire',
-    value: visiblePercent(focal?.value ?? null),
-    tone: 't',
-    marker: 'dot',
-    markerColor: 'var(--brand-500)',
-    ariaLabel: `Territoire : ${ariaPercent(focal?.value ?? null, unit)}`,
-    comparison,
-  }]
+  const reading = curveReadings.value.find((candidate) => candidate.detail === detail)
+  return reading
+    ? mobiliteCurveTooltipRows({
+      figure: props.figure,
+      reading,
+      showComparison: showComparison.value,
+    })
+    : []
 }
 
 const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {

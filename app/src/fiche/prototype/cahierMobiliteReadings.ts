@@ -18,8 +18,10 @@ import type {
   MobiliteBarSegmentEvidence,
   MobiliteBarsFigureEvidence,
   MobiliteRatioEvidence,
+  MobiliteRaccordementEvidence,
+  MobiliteShareEvidence,
 } from '@/fiche/content/themeContent'
-import type { ComparisonRank } from '@/fiche/content/territoryFacts'
+import type { ComparisonRank, NumericFact } from '@/fiche/content/territoryFacts'
 import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
 
@@ -403,4 +405,322 @@ export function mobiliteBarsAccessibleLabel(options: {
     .join(' ; ')
   const notes = mobiliteBarResourceNotes({ figure }).join(' ')
   return `${figure.figureTitle}. Barres verticales groupées par ${figure.xAxisTitle.toLocaleLowerCase('fr-FR')}, en ${figure.unit}. ${readings}. Axe horizontal : ${figure.xAxisTitle}. Axe vertical : ${figure.yAxisTitle}.${notes ? ` ${notes}` : ''}`
+}
+
+/* ------------------------------------------------------------------ *
+ * Coverage share track (#1006) — the two-row 0-100 % figure
+ * ------------------------------------------------------------------ */
+
+/** The published share only when the fact is complete; null stays absent. */
+export function mobiliteShareValue(figure: MobiliteShareEvidence): number | null {
+  const fact = figure.value.fact
+  return fact.availability === 'complete' && fact.value !== null && Number.isFinite(fact.value)
+    ? fact.value
+    : null
+}
+
+/** A served reference is drawn only for a ready comparison with an explicit row. */
+export function mobiliteShareReference(options: {
+  figure: MobiliteShareEvidence
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  comparisonNone?: boolean
+}): number | null {
+  const { figure, status, comparisonNone = false } = options
+  if (comparisonNone || status !== 'ready') return null
+  const fact = figure.value.fact.comparison
+  if (!fact?.reference || !Number.isFinite(fact.reference.value)) return null
+  return fact.reference.value
+}
+
+function shareScaledValue(figure: MobiliteShareEvidence, value: number): number {
+  return figure.unit.trim() === '%' ? value * 100 : value
+}
+
+/** The served unit, never an invented percentage. */
+export function mobiliteShareDisplayUnit(figure: MobiliteShareEvidence): string {
+  return figure.unit.trim() || '%'
+}
+
+/** Visible label: one decimal, the same precision for both rows. */
+export function mobiliteShareVisibleLabel(value: number | null, figure: MobiliteShareEvidence): string {
+  return value === null
+    ? MOBILITE_UNAVAILABLE_LABEL
+    : `${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+      .format(shareScaledValue(figure, value))} ${mobiliteShareDisplayUnit(figure)}`
+}
+
+/** Accessible reading keeps the served value's actual precision. */
+export function mobiliteSharePreciseLabel(value: number | null, figure: MobiliteShareEvidence): string {
+  return value === null
+    ? MOBILITE_UNAVAILABLE_LABEL
+    : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 4 })
+      .format(shareScaledValue(figure, value))} ${mobiliteShareDisplayUnit(figure)}`
+}
+
+export interface CahierMobiliteShareDetail {
+  readonly statistic: 'Moyenne' | 'Médiane'
+  readonly rank: string | null
+  readonly direction: string | null
+}
+
+export function mobiliteShareComparisonDetail(
+  figure: MobiliteShareEvidence,
+): CahierMobiliteShareDetail | null {
+  const comparison = figure.value.fact.comparison
+  if (!comparison) return null
+  return {
+    statistic: comparison.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane',
+    rank: formatServedRankAria(comparison.rank),
+    direction: LIBELLES_DIRECTION[comparison.direction] ?? null,
+  }
+}
+
+export function mobiliteSharePublicationNotes(options: {
+  figure: MobiliteShareEvidence
+  comparisonNone?: boolean
+}): readonly string[] {
+  const { figure, comparisonNone = false } = options
+  return [
+    ...(figure.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
+    ...(comparisonNone
+      ? []
+      : (figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`)),
+  ]
+}
+
+export const MOBILITE_SHARE_REMAINDER_READING =
+  'Barre de 0 à 100 % ; le reste de la barre est le complément de la part publiée.'
+
+export function mobiliteShareTerritoryAria(figure: MobiliteShareEvidence): string {
+  return [
+    figure.figureTitle,
+    `${figure.territoryName} : ${mobiliteSharePreciseLabel(mobiliteShareValue(figure), figure)}`,
+    MOBILITE_SHARE_REMAINDER_READING,
+    ...(figure.unavailableResources ?? []).map((label) => `Publication indisponible : ${label}`),
+  ].join('. ')
+}
+
+export function mobiliteShareComparisonAria(options: {
+  figure: MobiliteShareEvidence
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  comparisonNone?: boolean
+}): string {
+  const { figure, status, comparisonNone = false } = options
+  if (status === 'loading') {
+    return `${figure.figureTitle}. ${GROUPE_COMPARE_LABEL} : chargement en cours.`
+  }
+  const reference = mobiliteShareReference({ figure, status, comparisonNone })
+  const detail = mobiliteShareComparisonDetail(figure)
+  if (reference === null || !detail) {
+    return [
+      figure.figureTitle,
+      `${GROUPE_COMPARE_LABEL} : indisponible`,
+      ...(comparisonNone
+        ? []
+        : (figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`)),
+    ].join('. ')
+  }
+  return [
+    figure.figureTitle,
+    `${GROUPE_COMPARE_LABEL} : ${mobiliteSharePreciseLabel(reference, figure)}`,
+    figure.comparisonLabel ?? `${detail.statistic} du groupe comparé`,
+    detail.rank ? `Rang ${detail.rank}` : detail.direction,
+    MOBILITE_SHARE_REMAINDER_READING,
+    ...(comparisonNone
+      ? []
+      : (figure.unavailableComparisons ?? []).map((label) => `Comparaison indisponible : ${label}`)),
+  ].filter(Boolean).join('. ')
+}
+
+export function mobiliteShareStateMessage(options: {
+  figure: MobiliteShareEvidence
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  error?: string
+  comparisonNone?: boolean
+}): string | null {
+  const { figure, status, error, comparisonNone = false } = options
+  if (comparisonNone) return null
+  if (status === 'loading') return 'Chargement du groupe comparé…'
+  if (status === 'error') {
+    return figure.unavailableComparisons?.length ? null : error ?? 'Groupe comparé indisponible.'
+  }
+  if (status === 'unavailable') return 'Groupe comparé indisponible pour cette sélection.'
+  if (status === 'idle') return 'Aucune comparaison active : aucun repère de groupe comparé n’est affiché.'
+  if (mobiliteShareReference({ figure, status }) === null
+    && (figure.unavailableComparisons?.length ?? 0) === 0) {
+    return 'Aucun repère de groupe comparé disponible pour cette sélection.'
+  }
+  return null
+}
+
+/* ------------------------------------------------------------------ *
+ * Raccordement curve — declared grid, points and published marker
+ * ------------------------------------------------------------------ */
+
+export function mobiliteCurvePercent(value: number): number {
+  return Math.max(0, Math.min(100, value * 100))
+}
+
+export function mobiliteCurveVisiblePercent(value: number | null): string {
+  return value === null
+    ? MOBILITE_UNAVAILABLE_LABEL
+    : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(mobiliteCurvePercent(value))
+}
+
+export function mobiliteCurveAriaPercent(value: number | null, unit: string): string {
+  return value === null
+    ? MOBILITE_UNAVAILABLE_LABEL
+    : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(mobiliteCurvePercent(value))} ${unit}`
+}
+
+export function mobiliteCurveTickLabel(tick: { label: string }, axisValue: number): string {
+  if (axisValue > 0 && axisValue < 60 && !/min/iu.test(tick.label)) {
+    return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(axisValue)} min`
+  }
+  return tick.label
+}
+
+export function mobiliteCurveAxisForDetail(
+  figure: MobiliteRaccordementEvidence,
+  detail: string | null,
+): number | null {
+  if (!detail) return null
+  const declared = figure.axis?.values.find((value) => value.detail === detail)?.numericValue
+  return declared !== undefined && Number.isFinite(declared) ? declared : null
+}
+
+function mobiliteCurveAxisForFact(
+  figure: MobiliteRaccordementEvidence,
+  fact: NumericFact,
+): number | null {
+  if (typeof fact.axisValue === 'number' && Number.isFinite(fact.axisValue)) return fact.axisValue
+  return mobiliteCurveAxisForDetail(figure, fact.detail)
+}
+
+function mobiliteCurvePointAt(
+  points: readonly { fact: NumericFact }[],
+  detail: string,
+): NumericFact | null {
+  return points.find((point) => point.fact.detail === detail)?.fact ?? null
+}
+
+export interface CahierCurveReading {
+  readonly detail: string
+  readonly axisValue: number
+  readonly label: string
+  /** Exact native share; null stays absent. */
+  readonly value: number | null
+  readonly display: string
+  readonly aria: string
+  readonly comparisonValue: number | null
+  readonly comparisonDisplay: string | null
+  readonly comparisonAria: string | null
+  readonly comparisonRank: ComparisonRank | null
+  readonly comparisonRankDisplay: string | null
+  readonly comparisonRankAria: string | null
+}
+
+/**
+ * Every declared grid point, joined by its detail identity. Values are the
+ * producer's shares; nothing is smoothed, resampled or re-based.
+ */
+export function mobiliteCurveReadings(options: {
+  figure: MobiliteRaccordementEvidence
+  showComparison: boolean
+}): readonly CahierCurveReading[] {
+  const { figure, showComparison } = options
+  const unit = figure.points[0]?.fact.unit ?? '%'
+  const declared = figure.trajectory?.ticks ?? []
+  const rows = declared.length
+    ? declared.flatMap((tick) => {
+      const axisValue = mobiliteCurveAxisForDetail(figure, tick.detail)
+      return axisValue === null ? [] : [{ detail: tick.detail, axisValue, label: mobiliteCurveTickLabel(tick, axisValue) }]
+    })
+    : figure.points.flatMap((point) => {
+      const axis = mobiliteCurveAxisForFact(figure, point.fact)
+      return axis === null || !point.fact.detail
+        ? []
+        : [{ detail: point.fact.detail, axisValue: axis, label: point.fact.detail }]
+    })
+  return rows.map((row) => {
+    const value = mobiliteCurvePointAt(figure.points, row.detail)?.value ?? null
+    const comparison = showComparison && figure.comparison
+      ? mobiliteCurvePointAt(figure.comparison.points, row.detail)
+      : null
+    // A rank is comparison evidence: it disappears with the hidden layer.
+    const rank = showComparison && figure.markerValue?.fact.detail === row.detail
+      ? figure.markerValue.fact.comparison?.rank ?? null
+      : null
+    const comparisonDisplay = comparison ? mobiliteCurveVisiblePercent(comparison.value) : null
+    return {
+      detail: row.detail,
+      axisValue: row.axisValue,
+      label: row.label,
+      value,
+      display: mobiliteCurveVisiblePercent(value),
+      aria: mobiliteCurveAriaPercent(value, unit),
+      comparisonValue: comparison?.value ?? null,
+      comparisonDisplay,
+      comparisonAria: comparison
+        ? mobiliteCurveAriaPercent(comparison.value, unit)
+        : null,
+      comparisonRank: rank,
+      comparisonRankDisplay: formatServedRank(rank),
+      comparisonRankAria: formatServedRankAria(rank),
+    }
+  })
+}
+
+export interface CahierCurveComparisonDetail {
+  readonly statistic: 'Moyenne' | 'Médiane'
+  readonly label: string
+}
+
+export function mobiliteCurveComparisonDetail(
+  figure: MobiliteRaccordementEvidence,
+): CahierCurveComparisonDetail | null {
+  if (!figure.comparison) return null
+  const scope = figure.comparison.scope.label
+    ?? figure.comparisonLabel?.replace(/^(?:Moyenne|Médiane) des /u, '')
+    ?? 'groupe comparé'
+  return {
+    statistic: figure.comparison.statistic === 'mean' ? 'Moyenne' : 'Médiane',
+    label: scope,
+  }
+}
+
+export function mobiliteCurveComparisonTooltip(options: {
+  figure: MobiliteRaccordementEvidence
+  reading: CahierCurveReading
+}): CahierTooltipComparison | undefined {
+  const { figure, reading } = options
+  const detail = mobiliteCurveComparisonDetail(figure)
+  if (!detail || reading.comparisonAria === null) return undefined
+  return {
+    value: reading.comparisonDisplay ?? MOBILITE_UNAVAILABLE_LABEL,
+    rank: reading.comparisonRankDisplay,
+    rankEvidence: reading.comparisonRank,
+    rankAria: reading.comparisonRankAria,
+    ariaLabel: `${GROUPE_COMPARE_LABEL} : ${reading.comparisonAria} (${detail.statistic} des ${detail.label})${reading.comparisonRankAria ? `. Rang ${reading.comparisonRankAria}` : ''}`,
+  }
+}
+
+export function mobiliteCurveTooltipRows(options: {
+  figure: MobiliteRaccordementEvidence
+  reading: CahierCurveReading
+  showComparison: boolean
+}): readonly CahierTooltipRow[] {
+  const { figure, reading, showComparison } = options
+  const unit = figure.points[0]?.fact.unit ?? '%'
+  return [{
+    label: 'Territoire',
+    value: reading.display,
+    tone: 't',
+    marker: 'dot',
+    markerColor: 'var(--brand-500)',
+    ariaLabel: `Territoire : ${mobiliteCurveAriaPercent(reading.value, unit)}`,
+    comparison: showComparison
+      ? mobiliteCurveComparisonTooltip({ figure, reading })
+      : undefined,
+  }]
 }

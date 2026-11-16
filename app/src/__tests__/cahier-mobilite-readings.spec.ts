@@ -3,12 +3,21 @@ import { describe, expect, it } from 'vitest'
 import type {
   ContentFact,
   MobiliteBarsFigureEvidence,
+  MobiliteRaccordementEvidence,
+  MobiliteShareEvidence,
 } from '@/fiche/content/themeContent'
 import type { NumericFact } from '@/fiche/content/territoryFacts'
 import {
   mobiliteBarReadings,
   mobiliteBarTooltipRows,
   mobiliteBarsAccessibleLabel,
+  mobiliteCurveReadings,
+  mobiliteCurveTooltipRows,
+  mobiliteShareComparisonAria,
+  mobiliteSharePreciseLabel,
+  mobiliteShareReference,
+  mobiliteShareValue,
+  mobiliteShareVisibleLabel,
 } from '@/fiche/prototype/cahierMobiliteReadings'
 
 function fact(
@@ -152,5 +161,151 @@ describe('Mobilité compared-bar readings (#1022)', () => {
       label: 't_longueur', value: '10', marker: 'slash',
       ariaLabel: 't_longueur : 10 km (valeur brute)',
     })
+  })
+})
+
+function shareFigure(overrides: Partial<MobiliteShareEvidence> = {}): MobiliteShareEvidence {
+  return {
+    kind: 'mobilite-share',
+    figureTitle: 'Part des bâtiments proches d’un arrêt (≤ 500 m)',
+    territoryName: 'Rennes',
+    unit: '%',
+    comparisonLabel: 'Médiane des communes de la classe de densité',
+    prose: [],
+    sources: [],
+    value: {
+      label: 'Part des bâtiments proches d’un arrêt (≤ 500 m)',
+      fact: {
+        key: 'offre_tc', detail: null, value: 0.9957355031616097, unit: '%',
+        availability: 'complete', provenance: null,
+        comparison: {
+          direction: 'plus-est-mieux',
+          scope: { kind: 'communes-densite', label: 'communes de la classe de densité' },
+          rank: { position: 1, size: 1 },
+          reference: { kind: 'median', value: 0.5 },
+        },
+        comparisonBasis: 'territory-median', reason: null,
+      },
+    },
+    ...overrides,
+  }
+}
+
+describe('Mobilité coverage-share and raccordement readings (#1022)', () => {
+  it('keeps a served share, its precise accessible reading and the singleton rank contract', () => {
+    const figure = shareFigure()
+    expect(mobiliteShareValue(figure)).toBe(0.9957355031616097)
+    expect(mobiliteShareVisibleLabel(mobiliteShareValue(figure), figure)).toBe('99,6 %')
+    expect(mobiliteSharePreciseLabel(mobiliteShareValue(figure), figure)).toBe('99,5736 %')
+    expect(mobiliteShareReference({ figure, status: 'ready' })).toBe(0.5)
+    expect(mobiliteShareReference({ figure, status: 'loading' })).toBeNull()
+    expect(mobiliteShareReference({ figure, status: 'ready', comparisonNone: true })).toBeNull()
+    const aria = mobiliteShareComparisonAria({ figure, status: 'ready' })
+    expect(aria).toContain('Groupe comparé : 50 %')
+    expect(aria).not.toContain('Rang')
+    expect(aria).toContain('Médiane des communes de la classe de densité')
+  })
+
+  it('keeps zero as a valid share and an incomplete value absent', () => {
+    const zero = shareFigure()
+    zero.value = { ...zero.value, fact: { ...zero.value.fact, value: 0 } }
+    expect(mobiliteShareValue(zero)).toBe(0)
+    expect(mobiliteShareVisibleLabel(mobiliteShareValue(zero), zero)).toBe('0,0 %')
+
+    const incomplete = shareFigure()
+    incomplete.value = { ...incomplete.value, fact: { ...incomplete.value.fact, value: null, availability: 'incomplete' } }
+    expect(mobiliteShareValue(incomplete)).toBeNull()
+    expect(mobiliteShareVisibleLabel(mobiliteShareValue(incomplete), incomplete)).toBe('Indisponible')
+  })
+
+  it('reads the declared raccordement grid by detail identity and hides a masked comparison', () => {
+    const point = (detail: string, value: number | null): ContentFact => ({
+      label: detail,
+      fact: {
+        key: 'raccordement_courbe', detail, axisValue: Number(detail.slice(1)),
+        value, unit: '%', availability: 'complete', provenance: null,
+        comparison: null, comparisonBasis: 'territory-median', reason: null,
+      },
+    })
+    const figure: MobiliteRaccordementEvidence = {
+      kind: 'mobilite-raccordement',
+      figureTitle: 'Part de la population bretonne joignable',
+      xAxisTitle: 'Temps de trajet',
+      territoryName: 'Rennes',
+      level: 'commune',
+      comparisonLabel: 'Moyenne des communes bretonnes',
+      prose: [], sources: [],
+      points: [point('t0030', 0.25), point('t0000', 0), point('t0090', 0.9), point('t0015', null)],
+      comparison: {
+        statistic: 'mean',
+        scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
+        selectedMemberCount: 3,
+        eligibleCount: 2,
+        modelZeroReasonCounts: {},
+        points: [point('t0000', 0.1), point('t0015', 0.3), point('t0030', 0.4), point('t0090', 0.8)],
+      },
+      trajectory: {
+        endpoints: ['t0000', 't0090'],
+        axisLabels: { x: 'Temps de trajet', y: 'Population joignable (%)' },
+        ticks: [
+          { detail: 't0000', label: '0' },
+          { detail: 't0090', label: '90 min' },
+          { detail: 't0015', label: '15' },
+          { detail: 't0030', label: '30 min' },
+        ],
+        marker: { detail: 't0090', label: '90 minutes' },
+      },
+      axis: {
+        values: [
+          { detail: 't0030', numericValue: 30 },
+          { detail: 't0000', numericValue: 0 },
+          { detail: 't0090', numericValue: 90 },
+          { detail: 't0015', numericValue: 15 },
+        ],
+        minimum: 0,
+        maximum: 90,
+      },
+      markerValue: {
+        label: '90 minutes',
+        fact: {
+          key: 'raccordement_courbe', detail: 't0090', axisValue: 90, value: 0.9, unit: '%',
+          availability: 'complete', provenance: null,
+          comparison: {
+            direction: 'plus-est-mieux',
+            scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
+            reference: { kind: 'mean', value: 0.8 },
+            rank: { position: 2, size: 5 },
+          },
+          comparisonBasis: 'territory-mean', reason: null,
+        },
+      },
+    }
+
+    const readings = mobiliteCurveReadings({ figure, showComparison: true })
+    expect(readings.map((reading) => [reading.detail, reading.label, reading.display, reading.comparisonDisplay]))
+      .toEqual([
+        ['t0000', '0', '0', '10'],
+        ['t0090', '90 min', '90', '80'],
+        ['t0015', '15 min', 'Indisponible', '30'],
+        ['t0030', '30 min', '25', '40'],
+      ])
+    expect(readings[1]?.comparisonRankDisplay).toBe('2e/5')
+    expect(readings[0]?.comparisonRankDisplay).toBeNull()
+    const rows = mobiliteCurveTooltipRows({
+      figure,
+      reading: readings[1]!,
+      showComparison: true,
+    })
+    expect(rows[0]).toMatchObject({
+      label: 'Territoire',
+      value: '90',
+      comparison: { value: '80', rank: '2e/5' },
+    })
+    expect(rows[0]?.comparison?.ariaLabel).toContain('Rang 2e/5')
+
+    const hidden = mobiliteCurveReadings({ figure, showComparison: false })
+    expect(hidden.every((reading) => reading.comparisonDisplay === null && reading.comparisonRank === null)).toBe(true)
+    const hiddenRows = mobiliteCurveTooltipRows({ figure, reading: hidden[1]!, showComparison: false })
+    expect(hiddenRows[0]?.comparison).toBeUndefined()
   })
 })
