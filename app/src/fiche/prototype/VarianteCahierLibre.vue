@@ -750,7 +750,7 @@ onBeforeUnmount(() => {
 .spine-number { color: var(--cahier-theme-strong); font-variant-numeric: tabular-nums; }
 .mobile-index { display: none; }
 .cahier-pages { display: grid; gap: 96px; min-width: 0; }
-.cahier-page, .sources-page { container: cahier-page / inline-size; position: relative; min-width: 0; --page-left-inset: var(--cahier-page-left-inset, 148px); --page-right-inset: var(--cahier-page-right-inset, 64px); padding: 48px var(--page-right-inset) 56px var(--page-left-inset); border: 1px solid rgb(35 42 42 / 15%); box-shadow: 0 14px 30px rgb(67 57 42 / 11%); scroll-margin-top: 28px; }
+.cahier-page, .sources-page { container: cahier-page / inline-size; position: relative; min-width: 0; --page-left-inset: var(--cahier-page-left-inset, 148px); --page-right-inset: var(--cahier-page-right-inset, 64px); padding: 48px var(--page-right-inset) 56px var(--page-left-inset); border: 1px solid var(--editorial-page-border-color); box-shadow: 0 14px 30px var(--editorial-page-shadow-color); scroll-margin-top: 28px; }
 .cahier--sans-grille .cahier-page,
 .cahier--sans-grille .sources-page { scroll-margin-top: var(--cahier-sticky-top); }
 .page-margin { position: absolute; top: 48px; left: 18px; display: grid; width: 72px; gap: 30px; align-content: start; text-align: center; }
