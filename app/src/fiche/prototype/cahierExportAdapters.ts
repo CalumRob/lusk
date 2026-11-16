@@ -35,6 +35,7 @@ import {
   mobiliteBarReadings,
   mobiliteBarResourceNotes,
   mobiliteBarsAccessibleLabel,
+  mobiliteBarsComparisonStateText,
   mobiliteComparisonAria,
   mobiliteCurveAccessibleLabel,
   mobiliteCurveComparisonStateText,
@@ -263,6 +264,10 @@ export interface CahierBarsProjection extends CahierFigureProjectionBase {
   readonly xAxisTitle: string
   readonly yAxisTitle: string
   readonly comparisonLabel: string | null
+  /** The actual comparison read state the owner presents. */
+  readonly comparisonStatus: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  /** The exact visible state copy, or null when the owner suppresses it. */
+  readonly comparisonStateText: string | null
   /** Present for the networks plate; its owner observation is the only proof. */
   readonly maps: CahierMapsProjection | null
   readonly ratio: {
@@ -273,6 +278,11 @@ export interface CahierBarsProjection extends CahierFigureProjectionBase {
     /** The owner's own unavailable-ratio explanation, when it carries one. */
     readonly note: string | null
     readonly ariaLabel: string
+    /**
+     * The comparison SLOT is rendered, including an explicit unavailable cell;
+     * this is not proof that a reference value was served. `comparisonValue`
+     * stays null when the slot is unavailable.
+     */
     readonly comparisonDisplayed: boolean
     readonly comparisonValue: number | null
     readonly comparisonDisplay: string | null
@@ -312,6 +322,10 @@ export interface CahierCurveProjection extends CahierFigureProjectionBase {
   readonly figureTitle: string
   readonly xAxisTitle: string
   readonly yAxisTitle: string
+  /** The actual comparison read state the owner presents. */
+  readonly comparisonStatus: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  /** The exact visible/accessible state copy, or null when suppressed. */
+  readonly comparisonStateText: string | null
   readonly unit: string
   readonly points: readonly {
     readonly detail: string
@@ -921,6 +935,11 @@ export function projectBars(
   // The section owner's exact predicate, never an inference from the
   // capture absence enum: no control and explicit empty are distinct facts.
   const comparisonNone = capture.comparison.none === true
+  const comparisonStateText = mobiliteBarsComparisonStateText({
+    status: capture.comparison.status,
+    error: capture.comparison.error ?? undefined,
+    comparisonNone,
+  })
   const showComparison = !comparisonNone && layerDisplayed(capture, figure.slot)
   const rows: CahierTableRow[] = []
   const notes: string[] = [...mobiliteBarResourceNotes({
@@ -960,6 +979,7 @@ export function projectBars(
       })
     }
   }
+  if (comparisonStateText) notes.push(comparisonStateText)
   const ratioReference = figure.model.ratio?.value.fact.comparison?.reference ?? null
   const ratioStatus = capture.comparison.status
   // The scalar always renders a reference slot unless comparisonNone; a ready
@@ -1078,6 +1098,8 @@ export function projectBars(
     comparisonLabel: showComparison || (ratio?.comparisonDisplayed ?? false)
       ? evidence.comparisonLabel
       : null,
+    comparisonStatus: capture.comparison.status,
+    comparisonStateText,
     maps: capture.capabilities.maps.status === 'none'
       ? null
       : mapProjection(capture),
@@ -1252,7 +1274,10 @@ export function projectCurve(
         }] : []),
       ],
       rows,
-      notes: unavailable.map((item) => item.message),
+      notes: [
+        ...unavailable.map((item) => item.message),
+        ...(comparisonStateText ? [comparisonStateText] : []),
+      ],
       unit,
     }],
     comparisonDisplayed: displayed,
@@ -1260,6 +1285,8 @@ export function projectCurve(
     figureTitle: evidence.figureTitle,
     xAxisTitle: evidence.xAxisTitle,
     yAxisTitle: evidence.trajectory?.axisLabels?.y ?? 'population joignable (%)',
+    comparisonStatus: capture.comparison.status,
+    comparisonStateText,
     unit,
     points: readings,
     axis: evidence.axis,

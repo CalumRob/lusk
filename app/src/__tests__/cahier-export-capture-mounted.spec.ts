@@ -1197,6 +1197,125 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     wrapper.unmount()
   })
 
+  it('keeps the actual bars and curve comparison read state on screen and in the projection', async () => {
+    const fixture = cahierExportFixture()
+    const content = JSON.parse(JSON.stringify(fixture.content)) as any
+    const networks = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'reseaux')
+    networks.evidence.figure.unavailableResources = ['Ressource test']
+    networks.evidence.figure.unavailableComparisons = []
+    for (const category of networks.evidence.figure.categories) {
+      category.splitNote = null
+      delete category.comparisonSplitNote
+      delete category.comparisonSplit
+    }
+    const curve = content.units.flatMap((unit: any) => unit.sections)
+      .find((section: any) => section.key === 'visiter-la-bretagne')
+    curve.evidence.unavailableResources = ['Ressource test']
+    curve.evidence.unavailableComparisons = []
+
+    const cases = [
+      {
+        status: 'loading',
+        error: null,
+        barsText: 'Chargement du groupe comparé…',
+        curveText: 'Comparaison en cours de chargement.',
+      },
+      {
+        status: 'error',
+        error: 'Lecture échouée',
+        barsText: 'Groupe comparé indisponible : Lecture échouée',
+        curveText: 'Comparaison indisponible : Lecture échouée',
+      },
+      {
+        status: 'unavailable',
+        error: null,
+        barsText: 'Groupe comparé indisponible pour cette sélection.',
+        curveText: 'Aucun groupe comparé actif.',
+      },
+    ] as const
+
+    for (const entry of cases) {
+      const wrapper = await mountCahier({
+        content,
+        control: fixture.control,
+        props: {
+          nativeComparisonStatus: entry.status,
+          nativeComparisonError: entry.error,
+        },
+      })
+      const barsProjection = projeterRequeteExportFigures(
+        (() => {
+          const projected = projeterRequeteExport(captureOf(wrapper, 'reseaux'), [])
+          if (projected.status !== 'ready') throw new Error('projection expected')
+          return projected.request
+        })(),
+      )[0]!
+      if (barsProjection.family !== 'mobilite-bars') throw new Error('bars expected')
+      expect(barsProjection.comparisonStatus, entry.status).toBe(entry.status)
+      expect(barsProjection.comparisonStateText, entry.status).toBe(entry.barsText)
+      expect(barsProjection.tables[0]?.notes, entry.status).toEqual([
+        'Publication indisponible : Ressource test',
+        entry.barsText,
+      ])
+      expect(wrapper.get('[data-section="reseaux"]').text(), entry.status).toContain(entry.barsText)
+
+      const curveProjection = projeterRequeteExportFigures(
+        (() => {
+          const projected = projeterRequeteExport(captureOf(wrapper, 'visiter-la-bretagne'), [])
+          if (projected.status !== 'ready') throw new Error('projection expected')
+          return projected.request
+        })(),
+      )[0]!
+      if (curveProjection.family !== 'mobilite-curve') throw new Error('curve expected')
+      expect(curveProjection.comparisonStatus, entry.status).toBe(entry.status)
+      expect(curveProjection.comparisonStateText, entry.status).toBe(entry.curveText)
+      expect(curveProjection.tables[0]?.notes, entry.status).toEqual([
+        'Publication indisponible : Ressource test',
+        entry.curveText,
+      ])
+      expect(wrapper.get('[data-section="visiter-la-bretagne"]').text(), entry.status)
+        .toContain(entry.curveText)
+      wrapper.unmount()
+    }
+
+    const hidden = await mountCahier({
+      content,
+      control: null,
+      props: {
+        nativeComparisonStatus: 'error',
+        nativeComparisonError: 'Lecture échouée',
+      },
+    })
+    const hiddenBars = projeterRequeteExportFigures(
+      (() => {
+        const projected = projeterRequeteExport(captureOf(hidden, 'reseaux'), [])
+        if (projected.status !== 'ready') throw new Error('projection expected')
+        return projected.request
+      })(),
+    )[0]!
+    if (hiddenBars.family !== 'mobilite-bars') throw new Error('bars expected')
+    expect(hiddenBars.comparisonStatus).toBe('error')
+    expect(hiddenBars.comparisonStateText).toBeNull()
+    expect(hiddenBars.tables[0]?.notes).toEqual(['Publication indisponible : Ressource test'])
+    expect(hidden.get('[data-section="reseaux"]').text()).not.toContain('Groupe comparé indisponible')
+
+    const hiddenCurve = projeterRequeteExportFigures(
+      (() => {
+        const projected = projeterRequeteExport(captureOf(hidden, 'visiter-la-bretagne'), [])
+        if (projected.status !== 'ready') throw new Error('projection expected')
+        return projected.request
+      })(),
+    )[0]!
+    if (hiddenCurve.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(hiddenCurve.comparisonStatus).toBe('error')
+    expect(hiddenCurve.comparisonStateText).toBeNull()
+    expect(hiddenCurve.tables[0]?.notes).toEqual(['Publication indisponible : Ressource test'])
+    expect(hidden.get('[data-section="visiter-la-bretagne"]').text())
+      .not.toContain('Comparaison indisponible : Lecture échouée')
+    hidden.unmount()
+  })
+
   it('keeps every native curve point with its declared human label on screen and in the projection', async () => {
     const fixture = cahierExportFixture()
     const content = JSON.parse(JSON.stringify(fixture.content)) as any

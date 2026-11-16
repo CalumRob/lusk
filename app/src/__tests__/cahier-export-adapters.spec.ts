@@ -1029,8 +1029,14 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
     ))[0]!
     if (rawLabelProjection.family !== 'mobilite-curve') throw new Error('curve expected')
     expect(rawLabelProjection.points.find((reading) => reading.detail === 't0045')?.label)
-      .toBe('Indisponible')
+      .toBe('Libellé indisponible')
+    expect(rawLabelProjection.points.find((reading) => reading.detail === 't0045')?.aria)
+      .toBe('40 %')
     expect(rawLabelProjection.accessibleLabel).not.toContain('t0045')
+    expect(rawLabelProjection.accessibleLabel).toContain('Libellé indisponible : 40 %')
+    expect(rawLabelProjection.accessibleLabel).not.toContain('Indisponible : 40 %')
+    expect(rawLabelProjection.tables[0]?.rows.map((row) => row.label))
+      .toContain('Libellé indisponible')
     expect(rawLabelProjection.tables[0]?.rows.map((row) => row.label))
       .not.toContain('t0045')
   })
@@ -1201,5 +1207,132 @@ describe('Cahier export adapters — owner comparison absence and ratio proof (#
       'Comparaison indisponible : Comparaison test',
     ])
     expect(normal.accessibleLabel).toContain('Comparaison indisponible : Comparaison test')
+  })
+})
+
+describe('Cahier export adapters — owner comparison read state (#1022)', () => {
+  it('keeps the bars owner loading/error/unavailable state in the projection and table notes', () => {
+    const fixture = cahierExportFixture()
+    const section = cloneSection(fixture, 'reseaux', (entry) => {
+      entry.evidence.figure.unavailableResources = ['Ressource test']
+      entry.evidence.figure.unavailableComparisons = []
+      for (const category of entry.evidence.figure.categories) {
+        category.splitNote = null
+        delete category.comparisonSplitNote
+        delete category.comparisonSplit
+      }
+    })
+    const cases = [
+      {
+        status: 'loading',
+        error: null,
+        stateText: 'Chargement du groupe comparé…',
+      },
+      {
+        status: 'error',
+        error: 'Lecture échouée',
+        stateText: 'Groupe comparé indisponible : Lecture échouée',
+      },
+      {
+        status: 'unavailable',
+        error: null,
+        stateText: 'Groupe comparé indisponible pour cette sélection.',
+      },
+    ] as const
+
+    for (const entry of cases) {
+      const capture = captureCahierSection(inputFor(fixture, section, [
+        layer('bars', { displayed: false, toggle: true }, 'mobilite-comparison-bars'),
+        mobileSectionState({
+          comparisonNone: false,
+          comparisonStatus: entry.status,
+          comparisonError: entry.error,
+        }),
+      ]))
+      expect(capture.comparison.status, entry.status).toBe(entry.status)
+      expect(capture.comparison.error, entry.status).toBe(entry.error)
+      const projection = projeterRequeteExportFigures(requestFor(capture))[0]!
+      if (projection.family !== 'mobilite-bars') throw new Error('bars expected')
+      expect(projection.comparisonStatus, entry.status).toBe(entry.status)
+      expect(projection.comparisonStateText, entry.status).toBe(entry.stateText)
+      expect(projection.tables[0]?.notes, entry.status).toEqual([
+        'Publication indisponible : Ressource test',
+        entry.stateText,
+      ])
+      expect(projection.comparisonDisplayed, entry.status).toBe(false)
+    }
+
+    const hiddenCapture = captureCahierSection(inputFor(fixture, section, [
+      layer('bars', { displayed: false, toggle: true }, 'mobilite-comparison-bars'),
+      mobileSectionState({
+        comparisonNone: true,
+        comparisonStatus: 'error',
+        comparisonError: 'Lecture échouée',
+      }),
+    ], { control: null }))
+    const hidden = projeterRequeteExportFigures(requestFor(hiddenCapture))[0]!
+    if (hidden.family !== 'mobilite-bars') throw new Error('bars expected')
+    expect(hidden.comparisonStatus).toBe('error')
+    expect(hidden.comparisonStateText).toBeNull()
+    expect(hidden.tables[0]?.notes).toEqual(['Publication indisponible : Ressource test'])
+  })
+
+  it('keeps the curve owner loading/error/unavailable state in the projection and table notes', () => {
+    const fixture = cahierExportFixture()
+    const section = cloneSection(fixture, 'visiter-la-bretagne', (entry) => {
+      entry.evidence.unavailableResources = ['Ressource test']
+      entry.evidence.unavailableComparisons = []
+    })
+    const cases = [
+      {
+        status: 'loading',
+        error: null,
+        stateText: 'Comparaison en cours de chargement.',
+      },
+      {
+        status: 'error',
+        error: 'Lecture échouée',
+        stateText: 'Comparaison indisponible : Lecture échouée',
+      },
+      {
+        status: 'unavailable',
+        error: null,
+        stateText: 'Aucun groupe comparé actif.',
+      },
+    ] as const
+
+    for (const entry of cases) {
+      const capture = captureCahierSection(inputFor(fixture, section, [
+        layer('curve', { displayed: false, toggle: true }, 'mobilite-raccordement-curve'),
+        mobileSectionState({
+          comparisonNone: false,
+          comparisonStatus: entry.status,
+          comparisonError: entry.error,
+        }),
+      ]))
+      const projection = projeterRequeteExportFigures(requestFor(capture))[0]!
+      if (projection.family !== 'mobilite-curve') throw new Error('curve expected')
+      expect(projection.comparisonStatus, entry.status).toBe(entry.status)
+      expect(projection.comparisonStateText, entry.status).toBe(entry.stateText)
+      expect(projection.tables[0]?.notes, entry.status).toEqual([
+        'Publication indisponible : Ressource test',
+        entry.stateText,
+      ])
+      expect(projection.accessibleLabel, entry.status).toContain(entry.stateText)
+    }
+
+    const hiddenCapture = captureCahierSection(inputFor(fixture, section, [
+      layer('curve', { displayed: false, toggle: true }, 'mobilite-raccordement-curve'),
+      mobileSectionState({
+        comparisonNone: true,
+        comparisonStatus: 'error',
+        comparisonError: 'Lecture échouée',
+      }),
+    ], { control: null }))
+    const hidden = projeterRequeteExportFigures(requestFor(hiddenCapture))[0]!
+    if (hidden.family !== 'mobilite-curve') throw new Error('curve expected')
+    expect(hidden.comparisonStatus).toBe('error')
+    expect(hidden.comparisonStateText).toBeNull()
+    expect(hidden.tables[0]?.notes).toEqual(['Publication indisponible : Ressource test'])
   })
 })

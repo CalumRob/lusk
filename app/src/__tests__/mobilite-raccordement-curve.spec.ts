@@ -403,6 +403,37 @@ describe('CahierMobiliteRaccordementCurve — approved travel-time figure (#1006
     wrapper.unmount()
   })
 
+  it('never presents a supported point as unavailable when only its label is missing', () => {
+    const figure = curveFigure({
+      points: [point('t0000', 0, 0), point('t0015', 15, 0.25), point('t0090', 90, 0.9)],
+      comparison: null,
+      trajectory: {
+        ...trajectory,
+        ticks: [
+          { detail: 't0000', label: '0' },
+          { detail: 't0090', label: '1 h 30' },
+        ],
+      },
+      axis: {
+        values: [
+          { detail: 't0000', numericValue: 0 },
+          { detail: 't0015', numericValue: 15 },
+          { detail: 't0090', numericValue: 90 },
+        ],
+        minimum: 0,
+        maximum: 360,
+      },
+    })
+    const wrapper = mount(CahierMobiliteRaccordementCurve, {
+      props: { figure, comparison: { status: 'unavailable' } },
+    })
+    const aria = wrapper.get('svg[role="img"]').attributes('aria-label')!
+    expect(aria).toContain('Libellé indisponible : 25 %')
+    expect(aria).not.toContain('Indisponible : 25 %')
+    expect(aria).not.toContain('t0015 :')
+    wrapper.unmount()
+  })
+
   it('uses the brand territory line and the brand-200 dashed reference from the shared tokens', () => {
     const source = readFileSync(join(
       process.cwd(), 'src', 'fiche', 'prototype', 'CahierMobiliteRaccordementCurve.vue',

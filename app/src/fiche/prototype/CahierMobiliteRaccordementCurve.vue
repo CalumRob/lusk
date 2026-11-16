@@ -402,19 +402,12 @@ function toggleLegend(key: string): void {
   if (key === 'comparison') comparisonVisible.value = !comparisonVisible.value
 }
 
-const stateMessage = computed(() => {
-  if (props.comparisonNone) return null
-  if (props.comparison.status === 'loading') return 'Chargement du groupe comparé…'
-  if (props.comparison.status === 'error') {
-    if (props.figure.unavailableComparisons?.length) return null
-    return props.comparison.error ?? 'Groupe comparé indisponible.'
-  }
-  if (props.comparison.status === 'unavailable') return 'Aucun groupe comparé actif : aucune courbe de référence n’est affichée.'
-  if (props.figure.comparison === null) {
-    return props.figure.unavailableComparisons?.length ? null : 'Aucune courbe de référence disponible pour cette sélection.'
-  }
-  return null
-})
+const stateMessage = computed(() => mobiliteCurveComparisonStateText({
+  figure: props.figure,
+  status: props.comparison.status,
+  error: props.comparison.error,
+  comparisonNone: props.comparisonNone,
+}))
 
 const unavailableState = computed(() => {
   if (props.figure.points.length && props.figure.axis === null) {

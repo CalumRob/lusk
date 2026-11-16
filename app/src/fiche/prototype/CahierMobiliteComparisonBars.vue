@@ -33,6 +33,7 @@ import {
   mobiliteBarToneColor,
   mobiliteBarTooltipRows,
   mobiliteBarsAccessibleLabel,
+  mobiliteBarsComparisonStateText,
   mobiliteFiniteValue,
   mobiliteRatioValueLabel,
 } from './cahierMobiliteReadings'
@@ -343,6 +344,12 @@ function categoryHitboxStyle(index: number): Record<string, string> {
   }
 }
 
+const comparisonStateText = computed(() => mobiliteBarsComparisonStateText({
+  status: props.comparison.status,
+  error: props.comparison.error,
+  comparisonNone: props.comparisonNone,
+}))
+
 const ratioComparisonStatus = computed(() => props.comparison.status)
 </script>
 
@@ -495,12 +502,11 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
       role="note"
     >{{ note }}</p>
 
-    <p v-if="!comparisonNone && comparison.status === 'loading'" class="mobilite-comparison-state" role="status">Chargement du groupe comparé…</p>
-    <div v-else-if="!comparisonNone && comparison.status === 'error'" class="mobilite-comparison-error" role="status">
-      <p>Groupe comparé indisponible.</p>
+    <p v-if="comparisonStateText && comparison.status !== 'error'" class="mobilite-comparison-state" role="status">{{ comparisonStateText }}</p>
+    <div v-else-if="comparisonStateText && comparison.status === 'error'" class="mobilite-comparison-error" role="status">
+      <p>{{ comparisonStateText }}</p>
       <button v-if="comparison.retry" type="button" class="mobilite-comparison-retry" @click="comparison.retry()">Réessayer les comparaisons</button>
     </div>
-    <p v-else-if="!comparisonNone && comparison.status === 'unavailable'" class="mobilite-comparison-state" role="status">Groupe comparé indisponible pour cette sélection.</p>
 
     <div v-if="ratio" class="mobilite-ratio">
       <p class="mobilite-ratio__value">

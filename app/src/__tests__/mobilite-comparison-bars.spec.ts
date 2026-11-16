@@ -410,7 +410,7 @@ describe('CahierMobiliteComparisonBars — comparison states and access', () => 
       props: { figure, comparison: { status: 'error', error: 'lecture refusée', retry } },
     })
     expect(wrapper.findAll('.mobilite-comparison-bars__comparison')).toHaveLength(0)
-    expect(wrapper.text()).toContain('Groupe comparé indisponible.')
+    expect(wrapper.text()).toContain('Groupe comparé indisponible : lecture refusée')
     await wrapper.get('.mobilite-comparison-retry').trigger('click')
     expect(retry).toHaveBeenCalledOnce()
   })

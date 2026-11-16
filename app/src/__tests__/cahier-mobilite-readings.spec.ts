@@ -389,8 +389,60 @@ describe('Mobilité coverage-share and raccordement readings (#1022)', () => {
       axis: { values: [{ detail: 't0030', numericValue: 30 }], minimum: 0, maximum: 90 },
     }
     const anonymousReading = mobiliteCurveReadings({ figure: anonymous, showComparison: false })[0]!
-    expect(anonymousReading.label).toBe('Indisponible')
+    expect(anonymousReading.label).toBe('Libellé indisponible')
+    expect(anonymousReading.aria).toContain('25 %')
+    expect(anonymousReading.aria).not.toContain('Indisponible : 25 %')
     expect(anonymousReading.aria).not.toContain('t0030')
+    expect(mobiliteCurveGrid(anonymous)[0]?.label).toBe('Libellé indisponible')
+
+    // A missing label never turns a real zero or null into the other.
+    const withValue = (value: number | null) => ({
+      ...anonymous,
+      points: [{
+        ...anonymous.points[0]!,
+        fact: { ...anonymous.points[0]!.fact, value },
+      }],
+    })
+    expect(mobiliteCurveReadings({ figure: withValue(0), showComparison: false })[0])
+      .toMatchObject({ label: 'Libellé indisponible', aria: '0 %' })
+    expect(mobiliteCurveReadings({ figure: withValue(null), showComparison: false })[0])
+      .toMatchObject({ label: 'Libellé indisponible', aria: 'Indisponible' })
+
+    // A comparison-only human label is a legitimate source label too.
+    const comparisonOnly = {
+      ...figure,
+      points: [figure.points[0]!],
+      comparison: {
+        ...figure.comparison!,
+        points: [
+          ...figure.comparison!.points,
+          {
+            label: '45 minutes',
+            fact: {
+              ...figure.points[0]!.fact,
+              detail: 't0045',
+              axisValue: 45,
+              detailLabel: '45 minutes',
+              value: 0.5,
+            },
+          },
+        ],
+      },
+      trajectory: null,
+      axis: {
+        values: [
+          { detail: 't0030', numericValue: 30 },
+          { detail: 't0045', numericValue: 45 },
+        ],
+        minimum: 0,
+        maximum: 90,
+      },
+    }
+    expect(mobiliteCurveGrid(comparisonOnly).find((tick) => tick.detail === 't0045')?.label)
+      .toBe('45 minutes')
+    expect(mobiliteCurveReadings({ figure: comparisonOnly, showComparison: true })
+      .find((reading) => reading.detail === 't0045')?.label)
+      .toBe('45 minutes')
   })
 })
 

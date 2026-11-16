@@ -52,6 +52,8 @@ export type CahierMobiliteCurveInput = Pick<MobiliteRaccordementEvidence,
   | 'unavailableComparisons'>
 
 export const MOBILITE_UNAVAILABLE_LABEL = 'Indisponible'
+/** A missing LABEL is not a missing value; the point's numeric reading stays. */
+export const MOBILITE_MISSING_LABEL = 'Libellé indisponible'
 
 export function formatMobiliteBarValue(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value)
@@ -493,6 +495,25 @@ export function mobiliteBarsAccessibleLabel(options: {
   return `${figure.figureTitle}. Barres verticales groupées par ${figure.xAxisTitle.toLocaleLowerCase('fr-FR')}, en ${figure.unit}. ${readings}. Axe horizontal : ${figure.xAxisTitle}. Axe vertical : ${figure.yAxisTitle}.${notes ? ` ${notes}` : ''}`
 }
 
+/**
+ * The bars owner's actual visible comparison read state. It is a status, not a
+ * served-reference proof and not an unavailable-resource list.
+ */
+export function mobiliteBarsComparisonStateText(options: {
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  error?: string
+  comparisonNone?: boolean
+}): string | null {
+  const { status, error, comparisonNone = false } = options
+  if (comparisonNone) return null
+  if (status === 'loading') return 'Chargement du groupe comparé…'
+  if (status === 'error') {
+    return error ? `Groupe comparé indisponible : ${error}` : 'Groupe comparé indisponible.'
+  }
+  if (status === 'unavailable') return 'Groupe comparé indisponible pour cette sélection.'
+  return null
+}
+
 /* ------------------------------------------------------------------ *
  * Coverage share track (#1006) — the two-row 0-100 % figure
  * ------------------------------------------------------------------ */
@@ -691,9 +712,22 @@ function humanCurveLabel(candidate: string | null | undefined, detail: string): 
 
 function curvePointLabel(figure: CahierMobiliteCurveInput, detail: string): string {
   const point = figure.points.find((candidate) => candidate.fact.detail === detail)
+  const comparison = figure.comparison?.points.find((candidate) => candidate.fact.detail === detail)
   return humanCurveLabel(point?.fact.detailLabel, detail)
     ?? humanCurveLabel(point?.label, detail)
-    ?? MOBILITE_UNAVAILABLE_LABEL
+    ?? humanCurveLabel(comparison?.fact.detailLabel, detail)
+    ?? humanCurveLabel(comparison?.label, detail)
+    ?? MOBILITE_MISSING_LABEL
+}
+
+/** Existing axis formatting applies to real source labels, never to a missing one. */
+function curveAxisLabel(
+  figure: CahierMobiliteCurveInput,
+  detail: string,
+  axisValue: number,
+): string {
+  const label = curvePointLabel(figure, detail)
+  return label === MOBILITE_MISSING_LABEL ? label : mobiliteCurveTickLabel({ label }, axisValue)
 }
 
 /**
@@ -747,7 +781,7 @@ export function mobiliteCurveGrid(figure: CahierMobiliteCurveInput): readonly Ca
     return figure.axis.values.map((value) => ({
       detail: value.detail,
       axisValue: value.numericValue,
-      label: mobiliteCurveTickLabel({ label: curvePointLabel(figure, value.detail) }, value.numericValue),
+      label: curveAxisLabel(figure, value.detail, value.numericValue),
       mobile: false,
     }))
   }
@@ -757,7 +791,7 @@ export function mobiliteCurveGrid(figure: CahierMobiliteCurveInput): readonly Ca
     return [{
       detail: point.fact.detail ?? '',
       axisValue,
-      label: mobiliteCurveTickLabel({ label: curvePointLabel(figure, point.fact.detail ?? '') }, axisValue),
+      label: curveAxisLabel(figure, point.fact.detail ?? '', axisValue),
       mobile: false,
     }]
   }).filter((point) => point.detail !== '')
@@ -832,7 +866,7 @@ export function mobiliteCurveReadings(options: {
       ?? humanCurveLabel(pair.focal?.label, detail)
       ?? humanCurveLabel(pair.comparison?.fact.detailLabel, detail)
       ?? humanCurveLabel(pair.comparison?.label, detail)
-      ?? MOBILITE_UNAVAILABLE_LABEL
+      ?? MOBILITE_MISSING_LABEL
     return [{
       detail,
       axisValue,
@@ -879,9 +913,9 @@ export function mobiliteCurveComparisonStateText(options: {
   if (comparisonNone) return null
   if (status === 'loading') return 'Comparaison en cours de chargement.'
   if (status === 'error') {
-    return figure.unavailableComparisons?.length
-      ? `Comparaison indisponible : ${figure.unavailableComparisons.join(', ')}.`
-      : `Comparaison indisponible : ${error ?? 'la lecture a échoué.'}`
+    // A publication-unavailable list is a different fact from the failed read
+    // status; keep the actual source error in the state copy.
+    return `Comparaison indisponible : ${error ?? 'la lecture a échoué.'}`
   }
   if (status === 'unavailable') return 'Aucun groupe comparé actif.'
   if (figure.comparison === null) return 'Aucune courbe de référence disponible pour cette sélection.'
