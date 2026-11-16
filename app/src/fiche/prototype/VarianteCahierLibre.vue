@@ -30,6 +30,8 @@ import {
 import type { ChapitreDemandStatus } from '@/fiche/content/demandInventory'
 import type { CahierPagination } from './cahierPagination'
 import CahierProse from './CahierProse.vue'
+import CahierPdfAction from './CahierPdfAction.vue'
+import type { CahierPdfGenerator } from './cahierPdfExportController'
 import CahierExportScope from './CahierExportScope.vue'
 import { CahierSectionBody, cahierSectionRendererFor } from './cahierSectionRenderers'
 import { provideAedarSectionContext } from './aedarSectionContext'
@@ -72,7 +74,12 @@ const props = withDefaults(defineProps<{
   chapitresStatut?: Readonly<Record<string, ChapitreDemandStatus>>
   /** The page-level data state already owns this failure and renders its retry. */
   erreurPage?: boolean
-}>(), { aedarChapterActive: true })
+  /**
+   * #1023 — the real browser-side PDF generator. Null until integration lot E
+   * wires the composer; the shared action then stays inert and honest.
+   */
+  pdfGenerator?: CahierPdfGenerator | null
+}>(), { aedarChapterActive: true, pdfGenerator: null })
 const emit = defineEmits<{ 'chapitre-visible': [anchor: string]; 'chapitre-reessayer': [chapter: string] }>()
 const route = useRoute()
 
@@ -555,6 +562,14 @@ onBeforeUnmount(() => {
                   <h3 class="concept-group-narrative">{{ section.lecture.marelle }}</h3>
                 </div>
                 <h3 v-else>{{ section.label }}</h3>
+                <CahierPdfAction
+                  v-if="rendererFor(section).body"
+                  class="concept-group-pdf-action"
+                  :section-key="section.key"
+                  :section-label="section.label"
+                  :capture="() => exportVenue.captureSection(section.key)"
+                  :generator="props.pdfGenerator ?? null"
+                />
               </div>
 
               <section
@@ -840,12 +855,20 @@ onBeforeUnmount(() => {
 }
 .concept-group { width: 100%; }
 .mobilite-delegate { width: 100%; min-width: 0; }
-.concept-group-heading { display: flex; align-items: baseline; justify-content: center; gap: 14px; padding: var(--cahier-unit-heading-padding, 8px 0 14px); }
+.concept-group-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 14px; padding: var(--cahier-unit-heading-padding, 8px 0 14px); }
 .cahier--sans-grille .concept-group-heading { --cahier-unit-heading-padding: 0 0 var(--space-4); }
-.concept-group-heading-copy { display: grid; gap: 4px; min-width: 0; text-align: center; }
+.concept-group-heading-copy { display: grid; grid-column: 2; gap: 4px; min-width: 0; justify-self: center; text-align: center; }
 .concept-group-label { color: var(--cahier-theme-strong); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); text-transform: uppercase; }
-.concept-group-heading > span { color: var(--red); font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: .08em; }
-.concept-group-heading h3 { margin: 0; color: var(--ink); font: var(--text-cahier-section); }
+.concept-group-heading > span { grid-column: 1; justify-self: end; color: var(--red); font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: .08em; }
+.concept-group-heading h3 { grid-column: 2; min-width: 0; margin: 0; justify-self: center; color: var(--ink); text-align: center; font: var(--text-cahier-section); }
+.concept-group-pdf-action { grid-column: 3; justify-self: end; align-self: center; }
+@media (max-width: 760px) {
+  .concept-group-heading { grid-template-columns: minmax(0, 1fr) auto; }
+  .concept-group-heading > span { display: none; }
+  .concept-group-heading-copy,
+  .concept-group-heading > h3 { grid-column: 1; justify-self: start; text-align: left; }
+  .concept-group-pdf-action { grid-column: 2; justify-self: end; }
+}
 .cahier--sans-grille .concept-group-narrative { font-size: clamp(1.05rem, 1.4vw, 1.35rem); font-style: italic; font-weight: 400; line-height: 1.15; text-wrap: balance; }
 .figure-spread { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(420px, 1.2fr); column-gap: clamp(40px, 5vw, 76px); row-gap: var(--cahier-spread-gap, 34px); align-items: start; padding: var(--cahier-spread-padding, 22px) 0; }
 .figure-spread--stack { grid-template-columns: minmax(0, 1fr); }

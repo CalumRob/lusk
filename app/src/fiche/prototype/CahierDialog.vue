@@ -67,7 +67,7 @@ function onNativeClose() {
     @close="onNativeClose"
     @click="(event) => { if (event.target === event.currentTarget) close() }"
   >
-    <div class="cahier-dialog__content">
+    <div v-if="props.open" class="cahier-dialog__content">
       <h2 class="cahier-dialog__title" :id="props.labelledBy">{{ props.title }}</h2>
       <header class="cahier-dialog__header">
         <slot name="toolbar" />
