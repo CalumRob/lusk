@@ -140,19 +140,17 @@ actual inventory, backups, input availability and planned owner closure first.
    forward/recovery). A separate, explicit `replacement` intent now covers the
    actual activation shape where an existing indicator's descriptor/facts
    expand from three to four levels. It is not a bypass: it proves, before any
-   connection or write, that every named indicator present in both generations
-   changes only by additive allowed levels (or its exact reverse for recovery),
-   that shared facts and provenance are byte-identical, that added facts exist
-   only at newly admitted levels, that unrelated descriptor fields never move,
-   and that the candidate/baseline shared source clocks and territory reference
-   agree. A plan may explicitly name one-sided indicators too; they keep the
-   normal missing-only semantics inside the same named scope, and a pure
-   one-sided scope under the replacement intent is refused as a missing-only
-   publication. Mixed semantics are therefore explicit, never converted from an
-   ordinary missing-only plan. The capability is derived from the owner's
-   registered scalar scope (`scalar_scope_registry()`); it does not hardcode a
-   Bretagne name. The plan/preview opens no database connection, works on a
-   private temporary copy, and modifies no reviewed artifact:
+   connection or write, that every named indicator is present in both
+   generations and changes only by additive allowed levels (or its exact reverse
+   for recovery), that shared facts and provenance are identical, that added
+   facts exist only at newly admitted levels, that unrelated descriptor fields
+   never move, and that the candidate/baseline shared source clocks and
+   territory reference agree. Mixed presence is a different capability and is
+   refused by this mode; there is no implicit one-sided acceptance. Use the
+   unchanged missing-only mode for a one-sided step. The capability is derived
+   from the owner's registered scalar scope (`scalar_scope_registry()`); it does
+   not hardcode a Bretagne name. The plan/preview opens no database connection,
+   works on a private temporary copy, and modifies no reviewed artifact:
 
    ```powershell
    # From pipeline/, on private reviewed copies only. No database is opened and
@@ -168,12 +166,16 @@ actual inventory, backups, input availability and planned owner closure first.
    The preview prints before/after facts, descriptors, versions, statuses,
    scoped source clocks, the closure identity and the live guard predicates that
    the wrapper will evaluate under `pg_advisory_lock(594,1)`. It is evidence for
-   review, **not** production authorization. If the live baseline turns out to
-   lack the three newer keys, the same explicit intent reports them as
-   one-sided forward indicators instead of pretending they were replaced; if the
-   plan is a no-op, changes a shared clock/reference, deletes an existing
-   scoped fact or differs outside the named scope, it refuses with zero writes.
-   The activation still requires the actual publication command with
+   review, **not** production authorization. The replacement mode requires all
+   named indicators on both sides. If the live baseline lacks the three newer
+   keys, the operator must first publish those keys through the unchanged
+   missing-only scope (all three are target-only there), then run the
+   replacement scope (all four keys) against that published generation; the
+   replacement plan then sees the ratio as the only both-present level expansion
+   and the three keys as unchanged rows. A mixed presence in one replacement
+   plan is refused, as is a no-op, a shared clock/reference change, a deleted
+   existing scoped fact or a difference outside the named scope — all with zero
+   writes. The activation still requires the actual publication command with
    `LUSK_SCALAR_PUBLICATION_INTENT=replacement`, a reviewed backup copy and
    separate approval. **This PR does not perform that publication, does not
    remove baseline descriptors, does not mutate markers and does not fall back
@@ -182,10 +184,13 @@ actual inventory, backups, input availability and planned owner closure first.
    The guarded test-only DB proof
    (`pipeline/scripts/run-scoped-replacement-smoke.ps1`, receipt
    `E:\Temp\opencode\lusk-1037-replacement-smoke-receipt.txt`) exercises one
-   additive `region` level/fact on the ratio through the normal wrapper (forward
-   → recovery → republish) with an unrelated marker untouched and zero residual
-   schemas. Its value is a labelled test fixture, not a production statistic and
-   not evidence of live regional row availability.
+   additive `region` level/fact on the ratio through the normal wrapper:
+   injected-failure rollback, forward closure equality against an independent
+   candidate seed, recovery back to the baseline digest, and a pinned write with
+   the profile/reading artifact directories renamed away. An unrelated marker
+   stays untouched and zero residual schemas/public relations remain. Its value
+   is a labelled test fixture, not a production statistic and not evidence of
+   live regional row availability.
 6. Obtain **separate publication approval** with that concrete projected closure,
    backup/recovery inventory and exact input clocks. Only then may the operator
    execute the normal publication path. No production publication command or

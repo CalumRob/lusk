@@ -162,20 +162,18 @@ $env:LUSK_SCALAR_PUBLICATION_INTENT = 'replacement'   # unset/empty = missing_on
 
 Under that intent the plan proves, before any connection, that:
 
-- at least one named indicator exists in **both** generations; a pure
-  one-sided scope is refused as a missing-only publication (it is never
-  silently converted);
-- every both-present indicator changes only by additive `allowed_levels`
-  (forward) or its exact reverse (recovery), never both;
+- **every** named indicator exists in both generations; mixed presence is
+  refused as a different capability (use the unchanged missing-only mode for a
+  one-sided step; it is never silently converted);
+- every named indicator changes only by additive `allowed_levels` (forward) or
+  its exact reverse (recovery), never both;
 - `descriptor_version` advances with the level change and stays identical
-  otherwise; every other descriptor field is byte-identical;
-- shared facts are byte-identical (territory type, value, status,
-  support/denominator counts) and added/removed facts exist only at newly
-  admitted/withdrawn levels;
+  otherwise; every other descriptor field is exactly identical;
+- shared facts are exactly identical on typed values (territory type, value,
+  status, support/denominator counts; row order is not semantic) and
+  added/removed facts exist only at newly admitted/withdrawn levels;
 - provenance of shared facts is identical and every scoped fact has at least one
   source association;
-- explicitly named one-sided indicators keep the normal missing-only semantics
-  inside the same intent and are reported as such (mixed scope is explicit);
 - candidate and baseline shared source rows and clocks agree, the territory
   reference is identical, and a no-op candidate is refused;
 - comparison evidence outside the scoped indicators is identical. The global
@@ -285,11 +283,11 @@ current delta in both directions, refusal of a difference outside the scope or
 of indicators present on both/neither side, and the scoped guard accepting the
 affected current markers while ignoring a newer unrelated owner marker. Since
 #1037 it also covers the explicit replacement intent: additive level
-expansion/reverse recovery, one-sided named indicators only under an explicit
-plan, refusal of unrelated descriptor/fact changes, deleted existing facts,
-facts at already-admitted levels, shared source clock drift, mixed directions,
-no-op identity and pure one-sided conversion; and the write-free preview
-contents.
+expansion/reverse recovery, refusal of mixed presence, refusal of unrelated
+descriptor/fact changes, deleted existing facts, facts at already-admitted
+levels, shared source clock drift, mixed directions, exact double comparison,
+row-order normalization, NA/NaN distinction, no-op identity and the write-free
+preview contents.
 
 `pipeline/tests/testthat/test-publication-transaction.R`: single-connection
 outer contract — inner publishers join only the identical connection, a
@@ -343,26 +341,50 @@ focused serial log:
 
 `pipeline/scripts/run-scoped-replacement-smoke.ps1` (same mutex, dedicated
 `lusk_it_contract` roles, disposable `serving_it_*` schema, cleanup always on)
-seeds **only** the baseline closure, then adds a TEST-ONLY additive `region`
-level/fact to `bornes_ev_par_station_service` on a private candidate copy. It
-runs the normal wrapper with `LUSK_SCALAR_PUBLICATION_INTENT=replacement`:
+takes a generation that already carries all four registered keys for **both**
+roles (the replacement step after the missing-only three-key publication), then
+adds a TEST-ONLY additive `region` level/fact to
+`bornes_ev_par_station_service` on its private candidate copy. It runs the
+normal wrapper with `LUSK_SCALAR_PUBLICATION_INTENT=replacement`:
 
-- forward rejects nothing legitimate: the replacement delta is proven, the
-  candidate scalar/comparison/profile/reading markers commit atomically, the
-  region fixture row and the three one-sided keys are present, and an unrelated
-  `ordered_series` marker is byte-identical;
-- recovery uses the same wrapper/plan with the frozen baseline as target and
-  the published candidate as the live guard state: the region and one-sided
-  facts disappear and the baseline affected markers are restored;
-- republish restores the candidate; the unrelated marker is still untouched;
-- zero residual `serving_it_*` schemas and zero `public` relations after the
-  run.
+- **failure injection**: the normal reading publisher is made to throw after the
+  scalar/profile stage; the whole outer transaction is rolled back and every
+  schema table (rows, markers, pointers) is identical to the baseline seed;
+- **forward**: the replacement delta is proven, the scalar/comparison/profile/
+  profile-comparison/selected-reading markers and linked identity verify, and
+  every closure table matches an independently seeded candidate schema through
+  the same normal publishers (facts, descriptors, provenance, comparisons,
+  profiles, selected reading, source rows) exactly;
+- **recovery**: the same wrapper/plan with the frozen baseline as target and the
+  published candidate as the live guard state restores the whole schema digest
+  to the baseline seed (region row 1→0, all other keys retained);
+- **pinned write**: after a fresh plan, the `profile-serving` and
+  `typed-reading-serving` directories are renamed away; a second normal atomic
+  publication still commits the same candidate closure from the frozen plan
+  (a re-read would fail), proving no plan-to-write TOCTOU;
+- every step keeps an unrelated `ordered_series` marker identical;
+- zero residual `serving_it_*` schemas and zero `public` relations before and
+  after, including after the injected failure.
 
-Receipt: `E:\Temp\opencode\lusk-1037-replacement-smoke-receipt.txt` (forward
-scalar `b3cb…`, forward comparison `6333…`, forward profile `9c0b…`, forward
-reading `2d64…`, recovery scalar `10cfd…`, region rows 1→0→1). The fixture value
-(2.5) is labelled test-only; it is not a production statistic and does not
-claim live activation.
+Receipt: `E:\Temp\opencode\lusk-1037-replacement-smoke-receipt.txt` (baseline
+scalar `f4e9…` with three-key facts 1267/1267/1267; forward scalar `b3cb…`,
+comparison `6333…`, profile `9c0b…`, profile comparison `839c…`, reading
+`2d64…`; recovery scalar `f4e9…`; pinned scalar `b3cb…`; region rows 1→0→1;
+public relations 0→0; residual schemas 0). The fixture value (2.5) is labelled
+test-only; it is not a production statistic and does not claim live activation.
+
+Replay (guarded test database only; both directories must already carry the
+four registered keys):
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:LUSK_SCALAR_TEST_DATABASE = 'lusk_it_contract'
+$env:LUSK_SCALAR_TEST_USER = 'lusk_it_contract_pub'
+$env:LUSK_REPLACEMENT_SMOKE_RECEIPT = 'E:\Temp\opencode\lusk-1037-replacement-smoke-receipt.txt'
+pipeline\scripts\run-scoped-replacement-smoke.ps1 `
+  -CandidateDir '<four-key candidate generation>' `
+  -BaselineDir '<same generation as the post-missing-only baseline>'
+```
 
 Run:
 

@@ -176,11 +176,13 @@ can be scoped.
 - Amended by #1037: an existing indicator may legitimately expand by adding
   allowed levels without a full-theme rebuild. The operator must state
   `LUSK_SCALAR_PUBLICATION_INTENT=replacement`; the plan then proves additive
-  levels only (or exact reverse recovery), byte-identical shared facts and
-  provenance, no unrelated descriptor change, coherent candidate/baseline
-  source clocks and reference, and no no-op. One-sided named indicators stay on
-  missing-only semantics inside that explicit plan; an ordinary missing-only
-  plan is never reinterpreted. The dry `--scalar-scope-preview` reports the
+  levels only (or exact reverse recovery), exactly identical shared facts and
+  provenance (typed values; row order not semantic), no unrelated descriptor
+  change, coherent candidate/baseline source clocks and reference, and no
+  no-op. Mixed presence is a different capability and is refused; the unchanged
+  missing-only mode remains the route for a one-sided publication. An ordinary
+  missing-only plan is never reinterpreted. The dry `--scalar-scope-preview`
+  reports the
   before/after closure and guard predicates without opening a database or
   writing an artifact; it is review evidence, not activation authority.
 - The worker never connects to the serving database. The operator performs the
