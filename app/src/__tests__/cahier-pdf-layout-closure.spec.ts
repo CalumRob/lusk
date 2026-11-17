@@ -142,9 +142,12 @@ describe('#1024 — pied de comparaison : zone réservée mesurée, jamais un d�
       label: Array.from({ length: 18 }, (_, index) => `Commune très longue ${index + 1}`).join(', '),
     }
     const lecture = await generer(capture)
+    const premièreNote = lecture.lignes.find((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))!
+    expect(premièreNote).toBeTruthy()
     const piedLignes = lecture.lignes.filter((ligne) => (
-      ligne.y >= 24 && ligne.y <= 80
+      ligne.y >= 34.5 && ligne.y <= premièreNote.y + 0.5
       && !ligne.texte.startsWith('Retrouvez')
+      && !ligne.texte.startsWith('Source(s) :')
       && !/^\d+ \/ \d+$/.test(ligne.texte)
     ))
     expect(piedLignes[0]?.texte.startsWith('¹ Groupe comparé :')).toBe(true)

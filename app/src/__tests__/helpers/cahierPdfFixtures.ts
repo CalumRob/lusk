@@ -320,6 +320,9 @@ export function capturePartDense(): CahierExportCapture {
     reference: { value: 0.8, unit: '%' },
   }
   figure.model.unit = '%'
+  // The synthetic served reference above supersedes the pre-serving
+  // "Comparaison indisponible — …" label carried by the base capture.
+  capture.comparison.statisticLabels = ['Médiane des communes de EPCI X']
   return capture as CahierExportCapture
 }
 
@@ -464,6 +467,11 @@ export function captureBarresStationnement(): CahierExportCapture {
       }
     }
   }
+  // The served references above supersede the pre-serving "Comparaison
+  // indisponible — …" label the base capture carried: this synthetic fixture
+  // provides the producer-shaped cells, so its footer statistic is the plain
+  // owner label (never parsed from the availability phrase at runtime).
+  capture.comparison.statisticLabels = ['Médiane des communes de EPCI X']
   return capture as CahierExportCapture
 }
 

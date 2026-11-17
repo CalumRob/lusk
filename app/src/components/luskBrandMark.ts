@@ -55,29 +55,31 @@ export const MARQUE_LUSK_ERMINE = {
  * (`LuskBrand.vue`) and the PDF painter both reproduce (`#1024`).
  *
  * `LuskBrand.vue` lays the lockup out as `inline-flex; align-items:center;
- * gap: var(--space-2); font: 600 1.375rem/1`. The ermine box is the tallest
- * item, so the flex line is its box, and the word's 1em line box is centred in
- * it. The word's alphabetic baseline sits one ascent below the word box top.
- * The browser uses the face's integer ascent at the header size: Newsreader's
- * `hhea`/`OS/2` typo metrics are `unitsPerEm 2000`, ascent `1470`, descent
- * `530`; at 22 px the 16.17 px ascent is laid out as 16 px (the descent as
- * 6 px, so ascent+descent = the 1em line box and the half-leading is 0).
+ * gap: var(--lusk-marque-ecart)`, and that injected gap is this owner's
+ * `ecartToken` (the app's shared `--space-2` spacing token, 8 px at the 16 px
+ * root). The PDF has no CSS cascade, so the painter consumes the same owner's
+ * declared pixel value (`ecartPx`); the token declaration and that value are
+ * tied by `lusk-brand.spec.ts`, so one edit cannot silently split them.
  *
- * Measured on the real header (read-only main capture, `#1024`): lockup top
- * 16.515625 px, word baseline 34.484375 px at 22 px → the box top is
- * 0.81676em above the baseline. The derivation below gives 0.81727em; the
- * 0.0005em difference is the header's 1/64 px layout rounding.
+ * The PDF text baseline is fixed by the page and the painter places the ermine
+ * box from the ink facts below. The embedded face and the browser's upright-600
+ * instance share the `l`/`k` ascender ink (`yMax` 1434/2000); the measured
+ * lockup is faithful, and no cross-face ink offset is applied. (An earlier
+ * "static face 0.0238 em lower" note came from a derived 22 px line-box probe,
+ * not from glyph ink, and is withdrawn.)
  */
 export const MARQUE_LUSK_LOCKUP = {
   /** `.lusk-marque__ermine { width/height: 1.18em }`. */
   ermineEm: 1.18,
-  /** `.lusk-marque--verticale .lusk-marque__ermine { 1.55em }` (landing hero). */
+  /**
+   * `.lusk-marque--verticale .lusk-marque__ermine { 1.55em }` — the vertical
+   * lockup's own default. The landing hero overrides it to 1.3em with its own
+   * negative margin (`AccueilView.vue`), a host variant, not this value.
+   */
   ermineVerticaleEm: 1.55,
-  /** `font: 600 1.375rem/1` → the word's line box is exactly 1em. */
-  ligneMotEm: 1,
-  /** Source size of the header word: `1.375rem` at the 16 px root. */
-  tailleSourcePx: 22,
-  /** `--space-2` of the header lockup gap, in CSS px. */
+  /** Shared spacing token of the horizontal lockup gap (`styles/tokens.css`). */
+  ecartToken: '--space-2',
+  /** The token's declared value, consumed by the PDF (which has no cascade). */
   ecartPx: 8,
   /** Newsreader typo/hhea metrics of the face shared by screen and PDF. */
   unitesParEm: 2000,
@@ -95,33 +97,19 @@ export const MARQUE_LUSK_LOCKUP = {
 } as const
 
 /**
- * Alphabetic baseline of the word inside its 1em line box, in em. The browser
- * rounds the face's ascent to whole pixels at the header size (see
- * `MARQUE_LUSK_LOCKUP`); the descent follows so that their sum is the line box.
- */
-export function baseMotDansLigneEm(taillePx: number = MARQUE_LUSK_LOCKUP.tailleSourcePx): number {
-  const ascentPx = Math.round(
-    MARQUE_LUSK_LOCKUP.ascensionUnites / MARQUE_LUSK_LOCKUP.unitesParEm * taillePx,
-  )
-  return ascentPx / taillePx
-}
-
-/**
  * Top of the lockup box above the word baseline, in em, for the PDF painter.
  *
- * The PDF text baseline is fixed (`baseMot`), and the embedded wordmark face's
- * ascender ink is its `l`/`k` `yMax` (1434/2000 = 0.717em). The real header's
- * measured ink gap between that ascender and the ermine's top is 0.26705em
- * (read-only capture at 720 px/em). The ermine's own ink top sits 0.3222em
- * below its box top inside the shared 1.18em viewport. Placing the box so that
+ * The PDF text baseline is fixed, and the embedded wordmark face's ascender ink
+ * is its `l`/`k` `yMax` (1434/2000 = 0.717em). The real header's measured ink
+ * gap between that ascender and the ermine's top is 0.26705em (read-only
+ * capture at 720 px/em). The ermine's own ink top sits 0.3222em below its box
+ * top inside the shared 1.18em viewport. Placing the box so that
  * `word ink − gap = ermine ink` gives the box top:
  *
  *   0.71703 − 0.26705 + 0.32222 = 0.77220em
  *
- * That is the number the painter consumes; the flex box arithmetic
- * (`0.09 + 0.72727 = 0.81727`) is the *screen's* box, not the PDF text's ink
- * frame — the embedded static face renders its ascender 0.0238em lower than
- * the browser's variable face, which the header ink gap already accounts for.
+ * That is the number the painter consumes; the screen's flex box arithmetic is
+ * a different frame and is not used here.
  */
 export function sommetErmineEm(): number {
   return MARQUE_LUSK_LOCKUP.ascensionEncreMotEm

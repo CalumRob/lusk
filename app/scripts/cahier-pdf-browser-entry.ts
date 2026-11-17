@@ -6,6 +6,8 @@
  */
 import { composerCahierPdf } from '../src/fiche/prototype/cahierPdfComposer'
 import { createApp, h, nextTick } from 'vue'
+import LuskBrand from '../src/components/LuskBrand.vue'
+import { MARQUE_LUSK_LOCKUP } from '../src/components/luskBrandMark'
 import AccessRampFigureCahier from '../src/fiche/prototype/AccessRampFigureCahier.vue'
 import CahierGroupedVerticalBarChart from '../src/fiche/prototype/CahierGroupedVerticalBarChart.vue'
 import CahierMobiliteComparisonBars from '../src/fiche/prototype/CahierMobiliteComparisonBars.vue'
@@ -85,6 +87,8 @@ interface ResultatPdf {
   readonly bytes: number[]
   readonly ms: number
   readonly heap?: number
+  /** Stable hash of the exact frozen request this PDF was composed from. */
+  readonly requestHash: string
 }
 
 async function generer(
@@ -106,6 +110,13 @@ async function generer(
   if (abort) controller.abort()
   const debut = performance.now()
   if (abortAfterDecode) afterDecode = () => controller.abort()
+  const empreinte = async (): Promise<string> => {
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(JSON.stringify(projection.request)),
+    )
+    return [...new Uint8Array(digest)].map((octet) => octet.toString(16).padStart(2, '0')).join('')
+  }
   try {
   const artifact = await composerCahierPdf(projection.request, {
     signal: controller.signal,
@@ -117,6 +128,7 @@ async function generer(
     bytes: [...new Uint8Array(await artifact.blob.arrayBuffer())],
     ms: performance.now() - debut,
     heap: memoire,
+    requestHash: await empreinte(),
   }
   } finally {
     afterDecode = undefined
@@ -182,6 +194,59 @@ async function generer(
 }
 
 ;(window as unknown as { clesPdfCahier: readonly PdfFixtureSectionKey[] }).clesPdfCahier = PDF_FIXTURE_SECTION_KEYS
+
+/**
+ * Rendered receipt for the shared brand lockup gap (#1024).
+ *
+ * Mounts the real `LuskBrand` in the app's CSS engine: the computed gap must be
+ * the owner's token (`--space-2` → 8 px), and mutating the injected custom
+ * property the owner supplies must move the rendered geometry. This is the
+ * browser counterpart of the vitest owner contract; the PDF side is measured on
+ * actual PDF bytes.
+ */
+;(window as any).auditerEcartMarque = async () => {
+  const hote = document.createElement('div')
+  hote.style.cssText = 'position:fixed;left:-20000px;top:0'
+  document.body.append(hote)
+  const racine = document.createElement('div')
+  hote.append(racine)
+  const application = createApp(LuskBrand as any)
+  application.mount(racine)
+  try {
+    await nextTick()
+    await new Promise((resoudre) => requestAnimationFrame(() => resoudre(null)))
+    const marque = racine.querySelector('.lusk-marque') as HTMLElement
+    if (!marque) throw new Error('Écart de marque : .lusk-marque introuvable')
+    const lire = () => getComputedStyle(marque).gap
+    const initial = lire()
+    marque.style.setProperty('--lusk-marque-ecart', '12px')
+    void marque.getBoundingClientRect()
+    const mute = lire()
+    marque.style.setProperty('--lusk-marque-ecart', `var(${MARQUE_LUSK_LOCKUP.ecartToken})`)
+    void marque.getBoundingClientRect()
+    const restaure = lire()
+    const tokenValue = getComputedStyle(document.documentElement)
+      .getPropertyValue(MARQUE_LUSK_LOCKUP.ecartToken).trim()
+    const resultat = {
+      token: MARQUE_LUSK_LOCKUP.ecartToken,
+      ownerPx: MARQUE_LUSK_LOCKUP.ecartPx,
+      tokenValue,
+      initial,
+      mute,
+      restaure,
+      injection: marque.style.getPropertyValue('--lusk-marque-ecart'),
+    }
+    if (initial !== `${MARQUE_LUSK_LOCKUP.ecartPx}px`) {
+      throw new Error(`Écart de marque : gap initial ${initial} ≠ ${MARQUE_LUSK_LOCKUP.ecartPx}px`)
+    }
+    if (mute !== '12px') throw new Error(`Écart de marque : la mutation ne déplace pas le gap (${mute})`)
+    if (restaure !== initial) throw new Error(`Écart de marque : le retour au token donne ${restaure}`)
+    return resultat
+  } finally {
+    application.unmount()
+    hote.remove()
+  }
+}
 
 /**
  * Rendered receipt for the shared screen stroke grammar (#1024).

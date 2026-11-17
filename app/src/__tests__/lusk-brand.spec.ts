@@ -61,6 +61,27 @@ describe('#204 — l’ermine suit le texte (em, pas de px fixe)', () => {
   })
 })
 
+describe('#1024 — écart horizontal du logotype : un seul propriétaire, écran et PDF', () => {
+  const tokens = readFileSync(join(process.cwd(), 'src', 'styles', 'tokens.css'), 'utf-8')
+
+  it('consomme le token --space-2 de l’app, sans nouvelle politique de marque', () => {
+    expect(MARQUE_LUSK_LOCKUP.ecartToken).toBe('--space-2')
+    const declaration = new RegExp(`${MARQUE_LUSK_LOCKUP.ecartToken}:\\s*(\\d+(?:\\.\\d+)?)px`).exec(tokens)
+    expect(declaration, 'déclaration du token dans tokens.css').toBeTruthy()
+    expect(Number(declaration![1])).toBe(MARQUE_LUSK_LOCKUP.ecartPx)
+  })
+
+  it('injecte l’écart du propriétaire dans le composant, jamais une copie littérale', () => {
+    const style = mount(LuskBrand).get('.lusk-marque').attributes('style') ?? ''
+    expect(style).toContain(`--lusk-marque-ecart: var(${MARQUE_LUSK_LOCKUP.ecartToken})`)
+    const css = readFileSync(join(process.cwd(), 'src', 'components', 'LuskBrand.vue'), 'utf-8')
+    expect(css).toMatch(/gap:\s*var\(--lusk-marque-ecart\)/)
+    // The component may not keep a second, unowned copy of the gap.
+    expect(css).not.toMatch(/gap:\s*var\(--space-2\)/)
+    expect(css).not.toMatch(/gap:\s*\d+px/)
+  })
+})
+
 /**
  * Identity contract for the locked mark's fills (#1024). The mark is a brand
  * asset, so its *design* identity belongs to this owner contract, not to an

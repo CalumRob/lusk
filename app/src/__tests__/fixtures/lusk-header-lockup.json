@@ -2,8 +2,10 @@
   "provenance": {
     "capturedAt": "2026-11-17T18:05:00Z",
     "source": "read-only live app http://127.0.0.1:5173/ (main checkout E:/Lusk, head 97a19652fc89cf001eea6e55b8b3fc54ce4eac56); no DOM state changed",
-    "method": "Playwright Chromium, viewport 1440x900; DOM geometry + detached-clone baseline probe; the same shared ermine paths rendered at 720 px/em (svg-standalone.png) for the ink offsets inside the 1.18em box",
-    "pathsSha256": "4de6b1cc493fcb42a2da72f9fc8e8b4bc74f2df132248a33001fe79094368597"
+    "method": "Playwright Chromium, viewport 1440x900; DOM geometry + detached-clone baseline probe; the same shared ermine paths rendered at 720 px/em (svg-standalone.png) for the ink offsets inside the 1.18em box. Ink offsets come from the rendered lockup raster (720 px/em); the detached-clone probe only measured the line box, never glyph ink.",
+    "pathsSha256": "4de6b1cc493fcb42a2da72f9fc8e8b4bc74f2df132248a33001fe79094368597",
+    "kind": "measurement snapshot — read-only live capture; not produced by the painter code",
+    "regeneration": "measurement snapshot, not codegen: the evidence-only make_header_fixture.mjs reproduces this file from the stored header-live.json geometry plus the pinned raster inks; the live browser capture is not re-run by any script"
   },
   "fontSizePx": 22,
   "ermineEm": 1.18,
@@ -41,7 +43,7 @@
   },
   "baseline": {
     "y": 34.484375,
-    "derivation": "word top + 16px (browser integer Newsreader ascent at 22px; probed on a detached clone)"
+    "derivation": "word top + 16px browser line-box ascent at 22px (detached-clone probe; a line-box baseline, NOT glyph ink)"
   },
   "derived": {
     "svgTopAboveBaseline": 0.8167613636363636,

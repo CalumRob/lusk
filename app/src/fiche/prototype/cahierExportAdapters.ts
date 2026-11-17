@@ -1467,6 +1467,11 @@ export function projectCurve(
     tables: [{
       key: 'curve',
       title: evidence.figureTitle,
+      // The row dimension is the trajectory time, named by the app content
+      // owner's approved table label (`Temps`, `desktop.js:274`) — not the
+      // figure's own x-axis title (`Temps de trajet`), which describes the
+      // chart axis, and not a painter-side family branch.
+      rowHeader: TABLEAU_TEMPS_LABEL,
       columns: [
         { key: 'focal', label: evidence.territoryName, unit, kind: 'focal', seriesKey: null },
         ...(displayed ? [{

@@ -963,7 +963,7 @@ async function dessinerMarque(doc: jsPDF, x: number, sommetErmine: number, baseM
   }
   const painter = doc as jsPDF & { svg: (element: Element, options: { x: number; y: number; width: number; height: number }) => Promise<unknown> }
   await painter.svg(svg, { x, y: sommetErmine, width: cote, height: cote })
-  texte(doc, 'lusk', x + cote + mm(rythmePt(8)), baseMot, {
+  texte(doc, 'lusk', x + cote + mm(ptDepuisCssPx(MARQUE_LUSK_LOCKUP.ecartPx)), baseMot, {
     police: ROLE_PDF.marqueMot.police,
     taille: ROLE_PDF.marqueMot.taille,
     couleur: PALETTE_PDF.textPrimary,
@@ -1116,6 +1116,8 @@ function dessinerTableau(
   y: number,
   width: number,
   continued: boolean,
+  /** Wrapped footer-note lines the pagination actually reserved. */
+  noteLines: number,
 ): number {
   let cy = y
   for (const ligne of part.titleLines) {
@@ -1213,7 +1215,15 @@ function dessinerTableau(
           hy,
           mesure.largeur('¹', roleEntete.police, roleEntete.taille) + 0.4,
           hauteurLigneEntete,
-          { pageNumber: numeroPage, top: PAGE.piedComparaison - mm(3) },
+          {
+            pageNumber: numeroPage,
+            // The note stacks upward when it wraps, so the `¹` destination is
+            // the measured top line's lead — never a fixed H-35 point inside
+            // or below a multi-line note.
+            top: PAGE.piedComparaison
+              - (Math.max(1, noteLines) - 1) * PIED.interligne
+              - PIED.reserveHaut,
+          },
         )
       }
       hy += hauteurLigneEntete
@@ -1332,6 +1342,13 @@ function dessinerSources(
 /**
  * The measured footer note. It is one wrapping owner so the pagination reserve
  * and the painter cannot disagree about how many lines the group needs.
+ *
+ * The note must explain *what* the compared column measures (PRD §8: the group
+ * name does not replace the served statistic/weighting/rank explanation). It
+ * therefore consumes the capture's owner-published `statisticLabels` verbatim:
+ * no family is assumed to be a mean, and an empty capture prints none. When a
+ * section really serves several heterogeneous labels (e.g. two compared
+ * columns), every one of them is kept in served order.
  */
 function lignesPiedComparaison(
   capture: CahierExportCapture,
@@ -1340,7 +1357,11 @@ function lignesPiedComparaison(
   const group = capture.comparison.group
   const label = group ? group.label ?? group.names.join(', ') : null
   if (!label) return []
-  return plierTexte(`¹ Groupe comparé : ${label}`, mesure, {
+  const statistiques = capture.comparison.statisticLabels
+  const textePied = statistiques.length
+    ? `¹ Groupe comparé : ${statistiques.join(' · ')} — ${label}`
+    : `¹ Groupe comparé : ${label}`
+  return plierTexte(textePied, mesure, {
     police: ROLE_PDF.pied.police,
     taillePt: TAILLE.pied,
     largeurMax: PAGE.largeurUtile,
@@ -1574,6 +1595,7 @@ export async function composerCahierPdf(request: CahierExportRequest,
             cy,
             cellule.width,
             cellule.continued,
+            documentPdf.piedComparaison.length,
           )
         }
         cy = start + bloc.height

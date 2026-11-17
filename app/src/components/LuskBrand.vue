@@ -30,12 +30,22 @@ const styleErmine = computed(() => {
   // 1.3em + a negative margin) keep their own CSS override.
   return { '--lusk-ermine-em': `${em}em` }
 })
+
+/**
+ * The horizontal lockup gap comes from the shared brand owner, which names the
+ * app's spacing token (`--space-2`). The SFC never restates the token itself:
+ * a host override (the hero's `gap: 0`) still wins through the cascade.
+ */
+const styleMarque = computed(() => ({
+  '--lusk-marque-ecart': `var(${MARQUE_LUSK_LOCKUP.ecartToken})`,
+}))
 </script>
 
 <template>
   <span
     class="lusk-marque"
     :class="{ 'lusk-marque--verticale': verticale }"
+    :style="styleMarque"
   >
     <svg
       class="lusk-marque__ermine"
@@ -54,7 +64,8 @@ const styleErmine = computed(() => {
 .lusk-marque {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  /* Shared owner injection: `var(--space-2)` named by `MARQUE_LUSK_LOCKUP`. */
+  gap: var(--lusk-marque-ecart);
   font: 600 1.375rem/1 var(--font-wordmark);
   font-style: italic;
   letter-spacing: -0.01em;
@@ -65,7 +76,7 @@ const styleErmine = computed(() => {
 .lusk-marque--verticale {
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--lusk-marque-ecart);
 }
 
 .lusk-marque__ermine {

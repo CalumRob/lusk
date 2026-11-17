@@ -23,6 +23,8 @@ export interface PoliceTtf {
   xMin(char: string): number | null
   /** `glyf` bounding box right edge in font units. */
   xMax(char: string): number | null
+  /** `glyf` bounding box top edge in font units (ink ascent). */
+  yMax(char: string): number | null
   /** Number of points of one simple glyph, or null when unmapped/composite. */
   pointCount(char: string): number | null
   /** Contour count of one glyph (-1 for a composite), or null when unmapped. */
@@ -155,13 +157,13 @@ export function lirePoliceTtf(program: Uint8Array): PoliceTtf {
     return i16(view, offset)
   }
 
-  const bounds = (char: string): { xMin: number; xMax: number } | null => {
+  const bounds = (char: string): { xMin: number; xMax: number; yMax: number } | null => {
     const contours = contourCount(char)
     if (contours === null || contours === 0) return null
     const glyph = glyphFor(char)
     if (glyph === null) return null
     const offset = glyphOffset(glyph)
-    return { xMin: i16(view, offset + 2), xMax: i16(view, offset + 6) }
+    return { xMin: i16(view, offset + 2), xMax: i16(view, offset + 6), yMax: i16(view, offset + 8) }
   }
 
   const pointCount = (char: string): number | null => {
@@ -184,6 +186,7 @@ export function lirePoliceTtf(program: Uint8Array): PoliceTtf {
     leftSideBearing,
     xMin: (char) => bounds(char)?.xMin ?? null,
     xMax: (char) => bounds(char)?.xMax ?? null,
+    yMax: (char) => bounds(char)?.yMax ?? null,
     pointCount,
     contourCount,
   }

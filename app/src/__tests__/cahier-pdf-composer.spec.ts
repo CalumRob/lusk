@@ -31,6 +31,8 @@ import type { CahierCaptureComparison } from '@/fiche/prototype/cahierExportCapt
 import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
 import type { CahierExportRequest } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
+import { projeterCaptureExportFigures } from '@/fiche/prototype/cahierExportAdapters'
+import { TABLEAU_TEMPS_LABEL } from '@/fiche/content/cahierTableauWording'
 import {
   chargeurImageTest,
   chargeurPoliceTest,
@@ -208,7 +210,7 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
       'Réseau cyclable',
       'Réseau automobile',
       'Groupe comparé',
-      '¹ Groupe comparé : communes de EPCI X',
+      '¹ Groupe comparé : Médiane des communes de EPCI X — communes de EPCI X',
       'Source(s) : OpenStreetMap',
     ])
     // Rank text is a second line under its value; the row stays one table row.
@@ -224,8 +226,10 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
         `${lecture.pages} / ${lecture.pages}`,
       ])
     }
-    // Every page that carries comparative proof carries the footer.
-    expect(occurrences(lecture, '¹ Groupe comparé : communes de EPCI X')).toBe(lecture.pages)
+    // Every page that carries comparative proof carries the footer, with the
+    // statistic label actually served by this section (never a hardcoded mean).
+    expect(occurrences(lecture, '¹ Groupe comparé : Médiane des communes de EPCI X — communes de EPCI X'))
+      .toBe(lecture.pages)
     // No row is cut: the six native rows appear once across the two pages, and
     // a category total is not joined to itself.
     for (const label of [
@@ -384,7 +388,14 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
 
 describe('scènes natives peuplées — géométrie partagée écran/PDF', () => {
   it('garde la courbe dense à 73 points, ticks déclarés et axe pourcentage fixe', async () => {
-    const { lecture } = await generer(requeteSansMode(captureCourbeDense()), 'dense-curve.pdf')
+    const capture = captureCourbeDense()
+    // The first table column is the row dimension the adapter declares; its
+    // label is the app content owner's (`TABLEAU_TEMPS_LABEL`), never the
+    // figure's `Temps de trajet` axis title and never a blank header.
+    expect(TABLEAU_TEMPS_LABEL).toBe('Temps')
+    const [projection] = projeterCaptureExportFigures(capture)
+    expect(projection!.tables[0]!.rowHeader).toBe(TABLEAU_TEMPS_LABEL)
+    const { lecture } = await generer(requeteSansMode(capture), 'dense-curve.pdf')
     contientTout(lecture, ['0 %', '25 %', '50 %', '75 %', '100 %', 'Temps de trajet'])
     const ticks = Array.from({ length: 73 }, (_, index) => ({
       key: `t${index}`,
@@ -400,9 +411,41 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
       const pageTexte = lecture.lignes.filter((ligne) => ligne.page === page).map((ligne) => ligne.texte).join(' ')
       expect(pageTexte).toContain('COMMUNE A1')
       expect(pageTexte).toContain('Source(s) : Lusk')
+      // The row-dimension header is repeated on the first page and on every
+      // continuation: no blank cell sits where the time labels need a name.
+      const entetes = lecture.lignes.filter((ligne) => ligne.page === page
+        && ligne.items.some((item) => item.str.startsWith('Groupe comparé'))
+        && ligne.items.some((item) => item.str === 'Commune A1'))
+      expect(entetes.length, `en-tête page ${page}`).toBe(1)
+      const temps = entetes[0]!.items.find((item) => item.str === TABLEAU_TEMPS_LABEL)
+      expect(temps, `en-tête « Temps » page ${page}`).toBeTruthy()
+      expect(temps!.x).toBeLessThan(entetes[0]!.items.find((item) => item.str === 'Commune A1')!.x)
     }
     const rowLabels = new Set(lecture.lignes.flatMap((ligne) => ligne.items.map((item) => item.str)).filter((value) => /^\d+ min$/.test(value)))
     expect(rowLabels.size).toBe(73)
+    verifierDansPage(lecture)
+    verifierCollisions(lecture)
+    await verifierAlphaTexte(lecture.octets)
+  })
+
+  it('garde l’en-tête « Temps » de la courbe à trous sur chaque page, avec ses valeurs', async () => {
+    const capture = captureCourbeTrous()
+    const [projection] = projeterCaptureExportFigures(capture)
+    expect(projection!.tables[0]!.rowHeader).toBe(TABLEAU_TEMPS_LABEL)
+    const { lecture } = await generer(requeteSansMode(capture), 'dense-curve-gaps.pdf')
+    expect(lecture.pages).toBeGreaterThanOrEqual(2)
+    for (let page = 1; page <= lecture.pages; page += 1) {
+      const entetes = lecture.lignes.filter((ligne) => ligne.page === page
+        && ligne.items.some((item) => item.str.startsWith('Groupe comparé'))
+        && ligne.items.some((item) => item.str === 'Commune A1'))
+      expect(entetes.length, `en-tête page ${page}`).toBe(1)
+      expect(entetes[0]!.items.some((item) => item.str === TABLEAU_TEMPS_LABEL), `page ${page}`).toBe(true)
+      // Every page still carries its own time rows and values.
+      expect(lecture.lignes.some((ligne) => ligne.page === page
+        && ligne.items.some((item) => /^\d+ min$/.test(item.str))), `lignes page ${page}`).toBe(true)
+    }
+    // The served gaps stay in the table where they occur (first page here).
+    expect(lecture.texteComplet).toContain('Indisponible')
     verifierDansPage(lecture)
     verifierCollisions(lecture)
     await verifierAlphaTexte(lecture.octets)
@@ -723,10 +766,20 @@ describe('compositeur PDF Cahier — refus explicites', () => {
       names: ['GROUPE CORROMPU'],
       label: 'GROUPE CORROMPU',
     }
+    // The footer now carries the served statistic label next to the group; the
+    // synthetic corruption covers both, so the audit on the old footer literal
+    // must fail on the old group identity, not on the statistic's own scope.
+    capture.comparison.statisticLabels = ['Moyenne des communes bretonnes']
     const corrompu = await generer(requeteAvecModes(capture), 'negatif-groupe-reel.pdf')
     expect(corrompu.lecture.texteComplet).toContain('GROUPE CORROMPU')
-    expect(() => auditerTexte(corrompu.lecture, ['communes de EPCI X'])).toThrow(/communes de EPCI X/)
-    expect(occurrences(corrompu.lecture, 'communes de EPCI X')).toBeLessThan(occurrences(bon.lecture, 'communes de EPCI X'))
+    expect(corrompu.lecture.texteComplet).toContain(
+      '¹ Groupe comparé : Moyenne des communes bretonnes — GROUPE CORROMPU',
+    )
+    expect(() => auditerTexte(corrompu.lecture, ['¹ Groupe comparé : communes de EPCI X']))
+      .toThrow(/¹ Groupe comparé : communes de EPCI X/)
+    expect(occurrences(corrompu.lecture, '¹ Groupe comparé : communes de EPCI X')).toBe(0)
+    expect(occurrences(corrompu.lecture, 'GROUPE CORROMPU'))
+      .toBeGreaterThan(occurrences(bon.lecture, 'GROUPE CORROMPU'))
   })
 })
 
@@ -1087,7 +1140,7 @@ describe('polices PDF — provenance et marque', () => {
           { d: 'M50 100 L70 100 L60 110 Z', role: 'ink' },
         ],
       },
-      MARQUE_LUSK_LOCKUP: { ermineEm: 1.18 },
+      MARQUE_LUSK_LOCKUP: { ermineEm: 1.18, ecartToken: '--space-2', ecartPx: 8 },
       sommetErmineEm: () => 0.8,
       REMPLISSAGES_MARQUE_LUSK: { ink: '#00ff00', accent: '#ff0000' },
     }))

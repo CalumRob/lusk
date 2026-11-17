@@ -10,6 +10,7 @@
  */
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { readFile, mkdir, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -139,6 +140,9 @@ try {
   await page.waitForFunction(() => typeof window.genererCahierPdf === 'function')
   const sourceColours = await page.evaluate(() => window.auditerCahierCouleurs())
   const strokeGrammar = await page.evaluate(() => window.auditerGrammaireTraitEcran())
+  const lockupGap = process.env.CAHIER_PDF_SKIP_LOCKUP_GAP
+    ? null
+    : await page.evaluate(() => window.auditerEcartMarque())
 
   const report = []
   for (const key of keys) {
@@ -154,6 +158,7 @@ try {
       heap: desktop.heap ?? null,
       pages: desktopAudit.pages,
       texteHash: desktopAudit.texteHash,
+      requestHash: desktop.requestHash,
       fileName: desktop.fileName,
     })
     await page.setViewportSize({ width: 390, height: 844 })
@@ -173,6 +178,7 @@ try {
       pages: mobileAudit.pages,
       texteHash: mobileAudit.texteHash,
       sameTextAsDesktop: mobileAudit.texteHash === desktopAudit.texteHash,
+      requestHash: mobile.requestHash,
       fileName: mobile.fileName,
     })
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -226,6 +232,7 @@ try {
     throw new Error(`Unexpected HTTP failures: ${JSON.stringify(badResponses)}`)
   }
   await writeFile(path.join(evidenceDir, 'report.json'), JSON.stringify({
+    head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: appDir, encoding: 'utf8' }).trim(),
     errors,
     badResponses,
     assetResponses,
@@ -237,6 +244,7 @@ try {
     cleanup,
     sourceColours,
     strokeGrammar,
+    lockupGap,
     report,
   }, null, 2))
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`)

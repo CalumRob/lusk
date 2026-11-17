@@ -20,7 +20,6 @@ import { describe, expect, it } from 'vitest'
 import {
   MARQUE_LUSK_ERMINE,
   MARQUE_LUSK_LOCKUP,
-  baseMotDansLigneEm,
   sommetErmineEm,
 } from '@/components/luskBrandMark'
 import { ROLE_PDF } from '@/fiche/prototype/cahierPdfGrammaire'
@@ -98,41 +97,32 @@ describe('#1024 — placement du lockup : la géométrie partagée, pas un litt�
     expect(fixture.provenance.source).toContain('read-only live app')
   })
 
-  it('dérive la baseline du mot et le sommet de l’hermine des métriques réelles de la face', () => {
+  it('dérive les métriques de la face réelle, pas d’une sonde de baseline', () => {
     const font = lirePoliceTtf(asset())
     // The shared face's own typographic metrics (upm 2000, hhea 1470/-530).
     expect(MARQUE_LUSK_LOCKUP.unitesParEm).toBe(font.unitsPerEm)
     expect(MARQUE_LUSK_LOCKUP.ascensionUnites).toBe(font.ascender)
     expect(MARQUE_LUSK_LOCKUP.descenteUnites).toBe(-font.descender)
-    // The browser lays the 22 px word out with its integer 16 px ascent; the
-    // shared owner states that derivation, not the measured result.
-    expect(baseMotDansLigneEm()).toBeCloseTo(16 / 22, 9)
-    expect(baseMotDansLigneEm()).toBeCloseTo(
-      Math.round(font.ascender / font.unitsPerEm * MARQUE_LUSK_LOCKUP.tailleSourcePx)
-        / MARQUE_LUSK_LOCKUP.tailleSourcePx,
-      9,
-    )
-    // The screen's flex box sits 0.81727em above the baseline; the PDF's text
-    // ink frame is 0.0451em lower (its static ascender is 0.0238em lower and
-    // the raster-confirmed ink gap is 0.26705em). Both numbers are derived,
-    // never copied from a previous PDF output.
-    expect((MARQUE_LUSK_LOCKUP.ermineEm - MARQUE_LUSK_LOCKUP.ligneMotEm) / 2 + 16 / 22)
-      .toBeCloseTo(0.8172727272727273, 9)
-    expect(sommetErmineEm()).toBeCloseTo(0.77215, 5)
-    // The PDF text baseline is fixed by the page; the embedded face's ascender
-    // ink is its `l`/`k` yMax. The owner derives the box top from that ink, the
-    // real header's ink gap and the ermine's ink offset in its box.
-    expect(MARQUE_LUSK_LOCKUP.ascensionEncreMotEm).toBe(1434 / 2000)
+    // The PDF's ascender ink is the face's own `l`/`k` `yMax` — not a raster
+    // probe. The withdrawn 0.0238 em "lower static face" came from a derived
+    // 22 px line box, not from glyph ink.
+    expect(font.yMax('l')).toBe(1434)
+    expect(font.yMax('k')).toBe(1434)
+    expect(MARQUE_LUSK_LOCKUP.ascensionEncreMotEm).toBe(font.yMax('l')! / font.unitsPerEm)
+    // The two remaining inputs are real header measurements (read-only capture):
+    // the ink gap from the word ascender to the ermine top, and the ermine ink
+    // top inside its box.
+    expect(MARQUE_LUSK_LOCKUP.ecartEncreMotErmineEm)
+      .toBeCloseTo(fixture.derived.pathWordToErmineGap, 4)
+    expect(MARQUE_LUSK_LOCKUP.encreHautErmineBoiteEm)
+      .toBeCloseTo(fixture.ink720Em.top, 4)
+    // The painter's box top is those facts combined; the raster spec owns the
+    // independent pixel comparison against the PDF.
     expect(sommetErmineEm()).toBeCloseTo(
-      MARQUE_LUSK_LOCKUP.ascensionEncreMotEm
-        - MARQUE_LUSK_LOCKUP.ecartEncreMotErmineEm
-        + MARQUE_LUSK_LOCKUP.encreHautErmineBoiteEm,
-      9,
-    )
-    // The ink gap it encodes is the one measured on the real header.
-    expect(MARQUE_LUSK_LOCKUP.ecartEncreMotErmineEm).toBeCloseTo(
-      fixture.derived.pathWordToErmineGap,
-      5,
+      font.yMax('l')! / font.unitsPerEm
+        - fixture.derived.pathWordToErmineGap
+        + fixture.ink720Em.top,
+      4,
     )
   })
 })
