@@ -132,14 +132,20 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # gardent compute_payload + publish, à l'identique (régression
   # byte-identical).
   if (is.function(theme$publier)) {
-    # #1041 : si la source littorale est admise, un seam publier qui ne
-    # l'admet pas est une erreur de câblage. Jamais un abandon silencieux de
-    # la classification (le graphe targets a la même garde).
-    if (!is.null(classes_littoral) &&
-        !"classes_littoral" %in% names(formals(theme$publier))) {
+    # #1041 : les deux classifications communales voyagent ENSEMBLE dans le
+    # référentiel territorial — la même garde que le graphe targets (_targets.R)
+    # : un seam publier les accepte TOUTES DEUX ou AUCUNE. Un consommateur
+    # intentionnel (publier_programmes, qui lit la référence DÉJÀ enrichie)
+    # n'accepte ni l'une ni l'autre : c'est un câblage licite, pas une dérive.
+    # En revanche un seam qui accepte classes_densite et abandonne
+    # classes_littoral est une perte silencieuse de classification — refusée,
+    # que la source soit présente ou non.
+    accepte_densite <- "classes_densite" %in% names(formals(theme$publier))
+    accepte_littoral <- "classes_littoral" %in% names(formals(theme$publier))
+    if (accepte_littoral != accepte_densite) {
       stop(
         "Le seam publier du thème « ", theme$theme,
-        " » n'admet pas classes_littoral alors que la source littorale est présente.",
+        " » doit accepter classes_densite ET classes_littoral, ou aucune des deux",
         call. = FALSE
       )
     }

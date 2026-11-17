@@ -572,6 +572,74 @@ test_that("run_pipeline refuse un publier de thème qui n'admet pas classes_litt
     run_pipeline(theme = theme_economie(), cache = cache,
                  sortie = tempfile("sortie-publier-"),
                  noms_epci_geo_api = NULL),
-    "n'admet pas classes_littoral|classes_littoral"
+    "classes_densite ET classes_littoral, ou aucune des deux"
   )
+})
+
+# #1041 : publier_programmes consomme la référence DÉJÀ enrichie et accepte
+# intentionnellement NI l'une NI l'autre des classifications communales. La
+# source littorale est téléchargée AVANT le routage : un run Programmes avec le
+# cache épinglé présent doit réussir, pas être refusé comme un câblage fautif.
+# C'est le miroir de la règle targets « les deux ou aucune » (_targets.R) :
+# on rejette le seam qui accepte la densité et abandonne le littoral, pas le
+# consommateur intentionnel qui n'accepte ni l'une ni l'autre.
+test_that("run_pipeline accepte publier_programmes avec la source littorale épinglée en cache (#1041)", {
+  cache <- tempfile("cache-programmes-littoral-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE), add = TRUE)
+  # La source LITTORALE ÉPINGLÉE est réellement présente dans le cache du run.
+  file.copy(
+    testthat::test_path("fixtures", "littoral-dreal-bretagne-2023-04-21.csv"),
+    file.path(cache, CLASSES_LITTORAL_FICHIER)
+  )
+  # Le téléchargeur de test ne déclare aucune source : aucun fichier de densité
+  # n'est exigé, mais le cache littoral épinglé est bien lu et vérifié.
+  statuts <- tibble::tibble(
+    id = character(), mode = character(), status = character()
+  )
+  # Tables Programmes vides : le seam publier_programmes (RÉEL) est exercé de
+  # bout en bout sans dépendre des lourds fichiers sources du thème.
+  donnees_vides <- list(
+    acv = tibble::tibble(code_commune = character(), nom_commune = character(),
+                         id_acv = character()),
+    pvd = tibble::tibble(code_commune = character(), nom_commune = character(),
+                         id_pvd = character()),
+    crte = tibble::tibble(id_crte = character(), lib_crte = character(),
+                          type_grp_crte = character(), nature_juridique = character(),
+                          siren_epci = character()),
+    territoires_industrie = tibble::tibble(id_ti = character(), lib_ti = character(),
+                                           siren_epci = character(), nom_epci = character()),
+    ort = tibble::tibble(code_commune = character(), statut = character(),
+                         actualisation = character())
+  )
+  conventions_vides <- tibble::tibble(
+    commune = character(), annee = integer(),
+    programme_libl = character(), montant = numeric()
+  )
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) statuts,
+    construire_donnees_programmes = function(cache) donnees_vides,
+    construire_donnees_subventions = function(cache) {
+      list(conventions = conventions_vides)
+    },
+    lire_epci = function(chemin) tibble::tibble(
+      CODGEO = character(), LIBGEO = character(), EPCI = character(),
+      LIBEPCI = character(), DEP = character(), REG = character()
+    ),
+    publier_geometrie = function(...) invisible(NULL),
+    .package = "lusk"
+  )
+
+  sortie <- tempfile("sortie-programmes-littoral-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+
+  payload <- run_pipeline(theme = theme_programmes(), cache = cache,
+                          sortie = sortie)
+
+  # publier_programmes accepte ni classes_densite ni classes_littoral : c'est un
+  # consommateur intentionnel, pas une dérive de câblage. Le run aboutit.
+  expect_named(payload, c("membres", "subventions", "indicateurs"))
+  expect_equal(nrow(payload$membres), 0L)
+  expect_equal(nrow(payload$subventions), 0L)
 })
