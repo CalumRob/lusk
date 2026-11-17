@@ -72,6 +72,30 @@ test_that("littoral projection is NA-safe for a valid all-NC reference with a no
                    c("NC", "NC", NA_character_, NA_character_))
 })
 
+test_that("littoral projection rejects an orphan source classement on an unclassified non-commune", {
+  de_base <- data.frame(
+    code=c("29001", "29002", "200000001", "53"),
+    type=c("commune", "commune", "epci", "region"),
+    nom=c("Alpha", "Beta", "EPCI", "Bretagne"),
+    departement=c("29", "29", "29", NA_character_),
+    epci=c("200000001", "200000001", NA_character_, NA_character_),
+    littoral_code=c("NC", "NC", NA_character_, NA_character_),
+    littoral_classement_source=c(NA_character_, NA_character_,
+                                 NA_character_, NA_character_),
+    stringsAsFactors=FALSE
+  )
+  # La référence all-NC valide (non-communes sans code NI source) reste admise.
+  expect_s3_class(project_territory_reference(de_base)$rows, "data.frame")
+
+  # Une source ORPHELINE sur un non-commune non classé : le littoral_code reste
+  # NA mais la source est renseignée. Le CHECK SQL le refuserait plus tard ; le
+  # projector doit le rejeter immédiatement (aucun code ⇒ aucune source).
+  orphelin <- de_base
+  orphelin$littoral_classement_source[[3L]] <- "Mer"   # EPCI, littoral_code = NA
+  expect_error(project_territory_reference(orphelin),
+               "orphan littoral source|without a littoral code")
+})
+
 test_that("littoral projection separates absent, partial and present-but-empty columns", {
   base <- data.frame(code=c("29001", "22"), type=c("commune", "departement"),
     nom=c("Alpha", "Finistère"), departement=c("29", "29"),

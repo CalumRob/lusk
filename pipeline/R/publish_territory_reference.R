@@ -52,6 +52,11 @@ project_territory_reference <- function(territories) {
     if (any(est_c & !result$littoral_classement_source %in% c("Mer", "Estuaire")) ||
         any(!est_c & classees & !is.na(result$littoral_classement_source)))
       stop("Territory reference has an incoherent littoral source classement", call.=FALSE)
+    # Une source sans classification est un orphelin : le CHECK SQL exige
+    # (code IS NULL AND source IS NULL) pour toute ligne non classée (typiquement
+    # un non-commune, qui n'a jamais de code). Le refuser ici, avant la publication.
+    if (any(!classees & !is.na(result$littoral_classement_source)))
+      stop("Territory reference has an orphan littoral source classement without a littoral code", call.=FALSE)
   }
   result <- result[order(result$territory_type, result$territory_id), , drop=FALSE]
   rownames(result) <- NULL
