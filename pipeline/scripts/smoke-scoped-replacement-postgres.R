@@ -9,26 +9,31 @@
 #   - LUSK_RETAINED_BASELINE_MUTEX_HELD=1, set only by the PowerShell wrapper
 #     that holds 'Local\LuskIntegrationContractDb' for the whole run;
 #   - LUSK_SCALAR_PUBLICATION_INTENT=replacement;
-#   - candidate and prior-baseline artifact sorties.
+#   - a candidate and a baseline generation that both already carry the four
+#     registered Mobility keys. The candidate copy gets one TEST-ONLY additive
+#     `region` level/fact on the ratio, the exact shape of the documented
+#     replacement step after the three newer keys were published missing-only.
 #
-# One random serving_it_* schema is created and seeded with ONLY the registered
-# scalar dependency closure of the baseline generation (reference, scalar +
-# comparison, declared profiles + comparison, linked Habitat selected reading).
-# Unrelated owners are deliberately not seeded: this proof asserts the scoped
-# path does not need them.
-#
-# A TEST-ONLY candidate copy adds one `region` level and one region fact to the
-# refuelling ratio, exactly the additive shape of the documented activation.
-# The normal wrapper/plan must:
-#   FORWARD  -> prove the replacement delta and publish the closure atomically;
-#   RECOVERY -> restore the baseline closure through the same plan (no special
-#               flag), removing the region/replacement facts;
-#   REPUBLISH-> install the candidate again.
-# Every step checks the unrelated publication marker is untouched. It does not
-# claim a production activation and does not touch the serving database.
-main <- function() {
+# One random serving_it_* schema is seeded with the baseline closure through
+# the normal registered publishers. The proof then:
+#   FAILURE  -> an injected reading-publisher error after the scalar/profile
+#               stage must roll back the whole outer transaction (all rows,
+#               markers and pointers byte-identical), then clean up normally;
+#   FORWARD  -> the normal wrapper commits the validated candidate closure;
+#               every closure table must equal an independently seeded candidate
+#               schema (same normal publishers), and the guard must verify every
+#               scalar/comparison/profile/profile-comparison/selected-reading
+#               marker + linked identity;
+#   RECOVERY -> the same wrapper/plan restores the baseline closure exactly;
+#   PINNED   -> after a plan, the profile/selected-reading artifact directories
+#               are renamed away. A second normal atomic publication must still
+#               commit the SAME validated candidate closure from the frozen plan
+#               (a re-read would fail), proving no plan-to-write TOCTOU.
+# Zero residual serving_it_* schemas and zero public relations are required
+# before and after, including after the injected failure.
 pkgload::load_all(".", quiet = TRUE)
 
+main <- function() {
 config <- setNames(lapply(c("HOST", "PORT", "DATABASE", "USER"),
   function(suffix) Sys.getenv(paste0("LUSK_SCALAR_TEST_", suffix), unset = "")),
   c("HOST", "PORT", "DATABASE", "USER"))
@@ -77,9 +82,8 @@ make_writable <- function(directory) {
 make_writable(candidate_dir)
 make_writable(baseline_dir)
 
-# TEST-ONLY fixture: the candidate artifact predates the #1032 metadata edit, so
-# add the additive region level/fact to one both-present scoped indicator. The
-# value is a labelled fixture, not a production statistic.
+# TEST-ONLY fixture: add the additive region level/fact to the ratio. The value
+# is a labelled fixture, not a production statistic.
 replacement_indicator <- "bornes_ev_par_station_service"
 replacement_region <- NULL
 add_region_replacement <- function(directory) {
@@ -126,15 +130,6 @@ add_region_replacement <- function(directory) {
 }
 replacement_region <- add_region_replacement(candidate_dir)
 
-# TEST-ONLY preparation (private copies): start the candidate from the prior
-# profile binding, so the normal metadata-only companion refresh runs forward.
-unlink(file.path(candidate_dir, "profile-serving"), recursive = TRUE)
-stopifnot(file.copy(file.path(baseline_dir, "profile-serving"), candidate_dir,
-                    recursive = TRUE))
-stopifnot(file.copy(file.path(baseline_dir, "scalar-serving", "binding.json"),
-  file.path(candidate_dir, "scalar-serving", "binding.json"), overwrite = TRUE))
-make_writable(candidate_dir)
-
 connection <- DBI::dbConnect(RPostgres::Postgres(), host = config[["HOST"]],
   port = as.integer(config[["PORT"]]), dbname = config[["DATABASE"]],
   user = config[["USER"]], passfile = passfile)
@@ -147,18 +142,24 @@ stopifnot(nrow(identity) == 1L,
 
 schema <- paste0("serving_it_", Sys.getpid(), "_",
                  sprintf("%08x", sample.int(.Machine$integer.max, 1L)))
+expected_schema <- paste0("serving_it_expected_", Sys.getpid(), "_",
+                          sprintf("%08x", sample.int(.Machine$integer.max, 1L)))
 quoted_schema <- as.character(DBI::dbQuoteIdentifier(connection, schema))
+quoted_expected <- as.character(DBI::dbQuoteIdentifier(connection,
+                                                       expected_schema))
 created <- FALSE
+expected_created <- FALSE
 previous_env <- Sys.getenv(c("LUSK_PUBLISH_HOST", "LUSK_PUBLISH_PORT",
   "LUSK_PUBLISH_DATABASE", "LUSK_PUBLISH_USER", "PGPASSFILE",
   "LUSK_SCALAR_SCOPE", "LUSK_SCALAR_BASELINE_SORTIE",
   "LUSK_SCALAR_PUBLICATION_INTENT", "PGOPTIONS"), unset = NA_character_)
+drop_schema <- function(name) {
+  try(DBI::dbExecute(connection, paste0("DROP SCHEMA ", name, " CASCADE")),
+      silent = TRUE)
+}
 on.exit({
-  if (created) {
-    try(DBI::dbExecute(connection, "ROLLBACK"), silent = TRUE)
-    try(DBI::dbExecute(connection, paste0("DROP SCHEMA ", quoted_schema,
-                                          " CASCADE")), silent = TRUE)
-  }
+  if (expected_created) drop_schema(quoted_expected)
+  if (created) drop_schema(quoted_schema)
   for (i in seq_along(previous_env)) {
     if (is.na(previous_env[[i]])) Sys.unsetenv(names(previous_env)[[i]])
     else do.call(Sys.setenv, setNames(list(previous_env[[i]]),
@@ -178,57 +179,90 @@ region_fact <- function(indicator) DBI::dbGetQuery(connection, paste(
   "SELECT value, status FROM scalar_observation WHERE indicator_id=$1",
   "AND territory_type='region' AND territory_id=$2"),
   params = list(indicator, replacement_region))
+residual_schemas <- function()
+  DBI::dbGetQuery(connection, paste(
+    "SELECT nspname FROM pg_namespace",
+    "WHERE nspname LIKE 'serving_it_%' ORDER BY nspname"))$nspname
+public_relations <- function()
+  DBI::dbGetQuery(connection, paste(
+    "SELECT count(*) AS n FROM pg_class c JOIN pg_namespace n",
+    "ON n.oid=c.relnamespace WHERE n.nspname='public'",
+    "AND c.relkind IN ('r','v','m','p')"))$n[[1L]]
+schema_digest <- function(name) {
+  tables <- DBI::dbGetQuery(connection, paste(
+    "SELECT table_name FROM information_schema.tables",
+    "WHERE table_schema=$1 AND table_type='BASE TABLE'",
+    "ORDER BY table_name"), params = list(name))$table_name
+  quote_id <- function(value) as.character(DBI::dbQuoteIdentifier(connection,
+                                                                 value))
+  vapply(tables, function(table) {
+    DBI::dbGetQuery(connection, paste0(
+      "SELECT md5(coalesce(string_agg(",
+      "(to_jsonb(t) - 'published_at')::text, '|' ORDER BY ",
+      "(to_jsonb(t) - 'published_at')::text), '')) AS h FROM ",
+      quote_id(name), ".", quote_id(table), " t"))$h[[1L]]
+  }, character(1))
+}
+apply_schema <- function(name) {
+  DBI::dbExecute(connection, paste0("SET search_path TO ", name))
+  sql <- paste(readLines(file.path("..", "api", "schema.sql"), warn = FALSE),
+               collapse = "\n")
+  for (statement in split_postgres_sql(sql)) DBI::dbExecute(connection, statement)
+}
+seed_closure <- function(directory, publication_dir = tempdir()) {
+  reference <- project_territory_reference(nanoparquet::read_parquet(
+    file.path(directory, "territoires.parquet")))
+  publish_territory_reference_projection(reference,
+    territory_reference_postgres_adapter(connection))
+  snapshot <- project_retained_scalar_snapshot(directory, reference)
+  publish_retained_scalar_snapshot(connection, snapshot, publication_dir)
+  publier_declared_profiles_postgres(directory, declared_profile_owners(),
+                                     con = connection)
+  reading <- read_typed_reading_publication_from(directory, "habitat")
+  publish_typed_reading_publication(
+    register_typed_reading_artifact_publisher(list(), "habitat",
+                                              publish_habitat_reading),
+    "habitat", reading, connection)
+  DBI::dbExecute(connection, paste(
+    "INSERT INTO table_publication(table_name, content_version, row_count,",
+    "reference_content_version) VALUES",
+    "('ordered_series', 'unrelated-sentinel-v1', 0, $1)"),
+    params = list(reference$content_version))
+  invisible(snapshot)
+}
 
-profile_owners <- declared_profile_owners()
-candidate_reference <- project_territory_reference(nanoparquet::read_parquet(
-  file.path(candidate_dir, "territoires.parquet")))
-candidate_scalar_version <- scalar_content_version(
-  project_retained_scalar_snapshot(candidate_dir,
-                                   candidate_reference)$scalar)
-receipt <- c(paste("schema:", schema),
-             "candidate_fixture: additive region level/fact on bornes_ev_par_station_service (value 2.5, TEST fixture)",
-             paste("candidate_scalar:", candidate_scalar_version))
+stopifnot(length(residual_schemas()) == 0L)
+public_before <- public_relations()
+receipt <- c("scoped replacement guarded proof (#1037)",
+             paste("candidate_fixture: additive region level/fact on",
+                   replacement_indicator, "(value 2.5, TEST fixture)"))
 DBI::dbExecute(connection, paste0("CREATE SCHEMA ", quoted_schema))
 created <- TRUE
-DBI::dbExecute(connection, paste0("SET search_path TO ", quoted_schema))
-schema_sql <- paste(readLines(file.path("..", "api", "schema.sql"), warn = FALSE),
-                    collapse = "\n")
-for (statement in split_postgres_sql(schema_sql))
-  DBI::dbExecute(connection, statement)
+apply_schema(quoted_schema)
 DBI::dbExecute(connection, paste0("GRANT USAGE ON SCHEMA ", quoted_schema,
   " TO ", as.character(DBI::dbQuoteIdentifier(connection, read_user))))
 DBI::dbExecute(connection, paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ",
   quoted_schema, " TO ",
   as.character(DBI::dbQuoteIdentifier(connection, read_user))))
 
-# Seed ONLY the affected closure of the baseline generation through the normal
-# registered publishers, including the linked Habitat selected reading.
-reference <- project_territory_reference(nanoparquet::read_parquet(
-  file.path(baseline_dir, "territoires.parquet")))
-publish_territory_reference_projection(reference,
-  territory_reference_postgres_adapter(connection))
-baseline_snapshot <- project_retained_scalar_snapshot(baseline_dir, reference)
-publish_retained_scalar_snapshot(connection, baseline_snapshot, tempdir())
-publier_declared_profiles_postgres(baseline_dir, profile_owners, con = connection)
-habitat <- read_typed_reading_publication_from(baseline_dir, "habitat")
-publish_typed_reading_publication(
-  register_typed_reading_artifact_publisher(list(), "habitat",
-                                            publish_habitat_reading),
-  "habitat", habitat, connection)
-# Unrelated sentinel: the scoped path must never touch it.
-DBI::dbExecute(connection, paste(
-  "INSERT INTO table_publication(table_name, content_version, row_count,",
-  "reference_content_version) VALUES",
-  "('ordered_series', 'unrelated-sentinel-v1', 0, $1)"),
-  params = list(reference$content_version))
+baseline_snapshot <- seed_closure(baseline_dir)
+baseline_digest <- schema_digest(schema)
 baseline_markers <- c(
   scalar = marker("scalar_observation"),
   comparison = DBI::dbGetQuery(connection,
     "SELECT content_version AS v FROM scalar_comparison_publication")$v[[1L]],
   profile = marker("declared_profile"),
+  profile_comparison = DBI::dbGetQuery(connection,
+    "SELECT content_version AS v FROM profile_comparison_publication")$v[[1L]],
   reading = marker("selected_reading"))
-stopifnot(nrow(region_fact(replacement_indicator)) == 0L)
+stopifnot(nrow(region_fact(replacement_indicator)) == 0L,
+          fact_count("stations_service") > 0L)
+receipt <- c(receipt,
+  paste("baseline_scalar:", baseline_markers[["scalar"]]),
+  paste("baseline_three_key_facts:", fact_count("stations_service"),
+        fact_count("stations_service_1000"), fact_count("bornes_recharge_1000")))
 
+# Point the wrapper at the dedicated test database and the private candidate.
 Sys.setenv(LUSK_PUBLISH_HOST = config[["HOST"]],
            LUSK_PUBLISH_PORT = config[["PORT"]],
            LUSK_PUBLISH_DATABASE = config[["DATABASE"]],
@@ -240,81 +274,151 @@ Sys.setenv(LUSK_PUBLISH_HOST = config[["HOST"]],
            LUSK_SCALAR_BASELINE_SORTIE = baseline_dir,
            LUSK_SCALAR_PUBLICATION_INTENT = "replacement")
 
-# The plan/preview must be write-free and honest about the replacement. Preview
-# runs on a private copy whose declared-profile binding is refreshed exactly as
-# forward publication will refresh the real private candidate.
-preview_dir <- file.path(workspace, "preview-candidate")
-dir.create(preview_dir)
-stopifnot(all(file.copy(list.files(candidate_dir, full.names = TRUE),
-                        preview_dir, recursive = TRUE)))
-refresh_declared_profile_scalar_binding(preview_dir, profile_owners,
-                                        candidate_scalar_version)
-plan <- scoped_publication_plan(preview_dir, baseline_dir, scope_ids,
-                                intent = "replacement")
-stopifnot(identical(plan$direction, "forward"),
-          any(plan$replacement_indicators$direction == "forward" &
-              plan$replacement_indicators$indicator_id ==
-                replacement_indicator))
-preview <- scoped_publication_preview(plan, theme = "mobilite")
-stopifnot(identical(preview$writes, FALSE))
-receipt <- c(receipt,
-  paste("preview_forward_added_facts:", nrow(preview$added_facts)),
-  paste("preview_forward_removed_facts:", nrow(preview$removed_facts)))
+# FAILURE injection: the reading publisher throws after the scalar/profile
+# stage. The normal outer transaction must roll everything back exactly.
+namespace <- asNamespace("lusk")
+original_reading_publisher <- get("publish_habitat_reading", envir = namespace)
+assignInNamespace("publish_habitat_reading",
+  function(...) stop("injected replacement failure", call. = FALSE), ns = "lusk")
+failed <- tryCatch({
+  publish_retained_backend_from_parquet(candidate_dir)
+  NULL
+}, error = function(error) error)
+assignInNamespace("publish_habitat_reading", original_reading_publisher,
+                  ns = "lusk")
+stopifnot(inherits(failed, "error"),
+          grepl("injected replacement failure", conditionMessage(failed)))
+failed_digest <- schema_digest(schema)
+stopifnot(identical(failed_digest, baseline_digest))
+stopifnot(identical(schema_digest(schema), baseline_digest),
+          identical(marker("scalar_observation"),
+                    baseline_markers[["scalar"]]),
+          identical(marker("declared_profile"), baseline_markers[["profile"]]),
+          nrow(region_fact(replacement_indicator)) == 0L)
+receipt <- c(receipt, "failure_injection: rolled back whole schema exactly")
 
+# FORWARD through the normal wrapper.
 forward <- publish_retained_backend_from_parquet(candidate_dir)
-stopifnot(identical(marker("scalar_observation"), candidate_scalar_version))
-stopifnot(nrow(region_fact(replacement_indicator)) == 1L,
+plan <- scoped_publication_plan(candidate_dir, baseline_dir, scope_ids,
+                                intent = "replacement")
+stopifnot(identical(plan$direction, "forward"))
+mismatches <- verifier_scoped_publication(
+  scoped_publication_markers(connection, plan),
+  scoped_target_markers(plan), plan$reading_owners)
+stopifnot(nrow(mismatches) == 0L,
+          nrow(region_fact(replacement_indicator)) == 1L,
           identical(as.numeric(region_fact(replacement_indicator)$value[[1L]]),
                     2.5),
           fact_count("stations_service") > 0L,
           fact_count("stations_service_1000") > 0L,
           fact_count("bornes_recharge_1000") > 0L,
           identical(marker("ordered_series"), "unrelated-sentinel-v1"))
-forward_markers <- c(
-  scalar = marker("scalar_observation"),
-  comparison = DBI::dbGetQuery(connection,
-    "SELECT content_version AS v FROM scalar_comparison_publication")$v[[1L]],
-  profile = marker("declared_profile"),
-  reading = marker("selected_reading"))
-receipt <- c(receipt,
-  paste("forward_scalar:", forward_markers[["scalar"]]),
-  paste("forward_comparison:", forward_markers[["comparison"]]),
-  paste("forward_profile:", forward_markers[["profile"]]),
-  paste("forward_reading:", forward_markers[["reading"]]),
-  paste("forward_region_rows:", nrow(region_fact(replacement_indicator))),
-  paste("forward_three_key_facts:", fact_count("stations_service"),
-        fact_count("stations_service_1000"), fact_count("bornes_recharge_1000")))
+forward_digest <- schema_digest(schema)
 
-# Recovery: the same normal wrapper/plan, frozen baseline as target and the
-# published candidate as the live guard state.
+# Independently seed the candidate closure in a second schema and require every
+# closure table to match exactly (all facts/descriptors/provenance,
+# comparisons, profiles, selected reading, markers and source rows).
+DBI::dbExecute(connection, paste0("CREATE SCHEMA ", quoted_expected))
+expected_created <- TRUE
+apply_schema(quoted_expected)
+reference <- project_territory_reference(nanoparquet::read_parquet(
+  file.path(candidate_dir, "territoires.parquet")))
+publish_territory_reference_projection(reference,
+  territory_reference_postgres_adapter(connection))
+candidate_snapshot <- project_retained_scalar_snapshot(candidate_dir, reference)
+publish_retained_scalar_snapshot(connection, candidate_snapshot, tempdir())
+publish_declared_profiles_projection(plan$target_profiles, connection,
+  artifact_directory = NULL, expected_version = plan$target_profile_version,
+  comparisons = plan$target_profile_comparisons)
+publish_typed_reading_publication(
+  register_typed_reading_artifact_publisher(list(), "habitat",
+                                            publish_habitat_reading),
+  "habitat", plan$target_reading_publication, connection)
+DBI::dbExecute(connection, paste(
+  "INSERT INTO table_publication(table_name, content_version, row_count,",
+  "reference_content_version) VALUES",
+  "('ordered_series', 'unrelated-sentinel-v1', 0, $1)"),
+  params = list(reference$content_version))
+expected_digest <- schema_digest(expected_schema)
+stopifnot(identical(names(expected_digest), names(forward_digest)),
+          identical(unname(expected_digest), unname(forward_digest)))
+DBI::dbExecute(connection, paste0("SET search_path TO ", quoted_schema))
+drop_schema(quoted_expected)
+expected_created <- FALSE
+receipt <- c(receipt,
+  paste("forward_scalar:", marker("scalar_observation")),
+  paste("forward_comparison:", {
+    DBI::dbGetQuery(connection,
+      "SELECT content_version AS v FROM scalar_comparison_publication")$v[[1L]]
+  }),
+  paste("forward_profile:", marker("declared_profile")),
+  paste("forward_profile_comparison:", {
+    DBI::dbGetQuery(connection,
+      "SELECT content_version AS v FROM profile_comparison_publication")$v[[1L]]
+  }),
+  paste("forward_reading:", marker("selected_reading")),
+  paste("forward_region_rows:", nrow(region_fact(replacement_indicator))),
+  "closure_rows: exact match against independent candidate seed")
+
+# RECOVERY through the same normal wrapper/plan.
 Sys.setenv(LUSK_SCALAR_BASELINE_SORTIE = candidate_dir)
 recovery <- publish_retained_backend_from_parquet(baseline_dir)
-stopifnot(identical(marker("scalar_observation"), baseline_markers[["scalar"]]),
+recovery_digest <- schema_digest(schema)
+stopifnot(identical(recovery_digest, baseline_digest),
+          identical(marker("scalar_observation"), baseline_markers[["scalar"]]),
           identical(marker("declared_profile"), baseline_markers[["profile"]]),
           nrow(region_fact(replacement_indicator)) == 0L,
-          fact_count("stations_service") == 0L,
-          fact_count("stations_service_1000") == 0L,
-          fact_count("bornes_recharge_1000") == 0L,
+          fact_count("stations_service") > 0L,
           identical(marker("ordered_series"), "unrelated-sentinel-v1"))
 receipt <- c(receipt,
   paste("recovery_scalar:", marker("scalar_observation")),
-  paste("recovery_region_rows:", nrow(region_fact(replacement_indicator))),
-  paste("recovery_unrelated_marker:", marker("ordered_series")))
+  "recovery_rows: whole schema digest identical to baseline seed")
 
-# Republish the candidate through the same normal wrapper.
-Sys.setenv(LUSK_SCALAR_BASELINE_SORTIE = baseline_dir)
-republish <- publish_retained_backend_from_parquet(candidate_dir)
-stopifnot(identical(marker("scalar_observation"), forward_markers[["scalar"]]),
+# PINNED write: build the plan, then rename the profile and reading artifact
+# directories away. A re-read would fail; the frozen plan must publish the SAME
+# candidate closure through the normal atomic transaction.
+plan <- scoped_publication_plan(candidate_dir, baseline_dir, scope_ids,
+                                intent = "replacement")
+profile_dir <- file.path(candidate_dir, "profile-serving")
+reading_dir <- file.path(candidate_dir, "typed-reading-serving")
+profile_pinned <- file.path(candidate_dir, "profile-serving.pinned")
+reading_pinned <- file.path(candidate_dir, "typed-reading-serving.pinned")
+stopifnot(file.rename(profile_dir, profile_pinned),
+          file.rename(reading_dir, reading_pinned))
+restore_pinned <- function() {
+  if (dir.exists(profile_pinned)) file.rename(profile_pinned, profile_dir)
+  if (dir.exists(reading_pinned)) file.rename(reading_pinned, reading_dir)
+}
+on.exit(restore_pinned(), add = TRUE)
+locked <- FALSE
+DBI::dbGetQuery(connection, "SELECT pg_advisory_lock(594, 1)")
+locked <- TRUE
+on.exit(if (locked) try(DBI::dbGetQuery(connection,
+  "SELECT pg_advisory_unlock(594, 1)"), silent = TRUE), add = TRUE)
+pinned_guard <- assert_scoped_publication_baseline(connection, plan)
+pinned <- publish_scoped_retained_backend(connection, plan,
+                                          pinned_guard$absent_sources)
+pinned_digest <- schema_digest(schema)
+stopifnot(identical(unname(pinned_digest), unname(forward_digest)),
           nrow(region_fact(replacement_indicator)) == 1L,
-          identical(marker("ordered_series"), "unrelated-sentinel-v1"))
+          identical(marker("selected_reading"), plan$target_reading_version))
 receipt <- c(receipt,
-  paste("republish_scalar:", marker("scalar_observation")),
-  paste("republish_region_rows:", nrow(region_fact(replacement_indicator))),
-  paste("unrelated_marker:", marker("ordered_series")),
-  "status: PASS (guarded test-only replacement proof)")
+  paste("pinned_scalar:", marker("scalar_observation")),
+  "pinned_write: same candidate closure with profile/reading dirs renamed")
+restore_pinned()
+DBI::dbGetQuery(connection, "SELECT pg_advisory_unlock(594, 1)")
+locked <- FALSE
 
+DBI::dbExecute(connection, paste0("SET search_path TO ", quoted_schema))
 DBI::dbExecute(connection, paste0("DROP SCHEMA ", quoted_schema, " CASCADE"))
 created <- FALSE
+public_after <- public_relations()
+residual_after <- residual_schemas()
+stopifnot(public_after == public_before, length(residual_after) == 0L)
+receipt <- c(receipt,
+  paste("public_relations_before_after:", public_before, public_after),
+  paste("residual_serving_schemas_after:", length(residual_after)),
+  "status: PASS (guarded test-only replacement proof)")
 writeLines(receipt, receipt_path)
 writeLines(receipt)
 cat("Scoped replacement smoke PASS; receipt:", receipt_path, "\n")

@@ -1,4 +1,7 @@
 # Guarded test-only harness for the #1037 replacement publication proof.
+# CandidateDir and BaselineDir must both already carry the four registered
+# Mobility keys (the replacement step after the missing-only three-key
+# publication); the smoke adds only its private test-only region fixture.
 # Holds the shared PowerShell named mutex across the entire R run (including
 # schema cleanup). No credentials are read or printed here; PGPASSFILE must
 # already point at the operator's private libpq file.
