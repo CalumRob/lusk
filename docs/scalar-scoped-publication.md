@@ -24,7 +24,7 @@ Registered scope (2026-11-12):
 
 | Theme | Indicators | Light sources |
 | --- | --- | --- |
-| mobilite | `stations_service`, `stations_service_1000`, `bornes_recharge_1000` | `mobilite_snapshot` (territory weights), `bpe_b316`, `bornes-recharges`, `stationnement-velo` |
+| mobilite | `stations_service`, `stations_service_1000`, `bornes_recharge_1000`, `bornes_ev_par_station_service` | `mobilite_snapshot` (territory weights), `bpe_b316`, `bornes-recharges`, `stationnement-velo` |
 
 ## Runbook (local, no database)
 
@@ -149,6 +149,57 @@ marker with live vs expected values, plus the instruction:
 > Retrieve the exact counterpart generation; do not force, regenerate or
 > overwrite the serving tables.
 
+### Explicit replacement intent (#1037)
+
+The missing-only rule above is unchanged and remains the default. When an
+already-published indicator must expand its serving contract (for example the
+refuelling ratio gaining `region`), the operator states a different intent
+explicitly:
+
+```powershell
+$env:LUSK_SCALAR_PUBLICATION_INTENT = 'replacement'   # unset/empty = missing_only
+```
+
+Under that intent the plan proves, before any connection, that:
+
+- **every** named indicator exists in both generations; mixed presence is
+  refused as a different capability (use the unchanged missing-only mode for a
+  one-sided step; it is never silently converted);
+- every named indicator changes only by additive `allowed_levels` (forward) or
+  its exact reverse (recovery), never both;
+- `descriptor_version` advances with the level change and stays identical
+  otherwise; every other descriptor field is exactly identical;
+- shared facts are exactly identical on typed values (territory type, value,
+  status, support/denominator counts; row order is not semantic) and
+  added/removed facts exist only at newly admitted/withdrawn levels;
+- provenance of shared facts is identical and every scoped fact has at least one
+  source association;
+- candidate and baseline shared source rows and clocks agree, the territory
+  reference is identical, and a no-op candidate is refused;
+- comparison evidence outside the scoped indicators is identical. The global
+  version clocks still advance because the whole snapshot is replaced — that is
+  the native publication semantics, not a forged token.
+
+Use the dry preflight to review that proof. It opens no database connection and
+works on a private temporary copy, so it never modifies the reviewed artifacts:
+
+```powershell
+$env:LUSK_SCALAR_SCOPE = 'mobilite:stations_service,stations_service_1000,bornes_recharge_1000,bornes_ev_par_station_service'
+$env:LUSK_SORTIE = '<reviewed candidate generation>'
+$env:LUSK_SCALAR_BASELINE_SORTIE = '<the generation serving was published from>'
+$env:LUSK_SCALAR_PUBLICATION_INTENT = 'replacement'
+Rscript scripts/publish-serving-tables.R --scalar-scope-preview
+```
+
+The preview prints before/after facts/descriptors/versions, status counts,
+scoped source clocks, the profile/reading closure and every live guard predicate
+the wrapper will evaluate under `pg_advisory_lock(594,1)`. It is review
+evidence; **production activation is NOT performed by it**. The real
+publication remains `--publish`/`--targets` with the same intent after a
+reviewed backup and separate approval; recovery is the same wrapper with the
+frozen prior generation as target and the published candidate as baseline,
+under the same explicit intent.
+
 ### Forward write
 
 `sortie` = candidate generation, `LUSK_SCALAR_BASELINE_SORTIE` = prior baseline.
@@ -185,7 +236,8 @@ Rscript scripts/publish-serving-tables.R --publish
 ```
 
 The direction is derived from the artifacts (exactly one generation carries the
-scoped indicators), so there is no separate recovery flag. The guard expects
+scoped indicators for missing-only, or the additive level relation for
+replacement), so there is no separate recovery flag. The guard expects
 the live **candidate** markers of the closure; the scalar publisher's normal
 explicit retirement policy omits the three scoped indicators from the restored
 generation (`retired_indicator_ids`), then the same atomic transaction restores
@@ -229,7 +281,13 @@ full-backend path (pure, no database).
 closure derivation (linked Habitat owner from DPE `part_passoires`), target vs
 current delta in both directions, refusal of a difference outside the scope or
 of indicators present on both/neither side, and the scoped guard accepting the
-affected current markers while ignoring a newer unrelated owner marker.
+affected current markers while ignoring a newer unrelated owner marker. Since
+#1037 it also covers the explicit replacement intent: additive level
+expansion/reverse recovery, refusal of mixed presence, refusal of unrelated
+descriptor/fact changes, deleted existing facts, facts at already-admitted
+levels, shared source clock drift, mixed directions, exact double comparison,
+row-order normalization, NA/NaN distinction, no-op identity and the write-free
+preview contents.
 
 `pipeline/tests/testthat/test-publication-transaction.R`: single-connection
 outer contract — inner publishers join only the identical connection, a
@@ -278,6 +336,55 @@ receipt. Receipt:
 focused serial log:
 `E:\Temp\opencode\lusk-1000-focused-R-serial-995-source.log` (125 PASS,
 0 FAIL/WARN/SKIP).
+
+#### Replacement-intent guarded proof (2026-11-17, #1037)
+
+`pipeline/scripts/run-scoped-replacement-smoke.ps1` (same mutex, dedicated
+`lusk_it_contract` roles, disposable `serving_it_*` schema, cleanup always on)
+takes a generation that already carries all four registered keys for **both**
+roles (the replacement step after the missing-only three-key publication), then
+adds a TEST-ONLY additive `region` level/fact to
+`bornes_ev_par_station_service` on its private candidate copy. It runs the
+normal wrapper with `LUSK_SCALAR_PUBLICATION_INTENT=replacement`:
+
+- **failure injection**: the normal reading publisher is made to throw after the
+  scalar/profile stage; the whole outer transaction is rolled back and every
+  schema table (rows, markers, pointers) is identical to the baseline seed;
+- **forward**: the replacement delta is proven, the scalar/comparison/profile/
+  profile-comparison/selected-reading markers and linked identity verify, and
+  every closure table matches an independently seeded candidate schema through
+  the same normal publishers (facts, descriptors, provenance, comparisons,
+  profiles, selected reading, source rows) exactly;
+- **recovery**: the same wrapper/plan with the frozen baseline as target and the
+  published candidate as the live guard state restores the whole schema digest
+  to the baseline seed (region row 1→0, all other keys retained);
+- **pinned write**: after a fresh plan, the `profile-serving` and
+  `typed-reading-serving` directories are renamed away; a second normal atomic
+  publication still commits the same candidate closure from the frozen plan
+  (a re-read would fail), proving no plan-to-write TOCTOU;
+- every step keeps an unrelated `ordered_series` marker identical;
+- zero residual `serving_it_*` schemas and zero `public` relations before and
+  after, including after the injected failure.
+
+Receipt: `E:\Temp\opencode\lusk-1037-replacement-smoke-receipt.txt` (baseline
+scalar `f4e9…` with three-key facts 1267/1267/1267; forward scalar `b3cb…`,
+comparison `6333…`, profile `9c0b…`, profile comparison `839c…`, reading
+`2d64…`; recovery scalar `f4e9…`; pinned scalar `b3cb…`; region rows 1→0→1;
+public relations 0→0; residual schemas 0). The fixture value (2.5) is labelled
+test-only; it is not a production statistic and does not claim live activation.
+
+Replay (guarded test database only; both directories must already carry the
+four registered keys):
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:LUSK_SCALAR_TEST_DATABASE = 'lusk_it_contract'
+$env:LUSK_SCALAR_TEST_USER = 'lusk_it_contract_pub'
+$env:LUSK_REPLACEMENT_SMOKE_RECEIPT = 'E:\Temp\opencode\lusk-1037-replacement-smoke-receipt.txt'
+pipeline\scripts\run-scoped-replacement-smoke.ps1 `
+  -CandidateDir '<four-key candidate generation>' `
+  -BaselineDir '<same generation as the post-missing-only baseline>'
+```
 
 Run:
 

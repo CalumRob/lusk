@@ -112,7 +112,8 @@ with_declared_profile_postgres <- function(state, code) {
       state$binding_requests <- c(state$binding_requests, sortie)
       state$binding
     },
-    profile_postgres_adapter = function(con, artifact_directory = NULL) {
+    profile_postgres_adapter = function(con, artifact_directory = NULL,
+                                        comparisons = NULL) {
       state$adapter_directories <- c(state$adapter_directories,
         if (is.null(artifact_directory)) NA_character_ else artifact_directory)
       adapter

@@ -59,14 +59,18 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
   }
   scoped_result <- NULL
   tryCatch({
-    # A scoped retained publication (the three #989 supply scalars) publishes
+    # A scoped retained publication (the #989/#1032 supply scalars) publishes
     # only the registered dependency closure: scalar snapshot/comparisons, the
     # scalar-bound declared-profile companion, and the linked selected reading.
-    # The scoped plan proves the delta against the explicitly supplied
+    # The explicit intent is missing-only (default) or replacement (#1037). The
+    # scoped plan proves the delta against the explicitly supplied
     # current/baseline generation and guards the live markers of that closure;
     # unrelated owner markers are neither expectations nor writes. Without a
     # scope, the normal full-backend publication is unchanged.
-    scope_ids <- retained_backend_scope_ids(scalar_scope)
+    intent <- scoped_publication_intent(
+      Sys.getenv("LUSK_SCALAR_PUBLICATION_INTENT", unset = ""))
+    scoped <- scoped_publication_scope(scalar_scope, intent)
+    scope_ids <- scoped$scope_ids
     if (length(scope_ids)) {
       if (!nzchar(baseline_sortie))
         stop("A scoped retained publication requires LUSK_SCALAR_BASELINE_SORTIE ",
@@ -75,25 +79,39 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
              "zero writes.", call. = FALSE)
       DBI::dbGetQuery(con, "SELECT pg_advisory_lock(594, 1)")
       locked <- TRUE
-      # Forward only: the candidate declared-profile artifact must be bound to
-      # the candidate scalar version before the plan reads it. The prior
-      # artifacts are restored on failure. Recovery consumes the frozen
-      # baseline artifacts unchanged (its binding is already the baseline
-      # scalar version).
+      # The candidate declared-profile artifact must be bound to the candidate
+      # scalar version before the plan reads it. Direction comes from the same
+      # explicit intent/delta as the plan. The prior artifacts are restored on
+      # failure. Recovery consumes the frozen baseline artifacts (its binding
+      # is already the baseline scalar version).
       target_reference <- project_territory_reference(
         nanoparquet::read_parquet(file.path(sortie, "territoires.parquet")))
       target_snapshot <- project_retained_scalar_snapshot(sortie,
                                                           target_reference)
-      forward <- all(scope_ids %in%
-        target_snapshot$scalar$descriptors$indicator_id)
+      baseline_reference <- project_territory_reference(
+        nanoparquet::read_parquet(file.path(baseline_sortie,
+                                            "territoires.parquet")))
+      if (!identical(target_reference$content_version,
+                     baseline_reference$content_version))
+        stop("Target and current territory references differ; the scoped ",
+             "publication never rewrites a different reference.",
+             call. = FALSE)
+      baseline_snapshot <- project_retained_scalar_snapshot(
+        baseline_sortie, baseline_reference)
+      direction <- scoped_snapshot_delta(
+        list(scalar = target_snapshot$scalar),
+        list(scalar = baseline_snapshot$scalar),
+        scope_ids, intent = intent)$direction
+      forward <- identical(direction, "forward")
       if (forward) {
         profile_backup <- backup_profile()
         refresh_declared_profile_scalar_binding(sortie,
           declared_profile_owners(),
           scalar_content_version(target_snapshot$scalar))
       }
-      plan <- scoped_publication_plan(sortie, baseline_sortie, scope_ids)
-      if (!identical(plan$direction, if (forward) "forward" else "recovery"))
+      plan <- scoped_publication_plan(sortie, baseline_sortie, scope_ids,
+                                      intent = intent)
+      if (!identical(plan$direction, direction))
         stop("Scoped publication direction could not be derived from the ",
              "supplied generations; refusing with zero writes.", call. = FALSE)
       guard <- assert_scoped_publication_baseline(con, plan)

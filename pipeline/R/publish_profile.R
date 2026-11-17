@@ -508,7 +508,8 @@ register_structure_age_profile_publisher <- function(registry, metadata) {
   }, function(projection, db, version) db$replace(projection, version))
 }
 
-profile_postgres_adapter <- function(con, artifact_directory = NULL) {
+profile_postgres_adapter <- function(con, artifact_directory = NULL,
+                                     comparisons = NULL) {
   if (!requireNamespace("DBI", quietly = TRUE)) stop("DBI is required")
   comparison_artifact <- NULL
   comparisons <- NULL
@@ -524,8 +525,17 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
     marker = function(name) DBI::dbGetQuery(con,
       "SELECT content_version,reference_content_version FROM table_publication WHERE table_name=$1", params=list(name)),
     prepare_comparisons = function(profiles, version, reference_version) {
-      refs <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
-      comparisons <<- project_declared_profile_comparisons(profiles, refs, version, reference_version)
+      if (!is.null(comparisons)) {
+        if (!identical(as.character(comparisons$profile_content_version),
+                       as.character(version)) ||
+            !identical(as.character(comparisons$reference_content_version),
+                       as.character(reference_version)))
+          stop("Frozen profile comparisons do not match the validated profile ",
+               "and reference versions", call.=FALSE)
+      } else {
+        refs <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
+        comparisons <<- project_declared_profile_comparisons(profiles, refs, version, reference_version)
+      }
       marker <- DBI::dbGetQuery(con, "SELECT content_version,profile_content_version,reference_content_version,group_row_count,territory_row_count,
         EXISTS(SELECT 1 FROM profile_comparison_group WHERE lineage_source_count IS NULL) AS lineage_incomplete
         FROM profile_comparison_publication WHERE singleton=true")
@@ -658,6 +668,36 @@ publier_declared_profiles_postgres <- function(artifact_directory, owners, con =
   owned <- is.null(con)
   if (owned) con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), configuration_service_postgres()))
   if (owned) on.exit(DBI::dbDisconnect(con), add=TRUE)
+  publish_declared_profiles_projection(profiles, con,
+    artifact_directory = artifact_directory)
+}
+
+# publish_declared_profiles_projection ------------------------------------------
+# The SAME normal declared-profile publication from an already-read, validated
+# in-memory projection. The scoped publication freezes these profiles at plan
+# time, so a file changed after validation cannot alter what is written. The
+# comparison companion is recomputed from the frozen profiles and the guarded
+# territory reference, never from a mutable artifact.
+publish_declared_profiles_projection <- function(profiles, con,
+    artifact_directory = NULL, expected_version = NULL, comparisons = NULL) {
+  if (!is.list(profiles) || !length(profiles) ||
+      any(!vapply(profiles, function(profile)
+        is.list(profile) && !is.null(profile$descriptor), logical(1))))
+    stop("Declared profile projections are required", call.=FALSE)
+  if (!"structure_age" %in% names(profiles))
+    stop("Declared profile publication requires the structure_age owner", call.=FALSE)
+  if (!is.null(expected_version)) {
+    ordered <- c(list(profiles[["structure_age"]]),
+                 profiles[setdiff(names(profiles), "structure_age")])
+    ids <- vapply(ordered, function(profile)
+      as.character(profile$descriptor$indicator_id), character(1))
+    computed <- if (length(ordered) > 1L)
+      profile_content_version(list(profiles = ordered[order(ids)])) else
+        profile_content_version(ordered[[1L]])
+    if (!identical(as.character(computed), as.character(expected_version)))
+      stop("Declared profile projection does not match the validated plan ",
+           "version; refusing to publish a changed projection.", call.=FALSE)
+  }
   # The artifacts are already projected and validated; the identity publisher
   # exists only to reuse the shared marker and comparison publication
   # transaction.
@@ -665,7 +705,8 @@ publier_declared_profiles_postgres <- function(artifact_directory, owners, con =
     function(projection) projection,
     function(projection, db, version) db$replace(projection, version))
   additional <- profiles[setdiff(names(profiles), "structure_age")]
-  adapter <- profile_postgres_adapter(con, artifact_directory)
+  adapter <- profile_postgres_adapter(con, artifact_directory,
+                                      comparisons = comparisons)
   publish_registered_profile(registry, "structure_age", profiles$structure_age, adapter,
     additional_projections = additional)
 }

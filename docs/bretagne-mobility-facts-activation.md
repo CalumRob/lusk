@@ -1,7 +1,11 @@
 # Bretagne factual serving: code and activation boundary (#1032)
 
-Related: #1017, #1020, ADR-0038, ADR-0040, ADR-0042 and ADR-0044.
+Related: #1017, #1020, #1037, ADR-0038, ADR-0040, ADR-0042 and ADR-0044.
 Implementation baseline: `0a8701ea629e9c16471e864bde89e816d5050d1a`.
+
+> **Production activation NOT performed.** The capability and its dry preview
+> are reviewed by this change; the production publication, backup and operator
+> approval remain separate gates.
 
 ## Cause and authorization
 
@@ -130,20 +134,63 @@ actual inventory, backups, input availability and planned owner closure first.
    Do not manually insert the four regional rows, mutate markers, use an
    alternate publisher or publish all themes blindly.
 
-   **Current activation blocker:** `scoped_snapshot_delta()` in
-   `pipeline/R/publish_scoped_publication.R` requires the scoped descriptors to
-   be present in exactly one generation (missing-only forward/recovery). It
-   deliberately rejects replacement when both baseline and candidate already
-   contain an indicator. Regional descriptor/fact expansion is a replacement,
-   not the original #989 addition. The ratio is present in historical retained
-   generations; the three newer keys may also be present in the live baseline.
-   `scoped_publication_plan()` must therefore refuse this activation if they
-   are present on both sides. This PR does **not** relax that guard. Retrieve
-   and inspect the exact published baseline, report that refusal, and obtain
-   separate review of a normal registered replacement-publication capability
-   before attempting activation. Do not remove descriptors from the baseline,
-   unset the scope to invoke a broader writer, or bypass the plan. Local
-   materialization readiness is not publication readiness.
+   **Registered replacement capability (#1037):** the original #995 guard
+   (`scoped_snapshot_delta()`) remains the default and still requires the scoped
+   descriptors to be present in exactly one generation (missing-only
+   forward/recovery). A separate, explicit `replacement` intent now covers the
+   actual activation shape where an existing indicator's descriptor/facts
+   expand from three to four levels. It is not a bypass: it proves, before any
+   connection or write, that every named indicator is present in both
+   generations and changes only by additive allowed levels (or its exact reverse
+   for recovery), that shared facts and provenance are identical, that added
+   facts exist only at newly admitted levels, that unrelated descriptor fields
+   never move, and that the candidate/baseline shared source clocks and
+   territory reference agree. Mixed presence is a different capability and is
+   refused by this mode; there is no implicit one-sided acceptance. Use the
+   unchanged missing-only mode for a one-sided step. The capability is derived
+   from the owner's registered scalar scope (`scalar_scope_registry()`); it does
+   not hardcode a Bretagne name. The plan/preview opens no database connection,
+   works on a private temporary copy, and modifies no reviewed artifact:
+
+   ```powershell
+   # From pipeline/, on private reviewed copies only. No database is opened and
+   # no artifact is modified by this command.
+   $env:LUSK_MODE = 'full'
+   $env:LUSK_SORTIE = '<reviewed candidate generation>'
+   $env:LUSK_SCALAR_BASELINE_SORTIE = '<the exact generation serving was published from>'
+   $env:LUSK_SCALAR_SCOPE = 'mobilite:stations_service,stations_service_1000,bornes_recharge_1000,bornes_ev_par_station_service'
+   $env:LUSK_SCALAR_PUBLICATION_INTENT = 'replacement'
+   Rscript scripts/publish-serving-tables.R --scalar-scope-preview
+   ```
+
+   The preview prints before/after facts, descriptors, versions, statuses,
+   scoped source clocks, the closure identity and the live guard predicates that
+   the wrapper will evaluate under `pg_advisory_lock(594,1)`. It is evidence for
+   review, **not** production authorization. The replacement mode requires all
+   named indicators on both sides. If the live baseline lacks the three newer
+   keys, the operator must first publish those keys through the unchanged
+   missing-only scope (all three are target-only there), then run the
+   replacement scope (all four keys) against that published generation; the
+   replacement plan then sees the ratio as the only both-present level expansion
+   and the three keys as unchanged rows. A mixed presence in one replacement
+   plan is refused, as is a no-op, a shared clock/reference change, a deleted
+   existing scoped fact or a difference outside the named scope — all with zero
+   writes. The activation still requires the actual publication command with
+   `LUSK_SCALAR_PUBLICATION_INTENT=replacement`, a reviewed backup copy and
+   separate approval. **This PR does not perform that publication, does not
+   remove baseline descriptors, does not mutate markers and does not fall back
+   to a broader writer.**
+
+   The guarded test-only DB proof
+   (`pipeline/scripts/run-scoped-replacement-smoke.ps1`, receipt
+   `E:\Temp\opencode\lusk-1037-replacement-smoke-receipt.txt`) exercises one
+   additive `region` level/fact on the ratio through the normal wrapper:
+   injected-failure rollback, forward closure equality against an independent
+   candidate seed, recovery back to the baseline digest, and a pinned write with
+   the profile/reading artifact directories renamed away. An unrelated marker
+   stays untouched and zero residual schemas/public relations remain. Its value
+   is a labelled test fixture, not a production statistic and not evidence of
+   live regional row availability.
 6. Obtain **separate publication approval** with that concrete projected closure,
    backup/recovery inventory and exact input clocks. Only then may the operator
    execute the normal publication path. No production publication command or
@@ -204,7 +251,7 @@ actual inventory, backups, input availability and planned owner closure first.
   call and switch arm are still rejected, including when appended to the current
   sources; the mixed legitimate-profile case remains accepted. No production
   source changed and no test was skipped or guard disabled. This narrow test
-  correction does not change the missing-only publication blocker below.
+  correction is independent of the publication capability described above.
 - Python compilation and generated endpoint/OpenAPI inventory check passed;
   there is no configured Python static type-check command in the API README.
 - Focused R projection/scoped suites: 8,066 assertions passed; the broader
@@ -232,6 +279,7 @@ actual inventory, backups, input availability and planned owner closure first.
   accessibility acceptance is implied.
 
 Local raw receipts are under this worktree's `.scratch/bretagne/` (not a
-production artifact or credential store). The missing-only publication-plan
-blocker above and unverified live regional row availability remain explicit
-handoff requirements, not hidden successful gates.
+production artifact or credential store). The remaining publication activation
+(reviewed replacement preview, backup copy and separate approval) and unverified
+live regional row availability remain explicit handoff requirements, not hidden
+successful gates.

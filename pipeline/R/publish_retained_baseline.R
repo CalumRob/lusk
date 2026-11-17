@@ -121,6 +121,7 @@ retained_profile_publication <- function(directory, binding, reference_version,
     version, reference_version)
   list(version = version,
        comparison_version = profile_content_version(comparisons),
+       comparisons = comparisons,
        dpe_descriptor_version = as.character(
          profiles[["distribution_dpe"]]$descriptor$descriptor_version[[1L]]),
        profiles = profiles)

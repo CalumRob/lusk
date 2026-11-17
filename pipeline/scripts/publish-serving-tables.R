@@ -21,6 +21,7 @@ if (selector_count==1L) {
 args <- args[args!="--all"]
 if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets",
                                                 "--scalar-scope", "--scalar-scope-check",
+                                                "--scalar-scope-preview",
                                                 "--scalar-fixture-check", "--scalar-fixture-publish",
                                                 "--series-fixture-check", "--series-fixture-publish",
                                                 "--series-check", "--series-publish",
@@ -183,6 +184,63 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
     stop("Targets publication failed: ", paste(failed, collapse = ", "),
          call. = FALSE)
   }
+} else if (args[[1L]] == "--scalar-scope-preview") {
+  # Dry publication preflight (#1037): reads the reviewed candidate/baseline
+  # artifacts and prints the concrete plan. It opens no database connection and
+  # works on a private temporary copy, so it never rewrites the reviewed
+  # artifacts. It is not production authorization.
+  if (identical(Sys.getenv("LUSK_MODE", unset = "full"), "cron")) {
+    stop("Scalar scope preview is not enabled for the cron graph.", call.=FALSE)
+  }
+  scalar_scope <- Sys.getenv("LUSK_SCALAR_SCOPE", unset = "")
+  intent <- scoped_publication_intent(
+    Sys.getenv("LUSK_SCALAR_PUBLICATION_INTENT", unset = ""))
+  scoped <- scoped_publication_scope(scalar_scope, intent)
+  if (!length(scoped$scope_ids))
+    stop("Scalar scope preview requires an explicit registered ",
+         "LUSK_SCALAR_SCOPE.", call.=FALSE)
+  sortie <- Sys.getenv("LUSK_SORTIE", file.path("..", "public", "data"))
+  baseline <- Sys.getenv("LUSK_SCALAR_BASELINE_SORTIE", unset = "")
+  if (!nzchar(baseline))
+    stop("Scalar scope preview requires LUSK_SCALAR_BASELINE_SORTIE ",
+         "(the counterpart generation).", call.=FALSE)
+  if (!file.exists(file.path(sortie, "territoires.parquet")) ||
+      !file.exists(file.path(baseline, "territoires.parquet")))
+    stop("Scalar scope preview requires territoires.parquet in both ",
+         "generations.", call.=FALSE)
+  preview_dir <- tempfile("scalar-publication-preview-")
+  on.exit(unlink(preview_dir, recursive = TRUE), add = TRUE)
+  dir.create(preview_dir, recursive = TRUE)
+  for (name in c("scalar-serving", "profile-serving",
+                 "typed-reading-serving")) {
+    if (dir.exists(file.path(sortie, name)))
+      file.copy(file.path(sortie, name), preview_dir, recursive = TRUE)
+  }
+  file.copy(file.path(sortie, "territoires.parquet"), preview_dir)
+  reference <- project_territory_reference(nanoparquet::read_parquet(
+    file.path(sortie, "territoires.parquet")))
+  baseline_reference <- project_territory_reference(nanoparquet::read_parquet(
+    file.path(baseline, "territoires.parquet")))
+  if (!identical(reference$content_version, baseline_reference$content_version))
+    stop("Target and current territory references differ; the scoped ",
+         "publication never rewrites a different reference.", call.=FALSE)
+  candidate_snapshot <- project_retained_scalar_snapshot(preview_dir,
+                                                         reference)
+  baseline_snapshot <- project_retained_scalar_snapshot(baseline, reference)
+  direction <- scoped_snapshot_delta(
+    list(scalar = candidate_snapshot$scalar),
+    list(scalar = baseline_snapshot$scalar),
+    scoped$scope_ids, intent = intent)$direction
+  if (identical(direction, "forward"))
+    refresh_declared_profile_scalar_binding(preview_dir,
+      declared_profile_owners(),
+      scalar_content_version(candidate_snapshot$scalar))
+  plan <- scoped_publication_plan(preview_dir, baseline, scoped$scope_ids,
+                                  intent = intent)
+  preview <- scoped_publication_preview(plan, theme = scoped$selection$theme)
+  cat(scoped_publication_preview_lines(preview), sep = "\n")
+  cat("\nNo database connection was opened and no reviewed artifact was ",
+      "modified.\n", sep = "")
 } else if (args[[1L]] %in% c("--scalar-scope", "--scalar-scope-check")) {
   # Matérialisation scalaire CIBLÉE (#989) : les indicateurs enregistrés du
   # périmètre, depuis LEURS sources légères, fusionnés dans l'artefact
