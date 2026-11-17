@@ -643,13 +643,6 @@ export function separateurVertical(
   return columns[index]!.groupe !== columns[index - 1]!.groupe
 }
 
-/** Total table height before any row split; title/headers included. */
-export function hauteurTableauPdf(part: TableauPdfPart): number {
-  const hauteurTitre = part.titleLines.length
-    * (ROLE_PDF.titreTableau.taille * 0.3528 * 1.18)
-  return hauteurTitre + 2 + part.headerHeight + part.rows.reduce((sum, row) => sum + row.height, 0) + 6
-}
-
 export const COULEURS_TABLEAU_PDF = {
   ink: PALETTE_PDF.ink,
   muted: PALETTE_PDF.muted,
