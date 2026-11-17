@@ -276,3 +276,340 @@ test_that("the projection source set unions scalar and profile sources", {
   expect_identical(scoped_source_difference(sources, sources)$datasets$source_id,
                    character())
 })
+
+# Explicit registered replacement intent (#1037) --------------------------------
+
+# The fixture expands one scoped scalar from commune-only to commune+region,
+# exactly the shape of a legitimate level expansion: the descriptor advances,
+# the existing facts are unchanged, and one fact appears at the new level.
+scoped_expanded_fixture <- function() {
+  expanded <- scoped_scalar_fixture()
+  scoped <- expanded$descriptors$indicator_id == "scoped_scalar"
+  expanded$descriptors$allowed_levels[scoped] <-
+    I(list(c("commune", "region")))
+  expanded$descriptors$descriptor_version[scoped] <- "v2"
+  expanded$facts <- rbind(expanded$facts, data.frame(
+    indicator_id = "scoped_scalar", territory_id = "53",
+    territory_type = "region", value = 5, status = "measured",
+    support_count = NA_integer_, denominator_count = NA_integer_,
+    stringsAsFactors = FALSE))
+  expanded$provenance <- rbind(expanded$provenance, data.frame(
+    indicator_id = "scoped_scalar", territory_id = "53",
+    source_id = "fixture_source", vintage_id = "2025/2025-01-01",
+    stringsAsFactors = FALSE))
+  expanded$eligible_territories <- rbind(expanded$eligible_territories,
+    data.frame(territory_id = "53", territory_type = "region",
+               stringsAsFactors = FALSE))
+  expanded
+}
+
+scoped_replacement_delta <- function(target, current, scope = "scoped_scalar")
+  scoped_snapshot_delta(list(scalar = target), list(scalar = current), scope,
+                        intent = "replacement")
+
+test_that("the default intent still rejects a both-present scope", {
+  generation <- scoped_expanded_fixture()
+  expect_error(
+    scoped_snapshot_delta(list(scalar = generation), list(scalar = generation),
+                          "scoped_scalar"),
+    "exactly one generation")
+})
+
+test_that("replacement accepts an additive level expansion and its reverse", {
+  baseline <- scoped_scalar_fixture()
+  candidate <- scoped_expanded_fixture()
+  forward <- scoped_replacement_delta(candidate, baseline)
+  expect_identical(forward$intent, "replacement")
+  expect_identical(forward$direction, "forward")
+  expect_identical(forward$indicators$added_levels, "region")
+  expect_identical(forward$indicators$facts_added, 1L)
+  expect_identical(forward$indicators$facts_removed, 0L)
+  expect_identical(forward$indicators$facts_shared, 2L)
+  expect_identical(nrow(forward$added_facts), 1L)
+  expect_true(all(forward$added_facts$territory_type == "region"))
+
+  recovery <- scoped_replacement_delta(baseline, candidate)
+  expect_identical(recovery$direction, "recovery")
+  expect_identical(recovery$indicators$removed_levels, "region")
+  expect_identical(recovery$indicators$facts_removed, 1L)
+  expect_identical(recovery$indicators$facts_added, 0L)
+})
+
+test_that("replacement refuses a pure one-sided scope instead of converting it", {
+  baseline <- retained_baseline_scalar(scoped_scalar_fixture(), "scoped_scalar")
+  candidate <- scoped_expanded_fixture()
+  expect_error(
+    scoped_snapshot_delta(list(scalar = candidate), list(scalar = baseline),
+                          "scoped_scalar", intent = "replacement"),
+    "missing-only publication")
+})
+
+test_that("an explicit replacement plan may include one-sided named indicators", {
+  baseline <- retained_baseline_scalar(scoped_scalar_fixture(), "scoped_scalar")
+  candidate <- scoped_expanded_fixture()
+  delta <- scoped_snapshot_delta(list(scalar = candidate),
+    list(scalar = baseline), c("kept_scalar", "scoped_scalar"),
+    intent = "replacement")
+  expect_identical(delta$direction, "forward")
+  rows <- delta$indicators
+  expect_identical(rows$direction[rows$indicator_id == "kept_scalar"],
+                   "unchanged")
+  expect_identical(rows$direction[rows$indicator_id == "scoped_scalar"],
+                   "forward")
+  expect_identical(rows$allowed_levels_before[rows$indicator_id ==
+                                                "scoped_scalar"], "<absent>")
+  expect_identical(nrow(delta$added_facts), 3L)
+  expect_true(all(delta$added_facts$indicator_id == "scoped_scalar"))
+
+  reverse <- scoped_snapshot_delta(list(scalar = baseline),
+    list(scalar = candidate), c("kept_scalar", "scoped_scalar"),
+    intent = "replacement")
+  expect_identical(reverse$direction, "recovery")
+  rows <- reverse$indicators
+  expect_identical(rows$direction[rows$indicator_id == "kept_scalar"],
+                   "unchanged")
+  expect_identical(rows$direction[rows$indicator_id == "scoped_scalar"],
+                   "recovery")
+  expect_identical(rows$allowed_levels_after[rows$indicator_id ==
+                                               "scoped_scalar"], "<absent>")
+  expect_identical(nrow(reverse$removed_facts), 3L)
+})
+
+test_that("replacement accepts multi-source provenance and refuses a change", {
+  add_second_source <- function(generation, vintage = "2025/2025-02-01") {
+    generation$datasets <- rbind(generation$datasets, data.frame(
+      source_id = "fixture_source_2", name = "Fixture second",
+      stringsAsFactors = FALSE))
+    generation$vintages <- rbind(generation$vintages, data.frame(
+      source_id = "fixture_source_2", vintage_id = vintage, version = "2025",
+      reference_date = as.Date("2025-02-01"),
+      publication_date = as.Date("2025-02-02"), stringsAsFactors = FALSE))
+    generation$provenance <- rbind(generation$provenance, data.frame(
+      indicator_id = "scoped_scalar", territory_id = "22001",
+      source_id = "fixture_source_2", vintage_id = vintage,
+      stringsAsFactors = FALSE))
+    generation
+  }
+  baseline <- add_second_source(scoped_scalar_fixture())
+  candidate <- add_second_source(scoped_expanded_fixture())
+  forward <- scoped_replacement_delta(candidate, baseline)
+  expect_identical(forward$direction, "forward")
+  changed <- add_second_source(scoped_expanded_fixture(),
+                               vintage = "2025/2025-03-01")
+  expect_error(scoped_replacement_delta(changed, baseline),
+               "changes provenance")
+})
+
+test_that("replacement refuses a change outside the scoped indicators", {
+  baseline <- scoped_scalar_fixture()
+  candidate <- scoped_expanded_fixture()
+  candidate$facts$value[candidate$facts$indicator_id == "kept_scalar"] <- 99
+  expect_error(scoped_replacement_delta(candidate, baseline),
+               "outside the scoped indicators")
+})
+
+test_that("replacement refuses a deleted existing fact", {
+  baseline <- scoped_scalar_fixture()
+  candidate <- scoped_expanded_fixture()
+  candidate$facts <- candidate$facts[!(
+    candidate$facts$indicator_id == "scoped_scalar" &
+      candidate$facts$territory_id == "22002"), , drop = FALSE]
+  candidate$provenance <- candidate$provenance[!(
+    candidate$provenance$indicator_id == "scoped_scalar" &
+      candidate$provenance$territory_id == "22002"), , drop = FALSE]
+  expect_error(scoped_replacement_delta(candidate, baseline),
+               "removes 1 existing fact")
+})
+
+test_that("replacement refuses a new fact at an already admitted level", {
+  baseline <- scoped_scalar_fixture()
+  candidate <- scoped_scalar_fixture()
+  candidate$facts <- rbind(candidate$facts, data.frame(
+    indicator_id = "scoped_scalar", territory_id = "22003",
+    territory_type = "commune", value = 7, status = "measured",
+    support_count = NA_integer_, denominator_count = NA_integer_,
+    stringsAsFactors = FALSE))
+  candidate$provenance <- rbind(candidate$provenance, data.frame(
+    indicator_id = "scoped_scalar", territory_id = "22003",
+    source_id = "fixture_source", vintage_id = "2025/2025-01-01",
+    stringsAsFactors = FALSE))
+  candidate$eligible_territories <- rbind(candidate$eligible_territories,
+    data.frame(territory_id = "22003", territory_type = "commune",
+               stringsAsFactors = FALSE))
+  expect_error(scoped_replacement_delta(candidate, baseline),
+               "without changing its allowed levels")
+})
+
+test_that("replacement refuses a changed shared fact value", {
+  baseline <- scoped_scalar_fixture()
+  candidate <- scoped_expanded_fixture()
+  candidate$facts$value[candidate$facts$indicator_id == "scoped_scalar" &
+    candidate$facts$territory_id == "22001"] <- 42
+  expect_error(scoped_replacement_delta(candidate, baseline),
+               "changes an existing fact")
+})
+
+test_that("replacement refuses descriptor changes the capability does not own", {
+  baseline <- scoped_scalar_fixture()
+  candidate <- scoped_expanded_fixture()
+  candidate$descriptors$label[candidate$descriptors$indicator_id ==
+                                "scoped_scalar"] <- "Relabelled"
+  expect_error(scoped_replacement_delta(candidate, baseline),
+               "outside allowed_levels")
+})
+
+test_that("replacement refuses a level change without a descriptor token", {
+  baseline <- scoped_scalar_fixture()
+  candidate <- scoped_expanded_fixture()
+  candidate$descriptors$descriptor_version[
+    candidate$descriptors$indicator_id == "scoped_scalar"] <- "v1"
+  expect_error(scoped_replacement_delta(candidate, baseline),
+               "without advancing descriptor_version")
+})
+
+test_that("replacement refuses a no-op candidate", {
+  generation <- scoped_expanded_fixture()
+  expect_error(scoped_replacement_delta(generation, generation), "no-op")
+})
+
+test_that("replacement refuses mixed directions across scoped indicators", {
+  baseline <- scoped_scalar_fixture()
+  baseline$descriptors$allowed_levels[
+    baseline$descriptors$indicator_id == "kept_scalar"] <-
+    I(list(c("commune", "region")))
+  baseline$descriptors$descriptor_version[
+    baseline$descriptors$indicator_id == "kept_scalar"] <- "v2"
+  baseline$facts <- rbind(baseline$facts, data.frame(
+    indicator_id = "kept_scalar", territory_id = "53",
+    territory_type = "region", value = 6, status = "measured",
+    support_count = NA_integer_, denominator_count = NA_integer_,
+    stringsAsFactors = FALSE))
+  baseline$provenance <- rbind(baseline$provenance, data.frame(
+    indicator_id = "kept_scalar", territory_id = "53",
+    source_id = "fixture_source", vintage_id = "2025/2025-01-01",
+    stringsAsFactors = FALSE))
+  baseline$eligible_territories <- rbind(baseline$eligible_territories,
+    data.frame(territory_id = "53", territory_type = "region",
+               stringsAsFactors = FALSE))
+  candidate <- scoped_expanded_fixture()
+  expect_error(scoped_replacement_delta(candidate, baseline,
+                                        c("scoped_scalar", "kept_scalar")),
+               "mixed directions")
+})
+
+test_that("the replacement intent accepts registered scopes and nothing else", {
+  expect_identical(scoped_publication_intent(""), "missing_only")
+  expect_identical(scoped_publication_intent(NULL), "missing_only")
+  expect_identical(scoped_publication_intent("missing-only"), "missing_only")
+  expect_identical(scoped_publication_intent("replacement"), "replacement")
+  expect_error(scoped_publication_intent("force"), "must be")
+  expect_error(scoped_publication_scope("", "replacement"),
+               "explicit registered scalar scope")
+  expect_error(scoped_publication_scope("mobilite:not_registered",
+                                        "replacement"),
+               "unregistered indicators")
+  scope <- scoped_publication_scope(
+    "mobilite:bornes_ev_par_station_service", "replacement")
+  expect_identical(scope$intent, "replacement")
+  expect_identical(scope$scope_ids, "bornes_ev_par_station_service")
+  expect_false("bornes_ev_par_station_service" %in%
+                 scoped_publication_scope("", "missing_only")$scope_ids)
+})
+
+test_that("shared source drift is refused before any connection", {
+  baseline <- scoped_source_fixture()
+  candidate <- scoped_source_fixture()
+  expect_identical(scoped_shared_source_drift(candidate$target_sources,
+    baseline$target_sources), character())
+  candidate$target_sources$vintages$version <- "2026"
+  drift <- scoped_shared_source_drift(candidate$target_sources,
+                                      baseline$target_sources)
+  expect_true(any(grepl("source_vintage", drift)))
+  candidate$target_sources$datasets$name <- "Renamed"
+  drift <- scoped_shared_source_drift(candidate$target_sources,
+                                      baseline$target_sources)
+  expect_true(any(grepl("source_dataset", drift)))
+})
+
+test_that("candidate source clocks are validated honestly", {
+  sources <- scoped_source_fixture()$target_sources
+  expect_invisible(scoped_source_clocks_valid(sources))
+  sources$vintages$publication_date <- as.Date("2024-12-31")
+  expect_error(scoped_source_clocks_valid(sources),
+               "publication date before its reference")
+})
+
+scoped_preview_plan <- function(baseline, candidate) {
+  delta <- scoped_replacement_delta(candidate, baseline)
+  list(
+    intent = "replacement", direction = delta$direction,
+    rejection = NULL,
+    replacement_indicators = delta$indicators,
+    replacement_added_facts = delta$added_facts,
+    replacement_removed_facts = delta$removed_facts,
+    target_dir = "candidate", current_dir = "baseline",
+    reference = "ref-v1", scope_ids = "scoped_scalar",
+    target_snapshot = list(scalar = candidate),
+    current_snapshot = list(scalar = baseline),
+    target_scalar_version = "scalar-candidate",
+    current_scalar_version = "scalar-base",
+    target_comparison_version = "comparison-candidate",
+    current_comparison_version = "comparison-base",
+    profile_owners = "distribution_dpe",
+    bound_profiles = "distribution_dpe",
+    target_sources = scoped_source_fixture()$target_sources,
+    current_sources = scoped_source_fixture()$target_sources,
+    retire_sources = list(
+      datasets = scoped_source_fixture()$target_sources$datasets[0, ,
+        drop = FALSE],
+      vintages = scoped_source_fixture()$target_sources$vintages[0, ,
+        drop = FALSE]),
+    target_profile_descriptors = data.frame(
+      indicator_id = "distribution_dpe",
+      descriptor_version = "dpe-v1",
+      required_scalar_version = "scalar-candidate",
+      stringsAsFactors = FALSE),
+    current_profile_descriptors = data.frame(
+      indicator_id = "distribution_dpe",
+      descriptor_version = "dpe-v1",
+      required_scalar_version = "scalar-base",
+      stringsAsFactors = FALSE),
+    target_profile_version = "profile-candidate",
+    current_profile_version = "profile-base",
+    target_profile_comparison_version = "profile-comparison-candidate",
+    current_profile_comparison_version = "profile-comparison-base",
+    reading_owners = "habitat",
+    target_reading_version = "habitat-v1",
+    current_reading_version = "habitat-v1",
+    target_linked_version = "linked-candidate",
+    current_linked_version = "linked-base")
+}
+
+test_that("the preview is honest, complete and write-free", {
+  baseline <- scoped_scalar_fixture()
+  candidate <- scoped_expanded_fixture()
+  preview <- scoped_publication_preview(scoped_preview_plan(baseline, candidate),
+                                        theme = "mobilite")
+  expect_false(preview$writes)
+  expect_false(preview$database)
+  expect_false(preview$guard$evaluated)
+  expect_identical(preview$theme, "mobilite")
+  expect_identical(preview$direction, "forward")
+  expect_identical(preview$snapshot$before$scope_facts, 2L)
+  expect_identical(preview$snapshot$after$scope_facts, 3L)
+  expect_identical(preview$snapshot$before$status_counts[["measured"]], 2L)
+  expect_identical(preview$snapshot$after$status_counts[["measured"]], 3L)
+  expect_identical(nrow(preview$added_facts), 1L)
+  expect_identical(nrow(preview$removed_facts), 0L)
+  expect_identical(preview$sources$before$vintages$version, "2025")
+  lines <- scoped_publication_preview_lines(preview)
+  expect_true(any(grepl("writes: none", lines, fixed = TRUE)))
+  expect_true(any(grepl("scoped_scalar: forward", lines, fixed = TRUE)))
+  expect_true(any(grepl("(+region)", lines, fixed = TRUE)))
+  expect_true(any(grepl("scalar version: scalar-base -> scalar-candidate",
+                        lines, fixed = TRUE)))
+  expect_true(any(grepl("source rows to upsert: 2 datasets / 2 vintages",
+                        lines, fixed = TRUE)))
+  expect_true(any(grepl("territory_reference = ref-v1", lines, fixed = TRUE)))
+  expect_true(any(grepl("Not exercised by this preview", lines, fixed = TRUE)))
+})
