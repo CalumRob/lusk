@@ -20,8 +20,11 @@ import {
   captureBarresDense,
   captureCourbeDense,
   captureCourbeTrous,
+  captureExplorerRangs,
+  captureExplorerRangsDense,
   capturePartDense,
   captureRampeDense,
+  captureRampeRangs,
   captureWaffleDense,
 } from '../src/__tests__/helpers/cahierPdfFixtures'
 import type { PdfFixtureSectionKey } from '../src/__tests__/helpers/cahierPdfFixtures'
@@ -31,9 +34,12 @@ const capturesDenses: Record<string, ReturnType<typeof captureCourbeDense>> = {
   'dense-curve-gaps': captureCourbeTrous(),
   'dense-share': capturePartDense(),
   'dense-ramp': captureRampeDense(),
-  'populated-comparison': captureRampeDense(),
+  'populated-comparison': captureRampeRangs(),
   'dense-bars': captureBarresDense(),
   'dense-waffle': captureWaffleDense(),
+  'ranks-compact': captureExplorerRangs(),
+  'two-tables-ranks': captureExplorerRangs(),
+  'two-tables-ranks-continuation': captureExplorerRangsDense(),
 }
 
 const assetPath = '/cahier-pdf-fixture-map.png'
@@ -93,7 +99,9 @@ async function generer(
   const memoire = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize
   const source = captureOverride ?? capturesDenses[key] ?? capturePdfFixture(key as PdfFixtureSectionKey)
   const capture = served ? withServedMaps(source) : source
-  const modes = capture.capabilities.selectableSeries.slice(0, key === 'populated-comparison' ? 2 : 3).map((serie: any) => serie.id)
+  const modes = capture.capabilities.selectableSeries
+    .slice(0, key === 'populated-comparison' ? 2 : key === 'ranks-compact' ? 1 : 3)
+    .map((serie: any) => serie.id)
   const projection = projeterRequeteExport(capture, modes)
   if (projection.status !== 'ready') throw new Error(projection.reason)
   const controller = new AbortController()
