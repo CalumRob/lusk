@@ -1,5 +1,20 @@
 # PostgreSQL migration history
 
+Migration 043 (#1041) is purely additive: it adds `littoral_code` and
+`littoral_classement_source` to `territory_reference`, with a closed CHECK
+(commune-only, C ⇒ Mer/Estuaire, NC ⇒ no source classement, NULL allowed for
+existing/transition rows). Apply it before running a publisher that writes the
+enriched reference. Applying it alone changes no data and publishes nothing.
+**Rollout caveat:** the projected reference content version changes once the
+enriched reference is published, so every comparison publication bound to
+`territory_reference` is invalidated until republished; do not publish the
+reference or the dependent comparison markers early. Existing rows and markers
+survive the DDL. See `docs/research/littoral-dreal-bretagne.md`.
+
+The guarded rehearsal is
+`api/tests/integration/test_littoral_reference_migration.py` (non-retained,
+requires the documented cleanup opt-in and the shared database mutex).
+
 Migration 041 adds `aedar_territory_summary` and its independent publication
 marker. Apply it after 040 before running the producer's existing guarded
 AEDAR `--publish` operation. The producer atomically publishes source facts,

@@ -128,7 +128,17 @@ CREATE TABLE territory_reference (
     department_id text,
     epci_id text,
     density_class_code text,
-    density_class_label text
+    density_class_label text,
+    littoral_code text,
+    littoral_classement_source text,
+    CONSTRAINT territory_reference_littoral_scope_check CHECK (COALESCE(
+      (littoral_code IS NULL AND littoral_classement_source IS NULL)
+      OR (territory_type = 'commune' AND littoral_code = 'C'
+          AND littoral_classement_source IN ('Mer', 'Estuaire'))
+      OR (territory_type = 'commune' AND littoral_code = 'NC'
+          AND littoral_classement_source IS NULL),
+      FALSE
+    ))
 );
 ALTER TABLE profile_observation ADD CONSTRAINT profile_observation_territory_reference
   FOREIGN KEY (territory_id) REFERENCES territory_reference(territory_id);
