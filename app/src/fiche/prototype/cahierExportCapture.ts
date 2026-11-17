@@ -231,8 +231,6 @@ export interface CahierCaptureComparison {
   readonly none: boolean | null
   /** Owner-observed effective presentation of comparative evidence. */
   readonly display: CahierCaptureComparisonDisplay
-  /** Distinct served statistic/scope labels carried by the section figures, in order. */
-  readonly statisticLabels: readonly string[]
 }
 
 /** Native legend content observed by a map owner; never reconstructed from pixels. */
@@ -679,7 +677,6 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
         status: comparisonStatus,
         referenceStatus,
       }),
-      statisticLabels: comparisonStatisticLabels(evidence, publications),
     },
     sources: captureSources(evidence),
     aedar: evidence && family?.startsWith('aedar-') ? deepPlain(input.aedar) : null,
@@ -878,40 +875,6 @@ function servedComparisonCounts(evidence: ContentEvidence | null): {
     selectedMemberCount: evidence.comparison.selectedMemberCount,
     eligibleContributorCount: evidence.comparison.eligibleCount,
   }
-}
-
-/** Distinct served statistic/scope labels the section figures actually carry. */
-function comparisonStatisticLabels(
-  evidence: ContentEvidence | null,
-  publications: readonly CahierExportPublication[],
-): readonly string[] {
-  if (!evidence) return []
-  const labels: string[] = []
-  const add = (label: string | null | undefined): void => {
-    if (label && !labels.includes(label)) labels.push(label)
-  }
-  switch (evidence.kind) {
-    case 'aedar-car-overview':
-    case 'aedar-access':
-    case 'mobilite-share':
-    case 'mobilite-raccordement':
-      add(evidence.comparisonLabel)
-      break
-    case 'mobilite-networks':
-      add(evidence.figure.comparisonLabel)
-      break
-    case 'mobilite-stationnement-ravitaillement':
-      for (const column of evidence.columns) add(column.bars.comparisonLabel)
-      break
-    case 'aedar-equipment-explorer':
-      add(evidence.comparisonRequest?.label)
-      add(explorerPublication(publications)?.comparison?.label)
-      break
-    case 'aedar-diversity-loss':
-    case 'aedar-equipment-profile':
-      break
-  }
-  return labels
 }
 
 function captureComparisonGroup(options: {

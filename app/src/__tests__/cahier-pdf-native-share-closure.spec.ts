@@ -195,9 +195,7 @@ describe('#1024 — rangée appairée : la source, pas un littéral transplanté
       }
     }
     const lecture = await generer(capture)
-    expect(lecture.texteComplet).toContain(
-      `¹ Groupe comparé : Médiane des communes de EPCI X — ${groupe.label}`,
-    )
+    expect(lecture.texteComplet).toContain('¹ Groupe comparé : Médiane des communes de EPCI X')
     expect(lecture.texteComplet).not.toContain('communes bretonnes')
     // The table paints the same served ordinal as the fixture declares.
     expect(lecture.textes.filter((item) => item.str === '1er/2')).toHaveLength(bars.length * 2)

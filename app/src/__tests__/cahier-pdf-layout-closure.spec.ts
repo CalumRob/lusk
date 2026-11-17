@@ -135,12 +135,11 @@ describe('#1024 — pied de comparaison : zone réservée mesurée, jamais un d�
     }
   })
 
-  it('plie un groupe long vers le haut et réserve sa hauteur réelle avant les sources', async () => {
-    const capture: any = structuredClone(capturePartDense())
-    capture.comparison.group = {
-      ...capture.comparison.group,
-      label: Array.from({ length: 18 }, (_, index) => `Commune très longue ${index + 1}`).join(', '),
-    }
+  it('plie un libellé long vers le haut et réserve sa hauteur réelle avant les sources', async () => {
+    const base = capturePartDense()
+    const capture: any = structuredClone(base)
+    const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-share')
+    figure.model.comparisonLabel = Array.from({ length: 18 }, (_, index) => `Commune très longue ${index + 1}`).join(', ')
     const lecture = await generer(capture)
     const premièreNote = lecture.lignes.find((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))!
     expect(premièreNote).toBeTruthy()
@@ -151,7 +150,7 @@ describe('#1024 — pied de comparaison : zone réservée mesurée, jamais un d�
       && !/^\d+ \/ \d+$/.test(ligne.texte)
     ))
     expect(piedLignes[0]?.texte.startsWith('¹ Groupe comparé :')).toBe(true)
-    expect(piedLignes.length, 'le groupe long est plié sur plusieurs lignes').toBeGreaterThanOrEqual(2)
+    expect(piedLignes.length, 'le libellé long est plié sur plusieurs lignes').toBeGreaterThanOrEqual(2)
     const invitation = ligneInvitation(lecture)
     const b = boiteLigne(invitation)
     let dessous = Infinity

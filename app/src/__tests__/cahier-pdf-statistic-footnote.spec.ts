@@ -1,24 +1,40 @@
 /**
- * #1024 / #1014 §8 — the comparison footer states the statistic that is
- * actually served, next to the group identity.
+ * #1024 / #1014 §8 + parent review `663567c6` — the comparison footer states
+ * what the compared column measures, using the owner's own comparison sentence.
  *
- * The page footnote is the only place the PDF explains what the compared
- * column measures. It must therefore consume the captured `statisticLabels`
- * (owner-published labels of the figures' comparison layer) instead of naming
- * the group alone: a group name is not an explanation of the statistic, the
- * weighting or the rank. No family may be assumed to be a mean, and a capture
- * without a served statistic label prints none (never an invented « Moyenne »).
+ * The approved generator paints `${COMPARISON_MARK} Groupe comparé :
+ * ${overview.comparisonLabel}` (`pdf-prototype/desktop.js:613`): ONE label, the
+ * one the figure owner built from its actual served comparison (statistic AND
+ * cohort in a single sentence). The PDF must not glue that label to an
+ * independent group identity — « Médiane des communes de EPCI X — communes de
+ * EPCI X » names the same cohort twice — and must not invent a statistic when
+ * the owner publishes none.
  *
- * These checks read the actual PDF bytes: the literal footer text, its
- * presence per page (proof only, repeated on continuations), and the measured
- * wrapped note that the footer reserve and the `¹` link destination consume.
+ * These checks read the actual PDF bytes: the literal footer text, its presence
+ * per page (proof only, repeated on continuations, and page-local), and the
+ * measured wrapped note that the footer reserve and the `¹` link consume.
  */
 import { describe, expect, it } from 'vitest'
 
 import { composerCahierPdf } from '@/fiche/prototype/cahierPdfComposer'
 import { PAGE_APPROUVEE } from '@/fiche/prototype/cahierPdfGrammaire'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
-import type { CahierExportCapture, CahierExportRequest } from '@/fiche/prototype/cahierExportCapture'
+import type {
+  CahierCaptureReadiness,
+  CahierExportCapture,
+  CahierExportRequest,
+  CahierSectionCaptureInput,
+} from '@/fiche/prototype/cahierExportCapture'
+import { captureCahierSection } from '@/fiche/prototype/cahierExportCapture'
+import { buildMobiliteNetworksSection } from '@/fiche/content/mobiliteSections'
+import type {
+  ComparisonScope,
+  FactComparison,
+  FactProvenance,
+  NumericFact,
+  TerritoryFacts,
+} from '@/fiche/content/territoryFacts'
+import type { ContentSection } from '@/fiche/content/themeContent'
 import {
   chargeurImageTest,
   chargeurPoliceTest,
@@ -28,7 +44,16 @@ import {
   verifierCollisions,
 } from './helpers/cahierPdfRuntime'
 import type { LecturePdf } from './helpers/cahierPdfRuntime'
-import { capturePdfFixture, captureRampeDense } from './helpers/cahierPdfFixtures'
+import {
+  READY_AEDAR,
+  captureBarresStationnement,
+  capturePdfFixture,
+  captureRampeDense,
+  displayedLayer,
+  loadedMaps,
+  mapAvailability,
+} from './helpers/cahierPdfFixtures'
+import { cahierExportFixture } from './helpers/cahierExportFixtures'
 
 const options = () => ({
   signal: new AbortController().signal,
@@ -66,45 +91,75 @@ function piedParPage(lecture: LecturePdf): Map<number, string[]> {
   return pages
 }
 
-describe('#1024 — pied comparatif : la statistique servie, pas une moyenne supposée', () => {
-  it('imprime le libellé statistique capturé à côté du groupe, sur chaque page de preuve', async () => {
-    const lecture = await generer(requetePour('visiter-la-bretagne'))
-    const attendu = '¹ Groupe comparé : Moyenne des communes bretonnes — communes de EPCI X'
+describe('#1024 — pied comparatif : le libellé du propriétaire, jamais un groupe recollé', () => {
+  it('imprime le libellé comparatif servi, une fois, sur chaque page de preuve', async () => {
+    const lecture = await generer(requetePour('reseaux'))
+    const attendu = '¹ Groupe comparé : Médiane des communes de EPCI X'
     expect(lecture.texteComplet).toContain(attendu)
     // A continuation repeats the same context; a proof page never misses it.
     expect(occurrences(lecture, attendu)).toBe(lecture.pages)
+    // The cohort is named once: the served sentence is never appended to the
+    // independent group identity (which would repeat/contradict the cohort).
+    expect(lecture.texteComplet).not.toContain('Médiane des communes de EPCI X — communes de EPCI X')
+    expect(lecture.texteComplet).not.toContain('Médiane des communes de EPCI X — ')
+    expect(occurrences(lecture, 'communes de EPCI X')).toBe(lecture.pages)
   })
 
-  it('suit une autre statistique réellement servie (médiane), sans la remplacer par une moyenne', async () => {
-    const lecture = await generer(requetePour('reseaux'))
-    expect(lecture.texteComplet).toContain('Médiane des communes de EPCI X')
-    expect(lecture.texteComplet).not.toContain('Moyenne des communes de EPCI X')
+  it('sert le libellé d’une comparaison réellement servie, jamais l’état indisponible de la base', async () => {
+    // The synthetic paired-cohort fixture serves both columns on the capture's
+    // own EPCI scope. The owner sentence must therefore be the available one:
+    // the pre-serving « Comparaison indisponible — … » state is gone once the
+    // figures serve cells (the fixture no longer overwrites a label list).
+    const capture = captureBarresStationnement()
+    const lecture = await generer(requete(capture))
     const pieds = piedParPage(lecture)
     expect(pieds.size).toBeGreaterThan(0)
     for (const [page, lignes] of pieds) {
-      expect(lignes.join(' '), `page ${page}`).toContain('Médiane des communes de EPCI X')
-      expect(lignes.join(' '), `page ${page}`).toContain('communes de EPCI X')
+      expect(lignes.join(' '), `page ${page}`).toBe('¹ Groupe comparé : Médiane des communes de EPCI X')
     }
+    expect(lecture.texteComplet).not.toContain('Comparaison indisponible')
   })
 
-  it('conserve tous les libellés statistiques hétérogènes capturés, dans leur ordre servi', async () => {
-    const base = requetePour('visiter-la-bretagne')
-    const capture: CahierExportCapture = {
-      ...base.capture,
-      comparison: {
-        ...base.capture.comparison,
-        statisticLabels: ['Moyenne des communes bretonnes', 'Médiane des établissements'],
-      },
+  it('suit la moyenne réellement servie (EPCI), sans la remplacer par une autre statistique', async () => {
+    const lecture = await generer(requetePour('visiter-la-bretagne'))
+    const attendu = '¹ Groupe comparé : Moyenne des communes de EPCI X'
+    expect(lecture.texteComplet).toContain(attendu)
+    expect(occurrences(lecture, attendu)).toBe(lecture.pages)
+    expect(lecture.texteComplet).not.toContain('Moyenne des communes bretonnes')
+  })
+
+  it('nomme la portée Bretagne quand le groupe et la comparaison servie sont Bretagne', async () => {
+    const capture = capturePdfFixture('visiter-la-bretagne', {
+      selection: { etat: 'preset', preset: 'bretagne' },
+    })
+    const lecture = await generer(requete(capture))
+    expect(lecture.texteComplet).toContain('¹ Groupe comparé : Moyenne des communes bretonnes')
+    expect(lecture.texteComplet).not.toContain('communes de EPCI X')
+  })
+
+  it('nomme chaque preuve d’une même page avec son propre libellé, sans recoller les cohortes', async () => {
+    // Two figures proved on the same page, each owning a different (complete)
+    // comparison sentence: the page keeps both, in served order, and still
+    // never appends the group identity to either of them.
+    const capture: CahierExportCapture = structuredClone(captureBarresStationnement()) as CahierExportCapture
+    const figures = (capture as unknown as { figures: { slot: string; model: { figure: { comparisonLabel: string } } }[] }).figures
+    const labels: Record<string, string> = {
+      stationnement: 'Médiane des communes de EPCI X',
+      ravitaillement: 'Moyenne des établissements de EPCI X',
     }
-    const lecture = await generer({ ...base, capture })
-    expect(lecture.texteComplet).toContain(
-      '¹ Groupe comparé : Moyenne des communes bretonnes · Médiane des établissements — communes de EPCI X',
+    for (const figure of figures) figure.model.figure.comparisonLabel = labels[figure.slot]!
+    const lecture = await generer(requete(capture))
+    const pied = [...piedParPage(lecture).values()][0]!.join(' ')
+    expect(pied).toBe(
+      '¹ Groupe comparé : Médiane des communes de EPCI X · Moyenne des établissements de EPCI X',
     )
+    expect(pied).not.toContain('Médiane des communes de EPCI X — ')
+    expect(pied).not.toContain('de EPCI X — communes de EPCI X')
   })
 
   it('ne fabrique aucune statistique quand la capture n’en porte aucune', async () => {
-    // The dense access ramp fixture carries comparative proof but no served
-    // statistic label: the footer keeps the factual group identity alone.
+    // The dense access ramp fixture carries comparative proof but publishes no
+    // comparison sentence: the footer keeps the factual group identity alone.
     const lecture = await generer(requete(captureRampeDense()))
     const pieds = piedParPage(lecture)
     expect(pieds.size).toBeGreaterThan(0)
@@ -113,6 +168,28 @@ describe('#1024 — pied comparatif : la statistique servie, pas une moyenne sup
     }
     expect(lecture.texteComplet).not.toContain('Moyenne')
     expect(lecture.texteComplet).not.toContain('Médiane')
+  })
+
+  it('n’imprime aucun pied quand la comparaison est entièrement indisponible', async () => {
+    // The real owner publishes no served reference here: no comparative proof
+    // exists on the page, so the note is absent rather than « indisponible ».
+    const capture = capturePdfFixture('couverture-du-territoire')
+    const figure = (capture as unknown as {
+      figures: { family: string; model: { value: { fact: { comparison: FactComparison | null } }; comparisonLabel: string | null } }[]
+    }).figures.find((candidate) => candidate.family === 'mobilite-share')!
+    expect(figure.model.value.fact.comparison?.reference).toBeNull()
+    const lecture = await generer(requete(capture))
+    expect(lecture.lignes.some((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))).toBe(false)
+  })
+
+  it('refuse une capture incohérente (libellé publié vide) au lieu d’inventer une phrase', async () => {
+    const capture: CahierExportCapture = structuredClone(captureBarresStationnement()) as CahierExportCapture
+    const figure = (capture as unknown as { figures: { model: { figure: { comparisonLabel: string | null } } }[] })
+      .figures.find((candidate) => candidate.model.figure.comparisonLabel !== null)!
+    figure.model.figure.comparisonLabel = '   '
+    await expect(composerCahierPdf(requete(capture), options())).rejects.toMatchObject({
+      code: 'inconsistent-capture',
+    })
   })
 
   it('n’imprime le pied que sur une page qui porte la preuve, jamais en reste', async () => {
@@ -134,15 +211,16 @@ describe('#1024 — pied comparatif : la statistique servie, pas une moyenne sup
       + 'et les services de proximité réellement publiés dans le groupe comparé ; '
       + 'la même statistique est rappelée pour chaque page qui porte la preuve '
       + 'comparative, avec ses pondérations et ses rangs servis'
-    const capture: CahierExportCapture = {
-      ...base.capture,
-      comparison: { ...base.capture.comparison, statisticLabels: [longLabel] },
-    }
+    const capture: CahierExportCapture = structuredClone(base.capture) as CahierExportCapture
+    const figure = (capture as unknown as { figures: { family: string; model: { comparisonLabel: string | null } }[] })
+      .figures.find((candidate) => candidate.family === 'mobilite-curve')!
+    figure.model.comparisonLabel = longLabel
     const lecture = await generer({ ...base, capture })
     verifierCollisions(lecture)
     const pieds = piedParPage(lecture)
     expect(pieds.size).toBeGreaterThan(0)
     const lignes = [...pieds.values()][0]!
+    expect(lignes.join(' ')).toContain(longLabel.slice(0, 40))
     // The measured note really wraps; a single-line reserve would overlap the
     // invitation or leave the ¹ destination inside the note.
     expect(lignes.length).toBeGreaterThan(1)
@@ -153,5 +231,132 @@ describe('#1024 — pied comparatif : la statistique servie, pas une moyenne sup
     // stacks 12 pt upwards; the 3 pt lead sits above the top line.
     expect(dest[3]).toBeCloseTo(35 + (lignes.length - 1) * 12 + 3, 0)
     expect(dest[3]).toBeLessThan(PAGE_APPROUVEE.hauteurPt - 46)
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * Source contract: the real owner, one unavailable fact beside served
+ * ones, then the capture, the projection and the actual PDF footer.
+ * ------------------------------------------------------------------ */
+
+const provenanceRecit: FactProvenance = {
+  sourceId: 'osm_reseaux',
+  source: 'OpenStreetMap',
+  version: '2026-08',
+  referenceDate: '2026-08-05',
+  publicationDate: '2026-08-06',
+}
+
+const territoireSource = {
+  type: 'commune' as const,
+  code: '22001',
+  name: 'Commune A1',
+  department: '22',
+  epci: '200000001',
+  epciName: 'EPCI X',
+}
+
+const porteeEpci: ComparisonScope = { kind: 'communes-epci', label: 'communes de EPCI X' }
+
+function faitReseau(detail: string, value: number, comparison: FactComparison | null): NumericFact {
+  return {
+    key: 'reseaux_par_habitant',
+    detail,
+    value,
+    unit: 'km / 1 000 hab.',
+    availability: 'complete',
+    provenance: provenanceRecit,
+    comparison,
+    comparisonBasis: 'territory-median',
+    reason: null,
+  }
+}
+
+function faitsReseau(comparaisons: readonly FactComparison[]): TerritoryFacts {
+  return {
+    territory: territoireSource,
+    theme: 'mobilite',
+    mobility: {
+      namedTrajectoryReferences: [],
+      indicators: [
+        faitReseau('t_km_1000', 10, comparaisons[0]!),
+        faitReseau('b_km_1000', 8, comparaisons[1]!),
+        faitReseau('c_km_1000', 80, comparaisons[2]!),
+      ],
+    },
+  }
+}
+
+function sectionReseau(facts: TerritoryFacts): ContentSection {
+  return buildMobiliteNetworksSection(facts, undefined) as unknown as ContentSection
+}
+
+function capturerReseau(section: ContentSection): CahierExportCapture {
+  const fixture = cahierExportFixture()
+  const readiness: CahierCaptureReadiness = { status: 'ready', reason: 'evidence-ready', availability: 'complete' }
+  const input: CahierSectionCaptureInput = {
+    section,
+    unit: { key: 'partage-de-lespace-public', label: 'Le partage de l’espace public' },
+    territory: fixture.content.territory,
+    readiness,
+    comparisonEligible: true,
+    comparisonStatus: 'ready',
+    comparisonError: null,
+    control: fixture.control,
+    aedar: READY_AEDAR,
+    publications: [
+      mapAvailability(loadedMaps(['walkTransit', 'bike', 'car']), 'none'),
+      displayedLayer('mobilite-comparison-bars', 'bars'),
+    ],
+  }
+  return captureCahierSection(input)
+}
+
+describe('contrat de source — un fait indisponible ne rend pas le groupe indisponible', () => {
+  const median = (value: number): FactComparison => ({
+    direction: 'plus-est-mieux', scope: porteeEpci, rank: null, reference: { kind: 'median', value },
+  })
+  const indisponible: FactComparison = {
+    direction: 'plus-est-mieux', scope: porteeEpci, rank: null, reference: null,
+  }
+
+  it('capture le libellé servi, le projette et l’imprime en pied de page réel', async () => {
+    const section = sectionReseau(faitsReseau([indisponible, median(9), median(70)]))
+    if (section.evidence?.kind !== 'mobilite-networks') throw new Error('Réseaux evidence expected')
+    // The owner speaks about the comparison it actually serves, even though
+    // its first fact has no reference of its own.
+    expect(section.evidence.figure.comparisonLabel).toBe('Médiane des communes de EPCI X')
+    const capture = capturerReseau(section)
+    const bars = capture.figures.find((figure) => figure.family === 'mobilite-bars')
+    if (!bars || bars.family !== 'mobilite-bars') throw new Error('bars capture expected')
+    expect(bars.model.figure.comparisonLabel).toBe('Médiane des communes de EPCI X')
+
+    const lecture = await generer(requete(capture))
+    const attendu = '¹ Groupe comparé : Médiane des communes de EPCI X'
+    expect(lecture.texteComplet).toContain(attendu)
+    expect(lecture.texteComplet).not.toContain('Comparaison indisponible')
+    for (const lignes of piedParPage(lecture).values()) expect(lignes.join(' ')).toBe(attendu)
+  })
+
+  it('ne peint aucune note quand aucun fait ne sert de référence', async () => {
+    const section = sectionReseau(faitsReseau([indisponible, indisponible, indisponible]))
+    if (section.evidence?.kind !== 'mobilite-networks') throw new Error('Réseaux evidence expected')
+    expect(section.evidence.figure.comparisonLabel).toBe(
+      'Comparaison indisponible — Médiane des communes de EPCI X',
+    )
+    const capture = capturerReseau(section)
+    const lecture = await generer(requete(capture))
+    expect(lecture.lignes.some((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))).toBe(false)
+    expect(lecture.texteComplet).not.toContain('Comparaison indisponible — Médiane')
+  })
+
+  it('garde le fait indisponible à sa cellule pendant que les autres faits servent', async () => {
+    const capture = capturerReseau(sectionReseau(faitsReseau([indisponible, median(9), median(70)])))
+    const lecture = await generer(requete(capture))
+    // The served compared cells are painted; the unavailable one keeps its own
+    // honest cell state rather than being replaced by the group sentence.
+    expect(lecture.texteComplet).toContain('Indisponible')
+    expect(lecture.texteComplet).toContain('Médiane des communes de EPCI X')
+    expect(piedParPage(lecture).size).toBeGreaterThan(0)
   })
 })

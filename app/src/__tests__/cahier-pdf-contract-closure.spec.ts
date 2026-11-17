@@ -180,13 +180,13 @@ describe('#1024 contrat — en-tête plat, colgroup, barres, séparateurs, horiz
     const { request } = await parties(capture)
     const bars = projeterRequeteExportFigures(request).find((projection) => projection.family === 'mobilite-bars')!
     const table = bars.tables[0]!
-    expect(table.rowHeader).toBe('Type de stationnement')
+    expect(table.rowHeader).toBe('Réseau')
     expect(table.columns[0]!.label).toBe(capture.identity.territory.name)
     // The axis title never takes the focal value column.
-    expect(table.columns.map((column) => column.label)).not.toContain('Type de stationnement')
+    expect(table.columns.map((column) => column.label)).not.toContain('Réseau')
 
     const lecture = await generer(capture)
-    const titre = lecture.textes.find((item) => item.str === 'Type de stationnement'
+    const titre = lecture.textes.find((item) => item.str === 'Réseau'
       && Math.abs(item.taille - ROLE_PDF.enteteTableauMode.taille) < 0.02)
     expect(titre, 'le titre de dimension est peint au-dessus des libellés de ligne').toBeTruthy()
     const territoire = lecture.textes

@@ -71,6 +71,7 @@ import {
 export class CahierPdfCompositionError extends Error {
   readonly code:
     | 'incomplete-capture'
+    | 'inconsistent-capture'
     | 'unsupported-family'
     | 'asset'
     | 'font'
@@ -413,6 +414,8 @@ interface TableBloc {
   readonly kind: 'table'
   /** One table in the flat shape, or the two side-by-side approved access panels. */
   readonly cells: readonly CelluleTableauBloc[]
+  /** Owner-published comparison label of the figure this table renders. */
+  readonly comparisonLabel: string | null
   readonly height: number
   readonly gapAvant: number
 }
@@ -432,6 +435,12 @@ interface PagePdf {
   readonly blocks: BlocPdf[]
   readonly continuation: boolean
   readonly hasComparisonProof: boolean
+  /**
+   * The measured comparison note this page actually paints: the owner's served
+   * label(s) of the proof blocks it carries, or the group identity when no
+   * proof block publishes one. Empty when the page carries no note.
+   */
+  readonly comparaisonLignes: readonly string[]
 }
 
 interface DocumentPdf {
@@ -439,8 +448,8 @@ interface DocumentPdf {
   readonly sousTitre: SousTitreComparaison | null
   readonly identityHeight: number
   readonly sourcesHeight: number
-  /** Measured comparison-footer lines; empty when the capture declares no group. */
-  readonly piedComparaison: readonly string[]
+  /** Measured lines of the longest possible comparison note (the reserve). */
+  readonly piedReserve: number
   /** Content bottom after reserving the measured footer zone. */
   readonly contenuBas: number
 }
@@ -516,6 +525,28 @@ function familySlots(projection: CahierFigureProjection): readonly string[] {
     case 'mobilite-bars': return [projection.slot]
     case 'mobilite-share': return ['share']
     case 'mobilite-curve': return ['curve']
+  }
+}
+
+/**
+ * The owner-published comparison label a projection carries, when its family
+ * publishes one. Families without a comparison layer (profile, diversity loss)
+ * publish no label: the note then falls back to the factual group identity.
+ */
+function libelleComparaisonProjection(projection: CahierFigureProjection): string | null {
+  switch (projection.family) {
+    case 'aedar-ramps':
+    case 'aedar-car-overview':
+    case 'mobilite-bars':
+    case 'mobilite-share':
+    case 'mobilite-curve':
+      return projection.comparisonLabel
+    // The explorer's owner publishes the requested group identity, not a
+    // statistic/scope sentence: the factual group fallback says the same thing.
+    case 'aedar-equipment-explorer':
+    case 'aedar-diversity-loss':
+    case 'aedar-equipment-profile':
+      return null
   }
 }
 
@@ -620,7 +651,14 @@ function assemblerPages(
   )).flat().map((ligne) => ligne.texte)
   const sourcesHeight = Math.max(4, sourcesLines.length
     * mesure.hauteurLigne(ROLE_PDF.source.police, TAILLE.source) * 1.4) + ESPACE.sourcesHaut
-  const piedComparaison = lignesPiedComparaison(capture, mesure)
+  // The reserve is the longest note any page could paint: the section's distinct
+  // owner comparison labels, then the group identity every page shares. A page
+  // paints only the labels of the proof blocks it really carries (below), so the
+  // reserve is an upper bound of the painted note, never a smaller guess.
+  const labelsSection = [...new Set(projections
+    .map((projection) => libelleComparaisonProjection(projection))
+    .filter((label): label is string => label !== null))]
+  const piedComparaison = lignesPiedComparaison(labelsSection, capture, mesure)
   // Reserve the comparison footer's actual wrapped height (not a fixed offset),
   // leaving the approved single-line box at its H-35 baseline and clear of the
   // invitation at H-23. The reserve follows the painter's own predicate: a page
@@ -709,9 +747,10 @@ function assemblerPages(
     pousserIndisponibles(projection)
   }
 
-  const tableGroups: TableauPdfPart[][] = []
+  const tableGroups: { parts: TableauPdfPart[]; comparisonLabel: string | null }[] = []
   for (const projection of projections) {
     const ownerDisplayed = preuveProprietaire(capture, familySlots(projection))
+    const comparisonLabel = libelleComparaisonProjection(projection)
     const build = (table: Parameters<typeof construireTableauxPdf>[0], largeurDisponible: number) => (
       construireTableauxPdf(table, {
         mesure,
@@ -732,21 +771,21 @@ function assemblerPages(
         try {
           const pair = projection.tables.map((table) => build(table, PAIRE_TABLEAUX.largeur))
           if (pair.every((parts) => parts.length === 1 && parts[0]!.rows.length > 0)) {
-            tableGroups.push(pair.map((parts) => parts[0]!))
+            tableGroups.push({ parts: pair.map((parts) => parts[0]!), comparisonLabel })
             continue
           }
         } catch (error) {
           if (!(error instanceof CahierPdfTableLayoutError)) throw error
         }
       }
-      for (const parts of large) for (const part of parts) tableGroups.push([part])
+      for (const parts of large) for (const part of parts) tableGroups.push({ parts: [part], comparisonLabel })
       continue
     }
     for (const table of projection.tables) {
-      for (const part of build(table, PAGE.largeurCorps)) tableGroups.push([part])
+      for (const part of build(table, PAGE.largeurCorps)) tableGroups.push({ parts: [part], comparisonLabel })
     }
   }
-  const tableParts = tableGroups.flat()
+  const tableParts = tableGroups.flatMap((group) => group.parts)
   if (tableGroups.length) {
     const libelle = tableParts.length > 1 ? 'Valeurs des graphiques' : 'Valeurs du graphique'
     blocks.push({
@@ -757,19 +796,20 @@ function assemblerPages(
       gapAvant: ESPACE.titreTableauxHaut,
       height: mesure.hauteurLigne(ROLE_PDF.titreTableau.police, TAILLE.titreTableaux) * 1.4,
     })
-    const largeurCellule = (group: TableauPdfPart[]) => (
-      group.length === 2 ? PAIRE_TABLEAUX.largeur : PAGE.largeurCorps
+    const largeurCellule = (parts: TableauPdfPart[]) => (
+      parts.length === 2 ? PAIRE_TABLEAUX.largeur : PAGE.largeurCorps
     )
     for (const [index, group] of tableGroups.entries()) {
       blocks.push({
         kind: 'table',
-        cells: group.map((part, cellIndex) => ({
+        cells: group.parts.map((part, cellIndex) => ({
           part,
           rows: part.rows,
           x: PAGE.corpsX + cellIndex * (PAIRE_TABLEAUX.largeur + PAIRE_TABLEAUX.gap),
-          width: largeurCellule(group),
+          width: largeurCellule(group.parts),
           continued: false,
         })),
+        comparisonLabel: group.comparisonLabel,
         // The first caption keeps the heading's 12 px bottom margin; a new
         // table row keeps its 20 px `margin-bottom` (source rhythm, not zero).
         gapAvant: index === 0 ? ESPACE.titreTableauxBas : ESPACE.entreTableaux,
@@ -802,7 +842,7 @@ function assemblerPages(
     }
   }
 
-  const pagesBrutes: PagePdf[] = []
+  const pagesBrutes: Omit<PagePdf, 'comparaisonLignes'>[] = []
   let page: { blocks: BlocPdf[]; remaining: number } = { blocks: [], remaining: availableFirst }
   let continuation = false
   const nouvellePage = () => {
@@ -862,6 +902,7 @@ function assemblerPages(
             rows: cell.rows.slice(0, n),
             continued: !first || cell.continued,
           })),
+          comparisonLabel: bloc.comparisonLabel,
           height: hauteur,
           gapAvant,
         })
@@ -898,24 +939,51 @@ function assemblerPages(
 
   // A comparison footer/heading appears only on a page that actually carries
   // comparative marks (a table column or a figure layer), never as residual.
-  const pages: PagePdf[] = pagesBrutes.map((candidate) => ({
-    ...candidate,
-    hasComparisonProof: candidate.blocks.some((bloc) => {
+  // The note of a page names the owner-published labels of the proof blocks it
+  // really carries, in served order: a figure proved on another page is not
+  // named here, and no statistic label is glued to an independent group.
+  const labelsPreuve = (blocks: readonly BlocPdf[]): string[] => {
+    const labels: string[] = []
+    const add = (label: string | null) => {
+      if (label && !labels.includes(label)) labels.push(label)
+    }
+    for (const bloc of blocks) {
+      if (bloc.kind === 'figure') {
+        if (preuveFigureComparative(bloc.projection, capture)) add(libelleComparaisonProjection(bloc.projection))
+      } else if (bloc.kind === 'figure-row') {
+        for (const cell of bloc.cells) {
+          if (preuveFigureComparative(cell.projection, capture)) add(libelleComparaisonProjection(cell.projection))
+        }
+      } else if (bloc.kind === 'table') {
+        if (bloc.cells.some((cell) => cell.part.hasComparison)) add(bloc.comparisonLabel)
+      }
+    }
+    return labels
+  }
+  const pages: PagePdf[] = pagesBrutes.map((candidate) => {
+    const hasComparisonProof = candidate.blocks.some((bloc) => {
       if (bloc.kind === 'figure') return preuveFigureComparative(bloc.projection, capture)
       if (bloc.kind === 'figure-row') {
         return bloc.cells.some((cell) => preuveFigureComparative(cell.projection, capture))
       }
       if (bloc.kind === 'table') return bloc.cells.some((cell) => cell.part.hasComparison)
       return false
-    }),
-  }))
+    })
+    return {
+      ...candidate,
+      hasComparisonProof,
+      comparaisonLignes: hasComparisonProof
+        ? lignesPiedComparaison(labelsPreuve(candidate.blocks), capture, mesure)
+        : [],
+    }
+  })
 
   return {
     pages,
     sousTitre: pages.some((candidate) => candidate.hasComparisonProof) ? sousTitre : null,
     identityHeight,
     sourcesHeight,
-    piedComparaison,
+    piedReserve: piedComparaison.length,
     contenuBas,
   }
 }
@@ -933,7 +1001,7 @@ function construirePages(
 ): DocumentPdf {
   const sansReserve = assemblerPages(request, mesure, false)
   const preuveComparative = sansReserve.pages.some((page) => page.hasComparisonProof)
-  if (!preuveComparative || sansReserve.piedComparaison.length === 0) return sansReserve
+  if (!preuveComparative || sansReserve.piedReserve === 0) return sansReserve
   return assemblerPages(request, mesure, true)
 }
 
@@ -1341,27 +1409,36 @@ function dessinerSources(
 
 /**
  * The measured footer note. It is one wrapping owner so the pagination reserve
- * and the painter cannot disagree about how many lines the group needs.
+ * and the painter cannot disagree about how many lines the note needs.
  *
  * The note must explain *what* the compared column measures (PRD §8: the group
  * name does not replace the served statistic/weighting/rank explanation). It
- * therefore consumes the capture's owner-published `statisticLabels` verbatim:
- * no family is assumed to be a mean, and an empty capture prints none. When a
- * section really serves several heterogeneous labels (e.g. two compared
- * columns), every one of them is kept in served order.
+ * therefore prints the owner-published comparison label(s) verbatim — the
+ * sentence the owner built from its actual served comparison — and never glues
+ * a statistic label to an independent group identity, which would name two
+ * different cohorts in one statement. When the proof blocks publish no label
+ * at all, the factual group identity is the only truthful source and is used
+ * alone. A blank published label is a corrupt capture: the painter refuses it
+ * rather than printing an empty statement.
  */
 function lignesPiedComparaison(
+  labels: readonly string[],
   capture: CahierExportCapture,
   mesure: MesureTexte,
 ): readonly string[] {
+  for (const label of labels) {
+    if (!label.trim()) {
+      throw new CahierPdfCompositionError(
+        'inconsistent-capture',
+        'Un libellé de comparaison publié est vide : la note de pied ne peut pas être inventée.',
+      )
+    }
+  }
   const group = capture.comparison.group
-  const label = group ? group.label ?? group.names.join(', ') : null
-  if (!label) return []
-  const statistiques = capture.comparison.statisticLabels
-  const textePied = statistiques.length
-    ? `¹ Groupe comparé : ${statistiques.join(' · ')} — ${label}`
-    : `¹ Groupe comparé : ${label}`
-  return plierTexte(textePied, mesure, {
+  const groupeLabel = group ? group.label ?? group.names.join(', ') : null
+  const libelle = labels.length ? labels.join(' · ') : groupeLabel
+  if (!libelle) return []
+  return plierTexte(`¹ Groupe comparé : ${libelle}`, mesure, {
     police: ROLE_PDF.pied.police,
     taillePt: TAILLE.pied,
     largeurMax: PAGE.largeurUtile,
@@ -1595,7 +1672,7 @@ export async function composerCahierPdf(request: CahierExportRequest,
             cy,
             cellule.width,
             cellule.continued,
-            documentPdf.piedComparaison.length,
+            page.comparaisonLignes.length,
           )
         }
         cy = start + bloc.height
@@ -1632,7 +1709,7 @@ export async function composerCahierPdf(request: CahierExportRequest,
       cy + ESPACE.sourcesHaut,
       PAGE.largeurCorps,
     )
-    dessinerPied(doc, mesure, index + 1, total, urlAccueil, page.hasComparisonProof, documentPdf.piedComparaison)
+    dessinerPied(doc, mesure, index + 1, total, urlAccueil, page.hasComparisonProof, page.comparaisonLignes)
   }
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error

@@ -392,10 +392,10 @@ describe('Cahier export capture — comparison identity and effective presentati
       selectedMemberCount: 3,
       eligibleContributorCount: 2,
     })
-    expect(capture.comparison.statisticLabels).toEqual(['Moyenne des communes bretonnes'])
     const curve = capture.figures.find((figure) => figure.family === 'mobilite-curve')
     if (!curve || curve.family !== 'mobilite-curve') throw new Error('curve figure expected')
     expect(curve.model.comparison?.eligibleCount).toBe(2)
+    expect(curve.model.comparisonLabel).toBe('Moyenne des communes bretonnes')
   })
 
   it('preserves each paired column statistic instead of claiming the first one for both', () => {
@@ -417,7 +417,6 @@ describe('Cahier export capture — comparison identity and effective presentati
       },
     } as ContentSection
     const capture = captureCahierSection(inputFor(variant, { publications: [layer('stationnement'), layer('ravitaillement')] }))
-    expect(capture.comparison.statisticLabels).toEqual([...labels])
     const stationnement = capture.figures.find((figure) => figure.slot === 'stationnement')
     const ravitaillement = capture.figures.find((figure) => figure.slot === 'ravitaillement')
     if (stationnement?.family !== 'mobilite-bars' || ravitaillement?.family !== 'mobilite-bars') {

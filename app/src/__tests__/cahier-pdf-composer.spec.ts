@@ -210,7 +210,7 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
       'Réseau cyclable',
       'Réseau automobile',
       'Groupe comparé',
-      '¹ Groupe comparé : Médiane des communes de EPCI X — communes de EPCI X',
+      '¹ Groupe comparé : Médiane des communes de EPCI X',
       'Source(s) : OpenStreetMap',
     ])
     // Rank text is a second line under its value; the row stays one table row.
@@ -227,9 +227,10 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
       ])
     }
     // Every page that carries comparative proof carries the footer, with the
-    // statistic label actually served by this section (never a hardcoded mean).
-    expect(occurrences(lecture, '¹ Groupe comparé : Médiane des communes de EPCI X — communes de EPCI X'))
+    // owner's actual comparison sentence (its statistic AND its cohort, once).
+    expect(occurrences(lecture, '¹ Groupe comparé : Médiane des communes de EPCI X'))
       .toBe(lecture.pages)
+    expect(lecture.texteComplet).not.toContain('Médiane des communes de EPCI X — communes de EPCI X')
     // No row is cut: the six native rows appear once across the two pages, and
     // a category total is not joined to itself.
     for (const label of [
@@ -481,15 +482,18 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
   it('garde l’échelle arrondie et les segments natifs des barres comparées', async () => {
     const { lecture } = await generer(requeteSansMode(captureBarresDense()), 'dense-bars.pdf')
     contientTout(lecture, [
-      'Places',
-      'places / 1 000 hab.',
+      'Longueur du réseau par habitant',
+      'km / 1 000 hab.',
       'Protégé',
       'Partagé',
       'Groupe comparé',
     ])
+    // The scene is ONE native family: the published network title/unit/axes and
+    // the real cycling partition, never parking wording over network rows.
+    expect(lecture.texteComplet).not.toContain('Places')
+    expect(lecture.texteComplet).not.toContain('Type de stationnement')
     // The table carries no PDF-only `Unité :` line (the approved caption clone
     // has none); the unit fact stays on the figure's own axis title.
-    expect(lecture.texteComplet).toContain('Places (places / 1 000 hab.)')
     expect(lecture.texteComplet).not.toContain('Unité :')
     // Native rounded headroom for 3,4 must not become a raw 0/.85/1.7 axis.
     expect(lecture.texteComplet).not.toContain('0,85')
@@ -500,6 +504,9 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
     expect(rowLabel).toBeTruthy()
     expect(comparisonHeader).toBeTruthy()
     expect(comparisonHeader!.x).toBeGreaterThan(rowLabel!.x + 20)
+    // The cycling total keeps its served reference on the capture's own cohort.
+    expect(lecture.texteComplet).toContain('Réseau cyclable — Protégé')
+    expect(lecture.texteComplet).toContain('Réseau cyclable — Partagé')
     const comparisonValue = lecture.textes.find((item) => item.str === '2,2' && item.page === 1)
     expect(comparisonValue).toBeTruthy()
     const alignedHeader = lecture.textes
@@ -613,7 +620,8 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
   it('partage les mêmes primitives de domaine entre écran et PDF', () => {
     const bars: any = captureBarresDense()
     const barFigure = bars.figures.find((candidate: any) => candidate.family === 'mobilite-bars').model.figure
-    const single = { ...barFigure, categories: [barFigure.categories[0]] }
+    const bike = barFigure.categories.find((category: any) => category.key === 'bike')
+    const single = { ...barFigure, categories: [bike] }
     const barScale = mobiliteBarScale(single, true)
     expect(barScale.ticks).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5])
     expect(barScale.maximum).toBe(3.5)
@@ -766,18 +774,21 @@ describe('compositeur PDF Cahier — refus explicites', () => {
       names: ['GROUPE CORROMPU'],
       label: 'GROUPE CORROMPU',
     }
-    // The footer now carries the served statistic label next to the group; the
-    // synthetic corruption covers both, so the audit on the old footer literal
-    // must fail on the old group identity, not on the statistic's own scope.
-    capture.comparison.statisticLabels = ['Moyenne des communes bretonnes']
+    // The footer carries the owner's served comparison sentence. Corrupting the
+    // *group* identity can only reach the subtitle: it must never be glued to
+    // the statistic sentence as if it named the compared cohort.
+    capture.comparison.group = {
+      ...capture.comparison.group,
+      names: ['GROUPE CORROMPU'],
+      label: 'GROUPE CORROMPU',
+    }
     const corrompu = await generer(requeteAvecModes(capture), 'negatif-groupe-reel.pdf')
     expect(corrompu.lecture.texteComplet).toContain('GROUPE CORROMPU')
-    expect(corrompu.lecture.texteComplet).toContain(
-      '¹ Groupe comparé : Moyenne des communes bretonnes — GROUPE CORROMPU',
-    )
-    expect(() => auditerTexte(corrompu.lecture, ['¹ Groupe comparé : communes de EPCI X']))
-      .toThrow(/¹ Groupe comparé : communes de EPCI X/)
-    expect(occurrences(corrompu.lecture, '¹ Groupe comparé : communes de EPCI X')).toBe(0)
+    expect(corrompu.lecture.texteComplet).toContain('¹ Groupe comparé : Médiane des communes de EPCI X')
+    expect(occurrences(corrompu.lecture, '¹ Groupe comparé : GROUPE CORROMPU')).toBe(0)
+    // The independent audit still catches the corrupted group identity.
+    expect(() => auditerTexte(corrompu.lecture, ['Groupe comparé : EPCI X']))
+      .toThrow(/Groupe comparé : EPCI X/)
     expect(occurrences(corrompu.lecture, 'GROUPE CORROMPU'))
       .toBeGreaterThan(occurrences(bon.lecture, 'GROUPE CORROMPU'))
   })
@@ -833,7 +844,6 @@ describe('sous-titre de comparaison — règle mesurée approuvée', () => {
         reason: 'shown',
         layers: [{ slot: 'comparison', toggle: true, referenceAvailable: true, visibleReferenceAvailable: true, displayed: true }],
       },
-      statisticLabels: ['Moyenne'],
       ...rest,
       group,
     } as CahierCaptureComparison

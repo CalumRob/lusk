@@ -15,6 +15,7 @@ import type {
   CahierMapAvailabilityCaptureState,
 } from '@/fiche/prototype/cahierExportCapture'
 import { captureCahierSection } from '@/fiche/prototype/cahierExportCapture'
+import { comparisonLabelFor } from '@/fiche/content/mobiliteSections'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
 import { AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
@@ -255,6 +256,10 @@ export function withAedarModes(
 
 export function captureCourbeDense(): CahierExportCapture {
   const capture: any = structuredClone(capturePdfFixture('visiter-la-bretagne'))
+  const groupe = capture.comparison.group as { scopeKind: ComparisonScopeKind | null; label: string | null } | null
+  if (!groupe?.scopeKind || !groupe.label) {
+    throw new Error('Fixture PDF : le groupe de comparaison natif est requis pour la courbe dense.')
+  }
   const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-curve')
   const base = figure.model.points[0]
   const points = Array.from({ length: 73 }, (_, index) => ({
@@ -278,17 +283,19 @@ export function captureCourbeDense(): CahierExportCapture {
       ...points[18]!.fact,
       comparison: {
         direction: 'neutral',
-        scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-        rank: { position: 1, size: 43, ties: null },
-        reference: { value: 0.8, unit: '%' },
+        // The curve's served cohort is the capture's own comparison group: one
+        // scene, one cohort, never a second scope chosen by the fixture.
+        scope: { kind: groupe.scopeKind, label: groupe.label },
+        rank: { position: 1, size: 2, ties: null },
+        reference: { kind: 'median', value: 0.8 },
       },
     },
     label: '1 h 30',
   }
   figure.model.comparison = {
     statistic: 'mean',
-    scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-    selectedMemberCount: 3,
+    scope: { kind: groupe.scopeKind, label: groupe.label },
+    selectedMemberCount: 2,
     eligibleCount: 2,
     modelZeroReasonCounts: {},
     points: points.map((point) => ({ ...point, fact: { ...point.fact, value: point.fact.value * 0.9 } })),
@@ -317,12 +324,13 @@ export function capturePartDense(): CahierExportCapture {
     // ranked among the EPCI communes, not among all Breton communes.
     scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
     rank: { position: 1, size: 38, ties: null },
-    reference: { value: 0.8, unit: '%' },
+    reference: { kind: 'median', value: 0.8 },
   }
   figure.model.unit = '%'
-  // The synthetic served reference above supersedes the pre-serving
-  // "Comparaison indisponible — …" label carried by the base capture.
-  capture.comparison.statisticLabels = ['Médiane des communes de EPCI X']
+  // The served reference above changes what the figure states: its comparison
+  // sentence is derived by the section owner from these very facts, never a
+  // copied string and never the pre-serving "indisponible" label.
+  figure.model.comparisonLabel = comparisonLabelFor([figure.model.value], capture.identity.territory)
   return capture as CahierExportCapture
 }
 
@@ -350,46 +358,59 @@ export function captureRampeDense(): CahierExportCapture {
   return capture as CahierExportCapture
 }
 
+/**
+ * A dense, populated "Réseaux" scene on ONE native family: the published
+ * network categories (Réseau piéton / cyclable / automobile) keep the owner's
+ * title, unit, axes and legend, and the cycling row carries its real
+ * Protégé/Partagé partition. Only the served values are synthetic, inside the
+ * capture's own declared comparison cohort: the total equals its two published
+ * partitions and every compared cell is a served reference on that same scope
+ * and cohort size. Nothing here is production data, and no rank or statistic is
+ * recomputed by the app — the fixture provides the producer-shaped cells.
+ */
 export function captureBarresDense(): CahierExportCapture {
   const capture: any = structuredClone(capturePdfFixture('reseaux'))
   const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-bars')
-  const model = figure.model.figure
-  model.yAxisTitle = 'Places'
-  model.unit = 'places / 1 000 hab.'
-  model.xAxisTitle = 'Type de stationnement'
-  const category = model.categories[0]
-  category.tone = 'brand'
-  category.value.fact.value = 3.4
-  category.value.fact.unit = 'places / 1 000 hab.'
-  category.value.fact.comparison = {
-    direction: 'neutral',
-    scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-    rank: null,
-    reference: { value: 2.2, unit: 'places / 1 000 hab.' },
+  const group = capture.comparison.group as { scopeKind: ComparisonScopeKind | null; label: string | null } | null
+  if (!group?.scopeKind || !group.label) {
+    throw new Error('Fixture PDF : le groupe de comparaison natif est requis pour les barres réseau.')
   }
-  const segment = (key: string, label: string, value: number, reference: number) => ({
-    key,
-    label,
+  const scope = { kind: group.scopeKind, label: group.label }
+  const cohorte = { position: 1, size: 2, ties: null }
+  const modele = figure.model.figure
+  /** The declared EPCI pair: focal 3,4 = 2,0 protégé + 1,4 partagé, peer mean 2,2. */
+  const bike = modele.categories.find((category: any) => category.key === 'bike')
+  if (!bike) throw new Error('Fixture PDF : la catégorie cyclable native est requise.')
+  const base = bike.value.fact
+  const totalReference = 2.2
+  const segments = [
+    { key: 'protege_km_1000', label: 'Protégé', value: 2, reference: 1.3 },
+    { key: 'partage_km_1000', label: 'Partagé', value: 1.4, reference: 0.9 },
+  ]
+  bike.value.fact.value = segments.reduce((sum, segment) => sum + segment.value, 0)
+  bike.value.fact.comparison = {
+    direction: 'neutral', scope, rank: cohorte, reference: { kind: 'median', value: totalReference },
+  }
+  bike.segments = segments.map((segment) => ({
+    key: segment.key,
+    label: segment.label,
+    legendLabel: `Réseau cyclable ${segment.label.toLocaleLowerCase('fr-FR')}`,
     value: {
       fact: {
-        ...category.value.fact,
-        value,
-        comparison: {
-          direction: 'neutral',
-          scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-          rank: null,
-          reference: { value: reference, unit: 'places / 1 000 hab.' },
-        },
+        ...base,
+        detail: segment.key,
+        value: segment.value,
+        comparison: { direction: 'neutral', scope, rank: cohorte, reference: { kind: 'median', value: segment.reference } },
       },
-      label,
+      label: segment.label,
     },
     rawValue: null,
-  })
-  category.segments = [
-    segment('protege_km_1000', 'Protégé', 2.0, 1.3),
-    segment('partage_km_1000', 'Partagé', 1.4, 0.9),
-  ]
-  category.comparisonSplit = true
+  }))
+  bike.comparisonSplit = true
+  delete bike.comparisonSplitNote
+  bike.splitNote = null
+  // The figure keeps the owner's comparison sentence: only the served values
+  // changed, and the sentence already names exactly this cohort and statistic.
   return capture as CahierExportCapture
 }
 
@@ -463,15 +484,17 @@ export function captureBarresStationnement(): CahierExportCapture {
         direction: 'neutral',
         scope,
         rank: { position: focal >= pair ? 1 : 2, size: paire.size, ties: null },
-        reference: { value: reference, unit },
+        reference: { kind: 'median', value: reference },
       }
     }
+    // The served references above change what the figure states: the owner
+    // derives the comparison sentence from these same facts, so the pre-serving
+    // "indisponible" label cannot survive beside served cells.
+    figure.model.figure.comparisonLabel = comparisonLabelFor(
+      figure.model.figure.categories.map((category: any) => category.value),
+      capture.identity.territory,
+    )
   }
-  // The served references above supersede the pre-serving "Comparaison
-  // indisponible — …" label the base capture carried: this synthetic fixture
-  // provides the producer-shaped cells, so its footer statistic is the plain
-  // owner label (never parsed from the availability phrase at runtime).
-  capture.comparison.statisticLabels = ['Médiane des communes de EPCI X']
   return capture as CahierExportCapture
 }
 

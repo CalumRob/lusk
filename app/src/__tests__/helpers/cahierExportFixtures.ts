@@ -6,6 +6,7 @@
  * evidence models and the real mounted owners rather than a second section list.
  */
 import type { ControleComparaison, SelectionComparaison } from '@/fiche/comparisonContext'
+import { contexteMembresSelectionnes, contextesDepuisReference } from '@/fiche/comparisonContext'
 import { aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
 import type { AedarReferenceEvidence } from '@/fiche/content/aedarAccessSection'
 import type { AedarComparisonRequest } from '@/fiche/content/aedarComparisonClient'
@@ -16,6 +17,7 @@ import { buildMobiliteRaccordementSection, buildMobiliteShareSection } from '@/f
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import type { ContentSection, ThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
+import type { ComparisonScope } from '@/fiche/content/territoryFacts'
 import {
   histoiresMobiliteFixture,
   indicateursMobiliteFixture,
@@ -191,6 +193,41 @@ export function captureAedarAccessForSource(
  * The nine sections currently rendered by the Cahier: five AEDAR compositions
  * and the four Mobilité delegate kinds across three units.
  */
+/** The served trajectory comparison of the fixture, bound to the control's own resolved context. */
+function porteeTrajectoire(
+  selection: SelectionComparaison,
+  focal: ControleComparaison['focal'],
+): { scope: ComparisonScope; selectedMemberCount: number; eligibleCount: number } {
+  const contextes = contextesDepuisReference(focal, territoiresFixture)
+  if (selection.etat === 'membres' && selection.membres.length) {
+    const contexte = contexteMembresSelectionnes(selection.membres)
+    if (contexte) {
+      return {
+        scope: contexte.scope,
+        selectedMemberCount: selection.membres.length,
+        eligibleCount: selection.membres.length,
+      }
+    }
+  }
+  const preset = selection.etat === 'preset'
+    ? selection.preset
+    : (focal.type === 'commune' && focal.epci ? 'epci' : 'bretagne')
+  const contexte = preset === 'densite'
+    ? contextes.densite
+    : preset === 'epci' ? contextes.epci : contextes.bretagne
+  const communes = territoiresFixture.filter((candidate) => candidate.type === 'commune')
+  const cohorte = preset === 'epci'
+    ? communes.filter((candidate) => candidate.epci === focal.epci)
+    : preset === 'densite'
+      ? communes.filter((candidate) => candidate.classe_densite_code === focal.classe_densite_code)
+      : communes
+  return {
+    scope: (contexte ?? contextes.bretagne!).scope,
+    selectedMemberCount: cohorte.length,
+    eligibleCount: cohorte.length,
+  }
+}
+
 export function cahierExportFixture(options: {
   selection?: SelectionComparaison
   focal?: ControleComparaison['focal']
@@ -199,18 +236,23 @@ export function cahierExportFixture(options: {
   explorerComparison?: boolean
   curveReference?: 'null'
 } = {}): CahierExportFixture {
+  const focal = options.focal ?? territoiresFixture[0]!
+  const selection = options.selection ?? { etat: 'defaut' }
   const facts = territoryFactsFor(basePayload, '22001')
   if (!facts) throw new Error('Mobilité fixture facts missing')
   const content = resolveMobiliteThemeContent(facts, metadonneesThemesFixtures.mobilite)
   const page3Facts = territoryFactsFor(page3Payload, '22001')
   if (!page3Facts) throw new Error('Page 3 fixture facts missing')
-  // Fixture-only served comparison: the producer-owned counts are placed here,
-  // never computed. They let the mounted curve expose its real comparison layer.
+  // Fixture-only served comparison. Its scope and its counts are the ones the
+  // comparison control resolves for the SAME selection (production binds both
+  // from one context): a preset EPCI never serves a Bretagne mean. The counts
+  // are placed here, never computed by the app.
+  const portee = porteeTrajectoire(selection, focal)
   page3Facts.mobility.selectedTrajectoryComparison = {
     statistic: 'mean',
-    scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-    selectedMemberCount: 3,
-    eligibleCount: 2,
+    scope: portee.scope,
+    selectedMemberCount: portee.selectedMemberCount,
+    eligibleCount: portee.eligibleCount,
     modelZeroReasonCounts: {},
     sourceLineage: [],
     points: options.curveReference === 'null'
@@ -253,11 +295,10 @@ export function cahierExportFixture(options: {
     { ...content.units[2]!, sections: page3 },
   ] as unknown as ThemeContent['units']
   const themed: ThemeContent = { ...content, units }
-  const focal = options.focal ?? territoiresFixture[0]!
   const control: ControleComparaison = {
     focal,
     territoires: territoiresFixture,
-    selection: options.selection ?? { etat: 'defaut' },
+    selection,
     libelleActif: 'Groupe de test',
     presetDefaut: focal.type === 'commune' && focal.epci ? 'epci' : 'bretagne',
     presets: [],
