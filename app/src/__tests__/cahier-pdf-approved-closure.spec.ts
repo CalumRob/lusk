@@ -208,9 +208,9 @@ describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes'
   it('marque ¹ une seule fois par cellule comparée, même quand l’en-tête est plié', async () => {
     const lecture = await generer(captureRampeRangs())
     // The paired flat header wraps `Groupe comparé` in two lines; the mark is
-    // appended once, to the last line, exactly like the approved inline anchor.
+    // appended once to the last line, with the approved flat space (`comparé ¹`).
     expect(lecture.texteComplet).toContain('Groupe')
-    expect(lecture.texteComplet).toContain('comparé¹')
+    expect(lecture.texteComplet).toContain('comparé ¹')
     expect(lecture.texteComplet).not.toContain('Groupe¹')
     expect(lecture.texteComplet).not.toContain('¹comparé')
     // Real in-document link to the page footer, two compared cells → two links.

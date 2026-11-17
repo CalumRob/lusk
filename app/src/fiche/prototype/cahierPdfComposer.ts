@@ -1058,7 +1058,10 @@ function dessinerTableau(
     colonne.headerLines.forEach((ligne, index) => {
       const derniere = index === colonne.headerLines.length - 1
       const avecMarque = estGroupe && derniere
-      texte(doc, avecMarque ? `${ligne}¹` : ligne, cx + 1, hy, {
+      // The approved anchor keeps a space in the flat shape (`comparé ¹`,
+      // `desktop.js:226`) and none in the grouped shape (`Groupe¹`, `:320`).
+      const separateur = part.layout === 'flat' ? ' ' : ''
+      texte(doc, avecMarque ? `${ligne}${separateur}¹` : ligne, cx + 1, hy, {
         police: roleEntete.police,
         taille: roleEntete.taille,
         couleur: PALETTE_PDF.ink,
@@ -1066,6 +1069,7 @@ function dessinerTableau(
       })
       if (avecMarque) {
         const largeurLibelle = mesure.largeur(ligne, roleEntete.police, roleEntete.taille)
+          + (separateur ? mesure.largeur(' ', roleEntete.police, roleEntete.taille) : 0)
         doc.link(
           cx + 1 + largeurLibelle,
           hy,

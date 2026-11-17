@@ -252,7 +252,7 @@ or starts an acquisition.
   choose the one its family ships (`desktop.js:appendTimeRampTables` /
   `appendSandboxTables`):
   * **flat (A)**: `aedar-ramps`. Rows are `cut × mode`; the columns are
-    `Temps | Mode | territory | Groupe comparé¹ | Rang`. The mode is a row
+    `Temps | Mode | territory | Groupe comparé ¹ | Rang`. The mode is a row
     dimension, so a flat table always has the same five columns and never
     column-splits. The approved generator lays the two access panels in one
     grid — `grid-template-columns: repeat(2, minmax(0,1fr)); gap: 24px`
@@ -268,7 +268,7 @@ or starts an acquisition.
     its series colour. A grouped table splits only at complete group boundaries
     and a too-tall table only at complete rows, with repeated title/header.
   The `¹` footnote marks the compared **`Groupe`** cell once per cell (the flat
-  shape prints the full `Groupe comparé¹`, the grouped shape its approved
+  shape prints the full `Groupe comparé ¹`, the grouped shape its approved
   `Groupe¹`), never `Rang` and never once per wrapped line. It is an actual
   in-document link to the page footer (`comparisonReference()` destination), not
   a decorative glyph. The rank value stays the producer-served display and is
