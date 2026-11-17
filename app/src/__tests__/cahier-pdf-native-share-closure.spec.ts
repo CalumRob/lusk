@@ -14,7 +14,6 @@
  * identity.
  */
 import { describe, expect, it } from 'vitest'
-import { jsPDF } from 'jspdf'
 
 import { composerCahierPdf, mesurePdfProduction, optionsFigurePdf } from '@/fiche/prototype/cahierPdfComposer'
 import { dessinerFigurePdf, hauteurFigurePdf } from '@/fiche/prototype/cahierPdfFigures'
@@ -31,7 +30,6 @@ import {
   ptDepuisCssPx,
 } from '@/fiche/prototype/cahierPdfGrammaire'
 import { construireTableauxPdf } from '@/fiche/prototype/cahierPdfTableau'
-import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import type { CahierCaptureFigure, CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import {
@@ -43,6 +41,7 @@ import {
   chargeurPoliceTest,
   cheminsPdf,
   lirePdf,
+  mesurePdfTest,
   verifierCollisions,
   type LecturePdf,
 } from './helpers/cahierPdfRuntime'
@@ -51,7 +50,6 @@ import {
   capturePartDense,
   capturePdfFixture,
 } from './helpers/cahierPdfFixtures'
-import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
 
 const CORPS_X_PT = PAGE_APPROUVEE.insetGauchePt + PADDING_SECTION_PT
 
@@ -73,30 +71,6 @@ async function generer(capture: CahierExportCapture, modes?: readonly string[]):
   const projection = projeterRequeteExport(capture, modes ?? offered.slice(0, 3))
   if (projection.status !== 'ready') throw new Error(projection.reason)
   return lirePdf((await composerCahierPdf(projection.request, options())).blob)
-}
-
-/** Production text box, for table layout only (same class the painter uses). */
-async function mesurePdf(): Promise<MesureTexte> {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-  const signal = new AbortController().signal
-  for (const face of POLICES_PDF) {
-    doc.addFileToVFS(face.file, Buffer.from(await chargeurPoliceTest(face, { signal })).toString('base64'))
-    doc.addFont(face.file, face.id, 'normal')
-  }
-  return {
-    largeur: (texte, police, taille, espacement = 0) => {
-      doc.setFont(police, 'normal')
-      doc.setFontSize(taille)
-      const width = doc.getTextWidth(texte)
-      return width + (espacement * 25.4) / 72 * Array.from(texte).length
-    },
-    hauteurLigne: (_police, taille) => taille * 0.3528 * 1.2,
-    espace: (police, taille) => {
-      doc.setFont(police, 'normal')
-      doc.setFontSize(taille)
-      return doc.getTextWidth(' ')
-    },
-  }
 }
 
 /** The two share tracks of one page: full-width 5 mm rows. */
@@ -391,7 +365,7 @@ describe('#1024 — mesure et peinture partagent le même jeu d’options', () =
 
 describe('#1024 — formes et états déclarés, jamais devinés', () => {
   it('n’ajoute aucune bande de groupe à un tableau déclaré plat', async () => {
-    const mesure = await mesurePdf()
+    const mesure = await mesurePdfTest()
     const parts = construireTableauxPdf({
       key: 'flat-with-group-label',
       title: 'Tableau plat',

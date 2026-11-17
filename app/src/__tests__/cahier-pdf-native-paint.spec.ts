@@ -283,14 +283,17 @@ describe('sortie native du peintre PDF', () => {
     // vertical middle. The middle is read from the shared `40`/`0` tick labels
     // (owner positions), never from a 130/300 literal; the measured residual is
     // the embedded face's rotated baseline (< 8 pt, as originally asserted).
-    const label40 = lecture.textes.find((item) => item.str === '40 établissements'
+    const label40 = lecture.textes.find((item) => item.str === '40'
       && Math.abs(item.taille - ROLE_PDF.tick.taille) < 0.05)!
-    const label0 = lecture.textes.find((item) => item.str === '0 établissements'
-      && Math.abs(item.taille - ROLE_PDF.tick.taille) < 0.05)!
+    const droite = label40.x + label40.largeur
+    const label0 = lecture.textes.find((item) => item.str === '0'
+      && Math.abs(item.taille - ROLE_PDF.tick.taille) < 0.05
+      && Math.abs(item.x + item.largeur - droite) < 0.6)!
     const middle = (label40.y + label0.y) / 2
     expect(Math.abs(title.y + title.largeur / 2 - middle)).toBeLessThan(8)
-    const ticks = lecture.textes.filter((item) => /établissements/.test(item.str)
-      && Math.abs(item.rotation) < 0.01)
+    const ticks = lecture.textes.filter((item) => /^\d+$/.test(item.str)
+      && Math.abs(item.taille - ROLE_PDF.tick.taille) < 0.05
+      && Math.abs(item.x + item.largeur - droite) < 0.6)
     expect(ticks).toHaveLength(3)
     // The rotated run keeps the embedded face's exact advance (no shrink, no
     // 96 dpi conversion): the PDF run length equals the measured role width.

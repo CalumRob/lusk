@@ -296,7 +296,9 @@ or starts an acquisition.
   bâtiments près d’un arrêt`) carries the same `Groupe comparé ¹ | Rang`
   presentation: its `Rang` cell is the producer-served ordinal and its scope
   (e.g. `1er/38` among the EPCI communes), never a value inferred from the
-  percentage or the median; the footer names the same group. The share **table** is the rank surface: the user asked for its `Rang` column to be populated, not for a rank badge on the share figure, so the figure keeps the screen's two tracks without one (a populated track keeps its 1 px solid border; only an empty track is dashed, with `Indisponible` centred inside it). Numbers are
+  percentage or the median; the footer names the same group. The share **table** is the rank surface: the user asked for its `Rang` column to be populated, not for a rank badge on the share figure, so the figure keeps the screen's two tracks without one (a populated track keeps its 1 px solid border; only an empty track is dashed, with `Indisponible` centred inside it). The share painter and `hauteurFigurePdf` consume one
+  `GEOMETRIE_PART_PDF` body layout, including wrapped state/notes; there is no
+  fixed 40 mm reserve. Numbers are
   never truncated
   (`CahierPdfTableLayoutError` rejects an impossible cell). Only a narrow
   territory table header may wrap twice then ellipsize; group names never are
@@ -314,20 +316,26 @@ or starts an acquisition.
   selection, ramp paths, compared-bar geometry and stacked comparison segments,
   grouped-bar geometry, waffle five-row column flow and share unit/percent
   handling. The mounted figure components import the same functions; the PDF
-  only paints the resulting primitives.
+  only paints the resulting primitives. The curve functions consume the
+  captured model's narrow `CahierMobiliteCurveInput` shape (axis, points,
+  trajectory, comparison, marker), not a widened full screen evidence.
 - `cahierPdfFigures.ts` paints those shared primitives (SVG marks + selectable
   jsPDF text) from the frozen #1022 projections/native models. It does not own
   a second axis/geometry/colour policy. The native AEDAR frame is declared once
   in `cahierFigureNativeGeometry.ts` (`CAHIER_AEDAR_FIGURE_GEOMETRY`, the
   640×300 viewBox with margins top 22 / right 68 / bottom 62 / left 64) and is
   imported by `AccessRampFigureCahier.vue`, `CahierGroupedVerticalBarChart.vue`
-  and the painter. The left rail is **measured**, not fixed: the painter applies
-  the same `deriveCahierFigureGeometry` rule as
+  and the painter. The left rail is **measured**, not fixed: the painter feeds
+  `deriveCahierFigureGeometry` the panel's actual rendered CSS-pixel width and
+  the embedded face's real label width, exactly like
   `useMeasuredCahierFigureGeometry` (16 px title lane + longest rendered y label
-  + 8 px gap, capped by the native minimum plot width) using the embedded
-  face's real advances, then keeps the right/top/bottom margins and scales the
-  plot from the derived left margin. The compared bars use the same rule, and
-  their y labels sit on that rail (no painter inset). SVG strokes stay in native
+  + 8 px gap, capped by the native minimum plot width). The lane and gap are
+  therefore converted by `640 / renderedWidth`, not left as 640-unit numbers;
+  the derived user-unit rail is then scaled with the panel. The compared bars
+  use the same rule, and their y labels sit on that rail (no painter inset).
+  Access-ramp ticks stay bare (`0`, `5`, …) as in R1: the unit is painted once
+  on the axis title, and the compact x labels start at the shared
+  `xLabelOffsetAccess` that clears the y tick's line box. SVG strokes stay in native
   units
   (`CAHIER_FIGURE_STROKE` 2.5 / 1.5 / 1 px) and the local figure transform
   scales them once. Axis titles take the `.type-figure-label` uppercase role,
@@ -344,10 +352,13 @@ or starts an acquisition.
 - `cahierPdfComposer.ts` owns the A4 document: paper/ground, brand home link,
   centered page title, focal territory link, red rule, comparison subtitle,
   figures, value tables, notes, `Source(s) :` bottom-right, page-local
-  comparison footer, page numbers and metadata. It reserves sources/footer
-  space, measures real block heights, keeps the value heading with its first
-  table and starts a continuation only at a measured overflow. No global
-  document shrink is applied. A captured `figure.row` (the stationnement /
+  comparison footer, page numbers and metadata. The footer note is measured and
+  wrapped once: the last line keeps the approved H-35 alphabetic baseline,
+  extra lines stack upward at the footer's 12 pt pitch, and that measured zone
+  is removed from the content bottom before pagination. It reserves
+  sources/footer space, measures real block heights, keeps the value heading
+  with its first table and starts a continuation only at a measured overflow.
+  No global document shrink is applied. A captured `figure.row` (the stationnement /
   ravitaillement pair) is painted as one atomic side-by-side figure row: the
   capture records the native row grammar and the desktop viewport
   (`CAHIER_FIGURE_ROW` in `cahierFigureNativeGeometry.ts`), and the composer
@@ -371,7 +382,14 @@ or starts an acquisition.
   the browser synthesises the oblique. The derived face is therefore the upright
   `wght=600` instance skewed by `(1,0,.25,1,0,0)` with `post.italicAngle = -14`
   (advance `lusk` = 1.855 em, 33-point `k`), exactly as the approved generator
-  did; the packaged real italic cut is not embedded. A missing/truncated face
+  did; the packaged real italic cut is not embedded. **Post-skew bearings:** the
+  derivation sets `hmtx` lsb to the new `glyf.xMin` and refreshes the `hhea`
+  extrema. Keeping the upright lsb displaced `u` by 0.086 em inside its advance
+  even though pen origins matched; the real header's visible ink is the test
+  reference (`cahier-pdf-wordmark-ink.spec.ts`). The lockup uses the measured
+  0.792 em header box offset (not the old 0.847 em), and the PDF page header
+  keeps the global header's `-0.01em`; the landing hero's `-0.02em` is a
+  separate surface variant, not the document value. A missing/truncated face
   rejects generation. There is no system-font substitution, runtime font
   download or reader-side Python.
 - `cahierColorRoles.ts` owns the Cahier-scoped colour aliases used by the real
@@ -379,7 +397,10 @@ or starts an acquisition.
   mode scale does not tokenise. `cahierPdfPalette.ts` resolves the canonical
   `:root` block of the bundled `styles/tokens.css?raw` source (including
   editorial paper/deep, ink, muted, margin, brand, theme and mode roles); it
-  contains no copied palette hexes. Media/theme-scoped overrides are not part of
+  contains no copied palette hexes. The share track's 18/22/40 % paper mixes
+  live in `CAHIER_SHARE_COLOUR` and are consumed by both
+  `CahierMobiliteShareTrack.vue` (inline custom properties) and the PDF palette;
+  no SFC/palette duplicate remains. Media/theme-scoped overrides are not part of
   the print document and are never consumed silently.
   The existing app OKLab mix primitive is reused. Supported aliases, sRGB/OKLab
   mixes and the owner's alpha RGB are resolved explicitly; unsupported colours
@@ -556,6 +577,19 @@ the measured transfer/generation numbers are development-machine observations,
 not a new SLA.
 
 
+
+### Third bounded correction (2026-11-17): measured closure, real header ink
+
+Independent review of `2c7833fb` and the actual running-header diagnosis (`E:/Temp/opencode/1024-parent-review/actual-app-logo/MEASUREMENTS.md`) produced six bounded corrections, each with a real-PDF check:
+
+- **Rail units.** The measured rail rule is evaluated entirely in rendered CSS px (actual panel width and embedded-face label width), then returned as native user units. Feeding the 640-unit viewBox as the rendered width left the 16/8 px lane/gap unscaled; at half width the wide stationnement rail moved from 123.48 pt to its literal expected 126.95 pt, and the full-width case from 133.74 pt to 126.95 pt.
+- **Footer.** The comparison footer now stacks a wrapped group note upwards from the approved H-35 alphabetic baseline (12 pt pitch), and the measured zone is reserved before pagination. On 02/04/06/07 the note moved from 805.91–815.09 (3.13 pt overlap with the 811.96–821.14 invitation) to 799.96–809.14 (clear).
+- **Share height.** `GEOMETRIE_PART_PDF` is the single body layout for measurement and paint (rows, wrapped state and notes). The 07 gap before « Valeurs du graphique » fell from 85.57 pt to 23.21 pt, the source 24 px heading margin plus the row's unused pitch; the reservation equals the painted height.
+- **Ramp origin.** The unit stays once on the axis title, as in R1; graduations are bare (`0`, `5`, …) and the compact x labels use `xLabelOffsetAccess` (14 px) to clear the zero tick's line box. On 02, the zero label is `0` at 59.89–63.87 instead of `0 types` reaching 72.81 into `5 min`.
+- **Share colours.** `CAHIER_SHARE_COLOUR` owns the 18/22/40 % mixes consumed by the share SFC and the PDF palette; the source-token mutation test now also covers `--editorial-paper-deep` and resolves both the SFC role object and the PDF palette.
+- **Curve type.** `curveGeometry`/`curveSeriesPath` and the painter accept `CahierMobiliteCurveInput`; `optionsFigurePdf` passes the captured model directly, with no `as unknown as MobiliteRaccordementEvidence` widening.
+
+**Wordmark root cause acknowledged.** The old “origins match, so the face is canonical” claim was false: pen origins are immune to the bearing bug. The derivation now refreshes `hmtx.lsb` to the post-skew `glyf.xMin` (manifest `derivation.bearing = "glyf.xMin"`), the embedded program carries the same bearings, and the lockup top uses the measured header offset `0.792 em`. The real running header remains the reference: its `-0.01 em` header tracking is the PDF value; the landing `-0.02 em` is a separate surface. No owner choice is recorded, and A–D remain withdrawn/invalid.
 
 ## Preserved boundaries
 

@@ -110,6 +110,13 @@ export const CAHIER_FIGURE_AXIS = {
   width: 1,
   tickLength: 7,
   xLabelOffset: 22,
+  /**
+   * Compact ramp labels: the y tick line box (11 px × 1.2) is centred on
+   * `tick + yLabelBaseline`, so its bottom edge sits ~10.6 px below the plot.
+   * The first x label must start below that box: 14 px clears it by 3.4 px and
+   * keeps the unit-bearing zero tick from touching « 5 min ».
+   */
+  xLabelOffsetAccess: 14,
   yLabelOffset: 0,
   yLabelBaseline: 4,
 } as const

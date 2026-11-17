@@ -17,7 +17,6 @@ import type { CahierFigureGeometry, CahierFigureAxisTick, CahierGroupedVerticalB
 import type {
   MobiliteBarCategoryEvidence,
   MobiliteBarsFigureEvidence,
-  MobiliteRaccordementEvidence,
 } from '@/fiche/content/themeContent'
 import type { NumericFact, TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territoryFacts'
 import {
@@ -28,6 +27,7 @@ import {
   mobiliteCurveGrid,
   mobiliteFiniteValue,
   mobiliteShareVisibleLabel,
+  type CahierMobiliteCurveInput,
 } from './cahierMobiliteReadings'
 import { formatTimeRampNumber } from './cahierFigureReadings'
 
@@ -293,7 +293,7 @@ export function dashArrayMm(values: readonly number[]): string {
 /** Native curve fixed percent axis, shared by screen and PDF. */
 export const CURVE_Y_TICKS = [0, 0.25, 0.5, 0.75, 1] as const
 
-export function curveScale(figure: MobiliteRaccordementEvidence): CurveScale {
+export function curveScale(figure: CahierMobiliteCurveInput): CurveScale {
   const axis = figure.axis
   return axis
     ? { minimum: axis.minimum, maximum: axis.maximum, ticks: [...CURVE_Y_TICKS] }
@@ -301,7 +301,7 @@ export function curveScale(figure: MobiliteRaccordementEvidence): CurveScale {
 }
 
 export function curveGeometry(
-  figure: MobiliteRaccordementEvidence,
+  figure: CahierMobiliteCurveInput,
   geometry: CahierFigureGeometry,
 ): CurveGeometry {
   const scale = curveScale(figure)
@@ -367,7 +367,7 @@ export function visibleCurveTicks(
 
 export function curveSeriesPath(
   points: readonly { fact: NumericFact }[],
-  figure: MobiliteRaccordementEvidence,
+  figure: CahierMobiliteCurveInput,
   geometry: CurveGeometry,
 ): string {
   let started = false

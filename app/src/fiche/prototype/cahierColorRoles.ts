@@ -26,3 +26,24 @@ export const CAHIER_COLOR_ROLES = {
   '--cahier-cycle-protected': 'var(--cahier-mode-bike)',
   '--cahier-cycle-shared': COULEUR_CYCLE_PARTAGE,
 } as const
+
+/**
+ * The coverage-share track's three state inks. `CahierMobiliteShareTrack.vue`
+ * and the PDF palette consume these exact roles, so the screen and the
+ * document cannot drift to two different paper mixes (#1024).
+ */
+export const CAHIER_SHARE_COLOUR = {
+  /** `.mobilite-share-track__track` complement ground, 18 % on the paper. */
+  fond: 'color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 18%, var(--paper))',
+  /** A populated track's 1 px border, 22 % on transparent. */
+  filet: 'color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 22%, transparent)',
+  /** The empty track's dashed 1 px border, 40 % on transparent. */
+  filetVide: 'color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 40%, transparent)',
+} as const
+
+/** Inline custom properties bound by the share SFC; the same owner expressions. */
+export const CAHIER_SHARE_TRACK_STYLE = {
+  '--mobilite-share-complement': CAHIER_SHARE_COLOUR.fond,
+  '--mobilite-share-border': CAHIER_SHARE_COLOUR.filet,
+  '--mobilite-share-border-empty': CAHIER_SHARE_COLOUR.filetVide,
+} as const

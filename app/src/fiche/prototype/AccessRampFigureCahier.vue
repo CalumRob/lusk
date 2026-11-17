@@ -11,6 +11,7 @@ import type { TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territor
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import { CAHIER_FIGURE_AXIS } from '@/fiche/cahierFigureGrammaire'
 import {
   CAHIER_AEDAR_FIGURE_GEOMETRY,
   CAHIER_FIGURE_STROKE,
@@ -81,15 +82,16 @@ function toggleTimeMode(key: string): void {
 const timeYAxis = computed(() => rampScale(visibleTimeSeries.value, comparisonVisible.value))
 const figureGeometry = useMeasuredCahierFigureGeometry(
   plotElement,
-  computed(() => timeYAxis.value.ticks.map((value) =>
-    `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}`)),
+  // The unit belongs to the axis title (`y-title` below), exactly as on the
+  // approved R1 artifacts; repeating it on every tick widened `0` into the
+  // first x label without adding a fact.
+  computed(() => timeYAxis.value.ticks.map((value) => formatNumber(value))),
   CAHIER_AEDAR_FIGURE_GEOMETRY,
 )
 const rampGeom = computed(() => rampGeometry(
   timePoints.value,
   timeYAxis.value,
   figureGeometry.value,
-  props.timeRamp?.yAxis.unit ?? '',
 ))
 const plotHeight = computed(() => figureGeometry.value.height -
   figureGeometry.value.margin.top - figureGeometry.value.margin.bottom)
@@ -182,7 +184,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
             <path v-for="(path, index) in timePaths(series.points)" :key="`value-${index}`" class="access-ramp-line access-ramp-line--territory access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :style="{ stroke: timeSeriesColor(series.key) }" :d="path" aria-hidden="true" />
           </g>
         </svg>
-        <CahierFigureAxisLabels :geometry="figureGeometry" :x-ticks="timeTicks" :y-ticks="timeYTicks" :x-label-offset="8" />
+        <CahierFigureAxisLabels :geometry="figureGeometry" :x-ticks="timeTicks" :y-ticks="timeYTicks" :x-label-offset="CAHIER_FIGURE_AXIS.xLabelOffsetAccess" />
         <div class="access-ramp-cut-hitboxes" aria-label="Détails par temps d'accès">
           <button v-for="(point, index) in timePoints" :key="point.xValue" class="access-ramp-cut-hitbox" type="button" :style="timeHitboxStyle(index)" :aria-label="`Temps d'accès : ${point.xLabel}`" @mouseenter="selectedTimeCut = { xValue: point.xValue, xLabel: point.xLabel }" @mouseleave="selectedTimeCut = null" @focus="selectedTimeCut = { xValue: point.xValue, xLabel: point.xLabel }" @blur="selectedTimeCut = null" @click="selectedTimeCut = { xValue: point.xValue, xLabel: point.xLabel }" />
         </div>

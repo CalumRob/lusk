@@ -355,16 +355,25 @@ describe('PDF approuvé — wordmark, figures AEDAR', () => {
     expect(advances).toEqual([585, 1143, 823, 1159])
     expect(advances.reduce((sum, value) => sum + value, 0) / font.unitsPerEm).toBeCloseTo(1.855, 4)
     expect(font.italicAngle).toBe(-14)
+    // Post-skew ink contract: the browser positions the visible outline by
+    // `xMin - hmtx.lsb`; the derived face must carry the skewed bearing, not
+    // the upright one (the shipped 8/23/74/7 shifted `u` by 0.086 em).
+    const glyphs = ['l', 'u', 's', 'k']
+    expect(glyphs.map((glyph) => font.xMin(glyph))).toEqual([34, 195, 115, 32])
+    for (const glyph of glyphs) {
+      expect(font.leftSideBearing(glyph), glyph).toBe(font.xMin(glyph))
+    }
     // Upright cut: 33 points over two contours (the real italic has 55).
     expect(font.pointCount('k')).toBe(33)
     expect(font.contourCount('k')).toBe(2)
     // Provenance of the derivation, checked against the committed manifest.
     const manifest = JSON.parse(readFileSync(
       resolve(process.cwd(), 'src/assets/fonts/pdf/manifest.json'), 'utf8',
-    )) as { faces: { id: string; source: string; sha256: string; derivation?: { matrix: number[] } }[] }
+    )) as { faces: { id: string; source: string; sha256: string; derivation?: { matrix: number[]; bearing?: string } }[] }
     const face = manifest.faces.find((candidate) => candidate.id === 'newsreader-600-italic')!
     expect(face.source).toMatch(/-wght-normal\.woff2$/)
     expect(face.derivation?.matrix).toEqual([1, 0, 0.25, 1, 0, 0])
+    expect(face.derivation?.bearing).toBe('glyf.xMin')
     const { createHash } = await import('node:crypto')
     expect(createHash('sha256').update(asset).digest('hex')).toBe(face.sha256)
 
@@ -376,6 +385,12 @@ describe('PDF approuvé — wordmark, figures AEDAR', () => {
       return candidate.unitsPerEm === 2000
     })
     expect(embargo, 'la face du wordmark est embarquée').toBeTruthy()
+    // The embedded program carries the same post-skew bearings, so the PDF
+    // renderer places the visible ink where the header does.
+    const embargoFont = lirePoliceTtf(embargo!)
+    for (const glyph of glyphs) {
+      expect(embargoFont.leftSideBearing(glyph), `PDF ${glyph}`).toBe(embargoFont.xMin(glyph))
+    }
     // jsPDF subsets/rewrites the program; the angle is asserted on the asset,
     // the advance vector on the painted run below.
     // The painted `lusk` run keeps the upright advance vector: 1.855em at the

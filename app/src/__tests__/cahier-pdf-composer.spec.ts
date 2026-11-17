@@ -429,7 +429,8 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
       false,
     )
     expect(scale.ticks).toEqual([0, 1, 2])
-    contientTout(lecture, ['0', '1', '2', 'types', 'Diversité de l’offre accessible'])
+    // The unit is once on the axis title (R1), not repeated on every tick.
+    contientTout(lecture, ['0', '1', '2', 'TYPES', 'Diversité de l’offre accessible'])
     expect(lecture.texteComplet).not.toContain('0,47')
     verifierCollisions(lecture)
   })

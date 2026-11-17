@@ -125,7 +125,7 @@
       "style": "italic",
       "file": "newsreader-600-italic.ttf",
       "bytes": 52520,
-      "sha256": "eb6650f0a336734b3a72c0431b3367939616c008a352b03400f93e80741bba37",
+      "sha256": "9fa8cf8dc0984fa15e35a87980d78a3751aae462acde23e4378b64b078f2687f",
       "source": "node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-normal.woff2",
       "sourcePackage": "@fontsource-variable/newsreader",
       "license": "LICENSE",
@@ -140,7 +140,8 @@
           0,
           0
         ],
-        "italicAngle": -14
+        "italicAngle": -14,
+        "bearing": "glyf.xMin"
       }
     }
   ]

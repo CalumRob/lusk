@@ -33,6 +33,7 @@ import {
   mobiliteShareVisibleLabel,
 } from './cahierMobiliteReadings'
 import CahierRank from './CahierRank.vue'
+import { CAHIER_SHARE_TRACK_STYLE } from './cahierColorRoles'
 import { useCahierExportPublication } from './cahierExportVenue'
 
 type ComparisonState = {
@@ -105,7 +106,7 @@ const stateMessage = computed(() => mobiliteShareStateMessage({
 }))</script>
 
 <template>
-  <div class="mobilite-share-track">
+  <div class="mobilite-share-track" :style="CAHIER_SHARE_TRACK_STYLE">
     <div class="mobilite-share-track__row" data-row="territory">
       <div class="mobilite-share-track__head">
         <span class="mobilite-share-track__label">{{ figure.territoryName }}</span>
@@ -196,7 +197,6 @@ const stateMessage = computed(() => mobiliteShareStateMessage({
 
 <style scoped>
 .mobilite-share-track {
-  --mobilite-share-complement: color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 18%, var(--paper));
   display: grid;
   gap: var(--space-3);
   min-width: 0;
@@ -232,7 +232,7 @@ const stateMessage = computed(() => mobiliteShareStateMessage({
   display: flex;
   min-width: 0;
   height: 0.875rem;
-  border: 1px solid color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 22%, transparent);
+  border: 1px solid var(--mobilite-share-border);
   background: var(--mobilite-share-complement);
 }
 .mobilite-share-track__segment {
@@ -248,7 +248,7 @@ const stateMessage = computed(() => mobiliteShareStateMessage({
   align-items: center;
   padding: 0 var(--space-2);
   border-style: dashed;
-  border-color: color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 40%, transparent);
+  border-color: var(--mobilite-share-border-empty);
   background: transparent;
 }
 .mobilite-share-track__empty {

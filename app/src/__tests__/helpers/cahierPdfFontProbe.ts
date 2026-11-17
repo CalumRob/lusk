@@ -13,6 +13,12 @@ export interface PoliceTtf {
   readonly glyphCount: number
   /** Advance width in font units for one character, or null when unmapped. */
   advance(char: string): number | null
+  /** `hmtx` left side bearing in font units. */
+  leftSideBearing(char: string): number | null
+  /** `glyf` bounding box left edge in font units (post-skew asset). */
+  xMin(char: string): number | null
+  /** `glyf` bounding box right edge in font units. */
+  xMax(char: string): number | null
   /** Number of points of one simple glyph, or null when unmapped/composite. */
   pointCount(char: string): number | null
   /** Contour count of one glyph (-1 for a composite), or null when unmapped. */
@@ -119,6 +125,14 @@ export function lirePoliceTtf(program: Uint8Array): PoliceTtf {
     return u16(view, hmtx.offset + metric * 4)
   }
 
+  const leftSideBearing = (char: string): number | null => {
+    const glyph = glyphFor(char)
+    if (glyph === null) return null
+    if (glyph < numberOfHMetrics) return i16(view, hmtx.offset + glyph * 4 + 2)
+    const trailing = hmtx.offset + numberOfHMetrics * 4 + (glyph - numberOfHMetrics) * 2
+    return i16(view, trailing)
+  }
+
   const glyphOffset = (glyph: number): number => {
     if (indexToLocFormat === 0) {
       return glyf.offset + u16(view, loca.offset + glyph * 2) * 2
@@ -135,6 +149,15 @@ export function lirePoliceTtf(program: Uint8Array): PoliceTtf {
     return i16(view, offset)
   }
 
+  const bounds = (char: string): { xMin: number; xMax: number } | null => {
+    const contours = contourCount(char)
+    if (contours === null || contours === 0) return null
+    const glyph = glyphFor(char)
+    if (glyph === null) return null
+    const offset = glyphOffset(glyph)
+    return { xMin: i16(view, offset + 2), xMax: i16(view, offset + 6) }
+  }
+
   const pointCount = (char: string): number | null => {
     const contours = contourCount(char)
     if (contours === null || contours < 0) return null
@@ -145,5 +168,15 @@ export function lirePoliceTtf(program: Uint8Array): PoliceTtf {
     return u16(view, offset + 10 + (contours - 1) * 2) + 1
   }
 
-  return { unitsPerEm, italicAngle, glyphCount, advance, pointCount, contourCount }
+  return {
+    unitsPerEm,
+    italicAngle,
+    glyphCount,
+    advance,
+    leftSideBearing,
+    xMin: (char) => bounds(char)?.xMin ?? null,
+    xMax: (char) => bounds(char)?.xMax ?? null,
+    pointCount,
+    contourCount,
+  }
 }

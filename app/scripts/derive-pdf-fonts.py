@@ -112,6 +112,28 @@ def main() -> None:
                 transformed[name] = pen.glyph()
             for name, glyph in transformed.items():
                 font["glyf"][name] = glyph
+            # The skew changes each outline's left edge, so the upright `hmtx`
+            # bearing now disagrees with `glyf.xMin`. Browsers and PDF
+            # rasterisers position visible ink at `pen + xMin - lsb`; leaving the
+            # upright bearing shifts `u` by 0.086 em inside its advance. Refresh
+            # the bearings (and the hhea extrema) after the skew.
+            hmtx = font["hmtx"].metrics
+            extents: list[tuple[int, int, int]] = []
+            for name in font.getGlyphOrder():
+                glyph = font["glyf"][name]
+                if glyph.numberOfContours == 0:
+                    continue
+                glyph.recalcBounds(font["glyf"])
+                advance, _ = hmtx[name]
+                hmtx[name] = (advance, glyph.xMin)
+                extents.append((advance, glyph.xMin, glyph.xMax - glyph.xMin))
+            if extents:
+                font["hhea"].advanceWidthMax = max(advance for advance, _, _ in extents)
+                font["hhea"].minLeftSideBearing = min(lsb for _, lsb, _ in extents)
+                font["hhea"].minRightSideBearing = min(
+                    advance - lsb - width for advance, lsb, width in extents
+                )
+                font["hhea"].xMaxExtent = max(lsb + width for _, lsb, width in extents)
             font["post"].italicAngle = oblique["italicAngle"]
         font["head"].modified = upstream_modified
         font.flavor = None
@@ -179,6 +201,9 @@ def main() -> None:
                     "kind": "synthetic-oblique",
                     "matrix": [1, 0, oblique["skewX"], 1, 0, 0],
                     "italicAngle": oblique["italicAngle"],
+                    # The visible ink is placed by `xMin - hmtx.lsb`; after the
+                    # skew the bearing is refreshed to the new outline edge.
+                    "bearing": "glyf.xMin",
                 }} if oblique is not None else {}),
             }
         )

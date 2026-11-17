@@ -53,12 +53,12 @@ import type {
 import type { CahierCaptureFigure } from './cahierExportCapture'
 import type { CahierFigureGeometry, CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_FIGURE_AXIS, CAHIER_FIGURE_RAIL, cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
-import type { MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
 import type { TimeRampPoint } from '@/fiche/content/territoryFacts'
 import { AEDAR_TIME_MODE_COLORS, aedarTimeModeColor } from './aedarTimeModeColors'
 import { mobiliteBarSegmentColor } from './cahierMobiliteReadings'
 import { visibleGroupedBarSeries } from './cahierFigureReadings'
-import type { MesureTexte } from './cahierPdfMesure'
+import type { CahierMobiliteCurveInput } from './cahierMobiliteReadings'
+import type { LigneMesuree, MesureTexte } from './cahierPdfMesure'
 import { plierTexte } from './cahierPdfMesure'
 import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
 import { POLICE_PDF } from './cahierPdfFonts'
@@ -104,8 +104,8 @@ export interface OptionsFigurePdfLiaison {
   readonly distributionUnit?: string
   /** Native selected equipment type label: the figcaption's second title line. */
   readonly explorerTypequLabel?: string | null
-  /** Native curve model, for the declared grid ticks/axis. */
-  readonly modeleCourbe?: MobiliteRaccordementEvidence
+  /** Native curve model the capture narrows; only these fields are consumed. */
+  readonly modeleCourbe?: CahierMobiliteCurveInput
   /** Owner-observed served comparative proof for this figure (not capability). */
   readonly comparisonProof?: boolean
 }
@@ -560,8 +560,8 @@ const OPACITE_BARRES_GROUPEES = 0.78
  */
 const GEOMETRIE_NATIVE_AEDAR = CAHIER_AEDAR_FIGURE_GEOMETRY
 
-/** Native label offset of the AEDAR figures (`CahierFigureAxisLabels`, 8 px). */
-const DECALAGE_ETIQUETTE_X = 8
+/** Native label offset of the compact AEDAR ramps (`CahierFigureAxisLabels`). */
+const DECALAGE_ETIQUETTE_X = CAHIER_FIGURE_AXIS.xLabelOffsetAccess
 
 /**
  * One side of the native paired row, inside the PDF's own content box.
@@ -648,16 +648,16 @@ function geometrieBarresMesuree(
     TAILLE.tick,
     TAILLE.tick * ROLE_PDF.tick.espacementEm,
   )))
-  // The native rule counts the lane and the gap in rendered CSS px; convert the
-  // measured label back to native user units at the panel's own page scaling.
-  const labelUser = largeurLabel * CAHIER_MOBILITE_BARS_GEOMETRY.width / largeur
+  // The native rule counts the 16 px lane and the 8 px gap in rendered CSS px,
+  // so the PDF must feed it the actual rendered CSS width of this panel and the
+  // label's CSS width, exactly like `useMeasuredCahierFigureGeometry`. Feeding
+  // the 640-unit viewBox width leaves the lane/gap unscaled and shrinks the
+  // rail whenever the panel renders narrower than 640 CSS px.
+  const largeurCss = largeur / mmDepuisCssPx(1)
+  const labelCss = largeurLabel / mmDepuisCssPx(1)
   return geometrieBarresMobilite(
     largeur,
-    deriveAedarFigureGeometry(
-      CAHIER_MOBILITE_BARS_GEOMETRY,
-      CAHIER_MOBILITE_BARS_GEOMETRY.width,
-      labelUser,
-    ),
+    deriveAedarFigureGeometry(CAHIER_MOBILITE_BARS_GEOMETRY, largeurCss, labelCss),
   )
 }
 
@@ -679,11 +679,14 @@ function geometrieAedarMesuree(
       TAILLE.tick,
       TAILLE.tick * ROLE_PDF.tick.espacementEm,
     )))
-  // The native rule counts the title lane and the label gap in the same user
-  // units as the viewBox: convert the embedded-face label width to user units
-  // and apply the shared derivation at the native 640-unit width.
-  const largeurUser = largeurMm * GEOMETRIE_NATIVE_AEDAR.width / panelWidth
-  return deriveAedarFigureGeometry(GEOMETRIE_NATIVE_AEDAR, GEOMETRIE_NATIVE_AEDAR.width, largeurUser)
+  // Same shared rule as the mounted hook: the 16 px lane, the measured label
+  // and the 8 px gap are all CSS px at the panel's actual rendered width, then
+  // `deriveCahierFigureGeometry` returns the native user-unit rail.
+  return deriveAedarFigureGeometry(
+    GEOMETRIE_NATIVE_AEDAR,
+    panelWidth / mmDepuisCssPx(1),
+    largeurMm / mmDepuisCssPx(1),
+  )
 }
 
 /**
@@ -908,11 +911,12 @@ async function dessinerRampes(
     // Measure the native rail with the embedded face before placing the plot:
     // long unit labels (`40 établissements`) widen the left margin exactly as
     // `AccessRampFigureCahier` does in the browser.
+    // Ticks stay bare, like R1; the unit is painted once on the axis title.
     const plentyTicks = rampGeometry(
-      rampPoints(firstSeries), panelScale, GEOMETRIE_NATIVE_AEDAR, ramp.yAxis.unit,
+      rampPoints(firstSeries), panelScale, GEOMETRIE_NATIVE_AEDAR,
     ).yTicks
     const native = geometrieAedarMesuree(panelWidth, plentyTicks.map((tick) => tick.label), mesure)
-    const geom = rampGeometry(rampPoints(firstSeries), panelScale, native, ramp.yAxis.unit)
+    const geom = rampGeometry(rampPoints(firstSeries), panelScale, native)
     const plotBottom = native.height - native.margin.bottom
     const plotRight = native.width - native.margin.right
     const svg = svgCanvas(native.width, native.height)
@@ -1418,16 +1422,102 @@ function groupedBarTicksFromFigure(
     groupedBarTickLabel(figure, value))
 }
 
+/**
+ * The one measured layout of the coverage-share figure, consumed by both the
+ * pagination height and the painter. The label lane, track extent, row pitch
+ * and note rhythm are the painter's actual margins; the reserved block is
+ * derived from them instead of a second 40 mm body estimate.
+ */
+export const GEOMETRIE_PART_PDF = {
+  hauteurPiste: 5,
+  pasRangee: 9,
+  margeEtiquette: 32,
+  margePisteDroite: 40,
+  ecartValeur: 1.5,
+  /** The painter's one-millimetre breathing room before the first note. */
+  avantNote: 1,
+} as const
+
+interface LayoutPartPdf {
+  readonly rangees: number
+  readonly hauteur: number
+  readonly trackHeight: number
+  readonly trackXOffset: number
+  readonly trackWidth: number
+  readonly valueGap: number
+  readonly stateLines: readonly LigneMesuree[]
+  readonly noteLines: readonly (readonly LigneMesuree[])[]
+  readonly linePitch: number
+}
+
+/**
+ * The coverage-share body layout. `hauteurFigurePdf` and `dessinerPart` both
+ * consume this object: pagination reserves the lines the painter actually
+ * emits (including wrapped notes), never a fixed 40 mm stand-in.
+ */
+function layoutPartPdf(
+  projection: CahierShareProjection,
+  width: number,
+  options: OptionsFigurePdfLiaison,
+  mesure: MesureTexte,
+): LayoutPartPdf {
+  const rangees = 1 + (options.comparisonProof ? 1 : 0)
+  const plier = (texte: string) => plierTexte(texte, mesure, {
+    police: POLICE_PDF.body,
+    taillePt: TAILLE.note,
+    largeurMax: width,
+    casserMotsLongs: true,
+  })
+  const stateLines = projection.stateMessage ? plier(projection.stateMessage) : []
+  const noteLines = projection.notes.map(plier)
+  const linePitch = mesure.hauteurLigne(POLICE_PDF.body, TAILLE.note) * 1.18
+  const hauteur = rangees * GEOMETRIE_PART_PDF.pasRangee
+    + stateLines.length * linePitch
+    + (noteLines.length ? GEOMETRIE_PART_PDF.avantNote : 0)
+    + noteLines.reduce((sum, lignes) => sum + lignes.length * linePitch, 0)
+  return {
+    rangees,
+    hauteur,
+    trackHeight: GEOMETRIE_PART_PDF.hauteurPiste,
+    trackXOffset: GEOMETRIE_PART_PDF.margeEtiquette,
+    trackWidth: width - GEOMETRIE_PART_PDF.margePisteDroite,
+    valueGap: GEOMETRIE_PART_PDF.ecartValeur,
+    stateLines,
+    noteLines,
+    linePitch,
+  }
+}
+
+function dessinerLignesPart(
+  doc: jsPDF,
+  lignes: readonly LigneMesuree[],
+  x: number,
+  y: number,
+  pitch: number,
+): number {
+  let cy = y
+  for (const ligne of lignes) {
+    textePdf(doc, ligne.texte, x, cy, {
+      police: POLICE_PDF.body,
+      taille: TAILLE.note,
+      couleur: PALETTE_PDF.muted,
+    })
+    cy += pitch
+  }
+  return cy
+}
+
 async function dessinerPart(
   options: OptionsFigurePdf,
   projection: CahierShareProjection,
 ): Promise<number> {
   const { doc, x, y, width, mesure } = options
+  const layout = layoutPartPdf(projection, width, options, mesure)
   let cy = y
   cy += dessinerTitre(doc, mesure, projection, x, width, cy)
-  const trackHeight = 5
-  const trackX = x + 32
-  const trackW = width - 40
+  const trackHeight = layout.trackHeight
+  const trackX = x + layout.trackXOffset
+  const trackW = layout.trackWidth
   /**
    * Native `.mobilite-share-track__track` state grammar: a populated row keeps
    * its 1 px solid border; only an empty row is dashed, with the state text
@@ -1466,31 +1556,22 @@ async function dessinerPart(
     setStroke(doc, PALETTE_PDF.shareTrackBorder)
     doc.rect(trackX, yy, trackW, trackHeight, 'S')
     resetOpacity(doc)
-    textePdf(doc, label === 'Groupe comparé' ? (projection.comparisonDisplay ?? 'Indisponible') : projection.display, trackX + trackW + 1.5, yy + 0.6, {
+    textePdf(doc, label === 'Groupe comparé' ? (projection.comparisonDisplay ?? 'Indisponible') : projection.display, trackX + trackW + layout.valueGap, yy + 0.6, {
       police: POLICE_PDF.metaMedium,
       taille: TAILLE.legende,
       couleur: PALETTE_PDF.ink,
     })
   }
   drawTrack(projection.territoryName, projection.value, PALETTE_PDF.brand500, cy)
-  cy += 9
+  cy += GEOMETRIE_PART_PDF.pasRangee
   if (options.comparisonProof) {
     drawTrack('Groupe comparé', projection.comparisonValue, PALETTE_PDF.brand200, cy)
-    cy += 9
+    cy += GEOMETRIE_PART_PDF.pasRangee
   }
-  if (projection.stateMessage) {
-    cy += dessinerTextePlie(doc, mesure, projection.stateMessage, x, cy, width, {
-      police: POLICE_PDF.body,
-      taille: TAILLE.note,
-      couleur: PALETTE_PDF.muted,
-    })
-  }
-  for (const note of projection.notes) {
-    cy += dessinerTextePlie(doc, mesure, note, x, cy + 1, width, {
-      police: POLICE_PDF.body,
-      taille: TAILLE.note,
-      couleur: PALETTE_PDF.muted,
-    })
+  cy = dessinerLignesPart(doc, layout.stateLines, x, cy, layout.linePitch)
+  if (layout.noteLines.length) cy += GEOMETRIE_PART_PDF.avantNote
+  for (const lignes of layout.noteLines) {
+    cy = dessinerLignesPart(doc, lignes, x, cy, layout.linePitch)
   }
   return cy - y
 }
@@ -1738,8 +1819,9 @@ export function hauteurFigurePdf(
       return titre + 2 + geometrieBarresMobilite(width).height + gapLegende + legend + maps
     }
     case 'mobilite-share': {
-      const lines = projection.notes.length + (projection.stateMessage ? 1 : 0)
-      return titre + 40 + lines * 3
+      // The painter's own body layout, note wrapping included; the previous
+      // fixed 40 mm body was 22 mm taller than the two 9 mm rows it drew.
+      return titre + layoutPartPdf(projection, width, options ?? {}, mesure).hauteur
     }
     case 'mobilite-curve': {
       const legend = hauteurLegende(mesure, [

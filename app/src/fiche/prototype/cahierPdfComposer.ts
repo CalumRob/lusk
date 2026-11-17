@@ -56,7 +56,6 @@ import {
 import { figureRowLayout } from './cahierFigureNativeGeometry'
 import type { MesureTexte } from './cahierPdfMesure'
 import { plierTexte } from './cahierPdfMesure'
-import type { MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
 import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
 import {
   EXPLICATION_INDISPONIBLE,
@@ -98,6 +97,17 @@ export interface OptionsCompositionCahierPdf {
 }
 
 const mm = mmDepuisPt
+
+/**
+ * The approved footer flow (`desktop.js:613-617`): the comparison line is an
+ * alphabetic baseline at H-35, the invitation at H-23 and the page number at
+ * H-24. The 12 pt delta is the footer's own line pitch, used to stack a
+ * wrapped group note upwards without inventing a conditional offset.
+ */
+const PIED = {
+  interligne: mm(PAGE_APPROUVEE.hauteurPt - 23) - mm(PAGE_APPROUVEE.hauteurPt - 35),
+  reserveHaut: mm(3),
+} as const
 
 /**
  * Approved A4 box (points → mm). The content box is the desktop column at the
@@ -429,6 +439,10 @@ interface DocumentPdf {
   readonly sousTitre: SousTitreComparaison | null
   readonly identityHeight: number
   readonly sourcesHeight: number
+  /** Measured comparison-footer lines; empty when the capture declares no group. */
+  readonly piedComparaison: readonly string[]
+  /** Content bottom after reserving the measured footer zone. */
+  readonly contenuBas: number
 }
 
 function hauteurTexteSimple(
@@ -577,11 +591,10 @@ export function optionsFigurePdf(
       }
       : {}),
     ...(bars ? { modeleBars: bars.model.figure } : {}),
-    // The captured curve model is the same published model the painter reads
-    // (axis, points, trajectory, comparison); the capture narrows it to its own
-    // structural projection, so this one widening is stated here, not repeated
-    // at every painter call site.
-    ...(curve ? { modeleCourbe: curve.model as unknown as MobiliteRaccordementEvidence } : {}),
+    // The captured curve model is consumed through its actual narrowed shape
+    // (axis, points, trajectory, comparison), never widened to a fake full
+    // screen evidence with prose/sources/kind it does not carry.
+    ...(curve ? { modeleCourbe: curve.model } : {}),
   }
 }
 
@@ -606,9 +619,19 @@ function construirePages(
   )).flat().map((ligne) => ligne.texte)
   const sourcesHeight = Math.max(4, sourcesLines.length
     * mesure.hauteurLigne(ROLE_PDF.source.police, TAILLE.source) * 1.4) + ESPACE.sourcesHaut
+  const piedComparaison = lignesPiedComparaison(capture, mesure)
+  // Reserve the comparison footer's actual wrapped height (not a fixed offset),
+  // leaving the approved single-line box at its H-35 baseline and clear of the
+  // invitation at H-23.
+  const contenuBas = Math.min(
+    PAGE.contenuBas,
+    piedComparaison.length
+      ? PAGE.piedComparaison - (piedComparaison.length - 1) * PIED.interligne - PIED.reserveHaut
+      : PAGE.contenuBas,
+  )
   // The vertically centred section stack: body padding, repeated identity
   // (with its comparison subtitle), the measured blocks and the sources.
-  const hauteurUtile = PAGE.contenuBas - PAGE.contenuHaut
+  const hauteurUtile = contenuBas - PAGE.contenuHaut
   const disponibles = hauteurUtile - 2 * PAGE.paddingSection - identityHeight - sourcesHeight
   const availableFirst = disponibles
   const availableNext = disponibles
@@ -886,7 +909,20 @@ function construirePages(
     sousTitre: pages.some((candidate) => candidate.hasComparisonProof) ? sousTitre : null,
     identityHeight,
     sourcesHeight,
+    piedComparaison,
+    contenuBas,
   }
+}
+
+/**
+ * The live global header's lockup offset: its box top sits 0.792 em above the
+ * word baseline (`LuskBrand.vue` align-items:center, 22 px header). The painter
+ * previously used 0.847 em, lifting the ermine 0.076 em above the screen.
+ */
+export const OFFSET_ERMINE_EM = 0.792
+
+export function sommetErminePt(baseMotPt: number, taillePt: number): number {
+  return baseMotPt - OFFSET_ERMINE_EM * taillePt
 }
 
 async function dessinerMarque(doc: jsPDF, x: number, sommetErmine: number, baseMot: number): Promise<void> {
@@ -923,7 +959,13 @@ async function dessinerEntete(
 ): Promise<void> {
   setFill(doc, PALETTE_PDF.paper)
   doc.rect(0, 0, PAGE.width, PAGE.height, 'F')
-  await dessinerMarque(doc, PAGE.margeGauche, mm(26.9), mm(36.7))
+  const baseMot = mm(36.7)
+  await dessinerMarque(
+    doc,
+    PAGE.margeGauche,
+    mm(sommetErminePt(36.7, ROLE_PDF.marqueMot.taille)),
+    baseMot,
+  )
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
   if (urlAccueil) doc.link(PAGE.margeGauche, mm(26), mm(20), mm(6), { url: urlAccueil })
   const titre = capture.identity.unit.label
@@ -1264,22 +1306,44 @@ function dessinerSources(
   }
 }
 
+/**
+ * The measured footer note. It is one wrapping owner so the pagination reserve
+ * and the painter cannot disagree about how many lines the group needs.
+ */
+function lignesPiedComparaison(
+  capture: CahierExportCapture,
+  mesure: MesureTexte,
+): readonly string[] {
+  const group = capture.comparison.group
+  const label = group ? group.label ?? group.names.join(', ') : null
+  if (!label) return []
+  return plierTexte(`¹ Groupe comparé : ${label}`, mesure, {
+    police: ROLE_PDF.pied.police,
+    taillePt: TAILLE.pied,
+    largeurMax: PAGE.largeurUtile,
+    casserMotsLongs: true,
+  }).map((ligne) => ligne.texte)
+}
+
 function dessinerPied(
   doc: jsPDF,
   mesure: MesureTexte,
   page: number,
   total: number,
-  capture: CahierExportCapture,
   urlAccueil: string | null,
   hasComparisonProof: boolean,
+  lignesComparaison: readonly string[],
 ): void {
-  if (hasComparisonProof && capture.comparison.group) {
-    const group = capture.comparison.group.label ?? capture.comparison.group.names.join(', ')
-    if (group) {
-      texte(doc, `¹ Groupe comparé : ${group}`, PAGE.margeGauche, PAGE.piedComparaison, {
+  if (hasComparisonProof && lignesComparaison.length) {
+    for (let index = 0; index < lignesComparaison.length; index += 1) {
+      // Stack extra wrapped lines upwards; the last line keeps the approved
+      // H-35 baseline. The previous top-baseline draw sat 6.9 pt too low.
+      const y = PAGE.piedComparaison - (lignesComparaison.length - 1 - index) * PIED.interligne
+      texte(doc, lignesComparaison[index]!, PAGE.margeGauche, y, {
         police: ROLE_PDF.pied.police,
         taille: TAILLE.pied,
         couleur: PALETTE_PDF.muted,
+        baseline: 'alphabetic',
       })
     }
   }
@@ -1355,7 +1419,7 @@ export async function mesurePdfProduction(options: {
  * Public generation seam. Lazy-imports jsPDF/svg2pdf only when a file is
  * actually requested; the app's initial bundle does not carry them.
  */
-export async function composerCahierPdf(  request: CahierExportRequest,
+export async function composerCahierPdf(request: CahierExportRequest,
   options: OptionsCompositionCahierPdf,
 ): Promise<CahierPdfArtifact> {
   const { signal } = options
@@ -1449,7 +1513,7 @@ export async function composerCahierPdf(  request: CahierExportRequest,
     const identitePage = hauteurIdentite(capture, sousTitrePage, mesure)
     const hauteurContenu = page.blocks.reduce((sum, bloc) => sum + bloc.gapAvant + bloc.height, 0)
     const hauteurSection = 2 * PAGE.paddingSection + identitePage + hauteurContenu + documentPdf.sourcesHeight
-    const hauteurUtile = PAGE.contenuBas - PAGE.contenuHaut
+    const hauteurUtile = documentPdf.contenuBas - PAGE.contenuHaut
     const inset = Math.max(0, (hauteurUtile - hauteurSection) / 2)
     const frameTop = PAGE.contenuHaut + inset
     const frameBottom = frameTop + hauteurSection
@@ -1523,7 +1587,7 @@ export async function composerCahierPdf(  request: CahierExportRequest,
       cy + ESPACE.sourcesHaut,
       PAGE.largeurCorps,
     )
-    dessinerPied(doc, mesure, index + 1, total, capture, urlAccueil, page.hasComparisonProof)
+    dessinerPied(doc, mesure, index + 1, total, urlAccueil, page.hasComparisonProof, documentPdf.piedComparaison)
   }
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error

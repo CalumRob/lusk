@@ -8,7 +8,7 @@
  */
 import tokensCss from '@/styles/tokens.css?raw'
 import { melangerOklab } from '@/carte/couleurs'
-import { CAHIER_COLOR_ROLES } from './cahierColorRoles'
+import { CAHIER_COLOR_ROLES, CAHIER_SHARE_COLOUR } from './cahierColorRoles'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 
 // No live screen/style introspection: these are immutable bundled owner inputs.
@@ -63,15 +63,10 @@ export const PALETTE_PDF = {
   modeCar: couleurPdf('--cahier-mode-car'),
   modeWalk: couleurPdf(AEDAR_TIME_MODE_COLORS.walk),
   modeBikeLts2: couleurPdf(AEDAR_TIME_MODE_COLORS.bike_lts2),
-  /**
-   * `.mobilite-share-track` complement ground:
-   * `color-mix(in srgb, var(--cahier-default) 18%, var(--paper))`.
-   */
-  shareTrackGround: couleurPdf('color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 18%, var(--paper))'),
-  /** A populated share track's 1 px border: the same mix at 22 %. */
-  shareTrackBorder: couleurPdf('color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 22%, transparent)'),
-  /** The empty track's dashed 1 px border: the same mix at 40 %. */
-  shareTrackEmptyBorder: couleurPdf('color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 40%, transparent)'),
+  /** The share SFC's own role expressions (`CAHIER_SHARE_COLOUR`). */
+  shareTrackGround: couleurPdf(CAHIER_SHARE_COLOUR.fond),
+  shareTrackBorder: couleurPdf(CAHIER_SHARE_COLOUR.filet),
+  shareTrackEmptyBorder: couleurPdf(CAHIER_SHARE_COLOUR.filetVide),
 } as const
 
 export type PdfPaletteKey = keyof typeof PALETTE_PDF
