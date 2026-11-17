@@ -335,44 +335,69 @@ test_that("replacement accepts an additive level expansion and its reverse", {
   expect_identical(recovery$indicators$facts_added, 0L)
 })
 
-test_that("replacement refuses a pure one-sided scope instead of converting it", {
+test_that("replacement refuses a pure one-sided scope", {
   baseline <- retained_baseline_scalar(scoped_scalar_fixture(), "scoped_scalar")
   candidate <- scoped_expanded_fixture()
   expect_error(
     scoped_snapshot_delta(list(scalar = candidate), list(scalar = baseline),
                           "scoped_scalar", intent = "replacement"),
-    "missing-only publication")
+    "EVERY named scoped indicator in both")
 })
 
-test_that("an explicit replacement plan may include one-sided named indicators", {
+test_that("replacement refuses mixed presence instead of widening the mode", {
   baseline <- retained_baseline_scalar(scoped_scalar_fixture(), "scoped_scalar")
   candidate <- scoped_expanded_fixture()
-  delta <- scoped_snapshot_delta(list(scalar = candidate),
-    list(scalar = baseline), c("kept_scalar", "scoped_scalar"),
-    intent = "replacement")
-  expect_identical(delta$direction, "forward")
-  rows <- delta$indicators
-  expect_identical(rows$direction[rows$indicator_id == "kept_scalar"],
-                   "unchanged")
-  expect_identical(rows$direction[rows$indicator_id == "scoped_scalar"],
-                   "forward")
-  expect_identical(rows$allowed_levels_before[rows$indicator_id ==
-                                                "scoped_scalar"], "<absent>")
-  expect_identical(nrow(delta$added_facts), 3L)
-  expect_true(all(delta$added_facts$indicator_id == "scoped_scalar"))
+  expect_error(
+    scoped_snapshot_delta(list(scalar = candidate), list(scalar = baseline),
+                          c("kept_scalar", "scoped_scalar"),
+                          intent = "replacement"),
+    "mixed presence.*refused|EVERY named scoped indicator in both")
+  expect_error(
+    scoped_snapshot_delta(list(scalar = candidate), list(scalar = baseline),
+                          "scoped_scalar", intent = "replacement"),
+    "missing from current: scoped_scalar")
+})
 
-  reverse <- scoped_snapshot_delta(list(scalar = baseline),
-    list(scalar = candidate), c("kept_scalar", "scoped_scalar"),
-    intent = "replacement")
-  expect_identical(reverse$direction, "recovery")
-  rows <- reverse$indicators
-  expect_identical(rows$direction[rows$indicator_id == "kept_scalar"],
-                   "unchanged")
-  expect_identical(rows$direction[rows$indicator_id == "scoped_scalar"],
-                   "recovery")
-  expect_identical(rows$allowed_levels_after[rows$indicator_id ==
-                                               "scoped_scalar"], "<absent>")
-  expect_identical(nrow(reverse$removed_facts), 3L)
+test_that("numeric facts are compared exactly, not through string casts", {
+  baseline <- scoped_scalar_fixture()
+  candidate <- scoped_expanded_fixture()
+  candidate$facts$value[candidate$facts$indicator_id == "scoped_scalar" &
+    candidate$facts$territory_id == "22001"] <-
+    candidate$facts$value[candidate$facts$indicator_id == "scoped_scalar" &
+      candidate$facts$territory_id == "22001"] * (1 + .Machine$double.eps)
+  expect_error(scoped_replacement_delta(candidate, baseline),
+               "changes an existing fact")
+})
+
+test_that("fact row order does not change the replacement proof", {
+  baseline <- scoped_scalar_fixture()
+  candidate <- scoped_expanded_fixture()
+  candidate$facts <- candidate$facts[rev(seq_len(nrow(candidate$facts))), ,
+                                     drop = FALSE]
+  candidate$provenance <- candidate$provenance[
+    rev(seq_len(nrow(candidate$provenance))), , drop = FALSE]
+  forward <- scoped_replacement_delta(candidate, baseline)
+  expect_identical(forward$direction, "forward")
+})
+
+test_that("true NA facts stay equal and NA/NaN is not silently merged", {
+  make_na <- function(generation) {
+    row <- generation$facts$indicator_id == "scoped_scalar" &
+      generation$facts$territory_id == "22002"
+    generation$facts$value[row] <- NA_real_
+    generation$facts$status[row] <- "not_available"
+    generation
+  }
+  baseline <- make_na(scoped_scalar_fixture())
+  candidate <- make_na(scoped_expanded_fixture())
+  forward <- scoped_replacement_delta(candidate, baseline)
+  expect_identical(forward$direction, "forward")
+  changed <- candidate
+  row <- changed$facts$indicator_id == "scoped_scalar" &
+    changed$facts$territory_id == "22002"
+  changed$facts$value[row] <- NaN
+  expect_error(scoped_replacement_delta(changed, baseline),
+               "changes an existing fact")
 })
 
 test_that("replacement accepts multi-source provenance and refuses a change", {
@@ -612,4 +637,34 @@ test_that("the preview is honest, complete and write-free", {
                         lines, fixed = TRUE)))
   expect_true(any(grepl("territory_reference = ref-v1", lines, fixed = TRUE)))
   expect_true(any(grepl("Not exercised by this preview", lines, fixed = TRUE)))
+})
+
+test_that("the target marker expectations use the validated write generation", {
+  plan <- scoped_plan_fixture()
+  plan$target_scalar_version <- "scalar-target"
+  plan$target_comparison_version <- "comparison-target"
+  plan$target_profile_version <- "profile-target"
+  plan$target_profile_comparison_version <- "profile-comparison-target"
+  plan$target_profile_descriptors <- data.frame(
+    indicator_id = "distribution_dpe", descriptor_version = "dpe-v2",
+    required_scalar_version = "scalar-target", stringsAsFactors = FALSE)
+  plan$target_reading_version <- "habitat-v1"
+  plan$target_linked_version <- "linked-target"
+  target <- scoped_target_markers(plan)
+  expect_identical(target$scalar, "scalar-target")
+  expect_identical(target$profile, "profile-target")
+  expect_identical(target$profile_comparison, "profile-comparison-target")
+  expect_identical(target$linked, "linked-target")
+  expect_identical(target$profile_descriptors, plan$target_profile_descriptors)
+})
+
+test_that("frozen profile publication refuses a changed projection", {
+  profile <- list(descriptor = list(indicator_id = "structure_age"),
+                  facts = data.frame(), axes = data.frame(),
+                  provenance = data.frame(), datasets = data.frame(),
+                  vintages = data.frame(), eligible_territories = data.frame())
+  expect_error(
+    publish_declared_profiles_projection(list(structure_age = profile), NULL,
+      expected_version = paste(rep("0", 32), collapse = "")),
+    "does not match the validated plan")
 })

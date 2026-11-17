@@ -109,8 +109,10 @@ scoped_publication_scope <- function(scalar_scope, intent = NULL) {
 }
 
 # scoped_fact_profile -----------------------------------------------------------
-# Normalised fact and provenance rows used by the replacement proof. Values are
-# serialised exactly (NA stays NA) so a data.frame comparison is byte-honest.
+# Normalised fact and provenance rows used by the replacement proof. Typed
+# numeric values are compared directly (never stringified), so exactly equal
+# doubles pass and any representable change refuses; NA stays NA and NaN is not
+# silently merged with NA.
 scoped_fact_profile <- function(facts) {
   data.frame(
     key = paste(as.character(facts$indicator_id),
@@ -118,10 +120,10 @@ scoped_fact_profile <- function(facts) {
     indicator_id = as.character(facts$indicator_id),
     territory_id = as.character(facts$territory_id),
     territory_type = as.character(facts$territory_type),
-    value = as.character(facts$value),
+    value = as.numeric(facts$value),
     status = as.character(facts$status),
-    support_count = as.character(facts$support_count),
-    denominator_count = as.character(facts$denominator_count),
+    support_count = as.integer(facts$support_count),
+    denominator_count = as.integer(facts$denominator_count),
     stringsAsFactors = FALSE)
 }
 
@@ -134,6 +136,32 @@ scoped_provenance_profile <- function(provenance) {
     source_id = as.character(provenance$source_id),
     vintage_id = as.character(provenance$vintage_id),
     stringsAsFactors = FALSE)
+}
+
+# Row order is not semantic for the scoped delta: the canonical artifacts may
+# be serialized in a different row order while carrying identical rows. Normalize
+# only for the equality proof; the published snapshot keeps its own order.
+scoped_order_scalar_projection <- function(projection) {
+  order_frame <- function(frame, keys) {
+    if (!is.data.frame(frame) || !nrow(frame)) return(frame)
+    frame <- frame[do.call(order, c(frame[keys], list(na.last = TRUE,
+                                                      method = "radix"))), ,
+                   drop = FALSE]
+    rownames(frame) <- NULL
+    frame
+  }
+  projection$facts <- order_frame(projection$facts,
+                                  c("indicator_id", "territory_id"))
+  projection$descriptors <- order_frame(projection$descriptors,
+                                        "indicator_id")
+  projection$provenance <- order_frame(projection$provenance,
+    c("indicator_id", "territory_id", "source_id", "vintage_id"))
+  projection$datasets <- order_frame(projection$datasets, "source_id")
+  projection$vintages <- order_frame(projection$vintages,
+                                     c("source_id", "vintage_id"))
+  projection$eligible_territories <- order_frame(
+    projection$eligible_territories, c("territory_type", "territory_id"))
+  projection
 }
 
 scoped_descriptor_field_differences <- function(target, current) {
@@ -156,16 +184,15 @@ scoped_level_summary <- function(facts, scope_id) {
 #   - allowed_levels may gain (forward) or lose (recovery) levels, never both;
 #   - descriptor_version must advance when levels change and stay identical
 #     otherwise;
-#   - every other descriptor field is byte-identical;
-#   - shared facts are byte-identical (type/value/status/support/denominator);
+#   - every other descriptor field is exactly identical;
+#   - shared facts are exactly identical on typed values (territory type,
+#     value, status, support/denominator counts; row order is not semantic);
 #   - added facts exist only at newly admitted levels, removed facts only at
 #     levels that disappear;
 #   - every scoped fact has at least one provenance association and the
-#     association SET of shared facts is byte-identical.
-# Anything else is a different capability and is refused. `allow_noop` lets the
-# mixed-intent path reuse the evidence for the both-present subset.
-scoped_replacement_proof <- function(target_scalar, current_scalar, scope_ids,
-                                     allow_noop = FALSE) {
+#     association SET of shared facts is exactly identical.
+# Anything else is a different capability and is refused.
+scoped_replacement_proof <- function(target_scalar, current_scalar, scope_ids) {
   scoped_assert_scope_ids(scope_ids)
   descriptor_row <- function(scalar, id) {
     index <- match(id, as.character(scalar$descriptors$indicator_id))
@@ -344,19 +371,10 @@ scoped_replacement_proof <- function(target_scalar, current_scalar, scope_ids,
   rownames(indicators) <- NULL
   changed <- indicators$direction != "unchanged"
   empty_facts <- target_facts[0, , drop = FALSE]
-  if (!any(changed)) {
-    if (!isTRUE(allow_noop))
-      stop("Scoped replacement is a no-op: target and current already carry ",
-           "identical scoped descriptors and facts; refusing to publish an ",
-           "unchanged generation.", call. = FALSE)
-    return(list(
-      direction = "unchanged",
-      indicators = indicators,
-      added_facts = empty_facts,
-      removed_facts = empty_facts,
-      gained_levels = gained_all,
-      lost_levels = lost_all))
-  }
+  if (!any(changed))
+    stop("Scoped replacement is a no-op: target and current already carry ",
+         "identical scoped descriptors and facts; refusing to publish an ",
+         "unchanged generation.", call. = FALSE)
   directions <- unique(indicators$direction[changed])
   if (length(directions) != 1L)
     stop("Scoped replacement indicators move in mixed directions (",
@@ -436,86 +454,21 @@ scoped_source_clocks_valid <- function(sources) {
   invisible(TRUE)
 }
 
-# scoped_missing_indicator_evidence ---------------------------------------------
-# One-sided indicators in an explicit replacement plan stay on the normal
-# missing-only semantics, but they are reported in the same evidence table so
-# the operator sees the whole named scope. Their descriptor/facts are not
-# compared across generations (there is no counterpart).
-scoped_missing_indicator_evidence <- function(scalar, scope_ids, direction) {
-  direction <- match.arg(direction, c("forward", "recovery"))
-  facts <- scoped_fact_profile(scalar$facts)
-  rows <- list()
-  selected <- facts[0, , drop = FALSE]
-  for (id in scope_ids) {
-    index <- match(id, as.character(scalar$descriptors$indicator_id))
-    if (is.na(index))
-      stop("Missing-side scoped indicator is not declared in its generation: ",
-           id, call. = FALSE)
-    descriptor <- scalar$descriptors[index, , drop = FALSE]
-    levels <- as.character(descriptor$allowed_levels[[1L]])
-    indicator_facts <- facts[facts$indicator_id == id, , drop = FALSE]
-    selected <- rbind(selected, indicator_facts)
-    rows[[length(rows) + 1L]] <- data.frame(
-      indicator_id = id,
-      direction = direction,
-      allowed_levels_before = if (identical(direction, "recovery"))
-        paste(levels, collapse = ",") else "<absent>",
-      allowed_levels_after = if (identical(direction, "forward"))
-        paste(levels, collapse = ",") else "<absent>",
-      added_levels = if (identical(direction, "forward"))
-        paste(levels, collapse = ",") else "",
-      removed_levels = if (identical(direction, "recovery"))
-        paste(levels, collapse = ",") else "",
-      descriptor_version_before = if (identical(direction, "recovery"))
-        as.character(descriptor$descriptor_version) else "<absent>",
-      descriptor_version_after = if (identical(direction, "forward"))
-        as.character(descriptor$descriptor_version) else "<absent>",
-      facts_before = if (identical(direction, "recovery"))
-        nrow(indicator_facts) else 0L,
-      facts_after = if (identical(direction, "forward"))
-        nrow(indicator_facts) else 0L,
-      facts_shared = 0L,
-      facts_added = if (identical(direction, "forward"))
-        nrow(indicator_facts) else 0L,
-      facts_removed = if (identical(direction, "recovery"))
-        nrow(indicator_facts) else 0L,
-      facts_added_by_level = if (identical(direction, "forward"))
-        scoped_level_summary(indicator_facts, id) else "",
-      facts_removed_by_level = if (identical(direction, "recovery"))
-        scoped_level_summary(indicator_facts, id) else "",
-      stringsAsFactors = FALSE)
-  }
-  empty <- facts[0, , drop = FALSE]
-  levels_of <- function(id) {
-    descriptor <- scalar$descriptors[
-      match(id, as.character(scalar$descriptors$indicator_id)), ,
-      drop = FALSE]
-    as.character(descriptor$allowed_levels[[1L]])
-  }
-  indicator_levels <- unique(unlist(lapply(scope_ids, levels_of),
-                                    use.names = FALSE))
-  list(
-    indicators = do.call(rbind, rows),
-    added_facts = if (identical(direction, "forward")) selected else empty,
-    removed_facts = if (identical(direction, "recovery")) selected else empty,
-    gained_levels = if (identical(direction, "forward")) indicator_levels else
-      character(),
-    lost_levels = if (identical(direction, "recovery")) indicator_levels else
-      character())
-}
 # scoped_snapshot_delta ---------------------------------------------------------
 # Pure proof of the scoped delta: the two full snapshots must be identical once
 # the scoped indicators are removed. The intent decides the remaining rule:
-# missing_only -> exactly one side carries them; replacement -> at least one
+# missing_only -> exactly one side carries them; replacement -> EVERY named
 # indicator is present in both generations and changes only by additive level
-# expansion (or its reverse), while explicitly named one-sided indicators keep
-# the missing-only semantics inside the same explicit intent.
+# expansion (or its exact reverse). Mixed presence is a different capability
+# and is refused; it is never folded into this mode.
 scoped_snapshot_delta <- function(target_snapshot, current_snapshot, scope_ids,
                                   intent = "missing_only") {
   intent <- scoped_publication_intent(intent)
   scoped_assert_scope_ids(scope_ids)
-  target_without <- retained_baseline_scalar(target_snapshot$scalar, scope_ids)
-  current_without <- retained_baseline_scalar(current_snapshot$scalar, scope_ids)
+  target_without <- scoped_order_scalar_projection(
+    retained_baseline_scalar(target_snapshot$scalar, scope_ids))
+  current_without <- scoped_order_scalar_projection(
+    retained_baseline_scalar(current_snapshot$scalar, scope_ids))
   if (identical(intent, "replacement")) {
     # A legitimate level expansion changes the eligible universe by the newly
     # admitted levels only; that is proven by the replacement proof below.
@@ -536,49 +489,19 @@ scoped_snapshot_delta <- function(target_snapshot, current_snapshot, scope_ids,
   target_has <- scope_ids %in% target_snapshot$scalar$descriptors$indicator_id
   current_has <- scope_ids %in% current_snapshot$scalar$descriptors$indicator_id
   if (identical(intent, "replacement")) {
-    both <- scope_ids[target_has & current_has]
-    target_only <- scope_ids[target_has & !current_has]
-    current_only <- scope_ids[!target_has & current_has]
-    if (!length(both))
-      stop("Replacement publication requires at least one scoped indicator ",
-           "in BOTH generations; a pure addition/removal is a missing-only ",
-           "publication (use the missing-only intent).", call. = FALSE)
-    if (length(target_only) && length(current_only))
-      stop("Replacement publication cannot mix target-only and current-only ",
-           "scoped indicators; refusing.", call. = FALSE)
-    evidence <- scoped_replacement_proof(target_snapshot$scalar,
-      current_snapshot$scalar, both, allow_noop = TRUE)
-    missing_direction <- if (length(target_only)) "forward" else
-      if (length(current_only)) "recovery" else "unchanged"
-    if (!identical(evidence$direction, "unchanged") &&
-        !identical(missing_direction, "unchanged") &&
-        !identical(evidence$direction, missing_direction))
-      stop("Scoped replacement mixes an expansion and a one-sided recovery; ",
-           "refusing.", call. = FALSE)
-    direction <- if (!identical(evidence$direction, "unchanged"))
-      evidence$direction else missing_direction
-    if (identical(direction, "unchanged"))
-      stop("Scoped replacement is a no-op: target and current already carry ",
-           "identical scoped descriptors and facts; refusing to publish an ",
-           "unchanged generation.", call. = FALSE)
-    missing <- if (length(target_only))
-      scoped_missing_indicator_evidence(target_snapshot$scalar, target_only,
-                                        "forward")
-      else if (length(current_only))
-        scoped_missing_indicator_evidence(current_snapshot$scalar,
-                                          current_only, "recovery") else NULL
-    empty_facts <- scoped_fact_profile(target_snapshot$scalar$facts)[0, ,
-                                                                     drop = FALSE]
-    indicators <- if (is.null(missing)) evidence$indicators else
-      rbind(evidence$indicators, missing$indicators)
-    added_facts <- if (is.null(missing)) evidence$added_facts else
-      rbind(evidence$added_facts, missing$added_facts)
-    removed_facts <- if (is.null(missing)) evidence$removed_facts else
-      rbind(evidence$removed_facts, missing$removed_facts)
-    gained <- union(evidence$gained_levels,
-                    if (is.null(missing)) character() else missing$gained_levels)
-    lost <- union(evidence$lost_levels,
-                  if (is.null(missing)) character() else missing$lost_levels)
+    if (!all(target_has) || !all(current_has))
+      stop("Replacement publication requires EVERY named scoped indicator in ",
+           "both generations (missing from target: ",
+           paste(scope_ids[!target_has], collapse = ", "),
+           "; missing from current: ",
+           paste(scope_ids[!current_has], collapse = ", "),
+           "). Mixed presence is a different capability and is refused; use ",
+           "the missing-only intent for a one-sided publication.",
+           call. = FALSE)
+    proof <- scoped_replacement_proof(target_snapshot$scalar,
+                                      current_snapshot$scalar, scope_ids)
+    gained <- proof$gained_levels
+    lost <- proof$lost_levels
     universe_key <- function(scalar) paste(
       as.character(scalar$eligible_territories$territory_type),
       as.character(scalar$eligible_territories$territory_id), sep = "\r")
@@ -589,13 +512,14 @@ scoped_snapshot_delta <- function(target_snapshot, current_snapshot, scope_ids,
     universe_type <- function(key) sub("\r.*$", "", key)
     if (any(!universe_type(universe_added) %in% gained))
       stop("Scoped replacement adds eligible territories outside the newly ",
-           "admitted or newly declared levels; refusing.", call. = FALSE)
+           "admitted levels; refusing.", call. = FALSE)
     if (any(!universe_type(universe_removed) %in% lost))
       stop("Scoped replacement removes eligible territories outside the ",
            "levels it stops admitting; refusing.", call. = FALSE)
-    return(list(direction = direction, without_scope = target_without,
-                intent = intent, indicators = indicators,
-                added_facts = added_facts, removed_facts = removed_facts))
+    return(list(direction = proof$direction, without_scope = target_without,
+                intent = intent, indicators = proof$indicators,
+                added_facts = proof$added_facts,
+                removed_facts = proof$removed_facts))
   }
   if (all(target_has) && !any(current_has)) {
     direction <- "forward"
@@ -827,6 +751,9 @@ scoped_publication_plan <- function(target_dir, current_dir, scope_ids,
     current_comparison_version = current_snapshot$comparison$content_version,
     profile_owners = declared_profile_owners(),
     bound_profiles = bound(target_profile),
+    target_profiles = target_profile$profiles,
+    current_profiles = current_profile$profiles,
+    target_profile_comparisons = target_profile$comparisons,
     target_sources = target_sources,
     current_sources = current_sources,
     retire_sources = retire_sources,
@@ -839,6 +766,8 @@ scoped_publication_plan <- function(target_dir, current_dir, scope_ids,
     target_profile_comparison_version = target_profile$comparison_version,
     current_profile_comparison_version = current_profile$comparison_version,
     reading_owners = reading_owners,
+    target_reading_publication = target_reading,
+    current_reading_publication = current_reading,
     target_reading_version = if (length(reading_owners))
       target_reading$content_version else character(),
     current_reading_version = if (length(reading_owners))
@@ -907,6 +836,23 @@ scoped_expected_markers <- function(plan) {
       plan$reading_owners[[1L]] else character(),
     reading = plan$current_reading_version,
     linked = plan$current_linked_version
+  )
+}
+
+# Target markers: what the validated write installs. Used by the guarded proof
+# to verify the committed closure, not as a guard expectation.
+scoped_target_markers <- function(plan) {
+  list(
+    reference = plan$reference,
+    scalar = plan$target_scalar_version,
+    scalar_comparison = plan$target_comparison_version,
+    profile = plan$target_profile_version,
+    profile_comparison = plan$target_profile_comparison_version,
+    profile_descriptors = plan$target_profile_descriptors,
+    reading_owner = if (length(plan$reading_owners))
+      plan$reading_owners[[1L]] else character(),
+    reading = plan$target_reading_version,
+    linked = plan$target_linked_version
   )
 }
 
@@ -1273,14 +1219,26 @@ publish_scoped_retained_backend <- function(con, plan, absent_sources = NULL) {
       snapshot$retired_indicator_ids <- unique(c(
         snapshot$retired_indicator_ids, plan$scope_ids))
     publish_retained_scalar_snapshot(con, snapshot, plan$target_dir)
-    publier_declared_profiles_postgres(plan$target_dir,
-                                       plan$profile_owners, con = con)
+    # Publish the EXACT validated plan projections. Re-reading mutable profile
+    # or reading artifacts here would reopen a plan-to-write race.
+    if (!is.list(plan$target_profiles) || !length(plan$target_profiles))
+      stop("Scoped publication plan has no frozen declared-profile projections",
+           call. = FALSE)
+    publish_declared_profiles_projection(plan$target_profiles, con,
+      artifact_directory = plan$target_dir,
+      expected_version = plan$target_profile_version,
+      comparisons = plan$target_profile_comparisons)
     for (owner in plan$reading_owners) {
       publisher <- scoped_reading_publishers()[[owner]]
       if (!is.function(publisher))
         stop("No registered scoped reading publisher for ", owner,
              call. = FALSE)
-      publication <- read_typed_reading_publication_from(plan$target_dir, owner)
+      publication <- plan$target_reading_publication
+      if (!is.list(publication) ||
+          !identical(as.character(publication$content_version),
+                     as.character(plan$target_reading_version)))
+        stop("Scoped publication plan has no matching frozen selected-reading ",
+             "projection; refusing to re-read mutable artifacts.", call. = FALSE)
       publish_typed_reading_publication(
         register_typed_reading_artifact_publisher(list(), owner, publisher),
         owner, publication, con)
