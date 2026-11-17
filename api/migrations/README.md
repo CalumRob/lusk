@@ -11,9 +11,12 @@ enriched reference is published, so every comparison publication bound to
 reference or the dependent comparison markers early. Existing rows and markers
 survive the DDL. See `docs/research/littoral-dreal-bretagne.md`.
 
-The guarded rehearsal is
-`api/tests/integration/test_littoral_reference_migration.py` (non-retained,
-requires the documented cleanup opt-in and the shared database mutex).
+The guarded rehearsals are
+`api/tests/integration/test_littoral_reference_migration.py` (schema/migration
+upgrade) and `test_littoral_reference_publisher.py` (the real nine-column R
+adapter roundtrip), both non-retained, requiring the documented cleanup opt-in
+and the shared database mutex. Both verify the dedicated publisher/read roles
+and exact test database before any DDL.
 
 Migration 041 adds `aedar_territory_summary` and its independent publication
 marker. Apply it after 040 before running the producer's existing guarded

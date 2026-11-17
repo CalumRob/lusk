@@ -11,12 +11,11 @@ from __future__ import annotations
 import os
 import uuid
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import pytest
 
 from api.tests.integration.test_postgres_publication import (
-    _aedar_guarded_configuration, _dsn_with_schema)
+    _aedar_guarded_configuration, _assert_aedar_server_identity)
 from api.tests.integration.test_selected_profile_mean_http import (
     _acquire_mutex, _release_mutex)
 
@@ -76,9 +75,18 @@ def test_migration_043_is_additive_and_matches_a_fresh_install():
         pytest.fail("the littoral migration proof is non-retained; set LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1")
     psycopg = pytest.importorskip("psycopg")
     mutex = _acquire_mutex()
+    verified = False
     upgraded = "it_littoral_mig_" + uuid.uuid4().hex[:12]
     fresh = "it_littoral_fresh_" + uuid.uuid4().hex[:12]
     try:
+        # Verify BOTH dedicated roles and the exact test database BEFORE any
+        # DDL. A wrong target must never see CREATE/DROP from this proof.
+        with psycopg.connect(publish_dsn, autocommit=True) as identity:
+            _assert_aedar_server_identity(identity, "lusk_it_contract_pub")
+        with psycopg.connect(read_dsn, autocommit=True) as identity:
+            _assert_aedar_server_identity(identity, "lusk_it_contract_read")
+        verified = True
+
         with psycopg.connect(publish_dsn, autocommit=True) as connection:
             connection.execute(f'CREATE SCHEMA "{upgraded}"')
             connection.execute(f'CREATE SCHEMA "{fresh}"')
@@ -137,7 +145,12 @@ def test_migration_043_is_additive_and_matches_a_fresh_install():
                         "VALUES (%s,%s,%s,%s,%s)",
                         (f"bad-{code}", kind, "Bad", littoral, classement))
     finally:
-        with psycopg.connect(publish_dsn, autocommit=True) as connection:
-            for schema in (upgraded, fresh):
-                connection.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
-        _release_mutex(mutex)
+        try:
+            if verified:
+                with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                    for schema in (upgraded, fresh):
+                        connection.execute(
+                            f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        finally:
+            # The mutex is released even when cleanup itself raises.
+            _release_mutex(mutex)

@@ -133,9 +133,11 @@ def test_producer_and_app_share_the_same_reference_fields():
         assert f",{column}" in projector
         assert f"{column}=EXCLUDED.{column}" in projector
 
-    # The producer owns the closed domain and the source classements.
+    # The producer owns the closed C/NC protocol AND the upstream source
+    # classification modalities (Mer/Estuaire). The app consumes the served
+    # registry rather than duplicating those factual values.
     assert '"C", "NC"' in producer
     assert '"Mer", "Estuaire"' in producer
-    # The app validates the same closed domain, never derives it.
-    assert "'C'" in app_validate and "'NC'" in app_validate
-    assert "Mer" in app_validate and "Estuaire" in app_validate
+    assert "classements" in app_validate
+    assert "littoral_classement_source" in app_validate
+    assert "littoral_code" in app_types

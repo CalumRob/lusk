@@ -380,6 +380,14 @@ drops them in `finally`. Without the guarded `LUSK_TEST_*` DSNs the module
 skips. It proves existing rows/markers survive, old rows keep NULL/NULL, both
 column sets and the closed CHECK agree, and invalid classifications fail.
 
+The companion real-adapter proof is
+`test_littoral_reference_publisher.py`: it applies a fresh `api/schema.sql` in
+one random schema, runs `pipeline/scripts/smoke-littoral-reference.R` against a
+small synthetic classified reference (valid publish, marker, no-op,
+ON CONFLICT update, rollback of an invalid classification), verifies values
+externally, and drops only its own schema. It does not need any
+scalar/profile serving artifact.
+
 ```powershell
 $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
 $env:LUSK_TEST_DATABASE_PREFIX = 'lusk_it_'
@@ -391,6 +399,7 @@ $env:PGCONNECT_TIMEOUT = '5'
 $env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000'
 $env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
 python -m pytest api/tests/integration/test_littoral_reference_migration.py -q
+python -m pytest api/tests/integration/test_littoral_reference_publisher.py -q
 ```
 
 ## Current retained model and migration selectors
