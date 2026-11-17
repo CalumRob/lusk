@@ -55,7 +55,11 @@ import type {
   Vintage,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
-import { PayloadError, verifierClassesDensite } from './validate'
+import {
+  PayloadError,
+  verifierClassesDensite,
+  verifierClassificationLittorale,
+} from './validate'
 
 /** The per-file payload charger — injectable so component tests stub the fetch seam. */
 export type ChargerFichier = (fichier: Fichier) => Promise<unknown>
@@ -189,6 +193,13 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
     if (!reference || reference.etat !== 'succes' || !metadata || metadata.etat !== 'succes') return
     try {
       verifierClassesDensite(
+        reference.valeur as Territoire[],
+        metadata.valeur as TerritoryMetadata | null,
+      )
+      // #1041 — même frontière atomique : une classification littorale
+      // partielle ou une provenance manquante est une dérive de domaine, pas
+      // une absence honnête.
+      verifierClassificationLittorale(
         reference.valeur as Territoire[],
         metadata.valeur as TerritoryMetadata | null,
       )

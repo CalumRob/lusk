@@ -14,7 +14,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import { PayloadError, parsePayload, validerTerritoires, validerTerritoiresMetadata, validerCatalogueNavigateur, validerThemeMetadata, verifierClassesDensite } from '../payload/validate'
+import { PayloadError, parsePayload, validerTerritoires, validerTerritoiresMetadata, validerCatalogueNavigateur, validerThemeMetadata, verifierClassesDensite, verifierClassificationLittorale } from '../payload/validate'
 import type { HistoireDemographie, HistoireMilieux, HistoireMobilite, Payload } from '../payload/types'
 
 type DocumentsBruts = Parameters<typeof parsePayload>[0]
@@ -68,6 +68,113 @@ describe('contrat des classes de densité communale', () => {
     }]))
     expect(() => validerTerritoiresMetadata({ ...metadata, density_classes: classesDecalees }, 'territoires-metadata.json'))
       .toThrow('codes 1 à 7')
+  })
+})
+
+describe('contrat de la classification littorale (#1041)', () => {
+  const classes = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [String(index + 1), {
+    code: String(index + 1),
+    libelle_insee: `Libellé INSEE ${index + 1}`,
+    libelle_public: `Libellé public ${index + 1}`,
+  }]))
+  const metadata = {
+    schema_version: '1',
+    territory_reference_label: 'Référentiel territorial — classifications communales',
+    density_classes: classes,
+    source_records: {
+      classe_densite_communale: {
+        dataset: 'Grille de densité 2025 — maille communale',
+        publisher: 'INSEE',
+        url: 'https://www.insee.fr/fr/statistiques/fichier/8571524/fichier_diffusion_2026.xlsx',
+        licence: 'Licence Ouverte 2.0',
+        sha256: '8ebf3011743db45ab94c4ffb74d1bcb06929f0076ecd5b8247011bca861ca978',
+        vintage: 'Classification 2025 · géographie communale au 01/01/2026 · RP 2021',
+        freshness: 'Publication INSEE du 15 mai 2026',
+      },
+      classe_littorale_communale: {
+        dataset: 'Communes littorales en Bretagne au titre de la loi',
+        publisher: 'DREAL Bretagne',
+        url: 'https://www.data.gouv.fr/datasets/communes-littorales-en-bretagne-au-titre-de-la-loi',
+        acquisition_url: 'https://geobretagne.fr/geoserver/dreal_b/l_communes_littorales/wfs',
+        licence: 'Licence Ouverte 2.0 (lov2)',
+        sha256: 'd68f20e7ea2928ac36e104201fdd81327b610a384c1a3a6d6c33521fe61153cc',
+        vintage: 'Liste positive DREAL Bretagne — métadonnées de diffusion du 2023-04-21',
+        freshness: 'Dernière modification déclarée par data.gouv.fr le 21 avril 2023',
+        definition: 'Communes définies par la loi Littoral de 1986, complétées par le décret 2004-311.',
+        coverage: 'Liste positive exhaustive pour les quatre départements bretons.',
+        classements: ['Mer', 'Estuaire'],
+      },
+    },
+  }
+
+  const commune = (territoire: string, littoral_code: string | null, classement: string | null = null) => ({
+    territoire, type: 'commune' as const, nom: territoire, departement: '22', epci: null,
+    littoral_code, littoral_classement_source: classement,
+  })
+
+  it('accepte une référence de transition qui ne porte pas le littoral', () => {
+    const territoires = validerTerritoires([
+      { territoire: '22001', type: 'commune', nom: 'A', departement: '22', epci: null },
+    ], 'territoires.json')
+    expect(territoires[0]!.littoral_code).toBeUndefined()
+    expect(() => verifierClassificationLittorale(territoires, null)).not.toThrow()
+  })
+
+  it('accepte C/NC complets, îles comprises, et exige la provenance', () => {
+    const territoires = validerTerritoires([
+      commune('29083', 'C', 'Mer'),
+      commune('29084', 'C', 'Mer'),
+      commune('29209', 'NC'),
+      { territoire: '22', type: 'departement', nom: 'Côtes-d’Armor', departement: '22', epci: null, littoral_code: null, littoral_classement_source: null },
+    ], 'territoires.json')
+    const parsed = validerTerritoiresMetadata(metadata, 'territoires-metadata.json')
+    expect(parsed.source_records['classe_littorale_communale']?.publisher).toBe('DREAL Bretagne')
+    expect(() => verifierClassificationLittorale(territoires, parsed)).not.toThrow()
+  })
+
+  it('refuse une classification partielle, inconnue ou portée par un non-commune', () => {
+    expect(() => validerTerritoires([
+      commune('29083', 'C', 'Mer'),
+      { territoire: '29209', type: 'commune', nom: 'Plouvien', departement: '29', epci: null, littoral_code: null, littoral_classement_source: null },
+    ], 'territoires.json')).toThrow('littoral_code')
+
+    expect(() => validerTerritoires([
+      commune('29083', 'C', 'Lac'),
+    ], 'territoires.json')).toThrow('Mer ou Estuaire')
+
+    expect(() => validerTerritoires([
+      commune('29209', 'NC', 'Mer'),
+    ], 'territoires.json')).toThrow('classement source')
+
+    expect(() => validerTerritoires([
+      { territoire: '22', type: 'departement', nom: 'Côtes-d’Armor', departement: '22', epci: null, littoral_code: 'C', littoral_classement_source: 'Mer' },
+    ], 'territoires.json')).toThrow('classification littorale')
+  })
+
+  it('valide la référence réellement servie par R (contrat R -> référence -> app)', async () => {
+    const fs = await import('node:fs')
+    const document = JSON.parse(fs.readFileSync(
+      'src/__tests__/fixtures/littoral-reference-served.json', 'utf8'))
+    const territoires = validerTerritoires(document.territoires, 'territoires.json')
+    const parsed = validerTerritoiresMetadata(document.metadata, 'territoires-metadata.json')
+    expect(() => verifierClassificationLittorale(territoires, parsed)).not.toThrow()
+    expect(territoires.find((t) => t.territoire === '29083')?.littoral_code).toBe('C')
+    expect(territoires.find((t) => t.territoire === '29209')?.littoral_code).toBe('NC')
+    expect(territoires.find((t) => t.territoire === '22')?.littoral_code).toBeNull()
+  })
+
+  it('exige la source littorale dans les métadonnées et valide son empreinte', () => {
+    const sansSource = structuredClone(metadata)
+    delete (sansSource.source_records as Record<string, unknown>).classe_littorale_communale
+    const territoires = validerTerritoires([commune('29083', 'C', 'Mer')], 'territoires.json')
+    const parsed = validerTerritoiresMetadata(sansSource, 'territoires-metadata.json')
+    expect(() => verifierClassificationLittorale(territoires, parsed))
+      .toThrow('classe_littorale_communale')
+
+    const empreinteInvalide = structuredClone(metadata)
+    empreinteInvalide.source_records.classe_littorale_communale.sha256 = 'pas-une-empreinte'
+    expect(() => validerTerritoiresMetadata(empreinteInvalide, 'territoires-metadata.json'))
+      .toThrow('sha256')
   })
 })
 
