@@ -4,6 +4,10 @@
   serving database publication remains the separately gated operator step.
   Amended by #995 (2026-11-12): the pre-write guard and the write are scoped to
   the registered scalar dependency closure instead of every retained owner.
+  Amended by #1037 (2026-11-17): an explicit `replacement` publication intent
+  covers an existing indicator whose serving contract expands (additive allowed
+  levels) while the default missing-only rule stays unchanged; a dry
+  plan/preview makes the proof reviewable without connecting to the database.
 - **Parent:** ADR-0038 (common indicator serving contract), ADR-0035 (serving
   grains and scoped comparisons), ADR-0037 (publish tables independently from
   R).
@@ -169,6 +173,16 @@ can be scoped.
 - A semantic metadata change to an unrecomputed indicator fails loudly and
   requires the full theme path; this is deliberate — the scoped path cannot
   silently relabel an old fact.
+- Amended by #1037: an existing indicator may legitimately expand by adding
+  allowed levels without a full-theme rebuild. The operator must state
+  `LUSK_SCALAR_PUBLICATION_INTENT=replacement`; the plan then proves additive
+  levels only (or exact reverse recovery), byte-identical shared facts and
+  provenance, no unrelated descriptor change, coherent candidate/baseline
+  source clocks and reference, and no no-op. One-sided named indicators stay on
+  missing-only semantics inside that explicit plan; an ordinary missing-only
+  plan is never reinterpreted. The dry `--scalar-scope-preview` reports the
+  before/after closure and guard predicates without opening a database or
+  writing an artifact; it is review evidence, not activation authority.
 - The worker never connects to the serving database. The operator performs the
   backup/window/identity checks and the normal publication step.
 
