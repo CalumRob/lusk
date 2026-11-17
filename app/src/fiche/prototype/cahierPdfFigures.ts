@@ -97,6 +97,8 @@ export interface OptionsFigurePdf {
   readonly distributionTitle?: string
   /** Native distribution value unit for the y-axis title. */
   readonly distributionUnit?: string
+  /** Native selected equipment type label: the figcaption's second title line. */
+  readonly explorerTypequLabel?: string | null
   /** Native curve model, for the declared grid ticks/axis. */
   readonly modeleCourbe?: MobiliteRaccordementEvidence
   /** Owner-observed served comparative proof for this figure (not capability). */
@@ -275,15 +277,6 @@ function svgLine(
   node.setAttribute('stroke-width', String(width))
   if (dash) node.setAttribute('stroke-dasharray', dash)
   if (opacity < 1) node.setAttribute('stroke-opacity', String(opacity))
-  svg.append(node)
-}
-
-function svgCircle(svg: SVGSVGElement, cx: number, cy: number, r: number, fill: string): void {
-  const node = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
-  node.setAttribute('cx', String(cx))
-  node.setAttribute('cy', String(cy))
-  node.setAttribute('r', String(r))
-  node.setAttribute('fill', fill)
   svg.append(node)
 }
 
@@ -537,6 +530,112 @@ function titreAvecUnite(titre: string, unite: string): string {
   return titre.includes(value) ? titre : `${titre} (${value})`
 }
 
+/**
+ * Native `.cahier-grouped-vertical-bar-chart__bar { fill-opacity: .78 }`.
+ * The PDF has one opaque paper ground and its SVG converter carries no shape
+ * alpha, so the painter composites the same 78% onto that ground — the pixels
+ * are the native ones, not an opaque bar.
+ */
+const OPACITE_BARRES_GROUPEES = 0.78
+
+/**
+ * Native plot box of the two AEDAR families (`AccessRampFigureCahier.vue:44-50`
+ * and `CahierGroupedVerticalBarChart.vue:32-36`): the screen SVG's own viewBox
+ * and margins. The PDF maps this box to the panel width and reads every stroke
+ * and label position from it, instead of a parallel 96 dpi millimetre policy.
+ */
+const GEOMETRIE_NATIVE_AEDAR = {
+  width: 640,
+  height: 300,
+  margin: { top: 22, right: 68, bottom: 62, left: 64 },
+} as const
+
+/** Native label offset of the AEDAR figures (`CahierFigureAxisLabels`, 8 px). */
+const DECALAGE_ETIQUETTE_X = 8
+
+function hauteurPanneauAedar(largeurPanneau: number): number {
+  return largeurPanneau * GEOMETRIE_NATIVE_AEDAR.height / GEOMETRIE_NATIVE_AEDAR.width
+}
+
+/**
+ * Axis labels/titles of one AEDAR panel, placed from the native viewBox.
+ *
+ * The `.type-figure-label` role uppercases its text (`text-transform`) and adds
+ * 0.08em of tracking; both are painted here because a PDF has no CSS cascade.
+ * Sizes stay at the document role scale (they do not shrink with the panel);
+ * only positions follow the figure's own transform.
+ */
+function dessinerAxesAedar(
+  doc: jsPDF,
+  mesure: MesureTexte,
+  options: {
+    x: number
+    y: number
+    panelWidth: number
+    xTicks: readonly { key: string | number; position: number; label: string | null }[]
+    yTicks: readonly { key: string | number; position: number; label: string | null }[]
+    xTitle: string
+    yTitle: string
+  },
+): void {
+  const { x, y, panelWidth, xTicks, yTicks, xTitle, yTitle } = options
+  const native = GEOMETRIE_NATIVE_AEDAR
+  const echelle = panelWidth / native.width
+  const u = (value: number) => value * echelle
+  const tickSpace = ROLE_PDF.tick.taille * ROLE_PDF.tick.espacementEm
+  for (const tick of yTicks) {
+    if (tick.label === null) continue
+    textePdf(doc, tick.label, x + u(native.margin.left) - 0.2, y + u(tick.position), {
+      police: ROLE_PDF.tick.police,
+      taille: TAILLE.tick,
+      couleur: PALETTE_PDF.editorialMuted,
+      align: 'right',
+      baseline: 'middle',
+      espacement: tickSpace,
+    })
+  }
+  const xLabelY = y + u(native.height - native.margin.bottom + DECALAGE_ETIQUETTE_X)
+  for (const tick of xTicks) {
+    if (tick.label === null) continue
+    textePdf(doc, tick.label, x + u(tick.position), xLabelY, {
+      police: ROLE_PDF.tick.police,
+      taille: TAILLE.tick,
+      couleur: PALETTE_PDF.editorialMuted,
+      align: 'center',
+      espacement: tickSpace,
+    })
+  }
+  // `.cahier-figure-axis-title`: font `--type-figure-label`, uppercase, 0.08em.
+  const titreX = xTitle.toLocaleUpperCase('fr-FR')
+  textePdf(doc, titreX, x + u(native.margin.left) + (
+    u(native.width - native.margin.left - native.margin.right) / 2
+  ), y + u(native.height) - 0.6, {
+    police: ROLE_PDF.axe.police,
+    taille: TAILLE.axe,
+    couleur: PALETTE_PDF.editorialMuted,
+    align: 'center',
+    baseline: 'alphabetic',
+    espacement: TAILLE.axe * ROLE_PDF.axe.espacementEm,
+  })
+  const titreY = yTitle.toLocaleUpperCase('fr-FR')
+  const titreWidth = mesure.largeur(
+    titreY,
+    ROLE_PDF.axe.police,
+    TAILLE.axe,
+    TAILLE.axe * ROLE_PDF.axe.espacementEm,
+  )
+  const plotMilieu = u(native.margin.top + (native.height - native.margin.top - native.margin.bottom) / 2)
+  doc.saveGraphicsState()
+  doc.setFont(ROLE_PDF.axe.police, 'normal')
+  doc.setFontSize(TAILLE.axe)
+  doc.setTextColor(...rgb(PALETTE_PDF.editorialMuted))
+  doc.setCharSpace(mmDepuisPt(TAILLE.axe * ROLE_PDF.axe.espacementEm))
+  // The native title is a rotated run whose centre sits 8 px from the left edge.
+  doc.text(titreY, x + u(11), y + plotMilieu + titreWidth / 2, { angle: 90 })
+  doc.setCharSpace(0)
+  doc.restoreGraphicsState()
+}
+
 function dessinerAxes(
   doc: jsPDF,
   mesure: MesureTexte,
@@ -642,7 +741,7 @@ async function dessinerRampes(
   const nombre = Math.max(1, projection.ramps.length)
   const gap = 6
   const panelWidth = (width - gap * (nombre - 1)) / nombre
-  const plotHeight = 42
+  const panelHeight = hauteurPanneauAedar(panelWidth)
   const panelTitles = projection.ramps.map((ramp) => plierTexte(ramp.title, mesure, {
     police: ROLE_PDF.sousTitreFigure.police,
     taillePt: TAILLE.sousTitre,
@@ -668,33 +767,25 @@ async function dessinerRampes(
     const panelScale = cahierIntegerYAxisScale(ramp.series.flatMap((serie) =>
       serie.points.flatMap((point) => [point.value, point.referenceValue])))
     const firstSeries = ramp.series[0]!
-    const initialGeometry = {
-      width: panelWidth,
-      height: plotHeight,
-      margin: { top: 2, right: 2, bottom: 2, left: 9 },
-    } as const
-    const initialTicks = rampGeometry(rampPoints(firstSeries), panelScale, initialGeometry, ramp.yAxis.unit).yTicks
-    const tickWidth = Math.max(0, ...initialTicks.map((tick) => mesure.largeur(tick.label ?? '', ROLE_PDF.tick.police, TAILLE.tick, TAILLE.tick * ROLE_PDF.tick.espacementEm)))
-    const nativeGeometry = { ...initialGeometry, margin: {
-      ...initialGeometry.margin, left: Math.max(initialGeometry.margin.left, tickWidth + 5.3),
-    } }
-    const geom = rampGeometry(rampPoints(firstSeries), panelScale, nativeGeometry, ramp.yAxis.unit)
-    const svg = svgCanvas(panelWidth, plotHeight)
+    const geom = rampGeometry(rampPoints(firstSeries), panelScale, GEOMETRIE_NATIVE_AEDAR, ramp.yAxis.unit)
+    const plotBottom = GEOMETRIE_NATIVE_AEDAR.height - GEOMETRIE_NATIVE_AEDAR.margin.bottom
+    const plotRight = GEOMETRIE_NATIVE_AEDAR.width - GEOMETRIE_NATIVE_AEDAR.margin.right
+    const svg = svgCanvas(GEOMETRIE_NATIVE_AEDAR.width, GEOMETRIE_NATIVE_AEDAR.height)
     for (const tick of geom.yTicks) {
-      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+      svgLine(svg, GEOMETRIE_NATIVE_AEDAR.margin.left, tick.position, plotRight, tick.position, PALETTE_PDF.figureGrid, CAHIER_FIGURE_STROKE.gridWidthPx)
     }
     // Native access-ramp grid draws one vertical line per time cut on both axes.
     for (const tick of geom.xTicks) {
-      svgLine(svg, tick.position, nativeGeometry.margin.top, tick.position, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+      svgLine(svg, tick.position, GEOMETRIE_NATIVE_AEDAR.margin.top, tick.position, plotBottom, PALETTE_PDF.figureGrid, CAHIER_FIGURE_STROKE.gridWidthPx)
     }
     svgLine(
       svg,
-      nativeGeometry.margin.left,
-      plotHeight - nativeGeometry.margin.bottom,
-      panelWidth - nativeGeometry.margin.right,
-      plotHeight - nativeGeometry.margin.bottom,
+      GEOMETRIE_NATIVE_AEDAR.margin.left,
+      plotBottom,
+      plotRight,
+      plotBottom,
       PALETTE_PDF.figureAxis,
-      cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx),
+      CAHIER_FIGURE_STROKE.axisWidthPx,
     )
     for (const serie of ramp.series) {
       const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!)
@@ -704,7 +795,7 @@ async function dessinerRampes(
         node.setAttribute('d', path)
         node.setAttribute('fill', 'none')
         node.setAttribute('stroke', color)
-        node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.widthPx)))
+        node.setAttribute('stroke-width', String(CAHIER_FIGURE_STROKE.widthPx))
         node.setAttribute('stroke-linecap', CAHIER_FIGURE_STROKE.linecap)
         node.setAttribute('stroke-linejoin', CAHIER_FIGURE_STROKE.linejoin)
         svg.append(node)
@@ -714,33 +805,26 @@ async function dessinerRampes(
         node.setAttribute('d', path)
         node.setAttribute('fill', 'none')
         node.setAttribute('stroke', color)
-        node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.comparisonWidthPx)))
+        node.setAttribute('stroke-width', String(CAHIER_FIGURE_STROKE.comparisonWidthPx))
         node.setAttribute('stroke-opacity', String(CAHIER_FIGURE_STROKE.comparisonOpacity))
-        node.setAttribute('stroke-dasharray', dashArrayMm(CAHIER_FIGURE_STROKE.comparisonDashPx))
+        node.setAttribute('stroke-dasharray', CAHIER_FIGURE_STROKE.comparisonDashPx.join(' '))
         node.setAttribute('stroke-linecap', CAHIER_FIGURE_STROKE.linecap)
         node.setAttribute('stroke-linejoin', CAHIER_FIGURE_STROKE.linejoin)
         svg.append(node)
       }
-      for (const point of points) {
-        if (point.value !== null) svgCircle(svg, geom.x(point.xValue), geom.y(point.value), 0.8, color)
-      }
+      // The native ramp paints paths only: no invented point marker.
     }
-    await poserSvg(doc, svg, px, py + 2, panelWidth, plotHeight)
-    dessinerAxes(doc, mesure, {
+    await poserSvg(doc, svg, px, py + 2, panelWidth, panelHeight)
+    dessinerAxesAedar(doc, mesure, {
       x: px,
       y: py + 2,
-      height: plotHeight,
-      width: panelWidth,
+      panelWidth,
       xTicks: geom.xTicks,
       yTicks: geom.yTicks,
       xTitle: ramp.xAxis.label,
       yTitle: titreAvecUnite(ramp.yAxis.label, ramp.yAxis.unit),
-      plotLeft: nativeGeometry.margin.left,
-      plotBottom: plotHeight - nativeGeometry.margin.bottom,
-      plotWidth: panelWidth - nativeGeometry.margin.left - nativeGeometry.margin.right,
-      plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
     })
-    bas = Math.max(bas, py + plotHeight)
+    bas = Math.max(bas, py + 2 + panelHeight)
   }
   // One centred legend for the whole figure, not one per panel.
   const legend = dessinerLegendeFigure(
@@ -941,21 +1025,26 @@ async function dessinerBarresGroupees(
   const { doc, x, y, width, mesure } = options
   const gap = 6
   const panelWidth = (width - gap) / 2
-  const plotHeight = 42
-  const leftTitle = plierTexte(projection.volume.title, mesure, {
+  const panelHeight = hauteurPanneauAedar(panelWidth)
+  const subtitle = options.explorerTypequLabel ?? null
+  const plierTitre = (title: string) => plierTexte(title, mesure, {
     police: ROLE_PDF.sousTitreFigure.police,
     taillePt: TAILLE.sousTitre,
     largeurMax: panelWidth,
     casserMotsLongs: true,
   }).map((ligne) => ligne.texte)
-  const rightTitle = plierTexte(
+  const avecSousTitre = (lines: string[]) => [
+    ...lines,
+    ...(subtitle ? plierTitre(subtitle) : []),
+  ]
+  // Native figcaption: two stacked spans (figure title + selected equipment type).
+  const leftTitle = avecSousTitre(plierTitre(projection.volume.title))
+  const rightTitle = avecSousTitre(plierTitre(
     options.distributionTitle ?? projection.distribution.figure.xAxisTitle,
-    mesure,
-    { police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true },
-  ).map((ligne) => ligne.texte)
-  const drawGrouped = async (originX: number, figure: CahierGroupedVerticalBarFigureData, hidden: readonly string[], titleLines: string[], unit: string) => {
+  ))
+  const dessinerTitres = (lines: readonly string[], originX: number): number => {
     let cy = y
-    for (const line of titleLines) {
+    for (const line of lines) {
       textePdf(doc, line, originX + panelWidth / 2, cy, {
         police: ROLE_PDF.sousTitreFigure.police,
         taille: TAILLE.sousTitre,
@@ -964,69 +1053,76 @@ async function dessinerBarresGroupees(
       })
       cy += mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18
     }
+    return cy
+  }
+  const native = GEOMETRIE_NATIVE_AEDAR
+  const plotBottom = native.height - native.margin.bottom
+  const plotRight = native.width - native.margin.right
+  const drawGrouped = async (
+    originX: number,
+    figure: CahierGroupedVerticalBarFigureData,
+    hidden: readonly string[],
+    titleLines: readonly string[],
+    unit: string,
+  ) => {
+    const cy = dessinerTitres(titleLines, originX)
     const visible = visibleGroupedBarSeries(figure, hidden)
     const scale = groupedBarScaleFromFigure(visible)
-    const nativeGeometry = { width: panelWidth, height: plotHeight, margin: { top: 2, right: 2, bottom: 2, left: 9 } } as const
-    const bar = groupedBarGeometryFromFigure(nativeGeometry, figure.categories.length, visible.length, scale)
-    const svg = svgCanvas(panelWidth, plotHeight)
-    const ticks = groupedBarTicksFromFigure(figure, nativeGeometry, bar, scale)
+    const bar = groupedBarGeometryFromFigure(native, figure.categories.length, visible.length, scale)
+    const ticks = groupedBarTicksFromFigure(figure, native, bar, scale)
+    const svg = svgCanvas(native.width, native.height)
     for (const tick of ticks.y) {
-      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+      svgLine(svg, native.margin.left, tick.position, plotRight, tick.position, PALETTE_PDF.figureGrid, CAHIER_FIGURE_STROKE.gridWidthPx)
     }
-    svgLine(svg, nativeGeometry.margin.left, nativeGeometry.height - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, nativeGeometry.height - nativeGeometry.margin.bottom, PALETTE_PDF.figureAxis, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
+    svgLine(svg, native.margin.left, plotBottom, plotRight, plotBottom, PALETTE_PDF.figureAxis, CAHIER_FIGURE_STROKE.axisWidthPx)
+    const yFor = (value: number) => native.margin.top
+      + (1 - (value - scale.minimum) / (scale.maximum - scale.minimum))
+      * (native.height - native.margin.top - native.margin.bottom)
     visible.forEach((series, seriesIndex) => {
       figure.categories.forEach((_category, categoryIndex) => {
         const value = series.values[categoryIndex]
         if (value === null || value === undefined || !Number.isFinite(value)) return
-        svgRect(svg, bar.x(categoryIndex, seriesIndex), Math.min(nativeGeometry.height - nativeGeometry.margin.bottom - bar.height(value), nativeGeometry.height - nativeGeometry.margin.bottom - bar.height(value)), bar.barWidth, bar.height(value), couleurSerie(series.color))
+        svgRect(
+          svg,
+          bar.x(categoryIndex, seriesIndex),
+          Math.min(yFor(value), yFor(0)),
+          bar.barWidth,
+          bar.height(value),
+          couleurSerie(`color-mix(in srgb, ${series.color} ${OPACITE_BARRES_GROUPEES * 100}%, var(--paper))`),
+        )
       })
     })
-    await poserSvg(doc, svg, originX, cy + 2, panelWidth, plotHeight)
-    dessinerAxes(doc, mesure, {
+    await poserSvg(doc, svg, originX, cy + 2, panelWidth, panelHeight)
+    dessinerAxesAedar(doc, mesure, {
       x: originX,
       y: cy + 2,
-      height: plotHeight,
-      width: panelWidth,
+      panelWidth,
       xTicks: ticks.x,
       yTicks: ticks.y,
       xTitle: figure.xAxisTitle,
       yTitle: titreAvecUnite(figure.yAxisTitle, unit),
-      plotLeft: nativeGeometry.margin.left,
-      plotBottom: nativeGeometry.height - nativeGeometry.margin.bottom,
-      plotWidth: panelWidth - nativeGeometry.margin.left - nativeGeometry.margin.right,
-      plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
     })
     // The native grouped chart has no legend of its own; the explorer's one
     // shared mode legend is painted once under the whole figure below.
-    return cy + 2 + plotHeight
+    return cy + 2 + panelHeight
   }
   const leftBottom = await (async () => {
-    let cy = y
-    for (const line of leftTitle) {
-      textePdf(doc, line, x + panelWidth / 2, cy, {
-        police: ROLE_PDF.sousTitreFigure.police,
-        taille: TAILLE.sousTitre,
-        couleur: PALETTE_PDF.brand700,
-        align: 'center',
-      })
-      cy += mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18
-    }
+    const cy = dessinerTitres(leftTitle, x)
     const values = projection.volume.series.flatMap((serie) =>
       serie.points.flatMap((point) => [point.value, point.referenceValue]))
     const scale = cahierIntegerYAxisScale(values)
-    const nativeGeometry = { width: panelWidth, height: plotHeight, margin: { top: 2, right: 2, bottom: 2, left: 9 } } as const
     const first = projection.volume.series[0]!
     const points = rampPoints(first)
-    const geom = rampGeometry(points, scale, nativeGeometry, projection.volume.yAxis.unit)
-    const svg = svgCanvas(panelWidth, plotHeight)
+    const geom = rampGeometry(points, scale, native, projection.volume.yAxis.unit)
+    const svg = svgCanvas(native.width, native.height)
     for (const tick of geom.yTicks) {
-      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+      svgLine(svg, native.margin.left, tick.position, plotRight, tick.position, PALETTE_PDF.figureGrid, CAHIER_FIGURE_STROKE.gridWidthPx)
     }
     // The volume ramp is the same native ramp grammar: vertical grid per cut.
     for (const tick of geom.xTicks) {
-      svgLine(svg, tick.position, nativeGeometry.margin.top, tick.position, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+      svgLine(svg, tick.position, native.margin.top, tick.position, plotBottom, PALETTE_PDF.figureGrid, CAHIER_FIGURE_STROKE.gridWidthPx)
     }
-    svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.figureAxis, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
+    svgLine(svg, native.margin.left, plotBottom, plotRight, plotBottom, PALETTE_PDF.figureAxis, CAHIER_FIGURE_STROKE.axisWidthPx)
     for (const serie of projection.volume.series) {
       const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!)
       const seriePoints = rampPoints(serie)
@@ -1035,7 +1131,7 @@ async function dessinerBarresGroupees(
         node.setAttribute('d', path)
         node.setAttribute('fill', 'none')
         node.setAttribute('stroke', color)
-        node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.widthPx)))
+        node.setAttribute('stroke-width', String(CAHIER_FIGURE_STROKE.widthPx))
         node.setAttribute('stroke-linecap', CAHIER_FIGURE_STROKE.linecap)
         node.setAttribute('stroke-linejoin', CAHIER_FIGURE_STROKE.linejoin)
         svg.append(node)
@@ -1047,33 +1143,26 @@ async function dessinerBarresGroupees(
         node.setAttribute('d', path)
         node.setAttribute('fill', 'none')
         node.setAttribute('stroke', color)
-        node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.comparisonWidthPx)))
+        node.setAttribute('stroke-width', String(CAHIER_FIGURE_STROKE.comparisonWidthPx))
         node.setAttribute('stroke-opacity', String(CAHIER_FIGURE_STROKE.comparisonOpacity))
-        node.setAttribute('stroke-dasharray', dashArrayMm(CAHIER_FIGURE_STROKE.comparisonDashPx))
+        node.setAttribute('stroke-dasharray', CAHIER_FIGURE_STROKE.comparisonDashPx.join(' '))
         node.setAttribute('stroke-linecap', CAHIER_FIGURE_STROKE.linecap)
         node.setAttribute('stroke-linejoin', CAHIER_FIGURE_STROKE.linejoin)
         svg.append(node)
       }
-      for (const point of seriePoints) {
-        if (point.value !== null) svgCircle(svg, geom.x(point.xValue), geom.y(point.value), 0.8, color)
-      }
+      // No invented point markers on the native ramp.
     }
-    await poserSvg(doc, svg, x, cy + 2, panelWidth, plotHeight)
-    dessinerAxes(doc, mesure, {
+    await poserSvg(doc, svg, x, cy + 2, panelWidth, panelHeight)
+    dessinerAxesAedar(doc, mesure, {
       x,
       y: cy + 2,
-      height: plotHeight,
-      width: panelWidth,
+      panelWidth,
       xTicks: geom.xTicks,
       yTicks: geom.yTicks,
       xTitle: projection.volume.xAxis.label,
       yTitle: titreAvecUnite(projection.volume.yAxis.label, projection.volume.yAxis.unit),
-      plotLeft: nativeGeometry.margin.left,
-      plotBottom: plotHeight - nativeGeometry.margin.bottom,
-      plotWidth: panelWidth - nativeGeometry.margin.left - nativeGeometry.margin.right,
-      plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
     })
-    return cy + 2 + plotHeight
+    return cy + 2 + panelHeight
   })()
   const rightBottom = await drawGrouped(x + panelWidth + gap, projection.distribution.figure, projection.distribution.hiddenSeriesKeys, rightTitle, options.distributionUnit ?? '')
   const legend = [
@@ -1365,31 +1454,41 @@ export function hauteurFigurePdf(
   projection: CahierFigureProjection,
   width: number,
   mesure: MesureTexte,
-  options?: Pick<OptionsFigurePdf, 'comparisonProof' | 'distributionTitle' | 'modeleBars'>,
+  options?: Pick<OptionsFigurePdf, 'comparisonProof' | 'distributionTitle' | 'modeleBars' | 'explorerTypequLabel'>,
 ): number {
   const titre = hauteurTitre(projection, width, mesure)
   const gapLegende = LEGENDE_APRES_PLOT
   switch (projection.family) {
     case 'aedar-ramps': {
-      const panelWidth = width / Math.max(1, projection.ramps.length)
+      const gap = 6
+      const nominal = Math.max(1, projection.ramps.length)
+      const panelWidth = (width - gap * (nominal - 1)) / nominal
       const titles = Math.max(...projection.ramps.map((ramp) => plierTexte(ramp.title, mesure, {
         police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true,
       }).length))
       const legend = hauteurLegende(mesure, rampLegend(projection, Boolean(options?.comparisonProof)), width)
-      return titles * mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18 + 2 + 42 + gapLegende + legend
+      return titles * mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18
+        + 2 + hauteurPanneauAedar(panelWidth) + gapLegende + legend
     }
     case 'aedar-equipment-explorer': {
-      const panelWidth = width / 2
+      const gap = 6
+      const panelWidth = (width - gap) / 2
       const rightTitle = options?.distributionTitle ?? projection.distribution.figure.xAxisTitle
+      const subtitleLines = options?.explorerTypequLabel
+        ? plierTexte(options.explorerTypequLabel, mesure, {
+          police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true,
+        }).length
+        : 0
       const titles = Math.max(
         plierTexte(projection.volume.title, mesure, { police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
         plierTexte(rightTitle, mesure, { police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
-      )
+      ) + subtitleLines
       const legend = hauteurLegende(mesure, [
         ...projection.volume.series.map((serie) => ({ label: serie.label, color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!) })),
         ...(options?.comparisonProof ? [{ label: 'Groupe comparé', color: PALETTE_PDF.editorialMuted, dash: true }] : []),
       ], width)
-      return titles * mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18 + 2 + 42 + gapLegende + legend
+      return titles * mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18
+        + 2 + hauteurPanneauAedar(panelWidth) + gapLegende + legend
     }
     case 'aedar-car-overview': {
       const scalars = Math.ceil(Math.max(1, projection.scalars.length) / 2) * 22

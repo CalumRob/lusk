@@ -247,8 +247,22 @@ or starts an acquisition.
   comparative proof.
 - `cahierPdfTableau.ts` builds tables only from the B models. Columns are
   measured with the embedded face; focal/comparison pairs stay together; a
-  too-wide table is split into coherent column groups and a too-tall table into
-  row groups with repeated title/header. Numbers are never truncated
+  **one table per figure panel** — never one per x-axis value and never the
+  transposed model. The approved generator has two shapes, and the adapter must
+  choose the one its family ships (`desktop.js:appendTimeRampTables` /
+  `appendSandboxTables`):
+  * **flat (A)**: `aedar-ramps`. Rows are `cut × mode`; the columns are
+    `Temps | Mode | territory | Groupe¹ | Rang`. The mode is a row dimension, so
+    a flat table always has the same five columns and never column-splits.
+  * **grouped (B)**: any figure with a legend-key axis (`aedar-equipment-explorer`
+    volume ramp and distribution). Rows are the panel's x-axis categories
+    (`Temps` or `Statistique` row-dimension header); columns are grouped by the
+    visible legend key, each group carrying `[territory | Groupe¹ | Rang]` and
+    its series colour. A grouped table splits only at complete group boundaries
+    and a too-tall table only at complete rows, with repeated title/header.
+  The `¹` footnote marks the compared **`Groupe`** cell, never `Rang`; the rank
+  value stays the producer-served display and is never recomputed. Numbers are
+  never truncated
   (`CahierPdfTableLayoutError` rejects an impossible cell). Only a narrow
   territory table header may wrap twice then ellipsize; group names never are.
   `Indisponible` becomes `Indisp.` only when measured width requires it, and the
@@ -264,9 +278,17 @@ or starts an acquisition.
   only paints the resulting primitives.
 - `cahierPdfFigures.ts` paints those shared primitives (SVG marks + selectable
   jsPDF text) from the frozen #1022 projections/native models. It does not own
-  a second axis/geometry/colour policy. Native titles, x/y axis titles, units,
-  legends, ranks and owner-observed comparison layers are preserved; no
-  title parsing and no PDF-only significant-figure/rounding policy.
+  a second axis/geometry/colour policy. The two AEDAR families read the screen
+  SVG's own 640×300 viewBox and margins (top 22 / right 68 / bottom 62 / left 64)
+  and map that box to the panel width; SVG strokes stay in native units
+  (`CAHIER_FIGURE_STROKE` 2.5 / 1.5 / 1 px) and the local figure transform
+  scales them once. Axis titles take the `.type-figure-label` uppercase role,
+  the ramp paints paths only (no invented point markers), grouped bars composite
+  their native `fill-opacity: .78` onto the single paper ground, and the
+  explorer panel titles carry the figcaption's second line
+  (`typequLabel`). Native titles, units, legends, ranks and owner-observed
+  comparison layers are preserved; no title parsing and no PDF-only
+  significant-figure/rounding policy.
 - `cahierPdfComposer.ts` owns the A4 document: paper/ground, brand home link,
   centered page title, focal territory link, red rule, comparison subtitle,
   figures, value tables, notes, `Source(s) :` bottom-right, page-local
@@ -278,8 +300,14 @@ or starts an acquisition.
   derived from the installed `@fontsource-variable` packages by
   `scripts/derive-pdf-fonts.py`; `src/assets/fonts/pdf/manifest.json` records the
   source package/file, byte size and SHA-256, and each face has its OFL licence
-  copy. A missing/truncated face rejects generation. There is no system-font
-  substitution, runtime font download or reader-side Python.
+  copy. The **wordmark** is the face the browser actually displays: `main.ts`
+  loads only the `normal` Newsreader CSS and `LuskBrand.vue` asks for italic, so
+  the browser synthesises the oblique. The derived face is therefore the upright
+  `wght=600` instance skewed by `(1,0,.25,1,0,0)` with `post.italicAngle = -14`
+  (advance `lusk` = 1.855 em, 33-point `k`), exactly as the approved generator
+  did; the packaged real italic cut is not embedded. A missing/truncated face
+  rejects generation. There is no system-font substitution, runtime font
+  download or reader-side Python.
 - `cahierColorRoles.ts` owns the Cahier-scoped colour aliases used by the real
   shell and the document painter, including the cycle-shared hue that DESIGN.md's
   mode scale does not tokenise. `cahierPdfPalette.ts` resolves the canonical
@@ -354,8 +382,8 @@ A compared-group column now carries an explicit **`Rang`** column with the
 producer-served display (`formatServedRank`, `=1er/43` for ties) or the approved
 em dash when the producer served none; the rank is never a second micro-line
 under the value and is never recomputed. Column groups keep focal, comparison
-and rank adjacent, including when a wide table is split into coherent column
-groups. The 24 px heading / 20 px stacked-table / 12 px and 8 px caption rhythm
+and rank adjacent, including when a wide grouped table is split at complete
+legend-key boundaries. The 24 px heading / 20 px stacked-table / 12 px and 8 px caption rhythm
 is emitted as measured block gaps, so a continuation is chosen instead of
 shrinking the document.
 
@@ -364,6 +392,33 @@ indicator chip (new line after the reference value, `--brand-200`, tie/singleton
 rules). The correction above applies only to the exported value table, which
 follows the approved desktop generator (`desktop.js` prints a `Rang` column and
 ink table text); it does not restyle or move any on-screen chip.
+
+### Second owner rejection (2026-11-17): face, table orientation, figure geometry
+
+The owner rejected the exported PDF a second time. The three complaints were
+source-level, not cosmetic, and the earlier "faithful" report was not evidence:
+
+- **Wordmark face.** The composer embedded the packaged *real* italic
+  (`italicAngle −17`, advance 1.777 em, 55-point `k`) while the screen and R1–R3
+  use the browser's synthetic oblique of the upright 600 face (`−14`, 1.855 em,
+  33-point `k`). The derived asset, manifest `derivation.matrix` and the painted
+  `lusk` advance are now pinned by `cahier-pdf-approved-grammar.spec.ts`.
+- **Table orientation.** The distribution table was the exact transpose:
+  columns = deciles, rows = modes, one table repeated per decile group.
+  `projectExplorer` now reads rows from `distFigure.categories` (published
+  labels), columns from the visible legend series, and the painter renders the
+  two-level header. `projectRamps` keeps the approved flat shape A. The gate
+  reads the literal matrix from the PDF, not only `Rang` text.
+- **Figure geometry.** The AEDAR painters used their own 96 dpi millimetre box
+  (`{top:2,right:2,bottom:2,left:9}`), invented point markers, sentence-case
+  axis titles, opaque bars and a one-line panel title. They now consume the
+  native 640×300 viewBox/margins and stroke grammar, paint no marker, uppercase
+  the axis-title role, composite `.78`, and print the figcaption's second line.
+
+`cahierPdfFixtures.captureExplorerRangs` was also degenerate (no focal
+distribution measure, constant group value), so an otherwise correct table
+looked unavailable. It now serves a varied synthetic matrix with scope-correct
+ranks; the values are fixture literals, never production data.
 
 `cahier-pdf-fidelity.spec.ts` asserts this contract on real PDFs: the embedded
 role metrics and tracking advance of the focal identity, the wordmark/page-title

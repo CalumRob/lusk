@@ -148,8 +148,8 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
       'Diversité de l’offre accessible (moyenne par adresse)',
       'Établissements accessibles (moyenne par adresse)',
       'Valeurs des graphiques',
-      'Temps d’accès',
-      'Volume de l’offre',
+      'TEMPS D’ACCÈS',
+      'VOLUME DE L’OFFRE',
       'Voiture',
       'Vélo (LTS2)',
       'Vélo (LTS4)',
@@ -172,12 +172,10 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
         .map((item) => item.str)
         .filter((value) => value.trim().length > 0)
     }
-    expect(rangee('5 min')).toEqual([
-      '5 min', '5', 'Indisponible', '—', '5', 'Indisponible', '—', '5', 'Indisponible', '—',
-    ])
-    expect(rangee('20 min')).toEqual([
-      '20 min', '5', 'Indisponible', '—', '5', 'Indisponible', '—', '5', 'Indisponible', '—',
-    ])
+    // Approved flat shape A: one row per cut × mode with Temps | Mode |
+    // territory | Groupe¹ | Rang, so a cut repeats once per visible mode.
+    expect(rangee('5 min')).toEqual(['5 min', 'Voiture', '5', 'Indisponible', '—'])
+    expect(rangee('20 min')).toEqual(['20 min', 'Voiture', '5', 'Indisponible', '—'])
     // Numbers are never truncated: the native display is intact.
     expect(lecture.texteComplet).not.toContain('Indisp. :')
     // Brand, live identity and source links are real annotations.
@@ -243,16 +241,17 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
     expect(tailles.size).toBe(1)
   })
 
-  it('exerce « Indisp. » avec une explication unique et tous les déciles', async () => {
+  it('imprime les catégories publiées en lignes, sans abréger un mot qui tient', async () => {
     const { lecture } = await generer(requetePour('aedar-equipment-explorer'), 'audit-explorer.pdf')
-    contientTout(lecture, ['Indisp.', 'Indisp. : valeur indisponible.'])
-    expect(occurrences(lecture, 'Indisp. : valeur indisponible.')).toBe(1)
-    for (const label of ['Min', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'Max']) {
+    // Approved shape B: the row dimension is the published statistic label,
+    // never the short axis tick (`D1`) and never a mode.
+    for (const label of ['Minimum', 'Décile 1', 'Décile 9', 'Maximum']) {
       expect(lecture.texteComplet).toContain(label)
     }
-    // The full unavailable word remains in the volume table; only the narrow
-    // decile cells use the approved abbreviation.
+    // The grouped columns are wide enough for the full word: no abbreviation
+    // is invented, and no explanation note appears.
     expect(lecture.texteComplet).toContain('Indisponible')
+    expect(lecture.texteComplet).not.toContain('Indisp. :')
   })
 
   it('garde le groupe comparé conditionnel à la preuve réellement servie', async () => {
@@ -271,7 +270,7 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
 
   it('conserve les accents français et les glyphes embarqués', async () => {
     const { lecture } = await generer(requetePour('aedar-access'), 'glyphes.pdf')
-    for (const valeur of ['Établissements', 'Vélo', 'd’accès', 'Diversité', 'Indisponible']) {
+    for (const valeur of ['Établissements', 'Vélo', 'D’ACCÈS', 'Diversité', 'Indisponible']) {
       expect(lecture.texteComplet).toContain(valeur)
     }
     // headline-400, text-400/500/600, fira-code-500, newsreader-600-italic.

@@ -310,6 +310,71 @@ export async function policesEmbarquees(octets: Uint8Array): Promise<number> {
   return count
 }
 
+/**
+ * Raw `FontFile2` programs embedded in the document, in object order. The
+ * caller identifies a face by its actual metrics/outlines, never by a nominal
+ * family name.
+ */
+export async function programmesPoliceEmbarques(
+  octets: Uint8Array,
+): Promise<readonly Uint8Array[]> {
+  const document = await PDFDocument.load(Uint8Array.from(octets).buffer)
+  const programs: Uint8Array[] = []
+  for (const [, object] of document.context.enumerateIndirectObjects()) {
+    if (!object || typeof (object as { lookup?: unknown }).lookup !== 'function') continue
+    const lookup = (object as unknown as { lookup: (name: PDFName) => unknown }).lookup
+    const value = lookup.call(object, PDFName.of('FontFile2'))
+    if (value instanceof PDFRawStream) {
+      const raw = Buffer.from(value.getContents())
+      // pdf-lib exposes the stored bytes; a FlateDecode stream stays zlib-
+      // compressed. The composer always embeds deflated programs.
+      programs.push(raw[0] === 0x78 ? Uint8Array.from(inflateSync(raw)) : Uint8Array.from(raw))
+    }
+  }
+  return programs
+}
+
+/** Fill alpha (`ca`) values declared in one page's ExtGState resources. */
+export async function opacitesRemplissagePdf(
+  octets: Uint8Array,
+  pageIndex = 0,
+): Promise<readonly number[]> {
+  const document = await PDFDocument.load(Uint8Array.from(octets).buffer)
+  const page = document.getPages()[pageIndex]
+  const resources = page.node.Resources()
+  if (!resources) return []
+  const states = resources.lookup(PDFName.of('ExtGState'))
+  if (!states) return []
+  const values: number[] = []
+  const entries = (states as unknown as { entries: () => Iterable<[PDFName, unknown]> }).entries
+  for (const [, state] of entries.call(states)) {
+    const lookup = (state as { lookup?: (name: PDFName) => unknown }).lookup
+    if (!lookup) continue
+    const ca = lookup.call(state, PDFName.of('ca'))
+    if (ca && typeof (ca as { asNumber?: () => number }).asNumber === 'function') {
+      values.push((ca as { asNumber: () => number }).asNumber())
+    }
+  }
+  return values
+}
+
+/** Line widths (`setLineWidth`) actually painted on one page, in points. */
+export async function epaisseursTraitPdf(
+  octets: Uint8Array,
+  pageIndex = 0,
+): Promise<readonly number[]> {
+  const pdf = await getDocument({ data: Uint8Array.from(octets), useSystemFonts: false }).promise
+  const page = await pdf.getPage(pageIndex + 1)
+  const operators = await page.getOperatorList()
+  const widths: number[] = []
+  for (let index = 0; index < operators.fnArray.length; index += 1) {
+    if (operators.fnArray[index] !== OPS.setLineWidth) continue
+    const value = operators.argsArray[index]?.[0]
+    if (typeof value === 'number') widths.push(value)
+  }
+  return widths
+}
+
 export function captureDe(request: CahierExportRequest): CahierExportCapture {
   return request.capture
 }

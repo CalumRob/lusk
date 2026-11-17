@@ -23,7 +23,7 @@ import type {
 } from './cahierExportAdapters'
 import type { MesureTexte } from './cahierPdfMesure'
 import { plierTexte, tronquerParMesure } from './cahierPdfMesure'
-import { PALETTE_PDF } from './cahierPdfPalette'
+import { PALETTE_PDF, couleurPdf } from './cahierPdfPalette'
 import { ROLE_PDF } from './cahierPdfGrammaire'
 
 export const TAILLE_TABLEAU = {
@@ -71,6 +71,11 @@ export interface TableauPdfPart {
   readonly key: string
   readonly title: string
   readonly titleLines: readonly string[]
+  /** Approved table shape: `grouped` paints a legend-key header row. */
+  readonly layout: 'flat' | 'grouped'
+  /** Row-dimension header (`Temps`, `Statistique`); null for a scalar table. */
+  readonly rowHeader: string | null
+  readonly groups: readonly GroupeEnteteTableauPdf[]
   readonly columns: readonly ColonneTableauPdf[]
   readonly rows: readonly LigneTableauPdf[]
   readonly width: number
@@ -82,6 +87,14 @@ export interface TableauPdfPart {
   readonly abbreviatedUnavailable: boolean
   /** Identifies the original table across its continued page parts. */
   readonly sourceKey: string
+}
+
+/** One coloured legend-key header spanning its focal/compared/rank columns. */
+export interface GroupeEnteteTableauPdf {
+  readonly key: string
+  readonly label: string
+  readonly color: string | null
+  readonly width: number
 }
 
 export interface OptionsTableauPdf {
@@ -109,11 +122,12 @@ function mesurerEntete(
   largeur: number,
   mesure: MesureTexte,
   nomTerritoire: string | null,
+  role: { readonly police: string; readonly taille: number },
 ): readonly string[] {
   const compact = nomTerritoire !== null && column.label === nomTerritoire
   const commun = {
-    police: ROLE_PDF.enteteTableauSous.police,
-    taillePt: ROLE_PDF.enteteTableauSous.taille,
+    police: role.police,
+    taillePt: role.taille,
     largeurMax: largeur - 2,
     casserMotsLongs: true,
   } as const
@@ -147,16 +161,18 @@ function colonneRang(column: CahierTableColumn): ColonneTableauPdf['column'] {
 }
 
 /**
- * Reading order of one table: a mode's focal value, its compared-group value and
- * the served rank stay adjacent, as in the approved desktop grouped table.
- * Series-keyed families are regrouped by their mode; flat families already
- * arrive as focal/comparison pairs and keep their source order.
+ * Reading order of one table. A grouped table keeps every legend-key group
+ * together (focal, compared value and served rank), in the visible series
+ * order the legend shows. A flat table keeps its source column order.
  */
-function ordonnerColonnes(columns: readonly CahierTableColumn[]): readonly CahierTableColumn[] {
-  if (!columns.some((column) => column.seriesKey !== null)) return columns
+function ordonnerColonnes(
+  columns: readonly CahierTableColumn[],
+  groupable: boolean,
+): readonly CahierTableColumn[] {
+  if (!groupable) return columns
   const groupes = new Map<string, CahierTableColumn[]>()
   for (const column of columns) {
-    const groupe = column.seriesKey ?? column.key
+    const groupe = column.groupLabel ?? column.seriesKey ?? column.key
     const liste = groupes.get(groupe) ?? []
     liste.push(column)
     groupes.set(groupe, liste)
@@ -165,42 +181,32 @@ function ordonnerColonnes(columns: readonly CahierTableColumn[]): readonly Cahie
 }
 
 /**
- * One focal/comparison pair is one group: a flat table's consecutive focal and
- * comparison columns stay together (and receive the rank column), while a
- * series-keyed table groups all its mode columns.
+ * Approved column grouping. A grouped table (approved shape B) has one group
+ * per legend key: the territory/focal column, its compared `Groupe` column and
+ * the rank column stay together. A flat table (approved shape A) is one
+ * group: its mode is a row dimension, so its five columns never split.
  */
-function groupesSource(columns: readonly CahierTableColumn[]): readonly (readonly CahierTableColumn[])[] {
-  if (columns.some((column) => column.seriesKey !== null)) {
-    const groupes = new Map<string, CahierTableColumn[]>()
-    for (const column of columns) {
-      const groupe = column.seriesKey ?? column.key
-      const liste = groupes.get(groupe) ?? []
-      liste.push(column)
-      groupes.set(groupe, liste)
-    }
-    return [...groupes.values()]
+function groupesSource(
+  columns: readonly CahierTableColumn[],
+  groupable: boolean,
+): readonly (readonly CahierTableColumn[])[] {
+  if (!groupable) return [columns]
+  const groupes = new Map<string, CahierTableColumn[]>()
+  for (const column of columns) {
+    const groupe = column.groupLabel ?? column.seriesKey ?? column.key
+    const liste = groupes.get(groupe) ?? []
+    liste.push(column)
+    groupes.set(groupe, liste)
   }
-  const groupes: CahierTableColumn[][] = []
-  let index = 0
-  while (index < columns.length) {
-    const column = columns[index]!
-    const suivant = columns[index + 1]
-    if (column.kind === 'focal' && suivant?.kind === 'comparison') {
-      groupes.push([column, suivant])
-      index += 2
-    } else {
-      groupes.push([column])
-      index += 1
-    }
-  }
-  return groupes
+  return [...groupes.values()]
 }
 
 interface ColonneAffichage {
   readonly column: CahierTableColumn
   readonly role: RoleColonneTableauPdf
   readonly groupe: string
-  readonly natural: number
+  /** Natural width in mm; a flat table may shrink it proportionally to fit. */
+  natural: number
 }
 
 /**
@@ -212,6 +218,12 @@ export function construireTableauxPdf(
   options: OptionsTableauPdf,
 ): readonly TableauPdfPart[] {
   const { mesure, largeurDisponible, nomTerritoire } = options
+  /** Approved shape B renders a coloured legend-key header row. */
+  const grouped = table.columns.some((column) => column.groupLabel != null)
+  /** Any series/legend-key grouping means a split may only cut whole groups. */
+  const groupable = table.columns.some((column) => (
+    column.groupLabel != null || column.seriesKey !== null
+  ))
   if (table.columns.length === 0) {
     return [{
       key: table.key,
@@ -222,6 +234,9 @@ export function construireTableauxPdf(
         taillePt: ROLE_PDF.titreTableau.taille,
         largeurMax: largeurDisponible,
       }).map((ligne) => ligne.texte),
+      layout: 'flat',
+      rowHeader: table.rowHeader ?? null,
+      groups: [],
       columns: [],
       rows: [],
       width: largeurDisponible,
@@ -256,10 +271,19 @@ export function construireTableauxPdf(
     ),
   )
 
-  const groupesOrdonnes = groupesSource(ordonnerColonnes(table.columns))
+  // The flat approved shape (A) prints its single header row in the mode role;
+  // the grouped shape (B) keeps the smaller legend-role sub-header.
+  const roleEntete = grouped ? ROLE_PDF.enteteTableauSous : ROLE_PDF.enteteTableauMode
+  const groupesOrdonnes = groupesSource(ordonnerColonnes(table.columns, groupable), groupable)
   const groupeParCle = new Map<string, string>()
+  const libelleGroupe = new Map<string, { label: string; color: string | null }>()
   groupesOrdonnes.forEach((groupe, index) => {
     for (const colonne of groupe) groupeParCle.set(colonne.key, `g${index}`)
+    const premiere = groupe[0]!
+    libelleGroupe.set(`g${index}`, {
+      label: premiere.groupLabel ?? '',
+      color: premiere.groupColor ?? null,
+    })
   })
   const colonnesOrdonnees = groupesOrdonnes.flat()
   const affichage: ColonneAffichage[] = []
@@ -304,8 +328,8 @@ export function construireTableauxPdf(
       )
       const enteteRang = mesure.largeur(
         libelleRang.label,
-        ROLE_PDF.enteteTableauSous.police,
-        ROLE_PDF.enteteTableauSous.taille,
+        roleEntete.police,
+        roleEntete.taille,
       )
       affichage.push({
         column: libelleRang,
@@ -313,6 +337,29 @@ export function construireTableauxPdf(
         groupe,
         natural: Math.max(7, enteteRang, rangMax) + 2.6,
       })
+    }
+  }
+
+  // A single column that cannot fit next to its row label is a genuine layout
+  // error: no number may be truncated, narrowed or abbreviated to hide it.
+  for (const colonne of affichage) {
+    if (colonne.natural + largeurLibelle > largeurDisponible) {
+      throw new CahierPdfTableLayoutError(
+        `La valeur de la colonne « ${colonne.column.label} » dépasse la largeur utile du PDF ; aucun nombre n’est tronqué.`,
+      )
+    }
+  }
+
+  // A flat table is the approved shape A: its mode is a row dimension, so the
+  // column set is fixed and the browser's `table-layout: fixed` fits it to the
+  // content box. Reproduce that proportional fit instead of inventing a column
+  // split (there is no complete group boundary to split at).
+  if (!groupable) {
+    const naturels = affichage.reduce((sum, item) => sum + item.natural, 0)
+    if (naturels + largeurLibelle > largeurDisponible) {
+      const disponible = Math.max(7 * affichage.length, largeurDisponible - largeurLibelle)
+      const facteur = disponible / naturels
+      for (const item of affichage) item.natural = Math.max(7, item.natural * facteur)
     }
   }
 
@@ -369,12 +416,12 @@ export function construireTableauxPdf(
           width,
           headerLines,
           headerHeight: mesure.hauteurLigne(
-            ROLE_PDF.enteteTableauSous.police,
-            ROLE_PDF.enteteTableauSous.taille,
+            roleEntete.police,
+            roleEntete.taille,
           ) * 1.16 + 1.8,
         }
       }
-      const headerLines = mesurerEntete(item.column, width, mesure, nomTerritoire)
+      const headerLines = mesurerEntete(item.column, width, mesure, nomTerritoire, roleEntete)
       return {
         key: item.column.key,
         column: item.column,
@@ -383,7 +430,7 @@ export function construireTableauxPdf(
         width,
         headerLines,
         headerHeight: headerLines.length * (
-          mesure.hauteurLigne(ROLE_PDF.enteteTableauSous.police, ROLE_PDF.enteteTableauSous.taille) * 1.16
+          mesure.hauteurLigne(roleEntete.police, roleEntete.taille) * 1.16
         ) + 1.8,
       }
     })
@@ -443,17 +490,48 @@ export function construireTableauxPdf(
         height: hauteurCellule * hauteurLigneTexte * 1.12 + 1.8,
       }
     })
-    const headerHeight = Math.max(...colonnes.map((colonne) => colonne.headerHeight), 4)
+    const hauteurMode = grouped
+      ? mesure.hauteurLigne(ROLE_PDF.enteteTableauMode.police, ROLE_PDF.enteteTableauMode.taille) * 1.16 + 1.6
+      : 0
+    const headerHeight = hauteurMode + Math.max(...colonnes.map((colonne) => colonne.headerHeight), 4)
+    const groups: GroupeEnteteTableauPdf[] = []
+    for (const colonne of colonnes) {
+      const dernier = groups[groups.length - 1]
+      if (dernier && dernier.key === colonne.groupe) {
+        groups[groups.length - 1] = { ...dernier, width: dernier.width + colonne.width }
+      } else {
+        const libelle = libelleGroupe.get(colonne.groupe)
+        groups.push({
+          key: colonne.groupe,
+          label: libelle?.label ?? '',
+          color: libelle?.color ? couleurPdf(libelle.color) : null,
+          width: colonne.width,
+        })
+      }
+    }
     const hasComparison = comparatifProuve && options.ownerDisplayed !== false
-    parts.push({
-      key: `${table.key}${groupIndex ? `:colonnes-${groupIndex + 1}` : ''}`,
-      sourceKey: table.key,
-      title: table.title,
-      titleLines: plierTexte(table.title, mesure, {
+    const titleLines = [
+      ...plierTexte(table.title, mesure, {
         police: ROLE_PDF.titreTableau.police,
         taillePt: ROLE_PDF.titreTableau.taille,
         largeurMax: largeurDisponible,
       }).map((ligne) => ligne.texte),
+      ...(table.subtitle
+        ? plierTexte(table.subtitle, mesure, {
+          police: ROLE_PDF.titreTableau.police,
+          taillePt: ROLE_PDF.titreTableau.taille,
+          largeurMax: largeurDisponible,
+        }).map((ligne) => ligne.texte)
+        : []),
+    ]
+    parts.push({
+      key: `${table.key}${groupIndex ? `:colonnes-${groupIndex + 1}` : ''}`,
+      sourceKey: table.key,
+      title: table.title,
+      titleLines,
+      layout: grouped ? 'grouped' : 'flat',
+      rowHeader: table.rowHeader ?? null,
+      groups: grouped ? groups : [],
       columns: colonnes,
       rows,
       width: colonnes.reduce((sum, colonne) => sum + colonne.width, largeurLibelle),

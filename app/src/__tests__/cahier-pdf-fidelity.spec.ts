@@ -220,12 +220,14 @@ describe('grammaire PDF — rôles approuvés et métriques réelles', () => {
     const titres = lecture.textes.filter((item) => item.taille >= 7.5
       && item.str.startsWith('Établissements accessibles'))
     expect(titres.length).toBeGreaterThanOrEqual(2)
+    // Approved shape B for this fixture: two visible modes × two tables, so
+    // one explicit `Rang` header per legend-key group.
     const rangs = lecture.textes.filter((item) => item.str === 'Rang')
-    expect(rangs.length).toBeGreaterThanOrEqual(6)
-    expect(lecture.texteComplet).toContain('=1er/43')
+    expect(rangs).toHaveLength(4)
+    expect(lecture.texteComplet).toContain('1er/43')
     // The served rank has its own cell: same row as the compared value and to
     // its right, not a second line under the number.
-    const rang = lecture.textes.find((item) => item.str === '=1er/43')!
+    const rang = lecture.textes.find((item) => item.str === '1er/43')!
     const valeurs = lecture.textes.filter((item) => item.y === rang.y && item.x < rang.x
       && /^\d+([.,]\d+)?$/.test(item.str))
     expect(valeurs.length).toBeGreaterThan(0)

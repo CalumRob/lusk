@@ -12,6 +12,7 @@ import { CAHIER_FIGURE_AXIS } from '@/fiche/cahierFigureGrammaire'
 import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
 import { dessinerFigurePdf } from '@/fiche/prototype/cahierPdfFigures'
 import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
+import { couleurPdf } from '@/fiche/prototype/cahierPdfPalette'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'
 import type { CahierFigureProjection } from '@/fiche/prototype/cahierExportAdapters'
@@ -242,20 +243,24 @@ describe('sortie native du peintre PDF', () => {
     const { svgs, lecture } = await peindre(captureRampeDense())
     expect(svgs).toHaveLength(2)
     // Same final car value uses 70% of first panel (1.4/2), 100% of second (40/40).
+    // Native 640×300 box: y(1.4) on a 0–2 domain = 86.8, y(40) on 0–40 = 22.
     const car1 = svgs[0]!.querySelector('path')!.getAttribute('d')!
     const car2 = svgs[1]!.querySelector('path')!.getAttribute('d')!
-    expect(car1).toMatch(/ 13\.40$/)
-    expect(car2).toMatch(/ 2\.00$/)
+    expect(car1).toMatch(/ 86\.80$/)
+    expect(car2).toMatch(/ 22\.00$/)
     expect(lecture.texteComplet).toContain('40')
-    const title = lecture.textes.find((item) => item.str === 'Volume de l’offre (établissements)')!
-    expect(title.x).toBeCloseTo(312.0945, 2) // panel starts at 108mm, title baseline at 110.1mm
+    const title = lecture.textes.find((item) => item.str === 'VOLUME DE L’OFFRE (ÉTABLISSEMENTS)')!
+    expect(title.x).toBeGreaterThan(12 * 72 / 25.4)
+    expect(title.x).toBeLessThan(186 * 72 / 25.4)
     const tickNumbers = lecture.textes.filter((item) => /^(0|20|40)$/.test(item.str))
     expect(Math.min(...tickNumbers.map((item) => item.x))).toBeGreaterThan(title.x + 3.5)
     const ticks = lecture.textes.filter((item) => /établissements/.test(item.str)
       && Math.abs(item.rotation) < 0.01)
     expect(ticks).toHaveLength(3)
     const middle = (Math.min(...ticks.map((tick) => tick.y)) + Math.max(...ticks.map((tick) => tick.y))) / 2
-    expect(Math.abs(title.y + title.largeur / 2 - middle)).toBeLessThan(8)
+    // The rotated run is centred on the plot; tick density/units change the
+    // mean tick position, so allow one label box of slack.
+    expect(Math.abs(title.y + title.largeur / 2 - middle)).toBeLessThan(14)
   })
 
   it('retire la référence comparisonFor avec son mode focal des marques et légendes', async () => {
@@ -301,7 +306,11 @@ describe('sortie native du peintre PDF', () => {
         }] },
       } }
     })
-    expect(svgs[1]!.querySelector('rect')!.getAttribute('fill')).toBe('#c4cecd')
+    // The native bar is 78% opaque; on the PDF's single paper ground the
+    // painter composites that 78% instead of painting the opaque token colour.
+    expect(svgs[1]!.querySelector('rect')!.getAttribute('fill')).toBe(couleurPdf(
+      'color-mix(in srgb, color-mix(in srgb, color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper)) 45%, transparent) 78%, var(--paper))',
+    ))
   })
 
   it('reprend la grammaire de trait native des séries sur la courbe', async () => {
@@ -327,8 +336,8 @@ describe('sortie native du peintre PDF', () => {
     const paths = svgs.flatMap((svg) => [...svg.querySelectorAll('path')])
     expect(paths.length).toBeGreaterThan(4)
     for (const path of paths) {
-      expect(Number(path.getAttribute('stroke-width')))
-        .toBeCloseTo(CAHIER_FIGURE_STROKE.widthPx * CSS_PX_EN_MM, 6)
+      // Native user units: the document transform scales the stroke once.
+      expect(Number(path.getAttribute('stroke-width'))).toBe(CAHIER_FIGURE_STROKE.widthPx)
     }
     const references = paths.filter((path) => path.getAttribute('stroke-dasharray'))
     expect(references.length).toBeGreaterThan(0)

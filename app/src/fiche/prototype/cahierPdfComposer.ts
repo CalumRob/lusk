@@ -52,7 +52,7 @@ import {
 } from './cahierPdfFigures'
 import type { MesureTexte } from './cahierPdfMesure'
 import { plierTexte } from './cahierPdfMesure'
-import { PALETTE_PDF, hexVersRgb } from './cahierPdfPalette'
+import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
 import {
   EXPLICATION_INDISPONIBLE,
   construireTableauxPdf,
@@ -514,6 +514,11 @@ function construirePages(
       .filter((figure) => figure.family === 'aedar-equipment-explorer')
       .map((figure) => [figure.slot, figure.model.distributionFigureTitle]),
   )
+  const libellesTypequ = new Map(
+    capture.figures
+      .filter((figure) => figure.family === 'aedar-equipment-explorer')
+      .map((figure) => [figure.slot, figure.effective.typequLabel]),
+  )
   const modelesBars = new Map(
     capture.figures
       .filter((figure) => figure.family === 'mobilite-bars')
@@ -552,6 +557,9 @@ function construirePages(
         comparisonProof: preuveFigureComparative(projection, capture),
         ...(titresDistribution.has(projection.slot)
           ? { distributionTitle: titresDistribution.get(projection.slot) }
+          : {}),
+        ...(libellesTypequ.has(projection.slot)
+          ? { explorerTypequLabel: libellesTypequ.get(projection.slot) }
           : {}),
         ...(modelesBars.has(projection.slot)
           ? { modeleBars: modelesBars.get(projection.slot) }
@@ -916,25 +924,62 @@ function dessinerTableau(
     cy += 2.4
   }
   const enteteTop = cy
-  // Header row: the row-label column is distinct; data headers start over
-  // their actual data cells, not over the row-label column.
+  const hauteurMode = part.layout === 'grouped'
+    ? mesure.hauteurLigne(ROLE_PDF.enteteTableauMode.police, ROLE_PDF.enteteTableauMode.taille) * 1.16 + 1.6
+    : 0
+  const sousEnteteTop = enteteTop + hauteurMode
+  // Row-dimension header (`Temps` / `Statistique`): in the grouped shape it is
+  // the approved `th[colspan=1][rowspan=2]`, bottom-aligned across both header
+  // rows; in the flat shape it is the first column's header.
+  if (part.rowHeader) {
+    // The native row-dimension `th[colspan][rowspan=2]` uses the mode role
+    // (`--type-figure-mode`, 7.36 pt), not the smaller sub-header role.
+    texte(doc, part.rowHeader, x + 1, part.layout === 'grouped' ? cy + part.headerHeight - 2.4 : sousEnteteTop, {
+      police: ROLE_PDF.enteteTableauMode.police,
+      taille: ROLE_PDF.enteteTableauMode.taille,
+      couleur: PALETTE_PDF.ink,
+    })
+  }
+  if (part.layout === 'grouped') {
+    // Legend-key header row: one coloured, spanning cell per mode, exactly like
+    // the approved generator's `th[colspan=count]` with `column.color`.
+    let gx = x + part.rowLabelWidth
+    for (const groupe of part.groups) {
+      texte(doc, groupe.label, gx + 1, enteteTop, {
+        police: ROLE_PDF.enteteTableauMode.police,
+        taille: ROLE_PDF.enteteTableauMode.taille,
+        couleur: groupe.color ?? PALETTE_PDF.ink,
+      })
+      gx += groupe.width
+    }
+    setStroke(doc, PALETTE_PDF.marginSoft)
+    doc.setLineWidth(mm(ptDepuisCssPx(1)))
+    doc.line(x, sousEnteteTop, x + width, sousEnteteTop)
+  }
+  // Sub-header row: over each group, `[territory | Groupe¹ | Rang]`; the flat
+  // shape uses the same native header role as its own row-dimension cell.
+  const roleEntete = part.layout === 'grouped' ? ROLE_PDF.enteteTableauSous : ROLE_PDF.enteteTableauMode
   let cx = x + part.rowLabelWidth
   for (const colonne of part.columns) {
-    let hy = cy
-    for (const [lineIndex, ligne] of colonne.headerLines.entries()) {
-      texte(doc, ligne, cx + 1, hy, {
-        police: ROLE_PDF.enteteTableauSous.police,
-        taille: ROLE_PDF.enteteTableauSous.taille,
+    let hy = sousEnteteTop
+    for (const ligne of colonne.headerLines) {
+      // Both approved shapes carry the comparison footnote on the compared
+      // column's own label (`Groupe¹` grouped, `Groupe comparé¹` flat).
+      // Only the two approved AEDAR table shapes carry the `¹` footnote; a
+      // plain scalar/bar table keeps its plain compared-group header.
+      const estGroupe = colonne.role !== 'rang'
+        && colonne.column.kind === 'comparison'
+        && part.hasComparison
+        && part.rowHeader !== null
+      // The `¹` footnote belongs to the compared group, never to `Rang`.
+      // R3 prints it inline in the same `Groupe¹` run (the generator clones a
+      // `font:inherit` anchor), so the sub-header keeps one run and one role.
+      texte(doc, estGroupe ? `${ligne}¹` : ligne, cx + 1, hy, {
+        police: roleEntete.police,
+        taille: roleEntete.taille,
         couleur: PALETTE_PDF.ink,
         align: 'left',
       })
-      if (colonne.role === 'rang' && part.hasComparison && lineIndex === colonne.headerLines.length - 1) {
-        texte(doc, '¹', cx + 1 + mesure.largeur(ligne, ROLE_PDF.enteteTableauSous.police, ROLE_PDF.enteteTableauSous.taille) + 0.6, hy, {
-          police: ROLE_PDF.legende.police,
-          taille: 5.4,
-          couleur: PALETTE_PDF.muted,
-        })
-      }
       hy += 2.4
     }
     cx += colonne.width
@@ -986,11 +1031,13 @@ function dessinerTableau(
         largeurMax: colonne.width - 2,
         casserMotsLongs: cellule.cell.value === null,
       })
+      // The approved flat table inks the mode label with its series colour.
+      const couleurCellule = cellule.cell.color ? couleurPdf(cellule.cell.color) : PALETTE_PDF.ink
       lignes.forEach((ligne, ligneIndex) => {
         texte(doc, ligne.texte, cellX + 1, cy + 1 + ligneIndex * 2.5, {
           police: ROLE_PDF.valeurTableau.police,
           taille: ROLE_PDF.valeurTableau.taille,
-          couleur: PALETTE_PDF.ink,
+          couleur: couleurCellule,
         })
       })
       rh = Math.max(rh, lignes.length * 2.5)
@@ -1194,6 +1241,11 @@ export async function composerCahierPdf(
       .filter((figure) => figure.family === 'aedar-equipment-explorer')
       .map((figure) => [figure.slot, figure.model.distributionValueUnit]),
   )
+  const libellesTypequ = new Map(
+    capture.figures
+      .filter((figure) => figure.family === 'aedar-equipment-explorer')
+      .map((figure) => [figure.slot, figure.effective.typequLabel]),
+  )
   const total = documentPdf.pages.length
   try {
   for (let index = 0; index < documentPdf.pages.length; index += 1) {
@@ -1239,6 +1291,9 @@ export async function composerCahierPdf(
             ...(modele ? { modeleBars: modele } : {}),
             ...(modeleCourbe ? { modeleCourbe: modeleCourbe as never } : {}),
             ...(distributionTitle ? { distributionTitle } : {}),
+            ...(libellesTypequ.has(bloc.projection.slot)
+              ? { explorerTypequLabel: libellesTypequ.get(bloc.projection.slot) }
+              : {}),
             ...(unitesDistribution.get(bloc.projection.slot)
               ? { distributionUnit: unitesDistribution.get(bloc.projection.slot) }
               : {}),

@@ -17,6 +17,7 @@ import type {
 import { captureCahierSection } from '@/fiche/prototype/cahierExportCapture'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
+import { AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { ContentEvidence } from '@/fiche/content/themeContent'
 import type { ControleComparaison } from '@/fiche/comparisonContext'
@@ -444,14 +445,6 @@ export function captureExplorerRangs(): CahierExportCapture {
   const statistics = figure.model.distributionStatistics as readonly { key: string }[]
   const fact = figure.model.facts.find((candidate: any) => candidate.typequ === typequ)
   if (!fact) throw new Error('Fixture PDF : fait focal introuvable pour les rangs.')
-  // Native focal measures: four horizons × the selected modes (producer-shaped).
-  let focalIndex = 0
-  for (const mode of modes) {
-    for (const horizon of AEDAR_EQUIPMENT_BUCKET_HORIZONS) {
-      fact.measures[`count_${horizon}_${mode}_mean`] = 10 + horizon + (focalIndex % 3)
-      focalIndex += 1
-    }
-  }
   const source = {
     typequ,
     source_id: 'aedar_bretagne',
@@ -465,28 +458,38 @@ export function captureExplorerRangs(): CahierExportCapture {
     direction: 'high' as const,
   }
   const cells: Record<string, unknown>[] = []
-  let index = 0
   for (const mode of modes) {
-    for (const horizon of AEDAR_EQUIPMENT_BUCKET_HORIZONS) {
+    // Canonical producer mode order, not the effective-modes order: a request
+    // that shows a subset must read the same served cells for that mode.
+    const modeIndex = AEDAR_RAMP_MODES.indexOf(mode as never)
+    // Volume ramp: a served mean per horizon (same cells the screen reads).
+    for (const [horizonIndex, horizon] of AEDAR_EQUIPMENT_BUCKET_HORIZONS.entries()) {
+      const measure = `count_${horizon}_${mode}_mean`
+      fact.measures[measure] = 10 + horizonIndex + modeIndex
       cells.push({
         ...source,
-        measure: `count_${horizon}_${mode}_mean`,
-        group_value: 10 + horizon,
-        rank: 1 + (index % 3),
+        measure,
+        group_value: 9 + horizonIndex + modeIndex,
+        rank: 1 + ((horizonIndex + modeIndex) % 5),
         rank_size: 43,
-        rank_ties: index % 7 === 0 ? 2 : null,
+        rank_ties: (horizonIndex + modeIndex) % 7 === 0 ? 2 : null,
       })
-      for (const statistic of statistics) {
-        cells.push({
-          ...source,
-          measure: `count_${horizon}_${mode}_${statistic.key}`,
-          group_value: 5 + (index % 20),
-          rank: 1 + ((index + 1) % 5),
-          rank_size: 43,
-          rank_ties: null,
-        })
-      }
-      index += 1
+    }
+    // Distribution: every published statistic carries a focal and a served
+    // comparison cell. Values vary by mode and statistic so the exported table
+    // demonstrates a populated, complete comparison instead of a constant.
+    for (const [statisticIndex, statistic] of statistics.entries()) {
+      const index = modeIndex * statistics.length + statisticIndex
+      const measure = `count_15_${mode}_${statistic.key}`
+      fact.measures[measure] = 10 + index
+      cells.push({
+        ...source,
+        measure,
+        group_value: 100 + index,
+        rank: 1 + (index % 5),
+        rank_size: 43,
+        rank_ties: null,
+      })
     }
   }
   figure.effective.comparison = {
@@ -531,7 +534,12 @@ export function captureExplorerRangsDense(): CahierExportCapture {
     axisLabel: index === 0 ? 'Min' : index === 24 ? 'Max' : `D${index}`,
   }))
   figure.model.distributionStatistics = statistics
-  const cells = figure.effective.comparison.cells as Record<string, unknown>[]
+  // Rebuild the distribution comparison from scratch: the 25 published
+  // statistics replace the 11 of the base fixture instead of stacking two
+  // cell sets for the same measures.
+  const cells = (figure.effective.comparison.cells as Record<string, unknown>[])
+    .filter((cell) => String(cell.measure).endsWith('_mean'))
+  figure.effective.comparison.cells = cells
   const modes = figure.effective.modes as readonly string[]
   let index = 0
   for (const mode of modes) {
