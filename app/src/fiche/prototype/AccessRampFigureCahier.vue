@@ -220,12 +220,12 @@ function timeHitboxStyle(index: number): Record<string, string> {
 
 .access-ramp-grid line {
   stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent);
-  stroke-width: var(--cahier-figure-grid-width);
+  stroke-width: var(--cahier-figure-stroke-grid-width);
 }
 
 .access-ramp-grid .access-ramp-axis {
   stroke: var(--cahier-theme-strong);
-  stroke-width: var(--cahier-figure-axis-width);
+  stroke-width: var(--cahier-figure-stroke-axis-width);
 }
 
 .access-ramp-grid .access-ramp-median {
@@ -245,15 +245,15 @@ function timeHitboxStyle(index: number): Record<string, string> {
 
 .access-ramp-line {
   fill: none;
-  stroke-linecap: var(--cahier-figure-series-cap);
-  stroke-linejoin: var(--cahier-figure-series-join);
-  stroke-width: var(--cahier-figure-series-width);
+  stroke-linecap: var(--cahier-figure-stroke-series-cap);
+  stroke-linejoin: var(--cahier-figure-stroke-series-join);
+  stroke-width: var(--cahier-figure-stroke-series-width);
 }
 
 .access-ramp-line--comparison {
-  stroke-dasharray: var(--cahier-figure-comparison-dash);
-  opacity: var(--cahier-figure-comparison-opacity);
-  stroke-width: var(--cahier-figure-comparison-width);
+  stroke-dasharray: var(--cahier-figure-stroke-comparison-dash);
+  opacity: var(--cahier-figure-stroke-comparison-opacity);
+  stroke-width: var(--cahier-figure-stroke-comparison-width);
 }
 
 .access-ramp-line--territory {

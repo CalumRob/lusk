@@ -186,21 +186,27 @@ export const CAHIER_FIGURE_STROKE = {
  * CSS custom properties carrying the grammar into a mounted native figure.
  * Callers pass the owner object explicitly so a single owner substitution
  * reaches both the screen binding and the PDF painter.
+ *
+ * The `--cahier-figure-stroke-*` namespace is deliberately distinct from
+ * `CAHIER_FIGURE_AXIS.width`'s legacy `--cahier-figure-axis-width` (1 CSS px,
+ * consumed by `CahierFigureAxes.vue`/`cahierFigure.css`). Two grammars, two
+ * variable scopes: nesting the figures cannot silently promote the native
+ * 1.5 px stroke to the axis geometry width or the reverse.
  */
 export function cahierFigureStrokeVars(
   stroke: CahierFigureStroke = CAHIER_FIGURE_STROKE,
 ): Record<string, string> {
   return {
-    '--cahier-figure-series-width': `${stroke.widthPx}px`,
-    '--cahier-figure-series-cap': stroke.linecap,
-    '--cahier-figure-series-join': stroke.linejoin,
-    '--cahier-figure-comparison-width': `${stroke.comparisonWidthPx}px`,
-    '--cahier-figure-comparison-dash': stroke.comparisonDashPx.join(' '),
-    '--cahier-figure-comparison-opacity': String(stroke.comparisonOpacity),
-    '--cahier-figure-marker-width': `${stroke.markerWidthPx}px`,
-    '--cahier-figure-marker-dash': stroke.markerDashPx.join(' '),
-    '--cahier-figure-grid-width': `${stroke.gridWidthPx}px`,
-    '--cahier-figure-axis-width': `${stroke.axisWidthPx}px`,
+    '--cahier-figure-stroke-series-width': `${stroke.widthPx}px`,
+    '--cahier-figure-stroke-series-cap': stroke.linecap,
+    '--cahier-figure-stroke-series-join': stroke.linejoin,
+    '--cahier-figure-stroke-comparison-width': `${stroke.comparisonWidthPx}px`,
+    '--cahier-figure-stroke-comparison-dash': stroke.comparisonDashPx.join(' '),
+    '--cahier-figure-stroke-comparison-opacity': String(stroke.comparisonOpacity),
+    '--cahier-figure-stroke-marker-width': `${stroke.markerWidthPx}px`,
+    '--cahier-figure-stroke-marker-dash': stroke.markerDashPx.join(' '),
+    '--cahier-figure-stroke-grid-width': `${stroke.gridWidthPx}px`,
+    '--cahier-figure-stroke-axis-width': `${stroke.axisWidthPx}px`,
   }
 }
 

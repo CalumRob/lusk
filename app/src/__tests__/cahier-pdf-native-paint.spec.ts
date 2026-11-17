@@ -5,17 +5,22 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { jsPDF } from 'jspdf'
 import AccessRampFigureCahier from '@/fiche/prototype/AccessRampFigureCahier.vue'
+import CahierGroupedVerticalBarChart from '@/fiche/prototype/CahierGroupedVerticalBarChart.vue'
+import CahierMobiliteComparisonBars from '@/fiche/prototype/CahierMobiliteComparisonBars.vue'
 import CahierMobiliteRaccordementCurve from '@/fiche/prototype/CahierMobiliteRaccordementCurve.vue'
+import { CAHIER_FIGURE_AXIS } from '@/fiche/cahierFigureGrammaire'
+import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
 import { dessinerFigurePdf } from '@/fiche/prototype/cahierPdfFigures'
 import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'
 import type { CahierFigureProjection } from '@/fiche/prototype/cahierExportAdapters'
-import type { MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
+import type { MobiliteBarsFigureEvidence, MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
 import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import {
   CAHIER_FIGURE_STROKE,
   CSS_PX_EN_MM,
+  cahierFigureStrokeVars,
   curveGeometry,
   cssPxToMm,
 } from '@/fiche/prototype/cahierFigureNativeGeometry'
@@ -43,6 +48,30 @@ function rampeNative(): TimeRampFigureData {
     provenance: null,
     comparisonLabel: 'Territoires comparables',
   }
+}
+
+/** Minimal native grouped figure used only to read the injected stroke metrics. */
+function barresGroupeesNative(): CahierGroupedVerticalBarFigureData {
+  return {
+    categories: [
+      { key: 'early', label: 'Début', axisLabel: 'Début' },
+      { key: 'late', label: 'Fin', axisLabel: 'Fin' },
+    ],
+    series: [
+      { key: 'north', label: 'Nord', color: '#356a83', values: [2, 5] },
+      { key: 'south', label: 'Sud', color: '#a94b65', values: [3, 4] },
+    ],
+    xAxisTitle: 'Période',
+    yAxisTitle: 'Mesure',
+    description: 'Comparaison groupée de deux séries.',
+  }
+}
+
+/** Minimal native compared-bars model, taken from the shared dense capture. */
+function barresCompareesNative(): MobiliteBarsFigureEvidence {
+  const capture = captureBarresDense()
+  const figure = capture.figures.find((candidate) => candidate.family === 'mobilite-bars')!
+  return (figure as unknown as { model: { figure: MobiliteBarsFigureEvidence } }).model.figure
 }
 
 // Public native painter -> SVG serialization boundary. Text still uses real
@@ -82,6 +111,87 @@ async function peindre(
     }, projection)
   }
   return { svgs, lecture: await lirePdf(doc.output('blob')) }
+}
+
+type ContratTrait = readonly [
+  chemin: string,
+  selecteur: string,
+  propriete: string,
+  variable: string,
+]
+
+/**
+ * Every shared stroke metric the four affected SFCs actually paint with.
+ * `propriete` is asserted, not a bare `var(--...)` occurrence: a rule that
+ * declares the variable for something else cannot satisfy the contract.
+ */
+const CONTRAT_TRAIT: readonly ContratTrait[] = [
+  ['src/fiche/prototype/AccessRampFigureCahier.vue', '.access-ramp-grid line', 'stroke-width', '--cahier-figure-stroke-grid-width'],
+  ['src/fiche/prototype/AccessRampFigureCahier.vue', '.access-ramp-grid .access-ramp-axis', 'stroke-width', '--cahier-figure-stroke-axis-width'],
+  ['src/fiche/prototype/AccessRampFigureCahier.vue', '.access-ramp-line', 'stroke-width', '--cahier-figure-stroke-series-width'],
+  ['src/fiche/prototype/AccessRampFigureCahier.vue', '.access-ramp-line', 'stroke-linecap', '--cahier-figure-stroke-series-cap'],
+  ['src/fiche/prototype/AccessRampFigureCahier.vue', '.access-ramp-line', 'stroke-linejoin', '--cahier-figure-stroke-series-join'],
+  ['src/fiche/prototype/AccessRampFigureCahier.vue', '.access-ramp-line--comparison', 'stroke-width', '--cahier-figure-stroke-comparison-width'],
+  ['src/fiche/prototype/AccessRampFigureCahier.vue', '.access-ramp-line--comparison', 'stroke-dasharray', '--cahier-figure-stroke-comparison-dash'],
+  ['src/fiche/prototype/AccessRampFigureCahier.vue', '.access-ramp-line--comparison', 'opacity', '--cahier-figure-stroke-comparison-opacity'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__grid line', 'stroke-width', '--cahier-figure-stroke-grid-width'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__grid .mobilite-raccordement-curve__axis', 'stroke-width', '--cahier-figure-stroke-axis-width'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__territory', 'stroke-width', '--cahier-figure-stroke-series-width'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__territory', 'stroke-linecap', '--cahier-figure-stroke-series-cap'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__territory', 'stroke-linejoin', '--cahier-figure-stroke-series-join'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__comparison', 'stroke-width', '--cahier-figure-stroke-comparison-width'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__comparison', 'stroke-dasharray', '--cahier-figure-stroke-comparison-dash'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__comparison', 'stroke-linecap', '--cahier-figure-stroke-series-cap'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__comparison', 'stroke-linejoin', '--cahier-figure-stroke-series-join'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__comparison', 'opacity', '--cahier-figure-stroke-comparison-opacity'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__marker-line', 'stroke-width', '--cahier-figure-stroke-marker-width'],
+  ['src/fiche/prototype/CahierMobiliteRaccordementCurve.vue', '.mobilite-raccordement-curve__marker-line', 'stroke-dasharray', '--cahier-figure-stroke-marker-dash'],
+  ['src/fiche/prototype/CahierMobiliteComparisonBars.vue', '.mobilite-comparison-bars__grid line', 'stroke-width', '--cahier-figure-stroke-grid-width'],
+  ['src/fiche/prototype/CahierMobiliteComparisonBars.vue', '.mobilite-comparison-bars__grid .mobilite-comparison-bars__axis', 'stroke-width', '--cahier-figure-stroke-axis-width'],
+  ['src/fiche/prototype/CahierGroupedVerticalBarChart.vue', '.cahier-grouped-vertical-bar-chart__grid line', 'stroke-width', '--cahier-figure-stroke-grid-width'],
+  ['src/fiche/prototype/CahierGroupedVerticalBarChart.vue', '.cahier-grouped-vertical-bar-chart__grid .cahier-grouped-vertical-bar-chart__axis', 'stroke-width', '--cahier-figure-stroke-axis-width'],
+]
+
+/** Inline `style` attribute of a mounted SVG -> exact custom-property map. */
+function proprietesSvg(style: string): Record<string, string> {
+  return Object.fromEntries(style.split(';').map((declaration) => declaration.trim()).filter(Boolean).map((declaration) => {
+    const colon = declaration.indexOf(':')
+    return [declaration.slice(0, colon).trim(), declaration.slice(colon + 1).trim()]
+  }))
+}
+
+/** Flat SFC `<style>` rules -> declarations of one exact selector. */
+function declarationsSfc(source: string, selector: string): Map<string, string> {
+  const style = /<style[^>]*>([\s\S]*?)<\/style>/.exec(source)?.[1] ?? ''
+  const attendu = selector.replace(/\s+/g, ' ').trim()
+  for (const block of style.split('}')) {
+    const open = block.indexOf('{')
+    if (open < 0) continue
+    const selecteurs = block.slice(0, open).split(',').map((value) => value.replace(/\s+/g, ' ').trim())
+    if (!selecteurs.includes(attendu)) continue
+    const declarations = new Map<string, string>()
+    for (const declaration of block.slice(open + 1).split(';')) {
+      const colon = declaration.indexOf(':')
+      if (colon < 0) continue
+      declarations.set(declaration.slice(0, colon).trim(), declaration.slice(colon + 1).trim())
+    }
+    return declarations
+  }
+  throw new Error(`Sélecteur de trait introuvable : ${selector}`)
+}
+
+/** Assert `selector { property: var(--variable) }`; `source` is injectable so
+ * the negative tests prove the contract fails on a corrupted or removed rule. */
+function exigerTrait(
+  chemin: string,
+  selecteur: string,
+  propriete: string,
+  variable: string,
+  source = readFileSync(resolve(process.cwd(), chemin), 'utf8'),
+): void {
+  const declarations = declarationsSfc(source, selecteur)
+  expect(declarations.has(propriete), `${selecteur} { ${propriete} } absent`).toBe(true)
+  expect(declarations.get(propriete), `${selecteur} { ${propriete} }`).toBe(`var(${variable})`)
 }
 
 describe('sortie native du peintre PDF', () => {
@@ -226,7 +336,7 @@ describe('sortie native du peintre PDF', () => {
     }
   })
 
-  it('injecte les métriques de trait du propriétaire dans les figures natives', () => {
+  it('injecte le propriétaire de trait complet sur les quatre figures natives', () => {
     const ramp = mount(AccessRampFigureCahier, {
       props: { timeRamp: rampeNative(), territoryName: 'Rennes' },
     })
@@ -237,49 +347,88 @@ describe('sortie native du peintre PDF', () => {
     const curve = mount(CahierMobiliteRaccordementCurve, {
       props: { figure: curveModel, comparison: { status: 'ready' } },
     })
-    const attendu: Record<string, string> = {
-      '--cahier-figure-series-width': `${CAHIER_FIGURE_STROKE.widthPx}px`,
-      '--cahier-figure-comparison-width': `${CAHIER_FIGURE_STROKE.comparisonWidthPx}px`,
-      '--cahier-figure-comparison-dash': CAHIER_FIGURE_STROKE.comparisonDashPx.join(' '),
-      '--cahier-figure-comparison-opacity': String(CAHIER_FIGURE_STROKE.comparisonOpacity),
-      '--cahier-figure-marker-width': `${CAHIER_FIGURE_STROKE.markerWidthPx}px`,
-      '--cahier-figure-marker-dash': CAHIER_FIGURE_STROKE.markerDashPx.join(' '),
-      '--cahier-figure-grid-width': `${CAHIER_FIGURE_STROKE.gridWidthPx}px`,
-      '--cahier-figure-axis-width': `${CAHIER_FIGURE_STROKE.axisWidthPx}px`,
+    const bars = mount(CahierMobiliteComparisonBars, {
+      props: { figure: barresCompareesNative(), comparison: { status: 'ready' } },
+    })
+    const grouped = mount(CahierGroupedVerticalBarChart, {
+      props: { figure: barresGroupeesNative() },
+    })
+    // The expectation is the owner's own mapping: one object, one substitution.
+    const attendu = { ...cahierFigureStrokeVars() }
+    expect(Object.keys(attendu)).toHaveLength(10)
+    const figures = [
+      ['rampe', ramp.get('svg').attributes('style')],
+      ['courbe', curve.get('svg[role="img"]').attributes('style')],
+      ['barres comparées', bars.get('.mobilite-comparison-bars__svg').attributes('style')],
+      ['barres groupées', grouped.get('.cahier-grouped-vertical-bar-chart__svg').attributes('style')],
+    ] as const
+    for (const [nom, style] of figures) {
+      expect(style, nom).toBeTruthy()
+      expect(proprietesSvg(style!), nom).toEqual(attendu)
     }
-    for (const [propriete, valeur] of Object.entries(attendu)) {
-      expect(ramp.get('svg').attributes('style'), propriete).toContain(`${propriete}: ${valeur}`)
-      expect(curve.get('svg[role="img"]').attributes('style'), propriete)
-        .toContain(`${propriete}: ${valeur}`)
-    }
-    expect(ramp.get('svg').attributes('style')).toContain(
-      `--cahier-figure-series-cap: ${CAHIER_FIGURE_STROKE.linecap}`,
-    )
-    expect(curve.get('svg[role="img"]').attributes('style')).toContain(
-      `--cahier-figure-series-join: ${CAHIER_FIGURE_STROKE.linejoin}`,
-    )
   })
 
-  it('consomme ces variables dans les règles de trait des SFC natives', () => {
-    const ramp = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/AccessRampFigureCahier.vue'), 'utf8')
-    const curve = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/CahierMobiliteRaccordementCurve.vue'), 'utf8')
-    const regles: [string, string, string][] = [
-      [ramp, '.access-ramp-line', '--cahier-figure-series-width'],
-      [ramp, '.access-ramp-line--comparison', '--cahier-figure-comparison-dash'],
-      [ramp, '.access-ramp-grid line', '--cahier-figure-grid-width'],
-      [ramp, '.access-ramp-grid .access-ramp-axis', '--cahier-figure-axis-width'],
-      [curve, '.mobilite-raccordement-curve__territory', '--cahier-figure-series-width'],
-      [curve, '.mobilite-raccordement-curve__comparison', '--cahier-figure-comparison-width'],
-      [curve, '.mobilite-raccordement-curve__marker-line', '--cahier-figure-marker-width'],
-      [curve, '.mobilite-raccordement-curve__grid line', '--cahier-figure-grid-width'],
-      [curve, '.mobilite-raccordement-curve__grid .mobilite-raccordement-curve__axis', '--cahier-figure-axis-width'],
-    ]
-    for (const [source, selecteur, variable] of regles) {
-      const start = source.indexOf(`${selecteur} {`)
-      expect(start, selecteur).toBeGreaterThanOrEqual(0)
-      const open = source.indexOf('{', start)
-      const close = source.indexOf('}', open)
-      expect(source.slice(open + 1, close), selecteur).toContain(`var(${variable})`)
+  it('consomme la variable du propriétaire sur chaque propriété de trait des quatre SFC', () => {
+    for (const [chemin, selecteur, propriete, variable] of CONTRAT_TRAIT) {
+      exigerTrait(chemin, selecteur, propriete, variable)
+    }
+  })
+
+  it('échoue si une déclaration de trait est corrompue ou supprimée (contrôle négatif)', () => {
+    const rampPath = 'src/fiche/prototype/AccessRampFigureCahier.vue'
+    const ramp = readFileSync(resolve(process.cwd(), rampPath), 'utf8')
+    const corrompu = ramp.replace(
+      'stroke-width: var(--cahier-figure-stroke-axis-width)',
+      'stroke-width: 1.5',
+    )
+    expect(corrompu).not.toBe(ramp)
+    expect(() => exigerTrait(
+      rampPath, '.access-ramp-grid .access-ramp-axis', 'stroke-width',
+      '--cahier-figure-stroke-axis-width', corrompu,
+    )).toThrow()
+
+    const curvePath = 'src/fiche/prototype/CahierMobiliteRaccordementCurve.vue'
+    const curve = readFileSync(resolve(process.cwd(), curvePath), 'utf8')
+    const sansTirets = curve.replace(
+      'stroke-dasharray: var(--cahier-figure-stroke-marker-dash);',
+      'stroke-dasharray: 3 3;',
+    )
+    expect(sansTirets).not.toBe(curve)
+    expect(() => exigerTrait(
+      curvePath, '.mobilite-raccordement-curve__marker-line', 'stroke-dasharray',
+      '--cahier-figure-stroke-marker-dash', sansTirets,
+    )).toThrow()
+
+    const barsPath = 'src/fiche/prototype/CahierMobiliteComparisonBars.vue'
+    const bars = readFileSync(resolve(process.cwd(), barsPath), 'utf8')
+    const supprime = bars.replace('; stroke-width: var(--cahier-figure-stroke-grid-width)', '')
+    expect(supprime).not.toBe(bars)
+    expect(() => exigerTrait(
+      barsPath, '.mobilite-comparison-bars__grid line', 'stroke-width',
+      '--cahier-figure-stroke-grid-width', supprime,
+    )).toThrow()
+  })
+
+  it('garde des portées CSS distinctes pour la géométrie d’axe et la grammaire de trait native', () => {
+    // Two grammars with the same axis theme: 1 px legacy axis geometry vs the
+    // native 1.5 px stroke. Neither may be aliased to the other (#1024).
+    expect(CAHIER_FIGURE_AXIS.width).toBe(1)
+    expect(CAHIER_FIGURE_STROKE.axisWidthPx).toBe(1.5)
+    const natives = Object.keys(cahierFigureStrokeVars())
+    expect(natives).not.toContain('--cahier-figure-axis-width')
+    expect(natives.every((nom) => nom.startsWith('--cahier-figure-stroke-'))).toBe(true)
+
+    // The legacy owner keeps its own name, value and fallback.
+    const axes = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/CahierFigureAxes.vue'), 'utf8')
+    expect(axes).toContain("'--cahier-figure-axis-width': `${CAHIER_FIGURE_AXIS.width}`")
+    const figureCss = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/cahierFigure.css'), 'utf8')
+    expect(figureCss).toContain('stroke-width: var(--cahier-figure-axis-width, 1)')
+
+    // No native figure reads or shadows the legacy geometry variable.
+    for (const chemin of new Set(CONTRAT_TRAIT.map(([source]) => source))) {
+      const source = readFileSync(resolve(process.cwd(), chemin), 'utf8')
+      expect(source, chemin).not.toContain('var(--cahier-figure-axis-width')
+      expect(source, chemin).not.toContain("'--cahier-figure-axis-width'")
     }
   })
 
@@ -294,7 +443,7 @@ describe('sortie native du peintre PDF', () => {
     expect(reference.getAttribute('stroke-linejoin')).toBe(CAHIER_FIGURE_STROKE.linejoin)
   })
 
-  it('fait suivre une mutation du propriétaire aux SFC natives et au PDF', async () => {
+  it('fait suivre une mutation du propriétaire aux quatre SFC natives et au PDF', async () => {
     const mute = {
       ...CAHIER_FIGURE_STROKE,
       widthPx: 4.25,
@@ -315,17 +464,25 @@ describe('sortie native du peintre PDF', () => {
     })
     try {
       const { mount: monter } = await import('@vue/test-utils')
-      const [{ default: Ramp }, { default: Curve }, { dessinerFigurePdf: peintre }] = await Promise.all([
+      const [
+        { default: Ramp },
+        { default: Curve },
+        { default: Bars },
+        { default: Grouped },
+        { dessinerFigurePdf: peintre },
+      ] = await Promise.all([
         import('@/fiche/prototype/AccessRampFigureCahier.vue'),
         import('@/fiche/prototype/CahierMobiliteRaccordementCurve.vue'),
+        import('@/fiche/prototype/CahierMobiliteComparisonBars.vue'),
+        import('@/fiche/prototype/CahierGroupedVerticalBarChart.vue'),
         import('@/fiche/prototype/cahierPdfFigures'),
       ])
       const rampStyle = monter(Ramp, {
         props: { timeRamp: rampeNative(), territoryName: 'Rennes' },
       }).get('svg').attributes('style')!
-      expect(rampStyle).toContain('--cahier-figure-series-width: 4.25px')
-      expect(rampStyle).toContain('--cahier-figure-comparison-dash: 12 7')
-      expect(rampStyle).toContain('--cahier-figure-grid-width: 2px')
+      expect(rampStyle).toContain('--cahier-figure-stroke-series-width: 4.25px')
+      expect(rampStyle).toContain('--cahier-figure-stroke-comparison-dash: 12 7')
+      expect(rampStyle).toContain('--cahier-figure-stroke-grid-width: 2px')
 
       const curveCapture = captureCourbeTrous()
       const curveModel = (curveCapture.figures.find((figure) => figure.family === 'mobilite-curve') as unknown as {
@@ -334,8 +491,20 @@ describe('sortie native du peintre PDF', () => {
       const curveStyle = monter(Curve, {
         props: { figure: curveModel, comparison: { status: 'ready' } },
       }).get('svg[role="img"]').attributes('style')!
-      expect(curveStyle).toContain('--cahier-figure-marker-width: 2.25px')
-      expect(curveStyle).toContain('--cahier-figure-marker-dash: 5 4')
+      expect(curveStyle).toContain('--cahier-figure-stroke-marker-width: 2.25px')
+      expect(curveStyle).toContain('--cahier-figure-stroke-marker-dash: 5 4')
+
+      const barsStyle = monter(Bars, {
+        props: { figure: barresCompareesNative(), comparison: { status: 'ready' } },
+      }).get('.mobilite-comparison-bars__svg').attributes('style')!
+      expect(barsStyle).toContain('--cahier-figure-stroke-grid-width: 2px')
+      expect(barsStyle).toContain('--cahier-figure-stroke-axis-width: 3px')
+
+      const groupedStyle = monter(Grouped, {
+        props: { figure: barresGroupeesNative() },
+      }).get('.cahier-grouped-vertical-bar-chart__svg').attributes('style')!
+      expect(groupedStyle).toContain('--cahier-figure-stroke-grid-width: 2px')
+      expect(groupedStyle).toContain('--cahier-figure-stroke-axis-width: 3px')
 
       const { svgs } = await peindre(curveCapture, true, undefined, false, peintre)
       const [focal, reference] = [...svgs[0]!.querySelectorAll('path')]
@@ -351,6 +520,15 @@ describe('sortie native du peintre PDF', () => {
         .map((line) => Number(line.getAttribute('stroke-width')))
       expect(solides).toContainEqual(expect.closeTo(cssPxToMm(mute.gridWidthPx), 6))
       expect(solides).toContainEqual(expect.closeTo(cssPxToMm(mute.axisWidthPx), 6))
+
+      // The bar family paints its grid/axis from the same mutated owner.
+      const { svgs: barSvgs } = await peindre(captureBarresDense(), true, undefined, false, peintre)
+      const barSolides = barSvgs
+        .flatMap((svg) => [...svg.querySelectorAll('line')])
+        .filter((line) => !line.getAttribute('stroke-dasharray'))
+        .map((line) => Number(line.getAttribute('stroke-width')))
+      expect(barSolides).toContainEqual(expect.closeTo(cssPxToMm(mute.gridWidthPx), 6))
+      expect(barSolides).toContainEqual(expect.closeTo(cssPxToMm(mute.axisWidthPx), 6))
     } finally {
       vi.doUnmock('@/fiche/prototype/cahierFigureNativeGeometry')
       vi.resetModules()

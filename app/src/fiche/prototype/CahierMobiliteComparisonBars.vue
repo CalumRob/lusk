@@ -37,6 +37,8 @@ import {
   mobiliteRatioValueLabel,
 } from './cahierMobiliteReadings'
 import {
+  CAHIER_FIGURE_STROKE,
+  cahierFigureStrokeVars,
   mobiliteBarGeometry,
   mobiliteBarScale,
   mobiliteBarStackedSegments,
@@ -70,6 +72,8 @@ const BASE_FIGURE_GEOMETRY = {
   height: 300,
   margin: { top: 22, right: 24, bottom: 62, left: 68 },
 } as const satisfies CahierFigureGeometry
+/** Same stroke owner as the ramp/curve; the SVG binds it locally (#1024). */
+const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
 const UNAVAILABLE_LABEL = 'Indisponible'
 const finiteValue = mobiliteFiniteValue
 const toneColor = mobiliteBarToneColor
@@ -311,6 +315,7 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
         <div ref="plotElement" class="mobilite-comparison-bars__plot cahier-figure-plot">
           <svg
             class="mobilite-comparison-bars__svg"
+            :style="figureStrokeStyle"
             :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`"
             preserveAspectRatio="xMidYMid meet"
             role="img"
@@ -472,8 +477,8 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
 .mobilite-comparison-bars { display: grid; gap: var(--space-3); min-width: 0; }
 .mobilite-comparison-bars__plot { position: relative; width: 100%; }
 .mobilite-comparison-bars__svg { display: block; width: 100%; height: auto; overflow: visible; }
-.mobilite-comparison-bars__grid line { stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent); stroke-width: 1; }
-.mobilite-comparison-bars__grid .mobilite-comparison-bars__axis { stroke: var(--cahier-theme-strong); stroke-width: 1.5; }
+.mobilite-comparison-bars__grid line { stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent); stroke-width: var(--cahier-figure-stroke-grid-width); }
+.mobilite-comparison-bars__grid .mobilite-comparison-bars__axis { stroke: var(--cahier-theme-strong); stroke-width: var(--cahier-figure-stroke-axis-width); }
 .mobilite-comparison-bars__bar { fill-opacity: .78; shape-rendering: crispEdges; }
 .mobilite-comparison-bars__segment { fill-opacity: .9; shape-rendering: crispEdges; }
 .mobilite-comparison-bars__comparison { fill-opacity: .62; shape-rendering: crispEdges; }

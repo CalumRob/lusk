@@ -99,7 +99,13 @@ export const CAHIER_MAP_LAYOUT_STYLE = {
   '--cahier-map-circle-border': '4px',
 } as const
 
-/** Mesures communes des axes SVG et ECharts. */
+/**
+ * Mesures communes des axes SVG et ECharts. `width` is the *axis geometry*
+ * width (1 CSS px), exposed as `--cahier-figure-axis-width` by
+ * `CahierFigureAxes.vue`. It is a distinct grammar from the native
+ * `CAHIER_FIGURE_STROKE` owner, whose CSS properties live under the
+ * `--cahier-figure-stroke-*` namespace; do not alias the two (#1024).
+ */
 export const CAHIER_FIGURE_AXIS = {
   width: 1,
   tickLength: 7,

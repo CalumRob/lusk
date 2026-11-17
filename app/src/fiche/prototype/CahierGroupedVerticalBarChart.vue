@@ -8,6 +8,8 @@ import type {
 } from '@/fiche/cahierFigureGrammaire'
 import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
 import {
+  CAHIER_FIGURE_STROKE,
+  cahierFigureStrokeVars,
   groupedBarGeometry,
   groupedBarScale,
   groupedBarTicks,
@@ -33,6 +35,8 @@ const BASE_FIGURE_GEOMETRY = {
   margin: { top: 22, right: 68, bottom: 62, left: 64 },
 } as const satisfies CahierFigureGeometry
 const plotElement = ref<HTMLElement | null>(null)
+/** Same stroke owner as the ramp/curve; the SVG binds it locally (#1024). */
+const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
 
 function formatAxisTick(value: number): string {
   return props.figure.formatAxisTick?.(value)
@@ -149,6 +153,7 @@ function categoryHitboxStyle(index: number): Record<string, string> {
       <div ref="plotElement" class="cahier-grouped-vertical-bar-chart__plot cahier-figure-plot">
         <svg
           class="cahier-grouped-vertical-bar-chart__svg"
+          :style="figureStrokeStyle"
           :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`"
           preserveAspectRatio="xMidYMid meet"
           role="img"
@@ -207,8 +212,8 @@ function categoryHitboxStyle(index: number): Record<string, string> {
 .cahier-grouped-vertical-bar-chart { width: 100%; min-width: 0; }
 .cahier-grouped-vertical-bar-chart__plot { position: relative; width: 100%; }
 .cahier-grouped-vertical-bar-chart__svg { display: block; width: 100%; height: auto; overflow: visible; }
-.cahier-grouped-vertical-bar-chart__grid line { stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent); stroke-width: 1; }
-.cahier-grouped-vertical-bar-chart__grid .cahier-grouped-vertical-bar-chart__axis { stroke: var(--cahier-theme-strong); stroke-width: 1.5; }
+.cahier-grouped-vertical-bar-chart__grid line { stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent); stroke-width: var(--cahier-figure-stroke-grid-width); }
+.cahier-grouped-vertical-bar-chart__grid .cahier-grouped-vertical-bar-chart__axis { stroke: var(--cahier-theme-strong); stroke-width: var(--cahier-figure-stroke-axis-width); }
 .cahier-grouped-vertical-bar-chart__bar { fill-opacity: 0.78; shape-rendering: crispEdges; }
 .cahier-grouped-vertical-bar-chart__hitboxes { position: absolute; inset: 0; }
 .cahier-grouped-vertical-bar-chart__category-hitbox { position: absolute; display: block; margin: 0; padding: 0; border: 0; background: transparent; cursor: help; }

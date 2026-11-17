@@ -541,32 +541,32 @@ const unavailableState = computed(() => {
 .mobilite-raccordement-curve__svg { display: block; width: 100%; height: auto; overflow: visible; }
 .mobilite-raccordement-curve__grid line {
   stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent);
-  stroke-width: var(--cahier-figure-grid-width);
+  stroke-width: var(--cahier-figure-stroke-grid-width);
 }
 .mobilite-raccordement-curve__grid .mobilite-raccordement-curve__axis {
   stroke: var(--cahier-theme-strong);
-  stroke-width: var(--cahier-figure-axis-width);
+  stroke-width: var(--cahier-figure-stroke-axis-width);
 }
 .mobilite-raccordement-curve__territory {
   fill: none;
   stroke: var(--brand-500);
-  stroke-width: var(--cahier-figure-series-width);
-  stroke-linecap: var(--cahier-figure-series-cap);
-  stroke-linejoin: var(--cahier-figure-series-join);
+  stroke-width: var(--cahier-figure-stroke-series-width);
+  stroke-linecap: var(--cahier-figure-stroke-series-cap);
+  stroke-linejoin: var(--cahier-figure-stroke-series-join);
 }
 .mobilite-raccordement-curve__comparison {
   fill: none;
   stroke: var(--brand-200);
-  stroke-width: var(--cahier-figure-comparison-width);
-  stroke-dasharray: var(--cahier-figure-comparison-dash);
-  stroke-linecap: var(--cahier-figure-series-cap);
-  stroke-linejoin: var(--cahier-figure-series-join);
-  opacity: var(--cahier-figure-comparison-opacity);
+  stroke-width: var(--cahier-figure-stroke-comparison-width);
+  stroke-dasharray: var(--cahier-figure-stroke-comparison-dash);
+  stroke-linecap: var(--cahier-figure-stroke-series-cap);
+  stroke-linejoin: var(--cahier-figure-stroke-series-join);
+  opacity: var(--cahier-figure-stroke-comparison-opacity);
 }
 .mobilite-raccordement-curve__marker-line {
   stroke: var(--cahier-default, var(--editorial-muted));
-  stroke-width: var(--cahier-figure-marker-width);
-  stroke-dasharray: var(--cahier-figure-marker-dash);
+  stroke-width: var(--cahier-figure-stroke-marker-width);
+  stroke-dasharray: var(--cahier-figure-stroke-marker-dash);
 }
 .mobilite-raccordement-curve__cursor-line {
   stroke: color-mix(in srgb, var(--cahier-theme) 38%, transparent);
