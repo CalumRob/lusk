@@ -171,11 +171,19 @@ export function rampScale(
   return cahierIntegerYAxisScale(values)
 }
 
+/**
+ * One formatter owner for the time-ramp ticks (`AccessRampFigureCahier` and the
+ * PDF painter): ticks stay bare — the unit belongs to the axis title, and
+ * repeating it on every tick widened the zero tick into the first x label.
+ */
+export function rampTickLabel(value: number): string {
+  return formatTimeRampNumber(value)
+}
+
 export function rampGeometry(
   points: readonly TimeRampPoint[],
   scale: RampScale,
   geometry: CahierFigureGeometry,
-  unit = '',
 ): RampGeometry {
   const { width, height, margin } = geometry
   const first = points[0]?.xValue ?? 0
@@ -186,13 +194,12 @@ export function rampGeometry(
     + ((value - first) / Math.max(1, last - first)) * plotWidth
   const y = (value: number) => margin.top
     + (1 - (value - scale.minimum) / (scale.maximum - scale.minimum)) * plotHeight
-  const label = (value: number) => `${formatTimeRampNumber(value)}${unit ? ` ${unit}` : ''}`
   return {
     yAxis: scale,
     x,
     y,
     xTicks: points.map((point) => ({ key: point.xValue, position: x(point.xValue), label: point.xLabel })),
-    yTicks: scale.ticks.map((value) => ({ key: value, position: y(value), label: label(value) })),
+    yTicks: scale.ticks.map((value) => ({ key: value, position: y(value), label: rampTickLabel(value) })),
   }
 }
 

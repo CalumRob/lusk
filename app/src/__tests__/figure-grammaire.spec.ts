@@ -77,6 +77,7 @@ describe('figureGrammaire — le socle géométrique du Cahier', () => {
       tickLength: 7,
       xLabelOffset: 22,
       xLabelOffsetAccess: 14,
+      xLabelOffsetGrouped: 8,
       yLabelOffset: 0,
       yLabelBaseline: 4,
     })

@@ -9,6 +9,10 @@
 
 export interface PoliceTtf {
   readonly unitsPerEm: number
+  /** `hhea` ascender in font units (the face's typographic ascent). */
+  readonly ascender: number
+  /** `hhea` descender in font units (negative). */
+  readonly descender: number
   readonly italicAngle: number
   readonly glyphCount: number
   /** Advance width in font units for one character, or null when unmapped. */
@@ -76,6 +80,8 @@ export function lirePoliceTtf(program: Uint8Array): PoliceTtf {
   const cmap = require('cmap')
 
   const unitsPerEm = u16(view, head.offset + 18)
+  const ascender = i16(view, hhea.offset + 4)
+  const descender = i16(view, hhea.offset + 6)
   const indexToLocFormat = i16(view, head.offset + 50)
   const glyphCount = u16(view, maxp.offset + 4)
   const numberOfHMetrics = u16(view, hhea.offset + 34)
@@ -170,6 +176,8 @@ export function lirePoliceTtf(program: Uint8Array): PoliceTtf {
 
   return {
     unitsPerEm,
+    ascender,
+    descender,
     italicAngle,
     glyphCount,
     advance,

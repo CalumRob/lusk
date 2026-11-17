@@ -16,9 +16,10 @@ import {
   dessinerFigurePdf,
   hauteurFigurePdf,
   GEOMETRIE_PART_PDF,
+  GAP_PANNEAUX_FIGURE_MM,
 } from '@/fiche/prototype/cahierPdfFigures'
 import type { OptionsFigurePdfLiaison } from '@/fiche/prototype/cahierPdfFigures'
-import { CAHIER_FIGURE_RAIL } from '@/fiche/cahierFigureGrammaire'
+import { CAHIER_FIGURE_AXIS, CAHIER_FIGURE_RAIL } from '@/fiche/cahierFigureGrammaire'
 import {
   CAHIER_MOBILITE_BARS_GEOMETRY,
   figureRowLayout,
@@ -45,6 +46,7 @@ import {
   chargeurImageTest,
   chargeurPoliceTest,
   cheminsPdf,
+  cheminsPdfPage,
   lirePdf,
   mesurePdfTest,
   verifierCollisions,
@@ -171,6 +173,43 @@ describe('#1024 — pied de comparaison : zone réservée mesurée, jamais un d�
       expect(sources.length, `sources page ${page}`).toBeGreaterThan(0)
       expect(lecture.lignes.some((ligne) => ligne.page === page && ligne.texte.startsWith('¹ Groupe comparé :'))).toBe(false)
     }
+  })
+
+  it('ne réserve rien pour un groupe sans preuve comparative peinte (même document)', async () => {
+    const sansGroupe: any = structuredClone(capturePdfFixture('visiter-la-bretagne'))
+    // The owner says nothing is displayed: this is a proof-less capture, not a
+    // capture with comparison marks. Only the declared group varies below.
+    sansGroupe.comparison.display = {
+      state: 'hidden-by-user',
+      reason: 'hidden-by-user',
+      layers: sansGroupe.comparison.display.layers.map((layer: any) => ({ ...layer, displayed: false })),
+    }
+    const avecGroupe: any = structuredClone(sansGroupe)
+    // `cahierExportCapture.ts`: the group is NOT proof that a comparison is
+    // displayed. The exact edge the footer must not reserve for.
+    avecGroupe.comparison.group = {
+      ...(avecGroupe.comparison.group ?? {}),
+      scopeKind: 'communes-bretagne',
+      label: Array.from({ length: 18 }, (_, index) => `Commune très longue ${index + 1}`).join(', '),
+      names: Array.from({ length: 18 }, (_, index) => `Commune très longue ${index + 1}`),
+    }
+    const a = await generer(sansGroupe)
+    const b = await generer(avecGroupe)
+    expect(b.lignes.some((ligne) => ligne.texte.startsWith('¹ Groupe comparé'))).toBe(false)
+    // No note is painted, so the group must not move a single block or add a
+    // page: the reservation follows the painter's proof, not the group.
+    expect(b.pages).toBe(a.pages)
+    expect(b.textes.map((item) => ({
+      page: item.page,
+      x: Math.round(item.x * 1000),
+      y: Math.round(item.y * 1000),
+      str: item.str,
+    }))).toEqual(a.textes.map((item) => ({
+      page: item.page,
+      x: Math.round(item.x * 1000),
+      y: Math.round(item.y * 1000),
+      str: item.str,
+    })))
   })
 })
 
@@ -444,5 +483,104 @@ describe('#1024 — contrat de type du modèle de courbe capturé', () => {
     expect(modele).toBe(curve.model)
     expect('prose' in modele).toBe(false)
     expect('sources' in modele).toBe(false)
+  })
+})
+
+describe('#1024 — libellés x du graphique groupé : le décalage natif de la famille', () => {
+  function topBox(item: { y: number; hauteur: number }): number {
+    return H - (item.y + item.hauteur)
+  }
+
+  it('garde les trois positions de déciles au décalage groupé (8 px), pas celui des rampes (14 px)', async () => {
+    const lecture = await generer(captureExplorerRangs())
+    const textes = lecture.textes.filter((item) => item.page === 1)
+    const labels = ['D1', 'D5', 'D9'].map((label) => {
+      const item = textes.find((candidate) => candidate.str === label)
+      expect(item, label).toBeTruthy()
+      return item!
+    })
+    // All three deciles share one baseline row: the native category lane.
+    for (const label of labels.slice(1)) {
+      expect(topBox(label)).toBeCloseTo(topBox(labels[0]!), 1)
+    }
+    const dessins = await cheminsPdfPage(lecture.octets, lecture.pages)
+    const choisirAxe = (label: { x: number; largeur: number }, labelTop: number) => {
+      const centre = label.x + label.largeur / 2
+      return dessins
+        .filter((chemin) => (
+          chemin.kind === 'stroke'
+          && chemin.height < 1
+          && chemin.width > 150
+          && chemin.x <= centre
+          && chemin.x + chemin.width >= centre
+          && chemin.y <= labelTop
+          && labelTop - chemin.y < 30
+        ))
+        .sort((a, b) => b.y - a.y)[0]
+    }
+    const axis = choisirAxe(labels[0]!, topBox(labels[0]!))
+    expect(axis, 'l’axe du panneau groupé').toBeTruthy()
+    // The ramp's own x labels are the time cuts under the left panel (the
+    // tables below repeat the same words, so stay in the figure band).
+    const rampLabel = textes
+      .filter((item) => /^\d+ min$/.test(item.str) && item.x < 300 && item.y > 500 && item.y < 600)
+      .sort((a, b) => a.x - b.x)[0]!
+    expect(rampLabel, 'le libellé x de la rampe de volume').toBeTruthy()
+    const rampAxis = choisirAxe(rampLabel, topBox(rampLabel))
+    expect(rampAxis, 'l’axe de la rampe de volume').toBeTruthy()
+    // Both panels share one width and one native 640-unit viewBox. The gap
+    // between the plot bottom and the font box top is the family's native
+    // offset; the grouped family is 8, the ramp family 14.
+    const panelPt = (LARGEUR_CORPS_PT - GAP_PANNEAUX_FIGURE_MM * 72 / 25.4) / 2
+    const echelle = panelPt / 640
+    const decalage = (label: { y: number; hauteur: number }, line: { y: number }) => (
+      (topBox(label) - line.y) / echelle
+    )
+    expect(decalage(labels[0]!, axis!) - decalage(rampLabel, rampAxis!)).toBeCloseTo(
+      CAHIER_FIGURE_AXIS.xLabelOffsetGrouped - CAHIER_FIGURE_AXIS.xLabelOffsetAccess,
+      0,
+    )
+    // The unit is not lost: it stays once on the grouped axis title.
+    expect(lecture.texteComplet).toContain('ÉTABLISSEMENT')
+  })
+})
+
+describe('#1024 — graduations de rampe : le formateur partagé, jamais une unité par hasard', () => {
+  it('peint des graduations nues même quand l’unité du modèle est non vide', async () => {
+    const capture = captureExplorerRangs()
+    const offered = capture.capabilities.selectableSeries.map((serie) => serie.id)
+    const projection = projeterRequeteExport(capture, offered.slice(0, 3))
+    if (projection.status !== 'ready') throw new Error(projection.reason)
+    const baseExplorer = projeterRequeteExportFigures(projection.request)
+      .find((figure) => figure.family === 'aedar-equipment-explorer')!
+    const explorer: any = {
+      ...baseExplorer,
+      volume: {
+        ...baseExplorer.volume,
+        yAxis: { ...baseExplorer.volume.yAxis, unit: 'équipements' },
+      },
+    }
+    // A valid, non-empty model unit: the axis title carries it; the ticks stay
+    // bare because the shared formatter (`rampTickLabel`) is the only owner.
+    explorer.volume.yAxis.unit = 'équipements'
+    const { doc, mesure } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })
+    await dessinerFigurePdf({
+      ...optionsFigurePdf(projection.request, explorer),
+      doc,
+      mesure,
+      x: 20,
+      y: 40,
+      width: LARGEUR_CORPS_PT * 25.4 / 72,
+      signal: new AbortController().signal,
+      chargerImage: chargeurImageTest,
+    }, explorer)
+    const lecture = await lirePdf(new Blob([doc.output('arraybuffer')]))
+    const ticks = lecture.textes.filter((item) => (
+      Math.abs(item.taille - ROLE_PDF.tick.taille) < 0.02 && item.rotation === 0
+    ))
+    expect(ticks.length).toBeGreaterThan(1)
+    expect(ticks.some((item) => /équipements/i.test(item.str))).toBe(false)
+    // The factual unit remains visible once, on the rotated axis title.
+    expect(lecture.texteComplet).toContain('ÉQUIPEMENTS')
   })
 })

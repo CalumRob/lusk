@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
-import { REMPLISSAGES_MARQUE_LUSK } from '../components/luskBrandMark'
+import LuskBrand from '../components/LuskBrand.vue'
+import { MARQUE_LUSK_LOCKUP, REMPLISSAGES_MARQUE_LUSK } from '../components/luskBrandMark'
 
 /**
  * Contract test for issue #204 — the ermine must scale with the wordmark text.
@@ -11,14 +13,10 @@ import { REMPLISSAGES_MARQUE_LUSK } from '../components/luskBrandMark'
  * size the ermine in `em` (relative to the wordmark's font), never fixed px:
  * when the hero text shrinks via clamp()/rem on mobile, the brand column keeps
  * its proportions instead of leaving a disproportionately large fixed ermine.
- * Same spirit as app-header-contract.spec.ts / tokens.spec.ts — the committed
- * SFC CSS is the source of truth.
+ * Since #1024 the em value is owned by `MARQUE_LUSK_LOCKUP`, the same owner the
+ * PDF painter consumes, and the committed SFC binds it at runtime.
  */
 
-const luskBrandSource = readFileSync(
-  join(process.cwd(), 'src', 'components', 'LuskBrand.vue'),
-  'utf-8',
-)
 const accueilSource = readFileSync(
   join(process.cwd(), 'src', 'views', 'AccueilView.vue'),
   'utf-8',
@@ -32,21 +30,21 @@ function regle(source: string, selecteur: string): string {
 }
 
 describe('#204 — l’ermine suit le texte (em, pas de px fixe)', () => {
-  it('dimensionne l’ermine horizontale en em — relative au mot, pas à une taille fixe', () => {
-    const ermine = regle(luskBrandSource, '\\.lusk-marque__ermine')
-    expect(ermine).toMatch(/width:\s*[\d.]+em/)
-    expect(ermine).toMatch(/height:\s*[\d.]+em/)
-    expect(ermine).not.toMatch(/\d+px/)
+  it('dimensionne l’ermine horizontale en em — depuis l’owner partagé, jamais une taille fixe', () => {
+    expect(MARQUE_LUSK_LOCKUP.ermineEm).toBe(1.18)
+    const style = mount(LuskBrand).get('.lusk-marque__ermine').attributes('style')!
+    expect(style).toContain(`width: ${MARQUE_LUSK_LOCKUP.ermineEm}em`)
+    expect(style).toContain(`height: ${MARQUE_LUSK_LOCKUP.ermineEm}em`)
+    expect(style).not.toMatch(/\d+px/)
   })
 
   it('dimensionne l’ermine verticale (34 px fixes → em) pour qu’elle réduise avec le texte', () => {
-    const verticale = regle(
-      luskBrandSource,
-      '\\.lusk-marque--verticale \\.lusk-marque__ermine',
-    )
-    expect(verticale).toMatch(/width:\s*[\d.]+em/)
-    expect(verticale).toMatch(/height:\s*[\d.]+em/)
-    expect(verticale).not.toMatch(/\d+px/)
+    expect(MARQUE_LUSK_LOCKUP.ermineVerticaleEm).toBe(1.55)
+    const style = mount(LuskBrand, { props: { verticale: true } })
+      .get('.lusk-marque__ermine').attributes('style')!
+    expect(style).toContain(`width: ${MARQUE_LUSK_LOCKUP.ermineVerticaleEm}em`)
+    expect(style).toContain(`height: ${MARQUE_LUSK_LOCKUP.ermineVerticaleEm}em`)
+    expect(style).not.toMatch(/\d+px/)
   })
 
   it('dimensionne l’ermine du héros en em — les proportions de la colonne de marque tiennent à petite largeur', () => {

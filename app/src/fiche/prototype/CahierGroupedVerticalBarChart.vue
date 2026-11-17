@@ -6,6 +6,7 @@ import type {
   CahierGroupedVerticalBarFigureData,
   CahierTooltipRow,
 } from '@/fiche/cahierFigureGrammaire'
+import { CAHIER_FIGURE_AXIS } from '@/fiche/cahierFigureGrammaire'
 import {
   CAHIER_AEDAR_FIGURE_GEOMETRY,
   CAHIER_FIGURE_STROKE,
@@ -174,7 +175,7 @@ function categoryHitboxStyle(index: number): Record<string, string> {
             </template>
           </g>
         </svg>
-        <CahierFigureAxisLabels :geometry="figureGeometry" :x-ticks="xTicks" :y-ticks="yTicks" :x-label-offset="8" />
+        <CahierFigureAxisLabels :geometry="figureGeometry" :x-ticks="xTicks" :y-ticks="yTicks" :x-label-offset="CAHIER_FIGURE_AXIS.xLabelOffsetGrouped" />
         <div class="cahier-grouped-vertical-bar-chart__hitboxes" role="group" :aria-label="`Détails par ${figure.xAxisTitle.toLocaleLowerCase('fr-FR')}`">
           <button
             v-for="(category, index) in figure.categories"

@@ -1,0 +1,53 @@
+{
+  "provenance": {
+    "capturedAt": "2026-11-17T18:05:00Z",
+    "source": "read-only live app http://127.0.0.1:5173/ (main checkout E:/Lusk, head 97a19652fc89cf001eea6e55b8b3fc54ce4eac56); no DOM state changed",
+    "method": "Playwright Chromium, viewport 1440x900; DOM geometry + detached-clone baseline probe; the same shared ermine paths rendered at 720 px/em (svg-standalone.png) for the ink offsets inside the 1.18em box",
+    "pathsSha256": "4de6b1cc493fcb42a2da72f9fc8e8b4bc74f2df132248a33001fe79094368597"
+  },
+  "fontSizePx": 22,
+  "computed": {
+    "alignItems": "center",
+    "gap": "8px",
+    "fontSize": "22px",
+    "lineHeight": "22px",
+    "letterSpacing": "-0.22px",
+    "fontFamily": "\"Newsreader Variable\", Georgia, \"Times New Roman\", serif",
+    "fontStyle": "italic",
+    "fontWeight": "600"
+  },
+  "lockup": {
+    "x": 44,
+    "y": 16.515625,
+    "w": 73.890625,
+    "h": 25.953125
+  },
+  "svg": {
+    "x": 44,
+    "y": 16.515625,
+    "w": 25.953125,
+    "h": 25.953125
+  },
+  "word": {
+    "x": 77.953125,
+    "y": 18.484375,
+    "w": 39.9375,
+    "h": 22
+  },
+  "baseline": {
+    "y": 34.484375,
+    "derivation": "word top + 16px (browser integer Newsreader ascent at 22px; probed on a detached clone)"
+  },
+  "derived": {
+    "svgTopAboveBaseline": 0.8167613636363636,
+    "wordTopAboveBaseline": 0.7272727272727273,
+    "pathInkTopInBox": 0.32246372916481714,
+    "pathInkBottomInBox": 0.7960159995339133
+  },
+  "ink720Em": {
+    "top": 0.32222222222222224,
+    "bottom": 0.7972222222222223,
+    "left": 0.04027777777777778,
+    "right": 1.113888888888889
+  }
+}

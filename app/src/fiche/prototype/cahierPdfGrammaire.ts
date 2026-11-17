@@ -118,8 +118,6 @@ export const ROLE_PDF = {
     taille: ptDepuisCssPx(22),
     espacementEm: -0.01,
   },
-  /** `.lusk-marque__ermine { width/height: 1.18em }`. */
-  marqueErmineEm: 1.18,
   /** `--type-figure-title` (600 / 15 px), `--brand-700`. */
   titreFigure: {
     police: POLICE_PDF.bodyStrong,

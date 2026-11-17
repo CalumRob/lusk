@@ -1087,6 +1087,8 @@ describe('polices PDF — provenance et marque', () => {
           { d: 'M50 100 L70 100 L60 110 Z', role: 'ink' },
         ],
       },
+      MARQUE_LUSK_LOCKUP: { ermineEm: 1.18 },
+      sommetErmineEm: () => 0.8,
       REMPLISSAGES_MARQUE_LUSK: { ink: '#00ff00', accent: '#ff0000' },
     }))
     try {

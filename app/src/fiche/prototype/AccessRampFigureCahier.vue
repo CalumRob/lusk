@@ -19,10 +19,10 @@ import {
   rampGeometry,
   rampPaths,
   rampScale,
+  rampTickLabel,
 } from './cahierFigureNativeGeometry'
 import { aedarTimeModeColor } from './aedarTimeModeColors'
 import {
-  formatTimeRampNumber,
   timeRampAccessibleReading,
   timeRampTooltipRows,
 } from './cahierFigureReadings'
@@ -47,7 +47,6 @@ const plotElement = ref<HTMLElement | null>(null)
 /** The shared stroke owner is injected as CSS custom properties on the plot. */
 const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
 
-const formatNumber = formatTimeRampNumber
 const TIME_MODE_LINE_CLASS: Readonly<Record<string, string>> = {
   car: 'access-ramp-line--car',
   bike_lts2: 'access-ramp-line--bike-light',
@@ -85,7 +84,7 @@ const figureGeometry = useMeasuredCahierFigureGeometry(
   // The unit belongs to the axis title (`y-title` below), exactly as on the
   // approved R1 artifacts; repeating it on every tick widened `0` into the
   // first x label without adding a fact.
-  computed(() => timeYAxis.value.ticks.map((value) => formatNumber(value))),
+  computed(() => timeYAxis.value.ticks.map((value) => rampTickLabel(value))),
   CAHIER_AEDAR_FIGURE_GEOMETRY,
 )
 const rampGeom = computed(() => rampGeometry(

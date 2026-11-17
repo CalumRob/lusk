@@ -49,3 +49,61 @@ export const MARQUE_LUSK_ERMINE = {
   readonly viewBox: string
   readonly chemins: readonly CheminMarqueLusk[]
 }
+
+/**
+ * Lockup geometry of the brand: the one set of numbers the header CSS
+ * (`LuskBrand.vue`) and the PDF painter both reproduce (`#1024`).
+ *
+ * `LuskBrand.vue` lays the lockup out as `inline-flex; align-items:center;
+ * gap: var(--space-2); font: 600 1.375rem/1`. The ermine box is the tallest
+ * item, so the flex line is its box, and the word's 1em line box is centred in
+ * it. The word's alphabetic baseline sits one ascent below the word box top.
+ * The browser uses the face's integer ascent at the header size: Newsreader's
+ * `hhea`/`OS/2` typo metrics are `unitsPerEm 2000`, ascent `1470`, descent
+ * `530`; at 22 px the 16.17 px ascent is laid out as 16 px (the descent as
+ * 6 px, so ascent+descent = the 1em line box and the half-leading is 0).
+ *
+ * Measured on the real header (read-only main capture, `#1024`): lockup top
+ * 16.515625 px, word baseline 34.484375 px at 22 px → the box top is
+ * 0.81676em above the baseline. The derivation below gives 0.81727em; the
+ * 0.0005em difference is the header's 1/64 px layout rounding.
+ */
+export const MARQUE_LUSK_LOCKUP = {
+  /** `.lusk-marque__ermine { width/height: 1.18em }`. */
+  ermineEm: 1.18,
+  /** `.lusk-marque--verticale .lusk-marque__ermine { 1.55em }` (landing hero). */
+  ermineVerticaleEm: 1.55,
+  /** `font: 600 1.375rem/1` → the word's line box is exactly 1em. */
+  ligneMotEm: 1,
+  /** Source size of the header word: `1.375rem` at the 16 px root. */
+  tailleSourcePx: 22,
+  /** `--space-2` of the header lockup gap, in CSS px. */
+  ecartPx: 8,
+  /** Newsreader typo/hhea metrics of the face shared by screen and PDF. */
+  unitesParEm: 2000,
+  ascensionUnites: 1470,
+  descenteUnites: 530,
+} as const
+
+/**
+ * Alphabetic baseline of the word inside its 1em line box, in em. The browser
+ * rounds the face's ascent to whole pixels at the header size (see
+ * `MARQUE_LUSK_LOCKUP`); the descent follows so that their sum is the line box.
+ */
+export function baseMotDansLigneEm(taillePx: number = MARQUE_LUSK_LOCKUP.tailleSourcePx): number {
+  const ascentPx = Math.round(
+    MARQUE_LUSK_LOCKUP.ascensionUnites / MARQUE_LUSK_LOCKUP.unitesParEm * taillePx,
+  )
+  return ascentPx / taillePx
+}
+
+/**
+ * Top of the lockup box above the word baseline, in em, under
+ * `align-items:center` with the ermine as the tallest item. The PDF painter
+ * places the ermine box by this same number; it is not a PDF-only literal.
+ */
+export function sommetErmineEm(taillePx: number = MARQUE_LUSK_LOCKUP.tailleSourcePx): number {
+  return (MARQUE_LUSK_LOCKUP.ermineEm - MARQUE_LUSK_LOCKUP.ligneMotEm) / 2
+    + baseMotDansLigneEm(taillePx)
+}
+

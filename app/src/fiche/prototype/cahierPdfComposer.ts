@@ -14,7 +14,7 @@
  */
 import type { jsPDF } from 'jspdf'
 
-import { MARQUE_LUSK_ERMINE, REMPLISSAGES_MARQUE_LUSK } from '@/components/luskBrandMark'
+import { MARQUE_LUSK_ERMINE, MARQUE_LUSK_LOCKUP, REMPLISSAGES_MARQUE_LUSK, sommetErmineEm } from '@/components/luskBrandMark'
 
 import type { CahierPdfArtifact, CahierPdfGenerator } from './cahierPdfExportController'
 import type { CahierFigureProjection } from './cahierExportAdapters'
@@ -598,9 +598,10 @@ export function optionsFigurePdf(
   }
 }
 
-function construirePages(
+function assemblerPages(
   request: CahierExportRequest,
   mesure: MesureTexte,
+  reserverPiedComparaison: boolean,
 ): DocumentPdf {
   const capture = request.capture
   const projections = projeterRequeteExportFigures(request)
@@ -622,11 +623,16 @@ function construirePages(
   const piedComparaison = lignesPiedComparaison(capture, mesure)
   // Reserve the comparison footer's actual wrapped height (not a fixed offset),
   // leaving the approved single-line box at its H-35 baseline and clear of the
-  // invitation at H-23.
+  // invitation at H-23. The reserve follows the painter's own predicate: a page
+  // without comparative proof paints no note, so a `comparison.group` alone
+  // never reserves space or shifts pagination (`cahierExportCapture.ts`: the
+  // group is not proof that a comparison is displayed). The caller resolves the
+  // page-local proof and asks for this pass again when a note is really painted.
+  const lignesReservees = reserverPiedComparaison ? piedComparaison : []
   const contenuBas = Math.min(
     PAGE.contenuBas,
-    piedComparaison.length
-      ? PAGE.piedComparaison - (piedComparaison.length - 1) * PIED.interligne - PIED.reserveHaut
+    lignesReservees.length
+      ? PAGE.piedComparaison - (lignesReservees.length - 1) * PIED.interligne - PIED.reserveHaut
       : PAGE.contenuBas,
   )
   // The vertically centred section stack: body padding, repeated identity
@@ -915,21 +921,38 @@ function construirePages(
 }
 
 /**
- * The live global header's lockup offset: its box top sits 0.792 em above the
- * word baseline (`LuskBrand.vue` align-items:center, 22 px header). The painter
- * previously used 0.847 em, lifting the ermine 0.076 em above the screen.
+ * Paginate against the footer that is actually painted. The first pass places
+ * the blocks without a footer reserve; if no page carries comparative proof,
+ * the group note is not painted and the document is returned unchanged. Only
+ * when a proof page exists does the second pass reserve the measured wrapped
+ * note, so the note's real height and the pagination agree page for page.
  */
-export const OFFSET_ERMINE_EM = 0.792
+function construirePages(
+  request: CahierExportRequest,
+  mesure: MesureTexte,
+): DocumentPdf {
+  const sansReserve = assemblerPages(request, mesure, false)
+  const preuveComparative = sansReserve.pages.some((page) => page.hasComparisonProof)
+  if (!preuveComparative || sansReserve.piedComparaison.length === 0) return sansReserve
+  return assemblerPages(request, mesure, true)
+}
 
+/**
+ * The lockup top above the word baseline, in em, from the shared brand owner
+ * (`luskBrandMark.ts`): the header's `align-items:center` flex geometry plus
+ * the face's line-box baseline. The painter consumes the owner's derivation —
+ * it no longer carries a copied PDF-only offset.
+ */
 export function sommetErminePt(baseMotPt: number, taillePt: number): number {
-  return baseMotPt - OFFSET_ERMINE_EM * taillePt
+  return baseMotPt - sommetErmineEm() * taillePt
 }
 
 async function dessinerMarque(doc: jsPDF, x: number, sommetErmine: number, baseMot: number): Promise<void> {
   // The lockup is drawn from the locked brand paths; the wordmark uses the
   // Newsreader face actually embedded in the document. The ermine is em-relative
-  // to the word (`LuskBrand.vue`: width/height 1.18em), never a fixed millimetre.
-  const cote = mm(ROLE_PDF.marqueMot.taille * ROLE_PDF.marqueErmineEm)
+  // to the word (the shared `MARQUE_LUSK_LOCKUP.ermineEm`), never a fixed
+  // millimetre.
+  const cote = mm(ROLE_PDF.marqueMot.taille * MARQUE_LUSK_LOCKUP.ermineEm)
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   svg.setAttribute('viewBox', MARQUE_LUSK_ERMINE.viewBox)
   for (const path of MARQUE_LUSK_ERMINE.chemins) {

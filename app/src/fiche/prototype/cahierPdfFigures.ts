@@ -560,9 +560,8 @@ const OPACITE_BARRES_GROUPEES = 0.78
  */
 const GEOMETRIE_NATIVE_AEDAR = CAHIER_AEDAR_FIGURE_GEOMETRY
 
-/** Native label offset of the compact AEDAR ramps (`CahierFigureAxisLabels`). */
+/** Native x label offset of the compact AEDAR ramps (`CahierFigureAxisLabels`). */
 const DECALAGE_ETIQUETTE_X = CAHIER_FIGURE_AXIS.xLabelOffsetAccess
-
 /**
  * One side of the native paired row, inside the PDF's own content box.
  *
@@ -709,6 +708,8 @@ function dessinerAxesAedar(
     yTicks: readonly { key: string | number; position: number; label: string | null }[]
     xTitle: string
     yTitle: string
+    /** Native `xLabelOffset` of this family (`CAHIER_FIGURE_AXIS`). */
+    xLabelOffset: number
   },
 ): void {
   const { x, y, panelWidth, xTicks, yTicks, xTitle, yTitle } = options
@@ -729,7 +730,7 @@ function dessinerAxesAedar(
       espacement: tickSpace,
     })
   }
-  const xLabelY = y + u(native.height - native.margin.bottom + DECALAGE_ETIQUETTE_X)
+  const xLabelY = y + u(native.height - native.margin.bottom + options.xLabelOffset)
   for (const tick of xTicks) {
     if (tick.label === null) continue
     textePdf(doc, tick.label, x + u(tick.position), xLabelY, {
@@ -972,6 +973,7 @@ async function dessinerRampes(
       yTicks: geom.yTicks,
       xTitle: ramp.xAxis.label,
       yTitle: titreAvecUnite(ramp.yAxis.label, ramp.yAxis.unit),
+      xLabelOffset: DECALAGE_ETIQUETTE_X,
     })
     bas = Math.max(bas, py + 2 + panelHeight)
   }
@@ -1310,6 +1312,7 @@ async function dessinerBarresGroupees(
       yTicks: ticks.y,
       xTitle: figure.xAxisTitle,
       yTitle: titreAvecUnite(figure.yAxisTitle, unit),
+      xLabelOffset: CAHIER_FIGURE_AXIS.xLabelOffsetGrouped,
     })
     // The native grouped chart has no legend of its own; the explorer's one
     // shared mode legend is painted once under the whole figure below.
@@ -1322,10 +1325,10 @@ async function dessinerBarresGroupees(
     const scale = cahierIntegerYAxisScale(values)
     const first = projection.volume.series[0]!
     const points = rampPoints(first)
-    const libelles = rampGeometry(points, scale, GEOMETRIE_NATIVE_AEDAR, projection.volume.yAxis.unit)
+    const libelles = rampGeometry(points, scale, GEOMETRIE_NATIVE_AEDAR)
       .yTicks.map((tick) => tick.label)
     const native = geometrieAedarMesuree(panelWidth, libelles, mesure)
-    const geom = rampGeometry(points, scale, native, projection.volume.yAxis.unit)
+    const geom = rampGeometry(points, scale, native)
     const plotBottom = native.height - native.margin.bottom
     const plotRight = native.width - native.margin.right
     const svg = svgCanvas(native.width, native.height)
@@ -1376,6 +1379,7 @@ async function dessinerBarresGroupees(
       yTicks: geom.yTicks,
       xTitle: projection.volume.xAxis.label,
       yTitle: titreAvecUnite(projection.volume.yAxis.label, projection.volume.yAxis.unit),
+      xLabelOffset: DECALAGE_ETIQUETTE_X,
     })
     return cy + 2 + panelHeight
   })()

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { MARQUE_LUSK_ERMINE, REMPLISSAGES_MARQUE_LUSK } from './luskBrandMark'
+import { computed } from 'vue'
+
+import { MARQUE_LUSK_ERMINE, MARQUE_LUSK_LOCKUP, REMPLISSAGES_MARQUE_LUSK } from './luskBrandMark'
 /**
  * LuskBrand — the locked brand lockup (mock/brand/final.html, état
  * verrouillé): the ermine in course + "lusk" in italic Newsreader, ink only.
@@ -10,10 +12,22 @@ import { MARQUE_LUSK_ERMINE, REMPLISSAGES_MARQUE_LUSK } from './luskBrandMark'
  * `verticale` (mock/brand/iterations/v8.html - the hero lock-up): the ermine
  * stacks ABOVE the word, the mark reads as a column (hero right column), not
  * the horizontal header lock-up.
+ *
+ * The ermine box is em-relative to the word and comes from the shared lockup
+ * owner: the PDF painter consumes the same `ermineEm`/`ermineVerticaleEm` and
+ * the same baseline geometry (`sommetErmineEm`), so the lockup cannot drift
+ * between the screen and the document (#1024).
  */
-defineProps<{
+const props = defineProps<{
   verticale?: boolean
 }>()
+
+const styleErmine = computed(() => {
+  const em = props.verticale
+    ? MARQUE_LUSK_LOCKUP.ermineVerticaleEm
+    : MARQUE_LUSK_LOCKUP.ermineEm
+  return { width: `${em}em`, height: `${em}em` }
+})
 </script>
 
 <template>
@@ -21,7 +35,13 @@ defineProps<{
     class="lusk-marque"
     :class="{ 'lusk-marque--verticale': verticale }"
   >
-    <svg class="lusk-marque__ermine" :viewBox="MARQUE_LUSK_ERMINE.viewBox" aria-hidden="true" focusable="false">
+    <svg
+      class="lusk-marque__ermine"
+      :style="styleErmine"
+      :viewBox="MARQUE_LUSK_ERMINE.viewBox"
+      aria-hidden="true"
+      focusable="false"
+    >
       <path v-for="chemin in MARQUE_LUSK_ERMINE.chemins" :key="chemin.d" :d="chemin.d" :fill="REMPLISSAGES_MARQUE_LUSK[chemin.role]" />
     </svg>
     <span class="lusk-marque__mot">lusk</span>
@@ -47,15 +67,10 @@ defineProps<{
 }
 
 .lusk-marque__ermine {
-  /* em relatif au mot : l'hermine suit la taille du wordmark, jamais une
-     taille fixe — la marque garde ses proportions à toute taille de texte. */
-  width: 1.18em;
-  height: 1.18em;
+  /* The em-relative box is the shared lockup owner's (`MARQUE_LUSK_LOCKUP`):
+     l'hermine suit la taille du wordmark, jamais une taille fixe — la marque
+     garde ses proportions à toute taille de texte. */
   flex-shrink: 0;
 }
-
-.lusk-marque--verticale .lusk-marque__ermine {
-  width: 1.55em;
-  height: 1.55em;
-}
 </style>
+

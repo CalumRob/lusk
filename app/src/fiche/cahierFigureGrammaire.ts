@@ -117,6 +117,12 @@ export const CAHIER_FIGURE_AXIS = {
    * keeps the unit-bearing zero tick from touching « 5 min ».
    */
   xLabelOffsetAccess: 14,
+  /**
+   * Grouped vertical bar categories (min/deciles/max) carry no unit-bearing
+   * zero tick, so the native chart places them at 8 px
+   * (`CahierGroupedVerticalBarChart.vue`), never the ramp's 14 px clearance.
+   */
+  xLabelOffsetGrouped: 8,
   yLabelOffset: 0,
   yLabelBaseline: 4,
 } as const

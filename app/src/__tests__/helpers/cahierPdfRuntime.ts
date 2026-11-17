@@ -79,6 +79,8 @@ export interface TextePdf {
   readonly str: string
   readonly taille: number
   readonly largeur: number
+  /** Font-box height (`TextItem.height`), for the reader-facing box top. */
+  readonly hauteur: number
   readonly rotation: number
 }
 
@@ -130,7 +132,7 @@ export async function lirePdf(blob: Blob): Promise<LecturePdf> {
     const viewport = page.getViewport({ scale: 1 })
     pagesFormat.push({ width: viewport.width, height: viewport.height })
     const content = await page.getTextContent()
-    for (const item of content.items as Array<{ str: string; transform: number[]; width: number }>) {
+    for (const item of content.items as Array<{ str: string; transform: number[]; width: number; height: number }>) {
       if (!item.str) continue
       textes.push({
         page: pageIndex,
@@ -139,6 +141,7 @@ export async function lirePdf(blob: Blob): Promise<LecturePdf> {
         str: item.str,
         taille: Math.hypot(item.transform[0] ?? 0, item.transform[1] ?? 0),
         largeur: item.width,
+        hauteur: item.height,
         rotation: Math.atan2(item.transform[1] ?? 0, item.transform[0] ?? 0),
       })
     }
@@ -367,10 +370,126 @@ export async function policesEmbarquees(octets: Uint8Array): Promise<number> {
 }
 
 /**
- * Raw `FontFile2` programs embedded in the document, in object order. The
- * caller identifies a face by its actual metrics/outlines, never by a nominal
- * family name.
+ * Paths actually painted, in real page points (bottom-origin converted to the
+ * reader's top-origin). Unlike `cheminsPdf`, this applies the live `cm`
+ * matrix stack, so paths emitted inside an SVG viewport (the brand lockup, the
+ * native figures) can be compared with header/PDF measurements. Test-only.
  */
+export async function cheminsPdfPage(
+  octets: Uint8Array,
+  pages = 1,
+): Promise<readonly CheminPdf[]> {
+  type Matrice = readonly [number, number, number, number, number, number]
+  const identite: Matrice = [1, 0, 0, 1, 0, 0]
+  const multiplier = (m: Matrice, n: Matrice): Matrice => [
+    m[0] * n[0] + m[1] * n[2],
+    m[0] * n[1] + m[1] * n[3],
+    m[2] * n[0] + m[3] * n[2],
+    m[2] * n[1] + m[3] * n[3],
+    m[4] * n[0] + m[5] * n[2] + n[4],
+    m[4] * n[1] + m[5] * n[3] + n[5],
+  ]
+  const appliquer = (m: Matrice, x: number, y: number): [number, number] => [
+    x * m[0] + y * m[2] + m[4],
+    x * m[1] + y * m[3] + m[5],
+  ]
+  const chemins: CheminPdf[] = []
+  for (let pageIndex = 0; pageIndex < pages; pageIndex += 1) {
+    const { raw, height: hauteurPage } = await fluxPage(octets, pageIndex)
+    let ctm: Matrice = identite
+    const pile: Matrice[] = []
+    let stroke: string | null = null
+    let fill: string | null = null
+    let largeur: number | null = null
+    let tirets: string | null = null
+    let kind: 'fill' | 'stroke' | null = null
+    let points: [number, number][] = []
+    const ajouter = (x: number, y: number) => points.push(appliquer(ctm, x, y))
+    for (const brut of raw.split('\n')) {
+      const ligne = brut.trim()
+      if (!ligne) continue
+      if (ligne === 'q') { pile.push(ctm); continue }
+      if (ligne === 'Q') { ctm = pile.pop() ?? identite; continue }
+      const nombres = [...ligne.matchAll(/-?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]))
+      const jetons = ligne.split(/\s+/)
+      if (jetons.length === 7 && jetons[6] === 'cm'
+        && jetons.slice(0, 6).every((jeton) => Number.isFinite(Number(jeton)))) {
+        ctm = multiplier(jetons.slice(0, 6).map(Number) as unknown as Matrice, ctm)
+        continue
+      }
+      const motif = /^\[([^\]]*)\] (-?(?:\d+(?:\.\d*)?|\.\d+)) d$/.exec(ligne)
+      if (motif) {
+        tirets = motif[1]!.trim() ? motif[1]!.trim().split(/\s+/).join(' ') : ''
+        continue
+      }
+      const rgbStroke = /^([\d.]+) ([\d.]+) ([\d.]+) RG$/.exec(ligne)
+      if (rgbStroke) {
+        stroke = `#${composante(rgbStroke[1]!)}${composante(rgbStroke[2]!)}${composante(rgbStroke[3]!)}`
+        continue
+      }
+      const rgbFill = /^([\d.]+) ([\d.]+) ([\d.]+) rg$/.exec(ligne)
+      if (rgbFill) {
+        fill = `#${composante(rgbFill[1]!)}${composante(rgbFill[2]!)}${composante(rgbFill[3]!)}`
+        continue
+      }
+      const largeurTrait = /^(-?\d+(?:\.\d+)?) w$/.exec(ligne)
+      if (largeurTrait) {
+        largeur = Number(largeurTrait[1])
+        continue
+      }
+      if (/\bm$/.test(ligne) || /\bl$/.test(ligne)) {
+        if (nombres.length >= 2) ajouter(nombres[0]!, nombres[1]!)
+        continue
+      }
+      if (/\bre$/.test(ligne)) {
+        const [x, y, w, h] = nombres
+        if ([x, y, w, h].every((value) => value !== undefined)) {
+          ajouter(x!, y!)
+          ajouter(x! + w!, y!)
+          ajouter(x!, y! + h!)
+          ajouter(x! + w!, y! + h!)
+        }
+        continue
+      }
+      if (/\b[cy]$/.test(ligne)) {
+        for (let index = 0; index + 1 < nombres.length; index += 2) ajouter(nombres[index]!, nombres[index + 1]!)
+        continue
+      }
+      if (ligne === 'S' || ligne === 's') kind = 'stroke'
+      else if (ligne === 'f' || ligne === 'f*' || ligne === 'F') kind = 'fill'
+      else if (ligne === 'W' || ligne === 'W*' || ligne === 'n') {
+        points = []
+        kind = null
+        continue
+      } else {
+        continue
+      }
+      if (points.length) {
+        const xs = points.map(([x]) => x)
+        const ys = points.map(([, y]) => y)
+        const x = Math.min(...xs)
+        const y = Math.min(...ys)
+        const width = Math.max(...xs) - x
+        const height = Math.max(...ys) - y
+        chemins.push({
+          page: pageIndex + 1,
+          kind,
+          colour: kind === 'stroke' ? stroke : fill,
+          largeur,
+          tirets,
+          x,
+          y: hauteurPage - (y + height),
+          width,
+          height,
+        })
+      }
+      points = []
+      kind = null
+    }
+  }
+  return chemins
+}
+
 export async function programmesPoliceEmbarques(
   octets: Uint8Array,
 ): Promise<readonly Uint8Array[]> {
