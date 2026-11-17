@@ -21,12 +21,16 @@ univers_canonique_1202 <- function() {
 }
 
 source_littorale <- function(codes, classement = "Mer") {
-  tibble::tibble(
+  source <- tibble::tibble(
     Code_insee = as.character(codes),
     Commune = paste("Commune", codes),
     Dpt = substr(as.character(codes), 1L, 2L),
     Classement = rep(classement, length(codes))
   )
+  # Fixture synthétique BORNÉE : elle simule une source déjà admise, sans
+  # toucher au défaut de production (le lecteur réel vérifie son SHA-256).
+  attr(source, "pin_verifie") <- TRUE
+  source
 }
 
 test_that("le lecteur littoral lit le CSV réel UTF-8 et son domaine source", {
@@ -52,10 +56,55 @@ test_that("le lecteur littoral accepte un CSV quoté (virgule dans le nom)", {
     'l_communes_littorales.1,22001,"Commune, avec virgule",22,Mer'
   ), chemin, useBytes = TRUE)
 
-  source <- lire_classes_littoral(chemin)
+  source <- lire_classes_littoral(chemin, sha256 = NULL)
 
   expect_equal(nrow(source), 1L)
   expect_identical(source$Commune, "Commune, avec virgule")
+  expect_false(isTRUE(attr(source, "pin_verifie")))
+})
+
+test_that("le lecteur littoral exige l'empreinte épinglée sur le fichier réel", {
+  altere <- tempfile(fileext = ".csv")
+  on.exit(unlink(altere), add = TRUE)
+  octets <- readBin(fixture_littorale(), "raw",
+                    n = file.info(fixture_littorale())$size)
+  # Un octet modifié (même longueur, CSV toujours lisible) doit échouer.
+  octets[[200L]] <- as.raw(0x58)
+  writeBin(octets, altere)
+
+  expect_error(lire_classes_littoral(altere), "empreinte|SHA-256")
+  expect_error(lire_classes_littoral(altere, sha256 = ""), "empreinte|SHA-256")
+  # La source réelle reste admise par défaut, avec sa preuve d'identité.
+  reelle <- lire_classes_littoral(fixture_littorale())
+  expect_true(isTRUE(attr(reelle, "pin_verifie")))
+  # Le seam borné des tests synthétiques est EXPLICITE : désactiver le pin ne
+  # peut jamais être le défaut de production.
+  synthetique_chemin <- tempfile(fileext = ".csv")
+  on.exit(unlink(synthetique_chemin), add = TRUE)
+  writeLines(c(
+    "Code_insee,Commune,Dpt,Classement",
+    "22001,A,22,Mer"
+  ), synthetique_chemin, useBytes = TRUE)
+  synthetique <- lire_classes_littoral(synthetique_chemin, sha256 = NULL)
+  expect_false(isTRUE(attr(synthetique, "pin_verifie")))
+})
+
+test_that("le crosswalk refuse une source dont l'identité n'a pas été admise", {
+  chemin <- tempfile(fileext = ".csv")
+  on.exit(unlink(chemin), add = TRUE)
+  writeLines(c(
+    "Code_insee,Commune,Dpt,Classement",
+    "22001,A,22,Mer"
+  ), chemin, useBytes = TRUE)
+  source <- lire_classes_littoral(chemin, sha256 = NULL)
+
+  expect_error(
+    construire_crosswalk_littoral(source, c("22001")),
+    "non vérifiée|admise"
+  )
+  expect_silent(
+    construire_crosswalk_littoral(source, c("22001"), exiger_identite = FALSE)
+  )
 })
 
 test_that("le lecteur littoral refuse un doublon, un classement inconnu et un fichier vide", {
@@ -74,9 +123,11 @@ test_that("le lecteur littoral refuse un doublon, un classement inconnu et un fi
   ), inconnu, useBytes = TRUE)
   writeLines("Code_insee,Commune,Dpt,Classement", vide, useBytes = TRUE)
 
-  expect_error(lire_classes_littoral(doublon), "doublon|ambigu")
-  expect_error(lire_classes_littoral(inconnu), "classement.*inconnu|inconnu.*classement")
-  expect_error(lire_classes_littoral(vide), "vide|aucune commune")
+  expect_error(lire_classes_littoral(doublon, sha256 = NULL), "doublon|ambigu")
+  expect_error(lire_classes_littoral(inconnu, sha256 = NULL),
+               "classement.*inconnu|inconnu.*classement")
+  expect_error(lire_classes_littoral(vide, sha256 = NULL),
+               "vide|aucune commune")
 })
 
 test_that("le crosswalk exhaustif projette la liste positive sur l'univers canonique 1202", {
@@ -109,16 +160,18 @@ test_that("le crosswalk refuse une source hors univers, vide ou dupliquée", {
   communes <- c("22001", "22002", "29001")
 
   expect_error(
-    construire_crosswalk_littoral(source_littorale("33001"), communes),
+    construire_crosswalk_littoral(source_littorale("33001"), communes,
+                                  exiger_identite = FALSE),
     "hors.*univers|inconnu"
   )
   expect_error(
-    construire_crosswalk_littoral(source_littorale(character()), communes),
+    construire_crosswalk_littoral(source_littorale(character()), communes,
+                                  exiger_identite = FALSE),
     "vide|aucune"
   )
   expect_error(
     construire_crosswalk_littoral(
-      source_littorale(c("22001", "22001")), communes
+      source_littorale(c("22001", "22001")), communes, exiger_identite = FALSE
     ),
     "doublon|ambigu"
   )
@@ -257,6 +310,9 @@ test_that("les métadonnées littorales portent la licence, le millésime, l'emp
   expect_setequal(meta$classements, c("Mer", "Estuaire"))
   expect_match(meta$caveat, "Plouvien")
   expect_match(meta$caveat, "pas une garantie juridique|ni une garantie")
+  # Aucune date de relevé de périmètre n'est connue : jamais inventée.
+  expect_true(is.na(meta$vintages[[1L]]$dateReference))
+  expect_true(is.na(MANIFEST_CLASSES_LITTORAL$date_reference[[1L]]))
   expect_equal(meta$vintages[[1L]]$datePublication, "2023-04-21")
 
   sidecar <- metadata_reference_territoriale(

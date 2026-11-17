@@ -107,6 +107,15 @@ test_that("les seams se dispatchent sur les traits du descripteur, jamais sur le
   expect_true(grepl("publish(", commande("publie_milieux"), fixed = TRUE))
   expect_false(grepl("publier_", commande("publie_demographie"), fixed = TRUE))
 
+  # #1041 : la classification littorale est réellement CÂBLÉE dans les
+  # commandes, pas seulement nommée dans le manifeste. Tous les producteurs de
+  # référence la reçoivent ; les seams publier l'admettent explicitement.
+  for (cible in c("payload_demographie", "payload_habitat",
+                  "payload_milieux", "publie_economie", "publie_mobilite")) {
+    expect_true(grepl("classes_littoral", commande(cible), fixed = TRUE),
+                info = cible)
+  }
+
   # Issue #890/#900 : plus aucune commande du graphe n'appelle un générateur
   # de modèles de lecture — le registre read_model ne pilote plus de cible
   # planifiée et le champ lui-même est retiré des métadonnées en #900.

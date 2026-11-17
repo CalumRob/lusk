@@ -132,6 +132,17 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # gardent compute_payload + publish, à l'identique (régression
   # byte-identical).
   if (is.function(theme$publier)) {
+    # #1041 : si la source littorale est admise, un seam publier qui ne
+    # l'admet pas est une erreur de câblage. Jamais un abandon silencieux de
+    # la classification (le graphe targets a la même garde).
+    if (!is.null(classes_littoral) &&
+        !"classes_littoral" %in% names(formals(theme$publier))) {
+      stop(
+        "Le seam publier du thème « ", theme$theme,
+        " » n'admet pas classes_littoral alors que la source littorale est présente.",
+        call. = FALSE
+      )
+    }
     args_publier <- list(
       donnees = brut,
       cache = cache,
@@ -152,6 +163,13 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   } else {
     # Le mapping est une épingle du package : le payload publié porte le nom
     # public Geo API, mais le run ne dépend jamais d'un appel réseau.
+    if (!is.null(classes_littoral) &&
+        !"classes_littoral" %in% names(formals(compute_payload))) {
+      stop(
+        "compute_payload n'admet pas classes_littoral alors que la source littorale est présente.",
+        call. = FALSE
+      )
+    }
     args_compute <- list(data = brut, theme = theme, vintages = vintages)
     # Le dispatch sur la signature garde les seams de tests et les extensions
     # historiques compatibles : seul le compute qui déclare l'épingle la lit.

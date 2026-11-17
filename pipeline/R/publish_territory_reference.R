@@ -10,9 +10,14 @@ project_territory_reference <- function(territories) {
     as.character(territories$classe_densite_code) else rep(NA_character_, nrow(territories))
   density_label <- if ("classe_densite_libelle_public" %in% names(territories))
     as.character(territories$classe_densite_libelle_public) else rep(NA_character_, nrow(territories))
-  littoral_code <- if ("littoral_code" %in% names(territories))
+  champs_littoral <- c("littoral_code", "littoral_classement_source")
+  presents <- champs_littoral %in% names(territories)
+  if (any(presents) && !all(presents))
+    stop("Territory reference littoral fields must be declared together", call.=FALSE)
+  littoral_declare <- all(presents)
+  littoral_code <- if (littoral_declare)
     as.character(territories$littoral_code) else rep(NA_character_, nrow(territories))
-  littoral_classement <- if ("littoral_classement_source" %in% names(territories))
+  littoral_classement <- if (littoral_declare)
     as.character(territories$littoral_classement_source) else rep(NA_character_, nrow(territories))
   result <- data.frame(territory_id=as.character(territories[[id_column]]),
     territory_type=as.character(territories$type), name=as.character(territories$nom),
@@ -27,8 +32,13 @@ project_territory_reference <- function(territories) {
   # #1041 : la classification littorale est TOUTE ou RIEN. Une projection
   # partielle (quelques lignes classées) ne doit jamais être publiée comme si
   # l'absence valait NC ; un non-commune classé est une erreur d'identité.
-  classees <- !is.na(result$littoral_code)
-  if (any(classees)) {
+  # Les colonnes ABSENTES sont la transition historique autorisée ; des
+  # colonnes PRÉSENTES mais entièrement vides sont une référence enrichie
+  # silencieusement vide — refusée, comme côté app.
+  if (littoral_declare) {
+    if (all(is.na(result$littoral_code)))
+      stop("Territory reference littoral classification is present but empty", call.=FALSE)
+    classees <- !is.na(result$littoral_code)
     communes <- result$territory_type == "commune"
     if (any(classees & !communes))
       stop("Territory reference classifies a non-commune as littoral", call.=FALSE)
@@ -36,12 +46,12 @@ project_territory_reference <- function(territories) {
       stop("Territory reference littoral classification is incomplete", call.=FALSE)
     if (any(!result$littoral_code[communes] %in% c("C", "NC")))
       stop("Territory reference has an unknown littoral code", call.=FALSE)
-    est_c <- result$littoral_code == "C"
+    # NA-safe : un non-commune n'est jamais "C", et un `NC` valide ne rend pas
+    # la garde inconnue (l'ancien `any(x == "C")` valait NA sur ces lignes).
+    est_c <- classees & result$littoral_code == "C"
     if (any(est_c & !result$littoral_classement_source %in% c("Mer", "Estuaire")) ||
-        any(!est_c & !is.na(result$littoral_classement_source)))
+        any(!est_c & classees & !is.na(result$littoral_classement_source)))
       stop("Territory reference has an incoherent littoral source classement", call.=FALSE)
-  } else if (any(!is.na(result$littoral_classement_source))) {
-    stop("Territory reference has a littoral classement without a code", call.=FALSE)
   }
   result <- result[order(result$territory_type, result$territory_id), , drop=FALSE]
   rownames(result) <- NULL

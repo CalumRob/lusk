@@ -53,6 +53,50 @@ test_that("littoral projection is all-or-nothing and rejects non-commune codes",
   expect_error(project_territory_reference(inconnu), "unknown littoral code")
 })
 
+test_that("littoral projection is NA-safe for a valid all-NC reference with a non-commune", {
+  toutes_nc <- data.frame(
+    code=c("29001", "29002", "200000001", "53"),
+    type=c("commune", "commune", "epci", "region"),
+    nom=c("Alpha", "Beta", "EPCI", "Bretagne"),
+    departement=c("29", "29", "29", NA_character_),
+    epci=c("200000001", "200000001", NA_character_, NA_character_),
+    littoral_code=c("NC", "NC", NA_character_, NA_character_),
+    littoral_classement_source=c(NA_character_, NA_character_,
+                                 NA_character_, NA_character_),
+    stringsAsFactors=FALSE
+  )
+
+  projection <- project_territory_reference(toutes_nc)
+
+  expect_identical(projection$rows$littoral_code,
+                   c("NC", "NC", NA_character_, NA_character_))
+})
+
+test_that("littoral projection separates absent, partial and present-but-empty columns", {
+  base <- data.frame(code=c("29001", "22"), type=c("commune", "departement"),
+    nom=c("Alpha", "Finistère"), departement=c("29", "29"),
+    epci=c(NA_character_, NA_character_), stringsAsFactors=FALSE)
+
+  # Transition explicite : les DEUX colonnes sont absentes.
+  absent <- project_territory_reference(base)
+  expect_true(all(is.na(absent$rows$littoral_code)))
+  expect_true(all(is.na(absent$rows$littoral_classement_source)))
+
+  # Une seule colonne : ambigu, refusé.
+  partiel <- base
+  partiel$littoral_code <- c("C", NA_character_)
+  expect_error(project_territory_reference(partiel),
+               "declared together|deux colonnes")
+
+  # Les deux colonnes présentes mais entièrement vides : référence enrichie
+  # silencieusement vide, refusée (le contrat app la refuse aussi).
+  vide <- base
+  vide$littoral_code <- NA_character_
+  vide$littoral_classement_source <- NA_character_
+  expect_error(project_territory_reference(vide),
+               "present but empty|vide")
+})
+
 test_that("reference publishing uses the owner protocol without legacy serving dependencies", {
   calls <- character()
   current <- data.frame(content_version="old", reference_content_version="source-old")

@@ -31,7 +31,7 @@ MANIFEST_CLASSES_LITTORAL <- tibble::tribble(
   CLASSES_LITTORAL_URL,
   CLASSES_LITTORAL_FICHIER,
   "Liste positive DREAL Bretagne — métadonnées de diffusion modifiées le 2023-04-21",
-  "2023-04-21",
+  NA_character_,
   "2023-04-21",
   "lov2",
   "d68f20e7ea2928ac36e104201fdd81327b610a384c1a3a6d6c33521fe61153cc",
@@ -45,9 +45,24 @@ MANIFEST_CLASSES_LITTORAL <- tibble::tribble(
 # Code_insee / Commune / Dpt / Classement. Le lecteur valide l'identité
 # communale, l'unicité et le domaine source AVANT toute projection ; un
 # fichier vide, un doublon ou un classement inventé échoue bruyamment.
-lire_classes_littoral <- function(chemin) {
+lire_classes_littoral <- function(chemin,
+                                  sha256 = MANIFEST_CLASSES_LITTORAL$sha256[[1L]]) {
   if (!file.exists(chemin)) {
     stop("Liste littorale DREAL introuvable : ", chemin, call. = FALSE)
+  }
+  # L'identité de la source est vérifiée ICI, au seam de lecture : un cache
+  # existant, tronqué ou altéré, ne peut jamais produire un crosswalk qui
+  # reclasse en NC les communes disparues. Le seam synthétique des tests doit
+  # désactiver le pin EXPLICITEMENT (`sha256 = NULL`), jamais par défaut.
+  if (!is.null(sha256)) {
+    if (!grepl("^[0-9a-f]{64}$", sha256) ||
+        !verifier_empreinte_fichier(chemin, sha256)) {
+      stop(
+        "Liste littorale DREAL invalide : l'empreinte SHA-256 du fichier ne ",
+        "correspond pas au pin de production (", sha256, ").",
+        call. = FALSE
+      )
+    }
   }
   source <- readr::read_csv(
     chemin,
@@ -104,6 +119,7 @@ lire_classes_littoral <- function(chemin) {
       call. = FALSE
     )
   }
+  attr(source, "pin_verifie") <- !is.null(sha256)
   source
 }
 
@@ -112,7 +128,15 @@ lire_classes_littoral <- function(chemin) {
 # CHAQUE commune canonique absente de la liste devient NC. La fonction refuse
 # une source vide, dupliquée ou hors de l'univers canonique — l'absence n'est
 # jamais convertie en NC avant cette validation.
-construire_crosswalk_littoral <- function(source, communes) {
+construire_crosswalk_littoral <- function(source, communes,
+                                          exiger_identite = TRUE) {
+  if (exiger_identite && !isTRUE(attr(source, "pin_verifie"))) {
+    stop(
+      "Crosswalk littoral invalide : la source n'a pas été admise par ",
+      "l'empreinte épinglée (aucun complément NC ne peut être généré).",
+      call. = FALSE
+    )
+  }
   requis <- c("Code_insee", "Classement")
   manquants <- setdiff(requis, names(source))
   if (length(manquants) > 0L) {
@@ -332,7 +356,10 @@ metadata_classes_littorale <- function() {
       label = "Communes littorales en Bretagne au titre de la loi",
       version = "Liste positive DREAL Bretagne — diffusion 2023-04-21",
       licence = "Licence Ouverte 2.0 (lov2)",
-      dateReference = "2023-04-21",
+      # Aucune date de relevé du périmètre juridique n'est publiée par la
+      # source : la référence reste honnêtement absente (null), la date de
+      # diffusion déclarée porte l'horloge de publication.
+      dateReference = NA_character_,
       datePublication = "2023-04-21"
     ))
   )
