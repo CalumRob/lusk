@@ -339,6 +339,23 @@ describe('#1024 — rail natif mesuré en pixels CSS rendus, pas en unités du v
   })
 })
 
+describe('#1024 — rapport indisponible : une seule sémantique de cellule', () => {
+  it('peint les deux cellules de rapport indisponibles avec le même libellé approuvé', async () => {
+    const lecture = await generer(captureBarresStationnement())
+    // The stationnement ratio row lies between the table and its explanation;
+    // both value cells describe the same missing ratio.
+    const ligne = lecture.lignes.find((candidate) => (
+      candidate.y > 210 && candidate.y < 225 && candidate.texte.includes('Indisponible')
+    ))!
+    expect(ligne).toBeTruthy()
+    const indisponibles = ligne.items.filter((item) => item.str === 'Indisponible')
+    expect(indisponibles, ligne.texte).toHaveLength(2)
+    // The rank has no served ordinal and keeps the approved em dash.
+    expect(ligne.items.filter((item) => item.str === '—')).toHaveLength(1)
+    expect(lecture.texteComplet).toContain('Rapport indisponible')
+  })
+})
+
 describe('#1024 — partage : une seule géométrie mesurée et peinte', () => {
   it('mesure exactement la hauteur que le peintre émet', async () => {
     const { doc, mesure } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })

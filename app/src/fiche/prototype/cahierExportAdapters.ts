@@ -51,6 +51,7 @@ import {
   mobiliteCurveReadings,
   mobiliteCurveUnavailableNotes,
   mobiliteCurveVisiblePercent,
+  mobiliteFiniteValue,
   mobiliteRatioAriaLabel,
   mobiliteRatioDisplayValue,
   mobiliteRatioNumber,
@@ -1214,7 +1215,16 @@ export function projectBars(
       key: `${figure.slot}:ratio`,
       label: ratio.label,
       cells: [
-        cell({ columnKey: 'focal', value: ratio.value, display: ratio.display, unit: ratio.unit }),
+        // The screen scalar placeholder is `—`; the value table uses the one
+        // approved table unavailable label for both cells of the missing ratio.
+        cell({
+          columnKey: 'focal',
+          value: ratio.value,
+          display: mobiliteFiniteValue(ratio.value) === null
+            ? CAHIER_UNAVAILABLE_LABEL
+            : ratio.display,
+          unit: ratio.unit,
+        }),
         ...(ratio.comparisonDisplayed
           ? [cell({
             columnKey: 'comparison',
