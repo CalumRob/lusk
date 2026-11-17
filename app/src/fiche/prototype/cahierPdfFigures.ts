@@ -908,10 +908,9 @@ async function dessinerRampes(
     const panelScale = cahierIntegerYAxisScale(ramp.series.flatMap((serie) =>
       serie.points.flatMap((point) => [point.value, point.referenceValue])))
     const firstSeries = ramp.series[0]!
-    // Measure the native rail with the embedded face before placing the plot:
-    // long unit labels (`40 établissements`) widen the left margin exactly as
-    // `AccessRampFigureCahier` does in the browser.
-    // Ticks stay bare, like R1; the unit is painted once on the axis title.
+    // Measure the native rail with the embedded face before placing the plot,
+    // exactly as `AccessRampFigureCahier` does in the browser. Ticks stay bare,
+    // like R1; the unit is painted once on the axis title.
     const plentyTicks = rampGeometry(
       rampPoints(firstSeries), panelScale, GEOMETRIE_NATIVE_AEDAR,
     ).yTicks
