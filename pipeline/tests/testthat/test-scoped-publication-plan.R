@@ -668,3 +668,15 @@ test_that("frozen profile publication refuses a changed projection", {
       expected_version = paste(rep("0", 32), collapse = "")),
     "does not match the validated plan")
 })
+
+test_that("the stripped snapshot keeps its artifact row order for versions", {
+  target <- scoped_scalar_fixture()
+  current <- retained_baseline_scalar(scoped_scalar_fixture(), "scoped_scalar")
+  current$facts <- current$facts[rev(seq_len(nrow(current$facts))), ,
+                                 drop = FALSE]
+  delta <- scoped_snapshot_delta(list(scalar = target), list(scalar = current),
+                                 "scoped_scalar")
+  expect_identical(delta$direction, "forward")
+  expect_identical(delta$without_scope$facts,
+                   retained_baseline_scalar(target, "scoped_scalar")$facts)
+})
