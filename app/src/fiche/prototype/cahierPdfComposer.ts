@@ -1025,18 +1025,22 @@ function dessinerTableau(
         cellX += colonne.width
         continue
       }
+      // The approved flat table's `Mode` cell keeps the row-label role (14 px)
+      // and its series ink; numeric value cells use the legend role.
+      const roleCellule = colonne.column.kind === 'raw'
+        ? ROLE_PDF.libelleTableau
+        : ROLE_PDF.valeurTableau
       const lignes = plierTexte(cellule.display, mesure, {
-        police: ROLE_PDF.valeurTableau.police,
-        taillePt: ROLE_PDF.valeurTableau.taille,
+        police: roleCellule.police,
+        taillePt: roleCellule.taille,
         largeurMax: colonne.width - 2,
         casserMotsLongs: cellule.cell.value === null,
       })
-      // The approved flat table inks the mode label with its series colour.
       const couleurCellule = cellule.cell.color ? couleurPdf(cellule.cell.color) : PALETTE_PDF.ink
       lignes.forEach((ligne, ligneIndex) => {
         texte(doc, ligne.texte, cellX + 1, cy + 1 + ligneIndex * 2.5, {
-          police: ROLE_PDF.valeurTableau.police,
-          taille: ROLE_PDF.valeurTableau.taille,
+          police: roleCellule.police,
+          taille: roleCellule.taille,
           couleur: couleurCellule,
         })
       })
