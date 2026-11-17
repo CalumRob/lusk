@@ -385,7 +385,10 @@ export function validerTerritoires(brut: unknown, fichier: string): Territoire[]
       if (type === 'commune') {
         exiger(littoral === 'C' || littoral === 'NC', fichier, ligneIndexee, '« littoral_code » doit être C ou NC pour une commune')
         if (littoral === 'C') {
-          exiger(classement === 'Mer' || classement === 'Estuaire', fichier, ligneIndexee, '« littoral_classement_source » doit être Mer ou Estuaire pour une commune littorale')
+          // Le domaine source (Mer/Estuaire, ou toute modalité future) est
+          // porté par le registre SERVI ; la ligne exige seulement une valeur
+          // non vide, l'appartenance est vérifiée contre ce registre.
+          exiger(estChaineNonVide(classement), fichier, ligneIndexee, '« littoral_classement_source » doit être renseigné pour une commune littorale')
         } else {
           exiger(classement === null, fichier, ligneIndexee, `« ${territoire} » (commune non littorale) porte un classement source`)
         }
@@ -458,14 +461,18 @@ export function validerTerritoiresMetadata(brut: unknown, fichier: string): Terr
       exiger(estChaine(source['sha256']) && /^[0-9a-f]{64}$/.test(source['sha256'] as string), fichier, 0, '« source_records.classe_littorale_communale.sha256 » doit être une empreinte SHA-256')
       exiger(estChaineNonVide(source['definition']), fichier, 0, '« source_records.classe_littorale_communale.definition » doit être renseigné')
       exiger(estChaineNonVide(source['coverage']), fichier, 0, '« source_records.classe_littorale_communale.coverage » doit être renseigné')
+      // Le registre des modalités source est une donnée AMONT : l'app valide
+      // sa forme (chaînes non vides, uniques, non vide) et s'y réfère pour
+      // l'appartenance. Elle ne duplique jamais Mer/Estuaire.
       const classements = source['classements']
       exiger(
         Array.isArray(classements) &&
           classements.length > 0 &&
-          classements.every((valeur) => valeur === 'Mer' || valeur === 'Estuaire'),
+          classements.every((valeur) => estChaineNonVide(valeur)) &&
+          new Set(classements as string[]).size === classements.length,
         fichier,
         0,
-        '« source_records.classe_littorale_communale.classements » doit déclarer Mer/Estuaire',
+        '« source_records.classe_littorale_communale.classements » doit être une liste non vide de modalités uniques',
       )
     }
   }
@@ -524,6 +531,17 @@ export function verifierClassificationLittorale(
     0,
     'la source classe_littorale_communale est requise lorsque le littoral est publié',
   )
+  const registre = metadata!.source_records['classe_littorale_communale']!.classements
+  exiger(
+    Array.isArray(registre) &&
+      registre.length > 0 &&
+      registre.every((valeur) => estChaineNonVide(valeur)) &&
+      new Set(registre).size === registre.length,
+    fichier,
+    0,
+    'le registre des classements littoraux servis doit être une liste non vide de modalités uniques',
+  )
+  const classements = new Set(registre as string[])
   for (const territoire of territoires) {
     if (territoire.type === 'commune') {
       exiger(
@@ -534,8 +552,7 @@ export function verifierClassificationLittorale(
       )
       if (territoire.littoral_code === 'C') {
         exiger(
-          territoire.littoral_classement_source === 'Mer' ||
-            territoire.littoral_classement_source === 'Estuaire',
+          classements.has(territoire.littoral_classement_source as string),
           fichier,
           0,
           `classement littoral source incohérent pour « ${territoire.territoire} »`,

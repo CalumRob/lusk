@@ -103,6 +103,14 @@ describe('contrat de la classification littorale (#1041)', () => {
         definition: 'Communes définies par la loi Littoral de 1986, complétées par le décret 2004-311.',
         coverage: 'Liste positive exhaustive pour les quatre départements bretons.',
         classements: ['Mer', 'Estuaire'],
+        vintages: [{
+          id: 'classe_littorale_communale',
+          label: 'Communes littorales en Bretagne au titre de la loi',
+          version: 'Liste positive DREAL Bretagne — diffusion 2023-04-21',
+          licence: 'Licence Ouverte 2.0 (lov2)',
+          dateReference: null,
+          datePublication: '2023-04-21',
+        }],
       },
     },
   }
@@ -132,15 +140,49 @@ describe('contrat de la classification littorale (#1041)', () => {
     expect(() => verifierClassificationLittorale(territoires, parsed)).not.toThrow()
   })
 
+  it('honore le registre de classements SERVI, sans dupliquer le domaine source', () => {
+    const avecLac = structuredClone(metadata)
+    avecLac.source_records.classe_littorale_communale.classements = ['Mer', 'Estuaire', 'Lac']
+    const territoires = validerTerritoires([commune('29083', 'C', 'Lac')], 'territoires.json')
+    const parsed = validerTerritoiresMetadata(avecLac, 'territoires-metadata.json')
+    expect(() => verifierClassificationLittorale(territoires, parsed)).not.toThrow()
+
+    const seulementMer = structuredClone(metadata)
+    seulementMer.source_records.classe_littorale_communale.classements = ['Mer']
+    const estuaire = validerTerritoires([commune('56086', 'C', 'Estuaire')], 'territoires.json')
+    const registreMer = validerTerritoiresMetadata(seulementMer, 'territoires-metadata.json')
+    expect(() => verifierClassificationLittorale(estuaire, registreMer))
+      .toThrow('classement littoral source incohérent')
+
+    const doublon = structuredClone(metadata)
+    doublon.source_records.classe_littorale_communale.classements = ['Mer', 'Mer']
+    expect(() => validerTerritoiresMetadata(doublon, 'territoires-metadata.json'))
+      .toThrow('classements')
+  })
+
+  it('accepte une dateReference absente et conserve la date de diffusion', () => {
+    const parsed = validerTerritoiresMetadata(metadata, 'territoires-metadata.json')
+    const vintages = parsed.source_records['classe_littorale_communale']?.vintages
+    expect(vintages?.[0]?.dateReference).toBeNull()
+    expect(vintages?.[0]?.datePublication).toBe('2023-04-21')
+  })
+
   it('refuse une classification partielle, inconnue ou portée par un non-commune', () => {
     expect(() => validerTerritoires([
       commune('29083', 'C', 'Mer'),
       { territoire: '29209', type: 'commune', nom: 'Plouvien', departement: '29', epci: null, littoral_code: null, littoral_classement_source: null },
     ], 'territoires.json')).toThrow('littoral_code')
 
+    // Un classement source non vide est structurellement valide ; c'est le
+    // registre SERVI qui décide s'il est admis (test suivant).
     expect(() => validerTerritoires([
       commune('29083', 'C', 'Lac'),
-    ], 'territoires.json')).toThrow('Mer ou Estuaire')
+    ], 'territoires.json')).not.toThrow()
+
+    // Les deux colonnes présentes mais vides : même refus que côté R.
+    expect(() => validerTerritoires([
+      { territoire: '29083', type: 'commune', nom: 'Île-de-Sein', departement: '29', epci: null, littoral_code: null, littoral_classement_source: null },
+    ], 'territoires.json')).toThrow('littoral_code')
 
     expect(() => validerTerritoires([
       commune('29209', 'NC', 'Mer'),

@@ -36,11 +36,24 @@ territory-reference contract. It adds no preset, no control and no UI surface.
 | `Classement` domain | `Mer` (250 rows) and `Estuaire` (13 rows) |
 
 The pipeline manifest (`pipeline/R/classes_littoral.R`) pins the exact URL,
-SHA-256, licence and dates. `download_sources()` refuses a file whose bytes do
-not match the pinned digest. The same bytes are committed as a small test
-fixture (`pipeline/tests/testthat/fixtures/littoral-dreal-bretagne-2023-04-21.csv`)
-so the reader, the crosswalk and the count regression are proven without a
+SHA-256, licence and dates. The digest is verified at the actual read/admission
+seam — `lire_classes_littoral()` checks the pinned bytes by default on EVERY
+path (`run_pipeline`, `_targets`, and any pre-existing cache), so a truncated
+or altered cache can never generate a complement that silently reclassifies the
+dropped communes as NC. `construire_crosswalk_littoral()` additionally refuses
+a source without that admission proof; bounded synthetic tests must opt out
+explicitly (`sha256 = NULL` / `exiger_identite = FALSE`), never by weakening
+the production default. The same bytes are committed as a small test fixture
+(`pipeline/tests/testthat/fixtures/littoral-dreal-bretagne-2023-04-21.csv`) so
+the reader, the crosswalk and the count regression are proven without a
 network call.
+
+**Served date semantics.** The source publishes a declared distribution /
+last-modification date (2023-04-21), not a surveyed legal-perimeter reference
+date. The manifest and the served source vintage therefore carry
+`datePublication = 2023-04-21` and an honestly absent `dateReference` (JSON
+`null`), consumed by the app's nullable `SourceVintageRecord.dateReference`.
+No observation date is invented.
 
 **Vintage caveat.** 2023-04-21 is the dataset record's declared
 last-modification date, not a surveyed legal-perimeter date. The source does
@@ -124,3 +137,8 @@ list must be reconciled and the snapshot re-pinned deliberately.
 - This slice performs no live DDL, no production publication and no service
   deployment. Migration 043 is a code artifact for an operator-managed
   rollout.
+- The real nine-parameter PostgreSQL adapter is exercised by a bounded guarded
+  roundtrip (`test_littoral_reference_publisher.py` +
+  `scripts/smoke-littoral-reference.R`): valid classified publish, marker,
+  no-op, ON CONFLICT update, and rollback of an invalid classification. It
+  needs no scalar/profile serving artifact.
