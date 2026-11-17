@@ -27,16 +27,14 @@
 #     scalar publisher with the normal explicit retirement policy, so the scoped
 #     indicators are removed by omission, not by ad-hoc SQL.
 #
-#   replacement (#1037) : at least one named scoped indicator is present in
-#     both generations, and the ONLY permitted change is an additive level
-#     expansion (forward) or its exact reverse (recovery).
-#     `scoped_replacement_proof()` checks descriptor fields, allowed levels,
-#     descriptor token, shared facts, added/removed facts and provenance before
-#     anything else. Explicitly named one-sided indicators keep missing-only
-#     semantics inside the same named scope, so a real mixed activation is
-#     reviewable; a pure one-sided scope is refused as a missing-only plan, and
-#     the missing-only intent never accepts a both-present scope. There is no
-#     silent conversion in either direction.
+#   replacement (#1037) : EVERY named scoped indicator is present in both
+#     generations, and the ONLY permitted change is an additive level expansion
+#     (forward) or its exact reverse (recovery). `scoped_replacement_proof()`
+#     checks descriptor fields, allowed levels, descriptor token, shared facts,
+#     added/removed facts and provenance before anything else. Mixed presence is
+#     a different capability and is refused; the missing-only mode is the route
+#     for a one-sided step, and it never accepts a both-present scope. There is
+#     no silent conversion in either direction.
 #
 # The replacement mode is not a second publisher: it feeds the same registered
 # closure and the same guarded atomic transaction.
