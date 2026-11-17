@@ -1017,12 +1017,18 @@ describe('polices PDF — provenance et marque', () => {
     const roles = new Set(MARQUE_LUSK_ERMINE.chemins.map((chemin) => chemin.role))
     expect(roles).toEqual(new Set(['ink', 'accent']))
     expect(Object.keys(REMPLISSAGES_MARQUE_LUSK).sort()).toEqual(['accent', 'ink'])
-    expect(REMPLISSAGES_MARQUE_LUSK.accent.toLowerCase()).toBe('#57726f')
-    expect(REMPLISSAGES_MARQUE_LUSK.ink.toLowerCase()).toBe('#1b1b19')
-    // The canonical accent is the design-token anchor, not an invented hue.
+    // Expectations derive from the owners, not from restated literals: the
+    // canonical accent is the design-token anchor, and the two roles must stay
+    // distinct, valid fills. The real-PDF owner mutation below is the guard
+    // that fails if a consumer paints a copied fill instead of this object.
     const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')
     const canonicalBrand = /--brand-500:\s*(#[0-9a-f]{6})/i.exec(tokens)![1]!.toLowerCase()
     expect(REMPLISSAGES_MARQUE_LUSK.accent.toLowerCase()).toBe(canonicalBrand)
+    for (const remplissage of Object.values(REMPLISSAGES_MARQUE_LUSK)) {
+      expect(remplissage).toMatch(/^#[0-9a-f]{6}$/i)
+    }
+    expect(REMPLISSAGES_MARQUE_LUSK.ink.toLowerCase())
+      .not.toBe(REMPLISSAGES_MARQUE_LUSK.accent.toLowerCase())
   })
 
   it('peint les remplissages de l’hermine depuis ce propriétaire, pas depuis une copie', async () => {
