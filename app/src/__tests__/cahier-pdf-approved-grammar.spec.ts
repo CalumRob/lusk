@@ -273,7 +273,7 @@ describe('PDF approuvé — tableaux transposés par légende', () => {
       expect(part.rows.slice(0, modes.length).map((row) => row.cells[0]!.display))
         .toEqual(capture.capabilities.selectableSeries.slice(0, 3).map((serie) => serie.label))
       expect(part.rows[0]!.cells.map((cellule) => cellule.display))
-        .toEqual([capture.capabilities.selectableSeries[0]!.label, expect.any(String), expect.any(String), expect.any(String)])
+        .toEqual([capture.capabilities.selectableSeries[0]!.label, '5', 'Indisponible', '—'])
     }
     const lecture = await generer(capture)
     expect(runs(lecture, 'Mode')).toHaveLength(2)
@@ -440,10 +440,6 @@ describe('PDF approuvé — wordmark, figures AEDAR', () => {
     // The real composer conversion (svg2pdf) is what a reader receives; the
     // stub painter cannot prove mark fills.
     const lecture = await generer(captureExplorerRangs())
-    // Panel width in mm → native 2.5 px stroke → points.
-    const panelWidth = (PAGE_APPROUVEE.largeurUtilePt - 2 * ptDepuisCssPx(13) - 6) / 2
-    const epaisseur = CAHIER_FIGURE_STROKE.widthPx * panelWidth / 640
-    void epaisseur
     const epaisseurs = await epaisseursTraitPdf(lecture.octets)
     expect(epaisseurs.length).toBeGreaterThan(0)
     // The painter states the stroke in native figure units; the document

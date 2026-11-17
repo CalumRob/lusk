@@ -8,10 +8,10 @@ import AccessRampFigureCahier from '@/fiche/prototype/AccessRampFigureCahier.vue
 import CahierGroupedVerticalBarChart from '@/fiche/prototype/CahierGroupedVerticalBarChart.vue'
 import CahierMobiliteComparisonBars from '@/fiche/prototype/CahierMobiliteComparisonBars.vue'
 import CahierMobiliteRaccordementCurve from '@/fiche/prototype/CahierMobiliteRaccordementCurve.vue'
-import { CAHIER_FIGURE_AXIS } from '@/fiche/cahierFigureGrammaire'
+import { CAHIER_FIGURE_AXIS, CAHIER_FIGURE_RAIL } from '@/fiche/cahierFigureGrammaire'
 import { ROLE_PDF } from '@/fiche/prototype/cahierPdfGrammaire'
 import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
-import { dessinerFigurePdf } from '@/fiche/prototype/cahierPdfFigures'
+import { dessinerFigurePdf, GAP_PANNEAUX_FIGURE_MM } from '@/fiche/prototype/cahierPdfFigures'
 import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
 import { couleurPdf } from '@/fiche/prototype/cahierPdfPalette'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
@@ -20,6 +20,7 @@ import type { CahierFigureProjection } from '@/fiche/prototype/cahierExportAdapt
 import type { MobiliteBarsFigureEvidence, MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
 import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import {
+  CAHIER_AEDAR_FIGURE_GEOMETRY,
   CAHIER_FIGURE_STROKE,
   CSS_PX_EN_MM,
   cahierFigureStrokeVars,
@@ -104,7 +105,14 @@ async function peindre(
     await peintre({
       doc, signal, x: 12, y: 25, width: 186, chargerImage: chargeurImageTest, comparisonProof,
       mesure: {
-        largeur: (text, font, size) => { doc.setFont(font); doc.setFontSize(size); return doc.getTextWidth(text) },
+        largeur: (text, font, size, espacement = 0) => {
+          doc.setFont(font)
+          doc.setFontSize(size)
+          const width = doc.getTextWidth(text)
+          // `getTextWidth` excludes the active char space (`Tc`): add the
+          // per-glyph advances exactly like the production `MesureJsPdf`.
+          return width + espacement * 25.4 / 72 * Array.from(text).length
+        },
         hauteurLigne: (_font, size) => size * 25.4 / 72,
         espace: (font, size) => { doc.setFont(font); doc.setFontSize(size); return doc.getTextWidth(' ') },
       },
@@ -251,16 +259,28 @@ describe('sortie native du peintre PDF', () => {
     expect(car2).toMatch(/ 22\.00$/)
     expect(lecture.texteComplet).toContain('40')
     const title = lecture.textes.find((item) => item.str === 'VOLUME DE L’OFFRE (ÉTABLISSEMENTS)')!
-    // Source geometry: two 90 mm panels with the painter's 6 mm gap; the right
-    // panel starts at 108 mm. The native title lane puts the rotated baseline
-    // at 16/640 of the panel width, and the run is centred on the plot's
-    // native vertical middle (130/300 of the viewBox).
-    const panelWidthMm = 90
-    const panelXMm = 108
-    const titreXAttendu = (panelXMm + 16 * panelWidthMm / 640) * 72 / 25.4
+    // Geometry is derived from the painter's own inputs and shared owners:
+    // panel count from the painted SVGs, gap from the painter, title lane from
+    // the grammar, viewBox width from the native AEDAR owner. No literal
+    // 90/108/16/640 is repeated here.
+    const nombrePanneaux = svgs.length
+    const largeurFigureMm = 186
+    const xFigureMm = 12
+    const largeurPanneauMm = (largeurFigureMm - GAP_PANNEAUX_FIGURE_MM * (nombrePanneaux - 1)) / nombrePanneaux
+    const xPanneauDroitMm = xFigureMm + largeurPanneauMm + GAP_PANNEAUX_FIGURE_MM
+    const titreXAttendu = (xPanneauDroitMm
+      + CAHIER_FIGURE_RAIL.titleLane * largeurPanneauMm / CAHIER_AEDAR_FIGURE_GEOMETRY.width) * 72 / 25.4
     expect(Math.abs(title.x - titreXAttendu)).toBeLessThan(0.3)
-    const tickNumbers = lecture.textes.filter((item) => /^(0|20|40)$/.test(item.str))
-    expect(Math.min(...tickNumbers.map((item) => item.x))).toBeGreaterThan(title.x + 3.5)
+    // Restored from `cede60a4`: the rotated run must sit on the plot's native
+    // vertical middle. The middle is read from the shared `40`/`0` tick labels
+    // (owner positions), never from a 130/300 literal; the measured residual is
+    // the embedded face's rotated baseline (< 8 pt, as originally asserted).
+    const label40 = lecture.textes.find((item) => item.str === '40 établissements'
+      && Math.abs(item.taille - ROLE_PDF.tick.taille) < 0.05)!
+    const label0 = lecture.textes.find((item) => item.str === '0 établissements'
+      && Math.abs(item.taille - ROLE_PDF.tick.taille) < 0.05)!
+    const middle = (label40.y + label0.y) / 2
+    expect(Math.abs(title.y + title.largeur / 2 - middle)).toBeLessThan(8)
     const ticks = lecture.textes.filter((item) => /établissements/.test(item.str)
       && Math.abs(item.rotation) < 0.01)
     expect(ticks).toHaveLength(3)

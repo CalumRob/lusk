@@ -2,8 +2,9 @@
  * Test-only runtime for the shared PDF composer.
  *
  * Fonts are the committed assets read from disk (same bytes the browser
- * fetches), and map images are decoded from a tiny PNG. Neither helper is
- * bundled in production.
+ * fetches), and the bounded image loader is exercised with a test-only colour
+ * block (a decode/embed proof, not map fidelity). Neither helper is bundled in
+ * production.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -26,13 +27,17 @@ export const chargeurPoliceTest: ChargeurPolicePdf = async (face: PdfFontFace) =
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
 }
 
-// 2×2 PNG, generated once and stable. Production converts the real inline
-// WebP/PNG assets; tests only exercise the same embedding path.
-export const PNG_TEST =
+// TEST-ONLY 2×2 colour block. It proves the image decode/embed path (and the
+// abort/cleanup path) only: it is NOT map fidelity evidence and is never part
+// of the approval PDF set. Production converts the real inline WebP/PNG assets.
+export const PNG_CHARGEUR_TEST_UNIQUEMENT =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR4nGNMmXbiPwMDAwMTiABhACnkAsXTOyC6AAAAAElFTkSuQmCC'
 
+/** @deprecated Name kept for the bounded loader tests; see the comment above. */
+export const PNG_TEST = PNG_CHARGEUR_TEST_UNIQUEMENT
+
 export const chargeurImageTest: ChargeurImagePdf = async () => ({
-  dataUrl: PNG_TEST,
+  dataUrl: PNG_CHARGEUR_TEST_UNIQUEMENT,
   width: 2,
   height: 2,
 })

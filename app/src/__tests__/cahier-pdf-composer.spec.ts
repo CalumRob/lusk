@@ -226,17 +226,20 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
     }
     // Every page that carries comparative proof carries the footer.
     expect(occurrences(lecture, '¹ Groupe comparé : communes de EPCI X')).toBe(lecture.pages)
-    // No row is cut: the six native rows appear once across the two pages.
+    // No row is cut: the six native rows appear once across the two pages, and
+    // a category total is not joined to itself.
     for (const label of [
-      'Réseau piéton — Réseau piéton',
       'Réseau piéton — Longueur brute — à pied (valeur brute)',
       'Réseau cyclable — Total vélo',
       'Réseau cyclable — Longueur brute — à vélo (valeur brute)',
-      'Réseau automobile — Réseau automobile',
       'Réseau automobile — Longueur brute — en voiture (valeur brute)',
     ]) {
       expect(occurrences(lecture, label)).toBe(1)
     }
+    expect(lecture.textes.filter((item) => item.str === 'Réseau piéton')).toHaveLength(1)
+    expect(lecture.textes.filter((item) => item.str === 'Réseau automobile')).toHaveLength(1)
+    expect(lecture.texteComplet).not.toContain('Réseau piéton — Réseau piéton')
+    expect(lecture.texteComplet).not.toContain('Réseau automobile — Réseau automobile')
     // Cell font size is identical on both pages: no global document shrink.
     const tailles = new Set(
       lecture.textes
@@ -448,7 +451,7 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
     expect(lecture.texteComplet).not.toContain('0,85')
     const rowLabel = lecture.textes.find((item) => item.str.startsWith('Réseau piéton') && item.page === 1)
     const comparisonHeader = lecture.textes
-      .filter((item) => item.str === 'Groupe comparé' && item.page === 1)
+      .filter((item) => item.str === 'Groupe comparé ¹' && item.page === 1)
       .sort((a, b) => b.x - a.x)[0]
     expect(rowLabel).toBeTruthy()
     expect(comparisonHeader).toBeTruthy()
@@ -456,7 +459,7 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
     const comparisonValue = lecture.textes.find((item) => item.str === '2,2' && item.page === 1)
     expect(comparisonValue).toBeTruthy()
     const alignedHeader = lecture.textes
-      .filter((item) => item.str === 'Groupe comparé' && item.page === 1)
+      .filter((item) => item.str === 'Groupe comparé ¹' && item.page === 1)
       .sort((a, b) => Math.abs(a.x - comparisonValue!.x) - Math.abs(b.x - comparisonValue!.x))[0]
     expect(Math.abs(alignedHeader!.x - comparisonValue!.x)).toBeLessThan(6)
     const couleurs = await couleursRemplissage(lecture.octets)

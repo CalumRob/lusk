@@ -18,6 +18,10 @@ import { captureCahierSection } from '@/fiche/prototype/cahierExportCapture'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
 import { AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
+import {
+  AEDAR_EQUIPMENT_BUCKET_ORDER,
+  AEDAR_EQUIPMENT_MODES,
+} from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { ContentEvidence } from '@/fiche/content/themeContent'
 import type { ControleComparaison } from '@/fiche/comparisonContext'
@@ -383,22 +387,72 @@ export function captureBarresDense(): CahierExportCapture {
   return capture as CahierExportCapture
 }
 
+/**
+ * A coherent synthetic equipment profile. The 40 (or N) rows are explicitly
+ * synthetic equipment labels, but their accessibility buckets and mode order
+ * come from the published AEDAR owners (`AEDAR_EQUIPMENT_BUCKET_ORDER`,
+ * `AEDAR_EQUIPMENT_MODES`): each row crosses the 25 % threshold in its bucket's
+ * mode only, with a small deterministic within-bucket variation. No cyclic
+ * modular ladder, no invented domain category, and never presented as real data.
+ */
+function profilSynthetique(
+  count: number,
+  baseFacts: readonly Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const bucketKeys = [...AEDAR_EQUIPMENT_BUCKET_ORDER]
+  const modes = AEDAR_EQUIPMENT_MODES.map(({ key }) => key)
+  return Array.from({ length: count }, (_, index) => {
+    const bucket = bucketKeys[index % bucketKeys.length]!
+    const variant = Math.floor(index / bucketKeys.length)
+    const measures = Object.fromEntries(modes.map((mode, modeIndex) => {
+      const share = mode === bucket
+        ? 0.72 + ((variant * 3 + modeIndex) % 9) / 100
+        : 0.04 + ((modeIndex * 7 + variant * 5) % 18) / 100
+      return [`count_15_${mode}_share`, Number(share.toFixed(2))]
+    }))
+    return {
+      ...baseFacts[index % baseFacts.length],
+      typequ: `T${String(index + 1).padStart(3, '0')}`,
+      typequ_label: `Équipement ${index + 1}`,
+      measures,
+    }
+  })
+}
+
+/**
+ * The populated standalone bars section, with no map plate: a native
+ * `stationnement-ravitaillement` capture whose compared cells carry served
+ * references. The approval PDF set uses this fixture for the barred header /
+ * table grammar instead of the synthetic map-block fixture.
+ */
+export function captureBarresStationnement(): CahierExportCapture {
+  const capture: any = structuredClone(capturePdfFixture('stationnement-ravitaillement'))
+  const synthetic = [12.4, 8.1]
+  let index = 0
+  for (const figure of capture.figures.filter((candidate: any) => candidate.family === 'mobilite-bars')) {
+    for (const category of figure.model.figure.categories) {
+      const unit = figure.model.figure.unit
+      const focal = synthetic[index % synthetic.length]!
+      index += 1
+      category.value.fact.value = focal
+      category.value.fact.unit = unit
+      category.value.fact.comparison = {
+        direction: 'neutral',
+        scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
+        rank: null,
+        reference: { value: Math.round(focal * 88) / 100, unit },
+      }
+    }
+  }
+  return capture as CahierExportCapture
+}
+
 export function captureWaffleDense(): CahierExportCapture {
   const base = sectionOf(cahierExportFixture().content, 'aedar-equipment-profile')
   const evidence = base.evidence as unknown as { facts: readonly Record<string, unknown>[] }
-  const facts = Array.from({ length: 12 }, (_, index) => ({
-    ...evidence.facts[index % evidence.facts.length],
-    typequ: `T${String(index + 1).padStart(3, '0')}`,
-    typequ_label: `Équipement ${index + 1}`,
-    measures: {
-      count_15_walk_share: index % 5 === 0 ? 0.8 : 0.05,
-      count_15_transit_share: index % 5 === 1 ? 0.8 : 0.05,
-      count_15_bike_lts2_share: index % 5 === 2 ? 0.8 : 0.05,
-      count_15_bike_lts4_share: index % 5 === 3 ? 0.8 : 0.05,
-      count_15_car_share: index % 5 === 4 ? 0.8 : 0.05,
-    },
-  }))
-  return capturePdfFixture('aedar-equipment-profile', { evidencePatch: { facts } })
+  return capturePdfFixture('aedar-equipment-profile', {
+    evidencePatch: { facts: profilSynthetique(12, evidence.facts) },
+  })
 }
 
 /* ------------------------------------------------------------------ *
@@ -531,23 +585,15 @@ export function captureExplorerRangs(): CahierExportCapture {
 
 /**
  * A dense, honest continuation fixture: forty synthetic equipment types in the
- * equipment-profile panel. The rows are legitimate panel rows (types grouped by
- * their served accessibility bucket), never invented deciles or extra domain
- * categories. Synthetic like every fixture here, never production data.
+ * equipment-profile panel. Rows are legitimate panel rows (types grouped by
+ * their published accessibility bucket and mode order), never invented deciles
+ * or extra domain categories. Synthetic like every fixture here, never
+ * production data.
  */
 export function captureProfilRangsDense(): CahierExportCapture {
   const capture: any = structuredClone(captureWaffleDense())
   const figure = capture.figures.find((candidate: any) => candidate.family === 'aedar-equipment-profile')
   const base = figure.model.facts as readonly Record<string, unknown>[]
-  const modes = ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'] as const
-  figure.model.facts = Array.from({ length: 40 }, (_, index) => ({
-    ...base[index % base.length],
-    typequ: `T${String(index + 1).padStart(3, '0')}`,
-    typequ_label: `Équipement ${index + 1}`,
-    measures: Object.fromEntries(modes.map((mode, modeIndex) => [
-      `count_15_${mode}_share`,
-      (((index * 7 + modeIndex * 13) % 85) + 5) / 100,
-    ])),
-  }))
+  figure.model.facts = profilSynthetique(40, base)
   return capture as CahierExportCapture
 }

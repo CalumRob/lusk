@@ -618,7 +618,8 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
       ['focal', 'focal'], ['comparison', 'comparison'],
     ])
     expect(table.columns[1]?.label).toBe(GROUPE_COMPARE_LABEL)
-    expect(table.columns[0]?.label).toBe(figure.xAxisTitle)
+    expect(table.columns[0]?.label).toBe(capture.identity.territory.name)
+    expect(table.rowHeader).toBe(figure.xAxisTitle)
     expect(table.rows.map((row) => [row.key, row.cells[0]?.display, row.cells[0]?.unit, row.cells[0]?.raw]))
       .toEqual([
         ['bike:total', '8', 'km / 1 000 hab.', false],
