@@ -44,6 +44,7 @@ const fixture = JSON.parse(readFileSync(
     svgTopAboveBaseline: number
     pathInkTopInBox: number
     pathInkBottomInBox: number
+    pathWordToErmineGap: number
   }
   ink720Em: { top: number; bottom: number; left: number; right: number }
   provenance: { pathsSha256: string; source: string }
@@ -111,12 +112,27 @@ describe('#1024 — placement du lockup : la géométrie partagée, pas un litt�
         / MARQUE_LUSK_LOCKUP.tailleSourcePx,
       9,
     )
+    // The screen's flex box sits 0.81727em above the baseline; the PDF's text
+    // ink frame is 0.0451em lower (its static ascender is 0.0238em lower and
+    // the raster-confirmed ink gap is 0.26705em). Both numbers are derived,
+    // never copied from a previous PDF output.
+    expect((MARQUE_LUSK_LOCKUP.ermineEm - MARQUE_LUSK_LOCKUP.ligneMotEm) / 2 + 16 / 22)
+      .toBeCloseTo(0.8172727272727273, 9)
+    expect(sommetErmineEm()).toBeCloseTo(0.77215, 5)
+    // The PDF text baseline is fixed by the page; the embedded face's ascender
+    // ink is its `l`/`k` yMax. The owner derives the box top from that ink, the
+    // real header's ink gap and the ermine's ink offset in its box.
+    expect(MARQUE_LUSK_LOCKUP.ascensionEncreMotEm).toBe(1434 / 2000)
     expect(sommetErmineEm()).toBeCloseTo(
-      (MARQUE_LUSK_LOCKUP.ermineEm - MARQUE_LUSK_LOCKUP.ligneMotEm) / 2 + 16 / 22,
+      MARQUE_LUSK_LOCKUP.ascensionEncreMotEm
+        - MARQUE_LUSK_LOCKUP.ecartEncreMotErmineEm
+        + MARQUE_LUSK_LOCKUP.encreHautErmineBoiteEm,
       9,
     )
-    // The real header: lockup top 16.515625 px, baseline 34.484375 px at 22 px.
-    expect(Math.abs(sommetErmineEm() - fixture.derived.svgTopAboveBaseline))
-      .toBeLessThanOrEqual(0.005)
+    // The ink gap it encodes is the one measured on the real header.
+    expect(MARQUE_LUSK_LOCKUP.ecartEncreMotErmineEm).toBeCloseTo(
+      fixture.derived.pathWordToErmineGap,
+      5,
+    )
   })
 })

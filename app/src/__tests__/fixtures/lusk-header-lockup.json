@@ -8,6 +8,9 @@
   "fontSizePx": 22,
   "ermineEm": 1.18,
   "gapPx": 8,
+  "ascensionEncreMotEm": 0.717,
+  "ecartEncreMotErmineEm": 0.26704545454545453,
+  "encreHautErmineBoiteEm": 0.3222,
   "computed": {
     "alignItems": "center",
     "gap": "8px",
@@ -44,7 +47,8 @@
     "svgTopAboveBaseline": 0.8167613636363636,
     "wordTopAboveBaseline": 0.7272727272727273,
     "pathInkTopInBox": 0.32246372916481714,
-    "pathInkBottomInBox": 0.7960159995339133
+    "pathInkBottomInBox": 0.7960159995339133,
+    "pathWordToErmineGap": 0.26704545454545453
   },
   "ink720Em": {
     "top": 0.32222222222222224,

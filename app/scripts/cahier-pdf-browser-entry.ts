@@ -21,7 +21,6 @@ import {
   captureCourbeDense,
   captureCourbeTrous,
   captureExplorerRangs,
-  captureExplorerRangsDense,
   capturePartDense,
   captureRampeDense,
   captureRampeRangs,
@@ -39,7 +38,6 @@ const capturesDenses: Record<string, ReturnType<typeof captureCourbeDense>> = {
   'dense-waffle': captureWaffleDense(),
   'ranks-compact': captureExplorerRangs(),
   'two-tables-ranks': captureExplorerRangs(),
-  'two-tables-ranks-continuation': captureExplorerRangsDense(),
 }
 
 const assetPath = '/cahier-pdf-fixture-map.png'

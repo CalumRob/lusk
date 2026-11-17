@@ -41,7 +41,6 @@ const keys = [
   'populated-comparison',
   'ranks-compact',
   'two-tables-ranks',
-  'two-tables-ranks-continuation',
 ]
 
 await rm(evidenceDir, { recursive: true, force: true })

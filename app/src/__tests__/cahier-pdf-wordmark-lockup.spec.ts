@@ -34,7 +34,9 @@ const fixture = JSON.parse(readFileSync(
   lockup: { w: number; h: number }
   ermineEm: number
   gapPx: number
-  derived: { svgTopAboveBaseline: number }
+  ascensionEncreMotEm: number
+  ecartEncreMotErmineEm: number
+  encreHautErmineBoiteEm: number
   ink720Em: { top: number; bottom: number; left: number; right: number }
 }
 
@@ -80,12 +82,13 @@ describe('#1024 — encre du logotype PDF vs header réel, les deux axes', () =>
     const gauche = Math.min(...ermine.map((chemin) => chemin.x))
     const droit = Math.max(...ermine.map((chemin) => chemin.x + chemin.width))
 
-    // Expected ink = the *real header's* measured box placement
-    // (`fixture.derived.svgTopAboveBaseline`) plus its measured ink offsets in
-    // the same box. Nothing here re-reads the painter's own constant.
-    const sommetPt = fixture.derived.svgTopAboveBaseline * taille
-    const attenduHaut = baselineHaut - (sommetPt - fixture.ink720Em.top * taille)
-    const attenduBas = baselineHaut - (sommetPt - fixture.ink720Em.bottom * taille)
+    // Expected ink = the *real header's* measured ink gap applied to the PDF
+    // word's own ascender ink (the embedded face's `l`/`k` yMax, a font fact),
+    // plus the header's measured horizontal ink offsets. Nothing here re-reads
+    // the painter's own box constant.
+    const ermineTopAbove = fixture.ascensionEncreMotEm - fixture.ecartEncreMotErmineEm
+    const attenduHaut = baselineHaut - ermineTopAbove * taille
+    const attenduBas = attenduHaut + (fixture.ink720Em.bottom - fixture.ink720Em.top) * taille
     const attenduGauche = PAGE_APPROUVEE.insetGauchePt + fixture.ink720Em.left * taille
     expect(Math.abs(haut - attenduHaut) / taille).toBeLessThanOrEqual(0.005)
     expect(Math.abs(bas - attenduBas) / taille).toBeLessThanOrEqual(0.005)

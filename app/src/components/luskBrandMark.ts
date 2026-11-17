@@ -83,6 +83,15 @@ export const MARQUE_LUSK_LOCKUP = {
   unitesParEm: 2000,
   ascensionUnites: 1470,
   descenteUnites: 530,
+  /** `l`/`k` ascender ink of the embedded face (`glyf.yMax` 1434/2000). */
+  ascensionEncreMotEm: 1434 / 2000,
+  /**
+   * Real header ink gap from the word's ascender to the ermine's top, measured
+   * at 720 px/em on the read-only live header (`#1024` fixture).
+   */
+  ecartEncreMotErmineEm: 0.26705,
+  /** Ermine ink top inside its 1.18em viewport (shared viewBox, 720 px/em). */
+  encreHautErmineBoiteEm: 0.3222,
 } as const
 
 /**
@@ -98,12 +107,25 @@ export function baseMotDansLigneEm(taillePx: number = MARQUE_LUSK_LOCKUP.tailleS
 }
 
 /**
- * Top of the lockup box above the word baseline, in em, under
- * `align-items:center` with the ermine as the tallest item. The PDF painter
- * places the ermine box by this same number; it is not a PDF-only literal.
+ * Top of the lockup box above the word baseline, in em, for the PDF painter.
+ *
+ * The PDF text baseline is fixed (`baseMot`), and the embedded wordmark face's
+ * ascender ink is its `l`/`k` `yMax` (1434/2000 = 0.717em). The real header's
+ * measured ink gap between that ascender and the ermine's top is 0.26705em
+ * (read-only capture at 720 px/em). The ermine's own ink top sits 0.3222em
+ * below its box top inside the shared 1.18em viewport. Placing the box so that
+ * `word ink − gap = ermine ink` gives the box top:
+ *
+ *   0.71703 − 0.26705 + 0.32222 = 0.77220em
+ *
+ * That is the number the painter consumes; the flex box arithmetic
+ * (`0.09 + 0.72727 = 0.81727`) is the *screen's* box, not the PDF text's ink
+ * frame — the embedded static face renders its ascender 0.0238em lower than
+ * the browser's variable face, which the header ink gap already accounts for.
  */
-export function sommetErmineEm(taillePx: number = MARQUE_LUSK_LOCKUP.tailleSourcePx): number {
-  return (MARQUE_LUSK_LOCKUP.ermineEm - MARQUE_LUSK_LOCKUP.ligneMotEm) / 2
-    + baseMotDansLigneEm(taillePx)
+export function sommetErmineEm(): number {
+  return MARQUE_LUSK_LOCKUP.ascensionEncreMotEm
+    - MARQUE_LUSK_LOCKUP.ecartEncreMotErmineEm
+    + MARQUE_LUSK_LOCKUP.encreHautErmineBoiteEm
 }
 
