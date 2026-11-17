@@ -262,6 +262,8 @@ async function generer(
     { figure: 'courbe', selecteur: '.mobilite-raccordement-curve__comparison', variable: '--cahier-figure-stroke-comparison-width', propriete: 'stroke-width', genre: 'longueur', sentinelle: '6px' },
     { figure: 'courbe', selecteur: '.mobilite-raccordement-curve__comparison', variable: '--cahier-figure-stroke-comparison-dash', propriete: 'stroke-dasharray', genre: 'tirets', sentinelle: '13 8' },
     { figure: 'courbe', selecteur: '.mobilite-raccordement-curve__comparison', variable: '--cahier-figure-stroke-comparison-opacity', propriete: 'opacity', genre: 'nombre', sentinelle: '0.4' },
+    { figure: 'courbe', selecteur: '.mobilite-raccordement-curve__comparison', variable: '--cahier-figure-stroke-series-cap', propriete: 'stroke-linecap', genre: 'mot', sentinelle: 'square' },
+    { figure: 'courbe', selecteur: '.mobilite-raccordement-curve__comparison', variable: '--cahier-figure-stroke-series-join', propriete: 'stroke-linejoin', genre: 'mot', sentinelle: 'bevel' },
     { figure: 'courbe', selecteur: '.mobilite-raccordement-curve__marker-line', variable: '--cahier-figure-stroke-marker-width', propriete: 'stroke-width', genre: 'longueur', sentinelle: '9px' },
     { figure: 'courbe', selecteur: '.mobilite-raccordement-curve__marker-line', variable: '--cahier-figure-stroke-marker-dash', propriete: 'stroke-dasharray', genre: 'tirets', sentinelle: '2 6' },
     { figure: 'courbe', selecteur: '.mobilite-raccordement-curve__grid line', variable: '--cahier-figure-stroke-grid-width', propriete: 'stroke-width', genre: 'longueur', sentinelle: '5px' },

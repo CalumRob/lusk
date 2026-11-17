@@ -981,6 +981,12 @@ describe('tableaux PDF — colonnes, nombres et en-têtes', () => {
   })
 })
 
+/** First owner fill a consumer source copies verbatim, or `undefined`. */
+function remplissageCopie(source: string, interdits: readonly string[]): string | undefined {
+  const normalise = source.toLowerCase()
+  return interdits.find((interdit) => normalise.includes(interdit))
+}
+
 describe('polices PDF — provenance et marque', () => {
   it('embarque uniquement des faces dérivées des paquets de l’app, avec licences', () => {
     expect(POLICES_PDF).toHaveLength(10)
@@ -1004,31 +1010,33 @@ describe('polices PDF — provenance et marque', () => {
       'src/components/LuskBrand.vue',
       'src/components/fiche/FiligraneFiche.vue',
     ].map((chemin) => [chemin, readFileSync(resolve(process.cwd(), chemin), 'utf8')] as const)
+    // Forbid the owner's *current* fills, derived from the owner itself: moving
+    // a canonical colour must not leave a stale copy undetected in a consumer.
+    const remplissagesInterdits = Object.values(REMPLISSAGES_MARQUE_LUSK)
+      .map((remplissage) => remplissage.toLowerCase())
     for (const [chemin, source] of consommateurs) {
       expect(source, chemin).toContain('MARQUE_LUSK_ERMINE')
-      expect(source.toLowerCase(), chemin).not.toContain('#57726f')
-      expect(source.toLowerCase(), chemin).not.toContain('#1b1b19')
+      expect(remplissageCopie(source, remplissagesInterdits), chemin).toBeUndefined()
       for (const cheminMarque of MARQUE_LUSK_ERMINE.chemins) {
         expect(source, chemin).not.toContain(cheminMarque.d)
       }
     }
     // Every path declares a role the fills owner can resolve; a cosmetic path
-    // split does not need a test edit.
+    // split does not need a test edit. The locked fills' *identity* is the brand
+    // owner's contract (`lusk-brand.spec.ts`), not a PDF-ownership incident.
     const roles = new Set(MARQUE_LUSK_ERMINE.chemins.map((chemin) => chemin.role))
     expect(roles).toEqual(new Set(['ink', 'accent']))
     expect(Object.keys(REMPLISSAGES_MARQUE_LUSK).sort()).toEqual(['accent', 'ink'])
-    // Expectations derive from the owners, not from restated literals: the
-    // canonical accent is the design-token anchor, and the two roles must stay
-    // distinct, valid fills. The real-PDF owner mutation below is the guard
-    // that fails if a consumer paints a copied fill instead of this object.
-    const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')
-    const canonicalBrand = /--brand-500:\s*(#[0-9a-f]{6})/i.exec(tokens)![1]!.toLowerCase()
-    expect(REMPLISSAGES_MARQUE_LUSK.accent.toLowerCase()).toBe(canonicalBrand)
+  })
+
+  it('détecte une copie de n’importe quel remplissage propriétaire courant', () => {
+    const interdits = Object.values(REMPLISSAGES_MARQUE_LUSK)
+      .map((remplissage) => remplissage.toLowerCase())
     for (const remplissage of Object.values(REMPLISSAGES_MARQUE_LUSK)) {
-      expect(remplissage).toMatch(/^#[0-9a-f]{6}$/i)
+      expect(remplissageCopie(`<path fill="${remplissage}" />`, interdits))
+        .toBe(remplissage.toLowerCase())
     }
-    expect(REMPLISSAGES_MARQUE_LUSK.ink.toLowerCase())
-      .not.toBe(REMPLISSAGES_MARQUE_LUSK.accent.toLowerCase())
+    expect(remplissageCopie('<path fill="var(--brand-500)" />', interdits)).toBeUndefined()
   })
 
   it('peint les remplissages de l’hermine depuis ce propriétaire, pas depuis une copie', async () => {

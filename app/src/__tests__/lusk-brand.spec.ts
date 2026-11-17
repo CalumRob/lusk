@@ -3,6 +3,8 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { REMPLISSAGES_MARQUE_LUSK } from '../components/luskBrandMark'
+
 /**
  * Contract test for issue #204 — the ermine must scale with the wordmark text.
  * The horizontal lockup, the vertical lock-up and the hero's brand column all
@@ -56,5 +58,32 @@ describe('#204 — l’ermine suit le texte (em, pas de px fixe)', () => {
     expect(hero).toMatch(/height:\s*[\d.]+em/)
     expect(hero).toMatch(/margin-bottom:\s*-[\d.]+em/)
     expect(hero).not.toMatch(/\d+px/)
+  })
+})
+
+/**
+ * Identity contract for the locked mark's fills (#1024). The mark is a brand
+ * asset, so its *design* identity belongs to this owner contract, not to an
+ * incidental PDF-ownership assertion. Both anchors are external to the module:
+ * the accent is the canonical `--brand-500` anchor (§2/§7), and the locked body
+ * ink is the stable `#1B1B19` recorded for the watermark (§7). The module owns
+ * the literal; consumers must resolve it from here (their no-copy scan lives in
+ * `cahier-pdf-composer.spec.ts`).
+ */
+describe('#1024 — identité verrouillée des remplissages de l’hermine', () => {
+  const tokens = readFileSync(
+    join(process.cwd(), 'src', 'styles', 'tokens.css'),
+    'utf-8',
+  ).toLowerCase()
+  const design = readFileSync(join(process.cwd(), '..', 'DESIGN.md'), 'utf-8').toLowerCase()
+
+  it('ancre l’accent sur --brand-500 et garde une encre de corps distincte', () => {
+    const ancre = /--brand-500:\s*(#[0-9a-f]{6})/.exec(tokens)?.[1]
+    expect(ancre).toBeTruthy()
+    expect(REMPLISSAGES_MARQUE_LUSK.accent.toLowerCase()).toBe(ancre)
+    expect(design).toContain('#1b1b19')
+    expect(REMPLISSAGES_MARQUE_LUSK.ink.toLowerCase()).toBe('#1b1b19')
+    expect(REMPLISSAGES_MARQUE_LUSK.ink.toLowerCase())
+      .not.toBe(REMPLISSAGES_MARQUE_LUSK.accent.toLowerCase())
   })
 })
