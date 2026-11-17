@@ -465,10 +465,10 @@ scoped_snapshot_delta <- function(target_snapshot, current_snapshot, scope_ids,
                                   intent = "missing_only") {
   intent <- scoped_publication_intent(intent)
   scoped_assert_scope_ids(scope_ids)
-  target_without <- scoped_order_scalar_projection(
-    retained_baseline_scalar(target_snapshot$scalar, scope_ids))
-  current_without <- scoped_order_scalar_projection(
-    retained_baseline_scalar(current_snapshot$scalar, scope_ids))
+  target_without <- retained_baseline_scalar(target_snapshot$scalar, scope_ids)
+  current_without <- retained_baseline_scalar(current_snapshot$scalar, scope_ids)
+  ordered_target_without <- scoped_order_scalar_projection(target_without)
+  ordered_current_without <- scoped_order_scalar_projection(current_without)
   if (identical(intent, "replacement")) {
     # A legitimate level expansion changes the eligible universe by the newly
     # admitted levels only; that is proven by the replacement proof below.
@@ -476,12 +476,12 @@ scoped_snapshot_delta <- function(target_snapshot, current_snapshot, scope_ids,
       prior$eligible_territories <- NULL
       prior
     }
-    if (!identical(without_universe(target_without),
-                   without_universe(current_without)))
+    if (!identical(without_universe(ordered_target_without),
+                   without_universe(ordered_current_without)))
       stop("Target and current scalar generations differ outside the scoped ",
            "indicators; retrieve the exact counterpart generation instead of ",
            "forcing a partial snapshot.", call. = FALSE)
-  } else if (!identical(target_without, current_without)) {
+  } else if (!identical(ordered_target_without, ordered_current_without)) {
     stop("Target and current scalar generations differ outside the scoped ",
          "indicators; retrieve the exact counterpart generation instead of ",
          "forcing a partial snapshot.", call. = FALSE)
