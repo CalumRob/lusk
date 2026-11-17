@@ -411,6 +411,33 @@ function servedRank(position: number | null, size = 43, ties: number | null = nu
   return position === null ? null : { position, size, ties }
 }
 
+/**
+ * A complete synthetic 43-territory cohort around one focal value. The fixture
+ * derives the served rank and the compared group mean from those peers, so a
+ * `1er/43` can never sit next to a compared value that is higher than the focal
+ * (direction `high`). This is fixture data only: the application/PDF never
+ * recomputes a served rank.
+ */
+function cohorteServie(focal: number, graine: number, egalite = false) {
+  const pairs = Array.from({ length: 43 }, (_, index) => {
+    if (egalite && index === 0) return focal
+    if (index === 1) return focal - 2
+    const spread = egalite
+      ? -(((graine * 29 + index * 17) % 400) / 100)
+      : (((graine * 37 + index * 53) % 401) / 100) - 2
+    return Math.round((focal + spread) * 100) / 100
+  })
+  const meilleurs = pairs.filter((value) => value > focal + 1e-9).length
+  const egaux = pairs.filter((value) => Math.abs(value - focal) < 1e-9).length
+  const moyenne = pairs.reduce((sum, value) => sum + value, 0) / pairs.length
+  return {
+    group_value: Number(moyenne.toFixed(2)),
+    rank: meilleurs + 1,
+    rank_size: 43,
+    rank_ties: egaux > 0 ? egaux + 1 : null,
+  }
+}
+
 /** The access ramps with producer-served reference values AND ranks. */
 export function captureRampeRangs(): CahierExportCapture {
   const capture: any = captureRampeDense()
@@ -465,14 +492,13 @@ export function captureExplorerRangs(): CahierExportCapture {
     // Volume ramp: a served mean per horizon (same cells the screen reads).
     for (const [horizonIndex, horizon] of AEDAR_EQUIPMENT_BUCKET_HORIZONS.entries()) {
       const measure = `count_${horizon}_${mode}_mean`
-      fact.measures[measure] = 10 + horizonIndex + modeIndex
+      const focal = 10 + horizonIndex + modeIndex
+      fact.measures[measure] = focal
+      const graine = horizonIndex * 10 + modeIndex
       cells.push({
         ...source,
         measure,
-        group_value: 9 + horizonIndex + modeIndex,
-        rank: 1 + ((horizonIndex + modeIndex) % 5),
-        rank_size: 43,
-        rank_ties: (horizonIndex + modeIndex) % 7 === 0 ? 2 : null,
+        ...cohorteServie(focal, graine, graine % 5 === 0),
       })
     }
     // Distribution: every published statistic carries a focal and a served
@@ -481,14 +507,12 @@ export function captureExplorerRangs(): CahierExportCapture {
     for (const [statisticIndex, statistic] of statistics.entries()) {
       const index = modeIndex * statistics.length + statisticIndex
       const measure = `count_15_${mode}_${statistic.key}`
-      fact.measures[measure] = 10 + index
+      const focal = 10 + index
+      fact.measures[measure] = focal
       cells.push({
         ...source,
         measure,
-        group_value: 100 + index,
-        rank: 1 + (index % 5),
-        rank_size: 43,
-        rank_ties: null,
+        ...cohorteServie(focal, index, index % 7 === 0),
       })
     }
   }
@@ -506,56 +530,24 @@ export function captureExplorerRangs(): CahierExportCapture {
 }
 
 /**
- * A dense variant of the two-table explorer: 25 published distribution
- * thresholds (minimum, quantiles, maximum) with served focal values and ranks.
- * It is the measured-continuation proof for the two value tables; synthetic
- * like every fixture here, never production data.
+ * A dense, honest continuation fixture: forty synthetic equipment types in the
+ * equipment-profile panel. The rows are legitimate panel rows (types grouped by
+ * their served accessibility bucket), never invented deciles or extra domain
+ * categories. Synthetic like every fixture here, never production data.
  */
-export function captureExplorerRangsDense(): CahierExportCapture {
-  const capture: any = captureExplorerRangs()
-  const figure = capture.figures.find((candidate: any) => candidate.family === 'aedar-equipment-explorer')
-  const typequ = figure.effective.typequ as string
-  const fact = figure.model.facts.find((candidate: any) => candidate.typequ === typequ)
-  const source = {
-    typequ,
-    source_id: fact.source_id,
-    vintage_id: fact.vintage_id,
-    reference_date: fact.reference_date,
-    publication_date: fact.publication_date,
-    group_coverage_status: 'covered',
-    group_n_addresses: 100,
-    group_n_observed: 100,
-    statistic: 'pooled' as const,
-    direction: 'high' as const,
-  }
-  const statistics = Array.from({ length: 25 }, (_, index) => ({
-    key: index === 0 ? 'min' : index === 24 ? 'max' : `decile${index}`,
-    label: index === 0 ? 'Minimum' : index === 24 ? 'Maximum' : `Décile ${index}`,
-    axisLabel: index === 0 ? 'Min' : index === 24 ? 'Max' : `D${index}`,
+export function captureProfilRangsDense(): CahierExportCapture {
+  const capture: any = structuredClone(captureWaffleDense())
+  const figure = capture.figures.find((candidate: any) => candidate.family === 'aedar-equipment-profile')
+  const base = figure.model.facts as readonly Record<string, unknown>[]
+  const modes = ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'] as const
+  figure.model.facts = Array.from({ length: 40 }, (_, index) => ({
+    ...base[index % base.length],
+    typequ: `T${String(index + 1).padStart(3, '0')}`,
+    typequ_label: `Équipement ${index + 1}`,
+    measures: Object.fromEntries(modes.map((mode, modeIndex) => [
+      `count_15_${mode}_share`,
+      (((index * 7 + modeIndex * 13) % 85) + 5) / 100,
+    ])),
   }))
-  figure.model.distributionStatistics = statistics
-  // Rebuild the distribution comparison from scratch: the 25 published
-  // statistics replace the 11 of the base fixture instead of stacking two
-  // cell sets for the same measures.
-  const cells = (figure.effective.comparison.cells as Record<string, unknown>[])
-    .filter((cell) => String(cell.measure).endsWith('_mean'))
-  figure.effective.comparison.cells = cells
-  const modes = figure.effective.modes as readonly string[]
-  let index = 0
-  for (const mode of modes) {
-    for (const statistic of statistics) {
-      const measure = `count_15_${mode}_${statistic.key}`
-      fact.measures[measure] = 10 + (index % 47)
-      cells.push({
-        ...source,
-        measure,
-        group_value: 6 + (index % 21),
-        rank: 1 + (index % 7),
-        rank_size: 43,
-        rank_ties: index % 11 === 0 ? 2 : null,
-      })
-      index += 1
-    }
-  }
   return capture as CahierExportCapture
 }

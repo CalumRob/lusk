@@ -9,6 +9,7 @@ import CahierGroupedVerticalBarChart from '@/fiche/prototype/CahierGroupedVertic
 import CahierMobiliteComparisonBars from '@/fiche/prototype/CahierMobiliteComparisonBars.vue'
 import CahierMobiliteRaccordementCurve from '@/fiche/prototype/CahierMobiliteRaccordementCurve.vue'
 import { CAHIER_FIGURE_AXIS } from '@/fiche/cahierFigureGrammaire'
+import { ROLE_PDF } from '@/fiche/prototype/cahierPdfGrammaire'
 import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
 import { dessinerFigurePdf } from '@/fiche/prototype/cahierPdfFigures'
 import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
@@ -111,7 +112,7 @@ async function peindre(
       ...(native.family === 'mobilite-bars' ? { modeleBars: native.model.figure } : {}),
     }, projection)
   }
-  return { svgs, lecture: await lirePdf(doc.output('blob')) }
+  return { svgs, lecture: await lirePdf(doc.output('blob')), doc }
 }
 
 type ContratTrait = readonly [
@@ -240,7 +241,7 @@ describe('sortie native du peintre PDF', () => {
   })
 
   it('garde les deux axes de rampe indépendants avec maxima 1,4 et 40', async () => {
-    const { svgs, lecture } = await peindre(captureRampeDense())
+    const { svgs, lecture, doc } = await peindre(captureRampeDense())
     expect(svgs).toHaveLength(2)
     // Same final car value uses 70% of first panel (1.4/2), 100% of second (40/40).
     // Native 640×300 box: y(1.4) on a 0–2 domain = 86.8, y(40) on 0–40 = 22.
@@ -250,17 +251,26 @@ describe('sortie native du peintre PDF', () => {
     expect(car2).toMatch(/ 22\.00$/)
     expect(lecture.texteComplet).toContain('40')
     const title = lecture.textes.find((item) => item.str === 'VOLUME DE L’OFFRE (ÉTABLISSEMENTS)')!
-    expect(title.x).toBeGreaterThan(12 * 72 / 25.4)
-    expect(title.x).toBeLessThan(186 * 72 / 25.4)
+    // Source geometry: two 90 mm panels with the painter's 6 mm gap; the right
+    // panel starts at 108 mm. The native title lane puts the rotated baseline
+    // at 16/640 of the panel width, and the run is centred on the plot's
+    // native vertical middle (130/300 of the viewBox).
+    const panelWidthMm = 90
+    const panelXMm = 108
+    const titreXAttendu = (panelXMm + 16 * panelWidthMm / 640) * 72 / 25.4
+    expect(Math.abs(title.x - titreXAttendu)).toBeLessThan(0.3)
     const tickNumbers = lecture.textes.filter((item) => /^(0|20|40)$/.test(item.str))
     expect(Math.min(...tickNumbers.map((item) => item.x))).toBeGreaterThan(title.x + 3.5)
     const ticks = lecture.textes.filter((item) => /établissements/.test(item.str)
       && Math.abs(item.rotation) < 0.01)
     expect(ticks).toHaveLength(3)
-    const middle = (Math.min(...ticks.map((tick) => tick.y)) + Math.max(...ticks.map((tick) => tick.y))) / 2
-    // The rotated run is centred on the plot; tick density/units change the
-    // mean tick position, so allow one label box of slack.
-    expect(Math.abs(title.y + title.largeur / 2 - middle)).toBeLessThan(14)
+    // The rotated run keeps the embedded face's exact advance (no shrink, no
+    // 96 dpi conversion): the PDF run length equals the measured role width.
+    doc.setFont(ROLE_PDF.axe.police, 'normal')
+    doc.setFontSize(ROLE_PDF.axe.taille)
+    const largeurAttendue = doc.getTextWidth('VOLUME DE L’OFFRE (ÉTABLISSEMENTS)') * 72 / 25.4
+      + ROLE_PDF.axe.taille * ROLE_PDF.axe.espacementEm * Array.from('VOLUME DE L’OFFRE (ÉTABLISSEMENTS)').length
+    expect(Math.abs(title.largeur - largeurAttendue)).toBeLessThan(0.6)
   })
 
   it('retire la référence comparisonFor avec son mode focal des marques et légendes', async () => {
@@ -306,11 +316,14 @@ describe('sortie native du peintre PDF', () => {
         }] },
       } }
     })
-    // The native bar is 78% opaque; on the PDF's single paper ground the
-    // painter composites that 78% instead of painting the opaque token colour.
-    expect(svgs[1]!.querySelector('rect')!.getAttribute('fill')).toBe(couleurPdf(
-      'color-mix(in srgb, color-mix(in srgb, color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper)) 45%, transparent) 78%, var(--paper))',
+    // The native bar keeps its own series ink at the native 78% shape alpha,
+    // so the grid beneath shows through instead of being painted over by a
+    // pre-composited colour.
+    const rect = svgs[1]!.querySelector('rect')!
+    expect(rect.getAttribute('fill')).toBe(couleurPdf(
+      'color-mix(in srgb, color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper)) 45%, transparent)',
     ))
+    expect(rect.getAttribute('fill-opacity')).toBe('0.78')
   })
 
   it('reprend la grammaire de trait native des séries sur la courbe', async () => {

@@ -72,11 +72,19 @@ export interface LignePdf {
   readonly texte: string
 }
 
+export interface AnnotationPdf {
+  readonly page: number
+  readonly url: string | null
+  readonly dest: unknown
+  readonly rect: readonly number[]
+}
+
 export interface LecturePdf {
   readonly pages: number
   readonly textes: readonly TextePdf[]
   readonly lignes: readonly LignePdf[]
   readonly liens: readonly string[]
+  readonly annotations: readonly AnnotationPdf[]
   readonly metadonnees: {
     readonly title?: string
     readonly subject?: string
@@ -98,6 +106,7 @@ export async function lirePdf(blob: Blob): Promise<LecturePdf> {
   const pdf = await getDocument({ data: Uint8Array.from(octets), useSystemFonts: false }).promise
   const textes: TextePdf[] = []
   const liens: string[] = []
+  const annotations: AnnotationPdf[] = []
   const pagesFormat: { width: number; height: number }[] = []
   for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
     const page = await pdf.getPage(pageIndex)
@@ -116,9 +125,21 @@ export async function lirePdf(blob: Blob): Promise<LecturePdf> {
         rotation: Math.atan2(item.transform[1] ?? 0, item.transform[0] ?? 0),
       })
     }
-    const annotations = await page.getAnnotations()
-    for (const annotation of annotations as Array<{ url?: string }>) {
+    const pageAnnotations = await page.getAnnotations()
+    for (const annotation of pageAnnotations as Array<{
+      url?: string
+      dest?: unknown
+      rect?: number[]
+    }>) {
       if (annotation.url) liens.push(annotation.url)
+      if (annotation.dest !== undefined) {
+        annotations.push({
+          page: pageIndex,
+          url: annotation.url ?? null,
+          dest: annotation.dest,
+          rect: annotation.rect ?? [],
+        })
+      }
     }
   }
   const lignes: LignePdf[] = []
@@ -154,6 +175,7 @@ export async function lirePdf(blob: Blob): Promise<LecturePdf> {
     textes,
     lignes,
     liens,
+    annotations,
     metadonnees: {
       title: info.Title,
       subject: info.Subject,
@@ -176,6 +198,7 @@ export interface CheminPdf {
   readonly page: number
   readonly kind: 'fill' | 'stroke'
   readonly colour: string | null
+  readonly largeur: number | null
   readonly x: number
   readonly y: number
   readonly width: number
@@ -220,6 +243,7 @@ export async function cheminsPdf(octets: Uint8Array, pages = 1): Promise<readonl
     const lignes = raw.split('\n')
     let stroke: string | null = null
     let fill: string | null = null
+    let largeur: number | null = null
     let points: [number, number][] = []
     let kind: 'fill' | 'stroke' | null = null
     const ajouter = (values: number[]) => {
@@ -239,6 +263,11 @@ export async function cheminsPdf(octets: Uint8Array, pages = 1): Promise<readonl
         continue
       }
       const nombres = [...ligne.matchAll(/-?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]))
+      const largeurTrait = /^(-?\d+(?:\.\d+)?) w$/.exec(ligne)
+      if (largeurTrait) {
+        largeur = Number(largeurTrait[1])
+        continue
+      }
       if (/\bm$/.test(ligne) || /\bl$/.test(ligne)) {
         ajouter(nombres)
         continue
@@ -274,6 +303,7 @@ export async function cheminsPdf(octets: Uint8Array, pages = 1): Promise<readonl
           page: pageIndex + 1,
           kind,
           colour: kind === 'stroke' ? stroke : fill,
+          largeur,
           x,
           // The content stream is bottom-origin; expose the reader's top-origin
           // y so a margin/frame assertion reads like the approved page box.
@@ -334,25 +364,20 @@ export async function programmesPoliceEmbarques(
   return programs
 }
 
-/** Fill alpha (`ca`) values declared in one page's ExtGState resources. */
+/** Fill alpha (`ca`) values declared in one page's graphics states. */
 export async function opacitesRemplissagePdf(
   octets: Uint8Array,
   pageIndex = 0,
 ): Promise<readonly number[]> {
-  const document = await PDFDocument.load(Uint8Array.from(octets).buffer)
-  const page = document.getPages()[pageIndex]
-  const resources = page.node.Resources()
-  if (!resources) return []
-  const states = resources.lookup(PDFName.of('ExtGState'))
-  if (!states) return []
+  const pdf = await getDocument({ data: Uint8Array.from(octets), useSystemFonts: false }).promise
+  const page = await pdf.getPage(pageIndex + 1)
+  const operators = await page.getOperatorList()
   const values: number[] = []
-  const entries = (states as unknown as { entries: () => Iterable<[PDFName, unknown]> }).entries
-  for (const [, state] of entries.call(states)) {
-    const lookup = (state as { lookup?: (name: PDFName) => unknown }).lookup
-    if (!lookup) continue
-    const ca = lookup.call(state, PDFName.of('ca'))
-    if (ca && typeof (ca as { asNumber?: () => number }).asNumber === 'function') {
-      values.push((ca as { asNumber: () => number }).asNumber())
+  for (let index = 0; index < operators.fnArray.length; index += 1) {
+    if (operators.fnArray[index] !== OPS.setGState) continue
+    const entries = operators.argsArray[index]?.[0] as [string, number][] | undefined
+    for (const [key, value] of entries ?? []) {
+      if (key === 'ca' && typeof value === 'number') values.push(value)
     }
   }
   return values

@@ -33,9 +33,10 @@ import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
 import {
   chargeurImageTest,
   chargeurPoliceTest,
-  cheminsPdf,
+  couleursRemplissage,
   epaisseursTraitPdf,
   lirePdf,
+  opacitesRemplissagePdf,
   programmesPoliceEmbarques,
   type LecturePdf,
   type TextePdf,
@@ -43,7 +44,7 @@ import {
 import { lirePoliceTtf } from './helpers/cahierPdfFontProbe'
 import {
   captureExplorerRangs,
-  captureExplorerRangsDense,
+  captureProfilRangsDense,
   capturePdfFixture,
 } from './helpers/cahierPdfFixtures'
 
@@ -163,19 +164,36 @@ describe('PDF approuvé — tableaux transposés par légende', () => {
     const capture = captureExplorerRangs()
     const { parts } = await parties(capture)
     const distribution = parts.find((part) => part.rowHeader === 'Statistique')!
-    // Literal matrix of the synthetic fixture: focal = 10 + index, compared
-    // group value = 100 + index, served rank = 1 + (index % 5), with
-    // index = modeIndex * 11 + statisticIndex (Voiture, Transports, Vélo).
+    // Literal matrix of the synthetic cohort fixture: focal 10 for the first
+    // statistic, its 43 served peers (mean 8,2, none above → tied 1er), then
+    // the Vélo group on the same published row.
     const cellules = (rowIndex: number) => distribution.rows[rowIndex]!.cells.map((cellule) => cellule.display)
-    expect(cellules(0)).toEqual(['10', '100', '1er/43', '21', '111', '2e/43'])
-    expect(cellules(10)).toEqual(['20', '110', '1er/43', '31', '121', '2e/43'])
+    expect(cellules(0)).toEqual(['10', '8,2', '=1er/43', '21', '20,9', '22e/43'])
+    expect(cellules(10)).toEqual(['20', '20', '21e/43', '31', '29', '=1er/43'])
     // Every distinct cell appears once: the two literal rows above are the only
     // occurrence of their values in the row set.
-    expect(distribution.rows.filter((row) => row.cells.some((c) => c.display === '100'))).toHaveLength(1)
-    expect(distribution.rows.filter((row) => row.cells.some((c) => c.display === '111'))).toHaveLength(1)
+    expect(distribution.rows.filter((row) => row.cells.some((c) => c.display === '8,2'))).toHaveLength(1)
+    expect(distribution.rows.filter((row) => row.cells.some((c) => c.display === '20,9'))).toHaveLength(1)
     // No `Indisponible` remains in the populated fixture: the comparison is real.
     expect(distribution.rows.some((row) => row.cells.some((cellule) => cellule.display === 'Indisponible')))
       .toBe(false)
+    // Fixture honesty: the served cohort never contradicts the direction
+    // (`high`): a top rank cannot sit beside a compared mean above the focal.
+    const figure = capture.figures.find((candidate) => candidate.family === 'aedar-equipment-explorer')!
+    const fact = (figure as unknown as { model: { facts: { typequ: string; measures: Record<string, number> }[] } })
+      .model.facts.find((candidate) => candidate.typequ === (figure as unknown as { effective: { typequ: string } }).effective.typequ)!
+    const comparison = (figure as unknown as {
+      effective: { comparison: { cells: { measure: string; group_value: number; rank: number; rank_size: number; rank_ties: number | null }[] } }
+    }).effective.comparison
+    for (const cell of comparison.cells) {
+      const focal = fact.measures[cell.measure]
+      if (focal === undefined) continue
+      expect(Number.isInteger(cell.rank)).toBe(true)
+      expect(cell.rank).toBeGreaterThanOrEqual(1)
+      expect(cell.rank).toBeLessThanOrEqual(cell.rank_size)
+      if (cell.rank === 1) expect(cell.group_value).toBeLessThanOrEqual(focal)
+      if (cell.rank_ties !== null) expect(cell.rank_ties).toBeGreaterThan(1)
+    }
   })
 
   it('imprime l’en-tête à deux niveaux et porte le ¹ sur Groupe, jamais sur Rang', async () => {
@@ -224,10 +242,10 @@ describe('PDF approuvé — tableaux transposés par légende', () => {
       .sort((a, b) => a.x - b.x)
       .map((item) => item.str)
     const cellules = surLaLigne.filter((value) => value.trim().length > 0)
-    expect(cellules.slice(0, 6)).toEqual(['10', '100', '1er/43', '21', '111', '2e/43'])
+    expect(cellules.slice(0, 6)).toEqual(['10', '8,2', '=1er/43', '21', '20,9', '22e/43'])
     expect(surLaLigne[0]).not.toBe('Voiture')
     // The compared rank is still the served value, never a recomputation.
-    expect(lecture.texteComplet).toContain('2e/43')
+    expect(lecture.texteComplet).toContain('22e/43')
   })
 
   it('une table plate par rampe : Temps | Mode | territoire | Groupe¹ | Rang', async () => {
@@ -292,18 +310,33 @@ describe('PDF approuvé — tableaux transposés par légende', () => {
     expect(parts[0]!.rows[0]!.cells.map((cellule) => cellule.display)).toEqual(['Indisp.', 'Indisp.'])
   })
 
-  it('ne réintroduit ni le découpage par décile ni un fixture constant', async () => {
-    const capture = captureExplorerRangsDense()
+  it('pagine une table réellement longue avec des lignes légitimes, jamais des déciles inventés', async () => {
+    const capture = captureProfilRangsDense()
     const { parts } = await parties(capture)
-    const distribution = parts.filter((part) => part.rowHeader === 'Statistique')
-    // 25 statistics: one table; only a genuine measured overflow may continue
-    // it, and a continuation may only repeat complete rows.
-    expect(distribution.length).toBe(1)
-    expect(distribution[0]!.rows).toHaveLength(25)
-    const values = distribution[0]!.rows.map((row) => row.cells.map((cellule) => cellule.display).join('|'))
-    expect(new Set(values).size).toBeGreaterThan(20)
-    for (const key of ['Voiture', 'Vélo (LTS2)']) {
-      expect(distribution[0]!.rows.map((row) => row.label)).not.toContain(key)
+    // One equipment-profile table: its rows are the panel's own equipment
+    // types (synthetic labels, real row semantics), not invented statistics.
+    expect(parts).toHaveLength(1)
+    const table = parts[0]!
+    expect(table.rows).toHaveLength(40)
+    for (const row of table.rows) expect(row.label).toMatch(/^Équipement \d+ \(T\d{3}\)$/)
+    expect(table.rows.map((row) => row.label)).not.toContain('Décile 10')
+    expect(table.rows.map((row) => row.label)).not.toContain('Décile 24')
+    // The document itself continues only at measured overflow, and every page
+    // repeats the same header and source stamp.
+    const lecture = await generer(capture)
+    expect(lecture.pages).toBeGreaterThanOrEqual(2)
+    for (let page = 1; page <= lecture.pages; page += 1) {
+      const textePage = lecture.lignes
+        .filter((ligne) => ligne.page === page).map((ligne) => ligne.texte).join(' ')
+        .replace(/[’']/g, "'")
+      expect(textePage).toContain('COMMUNE A1')
+      expect(textePage).toContain("Types d'équipements par premier mode permettant l'accès à au moins 25% des adresses")
+      expect(textePage).toContain('Source(s) :')
+    }
+    // A complete label appears once across the whole document (no cut row).
+    for (const label of ['Équipement 1 (T001)', 'Équipement 15 (T015)', 'Équipement 40 (T040)']) {
+      const occurrences = lecture.texteComplet.split(label).length - 1
+      expect(occurrences).toBe(1)
     }
   })
 })
@@ -439,22 +472,25 @@ describe('PDF approuvé — wordmark, figures AEDAR', () => {
         && item.x < ligne.x + ligne.largeur && item.x + item.largeur > ligne.x)
       expect(titre, 'la seconde ligne est empilée sous un titre de panneau').toBeTruthy()
     }
-    // Native `.bar { fill-opacity: .78 }`: on the opaque paper ground the
-    // painter composites the same 78% — the PDF must not paint the opaque fill.
-    const fills = new Set((await cheminsPdf(lecture.octets, 1)).filter((path) => path.kind === 'fill')
-      .map((path) => path.colour))
-    expect(fills).toContain(couleurPdf('color-mix(in srgb, var(--cahier-mode-car) 78%, var(--paper))'))
-    expect(fills).not.toContain(couleurPdf('var(--cahier-mode-car)'))
+    // Native `.bar { fill-opacity: .78 }`: the bar keeps its own ink and the
+    // shape alpha is emitted, so the grid beneath shows through. Pre-compositing
+    // the 78 % onto paper would hide the grid and must not come back.
+    const fills = await couleursRemplissage(lecture.octets)
+    expect(fills).toContain(couleurPdf('var(--cahier-mode-car)').toLowerCase())
+    expect(fills).not.toContain(couleurPdf('color-mix(in srgb, var(--cahier-mode-car) 78%, var(--paper))').toLowerCase())
+    expect(await opacitesRemplissagePdf(lecture.octets, 0)).toContain(0.78)
   })
 
   it('garde les barres groupées semi-transparentes et sans transposition visuelle', async () => {
     const { svgs } = await peindre(captureExplorerRangs())
     const rects = [...svgs[1]!.querySelectorAll('rect')]
     expect(rects.length).toBeGreaterThan(0)
-    const attendu = couleurPdf('color-mix(in srgb, var(--cahier-mode-car) 78%, var(--paper))')
-    expect(rects[0]!.getAttribute('fill')).toBe(attendu)
-    expect(attendu).not.toBe(couleurPdf('var(--cahier-mode-car)'))
+    // The SVG carries the native series ink and its own `.78` shape alpha, not
+    // an opaque pre-composited colour that would hide the grid beneath.
+    expect(rects[0]!.getAttribute('fill')).toBe(couleurPdf('var(--cahier-mode-car)'))
+    expect(rects[0]!.getAttribute('fill-opacity')).toBe('0.78')
     for (const rect of rects) {
+      expect(rect.getAttribute('fill-opacity')).toBe('0.78')
       // Bars grow from the native plot bottom, not a recomputed 96 dpi box.
       const bottom = Number(rect.getAttribute('y')) + Number(rect.getAttribute('height'))
       expect(bottom).toBeLessThanOrEqual(238.01)

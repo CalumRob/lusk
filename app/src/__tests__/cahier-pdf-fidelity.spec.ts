@@ -32,7 +32,7 @@ import {
 } from './helpers/cahierPdfRuntime'
 import {
   captureExplorerRangs,
-  captureExplorerRangsDense,
+  captureProfilRangsDense,
   capturePdfFixture,
 } from './helpers/cahierPdfFixtures'
 import { communeMembers } from './helpers/cahierExportFixtures'
@@ -224,10 +224,10 @@ describe('grammaire PDF — rôles approuvés et métriques réelles', () => {
     // one explicit `Rang` header per legend-key group.
     const rangs = lecture.textes.filter((item) => item.str === 'Rang')
     expect(rangs).toHaveLength(4)
-    expect(lecture.texteComplet).toContain('1er/43')
+    expect(lecture.texteComplet).toContain('=1er/43')
     // The served rank has its own cell: same row as the compared value and to
     // its right, not a second line under the number.
-    const rang = lecture.textes.find((item) => item.str === '1er/43')!
+    const rang = lecture.textes.find((item) => item.str === '=1er/43')!
     const valeurs = lecture.textes.filter((item) => item.y === rang.y && item.x < rang.x
       && /^\d+([.,]\d+)?$/.test(item.str))
     expect(valeurs.length).toBeGreaterThan(0)
@@ -243,7 +243,7 @@ describe('grammaire PDF — rôles approuvés et métriques réelles', () => {
     expect(compact.lecture.pages).toBe(1)
     // The dense two-table document is the measured continuation: both value
     // tables continue with complete rows, ranks and repeated identity/sources.
-    const dense = captureExplorerRangsDense()
+    const dense = captureProfilRangsDense()
     const continuation = await generer(dense)
     expect(continuation.lecture.pages).toBeGreaterThanOrEqual(2)
     // Same role size on both pages (no whole-document shrink).

@@ -8,7 +8,7 @@ import {
 } from '@/fiche/prototype/cahierPdfComposer'
 import { MARQUE_LUSK_ERMINE, REMPLISSAGES_MARQUE_LUSK } from '@/components/luskBrandMark'
 import { COULEUR_CYCLE_PARTAGE } from '@/fiche/prototype/cahierColorRoles'
-import { sousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaison'
+import { sousTitreComparaison, texteSousTitre } from '@/fiche/prototype/cahierPdfComparaison'
 import type { SousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaison'
 import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
 import { PALETTE_PDF } from '@/fiche/prototype/cahierPdfPalette'
@@ -164,20 +164,25 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
     // extractor's line grouping, so compare the row's runs by x instead.
     const rangee = (label: string) => {
       const ancre = lecture.textes.find((item) => item.page === 1
-        && item.str === label && Math.abs(item.taille - 7.36) < 0.05 && item.y > 300)
+        && item.str === label && Math.abs(item.taille - 7.36) < 0.05 && item.y > 150)
       if (!ancre) return []
+      // Approved access grid: two paired tables on the same baseline. Read the
+      // half the anchor belongs to, never both tables as one row.
+      const [gauche, droite] = ancre.x < 290 ? [38, 290] : [300, 565]
       return lecture.textes
-        .filter((item) => item.page === 1 && Math.abs(item.y - ancre.y) < 1.2)
+        .filter((item) => item.page === 1 && Math.abs(item.y - ancre.y) < 1.2
+          && item.x >= gauche && item.x < droite)
         .sort((a, b) => a.x - b.x)
         .map((item) => item.str)
         .filter((value) => value.trim().length > 0)
     }
     // Approved flat shape A: one row per cut × mode with Temps | Mode |
     // territory | Groupe¹ | Rang, so a cut repeats once per visible mode.
-    expect(rangee('5 min')).toEqual(['5 min', 'Voiture', '5', 'Indisponible', '—'])
-    expect(rangee('20 min')).toEqual(['20 min', 'Voiture', '5', 'Indisponible', '—'])
-    // Numbers are never truncated: the native display is intact.
-    expect(lecture.texteComplet).not.toContain('Indisp. :')
+    expect(rangee('5 min')).toEqual(['5 min', 'Voiture', '5', 'Indisp.', '—'])
+    expect(rangee('20 min')).toEqual(['20 min', 'Voiture', '5', 'Indisp.', '—'])
+    // The measured paired width only abbreviates the earned word; its single
+    // explanation is printed once under the pair.
+    expect(occurrences(lecture, 'Indisp. : valeur indisponible.')).toBe(1)
     // Brand, live identity and source links are real annotations.
     expect(lecture.liens).toContain('https://lusk.test/')
     expect(lecture.liens).toContain('https://lusk.test/territoire/commune/22001?theme=mobilite#section-aedar-access')
@@ -270,9 +275,12 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
 
   it('conserve les accents français et les glyphes embarqués', async () => {
     const { lecture } = await generer(requetePour('aedar-access'), 'glyphes.pdf')
-    for (const valeur of ['Établissements', 'Vélo', 'D’ACCÈS', 'Diversité', 'Indisponible']) {
+    for (const valeur of ['Établissements', 'Vélo', 'D’ACCÈS', 'Diversité', 'Indisp.']) {
       expect(lecture.texteComplet).toContain(valeur)
     }
+    // The paired access column is narrow enough for the measured abbreviation;
+    // its single explanation is emitted once under the pair.
+    expect(occurrences(lecture, 'Indisp. : valeur indisponible.')).toBe(1)
     // headline-400, text-400/500/600, fira-code-500, newsreader-600-italic.
     expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(6)
   })
@@ -428,11 +436,14 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
     contientTout(lecture, [
       'Places',
       'places / 1 000 hab.',
-      'Unité : places / 1 000 hab.',
       'Protégé',
       'Partagé',
       'Groupe comparé',
     ])
+    // The table carries no PDF-only `Unité :` line (the approved caption clone
+    // has none); the unit fact stays on the figure's own axis title.
+    expect(lecture.texteComplet).toContain('Places (places / 1 000 hab.)')
+    expect(lecture.texteComplet).not.toContain('Unité :')
     // Native rounded headroom for 3,4 must not become a raw 0/.85/1.7 axis.
     expect(lecture.texteComplet).not.toContain('0,85')
     const rowLabel = lecture.textes.find((item) => item.str.startsWith('Réseau piéton') && item.page === 1)
@@ -772,7 +783,7 @@ describe('sous-titre de comparaison — règle mesurée approuvée', () => {
   }
 
   function texte(sousTitre: SousTitreComparaison | null): string {
-    return sousTitre?.lignes.map((ligne) => ligne.map((run) => run.texte).join(' ')).join(' ') ?? ''
+    return sousTitre ? texteSousTitre(sousTitre) : ''
   }
 
   it('affiche le nom exact d’un EPCI, jamais le libellé de portée', () => {
